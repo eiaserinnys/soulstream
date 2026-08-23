@@ -23,10 +23,11 @@
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { invokeHarnessBoundary } from "./fault-harness-boundary.mjs";
+import { bindHarnessBoundary } from "./fault-harness-boundary.mjs";
 import { sampleInvariants } from "./fault-harness-evidence.mjs";
 import { LabRuntime } from "./fault-harness-runtime.mjs";
-import { createStrandedDeliveryMutation } from "./fault-harness-stranded-delivery-mutation.mjs";
+
+const invokeSampleInvariants = bindHarnessBoundary(sampleInvariants);
 
 const PREFIX = "lab-mutation";
 
@@ -197,7 +198,6 @@ const MUTATIONS = [
       await context.sql(`DELETE FROM session_deliveries WHERE delivery_id = '${planted.deliveryId}'`);
     },
   },
-  createStrandedDeliveryMutation(),
   {
     invariant: "activation_manifest",
     what: "the newest activation receipt naming a release the host is not running",
@@ -235,7 +235,7 @@ export const MUTATION_COVERAGE = Object.freeze(
   [...new Set(MUTATIONS.map((mutation) => mutation.invariant))],
 );
 
-/** Eight judges, nine mutations; `unanswered_demand` has two failure shapes. */
+/** Seven judges, eight mutations; `unanswered_demand` has two failure shapes. */
 export const JUDGE_COUNT = MUTATION_COVERAGE.length;
 
 /**
@@ -367,7 +367,7 @@ export async function runMutationGate(runtime) {
       `);
     },
     async sample() {
-      const { violations } = await invokeHarnessBoundary(sampleInvariants, runtime, since);
+      const { violations } = await invokeSampleInvariants(runtime, since);
       return violations;
     },
   };

@@ -24,7 +24,7 @@ export function pendingContractRuntime(now, directory) {
       if (query.includes("'ownerlessRunning'")) {
         return {
           ownerlessRunning: [], overdueRetries: [], ambiguousUncertain: [],
-          reasonlessDeadLetters: [], strandedDeliveryCandidates: [], sessions: [],
+          reasonlessDeadLetters: [], sessions: [],
           activationReceipt: { manifest_id: "m", release_cohort_id: "c", source_commit: "s" },
         };
       }

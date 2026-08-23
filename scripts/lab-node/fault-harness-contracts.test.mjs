@@ -5,7 +5,10 @@ import {
   defineHarnessBoundary,
   invokeHarnessBoundary,
 } from "./fault-harness-boundary.mjs";
-import { callOrdinaryWiringAcrossModule } from "./fault-harness-cross-module-forward.fixture.mjs";
+import {
+  callOrdinaryWiringAcrossModule,
+  makeUnregisteredForwardingClosure,
+} from "./fault-harness-cross-module-forward.fixture.mjs";
 import { ordinaryExportedWiring } from "./fault-harness-unregistered-export.fixture.mjs";
 import {
   boundaryContractInventory,
@@ -48,7 +51,20 @@ test("an ordinary exported forwarding function cannot execute registered wiring"
   );
   await assert.rejects(
     () => invokeHarnessBoundary(ordinaryExportedWiring, runTrafficCycles),
-    /unregistered harness wiring cannot execute/,
+    /unregistered harness invoker cannot execute/,
+  );
+});
+
+test("a dynamic public invoker cannot execute an unregistered forwarding closure", async () => {
+  const unregistered = makeUnregisteredForwardingClosure(runTrafficCycles);
+  assert.equal(Object.hasOwn(unregistered, "boundaryContract"), false);
+  await assert.rejects(
+    () => unregistered(
+      { concurrency: 0, cycles: 0, intervalSeconds: 0 },
+      {},
+      {},
+    ),
+    /unregistered harness invoker cannot execute/,
   );
 });
 

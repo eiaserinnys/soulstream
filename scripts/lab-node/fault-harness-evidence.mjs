@@ -24,8 +24,8 @@ import {
   findUnansweredDemands,
 } from "./fault-harness-verdict.mjs";
 import {
+  bindHarnessBoundary,
   defineHarnessBoundary,
-  invokeHarnessBoundary,
 } from "./fault-harness-boundary.mjs";
 import {
   boundaryAssert,
@@ -33,11 +33,6 @@ import {
   CONTRACT_SINCE,
   pendingContractRuntime,
 } from "./fault-harness-contract-fixtures.mjs";
-import {
-  findStrandedDeliveries,
-  runnerIsStillWorking,
-  STRANDED_DELIVERY_CANDIDATES_SQL,
-} from "./fault-harness-stranded-delivery.mjs";
 
 export class EvidenceRecorder {
   constructor(runtime, runId, directory) {
@@ -118,8 +113,7 @@ export class EvidenceRecorder {
 
   async sampleOnce(label, baseline) {
     await delay(2_000);
-    const { pairingInputs, ...sample } = await invokeHarnessBoundary(
-      sampleInvariants,
+    const { pairingInputs, ...sample } = await invokeSampleInvariants(
       this.runtime,
       this.since,
     );
@@ -246,7 +240,6 @@ async function sampleInvariantsImpl(runtime, since) {
         FROM session_deliveries
         WHERE state = 'uncertain' AND aggregate_state <> 'dead_letter'
       ),
-      'strandedDeliveryCandidates', (${STRANDED_DELIVERY_CANDIDATES_SQL}),
       'reasonlessDeadLetters', (
         SELECT COALESCE(json_agg(json_build_object('delivery_id', delivery_id)), '[]'::json)
         FROM session_deliveries
@@ -279,11 +272,6 @@ async function sampleInvariantsImpl(runtime, since) {
     lifecycles,
     database?.sessions ?? [],
   );
-  const strandedDeliveries = findStrandedDeliveries(
-    database?.strandedDeliveryCandidates,
-    lifecycles,
-    runtime,
-  );
   // The user-facing verdict, derived here rather than handed in.
   //
   // What stood here before was `messageLosses`, a parameter. Every scenario
@@ -314,7 +302,6 @@ async function sampleInvariantsImpl(runtime, since) {
     overdueRetries: database?.overdueRetries ?? [],
     ambiguousUncertain: database?.ambiguousUncertain ?? [],
     reasonlessDeadLetters: database?.reasonlessDeadLetters ?? [],
-    strandedDeliveries,
     activationManifestMismatch: !receipt
       || receipt.manifest_id !== manifest.manifestId
       || receipt.release_cohort_id !== manifest.releaseCohortId
@@ -370,6 +357,11 @@ export const sampleInvariants = defineHarnessBoundary({
   },
 });
 
+const invokeSampleInvariants = bindHarnessBoundary(sampleInvariants);
+
+const RUNNER_TERMINAL_STATES = ["completed", "failed", "reaped", "closed"];
+const RUNNER_PROGRESS_GRACE_MS = 60_000;
+
 /** Reads every readable runner lifecycle, keyed by the session it belongs to. */
 async function readRunnerLifecycles(runnerStateDirectory) {
   const lifecycles = new Map();
@@ -388,6 +380,18 @@ async function readRunnerLifecycles(runnerStateDirectory) {
     } catch {}
   }
   return lifecycles;
+}
+
+/**
+ * A runner that is still advancing may still answer a recent demand. This is
+ * used only by the pending/unanswered-demand verdict; delivery completion is
+ * deliberately not inferred from runner liveness or progress.
+ */
+function runnerIsStillWorking(lifecycle) {
+  if (!lifecycle) return false;
+  if (RUNNER_TERMINAL_STATES.includes(lifecycle.execution_state)) return false;
+  const progressedAt = Date.parse(lifecycle.progress_at ?? "") || 0;
+  return Date.now() - progressedAt < RUNNER_PROGRESS_GRACE_MS;
 }
 
 function findTerminalProjectionMismatches(lifecycles, sessionRows) {

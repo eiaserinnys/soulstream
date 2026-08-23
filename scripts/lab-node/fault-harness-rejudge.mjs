@@ -23,8 +23,8 @@ import {
 } from "./fault-harness-database.mjs";
 import { findUnansweredDemands } from "./fault-harness-verdict.mjs";
 import {
+  bindHarnessBoundary,
   defineHarnessBoundary,
-  invokeHarnessBoundary,
 } from "./fault-harness-boundary.mjs";
 
 const EVIDENCE_ROOT = join(
@@ -138,6 +138,8 @@ export const rejudgeDirectory = defineHarnessBoundary({
     }
   },
 });
+
+const invokeRejudgeDirectory = bindHarnessBoundary(rejudgeDirectory);
 
 /** The database, when there is one and it still holds the run's sessions. */
 async function readDatabaseInputs(database, window) {
@@ -256,7 +258,7 @@ async function main() {
   const database = new LabDatabase();
   const results = [];
   for (const directory of directories) {
-    results.push(await invokeHarnessBoundary(rejudgeDirectory, directory, database));
+    results.push(await invokeRejudgeDirectory(directory, database));
   }
   if (asJson) {
     process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);

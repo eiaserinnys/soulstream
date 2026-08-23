@@ -28,13 +28,15 @@ import {
   reportBoundaryContracts,
   runBoundaryContracts,
 } from "./fault-harness-contracts.mjs";
-import { invokeHarnessBoundary } from "./fault-harness-boundary.mjs";
+import { bindHarnessBoundary } from "./fault-harness-boundary.mjs";
 import { createQueryRunner } from "./fault-harness-database.mjs";
 import {
   reportMutationGate,
   runMutationGate,
 } from "./fault-harness-mutation.mjs";
 import { assertThrowawayTarget } from "./fault-harness-throwaway-boundary.mjs";
+
+const invokeAssertThrowawayTarget = bindHarnessBoundary(assertThrowawayTarget);
 
 /** Stands in for a built release; the gate only compares it to a receipt. */
 const FIXTURE_MANIFEST = Object.freeze({
@@ -59,7 +61,7 @@ const FIXTURE_MANIFEST = Object.freeze({
  */
 async function main() {
   const query = createQueryRunner(process.env);
-  await invokeHarnessBoundary(assertThrowawayTarget, query);
+  await invokeAssertThrowawayTarget(query);
   const runnerStateDirectory = await mkdtemp(join(tmpdir(), "lab-harness-ci-"));
 
   // The gate's activation mutation works by making the newest receipt disagree

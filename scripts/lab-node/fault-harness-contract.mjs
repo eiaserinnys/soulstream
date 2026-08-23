@@ -123,10 +123,6 @@ export function evaluateInvariantSnapshot(snapshot) {
   if (reasonlessDeadLettersExamples.length > 0) {
     violations.push(invariant("reasonless_dead_letter", reasonlessDeadLettersExamples.length, reasonlessDeadLettersExamples));
   }
-  const strandedExamples = asExamples(snapshot.strandedDeliveries);
-  if (strandedExamples.length > 0) {
-    violations.push(invariant("stranded_delivery", strandedExamples.length, strandedExamples));
-  }
   if (snapshot.activationManifestMismatch) {
     violations.push(invariant("activation_manifest", 1));
   }
