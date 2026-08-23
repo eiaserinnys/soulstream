@@ -429,6 +429,43 @@ describe("TaskDeliveryLedgerGate", () => {
     expect(markUncertain).not.toHaveBeenCalled();
   });
 
+  it("treats a queued CAS miss as accepted when the durable row already advanced", async () => {
+    const deliveryId = "edededed-eded-4ded-8ded-edededededed";
+    const markQueued = vi.fn()
+      .mockResolvedValueOnce(row(deliveryId, "queued"))
+      .mockResolvedValueOnce(null);
+    const get = vi.fn().mockResolvedValue(row(deliveryId, "queued"));
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get,
+      markQueued,
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+    });
+    const admission = {
+      kind: "admitted" as const,
+      deliveryId,
+      row: {
+        ...row(deliveryId, "dispatching"),
+        intent: "durable_next_turn" as const,
+        target_session_id: "caller-1",
+        lease_owner: "route-durable-acceptance",
+      },
+    };
+    const result = { queued: true as const, reason: "session_busy" };
+
+    await expect(gate.recordResult(admission, result)).resolves.toBeUndefined();
+    await expect(gate.recordResult(admission, result)).resolves.toBeUndefined();
+
+    expect(markQueued).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenCalledWith(deliveryId);
+  });
+
   it("supersedes only the pending durable retry selected by id", async () => {
     const deliveryId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
     const markPendingSuperseded = vi.fn().mockResolvedValue(
@@ -501,10 +538,12 @@ describe("TaskDeliveryLedgerGate", () => {
     );
   });
 
-  it("terminalizes ownership retries only after the existing delivery budget is exhausted", async () => {
+  it("parks ownership retries after the active cadence is exhausted", async () => {
     const deliveryId = "acacacac-acac-4cac-8cac-acacacacacac";
-    const markUncertain = vi.fn().mockResolvedValue(row(deliveryId, "uncertain"));
-    const retryLeasedDelivery = vi.fn();
+    const markUncertain = vi.fn();
+    const retryLeasedDelivery = vi.fn().mockResolvedValue(
+      row(deliveryId, "uncertain"),
+    );
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
       claimForTarget: vi.fn(),
@@ -530,14 +569,15 @@ describe("TaskDeliveryLedgerGate", () => {
         attempt_count: 15,
         created_at: new Date(),
       },
-    }, "2026-08-19T00:10:00.000Z")).resolves.toBe("exhausted");
+    }, "2026-08-19T00:10:00.000Z")).resolves.toBe("parked");
 
-    expect(markUncertain).toHaveBeenCalledWith(
+    expect(retryLeasedDelivery).toHaveBeenCalledWith(
       deliveryId,
       "route-exhausted",
-      "automatic ownership retry budget exhausted",
+      "reservation_in_flight",
+      expect.any(Number),
     );
-    expect(retryLeasedDelivery).not.toHaveBeenCalled();
+    expect(markUncertain).not.toHaveBeenCalled();
   });
 
 });

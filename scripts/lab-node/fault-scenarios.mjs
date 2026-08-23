@@ -23,8 +23,22 @@ import {
   shortId,
   withBaselineHonesty,
 } from "./fault-scenario-result.mjs";
+import {
+  DELIVERY_LOG_TERMS,
+  DELIVERY_SCENARIOS,
+} from "./fault-scenarios-delivery.mjs";
 
-const SCENARIO_ORDER = ["F9", "dead-owner", "F1", "F11", "F7"];
+const SCENARIO_ORDER = [
+  "F9",
+  "dead-owner",
+  "F1",
+  "F11",
+  "F7",
+  "delivery-revival",
+  "delivery-exact-once",
+  "delivery-fifo",
+  "delivery-accepted-cas",
+];
 const LOG_TERMS = {
   F1: ["F1_", "runner", "shutdown"],
   F11: ["F11_", "intervention", "delivery"],
@@ -34,6 +48,7 @@ const LOG_TERMS = {
     "Durable event stream already registered", "Runner IPC reconnect budget exhausted"],
   "dead-owner": ["DEAD_OWNER_", "dead execution owner", "expire_dead_owner"],
   F7: ["F7_", "dead_letter", "completion_notification", "delivery"],
+  ...DELIVERY_LOG_TERMS,
 };
 
 export function canonicalScenarioOrder() {
@@ -85,6 +100,7 @@ export async function runCanonicalScenario(id, runtime, recorder) {
 }
 
 const SCENARIOS = {
+  ...DELIVERY_SCENARIOS,
   async F1(runtime, recorder) {
     const modes = ["SIGTERM", "SIGKILL"];
     const cases = [];
@@ -227,7 +243,8 @@ const SCENARIOS = {
     const runner = await runtime.waitForRunner(sessionId);
     await waitForInFlightTool(runtime, sessionId);
     const oldOwnership = await waitFor(
-      async () => (await runtime.ownerships(sessionId)).find((row) => row.phase === "active"),
+      async () => (await runtime.controlPlane.ownerships(sessionId))
+        .find((row) => row.phase === "active"),
       30_000,
       "dead-owner scenario never reached active ownership",
     );
@@ -263,7 +280,7 @@ const SCENARIOS = {
     );
     const ownerships = await waitFor(
       async () => {
-        const rows = await runtime.ownerships(sessionId);
+        const rows = await runtime.controlPlane.ownerships(sessionId);
         const oldFailed = rows.some((row) => (
           row.ownership_generation === oldOwnership.ownership_generation
           && row.phase === "failed"
@@ -307,14 +324,14 @@ const SCENARIOS = {
     let restartedNodePid;
     let failedDelivery;
     try {
-      await runtime.updateSessionNode(parentId, "missing-lab-node");
+      await runtime.controlPlane.updateSessionNode(parentId, "missing-lab-node");
       restartedNodePid = await runtime.restartService("node", "SIGTERM");
       const failedChildId = await runtime.createSession(`Reply with exactly F7_FAILED_CHILD_${seed}.`, {
         caller_session_id: parentId,
       });
       await runtime.waitForTerminal(failedChildId);
       failedDelivery = await waitFor(
-        () => runtime.deliveryForSource(failedChildId),
+        () => runtime.deliveries.forSource(failedChildId),
         30_000,
         "F7 completion delivery was not created",
       );
@@ -327,30 +344,43 @@ const SCENARIOS = {
         restartedNodePid,
       });
       failedDelivery = await exhaustDelivery(runtime, failedDelivery);
-      assertScenario(failedDelivery.aggregate_state === "dead_letter", "F7 did not dead-letter");
+      assertScenario(failedDelivery.state === "uncertain", "F7 did not park as uncertain");
+      assertScenario(failedDelivery.aggregate_state === "pending", "F7 discarded pending work");
       assertScenario(failedDelivery.attempt_count === 16, `F7 attempt count was ${failedDelivery.attempt_count}`);
       assertScenario(
-        Boolean(failedDelivery.dead_letter_reason || failedDelivery.last_error),
-        "F7 dead letter had no reason",
+        Boolean(failedDelivery.last_error),
+        "F7 parked delivery had no reason",
       );
     } finally {
-      await runtime.updateSessionNode(parentId, "eias-lab");
+      await runtime.controlPlane.updateSessionNode(parentId, "eias-lab");
       try { await runtime.assertReady(); } catch { await runtime.startStack(); }
     }
+    await runtime.deliveries.forceDue(failedDelivery.delivery_id);
+    failedDelivery = await waitFor(
+      async () => {
+        const row = await runtime.deliveries.forSource(failedDelivery.source_session_id);
+        return row?.aggregate_state === "consumed" ? row : undefined;
+      },
+      120_000,
+      "F7 parked delivery did not revive after target restoration",
+      1_000,
+    );
     const controlChildId = await runtime.createSession(`Reply with exactly F7_CONTROL_CHILD_${seed}.`, {
       caller_session_id: parentId,
     });
     await runtime.waitForTerminal(controlChildId);
     const controlDelivery = await waitFor(
       async () => {
-        const row = await runtime.deliveryForSource(controlChildId);
+        const row = await runtime.deliveries.forSource(controlChildId);
         return row?.aggregate_state === "consumed" ? row : undefined;
       },
       120_000,
       "F7 control completion was not consumed",
       1_000,
     );
-    const consumptionCount = await runtime.consumptionCount(controlDelivery.relation_key);
+    const consumptionCount = await runtime.deliveries.consumptionCount(
+      controlDelivery.relation_key,
+    );
     assertScenario(consumptionCount === 1, `F7 control consumption count was ${consumptionCount}`);
     return {
       id: "F7",

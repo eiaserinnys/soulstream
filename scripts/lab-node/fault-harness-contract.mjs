@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export const SCENARIO_DEFINITIONS = Object.freeze({
   F1: Object.freeze({
     modes: Object.freeze(["SIGTERM", "SIGKILL"]),
@@ -22,8 +24,28 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
   }),
   F7: Object.freeze({
     injection: "Point a completion target at a missing node and repeatedly advance only its lab retry clock.",
-    expectedOutcome: "The canonical 16-attempt budget ends in an explained dead letter; a live-target control delivery consumes exactly once.",
-    verdict: "The failed delivery has 16 attempts and a reason, while the control relation has one consumption receipt.",
+    expectedOutcome: "The canonical 16-attempt cadence parks without discarding, then target restoration revives it.",
+    verdict: "The delivery reaches uncertain/pending at 16 attempts and later consumes; the control relation also consumes once.",
+  }),
+  "delivery-revival": Object.freeze({
+    injection: "Park a durable user delivery as uncertain at attempt 16, then make it due for recovery.",
+    expectedOutcome: "The target auto-resumes and consumes the original delivery without a second user send.",
+    verdict: "The original delivery reaches consumed and its user and assistant markers each appear once.",
+  }),
+  "delivery-exact-once": Object.freeze({
+    injection: "Submit the same stable durable delivery identity twice around a delayed target turn.",
+    expectedOutcome: "Both requests converge on one logical delivery and one execution.",
+    verdict: "One user marker, one assistant marker, and one consumed ledger row exist.",
+  }),
+  "delivery-fifo": Object.freeze({
+    injection: "Make a newer durable delivery due before its older predecessor.",
+    expectedOutcome: "The newer row waits until the older row is consumed.",
+    verdict: "Both rows consume and assistant markers appear in enqueue order.",
+  }),
+  "delivery-accepted-cas": Object.freeze({
+    injection: "Advance a dispatching delivery to queued in an AFTER UPDATE fault trigger before the route records its result.",
+    expectedOutcome: "The request reports durable acceptance instead of a 503/CAS failure.",
+    verdict: "The HTTP call succeeds and the accepted delivery is consumed exactly once.",
   }),
 });
 
@@ -93,6 +115,72 @@ export function buildInterventionPayload(deliveryId, text) {
     delivery_intent: "human_live_steer",
     source: "lab_fault_harness",
   };
+}
+
+export function buildDurableDeliverySeed(
+  deliveryId,
+  sessionId,
+  text,
+  leaseOwner,
+  logicalMessageId,
+) {
+  requireNonEmpty(deliveryId, "delivery id");
+  requireNonEmpty(sessionId, "session id");
+  requireNonEmpty(text, "intervention text");
+  const completionId = `message:${deliveryId}`;
+  const relationKey = `user_message:${sessionId}:${deliveryId}`;
+  const source = "lab_fault_harness";
+  const user = "lab-fault-harness";
+  const payload = {
+    text,
+    user,
+    logical_message_id: logicalMessageId ?? deliveryId,
+    attachment_paths: null,
+    context: null,
+    caller_info: null,
+    followup_key: null,
+    followup_attempt: null,
+    followup_task_ids: null,
+  };
+  const payloadHash = createHash("sha256")
+    .update(JSON.stringify(canonicalize({
+      ...payload,
+      source,
+      completion_id: completionId,
+      relation_key: relationKey,
+    })), "utf8")
+    .digest("hex");
+  return {
+    deliveryId,
+    sessionId,
+    completionId,
+    relationKey,
+    source,
+    payload,
+    payloadHash,
+    intervention: {
+      text,
+      user,
+      source,
+      delivery_id: deliveryId,
+      delivery_intent: "durable_next_turn",
+      completion_id: completionId,
+      relation_key: relationKey,
+      ...(leaseOwner ? { delivery_lease_owner: leaseOwner } : {}),
+    },
+  };
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalize(item)]),
+    );
+  }
+  return value;
 }
 
 export function evaluateInvariantSnapshot(snapshot) {

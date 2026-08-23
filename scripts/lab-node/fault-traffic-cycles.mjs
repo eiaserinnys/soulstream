@@ -140,7 +140,9 @@ async function runTrafficCycle(cycle, worker, runtime, recorder) {
     "final cycle completion",
     interruptedDelivery.delivery_id,
   );
-  const consumptionCount = await runtime.consumptionCount(completionDelivery.relation_key);
+  const consumptionCount = await runtime.deliveries.consumptionCount(
+    completionDelivery.relation_key,
+  );
   const initialCount = await runtime.countTimelineEvents(sessionId, "assistant_message", initialMarker);
   const finalCount = await runtime.countTimelineEvents(sessionId, "assistant_message", finalMarker);
   assertScenario(initialCount === 1 && finalCount === 1, "traffic cycle lost or duplicated a marker");

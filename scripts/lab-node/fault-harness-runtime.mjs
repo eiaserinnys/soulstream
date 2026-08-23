@@ -15,6 +15,8 @@ import {
   redactEvidenceLine,
 } from "./fault-harness-contract.mjs";
 import { EvidenceRecorder } from "./fault-harness-evidence.mjs";
+import { LabDeliveryRuntime } from "./fault-harness-runtime-delivery.mjs";
+import { LabControlPlaneRuntime } from "./fault-harness-runtime-control-plane.mjs";
 
 const execFileAsync = promisify(execFile);
 const TERMINAL_SESSION_STATES = new Set([
@@ -55,6 +57,8 @@ export class LabRuntime {
     this.runnerStateDirectory = join(this.root, "runner-state");
     this.nodeLog = join(this.root, "logs", "node.log");
     this.orchLog = join(this.root, "logs", "orch.log");
+    this.deliveries = new LabDeliveryRuntime(this);
+    this.controlPlane = new LabControlPlaneRuntime(this);
   }
 
   async createRun(command) {
@@ -192,19 +196,11 @@ export class LabRuntime {
   async waitForTerminal(sessionId, timeoutMs = 180_000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const status = await this.sessionStatus(sessionId);
+      const status = await this.controlPlane.sessionStatus(sessionId);
       if (TERMINAL_SESSION_STATES.has(status)) return status;
       await delay(1_000);
     }
     throw new Error(`session did not reach terminal state: ${sessionId}`);
-  }
-
-  async sessionStatus(sessionId) {
-    const row = await this.psqlOne(`
-      SELECT json_build_object('status', status)
-      FROM sessions WHERE session_id = ${sqlLiteral(sessionId)}
-    `);
-    return typeof row?.status === "string" ? row.status : "";
   }
 
   async waitForRunner(sessionId, timeoutMs = 30_000) {
@@ -359,64 +355,6 @@ export class LabRuntime {
     ], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 });
     const text = stdout.trim();
     return text ? JSON.parse(text) : null;
-  }
-
-  async updateSessionNode(sessionId, nodeId) {
-    assertIdentifier(sessionId, "session id");
-    assertIdentifier(nodeId, "node id");
-    return await this.psqlOne(`
-      WITH updated AS (
-        UPDATE sessions SET node_id = ${sqlLiteral(nodeId)}, updated_at = NOW()
-        WHERE session_id = ${sqlLiteral(sessionId)} RETURNING session_id, node_id
-      ) SELECT row_to_json(updated) FROM updated
-    `);
-  }
-
-  async forceDeliveryDue(deliveryId) {
-    assertIdentifier(deliveryId, "delivery id");
-    return await this.psqlOne(`
-      WITH updated AS (
-        UPDATE session_deliveries SET next_attempt_at = NOW() - INTERVAL '1 second'
-        WHERE delivery_id = ${sqlLiteral(deliveryId)}
-          AND aggregate_state = 'pending'
-        RETURNING delivery_id, attempt_count, state, aggregate_state
-      ) SELECT row_to_json(updated) FROM updated
-    `);
-  }
-
-  async deliveryForSource(sourceSessionId) {
-    return await this.psqlOne(`
-      SELECT row_to_json(delivery) FROM (
-        SELECT delivery_id, relation_key, completion_id, source_session_id, target_session_id,
-          state, aggregate_state, attempt_count, last_error,
-          dead_letter_reason, consumed_reason
-        FROM session_deliveries
-        WHERE source_session_id = ${sqlLiteral(sourceSessionId)}
-          AND intent = 'completion_notification'
-        ORDER BY created_at DESC LIMIT 1
-      ) AS delivery
-    `);
-  }
-
-  async ownerships(sessionId) {
-    return await this.psqlOne(`
-      SELECT COALESCE(json_agg(row_to_json(ownership)), '[]'::json) FROM (
-        SELECT ownership_generation, phase, manifest_id, registration_id,
-          pid, start_identity, runner_fact, failure_reason
-        FROM session_execution_ownerships
-        WHERE session_id = ${sqlLiteral(sessionId)}
-        ORDER BY ownership_generation
-      ) AS ownership
-    `) ?? [];
-  }
-
-  async consumptionCount(relationKey) {
-    const value = await this.psqlOne(`
-      SELECT json_build_object('count', COUNT(*)::integer)
-      FROM session_delivery_relation_consumptions
-      WHERE relation_key = ${sqlLiteral(relationKey)}
-    `);
-    return value?.count ?? 0;
   }
 
   /**

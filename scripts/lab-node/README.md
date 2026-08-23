@@ -99,8 +99,12 @@ Run one scenario or the complete prioritized set:
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh all
 ```
 
-`all` runs F9, dead-owner, F1, F11, and F7 in that order, then one normal
-traffic cycle. F1 includes both SIGTERM and SIGKILL. F9 toggles only the lab
+`all` runs F9, dead-owner, F1, F11, F7, delivery-revival,
+delivery-exact-once, delivery-fifo, and delivery-accepted-cas in that order,
+then one normal traffic cycle. The four delivery scenarios permanently cover
+attempt exhaustion recovery, stable-id exact-once delivery, per-target FIFO,
+and honest success after a queued-state CAS race. F1 includes both SIGTERM and
+SIGKILL. F9 toggles only the lab
 bearer credential's non-secret generation marker so the release identity
 changes without changing runtime behavior. The new generation stays canonical
 for the next lab run.

@@ -8,7 +8,7 @@ export async function waitForConsumedDelivery(
 ) {
   return await waitFor(
     async () => {
-      const row = await runtime.deliveryForSource(sourceSessionId);
+      const row = await runtime.deliveries.forSource(sourceSessionId);
       return row?.aggregate_state === "consumed" && row.delivery_id !== previousDeliveryId
         ? row
         : undefined;
@@ -22,13 +22,19 @@ export async function waitForConsumedDelivery(
 export async function exhaustDelivery(runtime, initial) {
   let delivery = initial;
   const deadline = Date.now() + 180_000;
-  while (Date.now() < deadline && delivery.aggregate_state !== "dead_letter") {
+  while (
+    Date.now() < deadline
+    && !(delivery.state === "uncertain" && delivery.attempt_count >= 16)
+  ) {
     const before = delivery.attempt_count;
-    await runtime.forceDeliveryDue(delivery.delivery_id);
+    await runtime.deliveries.forceDue(delivery.delivery_id);
     delivery = await waitFor(
       async () => {
-        const row = await runtime.deliveryForSource(delivery.source_session_id ?? "");
-        return row && (row.aggregate_state === "dead_letter" || row.attempt_count > before)
+        const row = await runtime.deliveries.forSource(delivery.source_session_id ?? "");
+        return row && (
+          (row.state === "uncertain" && row.attempt_count >= 16)
+          || row.attempt_count > before
+        )
           ? row
           : undefined;
       },
