@@ -231,12 +231,20 @@ export class TaskDeliveryLedgerGate {
           payload: buildNotificationOutboxPayload(admission.row, disposition),
         });
         if (!staged) {
-          throw new Error(`Delivery ${admission.deliveryId} could not stage notification`);
+          await requireDurableAcceptance(
+            repository,
+            admission.deliveryId,
+            "could not stage notification",
+          );
         }
       } else {
         const queued = await repository.markQueued(admission.deliveryId, leaseOwner);
         if (!queued) {
-          throw new Error(`Delivery ${admission.deliveryId} lost queued-state CAS`);
+          await requireDurableAcceptance(
+            repository,
+            admission.deliveryId,
+            "lost queued-state CAS",
+          );
         }
       }
       return;
@@ -246,21 +254,16 @@ export class TaskDeliveryLedgerGate {
       throw new Error(`Delivery ${admission.deliveryId} lost its dispatch lease`);
     }
     if ("delivered" in result && result.delivered === null) {
-      const retryExhausted =
-        admission.row.attempt_count + 1 >= DELIVERY_NOTIFICATION_MAX_ATTEMPTS
-        || admission.row.created_at <= notificationOldestAllowedCreatedAt();
-      if (!retryExhausted) {
-        const retried = await repository.retryLeasedDelivery(
-          admission.deliveryId,
-          leaseOwner,
-          result.reason,
-          deliveryRetryDelayMs(admission.row.attempt_count),
-        );
-        if (!retried) {
-          throw new Error(`Delivery ${admission.deliveryId} lost retryable-state CAS`);
-        }
-        return;
+      const retried = await repository.retryLeasedDelivery(
+        admission.deliveryId,
+        leaseOwner,
+        result.reason,
+        deliveryRetryDelayMs(admission.row.attempt_count),
+      );
+      if (!retried) {
+        throw new Error(`Delivery ${admission.deliveryId} lost retryable-state CAS`);
       }
+      return;
     }
     const uncertain = await repository.markUncertain(
       admission.deliveryId,
@@ -283,7 +286,7 @@ export class TaskDeliveryLedgerGate {
   async recordReservationRetry(
     admission: DeliveryLedgerAdmission,
     retryAt: string,
-  ): Promise<"scheduled" | "lost" | "exhausted"> {
+  ): Promise<"scheduled" | "lost" | "parked"> {
     if (admission.kind !== "admitted") return "lost";
     const leaseOwner = admission.row.lease_owner;
     if (!leaseOwner) return "lost";
@@ -291,18 +294,7 @@ export class TaskDeliveryLedgerGate {
     if (!Number.isFinite(requestedDueAt.getTime())) {
       throw new Error(`Delivery ${admission.deliveryId} has an invalid reservation retry time`);
     }
-    const exhausted =
-      admission.row.attempt_count + 1 >= DELIVERY_NOTIFICATION_MAX_ATTEMPTS
-      || admission.row.created_at <= notificationOldestAllowedCreatedAt();
     const repository = this.requireRepository();
-    if (exhausted) {
-      const uncertain = await repository.markUncertain(
-        admission.deliveryId,
-        leaseOwner,
-        "automatic ownership retry budget exhausted",
-      );
-      return uncertain ? "exhausted" : "lost";
-    }
     // All three candidates become durations before the minimum is taken: the
     // requested instant is the only one that came from another clock, and
     // mixing it with locally derived instants let skew pick the wrong bound.
@@ -317,7 +309,8 @@ export class TaskDeliveryLedgerGate {
       "reservation_in_flight",
       retryDelayMs,
     );
-    return retried ? "scheduled" : "lost";
+    if (!retried) return "lost";
+    return retried.state === "uncertain" ? "parked" : "scheduled";
   }
 
   async recordNotificationPublished(
@@ -418,6 +411,21 @@ export class TaskDeliveryLedgerGate {
     }
     return this.repository;
   }
+}
+
+async function requireDurableAcceptance(
+  repository: LedgerRepository,
+  deliveryId: string,
+  failure: string,
+): Promise<void> {
+  const current = await repository.get(deliveryId);
+  if (
+    current
+    && ["queued", "delivered", "consumed", "superseded"].includes(current.state)
+  ) {
+    return;
+  }
+  throw new Error(`Delivery ${deliveryId} ${failure}`);
 }
 
 function requiresExactDeliveryConsumption(message: InterventionMessage): boolean {

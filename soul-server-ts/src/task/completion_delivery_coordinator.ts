@@ -15,11 +15,7 @@ import {
 import type { CallerInfo } from "./task_models.js";
 import type { QueuedDeliveryTranscriptRecovery } from
   "./queued_delivery_transcript_recovery.js";
-import {
-  DELIVERY_NOTIFICATION_MAX_AGE_MS,
-  DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
-  deliveryRetryDelayMs,
-} from "./session_delivery_notification_policy.js";
+import { deliveryRetryDelayMs } from "./session_delivery_notification_policy.js";
 import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
 import type {
   RegisterSessionDeliveryParams,
@@ -236,20 +232,11 @@ export class CompletionDeliveryCoordinator {
       );
     } catch (err) {
       const failure = errorText(err);
-      if (isRetryExhausted(row)) {
-        const terminal = await this.deps.repository.markUncertain(
-          row.delivery_id,
-          leaseOwner,
-          failure,
-        );
-        this.deps.logger.warn(
-          {
-            err,
-            deliveryId: row.delivery_id,
-            attemptCount: row.attempt_count + 1,
-            terminalized: terminal !== null,
-          },
-          "Completion delivery retry budget exhausted; delivery terminalized as uncertain",
+      const current = await this.deps.repository.get(row.delivery_id);
+      if (current && isDurablyAccepted(current)) {
+        this.deps.logger.info(
+          { err, deliveryId: row.delivery_id, state: current.state },
+          "Completion delivery dispatch returned ambiguously after durable acceptance",
         );
         return;
       }
@@ -267,8 +254,10 @@ export class CompletionDeliveryCoordinator {
         return;
       }
       this.deps.logger.warn(
-        { err, deliveryId: row.delivery_id },
-        "Completion delivery dispatch failed; durable retry scheduled",
+        { err, deliveryId: row.delivery_id, state: retried.state },
+        retried.state === "uncertain"
+          ? "Completion delivery dispatch exhausted its retry cadence; delivery parked for execution revival"
+          : "Completion delivery dispatch failed; durable retry scheduled",
       );
     }
   }
@@ -283,9 +272,8 @@ function isStaleSelfCompletionDelivery(
     && row.source_session_id === targetSessionId;
 }
 
-function isRetryExhausted(row: SessionDeliveryRow, nowMs = Date.now()): boolean {
-  return row.attempt_count + 1 >= DELIVERY_NOTIFICATION_MAX_ATTEMPTS
-    || nowMs - row.created_at.getTime() >= DELIVERY_NOTIFICATION_MAX_AGE_MS;
+function isDurablyAccepted(row: SessionDeliveryRow): boolean {
+  return ["queued", "delivered", "consumed", "superseded"].includes(row.state);
 }
 
 function buildCompletionRegistration(

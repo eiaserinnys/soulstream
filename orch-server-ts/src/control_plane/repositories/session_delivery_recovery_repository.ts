@@ -6,7 +6,7 @@ import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
 import {
   attemptOutcomeFor,
-  deliveryRetryOrDeadLetterSet,
+  deliveryRetryOrParkSet,
 } from "./session_delivery_retry_policy.js";
 
 export interface QueuedDeliveryRecoveryScan {
@@ -97,9 +97,35 @@ export class SessionDeliveryRecoveryRepository {
             AND delivery.source = 'claude_runtime_task_followup')
           OR delivery.intent = 'durable_next_turn'
         )
-          AND delivery.state = 'pending'
-          AND delivery.next_attempt_at <= NOW()
-        ORDER BY delivery.next_attempt_at, delivery.created_at, delivery.enqueue_sequence
+          AND (
+            (delivery.state = 'pending' AND delivery.next_attempt_at <= NOW())
+            OR (
+              delivery.state = 'uncertain'
+              AND delivery.aggregate_state = 'pending'
+              AND (
+                delivery.next_attempt_at <= NOW()
+                OR EXISTS (
+                  SELECT 1
+                  FROM session_execution_ownerships AS ownership
+                  WHERE ownership.session_id = delivery.target_session_id
+                    AND ownership.phase = 'active'
+                    AND ownership.activated_at > delivery.updated_at
+                )
+              )
+            )
+          )
+          AND (
+            delivery.target_session_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM session_deliveries AS predecessor
+              WHERE predecessor.target_session_id = delivery.target_session_id
+                AND predecessor.enqueue_sequence < delivery.enqueue_sequence
+                AND predecessor.aggregate_state IN ('pending', 'delivered')
+                AND predecessor.state NOT IN ('consumed', 'superseded')
+            )
+          )
+        ORDER BY delivery.enqueue_sequence, delivery.created_at
         FOR UPDATE OF delivery SKIP LOCKED
         LIMIT ${limit}
       `;
@@ -113,24 +139,17 @@ export class SessionDeliveryRecoveryRepository {
           targetSessionId = targets[0]?.session_id ?? null;
         }
         if (!targetSessionId) {
-          const deferred = await transaction<Array<
-            Pick<SessionDeliveryRow, "aggregate_state">
-          >>`
+          await transaction`
             UPDATE session_deliveries
-            SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+            SET ${deliveryRetryOrParkSet(transaction as unknown as SqlClient, {
               reason: "no_current_target",
               retryState: "pending",
+              spendsAttempt: false,
             })}
-            WHERE delivery_id = ${row.delivery_id} AND state = 'pending'
+            WHERE delivery_id = ${row.delivery_id}
+              AND state IN ('pending', 'uncertain')
             RETURNING aggregate_state
           `;
-          await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
-            deliveryId: row.delivery_id,
-            outcome: deferred[0]
-              ? attemptOutcomeFor(deferred[0])
-              : "retryable",
-            reason: "no_current_target",
-          });
           continue;
         }
         const updated = await transaction<SessionDeliveryRow[]>`
@@ -139,7 +158,8 @@ export class SessionDeliveryRecoveryRepository {
               claimed_at = NOW(), lease_owner = ${leaseOwner},
               lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
               updated_at = NOW()
-          WHERE delivery_id = ${row.delivery_id} AND state = 'pending'
+          WHERE delivery_id = ${row.delivery_id}
+            AND state IN ('pending', 'uncertain')
           RETURNING *
         `;
         if (updated[0]) claimed.push(updated[0]);
@@ -212,7 +232,7 @@ export class SessionDeliveryRecoveryRepository {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
       const rows = await transaction<SessionDeliveryRow[]>`
         UPDATE session_deliveries
-        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+        SET ${deliveryRetryOrParkSet(transaction as unknown as SqlClient, {
           reason: error,
           retryState: "queued",
           retryDelayMs,
@@ -294,10 +314,25 @@ export class SessionDeliveryRecoveryRepository {
                 )
                 OR delivery.queued_at <= NOW()
                   - (${scan?.queuedAfterMs ?? null}::double precision * INTERVAL '1 millisecond')
+                OR EXISTS (
+                  SELECT 1
+                  FROM session_execution_ownerships AS ownership
+                  WHERE ownership.session_id = delivery.target_session_id
+                    AND ownership.phase = 'active'
+                    AND ownership.activated_at > delivery.queued_at
+                )
               )
             )
           )
-        ORDER BY delivery.next_attempt_at, delivery.queued_at, delivery.delivery_id
+          AND NOT EXISTS (
+            SELECT 1
+            FROM session_deliveries AS predecessor
+            WHERE predecessor.target_session_id = delivery.target_session_id
+              AND predecessor.enqueue_sequence < delivery.enqueue_sequence
+              AND predecessor.aggregate_state IN ('pending', 'delivered')
+              AND predecessor.state NOT IN ('consumed', 'superseded')
+          )
+        ORDER BY delivery.enqueue_sequence, delivery.queued_at, delivery.delivery_id
         FOR UPDATE OF delivery SKIP LOCKED
         LIMIT ${limit}
       )

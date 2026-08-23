@@ -17,7 +17,7 @@ import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
 import {
   attemptOutcomeFor,
-  deliveryRetryOrDeadLetterSet,
+  deliveryRetryOrParkSet,
 } from "./session_delivery_retry_policy.js";
 import {
   getSessionDeliveryRelationConsumption,
@@ -88,7 +88,7 @@ export class SessionDeliveryRepository {
     leaseMs = 15_000,
   ): Promise<SessionDeliveryRow | null> {
     const rows = await this.sql<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
+      UPDATE session_deliveries AS delivery
       SET
         state = 'claimed',
         claimed_at = NOW(),
@@ -108,7 +108,7 @@ export class SessionDeliveryRepository {
     leaseMs = 15_000,
   ): Promise<SessionDeliveryRow | null> {
     const rows = await this.sql<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
+      UPDATE session_deliveries AS delivery
       SET
         target_session_id = ${targetSessionId},
         state = 'claimed',
@@ -116,12 +116,20 @@ export class SessionDeliveryRepository {
         lease_owner = ${leaseOwner},
         lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
         updated_at = NOW()
-      WHERE delivery_id = ${deliveryId}
-        AND state = 'pending'
+      WHERE delivery.delivery_id = ${deliveryId}
+        AND delivery.state = 'pending'
         AND EXISTS (
           SELECT 1 FROM sessions WHERE session_id = ${targetSessionId}
         )
-      RETURNING *
+        AND NOT EXISTS (
+          SELECT 1
+          FROM session_deliveries AS predecessor
+          WHERE predecessor.target_session_id = ${targetSessionId}
+            AND predecessor.enqueue_sequence < delivery.enqueue_sequence
+            AND predecessor.aggregate_state IN ('pending', 'delivered')
+            AND predecessor.state NOT IN ('consumed', 'superseded')
+        )
+      RETURNING delivery.*
     `;
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
@@ -178,10 +186,11 @@ export class SessionDeliveryRepository {
     return await withDeliveryTransaction(this.sql, async (transaction) => {
       const rows = await transaction<SessionDeliveryRow[]>`
         UPDATE session_deliveries
-        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+        SET ${deliveryRetryOrParkSet(transaction as unknown as SqlClient, {
           reason: error,
           retryState: "pending",
           retryDelayMs,
+          spendsAttempt: false,
         })}
         WHERE delivery_id = ${deliveryId}
           AND state = 'pending'
@@ -189,11 +198,6 @@ export class SessionDeliveryRepository {
       `;
       const row = rows[0];
       if (!row) return null;
-      await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
-        deliveryId,
-        outcome: attemptOutcomeFor(row),
-        reason: error,
-      });
       return normalizeDeliveryRow(row);
     });
   }
@@ -207,7 +211,7 @@ export class SessionDeliveryRepository {
     return await withDeliveryTransaction(this.sql, async (transaction) => {
       const rows = await transaction<SessionDeliveryRow[]>`
         UPDATE session_deliveries
-        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+        SET ${deliveryRetryOrParkSet(transaction as unknown as SqlClient, {
           reason: error,
           retryState: "pending",
           retryDelayMs,
@@ -258,7 +262,7 @@ export class SessionDeliveryRepository {
         aggregate_state: SessionDeliveryRow["aggregate_state"];
       }>>`
         UPDATE session_deliveries
-        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+        SET ${deliveryRetryOrParkSet(transaction as unknown as SqlClient, {
           reason: "delivery lease expired",
           retryState: "pending",
           preserveExistingError: true,

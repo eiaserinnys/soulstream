@@ -1124,12 +1124,51 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     }]);
   });
 
+  it("revives legacy retry exhaustion without reviving identity rejection", async () => {
+    await register("legacy-retry-exhausted", "relation-legacy-retry-exhausted");
+    await register("legacy-identity-rejected", "relation-legacy-identity-rejected");
+    await harness.sql`
+      UPDATE session_deliveries
+      SET state = 'uncertain', aggregate_state = 'dead_letter',
+          attempt_count = 16, dead_letter_reason = 'target busy',
+          dead_lettered_at = NOW()
+      WHERE delivery_id = 'legacy-retry-exhausted'
+    `;
+    await harness.sql`
+      UPDATE session_deliveries
+      SET state = 'uncertain', aggregate_state = 'dead_letter',
+          attempt_count = 16, dead_letter_reason = 'delivery identity conflict',
+          dead_lettered_at = NOW()
+      WHERE delivery_id = 'legacy-identity-rejected'
+    `;
+    const migration = readFileSync(new URL(
+      "../../../packages/db-schema/sql/migrations/073_delivery_revival_fifo.sql",
+      import.meta.url,
+    ), "utf8");
+
+    await harness.sql.unsafe(migration);
+    await harness.sql.unsafe(migration);
+
+    await expect(repository.get("legacy-retry-exhausted")).resolves.toMatchObject({
+      state: "uncertain",
+      aggregate_state: "pending",
+      dead_letter_reason: null,
+      dead_lettered_at: null,
+    });
+    await expect(repository.get("legacy-identity-rejected")).resolves.toMatchObject({
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+      dead_letter_reason: "delivery identity conflict",
+      dead_lettered_at: expect.any(Date),
+    });
+  });
+
   /**
    * 260820 incident: every retry path scheduled the next attempt without ever
    * consulting a budget, so three user messages reached 1,932 / 155 / 154
    * attempts with no terminal state and no dead-letter row.
    */
-  it("dead-letters a delivery once its retry budget is spent", async () => {
+  it("parks a delivery once its active retry cadence is spent", async () => {
     await register("delivery-budget", "relation-budget", "durable_next_turn");
     await harness.sql`
       UPDATE session_deliveries
@@ -1145,18 +1184,17 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       1_000,
     )).resolves.toMatchObject({
       state: "uncertain",
-      aggregate_state: "dead_letter",
-      dead_letter_reason: "target busy",
+      aggregate_state: "pending",
+      dead_letter_reason: null,
     });
 
     await expect(harness.sql<Array<{ outcome: string; reason: string }>>`
       SELECT outcome, reason FROM session_delivery_attempts
       WHERE delivery_id = 'delivery-budget'
       ORDER BY attempt_number DESC LIMIT 1
-    `).resolves.toMatchObject([{ outcome: "rejected", reason: "target busy" }]);
+    `).resolves.toMatchObject([{ outcome: "retryable", reason: "target busy" }]);
 
-    // A dead-lettered delivery is terminal: the recovery scan must not pick it
-    // up again, which is what kept the incident's rows retrying forever.
+    // A parked row waits rather than hot-looping, but it remains recoverable.
     await expect(repository.recovery.claimRecoverableCompletionDeliveries(
       "worker-after",
       10,
@@ -1207,7 +1245,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     ]);
   });
 
-  it("still ends a transcript probe that has outlived the age budget", async () => {
+  it("parks a transcript probe that has outlived the active age budget", async () => {
     await register("delivery-probe-aged", "relation-probe-aged", "durable_next_turn");
     await harness.sql`
       UPDATE session_deliveries
@@ -1223,11 +1261,11 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       1_000,
     )).resolves.toMatchObject({
       state: "uncertain",
-      aggregate_state: "dead_letter",
+      aggregate_state: "pending",
     });
   });
 
-  it("dead-letters a delivery older than the retry age budget", async () => {
+  it("parks a delivery older than the active retry age budget", async () => {
     await register("delivery-aged", "relation-aged", "durable_next_turn");
     await harness.sql`
       UPDATE session_deliveries
@@ -1243,7 +1281,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       1_000,
     )).resolves.toMatchObject({
       state: "uncertain",
-      aggregate_state: "dead_letter",
+      aggregate_state: "pending",
     });
   });
 

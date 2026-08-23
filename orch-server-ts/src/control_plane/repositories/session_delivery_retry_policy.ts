@@ -11,7 +11,7 @@ import type { SessionDeliveryAttemptOutcome } from
 export const DELIVERY_MAX_ATTEMPTS = 16;
 export const DELIVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-export interface DeliveryRetryOrDeadLetterInput {
+export interface DeliveryRetryOrParkInput {
   reason: string;
   /** State to return to while the delivery still has budget. */
   retryState: "pending" | "queued";
@@ -46,18 +46,20 @@ export interface DeliveryRetryOrDeadLetterInput {
 }
 
 /**
- * Canonical "spend one attempt, or give up" SET clause.
+ * Canonical "spend one attempt, or park until a newer execution" SET clause.
  *
  * Every retry path used to schedule the next attempt without ever consulting a
  * budget, so a delivery whose target never became dispatchable retried forever
  * — the 260820 incident left three user messages at 1,932 / 155 / 154 attempts
  * with no terminal state. Routing every one of those paths through this clause
  * makes "attempt again" and "dead-letter" a single decision with a single
- * definition, evaluated entirely on the database clock.
+ * definition, evaluated entirely on the database clock. Exhaustion is a
+ * liveness backstop, not a deletion policy: the row stays aggregate-pending
+ * and a newer active execution generation may recover it.
  */
-export function deliveryRetryOrDeadLetterSet(
+export function deliveryRetryOrParkSet(
   sql: SqlClient,
-  input: DeliveryRetryOrDeadLetterInput,
+  input: DeliveryRetryOrParkInput,
 ) {
   const maxAttempts = input.maxAttempts ?? DELIVERY_MAX_ATTEMPTS;
   const maxAgeMs = input.maxAgeMs ?? DELIVERY_MAX_AGE_MS;
@@ -78,19 +80,16 @@ export function deliveryRetryOrDeadLetterSet(
   return sql`
     attempt_count = attempt_count + ${spendsAttempt ? 1 : 0},
     state = CASE WHEN ${exhausted} THEN 'uncertain' ELSE ${input.retryState} END,
-    aggregate_state = CASE WHEN ${exhausted} THEN 'dead_letter' ELSE 'pending' END,
+    aggregate_state = 'pending',
     lease_owner = NULL,
     lease_expires_at = NULL,
     next_attempt_at = CASE
-      WHEN ${exhausted} THEN next_attempt_at
+      WHEN ${exhausted} THEN NOW() + INTERVAL '60 seconds'
       ELSE NOW() + ${retryDelay}
     END,
     last_error = ${reason},
-    dead_letter_reason = CASE
-      WHEN ${exhausted} THEN ${reason}
-      ELSE dead_letter_reason
-    END,
-    dead_lettered_at = CASE WHEN ${exhausted} THEN NOW() ELSE dead_lettered_at END,
+    dead_letter_reason = NULL,
+    dead_lettered_at = NULL,
     updated_at = NOW()
   `;
 }

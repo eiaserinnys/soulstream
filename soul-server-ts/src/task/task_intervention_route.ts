@@ -363,7 +363,7 @@ export class TaskInterventionRoute {
           admission,
           err.retryAt,
         );
-        if (disposition !== "exhausted") {
+        if (disposition !== "lost") {
           return {
             delivered: false,
             queued: true,
@@ -371,12 +371,6 @@ export class TaskInterventionRoute {
             consumeWhen: "next_turn",
             reason: "queue_only_policy",
           };
-        }
-        if (disposition === "exhausted") {
-          throw new Error(
-            `Automatic message delivery retry budget exhausted for ${request.agentSessionId}`,
-            { cause: err },
-          );
         }
       }
       if (this.deps.deliveryLedgerGate && !ledgerResultRecorded) {
