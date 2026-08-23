@@ -14,6 +14,14 @@ import {
 } from "../../src/runner/runner_recovery_disposition.js";
 import type { RunnerRecoveryLogger } from "../../src/runner/runner_recovery_logging.js";
 
+// These cases record today's policy choices. The execution redesign may
+// intentionally change them without violating a runner invariant.
+const currentPolicySnapshot = it;
+
+// P2 RED marker: this one-way `satisfies` only validates the ten values listed
+// here. Adding an eleventh union member does not make this test inventory fail
+// to compile. Redesign 2-3 must make the product's
+// `Record<RunnerRecoveryDisposition, DispositionPolicy>` the exhaustive source.
 const ALL_DISPOSITIONS = [
   "wait_for_bootstrap",
   "adopt_prebootstrap",
@@ -28,13 +36,13 @@ const ALL_DISPOSITIONS = [
 ] as const satisfies readonly RunnerRecoveryDisposition[];
 
 describe("runner recovery disposition inventory", () => {
-  it.each(ALL_DISPOSITIONS)("declares whether %s requires a hydrated task", (disposition) => {
+  currentPolicySnapshot.each(ALL_DISPOSITIONS)("declares whether %s requires a hydrated task", (disposition) => {
     expect(dispositionRequiresTask(disposition)).toBe(
       disposition !== "wait_for_bootstrap" && disposition !== "retired_terminal",
     );
   });
 
-  it.each(ALL_DISPOSITIONS)("declares whether %s contends for ownership", (disposition) => {
+  currentPolicySnapshot.each(ALL_DISPOSITIONS)("declares whether %s contends for ownership", (disposition) => {
     expect(contendsForExecutionOwnership(disposition)).toBe(
       disposition === "adopt_prebootstrap"
       || disposition === "adopt_running"
@@ -104,7 +112,7 @@ describe("handleRecoveryWithFailureTracking", () => {
 });
 
 describe("resumeReapedRunner", () => {
-  it("terminates a surviving process before invalidation, offline recovery, and replacement", async () => {
+  it("makes the reaped terminal lifecycle observable through offline recovery and replacement", async () => {
     const order: string[] = [];
     const inputTask = task();
     const input = {
@@ -124,11 +132,24 @@ describe("resumeReapedRunner", () => {
     await resumeReapedRunner(input);
 
     expect(order).toEqual(["terminate", "invalidate", "recover", "resume"]);
-    expect(inputTask.runnerTerminalFact).toBe("reaped");
+    expect(input.recoverOffline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pidAlive: false,
+        lifecycle: expect.objectContaining({
+          execution_state: "reaped",
+          terminal_error: expect.objectContaining({ message: "terminal failure" }),
+        }),
+      }),
+      inputTask,
+    );
     expect(input.resumeReplacement).toHaveBeenCalledWith(
       inputTask,
       "terminal failure",
       input.registration.config,
+    );
+    expect(input.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ disposition: "already_reaped" }),
+      "reaped runner recovery resumed",
     );
   });
 
@@ -208,7 +229,7 @@ describe("reapAndResumeRunner", () => {
     );
   });
 
-  it.each([
+  currentPolicySnapshot.each([
     "adopt_prebootstrap",
     "adopt_running",
     "replay_terminal",
@@ -235,15 +256,43 @@ describe("reapAndResumeRunner", () => {
     expect(terminalize).not.toHaveBeenCalled();
   });
 
-  it.skip("불변식 16: refreshed non-recoverable dispositions use an explicit decision table", () => {
-    // 현재 wait_for_bootstrap, retired_terminal, reap_dead/reap_stalled 교차,
-    // already_reaped, closed는 아무 결과 없이 return한다. 재설계 결정표가 각
-    // generation의 terminal/defer 책임을 명시할 때 이 자리를 활성화한다.
+  currentPolicySnapshot("returns without destructive recovery when the refreshed registration is closed", async () => {
+    const closed = registration({ lifecycleState: "closed", pidAlive: false });
+    const recover = vi.fn(async (_registration, _disposition, recoveredTask: Task) => recoveredTask);
+    const terminalize = vi.fn(async () => {});
+
+    await expect(reapAndResumeRunner({
+      registration: closed,
+      disposition: "reap_dead",
+      task: task(),
+      hydrate: async () => closed,
+      now: () => Date.parse("2026-08-23T06:30:00.000Z"),
+      leaseTimeoutMs: 60_000,
+      recover,
+      terminalize,
+    })).resolves.toBeUndefined();
+
+    expect(recover).not.toHaveBeenCalled();
+    expect(terminalize).not.toHaveBeenCalled();
+  });
+
+  it.skip("불변식 16: refreshed non-recoverable dispositions use an explicit decision table", async () => {
+    const moduleExports = await import("../../src/runner/runner_recovery_disposition.js");
+    const explicitTables = Object.values(moduleExports).filter((value) => {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+      const keys = Object.keys(value);
+      return keys.length === ALL_DISPOSITIONS.length
+        && ALL_DISPOSITIONS.every((disposition) => disposition in value);
+    });
+
+    // Current code expresses the decision in scattered branches, so this is
+    // zero until redesign 2-3 introduces the exhaustive policy record.
+    expect(explicitTables).toHaveLength(1);
   });
 });
 
 describe("recoverRunnerByDisposition", () => {
-  it.each(["adopt_prebootstrap", "adopt_running"] as const)(
+  currentPolicySnapshot.each(["adopt_prebootstrap", "adopt_running"] as const)(
     "routes %s to live adoption",
     async (disposition) => {
       const recoveredTask = task();

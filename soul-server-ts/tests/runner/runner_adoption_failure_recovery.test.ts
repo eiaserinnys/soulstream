@@ -11,6 +11,9 @@ import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js"
 
 const NOW_MS = Date.parse("2026-08-23T06:30:00.000Z");
 const LEASE_TIMEOUT_MS = 60_000;
+// These cases record today's policy choices. The execution redesign may
+// intentionally change them without violating a runner invariant.
+const currentPolicySnapshot = it;
 
 describe("RunnerAdoptionFailureRecovery", () => {
   it("deduplicates an active recovery and clears the slot after it settles", async () => {
@@ -37,7 +40,7 @@ describe("RunnerAdoptionFailureRecovery", () => {
     expect(subject.deps.onFailure).not.toHaveBeenCalled();
   });
 
-  it("backs off a live runner that is not safe to replace, then clear and prune remove the gate", async () => {
+  currentPolicySnapshot("backs off a live runner that is not safe to replace, then clear and prune remove the gate", async () => {
     let now = NOW_MS;
     const subject = makeSubject({ now: () => now });
 
@@ -77,6 +80,31 @@ describe("RunnerAdoptionFailureRecovery", () => {
     );
   });
 
+  it("stands down when a newer execution promise supersedes the failed attempt", async () => {
+    const subject = makeSubject();
+    const current = registration();
+    const currentTask = task();
+    const rejectedAttempt = runtime();
+    const failedCompletion = Promise.resolve();
+    currentTask.executionPromise = Promise.resolve();
+
+    subject.recovery.schedule({
+      ...recoveryInput(current, currentTask, failedCompletion),
+      ownedRunner: rejectedAttempt,
+      attemptRunner: rejectedAttempt,
+    });
+    await Promise.all(subject.recovery.pending());
+
+    expect(rejectedAttempt.dispatcher.detachHost).toHaveBeenCalledOnce();
+    expect(subject.deps.refreshRegistration).not.toHaveBeenCalled();
+    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
+    expect(subject.deps.resumeReplacement).not.toHaveBeenCalled();
+    expect(subject.deps.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ supersededBy: "execution" }),
+      "runner adoption failure was superseded by a newer execution",
+    );
+  });
+
   it("terminalizes a refreshed dead runner and resumes a replacement", async () => {
     const dead = registration({ pidAlive: false });
     const subject = makeSubject({
@@ -105,7 +133,7 @@ describe("RunnerAdoptionFailureRecovery", () => {
     );
   });
 
-  it("replaces an identity-verified running runner from a superseded release", async () => {
+  currentPolicySnapshot("replaces an identity-verified running runner from a superseded release", async () => {
     const subject = makeSubject();
     const mismatch = new RunnerReleaseIdentityMismatchError({
       runnerManifestId: "old",
@@ -132,7 +160,7 @@ describe("RunnerAdoptionFailureRecovery", () => {
     );
   });
 
-  it("replaces a running runner when a nested cause proves its socket disappeared", async () => {
+  currentPolicySnapshot("replaces a running runner when a nested cause proves its socket disappeared", async () => {
     const subject = makeSubject();
     const socketError = new Error("adoption failed", {
       cause: new Error("connect failed", {
@@ -150,7 +178,7 @@ describe("RunnerAdoptionFailureRecovery", () => {
     );
   });
 
-  it("does not replace a prebootstrap runner merely because its socket is absent", async () => {
+  currentPolicySnapshot("does not replace a prebootstrap runner merely because its socket is absent", async () => {
     const prebootstrap = registration({ lifecycleState: null });
     const subject = makeSubject();
     const socketError = Object.assign(new Error("connect ENOENT"), { code: "ENOENT" });
@@ -165,7 +193,7 @@ describe("RunnerAdoptionFailureRecovery", () => {
     expect(subject.recovery.shouldSkip("session-a")).toBe(true);
   });
 
-  it("records refresh uncertainty through failure tracking and suppresses an immediate retry", async () => {
+  currentPolicySnapshot("records refresh uncertainty through failure tracking and suppresses an immediate retry", async () => {
     const refreshFailure = new Error("registration unreadable");
     const subject = makeSubject({
       refreshRegistration: vi.fn(async () => { throw refreshFailure; }),
@@ -201,13 +229,14 @@ describe("RunnerAdoptionFailureRecovery", () => {
     );
   });
 
-  it.skip("불변식 7·15: stopped recovery는 task 필드만 먼저 비워 종료를 가장하지 않는다", async () => {
+  it.skip("불변식 7·15: stopped recovery는 canonical terminal transition으로 실행 전체를 정산한다", async () => {
     const dead = registration({ pidAlive: false });
     const subject = makeSubject({
       refreshRegistration: vi.fn(async () => dead),
       hydrateRegistration: vi.fn(async () => dead),
     });
-    const currentTask = task();
+    const currentTask = task() as Task & { execution?: unknown };
+    currentTask.execution = { phase: "active" };
     const attempt = runtime();
     const completion = Promise.resolve();
     currentTask.runner = attempt;
@@ -219,9 +248,12 @@ describe("RunnerAdoptionFailureRecovery", () => {
       completion,
     });
 
-    // 현재 구현은 canonical terminal transition 없이 두 필드를 직접 비운다.
-    expect(currentTask.runner).toBe(attempt);
-    expect(currentTask.executionPromise).toBe(completion);
+    expect(attempt.dispatcher.detachHost).toHaveBeenCalledOnce();
+    expect(subject.deps.recoverOffline).toHaveBeenCalledOnce();
+    expect(subject.deps.resumeReplacement).toHaveBeenCalledOnce();
+    // Terminal settlement owns the whole execution slot. It does not preserve
+    // legacy runner/promise fields as evidence that cleanup was avoided.
+    expect(currentTask.execution).toBeUndefined();
   });
 });
 
