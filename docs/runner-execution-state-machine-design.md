@@ -1,8 +1,8 @@
 # 실행 턴 1급 상태기계 재설계
 
-기준 커밋: `2abbc180` (2026-08-23, PR #818 포함)
+기준 커밋: `e5d66742` (2026-08-23, PR #819 포함)
 
-상태: 설계 2차. 독립 검증 P0 7건을 반영했다. 제품 코드, DB 마이그레이션, 배포는 이 문서의 범위가 아니다.
+상태: 설계 3차. 2차 독립 검증 P0 7건과 3차 재검증 P0 4건을 반영했다. 제품 코드, DB 마이그레이션, 배포는 이 문서의 범위가 아니다.
 
 ## 판정 기준
 
@@ -39,6 +39,8 @@
 - 재기동 중 개입의 외부 경계는 지금 node WebSocket 단절과 timeout을 503으로 노출한다 (`orch-server/src/soulstream_server/api/sessions.py:370`, `:408`).
 - `TaskExecutor.startExecution()`은 execution ownership을 지원하지 않는 경로에서 독립 runner factory가 없으면 `createInProcessTaskRunnerRuntime()`로 폴백한다 (`soul-server-ts/src/task/task_executor.ts:277`). 과거 실제 사용자 실행 5건이 이 경로를 탔으므로 “현재 0건”은 제거 근거가 아니다.
 - 외부 입력 대기는 이미 실행 상태다. Agents는 `awaiting_approval`을 반환하고 durable approval request를 만든다 (`task_turn_loop_transition.ts:12`, `agents_adapter.ts:215`, `task_tool_approval_recovery.ts:73`). Claude `AskUserQuestion`도 같은 수명 문제를 가진다. 이 둘은 progress도 tool lease도 아니므로 별도 phase가 없으면 정상적인 사람 대기를 stalled execution으로 오판한다.
+- 외부 입력은 하나로 제한되지 않는다. Claude는 request별 `Map`을 유지하고 (`claude_adapter.ts:517`), Agents도 실행 중 복수 approval을 등록할 수 있다 (`agents_adapter.ts:215`). Claude `AskUserQuestion`의 기본 만료는 300,000ms이고, 만료 뒤 같은 request의 늦은 응답은 `expired`다 (`claude_sdk_client.ts:42`, `claude_adapter.test.ts:655`).
+- ownership proof 뒤에도 실행은 아직 active가 아니다. `task_executor.ts:495`의 proof commit 다음에는 `prepareSession`과 activation ACK가 남으므로, 그 사이 crash를 durable `activating`으로 복원해야 한다.
 - 현행 runner-origin terminal 순서는 lifecycle terminal commit 뒤 `execution_ended` control frame을 보내고 host가 pending outbox를 replay한 뒤 stream을 닫는다 (`runner_child_runtime.ts:292`, `runner_process_dispatcher.ts:694`). `execution_ended` 자체는 outbox frame이 아니므로 중앙 terminal보다 앞선 출력 durability/receipt 계약이 별도로 필요하다.
 - owner-null backfill은 stable identity면 `adopted_runner`, 아니면 session을 `interrupted`로 바꾼다 (`packages/db-schema/sql/schema.sql:3134`, `:3229`). 후자는 투명성 판정 기준에 정면으로 어긋난다.
 - 260823 사고 표본에서는 runner lifecycle이 `failed`였고 등록이 사라졌는데도 중앙 ownership과 host 실행 대기가 남았다. runner를 죽인 뒤에도 새 reserve가 없으므로 회수가 시작되지 않았다. 두 intervention은 옛 command에 `claimed`로 남았고, attempt 소진 delivery는 `uncertain`에서 다시 스캔되지 않았다.
@@ -132,12 +134,29 @@ adoption 10건 중 9건이 shared fixture를 경유하고 8건은 새 union fact
 
 별도 `runner-death-live-host`도 runner 종료 뒤 후속 요청에 HTTP 503 `runner registration identity incomplete`를 노출해 RED다. 즉 재시작 자체의 기본 adopt 경로는 이미 투명하고, 재설계의 직접 공략 표면은 **복구 완료 전 입력 창, runner 소실 회수, terminal/output durability 경계**다.
 
+### 새 구조의 예상 행 단위 trace
+
+위 표는 PR #819가 고정한 **현재 구현의 실측**이다. 다음 표는 v2 구조가 세 시나리오 모두에서 만들어야 하는 **동일한 외부 계약**이다. 내부 host phase만 다르고 caller ACK와 semantic event 열은 같아야 한다.
+
+| 순서 | 관측 경계 | ① steady-state | ② restart-adopt | ③ restart-intervention-window |
+| ---: | --- | --- | --- | --- |
+| 1 | caller identity | 첫 send 전에 action UUID를 생성하고 payload hash와 고정 | 같은 action UUID를 생성 | 같은 action UUID를 생성 |
+| 2 | durable admission | `session_accept_input_v2`가 delivery와 idempotency receipt commit | 동일 | host 복구 전이라도 동일하게 commit |
+| 3 | caller ACK | `{ status: "accepted", deliveryId }` | 동일 | 동일. 503·retry 요구 없음 |
+| 4 | execution bind | session head를 현재 `executionId/executionCommandId`에 bind | adopt가 보존한 같은 execution/command에 bind | recovering 중 queued; attach 또는 active-v1 승격 receipt 직후 **같은 열린 command**에 bind |
+| 5 | runner input | `runnerInputSequence=N` inbox receipt 뒤 consume | 동일 | 복구 대기만 늘고 동일 receipt |
+| 6 | semantic event | `user_message → tool_start → intervention_sent → tool_result → 개입이 반영된 단일 assistant_message` | 동일 순서·event id dedupe | 동일 순서·event id dedupe. `intervention_demand/context_reply` 소실 없음 |
+| 7 | delivery 정산 | `consumed`, attempt와 input receipt가 동일 execution을 가리킴 | 동일 | 동일. `queued/pending` 영구 잔류 없음 |
+| 8 | caller 재조회·재전송 | 같은 delivery receipt를 반환 | 동일 | admission 응답 전에 orch가 죽어도 같은 stable ID로 동일 receipt 반환 |
+
+③의 내부 trace는 `accepted → queued(recovering) → host capability 확인 → attachment/adoption 또는 active-v1 in-place promotion → bind → consumed`다. 이 내부 phase와 대기 시간은 ACK·session status·agent stream에 투영하지 않는다. 이 표의 행 3·6·7이 PR #819 transparency oracle의 비교 대상이고, 세 열의 값이 다르면 v2 cutover를 열지 않는다.
+
 ### 2차 검증 지적 폐쇄표
 
 | 지적 | 확정 설계 | 구조적 fence |
 | --- | --- | --- |
 | P0-1 in-process fallback | v2 user-visible 실행은 durable admission 뒤 독립 runner placement를 기다림 | `executor_kind` CHECK + runner capability + v2 input type |
-| P0-2 external input phase 누락 | approval·AskUserQuestion을 `awaiting_external_input`으로 durable 표현 | union variant + pending request phase CHECK + progress suspension |
+| P0-2 external input phase 누락 | approval·AskUserQuestion request 집합을 `awaiting_external_input`으로 durable 표현 | union variant + non-empty request phase CHECK + progress suspension |
 | P0-3 caller delivery ID 부재 | caller 8계열의 생성·보존·전달 계약을 v2 선행 단위로 배치 | required `delivery_id` + payload hash receipt + ingress capability |
 | P0-4 terminal durability 순서 | host intent와 runner outcome 분리, outbox/witness→receipt→visible terminal | runner witness CAS + receipt FK + 중앙 first-signal CAS |
 | P0-5 owner-null interrupt | `recovering(identity_unresolved)`가 adopt 또는 atomic replacement로 수렴 | DB phase/subject CHECK + reconcile job + replacement procedure |
@@ -145,6 +164,16 @@ adoption 10건 중 9건이 shared fixture를 경유하고 8건은 새 union fact
 | P0-7 깨지는 중간 배포 | executor·attachment·delivery를 inactive gate 뒤에서 완성 후 ACK를 한 번에 전환 | cutover epoch CAS; attachment가 ingress보다 선행 |
 | P1 event·lease·scenario·invariant | backend semantic adapter, 30분 두 lease, 3종 행 trace, DB 제약 승격 | exhaustive adapter/Record + DB CHECK/FK/head pointer |
 | P2 identity 단위 혼동 | execution=multi-turn command 수명, input sequence=각 개입·응답 | branded identity + attempt/receipt FK |
+
+### 3차 재검증 지적 폐쇄표
+
+| 지적 | 확정 설계 | 구조적 fence |
+| --- | --- | --- |
+| P0-1 external input 수명 | request id별 non-empty 집합, 응답·만료·취소 receipt, terminating activity 보존 | branded collection + JSON key CHECK + request resolution CAS + cleanup receipt |
+| P0-2 memory/durable phase 불일치 | v2 non-idle phase 이름을 동형화하고 `identity_proven`은 v1 projection으로만 유지 | phase별 child/proof/activation/request DB CHECK |
+| P0-3 active v1 cutover | exact runner를 같은 execution/command로 in-place 승격하고 head delivery를 compatibility bind | 단일 promotion procedure + attachment/write epoch fence + deterministic input UUID |
+| P0-4 live migration 불가 | nullable additive → v1 writer fence → 6,319행 backfill → open job backfill → CHECK validate → NOT NULL | compatibility procedure + validation query + FK/job count |
+| P1 expected trace·settle bound·deadline | 현재 실측과 별도 v2 예상 trace, 5초 scan/15초 grace/60초 capacity, Claude 300초 유지 | transparency oracle + durable wake + deadline receipt CAS |
 
 ## 시스템 그림
 
@@ -282,6 +311,10 @@ interface ExecutionProgress {
   }>;
 }
 
+type ExternalRequestDeadline =
+  | { kind: "none" }
+  | { kind: "at"; expiresAt: IsoDateTime; policy: "claude_ask_user_300s" };
+
 type PendingExternalInput =
   | {
       kind: "tool_approval";
@@ -289,22 +322,58 @@ type PendingExternalInput =
       approvalId: string;
       toolName: string;
       requestedAt: IsoDateTime;
-      deadline: { kind: "none" } | { kind: "at"; expiresAt: IsoDateTime };
+      deadline: { kind: "none" };
     }
   | {
       kind: "ask_user_question";
       requestId: ExternalRequestId;
       inputRequestId: string;
       requestedAt: IsoDateTime;
-      deadline: { kind: "none" } | { kind: "at"; expiresAt: IsoDateTime };
+      deadline: Extract<ExternalRequestDeadline, { kind: "at" }>;
     };
 
+declare const nonEmptyExternalRequestSet: unique symbol;
+
+interface PendingExternalRequestSet {
+  readonly [nonEmptyExternalRequestSet]: true;
+  readonly size: number;
+  get(requestId: ExternalRequestId): PendingExternalInput | undefined;
+  entries(): ReadonlyArray<readonly [ExternalRequestId, PendingExternalInput]>;
+}
+
+type ExternalRequestResolution =
+  | { kind: "responded"; deliveryId: DeliveryId; resolvedAt: IsoDateTime }
+  | { kind: "expired"; expiredAt: IsoDateTime }
+  | { kind: "cancelled"; cancelledAt: IsoDateTime; reason: "request_owner" | "user" }
+  | { kind: "execution_terminated"; terminatedAt: IsoDateTime; terminalSignalId: string };
+
+declare const externalRequestResolutionReceipt: unique symbol;
+
+interface ExternalRequestResolutionReceipt {
+  readonly [externalRequestResolutionReceipt]: true;
+  executionId: ExecutionId;
+  requestId: ExternalRequestId;
+  resolution: ExternalRequestResolution;
+  proof:
+    | { kind: "runner_journal"; sequence: number }
+    | { kind: "termination_cleanup"; cleanupReceiptId: string };
+  committedAt: IsoDateTime;
+}
+
+type ExternalRequestInventory =
+  | { state: "empty" }
+  | { state: "open"; requests: PendingExternalRequestSet };
+
 type ExecutionActivity =
-  | { kind: "foreground"; progress: ExecutionProgress }
+  | {
+      kind: "foreground";
+      progress: ExecutionProgress;
+      externalRequests: { state: "empty" };
+    }
   | {
       kind: "awaiting_external_input";
       progress: ExecutionProgress;
-      pending: PendingExternalInput;
+      externalRequests: Extract<ExternalRequestInventory, { state: "open" }>;
       progressReaping: "suspended";
     };
 
@@ -495,8 +564,18 @@ type TerminationSubject =
       child: SpawnedChildProof;
       attachment: LiveRunnerAttachment;
     }
-  | { kind: "attached_owner"; ownership: ExecutionOwnership; attachment: LiveRunnerAttachment }
-  | { kind: "recovering_owner"; subject: ExecutionRecoverySubject; recovery: ExecutionRecoveryHandle };
+  | {
+      kind: "attached_owner";
+      ownership: ExecutionOwnership;
+      attachment: LiveRunnerAttachment;
+      activity: ExecutionActivity;
+    }
+  | {
+      kind: "recovering_owner";
+      subject: ExecutionRecoverySubject;
+      recovery: ExecutionRecoveryHandle;
+      activity: ExecutionActivity;
+    };
 
 type ExecutionTerminationProgress =
   | { phase: "intent_recorded"; intent: HostTerminationIntent }
@@ -605,11 +684,7 @@ interface TaskExecutionController {
     executionId: ExecutionId,
     request: PendingExternalInput,
   ): Promise<void>;
-  resumeExternalInput(
-    executionId: ExecutionId,
-    requestId: ExternalRequestId,
-    deliveryId: DeliveryId,
-  ): Promise<void>;
+  resolveExternalInput(receipt: ExternalRequestResolutionReceipt): Promise<void>;
   assignDelivery(executionId: ExecutionId, deliveryId: DeliveryId): Promise<void>;
   requestInterrupt(executionId: ExecutionId): Promise<boolean>;
   terminate(
@@ -628,6 +703,8 @@ interface Task {
 `reaped`는 predecessor execution의 내부 outcome이지 곧바로 session 실패가 아니다. 승인된 입력 책임이 남아 있으면 atomic replacement handoff가 session의 `running`과 외부 stream을 유지한다. `interrupted`는 같은 invocation ID의 명시적 사용자 interrupt가 runner witness로 확인된 경우에만 session으로 투영한다. host restart, owner-null, registration identity 불완전은 이 outcome을 만들 수 없다.
 
 `Task.execution`은 required다. 자원이 없는 이유는 `undefined`가 아니라 phase가 말한다. 아직 시작하지 않았으면 `idle`, 독립 runner placement를 기다리면 `reserved`, 자식을 만들었지만 활성화 전이면 `provisional`, 사람의 approval·답변을 기다리면 `awaiting_external_input`, 회수 중이면 `recovering`, 자원을 정산했으면 terminal record를 가진 `terminal`이다. “없음”, “해당 없음”, “치웠음”이 같은 값이 되는 경로가 사라진다.
+
+`PendingExternalRequestSet`은 controller module의 private `create/add/removePendingExternalRequestSet()`만 만들 수 있는 non-empty branded collection이다. 메모리에서는 request id별 map을 제공하고 durable row와 runner journal에는 같은 내용을 key-unique JSON object로 직렬화한다. `awaiting_external_input`은 이 집합이 비어 있으면 구성할 수 없고, `foreground`는 명시적인 `externalRequests.state="empty"`를 가진다. 따라서 단일 pending slot, controller 밖 lookup, expiry 때의 direct clear가 필요 없다.
 
 기존 12개 필드의 정보는 다음처럼 정확히 한 union 안으로 이동한다.
 
@@ -672,20 +749,50 @@ session 1
 | `provisional` | proof·parent init 실패 | `terminating` | exact spawned child cleanup receipt 뒤 visible terminal CAS | 현재 등록 PID 추측 종료 |
 | `activating` | activation ACK | `active` | active CAS, activation waiter resolve | delivery 선할당 |
 | `activating` | activation 실패 | `terminating` | exact child cleanup 또는 runner witness receipt | promise만 reject하고 child 방치 |
-| `active` | durable tool approval·AskUserQuestion request | `awaiting_external_input` | pending request와 request id를 execution row·runner journal에 함께 기록 | `tool_start`나 단순 progress로 대체 |
-| `awaiting_external_input` | 같은 request id의 delivery consumed | `active` | pending request resolve receipt, 새 progress deadline, runner input sequence commit | foreground stall clock을 대기 시간만큼 소급 적용 |
+| `active` | 첫 durable tool approval·AskUserQuestion request | `awaiting_external_input` | non-empty request set과 request id를 execution row·runner journal에 함께 기록 | `tool_start`나 단순 progress로 대체 |
+| `awaiting_external_input` | 다른 request 생성 | `awaiting_external_input` | key-unique request set에 추가하고 다음 expiry wake를 갱신 | 기존 pending request 덮어쓰기 |
+| `awaiting_external_input` | 같은 request id의 응답 delivery consumed | 남은 request가 있으면 `awaiting_external_input`, 없으면 `active` | `responded` receipt, runner input sequence, 집합 remove를 한 transaction에 commit | 전체 집합 clear, foreground stall clock 소급 적용 |
+| `awaiting_external_input` | request deadline 도달 | 남은 request가 있으면 `awaiting_external_input`, 없으면 `active` | exact request의 `expired` receipt와 runner `input_request_expired` journal을 commit | progress reaper가 execution 종료, 다른 request clear |
+| `awaiting_external_input` | request owner·사용자 취소 | 남은 request가 있으면 `awaiting_external_input`, 없으면 `active` | exact request의 `cancelled` receipt를 commit | controller 밖 callback map만 삭제 |
+| `active` 또는 `awaiting_external_input` | 이미 resolved된 request의 late response | 동일 phase | 기존 resolution receipt를 반환. Claude expiry면 semantic `expired` | runner에 재전달, 새 delivery bind |
 | `awaiting_external_input` | host attachment 상실 | `recovering` | pending request를 보존한 recovery wake | stalled reap, request 유실 |
 | `active` | host attachment 상실 | `recovering` | recovery wake 기록 | stream fail, execution terminal 처리 |
+| `recovering(activity=awaiting_external_input)` | request expiry·취소 receipt 관측 | `recovering` | exact request만 정산하고 나머지 set 또는 foreground activity를 보존 | attach 전 direct clear, execution reap |
+| `recovering(activity=awaiting_external_input)` | response delivery 도착 | `recovering` | delivery는 accepted/queued, pending request는 runner consumption까지 유지 | host 부재를 503으로 반환, 응답했다고 선반영 |
 | `recovering` | 같은 identity reattach/adopt | `active` 또는 `awaiting_external_input` | attachment epoch 갱신, 보존한 activity로 복귀 | 새 execution 생성, pending request 삭제 |
 | `recovering(identity_unresolved)` | identity 증명 성공 | `active` 또는 `awaiting_external_input` | 기존 execution/command identity backfill | session `interrupted` 투영 |
 | `recovering(identity_unresolved)` | process 부재 확정·adopt 불가 | successor `reserved` | predecessor terminal proof + successor row + input/context handoff를 한 transaction에 commit | 중간 `idle`, session terminal/interrupted, 입력 유실 |
 | `recovering` | durable terminal witness | `terminating` | witness high-watermark drain wake | receipt 전 first signal CAS, 늦은 host 오류로 덮기 |
-| `active`, `awaiting_external_input`, `recovering` | host interrupt·reaper 의도 | `terminating(intent_recorded)` | durable intent와 runner control wake | intent만으로 visible terminal commit |
+| `active`, `awaiting_external_input`, `recovering` | host interrupt·reaper 의도 | `terminating(intent_recorded)` | durable intent, 전체 `ExecutionActivity`, runner control wake를 보존 | intent만으로 visible terminal commit, pending request 유실 |
 | nonterminal | runner witness 또는 process-absence proof와 ingress receipt | `terminating(proof_observed)` | first visible terminal CAS | receipt 전 session terminal 투영 |
 | `terminating` | visible terminal·delivery·cleanup 정산 완료 | `terminal` | terminal row, delivery resolution, cleanup report | waiters를 남긴 채 field clear |
 | `terminal` | 다음 유효 입력 | 새 `reserved` | 새 `executionId`, retention attachment의 명시적 handoff | terminal record 재사용, retained runner를 current turn으로 간주 |
 
 모든 mutation은 controller의 `transition(expectedExecutionId, expectedPhase, next)` CAS를 거친다. 이전 실행의 callback은 execution id가 다르면 관측만 기록하고 현재 실행의 자원에 접근할 수 없다.
+
+### 외부 입력 수명 정책
+
+Claude `AskUserQuestion`은 현행 UX인 **300,000ms**를 유지한다. request 생성 시 `expiresAt=requestedAt+300_000`을 runner journal과 중앙 ledger에 같이 쓴다. deadline worker는 exact runner expiry wake만 만들고 request를 직접 지우지 않는다. runner journal의 `input_request_expired`가 `{ kind: "runner_journal" }` proof로 resolution CAS를 이기며, exact process 부재·termination이면 cleanup proof가 대신 닫는다. 늦은 응답은 새 input으로 보지 않고 기존 `{ kind: "expired" }` receipt를 반환한다. 재기동 전후 모두 같은 결과이므로 이는 재시작 신호가 아니다.
+
+Agents tool approval은 현행처럼 자동 만료가 없는 `{ kind: "none" }`이다. 명시적 request cancellation이나 execution terminal만 닫을 수 있다. 한 request가 응답·만료·취소돼도 나머지 request는 그대로 남고, 마지막 open request가 사라질 때만 `active`로 돌아가 새 30분 foreground progress lease를 시작한다. execution이 `terminating`으로 들어가면 `TerminationSubject.activity`가 전체 집합을 보존하고 cleanup은 각 request를 `execution_terminated` receipt로 정산한 뒤에만 terminal을 게시한다.
+
+### 메모리 phase와 durable phase의 동형
+
+v2는 `reserved → identity_proven → active`를 해석해서 9-phase 메모리 상태에 끼워 맞추지 않는다. `idle`만 “open execution row가 없음”이고, 나머지 phase 이름은 메모리와 중앙 DB가 같다. 구 `identity_proven` 문자열은 semantics v1 row의 compatibility projection일 뿐이며 v2 writer는 만들 수 없다.
+
+| 메모리 phase | v2 durable phase | 필수 durable 증거 | crash 복원 결과 |
+| --- | --- | --- | --- |
+| `idle` | open row 없음 | session head에 미할당 delivery만 존재 가능 | 새 head가 있으면 `reserved` 생성 |
+| `reserved` | `reserved` | reservation, executor placement; child·ownership proof·activation receipt 없음 | placement 재개 |
+| `provisional` | `provisional` | exact child proof 있음, ownership proof·activation receipt 없음 | 같은 child의 proof 단계 재개 또는 exact cleanup |
+| `activating` | `activating` | exact child proof와 `ownership_proof_id` 있음, `activation_receipt_id` 없음 | idempotent `prepareSession(executionId, commandId)` 재실행 후 activation CAS |
+| `active` | `active` | ownership proof와 activation receipt 있음, external request set 비어 있음 | attach/adopt 뒤 foreground 재개 |
+| `awaiting_external_input` | `awaiting_external_input` | activation receipt와 non-empty request set 있음 | request set과 deadline wake를 복원 |
+| `recovering` | `recovering` | recovery subject·activity·reconcile job 있음 | activity를 보존해 adopt/replacement |
+| `terminating` | `terminating` | termination subject와 activity, intent 또는 proof 있음 | terminal pipeline 재개 |
+| `terminal` | `terminal` 또는 `failed` compatibility projection | first signal, ingress receipt/preactivation proof, cleanup report | immutable terminal 재조회 |
+
+DB CHECK는 이를 직접 강제한다. v2 `reserved`는 child identity가 모두 null, `provisional`은 child identity가 모두 non-null이면서 `ownership_proof_id IS NULL`, `activating`은 proof가 non-null이면서 `activation_receipt_id IS NULL`, `active/awaiting_external_input`은 둘 다 non-null이어야 한다. `awaiting_external_input`은 `jsonb_object_length(pending_external_requests) > 0`, `active`는 빈 object다. `recovering/terminating`은 각각 subject JSON과 activity JSON이 없으면 거부한다. 따라서 `task_executor.ts:495`의 proof commit 뒤 `prepareSession` 또는 activation ACK 전에 죽어도 durable row가 `activating` 이외 상태로 복원될 수 없다.
 
 ## 획득과 해제의 대칭
 
@@ -715,7 +822,7 @@ spawn은 v2 capability를 가진 독립 runner가 배정된 뒤에만 일어난�
 5. controller는 witness identity와 receipt sequence가 일치함을 확인한 뒤에만 중앙 first visible terminal CAS를 수행한다. 이때 늦은 `finish/fail`은 진단으로만 남는다.
 6. 할당된 delivery attempt를 consumed, unconsumed, reconcile_pending 중 하나로 정산한다.
 7. `ProcessFrameStream.terminate(firstSignal)`로 내부 소비자에게 정확히 한 terminal을 보낸 뒤 activation, terminal, interrupt waiter를 모두 settle한다.
-8. 진행 관측, request lifetime, reconnect timer, in-flight frame handler를 정산한다.
+8. `TerminationSubject.activity`의 open external request를 request id별 `execution_terminated` receipt로 먼저 정산하고 deadline timer·adapter callback을 끊는다. 그 뒤 진행 관측, reconnect timer, in-flight frame handler를 정산한다. 집합이 비지 않으면 이 cleanup step은 완료될 수 없다.
 9. pump mux 등록, IPC attachment, parent outbox, offline writer와 writer lock을 반납한다.
 10. 정책이 요구할 때만 exact child proof로 child를 종료·retire한다. host restart와 live adoption handoff에서는 child를 보존하고, foreground 종료 뒤 Claude background task가 남으면 `terminal.retention`으로 명시 이전한다.
 11. cleanup 실패 전체를 `ExecutionCleanupReport`에 기록하고, 독립 단계는 끝까지 시도한 뒤 `terminal`로 전이한다. 실패 단계는 maintenance lane이 재시도한다.
@@ -794,7 +901,7 @@ type InventoryRelation =
 
 매 maintenance tick은 다음 순서로 독립 스냅샷을 만든다.
 
-1. `session_execution_ownerships`의 `reserved`, `identity_proven`, `active`, `awaiting_external_input`, `recovering`, `terminating` row를 node별로 읽는다. 모든 open row는 같은 transaction에서 만들어진 `execution_reconcile_jobs` row와 non-null `reconcile_due_at`을 가진다.
+1. semantics v2 row는 `reserved`, `provisional`, `activating`, `active`, `awaiting_external_input`, `recovering`, `terminating`을, rolling 중 v1 row는 `reserved`, `identity_proven`, `active`를 node별로 읽는다. 모든 open row는 같은 transaction에서 만들어지거나 migration에서 backfill된 `execution_reconcile_jobs` row와 non-null `reconcile_due_at`을 가진다.
 2. runner 등록 디렉터리와 runner SQLite lifecycle witness를 읽는다.
 3. 메모리 controller를 읽되 판단 근거가 아니라 불일치 탐지에만 쓴다.
 4. `executionId`를 기준으로 full outer join한다.
@@ -802,7 +909,19 @@ type InventoryRelation =
 
 따라서 등록 디렉터리가 0개여도 중앙의 열린 실행 4개와 durable reconcile job 4개가 나오면 네 실행을 모두 검사한다. 반대로 중앙 execution 없이 등록만 있으면 orphan child 회수 대상이다. `activeRunnerOperations`와 Task 필드 존재는 inventory가 아니라 controller phase의 순수 projection으로 격하한다.
 
-스캔은 기존 bounded `PeriodicMaintenanceLoop`의 독립 step으로 둔다. DB의 `next_wake_at`이 지난 job을 `FOR UPDATE SKIP LOCKED`로 claim하며, worker lease가 끝나면 DB가 다시 runnable하게 만든다. 한 실행의 reconcile이 다른 실행을 막지 않는다. 새 메시지, reserve, intervention, 배포, 재시작은 가속 wake일 수 있지만 회수의 전제는 아니다. DB와 maintenance worker가 모두 fail-stop인 동안에는 지연이 늘 수밖에 없으나 책임 row와 wake가 사라지지 않으므로 서비스 복귀 뒤 반드시 계속된다.
+스캔은 기존 bounded `PeriodicMaintenanceLoop`의 독립 step으로 두고 다음 수치를 v2 설정 정본으로 고정한다.
+
+| 수치 | 값 | 의미 |
+| --- | ---: | --- |
+| `EXECUTION_RECONCILE_SCAN_MS` | 5,000ms | due job을 확인하는 최대 간격 |
+| `EXECUTION_RECONCILE_JOB_LEASE_MS` | 15,000ms | worker fail-stop 뒤 같은 job이 다시 runnable해지는 상한 |
+| `PROCESS_ABSENCE_GRACE_MS` | 15,000ms | 마지막 positive process liveness 뒤 process-absence 판정을 금지하는 구간 |
+| `PROCESS_ABSENCE_SECOND_SCAN_MS` | 5,000ms | 서로 다른 두 absence 관측의 최소 간격. due 뒤 두 번째 관측은 최대 10,000ms 안에 끝남 |
+| `REPLACEMENT_CAPACITY_RESERVATION_MS` | 60,000ms | process 부재 proof 뒤 successor 책임을 예약하는 상한 |
+
+DB의 `next_wake_at`이 지난 job을 `FOR UPDATE SKIP LOCKED`로 claim하며, worker lease가 끝나면 DB가 다시 runnable하게 만든다. 마지막 liveness를 `t0`라 하면 첫 absence proof 후보는 `t0+15s` 이전에 생길 수 없고 다음 scan은 최대 5초 뒤, 두 번째 독립 scan은 다시 최대 5초 뒤다. process 부재 proof 뒤 60초 안에 reserved recovery capacity가 successor row를 받으므로 predecessor execution waiter의 `reaped/replaced` 내부 settle 상한은 **85초**다. 이 상한은 중앙 DB, maintenance worker 하나, 예약된 v2 replacement capacity 하나가 건강하다는 availability envelope에서 성립한다. 전체 기반 시설 fail-stop 동안에는 시간을 보장할 수 없지만 durable 책임과 wake는 남고, 이를 503·session interrupt·외부 timeout으로 투영하지 않는다.
+
+replacement capacity는 일반 placement와 경쟁하는 희망값이 아니라 node별 최소 1개 복구 슬롯을 따로 예약하는 운영 capability다. 60초를 넘기면 내부 P0 invariant breach와 capacity 증설 wake를 만들되 승인된 delivery와 외부 stream은 계속 대기한다. 새 메시지, reserve, intervention, 배포, 재시작은 가속 wake일 수 있지만 회수의 전제는 아니다. 한 실행의 reconcile이 다른 실행을 막지 않는다.
 
 ### owner-null은 identity-unresolved 책임이다
 
@@ -823,7 +942,7 @@ v2 migration은 owner-null running row를 `idle`, `terminal`, session `interrupt
 - runner heartbeat는 process liveness만 갱신한다. 객체, socket, PID, 등록 디렉터리 존재는 progress가 아니다.
 - 중앙 progress row는 runner SQLite의 monotonic `progress_seq`를 CAS 투영한다. 늦은 host가 sequence를 되돌릴 수 없다.
 - foreground progress gap도 현행 설정 정본 `SOUL_RUNNER_LEASE_TIMEOUT_MS=1,800,000ms`를 그대로 쓴다 (`soul-server-ts/src/config.ts:71`). progress gap이 지났더라도 absolute lease 안의 in-flight tool이 있으면 기다리고, tool lease가 지났더라도 최근 semantic progress가 있으면 기다린다. 둘 다 지났고 terminal witness가 없으며 두 scan에서 sequence가 같을 때만 `reap_stalled` intent를 만든다.
-- `awaiting_external_input`에서는 foreground progress와 tool absolute lease 판정을 중지한다. durable pending request의 process liveness는 계속 감시하되 사람의 고민 시간을 stalled로 해석하지 않는다. 명시적 request deadline이 있는 경우에도 request subsystem이 `input_request_expired`/approval resolution을 durable하게 만들 뿐 progress reaper가 종료하지 않는다. 응답 consumption 뒤 새 30분 progress deadline으로 `active`를 재개한다.
+- `awaiting_external_input`에서는 foreground progress와 tool absolute lease 판정을 중지한다. durable request 집합의 process liveness는 계속 감시하되 사람의 고민 시간을 stalled로 해석하지 않는다. Claude request deadline은 request subsystem이 exact `input_request_expired` receipt를 만들 뿐 progress reaper가 execution을 종료하지 않는다. 마지막 open request가 정산된 뒤에만 새 30분 progress deadline으로 `active`를 재개한다.
 
 이는 “tool result, thinking, agent message가 오고 있으면 살아 있다”는 사용자 기준을 정본 predicate로 올린 것이다. 현재 `runner_child_runtime.ts:584`의 모든 SSE event progress, `runner_process_registry.ts:160`의 renewable gap, `claude_runtime_followup_watchdog.ts:205`의 foreground predicate를 하나로 합친다. 현행에는 tool absolute lease가 없으므로 이는 신규 durable 필드이며, 기존 gap 수치만 재사용한다.
 
@@ -1142,12 +1261,12 @@ v2 user-visible 진입은 durable admission 뒤 `reserved.executor.placement="wa
 | ID | 불변식 | 위반이 구성상 불가능한 이유 | 강제 수단 |
 | ---: | --- | --- | --- |
 | E1 | session당 current execution 최대 1, 모든 참조 identity 일치 | required controller 하나와 DB open-execution unique 제약이 같은 `executionId`만 허용한다. | 타입 + DB CAS |
-| E2 | 실행 lifecycle은 명시적 단일 상태기계 | 9 phase가 `TaskExecution` 판별 유니온이고 presence 판정 API가 없다. external request는 반드시 `awaiting_external_input` variant다. | 타입 + DB phase CHECK |
+| E2 | 실행 lifecycle은 명시적 단일 상태기계 | 9 phase가 `TaskExecution` 판별 유니온이고 presence 판정 API가 없다. external request 1개 이상은 non-empty set을 가진 `awaiting_external_input`, 0개는 `active`로만 표현된다. 메모리와 v2 DB phase가 동형이다. | 타입 + DB phase/request CHECK |
 | E3 | provisional spawn도 실행 | spawn proof와 attachment를 가진 `provisional`이 activation 전에 필수다. | 타입 + 단일 attach 경로 |
 | E4 | 새 identity가 옛 자원과 격리 | callback과 transition이 branded `executionId + generation`을 요구한다. wire 경계는 DB identity CAS를 다시 검사한다. | 타입 + DB/runtime fence |
-| E5 | runner·registration 소실 시 모든 waiter bounded settle | 모든 nonterminal row는 `reconcile_due_at NOT NULL`이고 1:1 reconcile job을 가진다. waiter는 메모리 promise가 아니라 execution terminal row subscription에서 재구성된다. | DB CHECK/FK + leased job + 단일 종료 |
+| E5 | runner·registration 소실 시 모든 waiter bounded settle | 모든 nonterminal row는 `reconcile_due_at NOT NULL`이고 1:1 reconcile job을 가진다. 5초 scan, 15초 absence grace, 두 scan 최대 10초, replacement capacity 60초로 predecessor waiter는 availability envelope 안에서 최대 85초에 내부 settle한다. waiter는 execution terminal/replacement row subscription에서 재구성된다. | DB CHECK/FK + leased job + reserved recovery capacity |
 | E6 | 회수는 restart·reserve·message와 독립 | open execution insert가 같은 transaction에서 durable reconcile job을 강제하고, worker lease 만료가 job을 다시 runnable하게 만든다. | DB trigger/procedure + maintenance |
-| E7 | reference clear는 종료가 아님 | public clear API가 없고 `terminal` DB phase는 terminal proof, receipt, cleanup report가 모두 없으면 CHECK에 실패한다. | 타입 + DB CHECK + 단일 경로 |
+| E7 | reference clear는 종료가 아님 | public clear API가 없고 `terminal` DB phase는 terminal proof, ingress receipt, 모든 external request resolution, cleanup report가 없으면 CHECK에 실패한다. | 타입 + DB CHECK + 단일 경로 |
 | E8 | terminal은 멱등, visible 결과 하나 | runner witness의 outbox high-watermark receipt 뒤 first-signal CAS만 visible terminal을 만든다. | DB unique/CAS + receipt FK |
 | E9 | activeRunnerOperations는 실행과 함께 끝남 | 별도 begin/finish mutable set을 없애고 nonterminal controller/resource ledger의 순수 projection으로 계산한다. execution terminal이면 관측 row도 생성 불가다. | 타입 projection + DB execution FK |
 | E10 | activation 실패 시 같은 generation active 또는 exact child dead | `provisional`은 exact child proof를 보유하고 failure가 proof-bearing `terminate()` 없이는 상태를 벗어나지 못한다. | 타입 + identity-fenced rollback |
@@ -1155,7 +1274,7 @@ v2 user-visible 진입은 durable admission 뒤 `reserved.executor.placement="wa
 | E12 | rollback은 exact spawned child proof 사용 | `provisional.child` 없이는 rollback proof를 만들 수 없다. sidecar 최신값은 입력 타입이 아니다. | 타입 |
 | E13 | recovery retry 또는 명시적 책임 | action receipt와 reconcile job update가 한 DB transaction이다. `scheduled`는 non-null `next_wake_at`, `completed`는 resulting phase를 요구한다. | 타입 + DB CHECK/transaction |
 | E14 | execution inventory는 registration과 별도 reconcile | reconcile job은 execution row FK에서 생성되고 등록 테이블과 독립적으로 열거된다. registration 0건도 job 수를 0으로 만들지 못한다. | DB FK/procedure + full outer join |
-| E15 | acquire/release 대칭 경계와 자원 순서 | attachment/resource token 생성자는 controller module private이고 resource ledger 없이는 attach phase를 구성할 수 없다. terminal은 cleanup receipt inventory를 요구한다. TypeScript는 affine type을 지원하지 않으므로 private module 경계·architecture test·DB receipt가 선형성의 대체 강제다. | 타입/module boundary + DB CHECK + contract test |
+| E15 | acquire/release 대칭 경계와 자원 순서 | attachment/resource token과 non-empty request set 생성자는 controller module private이고 resource ledger 없이는 attach phase를 구성할 수 없다. `TerminationSubject`가 activity 전체를 소유하며 terminal은 request별 resolution을 포함한 cleanup receipt inventory를 요구한다. TypeScript는 affine type을 지원하지 않으므로 private module 경계·architecture test·DB receipt가 선형성의 대체 강제다. | 타입/module boundary + DB CHECK + contract test |
 | E16 | durable/process/memory 불일치는 한 결정표로 해결 | classifier는 사실만 만들고 exhaustive `Record<RunnerRecoveryDispositionV2, DispositionPolicy>`가 action을 강제한다. | exhaustive 타입 + runtime 검사 |
 
 ### delivery 불변식 10개
@@ -1211,12 +1330,12 @@ v2 user-visible 진입은 durable admission 뒤 `reserved.executor.placement="wa
 | 5. 독립 executor 전환 | v2 placement scheduler와 DB executor CHECK를 연결하고 user-visible `createInProcessTaskRunnerRuntime` fallback 제거 | v2 dry-run row는 독립 runner가 없으면 waiting이고 실패하지 않음. in-process 선택 0 | v1 production traffic 유지, v2 shadow placement만 검사 |
 | 6. attachment 투명화 | durable host-call journal/receipt, 30초 host-call deadline의 외부 실패 투영 제거, shutdown detach, adopt 후 outbox replay | v2 shadow 실행에서 host 부재가 engine error·turn 중단으로 나타나지 않음 | v1 runner witness adapter 유지, ingress ACK 아직 미전환 |
 | 7. delivery·admission 완성 | execution-bound attempt, stored-procedure FIFO head, reconcile/retry_paused, `session_accept_input_v2`를 inactive gate 뒤에서 통합 | shadow 입력이 다른 delivery에 가려지지 않고 caller ID별 동일 receipt를 만듦 | 외부 route는 아직 v1 ACK. v2 end-to-end gate만 실험 |
-| 8. 단일 capability cutover | caller ID, v2 DB writer, v2 host, 독립 runner, attachment transparency, binder가 모두 ready인 session/node만 한 transaction에서 `semantics_version=2` 활성 | 그 순간부터 정상·복구 창 모두 같은 accepted ACK와 event 순서. 중간에 “accepted 후 30초 host-call 실패” 창이 없음 | capability 미충족 session은 v1 유지하거나 durable admission 뒤 기다림. old host routing 금지 |
+| 8. 단일 capability cutover | caller ID, v2 DB writer, v2 host, 독립 runner, attachment transparency, binder가 모두 ready인 session에서 active v1 실행을 같은 PID·command의 v2 실행으로 원자 승격하고 cutover epoch 활성 | active v1의 drain을 기다리지 않고 그 순간부터 새 delivery가 같은 command에 bind. 정상·복구 창 모두 같은 accepted ACK와 event 순서 | exact identity가 없는 row는 `recovering(identity_unresolved)`. old host write lease는 같은 transaction에서 폐기 |
 | 9. 구 표면 제거 | Task optional 12, partial cleanup 9곳, legacy disposition helper와 상태 projection 삭제 | 구조 화석 2 제거, direct mutation·v1 open execution 0 | 전 cluster v2 drain과 rollback window 종료 뒤 수행 |
 
 단위 3에서 legacy field와 새 controller를 독립적으로 dual-write하지 않는다. controller가 유일한 writer이고 legacy getter는 controller state의 projection이다. 단위 2의 DB도 v1 row는 v1 함수, v2 row는 v2 함수만 쓰므로 중간 상태에서도 row별 정본은 하나다.
 
-단위 5~7은 모두 `execution_semantics_v2` capability gate 뒤에서 완성하고 외부 traffic에는 노출하지 않는다. 특히 attachment 투명화가 admission 전환보다 먼저 배포된다. 외부 ACK 전환은 단위 8 한 번뿐이며, cutover transaction이 host·runner capability lease와 caller identity capability를 다시 확인한다. 따라서 “입력은 accepted인데 실행 중 agent는 현행 host-call deadline으로 실패”하는 중간 배포가 없다.
+단위 5~7은 모두 `execution_semantics_v2` capability gate 뒤에서 완성하고 외부 traffic에는 노출하지 않는다. 특히 attachment 투명화와 active-v1 compatibility binder가 admission 전환보다 먼저 배포된다. 외부 ACK 전환은 단위 8 한 번뿐이며, cutover transaction이 host·runner capability lease와 caller identity capability를 다시 확인한다. 따라서 “입력은 accepted인데 실행 중 agent는 현행 host-call deadline으로 실패”하는 중간 배포가 없다.
 
 현재 동작 기록 테스트 32개는 단위별 정책 변경표와 연결한다. 바뀐 정책을 기대한 RED만 새 계약으로 갱신하고, 나머지 RED는 회귀다. shared fixture 전환으로 따라오는 8개는 개별 수정하지 않는다.
 
@@ -1230,11 +1349,12 @@ DB 변경은 필요하다. 실행 identity, first terminal, progress와 delivery
 
 `session_execution_ownerships`를 durable execution ledger로 확장한다.
 
-- `execution_id TEXT`
-- `semantics_version SMALLINT NOT NULL`과 `executor_kind TEXT NOT NULL`
+- 최종형 `execution_id TEXT NOT NULL UNIQUE`. migration 첫 DDL에서는 nullable로 추가하고 deterministic v1 backfill 뒤 전환한다
+- 최종형 `semantics_version SMALLINT NOT NULL`과 `executor_kind TEXT NOT NULL`. migration 첫 DDL에서는 nullable로 추가한다
 - `CHECK (semantics_version <> 2 OR executor_kind = 'independent_runner')`
-- phase constraint에 `awaiting_external_input`, `recovering`, `terminating`
-- `pending_external_request JSONB`, phase별 presence CHECK
+- v2 phase constraint에 `reserved`, `provisional`, `activating`, `active`, `awaiting_external_input`, `recovering`, `terminating`, `terminal`; v1 `identity_proven/failed`는 version별 compatibility branch
+- `ownership_proof_id TEXT`, `activation_receipt_id TEXT`와 phase별 identity shape CHECK
+- `pending_external_requests JSONB`, `request_resolution_receipts JSONB`; key uniqueness와 phase별 empty/non-empty CHECK. response/expiry/cancel은 runner-journal proof, execution terminal은 cleanup proof만 허용
 - `termination_intent JSONB`, `runner_terminal_witness JSONB`, `terminal_ingress_receipt JSONB`
 - `first_terminal_signal JSONB`, `first_terminal_committed_at TIMESTAMPTZ`; visible terminal은 witness/receipt 또는 preactivation proof가 없으면 거부
 - `progress_seq BIGINT`, `progress_kind TEXT`, `progress_at TIMESTAMPTZ`
@@ -1247,6 +1367,9 @@ DB 변경은 필요하다. 실행 identity, first terminal, progress와 delivery
 - `session_commit_runner_terminal_witness_v2(...)` witness high-watermark CAS
 - `session_commit_execution_terminal_v2(...)` receipt 검증 뒤 first visible signal CAS
 - `session_replace_execution_v2(...)` predecessor proof와 successor responsibility의 원자 handoff
+- `session_promote_open_execution_v1_to_v2(...)` exact v1 identity·attachment receipt를 같은 execution/command의 v2 phase로 원자 승격
+- `session_assign_delivery_to_promoted_command_v2(...)` 승격된 active command에 head delivery를 bind하고 deterministic runner input identity를 기록
+- `session_assign_delivery_to_legacy_bridge_v2(...)` migration 시점의 open `legacy_in_process` command에만 허용되는 compatibility bind
 - `session_list_open_executions(node_id, limit)` inventory 함수
 
 `execution_reconcile_jobs`는 open execution과 1:1 FK를 가진다. `state`, `next_wake_at`, `lease_owner`, `lease_expires_at`, `last_receipt`을 보유하고 open row 생성·전이 transaction에서만 갱신한다. owner-null row도 `identity_unresolved` job으로 들어간다.
@@ -1259,6 +1382,7 @@ DB 변경은 필요하다. 실행 identity, first terminal, progress와 delivery
 - `execution_id TEXT`
 - `ownership_generation BIGINT`
 - `execution_command_id TEXT`
+- `execution_semantics_version SMALLINT`, `assignment_kind TEXT`; 일반 v2 attempt는 v2 execution만, `legacy_bridge`는 migration에서 표식된 open v1 command만 참조
 - `assignment_state TEXT`
 - `runner_input_sequence BIGINT`
 - `resolved_at TIMESTAMPTZ`
@@ -1284,7 +1408,39 @@ DB 변경은 필요하다. 실행 identity, first terminal, progress와 delivery
 2. `packages/db-schema/migration-manifest.json`의 sha256·rollback compatibility
 3. `packages/db-schema/sql/schema.sql`의 bootstrap 동형 정의
 
-runner SQLite는 중앙 migration과 별도로 additive schema upgrade를 한다. execution id, command id, input sequence, terminal witness와 outbox high-watermark, delivery attempt id, pending external request, fixed tool lease, durable host-call request/response를 추가한다. 중앙 execution row가 책임 정본이고 runner SQLite는 child가 host 부재 중 남기는 증거다. reconcile이 monotonic sequence와 identity fence를 검증한 뒤 중앙 정본에 투영한다.
+runner SQLite는 중앙 migration과 별도로 additive schema upgrade를 한다. execution id, command id, input sequence, terminal witness와 outbox high-watermark, delivery attempt id, pending external request 집합과 resolution receipt, fixed tool lease, durable host-call request/response를 추가한다. 중앙 execution row가 책임 정본이고 runner SQLite는 child가 host 부재 중 남기는 증거다. reconcile이 monotonic sequence와 identity fence를 검증한 뒤 중앙 정본에 투영한다.
+
+### migration 073의 라이브 데이터 순서
+
+2026-08-23 실측은 `session_execution_ownerships` 6,319행이며 `active=2`, `identity_proven=2`, `reserved=1`, `failed=5,804`, `terminal=510`이다. `semantics_version`, `executor_kind`, `reconcile_due_at`은 아직 없다. 이 수치는 migration의 가정이 아니라 검증 fixture다. 실제 적용 직전 같은 query를 다시 실행하고 발견한 모든 phase·owner kind를 분류한다.
+
+073은 다음 순서로만 실행한다.
+
+1. `semantics_version`, `executor_kind`, `execution_id`, v2 phase/proof/request/terminal 필드, `reconcile_due_at`을 **nullable**로 추가한다. 이 단계에서 `NOT NULL`이나 validated CHECK를 걸지 않는다.
+2. 기존 v1 insert/update procedure를 compatibility wrapper로 교체해 새로 쓰이는 row가 즉시 `semantics_version=1`, owner kind에서 결정한 executor kind, 결정적 `execution_id='legacy:' || session_id || ':' || ownership_generation`을 받게 한다. application role direct DML은 이 wrapper 배포 뒤 revoke한다. backfill 중 새 null row가 생기지 않는 write fence다.
+3. 기존 6,319행을 primary-key 순 bounded batch로 backfill한다. `runner_process/adopted_runner → independent_runner`, `in_process → legacy_in_process`로 기록하고, v1 phase는 그대로 둔다. terminal/failed row는 `reconcile_due_at=NULL`, open `reserved/identity_proven/active` row는 `reconcile_due_at=NOW()`로 둔다.
+4. 같은 transaction 계열에서 **모든** open v1 row를 `execution_reconcile_jobs`에 `INSERT ... ON CONFLICT`한다. 실측 5행만 하드코딩하지 않는다. `reserved`는 placement, `identity_proven`은 activation recovery, `active`는 attachment/adoption job이며, owner-null·불완전 identity는 `identity_unresolved` job이다.
+5. 기존 phase constraint보다 넓은 version별 phase·identity·request·terminal·reconcile shape CHECK를 `NOT VALID`로 추가한다. 검증 query가 null execution/semantics/executor, duplicate execution id, session별 복수 open row, open row without job/due, terminal row with due, identity shape mismatch를 각각 0건으로 확인한 뒤 `VALIDATE CONSTRAINT`하고 구 phase constraint를 제거한다. 복수 open v1 row가 나오면 삭제하거나 interrupt하지 않고 exact current row 하나를 보존하며 predecessor를 proof-bearing `terminating/recovering`으로 옮긴 뒤 다시 검증한다.
+6. validated non-null CHECK를 이용해 lock을 제한한 채 `execution_id`, `semantics_version`, `executor_kind`를 `SET NOT NULL`로 전환하고 execution id unique constraint를 건다. 이때까지 v1 wrapper와 v2 procedure 모두 값 없는 write를 거부한다.
+7. 마지막에 open-row unique index와 v2 procedure/capability fence를 활성화한다. migration transaction 종료 뒤 inventory count와 reconcile job count를 다시 읽어 모든 open row가 정확히 한 책임 job을 갖는지 확인한다.
+
+`legacy_in_process`는 backfill 분류일 뿐 v2 reserve가 선택할 수 있는 executor가 아니다. 해당 open row가 있으면 unit 5가 새 입력은 v2 ledger에 승인·대기시키고 old generation을 compatibility bridge로 유지한 채 다음 durable command boundary에서 독립 runner successor로 원자 handoff한다. session ingress cutover를 drain 뒤로 미루지는 않지만, old process를 그 전에 종료하지도 않는다. 신규 user-visible v2 execution은 처음부터 `independent_runner`만 허용한다.
+
+### active v1 실행의 in-place v2 승격
+
+결정은 **(a) active v1을 같은 실행으로 승격**이다. open v1 execution이 0이 될 때까지 기다리지 않고, 기존 독립 runner의 PID·start identity·`executionCommandId`·manifest·event/outbox watermark를 보존한다. 새 모델 turn이나 replacement execution을 만들지 않으므로 이미 진행 중인 tool·thinking·context도 끊지 않는다.
+
+`session_promote_open_execution_v1_to_v2(...)`는 다음 순서의 단일 cutover procedure다.
+
+1. v2 host가 exact v1 row와 runner lifecycle/bootstrap을 shadow-read하고 `execution_semantics_v2`, attachment journal, compatibility input adapter capability를 증명한다. live v1 host가 붙어 있어도 이 preflight에서는 detach하거나 writer lease를 바꾸지 않는다. 대신 child를 살린 채 넘길 수 있는 prepared handoff token을 만든다.
+2. `execution_id`는 migration에서 고정한 `legacy:{session_id}:{ownership_generation}`을 그대로 쓴다. runner lifecycle의 registration/PID/start identity/command가 중앙 row와 일치해야 exact promotion이 가능하다. 불일치하면 row를 없애거나 interrupt하지 않고 같은 transaction의 `recovering(identity_unresolved)` branch로 들어간다.
+3. procedure는 session semantics row, open execution row, delivery head를 `FOR UPDATE`로 잠근다. v1 `reserved → v2 reserved`, v1 `identity_proven → v2 activating`, v1 `active → v2 active`로 매핑하고 proof·activation compatibility receipt, progress/outbox watermark, reconcile job을 기록한다. `identity_proven → activating`은 `prepareSession`/activation ACK를 다시 거치며 active로 추측 승격하지 않는다.
+4. 같은 transaction에서 execution promotion, attachment epoch, DB writer lease epoch, `session_execution_semantics.active_version=2`를 함께 CAS한다. exact attachment가 아직 없으면 execution은 `recovering`이지만 v2 admission은 이 commit부터 즉시 열려 입력을 durable queue에 받는다. 이전 v1 host의 lease는 즉시 만료돼 commit 이후 reserve/activate/terminate/update가 DB에서 거부된다. transaction과 경합한 요청은 commit 전 v1 또는 commit 후 v2 중 한 경로에만 직렬화되고, commit 후에는 node command 실패를 ACK에 쓰는 경로가 없다.
+5. 이미 승인된 session head가 있고 승격 phase가 `active`면 `session_assign_delivery_to_promoted_command_v2(...)`가 같은 transaction에서 attempt를 기존 `execution_id/execution_command_id`에 bind한다. `activating/recovering`이면 attempt를 만들지 않고 binder wake를 기록한다. activation/reattach transaction이 같은 head를 이어서 bind한다.
+6. `LegacyExecutionInputAdapter`는 v2 attempt를 기존 frame protocol의 `deliveryId`와 deterministic `inputUuid=buildDeliveryInputUuid(deliveryId)`로 투영한다. rolling v1 runner에서는 기존 `runner_intervention_inbox.intervention_id=deliveryId` primary key와 `claimed_execution_command_id`가 중복·다른 command 소비를 막고, v2 runner에서는 이를 `(attempt_id, runner_input_sequence)` receipt로 확장한다. 두 경우 모두 중앙 attempt가 exact runner receipt와 맞아야 consumed가 된다. 응답 전 host가 죽으면 reconcile이 같은 delivery/input UUID만 재전송하므로 중복 turn을 만들지 않는다.
+7. commit 뒤 old host는 prepared token으로 `detachAttachment("adoption_handoff")`하고 v2 controller는 동일 execution/command를 hydrate한다. old host가 먼저 죽었으면 detach receipt를 기다리지 않고 중앙 row·runner lifecycle로 adopt한다. procedure 전 crash는 전부 rollback돼 v1 row와 lease가 유지되고, procedure 후 crash는 v2 reconcile job이 계속한다. v1과 v2가 동시에 정본인 중간 row는 없다.
+
+`legacy_in_process`는 PID 밖으로 현재 engine state를 옮길 durable witness가 없으므로 거짓으로 in-place 승격하지 않는다. 앞 절의 compatibility bridge가 v2 ingress를 먼저 열고 old generation을 current command의 물리 executor로 유지한다. v2 attempt는 명시적으로 그 v1 command를 target으로 갖고, `session_assign_delivery_to_legacy_bridge_v2(...)`만 bridge inbox에 deterministic input UUID를 쓸 수 있다. successor handoff receipt 전에는 restart controller가 그 old generation을 종료할 수 없다. 이는 session cutover를 drain 뒤로 미루는 것이 아니라 **cutover 뒤 물리 executor retirement만 지연**하는 경로다. 이 bridge가 준비되지 않은 node에는 unit 8 capability가 발급되지 않는다.
 
 ### rolling coexistence
 
@@ -1294,7 +1450,7 @@ runner SQLite는 중앙 migration과 별도로 additive schema upgrade를 한다
 4. orch routing은 `execution_host_capabilities`의 unexpired `execution_semantics_v2` lease가 있는 host·runner에만 v2 session을 보낸다. 가능한 host가 없으면 admission된 delivery와 reserved placement가 기다리며 old host로 downgrade하거나 실패하지 않는다.
 5. v2 row의 정본은 `responsibility_state`와 v2 execution phase다. legacy `state`/`aggregate_state`는 v2 procedure가 만드는 역방향 read projection일 뿐이고 v1 writer가 수정할 수 없다. v1 row는 기존 column이 정본이므로 row별 정본이 하나다.
 6. v2 runner는 rolling 기간에 기존 `frame_protocol` 형식과 bootstrap projection을 함께 기록한다. Zod 형식 정본은 유지하고 `semantics_version`이 의미 계약을 가른다.
-7. session cutover는 caller identity, DB writer, host, independent runner, attachment, binder capability를 한 번에 확인하고 `session_execution_semantics.cutover_epoch`를 CAS한다. 그 전에는 v2-only execution을 만들지 않는다.
+7. session cutover는 caller identity, DB writer, host, independent runner, attachment, compatibility binder capability를 한 번에 확인하고 `session_promote_open_execution_v1_to_v2(...)` 안에서 `cutover_epoch`를 CAS한다. active v1 row가 있어도 같은 execution/command로 승격하거나 identity-unresolved 책임으로 옮기며 drain을 기다리지 않는다.
 8. rollback 시 이미 열린 v2 execution은 capability lease가 남은 v2 host가 drain·handoff한다. v1 binary로 강제 인계하지 않으며, DB fence 때문에 운영 순서를 어겨도 v1 writer가 v2 정본을 훼손하지 못한다.
 
 이 공존 전략에서도 사용자 ACK는 admission receipt 하나다. 구·신 runner 선택이나 handoff 대기는 외부 결과에 나타나지 않는다. “구 host가 v2-only 실행을 만나지 않게 배포한다”는 운영 희망이 아니라 DB write fence와 capability routing이 정본 하나를 강제한다.
@@ -1302,11 +1458,10 @@ runner SQLite는 중앙 migration과 별도로 additive schema upgrade를 한다
 ## 검증자가 확인할 열어 둔 질문
 
 1. engine별 비멱등 host call inventory는 무엇인가. correlation receipt만으로 충분한 호출과 별도 operation receipt·보상 transaction이 필요한 호출을 전수 열거해야 한다.
-2. `AskUserQuestion`과 tool approval의 제품 정책상 explicit deadline이 필요한가. 필요하면 `PendingExternalInput.deadline`의 exact 값과 expiry 후 semantic response를 별도 결정해야 한다. 다만 어떤 값이든 foreground stalled reaper와는 분리한다.
-3. runner process 자체 crash에서 Claude, Codex 두 모드, Agents 각각 같은 command를 checkpoint-resume할 수 있는가. 불가능한 backend는 process-absence proof 뒤 replacement continuity로 수렴하지만, 이미 engine 내부에서 실행된 비멱등 tool effect를 어떻게 증명할지는 별도 검증이 필요하다.
-4. capability cutover의 최소 단위를 session으로 둘지 node로 둘지 운영·부하 실측이 필요하다. 정확성 조건은 어느 쪽이든 DB cutover epoch와 unexpired host/runner/caller capability를 한 transaction에서 확인하는 것이다.
-5. v1 open execution을 `LegacyExecutionWitnessAdapter`로 끝까지 drain할 때 terminal outbox high-watermark를 복원할 수 없는 가장 오래된 runner schema가 있는가. 있으면 그 버전은 v2 cutover 전 drain 대상으로 명시해야 한다.
-6. external input 대기 중 runner process가 죽고 pending request UI가 이미 노출된 경우 replacement가 같은 request id를 재노출하지 않고 이어받는 exact receipt shape를 검증해야 한다.
+2. runner process 자체 crash에서 Claude, Codex 두 모드, Agents 각각 같은 command를 checkpoint-resume할 수 있는가. 불가능한 backend는 process-absence proof 뒤 replacement continuity로 수렴하지만, 이미 engine 내부에서 실행된 비멱등 tool effect를 어떻게 증명할지는 별도 검증이 필요하다.
+3. capability cutover의 최소 단위를 session으로 둘지 node로 둘지 운영·부하 실측이 필요하다. 정확성 조건은 어느 쪽이든 DB cutover epoch와 unexpired host/runner/caller capability를 한 transaction에서 확인하는 것이다.
+4. 배포 당시 존재할 수 있는 가장 오래된 v1 runner schema가 deterministic input UUID와 outbox high-watermark를 모두 제공하는가. 제공하지 않으면 in-place promotion이 아니라 같은 `identity_unresolved → replacement` branch를 타며, drain 대기로 남기지 않는다.
+5. external input 대기 중 runner process가 죽고 pending request UI가 이미 노출된 경우 replacement가 같은 request id를 재노출하지 않고 이어받는 exact receipt shape를 검증해야 한다.
 
 ## 설계 검증 통과 조건
 
@@ -1316,6 +1471,10 @@ runner SQLite는 중앙 migration과 별도로 additive schema upgrade를 한다
 - runner-death와 activation rollback 영구 RED가 새 구조에서는 각각 bounded terminal settle과 exact child cleanup으로만 green이 되어야 한다.
 - #818의 2-2 기존 green 0 파단, 2-3 37 passed를 기준선으로 삼고, 2-1은 shared fixture 한 곳 변경으로 계약 8개를 보존해야 한다.
 - Claude `text`, Codex 두 mapper, Agents 완료 output이 semantic progress 3종으로 exhaustive하게 정규화되고, 30분 gap·30분 tool absolute lease·external wait suspension의 경계 테스트가 있어야 한다.
+- 한 execution에 external request 2개 이상을 열고 하나씩 response/expiry/cancel하는 테스트, 마지막 request에서만 active로 돌아가는 테스트, terminating이 전 request resolution receipt를 요구하는 테스트, Claude 300초 expiry 뒤 late response가 재기동 유무와 무관하게 같은 `expired`를 반환하는 테스트가 있어야 한다.
+- ownership proof 직후, `prepareSession` 중, activation ACK 직전 crash가 각각 durable `activating`으로 hydrate되고 v1 `identity_proven`을 v2가 직접 만들지 않는 DB phase 계약 테스트가 있어야 한다.
+- active v1 runner를 승격하는 동안 같은 PID·command·manifest를 보존하고 concurrent delivery가 기존 command에 정확히 한 번 bind되며 late v1 write가 거부되는 trace가 있어야 한다. open v1 execution 0건을 사전조건으로 삼으면 실패다.
+- migration 073은 6,319행 fixture와 migration 중 concurrent v1 insert fixture에서 nullable 추가→backfill→job 생성→CHECK validate→NOT NULL 순서를 dry-run하고 open 5행 전부에 정확히 한 reconcile job이 생겨야 한다.
 - caller 8계열이 첫 send 전 stable ID를 만들고 commit-after-response-loss에서 같은 receipt를 받는 transport test를 통과해야 한다.
 - 제품 코드 구현 전에 migration 073의 forward/rollback compatibility, direct DML revoke, v1 writer→v2 row 거부, capability routing을 별도 검토해야 한다.
 
