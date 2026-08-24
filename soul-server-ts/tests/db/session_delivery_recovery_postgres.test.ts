@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type { SqlClient } from "../../src/db/session_db.js";
+import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
 import { CompletionDeliveryCoordinator } from
   "../../src/task/completion_delivery_coordinator.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
@@ -665,10 +666,80 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
 
     expect(dispatched).toEqual([]);
     await expect(repository.get("delivery-transcript")).resolves.toMatchObject({
-      state: "delivered",
+      state: "consumed",
       caller_turn_id: "transcript:assistant-result-uuid",
+      target_receipt_id: "transcript:assistant-result-uuid",
+      consumed_at: expect.any(Date),
       last_error: "worker_restart_transcript_reconciled",
     });
+  });
+
+  it("keeps the legacy transcript response delivered while new orch stores it consumed", async () => {
+    await register("delivery-old-soul-new-orch", "relation-old-soul-new-orch", {
+      targetSessionId: "caller-session",
+    });
+    await repository.claimForTarget(
+      "delivery-old-soul-new-orch",
+      "caller-session",
+      "worker-before-crash",
+    );
+    await repository.beginDispatch(
+      "delivery-old-soul-new-orch",
+      "worker-before-crash",
+    );
+    await repository.markQueued(
+      "delivery-old-soul-new-orch",
+      "worker-before-crash",
+    );
+    const [claimed] = await repository.recovery.claimQueuedAfterNodeRestart(
+      "node-test",
+      "old-soul-worker",
+      10,
+      60_000,
+    );
+    expect(claimed?.delivery_id).toBe("delivery-old-soul-new-orch");
+
+    const recovery = repository.recovery as typeof repository.recovery & {
+      markDeliveredFromTranscript?: (
+        deliveryId: string,
+        leaseOwner: string,
+        assistantMessageUuid: string,
+      ) => Promise<SessionDeliveryRow | null>;
+      markConsumedFromTranscript?: (
+        deliveryId: string,
+        leaseOwner: string,
+        assistantMessageUuid: string,
+      ) => Promise<SessionDeliveryRow | null>;
+    };
+    const legacyAction = recovery.markDeliveredFromTranscript
+      ?? recovery.markConsumedFromTranscript;
+    if (!legacyAction) throw new Error("legacy transcript action is unavailable");
+    const legacyResponse = await legacyAction.call(
+      recovery,
+      "delivery-old-soul-new-orch",
+      "old-soul-worker",
+      "assistant-old-soul",
+    );
+
+    expect(legacyResponse).toMatchObject({
+      state: "delivered",
+      target_receipt_id: "transcript:assistant-old-soul",
+    });
+    const stored = await repository.get("delivery-old-soul-new-orch");
+    expect(stored).toMatchObject({
+      state: "consumed",
+      target_receipt_id: "transcript:assistant-old-soul",
+      consumed_at: expect.any(Date),
+    });
+    const consumedAt = stored?.consumed_at?.toISOString();
+    await expect(repository.claimRecoverableCompletionDeliveries(
+      "post-consume-worker",
+      10,
+      15_000,
+    )).resolves.toEqual([]);
+    const afterRecovery = await repository.get("delivery-old-soul-new-orch");
+    expect(afterRecovery).toMatchObject({ state: "consumed" });
+    expect(afterRecovery?.consumed_at?.toISOString()).toBe(consumedAt);
   });
 
   it("keeps an accepted SDK input queued while its assistant transcript is pending", async () => {
@@ -709,6 +780,51 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       attempt_count: 0,
       last_error: "queued_transcript_input_pending",
     });
+  });
+
+  it("bounds a stale exact transcript identity at the canonical retry budget", async () => {
+    await register("delivery-stale-identity", "relation-stale-identity", {
+      targetSessionId: "caller-session",
+    });
+    await repository.claimForTarget(
+      "delivery-stale-identity",
+      "caller-session",
+      "worker-before-crash",
+    );
+    await repository.beginDispatch(
+      "delivery-stale-identity",
+      "worker-before-crash",
+    );
+    await repository.markQueued(
+      "delivery-stale-identity",
+      "worker-before-crash",
+    );
+    await harness.sql`
+      UPDATE session_deliveries
+      SET attempt_count = 15
+      WHERE delivery_id = 'delivery-stale-identity'
+    `;
+
+    const queuedRecovery = makeQueuedRecovery(
+      "stale-identity-worker",
+      async (row) => ({
+        kind: "absent",
+        inputUuid: buildDeliveryInputUuid(row.delivery_id),
+      }),
+    );
+    await expect(
+      queuedRecovery.recoverAfterNodeRestart("node-test"),
+    ).resolves.toBe(1);
+    await expect(repository.get("delivery-stale-identity")).resolves
+      .toMatchObject({
+        state: "uncertain",
+        aggregate_state: "dead_letter",
+        attempt_count: 16,
+        last_error: "queued_transcript_input_absent",
+      });
+    await expect(
+      queuedRecovery.recoverAfterNodeRestart("node-test"),
+    ).resolves.toBe(0);
   });
 
   it("rolls ledger and notification outbox forward atomically", async () => {

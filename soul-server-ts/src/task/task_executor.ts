@@ -182,7 +182,7 @@ export class TaskExecutor {
     private readonly claudeRuntimeTaskFollowup?: ClaudeRuntimeTaskFollowupPort,
     deliveryConsumptionRecorder?: Pick<
       TaskDeliveryLedgerGate,
-      "recordConsumed" | "recordTurnStarted"
+      "recordConsumed" | "recordTurnStarted" | "discardIfConsumed"
     >,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
@@ -1228,11 +1228,7 @@ export class TaskExecutor {
           this.collectClaudeRuntimeTaskFollowup(task, event);
         }
       } catch (err) {
-        try {
-          await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
-        } finally {
-          if (turnReceipt) await turnReceipt.consume(task);
-        }
+        await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
         break;
       }
       try {
@@ -1515,11 +1511,18 @@ export class TaskExecutor {
         runnerInterventionId: pending.interventionId,
       };
       if (message.deliveryId) {
+        const discarded = await this.deliveryConsumption?.discardIfConsumed(
+          task,
+          message,
+        ) ?? false;
+        if (discarded) continue;
         const admitted = task.interventionQueue.find(
           (queued) => queued.deliveryId === message.deliveryId,
         );
-        if (admitted) admitted.runnerInterventionId = pending.interventionId;
-        continue;
+        if (admitted) {
+          admitted.runnerInterventionId = pending.interventionId;
+          continue;
+        }
       }
       enqueueInterventionOnce(task, message);
     }

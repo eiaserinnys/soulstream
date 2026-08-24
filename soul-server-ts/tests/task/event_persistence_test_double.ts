@@ -12,8 +12,18 @@ export function makeEventPersistenceTestDouble(
     event: SSEEventPayload,
     task: Task,
   ) => Promise<void>,
+  initialEvents: ReadonlyArray<{
+    eventId: number;
+    event: SSEEventPayload;
+  }> = [],
 ) {
-  let sourceSeq = 0;
+  let sourceSeq = initialEvents.reduce(
+    (highest, fixture) => Math.max(highest, fixture.eventId),
+    0,
+  );
+  const eventsById = new Map(
+    initialEvents.map((fixture) => [fixture.eventId, fixture.event] as const),
+  );
   const latestBySession = new Map<string, number>();
   const enqueueEvent = vi.fn(
     async (
@@ -23,6 +33,7 @@ export function makeEventPersistenceTestDouble(
     ): Promise<unknown> => {
       sourceSeq += 1;
       latestBySession.set(sessionId, sourceSeq);
+      eventsById.set(sourceSeq, event);
       return makeRecord(sourceSeq, sessionId, event, effect);
     },
   );
@@ -201,6 +212,9 @@ export function makeEventPersistenceTestDouble(
     enqueueTerminalTransitionAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
+    getEventById(eventId: number): SSEEventPayload | undefined {
+      return eventsById.get(eventId);
+    },
   };
 }
 
