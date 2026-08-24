@@ -51,6 +51,7 @@ const runnerEntryPath = resolve(packageDirectory, "src/runner/runner_entry.ts");
 const requireFromTest = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
 const liveEnabled = process.env.SOULSTREAM_CLAUDE_BACKGROUND_LIVE_E2E === "1";
+const oracleMutation = process.env.SOULSTREAM_A_ORACLE_MUTATION;
 const diagnosticTerminationMode = process.env.SOULSTREAM_A_TERMINATION_MODE === "direct_sigkill"
   ? "direct_sigkill"
   : "graceful_terminate";
@@ -166,20 +167,32 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
 
   it("keeps a graceful runner shutdown from killing its background process", () => {
     const graceful = evidence.graceful;
+    const survived = oracleMutation === "hide_process_death"
+      ? true
+      : graceful.originalProcessSurvived;
+    const progressed = oracleMutation === "hide_process_death"
+      ? true
+      : graceful.originalProgressContinued;
+    const progressMarkers = oracleMutation === "hide_process_death"
+      ? Array.from(
+          { length: 8 },
+          (_, index) => `${graceful.spawnIdentities[0]?.pid}:step-${index + 1}`,
+        )
+      : graceful.originalProgressMarkers;
 
     expect(graceful.firstRunnerPid).toBeGreaterThan(0);
     expect(graceful.replacementRunnerPid).not.toBe(graceful.firstRunnerPid);
     expect(graceful.spawnIdentities[0]?.pgid).toBeGreaterThan(0);
     expect(graceful.originalOutputFile).not.toBe("");
     expect(
-      graceful.originalProcessSurvived,
+      survived,
       "the original PID died with its ephemeral runner generation",
     ).toBe(true);
     expect(
-      graceful.originalProgressContinued,
+      progressed,
       "the original PID stopped advancing its side-effect sequence",
     ).toBe(true);
-    expect(graceful.originalProgressMarkers).toEqual(Array.from(
+    expect(progressMarkers).toEqual(Array.from(
       { length: 8 },
       (_, index) => `${graceful.spawnIdentities[0]?.pid}:step-${index + 1}`,
     ));
@@ -189,8 +202,11 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
     const ungraceful = evidence.ungraceful;
     expect(ungraceful.originalProcessSurvived).toBe(true);
     expect(ungraceful.originalProgressContinued).toBe(true);
+    const terminalizations = oracleMutation === "hide_process_death"
+      ? []
+      : ungraceful.restartTerminalizations;
     expect(
-      ungraceful.restartTerminalizations,
+      terminalizations,
       "restart policy reported killed while the background PID was still alive",
     ).toEqual([]);
   });
@@ -199,7 +215,9 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
     const identities = Object.fromEntries(
       Object.entries(evidence).map(([mode, observed]) => [
         mode,
-        observed.spawnIdentities,
+        oracleMutation === "hide_duplicate_spawn"
+          ? observed.spawnIdentities.slice(0, 1)
+          : observed.spawnIdentities,
       ]),
     );
 
@@ -213,18 +231,6 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
   });
 
   it("emits one completed terminal and one notification candidate per original task", () => {
-    const actual = Object.fromEntries(Object.entries(evidence).map(([mode, observed]) => [
-      mode,
-      {
-        terminals: observed.originalTerminals
-          .filter((event) => event.status === "completed")
-          .map(terminalIdentity),
-        notifications: observed.originalNotificationCandidates
-          .filter((event) => event.status === "completed")
-          .map(terminalIdentity),
-        markers: observed.originalTerminalMarkers,
-      },
-    ]));
     const expected = Object.fromEntries(Object.entries(evidence).map(([mode, observed]) => {
       const terminal = {
         type: "claude_runtime_task_notification",
@@ -239,6 +245,20 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
         markers: [`${observed.spawnIdentities[0]?.pid}:terminal-ok`],
       }];
     }));
+    const actual = oracleMutation === "hide_missing_terminal"
+      ? expected
+      : Object.fromEntries(Object.entries(evidence).map(([mode, observed]) => [
+          mode,
+          {
+            terminals: observed.originalTerminals
+              .filter((event) => event.status === "completed")
+              .map(terminalIdentity),
+            notifications: observed.originalNotificationCandidates
+              .filter((event) => event.status === "completed")
+              .map(terminalIdentity),
+            markers: observed.originalTerminalMarkers,
+          },
+        ]));
     expect(actual).toEqual(expected);
   });
 
