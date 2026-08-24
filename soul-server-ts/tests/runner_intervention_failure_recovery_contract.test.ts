@@ -8,6 +8,8 @@ import {
   RunnerSqliteEventOutbox,
   type RunnerBootstrapInput,
 } from "../src/runner/sqlite_event_outbox.js";
+import { resolveAmbiguousRunnerIntervention } from
+  "../src/runner/runner_intervention_resolution.js";
 import { RunnerSqliteLifecycle } from "../src/runner/sqlite_runner_lifecycle.js";
 
 const tempDirectories: string[] = [];
@@ -19,12 +21,12 @@ afterEach(async () => {
 });
 
 describe("runner intervention failure recovery contract", () => {
-  it("keeps a pre-delivery terminal failure claimable after restart", async () => {
+  it("does not automatically re-serve a terminal failure after writer restart", async () => {
     const outbox = await createOutbox();
     const databasePath = outbox.databasePath;
-    await stage(outbox, "pre-delivery-failure", "first instruction", 2);
+    await stage(outbox, "terminal-failure", "first instruction", 2);
     await expect(
-      outbox.claimIntervention("pre-delivery-failure", "execute:first"),
+      outbox.claimIntervention("terminal-failure", "execute:first"),
     ).resolves.toBe(true);
     const lifecycle = RunnerSqliteLifecycle.open(databasePath, "session-a");
     lifecycle.begin({
@@ -34,41 +36,7 @@ describe("runner intervention failure recovery contract", () => {
     });
     await outbox.finishExecution({
       commandId: "execute:first",
-      interventionId: "pre-delivery-failure",
-      state: "failed",
-      progressedAt: timestamp(4),
-      terminalError: { code: "execution_failed", message: "engine rejected before turn start" },
-    });
-    lifecycle.close();
-    outbox.close();
-
-    const recovered = await RunnerSqliteEventOutbox.open(databasePath);
-    await expect(
-      recovered.claimIntervention("pre-delivery-failure", "execute:retry"),
-    ).resolves.toBe(true);
-    recovered.close();
-  });
-
-  it("does not automatically re-serve a zero-frame terminal failure", async () => {
-    const outbox = await createOutbox();
-    const databasePath = outbox.databasePath;
-    await stage(outbox, "zero-frame-terminal", "first instruction", 2);
-    await expect(
-      outbox.claimIntervention("zero-frame-terminal", "execute:zero-frame"),
-    ).resolves.toBe(true);
-    const lifecycle = RunnerSqliteLifecycle.open(databasePath, "session-a");
-    lifecycle.begin({
-      pid: process.pid,
-      commandId: "execute:zero-frame",
-      progressedAt: timestamp(3),
-    });
-
-    // No engine frame is recorded between lifecycle begin and terminal failure.
-    // This is intentionally indistinguishable from the pre-delivery case above:
-    // their incompatible outcomes expose the missing durable acceptance fact.
-    await outbox.finishExecution({
-      commandId: "execute:zero-frame",
-      interventionId: "zero-frame-terminal",
+      interventionId: "terminal-failure",
       state: "failed",
       progressedAt: timestamp(4),
       terminalError: { code: "execution_failed", message: "turn produced no engine frame" },
@@ -78,38 +46,73 @@ describe("runner intervention failure recovery contract", () => {
 
     const recovered = await RunnerSqliteEventOutbox.open(databasePath);
     await expect(
-      recovered.claimIntervention("zero-frame-terminal", "execute:automatic-retry"),
+      recovered.claimIntervention("terminal-failure", "execute:automatic-retry"),
     ).resolves.toBe(false);
     recovered.close();
   });
 
-  it("does not re-claim input after the engine durably reported its turn started", async () => {
+  it("requeues a terminal failure after explicit not_applied resolution", async () => {
     const outbox = await createOutbox();
     const databasePath = outbox.databasePath;
-    await stage(outbox, "accepted-then-empty", "first instruction", 2);
+    await stage(outbox, "retryable-after-review", "first instruction", 2);
+    await expect(
+      outbox.claimIntervention("retryable-after-review", "execute:first"),
+    ).resolves.toBe(true);
     const lifecycle = RunnerSqliteLifecycle.open(databasePath, "session-a");
     lifecycle.begin({
       pid: process.pid,
-      commandId: "execute:accepted",
+      commandId: "execute:first",
+      progressedAt: timestamp(3),
+    });
+    await outbox.finishExecution({
+      commandId: "execute:first",
+      interventionId: "retryable-after-review",
+      state: "failed",
+      progressedAt: timestamp(4),
+      terminalError: { code: "execution_failed", message: "engine failed before delivery" },
+    });
+    lifecycle.close();
+    outbox.close();
+
+    await resolveAmbiguousRunnerIntervention(
+      databasePath,
+      "retryable-after-review",
+      "not_applied",
+      stoppedRunnerResolutionDependencies(),
+    );
+    const recovered = await RunnerSqliteEventOutbox.open(databasePath);
+    await expect(
+      recovered.claimIntervention("retryable-after-review", "execute:reviewed-retry"),
+    ).resolves.toBe(true);
+    recovered.close();
+  });
+
+  it("deletes a completed intervention instead of retaining a replay token", async () => {
+    const outbox = await createOutbox();
+    const databasePath = outbox.databasePath;
+    await stage(outbox, "completed", "first instruction", 2);
+    const lifecycle = RunnerSqliteLifecycle.open(databasePath, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute:completed",
       progressedAt: timestamp(3),
     });
     await expect(
-      outbox.claimIntervention("accepted-then-empty", "execute:accepted"),
+      outbox.claimIntervention("completed", "execute:completed"),
     ).resolves.toBe(true);
-    await recordTurnStarted(outbox, lifecycle, "execute:accepted", 4);
     await outbox.finishExecution({
-      commandId: "execute:accepted",
-      interventionId: "accepted-then-empty",
-      state: "failed",
-      progressedAt: timestamp(5),
-      terminalError: { code: "execution_failed", message: "engine produced no result" },
+      commandId: "execute:completed",
+      interventionId: "completed",
+      state: "completed",
+      progressedAt: timestamp(4),
+      terminalError: null,
     });
     lifecycle.close();
     outbox.close();
 
     const recovered = await RunnerSqliteEventOutbox.open(databasePath);
     await expect(
-      recovered.claimIntervention("accepted-then-empty", "execute:repeat"),
+      recovered.claimIntervention("completed", "execute:repeat"),
     ).resolves.toBe(false);
     recovered.close();
   });
@@ -128,7 +131,6 @@ describe("runner intervention failure recovery contract", () => {
     await expect(
       outbox.claimIntervention("poison-head", "execute:poison-head"),
     ).resolves.toBe(true);
-    await recordTurnStarted(outbox, lifecycle, "execute:poison-head", 5);
     await outbox.finishExecution({
       commandId: "execute:poison-head",
       interventionId: "poison-head",
@@ -147,7 +149,7 @@ describe("runner intervention failure recovery contract", () => {
     recovered.close();
   });
 
-  it("recovers an unfinished claim when the runner disappears before terminal commit", async () => {
+  it("releases an unfinished claim only after stopped-runner resolution", async () => {
     const outbox = await createOutbox();
     const databasePath = outbox.databasePath;
     await stage(outbox, "hard-kill", "survive runner death", 2);
@@ -164,6 +166,17 @@ describe("runner intervention failure recovery contract", () => {
     lifecycle.close();
     outbox.close();
 
+    const fenced = await RunnerSqliteEventOutbox.open(databasePath);
+    await expect(
+      fenced.claimIntervention("hard-kill", "execute:premature-replacement"),
+    ).resolves.toBe(false);
+    fenced.close();
+    await resolveAmbiguousRunnerIntervention(
+      databasePath,
+      "hard-kill",
+      "not_applied",
+      stoppedRunnerResolutionDependencies(),
+    );
     const recovered = await RunnerSqliteEventOutbox.open(databasePath);
     await expect(
       recovered.claimIntervention("hard-kill", "execute:replacement"),
@@ -198,34 +211,12 @@ function timestamp(second: number): string {
   return `2026-08-23T20:08:${String(second).padStart(2, "0")}.000Z`;
 }
 
-async function recordTurnStarted(
-  outbox: RunnerSqliteEventOutbox,
-  lifecycle: RunnerSqliteLifecycle,
-  commandId: string,
-  second: number,
-): Promise<void> {
-  const payload = {
-    type: "progress",
-    text: "Codex turn started",
-    timestamp: second,
-    raw_event_type: "turn/started",
-    turn_id: `turn-${second}`,
+function stoppedRunnerResolutionDependencies() {
+  return {
+    acquireWriterLock: async () => ({ release: async () => undefined }),
+    inspectProcess: async () => ({ alive: false as const, startIdentity: null }),
+    readPidFile: async () => null,
   };
-  lifecycle.progress(commandId, timestamp(second));
-  await outbox.appendEngineFrame({
-    session_id: "session-a",
-    event_type: "progress",
-    payload,
-    searchable_text: payload.text,
-    created_at: timestamp(second),
-    semantic_dedupe_key: null,
-    session_effect: null,
-  }, {
-    protocolVersion: 1,
-    channel: "event",
-    kind: "engine_event",
-    payload,
-  });
 }
 
 function bootstrapInput(): RunnerBootstrapInput {
