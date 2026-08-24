@@ -4,6 +4,8 @@ import type {
 } from "../control_plane_types.js";
 import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
+import { markSessionDeliveryConsumed } from
+  "./session_delivery_consumption_transition.js";
 import {
   attemptOutcomeFor,
   deliveryRetryOrDeadLetterSet,
@@ -189,7 +191,7 @@ export class SessionDeliveryRecoveryRepository {
           state = 'delivered', aggregate_state = 'delivered',
           caller_turn_id = ${receiptId},
           target_receipt_id = ${receiptId}, target_receipt_at = NOW(),
-          delivered_at = NOW(),
+          delivered_at = COALESCE(delivered_at, NOW()),
           lease_owner = NULL,
           lease_expires_at = NULL,
           last_error = 'worker_restart_transcript_reconciled',
@@ -199,7 +201,22 @@ export class SessionDeliveryRecoveryRepository {
           AND lease_owner = ${leaseOwner}
         RETURNING *
       `;
-      return rows[0] ?? null;
+      const delivered = rows[0] ?? null;
+      if (!delivered) return null;
+      const consumed = await markSessionDeliveryConsumed(
+        transaction as unknown as SqlClient,
+        deliveryId,
+        receiptId,
+      );
+      if (!consumed) {
+        throw new Error(
+          `Transcript-proven delivery ${deliveryId} did not reach consumed`,
+        );
+      }
+      // Preserve the legacy wire contract for old soul-server callers. The
+      // transaction is durably consumed, but the legacy action still reports
+      // the delivered proof that old callers understand.
+      return delivered;
     });
   }
 

@@ -1228,11 +1228,7 @@ export class TaskExecutor {
           this.collectClaudeRuntimeTaskFollowup(task, event);
         }
       } catch (err) {
-        try {
-          await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
-        } finally {
-          if (turnReceipt) await turnReceipt.consume(task);
-        }
+        await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
         break;
       }
       try {
