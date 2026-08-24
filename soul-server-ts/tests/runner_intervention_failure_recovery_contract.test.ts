@@ -23,15 +23,15 @@ describe("runner intervention failure recovery contract", () => {
     const outbox = await createOutbox();
     const databasePath = outbox.databasePath;
     await stage(outbox, "pre-delivery-failure", "first instruction", 2);
+    await expect(
+      outbox.claimIntervention("pre-delivery-failure", "execute:first"),
+    ).resolves.toBe(true);
     const lifecycle = RunnerSqliteLifecycle.open(databasePath, "session-a");
     lifecycle.begin({
       pid: process.pid,
       commandId: "execute:first",
       progressedAt: timestamp(3),
     });
-    await expect(
-      outbox.claimIntervention("pre-delivery-failure", "execute:first"),
-    ).resolves.toBe(true);
     await outbox.finishExecution({
       commandId: "execute:first",
       interventionId: "pre-delivery-failure",
@@ -46,6 +46,40 @@ describe("runner intervention failure recovery contract", () => {
     await expect(
       recovered.claimIntervention("pre-delivery-failure", "execute:retry"),
     ).resolves.toBe(true);
+    recovered.close();
+  });
+
+  it("does not automatically re-serve a zero-frame terminal failure", async () => {
+    const outbox = await createOutbox();
+    const databasePath = outbox.databasePath;
+    await stage(outbox, "zero-frame-terminal", "first instruction", 2);
+    await expect(
+      outbox.claimIntervention("zero-frame-terminal", "execute:zero-frame"),
+    ).resolves.toBe(true);
+    const lifecycle = RunnerSqliteLifecycle.open(databasePath, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute:zero-frame",
+      progressedAt: timestamp(3),
+    });
+
+    // No engine frame is recorded between lifecycle begin and terminal failure.
+    // This is intentionally indistinguishable from the pre-delivery case above:
+    // their incompatible outcomes expose the missing durable acceptance fact.
+    await outbox.finishExecution({
+      commandId: "execute:zero-frame",
+      interventionId: "zero-frame-terminal",
+      state: "failed",
+      progressedAt: timestamp(4),
+      terminalError: { code: "execution_failed", message: "turn produced no engine frame" },
+    });
+    lifecycle.close();
+    outbox.close();
+
+    const recovered = await RunnerSqliteEventOutbox.open(databasePath);
+    await expect(
+      recovered.claimIntervention("zero-frame-terminal", "execute:automatic-retry"),
+    ).resolves.toBe(false);
     recovered.close();
   });
 
