@@ -317,7 +317,14 @@ export async function composeWorkerRuntime(
     {
       send: (message) =>
         sendMessageToSession(
-          { taskManager, onResume: taskRuntime.onResume, logger, orch: orchProxyConfig },
+          {
+            taskManager,
+            nodeId: env.SOULSTREAM_NODE_ID,
+            sessionLookup: db,
+            onResume: taskRuntime.onResume,
+            logger,
+            orch: orchProxyConfig,
+          },
           message,
         ),
     },

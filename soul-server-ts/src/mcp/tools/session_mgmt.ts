@@ -164,6 +164,8 @@ export function registerSessionMgmtTools(
       const result = await sendMessageToSession(
         {
           taskManager: runtime.taskManager,
+          nodeId: runtime.nodeId,
+          sessionLookup: runtime.db,
           logger: runtime.logger,
           orch: runtime.orch,
           // TaskManager.addIntervention의 두 번째 인자 onResume이 auto-resume 분기에서 호출됨.
