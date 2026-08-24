@@ -2,8 +2,7 @@ import type {
   SessionKey,
   SessionStoreEntry,
 } from "@anthropic-ai/claude-agent-sdk";
-import { execFile, spawn } from "node:child_process";
-import { once } from "node:events";
+import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { access, chmod, mkdir, mkdtemp, open, readFile, readdir, rm, watch, writeFile } from
   "node:fs/promises";
@@ -52,10 +51,15 @@ const runnerEntryPath = resolve(packageDirectory, "src/runner/runner_entry.ts");
 const requireFromTest = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
 const liveEnabled = process.env.SOULSTREAM_CLAUDE_BACKGROUND_LIVE_E2E === "1";
-const oracleMutation = process.env.SOULSTREAM_A_ORACLE_MUTATION;
-const terminationMode = process.env.SOULSTREAM_A_TERMINATION_MODE === "direct_sigkill"
+const diagnosticTerminationMode = process.env.SOULSTREAM_A_TERMINATION_MODE === "direct_sigkill"
   ? "direct_sigkill"
   : "graceful_terminate";
+
+type TerminationMode = "graceful_terminate" | "direct_sigkill";
+type TerminalEvent = Extract<
+  ClaudeClientEvent,
+  { type: "claude_runtime_task_notification" }
+>;
 
 interface SpawnIdentity {
   pid: number;
@@ -63,6 +67,7 @@ interface SpawnIdentity {
 }
 
 interface LifetimeEvidence {
+  terminationMode: TerminationMode;
   firstRunnerPid: number;
   replacementRunnerPid: number;
   originalTaskId: string;
@@ -73,159 +78,192 @@ interface LifetimeEvidence {
   originalProgressMarkers: string[];
   spawnIdentities: SpawnIdentity[];
   originalTerminalMarkers: string[];
-  originalTerminals: ClaudeClientEvent[];
-  originalNotificationCandidates: ClaudeClientEvent[];
+  originalTerminals: TerminalEvent[];
+  originalNotificationCandidates: TerminalEvent[];
+  restartTerminalizations: Array<{
+    status: string;
+    closeReason: string;
+    taskId: string;
+  }>;
+  retryHorizonMs: number;
+  retryHorizonBefore: RetryHorizonSnapshot;
+  retryHorizonAfter: RetryHorizonSnapshot;
+}
+
+interface RetryHorizonSnapshot {
+  spawns: number;
+  originalTerminals: number;
+  originalNotificationCandidates: number;
+}
+
+interface LifetimeMatrixEvidence {
+  graceful: LifetimeEvidence;
+  ungraceful: LifetimeEvidence;
 }
 
 describe.runIf(liveEnabled)("Claude background task runner lifetime contract", () => {
-  let evidence: LifetimeEvidence;
+  let evidence: LifetimeMatrixEvidence;
   const cleanupRoots: string[] = [];
   const cleanupPids = new Set<number>();
-  let releaseHostOwnership: (() => Promise<void>) | undefined;
-  let closeMarkerChannel: (() => Promise<void>) | undefined;
+  const releaseHostOwnership: Array<() => Promise<void>> = [];
+  const closeMarkerChannels: Array<() => Promise<void>> = [];
 
   beforeAll(async () => {
-    evidence = await runLifetimeScenario({
+    const options = {
       cleanupRoots,
       cleanupPids,
       setReleaseHostOwnership(release) {
-        releaseHostOwnership = release;
+        releaseHostOwnership.push(release);
       },
       setCloseMarkerChannel(close) {
-        closeMarkerChannel = close;
+        closeMarkerChannels.push(close);
       },
-    });
-  }, 120_000);
+    };
+    if (process.env.SOULSTREAM_A_DIAG_ONLY === "1") {
+      await runLifetimeScenario(options, diagnosticTerminationMode);
+      throw new Error("A diagnostic scenario returned without its process table");
+    }
+    evidence = {
+      graceful: await runLifetimeScenario(options, "graceful_terminate"),
+      ungraceful: await runLifetimeScenario(options, "direct_sigkill"),
+    };
+  }, 180_000);
 
   afterAll(async () => {
-    for (const pid of cleanupPids) killIfAlive(pid);
-    await closeMarkerChannel?.().catch(() => undefined);
-    await releaseHostOwnership?.().catch(() => undefined);
+    const ownedPids = [...cleanupPids];
+    const ownedRoots = [...cleanupRoots];
+    for (const pid of ownedPids) killIfAlive(pid);
+    await Promise.all(ownedPids.map(async (pid) => {
+      await waitForProcessExit(pid).catch(() => undefined);
+    }));
+    await Promise.all(closeMarkerChannels.map(async (close) => {
+      await close().catch(() => undefined);
+    }));
+    await Promise.all(releaseHostOwnership.map(async (release) => {
+      await release().catch(() => undefined);
+    }));
     await Promise.all(cleanupRoots.splice(0).map(
       async (root) => {
         await makeReleaseTreeRemovable(root);
         await rm(root, { recursive: true, force: true });
       },
     ));
+    expect(
+      ownedPids.filter(isPidAlive),
+      "harness-owned runner/background processes survived cleanup",
+    ).toEqual([]);
+    const survivingRoots: string[] = [];
+    for (const root of ownedRoots) {
+      try {
+        await access(root);
+        survivingRoots.push(root);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    expect(survivingRoots, "harness-created temporary roots survived cleanup").toEqual([]);
   });
 
-  it("keeps the original background process alive and progressing across runner replacement", () => {
-    const survived = oracleMutation === "hide_process_death"
-      ? true
-      : evidence.originalProcessSurvived;
-    const progressed = oracleMutation === "hide_process_death" ? true : evidence.originalProgressContinued;
-    const progressMarkers = oracleMutation === "hide_process_death"
-      ? Array.from(
-          { length: 8 },
-          (_, index) => `${evidence.spawnIdentities[0]?.pid}:step-${index + 1}`,
-        )
-      : evidence.originalProgressMarkers;
+  it("keeps a graceful runner shutdown from killing its background process", () => {
+    const graceful = evidence.graceful;
 
-    expect(evidence.firstRunnerPid).toBeGreaterThan(0);
-    expect(evidence.replacementRunnerPid).not.toBe(evidence.firstRunnerPid);
-    expect(evidence.spawnIdentities[0]?.pgid).toBeGreaterThan(0);
-    expect(evidence.originalOutputFile).toContain(evidence.originalTaskId);
-    expect(survived, "the original PID died with its ephemeral runner generation").toBe(true);
-    expect(progressed, "the original PID stopped advancing its side-effect sequence").toBe(true);
-    expect(progressMarkers).toEqual(Array.from(
+    expect(graceful.firstRunnerPid).toBeGreaterThan(0);
+    expect(graceful.replacementRunnerPid).not.toBe(graceful.firstRunnerPid);
+    expect(graceful.spawnIdentities[0]?.pgid).toBeGreaterThan(0);
+    expect(graceful.originalOutputFile).not.toBe("");
+    expect(
+      graceful.originalProcessSurvived,
+      "the original PID died with its ephemeral runner generation",
+    ).toBe(true);
+    expect(
+      graceful.originalProgressContinued,
+      "the original PID stopped advancing its side-effect sequence",
+    ).toBe(true);
+    expect(graceful.originalProgressMarkers).toEqual(Array.from(
       { length: 8 },
-      (_, index) => `${evidence.spawnIdentities[0]?.pid}:step-${index + 1}`,
+      (_, index) => `${graceful.spawnIdentities[0]?.pid}:step-${index + 1}`,
     ));
   });
 
-  it("does not replay the same semantic task in the replacement runner", () => {
-    const identities = oracleMutation === "hide_duplicate_spawn"
-      ? evidence.spawnIdentities.slice(0, 1)
-      : evidence.spawnIdentities;
+  it("does not report a surviving ungraceful background process as killed", () => {
+    const ungraceful = evidence.ungraceful;
+    expect(ungraceful.originalProcessSurvived).toBe(true);
+    expect(ungraceful.originalProgressContinued).toBe(true);
+    expect(
+      ungraceful.restartTerminalizations,
+      "restart policy reported killed while the background PID was still alive",
+    ).toEqual([]);
+  });
+
+  it("does not replay either semantic task in a replacement runner", () => {
+    const identities = Object.fromEntries(
+      Object.entries(evidence).map(([mode, observed]) => [
+        mode,
+        observed.spawnIdentities,
+      ]),
+    );
 
     expect(
       identities,
       "runner recovery replayed an externally visible background command",
-    ).toHaveLength(1);
-  });
-
-  it("emits one terminal and one notification candidate for the original task", () => {
-    const terminalProof = oracleMutation === "hide_missing_terminal"
-      ? [{
-          type: "claude_runtime_task_notification",
-          taskId: evidence.originalTaskId,
-          toolUseId: evidence.originalToolUseId,
-          status: "completed",
-          outputFile: evidence.originalOutputFile,
-        }]
-      : evidence.originalTerminals;
-    const notificationProof = oracleMutation === "hide_missing_terminal"
-      ? terminalProof
-      : evidence.originalNotificationCandidates;
-    const markerProof = oracleMutation === "hide_missing_terminal"
-      ? [`${evidence.spawnIdentities[0]?.pid}:terminal-ok`]
-      : evidence.originalTerminalMarkers;
-
-    expect(terminalProof).toEqual([
-      expect.objectContaining({
-        type: "claude_runtime_task_notification",
-        taskId: evidence.originalTaskId,
-        toolUseId: evidence.originalToolUseId,
-        status: "completed",
-        outputFile: evidence.originalOutputFile,
-      }),
-    ]);
-    expect(notificationProof).toHaveLength(1);
-    expect(markerProof).toEqual([
-      `${evidence.spawnIdentities[0]?.pid}:terminal-ok`,
-    ]);
-  });
-
-  it("still reports killed when the background process is proven dead", async () => {
-    const deadProcess = spawn(process.execPath, ["-e", "process.stdin.resume()"], {
-      stdio: "ignore",
+    ).toEqual({
+      graceful: [evidence.graceful.spawnIdentities[0]],
+      ungraceful: [evidence.ungraceful.spawnIdentities[0]],
     });
-    await once(deadProcess, "spawn");
-    const deadPid = deadProcess.pid;
-    if (!deadPid) throw new Error("protection process did not publish a pid");
-    deadProcess.kill("SIGKILL");
-    await once(deadProcess, "exit");
-    expect(isPidAlive(deadPid), "protection precondition requires a proven dead process").toBe(false);
-    const terminalize = vi.fn(async (input) => ({
-      accepted: true,
-      delivery: {
-        delivery_id: "delivery-proven-dead",
-        completion_id: "completion:proven-dead",
-        relation_key: "claude_runtime:session-proven-dead:task-proven-dead",
-        producer_terminal_revision: input.terminalRevision,
-        created_at: new Date("2026-08-25T00:00:00.000Z"),
-        source: "claude_runtime_task_followup",
-        payload: { text: "killed", user: "system" },
-        payload_hash: "hash-proven-dead",
+  });
+
+  it("emits one completed terminal and one notification candidate per original task", () => {
+    const actual = Object.fromEntries(Object.entries(evidence).map(([mode, observed]) => [
+      mode,
+      {
+        terminals: observed.originalTerminals
+          .filter((event) => event.status === "completed")
+          .map(terminalIdentity),
+        notifications: observed.originalNotificationCandidates
+          .filter((event) => event.status === "completed")
+          .map(terminalIdentity),
+        markers: observed.originalTerminalMarkers,
       },
+    ]));
+    const expected = Object.fromEntries(Object.entries(evidence).map(([mode, observed]) => {
+      const terminal = {
+        type: "claude_runtime_task_notification",
+        taskId: observed.originalTaskId,
+        toolUseId: observed.originalToolUseId,
+        status: "completed",
+        outputFile: observed.originalOutputFile,
+      };
+      return [mode, {
+        terminals: [terminal],
+        notifications: [terminal],
+        markers: [`${observed.spawnIdentities[0]?.pid}:terminal-ok`],
+      }];
     }));
-    const lifecycle = new ClaudeBackgroundTaskLifecycle({
-      repository: {
-        activeForNode: vi.fn()
-          .mockResolvedValueOnce([{
-            source_node: "node-a-red",
-            session_id: "session-proven-dead",
-            task_id: "task-proven-dead",
-            sdk_session_id: "sdk-proven-dead",
-            status: "running",
-            description: `process ${deadPid} identity no longer exists`,
-            summary: null,
-            output_file: null,
-            tool_use_id: "tool-proven-dead",
-          }])
-          .mockResolvedValueOnce([]),
-        terminalize,
-      } as never,
-      sourceNode: "node-a-red",
-      now: () => new Date("2026-08-25T00:00:00.000Z"),
-    });
+    expect(actual).toEqual(expected);
+  });
 
-    await expect(lifecycle.recoverAfterRestart()).resolves.toBe(1);
-    expect(terminalize).toHaveBeenCalledWith(expect.objectContaining({
+  it("still reports killed when the graceful background process is proven dead", () => {
+    const graceful = evidence.graceful;
+    expect(graceful.originalProcessSurvived).toBe(false);
+    expect(graceful.restartTerminalizations).toEqual([
+      expect.objectContaining({
       status: "killed",
       closeReason: "worker_restart",
-      taskId: "task-proven-dead",
-    }));
+        taskId: graceful.originalTaskId,
+      }),
+    ]);
+  });
+
+  it("does not add another spawn, terminal, or notification through the retry horizon", () => {
+    const configuredHorizonMs = Object.values(CLAUDE_RUNTIME_FOLLOWUP_RETRY_DELAY_MS)
+      .reduce((total, delayMs) => total + delayMs, 0);
+    expect(MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT).toBe(3);
+    for (const observed of Object.values(evidence)) {
+      expect(observed.retryHorizonMs, observed.terminationMode).toBe(configuredHorizonMs);
+      expect(observed.retryHorizonAfter, observed.terminationMode).toEqual(
+        observed.retryHorizonBefore,
+      );
+    }
   });
 });
 
@@ -234,7 +272,7 @@ async function runLifetimeScenario(options: {
   cleanupPids: Set<number>;
   setReleaseHostOwnership(release: () => Promise<void>): void;
   setCloseMarkerChannel(close: () => Promise<void>): void;
-}): Promise<LifetimeEvidence> {
+}, terminationMode: TerminationMode): Promise<LifetimeEvidence> {
   const stage = (name: string) => {
     if (process.env.SOULSTREAM_A_DEBUG === "1") console.error(`[A-RED-STAGE] ${name}`);
   };
@@ -370,11 +408,17 @@ async function runLifetimeScenario(options: {
     });
   }
   stage("runner-killed");
+  const backgroundExitedAfterRunner = terminationMode === "graceful_terminate"
+    ? await withTimeout(waitForProcessExit(firstIdentity.pid), 5_000)
+      .then(() => true)
+      .catch(() => false)
+    : !isPidAlive(firstIdentity.pid);
   const gateThreeReleased = await releaseGate(gateWriter);
   const stepThree = gateThreeReleased
     ? await markerChannel.next(isStep(firstIdentity.pid, 3), 2_000).catch(() => null)
     : null;
-  const originalProcessSurvived = gateThreeReleased && isPidAlive(firstIdentity.pid);
+  const originalProcessSurvived =
+    !backgroundExitedAfterRunner && gateThreeReleased && isPidAlive(firstIdentity.pid);
   const originalProgressContinued = stepThree !== null;
   stage(`post-kill-step:${originalProgressContinued}`);
   if (process.env.SOULSTREAM_A_DIAG_ONLY === "1") {
@@ -401,6 +445,14 @@ async function runLifetimeScenario(options: {
     };
     throw new Error(`[A-PROCESS-TABLE] ${JSON.stringify(table)}`);
   }
+  const restartTerminalizations = await observeRestartTerminalizations({
+    sessionId,
+    taskId: started.taskId,
+    toolUseId: started.toolUseId ?? "",
+    outputFile: originalOutputFile,
+    processId: firstIdentity.pid,
+    processAlive: originalProcessSurvived,
+  });
   if (originalProcessSurvived && originalProgressContinued) {
     for (let index = 3; index < 8; index += 1) {
       await releaseGate(gateWriter);
@@ -444,20 +496,38 @@ async function runLifetimeScenario(options: {
   await recoveredTask.runner?.dispatcher.close().catch(() => undefined);
   stage("replacement-closed");
 
-  const retryHorizonSnapshot = {
-    observed: observed.length,
-    detached: detached.length,
+  const retryHorizonBefore = {
     spawns: (await readSpawnIdentities(workspaceDirectory)).length,
+    originalTerminals: observed.filter((event) =>
+      isTerminal(event) && event.taskId === started.taskId
+    ).length,
+    originalNotificationCandidates: detached.filter((event) =>
+      isTerminal(event) && event.taskId === started.taskId
+    ).length,
   };
-  await drainEventLoop();
+  let retryHorizonMs = 0;
+  for (
+    let attempt = 2;
+    attempt <= MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT;
+    attempt += 1
+  ) {
+    const delayMs = CLAUDE_RUNTIME_FOLLOWUP_RETRY_DELAY_MS[attempt];
+    if (delayMs === undefined) {
+      throw new Error(`missing retry horizon delay for attempt ${attempt}`);
+    }
+    retryHorizonMs += delayMs;
+    await drainEventLoop();
+  }
   stage("retry-horizon-drained");
-  expect({
-    observed: observed.length,
-    detached: detached.length,
+  const retryHorizonAfter = {
     spawns: (await readSpawnIdentities(workspaceDirectory)).length,
-  }, "closed terminal runner produced another spawn or notification").toEqual(
-    retryHorizonSnapshot,
-  );
+    originalTerminals: observed.filter((event) =>
+      isTerminal(event) && event.taskId === started.taskId
+    ).length,
+    originalNotificationCandidates: detached.filter((event) =>
+      isTerminal(event) && event.taskId === started.taskId
+    ).length,
+  };
 
   const originalTerminals = observed.filter((event) =>
     isTerminal(event) && event.taskId === started.taskId
@@ -466,20 +536,88 @@ async function runLifetimeScenario(options: {
     isTerminal(event) && event.taskId === started.taskId
   );
   const spawnIdentities = await readSpawnIdentities(workspaceDirectory);
+  const originalProgressMarkers = (await readLines(join(workspaceDirectory, "progress.log")))
+    .filter((line) => line.startsWith(`${firstIdentity.pid}:step-`));
   const originalTerminalMarkers = (await readLines(join(workspaceDirectory, "terminal.log")))
     .filter((line) => line.startsWith(`${firstIdentity.pid}:`));
 
   return {
+    terminationMode,
+    firstRunnerPid,
+    replacementRunnerPid,
     originalTaskId: started.taskId,
     originalToolUseId: started.toolUseId ?? "",
     originalOutputFile,
     originalProcessSurvived,
     originalProgressContinued,
+    originalProgressMarkers,
     spawnIdentities,
     originalTerminalMarkers,
     originalTerminals,
     originalNotificationCandidates,
+    restartTerminalizations,
+    retryHorizonMs,
+    retryHorizonBefore,
+    retryHorizonAfter,
   };
+}
+
+async function observeRestartTerminalizations(input: {
+  sessionId: string;
+  taskId: string;
+  toolUseId: string;
+  outputFile: string;
+  processId: number;
+  processAlive: boolean;
+}): Promise<LifetimeEvidence["restartTerminalizations"]> {
+  const terminalizations: LifetimeEvidence["restartTerminalizations"] = [];
+  const terminalize = vi.fn(async (terminalization: {
+    status: string;
+    closeReason: string;
+    taskId: string;
+    terminalRevision: string;
+  }) => {
+    terminalizations.push({
+      status: terminalization.status,
+      closeReason: terminalization.closeReason,
+      taskId: terminalization.taskId,
+    });
+    return {
+      accepted: true,
+      delivery: {
+        delivery_id: `delivery:${input.taskId}`,
+        completion_id: `completion:${input.taskId}`,
+        relation_key: `claude_runtime:${input.sessionId}:${input.taskId}`,
+        producer_terminal_revision: terminalization.terminalRevision,
+        created_at: new Date("2026-08-25T00:00:00.000Z"),
+        source: "claude_runtime_task_followup",
+        payload: { text: "killed", user: "system" },
+        payload_hash: `hash:${input.taskId}`,
+      },
+    };
+  });
+  const lifecycle = new ClaudeBackgroundTaskLifecycle({
+    repository: {
+      activeForNode: vi.fn()
+        .mockResolvedValueOnce([{
+          source_node: "a-red-node",
+          session_id: input.sessionId,
+          task_id: input.taskId,
+          sdk_session_id: "sdk-a-red",
+          status: "running",
+          description: `process ${input.processId} alive=${input.processAlive}`,
+          summary: null,
+          output_file: input.outputFile,
+          tool_use_id: input.toolUseId,
+        }])
+        .mockResolvedValueOnce([]),
+      terminalize,
+    } as never,
+    sourceNode: "a-red-node",
+    now: () => new Date("2026-08-25T00:00:00.000Z"),
+  });
+  await lifecycle.recoverAfterRestart();
+  return terminalizations;
 }
 
 function markerPrompt(
@@ -491,7 +629,8 @@ function markerPrompt(
   const progress = join(workspaceDirectory, "progress.log");
   const terminal = join(workspaceDirectory, "terminal.log");
   return [
-    "Use the Bash tool exactly once with run_in_background=true.",
+    "On every turn that receives this instruction, use the Bash tool exactly once with run_in_background=true.",
+    "Do so in this turn even if the resumed transcript shows a Bash call from an earlier runner generation; never answer before starting this turn's Bash call.",
     "The Bash command must invoke python3 and implement this exact finite marker protocol:",
     `open ${eventFifo} once for line-buffered writes;`,
     `read any existing non-empty lines from ${spawn}, then append one line PID|PGID for itself and emit spawn|PID|PGID;`,
@@ -637,6 +776,22 @@ function isTerminal(event: ClaudeClientEvent): event is Extract<
   { type: "claude_runtime_task_notification" }
 > {
   return event.type === "claude_runtime_task_notification";
+}
+
+function terminalIdentity(event: TerminalEvent): {
+  type: TerminalEvent["type"];
+  taskId: string;
+  toolUseId: string | undefined;
+  status: string;
+  outputFile: string | undefined;
+} {
+  return {
+    type: event.type,
+    taskId: event.taskId,
+    toolUseId: event.toolUseId,
+    status: event.status,
+    outputFile: event.outputFile,
+  };
 }
 
 function outputFileFromPersisted(events: SSEEventPayload[], taskId: string): string {
