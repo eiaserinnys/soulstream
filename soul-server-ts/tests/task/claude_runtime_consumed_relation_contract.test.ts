@@ -221,6 +221,9 @@ function makeRunner() {
         queuePosition: [...inbox.values()].filter((row) => row.message).length,
       };
     }),
+    discardIntervention: vi.fn(async (interventionId: string) => {
+      inbox.delete(interventionId);
+    }),
     recoverPendingInterventions: vi.fn(async () => [...inbox.values()]),
     executeFrames: vi.fn((params: EngineExecuteParams) => (async function* () {
       const interventionId = params.runnerInterventionId;
