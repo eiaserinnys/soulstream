@@ -10,6 +10,7 @@ import type {
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+import { buildCanonicalDeliveryPayload } from "../../src/task/delivery_payload.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
@@ -27,15 +28,10 @@ type DeliveryState = "queued" | "delivered" | "consumed";
 interface DeliveryEvidenceRow {
   deliveryId: string;
   payloadHash: string;
+  payload: Record<string, unknown>;
   state: DeliveryState;
   targetReceiptId: string | null;
   consumedAt: string | null;
-}
-
-interface ReceiptEvidence {
-  type: "context_usage" | "execution_ownership_transition" | "intervention_sent";
-  deliveryId?: string;
-  payloadHash?: string;
 }
 
 /**
@@ -45,13 +41,11 @@ interface ReceiptEvidence {
  */
 class HumanLiveSteerEvidenceLedger {
   readonly row: DeliveryEvidenceRow;
-  private readonly receiptEvents = new Map<string, ReceiptEvidence>();
 
   readonly recordTurnStarted = vi.fn(async (_message: InterventionMessage, task: Task) => {
     const receiptId = `event:${task.lastEventId ?? "unknown"}`;
     this.row.state = "delivered";
     this.row.targetReceiptId = receiptId;
-    this.receiptEvents.set(receiptId, this.receiptEvidence);
   });
 
   readonly recordConsumed = vi.fn(async () => {
@@ -63,11 +57,13 @@ class HumanLiveSteerEvidenceLedger {
   constructor(
     deliveryId: string,
     payloadHash: string,
-    private readonly receiptEvidence: ReceiptEvidence,
+    payload: Record<string, unknown>,
+    private readonly getPersistedEvent: (receiptId: string) => SSEEventPayload | undefined,
   ) {
     this.row = {
       deliveryId,
       payloadHash,
+      payload,
       state: "queued",
       targetReceiptId: null,
       consumedAt: null,
@@ -83,18 +79,14 @@ class HumanLiveSteerEvidenceLedger {
 
     expect(this.row.consumedAt).not.toBeNull();
     expect(this.row.targetReceiptId).not.toBeNull();
-    const receiptEvidence = process.env.SOULSTREAM_C_ORACLE_MUTATION
-        === "hide_model_input_proof"
-      ? {
-          type: "intervention_sent",
-          deliveryId: this.row.deliveryId,
-          payloadHash: this.row.payloadHash,
-        }
-      : this.receiptEvents.get(this.row.targetReceiptId!);
-    expect(receiptEvidence).toEqual({
+    if (process.env.SOULSTREAM_C_ORACLE_MUTATION === "hide_model_input_proof") {
+      return;
+    }
+    const receiptEvent = this.getPersistedEvent(this.row.targetReceiptId!);
+    expect(receiptEvent).toMatchObject({
       type: "intervention_sent",
-      deliveryId: this.row.deliveryId,
-      payloadHash: this.row.payloadHash,
+      text: this.row.payload.text,
+      user: this.row.payload.user,
     });
   }
 }
@@ -102,17 +94,36 @@ class HumanLiveSteerEvidenceLedger {
 interface HarnessOptions {
   deliveryId: string;
   failure?: Error;
-  receiptEvidence: ReceiptEvidence;
+  precedingEvent: {
+    eventId: number;
+    event: SSEEventPayload;
+  };
 }
 
 async function executeHumanLiveSteer(options: HarnessOptions): Promise<HumanLiveSteerEvidenceLedger> {
-  const payloadHash = `sha256:${options.deliveryId}`;
+  const text = `human-live-steer:${options.deliveryId}`;
+  const completionId = `message:${options.deliveryId}`;
+  const relationKey = `user_message:8ad6935c:${options.deliveryId}`;
+  const canonical = buildCanonicalDeliveryPayload({
+    text,
+    user: "agent",
+    source: "user_message",
+    completionId,
+    relationKey,
+  });
+  const persistenceDouble = makeEventPersistenceTestDouble(
+    undefined,
+    [options.precedingEvent],
+  );
   const ledger = new HumanLiveSteerEvidenceLedger(
     options.deliveryId,
-    payloadHash,
-    options.receiptEvidence,
+    canonical.payloadHash,
+    canonical.payload,
+    (receiptId) => {
+      const match = /^event:(\d+)$/.exec(receiptId);
+      return match ? persistenceDouble.getEventById(Number(match[1])) : undefined;
+    },
   );
-  const persistenceDouble = makeEventPersistenceTestDouble();
   const db = {
     updateSession: vi.fn().mockResolvedValue(undefined),
     setClaudeSessionId: vi.fn().mockResolvedValue(undefined),
@@ -135,12 +146,15 @@ async function executeHumanLiveSteer(options: HarnessOptions): Promise<HumanLive
     ledger,
   );
   const intervention: InterventionMessage = {
-    text: `human-live-steer:${options.deliveryId}`,
+    text,
     user: "agent",
     source: "user_message",
     deliveryId: options.deliveryId,
     deliveryIntent: "human_live_steer",
-    storedDeliveryPayloadHash: payloadHash,
+    completionId,
+    relationKey,
+    storedDeliveryPayload: canonical.payload,
+    storedDeliveryPayloadHash: canonical.payloadHash,
   };
   const task: Task = {
     agentSessionId: "8ad6935c-ac67-42d9-8af8-44323dbf9c40",
@@ -148,8 +162,8 @@ async function executeHumanLiveSteer(options: HarnessOptions): Promise<HumanLive
     status: "running",
     profileId: agent.id,
     createdAt: new Date("2026-08-24T15:49:08.000Z"),
-    lastEventId: 2595,
-    lastReadEventId: 2594,
+    lastEventId: options.precedingEvent.eventId,
+    lastReadEventId: options.precedingEvent.eventId - 1,
     interventionQueue: [intervention],
   };
 
@@ -182,7 +196,15 @@ describe("human_live_steer consumption evidence", () => {
     const ledger = await executeHumanLiveSteer({
       deliveryId: "25b5ba7f-6c2b-471c-a6b0-12e7c367b348",
       failure: new Error("Runner IPC request timed out after 30000ms"),
-      receiptEvidence: { type: "context_usage" },
+      precedingEvent: {
+        eventId: 2595,
+        event: {
+          type: "context_usage",
+          used_tokens: 781_290,
+          max_tokens: 1_000_000,
+          percent: 78.129,
+        } as SSEEventPayload,
+      },
     });
 
     ledger.assertConsumptionContract();
@@ -196,7 +218,14 @@ describe("human_live_steer consumption evidence", () => {
         `Runner command execute:ebd7208d failed (execute_intervention_claim_failed): `
           + `runner intervention unavailable: ${deliveryId}`,
       ),
-      receiptEvidence: { type: "execution_ownership_transition" },
+      precedingEvent: {
+        eventId: 2655,
+        event: {
+          type: "metadata",
+          metadata_type: "execution_ownership_transition",
+          value: { phase: "execution_activate" },
+        } as unknown as SSEEventPayload,
+      },
     });
 
     ledger.assertConsumptionContract();
@@ -204,13 +233,16 @@ describe("human_live_steer consumption evidence", () => {
 
   it("keeps a proven model input consumed", async () => {
     const deliveryId = "healthy-live-steer-delivery";
-    const payloadHash = `sha256:${deliveryId}`;
     const ledger = await executeHumanLiveSteer({
       deliveryId,
-      receiptEvidence: {
-        type: "intervention_sent",
-        deliveryId,
-        payloadHash,
+      precedingEvent: {
+        eventId: 7001,
+        event: {
+          type: "intervention_sent",
+          text: `human-live-steer:${deliveryId}`,
+          user: "agent",
+          timestamp: 1,
+        } as SSEEventPayload,
       },
     });
 
