@@ -1,3 +1,14 @@
+/**
+ * Evidence chain: commit acb6ecb2 measured the graceful-shutdown behavior
+ * against the real Claude Code/SDK path. The deterministic fixture in this
+ * file models that observed close behavior so the contract does not depend on
+ * model tool choice. Keep that diagnostic commit in history; changing the
+ * fixture's close semantics requires rerunning the diagnostic.
+ *
+ * The ungraceful axis is an OS-level observation: the runner and background
+ * process have distinct process groups, while SIGKILL targets only the runner
+ * PID.
+ */
 import type {
   SessionKey,
   SessionStoreEntry,
