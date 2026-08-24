@@ -147,7 +147,7 @@ export function composeRunnerReconciliationReporter(
       leaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       logger,
     }),
-    waitForRunnerReconciliation: async () => await coordinator.waitForSettled(),
+    waitForRunnerReconciliation: async () => await coordinator.scanOnce(),
   };
 }
 

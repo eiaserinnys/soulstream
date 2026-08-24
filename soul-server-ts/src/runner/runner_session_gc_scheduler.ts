@@ -24,16 +24,6 @@ export class RunnerSessionGarbageCollectionScheduler {
     if (collection) this.track(collection);
   }
 
-  scheduleAfter(
-    barrier: Promise<unknown>,
-    scan: () => Awaited<ReturnType<typeof scanRunnerRegistrations>>,
-  ): void {
-    if (!this.options.collector || this.collectionInFlight) return;
-    this.track(barrier.then(async () => {
-      await this.collect(scan());
-    }));
-  }
-
   private collect(
     scan: Awaited<ReturnType<typeof scanRunnerRegistrations>>,
   ): Promise<void> | undefined {

@@ -659,7 +659,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
-  it("does not block recovery scans while a live completed runner drains offline", async () => {
+  it("does not block later recovery scans while a live completed runner drains offline", async () => {
     let finishRecovery!: () => void;
     const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
     const recoverRegisteredRunner = vi.fn(() => recovery);
@@ -683,8 +683,17 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
     expect(subject.terminate).toHaveBeenCalledOnce();
 
+    let laterScanSettled = false;
+    const laterScan = subject.coordinator.scanOnce().then(() => {
+      laterScanSettled = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const skippedWithoutWaiting = laterScanSettled;
+
     finishRecovery();
+    await laterScan;
     await subject.coordinator.stop();
+    expect(skippedWithoutWaiting).toBe(true);
   });
 
   it("does not terminate a live terminal registration already owned by this host", async () => {
@@ -834,13 +843,14 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   it("keeps terminal replay ahead of session garbage collection", async () => {
     let finishRecovery!: () => void;
     const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
+    const current = registration({
+      pidAlive: false,
+      lifecycleState: "completed",
+    });
     const sessionGarbageCollector = {
       collect: vi.fn(async () => ({ removed: [], retained: [] })),
     };
-    const subject = makeSubject([registration({
-      pidAlive: false,
-      lifecycleState: "completed",
-    })], Date.now(), [], {
+    const subject = makeSubject([current], Date.now(), [], {
       taskExecutor: {
         recoverRegisteredRunner: vi.fn(() => recovery),
         restartRegisteredRunner: vi.fn(),
@@ -852,8 +862,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     expect(sessionGarbageCollector.collect).not.toHaveBeenCalled();
     finishRecovery();
-    await subject.coordinator.stop();
+    await subject.coordinator.waitForSettled();
+    current.retiredAt = new Date().toISOString();
+    await subject.coordinator.scanOnce();
     expect(sessionGarbageCollector.collect).toHaveBeenCalledOnce();
+    await subject.coordinator.stop();
   });
 
   it("a live but stale progress lease is killed before offline drain and resume", async () => {
@@ -1534,7 +1547,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
   });
 
-  it("waits for an active recovery before stop returns", async () => {
+  it("stops scan admission without waiting for an active runner execution", async () => {
     let finishRecovery!: () => void;
     const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
     const subject = makeSubject([registration({
@@ -1550,12 +1563,13 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     let stopped = false;
     const stopping = subject.coordinator.stop().then(() => { stopped = true; });
-    await Promise.resolve();
-    expect(stopped).toBe(false);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const stoppedBeforeExecution = stopped;
 
     finishRecovery();
     await stopping;
-    expect(stopped).toBe(true);
+    await subject.coordinator.waitForSettled();
+    expect(stoppedBeforeExecution).toBe(true);
   });
 
   it("exposes a reconciliation barrier without stopping future scans", async () => {
@@ -1585,9 +1599,45 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 });
 
 describe("RunnerRecoveryCoordinator GC cadence", () => {
+  it("collects owner-free registrations without waiting for an active recovery", async () => {
+    let finishRecovery!: () => void;
+    const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
+    const active = registration({
+      sessionId: "session-a",
+      pidAlive: false,
+      lifecycleState: "completed",
+    });
+    const ownerFree = registration({ sessionId: "session-b" });
+    ownerFree.pidAlive = false;
+    ownerFree.lifecycle!.execution_state = "completed";
+    ownerFree.retiredAt = "2026-08-11T00:00:25.000Z";
+    const sessionGarbageCollector = {
+      collect: vi.fn(async () => ({ removed: [], retained: [] })),
+    };
+    const subject = makeSubject([active, ownerFree], Date.now(), [], {
+      sessionGarbageCollector,
+      taskExecutor: {
+        recoverRegisteredRunner: vi.fn((task) =>
+          task.agentSessionId === "session-a" ? recovery : Promise.resolve()),
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+    await Promise.resolve();
+    const collectedBeforeRecoverySettled = sessionGarbageCollector.collect.mock.calls.map(
+      ([scan]) => scan.registrations.map((item) => item.config.sessionId),
+    );
+
+    finishRecovery();
+    await subject.coordinator.waitForSettled();
+
+    expect(collectedBeforeRecoverySettled).toEqual([["session-b"]]);
+  });
+
   it("runs session state GC at startup and then at most hourly", async () => {
     let now = Date.parse("2026-08-11T00:00:00.000Z");
-    const current = registration();
+    const current = registration({ pidAlive: false, lifecycleState: "completed" });
+    current.retiredAt = "2026-08-11T00:00:00.000Z";
     const sessionGarbageCollector = {
       collect: vi.fn(async () => ({ removed: [], retained: [] })),
     };

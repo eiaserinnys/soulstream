@@ -151,21 +151,21 @@ describe("runner process composition feature gate", () => {
     )).toEqual({});
   });
 
-  it("waits for recovery before reading the enabled runner inventory", async () => {
-    const waitForSettled = vi.fn(async () => {});
+  it("waits for recovery admission, not runner completion, before reading inventory", async () => {
+    const scanOnce = vi.fn(async () => {});
     const reporter = composeRunnerReconciliationReporter(
       {
         SOUL_RUNNER_STATE_DIR: "/runner-directory-that-does-not-exist",
         SOUL_RUNNER_LEASE_TIMEOUT_MS: 120_000,
       } as never,
       {} as never,
-      { waitForSettled } as never,
+      { scanOnce } as never,
       { debug: vi.fn() } as never,
     );
 
     await reporter.waitForRunnerReconciliation!();
     await expect(reporter.listLiveRunnerSessionIds!()).resolves.toEqual([]);
-    expect(waitForSettled).toHaveBeenCalledOnce();
+    expect(scanOnce).toHaveBeenCalledOnce();
   });
 
   it("ignores reserved infrastructure during the initial runner inventory", async () => {
@@ -174,19 +174,19 @@ describe("runner process composition feature gate", () => {
     const controlDirectory = join(root, "_control");
     await mkdir(controlDirectory);
     await writeFile(join(controlDirectory, "control-inbox.sqlite"), "not-a-runner-database");
-    const waitForSettled = vi.fn(async () => {});
+    const scanOnce = vi.fn(async () => {});
     const reporter = composeRunnerReconciliationReporter(
       {
         SOUL_RUNNER_STATE_DIR: root,
         SOUL_RUNNER_LEASE_TIMEOUT_MS: 120_000,
       } as never,
       {} as never,
-      { waitForSettled } as never,
+      { scanOnce } as never,
       { debug: vi.fn() } as never,
     );
 
     await reporter.waitForRunnerReconciliation!();
     await expect(reporter.listLiveRunnerSessionIds!()).resolves.toEqual([]);
-    expect(waitForSettled).toHaveBeenCalledOnce();
+    expect(scanOnce).toHaveBeenCalledOnce();
   });
 });

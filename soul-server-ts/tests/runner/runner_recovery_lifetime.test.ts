@@ -31,7 +31,7 @@ describe("RunnerRecoveryCoordinator recovery lifetime", () => {
     expect(settled).toBe(true);
   });
 
-  it("does not start terminal replay while the same session adoption is in flight", async () => {
+  it("skips terminal replay without blocking the scan while adoption owns the session", async () => {
     const adoption = deferred<void>();
     const harness = makeHarness({
       registration: runnerRegistration({ lifecycleState: "running" }),
@@ -62,25 +62,22 @@ describe("RunnerRecoveryCoordinator recovery lifetime", () => {
     adoption.resolve();
     await terminalScan;
     await harness.coordinator.waitForSettled();
+    await harness.coordinator.scanOnce();
+    await harness.coordinator.waitForSettled();
 
     expect(observationBeforeAdoptionCompleted).toEqual({
       detachCalls: 0,
       offlineCalls: 0,
-      terminalScanSettled: false,
+      terminalScanSettled: true,
     });
     expect(harness.detachHost).toHaveBeenCalledOnce();
     expect(harness.recoveryModes.filter((mode) => mode === "offline")).toHaveLength(1);
   });
 
-  it("re-reads lifecycle after the adoption owner settles before choosing replay", async () => {
+  it("re-reads lifecycle on the next scan after the adoption owner settles", async () => {
     const adoption = deferred<void>();
     const harness = makeHarness({
       registration: runnerRegistration({ lifecycleState: "running" }),
-      hydrate: async (registration) => {
-        if (registration.lifecycle?.execution_state !== "completed") return registration;
-        await adoption.promise;
-        return runnerRegistration({ lifecycleState: "running" });
-      },
       recover: ({ mode, task, runner }) => {
         if (mode !== "adopt") return Promise.resolve();
         const completion = adoption.promise.finally(() => {
@@ -94,15 +91,23 @@ describe("RunnerRecoveryCoordinator recovery lifetime", () => {
     await harness.coordinator.scanOnce();
     harness.setRegistration(runnerRegistration({ lifecycleState: "completed" }));
 
-    const terminalScan = harness.coordinator.scanOnce();
+    let terminalScanSettled = false;
+    const terminalScan = harness.coordinator.scanOnce().then(() => {
+      terminalScanSettled = true;
+    });
     await nextEventLoopTurn();
+    const skippedWithoutWaiting = terminalScanSettled;
     adoption.resolve();
     await terminalScan;
     await harness.coordinator.waitForSettled();
+    harness.setRegistration(runnerRegistration({ lifecycleState: "running" }));
+    await harness.coordinator.scanOnce();
+    await harness.coordinator.waitForSettled();
 
+    expect(skippedWithoutWaiting).toBe(true);
     expect(harness.detachHost).not.toHaveBeenCalled();
     expect(harness.terminate).not.toHaveBeenCalled();
-    expect(harness.recoveryModes).toEqual(["adopt"]);
+    expect(harness.recoveryModes).not.toContain("offline");
   });
 
   it("delivers an intervention admitted at the terminal boundary exactly once", async () => {
@@ -142,13 +147,20 @@ describe("RunnerRecoveryCoordinator recovery lifetime", () => {
     await harness.coordinator.scanOnce();
     harness.setRegistration(runnerRegistration({ lifecycleState: "completed" }));
 
-    const terminalScan = harness.coordinator.scanOnce();
+    let terminalScanSettled = false;
+    const terminalScan = harness.coordinator.scanOnce().then(() => {
+      terminalScanSettled = true;
+    });
     await nextEventLoopTurn();
+    const skippedWithoutWaiting = terminalScanSettled;
     claimedByOldRunner = true;
     adoption.resolve();
     await terminalScan;
     await harness.coordinator.waitForSettled();
+    await harness.coordinator.scanOnce();
+    await harness.coordinator.waitForSettled();
 
+    expect(skippedWithoutWaiting).toBe(true);
     expect(markers).toHaveLength(1);
     expect(markers[0]).toMatch(/^(old|successor)$/);
     expect(pendingIntervention).toBe(false);
@@ -192,6 +204,24 @@ describe("RunnerRecoveryCoordinator recovery lifetime", () => {
 
     expect(heldUntilTimeout).toBe(true);
     expect(harness.restartRegisteredRunnerUnderRecoveryLease).toHaveBeenCalledOnce();
+  });
+
+  it("does not start a replacement after stop returns when an admitted recovery later fails", async () => {
+    const adoption = deferred<void>();
+    const running = runnerRegistration({ lifecycleState: "running", pidAlive: true });
+    const stopped = runnerRegistration({ lifecycleState: "running", pidAlive: false });
+    const harness = makeHarness({
+      registration: running,
+      refreshRegistration: async () => stopped,
+      recover: ({ mode }) => mode === "adopt" ? adoption.promise : Promise.resolve(),
+    });
+    await harness.coordinator.scanOnce();
+
+    await harness.coordinator.stop();
+    adoption.reject(new Error("runner turn inactivity timeout"));
+    await harness.coordinator.waitForSettled();
+
+    expect(harness.restartRegisteredRunnerUnderRecoveryLease).toHaveBeenCalledTimes(0);
   });
 
   it("reaches replacement after failed adoption without recursively acquiring its recovery lease", async () => {

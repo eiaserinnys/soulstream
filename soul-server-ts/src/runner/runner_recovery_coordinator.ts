@@ -131,14 +131,7 @@ export class RunnerRecoveryCoordinator {
       recoverOffline: async (registration, task) =>
         (await this.recoverRegistered(registration, task, "offline")).task,
       resumeReplacement: async (task, message, config) =>
-        await options.taskManager.markRunnerFailureAndResume(
-          task,
-          message,
-          (resumedTask) => options.taskExecutor.restartRegisteredRunnerUnderRecoveryLease(
-            resumedTask,
-            config,
-          ),
-        ),
+        await this.resumeReplacement(task, message, config),
       onFailure: (registration, disposition, error) =>
         this.recoveryLogger.failure(registration, disposition, error),
     });
@@ -165,19 +158,12 @@ export class RunnerRecoveryCoordinator {
   private async performScan(): Promise<void> {
     const monotonicNow = this.options.monotonicNow ?? (() => performance.now());
     const startedAt = monotonicNow();
-    const activeAtScanStart = new Map(this.active);
     if (this.sessionGarbageCollectionScheduler.inFlight) {
       await this.sessionGarbageCollectionScheduler.inFlight;
     }
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
     );
-    scan.registrations = await Promise.all(scan.registrations.map(async (registration) => {
-      const active = activeAtScanStart.get(registration.config.sessionId);
-      if (!active) return registration;
-      await active;
-      return await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
-    }));
     this.ownerNullExecutionReconciler.prune(scan.registrations);
     await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
     await this.unreadableRegistrationHandler.handle(scan.errors);
@@ -279,20 +265,12 @@ export class RunnerRecoveryCoordinator {
         this.options.logger.error({ err: error }, "runner release GC failed");
       }
     }
-    const activeRecoveries = [...this.active.values()];
-    if (activeRecoveries.length === 0) {
-      this.sessionGarbageCollectionScheduler.schedule(scan);
-    } else {
-      this.sessionGarbageCollectionScheduler.scheduleAfter(
-        Promise.allSettled(activeRecoveries),
-        () => ({
-          ...scan,
-          registrations: scan.registrations.filter(
-            (registration) => !this.active.has(registration.config.sessionId),
-          ),
-        }),
-      );
-    }
+    this.sessionGarbageCollectionScheduler.schedule({
+      ...scan,
+      registrations: scan.registrations.filter(
+        (registration) => !this.active.has(registration.config.sessionId),
+      ),
+    });
     logRunnerRecoveryScan(
       this.options.logger,
       admitted.map(({ registration }) => registration),
@@ -304,9 +282,8 @@ export class RunnerRecoveryCoordinator {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    await this.waitForSettled();
+    if (this.scanInFlight) await this.scanInFlight;
     await this.sessionGarbageCollectionScheduler.inFlight;
-    this.active.clear();
   }
   /** Waits for recovery work already admitted by a scan without stopping the coordinator. */
   async waitForSettled(): Promise<void> {
@@ -321,6 +298,23 @@ export class RunnerRecoveryCoordinator {
         ...this.adoptionFailureRecovery.pending(),
       ]);
     }
+  }
+  private async resumeReplacement(
+    task: Task,
+    message: string,
+    config: RunnerRegistration["config"],
+  ): Promise<void> {
+    await this.options.taskManager.markRunnerFailureAndResume(
+      task,
+      message,
+      (resumedTask) => {
+        if (this.stopped) return;
+        return this.options.taskExecutor.restartRegisteredRunnerUnderRecoveryLease(
+          resumedTask,
+          config,
+        );
+      },
+    );
   }
   private async handle(
     registration: RunnerRegistration,
@@ -394,14 +388,7 @@ export class RunnerRecoveryCoordinator {
         recoverOffline: async (owned, recoveredTask) =>
           (await this.recoverRegistered(owned, recoveredTask, "offline")).task,
         resumeReplacement: async (recoveredTask, message, config) =>
-          await this.options.taskManager.markRunnerFailureAndResume(
-            recoveredTask,
-            message,
-            (resumedTask) => this.options.taskExecutor.restartRegisteredRunnerUnderRecoveryLease(
-              resumedTask,
-              config,
-            ),
-          ),
+          await this.resumeReplacement(recoveredTask, message, config),
         logger: this.options.logger,
       });
       return;
