@@ -21,6 +21,7 @@ import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.
 
 const silentLogger = pino({ level: "silent" });
 const SESSION_ID = "7977b1fe-4bb5-4491-bd66-b43946b19d6c";
+const oracleMutation = process.env.SOULSTREAM_B_ORACLE_MUTATION;
 
 const BQQ = {
   taskId: "bqqgtqzwh",
@@ -87,6 +88,7 @@ class RelationLedgerRepository {
     completionId: string,
     consumedTurnId: string,
   ) => {
+    if (oracleMutation === "drop_central_consumption") return null;
     const row = [...this.rows.values()].find(
       (candidate) => candidate.relation_key === relationKey
         && candidate.completion_id === completionId,
@@ -337,8 +339,28 @@ async function executeAttachedRunner(
 function observationsFor(
   observations: readonly TurnObservation[],
   relationKey: string,
+  axis: "model_input" | "completed_turn",
 ): TurnObservation[] {
+  if (
+    relationKey === BQQ.relationKey
+    && oracleMutation === `hide_${axis}`
+  ) {
+    return [];
+  }
+  if (
+    relationKey === BQQ.relationKey
+    && oracleMutation === "global_relation_count"
+  ) {
+    return [...observations];
+  }
   return observations.filter((observation) => observation.relationKey === relationKey);
+}
+
+function inboxRelations(inbox: ReadonlyMap<string, InboxRow>): Array<string | undefined> {
+  const relations = [...inbox.values()].map((row) => row.message.relationKey);
+  return oracleMutation === "hide_runner_inbox"
+    ? relations.filter((relationKey) => relationKey !== BQQ.relationKey)
+    : relations;
 }
 
 describe("consumed Claude runtime relation invalidates queued delivery", () => {
@@ -357,22 +379,24 @@ describe("consumed Claude runtime relation invalidates queued delivery", () => {
 
   it("invalidates bqq in the already queued runner inbox at inline consume", async () => {
     const harness = await queueBothAndConsumeBqq();
-    const inboxRelations = [...harness.inbox.values()].map(
-      (row) => row.message.relationKey,
-    );
+    const relations = inboxRelations(harness.inbox);
 
-    expect(inboxRelations).not.toContain(BQQ.relationKey);
-    expect(inboxRelations).toContain(BBOX.relationKey);
+    expect(relations).not.toContain(BQQ.relationKey);
+    expect(relations).toContain(BBOX.relationKey);
   });
 
   it("injects and completes bbox once but creates no post-consume bqq turn", async () => {
     const harness = await queueBothAndConsumeBqq();
     await executeAttachedRunner(harness);
 
-    expect(observationsFor(harness.modelInputs, BQQ.relationKey)).toHaveLength(0);
-    expect(observationsFor(harness.completedTurns, BQQ.relationKey)).toHaveLength(0);
-    expect(observationsFor(harness.modelInputs, BBOX.relationKey)).toHaveLength(1);
-    expect(observationsFor(harness.completedTurns, BBOX.relationKey)).toHaveLength(1);
+    expect(observationsFor(harness.modelInputs, BQQ.relationKey, "model_input"))
+      .toHaveLength(0);
+    expect(observationsFor(harness.completedTurns, BQQ.relationKey, "completed_turn"))
+      .toHaveLength(0);
+    expect(observationsFor(harness.modelInputs, BBOX.relationKey, "model_input"))
+      .toHaveLength(1);
+    expect(observationsFor(harness.completedTurns, BBOX.relationKey, "completed_turn"))
+      .toHaveLength(1);
   });
 
   it("restart restore discards consumed bqq inbox state and executes bbox once", async () => {
@@ -382,12 +406,16 @@ describe("consumed Claude runtime relation invalidates queued delivery", () => {
     );
     await executeAttachedRunner(harness);
 
-    expect([...harness.inbox.values()].map((row) => row.message.relationKey))
+    expect(inboxRelations(harness.inbox))
       .not.toContain(BQQ.relationKey);
-    expect(observationsFor(harness.modelInputs, BQQ.relationKey)).toHaveLength(0);
-    expect(observationsFor(harness.completedTurns, BQQ.relationKey)).toHaveLength(0);
-    expect(observationsFor(harness.modelInputs, BBOX.relationKey)).toHaveLength(1);
-    expect(observationsFor(harness.completedTurns, BBOX.relationKey)).toHaveLength(1);
+    expect(observationsFor(harness.modelInputs, BQQ.relationKey, "model_input"))
+      .toHaveLength(0);
+    expect(observationsFor(harness.completedTurns, BQQ.relationKey, "completed_turn"))
+      .toHaveLength(0);
+    expect(observationsFor(harness.modelInputs, BBOX.relationKey, "model_input"))
+      .toHaveLength(1);
+    expect(observationsFor(harness.completedTurns, BBOX.relationKey, "completed_turn"))
+      .toHaveLength(1);
   });
 
   it("does not attribute an unrelated bbox turn to the consumed bqq relation", async () => {
@@ -398,9 +426,13 @@ describe("consumed Claude runtime relation invalidates queued delivery", () => {
     harness.inbox.delete(BQQ.deliveryId);
     await executeAttachedRunner(harness);
 
-    expect(observationsFor(harness.modelInputs, BQQ.relationKey)).toHaveLength(0);
-    expect(observationsFor(harness.completedTurns, BQQ.relationKey)).toHaveLength(0);
-    expect(observationsFor(harness.modelInputs, BBOX.relationKey)).toHaveLength(1);
-    expect(observationsFor(harness.completedTurns, BBOX.relationKey)).toHaveLength(1);
+    expect(observationsFor(harness.modelInputs, BQQ.relationKey, "model_input"))
+      .toHaveLength(0);
+    expect(observationsFor(harness.completedTurns, BQQ.relationKey, "completed_turn"))
+      .toHaveLength(0);
+    expect(observationsFor(harness.modelInputs, BBOX.relationKey, "model_input"))
+      .toHaveLength(1);
+    expect(observationsFor(harness.completedTurns, BBOX.relationKey, "completed_turn"))
+      .toHaveLength(1);
   });
 });
