@@ -54,7 +54,7 @@ def _message_inventory_summary(schema: dict) -> str:
     defs_count = len(schema["$defs"])
     wire_count = len(schema["oneOf"])
     sse_count = defs_count - wire_count
-    return f"{defs_count}개 $defs (wire {wire_count} + SSE event {sse_count})"
+    return f"{defs_count}개 $defs (top-level wire {wire_count} + supporting/SSE {sse_count})"
 
 
 def _load_orch_string_set(name: str) -> set[str]:
@@ -206,8 +206,16 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthGetProfile",
         "AcknowledgeSessionReview",
         "AcknowledgeSessionReviewAck",
+        "NodeControlRegister",
+        "NodeControlRegisterAck",
+        "NodeControlReady",
+        "NodeControlReadyAck",
+        "ControlAdmissionAck",
+        "ControlResult",
+        "ControlResultAck",
+        "ControlAckMetric",
     }
-    assert len(wire_types) == 58
+    assert len(wire_types) == 66
 
     sse_types = {
         "SSEEventInit",
@@ -500,6 +508,14 @@ def test_oneof_covers_all_wire_messages() -> None:
         "ClaudeAuthGetProfile",
         "AcknowledgeSessionReview",
         "AcknowledgeSessionReviewAck",
+        "NodeControlRegister",
+        "NodeControlRegisterAck",
+        "NodeControlReady",
+        "NodeControlReadyAck",
+        "ControlAdmissionAck",
+        "ControlResult",
+        "ControlResultAck",
+        "ControlAckMetric",
     }
     assert oneof_refs == wire_types
 
