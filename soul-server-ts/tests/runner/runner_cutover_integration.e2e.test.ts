@@ -24,8 +24,9 @@ import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { RunnerProcessDispatcher } from "../../src/runner/runner_process_dispatcher.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { parseRunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
+import { readRunnerRegistrationSummary } from
+  "../../src/runner/runner_process_registry.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
-import { readRunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import { composeRunnerProcessRuntime } from "../../src/runtime/runner_process_composition.js";
 import { buildServer } from "../../src/server.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
@@ -268,13 +269,13 @@ describe("runner cutover all-flags-on integration", () => {
     task.runner = undefined;
     task.runnerRetainedForClaudeBackground = undefined;
     task.executionPromise = undefined;
-    const config = parseRunnerChildConfig(JSON.parse(await readFile(paths.configPath, "utf8")));
-    const lifecycle = readRunnerSqliteLifecycle(paths.databasePath);
+    const registration = await readRunnerRegistrationSummary(paths.sessionDirectory);
+    const lifecycle = registration.lifecycle;
     if (!lifecycle) throw new Error("completed runner lifecycle is unavailable");
     executor = createExecutor();
     await executor.recoverRegisteredRunner(
       task,
-      config,
+      registration,
       lifecycle.execution_command_id,
       "replay",
     );
@@ -511,11 +512,11 @@ describe("runner cutover all-flags-on integration", () => {
     await waitFor(async () => await hasDurableContent(paths.databasePath, "after-detach"));
     expect(isPidAlive(pid)).toBe(true);
 
-    const config = parseRunnerChildConfig(JSON.parse(await readFile(paths.configPath, "utf8")));
+    const registration = await readRunnerRegistrationSummary(paths.sessionDirectory);
     const restartedHost = taskExecutor(composition.runtimeFactory);
     const recovery = restartedHost.executor.recoverRegisteredRunner(
       task,
-      config,
+      registration,
       undefined,
       "adopt",
     );

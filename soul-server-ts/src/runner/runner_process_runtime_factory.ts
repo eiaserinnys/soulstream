@@ -34,7 +34,12 @@ import {
 } from "./runner_process_dispatcher.js";
 import { RunnerProcessEngineProxy } from "./runner_process_engine_proxy.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
-import type { RunnerChildConfig, SpawnRunnerProcessInput } from "./runner_process_spawn.js";
+import type {
+  RunnerChildConfig,
+  SpawnedRunnerProcess,
+  SpawnRunnerProcessInput,
+} from "./runner_process_spawn.js";
+import type { RunnerRegistration } from "./runner_process_registry.js";
 import type { RunnerReleasePool } from "./runner_release_pool.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
 import type { ReleaseManifestV1 } from "../release/release_manifest.js";
@@ -79,7 +84,8 @@ export interface RunnerProcessRuntimeFactoryOptions {
     event: ClaudeClientEvent,
     idempotencyKey: string,
   ): Promise<unknown>;
-  spawner?: Pick<RunnerProcessSpawner, "spawn">;
+  spawner?: Pick<RunnerProcessSpawner, "adopt" | "spawn">
+    & Partial<Pick<RunnerProcessSpawner, "terminate">>;
 }
 
 export function createRunnerProcessRuntimeFactory(
@@ -94,11 +100,12 @@ export function createRunnerProcessRuntimeFactory(
     backend: import("../engine/protocol.js").BackendId,
     snapshots: RunnerSnapshotPersistence,
     spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>,
+    runnerProcess: SpawnedRunnerProcess | Promise<SpawnedRunnerProcess> | null,
     recoveryMode?: "adopt" | "replay" | "offline",
   ) => {
     const dispatcher = new RunnerProcessDispatcher({
       spawn,
-      adoptExisting: recoveryMode === "adopt" || recoveryMode === "replay",
+      runnerProcess,
       offlineExisting: recoveryMode === "offline",
       spawner,
       pumpMux: options.pumpMux,
@@ -128,38 +135,40 @@ export function createRunnerProcessRuntimeFactory(
     const codexHome = backend === "codex"
       ? childProcessEnv.CODEX_HOME?.trim() || join(homedir(), ".codex")
       : null;
+    const spawnInput = Promise.resolve().then(() => (
+      options.releaseManifest
+        ? options.releasePool.describe(options.releaseManifest.runner_release_id)
+        : options.releasePool.resolveCurrentRelease()
+    )).then((release) => ({
+      stateDirectory,
+      sessionId: task.agentSessionId,
+      backend,
+      agent,
+      // `codeSha` is a legacy field name for the opaque release id.
+      codeSha: release.releaseId,
+      releaseManifestId: options.releaseManifest?.manifest_id ?? release.releaseId,
+      runtimeEnvIdentity: agentRuntimeEnvIdentity(agent),
+      snapshotPath: release.runnerModuleRoot,
+      codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
+      codexCliPath: options.codexCliPath?.path,
+      claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+      claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
+      claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
+      claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
+      runnerLeaseTimeoutMs: options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+      ...runtimeMcpConfig,
+      codexHome,
+      rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
+      childProcessEnv,
+      prepareSnapshot: async () => await options.releasePool.ensureRelease(release),
+    }));
     return createRuntime(
       task,
       agent,
       backend,
       snapshots,
-      Promise.resolve().then(() => (
-        options.releaseManifest
-          ? options.releasePool.describe(options.releaseManifest.runner_release_id)
-          : options.releasePool.resolveCurrentRelease()
-      )).then((release) => ({
-        stateDirectory,
-        sessionId: task.agentSessionId,
-        backend,
-        agent,
-        // `codeSha` is a legacy field name for the opaque release id.
-        codeSha: release.releaseId,
-        releaseManifestId: options.releaseManifest?.manifest_id ?? release.releaseId,
-        runtimeEnvIdentity: agentRuntimeEnvIdentity(agent),
-        snapshotPath: release.runnerModuleRoot,
-        codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
-        codexCliPath: options.codexCliPath?.path,
-        claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
-        claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
-        claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
-        claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
-        runnerLeaseTimeoutMs: options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
-        ...runtimeMcpConfig,
-        codexHome,
-        rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
-        childProcessEnv,
-        prepareSnapshot: async () => await options.releasePool.ensureRelease(release),
-      })),
+      spawnInput,
+      spawnInput.then(async (input) => await spawner.spawn(input)),
     );
   }) as RunnerProcessRuntimeFactory;
   factory.describe = async (agent) => {
@@ -174,36 +183,56 @@ export function createRunnerProcessRuntimeFactory(
   };
   // Adoption, live terminal replay, and offline replay reuse the registered
   // child/config rather than resolving current profile MCP settings.
-  factory.recover = (task, config, snapshots, mode = "adopt") => createRuntime(
-    task,
-    config.agent,
-    config.backend,
-    snapshots,
-    spawnInputFromConfig(
+  factory.recover = (task, registration, snapshots, mode = "adopt") => {
+    const config = registration.config;
+    const spawnInput = spawnInputFromConfig(
       stateDirectory,
       config,
       options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       options.releasePool,
       storedRuntimeMcpConfig(config),
-    ),
-    mode,
-  );
+    );
+    return createRuntime(
+      task,
+      config.agent,
+      config.backend,
+      snapshots,
+      spawnInput,
+      mode === "offline" ? null : adoptRegisteredRunner(spawner, registration),
+      mode,
+    );
+  };
   // A replacement child keeps the original release snapshot but binds to the
   // host's current runtime MCP endpoints and resolved profile.
-  factory.restart = (task, config, snapshots) => createRuntime(
-    task,
-    config.agent,
-    config.backend,
-    snapshots,
-    spawnInputFromConfig(
+  factory.restart = (task, config, snapshots) => {
+    const spawnInput = spawnInputFromConfig(
       stateDirectory,
       config,
       options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       options.releasePool,
       resolveRuntimeMcpConfig(options, config.agent),
-    ),
-  );
+    );
+    return createRuntime(
+      task,
+      config.agent,
+      config.backend,
+      snapshots,
+      spawnInput,
+      spawner.spawn(spawnInput),
+    );
+  };
   return factory;
+}
+
+async function adoptRegisteredRunner(
+  spawner: Pick<RunnerProcessSpawner, "adopt">,
+  registration: RunnerRegistration,
+): Promise<SpawnedRunnerProcess> {
+  const adopted = await spawner.adopt(registration);
+  if (!adopted) {
+    throw new Error(`registered runner is not alive: ${registration.config.sessionId}`);
+  }
+  return adopted;
 }
 
 function spawnInputFromConfig(

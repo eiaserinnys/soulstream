@@ -501,7 +501,7 @@ export class RunnerRecoveryCoordinator {
     let attemptRunner: TaskRunnerRuntime | undefined;
     const completion = this.options.taskExecutor.recoverRegisteredRunner(
       task,
-      hydrated.config,
+      hydrated,
       lifecycle?.execution_command_id,
       mode,
       (runner) => {

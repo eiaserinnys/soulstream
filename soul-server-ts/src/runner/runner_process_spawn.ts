@@ -38,6 +38,7 @@ import {
   unlinkIfPresent,
 } from "./runner_registration_mutation.js";
 import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
+import type { RunnerRegistration } from "./runner_process_registry.js";
 
 const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
 const RunnerProcessPathsSchema = z.object({
@@ -105,11 +106,6 @@ export interface SpawnedRunnerProcess {
   paths: RunnerProcessPaths;
   config: RunnerChildConfig;
   adopted: boolean;
-}
-
-export interface AdoptRunnerProcessInput {
-  stateDirectory: string;
-  sessionId: string;
 }
 
 interface SpawnDependencies {
@@ -315,31 +311,17 @@ export class RunnerProcessSpawner {
       adopted: false,
     };
   }
-  async adopt(input: AdoptRunnerProcessInput): Promise<SpawnedRunnerProcess | null> {
-    const paths = runnerProcessPaths(input.stateDirectory, input.sessionId);
-    const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
-    const lifecycle = await this.readLifecycle(paths.databasePath);
-    const pid = resolveRegisteredRunnerPid(
-      await readRunnerPid(paths.pidPath),
-      lifecycle?.runner_pid ?? null,
-      identity?.pid ?? null,
-      paths.sessionDirectory,
-      this.deps.isPidAlive,
-    );
-    if (pid === null || !this.deps.isPidAlive(pid)) return null;
-    if (!identity || identity.pid === null || identity.startIdentity === null) return null;
+  async adopt(registration: RunnerRegistration): Promise<SpawnedRunnerProcess | null> {
+    const { config, pid, pidAlive, pidStartIdentity, registrationId } = registration;
+    if (pid === null || !pidAlive || !this.deps.isPidAlive(pid)) return null;
+    if (!registrationId || !pidStartIdentity) return null;
     const observed = await this.deps.inspectProcess(pid);
     if (
-      identity.pid !== pid
-      || !observed.alive
+      !observed.alive
       || !observed.startIdentity
-      || !processStartIdentitiesMatch(observed.startIdentity, identity.startIdentity)
+      || !processStartIdentitiesMatch(observed.startIdentity, pidStartIdentity)
     ) return null;
-    const config = await readRunnerChildConfig(paths.configPath);
-    if (config.sessionId !== input.sessionId || !samePaths(config.paths, paths)) {
-      throw new Error(`runner registration mismatch for ${input.sessionId}`);
-    }
-    return { pid, registrationId: identity.registrationId, paths, config, adopted: true };
+    return { pid, registrationId, paths: config.paths, config, adopted: true };
   }
   async terminate(
     paths: RunnerProcessPaths,
@@ -484,16 +466,6 @@ export async function readRunnerChildConfig(path: string): Promise<RunnerChildCo
     }
     throw error;
   }
-}
-
-function samePaths(left: RunnerProcessPaths, right: RunnerProcessPaths): boolean {
-  return left.sessionDirectory === right.sessionDirectory
-    && left.databasePath === right.databasePath
-    && left.socketPath === right.socketPath
-    && left.pidPath === right.pidPath
-    && left.lockPath === right.lockPath
-    && left.configPath === right.configPath
-    && left.logPath === right.logPath;
 }
 
 function isProcessAlive(pid: number): boolean {

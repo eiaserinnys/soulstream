@@ -36,6 +36,7 @@ import {
   type TaskRunnerRuntime,
 } from "../runner/task_runner_runtime.js";
 import type { RunnerChildConfig } from "../runner/runner_process_spawn.js";
+import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
@@ -119,7 +120,7 @@ export interface RunnerProcessRuntimeFactory {
   ): TaskRunnerRuntime;
   recover?(
     task: Task,
-    config: RunnerChildConfig,
+    registration: RunnerRegistration,
     snapshots: RunnerSnapshotPersistence,
     mode?: "adopt" | "replay" | "offline",
   ): TaskRunnerRuntime;
@@ -987,14 +988,15 @@ export class TaskExecutor {
 
   recoverRegisteredRunner(
     task: Task,
-    config: RunnerChildConfig,
+    registration: RunnerRegistration,
     commandId: string | undefined,
     mode: "adopt" | "replay" | "offline",
     onAttemptCreated?: (runner: TaskRunnerRuntime) => void,
   ): Promise<void> {
+    const config = registration.config;
     const runner = this.runnerProcessFactory?.recover?.(
       task,
-      config,
+      registration,
       this.snapshotPersistenceFor(task),
       mode,
     );
