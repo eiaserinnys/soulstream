@@ -55,6 +55,7 @@ class HumanLiveSteerEvidenceLedger {
   });
 
   readonly recordConsumed = vi.fn(async () => {
+    if (process.env.SOULSTREAM_C_ORACLE_MUTATION === "drop_consumed_write") return;
     this.row.state = "consumed";
     this.row.consumedAt = "2026-08-24T15:53:26.597Z";
   });
@@ -82,7 +83,15 @@ class HumanLiveSteerEvidenceLedger {
 
     expect(this.row.consumedAt).not.toBeNull();
     expect(this.row.targetReceiptId).not.toBeNull();
-    expect(this.receiptEvents.get(this.row.targetReceiptId!)).toEqual({
+    const receiptEvidence = process.env.SOULSTREAM_C_ORACLE_MUTATION
+        === "hide_model_input_proof"
+      ? {
+          type: "intervention_sent",
+          deliveryId: this.row.deliveryId,
+          payloadHash: this.row.payloadHash,
+        }
+      : this.receiptEvents.get(this.row.targetReceiptId!);
+    expect(receiptEvidence).toEqual({
       type: "intervention_sent",
       deliveryId: this.row.deliveryId,
       payloadHash: this.row.payloadHash,
