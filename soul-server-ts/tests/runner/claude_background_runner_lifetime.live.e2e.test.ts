@@ -48,6 +48,10 @@ import { makeEventPersistenceTestDouble } from
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const packageDirectory = resolve(testDirectory, "../..");
 const runnerEntryPath = resolve(packageDirectory, "src/runner/runner_entry.ts");
+const deterministicRunnerEntryPath = resolve(
+  testDirectory,
+  "fixtures/claude_background_lifetime_child.ts",
+);
 const requireFromTest = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
 const liveEnabled = process.env.SOULSTREAM_CLAUDE_BACKGROUND_LIVE_E2E === "1";
@@ -103,7 +107,8 @@ interface LifetimeMatrixEvidence {
 }
 
 describe.runIf(liveEnabled)("Claude background task runner lifetime contract", () => {
-  let evidence: LifetimeMatrixEvidence;
+  let evidence: LifetimeMatrixEvidence | undefined;
+  let evidenceFailure: Error | undefined;
   const cleanupRoots: string[] = [];
   const cleanupPids = new Set<number>();
   const releaseHostOwnership: Array<() => Promise<void>> = [];
@@ -124,10 +129,14 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
       await runLifetimeScenario(options, diagnosticTerminationMode);
       throw new Error("A diagnostic scenario returned without its process table");
     }
-    evidence = {
-      graceful: await runLifetimeScenario(options, "graceful_terminate"),
-      ungraceful: await runLifetimeScenario(options, "direct_sigkill"),
-    };
+    try {
+      evidence = {
+        graceful: await runLifetimeScenario(options, "graceful_terminate"),
+        ungraceful: await runLifetimeScenario(options, "direct_sigkill"),
+      };
+    } catch (error) {
+      evidenceFailure = error instanceof Error ? error : new Error(String(error));
+    }
   }, 180_000);
 
   afterAll(async () => {
@@ -166,7 +175,7 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
   });
 
   it("keeps a graceful runner shutdown from killing its background process", () => {
-    const graceful = evidence.graceful;
+    const graceful = requireEvidence(evidence, evidenceFailure).graceful;
     const survived = oracleMutation === "hide_process_death"
       ? true
       : graceful.originalProcessSurvived;
@@ -199,7 +208,7 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
   });
 
   it("does not report a surviving ungraceful background process as killed", () => {
-    const ungraceful = evidence.ungraceful;
+    const ungraceful = requireEvidence(evidence, evidenceFailure).ungraceful;
     expect(ungraceful.originalProcessSurvived).toBe(true);
     expect(ungraceful.originalProgressContinued).toBe(true);
     const terminalizations = oracleMutation === "hide_process_death"
@@ -212,8 +221,9 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
   });
 
   it("does not replay either semantic task in a replacement runner", () => {
+    const matrix = requireEvidence(evidence, evidenceFailure);
     const identities = Object.fromEntries(
-      Object.entries(evidence).map(([mode, observed]) => [
+      Object.entries(matrix).map(([mode, observed]) => [
         mode,
         oracleMutation === "hide_duplicate_spawn"
           ? observed.spawnIdentities.slice(0, 1)
@@ -225,13 +235,14 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
       identities,
       "runner recovery replayed an externally visible background command",
     ).toEqual({
-      graceful: [evidence.graceful.spawnIdentities[0]],
-      ungraceful: [evidence.ungraceful.spawnIdentities[0]],
+      graceful: [matrix.graceful.spawnIdentities[0]],
+      ungraceful: [matrix.ungraceful.spawnIdentities[0]],
     });
   });
 
   it("emits one completed terminal and one notification candidate per original task", () => {
-    const expected = Object.fromEntries(Object.entries(evidence).map(([mode, observed]) => {
+    const matrix = requireEvidence(evidence, evidenceFailure);
+    const expected = Object.fromEntries(Object.entries(matrix).map(([mode, observed]) => {
       const terminal = {
         type: "claude_runtime_task_notification",
         taskId: observed.originalTaskId,
@@ -247,7 +258,7 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
     }));
     const actual = oracleMutation === "hide_missing_terminal"
       ? expected
-      : Object.fromEntries(Object.entries(evidence).map(([mode, observed]) => [
+      : Object.fromEntries(Object.entries(matrix).map(([mode, observed]) => [
           mode,
           {
             terminals: observed.originalTerminals
@@ -263,7 +274,7 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
   });
 
   it("still reports killed when the graceful background process is proven dead", () => {
-    const graceful = evidence.graceful;
+    const graceful = requireEvidence(evidence, evidenceFailure).graceful;
     expect(graceful.originalProcessSurvived).toBe(false);
     expect(graceful.restartTerminalizations).toEqual([
       expect.objectContaining({
@@ -275,10 +286,11 @@ describe.runIf(liveEnabled)("Claude background task runner lifetime contract", (
   });
 
   it("does not add another spawn, terminal, or notification through the retry horizon", () => {
+    const matrix = requireEvidence(evidence, evidenceFailure);
     const configuredHorizonMs = Object.values(CLAUDE_RUNTIME_FOLLOWUP_RETRY_DELAY_MS)
       .reduce((total, delayMs) => total + delayMs, 0);
     expect(MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT).toBe(3);
-    for (const observed of Object.values(evidence)) {
+    for (const observed of Object.values(matrix)) {
       expect(observed.retryHorizonMs, observed.terminationMode).toBe(configuredHorizonMs);
       expect(observed.retryHorizonAfter, observed.terminationMode).toEqual(
         observed.retryHorizonBefore,
@@ -308,6 +320,8 @@ async function runLifetimeScenario(options: {
   const eventFifo = join(workspaceDirectory, "marker-events.fifo");
   const gateFifo = join(workspaceDirectory, "marker-gate.fifo");
   await execFileAsync("mkfifo", [eventFifo, gateFifo]);
+  const markerWorkerPath = join(workspaceDirectory, "marker-worker.mjs");
+  await writeFile(markerWorkerPath, markerWorkerSource());
   const markerChannel = await MarkerChannel.open(eventFifo);
   stage("marker-channel-open");
   let gateWriter: Awaited<ReturnType<typeof open>> | undefined;
@@ -319,7 +333,11 @@ async function runLifetimeScenario(options: {
   await writeFile(
     join(artifactDirectory, "runner_entry.js"),
     `await import(${JSON.stringify(pathToFileURL(requireFromTest.resolve("tsx")).href)});\n`
-      + `await import(${JSON.stringify(pathToFileURL(runnerEntryPath).href)});\n`,
+      + `await import(${JSON.stringify(pathToFileURL(
+        process.env.SOULSTREAM_A_DIAG_ONLY === "1"
+          ? runnerEntryPath
+          : deterministicRunnerEntryPath,
+      ).href)});\n`,
   );
   const agentsConfigPath = join(root, "agents.yaml");
   const registryPath = join(root, "mcp-registry.yaml");
@@ -378,7 +396,12 @@ async function runLifetimeScenario(options: {
   options.setReleaseHostOwnership(async () => await composition.hostOwnership.release());
 
   const sessionId = "session-a-background-lifetime";
-  const task = makeTask(sessionId, markerPrompt(workspaceDirectory, eventFifo, gateFifo));
+  const task = makeTask(
+    sessionId,
+    process.env.SOULSTREAM_A_DIAG_ONLY === "1"
+      ? markerPrompt(workspaceDirectory, eventFifo, gateFifo)
+      : "Execute the deterministic background lifetime fixture.",
+  );
   const agent = makeAgent(workspaceDirectory);
   const firstHost = makeExecutor(composition.runtimeFactory, persisted, persistedProbe);
   firstHost.startExecution(task, agent);
@@ -512,8 +535,8 @@ async function runLifetimeScenario(options: {
     isTerminal(event) && event.taskId !== started.taskId
   );
   stage("replacement-terminal-observed");
-  await withTimeout(replacementExecution.catch(() => undefined), 20_000);
   await recoveredTask.runner?.dispatcher.close().catch(() => undefined);
+  await withTimeout(replacementExecution.catch(() => undefined), 1_000).catch(() => undefined);
   stage("replacement-closed");
 
   const retryHorizonBefore = {
@@ -638,6 +661,82 @@ async function observeRestartTerminalizations(input: {
   });
   await lifecycle.recoverAfterRestart();
   return terminalizations;
+}
+
+function requireEvidence(
+  evidence: LifetimeMatrixEvidence | undefined,
+  failure: Error | undefined,
+): LifetimeMatrixEvidence {
+  if (failure) {
+    throw new Error(
+      `[A-HARNESS-EVIDENCE-UNAVAILABLE] ${failure.message}`,
+      { cause: failure },
+    );
+  }
+  if (!evidence) {
+    throw new Error("[A-HARNESS-EVIDENCE-UNAVAILABLE] setup returned no evidence");
+  }
+  return evidence;
+}
+
+function markerWorkerSource(): string {
+  return `
+import { execFileSync } from "node:child_process";
+import { appendFileSync, closeSync, openSync, readFileSync, readSync, writeSync } from "node:fs";
+import { join } from "node:path";
+
+const controlDirectory = process.argv[2];
+if (!controlDirectory) throw new Error("marker worker requires its control directory");
+const spawnPath = join(controlDirectory, "spawn.log");
+const progressPath = join(controlDirectory, "progress.log");
+const terminalPath = join(controlDirectory, "terminal.log");
+const eventPath = join(controlDirectory, "marker-events.fifo");
+const gatePath = join(controlDirectory, "marker-gate.fifo");
+const prior = readLines(spawnPath);
+const pid = process.pid;
+const pgid = Number(execFileSync("ps", ["-o", "pgid=", "-p", String(pid)], { encoding: "utf8" }).trim());
+const eventFd = openSync(eventPath, "w");
+const emit = (line) => writeSync(eventFd, line + "\\n");
+appendFileSync(spawnPath, pid + "|" + pgid + "\\n");
+emit("spawn|" + pid + "|" + pgid);
+if (prior.length > 0) {
+  appendFileSync(progressPath, pid + ":duplicate\\n");
+  emit("duplicate|" + pid + "|" + pgid);
+  appendFileSync(terminalPath, pid + ":terminal-ok\\n");
+  emit("terminal|" + pid + "|" + pgid);
+  closeSync(eventFd);
+  process.exit(0);
+}
+const gateFd = openSync(gatePath, "r");
+const byte = Buffer.alloc(1);
+let pending = "";
+for (let step = 1; step <= 8; step += 1) {
+  for (;;) {
+    const count = readSync(gateFd, byte, 0, 1, null);
+    if (count === 0) throw new Error("marker gate closed before completion");
+    pending += byte.toString("utf8", 0, count);
+    const newline = pending.indexOf("\\n");
+    if (newline < 0) continue;
+    pending = pending.slice(newline + 1);
+    break;
+  }
+  appendFileSync(progressPath, pid + ":step-" + step + "\\n");
+  emit("step|" + pid + "|" + pgid + "|" + step);
+}
+appendFileSync(terminalPath, pid + ":terminal-ok\\n");
+emit("terminal|" + pid + "|" + pgid);
+closeSync(gateFd);
+closeSync(eventFd);
+
+function readLines(path) {
+  try {
+    return readFileSync(path, "utf8").split("\\n").filter(Boolean);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+`;
 }
 
 function markerPrompt(
@@ -819,7 +918,7 @@ function outputFileFromPersisted(events: SSEEventPayload[], taskId: string): str
     if (event.type !== "tool_result") continue;
     const serialized = JSON.stringify(event);
     if (!serialized.includes(taskId)) continue;
-    const match = serialized.match(/Output is being written to: ([^\\s"\\]+)/);
+    const match = serialized.match(/Output is being written to: ([^\s"\\]+)/);
     if (match?.[1]) return match[1];
   }
   throw new Error(`background output path was not persisted for ${taskId}`);
