@@ -357,7 +357,7 @@ describe("TaskExecutor.startExecution", () => {
     );
   });
 
-  it("queued delivery turn 실패도 iterator 종료 경계에서 정확히 한 번 consume한다", async () => {
+  it("queued delivery execute 실패는 receipt 없이 consume하지 않는다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "runtime result",
@@ -387,13 +387,8 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
-      message,
-      task,
-      expect.stringMatching(/^event:/),
-    );
+    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
   it("iterator 성공 뒤 ACK barrier 실패도 delivery를 정확히 한 번 consume한다", async () => {
@@ -438,7 +433,7 @@ describe("TaskExecutor.startExecution", () => {
     );
   });
 
-  it("turn-start receipt 일시 실패 뒤 성공한 turn 종료에서 receipt를 재기록한다", async () => {
+  it("turn-start receipt 기록 실패는 transcript recovery에 맡긴다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "child result",
@@ -448,8 +443,7 @@ describe("TaskExecutor.startExecution", () => {
     };
     const deliveryRecorder = {
       recordTurnStarted: vi.fn()
-        .mockRejectedValueOnce(new Error("transient database error"))
-        .mockResolvedValueOnce(true),
+        .mockRejectedValueOnce(new Error("transient database error")),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
@@ -473,16 +467,11 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(2);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
-      message,
-      task,
-      expect.stringMatching(/^event:/),
-    );
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
-  it("turn-start receipt가 재실패해도 iterator 종료에서 consume을 직접 시도한다", async () => {
+  it("turn-start receipt가 없으면 iterator 종료만으로 consume하지 않는다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "runtime result",
@@ -515,12 +504,11 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(2);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(message, task);
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
-  it("error 이벤트만 관측한 성공 turn도 종료 시 receipt를 기록한다", async () => {
+  it("error 이벤트만 관측한 turn은 receipt 없이 consume하지 않는다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "runtime result",
@@ -552,8 +540,8 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
   it("정상 흐름: persistent 이벤트는 ingress, transient 이벤트만 wire + 완료 후 session_updated", async () => {

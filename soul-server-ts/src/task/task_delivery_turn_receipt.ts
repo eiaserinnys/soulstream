@@ -33,18 +33,9 @@ export class TaskDeliveryTurnReceipt {
 
   async consume(task: Task): Promise<void> {
     if (this.consumed) return;
-    // A transient turn-start receipt failure must not strand a successfully
-    // completed delivery in `queued`. Retry the durable receipt at the turn
-    // boundary before marking it consumed.
-    if (!this.recorded) {
-      const consumedTurnId = turnReceiptId(task);
-      this.recorded = await this.consumption.recordTurnStarted(task, this.intervention);
-      if (this.recorded) this.consumedTurnId = consumedTurnId;
-    }
-    // Iterator exhaustion is direct evidence that this foreground input ran.
-    // Even when the advisory turn-start receipt remains unavailable, attempt
-    // the canonical consume boundary instead of leaving the parent delivery
-    // as an accidental retry token.
+    // Without an observed turn receipt the delivery stays replayable. Startup
+    // transcript recovery owns the durable completed/absent decision.
+    if (!this.recorded) return;
     await this.consumption.recordConsumed(
       task,
       this.intervention,

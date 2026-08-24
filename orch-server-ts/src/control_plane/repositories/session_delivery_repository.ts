@@ -13,6 +13,8 @@ import type {
 import { SessionDeliveryNotificationRepository } from "./session_delivery_notification_repository.js";
 import { SessionDeliveryRecoveryRepository } from
   "./session_delivery_recovery_repository.js";
+import { markSessionDeliveryConsumed } from
+  "./session_delivery_consumption_transition.js";
 import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
 import {
@@ -331,24 +333,12 @@ export class SessionDeliveryRepository {
     deliveryId: string,
     consumedTurnId: string,
   ): Promise<SessionDeliveryRow | null> {
-    // target_receipt_id proves that this delivery reached the target and stays
-    // immutable. caller_turn_id identifies the later foreground turn that
-    // consumed it; lastEventId may advance between those two boundaries.
-    const rows = await this.sql<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
-      SET
-        state = 'consumed',
-        aggregate_state = 'consumed',
-        caller_turn_id = ${consumedTurnId},
-        consumed_at = NOW(),
-        updated_at = NOW()
-      WHERE delivery_id = ${deliveryId}
-        AND aggregate_state = 'delivered'
-        AND target_receipt_id IS NOT NULL
-        AND state IN ('delivered', 'queued')
-      RETURNING *
-    `;
-    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
+    const consumed = await markSessionDeliveryConsumed(
+      this.sql,
+      deliveryId,
+      consumedTurnId,
+    );
+    return consumed ? normalizeDeliveryRow(consumed) : null;
   }
 
   async markConsumedByRelation(
