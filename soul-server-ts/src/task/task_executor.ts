@@ -1508,12 +1508,20 @@ export class TaskExecutor {
       if (typeof text !== "string" || typeof user !== "string") {
         throw new Error(`runner intervention payload is invalid: ${pending.interventionId}`);
       }
-      enqueueInterventionOnce(task, {
+      const message = {
         ...(pending.message as unknown as InterventionMessage),
         text,
         user,
         runnerInterventionId: pending.interventionId,
-      });
+      };
+      if (message.deliveryId) {
+        const admitted = task.interventionQueue.find(
+          (queued) => queued.deliveryId === message.deliveryId,
+        );
+        if (admitted) admitted.runnerInterventionId = pending.interventionId;
+        continue;
+      }
+      enqueueInterventionOnce(task, message);
     }
   }
 
