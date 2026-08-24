@@ -1,3 +1,6 @@
+// 500-line exception: the deterministic two-node ledger, clock, execution
+// fixture, retry-horizon oracle, and its mutation self-test stay together so
+// the oracle cannot drift from the failure model it judges.
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
@@ -377,6 +380,10 @@ describe("sendMessageToSession cross-node exact-once", () => {
         addIntervention: (params, onResume) =>
           nonOwnerRoute.addIntervention(params, onResume),
       },
+      nodeId: "local-node",
+      sessionLookup: {
+        getSession: async () => ({ node_id: "owner-node" }),
+      },
       onResume: () => {
         throw new Error("non-owner resumed the target");
       },
@@ -426,6 +433,10 @@ describe("sendMessageToSession cross-node exact-once", () => {
         addIntervention: (params, onResume) =>
           owner.route.addIntervention(params, onResume),
       },
+      nodeId: "owner-node",
+      sessionLookup: {
+        getSession: async () => ({ node_id: "owner-node" }),
+      },
       onResume: owner.onResume,
       logger: silentLogger(),
       orch: { baseUrl: "http://orch.test", headers: {} },
@@ -449,6 +460,182 @@ describe("sendMessageToSession cross-node exact-once", () => {
     expect(ledger.admissions.get("owner-node") ?? 0).toBe(1);
   });
 
+  it("reroutes an owner handoff with one identity and no non-owner admission", async () => {
+    const clock = new FakeClock();
+    const ledger = new SharedDeliveryLedger(clock);
+    const owner = makeOwnerNode(ledger);
+    const nonOwnerRoute = makeNonOwnerRoute(ledger);
+    const ownerSequence = ["local-node", "owner-node"];
+    const getSession = vi.fn(async () => ({
+      node_id: ownerSequence.shift() ?? "owner-node",
+    }));
+
+    const result = await sendMessageToSession({
+      taskManager: {
+        // The owner was local at preflight, then moved before the route
+        // resolved the task. The former owner must not admit the delivery.
+        addIntervention: (params, onResume) =>
+          nonOwnerRoute.addIntervention(params, onResume),
+      },
+      nodeId: "local-node",
+      sessionLookup: { getSession },
+      onResume: () => {
+        throw new Error("former owner resumed the target");
+      },
+      logger: silentLogger(),
+      orch: { baseUrl: "http://orch.test", headers: {} },
+      fetchImpl: relayFetch(owner),
+    }, {
+      targetSessionId: TARGET_SESSION_ID,
+      message: "handoff logical message",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      detail: { relayed: true, outcome: "auto_resumed", delivered: true },
+    });
+    expect(getSession).toHaveBeenCalledTimes(2);
+    expect(ledger.rows.size).toBe(1);
+    expect(ledger.admissions.get("local-node") ?? 0).toBe(0);
+    expect(ledger.admissions.get("owner-node") ?? 0).toBe(1);
+    expect(owner.execution).toMatchObject({
+      targetInputs: 1,
+      executions: 1,
+      assistantMessages: 1,
+      results: 1,
+    });
+  });
+
+  it("retries a temporary relay failure with the same delivery identity", async () => {
+    const clock = new FakeClock();
+    const ledger = new SharedDeliveryLedger(clock);
+    const owner = makeOwnerNode(ledger);
+    const relay = relayFetch(owner);
+    const identities: string[] = [];
+    let attempts = 0;
+
+    const result = await sendMessageToSession({
+      taskManager: {
+        addIntervention: async () => {
+          throw new Error("remote owner must not receive a local admission");
+        },
+      },
+      nodeId: "local-node",
+      sessionLookup: { getSession: async () => ({ node_id: "owner-node" }) },
+      onResume: () => {},
+      logger: silentLogger(),
+      orch: { baseUrl: "http://orch.test", headers: {} },
+      fetchImpl: async (url, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        identities.push(String(body.delivery_id));
+        attempts += 1;
+        if (attempts === 1) throw new Error("temporary connection reset");
+        return relay(url, init);
+      },
+    }, {
+      targetSessionId: TARGET_SESSION_ID,
+      message: "retry logical message",
+    });
+
+    expect(result).toMatchObject({ ok: true, detail: { relayed: true } });
+    expect(identities).toHaveLength(2);
+    expect(new Set(identities).size).toBe(1);
+    expect(ledger.rows.size).toBe(1);
+    expect(ledger.admissions.get("local-node") ?? 0).toBe(0);
+    expect(ledger.admissions.get("owner-node") ?? 0).toBe(1);
+    expect(owner.execution.executions).toBe(1);
+  });
+
+  it.each([
+    {
+      kind: "missing",
+      lookupNodeId: null,
+      failureMessage: `Task not found: ${TARGET_SESSION_ID}`,
+      loadEvictedTask: async () => null,
+    },
+    {
+      kind: "hydration",
+      lookupNodeId: "local-node",
+      failureMessage: `Task hydration failed: ${TARGET_SESSION_ID}`,
+      loadEvictedTask: async () => {
+        throw new Error(`Task hydration failed: ${TARGET_SESSION_ID}`);
+      },
+    },
+  ])("keeps $kind failures explicit without a local delivery row", async ({
+    lookupNodeId,
+    failureMessage,
+    loadEvictedTask,
+  }) => {
+    const clock = new FakeClock();
+    const ledger = new SharedDeliveryLedger(clock);
+    const route = new TaskInterventionRoute({
+      getTask: () => undefined,
+      loadEvictedTask,
+      rememberTask: () => {},
+      runningInterventionTransition: forbiddenRunningTransition(),
+      autoResumeTransition: {
+        resume: vi.fn(async () => {
+          throw new Error("resolution failure must not resume");
+        }),
+      } as unknown as Pick<AutoResumeTransition, "resume">,
+      deliveryLedgerGate: ledger.gate("local-node"),
+    });
+    const result = await sendMessageToSession({
+      taskManager: {
+        addIntervention: (params, onResume) =>
+          route.addIntervention(params, onResume),
+      },
+      nodeId: "local-node",
+      sessionLookup: {
+        getSession: async () => lookupNodeId === null
+          ? null
+          : { node_id: lookupNodeId },
+      },
+      onResume: () => {},
+      logger: silentLogger(),
+    }, {
+      targetSessionId: TARGET_SESSION_ID,
+      message: "failure contract",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: failureMessage,
+      fallback_error: "orch fallback unavailable",
+    });
+    expect(ledger.rows.size).toBe(0);
+    expect(ledger.admissions.get("local-node") ?? 0).toBe(0);
+  });
+
+  it("fails an unavailable owner lookup explicitly before any delivery side effect", async () => {
+    const addIntervention = vi.fn(async () => ({ delivered: true as const }));
+    const fetchImpl = vi.fn(async () => new Response("unexpected relay"));
+    const result = await sendMessageToSession({
+      taskManager: { addIntervention },
+      nodeId: "local-node",
+      sessionLookup: {
+        getSession: async () => {
+          throw new Error("session owner store unavailable");
+        },
+      },
+      onResume: () => {},
+      logger: silentLogger(),
+      orch: { baseUrl: "http://orch.test", headers: {} },
+      fetchImpl,
+    }, {
+      targetSessionId: TARGET_SESSION_ID,
+      message: "owner lookup failure contract",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "session owner store unavailable",
+      fallback_error: "target owner lookup failed: session owner store unavailable",
+    });
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("oracle rejects each independently weakened exact-once dimension", () => {
     const valid: ExactOnceObservation = {
       deliveryTotal: 1,
@@ -464,6 +651,7 @@ describe("sendMessageToSession cross-node exact-once", () => {
     for (const key of [
       "deliveryTotal",
       "consumedDeliveries",
+      "userMessages",
       "targetInputs",
       "executions",
       "assistantMessages",

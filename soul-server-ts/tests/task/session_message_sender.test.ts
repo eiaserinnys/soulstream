@@ -32,10 +32,12 @@ function relayingDeps(
     logger,
     orch: ORCH,
     onResume: () => {},
+    nodeId: "self",
+    sessionLookup: { getSession: async () => ({ node_id: "other" }) },
     // Forces the orch relay path: the target session lives on another node.
     taskManager: {
       addIntervention: async () => {
-        throw new Error("Task owned by another node: owner=other current=self");
+        throw new Error("remote delivery must not attempt local admission");
       },
     },
     fetchImpl: async () => responder(),
@@ -171,7 +173,13 @@ describe("sendMessageToSession relay verdict", () => {
       logger,
       orch: ORCH,
       onResume: () => {},
-      taskManager: { addIntervention: async () => ({ delivered: true as const }) },
+      nodeId: "self",
+      sessionLookup: {
+        getSession: async () => ({ node_id: "self" }),
+      },
+      taskManager: {
+        addIntervention: async () => ({ delivered: true as const }),
+      },
       fetchImpl: async () => { throw new Error("relay must not be attempted"); },
     } as unknown as SendMessageToSessionDeps, {
       targetSessionId: "session-1",

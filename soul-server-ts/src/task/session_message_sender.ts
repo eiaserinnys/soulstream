@@ -1,5 +1,10 @@
 import type { Logger } from "pino";
 
+import {
+  ensureHumanDeliveryIdentity,
+  type AddInterventionParams,
+} from "./task_intervention_route.js";
+import { TaskOwnedByAnotherNodeError } from "./task_hydration_errors.js";
 import type { CallerInfo } from "./task_models.js";
 import type {
   AddInterventionResult,
@@ -14,6 +19,10 @@ export interface SessionMessageOrchConfig {
 
 export interface SendMessageToSessionDeps {
   taskManager: Pick<TaskManager, "addIntervention">;
+  nodeId: string;
+  sessionLookup: {
+    getSession(sessionId: string): Promise<{ node_id: string | null } | null>;
+  };
   onResume: StartExecutionCallback;
   logger: Logger;
   orch?: SessionMessageOrchConfig;
@@ -63,15 +72,32 @@ export async function sendMessageToSession(
   deps: SendMessageToSessionDeps,
   params: SendMessageToSessionParams,
 ): Promise<SendMessageToSessionResult> {
+  const request = ensureHumanDeliveryIdentity({
+    agentSessionId: params.targetSessionId,
+    text: params.message,
+    user: "agent",
+    callerInfo: params.callerInfo,
+  });
+
+  let ownerNodeId: string | null;
+  try {
+    ownerNodeId = await resolveOwnerNodeId(deps, params.targetSessionId);
+  } catch (err) {
+    const error = errorMessage(err);
+    return {
+      ok: false,
+      error,
+      fallback_error: `target owner lookup failed: ${error}`,
+    };
+  }
+  if (ownerNodeId !== null && ownerNodeId !== deps.nodeId) {
+    return await relayThroughOrch(deps, request, null);
+  }
+
   let localError: string | null = null;
   try {
     const detail = await deps.taskManager.addIntervention(
-      {
-        agentSessionId: params.targetSessionId,
-        text: params.message,
-        user: "agent",
-        callerInfo: params.callerInfo,
-      },
+      request,
       deps.onResume,
     );
     return { ok: true, detail };
@@ -81,8 +107,42 @@ export async function sendMessageToSession(
       { err, targetSessionId: params.targetSessionId },
       "send_message_to_session local delivery failed — trying orch fallback",
     );
+    if (err instanceof TaskOwnedByAnotherNodeError) {
+      try {
+        const ownerNodeId = await resolveOwnerNodeId(deps, params.targetSessionId);
+        if (ownerNodeId === null || ownerNodeId === deps.nodeId) {
+          return {
+            ok: false,
+            error: localError,
+            fallback_error: "target owner remained local after NOT_OWNER",
+          };
+        }
+      } catch (ownerError) {
+        return {
+          ok: false,
+          error: localError,
+          fallback_error: `target owner relookup failed: ${errorMessage(ownerError)}`,
+        };
+      }
+    }
   }
 
+  return await relayThroughOrch(deps, request, localError);
+}
+
+async function resolveOwnerNodeId(
+  deps: Pick<SendMessageToSessionDeps, "sessionLookup">,
+  targetSessionId: string,
+): Promise<string | null> {
+  const session = await deps.sessionLookup.getSession(targetSessionId);
+  return session?.node_id ?? null;
+}
+
+async function relayThroughOrch(
+  deps: SendMessageToSessionDeps,
+  request: AddInterventionParams,
+  localError: string | null,
+): Promise<SendMessageToSessionResult> {
   const orch = deps.orch;
   if (!orch) {
     return {
@@ -92,53 +152,67 @@ export async function sendMessageToSession(
     };
   }
 
-  try {
-    const verdict = await relayMessageToOrch(
-      orch,
-      params.targetSessionId,
-      params.message,
-      params.callerInfo,
-      deps.fetchImpl,
-    );
-    if (verdict.delivered === null) {
+  let fallbackError = "orch relay failed";
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const verdict = await relayMessageToOrch(
+        orch,
+        request,
+        deps.fetchImpl,
+      );
+      if (verdict.delivered === null) {
+        deps.logger.warn(
+          { targetSessionId: request.agentSessionId, reason: verdict.reason },
+          "send_message_to_session relayed without a delivery verdict",
+        );
+      }
+      return {
+        ok: true,
+        detail: {
+          relayed: true,
+          target_session_id: request.agentSessionId,
+          local_error: localError,
+          ...verdict,
+        },
+      };
+    } catch (err) {
+      fallbackError = errorMessage(err);
+      if (attempt === 2 || !isRetryableRelayError(err)) break;
       deps.logger.warn(
-        { targetSessionId: params.targetSessionId, reason: verdict.reason },
-        "send_message_to_session relayed without a delivery verdict",
+        {
+          err,
+          targetSessionId: request.agentSessionId,
+          deliveryId: request.deliveryId,
+        },
+        "send_message_to_session relay failed — retrying same delivery identity",
       );
     }
-    return {
-      ok: true,
-      detail: {
-        relayed: true,
-        target_session_id: params.targetSessionId,
-        local_error: localError,
-        ...verdict,
-      },
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      error: localError,
-      fallback_error: err instanceof Error ? err.message : String(err),
-    };
   }
+  return {
+    ok: false,
+    error: localError,
+    fallback_error: fallbackError,
+  };
 }
 
 async function relayMessageToOrch(
   orch: SessionMessageOrchConfig,
-  targetSessionId: string,
-  message: string,
-  callerInfo: CallerInfo | undefined,
+  request: AddInterventionParams,
   fetchImpl: typeof fetch = fetch,
 ): Promise<RelayedInterventionVerdict> {
-  const url = `${orch.baseUrl}/api/sessions/${targetSessionId}/intervene`;
+  const url = `${orch.baseUrl}/api/sessions/${request.agentSessionId}/intervene`;
   const body: Record<string, unknown> = {
-    text: message,
-    user: "agent",
+    text: request.text,
+    user: request.user,
+    delivery_id: request.deliveryId,
+    delivery_intent: request.deliveryIntent,
+    source: request.source,
+    completion_id: request.completionId,
+    relation_key: request.relationKey,
+    created_at: request.deliveryCreatedAt,
   };
-  if (callerInfo !== undefined) {
-    // orch InterveneRequest의 Pydantic 필드명은 snake_case. camelCase callerInfo 금지.
-    body.caller_info = callerInfo;
+  if (request.callerInfo !== undefined) {
+    body.caller_info = request.callerInfo;
   }
 
   const resp = await fetchImpl(url, {
@@ -150,11 +224,27 @@ async function relayMessageToOrch(
     body: JSON.stringify(body),
   });
   if (!resp.ok) {
-    throw new Error(
-      `orch POST /api/sessions/${targetSessionId}/intervene failed: ${resp.status} ${resp.statusText}`,
+    throw new RelayResponseError(
+      resp.status,
+      `orch POST /api/sessions/${request.agentSessionId}/intervene failed: ${resp.status} ${resp.statusText}`,
     );
   }
   return parseInterveneVerdict(await readJsonBody(resp));
+}
+
+class RelayResponseError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = "RelayResponseError";
+  }
+}
+
+function isRetryableRelayError(error: unknown): boolean {
+  return !(error instanceof RelayResponseError) || error.status >= 500;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function readJsonBody(resp: Response): Promise<unknown> {

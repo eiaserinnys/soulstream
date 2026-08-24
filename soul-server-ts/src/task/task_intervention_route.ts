@@ -128,6 +128,12 @@ export class TaskInterventionRoute {
     const request = this.deps.deliveryLedgerGate
       ? ensureHumanDeliveryIdentity(params)
       : params;
+    // Human sends must prove local ownership before the first ledger write.
+    // Durable completion/runtime retries keep their existing admission-first
+    // suppression: a consumed semantic relation is final even without a task.
+    let task = request.deliveryIntent === "human_live_steer"
+      ? await this.resolveTask(params.agentSessionId)
+      : undefined;
     const admission = this.deps.deliveryLedgerGate
       ? await this.deps.deliveryLedgerGate.admit(request)
       : { kind: "legacy" } as const;
@@ -160,7 +166,7 @@ export class TaskInterventionRoute {
         reason: admission.reason,
       };
     }
-    const task = await this.resolveTask(params.agentSessionId);
+    task ??= await this.resolveTask(params.agentSessionId);
     const message = admission.kind === "admitted"
       ? hydrateStoredDeliveryMessage(initialMessage, admission.row)
       : initialMessage;
@@ -422,7 +428,7 @@ function interventionTaskRoute(
   return isActiveTaskStatus(task.status) ? "running" : "auto-resume";
 }
 
-function ensureHumanDeliveryIdentity(
+export function ensureHumanDeliveryIdentity(
   params: AddInterventionParams,
 ): AddInterventionParams {
   if (params.deliveryIntent) return params;
