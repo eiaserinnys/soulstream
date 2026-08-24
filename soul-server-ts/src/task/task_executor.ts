@@ -253,6 +253,36 @@ export class TaskExecutor {
    * promise 실패는 task.error에 박히고 status="error"로 전환.
    */
   startExecution(task: Task, agent: AgentProfile): Promise<void> {
+    return this.startExecutionWithOwnership(
+      task,
+      agent,
+      async (operation, start) => await this.executionOwnershipCoordinator.withSessionLease(
+        task.agentSessionId,
+        operation,
+        start,
+      ),
+    );
+  }
+
+  private startExecutionUnderRecoveryLease(
+    task: Task,
+    agent: AgentProfile,
+  ): Promise<void> {
+    return this.startExecutionWithOwnership(
+      task,
+      agent,
+      async (_operation, start) => await start(),
+    );
+  }
+
+  private startExecutionWithOwnership(
+    task: Task,
+    agent: AgentProfile,
+    runOwnedAttempt: (
+      operation: "attach" | "spawn",
+      start: () => Promise<void>,
+    ) => Promise<void>,
+  ): Promise<void> {
     const retainedRunner = task.runnerRetainedForClaudeBackground === true
       ? task.runner
       : undefined;
@@ -309,6 +339,7 @@ export class TaskExecutor {
       backend,
       retainedRunner,
       () => activation.resolve(undefined),
+      runOwnedAttempt,
     ).catch(
       async (err: unknown) => {
         activation.reject(err);
@@ -376,6 +407,10 @@ export class TaskExecutor {
     backend: BackendId,
     retainedRunner: TaskRunnerRuntime | undefined,
     resolveActivation: () => void,
+    runOwnedAttempt: (
+      operation: "attach" | "spawn",
+      start: () => Promise<void>,
+    ) => Promise<void>,
   ): Promise<void> {
     // An attempt that lost to an owner it then proved dead has displaced the
     // only thing in its way, and giving up there left the session waiting on a
@@ -387,8 +422,7 @@ export class TaskExecutor {
     // conflict means somebody genuinely holds the session.
     for (let attempt = 0; ; attempt += 1) {
       try {
-        await this.executionOwnershipCoordinator.withSessionLease(
-          task.agentSessionId,
+        await runOwnedAttempt(
           retainedRunner ? "attach" : "spawn",
           async () => await this.startOwnedExecutionLocked(
             task,
@@ -745,9 +779,43 @@ export class TaskExecutor {
     manifestId?: string,
     runtimeEnvIdentity?: string,
   ): Promise<void> {
+    return this.withSessionRecoveryLease(
+      task.agentSessionId,
+      async () => await this.recoverRunnerExecutionLocked(
+        task,
+        agent,
+        runner,
+        commandId,
+        mode,
+        manifestId,
+        runtimeEnvIdentity,
+      ),
+    );
+  }
+
+  withSessionRecoveryLease<T>(
+    sessionId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.executionOwnershipCoordinator.withSessionLease(
+      sessionId,
+      "recovery",
+      operation,
+    );
+  }
+
+  private recoverRunnerExecutionLocked(
+    task: Task,
+    agent: AgentProfile,
+    runner: TaskRunnerRuntime,
+    commandId?: string,
+    mode: "adopt" | "replay" | "offline" = "adopt",
+    manifestId?: string,
+    runtimeEnvIdentity?: string,
+  ): Promise<void> {
     if (mode === "adopt" && manifestId && this.supportsExecutionOwnership()) {
       const runnerRuntimeEnvIdentity = runtimeEnvIdentity ?? `legacy:${manifestId}`;
-      return this.recoverOwnedRunnerExecution(
+      return this.recoverOwnedRunnerExecutionLocked(
         task,
         agent,
         runner,
@@ -793,28 +861,6 @@ export class TaskExecutor {
     })();
     this.holdExecutionSlot(task, promise);
     return promise;
-  }
-
-  private recoverOwnedRunnerExecution(
-    task: Task,
-    agent: AgentProfile,
-    runner: TaskRunnerRuntime,
-    manifestId: string,
-    runtimeEnvIdentity: string,
-    commandId?: string,
-  ): Promise<void> {
-    return this.executionOwnershipCoordinator.withSessionLease(
-      task.agentSessionId,
-      "recovery",
-      async () => await this.recoverOwnedRunnerExecutionLocked(
-        task,
-        agent,
-        runner,
-        manifestId,
-        runtimeEnvIdentity,
-        commandId,
-      ),
-    );
   }
 
   private recoverOwnedRunnerExecutionLocked(
@@ -954,7 +1000,7 @@ export class TaskExecutor {
     );
     if (!runner) throw new Error("runner process recovery factory unavailable");
     onAttemptCreated?.(runner);
-    return this.recoverRunnerExecution(
+    return this.recoverRunnerExecutionLocked(
       task,
       config.agent,
       runner,
@@ -1006,6 +1052,23 @@ export class TaskExecutor {
   restartRegisteredRunner(task: Task, config: RunnerChildConfig): Promise<void> {
     if (this.supportsExecutionOwnership()) {
       return this.startExecution(task, config.agent);
+    }
+    const runner = this.runnerProcessFactory?.restart?.(
+      task,
+      config,
+      this.snapshotPersistenceFor(task),
+    );
+    if (!runner) throw new Error("runner process restart factory unavailable");
+    this.startExecutionWithRunner(task, config.agent, runner);
+    return task.executionPromise!;
+  }
+
+  restartRegisteredRunnerUnderRecoveryLease(
+    task: Task,
+    config: RunnerChildConfig,
+  ): Promise<void> {
+    if (this.supportsExecutionOwnership()) {
+      return this.startExecutionUnderRecoveryLease(task, config.agent);
     }
     const runner = this.runnerProcessFactory?.restart?.(
       task,

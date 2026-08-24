@@ -76,15 +76,17 @@ export class RunnerAdoptionFailureRecovery {
     ownedRunner: Task["runner"];
     attemptRunner: TaskRunnerRuntime | undefined;
     error: unknown;
-  }): void {
+  }): Promise<void> {
     const sessionId = input.registration.config.sessionId;
-    if (this.active.has(sessionId)) return;
+    const active = this.active.get(sessionId);
+    if (active) return active;
     const recovery = this.recover(input).catch((error) => {
       this.deps.onFailure(input.registration, input.disposition, error);
     }).finally(() => {
       if (this.active.get(sessionId) === recovery) this.active.delete(sessionId);
     });
     this.active.set(sessionId, recovery);
+    return recovery;
   }
 
   async terminalize(

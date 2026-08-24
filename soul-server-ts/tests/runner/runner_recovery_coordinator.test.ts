@@ -784,8 +784,10 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       finishCollection = () => resolve({ removed: [], retained: [] });
     });
     const sessionGarbageCollector = { collect: vi.fn(() => collection) };
+    const retired = registration({ pidAlive: false, lifecycleState: "completed" });
+    retired.retiredAt = "2026-08-11T00:00:25.000Z";
     const subject = makeSubject(
-      [registration()],
+      [retired],
       Date.parse("2026-08-11T00:00:30.000Z"),
       [],
       { sessionGarbageCollector },
@@ -807,14 +809,17 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       finishCollection = () => resolve({ removed: [], retained: [] });
     });
     const sessionGarbageCollector = { collect: vi.fn(() => collection) };
+    const retired = registration({ pidAlive: false, lifecycleState: "completed" });
+    retired.retiredAt = "2026-08-11T00:00:25.000Z";
     const subject = makeSubject(
-      [registration()],
+      [retired],
       Date.parse("2026-08-11T00:00:30.000Z"),
       [],
       { sessionGarbageCollector },
     );
 
     await subject.coordinator.scanOnce();
+    expect(sessionGarbageCollector.collect).toHaveBeenCalledOnce();
     const laterScan = subject.coordinator.scanOnce().then(() => "scanned");
     await expect(Promise.race([
       laterScan,
@@ -848,6 +853,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(sessionGarbageCollector.collect).not.toHaveBeenCalled();
     finishRecovery();
     await subject.coordinator.stop();
+    expect(sessionGarbageCollector.collect).toHaveBeenCalledOnce();
   });
 
   it("a live but stale progress lease is killed before offline drain and resume", async () => {
@@ -1656,6 +1662,7 @@ describe("RunnerRecoveryCoordinator execution ownership backoff", () => {
     );
 
     await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledTimes(1);
 
     backoff.observeConflict("session-a", new Date(nowMs + 60_000).toISOString());
@@ -1718,7 +1725,9 @@ function makeSubject(
   registrations: RunnerRegistration[],
   now = Date.parse("2026-08-11T00:00:30.000Z"),
   errors: Array<{ directory: string; error: Error }> = [],
-  overrides: Partial<RunnerRecoveryCoordinatorOptions> = {},
+  overrides: Omit<Partial<RunnerRecoveryCoordinatorOptions>, "taskExecutor"> & {
+    taskExecutor?: Partial<RunnerRecoveryCoordinatorOptions["taskExecutor"]>;
+  } = {},
 ) {
   const tasks = new Map<string, Task>();
   for (const item of registrations) {
@@ -1758,7 +1767,6 @@ function makeSubject(
     stateDirectory: "/runner",
     leaseTimeoutMs: 120_000,
     scanIntervalMs: 15_000,
-    taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner },
     closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger,
     spawner: { terminate, invalidateRegistration, retireTerminalRegistration },
@@ -1767,6 +1775,16 @@ function makeSubject(
     now: () => now,
     markReaped,
     ...overrides,
+    taskExecutor: {
+      recoverRegisteredRunner,
+      restartRegisteredRunner,
+      restartRegisteredRunnerUnderRecoveryLease:
+        overrides.taskExecutor?.restartRegisteredRunnerUnderRecoveryLease
+        ?? overrides.taskExecutor?.restartRegisteredRunner
+        ?? restartRegisteredRunner,
+      withSessionRecoveryLease: async (_sessionId, operation) => await operation(),
+      ...overrides.taskExecutor,
+    },
     taskManager: {
       ...baseTaskManager,
       ...overrides.taskManager,

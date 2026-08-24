@@ -134,7 +134,10 @@ export class RunnerRecoveryCoordinator {
         await options.taskManager.markRunnerFailureAndResume(
           task,
           message,
-          (resumedTask) => options.taskExecutor.restartRegisteredRunner(resumedTask, config),
+          (resumedTask) => options.taskExecutor.restartRegisteredRunnerUnderRecoveryLease(
+            resumedTask,
+            config,
+          ),
         ),
       onFailure: (registration, disposition, error) =>
         this.recoveryLogger.failure(registration, disposition, error),
@@ -162,12 +165,19 @@ export class RunnerRecoveryCoordinator {
   private async performScan(): Promise<void> {
     const monotonicNow = this.options.monotonicNow ?? (() => performance.now());
     const startedAt = monotonicNow();
+    const activeAtScanStart = new Map(this.active);
     if (this.sessionGarbageCollectionScheduler.inFlight) {
       await this.sessionGarbageCollectionScheduler.inFlight;
     }
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
     );
+    scan.registrations = await Promise.all(scan.registrations.map(async (registration) => {
+      const active = activeAtScanStart.get(registration.config.sessionId);
+      if (!active) return registration;
+      await active;
+      return await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
+    }));
     this.ownerNullExecutionReconciler.prune(scan.registrations);
     await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
     await this.unreadableRegistrationHandler.handle(scan.errors);
@@ -248,14 +258,10 @@ export class RunnerRecoveryCoordinator {
           continue;
         }
       }
-      if (
-        disposition === "adopt_prebootstrap"
-        || disposition === "adopt_running"
-      ) {
-        await this.handleWithFailureTracking(registration, disposition, task);
-        continue;
-      }
-      const recovery = this.handleWithFailureTracking(registration, disposition, task)
+      const recovery = this.options.taskExecutor.withSessionRecoveryLease(
+        sessionId,
+        async () => await this.handleWithFailureTracking(registration, disposition, task),
+      )
         .finally(() => {
           if (this.active.get(sessionId) === recovery) this.active.delete(sessionId);
         });
@@ -273,12 +279,20 @@ export class RunnerRecoveryCoordinator {
         this.options.logger.error({ err: error }, "runner release GC failed");
       }
     }
-    this.sessionGarbageCollectionScheduler.schedule({
-      ...scan,
-      registrations: scan.registrations.filter(
-        (registration) => !this.active.has(registration.config.sessionId),
-      ),
-    });
+    const activeRecoveries = [...this.active.values()];
+    if (activeRecoveries.length === 0) {
+      this.sessionGarbageCollectionScheduler.schedule(scan);
+    } else {
+      this.sessionGarbageCollectionScheduler.scheduleAfter(
+        Promise.allSettled(activeRecoveries),
+        () => ({
+          ...scan,
+          registrations: scan.registrations.filter(
+            (registration) => !this.active.has(registration.config.sessionId),
+          ),
+        }),
+      );
+    }
     logRunnerRecoveryScan(
       this.options.logger,
       admitted.map(({ registration }) => registration),
@@ -383,7 +397,7 @@ export class RunnerRecoveryCoordinator {
           await this.options.taskManager.markRunnerFailureAndResume(
             recoveredTask,
             message,
-            (resumedTask) => this.options.taskExecutor.restartRegisteredRunner(
+            (resumedTask) => this.options.taskExecutor.restartRegisteredRunnerUnderRecoveryLease(
               resumedTask,
               config,
             ),
@@ -511,20 +525,20 @@ export class RunnerRecoveryCoordinator {
     if (mode === "offline") {
       await completion;
     } else if (mode === "adopt" && adoptionDisposition) {
-      void completion.then(
-        () => this.adoptionFailureRecovery.clear(registration.config.sessionId),
-        (error: unknown) => {
-          this.adoptionFailureRecovery.schedule({
-            registration,
-            disposition: adoptionDisposition,
-            task,
-            completion,
-            ownedRunner,
-            attemptRunner,
-            error,
-          });
-        },
-      );
+      try {
+        await completion;
+        this.adoptionFailureRecovery.clear(registration.config.sessionId);
+      } catch (error) {
+        await this.adoptionFailureRecovery.schedule({
+          registration,
+          disposition: adoptionDisposition,
+          task,
+          completion,
+          ownedRunner,
+          attemptRunner,
+          error,
+        });
+      }
     } else {
       void completion.catch((error) => {
         this.options.logger.error(
