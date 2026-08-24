@@ -22,6 +22,8 @@ import { McpConfigService } from "../../src/mcp_config_service.js";
 import { getCurrentMcpCallerSessionId } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { RunnerProcessDispatcher } from "../../src/runner/runner_process_dispatcher.js";
+import { resolveAmbiguousRunnerIntervention } from
+  "../../src/runner/runner_intervention_resolution.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { parseRunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
 import { readRunnerRegistrationSummary } from
@@ -617,7 +619,7 @@ describe("runner cutover all-flags-on integration", () => {
     await secondComposition.hostOwnership.release();
   }, 45_000);
 
-  it("heals a legacy ambiguous inbox row and carries it through the replacement child", async () => {
+  it("carries an explicitly resolved ambiguous inbox row through the replacement child", async () => {
     const root = await mkdtemp(join(tmpdir(), "runner-intervention-recovery-"));
     temporaryRoots.push(root);
     const stateDirectory = join(root, "state");
@@ -723,6 +725,12 @@ describe("runner cutover all-flags-on integration", () => {
       WHERE intervention_id = 'legacy-ambiguous-e2e'
     `).get()).toEqual({ application_state: "ambiguous" });
     legacy.close();
+
+    await resolveAmbiguousRunnerIntervention(
+      paths.databasePath,
+      "legacy-ambiguous-e2e",
+      "not_applied",
+    );
 
     task.runner = undefined;
     task.executionPromise = undefined;

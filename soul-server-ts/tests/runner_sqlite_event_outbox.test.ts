@@ -289,7 +289,7 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
   });
 
-  it("heals a legacy ambiguous receipt to the restart-safe pending queue on writer open", async () => {
+  it("keeps a legacy ambiguous receipt fenced across writer open", async () => {
     const outbox = await createOutbox();
     await outbox.stageIntervention({
       interventionId: "legacy-ambiguous",
@@ -302,19 +302,16 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
 
     const recovered = await RunnerSqliteEventOutbox.open(path);
-    await expect(recovered.readPendingInterventions()).resolves.toEqual([{
-      interventionId: "legacy-ambiguous",
-      message: { text: "recover after upgrade", user: "soak" },
-    }]);
+    await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
     const database = new DatabaseSync(path);
     expect(database.prepare(`
       SELECT application_state, claimed_execution_command_id, claimed_at
       FROM runner_intervention_inbox
       WHERE intervention_id = 'legacy-ambiguous'
     `).get()).toEqual({
-      application_state: "pending",
-      claimed_execution_command_id: null,
-      claimed_at: null,
+      application_state: "ambiguous",
+      claimed_execution_command_id: "apply-intervention:legacy-ambiguous",
+      claimed_at: expect.any(String),
     });
     database.close();
     recovered.close();
@@ -645,7 +642,7 @@ describe("RunnerSqliteEventOutbox", () => {
     expect(database.prepare(`
       SELECT application_state FROM runner_intervention_inbox
       WHERE intervention_id = 'resolve-live-runner'
-    `).get()).toEqual({ application_state: "pending" });
+    `).get()).toEqual({ application_state: "ambiguous" });
     database.close();
     recovered.close();
   });
