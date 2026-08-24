@@ -1,6 +1,6 @@
 import type { Stats } from "node:fs";
 import { stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { readClosedRunnerTailState } from "./closed_runner_tail_state.js";
 import { runnerHostStatePath } from "./runner_host_state_store.js";
@@ -20,6 +20,10 @@ import {
   processStartIdentitiesMatch,
   type ProcessIdentity,
 } from "./runner_process_lock.js";
+import {
+  runnerProcessPaths,
+  type RunnerProcessPaths,
+} from "./runner_process_paths.js";
 import {
   readRunnerRegistrationIdentity,
   recoverRunnerDirectoryIdentity,
@@ -44,8 +48,9 @@ export async function readRunnerRegistrationSummary(
   }
   let configStat: Stats;
   try {
-    if (resolve(config.paths.sessionDirectory) !== directory) {
-      throw new Error(`runner config directory mismatch: ${directory}`);
+    const canonicalPaths = runnerProcessPaths(dirname(directory), config.sessionId);
+    if (!samePaths(config.paths, canonicalPaths)) {
+      throw new Error(`runner config paths mismatch: ${directory}`);
     }
     configStat = await stat(configPath);
   } catch (error) {
@@ -144,6 +149,16 @@ export async function readRunnerRegistrationSummary(
       "identity",
     );
   }
+}
+
+function samePaths(left: RunnerProcessPaths, right: RunnerProcessPaths): boolean {
+  return left.sessionDirectory === right.sessionDirectory
+    && left.databasePath === right.databasePath
+    && left.socketPath === right.socketPath
+    && left.pidPath === right.pidPath
+    && left.lockPath === right.lockPath
+    && left.configPath === right.configPath
+    && left.logPath === right.logPath;
 }
 
 function isPidAlive(pid: number): boolean {

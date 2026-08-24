@@ -109,9 +109,9 @@ describe("TaskRunnerRecovery", () => {
     expect(task).toMatchObject({
       status: "error",
       error: "runner replacement start failed: snapshot missing",
-      runner: undefined,
       executionPromise: undefined,
     });
+    expect(task.runner).toBeUndefined();
     expect(task.completedAt).toBeInstanceOf(Date);
   });
 

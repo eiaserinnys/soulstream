@@ -1,4 +1,10 @@
+import { randomUUID } from "node:crypto";
+
+import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+
+import type { SessionDeliveryRepository } from
+  "../control_plane/repositories/session_delivery_repository.js";
 
 import {
   badRequest,
@@ -19,6 +25,7 @@ import {
   realtimeResolveToolApprovalPayload,
   toolApprovalPayload,
   type ApprovalParams,
+  type InterveneNodeCommandPayload,
   type InterruptNodeCommandPayload,
   type JsonObject,
   type AcknowledgeSessionReviewNodeCommandPayload,
@@ -36,6 +43,7 @@ export type SessionActionCommandRouteOptions =
   SessionActionCommandDispatchOptions & {
     resolveCallerInfo?: SessionActionCallerInfoResolver;
     reviewAcknowledgeFallback?: SessionReviewAcknowledgeFallback;
+    deliveryRepositoryProvider?: () => Promise<Pick<SessionDeliveryRepository, "register">>;
   };
 
 export const sessionActionCommandRouteAuthRequirements = {
@@ -72,8 +80,25 @@ export function registerSessionActionCommandRoutes(
           targetSessionId,
         );
       }
-
-      return sendInterveneCommand(reply, options, payload.value);
+      const durable = await admitDurableHumanIntervention(
+        options,
+        payload.value,
+      );
+      if (durable.conflict) {
+        return reply.code(409).send({
+          error: {
+            code: "DELIVERY_IDENTITY_CONFLICT",
+            message: `Delivery identity conflict: ${durable.deliveryId}`,
+            deliveryId: durable.deliveryId,
+          },
+        });
+      }
+      return sendInterveneCommand(
+        reply,
+        options,
+        durable.payload,
+        durable.deliveryId,
+      );
     },
   );
 
@@ -177,6 +202,76 @@ export function registerSessionActionCommandRoutes(
       return sendActionCommand(reply, options, payload.value, sendRealtimeAckError);
     },
   );
+}
+
+async function admitDurableHumanIntervention(
+  options: SessionActionCommandRouteOptions,
+  payload: InterveneNodeCommandPayload,
+): Promise<{
+  payload: InterveneNodeCommandPayload;
+  deliveryId?: string;
+  conflict: boolean;
+}> {
+  if (
+    options.deliveryRepositoryProvider === undefined
+    || (
+      payload.delivery_intent !== undefined
+      && payload.delivery_intent !== "human_live_steer"
+    )
+  ) {
+    return { payload, conflict: false };
+  }
+  const deliveryId = payload.delivery_id ?? randomUUID();
+  const completionId = payload.completion_id ?? `message:${deliveryId}`;
+  const relationKey = payload.relation_key
+    ?? `user_message:${payload.agentSessionId}:${deliveryId}`;
+  const source = payload.source ?? "user_message";
+  const createdAt = parseCreatedAt(payload.created_at);
+  const durablePayload = {
+    ...payload,
+    delivery_id: deliveryId,
+    delivery_intent: "human_live_steer" as const,
+    source,
+    completion_id: completionId,
+    relation_key: relationKey,
+    created_at: createdAt.toISOString(),
+  };
+  const canonical = buildCanonicalDeliveryPayload({
+    text: payload.text,
+    user: payload.user,
+    source,
+    completionId,
+    relationKey,
+    attachmentPaths: payload.attachment_paths,
+    context: payload.extra_context_items,
+    callerInfo: payload.caller_info,
+  });
+  const repository = await options.deliveryRepositoryProvider();
+  const registered = await repository.register({
+    deliveryId,
+    targetSessionId: payload.agentSessionId,
+    relationKey,
+    completionId,
+    intent: "human_live_steer",
+    source,
+    payloadHash: canonical.payloadHash,
+    payload: canonical.payload,
+    createdAt,
+  });
+  return {
+    payload: durablePayload,
+    deliveryId,
+    conflict: registered.conflict,
+  };
+}
+
+function parseCreatedAt(value: string | undefined): Date {
+  if (value === undefined) return new Date();
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("created_at must be an ISO timestamp");
+  }
+  return parsed;
 }
 
 function deprecatedSessionMessage(

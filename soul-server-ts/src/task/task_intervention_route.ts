@@ -1,13 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import type { AutoResumeCallback, AutoResumeTransition } from "./task_auto_resume_transition.js";
-import type {
-  ActiveTaskRecovery,
-  InterventionTaskRoute,
-} from "./task_active_recovery.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import {
+  isActiveTaskStatus,
   isTerminalTaskStatus,
   type CallerInfo,
   type InterventionMessage,
@@ -99,7 +96,6 @@ export interface TaskInterventionRouteDeps {
   getTask(sessionId: string): Task | undefined;
   loadEvictedTask(sessionId: string): Promise<Task | null>;
   rememberTask(task: Task): void;
-  activeTaskRecovery: Pick<ActiveTaskRecovery, "prepareForIntervention">;
   runningInterventionTransition: Pick<
     RunningInterventionTransition,
     "deliver" | "queueOnly"
@@ -117,9 +113,10 @@ export interface TaskInterventionRouteDeps {
 /**
  * Owns public intervention route policy.
  *
- * ActiveTaskRecovery owns stale-running classification. RunningInterventionTransition and
- * AutoResumeTransition own side-effect order. This route owns task resolution, transition
- * selection, public result forwarding, and onResume callback wiring.
+ * Active status is the single authority for routing an intervention to the
+ * attached runner. RunningInterventionTransition and AutoResumeTransition own
+ * side-effect order. This route owns task resolution, transition selection,
+ * public result forwarding, and onResume callback wiring.
  */
 export class TaskInterventionRoute {
   constructor(private readonly deps: TaskInterventionRouteDeps) {}
@@ -128,35 +125,12 @@ export class TaskInterventionRoute {
     params: AddInterventionParams,
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
-    let task: Task;
-    let preclassifiedRoute: InterventionTaskRoute | undefined;
-    let request = params;
-    let admission: DeliveryLedgerAdmission;
-    if (this.deps.deliveryLedgerGate && params.deliveryIntent) {
-      admission = await this.deps.deliveryLedgerGate.admit(params);
-      if (admission.kind === "suppressed") {
-        return {
-          suppressed: true,
-          deliveryId: admission.deliveryId,
-          reason: admission.reason,
-        };
-      }
-      task = await this.resolveTask(params.agentSessionId);
-      preclassifiedRoute = task.status === "initializing"
-        ? undefined
-        : this.deps.activeTaskRecovery.prepareForIntervention(task);
-    } else {
-      task = await this.resolveTask(params.agentSessionId);
-      preclassifiedRoute = task.status === "initializing"
-        ? undefined
-        : this.deps.activeTaskRecovery.prepareForIntervention(task);
-      request = this.deps.deliveryLedgerGate && preclassifiedRoute !== "running"
-        ? ensureDurableDeliveryIdentity(params)
-        : params;
-      admission = this.deps.deliveryLedgerGate
-        ? await this.deps.deliveryLedgerGate.admit(request)
-        : { kind: "legacy" };
-    }
+    const request = this.deps.deliveryLedgerGate
+      ? ensureHumanDeliveryIdentity(params)
+      : params;
+    const admission = this.deps.deliveryLedgerGate
+      ? await this.deps.deliveryLedgerGate.admit(request)
+      : { kind: "legacy" } as const;
     const initialMessage: InterventionMessage = {
       text: request.text,
       user: request.user,
@@ -186,6 +160,7 @@ export class TaskInterventionRoute {
         reason: admission.reason,
       };
     }
+    const task = await this.resolveTask(params.agentSessionId);
     const message = admission.kind === "admitted"
       ? hydrateStoredDeliveryMessage(initialMessage, admission.row)
       : initialMessage;
@@ -233,8 +208,7 @@ export class TaskInterventionRoute {
           };
         }
       }
-      const taskRoute = preclassifiedRoute
-        ?? this.deps.activeTaskRecovery.prepareForIntervention(task);
+      const taskRoute = interventionTaskRoute(task);
       if (taskRoute === "activating") {
         throw new Error(
           `execution activation did not reach running state for ${task.agentSessionId}`,
@@ -258,6 +232,12 @@ export class TaskInterventionRoute {
             { publishEvent: false },
           );
           notificationDisposition = "queued";
+        } else if (message.deliveryIntent === "human_live_steer") {
+          result = await this.deps.runningInterventionTransition.deliver(
+            task,
+            message,
+            { queueIfUndelivered: request.queueIfRunning ?? true },
+          );
         } else {
           result = await this.deps.runningInterventionTransition.queueOnly(task, message);
         }
@@ -435,7 +415,14 @@ export class TaskInterventionRoute {
   }
 }
 
-function ensureDurableDeliveryIdentity(
+function interventionTaskRoute(
+  task: Task,
+): "running" | "activating" | "auto-resume" {
+  if (task.status === "initializing") return "activating";
+  return isActiveTaskStatus(task.status) ? "running" : "auto-resume";
+}
+
+function ensureHumanDeliveryIdentity(
   params: AddInterventionParams,
 ): AddInterventionParams {
   if (params.deliveryIntent) return params;
@@ -444,7 +431,7 @@ function ensureDurableDeliveryIdentity(
     ...params,
     source: params.source ?? "user_message",
     deliveryId,
-    deliveryIntent: "durable_next_turn",
+    deliveryIntent: "human_live_steer",
     completionId: `message:${deliveryId}`,
     relationKey: `user_message:${params.agentSessionId}:${deliveryId}`,
     deliveryCreatedAt: new Date().toISOString(),

@@ -7,6 +7,7 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
+import { releaseTaskRunner } from "./task_runner_release.js";
 import { reviewStateAfterFollowup } from "./session_review.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
@@ -47,13 +48,7 @@ export class AutoResumeTransition {
   ): Promise<{ autoResumed: true }> {
     this.requireResumableProfile(task);
     const transitionRevision = task.lastEventId;
-    // `null` is a real expectation -- a session can end without a terminal
-    // event -- so it cannot double as "this session never ended". The detached
-    // running case says so explicitly instead.
-    const detachedRunningResume = task.detachedRunningResume === true;
-    const expectedTerminalEventId = detachedRunningResume
-      ? undefined
-      : task.terminalEventId ?? null;
+    const expectedTerminalEventId = task.terminalEventId ?? null;
     const originalStatus = task.status;
     const originalTerminalEventId = task.terminalEventId;
     const ownershipPersistence = this.deps.persistence as EventPersistence & {
@@ -66,25 +61,12 @@ export class AutoResumeTransition {
       task.status = "initializing";
       task.executionActivationHandoff = activationHandoff;
       task.executionActivationPromise = activationHandoff.promise;
-      void activationHandoff.promise.catch(() => undefined);
-      // The resume has not landed until ownership activates. Everything below
-      // only queues the attempt; the executor starts deferred and the
-      // activation is awaited by the caller. Treating the transition as the
-      // landing point cleared the detached-running flag while the reservation
-      // could still fail, and the next durable retry then went back down the
-      // terminal branch against a session row that is still `running`.
-      void activationHandoff.promise.then(
-        () => {
-          task.detachedRunningResume = undefined;
-        },
-        () => {
-          if (task.status !== "initializing") return;
-          task.status = originalStatus;
-          task.terminalEventId = originalTerminalEventId;
-          task.pendingExecutionExpectedTerminalEventId = undefined;
-          if (detachedRunningResume) task.detachedRunningResume = true;
-        },
-      );
+      void activationHandoff.promise.catch(() => {
+        if (task.status !== "initializing") return;
+        task.status = originalStatus;
+        task.terminalEventId = originalTerminalEventId;
+        task.pendingExecutionExpectedTerminalEventId = undefined;
+      });
     }
 
     try {
@@ -115,7 +97,7 @@ export class AutoResumeTransition {
           .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
           reviewState: resumedReviewState,
           transitionId: `resume:${transitionRevision}`,
-          ...(expectedTerminalEventId === undefined ? {} : { expectedTerminalEventId }),
+          expectedTerminalEventId,
         });
         applyCanonicalSessionProjection(task, application.canonicalSession);
         if (!application.applied) {
@@ -127,13 +109,9 @@ export class AutoResumeTransition {
       if (userMessageEvent) {
         await finishUserMessageEvent(task, userMessageEvent, this.deps);
       }
-      if (ownershipEnabled && expectedTerminalEventId !== undefined) {
+      if (ownershipEnabled) {
         task.pendingExecutionExpectedTerminalEventId = expectedTerminalEventId;
       }
-      // Without ownership there is no activation to wait for, so the durable
-      // transition is where this resume lands. With ownership, the handoff
-      // above owns the flag.
-      if (!activationHandoff) task.detachedRunningResume = undefined;
       prepareTaskForAutoResume(task, message, ownershipEnabled ? "initializing" : "running");
       onResume(task);
       return { autoResumed: true };
@@ -178,7 +156,7 @@ export class AutoResumeTransition {
     if (!task.runner) return;
     if (task.runnerRetainedForClaudeBackground === true) return;
     const runner = task.runner;
-    task.runner = undefined;
+    releaseTaskRunner(task, runner);
     try {
       await runner.dispatcher.close();
     } catch (err) {

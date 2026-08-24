@@ -528,6 +528,8 @@ describe("UpstreamAdapter", () => {
       taskExecutor: {
         recoverRegisteredRunner,
         restartRegisteredRunner: vi.fn(async () => undefined),
+        restartRegisteredRunnerUnderRecoveryLease: vi.fn(async () => undefined),
+        withSessionRecoveryLease: async (_sessionId, operation) => await operation(),
       },
       closedTailDrainer: { drain: vi.fn(async () => undefined) },
       logger: silentLogger,

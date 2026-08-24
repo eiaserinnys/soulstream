@@ -51,16 +51,6 @@ export function migrateRunnerInterventionInboxV9(
           AND claimed_execution_command_id IS NOT NULL
       `).run();
     }
-    // Versions that wrote an ambiguous replay fence made the session
-    // permanently unreadable. The non-runner contract keeps undelivered input
-    // queued, so writer open repairs that legacy state to the same contract.
-    database.prepare(`
-      UPDATE runner_intervention_inbox
-      SET application_state = 'pending',
-          claimed_execution_command_id = NULL,
-          claimed_at = NULL
-      WHERE application_state = 'ambiguous'
-    `).run();
     if (previousVersion < 9) database.exec("PRAGMA user_version = 9");
   }, { transactionLabel: "intervention_inbox.migrate_v9" });
 }
@@ -282,8 +272,6 @@ export async function resolveRunnerInterventionAmbiguity(
 ): Promise<void> {
   if (!interventionId) throw new Error("runner intervention id is required");
   await transaction(() => {
-    // Writer open heals legacy ambiguous rows before the stopped-runner
-    // resolution API runs, so an explicitly selected row may already be pending.
     const result = resolution === "applied" || resolution === "discarded"
       ? database.prepare(`
           DELETE FROM runner_intervention_inbox

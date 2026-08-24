@@ -92,7 +92,13 @@ export async function composeRunnerRecoveryCoordinator(options: {
     | "reconcileExecutionOwnershipObservations"
     | "listOwnerNullRunningInventory"
   >;
-  taskExecutor: Pick<TaskExecutor, "recoverRegisteredRunner" | "restartRegisteredRunner">;
+  taskExecutor: Pick<
+    TaskExecutor,
+    | "recoverRegisteredRunner"
+    | "restartRegisteredRunner"
+    | "restartRegisteredRunnerUnderRecoveryLease"
+    | "withSessionRecoveryLease"
+  >;
   ownershipBackoff?: ExecutionOwnershipBackoff;
   logger: Logger;
 }): Promise<RunnerRecoveryCoordinator | undefined> {
@@ -141,7 +147,7 @@ export function composeRunnerReconciliationReporter(
       leaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       logger,
     }),
-    waitForRunnerReconciliation: async () => await coordinator.waitForSettled(),
+    waitForRunnerReconciliation: async () => await coordinator.scanOnce(),
   };
 }
 

@@ -14,6 +14,8 @@ export { assertRunnerJsonValue } from "./runner_json_contract.js";
  *   unknown fields on a known variant.
  * - Removing/renaming a field, changing its meaning, or changing a field from
  *   optional to required requires a protocol version bump.
+ * - Release identity is provenance, not compatibility. Bump this version when
+ *   a host and runner can no longer exchange the same frame contract.
  * - Every frame must remain JSON-serializable. Functions, Date, Buffer, class
  *   instances, and process-local handles are forbidden at this boundary.
  * - claude_runtime.observe responses must accept both legacy booleans and the

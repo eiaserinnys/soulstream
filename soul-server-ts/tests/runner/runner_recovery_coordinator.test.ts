@@ -6,7 +6,6 @@ import {
 } from "../../src/runner/runner_recovery_coordinator.js";
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
-import { RunnerReleaseIdentityMismatchError } from "../../src/runner/runner_adoption_error.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
 import { ExecutionOwnershipBackoff } from "../../src/task/execution_ownership_backoff.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -51,6 +50,27 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "offline",
       expect.any(Function),
     );
+  });
+
+  it("does not detach a live successor while replaying an older terminal registration", async () => {
+    const finishedRegistration = registration({ lifecycleState: "completed", pidAlive: false });
+    const currentTask = task("session-a");
+    const { runner, detachHost } = finishedRunner("registration-new");
+    const currentExecution = new Promise<void>(() => {});
+    currentTask.runner = runner;
+    currentTask.executionPromise = currentExecution;
+    const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => currentTask),
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(detachHost).not.toHaveBeenCalled();
+    expect(currentTask.runner).toBe(runner);
+    expect(currentTask.executionPromise).toBe(currentExecution);
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
   });
 
   it("호스트가 포기한 러너를 붙들고 offline replay를 막지 않는다", async () => {
@@ -410,127 +430,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
-  it("releases the attempt host channel only after superseded-release termination", async () => {
-    const failedRunner = failedRecoveryRunner();
-    const restartRegisteredRunner = vi.fn();
-    const mismatch = runnerReleaseIdentityMismatchError();
-    const recoverRegisteredRunner = vi.fn((
-      _recovered: Task,
-      _config: unknown,
-      _commandId: unknown,
-      mode: string,
-      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
-    ) => {
-      if (mode === "offline") return Promise.resolve();
-      onAttemptCreated?.(failedRunner.runner);
-      return Promise.reject(mismatch);
-    });
-    const current = registration({ lifecycleState: "running" });
-    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
-      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner },
-      refreshRegistration: vi.fn(async () => current),
-    });
-
-    await subject.coordinator.scanOnce();
-    await subject.coordinator.waitForSettled();
-
-    expect(subject.terminate).toHaveBeenCalledWith(
-      expect.anything(),
-      { pid: 4123, startIdentity: "start-4123" },
-    );
-    expect(subject.markReaped).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.any(String),
-      {
-        code: "release_superseded",
-        message: "runner release identity is incompatible with the current host release",
-      },
-    );
-    expect(recoverRegisteredRunner).toHaveBeenNthCalledWith(
-      2,
-      subject.task,
-      expect.anything(),
-      "execute-a",
-      "offline",
-      expect.any(Function),
-    );
-    expect(subject.markRunnerFailureAndResume).toHaveBeenCalledOnce();
-    expect(restartRegisteredRunner).toHaveBeenCalledOnce();
-    expect(failedRunner.detachHost).toHaveBeenCalledOnce();
-    expect(subject.terminate.mock.invocationCallOrder[0]).toBeLessThan(
-      failedRunner.detachHost.mock.invocationCallOrder[0]!,
-    );
-    expect(subject.terminate.mock.invocationCallOrder[0]).toBeLessThan(
-      subject.markReaped.mock.invocationCallOrder[0]!,
-    );
-    expect(subject.markReaped.mock.invocationCallOrder[0]).toBeLessThan(
-      recoverRegisteredRunner.mock.invocationCallOrder[1]!,
-    );
-  });
-
-  it("releases the attempt runner even when release-superseded terminalization fails", async () => {
-    const failedRunner = failedRecoveryRunner();
-    const recoverRegisteredRunner = vi.fn((
-      _recovered: Task,
-      _config: unknown,
-      _commandId: unknown,
-      _mode: string,
-      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
-    ) => {
-      onAttemptCreated?.(failedRunner.runner);
-      return Promise.reject(runnerReleaseIdentityMismatchError());
-    });
-    const current = registration({ lifecycleState: "running" });
-    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
-      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner: vi.fn() },
-      refreshRegistration: vi.fn(async () => current),
-      markReaped: vi.fn(async () => {
-        throw new Error("central mark failed");
-      }),
-    });
-
-    await subject.coordinator.scanOnce();
-    await subject.coordinator.waitForSettled();
-
-    expect(failedRunner.detachHost).toHaveBeenCalledOnce();
-    expect(subject.logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "session-a" }),
-      "runner recovery action failed",
-    );
-  });
-
-  it("keeps the attempt host channel when runner termination itself is uncertain", async () => {
-    const failedRunner = failedRecoveryRunner();
-    const recoverRegisteredRunner = vi.fn((
-      _recovered: Task,
-      _config: unknown,
-      _commandId: unknown,
-      _mode: string,
-      onAttemptCreated?: (runner: NonNullable<Task["runner"]>) => void,
-    ) => {
-      onAttemptCreated?.(failedRunner.runner);
-      return Promise.reject(runnerReleaseIdentityMismatchError());
-    });
-    const current = registration({ lifecycleState: "running" });
-    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
-      taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner: vi.fn() },
-      refreshRegistration: vi.fn(async () => current),
-      spawner: {
-        terminate: vi.fn(async () => {
-          throw new Error("termination outcome unknown");
-        }),
-        invalidateRegistration: vi.fn(async () => {}),
-        retireTerminalRegistration: vi.fn(async () => {}),
-      },
-    });
-
-    await subject.coordinator.scanOnce();
-    await subject.coordinator.waitForSettled();
-
-    expect(failedRunner.detachHost).not.toHaveBeenCalled();
-    expect(subject.markReaped).not.toHaveBeenCalled();
-  });
-
   it("does not kill a live prebootstrap runner for a transient missing socket", async () => {
     const socketError = runnerSocketMissingError();
     const failedRunner = failedRecoveryRunner();
@@ -760,7 +659,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
-  it("does not block recovery scans while a live completed runner drains offline", async () => {
+  it("does not block later recovery scans while a live completed runner drains offline", async () => {
     let finishRecovery!: () => void;
     const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
     const recoverRegisteredRunner = vi.fn(() => recovery);
@@ -784,8 +683,17 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
     expect(subject.terminate).toHaveBeenCalledOnce();
 
+    let laterScanSettled = false;
+    const laterScan = subject.coordinator.scanOnce().then(() => {
+      laterScanSettled = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const skippedWithoutWaiting = laterScanSettled;
+
     finishRecovery();
+    await laterScan;
     await subject.coordinator.stop();
+    expect(skippedWithoutWaiting).toBe(true);
   });
 
   it("does not terminate a live terminal registration already owned by this host", async () => {
@@ -885,8 +793,10 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       finishCollection = () => resolve({ removed: [], retained: [] });
     });
     const sessionGarbageCollector = { collect: vi.fn(() => collection) };
+    const retired = registration({ pidAlive: false, lifecycleState: "completed" });
+    retired.retiredAt = "2026-08-11T00:00:25.000Z";
     const subject = makeSubject(
-      [registration()],
+      [retired],
       Date.parse("2026-08-11T00:00:30.000Z"),
       [],
       { sessionGarbageCollector },
@@ -908,14 +818,17 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       finishCollection = () => resolve({ removed: [], retained: [] });
     });
     const sessionGarbageCollector = { collect: vi.fn(() => collection) };
+    const retired = registration({ pidAlive: false, lifecycleState: "completed" });
+    retired.retiredAt = "2026-08-11T00:00:25.000Z";
     const subject = makeSubject(
-      [registration()],
+      [retired],
       Date.parse("2026-08-11T00:00:30.000Z"),
       [],
       { sessionGarbageCollector },
     );
 
     await subject.coordinator.scanOnce();
+    expect(sessionGarbageCollector.collect).toHaveBeenCalledOnce();
     const laterScan = subject.coordinator.scanOnce().then(() => "scanned");
     await expect(Promise.race([
       laterScan,
@@ -930,13 +843,14 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   it("keeps terminal replay ahead of session garbage collection", async () => {
     let finishRecovery!: () => void;
     const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
+    const current = registration({
+      pidAlive: false,
+      lifecycleState: "completed",
+    });
     const sessionGarbageCollector = {
       collect: vi.fn(async () => ({ removed: [], retained: [] })),
     };
-    const subject = makeSubject([registration({
-      pidAlive: false,
-      lifecycleState: "completed",
-    })], Date.now(), [], {
+    const subject = makeSubject([current], Date.now(), [], {
       taskExecutor: {
         recoverRegisteredRunner: vi.fn(() => recovery),
         restartRegisteredRunner: vi.fn(),
@@ -948,6 +862,10 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     expect(sessionGarbageCollector.collect).not.toHaveBeenCalled();
     finishRecovery();
+    await subject.coordinator.waitForSettled();
+    current.retiredAt = new Date().toISOString();
+    await subject.coordinator.scanOnce();
+    expect(sessionGarbageCollector.collect).toHaveBeenCalledOnce();
     await subject.coordinator.stop();
   });
 
@@ -1629,7 +1547,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
   });
 
-  it("waits for an active recovery before stop returns", async () => {
+  it("stops scan admission without waiting for an active runner execution", async () => {
     let finishRecovery!: () => void;
     const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
     const subject = makeSubject([registration({
@@ -1645,12 +1563,13 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     let stopped = false;
     const stopping = subject.coordinator.stop().then(() => { stopped = true; });
-    await Promise.resolve();
-    expect(stopped).toBe(false);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const stoppedBeforeExecution = stopped;
 
     finishRecovery();
     await stopping;
-    expect(stopped).toBe(true);
+    await subject.coordinator.waitForSettled();
+    expect(stoppedBeforeExecution).toBe(true);
   });
 
   it("exposes a reconciliation barrier without stopping future scans", async () => {
@@ -1680,9 +1599,45 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 });
 
 describe("RunnerRecoveryCoordinator GC cadence", () => {
+  it("collects owner-free registrations without waiting for an active recovery", async () => {
+    let finishRecovery!: () => void;
+    const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
+    const active = registration({
+      sessionId: "session-a",
+      pidAlive: false,
+      lifecycleState: "completed",
+    });
+    const ownerFree = registration({ sessionId: "session-b" });
+    ownerFree.pidAlive = false;
+    ownerFree.lifecycle!.execution_state = "completed";
+    ownerFree.retiredAt = "2026-08-11T00:00:25.000Z";
+    const sessionGarbageCollector = {
+      collect: vi.fn(async () => ({ removed: [], retained: [] })),
+    };
+    const subject = makeSubject([active, ownerFree], Date.now(), [], {
+      sessionGarbageCollector,
+      taskExecutor: {
+        recoverRegisteredRunner: vi.fn((task) =>
+          task.agentSessionId === "session-a" ? recovery : Promise.resolve()),
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+    await Promise.resolve();
+    const collectedBeforeRecoverySettled = sessionGarbageCollector.collect.mock.calls.map(
+      ([scan]) => scan.registrations.map((item) => item.config.sessionId),
+    );
+
+    finishRecovery();
+    await subject.coordinator.waitForSettled();
+
+    expect(collectedBeforeRecoverySettled).toEqual([["session-b"]]);
+  });
+
   it("runs session state GC at startup and then at most hourly", async () => {
     let now = Date.parse("2026-08-11T00:00:00.000Z");
-    const current = registration();
+    const current = registration({ pidAlive: false, lifecycleState: "completed" });
+    current.retiredAt = "2026-08-11T00:00:00.000Z";
     const sessionGarbageCollector = {
       collect: vi.fn(async () => ({ removed: [], retained: [] })),
     };
@@ -1757,6 +1712,7 @@ describe("RunnerRecoveryCoordinator execution ownership backoff", () => {
     );
 
     await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledTimes(1);
 
     backoff.observeConflict("session-a", new Date(nowMs + 60_000).toISOString());
@@ -1819,7 +1775,9 @@ function makeSubject(
   registrations: RunnerRegistration[],
   now = Date.parse("2026-08-11T00:00:30.000Z"),
   errors: Array<{ directory: string; error: Error }> = [],
-  overrides: Partial<RunnerRecoveryCoordinatorOptions> = {},
+  overrides: Omit<Partial<RunnerRecoveryCoordinatorOptions>, "taskExecutor"> & {
+    taskExecutor?: Partial<RunnerRecoveryCoordinatorOptions["taskExecutor"]>;
+  } = {},
 ) {
   const tasks = new Map<string, Task>();
   for (const item of registrations) {
@@ -1859,7 +1817,6 @@ function makeSubject(
     stateDirectory: "/runner",
     leaseTimeoutMs: 120_000,
     scanIntervalMs: 15_000,
-    taskExecutor: { recoverRegisteredRunner, restartRegisteredRunner },
     closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger,
     spawner: { terminate, invalidateRegistration, retireTerminalRegistration },
@@ -1868,6 +1825,16 @@ function makeSubject(
     now: () => now,
     markReaped,
     ...overrides,
+    taskExecutor: {
+      recoverRegisteredRunner,
+      restartRegisteredRunner,
+      restartRegisteredRunnerUnderRecoveryLease:
+        overrides.taskExecutor?.restartRegisteredRunnerUnderRecoveryLease
+        ?? overrides.taskExecutor?.restartRegisteredRunner
+        ?? restartRegisteredRunner,
+      withSessionRecoveryLease: async (_sessionId, operation) => await operation(),
+      ...overrides.taskExecutor,
+    },
     taskManager: {
       ...baseTaskManager,
       ...overrides.taskManager,
@@ -1889,7 +1856,7 @@ function makeSubject(
   };
 }
 
-function finishedRunner(): {
+function finishedRunner(registrationId = "registration-a"): {
   runner: NonNullable<Task["runner"]>;
   detachHost: ReturnType<typeof vi.fn>;
 } {
@@ -1900,6 +1867,7 @@ function finishedRunner(): {
         detachHost,
         isClosed: () => false,
         dispatcherId: () => "live-one",
+        registrationId: () => registrationId,
       } as unknown as NonNullable<Task["runner"]>["dispatcher"],
       engine: {} as NonNullable<Task["runner"]>["engine"],
       eventPersistence: "runner",
@@ -1913,6 +1881,7 @@ function abandonedRunner(): NonNullable<Task["runner"]> {
     dispatcher: {
       detachHost: vi.fn(async () => {}),
       isClosed: () => true,
+      registrationId: () => "registration-a",
     } as unknown as NonNullable<Task["runner"]>["dispatcher"],
     engine: {} as NonNullable<Task["runner"]>["engine"],
     eventPersistence: "runner",
@@ -1933,15 +1902,6 @@ function runnerSocketMissingError(): Error {
   });
 }
 
-function runnerReleaseIdentityMismatchError(): RunnerReleaseIdentityMismatchError {
-  return new RunnerReleaseIdentityMismatchError({
-    runnerManifestId: "release-old",
-    runnerRuntimeEnvIdentity: "env-old",
-    hostManifestId: "release-current",
-    hostRuntimeEnvIdentity: "env-current",
-  });
-}
-
 function failedRecoveryRunner(): {
   runner: NonNullable<Task["runner"]>;
   detachHost: ReturnType<typeof vi.fn>;
@@ -1949,7 +1909,10 @@ function failedRecoveryRunner(): {
   const detachHost = vi.fn(async () => {});
   return {
     runner: {
-      dispatcher: { detachHost } as NonNullable<Task["runner"]>["dispatcher"],
+      dispatcher: {
+        detachHost,
+        registrationId: () => "registration-a",
+      } as NonNullable<Task["runner"]>["dispatcher"],
       engine: {} as NonNullable<Task["runner"]>["engine"],
       eventPersistence: "runner",
     },

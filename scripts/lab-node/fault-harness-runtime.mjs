@@ -93,6 +93,15 @@ export class LabRuntime {
     await this.waitForNodeRegistration(30_000);
   }
 
+  async assertProvenance() {
+    const manifest = await this.currentManifest();
+    const { stdout } = await execFileAsync("git", ["-C", this.repo, "rev-parse", "HEAD"], {
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    });
+    assertMatchingProvenance(manifest.sourceCommit, stdout.trim());
+  }
+
   async createSession(prompt, extra = {}) {
     const body = await this.postJson("/api/sessions", {
       profile: "lab-claude",
@@ -560,11 +569,22 @@ export class LabRuntime {
       SELECT row_to_json(delivery) FROM (
         SELECT delivery_id, relation_key, source_session_id, target_session_id,
           state, aggregate_state, attempt_count, last_error,
-          dead_letter_reason, consumed_reason
+          dead_letter_reason, consumed_reason, target_receipt_id, caller_turn_id,
+          intent, source
         FROM session_deliveries
         WHERE delivery_id = ${sqlLiteral(deliveryId)}
       ) AS delivery
     `);
+  }
+
+  async deliveryCountById(deliveryId) {
+    assertIdentifier(deliveryId, "delivery id");
+    const value = await this.psqlOne(`
+      SELECT json_build_object('count', COUNT(*)::integer)
+      FROM session_deliveries
+      WHERE delivery_id = ${sqlLiteral(deliveryId)}
+    `);
+    return value?.count ?? 0;
   }
 
   async ownerships(sessionId) {
@@ -586,6 +606,47 @@ export class LabRuntime {
       WHERE relation_key = ${sqlLiteral(relationKey)}
     `);
     return value?.count ?? 0;
+  }
+
+  async turnResults(sessionId) {
+    assertIdentifier(sessionId, "session id");
+    return await this.psqlOne(`
+      SELECT COALESCE(json_agg(json_build_object(
+        'id', id,
+        'event_type', event_type,
+        'payload', payload,
+        'created_at', created_at
+      ) ORDER BY id), '[]'::json)
+      FROM events
+      WHERE session_id = ${sqlLiteral(sessionId)}
+        AND event_type = 'result'
+    `) ?? [];
+  }
+
+  async sessionEndedAt(sessionId) {
+    assertIdentifier(sessionId, "session id");
+    const event = await this.psqlOne(`
+      SELECT json_build_object('created_at', created_at)
+      FROM events
+      WHERE session_id = ${sqlLiteral(sessionId)}
+        AND event_type = 'session_ended'
+      ORDER BY id DESC
+      LIMIT 1
+    `);
+    return typeof event?.created_at === "string" ? event.created_at : null;
+  }
+
+  runnerInterventionInboxCount(sessionId) {
+    const databasePath = join(this.runnerDirectory(sessionId), "runner.sqlite");
+    const database = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const row = database.prepare(
+        "SELECT COUNT(*) AS count FROM runner_intervention_inbox",
+      ).get();
+      return Number(row?.count ?? 0);
+    } finally {
+      database.close();
+    }
   }
 
   /**
@@ -656,6 +717,14 @@ export async function waitFor(predicate, timeoutMs, message, intervalMs = 500) {
 export async function delay(ms) {
   if (ms <= 0) return;
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function assertMatchingProvenance(bundleCommit, checkoutCommit) {
+  if (bundleCommit !== checkoutCommit) {
+    throw new Error(
+      `lab provenance mismatch: bundle ${bundleCommit} != checkout ${checkoutCommit}`,
+    );
+  }
 }
 
 export function runnerOperationSnapshots(logText) {

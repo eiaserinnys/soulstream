@@ -1,7 +1,5 @@
-import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import { ActiveTaskRecovery } from "../../src/task/task_active_recovery.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import type { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -27,10 +25,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function makeLogger(): Logger {
-  return { warn: vi.fn() } as unknown as Logger;
-}
-
 function makeSubject(
   initialTasks: Task[] = [],
   deliveryLedgerGate?: Pick<
@@ -41,7 +35,6 @@ function makeSubject(
   >,
 ) {
   const tasks = new Map(initialTasks.map((task) => [task.agentSessionId, task]));
-  const logger = makeLogger();
   const loadEvictedTask = vi.fn(async (_sessionId: string): Promise<Task | null> => null);
   const queuedResult = {
     delivered: false,
@@ -69,7 +62,6 @@ function makeSubject(
     rememberTask: (task) => {
       tasks.set(task.agentSessionId, task);
     },
-    activeTaskRecovery: new ActiveTaskRecovery(logger),
     runningInterventionTransition,
     autoResumeTransition,
     deliveryLedgerGate,
@@ -88,7 +80,7 @@ function makeSubject(
 
 function admitted(
   deliveryId: string,
-  intent: "durable_next_turn" | "completion_notification" | "runtime_followup" =
+  intent: "human_live_steer" | "durable_next_turn" | "completion_notification" | "runtime_followup" =
     "completion_notification",
 ): DeliveryLedgerAdmission {
   return {
@@ -99,7 +91,9 @@ function admitted(
       intent,
       source: intent === "runtime_followup"
         ? "claude_runtime_task_followup"
-        : "completion_notifier",
+        : intent === "human_live_steer"
+          ? "user_message"
+          : "completion_notifier",
       completion_id: `completion:${deliveryId}`,
       relation_key: `relation:${deliveryId}`,
       producer_terminal_revision: null,
@@ -121,6 +115,82 @@ function admitted(
 }
 
 describe("TaskInterventionRoute.addIntervention", () => {
+  it("keeps admitted human live steering on the existing live-delivery path", async () => {
+    const deliveryId = "77777777-7777-4777-8777-777777777777";
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId, "human_live_steer")),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } as Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    >;
+    const task = makeTask({ status: "running" });
+    const { route, runningInterventionTransition } = makeSubject([task], gate);
+
+    await route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "look here",
+      user: "alice",
+      deliveryId,
+      deliveryIntent: "human_live_steer",
+      completionId: `message:${deliveryId}`,
+      relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
+      source: "user_message",
+    }, vi.fn());
+
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledWith(
+      task,
+      expect.objectContaining({ deliveryId, deliveryIntent: "human_live_steer" }),
+      { queueIfUndelivered: true },
+    );
+    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
+  });
+
+  it("routes admitted human steering from the task state at durable dispatch", async () => {
+    const deliveryId = "78787878-7878-4787-8787-787878787878";
+    const task = makeTask({ status: "running" });
+    const admission = admitted(deliveryId, "human_live_steer");
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admission),
+      beginDispatch: vi.fn(async (candidate) => {
+        task.status = "completed";
+        return candidate;
+      }),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } as Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    >;
+    const {
+      route,
+      autoResumeTransition,
+      runningInterventionTransition,
+    } = makeSubject([task], gate);
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "continue after restart",
+      user: "alice",
+      deliveryId,
+      deliveryIntent: "human_live_steer",
+      completionId: `message:${deliveryId}`,
+      relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
+      source: "user_message",
+    }, vi.fn())).resolves.toEqual({ autoResumed: true });
+
+    expect(autoResumeTransition.resume).toHaveBeenCalledOnce();
+    expect(autoResumeTransition.resume).toHaveBeenCalledWith(
+      task,
+      expect.objectContaining({ deliveryId, deliveryIntent: "human_live_steer" }),
+      expect.any(Function),
+    );
+    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
+  });
+
   it("routes memory-hit running tasks to the running transition and preserves public result shape", async () => {
     const task = makeTask();
     const { route, loadEvictedTask, runningInterventionTransition, autoResumeTransition } =
@@ -308,7 +378,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     );
   });
 
-  it("assigns legacy human interventions one durable delivery identity", async () => {
+  it("keeps an unlabelled human intervention human while assigning durable identity", async () => {
     const task = makeTask({ status: "completed" });
     const admit = vi.fn().mockImplementation(async (params) => ({
       kind: "suppressed",
@@ -335,7 +405,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }, vi.fn());
 
     expect(admit).toHaveBeenCalledWith(expect.objectContaining({
-      deliveryIntent: "durable_next_turn",
+      deliveryIntent: "human_live_steer",
       source: "user_message",
       deliveryId: expect.any(String),
       completionId: expect.stringMatching(/^message:/),
@@ -605,7 +675,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }), onResume);
   });
 
-  it("treats detached hydrated running tasks as auto-resume instead of running queue", async () => {
+  it("routes hydrated running tasks to the existing runner queue", async () => {
     const hydrated = makeTask({
       agentSessionId: "sess-stale-running",
       status: "running",
@@ -620,14 +690,24 @@ describe("TaskInterventionRoute.addIntervention", () => {
       agentSessionId: "sess-stale-running",
       text: "resume stale running",
       user: "alice",
-    }, vi.fn())).resolves.toEqual({ autoResumed: true });
+    }, vi.fn())).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
+    });
 
     expect(tasks.get("sess-stale-running")).toBe(hydrated);
-    expect(hydrated.status).toBe("interrupted");
-    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
-    expect(autoResumeTransition.resume).toHaveBeenCalledWith(hydrated, expect.objectContaining({
+    expect(hydrated.status).toBe("running");
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledWith(
+      hydrated,
+      expect.objectContaining({
       text: "resume stale running",
-    }), expect.any(Function));
+      }),
+      { queueIfUndelivered: true },
+    );
+    expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 
   it("normalizes unresolved task lookup to the existing Task not found error shape", async () => {

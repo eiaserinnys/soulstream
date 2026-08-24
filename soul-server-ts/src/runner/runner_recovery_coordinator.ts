@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import type { Task } from "../task/task_models.js";
+import { releaseTaskRunner } from "../task/task_runner_release.js";
 import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
@@ -130,11 +131,7 @@ export class RunnerRecoveryCoordinator {
       recoverOffline: async (registration, task) =>
         (await this.recoverRegistered(registration, task, "offline")).task,
       resumeReplacement: async (task, message, config) =>
-        await options.taskManager.markRunnerFailureAndResume(
-          task,
-          message,
-          (resumedTask) => options.taskExecutor.restartRegisteredRunner(resumedTask, config),
-        ),
+        await this.resumeReplacement(task, message, config),
       onFailure: (registration, disposition, error) =>
         this.recoveryLogger.failure(registration, disposition, error),
     });
@@ -247,14 +244,10 @@ export class RunnerRecoveryCoordinator {
           continue;
         }
       }
-      if (
-        disposition === "adopt_prebootstrap"
-        || disposition === "adopt_running"
-      ) {
-        await this.handleWithFailureTracking(registration, disposition, task);
-        continue;
-      }
-      const recovery = this.handleWithFailureTracking(registration, disposition, task)
+      const recovery = this.options.taskExecutor.withSessionRecoveryLease(
+        sessionId,
+        async () => await this.handleWithFailureTracking(registration, disposition, task),
+      )
         .finally(() => {
           if (this.active.get(sessionId) === recovery) this.active.delete(sessionId);
         });
@@ -289,9 +282,8 @@ export class RunnerRecoveryCoordinator {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    await this.waitForSettled();
+    if (this.scanInFlight) await this.scanInFlight;
     await this.sessionGarbageCollectionScheduler.inFlight;
-    this.active.clear();
   }
   /** Waits for recovery work already admitted by a scan without stopping the coordinator. */
   async waitForSettled(): Promise<void> {
@@ -306,6 +298,23 @@ export class RunnerRecoveryCoordinator {
         ...this.adoptionFailureRecovery.pending(),
       ]);
     }
+  }
+  private async resumeReplacement(
+    task: Task,
+    message: string,
+    config: RunnerRegistration["config"],
+  ): Promise<void> {
+    await this.options.taskManager.markRunnerFailureAndResume(
+      task,
+      message,
+      (resumedTask) => {
+        if (this.stopped) return;
+        return this.options.taskExecutor.restartRegisteredRunnerUnderRecoveryLease(
+          resumedTask,
+          config,
+        );
+      },
+    );
   }
   private async handle(
     registration: RunnerRegistration,
@@ -379,14 +388,7 @@ export class RunnerRecoveryCoordinator {
         recoverOffline: async (owned, recoveredTask) =>
           (await this.recoverRegistered(owned, recoveredTask, "offline")).task,
         resumeReplacement: async (recoveredTask, message, config) =>
-          await this.options.taskManager.markRunnerFailureAndResume(
-            recoveredTask,
-            message,
-            (resumedTask) => this.options.taskExecutor.restartRegisteredRunner(
-              resumedTask,
-              config,
-            ),
-          ),
+          await this.resumeReplacement(recoveredTask, message, config),
         logger: this.options.logger,
       });
       return;
@@ -428,7 +430,11 @@ export class RunnerRecoveryCoordinator {
     // is over, and the frames it has left are durable in the runner's own
     // outbox, which is what the offline replay reads. That is the difference
     // from `detachHost` on a runner still working, which stranded a live tool.
-    if (mode === "offline" && task.runner) {
+    if (
+      mode === "offline"
+      && task.runner
+      && registrationOwnsAttachedRunner(task, registration)
+    ) {
       this.options.logger.warn(
         {
           sessionId: registration.config.sessionId,
@@ -438,8 +444,7 @@ export class RunnerRecoveryCoordinator {
         "detaching a finished runner so its own replay can run",
       );
       const finished = task.runner;
-      task.runner = undefined;
-      task.runnerRetainedForClaudeBackground = undefined;
+      releaseTaskRunner(task, finished);
       // Letting go of the handle is only half of it. `detachHost` releases the
       // host's resources but never settles the execution it was consuming, so
       // the promise stays pending forever and the slot is never cleared -- the
@@ -454,13 +459,15 @@ export class RunnerRecoveryCoordinator {
         );
       });
     }
-    if (task.runner?.dispatcher.isClosed?.() === true) {
+    if (
+      task.runner?.dispatcher.isClosed?.() === true
+      && registrationOwnsAttachedRunner(task, registration)
+    ) {
       this.options.logger.warn(
         { sessionId: registration.config.sessionId, mode },
         "releasing a runner the host has given up so recovery can take over",
       );
-      task.runner = undefined;
-      task.runnerRetainedForClaudeBackground = undefined;
+      releaseTaskRunner(task, task.runner);
     }
     if (task.runner || task.executionPromise) {
       // This guard returned in silence for three hours during the 260822
@@ -494,7 +501,7 @@ export class RunnerRecoveryCoordinator {
     let attemptRunner: TaskRunnerRuntime | undefined;
     const completion = this.options.taskExecutor.recoverRegisteredRunner(
       task,
-      hydrated.config,
+      hydrated,
       lifecycle?.execution_command_id,
       mode,
       (runner) => {
@@ -505,20 +512,20 @@ export class RunnerRecoveryCoordinator {
     if (mode === "offline") {
       await completion;
     } else if (mode === "adopt" && adoptionDisposition) {
-      void completion.then(
-        () => this.adoptionFailureRecovery.clear(registration.config.sessionId),
-        (error: unknown) => {
-          this.adoptionFailureRecovery.schedule({
-            registration,
-            disposition: adoptionDisposition,
-            task,
-            completion,
-            ownedRunner,
-            attemptRunner,
-            error,
-          });
-        },
-      );
+      try {
+        await completion;
+        this.adoptionFailureRecovery.clear(registration.config.sessionId);
+      } catch (error) {
+        await this.adoptionFailureRecovery.schedule({
+          registration,
+          disposition: adoptionDisposition,
+          task,
+          completion,
+          ownedRunner,
+          attemptRunner,
+          error,
+        });
+      }
     } else {
       void completion.catch((error) => {
         this.options.logger.error(
@@ -580,4 +587,13 @@ export class RunnerRecoveryCoordinator {
       logger: this.options.logger,
     });
   }
+}
+
+function registrationOwnsAttachedRunner(
+  task: Task,
+  registration: RunnerRegistration,
+): boolean {
+  const attachedRegistrationId = task.runner?.dispatcher.registrationId();
+  return attachedRegistrationId !== undefined
+    && registration.registrationId === attachedRegistrationId;
 }

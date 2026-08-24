@@ -108,6 +108,7 @@ describe("RunnerProcessDispatcher", () => {
     };
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
+      runnerProcess: null,
       offlineExisting: true,
       pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
       logger,
@@ -190,6 +191,7 @@ describe("RunnerProcessDispatcher", () => {
     writer.close();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
+      runnerProcess: null,
       offlineExisting: true,
       pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
       logger: pino({ level: "silent" }),
@@ -250,6 +252,7 @@ describe("RunnerProcessDispatcher", () => {
     writer.close();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
+      runnerProcess: null,
       offlineExisting: true,
       pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
       logger: pino({ level: "silent" }),
@@ -285,6 +288,7 @@ describe("RunnerProcessDispatcher", () => {
     writer.close();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
+      runnerProcess: null,
       offlineExisting: true,
       pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
       logger: pino({ level: "silent" }),
@@ -314,10 +318,8 @@ describe("RunnerProcessDispatcher", () => {
       const close = vi.fn();
       const dispatcher = new RunnerProcessDispatcher({
         spawn: spawnInput(fixture.stateDirectory),
-        spawner: {
-          spawn: async () => fixture.spawned,
-          terminate,
-        },
+        runnerProcess: fixture.spawned,
+        spawner: { terminate },
         openParentOutbox: failurePoint === "outbox"
           ? async () => { throw new Error("outbox open failed"); }
           : async () => ({ close } as never),
@@ -342,8 +344,8 @@ describe("RunnerProcessDispatcher", () => {
     const fixture = await spawnedInitializationFixture();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(fixture.stateDirectory),
+      runnerProcess: fixture.spawned,
       spawner: {
-        spawn: async () => fixture.spawned,
         terminate: async () => { throw new Error("child remained alive"); },
       },
       openParentOutbox: async () => { throw new Error("outbox open failed"); },
@@ -435,7 +437,7 @@ describe("RunnerProcessDispatcher", () => {
     mux.connect(async (batch) => { batches.push(batch); });
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
+      runnerProcess: spawnedProcessForTest(paths),
       pumpMux: mux,
       logger: pino({ level: "silent" }),
       handleHostCall: async () => null,
@@ -554,7 +556,7 @@ describe("RunnerProcessDispatcher", () => {
     const sqliteTransactionObserver = vi.fn();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
+      runnerProcess: spawnedProcessForTest(paths),
       pumpMux: mux,
       logger: pino({ level: "silent" }),
       nodeStallMonitor: { beginRunnerOperation, sqliteTransactionObserver },
@@ -634,7 +636,7 @@ describe("RunnerProcessDispatcher", () => {
     await endpoint.listen();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
+      runnerProcess: spawnedProcessForTest(paths),
       pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
       logger: pino({ level: "silent" }),
       handleHostCall: async () => null,
@@ -712,7 +714,7 @@ describe("RunnerProcessDispatcher", () => {
     const finishRecoveryObservation = vi.fn();
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      spawner: { spawn: async () => await spawnedProcessForTest(paths) },
+      runnerProcess: spawnedProcessForTest(paths),
       pumpMux: { register: registerPump } as never,
       logger,
       handleHostCall: async () => null,
@@ -835,13 +837,14 @@ describe("RunnerProcessDispatcher", () => {
       await endpoint.currentConnection!.send(executionEndedControlFrame(frame.commandId));
     }, vi.fn());
     await endpoint.listen();
-    const spawn = vi.fn(async () => { throw new Error("must not spawn"); });
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
-      adoptExisting: true,
-      spawner: {
-        spawn,
-        adopt: async () => ({ pid: 1001, paths, config: {} as never, adopted: true }),
+      runnerProcess: {
+        pid: 1001,
+        registrationId: "registration-a",
+        paths,
+        config: {} as never,
+        adopted: true,
       },
       pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
       logger: pino({ level: "silent" }),
@@ -857,7 +860,6 @@ describe("RunnerProcessDispatcher", () => {
         payload: { type: "assistant_message", content: "replayed" },
       }),
     ]);
-    expect(spawn).not.toHaveBeenCalled();
     await collect(dispatcher.executeFrames({
       agentSessionId: "session-a",
       prompt: "intervention follow-up",
@@ -891,7 +893,13 @@ async function spawnedInitializationFixture() {
   return {
     stateDirectory,
     paths,
-    spawned: { pid: 7101, paths, config: {} as never, adopted: false },
+    spawned: {
+      pid: 7101,
+      registrationId: identity.registrationId,
+      paths,
+      config: {} as never,
+      adopted: false,
+    },
   };
 }
 
@@ -904,7 +912,13 @@ async function spawnedProcessForTest(
     startIdentity: "start-1001",
   };
   await writeRunnerRegistrationIdentity(paths.sessionDirectory, identity);
-  return { pid: 1001, paths, config: {} as never, adopted: false };
+  return {
+    pid: 1001,
+    registrationId: identity.registrationId,
+    paths,
+    config: {} as never,
+    adopted: false,
+  };
 }
 
 function spawnInput(stateDirectory: string) {

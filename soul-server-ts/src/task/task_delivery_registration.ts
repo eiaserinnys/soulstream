@@ -6,6 +6,7 @@ import type {
 import type { SessionDeliveryRepository } from
   "../db/repositories/session_delivery_repository.js";
 
+import type { DeliveryIntent } from "./delivery_contract.js";
 import type { AddInterventionParams } from "./task_intervention_route.js";
 import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
 
@@ -13,7 +14,7 @@ type ControlledRegistrationParams = AddInterventionParams & {
   deliveryId: string;
   relationKey: string;
   completionId: string;
-  deliveryIntent: "durable_next_turn" | "completion_notification" | "runtime_followup";
+  deliveryIntent: DeliveryIntent;
 };
 
 export type LoadOrRegisterResult =

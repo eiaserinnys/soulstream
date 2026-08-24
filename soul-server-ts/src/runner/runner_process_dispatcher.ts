@@ -58,6 +58,7 @@ import {
 } from "./runner_frame_drop.js";
 import {
   RunnerProcessSpawner,
+  type SpawnedRunnerProcess,
   type SpawnRunnerProcessInput,
 } from "./runner_process_spawn.js";
 import { runnerProcessPaths } from "./runner_process_paths.js";
@@ -101,9 +102,8 @@ export interface RunnerHostCall {
 
 export interface RunnerProcessDispatcherOptions {
   spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>;
-  spawner?: Pick<RunnerProcessSpawner, "spawn">
-    & Partial<Pick<RunnerProcessSpawner, "adopt" | "terminate">>;
-  adoptExisting?: boolean;
+  runnerProcess: SpawnedRunnerProcess | Promise<SpawnedRunnerProcess> | null;
+  spawner?: Partial<Pick<RunnerProcessSpawner, "terminate">>;
   offlineExisting?: boolean;
   openParentOutbox?: typeof RunnerParentOutbox.open;
   connectSocket?: typeof connectRunnerSocket;
@@ -352,6 +352,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     return this.instanceId;
   }
 
+  registrationId(): string | undefined {
+    return this.spawnedProcess?.registrationId;
+  }
+
   async releaseEventStreamRegistration(): Promise<void> {
     // The flag has to be set before the await. An adoption can be rejected
     // before the pump has even started registering, and then there is nothing
@@ -587,10 +591,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
       return;
     }
-    const spawner = this.options.spawner ?? new RunnerProcessSpawner();
-    const spawned = this.options.adoptExisting
-      ? await this.adoptExisting(spawner)
-      : await spawner.spawn(this.spawnInput);
+    const spawned = await this.options.runnerProcess!;
     this.spawnedProcess = spawned;
     this.socketPath = spawned.paths.socketPath;
     this.runnerDatabasePath = spawned.paths.databasePath;
@@ -608,7 +609,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     } catch (error) {
       if (!spawnedProof) throw error;
       await this.rollbackSpawnAfterParentInitializationFailure(
-        spawner,
+        this.options.spawner ?? new RunnerProcessSpawner(),
         spawned,
         spawnedProof,
         error,
@@ -675,20 +676,6 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       );
     }
     throw initializationError;
-  }
-
-  private async adoptExisting(
-    spawner: RunnerProcessDispatcherOptions["spawner"] | RunnerProcessSpawner,
-  ) {
-    if (!spawner?.adopt) throw new Error("runner adopter unavailable");
-    const adopted = await spawner.adopt({
-      stateDirectory: this.spawnInput.stateDirectory,
-      sessionId: this.spawnInput.sessionId,
-    });
-    if (!adopted) {
-      throw new Error(`registered runner is not alive: ${this.spawnInput.sessionId}`);
-    }
-    return adopted;
   }
 
   private async startRecovery(

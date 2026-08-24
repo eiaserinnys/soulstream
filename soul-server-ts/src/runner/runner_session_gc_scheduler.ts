@@ -19,16 +19,23 @@ export class RunnerSessionGarbageCollectionScheduler {
   }
 
   schedule(scan: Awaited<ReturnType<typeof scanRunnerRegistrations>>): void {
-    if (
-      !this.options.collector
-      || this.collectionInFlight
-      || (scan.registrations.length === 0 && scan.errors.length === 0)
-    ) return;
+    if (!this.options.collector || this.collectionInFlight) return;
+    const collection = this.collect(scan);
+    if (collection) this.track(collection);
+  }
+
+  private collect(
+    scan: Awaited<ReturnType<typeof scanRunnerRegistrations>>,
+  ): Promise<void> | undefined {
+    if (scan.registrations.length === 0 && scan.errors.length === 0) return;
     const now = this.options.now();
     if (now < this.nextCollectionAtMs) return;
     this.nextCollectionAtMs = now + SWEEP_INTERVAL_MS;
-    const collection = this.options.collector.collect(scan)
-      .then(() => undefined)
+    return this.options.collector!.collect(scan).then(() => undefined);
+  }
+
+  private track(work: Promise<void>): void {
+    const collection = work
       .catch((error) => {
         this.nextCollectionAtMs = 0;
         this.options.logger.error({ err: error }, "runner session GC failed");

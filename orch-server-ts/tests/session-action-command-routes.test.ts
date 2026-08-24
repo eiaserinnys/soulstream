@@ -190,6 +190,120 @@ describe("session action command HTTP route harness", () => {
     await app.close();
   });
 
+  it("persists an intervention before node routing and accepts recovery when the owner is offline", async () => {
+    const { router, bridge } = createHarnessCore({
+      findSessionOwnerNodeId: async () => "node-offline",
+    });
+    const route = vi.spyOn(router, "routeExistingSessionPendingCommand");
+    const register = vi.fn(async (params: Record<string, unknown>) => ({
+      inserted: true,
+      conflict: false,
+      row: {
+        delivery_id: params.deliveryId,
+        state: "pending",
+        aggregate_state: "pending",
+      },
+    }));
+    const app = createApp({ config });
+    registerSessionActionCommandRoutes(app, {
+      router,
+      bridge,
+      deliveryRepositoryProvider: async () => ({ register }),
+    } as Parameters<typeof registerSessionActionCommandRoutes>[1] & {
+      deliveryRepositoryProvider: () => Promise<{ register: typeof register }>;
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions/sess-offline/intervene",
+      payload: {
+        text: "continue after restart",
+        user: "operator",
+        delivery_id: "77777777-7777-4777-8777-777777777777",
+        delivery_intent: "human_live_steer",
+        source: "browser",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      type: "intervene_ack",
+      status: "ok",
+      outcome: "queued",
+      agentSessionId: "sess-offline",
+      deliveryId: "77777777-7777-4777-8777-777777777777",
+      delivered: false,
+      consumeWhen: "next_turn",
+    });
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({
+      deliveryId: "77777777-7777-4777-8777-777777777777",
+      targetSessionId: "sess-offline",
+      relationKey:
+        "user_message:sess-offline:77777777-7777-4777-8777-777777777777",
+      completionId: "message:77777777-7777-4777-8777-777777777777",
+      intent: "human_live_steer",
+      source: "browser",
+      payloadHash: expect.any(String),
+      payload: expect.objectContaining({
+        text: "continue after restart",
+        user: "operator",
+      }),
+    }));
+    expect(register.mock.invocationCallOrder[0]).toBeLessThan(
+      route.mock.invocationCallOrder[0]!,
+    );
+    await app.close();
+  });
+
+  it("keeps an admitted intervention queued for recovery after any routing failure", async () => {
+    const { router, bridge } = createHarnessCore();
+    vi.spyOn(router, "routeExistingSessionPendingCommand").mockRejectedValue(
+      new Error("unexpected route failure"),
+    );
+    const register = vi.fn(async (params: Record<string, unknown>) => ({
+      inserted: true,
+      conflict: false,
+      row: {
+        delivery_id: params.deliveryId,
+        state: "pending",
+        aggregate_state: "pending",
+      },
+    }));
+    const app = createApp({ config });
+    registerSessionActionCommandRoutes(app, {
+      router,
+      bridge,
+      deliveryRepositoryProvider: async () => ({ register }),
+    } as Parameters<typeof registerSessionActionCommandRoutes>[1] & {
+      deliveryRepositoryProvider: () => Promise<{ register: typeof register }>;
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions/sess-route-failure/intervene",
+      payload: {
+        text: "keep this durable",
+        user: "operator",
+        delivery_id: "88888888-8888-4888-8888-888888888888",
+        delivery_intent: "human_live_steer",
+        source: "browser",
+      },
+    });
+
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      type: "intervene_ack",
+      status: "ok",
+      outcome: "queued",
+      agentSessionId: "sess-route-failure",
+      deliveryId: "88888888-8888-4888-8888-888888888888",
+      delivered: false,
+      consumeWhen: "next_turn",
+    });
+    await app.close();
+  });
+
   it("preserves the owning node's delivered intervention verdict", async () => {
     const { app } = createActionHarness({
       ackFor: (message) => message.type === "intervene"

@@ -281,10 +281,19 @@ function processDispatcher(
   input: ReturnType<typeof spawnInput>,
   pumpMux: EventOutboxPumpMux,
 ): RunnerProcessDispatcher {
+  const spawner = new RunnerProcessSpawner();
+  const runnerProcess = scanRunnerRegistrations(input.stateDirectory).then(async (scan) => {
+    const registration = scan.registrations.find(
+      (candidate) => candidate.config.sessionId === input.sessionId,
+    );
+    if (!registration) throw new Error(`runner registration missing: ${input.sessionId}`);
+    const adopted = await spawner.adopt(registration);
+    if (!adopted) throw new Error(`registered runner is not alive: ${input.sessionId}`);
+    return adopted;
+  });
   return new RunnerProcessDispatcher({
     spawn: input,
-    adoptExisting: true,
-    spawner: new RunnerProcessSpawner(),
+    runnerProcess,
     pumpMux,
     logger: pino({ level: "silent" }),
     handleHostCall: async () => null,

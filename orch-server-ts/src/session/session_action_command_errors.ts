@@ -48,14 +48,29 @@ export async function sendInterveneCommand(
   reply: FastifyReply,
   options: SessionActionCommandDispatchOptions,
   payload: InterveneNodeCommandPayload,
+  durableDeliveryId?: string,
 ): Promise<FastifyReply | NodeCommandResponse> {
   try {
-    return mapActionCommandResponse(
-      reply,
-      await dispatchActionCommand(options, payload),
-      sendGenericStatusError,
-    );
+    const response = await dispatchActionCommand(options, payload);
+    if (isAckStatusError(response)) {
+      return sendGenericStatusError(reply, response);
+    }
+    return durableDeliveryId === undefined
+      ? response
+      : { ...response, deliveryId: durableDeliveryId };
   } catch (error) {
+    if (durableDeliveryId !== undefined) {
+      return reply.code(200).send({
+        type: "intervene_ack",
+        status: "ok",
+        outcome: "queued",
+        agentSessionId: payload.agentSessionId,
+        deliveryId: durableDeliveryId,
+        delivered: false,
+        consumeWhen: "next_turn",
+        reason: "next_turn_required",
+      });
+    }
     if (
       error instanceof PendingNodeCommandTimeoutError &&
       error.commandType === "intervene"

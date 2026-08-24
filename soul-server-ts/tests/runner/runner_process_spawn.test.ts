@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
+import {
+  RunnerProcessSpawner,
+  type SpawnedRunnerProcess,
+} from "../../src/runner/runner_process_spawn.js";
+import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { readAuthoritativeRunnerLifecycle } from "../../src/runner/runner_lifecycle_reader.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { defaultProcessOwnershipLockDependencies } from
@@ -236,8 +240,14 @@ describe("RunnerProcessSpawner", () => {
     });
     await expect(readFile(paths.pidPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     await expect(spawner.adopt({
-      stateDirectory: params.stateDirectory,
-      sessionId: params.sessionId,
+      config: {} as never,
+      pid: null,
+      pidAlive: false,
+      registeredAtMs: 0,
+      bootstrap: null,
+      lifecycle: null,
+      registrationId: "registration-a",
+      pidStartIdentity: null,
     })).resolves.toBeNull();
     expect(inspectProcess).not.toHaveBeenCalled();
   });
@@ -524,10 +534,8 @@ describe("RunnerProcessSpawner", () => {
       delay: async () => {},
     });
 
-    await expect(adopter.adopt({
-      stateDirectory: params.stateDirectory,
-      sessionId: params.sessionId,
-    })).resolves.toEqual({ ...registered, adopted: true });
+    await expect(adopter.adopt(registrationFor(registered)))
+      .resolves.toEqual({ ...registered, adopted: true });
     expect(spawnProcess).not.toHaveBeenCalled();
   });
 
@@ -558,10 +566,10 @@ describe("RunnerProcessSpawner", () => {
       delay: async () => {},
     });
 
-    await expect(adopter.adopt({
-      stateDirectory: params.stateDirectory,
-      sessionId: params.sessionId,
-    })).resolves.toBeNull();
+    await expect(adopter.adopt(registrationFor(registered, {
+      registrationId: null,
+      pidStartIdentity: null,
+    }))).resolves.toBeNull();
   });
 
   it("recovers across a persistent sidecar failure and runner pid generation change", async () => {
@@ -595,7 +603,7 @@ describe("RunnerProcessSpawner", () => {
       now: () => 0,
       delay: async () => {},
     });
-    await initial.spawn(params);
+    const registered = await initial.spawn(params);
     const firstLifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
     firstLifecycle.begin({
       pid: 5101,
@@ -645,11 +653,17 @@ describe("RunnerProcessSpawner", () => {
         },
       }),
     });
+    const recoveryLifecycle = await readAuthoritativeRunnerLifecycle(paths.databasePath, {
+      lifecycleSummaryOptions: {
+        renameFile: persistentRenameFailure,
+      },
+    });
 
-    await expect(recoveredHost.adopt({
-      stateDirectory: params.stateDirectory,
-      sessionId: params.sessionId,
-    })).resolves.toMatchObject({ pid: 5102, adopted: true });
+    await expect(recoveredHost.adopt(registrationFor(registered, {
+      pid: 5102,
+      pidStartIdentity: "test-5102",
+      lifecycle: recoveryLifecycle,
+    }))).resolves.toMatchObject({ pid: 5102, adopted: true });
     await expect(recoveredHost.spawn(params)).resolves.toMatchObject({ pid: 5103, adopted: false });
 
     expect(persistentRenameFailure).toHaveBeenCalledTimes(3);
@@ -728,6 +742,23 @@ describe("RunnerProcessSpawner", () => {
     expect(unref).toHaveBeenCalledOnce();
   });
 });
+
+function registrationFor(
+  spawned: SpawnedRunnerProcess,
+  overrides: Partial<RunnerRegistration> = {},
+): RunnerRegistration {
+  return {
+    config: spawned.config,
+    pid: spawned.pid,
+    pidAlive: true,
+    registeredAtMs: 0,
+    bootstrap: null,
+    lifecycle: null,
+    registrationId: spawned.registrationId,
+    pidStartIdentity: `test-${spawned.pid}`,
+    ...overrides,
+  };
+}
 
 async function input() {
   const stateDirectory = await mkdtemp(join(tmpdir(), "soulstream-runner-spawn-"));

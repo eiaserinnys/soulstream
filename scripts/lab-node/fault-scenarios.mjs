@@ -3,7 +3,11 @@ import { rename } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import {
+  autoResumeHandoffViolations,
   buildInterventionPayload,
+  inPostTurnAutoResumeHandoffWindow,
+  restartWindowContinuityViolations,
+  restartWindowDurableViolations,
   toggleReleaseGeneration,
 } from "./fault-harness-contract.mjs";
 import {
@@ -34,8 +38,10 @@ import {
 
 const SCENARIO_ORDER = [
   "steady-state",
+  "auto-resume-handoff",
   "restart-adopt",
   "restart-intervention-window",
+  "restart-window-durable",
   "delivery-revival",
   "delivery-exact-once",
   "delivery-fifo",
@@ -53,7 +59,11 @@ const LOG_TERMS = {
   ...DELIVERY_LOG_TERMS,
   F1: ["F1_", "runner", "shutdown"],
   F11: ["F11_", "intervention", "delivery"],
-  F9: ["F9_", "runner adoption release identity mismatch", "offline",
+  "auto-resume-handoff": ["completion_notification", "auto_resume",
+    "registered runner recovery skipped", "activeRunnerOperations", "connect ENOENT",
+    "runner.sock"],
+  "restart-window-durable": ["RESTART_WINDOW_DURABLE_", "NODE_UNAVAILABLE", "intervention"],
+  F9: ["F9_", "runner adoption release identity mismatch", "release_superseded", "offline",
     "runner adoption failure was superseded by a newer execution",
     "registered runner recovery skipped", "terminal runner replay was skipped",
     "Durable event stream already registered", "Runner IPC reconnect budget exhausted"],
@@ -92,13 +102,91 @@ export async function runCanonicalScenario(id, runtime, recorder) {
   }
   const logs = await recorder.captureLogs(id, offsets, LOG_TERMS[id]);
   if (id === "F9") {
-    const mismatchCount = logs.node.filter(
-      (line) => line.includes("runner adoption release identity mismatch"),
-    ).length;
+    const replacementTerms = [
+      "runner adoption release identity mismatch",
+      "release_superseded",
+      "runner adoption failure was superseded by a newer execution",
+    ];
+    const mismatchCount = logs.node.filter((line) => replacementTerms.some(
+      (term) => line.includes(term),
+    )).length;
     result.mismatchLogCount = mismatchCount;
     if (!failure) {
       try {
-        assertScenario(mismatchCount >= 1, "F9 emitted no release identity mismatch log");
+        const violations = restartWindowContinuityViolations({
+          ...result.continuityObservation,
+          replacementLogCount: mismatchCount,
+        });
+        assertScenario(violations.length === 0, `F9 continuity failed: ${violations.join("; ")}`);
+      } catch (error) {
+        failure = serializeError(error);
+        result = { ...result, status: "failed", failure };
+      }
+    }
+  }
+  if (id === "restart-window-durable") {
+    const replacementTerms = [
+      "runner adoption release identity mismatch",
+      "release_superseded",
+      "runner adoption failure was superseded by a newer execution",
+    ];
+    const replacementCount = logs.node.filter((line) => replacementTerms.some(
+      (term) => line.includes(term),
+    )).length;
+    result.replacementLogCount = replacementCount;
+    if (!failure) {
+      try {
+        const violations = restartWindowDurableViolations({
+          ...result.observation,
+          replacementLogCount: replacementCount,
+        });
+        assertScenario(
+          violations.length === 0,
+          `restart-window durable delivery failed: ${violations.join("; ")}`,
+        );
+      } catch (error) {
+        failure = serializeError(error);
+        result = { ...result, status: "failed", failure };
+      }
+    }
+  }
+  if (id === "auto-resume-handoff") {
+    const inWindowAttempts = result.attempts?.filter(
+      (attempt) => attempt.observation.inTimingWindow,
+    ) ?? [];
+    const inWindowSessionIds = inWindowAttempts.map((attempt) => attempt.parentId);
+    const inWindowNodeLogs = logs.node.filter((line) => (
+      inWindowSessionIds.some((sessionId) => line.includes(sessionId))
+    ));
+    const blockedCount = inWindowNodeLogs.filter((line) => (
+      line.includes("registered runner recovery skipped")
+      && line.includes("execution_promise")
+    )).length;
+    const replacementCount = inWindowNodeLogs.filter((line) => (
+      line.includes("release_superseded")
+      || line.includes("runner adoption failure was superseded by a newer execution")
+    )).length;
+    const socketErrorCount = inWindowNodeLogs.filter((line) => (
+      line.includes("connect ENOENT") && line.includes("runner.sock")
+    )).length;
+    result.executionPromiseBlockedCount = blockedCount;
+    result.replacementLogCount = replacementCount;
+    result.socketErrorCount = socketErrorCount;
+    if (!failure && inWindowAttempts.length === 0) {
+      result = {
+        ...result,
+        status: "inconclusive_timing_window",
+        reason: "no attempt entered the (0,+1000ms] post-turn runner handoff window",
+      };
+    } else if (!failure) {
+      try {
+        const violations = autoResumeHandoffViolations({
+          attempts: inWindowAttempts.map((attempt) => attempt.observation),
+          executionPromiseBlockedCount: blockedCount,
+          replacementLogCount: replacementCount,
+          socketErrorCount,
+        });
+        assertScenario(violations.length === 0, `auto-resume handoff failed: ${violations.join("; ")}`);
       } catch (error) {
         failure = serializeError(error);
         result = { ...result, status: "failed", failure };
@@ -123,6 +211,158 @@ export async function runCanonicalScenario(id, runtime, recorder) {
 const SCENARIOS = {
   ...TRANSPARENCY_SCENARIOS,
   ...DELIVERY_SCENARIOS,
+
+  async "auto-resume-handoff"(runtime, recorder) {
+    const attempts = [];
+    const childSleepSecondsByAttempt = [8.3, 8.5, 8.7, 8.9];
+    for (const [index, childSleepSeconds] of childSleepSecondsByAttempt.entries()) {
+      const attempt = index + 1;
+      const parentId = await runtime.createSession(
+        "Use Bash exactly once to run python3 -c \"import time; time.sleep(12)\". "
+        + "After it finishes, briefly state that the command completed.",
+      );
+      const oldRunner = await runtime.waitForRunner(parentId);
+      await waitForInFlightTool(runtime, parentId);
+      const childId = await runtime.createSession(
+        `Use Bash exactly once to run python3 -c \"import time; time.sleep(${childSleepSeconds})\". `
+        + "After it finishes, report the result of two plus two in one sentence.",
+        { caller_session_id: parentId },
+      );
+      const childTerminalStatus = await runtime.waitForTerminal(childId);
+      const childTerminalAt = await runtime.sessionEndedAt(childId);
+      const delivery = await waitForConsumedDelivery(
+        runtime,
+        childId,
+        `auto-resume handoff attempt ${attempt}`,
+      );
+      const parentTerminalStatus = await runtime.waitForTerminal(parentId);
+      const timeline = await runtime.timeline(parentId);
+      const turnBoundaries = await runtime.turnResults(parentId);
+      const parentFirstTurnEndedAt = turnBoundaries[0]?.created_at ?? null;
+      const handoffDeltaMs = timestampDeltaMs(childTerminalAt, parentFirstTurnEndedAt);
+      const ownerships = await runtime.ownerships(parentId);
+      const observedPids = [...new Set(ownerships.map((row) => row.pid).filter(Boolean))];
+      const consumptionCount = await runtime.consumptionCount(delivery.relation_key);
+      const messages = timeline.messages ?? [];
+      const observation = {
+        attemptNumber: attempt,
+        deliveryReceiptCount: messages.filter((message) => (
+          message.event_type === "session_notification"
+          && message.payload?.delivery_id === delivery.delivery_id
+        )).length,
+        consumptionCount,
+        userMessageCount: messages.filter((message) => message.event_type === "user_message").length,
+        turnBoundaryCount: turnBoundaries.length,
+        successfulTurnBoundaryCount: turnBoundaries.filter(
+          (message) => message.payload?.success === true,
+        ).length,
+        childTerminalStatus,
+        parentTerminalStatus,
+        childSleepSeconds,
+        childTerminalAt,
+        parentFirstTurnEndedAt,
+        handoffDeltaMs,
+        inTimingWindow: inPostTurnAutoResumeHandoffWindow(handoffDeltaMs),
+        oldPid: oldRunner.pid,
+        observedPids,
+      };
+      attempts.push({ parentId, childId, oldRunner, observedPids, delivery, ownerships, observation });
+      await recorder.event("auto_resume_handoff_observed", { attempt, ...attempts.at(-1) });
+    }
+    return { id: "auto-resume-handoff", status: "passed", attempts };
+  },
+
+  async "restart-window-durable"(runtime, recorder) {
+    const seed = shortId();
+    const marker = `RESTART_WINDOW_DURABLE_${seed}`;
+    const sessionId = await runtime.createSession(delayedMarkerPrompt(`RESTART_WINDOW_BASE_${seed}`, 30));
+    const oldRunner = await runtime.waitForRunner(sessionId);
+    await waitForInFlightTool(runtime, sessionId);
+    const deliveryId = randomUUID();
+    const payload = buildInterventionPayload(deliveryId, `Reply with exactly ${marker}.`);
+    await runtime.stopNodeForReleaseSwap();
+    let callerOutcome;
+    try {
+      callerOutcome = await settle(runtime.intervene(sessionId, payload));
+    } finally {
+      await runtime.startStack();
+    }
+    const newRunnerOutcome = await settle(runtime.waitForRunner(sessionId, 60_000));
+    const [markerOutcome, deliveryOutcome] = await Promise.all([
+      settle(runtime.waitForMarker(sessionId, marker, 90_000)),
+      settle(waitFor(
+        async () => {
+          const row = await runtime.deliveryById(deliveryId);
+          return row?.aggregate_state === "consumed" ? row : undefined;
+        },
+        90_000,
+        "restart-window intervention delivery did not reach consumed",
+        1_000,
+      )),
+    ]);
+    const terminalOutcome = await settle(runtime.waitForTerminal(sessionId, 30_000));
+    const acceptance = callerOutcome.status === "fulfilled"
+      ? callerOutcome.value
+      : callerOutcome;
+    const newRunner = newRunnerOutcome.status === "fulfilled"
+      ? newRunnerOutcome.value
+      : undefined;
+    const delivery = await runtime.deliveryById(deliveryId);
+    const deliveryCount = await runtime.deliveryCountById(deliveryId);
+    const interventionCount = await runtime.countTimelineEvents(
+      sessionId,
+      "intervention_sent",
+      payload.text,
+    );
+    const assistantCount = await runtime.countTimelineEvents(
+      sessionId,
+      "assistant_message",
+      marker,
+    );
+    const inboxRemainingCount = runtime.runnerInterventionInboxCount(sessionId);
+    const ownerships = await runtime.ownerships(sessionId);
+    const inFlightOwnerships = ownerships.filter((row) => (
+      row.phase === "reserved" || row.phase === "identity_proven" || row.phase === "active"
+    ));
+    const sessionStatus = await runtime.sessionStatus(sessionId);
+    const observation = {
+      acceptance,
+      delivery,
+      deliveryCount,
+      interventionCount,
+      assistantCount,
+      inboxRemainingCount,
+      inFlightCount: inFlightOwnerships.length,
+      sessionStatus,
+      oldPid: oldRunner.pid,
+      newPid: newRunner?.pid,
+      oldReleaseManifestId: oldRunner.config.releaseManifestId,
+      newReleaseManifestId: newRunner?.config.releaseManifestId,
+      replacementLogCount: 0,
+    };
+    await recorder.event("restart_window_durable_attempted", {
+      sessionId,
+      deliveryId,
+      callerOutcome,
+      markerOutcome,
+      deliveryOutcome,
+      terminalOutcome,
+      observation,
+    });
+    return {
+      id: "restart-window-durable",
+      status: "passed",
+      sessionId,
+      deliveryId,
+      callerOutcome,
+      newRunnerOutcome,
+      markerOutcome,
+      deliveryOutcome,
+      terminalOutcome,
+      ownerships,
+      observation,
+    };
+  },
   async "runner-death-live-host"(runtime, recorder) {
     const seed = shortId();
     const oldMarker = `RUNNER_DEATH_LIVE_HOST_OLD_${seed}`;
@@ -409,8 +649,15 @@ const SCENARIOS = {
       releaseGenerationFrom: toggled.previous,
       releaseGenerationTo: toggled.next,
     });
+    const restartWindowDeliveryId = randomUUID();
+    const restartWindowPayload = buildInterventionPayload(
+      restartWindowDeliveryId,
+      `Reply with exactly ${nextMarker}.`,
+    );
+    const restartWindowText = restartWindowPayload.text;
     await runtime.stopNodeForReleaseSwap();
     let newManifest;
+    let acceptanceOutcome;
     try {
       newManifest = await runtime.rebuildReleaseWithEnv(toggled.text);
       assertScenario(
@@ -418,6 +665,12 @@ const SCENARIOS = {
         "F9 rebuild did not change manifest identity",
       );
       await runtime.startStack();
+      acceptanceOutcome = await settle(runtime.intervene(sessionId, restartWindowPayload));
+      await recorder.event("restart_window_delivery_accepted", {
+        sessionId,
+        deliveryId: restartWindowDeliveryId,
+        acceptanceOutcome,
+      });
     } catch (error) {
       try {
         await runtime.rebuildReleaseWithEnv(originalEnvironment);
@@ -427,34 +680,73 @@ const SCENARIOS = {
       }
       throw error;
     }
-    assertScenario(runtime.runnerAlive(oldRunner.pid), "F9 old runner did not remain detached");
-    await runtime.waitForMarker(sessionId, oldMarker, 240_000);
-    await runtime.waitForTerminal(sessionId, 240_000);
-    const deliveryId = randomUUID();
-    const payload = buildInterventionPayload(deliveryId, `Reply with exactly ${nextMarker}.`);
-    await runtime.intervene(sessionId, payload);
-    const newRunner = await runtime.waitForRunner(sessionId, 60_000);
-    await runtime.waitForMarker(sessionId, nextMarker, 60_000);
-    const status = await runtime.waitForTerminal(sessionId);
+    const oldMarkerOutcome = await settle(runtime.waitForMarker(sessionId, oldMarker, 240_000));
+    const oldTerminalOutcome = await settle(runtime.waitForTerminal(sessionId, 30_000));
+    const newRunnerOutcome = await settle(runtime.waitForRunner(sessionId, 60_000));
+    const newRunner = newRunnerOutcome.status === "fulfilled" ? newRunnerOutcome.value : undefined;
+    const acceptance = acceptanceOutcome.status === "fulfilled"
+      ? acceptanceOutcome.value
+      : acceptanceOutcome;
+    let nextMarkerOutcome = { status: "not_attempted" };
+    let nextTerminalOutcome = { status: "not_attempted" };
+    if (
+      acceptanceOutcome.status === "fulfilled"
+      && acceptance?.status === "ok"
+      && ["delivered", "queued", "auto_resumed"].includes(acceptance.outcome)
+    ) {
+      nextMarkerOutcome = await settle(runtime.waitForMarker(sessionId, nextMarker, 120_000));
+      nextTerminalOutcome = await settle(runtime.waitForTerminal(sessionId, 30_000));
+    }
+    const status = await runtime.sessionStatus(sessionId);
     const oldCount = await runtime.countTimelineEvents(sessionId, "assistant_message", oldMarker);
     const nextCount = await runtime.countTimelineEvents(sessionId, "assistant_message", nextMarker);
-    assertScenario(oldCount === 1, `F9 old marker count was ${oldCount}`);
-    assertScenario(nextCount === 1, `F9 new marker count was ${nextCount}`);
-    assertScenario(newRunner.pid !== oldRunner.pid, "F9 next turn reused old runner pid");
-    assertScenario(
-      newRunner.config.releaseManifestId === newManifest.manifestId,
-      "F9 next runner did not use the rebuilt manifest",
+    const interventionCount = await runtime.countTimelineEvents(
+      sessionId,
+      "intervention_sent",
+      restartWindowText,
     );
+    const inboxRemainingCount = runtime.runnerInterventionInboxCount(sessionId);
+    const ownerships = await runtime.ownerships(sessionId);
+    const inFlightOwnerships = ownerships.filter((row) => (
+      row.phase === "reserved" || row.phase === "identity_proven" || row.phase === "active"
+    ));
+    const continuityObservation = {
+      acceptance,
+      interventionCount,
+      oldAssistantCount: oldCount,
+      assistantCount: nextCount,
+      inboxRemainingCount,
+      inFlightCount: inFlightOwnerships.length,
+      oldPid: oldRunner.pid,
+      newPid: newRunner?.pid,
+      oldReleaseManifestId: oldRunner.config.releaseManifestId,
+      newReleaseManifestId: newRunner?.config.releaseManifestId,
+      replacementLogCount: 0,
+    };
+    const continuityViolations = restartWindowContinuityViolations(continuityObservation);
     return {
       id: "F9",
-      status: "passed",
+      status: continuityViolations.length === 0 ? "passed" : "failed",
+      reason: continuityViolations.length === 0
+        ? undefined
+        : `F9 continuity failed before log reconciliation: ${continuityViolations.join("; ")}`,
       sessionId,
       oldRunner,
       newRunner,
+      oldMarkerOutcome,
+      oldTerminalOutcome,
+      newRunnerOutcome,
+      nextMarkerOutcome,
+      nextTerminalOutcome,
       oldManifest,
       newManifest,
       sessionStatus: status,
       markerCounts: { old: oldCount, next: nextCount },
+      restartWindowDeliveryId,
+      interventionCount,
+      inboxRemainingCount,
+      inFlightOwnerships,
+      continuityObservation,
     };
   },
 
@@ -617,4 +909,12 @@ function delayedMarkerPrompt(marker, seconds) {
   return "Use Bash exactly once to run "
     + `python3 -c "import time; time.sleep(${seconds})". `
     + `After it finishes, reply with exactly ${marker}.`;
+}
+
+function timestampDeltaMs(later, earlier) {
+  const laterMs = Date.parse(later ?? "");
+  const earlierMs = Date.parse(earlier ?? "");
+  return Number.isFinite(laterMs) && Number.isFinite(earlierMs)
+    ? laterMs - earlierMs
+    : null;
 }

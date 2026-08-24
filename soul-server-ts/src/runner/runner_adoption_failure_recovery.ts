@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import type { Task } from "../task/task_models.js";
+import { releaseTaskRunner } from "../task/task_runner_release.js";
 import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
@@ -9,7 +10,6 @@ import {
 } from "./runner_process_registry.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import { prepareRecoveredTask } from "./runner_recovery_task.js";
-import { RunnerReleaseIdentityMismatchError } from "./runner_adoption_error.js";
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
 
 export type RunnerAdoptionDisposition = "adopt_prebootstrap" | "adopt_running";
@@ -76,22 +76,24 @@ export class RunnerAdoptionFailureRecovery {
     ownedRunner: Task["runner"];
     attemptRunner: TaskRunnerRuntime | undefined;
     error: unknown;
-  }): void {
+  }): Promise<void> {
     const sessionId = input.registration.config.sessionId;
-    if (this.active.has(sessionId)) return;
+    const active = this.active.get(sessionId);
+    if (active) return active;
     const recovery = this.recover(input).catch((error) => {
       this.deps.onFailure(input.registration, input.disposition, error);
     }).finally(() => {
       if (this.active.get(sessionId) === recovery) this.active.delete(sessionId);
     });
     this.active.set(sessionId, recovery);
+    return recovery;
   }
 
   async terminalize(
     registration: RunnerRegistration,
     task: Task,
     error: { code: string; message: string },
-    disposition: "reap_dead" | "reap_stalled" | "socket_unavailable" | "release_superseded",
+    disposition: "reap_dead" | "reap_stalled" | "socket_unavailable",
     afterProcessStopped?: () => Promise<void>,
   ): Promise<void> {
     if (registration.pidAlive) {
@@ -156,9 +158,7 @@ export class RunnerAdoptionFailureRecovery {
     };
 
     const releaseStoppedRecoveryHandles = async (): Promise<void> => {
-      if (recoveryRunner && task.runner === recoveryRunner) {
-        task.runner = undefined;
-        task.runnerRetainedForClaudeBackground = undefined;
+      if (recoveryRunner && releaseTaskRunner(task, recoveryRunner)) {
         if (recoveryRunner === attemptRunner) attemptReleased = true;
         await recoveryRunner.dispatcher.detachHost().catch((detachError) => {
           this.deps.logger.warn(
@@ -222,28 +222,6 @@ export class RunnerAdoptionFailureRecovery {
       if (
         disposition === "adopt_running"
         && verifiedDisposition === "adopt_running"
-        && error instanceof RunnerReleaseIdentityMismatchError
-      ) {
-        this.deps.logger.info(
-          { ...recoveryLogContext(registration, error, verifiedDisposition), pid: hydrated.pid },
-          "runner from a superseded release will be replaced",
-        );
-        await this.terminalize(
-          hydrated,
-          task,
-          {
-            code: "release_superseded",
-            message: "runner release identity is incompatible with the current host release",
-          },
-          "release_superseded",
-          releaseStoppedRecoveryHandles,
-        );
-        this.clear(registration.config.sessionId);
-        return;
-      }
-      if (
-        disposition === "adopt_running"
-        && verifiedDisposition === "adopt_running"
         && errorChainHasCode(error, "ENOENT")
       ) {
         this.deps.logger.info(
@@ -301,9 +279,8 @@ function supersedingExecution(
   if (task.runner !== undefined && task.runner !== ownedRunner) return "runner";
   if (task.executionPromise === completion) return undefined;
   // An empty slot is not supersession. Lab scenario F9 showed every adoption
-  // rejection landing here as `execution_absent`: the release identity gate
-  // throws before `recoverRunnerExecution` assigns `task.executionPromise`,
-  // so nothing newer exists and standing down abandons the replacement path.
+  // An attempt may reject before `recoverRunnerExecution` assigns
+  // `task.executionPromise`; nothing newer exists in that case.
   if (task.executionPromise === undefined) return undefined;
   return "execution";
 }

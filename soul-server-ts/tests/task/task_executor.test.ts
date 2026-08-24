@@ -16,8 +16,6 @@ import {
   RUNNER_FRAME_PROTOCOL_VERSION,
 } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
-import { RunnerReleaseIdentityMismatchError } from
-  "../../src/runner/runner_adoption_error.js";
 import { RunnerOrphanedSpawnError } from
   "../../src/runner/runner_process_dispatcher.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
@@ -1930,15 +1928,7 @@ describe("TaskExecutor runner process boundary", () => {
     };
     dispatcher.prepareExecutionIdentity = vi.fn(async () => proof);
     const currentManifestId = "release-b";
-    const processFactory = vi.fn((task: Task) => {
-      const reservedManifestId = task.executionOwnershipReservation?.manifestId;
-      if (reservedManifestId !== currentManifestId) {
-        throw new Error(
-          `execution reservation release manifest mismatch: ${reservedManifestId} !== ${currentManifestId}`,
-        );
-      }
-      return runner;
-    }) as unknown as RunnerProcessRuntimeFactory;
+    const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
     processFactory.describe = vi.fn(async () => ({
       ownerKind: "runner_process",
       manifestId: currentManifestId,
@@ -2258,112 +2248,6 @@ describe("TaskExecutor runner process boundary", () => {
     expect(reserveAdoption).not.toHaveBeenCalled();
   });
 
-  it("호스트와 release identity가 다른 러너는 adopt 전에 거부한다", async () => {
-    const mocks = makeMocks();
-    Object.assign(mocks.persistence, {
-      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
-    });
-    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
-    dispatcher.prepareExecutionIdentity = vi.fn(async () => {
-      throw new Error("mismatched runner must not prepare adoption identity");
-    });
-    const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
-    processFactory.describe = vi.fn(async () => ({
-      ownerKind: "runner_process",
-      manifestId: "release-b",
-      runtimeEnvIdentity: "env-b",
-    }));
-    const executor = new TaskExecutor(
-      () => makeFakeEngine([]),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      processFactory,
-    );
-
-    const error = await executor.recoverRunnerExecution(
-      makeTask(),
-      agent,
-      runner,
-      "execute-a",
-      "adopt",
-      "release-a",
-      "env-a",
-    ).catch((failure: unknown) => failure);
-
-    expect(error).toBeInstanceOf(RunnerReleaseIdentityMismatchError);
-    expect(error).toMatchObject({
-      runnerManifestId: "release-a",
-      runnerRuntimeEnvIdentity: "env-a",
-      hostManifestId: "release-b",
-      hostRuntimeEnvIdentity: "env-b",
-      message: "runner adoption release identity mismatch: runner manifest=release-a env=env-a; host manifest=release-b env=env-b",
-    });
-
-    expect(processFactory.describe).toHaveBeenCalledWith(agent);
-    expect(dispatcher.prepareExecutionIdentity).not.toHaveBeenCalled();
-  });
-
-  it("adopt를 거부해도 구 러너의 host channel은 살려 두고 stream 등록만 돌려준다", async () => {
-    // The rejected adoption owns one thing: the durable event stream entry its
-    // dispatcher registered. The IPC connection and in-flight host requests
-    // belong to the runner, which is mid-tool and waiting on one of them.
-    // Closing those left the tool without a result, so the turn never finished
-    // and its output never reached the user (260822; lab F9 old turn stuck at
-    // tool_start). This contract is why that cannot come back.
-    const mocks = makeMocks();
-    Object.assign(mocks.persistence, {
-      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
-    });
-    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
-    const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
-    processFactory.describe = vi.fn(async () => ({
-      ownerKind: "runner_process",
-      manifestId: "release-host",
-      runtimeEnvIdentity: "env-host",
-    }));
-    processFactory.recover = vi.fn(() => runner);
-    const executor = new TaskExecutor(
-      () => makeFakeEngine([]),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      processFactory,
-    );
-    const task = makeTask();
-
-    await expect(executor.recoverRegisteredRunner(
-      task,
-      {
-        sessionId: task.agentSessionId,
-        agent,
-        releaseManifestId: "release-runner",
-        runtimeEnvIdentity: "env-runner",
-        codeSha: "sha-runner",
-      } as never,
-      "execute-old",
-      "adopt",
-    )).rejects.toThrow("runner adoption release identity mismatch");
-
-    expect(dispatcher.releaseEventStreamRegistration).toHaveBeenCalledTimes(1);
-    expect(dispatcher.detachHost).not.toHaveBeenCalled();
-    expect(dispatcher.close).not.toHaveBeenCalled();
-  });
-
   it("실행이 끝나면 성공이든 소유권 거부든 execution slot을 비운다", async () => {
     // Recovery, intervention routing and auto-resume all read a present
     // `executionPromise` as "an execution is in flight". A settled one left
@@ -2417,7 +2301,7 @@ describe("TaskExecutor runner process boundary", () => {
     expect(rejectedTask.executionPromise).toBeUndefined();
   });
 
-  it("adopt ownership은 old identity 예약 뒤 activation하고 reservation을 제거한다", async () => {
+  it("adopt ownership은 host release와 비교하지 않고 old identity로 activation한다", async () => {
     const mocks = makeMocks();
     const transition = (status: "initializing" | "running" | "completed") => ({
       eventId: status === "initializing" ? 20 : status === "running" ? 21 : 22,
@@ -2456,12 +2340,25 @@ describe("TaskExecutor runner process boundary", () => {
       executionCommandId: "execute-old",
     };
     dispatcher.prepareExecutionIdentity = vi.fn(async () => proof);
+    const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+    processFactory.describe = vi.fn(async () => ({
+      ownerKind: "runner_process",
+      manifestId: "release-current",
+      runtimeEnvIdentity: "env-current",
+    }));
     const executor = new TaskExecutor(
       () => makeFakeEngine([]),
       mocks.db,
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
     );
     const task = makeTask();
 
@@ -2496,6 +2393,7 @@ describe("TaskExecutor runner process boundary", () => {
     });
     expect(task.executionOwnershipReservation).toBeUndefined();
     expect(fail).not.toHaveBeenCalled();
+    expect(processFactory.describe).not.toHaveBeenCalled();
   });
 
   it("adopt activation rejection detaches the adopted identity before failing its reservation", async () => {

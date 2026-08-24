@@ -289,6 +289,37 @@ describe("runner process registry", () => {
     });
   });
 
+  it.each([
+    "sessionDirectory",
+    "databasePath",
+    "socketPath",
+    "pidPath",
+    "lockPath",
+    "configPath",
+    "logPath",
+  ] as const)("fails closed when runner config %s is not canonical", async (pathField) => {
+    const stateDirectory = await temporaryDirectory(`noncanonical-${pathField}`);
+    const paths = runnerProcessPaths(stateDirectory, "session-paths");
+    const current = registration({ sessionId: "session-paths" });
+    current.config = {
+      ...current.config,
+      paths: { ...paths, [pathField]: `${paths[pathField]}.other` },
+    };
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, JSON.stringify(current.config));
+
+    const result = await scanRunnerRegistrations(stateDirectory);
+
+    expect(result.registrations).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatchObject({
+      directory: paths.sessionDirectory,
+      sessionId: "session-paths",
+      codeSha: "release-a",
+      error: { message: `runner config paths mismatch: ${paths.sessionDirectory}` },
+    });
+  });
+
   it("skips a registration directory collected during the inventory scan and logs it", async () => {
     const stateDirectory = await temporaryDirectory("inventory-gc-race");
     const collectedDirectory = join(stateDirectory, "collected");

@@ -1,5 +1,5 @@
 import pino from "pino";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import { attachClaudeBackgroundDeliveryMetadata } from
@@ -13,9 +13,16 @@ import {
   "../../src/runner/runner_process_runtime_factory.js";
 import type { RunnerChildConfig } from
   "../../src/runner/runner_process_spawn.js";
+import type { RunnerRegistration } from
+  "../../src/runner/runner_process_registry.js";
+import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
 import type { Task } from "../../src/task/task_models.js";
 
 describe("createRunnerProcessRuntimeFactory", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("pins new runners to the immutable manifest instead of mutable current release", async () => {
     const spawn = vi.fn(async () => {
       throw new Error("captured pinned spawn input");
@@ -52,7 +59,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
         runner_release_id: "sha-pinned",
       } as never,
       buildChildProcessEnv: () => ({}),
-      spawner: { spawn },
+      spawner: { adopt: vi.fn(), spawn },
     });
     const task = {
       agentSessionId: "session-pinned",
@@ -79,6 +86,92 @@ describe("createRunnerProcessRuntimeFactory", () => {
       releaseManifestId: "manifest-pinned",
       snapshotPath: "/release/sha-pinned/soul-server-ts",
     }));
+  });
+
+  it("passes the existing registration to recovery adoption without spawning", async () => {
+    const config: RunnerChildConfig = {
+      schemaVersion: 1,
+      sessionId: "session-adopt",
+      backend: "codex",
+      agent: {
+        id: "agent-adopt",
+        name: "Adopt Agent",
+        backend: "codex",
+        workspace_dir: "/workspace/adopt",
+      },
+      paths: {
+        sessionDirectory: "/runner/session-adopt",
+        databasePath: "/runner/session-adopt/runner.sqlite",
+        socketPath: "/runner/session-adopt/runner.sock",
+        pidPath: "/runner/session-adopt/runner.pid",
+        lockPath: "/runner/session-adopt/runner.lock",
+        configPath: "/runner/session-adopt/runner-config.json",
+        logPath: "/runner/session-adopt/runner.log",
+      },
+      codeSha: "sha-adopt",
+      snapshotPath: "/release/sha-adopt/soul-server-ts",
+      codexAdapterMode: "sdk",
+      claudeRuntimeV2Enabled: true,
+      claudeRuntimeIdleTtlMs: 300_000,
+      claudeRuntimeMaxEntries: 16,
+      claudeRuntimeTurnTimeoutMs: 1_800_000,
+      internalMcpUrl: "http://127.0.0.1:4307/mcp/internal",
+      codexHome: "/home/test/.codex",
+      rolloutRoot: "/home/test/.codex/sessions",
+    };
+    const registration: RunnerRegistration = {
+      config,
+      pid: 6101,
+      pidAlive: true,
+      registeredAtMs: 1,
+      bootstrap: null,
+      lifecycle: null,
+      registrationId: "registration-adopt",
+      pidStartIdentity: "start-6101",
+    };
+    const adopt = vi.fn(async () => ({
+      pid: 6101,
+      registrationId: "registration-adopt",
+      paths: config.paths,
+      config,
+      adopted: true,
+    }));
+    const spawn = vi.fn();
+    vi.spyOn(RunnerParentOutbox, "open")
+      .mockRejectedValueOnce(new Error("stop after successful adoption"));
+    const factory = createRunnerProcessRuntimeFactory({
+      env: runnerEnv(),
+      logger: pino({ level: "silent" }),
+      pumpMux: {} as never,
+      sessionStore: {} as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      releasePool: {
+        resolveCurrentRelease: vi.fn(),
+        describe: vi.fn(() => ({
+          releaseId: "sha-adopt",
+          releaseRoot: "/release/sha-adopt",
+          runnerModuleRoot: "/release/sha-adopt/soul-server-ts",
+        })),
+        ensureRelease: vi.fn(async () => undefined),
+      },
+      buildChildProcessEnv: () => ({}),
+      spawner: { adopt, spawn },
+    });
+    const task = {
+      agentSessionId: "session-adopt",
+      prompt: "resume",
+      status: "pending",
+    } as Task;
+    const runtime = factory.recover!(task, registration, {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    });
+
+    await expect(runtime.dispatcher.prepareSession("session-adopt"))
+      .rejects.toThrow("stop after successful adoption");
+    expect(adopt).toHaveBeenCalledOnce();
+    expect(adopt).toHaveBeenCalledWith(registration);
+    expect(spawn).not.toHaveBeenCalled();
   });
 
   it("refreshes runtime MCP settings when restarting a stored runner config", async () => {
@@ -132,7 +225,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
         ensureRelease: vi.fn(async () => undefined),
       },
       buildChildProcessEnv: () => ({}),
-      spawner: { spawn },
+      spawner: { adopt: vi.fn(), spawn },
     });
     const storedConfig: RunnerChildConfig = {
       schemaVersion: 1,

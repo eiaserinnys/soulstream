@@ -10,7 +10,7 @@ import type {
   AddInterventionResult,
 } from "./task_intervention_route.js";
 import type { InterventionMessage, Task } from "./task_models.js";
-import { isLedgerControlledDeliveryIntent } from "./delivery_contract.js";
+import { isDeliveryIntent, type DeliveryIntent } from "./delivery_contract.js";
 import { loadOrRegisterDelivery } from "./task_delivery_registration.js";
 import {
   DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
@@ -241,6 +241,24 @@ export class TaskDeliveryLedgerGate {
       }
       return;
     }
+    if ("delivered" in result && result.delivered === true) {
+      const receiptId = `intervention:${admission.deliveryId}`;
+      const delivered = await repository.markDelivered(
+        admission.deliveryId,
+        receiptId,
+      );
+      if (!delivered) {
+        throw new Error(`Delivery ${admission.deliveryId} lost delivered-state CAS`);
+      }
+      const consumed = await repository.markConsumed(
+        admission.deliveryId,
+        receiptId,
+      );
+      if (!consumed) {
+        throw new Error(`Delivery ${admission.deliveryId} lost consumed-state CAS`);
+      }
+      return;
+    }
     const leaseOwner = admission.row.lease_owner;
     if (!leaseOwner) {
       throw new Error(`Delivery ${admission.deliveryId} lost its dispatch lease`);
@@ -428,19 +446,15 @@ function requiresExactDeliveryConsumption(message: InterventionMessage): boolean
 export function isLedgerControlled(
   params: Pick<AddInterventionParams, "deliveryIntent">,
 ): params is Pick<AddInterventionParams, "deliveryIntent"> & {
-  deliveryIntent: "durable_next_turn" | "completion_notification" | "runtime_followup";
+  deliveryIntent: DeliveryIntent;
 } {
-  return isLedgerControlledDeliveryIntent(params.deliveryIntent);
+  return isDeliveryIntent(params.deliveryIntent);
 }
 
 function isControlledMessage(
   message: Pick<InterventionMessage, "deliveryIntent">,
 ): boolean {
-  return (
-    message.deliveryIntent === "durable_next_turn" ||
-    message.deliveryIntent === "completion_notification" ||
-    message.deliveryIntent === "runtime_followup"
-  );
+  return isDeliveryIntent(message.deliveryIntent);
 }
 
 export function isInlineChildCompletion(

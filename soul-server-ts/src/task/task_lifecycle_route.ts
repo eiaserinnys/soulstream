@@ -5,6 +5,7 @@ import type { SessionMutationHost } from "../control_plane/persistence_host_clie
 
 import type { ExternalFinalizeParams } from "./task_lifecycle_transition.js";
 import { isActiveTaskStatus, type Task } from "./task_models.js";
+import { releaseTaskRunner } from "./task_runner_release.js";
 import type { ClaudeRuntimeRegistryCloseReason } from
   "../engine/claude_session_client_registry.js";
 
@@ -85,9 +86,9 @@ export class TaskLifecycleRoute {
     const shutdownAt = new Date();
     for (const task of this.deps.listTasks()) {
       if (task.runner?.eventPersistence === "runner") {
-        await task.runner.dispatcher.detachHost();
-        task.runner = undefined;
-        task.runnerRetainedForClaudeBackground = undefined;
+        const runner = task.runner;
+        await runner.dispatcher.detachHost();
+        releaseTaskRunner(task, runner);
         task.executionPromise = undefined;
         continue;
       }

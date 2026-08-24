@@ -3,16 +3,23 @@ import test from "node:test";
 
 import { MUTATION_COVERAGE } from "./fault-harness-mutation.mjs";
 import { canonicalScenarioOrder } from "./fault-scenarios.mjs";
-import { runnerOperationSnapshots } from "./fault-harness-runtime.mjs";
+import {
+  assertMatchingProvenance,
+  runnerOperationSnapshots,
+} from "./fault-harness-runtime.mjs";
 import {
   SCENARIO_DEFINITIONS,
+  autoResumeHandoffViolations,
   buildDurableDeliverySeed,
   buildInterventionPayload,
   countMatchingTimelineEvents,
   evaluateInvariantSnapshot,
+  inPostTurnAutoResumeHandoffWindow,
   newInvariantViolations,
   parseHarnessArguments,
   redactEvidenceLine,
+  restartWindowContinuityViolations,
+  restartWindowDurableViolations,
   toggleReleaseGeneration,
 } from "./fault-harness-contract.mjs";
 
@@ -50,11 +57,132 @@ test("runner operation snapshots expose active-turn presence without patch-speci
   assert.deepEqual(snapshots[1].activeRunnerOperations, []);
 });
 
+test("lab verdict refuses a bundle built from a different checkout", () => {
+  assert.doesNotThrow(() => assertMatchingProvenance("8470285a", "8470285a"));
+  assert.throws(
+    () => assertMatchingProvenance("b02adf1c", "8470285a"),
+    /lab provenance mismatch: bundle b02adf1c != checkout 8470285a/,
+  );
+});
+
+test("auto-resume oracle rejects response loss, duplicate consumption, and runner replacement", () => {
+  const clean = {
+    attempts: [{
+      deliveryReceiptCount: 1,
+      consumptionCount: 1,
+      userMessageCount: 1,
+      turnBoundaryCount: 2,
+      successfulTurnBoundaryCount: 2,
+      childTerminalStatus: "completed",
+      parentTerminalStatus: "completed",
+      oldPid: 41,
+      observedPids: [41],
+    }],
+    executionPromiseBlockedCount: 0,
+    replacementLogCount: 0,
+    socketErrorCount: 0,
+  };
+  assert.deepEqual(autoResumeHandoffViolations(clean), []);
+  for (const mutation of [
+    { attempts: [{ ...clean.attempts[0], turnBoundaryCount: 1, successfulTurnBoundaryCount: 1 }] },
+    { attempts: [{ ...clean.attempts[0], consumptionCount: 2 }] },
+    { attempts: [{ ...clean.attempts[0], deliveryReceiptCount: 2 }] },
+    { attempts: [{ ...clean.attempts[0], observedPids: [41, 42] }] },
+    { executionPromiseBlockedCount: 1 },
+    { socketErrorCount: 1 },
+  ]) {
+    assert.notDeepEqual(autoResumeHandoffViolations({ ...clean, ...mutation }), []);
+  }
+});
+
+test("auto-resume only judges attempts in the first second after the turn ends", () => {
+  assert.equal(inPostTurnAutoResumeHandoffWindow(1), true);
+  assert.equal(inPostTurnAutoResumeHandoffWindow(1_000), true);
+  assert.equal(inPostTurnAutoResumeHandoffWindow(-1), false);
+  assert.equal(inPostTurnAutoResumeHandoffWindow(0), false);
+  assert.equal(inPostTurnAutoResumeHandoffWindow(1_001), false);
+  assert.equal(inPostTurnAutoResumeHandoffWindow(null), false);
+});
+
+test("restart-window oracle rejects loss, duplicates, residue, in-flight, and replacement mutations", () => {
+  const clean = {
+    acceptance: { status: "ok", outcome: "queued" },
+    interventionCount: 1,
+    oldAssistantCount: 1,
+    assistantCount: 1,
+    inboxRemainingCount: 0,
+    inFlightCount: 0,
+    oldPid: 41,
+    newPid: 41,
+    oldReleaseManifestId: "release-old",
+    newReleaseManifestId: "release-old",
+    replacementLogCount: 0,
+  };
+  assert.deepEqual(restartWindowContinuityViolations(clean), []);
+  for (const mutation of [
+    { acceptance: { status: "ok", outcome: "deferred", delivered: false } },
+    { interventionCount: 0 },
+    { interventionCount: 2 },
+    { oldAssistantCount: 0 },
+    { assistantCount: 2 },
+    { inboxRemainingCount: 1 },
+    { inFlightCount: 1 },
+    { newPid: 42 },
+    { replacementLogCount: 1 },
+  ]) {
+    assert.notDeepEqual(restartWindowContinuityViolations({ ...clean, ...mutation }), []);
+  }
+});
+
+test("restart-window durable oracle rejects receipt, consumption, response, and adoption mutations", () => {
+  const clean = {
+    acceptance: { status: "ok", outcome: "queued" },
+    delivery: {
+      state: "consumed",
+      aggregate_state: "consumed",
+      target_receipt_id: "event:17",
+    },
+    deliveryCount: 1,
+    interventionCount: 1,
+    assistantCount: 1,
+    inboxRemainingCount: 0,
+    inFlightCount: 0,
+    sessionStatus: "completed",
+    oldPid: 41,
+    newPid: 41,
+    oldReleaseManifestId: "release-old",
+    newReleaseManifestId: "release-old",
+    replacementLogCount: 0,
+  };
+  assert.deepEqual(restartWindowDurableViolations(clean), []);
+  for (const mutation of [
+    { acceptance: { status: "rejected", reason: { message: "HTTP 503 NODE_UNAVAILABLE" } } },
+    { deliveryCount: 0, delivery: null },
+    { deliveryCount: 2 },
+    { delivery: { ...clean.delivery, state: "pending", aggregate_state: "pending" } },
+    { delivery: { ...clean.delivery, target_receipt_id: null } },
+    { interventionCount: 0 },
+    { interventionCount: 2 },
+    { assistantCount: 0 },
+    { assistantCount: 2 },
+    { inboxRemainingCount: 1 },
+    { inFlightCount: 1 },
+    { sessionStatus: "running" },
+    { newPid: 42 },
+    { newReleaseManifestId: "release-new" },
+    { replacementLogCount: 1 },
+  ]) {
+    assert.notDeepEqual(restartWindowDurableViolations({ ...clean, ...mutation }), []);
+  }
+});
+
 test("fault catalog is complete and F1 explicitly covers both host signals", () => {
   assert.deepEqual(Object.keys(SCENARIO_DEFINITIONS), [
     "steady-state",
+    "auto-resume-handoff",
     "restart-adopt",
     "restart-intervention-window",
+    "restart-window-durable",
     "delivery-revival",
     "delivery-exact-once",
     "delivery-fifo",
@@ -78,8 +206,10 @@ test("fault catalog is complete and F1 explicitly covers both host signals", () 
 test("delivery scenarios follow normal controls and precede accident reproductions", () => {
   assert.deepEqual(canonicalScenarioOrder(), [
     "steady-state",
+    "auto-resume-handoff",
     "restart-adopt",
     "restart-intervention-window",
+    "restart-window-durable",
     "delivery-revival",
     "delivery-exact-once",
     "delivery-fifo",
@@ -122,8 +252,10 @@ test("traffic loop defaults are bounded and concurrency above two is rejected", 
 test("scenario CLI accepts the transparent baseline and restart gates", () => {
   for (const scenarioId of [
     "steady-state",
+    "auto-resume-handoff",
     "restart-adopt",
     "restart-intervention-window",
+    "restart-window-durable",
     "delivery-revival",
     "delivery-exact-once",
     "delivery-fifo",
