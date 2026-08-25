@@ -1,14 +1,18 @@
+import type { SessionMessage, SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
+import { ClaudeDeliveryTranscriptReceiptReader } from
+  "../../src/engine/claude_delivery_transcript_receipt.js";
 import {
   CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
   ClaudeRuntimeTaskFollowupController,
   type ClaudeRuntimeTaskFollowupPort,
 } from "../../src/task/claude_runtime_task_followup.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -73,6 +77,32 @@ function makeMocks() {
 
 function fallbackSchedule(completed: Promise<void> = Promise.resolve()) {
   return { reserved: Promise.resolve(), completed };
+}
+
+function acceptedClaudeDeliveryReceipt(
+  deliveryId: string,
+): ClaudeDeliveryTranscriptReceiptReader {
+  const transcript: SessionMessage[] = [{
+    type: "user",
+    uuid: buildDeliveryInputUuid(deliveryId),
+    session_id: "claude-session-runtime-followup",
+    message: {},
+    parent_tool_use_id: null,
+    parent_agent_id: null,
+  }];
+  return new ClaudeDeliveryTranscriptReceiptReader({
+    sourceNode: "eiaserinnys",
+    sessionStore: {} as SessionStore,
+    getSession: async () => ({
+      agent_id: claudeAgent.id,
+      claude_session_id: "claude-session-runtime-followup",
+      model_preset: "claude-opus",
+      node_id: "eiaserinnys",
+    }) as never,
+    getAgent: () => claudeAgent,
+    getModelPresetBackend: () => "claude",
+    loadMessages: async () => transcript,
+  });
 }
 
 describe("TaskExecutor Claude runtime task follow-up", () => {
@@ -499,6 +529,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       deliveryId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       deliveryIntent: "runtime_followup" as const,
     };
+    const transcriptReceipt = acceptedClaudeDeliveryReceipt(parent.deliveryId);
     task.interventionQueue.push(parent);
     const order: string[] = [];
     const followup: ClaudeRuntimeTaskFollowupPort = {
@@ -542,6 +573,12 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       undefined,
       followup,
       deliveryRecorder,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      transcriptReceipt,
     );
 
     executor.startExecution(task, claudeAgent);

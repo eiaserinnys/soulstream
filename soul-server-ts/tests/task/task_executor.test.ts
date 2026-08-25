@@ -544,6 +544,103 @@ describe("TaskExecutor.startExecution", () => {
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
+  it("C2 Claude transcript rejection keeps the delivery replayable without polluting foreground completion", async () => {
+    const mocks = makeMocks();
+    const message: InterventionMessage = {
+      text: "human live steer",
+      user: "agent",
+      source: "user_message",
+      deliveryId: "cececece-cece-4ece-8ece-cececececece",
+      deliveryIntent: "human_live_steer",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
+    const transcriptReceipt = {
+      inspect: vi.fn().mockRejectedValue(new Error("transcript read failed")),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "assistant_message", content: "completed", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      transcriptReceipt,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.interventionQueue.push(message);
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(transcriptReceipt.inspect).toHaveBeenCalledOnce();
+    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+    expect(task.status).toBe("completed");
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ status: "completed" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "completed",
+        termination_reason: "completed_ok",
+      }),
+    );
+  });
+
+  it("C2 Claude without a transcript reader fails closed instead of using event heuristics", async () => {
+    const mocks = makeMocks();
+    const message: InterventionMessage = {
+      text: "human live steer",
+      user: "agent",
+      source: "user_message",
+      deliveryId: "cfcfcfcf-cfcf-4fcf-8fcf-cfcfcfcfcfcf",
+      deliveryIntent: "human_live_steer",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "assistant_message", content: "completed", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.interventionQueue.push(message);
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+    expect(task.status).toBe("completed");
+  });
+
   it("정상 흐름: persistent 이벤트는 ingress, transient 이벤트만 wire + 완료 후 session_updated", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [

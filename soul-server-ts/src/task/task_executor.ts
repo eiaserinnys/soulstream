@@ -29,6 +29,8 @@ import type {
 } from "../engine/protocol.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { ClaudeDeliveryTranscriptReceiptReader } from
+  "../engine/claude_delivery_transcript_receipt.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import {
@@ -78,7 +80,10 @@ import {
 } from "./claude_runtime_task_followup.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
-import { TaskDeliveryTurnReceipt } from "./task_delivery_turn_receipt.js";
+import {
+  TaskDeliveryTurnReceipt,
+  turnReceiptId,
+} from "./task_delivery_turn_receipt.js";
 import {
   applyModelPresetRuntime,
   effectiveTaskBackend,
@@ -189,6 +194,10 @@ export class TaskExecutor {
     transientEventLogAggregator?: TransientEventLogAggregator,
     private readonly executionOwnershipBackoff?: ExecutionOwnershipBackoff,
     executionOwnershipNodeId?: string,
+    private readonly deliveryTranscriptReceipt?: Pick<
+      ClaudeDeliveryTranscriptReceiptReader,
+      "inspect"
+    >,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -1189,10 +1198,15 @@ export class TaskExecutor {
         currentTurnIntervention = turnInput.intervention;
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
+      const requiresClaudeDeliveryInputProof =
+        effectiveTaskBackend(task, agent) === "claude";
       const turnReceipt = this.deliveryConsumption
-        ? new TaskDeliveryTurnReceipt(
+          ? new TaskDeliveryTurnReceipt(
             this.deliveryConsumption,
             currentTurnIntervention,
+            this.deliveryTranscriptReceipt,
+            requiresClaudeDeliveryInputProof,
+            turnReceiptId(task),
           )
         : undefined;
       try {

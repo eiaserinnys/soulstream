@@ -439,11 +439,12 @@ export class TaskDeliveryLedgerGate {
   async recordTurnStarted(
     message: InterventionMessage,
     task: Task,
+    targetReceiptId?: string,
   ): Promise<void> {
     if (!this.enabled || !isControlledMessage(message) || !message.deliveryId) return;
     await this.requireRepository().markDelivered(
       message.deliveryId,
-      `event:${task.lastEventId ?? "unknown"}`,
+      targetReceiptId ?? `event:${task.lastEventId ?? "unknown"}`,
     );
   }
 

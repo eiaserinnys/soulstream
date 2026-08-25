@@ -8,6 +8,8 @@ import type { ModelCatalog } from "../model_catalog.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { ClaudeDeliveryTranscriptReceiptReader } from
+  "../engine/claude_delivery_transcript_receipt.js";
 import type {
   EngineFactory,
   RunnerProcessRuntimeFactory,
@@ -45,6 +47,10 @@ export interface TaskRuntimeCompositionParams {
   broadcaster: SessionBroadcaster;
   scheduleService: SoulstreamScheduleService;
   orchProxyConfig: OrchProxyConfig;
+  deliveryTranscriptReceipt?: Pick<
+    ClaudeDeliveryTranscriptReceiptReader,
+    "inspect"
+  >;
   queuedDeliveryRecovery?: QueuedDeliveryTranscriptRecovery;
   runnerProcessFactory?: RunnerProcessRuntimeFactory;
   transientEventLogAggregator: TransientEventLogAggregator;
@@ -81,6 +87,7 @@ export function composeTaskRuntime(
     broadcaster,
     scheduleService,
     orchProxyConfig,
+    deliveryTranscriptReceipt,
     queuedDeliveryRecovery,
     transientEventLogAggregator,
   } = params;
@@ -165,6 +172,7 @@ export function composeTaskRuntime(
     transientEventLogAggregator,
     executionOwnershipBackoff,
     env.SOULSTREAM_NODE_ID,
+    deliveryTranscriptReceipt,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(
