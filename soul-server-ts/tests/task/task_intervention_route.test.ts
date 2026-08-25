@@ -245,7 +245,6 @@ describe("TaskInterventionRoute.addIntervention", () => {
       followupAttempt: 2,
       followupKey: "sess-intervention:agent-task",
       followupTaskIds: ["agent-task"],
-      onlyIfTerminal: true,
     }, onResume)).resolves.toEqual({ autoResumed: true });
 
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
@@ -627,7 +626,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
   });
 
   it.each(["running"] as const)(
-    "terminal-only delivery never enters the %s intervention path",
+    "runtime follow-up uses the same first-class %s intervention entry",
     async (status) => {
     const task = makeTask({ status });
     const { route, runningInterventionTransition, autoResumeTransition } = makeSubject([task]);
@@ -637,15 +636,15 @@ describe("TaskInterventionRoute.addIntervention", () => {
       text: "delayed background follow-up retry",
       user: "system",
       source: "claude_runtime_task_followup",
-      onlyIfTerminal: true,
     }, vi.fn())).resolves.toEqual({
       delivered: false,
-      deferred: true,
-      retryWhen: "terminal_state",
-      reason: "terminal_only_policy",
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
     });
 
-    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledOnce();
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
     },
   );

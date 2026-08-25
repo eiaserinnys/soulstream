@@ -1143,6 +1143,57 @@ describe("ClaudeSdkClient persistent runtime", () => {
     await client.close();
   });
 
+  it("accepts two consecutive interventions on one live Query without recovery work", async () => {
+    const harness = makeHarness({ receipt: { still_queued: [] } });
+    const client = new ClaudeSdkClient(
+      { query: harness.queryFn, detachedEventSink: harness.detached },
+      silentLogger,
+    );
+    const ownerUuid = "33333333-3333-5333-8333-333333333333";
+    const firstDeliveryUuid = "44444444-4444-5444-8444-444444444444";
+    const secondDeliveryUuid = "55555555-5555-5555-8555-555555555555";
+    const turn = collect(client.runPersistent(
+      { ...runOptions("long work"), inputUuid: ownerUuid },
+      abortSignal(),
+    ));
+    expect((await harness.nextInput()).uuid).toBe(ownerUuid);
+
+    await expect(client.steerActiveTurn({
+      prompt: "first correction",
+      inputUuid: firstDeliveryUuid,
+      turnOrigin: { kind: "user_message", id: "correction-1" },
+    })).resolves.toEqual({ status: "delivered" });
+    expect(await harness.nextInput()).toMatchObject({
+      uuid: firstDeliveryUuid,
+      priority: "next",
+    });
+    harness.push(sdkInterruptedResult("sdk-session", undefined));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await expect(client.steerActiveTurn({
+      prompt: "second correction",
+      inputUuid: secondDeliveryUuid,
+      turnOrigin: { kind: "user_message", id: "correction-2" },
+    })).resolves.toEqual({ status: "delivered" });
+    expect(await harness.nextInput()).toMatchObject({
+      uuid: secondDeliveryUuid,
+      priority: "next",
+    });
+    expect(harness.interrupt).toHaveBeenCalledTimes(2);
+    harness.push(sdkInterruptedResult("sdk-session", undefined));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    harness.push(sdkResult("sdk-session", secondDeliveryUuid, "second correction applied"));
+
+    const events = await turn;
+    expect(events.filter((event) => event.type === "error")).toEqual([]);
+    expect(events.filter((event) => event.type === "complete")).toEqual([
+      expect.objectContaining({ result: "second correction applied" }),
+    ]);
+    expect(harness.captured).toHaveLength(1);
+    expect(harness.close).not.toHaveBeenCalled();
+    await client.close();
+  });
+
   it("routes background terminal events after foreground Result to durable detached output", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(
