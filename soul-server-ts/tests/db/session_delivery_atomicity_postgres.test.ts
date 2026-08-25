@@ -613,7 +613,16 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       createdAt: new Date(),
     });
 
-    const getTask = vi.fn();
+    const task = {
+      agentSessionId: "caller-old",
+      prompt: "",
+      status: "completed" as const,
+      lastEventId: 9,
+      lastReadEventId: 0,
+      interventionQueue: [],
+      createdAt: new Date(),
+    };
+    const getTask = vi.fn().mockReturnValue(task);
     const queueOnly = vi.fn();
     const deliver = vi.fn();
     const resume = vi.fn();
@@ -633,7 +642,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       suppressed: true,
       reason: "delivery_consumed",
     });
-    expect(getTask).not.toHaveBeenCalled();
+    expect(getTask).toHaveBeenCalledOnce();
     expect(queueOnly).not.toHaveBeenCalled();
     expect(deliver).not.toHaveBeenCalled();
     expect(resume).not.toHaveBeenCalled();
@@ -661,7 +670,16 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       createdAt: new Date(),
     });
 
-    const getTask = vi.fn();
+    const task = {
+      agentSessionId: "caller-old",
+      prompt: "delegate",
+      status: "running" as const,
+      lastEventId: 44,
+      lastReadEventId: 0,
+      interventionQueue: [],
+      createdAt: new Date(),
+    };
+    const getTask = vi.fn().mockReturnValue(task);
     const queueOnly = vi.fn();
     const deliver = vi.fn();
     const resume = vi.fn();
@@ -700,7 +718,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       state: "consumed",
       consumed_at: expect.any(Date),
     });
-    expect(getTask).not.toHaveBeenCalled();
+    expect(getTask).toHaveBeenCalledOnce();
     expect(queueOnly).not.toHaveBeenCalled();
     expect(deliver).not.toHaveBeenCalled();
     expect(resume).not.toHaveBeenCalled();

@@ -86,6 +86,8 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
       taskManager: {
         addIntervention: (params, onResume) =>
           route.addIntervention(params, onResume),
+        reserveInterventionRetry: (params, deliveryNextAttemptAt) =>
+          route.reserveDeliveryRetry(params, deliveryNextAttemptAt),
       },
       onResume: () => {
         counts.wake += 1;
