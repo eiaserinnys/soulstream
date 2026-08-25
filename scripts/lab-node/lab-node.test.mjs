@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -110,6 +118,8 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
   assert.match(wrapper, /export LAB_ROOT/);
   assert.match(wrapper, /SOULSTREAM_HEAVY_LOCK_HELD=1/);
   assert.match(wrapper, /flock -w 300 \/tmp\/soulstream-heavy-verify\.lock/);
+  assert.match(wrapper, /LAB_HARNESS_PROCESS_CEILING_SECONDS/);
+  assert.match(wrapper, /run_with_process_group_ceiling/);
   assert.match(wrapper, /\$LAB_REPO\/scripts\/lab-node\/fault-harness\.mjs/);
   assert.match(runtime, /unsafe LAB_ROOT/);
   assert.match(runtime, /protectedPorts\.includes/);
@@ -157,3 +167,175 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
     assert.match(deliveryScenarios, new RegExp(`async ["']${scenario}["']\\(`));
   }
 });
+
+test("harness deadlines are 60 seconds for intervention acceptance and 180 seconds hard", () => {
+  const common = readFileSync(join(directory, "common.sh"), "utf8");
+  assert.match(common, /LAB_INTERVENTION_ACCEPTANCE_SECONDS=60/);
+  assert.match(common, /LAB_HARNESS_PROCESS_CEILING_SECONDS=180/);
+
+  const smoke = readFileSync(join(directory, "smoke.sh"), "utf8");
+  assert.match(smoke, /LAB_INTERVENTION_ACCEPTANCE_SECONDS/);
+  assert.doesNotMatch(smoke, /LAB_SMOKE_TIMEOUT_SECONDS:-600/);
+});
+
+test("the process ceiling kills the whole child process group", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "lab-process-ceiling-"));
+  const fixture = join(root, "ceiling-fixture.cjs");
+  const childPidPath = join(root, "child.pid");
+  writeFileSync(fixture, `
+    const { spawn } = require("node:child_process");
+    const fs = require("node:fs");
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore",
+    });
+    fs.writeFileSync(process.env.LAB_CHILD_PID_PATH, String(child.pid));
+    setInterval(() => {}, 1000);
+  `);
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+
+  const outcome = spawnSync(
+    "bash",
+    [
+      "-c",
+      'source "$1"; run_with_process_group_ceiling 1 "$2" env LAB_CHILD_PID_PATH="$3" node "$2"',
+      "lab-test",
+      join(directory, "common.sh"),
+      fixture,
+      childPidPath,
+    ],
+    { encoding: "utf8", timeout: 10_000 },
+  );
+  assert.equal(outcome.status, 124, outcome.stderr);
+  assert.equal(existsSync(childPidPath), true, "fixture did not publish its child pid");
+  const childPid = Number(readFileSync(childPidPath, "utf8"));
+  await waitForPidExit(childPid);
+});
+
+test("stop owns detached runners and GC removes only unreferenced releases", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "lab-runner-stop-"));
+  const releases = join(root, "state", "runner-releases");
+  const runnerState = join(root, "runner-state");
+  const referencedRelease = "sha256-referenced";
+  const orphanRelease = "sha256-orphan";
+  const referencedDirectory = join(releases, referencedRelease);
+  const orphanDirectory = join(releases, orphanRelease);
+  const runnerEntry = join(orphanDirectory, "runner_entry.js");
+  const childPidPath = join(root, "runner-child.pid");
+  mkdirSync(join(runnerState, "referenced"), { recursive: true });
+  mkdirSync(referencedDirectory, { recursive: true });
+  mkdirSync(orphanDirectory, { recursive: true });
+  writeFileSync(
+    join(runnerState, "referenced", "runner-config.json"),
+    JSON.stringify({ codeSha: referencedRelease }),
+  );
+  writeFileSync(runnerEntry, `
+    const { spawn } = require("node:child_process");
+    const fs = require("node:fs");
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore",
+    });
+    fs.writeFileSync(process.env.LAB_CHILD_PID_PATH, String(child.pid));
+    setInterval(() => {}, 1000);
+  `);
+
+  const runner = spawn(
+    process.execPath,
+    [runnerEntry, "--config", join(runnerState, "missing", "runner-config.json")],
+    {
+      detached: true,
+      stdio: "ignore",
+      env: { ...process.env, LAB_CHILD_PID_PATH: childPidPath },
+    },
+  );
+  runner.unref();
+  t.after(() => {
+    try { process.kill(-runner.pid, "SIGKILL"); } catch {}
+    rmSync(root, { recursive: true, force: true });
+  });
+  await waitForFile(childPidPath);
+  const childPid = Number(readFileSync(childPidPath, "utf8"));
+
+  const outcome = spawnSync(
+    "bash",
+    [
+      "-c",
+      'source "$1"; LAB_ROOT="$2"; LAB_DEFAULT_ROOT="$2"; stop_owned_runners; gc_orphan_runner_releases',
+      "lab-test",
+      join(directory, "common.sh"),
+      root,
+    ],
+    { encoding: "utf8", timeout: 10_000 },
+  );
+  assert.equal(outcome.status, 0, outcome.stderr);
+  await waitForPidExit(runner.pid);
+  await waitForPidExit(childPid);
+  assert.equal(existsSync(referencedDirectory), true);
+  assert.equal(existsSync(orphanDirectory), false);
+});
+
+test("bootstrap repairs a narrow deleted-branch refspec to fetch main", () => {
+  const root = mkdtempSync(join(tmpdir(), "lab-refspec-"));
+  const origin = join(root, "origin.git");
+  const seed = join(root, "seed");
+  const clone = join(root, "clone");
+  try {
+    execFileSync("git", ["init", "--bare", origin], { stdio: "pipe" });
+    execFileSync("git", ["init", seed], { stdio: "pipe" });
+    execFileSync("git", ["-C", seed, "config", "user.email", "lab@example.invalid"]);
+    execFileSync("git", ["-C", seed, "config", "user.name", "Lab Test"]);
+    writeFileSync(join(seed, "README.md"), "fixture\n");
+    execFileSync("git", ["-C", seed, "add", "README.md"]);
+    execFileSync("git", ["-C", seed, "commit", "-m", "fixture"], { stdio: "pipe" });
+    execFileSync("git", ["-C", seed, "branch", "-M", "main"]);
+    execFileSync("git", ["-C", seed, "remote", "add", "origin", origin]);
+    execFileSync("git", ["-C", seed, "push", "origin", "main"], { stdio: "pipe" });
+    execFileSync("git", ["--git-dir", origin, "symbolic-ref", "HEAD", "refs/heads/main"]);
+    execFileSync("git", ["clone", origin, clone], { stdio: "pipe" });
+    execFileSync("git", ["-C", clone, "config", "--replace-all", "remote.origin.fetch",
+      "+refs/heads/lab-node:refs/remotes/origin/lab-node"]);
+    execFileSync("git", ["-C", clone, "update-ref", "-d", "refs/remotes/origin/main"]);
+
+    const outcome = spawnSync(
+      "bash",
+      [
+        "-c",
+        'source "$1"; ensure_main_fetch_refspec "$2"',
+        "lab-test",
+        join(directory, "common.sh"),
+        clone,
+      ],
+      { encoding: "utf8", timeout: 10_000 },
+    );
+    assert.equal(outcome.status, 0, outcome.stderr);
+    assert.equal(
+      execFileSync("git", ["-C", clone, "config", "--get-all", "remote.origin.fetch"],
+        { encoding: "utf8" }).trim(),
+      "+refs/heads/*:refs/remotes/origin/*",
+    );
+    assert.equal(
+      execFileSync("git", ["-C", clone, "rev-parse", "refs/remotes/origin/main"],
+        { encoding: "utf8" }).trim(),
+      execFileSync("git", ["-C", seed, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+async function waitForFile(path) {
+  const deadline = Date.now() + 3_000;
+  while (Date.now() < deadline) {
+    if (existsSync(path)) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`file did not appear: ${path}`);
+}
+
+async function waitForPidExit(pid) {
+  const deadline = Date.now() + 3_000;
+  while (Date.now() < deadline) {
+    try { process.kill(pid, 0); } catch { return; }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.fail(`process ${pid} remained alive`);
+}
