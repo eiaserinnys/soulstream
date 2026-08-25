@@ -466,6 +466,71 @@ describe("CodexAppServerEngineAdapter", () => {
     expect(events).toEqual([]);
   });
 
+  it("C2 Codex guard sends identical text twice without treating text as input proof", async () => {
+    const { adapter, client } = makeAdapter();
+    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    await expect(adapter.intervene({ prompt: "same text" })).resolves.toEqual({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    await expect(adapter.intervene({ prompt: "same text" })).resolves.toEqual({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    expect(client.steerTurn).toHaveBeenCalledTimes(2);
+    expect(client.steerTurn).toHaveBeenNthCalledWith(1, {
+      threadId: "thread-1",
+      expectedTurnId: "turn-1",
+      input: [{ type: "text", text: "same text", text_elements: [] }],
+    });
+    expect(client.steerTurn).toHaveBeenNthCalledWith(2, {
+      threadId: "thread-1",
+      expectedTurnId: "turn-1",
+      input: [{ type: "text", text: "same text", text_elements: [] }],
+    });
+
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+    await eventsPromise;
+  });
+
+  it("C2 Codex guard rejects turn_mismatch without promoting the transport ACK", async () => {
+    const client = new FakeClient();
+    client.steerTurn.mockResolvedValueOnce({ turnId: "turn-other" });
+    const { adapter } = makeAdapter(client);
+    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    await expect(adapter.intervene({ prompt: "same text" })).resolves.toEqual({
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "turn_mismatch",
+      message: "Codex app-server steered turn turn-other, expected turn-1",
+    });
+
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+    await eventsPromise;
+  });
+
+  it("C2 Codex guard rejects no_active_turn without sending a steer RPC", async () => {
+    const { adapter, client } = makeAdapter();
+
+    await expect(adapter.intervene({ prompt: "same text" })).resolves.toEqual({
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "no_active_turn",
+      message: "No active Codex app-server turn",
+    });
+    expect(client.steerTurn).not.toHaveBeenCalled();
+  });
+
   it("intervene returns no_active_turn before execute and failed on RPC error", async () => {
     const client = new FakeClient();
     client.steerTurn.mockRejectedValueOnce(
