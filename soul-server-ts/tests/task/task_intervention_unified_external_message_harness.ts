@@ -148,7 +148,7 @@ async function observeIdle(
     runningInterventionTransition: running,
     autoResumeTransition: autoResume,
     ...(axis.durable
-      ? { deliveryLedgerGate: makeLedgerGate(admissionIds) }
+      ? { deliveryLedgerGate: makeLedgerGate(admissionIds).gate }
       : {}),
   });
   const text = textFor(axis);

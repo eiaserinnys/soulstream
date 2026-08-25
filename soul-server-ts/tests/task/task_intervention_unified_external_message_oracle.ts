@@ -193,10 +193,10 @@ export function unifiedExternalMessageViolations(
 
   for (const deliveryId of observation.identity.expectedDeliveryIds) {
     if (
-      !exactIdentity(observation.identity.admittedDeliveryIds, deliveryId)
-      || !exactIdentity(observation.identity.deliveredDeliveryIds, deliveryId)
-      || !exactIdentity(observation.identity.consumedDeliveryIds, deliveryId)
-      || !exactIdentity(observation.identity.modelInputDeliveryIds, deliveryId)
+      identityCount(observation.identity.admittedDeliveryIds, deliveryId) !== 1
+      || identityCount(observation.identity.deliveredDeliveryIds, deliveryId) !== 1
+      || identityCount(observation.identity.consumedDeliveryIds, deliveryId) !== 1
+      || identityCount(observation.identity.modelInputDeliveryIds, deliveryId) !== 1
     ) {
       violations.push(`delivery_identity_not_exactly_once:${deliveryId}`);
     }
@@ -399,6 +399,10 @@ function mutatePassiveWait(
 
 function exactIdentity(actual: string[], expected: string): boolean {
   return actual.length === 1 && actual[0] === expected;
+}
+
+function identityCount(actual: string[], expected: string): number {
+  return actual.filter((value) => value === expected).length;
 }
 
 function ordered(actual: string[], expected: string[]): boolean {
