@@ -1,3 +1,4 @@
+import type { SessionMessage, SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
@@ -10,6 +11,9 @@ import type {
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+import { ClaudeDeliveryTranscriptReceiptReader } from
+  "../../src/engine/claude_delivery_transcript_receipt.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { buildCanonicalDeliveryPayload } from "../../src/task/delivery_payload.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
@@ -42,8 +46,12 @@ interface DeliveryEvidenceRow {
 class HumanLiveSteerEvidenceLedger {
   readonly row: DeliveryEvidenceRow;
 
-  readonly recordTurnStarted = vi.fn(async (_message: InterventionMessage, task: Task) => {
-    const receiptId = `event:${task.lastEventId ?? "unknown"}`;
+  readonly recordTurnStarted = vi.fn(async (
+    _message: InterventionMessage,
+    task: Task,
+    targetReceiptId?: string,
+  ) => {
+    const receiptId = targetReceiptId ?? `event:${task.lastEventId ?? "unknown"}`;
     this.row.state = "delivered";
     this.row.targetReceiptId = receiptId;
   });
@@ -94,6 +102,7 @@ class HumanLiveSteerEvidenceLedger {
 interface HarnessOptions {
   deliveryId: string;
   failure?: Error;
+  transcript: SessionMessage[];
   precedingEvent: {
     eventId: number;
     event: SSEEventPayload;
@@ -133,6 +142,19 @@ async function executeHumanLiveSteer(options: HarnessOptions): Promise<HumanLive
     emitSessionUpdated: vi.fn().mockResolvedValue(undefined),
   } as unknown as SessionBroadcaster;
   const engine = makeEngine(options.failure);
+  const transcriptReceipt = new ClaudeDeliveryTranscriptReceiptReader({
+    sourceNode: "eiaserinnys",
+    sessionStore: {} as SessionStore,
+    getSession: async () => ({
+      agent_id: agent.id,
+      claude_session_id: "claude-session-c-contract",
+      model_preset: "claude-opus",
+      node_id: "eiaserinnys",
+    }) as never,
+    getAgent: () => agent,
+    getModelPresetBackend: () => "claude",
+    loadMessages: async () => options.transcript,
+  });
   const executor = new TaskExecutor(
     () => engine,
     db,
@@ -144,6 +166,12 @@ async function executeHumanLiveSteer(options: HarnessOptions): Promise<HumanLive
     undefined,
     undefined,
     ledger,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    transcriptReceipt,
   );
   const intervention: InterventionMessage = {
     text,
@@ -191,11 +219,23 @@ function makeEngine(failure?: Error): EnginePort {
   };
 }
 
+function sessionMessage(type: "user" | "assistant", uuid: string): SessionMessage {
+  return {
+    type,
+    uuid,
+    session_id: "claude-session-c-contract",
+    message: {},
+    parent_tool_use_id: null,
+    parent_agent_id: null,
+  };
+}
+
 describe("human_live_steer consumption evidence", () => {
   it("keeps an execute timeout replayable when its receipt points at context_usage", async () => {
     const ledger = await executeHumanLiveSteer({
       deliveryId: "25b5ba7f-6c2b-471c-a6b0-12e7c367b348",
       failure: new Error("Runner IPC request timed out after 30000ms"),
+      transcript: [],
       precedingEvent: {
         eventId: 2595,
         event: {
@@ -218,6 +258,7 @@ describe("human_live_steer consumption evidence", () => {
         `Runner command execute:ebd7208d failed (execute_intervention_claim_failed): `
           + `runner intervention unavailable: ${deliveryId}`,
       ),
+      transcript: [],
       precedingEvent: {
         eventId: 2655,
         event: {
@@ -235,6 +276,9 @@ describe("human_live_steer consumption evidence", () => {
     const deliveryId = "healthy-live-steer-delivery";
     const ledger = await executeHumanLiveSteer({
       deliveryId,
+      transcript: [
+        sessionMessage("user", buildDeliveryInputUuid(deliveryId)),
+      ],
       precedingEvent: {
         eventId: 7001,
         event: {
