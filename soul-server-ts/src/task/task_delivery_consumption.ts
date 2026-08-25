@@ -44,10 +44,15 @@ export class TaskDeliveryConsumption {
   async recordTurnStarted(
     task: Task,
     intervention: InterventionMessage | undefined,
+    targetReceiptId?: string,
   ): Promise<boolean> {
     if (!intervention || !this.recorder) return false;
     try {
-      await this.recorder.recordTurnStarted(intervention, task);
+      if (targetReceiptId === undefined) {
+        await this.recorder.recordTurnStarted(intervention, task);
+      } else {
+        await this.recorder.recordTurnStarted(intervention, task, targetReceiptId);
+      }
       return true;
     } catch (err) {
       this.logger.warn(

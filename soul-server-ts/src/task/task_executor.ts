@@ -1196,8 +1196,7 @@ export class TaskExecutor {
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
       const requiresClaudeDeliveryInputProof =
-        effectiveTaskBackend(task, agent) === "claude"
-        && this.deliveryTranscriptReceipt !== undefined;
+        effectiveTaskBackend(task, agent) === "claude";
       const turnReceipt = this.deliveryConsumption
           ? new TaskDeliveryTurnReceipt(
             this.deliveryConsumption,

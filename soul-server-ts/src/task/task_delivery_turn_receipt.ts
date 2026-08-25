@@ -1,5 +1,8 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
-import type { ClaudeDeliveryTranscriptReceiptReader } from
+import type {
+  ClaudeDeliveryTranscriptReceipt,
+  ClaudeDeliveryTranscriptReceiptReader,
+} from
   "../engine/claude_delivery_transcript_receipt.js";
 
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
@@ -27,7 +30,11 @@ export class TaskDeliveryTurnReceipt {
   ) {}
 
   async observe(task: Task, event: SSEEventPayload): Promise<void> {
-    if (this.requiresClaudeInputProof) return;
+    const consumedTurnId = turnReceiptId(task);
+    if (this.requiresClaudeInputProof) {
+      this.consumedTurnId ??= consumedTurnId;
+      return;
+    }
     if (
       this.recorded ||
       event.type === "session" ||
@@ -35,7 +42,6 @@ export class TaskDeliveryTurnReceipt {
     ) {
       return;
     }
-    const consumedTurnId = turnReceiptId(task);
     this.recorded = await this.consumption.recordTurnStarted(task, this.intervention);
     if (this.recorded) this.consumedTurnId = consumedTurnId;
   }
@@ -60,18 +66,27 @@ export class TaskDeliveryTurnReceipt {
     const deliveryId = this.intervention?.deliveryId;
     if (!deliveryId || !this.transcriptReceipt) return;
     const expectedInputUuid = buildDeliveryInputUuid(deliveryId);
-    const receipt = await this.transcriptReceipt.inspect({
-      delivery_id: deliveryId,
-      target_session_id: task.agentSessionId,
-    });
+    let receipt: ClaudeDeliveryTranscriptReceipt;
+    try {
+      receipt = await this.transcriptReceipt.inspect({
+        delivery_id: deliveryId,
+        target_session_id: task.agentSessionId,
+      });
+    } catch {
+      return;
+    }
     if (
       receipt.inputUuid !== expectedInputUuid
       || (receipt.kind !== "input_pending" && receipt.kind !== "completed")
     ) {
       return;
     }
-    const consumedTurnId = turnReceiptId(task);
-    this.recorded = await this.consumption.recordTurnStarted(task, this.intervention);
+    const consumedTurnId = this.consumedTurnId ?? turnReceiptId(task);
+    this.recorded = await this.consumption.recordTurnStarted(
+      task,
+      this.intervention,
+      consumedTurnId,
+    );
     if (this.recorded) this.consumedTurnId = consumedTurnId;
   }
 }
