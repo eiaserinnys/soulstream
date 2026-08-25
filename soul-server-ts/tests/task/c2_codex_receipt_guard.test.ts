@@ -55,14 +55,29 @@ interface Recorded {
   readonly receipt: TaskDeliveryTurnReceipt;
 }
 
-function makeReceipt(message: InterventionMessage): Recorded {
+function makeReceipt(
+  message: InterventionMessage,
+  transcriptReceipt?: { inspect: ReturnType<typeof vi.fn> },
+): Recorded {
   const recordTurnStarted = vi.fn(async () => true);
   const recordConsumed = vi.fn(async () => undefined);
-  const receipt = new TaskDeliveryTurnReceipt(
-    { recordTurnStarted, recordConsumed } as never,
-    message,
-  );
+  // Arity-safe construction: the transcript-receipt seam is an optional third
+  // parameter that only exists from the seam-injection commit onward, so this
+  // guard must compile and run on both sides of that commit.
+  const ctorArgs: unknown[] = [{ recordTurnStarted, recordConsumed }, message];
+  if (transcriptReceipt) ctorArgs.push(transcriptReceipt);
+  const Ctor = TaskDeliveryTurnReceipt as unknown as new (
+    ...args: unknown[]
+  ) => TaskDeliveryTurnReceipt;
+  const receipt = new Ctor(...ctorArgs);
   return { recordTurnStarted, recordConsumed, receipt };
+}
+
+/** Claude transcript reader that reports "no Claude input proof at all". */
+function makeAbsentProofReader(): { inspect: ReturnType<typeof vi.fn> } {
+  return {
+    inspect: vi.fn(async () => ({ kind: "absent", inputUuid: "no-claude-uuid" })),
+  };
 }
 
 const sessionEvent = { type: "session", sessionId: "codex-thread-1" } as unknown as SSEEventPayload;
@@ -153,5 +168,58 @@ describe("C2 review gate: shared turn receipt preserves Codex consumption", () =
       .toBe("codex-delivery-dup-1");
     expect((secondConsumed[1] as InterventionMessage).deliveryId)
       .toBe("codex-delivery-dup-2");
+  });
+
+  it("keeps reader-present Codex consumption exactly once and is not gated by an absent Claude proof", async () => {
+    const message = makeMessage("codex-delivery-reader-present", "reader present codex");
+    const task = makeCodexTask("reader-present", message);
+    expect(effectiveTaskBackend(task, CODEX_AGENT)).toBe("codex");
+
+    // Production wiring supplies the shared receipt with the Claude transcript
+    // reader regardless of backend. A Codex turn must not be routed into the
+    // Claude proof path, so an "absent" Claude proof must not suppress it.
+    const reader = makeAbsentProofReader();
+    const { recordTurnStarted, recordConsumed, receipt } = makeReceipt(message, reader);
+    await receipt.observe(task, metadataEvent);
+    await receipt.observe(task, assistantEvent);
+    await receipt.observe(task, resultEvent);
+    await receipt.observe(task, completeEvent);
+    await receipt.consume(task);
+    await receipt.consume(task);
+
+    expect(recordTurnStarted).toHaveBeenCalledTimes(1);
+    expect(recordConsumed).toHaveBeenCalledTimes(1);
+
+    const consumedCall = recordConsumed.mock.calls[0] as unknown[];
+    expect((consumedCall[0] as Task).agentSessionId).toBe(task.agentSessionId);
+    expect(consumedCall[1]).toBe(message);
+    expect(consumedCall[2]).toBe(`event:${task.lastEventId}`);
+  });
+
+  it("follows effectiveTaskBackend, not the agent profile, when the preset overrides it", async () => {
+    const claudeProfile: AgentProfile = {
+      id: "seosoyoung",
+      name: "서소영",
+      backend: "claude",
+      workspace_dir: "/tmp/seosoyoung",
+    };
+    const message = makeMessage("codex-delivery-preset-override", "preset overrides profile");
+    const task = makeCodexTask("preset-override", message);
+
+    // The production authority resolves modelPresetBackend ?? agent.backend, so
+    // a codex preset on a claude profile is a Codex turn. Anything that keys off
+    // the profile string instead would misroute this case.
+    expect(claudeProfile.backend).toBe("claude");
+    expect(effectiveTaskBackend(task, claudeProfile)).toBe("codex");
+
+    const reader = makeAbsentProofReader();
+    const { recordTurnStarted, recordConsumed, receipt } = makeReceipt(message, reader);
+    await receipt.observe(task, metadataEvent);
+    await receipt.observe(task, assistantEvent);
+    await receipt.consume(task);
+    await receipt.consume(task);
+
+    expect(recordTurnStarted).toHaveBeenCalledTimes(1);
+    expect(recordConsumed).toHaveBeenCalledTimes(1);
   });
 });
