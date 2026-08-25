@@ -288,6 +288,7 @@ export async function composeWorkerRuntime(
     broadcaster,
     scheduleService,
     orchProxyConfig,
+    deliveryTranscriptReceipt: claudeRuntime.transcriptReceipt,
     queuedDeliveryRecovery: claudeRuntime.queuedDeliveryRecovery,
     transientEventLogAggregator,
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),

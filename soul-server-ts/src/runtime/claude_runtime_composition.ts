@@ -42,6 +42,7 @@ export interface ClaudeRuntimeComposition {
   registry?: ClaudeSessionClientRegistry;
   backgroundLifecycle?: ClaudeBackgroundTaskLifecycle;
   childCompletionConsumption?: ChildCompletionConsumptionRecorder;
+  transcriptReceipt?: Pick<ClaudeDeliveryTranscriptReceiptReader, "inspect">;
   queuedDeliveryRecovery?: QueuedDeliveryTranscriptRecovery;
   startupRecovery?: ClaudeRuntimeStartupRecovery;
 }
@@ -110,6 +111,7 @@ export async function composeClaudeRuntime(
     childCompletionConsumption: new ChildCompletionConsumptionRecorder(
       deliveryRepository,
     ),
+    transcriptReceipt,
     queuedDeliveryRecovery,
     startupRecovery,
   };
