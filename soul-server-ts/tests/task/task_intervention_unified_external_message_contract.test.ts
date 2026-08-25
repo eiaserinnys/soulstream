@@ -42,9 +42,11 @@ describe("universal external-message routing contract", () => {
           mutation,
         ),
       );
-      process.stdout.write(
-        `E_UNIVERSAL_MUTATION ${mutation} ${JSON.stringify(violations)}\n`,
-      );
+      if (!MUTATION || MUTATION === mutation) {
+        process.stdout.write(
+          `E_UNIVERSAL_MUTATION ${mutation} ${JSON.stringify(violations)}\n`,
+        );
+      }
       expect(violations).toContain(MUTATION_SENTINELS[mutation]);
       expect(violations.length).toBeGreaterThan(0);
     },
