@@ -1,9 +1,7 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+// This RED does not prove timeout -> cut causality: A is recovery; B is a tripwire.
+import { mkdir, rm } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  engineEventFrame,
   executionEndedControlFrame,
   outboxAvailableControlFrame,
   runnerCommandResultFrame,
@@ -26,12 +24,11 @@ import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js
 import { createTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { TaskCompletionNotifier } from "../../src/task/completion_notifier.js";
 import {
-  buildDeliveryInputUuid,
   buildDeterministicDeliveryIdentity,
 } from "../../src/task/delivery_identity.js";
 import type { AddInterventionParams, TaskManager } from "../../src/task/task_manager.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
-import type { InterventionMessage, Task } from "../../src/task/task_models.js";
+import type { InterventionMessage } from "../../src/task/task_models.js";
 import { RunningInterventionTransition } from
   "../../src/task/task_running_intervention_transition.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
@@ -40,11 +37,19 @@ import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js"
 import {
   claudeAgent,
   emptyStore,
+  emitSuccessfulNextTurn,
+  emitSuccessfulTurn,
+  eventPayloadField,
   makeAgentRegistry,
   makeCapturingLogger,
   makeCompletionRepository,
+  makeDeferred,
+  makeECompletedChild,
+  makeEParentTask,
   makeSpawnInput,
   makeTaskMocks,
+  makeTemporaryDirectory,
+  provesExpectedNextTurn,
 } from "./e_report_intervention_control_timeout_harness.js";
 import {
   applyOracleMutation,
@@ -84,9 +89,31 @@ describe("E report intervention control-timeout contract", () => {
     }))).toEqual([]);
   });
 
-  it("keeps the running parent alive through the queued next turn", async () => {
-    const mutation = REQUESTED_ORACLE_MUTATION;
-    const stateDirectory = await temporaryDirectory();
+  it.each([
+    {
+      name: "positive control reaches the second-turn success path",
+      foregroundTerminal: "success",
+      resolveAmbiguity: true,
+      mutationEnabled: false,
+      timeoutExpectation: "absent",
+    },
+    {
+      name: "A recovery keeps an error-cut parent alive through the queued next turn",
+      foregroundTerminal: "error",
+      resolveAmbiguity: false,
+      mutationEnabled: true,
+      timeoutExpectation: "present",
+    },
+    {
+      name: "B tripwire lets product state decide whether timeout cuts the stream",
+      foregroundTerminal: "success",
+      resolveAmbiguity: false,
+      mutationEnabled: true,
+      timeoutExpectation: "present",
+    },
+  ] as const)("$name", async (scenario) => {
+    const mutation = scenario.mutationEnabled ? REQUESTED_ORACLE_MUTATION : undefined;
+    const stateDirectory = await makeTemporaryDirectory(directories);
     const paths = runnerProcessPaths(stateDirectory, SESSION_ID);
     await mkdir(paths.sessionDirectory, { recursive: true });
     const childOutbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
@@ -110,14 +137,15 @@ describe("E report intervention control-timeout contract", () => {
     };
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, registration);
 
-    const foregroundRunning = deferred<string>();
-    const runnerInterruptObserved = deferred<void>();
-    const releaseControlReply = deferred<void>();
-    const lateControlReplySent = deferred<void>();
+    const foregroundRunning = makeDeferred<string>();
+    const runnerInterruptObserved = makeDeferred<void>();
+    const releaseControlReply = makeDeferred<void>();
+    const lateControlReplySent = makeDeferred<void>();
     const trace: string[] = [];
     const stageAttempts: RunnerCommandFrame[] = [];
     const centralEventTypes: string[] = [];
     const executeFrames: Array<Extract<RunnerCommandFrame, { kind: "execute" }>> = [];
+    const acceptedExecuteFrames: Array<Extract<RunnerCommandFrame, { kind: "execute" }>> = [];
     const lateControlVerdicts: unknown[] = [];
     let applyRequests = 0;
     let endpoint!: RunnerSocketEndpoint;
@@ -158,6 +186,7 @@ describe("E report intervention control-timeout contract", () => {
         }
         return;
       }
+      if (frame.kind === "execute") executeFrames.push(frame);
       const interventionClaimFailure = frame.kind === "execute"
         ? await claimRunnerInterventionExecution(frame, childOutbox)
         : null;
@@ -165,7 +194,6 @@ describe("E report intervention control-timeout contract", () => {
         await endpoint.currentConnection!.send(interventionClaimFailure);
         return;
       }
-      if (frame.kind === "execute") executeFrames.push(frame);
       if (
         frame.kind === "execute"
         && executeFrames.length > 1
@@ -187,13 +215,20 @@ describe("E report intervention control-timeout contract", () => {
         runnerCommandResultFrame(frame.commandId, { status: "ok" }),
       );
       if (frame.kind === "execute") {
+        acceptedExecuteFrames.push(frame);
         if (executeFrames.length === 1) {
           trace.push("foreground_running");
           foregroundRunning.resolve(frame.commandId);
           return;
         }
         trace.push("next_turn_execute");
-        await emitSuccessfulNextTurn(childOutbox, endpoint, frame.commandId);
+        await emitSuccessfulNextTurn(
+          childOutbox,
+          endpoint,
+          frame,
+          SESSION_ID,
+          DELIVERY_IDENTITY.deliveryId,
+        );
       }
     }, vi.fn());
     await endpoint.listen();
@@ -239,7 +274,7 @@ describe("E report intervention control-timeout contract", () => {
       dispatcher,
       "runner",
     );
-    const parent = makeParentTask();
+    const parent = makeEParentTask(SESSION_ID);
     const mocks = makeTaskMocks();
     const repository = makeCompletionRepository();
     const executor = new TaskExecutor(
@@ -313,37 +348,60 @@ describe("E report intervention control-timeout contract", () => {
       true,
       repository.value as never,
     );
-    await notifier.notify(makeCompletedChild());
+    await notifier.notify(makeECompletedChild({
+      childSessionId: CHILD_SESSION_ID,
+      parentSessionId: SESSION_ID,
+      terminalRevision: TERMINAL_REVISION,
+    }));
 
-    await vi.advanceTimersByTimeAsync(30_000);
+    if (scenario.resolveAmbiguity) {
+      releaseControlReply.resolve();
+    } else {
+      await vi.advanceTimersByTimeAsync(30_000);
+    }
     const apiResult = await explicitDelivery;
-    trace.push("control_timeout");
     const reservedDeliveryIds = parent.interventionQueue
       .map((message) => message.deliveryId)
       .filter((deliveryId): deliveryId is string => deliveryId !== undefined);
     releaseControlReply.resolve();
     await lateControlReplySent.promise;
-
-    // Causal-seam fixture: the IPC timeout cannot itself terminate the foreground.
-    // This separately injects the child terminal error observed in the live failure.
-    // Therefore this RED assumes their co-occurrence; it does not prove timeout -> cut.
-    await endpoint.currentConnection!.send(executionEndedControlFrame(
-      foregroundCommandId,
-      {
-        code: "execution_failed",
-        message: "aborted_streaming: read ECONNRESET",
-      },
-    ));
-    trace.push("foreground_execution_ended_error");
-    await execution;
-
     const timeoutErrors = logger.errors().filter(
       (message) => message === "Runner IPC request timed out after 30000ms",
     );
+    if (timeoutErrors.length > 0) trace.push("control_timeout");
+    if (scenario.resolveAmbiguity) {
+      await childOutbox.resolveAmbiguousIntervention(identity.deliveryId, "replayable");
+    }
+
+    if (scenario.foregroundTerminal === "error") {
+      // A is a recovery contract. The terminal error is its explicit precondition, not an
+      // asserted timeout -> cut edge. B below never injects this frame.
+      await endpoint.currentConnection!.send(executionEndedControlFrame(
+        foregroundCommandId,
+        {
+          code: "execution_failed",
+          message: "aborted_streaming: read ECONNRESET",
+        },
+      ));
+      trace.push("A.foreground_execution_ended_error_precondition");
+    } else {
+      await emitSuccessfulTurn(
+        childOutbox,
+        endpoint,
+        foregroundCommandId,
+        SESSION_ID,
+        "foreground",
+      );
+      trace.push("foreground_execution_ended_success");
+    }
+    await execution;
+
     const nextTurnFrames = executeFrames.slice(1);
+    const acceptedNextTurnFrames = acceptedExecuteFrames.slice(1);
     const provenNextTurnFrames = nextTurnFrames.filter(
       (frame) => provesExpectedNextTurn(frame, identity.deliveryId),
     );
+    const centralEvents = batches.flatMap((batch) => batch.events);
     const observation: EObservation = {
       controlTimeoutErrors: timeoutErrors,
       terminalStatus: parent.status,
@@ -355,9 +413,14 @@ describe("E report intervention control-timeout contract", () => {
       nextTurnActivations: repository.turnStartedDeliveryIds().filter(
         (deliveryId) => deliveryId === identity.deliveryId,
       ).length,
-      nextTurnModelInputs: nextTurnFrames.length,
-      nextTurnCompletes: centralEventTypes.filter(
-        (eventType) => eventType === "complete",
+      nextTurnModelInputs: acceptedNextTurnFrames.length,
+      nextTurnResults: centralEvents.filter(
+        (event) => event.event_type === "result"
+          && eventPayloadField(event.payload, "output") === "next turn result",
+      ).length,
+      nextTurnCompletes: centralEvents.filter(
+        (event) => event.event_type === "complete"
+          && eventPayloadField(event.payload, "result") === "next turn completed",
       ).length,
       reportProducers: producers,
       durableDeliveryIds: repository.durableDeliveryIds(),
@@ -380,13 +443,21 @@ describe("E report intervention control-timeout contract", () => {
     expect(new Set(producers.map((producer) => producer.deliveryId))).toEqual(
       new Set([identity.deliveryId]),
     );
-    expect(apiResult).toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "verdict_unknown",
-    });
+    expect(apiResult).toEqual(timeoutErrors.length > 0
+      ? {
+          delivered: false,
+          queued: true,
+          queuePosition: 1,
+          consumeWhen: "next_turn",
+          reason: "verdict_unknown",
+        }
+      : {
+          delivered: false,
+          queued: true,
+          queuePosition: 1,
+          consumeWhen: "next_turn",
+          reason: "next_turn_required",
+        });
     expect(lateControlVerdicts).toEqual([{
       status: "not_delivered",
       mechanism: "interrupt_then_next_turn",
@@ -399,102 +470,24 @@ describe("E report intervention control-timeout contract", () => {
     )).toBe(true);
 
     const observedByOracle = applyOracleMutation(observation, mutation);
-    const violations = contractViolations(observedByOracle);
+    const violations = contractViolations(
+      observedByOracle,
+      scenario.timeoutExpectation,
+    );
+    if (scenario.mutationEnabled) {
+      process.stdout.write(
+        `E_ORACLE ${scenario.name} (${mutation ?? "baseline"}) ${JSON.stringify(violations)}\n`,
+      );
+    }
     childOutbox.close();
     await endpoint.close();
     mux.disconnect();
     vi.useRealTimers();
     expect(
       violations,
-      `E RED violations (${mutation ?? "baseline"}): ${JSON.stringify(violations)}\n`
+      `${scenario.name} violations (${mutation ?? "baseline"}): `
+        + `${JSON.stringify(violations)}\n`
         + `${JSON.stringify(observedByOracle, null, 2)}`,
     ).toEqual([]);
   });
 });
-
-function provesExpectedNextTurn(
-  frame: Extract<RunnerCommandFrame, { kind: "execute" }>,
-  deliveryId: string,
-): boolean {
-  return frame.params.runnerInterventionId === deliveryId
-    && frame.params.inputUuid === buildDeliveryInputUuid(deliveryId)
-    && frame.params.turnOrigin?.kind === "completion_notification"
-    && frame.params.turnOrigin.id === deliveryId
-    && frame.params.prompt.includes("fresh E report");
-}
-
-async function emitSuccessfulNextTurn(
-  outbox: RunnerSqliteEventOutbox,
-  endpoint: RunnerSocketEndpoint,
-  commandId: string,
-): Promise<void> {
-  const assistant = { type: "assistant_message", content: "next turn consumed E report" };
-  const complete = { type: "complete", result: "next turn completed", timestamp: 2 };
-  await outbox.appendEngineFrame({
-    session_id: SESSION_ID,
-    event_type: assistant.type,
-    payload: assistant,
-    searchable_text: assistant.content,
-    created_at: "2026-08-25T00:00:02.000Z",
-    semantic_dedupe_key: null,
-    session_effect: null,
-  }, engineEventFrame(assistant));
-  const terminal = await outbox.appendEngineFrame({
-    session_id: SESSION_ID,
-    event_type: complete.type,
-    payload: complete,
-    searchable_text: complete.result,
-    created_at: "2026-08-25T00:00:03.000Z",
-    semantic_dedupe_key: null,
-    session_effect: null,
-  }, engineEventFrame(complete));
-  await endpoint.currentConnection!.send(outboxAvailableControlFrame(terminal.source_seq));
-  await endpoint.currentConnection!.send(executionEndedControlFrame(commandId));
-}
-
-function makeParentTask(): Task {
-  return {
-    agentSessionId: SESSION_ID,
-    prompt: "parent foreground turn",
-    status: "running",
-    profileId: claudeAgent.id,
-    modelPresetBackend: "claude",
-    createdAt: new Date("2026-08-25T00:00:00.000Z"),
-    lastEventId: 0,
-    lastReadEventId: 0,
-    interventionQueue: [],
-  };
-}
-
-function makeCompletedChild(): Task {
-  return {
-    agentSessionId: CHILD_SESSION_ID,
-    prompt: "child work",
-    status: "completed",
-    profileId: claudeAgent.id,
-    callerSessionId: SESSION_ID,
-    createdAt: new Date("2026-08-25T00:00:00.000Z"),
-    completedAt: new Date("2026-08-25T00:00:01.000Z"),
-    lastEventId: Number(TERMINAL_REVISION),
-    terminalEventId: Number(TERMINAL_REVISION),
-    lastReadEventId: 0,
-    lastAssistantText: "fresh E report",
-    interventionQueue: [],
-  };
-}
-
-async function temporaryDirectory(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "soulstream-e-report-red-"));
-  directories.push(directory);
-  return directory;
-}
-
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}

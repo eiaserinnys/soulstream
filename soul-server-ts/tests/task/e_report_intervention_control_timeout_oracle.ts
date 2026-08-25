@@ -20,21 +20,31 @@ export interface EObservation {
   nextTurnProofs: number;
   nextTurnActivations: number;
   nextTurnModelInputs: number;
+  nextTurnResults: number;
   nextTurnCompletes: number;
   reportProducers: ProducerObservation[];
   durableDeliveryIds: string[];
   consumedDeliveryIds: string[];
 }
 
-export function contractViolations(observation: EObservation): string[] {
+export function contractViolations(
+  observation: EObservation,
+  timeoutExpectation: "absent" | "present" = "absent",
+): string[] {
   const failures: string[] = [];
-  if (observation.controlTimeoutErrors.length !== 0) failures.push("control_timeout");
+  if (timeoutExpectation === "absent" && observation.controlTimeoutErrors.length !== 0) {
+    failures.push("control_timeout");
+  }
+  if (timeoutExpectation === "present" && observation.controlTimeoutErrors.length !== 1) {
+    failures.push("control_timeout_evidence_missing");
+  }
   if (observation.terminalStatus !== "completed") failures.push("parent_not_completed");
   if (observation.terminalError !== null) failures.push("terminal_error");
   if (observation.nextTurnReservations !== 1) failures.push("next_turn_reservation");
   if (observation.nextTurnProofs !== 1) failures.push("next_turn_proof");
   if (observation.nextTurnActivations !== 1) failures.push("next_turn_activation");
   if (observation.nextTurnModelInputs !== 1) failures.push("next_turn_model_input");
+  if (observation.nextTurnResults !== 1) failures.push("next_turn_result");
   if (observation.nextTurnCompletes !== 1) failures.push("next_turn_complete");
   const producerKinds = observation.reportProducers.map((producer) => producer.kind).sort();
   if (
@@ -121,6 +131,7 @@ export function idealObservation(input: {
     nextTurnProofs: 1,
     nextTurnActivations: 1,
     nextTurnModelInputs: 1,
+    nextTurnResults: 1,
     nextTurnCompletes: 1,
     reportProducers: [
       {
