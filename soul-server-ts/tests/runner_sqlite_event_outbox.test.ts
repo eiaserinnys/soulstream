@@ -767,6 +767,127 @@ describe("RunnerSqliteEventOutbox", () => {
     outbox.close();
   });
 
+  it("claims and completes three intervention identities atomically for one turn", async () => {
+    const outbox = await createOutbox();
+    const interventionIds = ["batch-first", "batch-second", "batch-third"];
+    for (const [index, interventionId] of interventionIds.entries()) {
+      await outbox.stageIntervention({
+        interventionId,
+        message: { text: `correction ${index + 1}`, user: "operator" },
+        queued: true,
+        queuedAt: `2026-08-11T00:00:0${index + 2}.000Z`,
+      });
+    }
+    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute-batch",
+      progressedAt: "2026-08-11T00:00:05.000Z",
+    });
+
+    await expect(outbox.claimInterventions(interventionIds, "execute-batch")).resolves.toBe(true);
+    await outbox.finishExecution({
+      commandId: "execute-batch",
+      interventionIds,
+      state: "completed",
+      progressedAt: "2026-08-11T00:00:06.000Z",
+      terminalError: null,
+    });
+
+    const database = new DatabaseSync(outbox.databasePath);
+    expect(database.prepare(`
+      SELECT COUNT(*) AS count FROM runner_intervention_inbox
+      WHERE intervention_id IN ('batch-first', 'batch-second', 'batch-third')
+    `).get()).toEqual({ count: 0 });
+    database.close();
+    lifecycle.close();
+    outbox.close();
+  });
+
+  it("leaves every available identity pending when one batch member is unavailable", async () => {
+    const outbox = await createOutbox();
+    const interventionIds = ["atomic-first", "atomic-second", "atomic-third"];
+    for (const [index, interventionId] of interventionIds.entries()) {
+      await outbox.stageIntervention({
+        interventionId,
+        message: { text: `correction ${index + 1}`, user: "operator" },
+        queued: true,
+        queuedAt: `2026-08-11T00:00:0${index + 2}.000Z`,
+      });
+    }
+    await expect(outbox.claimIntervention("atomic-second", "other-execution")).resolves.toBe(true);
+
+    await expect(outbox.claimInterventions(interventionIds, "execute-batch")).resolves.toBe(false);
+
+    const database = new DatabaseSync(outbox.databasePath);
+    expect(database.prepare(`
+      SELECT intervention_id, application_state, claimed_execution_command_id
+      FROM runner_intervention_inbox
+      WHERE intervention_id IN ('atomic-first', 'atomic-second', 'atomic-third')
+      ORDER BY intervention_id
+    `).all()).toEqual([
+      {
+        intervention_id: "atomic-first",
+        application_state: "pending",
+        claimed_execution_command_id: null,
+      },
+      {
+        intervention_id: "atomic-second",
+        application_state: "claimed",
+        claimed_execution_command_id: "other-execution",
+      },
+      {
+        intervention_id: "atomic-third",
+        application_state: "pending",
+        claimed_execution_command_id: null,
+      },
+    ]);
+    database.close();
+    outbox.close();
+  });
+
+  it("marks every claimed identity ambiguous when the shared turn fails", async () => {
+    const outbox = await createOutbox();
+    const interventionIds = ["failed-first", "failed-second", "failed-third"];
+    for (const [index, interventionId] of interventionIds.entries()) {
+      await outbox.stageIntervention({
+        interventionId,
+        message: { text: `correction ${index + 1}`, user: "operator" },
+        queued: true,
+        queuedAt: `2026-08-11T00:00:0${index + 2}.000Z`,
+      });
+    }
+    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
+    lifecycle.begin({
+      pid: process.pid,
+      commandId: "execute-failed-batch",
+      progressedAt: "2026-08-11T00:00:05.000Z",
+    });
+    await outbox.claimInterventions(interventionIds, "execute-failed-batch");
+
+    await outbox.finishExecution({
+      commandId: "execute-failed-batch",
+      interventionIds,
+      state: "failed",
+      progressedAt: "2026-08-11T00:00:06.000Z",
+      terminalError: { code: "real_crash", message: "engine crashed" },
+    });
+
+    const database = new DatabaseSync(outbox.databasePath);
+    expect(database.prepare(`
+      SELECT intervention_id, application_state
+      FROM runner_intervention_inbox
+      WHERE intervention_id IN ('failed-first', 'failed-second', 'failed-third')
+      ORDER BY intervention_id
+    `).all()).toEqual(interventionIds.map((interventionId) => ({
+      intervention_id: interventionId,
+      application_state: "ambiguous",
+    })));
+    database.close();
+    lifecycle.close();
+    outbox.close();
+  });
+
   it("rejects a zero-byte database created by a concurrent opener", async () => {
     const path = await temporaryDatabasePath();
     const worker = new Worker(`

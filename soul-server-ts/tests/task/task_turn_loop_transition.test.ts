@@ -244,10 +244,8 @@ describe("Task turn loop transition", () => {
       "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
     );
     expect(decision.prompt).toContain("/tmp/incoming/sess/readme.txt");
-    expect(decision.prompt.endsWith(
-      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
-    )).toBe(true);
-    expect(task.interventionQueue.map((item) => item.text)).toEqual(["later"]);
+    expect(decision.prompt.endsWith("later")).toBe(true);
+    expect(task.interventionQueue).toEqual([]);
     expect(task.status).toBe("running");
   });
 
@@ -268,10 +266,12 @@ describe("Task turn loop transition", () => {
 
     expect(decision.kind).toBe("continue");
     if (decision.kind !== "continue") throw new Error("expected continue decision");
-    expect(decision.intervention).toMatchObject({
+    expect(decision.interventions).toEqual([
+      expect.objectContaining({
       source: "claude_runtime_task_followup",
       followupAttempt: 1,
       followupKey: "sess-1:task-1",
-    });
+      }),
+    ]);
   });
 });

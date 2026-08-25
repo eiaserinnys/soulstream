@@ -209,9 +209,10 @@ describe("TaskTurnInputBuilder", () => {
       "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
     );
     expect(input.prompt).toContain("/tmp/incoming/sess/readme.txt");
+    expect(input.prompt).toContain("later");
     expect(input.prompt).toContain("<running_sessions>");
     expect(input.prompt.endsWith("</context>")).toBe(true);
-    expect(task.interventionQueue.map((item) => item.text)).toEqual(["later"]);
+    expect(task.interventionQueue).toEqual([]);
   });
 
   it("does not duplicate the user_message already persisted when auto-resume was accepted", async () => {
@@ -325,7 +326,7 @@ describe("TaskTurnInputBuilder", () => {
     await builder.prepareFollowupTurnInput(
       task,
       claudeAgent,
-      task.interventionQueue.shift()!,
+      [task.interventionQueue.shift()!],
     );
     expect(contextBuilder.buildFollowupContext).toHaveBeenLastCalledWith(
       task,
@@ -348,12 +349,12 @@ describe("TaskTurnInputBuilder", () => {
     const first = await builder.prepareFollowupTurnInput(
       task,
       claudeAgent,
-      intervention,
+      [intervention],
     );
     const replay = await builder.prepareFollowupTurnInput(
       task,
       claudeAgent,
-      intervention,
+      [intervention],
     );
 
     expect(first.inputUuid).toBe(buildDeliveryInputUuid(deliveryId));
@@ -523,7 +524,7 @@ describe("TaskTurnInputBuilder", () => {
     await builder.prepareFollowupTurnInput(
       task,
       claudeAgent,
-      task.interventionQueue.shift()!,
+      [task.interventionQueue.shift()!],
     );
 
     expect(contextBuilder.buildFollowupContext).toHaveBeenLastCalledWith(

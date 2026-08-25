@@ -3299,6 +3299,96 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(task.interventionQueue).toHaveLength(0);
   });
 
+  it("큐의 세 delivery를 순서대로 한 model turn에 넣고 각각 한 번 consume한다", async () => {
+    const mocks = makeMocks();
+    const executeInputs: EngineExecuteParams[] = [];
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        executeInputs.push(params);
+        yield { type: "assistant_message", content: "all heard", timestamp: 1 } as unknown as SSEEventPayload;
+        yield { type: "complete", result: "done", timestamp: 2 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+    const task = makeTask();
+    const messages: InterventionMessage[] = [
+      {
+        text: "first correction",
+        user: "u",
+        deliveryId: "61000000-0000-4000-8000-000000000001",
+        runnerInterventionId: "runner-intervention-1",
+        deliveryIntent: "human_live_steer",
+      },
+      {
+        text: "second correction",
+        user: "u",
+        deliveryId: "61000000-0000-4000-8000-000000000002",
+        runnerInterventionId: "runner-intervention-2",
+        deliveryIntent: "human_live_steer",
+      },
+      {
+        text: "third correction",
+        user: "u",
+        deliveryId: "61000000-0000-4000-8000-000000000003",
+        runnerInterventionId: "runner-intervention-3",
+        deliveryIntent: "human_live_steer",
+      },
+    ];
+    task.interventionQueue.push(...messages);
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(executeInputs).toHaveLength(1);
+    expect(executeInputs[0]!.prompt.indexOf("first correction")).toBeLessThan(
+      executeInputs[0]!.prompt.indexOf("second correction"),
+    );
+    expect(executeInputs[0]!.prompt.indexOf("second correction")).toBeLessThan(
+      executeInputs[0]!.prompt.indexOf("third correction"),
+    );
+    for (const message of messages) {
+      expect(executeInputs[0]!.prompt.split(message.text)).toHaveLength(2);
+    }
+    expect((executeInputs[0] as EngineExecuteParams & {
+      runnerInterventionIds?: string[];
+    }).runnerInterventionIds).toEqual([
+      "runner-intervention-1",
+      "runner-intervention-2",
+      "runner-intervention-3",
+    ]);
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(3);
+    for (const message of messages) {
+      expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
+      expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
+        message,
+        task,
+        expect.stringMatching(/^event:/),
+      );
+    }
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(3);
+    expect(task.status).toBe("completed");
+    expect(task.interventionQueue).toEqual([]);
+  });
+
   it("turn 종료 시 interventionQueue 비어있으면 status=completed로 종료 (단일 turn 회귀)", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [

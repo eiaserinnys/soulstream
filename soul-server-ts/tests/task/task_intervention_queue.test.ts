@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  dequeueIntervention,
+  dequeueInterventions,
   enqueueInterventionOnce,
   sortInterventionsByPriority,
 } from "../../src/task/task_intervention_queue.js";
@@ -20,6 +20,26 @@ function task(): Task {
 }
 
 describe("enqueueInterventionOnce", () => {
+  it("drains three queued messages in priority/FIFO order as one turn batch", () => {
+    const target = task();
+    target.interventionQueue.push(
+      {
+        text: "low completion",
+        user: "agent",
+        deliveryIntent: "completion_notification",
+      },
+      { text: "first correction", user: "alice" },
+      { text: "second correction", user: "alice" },
+    );
+
+    expect(dequeueInterventions(target).map((message) => message.text)).toEqual([
+      "first correction",
+      "second correction",
+      "low completion",
+    ]);
+    expect(target.interventionQueue).toEqual([]);
+  });
+
   it("reorders a legacy unsorted queue at the direct dequeue boundary", () => {
     const target = task();
     target.interventionQueue.push(
@@ -31,8 +51,11 @@ describe("enqueueInterventionOnce", () => {
       { text: "live user message", user: "alice", source: "browser" },
     );
 
-    expect(dequeueIntervention(target)?.text).toBe("live user message");
-    expect(dequeueIntervention(target)?.text).toBe("stale runtime follow-up");
+    expect(dequeueInterventions(target).map((message) => message.text)).toEqual([
+      "live user message",
+      "stale runtime follow-up",
+    ]);
+    expect(target.interventionQueue).toEqual([]);
   });
 
   it("converges a retried durable delivery on one queue position", () => {
