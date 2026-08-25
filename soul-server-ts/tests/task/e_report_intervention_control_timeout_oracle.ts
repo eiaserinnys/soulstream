@@ -14,8 +14,6 @@ export interface ClaudeInterruptionObservation {
   terminalError: string | null;
   interruptRequestDeliveryIds: string[];
   interruptAdmissionDeliveryIds: string[];
-  oldExecutionEndCommandIds: string[];
-  oldOwnershipReleaseCommandIds: string[];
   reservedDeliveryIds: string[];
   provenDeliveryIds: string[];
   activatedDeliveryIds: string[];
@@ -143,12 +141,6 @@ export function claudeInterruptionViolations(
   if (!sameStrings(observation.interruptAdmissionDeliveryIds, expectedDelivery)) {
     failures.push("interrupt_admission_not_exactly_once");
   }
-  if (observation.oldExecutionEndCommandIds.length !== 1) {
-    failures.push("old_execution_end_not_exactly_once");
-  }
-  if (observation.oldOwnershipReleaseCommandIds.length !== 1) {
-    failures.push("old_ownership_release_not_exactly_once");
-  }
   for (const [name, values] of [
     ["next_turn_reservation", observation.reservedDeliveryIds],
     ["next_turn_proof", observation.provenDeliveryIds],
@@ -164,12 +156,12 @@ export function claudeInterruptionViolations(
   const orderedEvents = [
     "interrupt_request",
     "interrupt_admission",
-    "old_execution_ended",
-    "old_ownership_released",
     "next_turn_reserved",
     "next_turn_proven",
     "next_turn_activated",
     "next_turn_model_input",
+    "next_turn_result",
+    "next_turn_complete",
   ];
   const observedPositions = orderedEvents.map((event) => observation.eventOrder.indexOf(event));
   if (
@@ -199,7 +191,9 @@ export function applyClaudeInterruptionMutation(
 ): ClaudeInterruptionObservation {
   if (mutation !== "passive_wait_until_natural_complete") return observation;
   const admissionIndex = observation.eventOrder.indexOf("interrupt_admission");
-  const eventOrder = [...observation.eventOrder];
+  const eventOrder = observation.eventOrder.filter(
+    (event) => event !== "injected_old_execution_ended",
+  );
   eventOrder.splice(Math.max(0, admissionIndex + 1), 0, "natural_foreground_release");
   return {
     ...observation,
@@ -218,8 +212,6 @@ export function idealClaudeInterruptionObservation(
     terminalError: null,
     interruptRequestDeliveryIds: [deliveryId],
     interruptAdmissionDeliveryIds: [deliveryId],
-    oldExecutionEndCommandIds: ["old-execution"],
-    oldOwnershipReleaseCommandIds: ["old-execution"],
     reservedDeliveryIds: [deliveryId],
     provenDeliveryIds: [deliveryId],
     activatedDeliveryIds: [deliveryId],
@@ -233,12 +225,12 @@ export function idealClaudeInterruptionObservation(
       "foreground_running",
       "interrupt_request",
       "interrupt_admission",
-      "old_execution_ended",
-      "old_ownership_released",
       "next_turn_reserved",
       "next_turn_proven",
       "next_turn_activated",
       "next_turn_model_input",
+      "next_turn_result",
+      "next_turn_complete",
     ],
   };
 }

@@ -148,7 +148,7 @@ describe("E Claude intervention event-order contract", () => {
     ]);
   });
 
-  it("reaches the queued next turn before the foreground natural-release latch", async () => {
+  it("tripwires Claude next-turn order before the foreground natural-release latch", async () => {
     const stateDirectory = await makeTemporaryDirectory(directories);
     const paths = runnerProcessPaths(stateDirectory, SESSION_ID);
     await mkdir(paths.sessionDirectory, { recursive: true });
@@ -176,13 +176,10 @@ describe("E Claude intervention event-order contract", () => {
     const foregroundRunning = makeDeferred<string>();
     const interruptAdmissionObserved = makeDeferred<void>();
     const releaseControlResult = makeDeferred<void>();
-    const reservationObserved = makeDeferred<void>();
     const naturalForegroundRelease = makeDeferred<void>();
     const trace: string[] = [];
     const interruptRequestDeliveryIds: string[] = [];
     const interruptAdmissionDeliveryIds: string[] = [];
-    const oldExecutionEndCommandIds: string[] = [];
-    const oldOwnershipReleaseCommandIds: string[] = [];
     const reservedDeliveryIds: string[] = [];
     const provenDeliveryIds: string[] = [];
     const activatedDeliveryIds: string[] = [];
@@ -191,7 +188,6 @@ describe("E Claude intervention event-order contract", () => {
     let foregroundCommandId: string | undefined;
     let naturalForegroundReleases = 0;
     let executeRequests = 0;
-    let interruptTermination: Promise<void> | undefined;
     let endpoint!: RunnerSocketEndpoint;
 
     endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
@@ -233,14 +229,6 @@ describe("E Claude intervention event-order contract", () => {
             DELIVERY_IDENTITY.deliveryId,
             "replayable",
           );
-          interruptTermination = reservationObserved.promise.then(async () => {
-            if (!foregroundCommandId) throw new Error("foreground command id missing");
-            oldExecutionEndCommandIds.push(foregroundCommandId);
-            trace.push("old_execution_ended");
-            await endpoint.currentConnection!.send(
-              executionEndedControlFrame(foregroundCommandId),
-            );
-          });
         }
         return;
       }
@@ -277,8 +265,6 @@ describe("E Claude intervention event-order contract", () => {
         return;
       }
       if (!foregroundCommandId) throw new Error("foreground ownership was never established");
-      oldOwnershipReleaseCommandIds.push(foregroundCommandId);
-      trace.push("old_ownership_released");
       if (frame.params.runnerInterventionId) {
         reservedDeliveryIds.push(frame.params.runnerInterventionId);
         trace.push("next_turn_reserved");
@@ -301,9 +287,11 @@ describe("E Claude intervention event-order contract", () => {
       await endpoint.currentConnection!.send(
         runnerCommandResultFrame(frame.commandId, { status: "ok" }),
       );
-      acceptedNextTurnFrames.push(frame);
       activatedDeliveryIds.push(DELIVERY_IDENTITY.deliveryId);
       trace.push("next_turn_activated");
+      acceptedNextTurnFrames.push(frame);
+      modelInputDeliveryIds.push(DELIVERY_IDENTITY.deliveryId);
+      trace.push("next_turn_model_input");
       await emitSuccessfulNextTurn(
         childOutbox,
         endpoint,
@@ -319,6 +307,16 @@ describe("E Claude intervention event-order contract", () => {
     const batches: EventOutboxBatch[] = [];
     await mux.connect(async (batch) => {
       batches.push(batch);
+      for (const event of batch.events) {
+        if (
+          event.event_type === "result"
+          && eventPayloadField(event.payload, "output") === "next turn result"
+        ) trace.push("next_turn_result");
+        if (
+          event.event_type === "complete"
+          && eventPayloadField(event.payload, "result") === "next turn completed"
+        ) trace.push("next_turn_complete");
+      }
       await mux.handleAck({
         type: "event_append_ack",
         stream_id: batch.stream_id,
@@ -353,12 +351,7 @@ describe("E Claude intervention event-order contract", () => {
     );
     const parent = makeEParentTask(SESSION_ID);
     const mocks = makeTaskMocks();
-    const repository = makeCompletionRepository({
-      onTurnStarted(deliveryId) {
-        modelInputDeliveryIds.push(deliveryId);
-        trace.push("next_turn_model_input");
-      },
-    });
+    const repository = makeCompletionRepository();
     const executor = new TaskExecutor(
       () => runner.engine,
       mocks.db,
@@ -414,6 +407,16 @@ describe("E Claude intervention event-order contract", () => {
       runnerInterventionId: DELIVERY_IDENTITY.deliveryId,
     };
     const explicitDelivery = transition.deliver(parent, explicitReport);
+    const injectedOldExecutionEnd = explicitDelivery.then(async () => {
+      if (!foregroundCommandId) throw new Error("foreground command id missing");
+      // Test-only child seam: the fixture cannot observe ClaudeAdapter ending the old
+      // execution. Inject it after the real host transition applies the control verdict,
+      // and exclude it from product evidence in claudeInterruptionViolations().
+      trace.push("injected_old_execution_ended");
+      await endpoint.currentConnection!.send(
+        executionEndedControlFrame(foregroundCommandId),
+      );
+    });
     await interruptAdmissionObserved.promise;
     await notifier.notify(makeECompletedChild({
       childSessionId: CHILD_SESSION_ID,
@@ -425,8 +428,7 @@ describe("E Claude intervention event-order contract", () => {
       .filter((deliveryId): deliveryId is string => deliveryId !== undefined);
     releaseControlResult.resolve();
     const apiResult = await explicitDelivery;
-    reservationObserved.resolve();
-    await interruptTermination;
+    await injectedOldExecutionEnd;
     await execution;
 
     const centralEvents = batches.flatMap((batch) => batch.events);
@@ -445,8 +447,6 @@ describe("E Claude intervention event-order contract", () => {
       terminalError: parent.error ?? null,
       interruptRequestDeliveryIds,
       interruptAdmissionDeliveryIds,
-      oldExecutionEndCommandIds,
-      oldOwnershipReleaseCommandIds,
       reservedDeliveryIds,
       provenDeliveryIds,
       activatedDeliveryIds,
