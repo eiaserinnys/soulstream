@@ -479,6 +479,43 @@ describe("TaskInterventionRoute.addIntervention", () => {
     );
   });
 
+  it.each([
+    "human_live_steer",
+    "durable_next_turn",
+    "completion_notification",
+    "runtime_followup",
+  ] as const)(
+    "selects first idle resume inputs from delivery facts, not %s intent",
+    async (intent) => {
+      const deliveryId = `73737373-7373-4737-8737-${intent.length.toString().padStart(12, "0")}`;
+      const gate = {
+        admit: vi.fn().mockResolvedValue(admitted(deliveryId, intent)),
+        beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+        recordResult: vi.fn().mockResolvedValue(undefined),
+        recordFailure: vi.fn().mockResolvedValue(undefined),
+      } satisfies Pick<
+        TaskDeliveryLedgerGate,
+        "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      >;
+      const task = makeTask({ status: "completed" });
+      const { route, autoResumeTransition } = makeSubject([task], gate);
+
+      await expect(route.addIntervention({
+        agentSessionId: task.agentSessionId,
+        text: "first idle delivery",
+        user: "agent",
+        deliveryId,
+        deliveryIntent: intent,
+        completionId: `completion:${deliveryId}`,
+        relationKey: `delivery:${deliveryId}`,
+        source: "test",
+      }, vi.fn())).resolves.toEqual({ autoResumed: true });
+
+      expect(autoResumeTransition.resume).toHaveBeenCalledOnce();
+      expect(vi.mocked(autoResumeTransition.resume).mock.calls[0]).toHaveLength(3);
+    },
+  );
+
   it("projects terminal notification delivery only after ownership activation", async () => {
     const deliveryId = "61616161-6161-4161-8161-616161616161";
     let resolveActivation!: () => void;
@@ -780,7 +817,6 @@ describe("TaskInterventionRoute.addIntervention", () => {
       task,
       expect.objectContaining({ deliveryId }),
       expect.any(Function),
-      { publishUserMessage: false },
     );
     expect(sessionNotificationPublisher.publish).toHaveBeenCalledTimes(1);
     expect(vi.mocked(autoResumeTransition.resume).mock.invocationCallOrder[0]).toBeLessThan(
