@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -262,6 +263,7 @@ test("stop rejects zombie residue, reaps runner groups, and GCs only orphans", a
   t.after(async () => {
     try { process.kill(-runner.pid, "SIGKILL"); } catch {}
     await runnerClosed;
+    try { chmodSync(orphanDirectory, 0o755); } catch {}
     rmSync(root, { recursive: true, force: true });
   });
   await waitForFile(childPidPath);
@@ -269,6 +271,8 @@ test("stop rejects zombie residue, reaps runner groups, and GCs only orphans", a
   const childPid = Number(readFileSync(childPidPath, "utf8"));
   const zombiePid = Number(readFileSync(zombiePidPath, "utf8"));
   await waitForPidState(zombiePid, "Z");
+  chmodSync(runnerEntry, 0o444);
+  chmodSync(orphanDirectory, 0o555);
 
   const contamination = await runCommand(
     "bash",
