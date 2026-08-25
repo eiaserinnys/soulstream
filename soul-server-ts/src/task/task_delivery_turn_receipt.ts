@@ -1,4 +1,6 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
+import type { ClaudeDeliveryTranscriptReceiptReader } from
+  "../engine/claude_delivery_transcript_receipt.js";
 
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import type { InterventionMessage, Task } from "./task_models.js";
@@ -16,7 +18,13 @@ export class TaskDeliveryTurnReceipt {
   constructor(
     private readonly consumption: TaskDeliveryConsumption,
     private readonly intervention: InterventionMessage | undefined,
-  ) {}
+    private readonly transcriptReceipt?: Pick<
+      ClaudeDeliveryTranscriptReceiptReader,
+      "inspect"
+    >,
+  ) {
+    void this.transcriptReceipt;
+  }
 
   async observe(task: Task, event: SSEEventPayload): Promise<void> {
     if (

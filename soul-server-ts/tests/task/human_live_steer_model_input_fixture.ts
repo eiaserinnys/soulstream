@@ -1,7 +1,8 @@
-import type { SessionMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { SessionMessage, SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import { vi } from "vitest";
 
 import {
+  ClaudeDeliveryTranscriptReceiptReader,
   findClaudeDeliveryTranscriptReceipt,
 } from "../../src/engine/claude_delivery_transcript_receipt.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
@@ -76,6 +77,10 @@ export class HumanLiveSteerModelInputHarness {
 
   private currentAttempt = 0;
   private claimedAcceptanceWithoutTranscript = false;
+  private readonly transcriptReceipt: Pick<
+    ClaudeDeliveryTranscriptReceiptReader,
+    "inspect"
+  >;
 
   constructor(deliveryId: string) {
     this.deliveryId = deliveryId;
@@ -104,6 +109,22 @@ export class HumanLiveSteerModelInputHarness {
       state: "queued",
       consumedAt: null,
     };
+    this.transcriptReceipt = new ClaudeDeliveryTranscriptReceiptReader({
+      sourceNode: "eiaserinnys",
+      sessionStore: {} as SessionStore,
+      getSession: async () => ({
+        agent_id: "claude-roselin",
+        claude_session_id: "claude-session-c2",
+        model_preset: "claude-opus",
+        node_id: "eiaserinnys",
+      }) as never,
+      getAgent: () => ({
+        backend: "claude",
+        workspace_dir: "/work",
+      }) as never,
+      getModelPresetBackend: () => "claude",
+      loadMessages: async () => this.transcript,
+    });
   }
 
   async execute(kind: AttemptKind): Promise<void> {
@@ -116,6 +137,7 @@ export class HumanLiveSteerModelInputHarness {
         recordConsumed: this.recordConsumed,
       },
       this.message,
+      this.transcriptReceipt,
     );
     this.journal.push({
       kind: "turn",
