@@ -1300,6 +1300,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(intervene).toHaveBeenCalledWith({
       prompt: "focus on the failing test\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
       imageAttachmentPaths: ["/tmp/a.png"],
+      turnOrigin: { kind: "user_message" },
     });
     expect(mocks.enqueueEvent).toHaveBeenCalledWith(
       "s-live",
