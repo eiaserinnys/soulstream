@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { rename } from "node:fs/promises";
+import { readFile, rename } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import {
@@ -473,6 +473,7 @@ const SCENARIOS = {
     let scenarioError;
     await runtime.installActivationFailureFault(8);
     try {
+      const activationLogOffset = await runtime.nodeLogOffset();
       const sessionId = await runtime.createSession(
         `Reply with exactly ACTIVATE_ROLLBACK_SHOULD_NOT_RUN_${seed}.`,
       );
@@ -493,24 +494,43 @@ const SCENARIOS = {
         conflictingPidEvidence: process.pid,
         ownershipGeneration: ownership.ownership_generation,
       });
-      await waitFor(
-        () => runtime.runnerAlive(runner.pid) ? undefined : true,
-        15_000,
-        "activate rollback left the spawned child live",
-        100,
-      );
-      await waitFor(
+      const activationOutcome = await waitFor(
         async () => {
+          const nodeLog = await readFile(runtime.nodeLog);
+          const from = activationLogOffset <= nodeLog.length ? activationLogOffset : 0;
+          const activationApplied = nodeLog.subarray(from).toString("utf8").split("\n").some(
+            (line) => {
+              try {
+                const entry = JSON.parse(line);
+                return entry.sessionId === sessionId
+                  && entry.ownershipGeneration === ownership.ownership_generation
+                  && entry.operation === "activate"
+                  && entry.applied === true;
+              } catch {
+                return false;
+              }
+            },
+          );
+          if (activationApplied) return "applied";
           const rows = await runtime.ownerships(sessionId);
           return rows.some((row) => (
             row.ownership_generation === ownership.ownership_generation
             && row.phase === "failed"
             && String(row.failure_reason).includes("execution activate failed")
-          )) ? rows : undefined;
+          )) ? "failed" : undefined;
         },
         60_000,
         "activate failure did not converge to failed ownership",
         500,
+      );
+      if (activationOutcome === "applied") {
+        throw new Error("activate-rollback fault injection failed: activate applied:true");
+      }
+      await waitFor(
+        () => runtime.runnerAlive(runner.pid) ? undefined : true,
+        15_000,
+        "activate rollback left the spawned child live",
+        100,
       );
       const status = await runtime.waitForTerminal(sessionId, 60_000);
       assertScenario(status === "error", `activate rollback session status was ${status}`);

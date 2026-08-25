@@ -138,6 +138,11 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
   assert.match(scenarios, /dead-owner injection and lab restoration failed/);
   assert.match(scenarios, /runner-death-live-host injection and cleanup failed/);
   assert.match(scenarios, /activate-rollback injection and cleanup failed/);
+  assert.match(scenarios, /activate-rollback fault injection failed: activate applied:true/);
+  assert.ok(
+    scenarios.indexOf("activate failure did not converge to failed ownership")
+      < scenarios.indexOf("activate rollback left the spawned child live"),
+  );
   for (const scenario of [
     "steady-state",
     "restart-adopt",
