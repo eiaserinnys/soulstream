@@ -157,7 +157,10 @@ export function makeTaskMocks() {
   return { ...persistenceDouble, db, broadcaster };
 }
 
-export function makeCompletionRepository() {
+export function makeCompletionRepository(observers?: {
+  onTurnStarted?(deliveryId: string): void;
+  onConsumed?(deliveryId: string): void;
+}) {
   let stored: Record<string, unknown> | undefined;
   const turnStarted: string[] = [];
   const consumed: string[] = [];
@@ -218,11 +221,13 @@ export function makeCompletionRepository() {
     recordTurnStarted: vi.fn(async (message: { deliveryId?: string }) => {
       if (!message.deliveryId || stored?.delivery_id !== message.deliveryId) return;
       turnStarted.push(message.deliveryId);
+      observers?.onTurnStarted?.(message.deliveryId);
       stored = { ...stored, state: "delivered" };
     }),
     recordConsumed: vi.fn(async (message: { deliveryId?: string }) => {
       if (!message.deliveryId || stored?.delivery_id !== message.deliveryId) return;
       consumed.push(message.deliveryId);
+      observers?.onConsumed?.(message.deliveryId);
       stored = { ...stored, state: "consumed" };
     }),
     discardIfConsumed: vi.fn(async () => false),

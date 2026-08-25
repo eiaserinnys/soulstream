@@ -4,7 +4,29 @@ export type OracleMutation =
   | "hide_control_timeout"
   | "fake_next_turn_activation"
   | "mask_terminal_error"
-  | "collapse_dual_report_producers";
+  | "collapse_dual_report_producers"
+  | "passive_wait_until_natural_complete";
+
+export interface ClaudeInterruptionObservation {
+  backend: "claude";
+  deliveryId: string;
+  terminalStatus: TaskStatus;
+  terminalError: string | null;
+  interruptRequestDeliveryIds: string[];
+  interruptAdmissionDeliveryIds: string[];
+  oldExecutionEndCommandIds: string[];
+  oldOwnershipReleaseCommandIds: string[];
+  reservedDeliveryIds: string[];
+  provenDeliveryIds: string[];
+  activatedDeliveryIds: string[];
+  modelInputDeliveryIds: string[];
+  resultDeliveryIds: string[];
+  completeDeliveryIds: string[];
+  durableDeliveryIds: string[];
+  consumedDeliveryIds: string[];
+  naturalForegroundReleases: number;
+  eventOrder: string[];
+}
 
 export interface ProducerObservation {
   kind: "explicit_report" | "automatic_completion";
@@ -108,6 +130,119 @@ export function applyOracleMutation(
   return observation;
 }
 
+export function claudeInterruptionViolations(
+  observation: ClaudeInterruptionObservation,
+): string[] {
+  const failures: string[] = [];
+  const expectedDelivery = [observation.deliveryId];
+  if (observation.terminalStatus !== "completed") failures.push("parent_not_completed");
+  if (observation.terminalError !== null) failures.push("terminal_error");
+  if (!sameStrings(observation.interruptRequestDeliveryIds, expectedDelivery)) {
+    failures.push("interrupt_request_not_exactly_once");
+  }
+  if (!sameStrings(observation.interruptAdmissionDeliveryIds, expectedDelivery)) {
+    failures.push("interrupt_admission_not_exactly_once");
+  }
+  if (observation.oldExecutionEndCommandIds.length !== 1) {
+    failures.push("old_execution_end_not_exactly_once");
+  }
+  if (observation.oldOwnershipReleaseCommandIds.length !== 1) {
+    failures.push("old_ownership_release_not_exactly_once");
+  }
+  for (const [name, values] of [
+    ["next_turn_reservation", observation.reservedDeliveryIds],
+    ["next_turn_proof", observation.provenDeliveryIds],
+    ["next_turn_activation", observation.activatedDeliveryIds],
+    ["next_turn_model_input", observation.modelInputDeliveryIds],
+    ["next_turn_result", observation.resultDeliveryIds],
+    ["next_turn_complete", observation.completeDeliveryIds],
+    ["durable_delivery", observation.durableDeliveryIds],
+    ["durable_consume", observation.consumedDeliveryIds],
+  ] as const) {
+    if (!sameStrings(values, expectedDelivery)) failures.push(`${name}_not_exactly_once`);
+  }
+  const orderedEvents = [
+    "interrupt_request",
+    "interrupt_admission",
+    "old_execution_ended",
+    "old_ownership_released",
+    "next_turn_reserved",
+    "next_turn_proven",
+    "next_turn_activated",
+    "next_turn_model_input",
+  ];
+  const observedPositions = orderedEvents.map((event) => observation.eventOrder.indexOf(event));
+  if (
+    observedPositions.some((position) => position < 0)
+    || observedPositions.some((position, index) => index > 0 && position <= observedPositions[index - 1]!)
+  ) {
+    failures.push("claude_interrupt_boundary_order");
+  }
+  const naturalRelease = observation.eventOrder.indexOf("natural_foreground_release");
+  const admission = observation.eventOrder.indexOf("interrupt_admission");
+  const modelInput = observation.eventOrder.indexOf("next_turn_model_input");
+  if (
+    admission >= 0
+    && naturalRelease > admission
+    && modelInput > naturalRelease
+  ) {
+    failures.push("passive_wait_until_natural_complete");
+  } else if (observation.naturalForegroundReleases !== 0 || naturalRelease >= 0) {
+    failures.push("natural_foreground_release_observed");
+  }
+  return failures;
+}
+
+export function applyClaudeInterruptionMutation(
+  observation: ClaudeInterruptionObservation,
+  mutation: OracleMutation | undefined,
+): ClaudeInterruptionObservation {
+  if (mutation !== "passive_wait_until_natural_complete") return observation;
+  const admissionIndex = observation.eventOrder.indexOf("interrupt_admission");
+  const eventOrder = [...observation.eventOrder];
+  eventOrder.splice(Math.max(0, admissionIndex + 1), 0, "natural_foreground_release");
+  return {
+    ...observation,
+    naturalForegroundReleases: 1,
+    eventOrder,
+  };
+}
+
+export function idealClaudeInterruptionObservation(
+  deliveryId: string,
+): ClaudeInterruptionObservation {
+  return {
+    backend: "claude",
+    deliveryId,
+    terminalStatus: "completed",
+    terminalError: null,
+    interruptRequestDeliveryIds: [deliveryId],
+    interruptAdmissionDeliveryIds: [deliveryId],
+    oldExecutionEndCommandIds: ["old-execution"],
+    oldOwnershipReleaseCommandIds: ["old-execution"],
+    reservedDeliveryIds: [deliveryId],
+    provenDeliveryIds: [deliveryId],
+    activatedDeliveryIds: [deliveryId],
+    modelInputDeliveryIds: [deliveryId],
+    resultDeliveryIds: [deliveryId],
+    completeDeliveryIds: [deliveryId],
+    durableDeliveryIds: [deliveryId],
+    consumedDeliveryIds: [deliveryId],
+    naturalForegroundReleases: 0,
+    eventOrder: [
+      "foreground_running",
+      "interrupt_request",
+      "interrupt_admission",
+      "old_execution_ended",
+      "old_ownership_released",
+      "next_turn_reserved",
+      "next_turn_proven",
+      "next_turn_activated",
+      "next_turn_model_input",
+    ],
+  };
+}
+
 export function readOracleMutation(value: string | undefined): OracleMutation | undefined {
   if (value === undefined || value === "") return undefined;
   if (
@@ -115,8 +250,14 @@ export function readOracleMutation(value: string | undefined): OracleMutation | 
     || value === "fake_next_turn_activation"
     || value === "mask_terminal_error"
     || value === "collapse_dual_report_producers"
+    || value === "passive_wait_until_natural_complete"
   ) return value;
   throw new Error(`Unknown E oracle mutation: ${value}`);
+}
+
+function sameStrings(actual: readonly string[], expected: readonly string[]): boolean {
+  return actual.length === expected.length
+    && actual.every((value, index) => value === expected[index]);
 }
 
 export function idealObservation(input: {
