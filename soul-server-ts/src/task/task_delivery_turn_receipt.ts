@@ -5,7 +5,6 @@ import type {
 } from
   "../engine/claude_delivery_transcript_receipt.js";
 
-import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 
@@ -17,24 +16,21 @@ import type { InterventionMessage, Task } from "./task_models.js";
 export class TaskDeliveryTurnReceipt {
   private recorded = false;
   private consumed = false;
-  private consumedTurnId: string | undefined;
 
   constructor(
     private readonly consumption: TaskDeliveryConsumption,
     private readonly intervention: InterventionMessage | undefined,
-    private readonly transcriptReceipt?: Pick<
+    private readonly transcriptReceipt: Pick<
       ClaudeDeliveryTranscriptReceiptReader,
       "inspect"
-    >,
-    private readonly requiresClaudeInputProof = transcriptReceipt !== undefined,
+    > | undefined,
+    private readonly requiresClaudeInputProof: boolean,
+    private consumedTurnId: string,
   ) {}
 
   async observe(task: Task, event: SSEEventPayload): Promise<void> {
     const consumedTurnId = turnReceiptId(task);
-    if (this.requiresClaudeInputProof) {
-      this.consumedTurnId ??= consumedTurnId;
-      return;
-    }
+    if (this.requiresClaudeInputProof) return;
     if (
       this.recorded ||
       event.type === "session" ||
@@ -64,24 +60,22 @@ export class TaskDeliveryTurnReceipt {
 
   private async recordFromClaudeInputProof(task: Task): Promise<void> {
     const deliveryId = this.intervention?.deliveryId;
-    if (!deliveryId || !this.transcriptReceipt) return;
-    const expectedInputUuid = buildDeliveryInputUuid(deliveryId);
+    if (!this.transcriptReceipt) return;
     let receipt: ClaudeDeliveryTranscriptReceipt;
     try {
       receipt = await this.transcriptReceipt.inspect({
-        delivery_id: deliveryId,
+        delivery_id: deliveryId!,
         target_session_id: task.agentSessionId,
       });
     } catch {
       return;
     }
     if (
-      receipt.inputUuid !== expectedInputUuid
-      || (receipt.kind !== "input_pending" && receipt.kind !== "completed")
+      receipt.kind !== "input_pending" && receipt.kind !== "completed"
     ) {
       return;
     }
-    const consumedTurnId = this.consumedTurnId ?? turnReceiptId(task);
+    const consumedTurnId = this.consumedTurnId;
     this.recorded = await this.consumption.recordTurnStarted(
       task,
       this.intervention,
@@ -91,6 +85,6 @@ export class TaskDeliveryTurnReceipt {
   }
 }
 
-function turnReceiptId(task: Task): string {
+export function turnReceiptId(task: Task): string {
   return `event:${task.lastEventId ?? "unknown"}`;
 }

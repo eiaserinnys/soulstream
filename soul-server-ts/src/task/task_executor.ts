@@ -80,7 +80,10 @@ import {
 } from "./claude_runtime_task_followup.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
-import { TaskDeliveryTurnReceipt } from "./task_delivery_turn_receipt.js";
+import {
+  TaskDeliveryTurnReceipt,
+  turnReceiptId,
+} from "./task_delivery_turn_receipt.js";
 import {
   applyModelPresetRuntime,
   effectiveTaskBackend,
@@ -1203,6 +1206,7 @@ export class TaskExecutor {
             currentTurnIntervention,
             this.deliveryTranscriptReceipt,
             requiresClaudeDeliveryInputProof,
+            turnReceiptId(task),
           )
         : undefined;
       try {
