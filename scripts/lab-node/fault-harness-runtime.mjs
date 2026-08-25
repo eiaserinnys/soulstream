@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   mkdir,
+  readdir,
   readFile,
   readlink,
   rm,
@@ -45,6 +46,10 @@ export class LabRuntime {
     this.database = requireEnv(env, "LAB_POSTGRES_DB");
     this.databaseUser = requireEnv(env, "LAB_POSTGRES_USER");
     this.bearerToken = requireEnv(env, "LAB_AUTH_BEARER_TOKEN");
+    this.interventionAcceptanceTimeoutMs = requirePositiveInteger(
+      env,
+      "LAB_INTERVENTION_ACCEPTANCE_TIMEOUT_MS",
+    );
     this.labSecrets = [
       this.bearerToken,
       env.LAB_POSTGRES_PASSWORD,
@@ -67,11 +72,11 @@ export class LabRuntime {
     this.deliveries = new LabDeliveryRuntime(this);
   }
 
-  async createRun(command) {
+  async createRun(command, provenance) {
     const runId = `${command}-${new Date().toISOString().replaceAll(/[:.]/g, "-")}`;
     const directory = join(this.stateDirectory, runId);
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    return new EvidenceRecorder(this, runId, directory);
+    return new EvidenceRecorder(this, runId, directory, provenance);
   }
 
   /**
@@ -95,11 +100,63 @@ export class LabRuntime {
 
   async assertProvenance() {
     const manifest = await this.currentManifest();
-    const { stdout } = await execFileAsync("git", ["-C", this.repo, "rev-parse", "HEAD"], {
-      timeout: 10_000,
-      maxBuffer: 1024 * 1024,
-    });
-    assertMatchingProvenance(manifest.sourceCommit, stdout.trim());
+    const gitOptions = { timeout: 10_000, maxBuffer: 1024 * 1024 };
+    const [checkout, originMain, fetchRefspecs] = await Promise.all([
+      execFileAsync("git", ["-C", this.repo, "rev-parse", "HEAD"], gitOptions),
+      execFileAsync(
+        "git",
+        ["-C", this.repo, "rev-parse", "refs/remotes/origin/main"],
+        gitOptions,
+      ),
+      execFileAsync(
+        "git",
+        ["-C", this.repo, "config", "--get-all", "remote.origin.fetch"],
+        gitOptions,
+      ),
+    ]);
+    const checkoutCommit = checkout.stdout.trim();
+    const refspecs = fetchRefspecs.stdout.trim().split("\n").filter(Boolean);
+    assertMatchingProvenance(manifest.sourceCommit, checkoutCommit);
+    assertFetchRefspecCoversMain(refspecs);
+    return {
+      checkoutCommit,
+      bundleSourceCommit: manifest.sourceCommit,
+      originMainCommit: originMain.stdout.trim(),
+      fetchRefspecs: refspecs,
+      releaseManifestId: manifest.manifestId,
+      releaseCohortId: manifest.releaseCohortId,
+    };
+  }
+
+  async fixtureResidue() {
+    const central = await this.psqlOne(`
+      SELECT json_build_object(
+        'nonterminalSessions', (
+          SELECT COALESCE(json_agg(json_build_object(
+            'session_id', session_id,
+            'status', status
+          ) ORDER BY session_id), '[]'::json)
+          FROM sessions
+          WHERE status NOT IN (
+            'completed', 'failed', 'error', 'interrupted', 'cancelled', 'killed'
+          )
+        ),
+        'openOwnerships', (
+          SELECT COALESCE(json_agg(json_build_object(
+            'session_id', session_id,
+            'ownership_generation', ownership_generation,
+            'phase', phase
+          ) ORDER BY session_id, ownership_generation), '[]'::json)
+          FROM session_execution_ownerships
+          WHERE phase IN ('reserved', 'identity_proven', 'active')
+        )
+      )
+    `);
+    return {
+      nonterminalSessions: central?.nonterminalSessions ?? [],
+      openOwnerships: central?.openOwnerships ?? [],
+      runnerProcesses: await ownedRunnerProcesses(this.root),
+    };
   }
 
   async createSession(prompt, extra = {}) {
@@ -122,7 +179,11 @@ export class LabRuntime {
 
   async intervene(sessionId, body) {
     assertIdentifier(sessionId, "session id");
-    return await this.postJson(`/api/sessions/${sessionId}/intervene`, body);
+    return await this.postJson(
+      `/api/sessions/${sessionId}/intervene`,
+      body,
+      this.interventionAcceptanceTimeoutMs,
+    );
   }
 
   async interrupt(sessionId) {
@@ -727,6 +788,16 @@ export function assertMatchingProvenance(bundleCommit, checkoutCommit) {
   }
 }
 
+export function assertFetchRefspecCoversMain(refspecs) {
+  const coversMain = refspecs.some((refspec) => (
+    refspec === "+refs/heads/*:refs/remotes/origin/*"
+    || refspec === "+refs/heads/main:refs/remotes/origin/main"
+  ));
+  if (!coversMain) {
+    throw new Error("lab fetch refspec does not fetch origin/main");
+  }
+}
+
 export function runnerOperationSnapshots(logText) {
   const snapshots = [];
   for (const line of logText.split("\n")) {
@@ -758,6 +829,14 @@ function requirePort(env, key, protectedPorts) {
   return value;
 }
 
+function requirePositiveInteger(env, key) {
+  const value = Number(requireEnv(env, key));
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${key} must be a positive integer`);
+  }
+  return value;
+}
+
 function assertIdentifier(value, field) {
   if (typeof value !== "string" || !/^[A-Za-z0-9._:-]+$/.test(value)) {
     throw new Error(`invalid ${field}`);
@@ -784,6 +863,25 @@ async function assertProcess(pid, expectedEntry, expectedRoot) {
       throw new Error(`process ${pid} root mismatch`);
     }
   }
+}
+
+async function ownedRunnerProcesses(root) {
+  const releasePrefix = join(root, "state", "runner-releases") + "/";
+  const configPrefix = join(root, "runner-state") + "/";
+  const processes = [];
+  for (const entry of await readdir("/proc", { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+    try {
+      const command = (await readFile(`/proc/${entry.name}/cmdline`, "utf8"))
+        .replaceAll("\0", " ");
+      if (!command.includes(releasePrefix) || !command.includes("/runner_entry.js")) continue;
+      if (!command.includes(`--config ${configPrefix}`)) continue;
+      processes.push({ pid: Number(entry.name) });
+    } catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "EACCES") throw error;
+    }
+  }
+  return processes.sort((left, right) => left.pid - right.pid);
 }
 
 async function waitForExit(pid, timeoutMs) {

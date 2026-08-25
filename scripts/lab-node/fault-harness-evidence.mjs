@@ -35,10 +35,11 @@ import {
 } from "./fault-harness-contract-fixtures.mjs";
 
 export class EvidenceRecorder {
-  constructor(runtime, runId, directory) {
+  constructor(runtime, runId, directory, provenance) {
     this.runtime = runtime;
     this.runId = runId;
     this.directory = directory;
+    this.provenance = provenance;
     // Sessions from earlier runs stay in the lab database forever. Counting
     // them makes every verdict a running total that nobody can read: "11
     // violations" says nothing about which one this run caused.
@@ -203,7 +204,12 @@ export class EvidenceRecorder {
   }
 
   async finish(summary) {
-    const value = { runId: this.runId, completedAt: new Date().toISOString(), ...summary };
+    const value = {
+      runId: this.runId,
+      completedAt: new Date().toISOString(),
+      provenance: this.provenance,
+      ...summary,
+    };
     await writeFile(
       join(this.directory, "result.json"),
       `${JSON.stringify(value, null, 2)}\n`,

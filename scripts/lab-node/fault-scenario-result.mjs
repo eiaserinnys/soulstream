@@ -24,6 +24,34 @@ export function withBaselineHonesty(result, baseline, invariant) {
   };
 }
 
+export function preflightRefusalReasons(preflight = {}) {
+  return [
+    ...(preflight.violations ?? []).map(
+      (violation) => `invariant:${violation.invariant}`,
+    ),
+    ...(preflight.nonterminalSessions ?? []).map(
+      (session) => `nonterminal_session:${session.session_id}:${session.status}`,
+    ),
+    ...(preflight.openOwnerships ?? []).map(
+      (ownership) => `open_ownership:${ownership.session_id}:${ownership.ownership_generation}`,
+    ),
+    ...(preflight.runnerProcesses ?? []).map(
+      (runner) => `runner_process:${runner.pid}`,
+    ),
+  ];
+}
+
+export function classifyHarnessStatus({
+  fatalFailure,
+  failureCount = 0,
+  inconclusiveCount = 0,
+} = {}) {
+  if (fatalFailure) return "failed_harness_error";
+  if (failureCount > 0) return "failed_new_violation";
+  if (inconclusiveCount > 0) return "inconclusive";
+  return "passed";
+}
+
 export function assertScenario(condition, message) {
   if (!condition) throw new Error(message);
 }
