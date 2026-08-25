@@ -1122,7 +1122,8 @@ export class TaskExecutor {
    *   - generator 정상 종료 + foreground runtime pending → status="error" → loop 종료.
    *   - generator 정상 종료 + status="running" + queue empty → status="completed" → loop 종료.
    *   - generator 정상 종료 + status="running" + queue 비어있지 않음 → dequeue → 다음 turn.
-   *   - generator throw → status="error" → loop 종료.
+   *   - generator throw + distinct accepted successor owner → 같은 execution에서 다음 대화 진입.
+   *   - generator throw + successor owner 증거 없음 → status="error" → loop 종료.
    *   - 외부에서 status="interrupted" 박힘 (cancelTask) → loop 종료.
    *
    * codex_adapter는 같은 인스턴스에서 연속 turn 호출 안전 (concurrent 가드는 turn 종료 시
@@ -1227,7 +1228,24 @@ export class TaskExecutor {
           this.collectClaudeRuntimeTaskFollowup(task, event);
         }
       } catch (err) {
-        await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
+        await task.interruptRequest;
+        const disposition = await this.engineFailureRecovery.recoverFromExecuteFailure(
+          task,
+          err,
+          currentTurnIntervention,
+        );
+        if (disposition === "continue_with_accepted_successor") {
+          if (turnReceipt) await turnReceipt.consume(task);
+          const transition = resolveTurnLoopTransition(task, agent);
+          if (transition.kind === "continue") {
+            turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+              task,
+              agent,
+              transition.intervention,
+            );
+            continue;
+          }
+        }
         break;
       }
       try {

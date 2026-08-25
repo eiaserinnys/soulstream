@@ -1,11 +1,15 @@
 import type { Logger } from "pino";
 
-import type { Task } from "./task_models.js";
+import type { InterventionMessage, Task } from "./task_models.js";
 import { recordTerminationHint } from "./task_termination.js";
 
 export interface TaskEngineFailureRecoveryDeps {
   logger: Logger;
 }
+
+export type ExecuteFailureDisposition =
+  | "continue_with_accepted_successor"
+  | "stop_on_error";
 
 /**
  * Owns recovery after engine execution genuinely fails before or while draining a turn.
@@ -18,14 +22,32 @@ export interface TaskEngineFailureRecoveryDeps {
 export class TaskEngineFailureRecovery {
   constructor(private readonly deps: TaskEngineFailureRecoveryDeps) {}
 
-  async recoverFromExecuteFailure(task: Task, err: unknown): Promise<void> {
+  async recoverFromExecuteFailure(
+    task: Task,
+    err: unknown,
+    activeIntervention?: InterventionMessage,
+  ): Promise<ExecuteFailureDisposition> {
     const message = this.errorMessage(err);
+    const successorOwner = distinctAcceptedSuccessorOwner(task, activeIntervention);
+    if (task.status === "running" && successorOwner !== undefined) {
+      this.deps.logger.info(
+        {
+          sessionId: task.agentSessionId,
+          activeOwner: interventionOwner(activeIntervention) ?? "initial_prompt",
+          successorOwner,
+          interruptedTurnDetail: message,
+        },
+        "active turn yielded to an accepted conversation entry",
+      );
+      return "continue_with_accepted_successor";
+    }
     this.deps.logger.warn(
       { err, sessionId: task.agentSessionId },
       "engine.execute drain threw",
     );
 
     this.recordError(task, message, { overwriteNonRunning: false });
+    return "stop_on_error";
   }
 
   async recoverFromOuterExecutionFailure(task: Task, err: unknown): Promise<void> {
@@ -53,4 +75,18 @@ export class TaskEngineFailureRecovery {
     task.status = "error";
     task.error = message;
   }
+}
+
+function distinctAcceptedSuccessorOwner(
+  task: Task,
+  activeIntervention: InterventionMessage | undefined,
+): string | undefined {
+  const successorOwner = interventionOwner(task.interventionQueue[0]);
+  if (successorOwner === undefined) return undefined;
+  const activeOwner = interventionOwner(activeIntervention);
+  return successorOwner !== activeOwner ? successorOwner : undefined;
+}
+
+function interventionOwner(message: InterventionMessage | undefined): string | undefined {
+  return message?.runnerInterventionId ?? message?.deliveryId;
 }
