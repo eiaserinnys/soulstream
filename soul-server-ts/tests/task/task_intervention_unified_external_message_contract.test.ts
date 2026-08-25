@@ -61,7 +61,7 @@ describe("universal external-message routing contract", () => {
     expect(
       violations,
       `universal route violations (${MUTATION ?? "baseline"}): `
-        + `${JSON.stringify(violations)}\n${JSON.stringify(observed, null, 2)}`,
+        + JSON.stringify(violations),
     ).toEqual([]);
   });
 });
