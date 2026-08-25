@@ -58,6 +58,7 @@ interface Recorded {
 function makeReceipt(
   message: InterventionMessage,
   transcriptReceipt?: { inspect: ReturnType<typeof vi.fn> },
+  requiresClaudeInputProof?: boolean,
 ): Recorded {
   const recordTurnStarted = vi.fn(async () => true);
   const recordConsumed = vi.fn(async () => undefined);
@@ -66,6 +67,10 @@ function makeReceipt(
   // guard must compile and run on both sides of that commit.
   const ctorArgs: unknown[] = [{ recordTurnStarted, recordConsumed }, message];
   if (transcriptReceipt) ctorArgs.push(transcriptReceipt);
+  // The production selector owns this flag and always passes false for Codex.
+  // Without it the constructor default ("reader present => Claude proof") makes
+  // this direct guard model a path TaskExecutor never takes for a Codex turn.
+  if (requiresClaudeInputProof !== undefined) ctorArgs.push(requiresClaudeInputProof);
   const Ctor = TaskDeliveryTurnReceipt as unknown as new (
     ...args: unknown[]
   ) => TaskDeliveryTurnReceipt;
@@ -179,7 +184,7 @@ describe("C2 review gate: shared turn receipt preserves Codex consumption", () =
     // reader regardless of backend. A Codex turn must not be routed into the
     // Claude proof path, so an "absent" Claude proof must not suppress it.
     const reader = makeAbsentProofReader();
-    const { recordTurnStarted, recordConsumed, receipt } = makeReceipt(message, reader);
+    const { recordTurnStarted, recordConsumed, receipt } = makeReceipt(message, reader, false);
     await receipt.observe(task, metadataEvent);
     await receipt.observe(task, assistantEvent);
     await receipt.observe(task, resultEvent);
@@ -213,7 +218,7 @@ describe("C2 review gate: shared turn receipt preserves Codex consumption", () =
     expect(effectiveTaskBackend(task, claudeProfile)).toBe("codex");
 
     const reader = makeAbsentProofReader();
-    const { recordTurnStarted, recordConsumed, receipt } = makeReceipt(message, reader);
+    const { recordTurnStarted, recordConsumed, receipt } = makeReceipt(message, reader, false);
     await receipt.observe(task, metadataEvent);
     await receipt.observe(task, assistantEvent);
     await receipt.consume(task);
