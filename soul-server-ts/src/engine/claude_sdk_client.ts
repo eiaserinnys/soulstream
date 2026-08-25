@@ -396,11 +396,18 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
-    void input;
-    return {
-      status: "not_supported",
-      message: "Claude live steering uses interruptActiveTurnForSteer",
-    };
+    const persistent = this.persistentSession;
+    if (!persistent) {
+      return {
+        status: "not_supported",
+        message: "Claude native intervention requires a persistent session",
+      };
+    }
+    const result = await persistent.steerActiveTurn(input);
+    if (result.status === "delivered") {
+      this.toolPermissionController.abortPendingInputRequests();
+    }
+    return result;
   }
 
   async close(

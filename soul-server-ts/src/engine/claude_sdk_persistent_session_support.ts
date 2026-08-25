@@ -35,6 +35,8 @@ export interface ClaudeSdkPersistentSessionConfig {
 
 export type ActiveForeground = {
   uuid: string;
+  /** Owner captured immediately before a native intervention interrupts it. */
+  interruptedOwnerUuid?: string;
   output: EventQueue<ClaudeClientEvent>;
   interruptResultTimer: ReturnType<typeof setTimeout> | null;
   timedOut: boolean;
@@ -65,11 +67,16 @@ export function provableTurnResultOwner(
   // Result of our sole interrupting foreground can inherit local ownership.
   if (phase !== "interrupting" || !active) return null;
   if (asString(asRecord(message.origin)?.kind) === "task-notification") return null;
+  const ownerUuid = active.interruptedOwnerUuid ?? active.uuid;
   logger.info(
-    { activeForegroundUuid: active.uuid, resultUuid: asString(message.uuid) },
+    {
+      activeForegroundUuid: active.uuid,
+      interruptedOwnerUuid: ownerUuid,
+      resultUuid: asString(message.uuid),
+    },
     "Correlating Claude Result without user_message_uuid to the interrupted turn",
   );
-  return active.uuid;
+  return ownerUuid;
 }
 
 export function isExpectedInterruptDiagnostic(event: ClaudeClientEvent): boolean {

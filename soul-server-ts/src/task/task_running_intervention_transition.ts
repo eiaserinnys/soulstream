@@ -10,12 +10,14 @@ import type {
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { InterventionMessage, Task } from "./task_models.js";
+import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import {
   buildInterventionSentEvent,
   publishInterventionSent,
 } from "./task_intervention_events.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
+import { interventionTurnOrigin } from "./turn_origin.js";
 
 export type RunningInterventionResult =
   | { delivered: true }
@@ -241,7 +243,15 @@ export class RunningInterventionTransition {
         message: "Task runner engine is unavailable",
       };
     }
-    const input = composeInterventionTurnPrompt(message);
+    const composed = composeInterventionTurnPrompt(message);
+    const inputUuid = message.deliveryId
+      ? buildDeliveryInputUuid(message.deliveryId)
+      : undefined;
+    const input = {
+      ...composed,
+      ...(inputUuid ? { inputUuid } : {}),
+      turnOrigin: interventionTurnOrigin(message, inputUuid),
+    };
     try {
       if (usesDurableRunnerInterventionInbox(task)) {
         if (!runner?.dispatcher.applyIntervention) {

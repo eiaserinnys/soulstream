@@ -51,6 +51,10 @@ export type ClaudePermissionMode = (typeof CLAUDE_PERMISSION_MODES)[number];
 export interface EngineUserInput {
   prompt: string;
   imageAttachmentPaths?: string[];
+  /** Stable durable-delivery identity forwarded to a long-lived engine input stream. */
+  inputUuid?: string;
+  /** Producer identity retained when a live intervention becomes the next engine turn. */
+  turnOrigin?: TurnOrigin;
 }
 
 export type TurnOriginKind =

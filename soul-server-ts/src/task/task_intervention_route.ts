@@ -10,7 +10,6 @@ import {
   type InterventionMessage,
   type Task,
 } from "./task_models.js";
-import type { DeliveryIntent } from "./delivery_contract.js";
 import type {
   RunningInterventionResult,
   RunningInterventionTransition,
@@ -19,7 +18,6 @@ import type {
   DeliveryLedgerAdmission,
   TaskDeliveryLedgerGate,
 } from "./task_delivery_ledger_gate.js";
-import { decideNotificationDelivery } from "./delivery_policy.js";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
 import { isExecutionOwnershipConflictError } from "./execution_ownership.js";
@@ -98,7 +96,7 @@ export interface TaskInterventionRouteDeps {
   rememberTask(task: Task): void;
   runningInterventionTransition: Pick<
     RunningInterventionTransition,
-    "deliver" | "queueOnly"
+    "deliver"
   >;
   autoResumeTransition: Pick<AutoResumeTransition, "resume">;
   deliveryLedgerGate?: Pick<
@@ -221,33 +219,8 @@ export class TaskInterventionRoute {
         );
       }
       const isRunning = taskRoute === "running";
-      const notificationDecision =
-        admission.kind === "admitted" &&
-        isNotificationIntent(message.deliveryIntent)
-          ? decideNotificationDelivery(
-              "pending",
-              isRunning ? "generating" : "terminal",
-            )
-          : undefined;
       let result: AddInterventionResult;
-      if (isRunning && admission.kind === "admitted") {
-        if (notificationDecision?.action === "queue_only") {
-          result = await this.deps.runningInterventionTransition.queueOnly(
-            task,
-            message,
-            { publishEvent: false },
-          );
-          notificationDisposition = "queued";
-        } else if (message.deliveryIntent === "human_live_steer") {
-          result = await this.deps.runningInterventionTransition.deliver(
-            task,
-            message,
-            { queueIfUndelivered: request.queueIfRunning ?? true },
-          );
-        } else {
-          result = await this.deps.runningInterventionTransition.queueOnly(task, message);
-        }
-      } else if (isRunning) {
+      if (isRunning) {
         result = await this.deps.runningInterventionTransition.deliver(task, message, {
           queueIfUndelivered: request.queueIfRunning ?? true,
         });
@@ -255,7 +228,10 @@ export class TaskInterventionRoute {
         const deferResumeUntilQueued: StartExecutionCallback = (resumedTask) => {
           deferredResumeTask = resumedTask;
         };
-        if (notificationDecision?.action === "resume_next_turn") {
+        if (
+          message.deliveryIntent === "completion_notification"
+          || message.deliveryIntent === "runtime_followup"
+        ) {
           result = await this.deps.autoResumeTransition.resume(
             task,
             message,
@@ -279,6 +255,19 @@ export class TaskInterventionRoute {
         }
       } else {
         result = await this.deps.autoResumeTransition.resume(task, message, onResume);
+      }
+      if (
+        admission.kind === "admitted"
+        && (
+          message.deliveryIntent === "completion_notification"
+          || message.deliveryIntent === "runtime_followup"
+        )
+      ) {
+        notificationDisposition = "autoResumed" in result
+          ? "auto_resume"
+          : "queued" in result && result.queued
+            ? "queued"
+            : undefined;
       }
       if (this.deps.deliveryLedgerGate) {
         await this.deps.deliveryLedgerGate.recordResult(
@@ -476,10 +465,4 @@ function hydrateStoredDeliveryMessage(
     storedDeliveryPayload: row.payload,
     storedDeliveryPayloadHash: row.payload_hash,
   };
-}
-
-function isNotificationIntent(
-  intent: DeliveryIntent | undefined,
-): intent is "completion_notification" | "runtime_followup" {
-  return intent === "completion_notification" || intent === "runtime_followup";
 }
