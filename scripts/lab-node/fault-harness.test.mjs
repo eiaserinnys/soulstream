@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
+import { EvidenceRecorder } from "./fault-harness-evidence.mjs";
 import { MUTATION_COVERAGE } from "./fault-harness-mutation.mjs";
+import {
+  classifyHarnessStatus,
+  preflightRefusalReasons,
+} from "./fault-scenario-result.mjs";
 import { canonicalScenarioOrder } from "./fault-scenarios.mjs";
 import {
   assertMatchingProvenance,
+  assertFetchRefspecCoversMain,
+  LabRuntime,
   runnerOperationSnapshots,
 } from "./fault-harness-runtime.mjs";
 import {
@@ -63,6 +73,80 @@ test("lab verdict refuses a bundle built from a different checkout", () => {
     () => assertMatchingProvenance("b02adf1c", "8470285a"),
     /lab provenance mismatch: bundle b02adf1c != checkout 8470285a/,
   );
+  assert.doesNotThrow(() => assertFetchRefspecCoversMain([
+    "+refs/heads/*:refs/remotes/origin/*",
+  ]));
+  assert.throws(
+    () => assertFetchRefspecCoversMain([
+      "+refs/heads/lab-node:refs/remotes/origin/lab-node",
+    ]),
+    /does not fetch origin\/main/,
+  );
+});
+
+test("intervention acceptance uses the explicit 60 second deadline", async () => {
+  const runtime = new LabRuntime({
+    LAB_ROOT: "/home/eias/services/soulstream-lab",
+    LAB_REPO: "/home/eias/services/soulstream-lab/repo",
+    LAB_ORCH_PORT: "5300",
+    LAB_NODE_PORT: "3116",
+    LAB_POSTGRES_CONTAINER: "soulstream-lab-postgres",
+    LAB_POSTGRES_DB: "soulstream_lab",
+    LAB_POSTGRES_USER: "soulstream_lab",
+    LAB_AUTH_BEARER_TOKEN: "test-token",
+    LAB_INTERVENTION_ACCEPTANCE_TIMEOUT_MS: "60000",
+  });
+  runtime.postJson = async (...args) => args;
+  const call = await runtime.intervene("session-a", { text: "hello" });
+  assert.equal(call[2], 60_000);
+});
+
+test("preflight refuses invariant, central-state, ownership, and runner residue", () => {
+  assert.deepEqual(preflightRefusalReasons({
+    violations: [],
+    nonterminalSessions: [],
+    openOwnerships: [],
+    runnerProcesses: [],
+  }), []);
+  assert.deepEqual(preflightRefusalReasons({
+    violations: [{ invariant: "runner_terminal_projection", count: 1 }],
+    nonterminalSessions: [{ session_id: "old", status: "running" }],
+    openOwnerships: [{ session_id: "old", ownership_generation: 2 }],
+    runnerProcesses: [{ pid: 42 }],
+  }), [
+    "invariant:runner_terminal_projection",
+    "nonterminal_session:old:running",
+    "open_ownership:old:2",
+    "runner_process:42",
+  ]);
+});
+
+test("top-level status separates new violations from harness errors", () => {
+  assert.equal(classifyHarnessStatus({ fatalFailure: { message: "boom" } }),
+    "failed_harness_error");
+  assert.equal(classifyHarnessStatus({ failureCount: 1 }), "failed_new_violation");
+  assert.equal(classifyHarnessStatus({ inconclusiveCount: 1 }), "inconclusive");
+  assert.equal(classifyHarnessStatus({}), "passed");
+});
+
+test("result evidence records the exact checkout, bundle, origin main, and refspec", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lab-evidence-provenance-"));
+  try {
+    const provenance = {
+      checkoutCommit: "a".repeat(40),
+      bundleSourceCommit: "a".repeat(40),
+      originMainCommit: "b".repeat(40),
+      fetchRefspecs: ["+refs/heads/*:refs/remotes/origin/*"],
+      releaseManifestId: "sha256-release",
+      releaseCohortId: "sha256-cohort",
+    };
+    const recorder = new EvidenceRecorder({}, "run", directory, provenance);
+    await recorder.finish({ status: "passed" });
+    const result = JSON.parse(await readFile(join(directory, "result.json"), "utf8"));
+    assert.deepEqual(result.provenance, provenance);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("auto-resume oracle rejects response loss, duplicate consumption, and runner replacement", () => {

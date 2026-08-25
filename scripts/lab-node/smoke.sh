@@ -14,7 +14,7 @@ mkdir -p "$state_dir"
 create_response="$state_dir/create.json"
 timeline_response="$state_dir/timeline.json"
 intervene_response="$state_dir/intervene.json"
-timeout_seconds="${LAB_SMOKE_TIMEOUT_SECONDS:-600}"
+timeout_seconds="${LAB_SMOKE_TIMEOUT_SECONDS:-$LAB_INTERVENTION_ACCEPTANCE_SECONDS}"
 
 curl -fsS \
   -H "Authorization: Bearer $LAB_AUTH_BEARER_TOKEN" \

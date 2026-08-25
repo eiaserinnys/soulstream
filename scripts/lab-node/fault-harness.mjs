@@ -7,6 +7,10 @@ import {
 } from "./fault-harness-mutation.mjs";
 import { LabRuntime } from "./fault-harness-runtime.mjs";
 import {
+  classifyHarnessStatus,
+  preflightRefusalReasons,
+} from "./fault-scenario-result.mjs";
+import {
   canonicalScenarioOrder,
   runCanonicalScenario,
 } from "./fault-scenarios.mjs";
@@ -16,21 +20,53 @@ const invokeTrafficCycles = bindHarnessBoundary(runTrafficCycles);
 
 const options = parseHarnessArguments(process.argv.slice(2));
 const runtime = new LabRuntime();
-await runtime.assertProvenance();
+const provenance = await runtime.assertProvenance();
+const recorder = await runtime.createRun(runLabel(options), provenance);
+await recorder.event("harness_started", { options, provenance });
+const invariantPreflight = await recorder.invariant("preflight");
+const residue = await runtime.fixtureResidue();
+const preflight = {
+  violations: invariantPreflight.violations,
+  ...residue,
+};
+const preflightReasons = preflightRefusalReasons(preflight);
+await recorder.event("preflight_checked", { preflight, preflightReasons });
+
+if (preflightReasons.length > 0) {
+  const summary = await recorder.finish({
+    command: options.command,
+    status: "refused_dirty_baseline",
+    preflight,
+    preflightReasons,
+    failureCount: 0,
+    inconclusiveCount: 0,
+  });
+  process.stdout.write(`${JSON.stringify({
+    status: summary.status,
+    runId: summary.runId,
+    evidenceDirectory: recorder.directory,
+    preflightReasons,
+  }, null, 2)}\n`);
+  process.exit(1);
+}
 
 if (options.command === "mutation") {
   // Runs before the stack has to be healthy: it only needs the database and
   // the release manifest, and a lab too broken to serve a session is exactly
   // when you want to know whether the judges still work.
   const mutationResults = await runMutationGate(runtime);
-  process.exitCode = reportMutationGate(mutationResults) ? 0 : 1;
-  process.exit(process.exitCode);
+  const passed = reportMutationGate(mutationResults);
+  await recorder.finish({
+    command: options.command,
+    status: passed ? "passed" : "failed",
+    mutationResults,
+    failureCount: passed ? 0 : 1,
+    inconclusiveCount: 0,
+  });
+  process.exit(passed ? 0 : 1);
 }
 
 await runtime.assertReady();
-const recorder = await runtime.createRun(runLabel(options));
-await recorder.event("harness_started", { options });
-
 const scenarioResults = [];
 let cycleResults = [];
 let fatalFailure;
@@ -59,8 +95,6 @@ const allResults = [...scenarioResults, ...cycleResults];
 // A scenario that could not establish its injection window proves nothing. It
 // is not a failure, but it must never read as coverage either.
 const skipped = allResults.filter((result) => result.status === "skipped_precondition");
-// Started from a red lab, so the verdict subtracted a violation that was
-// already there. Reported apart from both passes and failures: it is neither.
 const INCONCLUSIVE_STATUSES = new Set([
   "inconclusive_dirty_baseline",
   "inconclusive_timing_window",
@@ -75,9 +109,11 @@ const failures = allResults.filter((result) => (
 ));
 const summary = await recorder.finish({
   command: options.command,
-  status: fatalFailure || failures.length > 0
-    ? "failed"
-    : (inconclusive.length > 0 ? "inconclusive" : "passed"),
+  status: classifyHarnessStatus({
+    fatalFailure,
+    failureCount: failures.length,
+    inconclusiveCount: inconclusive.length,
+  }),
   fatalFailure,
   scenarioResults,
   cycleResults,

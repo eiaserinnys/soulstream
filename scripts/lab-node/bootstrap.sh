@@ -7,6 +7,7 @@ source "$SCRIPT_DIR/common.sh"
 
 require_command docker
 require_command flock
+require_command git
 require_command node
 require_command openssl
 require_command pnpm
@@ -41,6 +42,7 @@ if [[ ! -f "$LAB_ENV_FILE" ]]; then
 fi
 
 load_lab_env
+ensure_main_fetch_refspec "$LAB_REPO"
 mkdir -p \
   "$LAB_ROOT/state" \
   "$LAB_ROOT/logs" \

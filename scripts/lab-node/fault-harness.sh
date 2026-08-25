@@ -8,5 +8,9 @@ source "$SCRIPT_DIR/common.sh"
 load_lab_env
 export LAB_ROOT
 export SOULSTREAM_HEAVY_LOCK_HELD=1
-exec flock -w 300 /tmp/soulstream-heavy-verify.lock \
-  timeout 1800s /usr/bin/node "$LAB_REPO/scripts/lab-node/fault-harness.mjs" "$@"
+export LAB_INTERVENTION_ACCEPTANCE_TIMEOUT_MS=$((LAB_INTERVENTION_ACCEPTANCE_SECONDS * 1000))
+harness_entry="$LAB_REPO/scripts/lab-node/fault-harness.mjs"
+run_with_process_group_ceiling \
+  "$LAB_HARNESS_PROCESS_CEILING_SECONDS" "$harness_entry" \
+  flock -w 300 /tmp/soulstream-heavy-verify.lock \
+  /usr/bin/node "$harness_entry" "$@"
