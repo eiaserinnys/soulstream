@@ -200,31 +200,14 @@ export class TaskInterventionRoute {
         const deferResumeUntilQueued: StartExecutionCallback = (resumedTask) => {
           deferredResumeTask = resumedTask;
         };
-        if (
-          message.deliveryIntent === "completion_notification"
-          || message.deliveryIntent === "runtime_followup"
-        ) {
-          result = await this.deps.autoResumeTransition.resume(
-            task,
-            message,
-            deferResumeUntilQueued,
-            { publishUserMessage: false },
-          );
-          notificationDisposition = "auto_resume";
-        } else if (admission.row.attempt_count > 0) {
-          result = await this.deps.autoResumeTransition.resume(
-            task,
-            message,
-            deferResumeUntilQueued,
-            { publishUserMessage: false },
-          );
-        } else {
-          result = await this.deps.autoResumeTransition.resume(
-            task,
-            message,
-            deferResumeUntilQueued,
-          );
-        }
+        result = await this.deps.autoResumeTransition.resume(
+          task,
+          message,
+          deferResumeUntilQueued,
+          ...(admission.row.attempt_count > 0
+            ? [{ publishUserMessage: false }]
+            : []),
+        );
       } else {
         result = await this.deps.autoResumeTransition.resume(task, message, onResume);
       }
