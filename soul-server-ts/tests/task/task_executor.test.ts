@@ -3218,7 +3218,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(pendingAfterTurnError).toBeUndefined();
   });
 
-  it("P1-3: turn 진행 중 intervention 도착 후 진짜 crash → error 분류하되 queued input 보존", async () => {
+  it("P1-3: owner 증거 없는 queued input과 진짜 crash는 error로 분류하고 보존", async () => {
     const mocks = makeMocks();
     const task = makeTask();
 
@@ -3247,6 +3247,56 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       ),
     );
     expect(skippedBroadcast).toBeUndefined();
+  });
+
+  it("accepted successor owner가 있으면 failed old turn 뒤 같은 execution에서 대화를 계속한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    let turnCount = 0;
+
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        turnCount += 1;
+        if (turnCount === 1) {
+          yield { type: "session", session_id: "thr-1" } as SSEEventPayload;
+          task.interventionQueue.push({
+            text: "correct the active work",
+            user: "u",
+            deliveryId: "delivery-successor-1",
+            runnerInterventionId: "delivery-successor-1",
+          });
+          throw new Error("aborted_streaming: read ECONNRESET");
+        }
+        expect(params.runnerInterventionId).toBe("delivery-successor-1");
+        yield {
+          type: "complete",
+          result: "continued in the same execution",
+          timestamp: 2,
+        } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const factory = vi.fn(() => engine);
+    const executor = new TaskExecutor(
+      factory,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(turnCount).toBe(2);
+    expect(task.status).toBe("completed");
+    expect(task.error).toBeUndefined();
+    expect(task.pendingTerminationHint).toBeUndefined();
+    expect(task.interventionQueue).toHaveLength(0);
   });
 
   it("turn 종료 시 interventionQueue 비어있으면 status=completed로 종료 (단일 turn 회귀)", async () => {
