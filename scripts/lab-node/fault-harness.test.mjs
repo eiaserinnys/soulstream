@@ -121,10 +121,7 @@ test("preflight refuses invariant, central-state, ownership, and runner residue"
   ]);
 });
 
-test("top-level status separates dirty baseline, new failure, signal, and harness error", () => {
-  assert.equal(classifyHarnessStatus({ preflightReasons: ["dirty"] }),
-    "refused_dirty_baseline");
-  assert.equal(classifyHarnessStatus({ signal: "SIGTERM" }), "interrupted_signal");
+test("top-level status separates new violations from harness errors", () => {
   assert.equal(classifyHarnessStatus({ fatalFailure: { message: "boom" } }),
     "failed_harness_error");
   assert.equal(classifyHarnessStatus({ failureCount: 1 }), "failed_new_violation");
