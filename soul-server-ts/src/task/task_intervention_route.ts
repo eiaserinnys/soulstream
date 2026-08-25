@@ -10,6 +10,7 @@ import {
   type InterventionMessage,
   type Task,
 } from "./task_models.js";
+import type { DeliveryIntent } from "./delivery_contract.js";
 import type {
   RunningInterventionResult,
   RunningInterventionTransition,

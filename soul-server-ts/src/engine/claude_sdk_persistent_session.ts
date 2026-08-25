@@ -430,7 +430,6 @@ export class ClaudeSdkPersistentSession {
     } else {
       const terminalEvents = this.eventMapper.mapResultMessage(message);
       for (const event of terminalEvents) {
-        if (phase === "interrupting" && isExpectedInterruptDiagnostic(event)) continue;
         if (active) {
           active.output.push(event);
         } else {
