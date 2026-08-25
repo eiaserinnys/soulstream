@@ -357,8 +357,16 @@ export class TaskExecutor {
               retryAt: err.retryAt,
               reason: err.reason,
             },
-            "Execution ownership conflict deferred to durable delivery recovery",
+            "Execution ownership conflict rejected before message delivery",
           );
+          await this.persistence.enqueueEvent(task.agentSessionId, {
+            type: "error",
+            message: "This message was not delivered because another runner owns the session.",
+            error_code: "execution_ownership_conflict",
+            fatal: false,
+            recoverable: true,
+            recovery_hint: "Retry the message if no response appears.",
+          } as SSEEventPayload);
           return;
         }
         this.executionOwnershipBackoff?.clear(task.agentSessionId);
