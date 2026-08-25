@@ -177,6 +177,20 @@ async function drain(
   return out;
 }
 
+async function drainFailure(
+  iterable: AsyncIterable<SSEEventPayload>,
+): Promise<{ events: SSEEventPayload[]; error: unknown }> {
+  const events: SSEEventPayload[] = [];
+  try {
+    for await (const event of iterable) {
+      events.push(event);
+    }
+    return { events, error: undefined };
+  } catch (error) {
+    return { events, error };
+  }
+}
+
 describe("CodexAppServerEngineAdapter", () => {
   it("logs each SSE MCP server excluded from the Codex backend", () => {
     const warn = vi.fn();
@@ -401,7 +415,7 @@ describe("CodexAppServerEngineAdapter", () => {
     const client = new FakeClient();
     client.rejectServerRequest.mockRejectedValueOnce(new Error("response write failed"));
     const { adapter } = makeAdapter(client);
-    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    const executionPromise = drainFailure(adapter.execute({ prompt: "hello" }));
     await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
 
     client.emitServerRequest({
@@ -410,12 +424,46 @@ describe("CodexAppServerEngineAdapter", () => {
       params: {},
     });
 
-    const events = await eventsPromise;
+    const { events, error } = await executionPromise;
     expect(events.at(-1)).toMatchObject({
       type: "error",
       message: "response write failed",
       fatal: true,
     });
+    expect(error).toEqual(new Error("response write failed"));
+  });
+
+  it("yields initialization failures once, then throws them to recovery", async () => {
+    const client = new FakeClient();
+    client.initialize.mockRejectedValueOnce(new Error("initialize failed"));
+    const { adapter } = makeAdapter(client);
+
+    const { events, error } = await drainFailure(adapter.execute({ prompt: "hello" }));
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "error",
+        message: "initialize failed",
+        fatal: true,
+      }),
+    ]);
+    expect(error).toEqual(new Error("initialize failed"));
+  });
+
+  it("yields client transport errors once, then throws them to recovery", async () => {
+    const { adapter, client } = makeAdapter();
+    const executionPromise = drainFailure(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    client.fail(new Error("transport failed"));
+
+    const { events, error } = await executionPromise;
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      message: "transport failed",
+      fatal: true,
+    });
+    expect(error).toEqual(new Error("transport failed"));
   });
 
   it("resumes existing thread without emitting a duplicate session event", async () => {
@@ -520,17 +568,18 @@ describe("CodexAppServerEngineAdapter", () => {
 
   it("transport close during execute yields fatal error and close() is idempotent", async () => {
     const { adapter, client } = makeAdapter();
-    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    const executionPromise = drainFailure(adapter.execute({ prompt: "hello" }));
     await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
 
     client.closeWith(new Error("process exited"));
 
-    const events = await eventsPromise;
+    const { events, error } = await executionPromise;
     expect(events.at(-1)).toMatchObject({
       type: "error",
       message: "process exited",
       fatal: true,
     });
+    expect(error).toEqual(new Error("process exited"));
 
     await adapter.close();
     await adapter.close();

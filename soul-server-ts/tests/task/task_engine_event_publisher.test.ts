@@ -259,22 +259,25 @@ describe("TaskEngineEventPublisher", () => {
     expect(task.terminationReason).toBeUndefined();
   });
 
-  it("records fatal error as error_aborted hint before finalizer runs", async () => {
+  it("publishes duplicate fatal errors without mutating session failure state", async () => {
     const deps = makePublisherDeps();
     const publisher = new TaskEngineEventPublisher(deps);
-    const task = makeTask();
-
-    await publisher.publishEngineEvent(task, {
+    const task = makeTask({ result: "completed result" });
+    const event = {
       type: "error",
       message: "backend died",
       error_code: "provider_shutdown",
       timestamp: 2,
-    } as unknown as SSEEventPayload);
+    } as unknown as SSEEventPayload;
 
-    expect(task.status).toBe("error");
-    expect(task.error).toBe("backend died");
-    expect(task.pendingTerminationHint).toBe("error_aborted");
-    expect(task.pendingTerminationDetail).toBe("provider_shutdown");
+    await publisher.publishEngineEvent(task, event);
+    await publisher.publishEngineEvent(task, event);
+
+    expect(task.status).toBe("running");
+    expect(task.error).toBeUndefined();
+    expect(task.result).toBe("completed result");
+    expect(task.pendingTerminationHint).toBeUndefined();
+    expect(task.pendingTerminationDetail).toBeUndefined();
     expect(task.terminationReason).toBeUndefined();
   });
 

@@ -36,12 +36,13 @@ function makeRecovery() {
 describe("TaskEngineFailureRecovery", () => {
   it("records engine errors on running tasks", async () => {
     const { recovery } = makeRecovery();
-    const task = makeTask();
+    const task = makeTask({ result: "stale success" });
 
     await recovery.recoverFromExecuteFailure(task, new Error("engine boom"));
 
     expect(task.status).toBe("error");
     expect(task.error).toBe("engine boom");
+    expect(task.result).toBeUndefined();
     expect(task.pendingTerminationHint).toBe("error_aborted");
     expect(task.pendingTerminationDetail).toBe("engine boom");
   });
@@ -94,6 +95,7 @@ describe("TaskEngineFailureRecovery", () => {
     const task = makeTask({
       status: "interrupted",
       error: "already interrupted",
+      result: "stale success",
       interventionQueue: [{ text: "pending", user: "u" }],
     });
 
@@ -101,6 +103,7 @@ describe("TaskEngineFailureRecovery", () => {
 
     expect(task.status).toBe("error");
     expect(task.error).toBe("prepare boom");
+    expect(task.result).toBeUndefined();
     expect(task.pendingTerminationHint).toBe("error_aborted");
     expect(task.pendingTerminationDetail).toBe("prepare boom");
     expect(task.interventionQueue).toEqual([{ text: "pending", user: "u" }]);
@@ -111,5 +114,18 @@ describe("TaskEngineFailureRecovery", () => {
       },
       "Task execution threw outside event stream",
     );
+  });
+
+  it("records synthesized fatal failures through the same terminal owner", () => {
+    const { recovery } = makeRecovery();
+    const task = makeTask({ result: "stale success" });
+
+    recovery.recoverFromSynthesizedFailure(task, "runtime stalled");
+
+    expect(task.status).toBe("error");
+    expect(task.error).toBe("runtime stalled");
+    expect(task.result).toBeUndefined();
+    expect(task.pendingTerminationHint).toBe("error_aborted");
+    expect(task.pendingTerminationDetail).toBe("runtime stalled");
   });
 });
