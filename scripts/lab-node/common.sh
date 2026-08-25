@@ -266,6 +266,7 @@ NODE
     if grep -Fxq "$name" <<<"$references"; then
       continue
     fi
+    chmod u+w -- "$release"
     rm -rf -- "$release"
     removed=$((removed + 1))
   done < <(find "$releases_root" -mindepth 1 -maxdepth 1 -type d -name 'sha256-*' -print0)
