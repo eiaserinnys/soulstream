@@ -9,9 +9,7 @@
  *   - pending_folder_id (folder 배정은 B-4 후속 PR-B 범위)
  *
  * B-4 추가 필드 (분석 캐시 `20260517-1410-codex-ts-folder-resume-intervene.md` §D):
- *   - interventionQueue: live delivery 미지원/idle-race/terminal auto-resume에서 turn 사이
-   *     큐잉되는 사용자 메시지. claude `task_models.py` intervention_queue(asyncio.Queue)
-   *     정본의 fallback queue 의미와 동등.
+ *   - interventionQueue: 세션 대화 창구가 받아들인 메시지를 전달 완료까지 보존하는 큐.
  */
 
 import type { ContextItem } from "../context/prompt_assembler.js";
@@ -61,8 +59,8 @@ export type PendingTerminationHint = Exclude<
 >;
 
 /**
- * 사용자가 turn 사이에 보내는 개입 메시지. claude `task_manager.py:603-608`의 message dict와
- * *키 동등* (wire payload에 그대로 운반 가능).
+ * 진행 중인 대화에 들어오는 메시지. 세션 생성·재개와 동등한 대화 진입점이며,
+ * claude `task_manager.py:603-608`의 message dict와 *키 동등*이다.
  */
 export interface InterventionMessage {
   text: string;
@@ -431,9 +429,8 @@ export interface Task {
   hydratedFromDb?: boolean;
 
   /**
-   * Turn 사이 큐잉되는 개입 메시지 (B-4, claude `task_manager.py:603-609`의 asyncio.Queue
-   * 정본 fallback과 의미 동등). live delivery 미지원/idle-race/terminal auto-resume이면
-   * turn 종료 후 dequeue → 다음 turn으로 자동 진입.
+   * 수용된 개입 메시지의 전달 보존 큐 (B-4, claude `task_manager.py:603-609`의
+   * asyncio.Queue 정본과 의미 동등). 큐는 개입을 예외나 실패로 바꾸지 않는다.
    *
    * 단일 process·단일 task_manager Map이라 별도 mutex 불요 — async await 경계만 정합.
    */

@@ -38,12 +38,6 @@ type NotificationPublication = Awaited<
 export type AddInterventionResult =
   | RunningInterventionResult
   | { autoResumed: true }
-  | {
-      delivered: false;
-      deferred: true;
-      retryWhen: "terminal_state";
-      reason: "terminal_only_policy";
-    }
   | { suppressed: true; deliveryId: string; reason: string };
 
 /** addIntervention이 받는 메시지. dispatcher가 wire payload에서 조립. */
@@ -64,8 +58,6 @@ export interface AddInterventionParams {
   callerTurnId?: string;
   deliveryCreatedAt?: string;
   deliveryLeaseOwner?: string;
-  /** Durable delayed retry due time. Internal ledger scheduling metadata. */
-  deliveryNextAttemptAt?: string;
   followupAttempt?: number;
   followupKey?: string;
   followupTaskIds?: string[];
@@ -78,8 +70,6 @@ export interface AddInterventionParams {
    * the caller can keep its durable store active and retry later.
    */
   queueIfRunning?: boolean;
-  /** Delayed retries must use the terminal auto-resume path, never live steering. */
-  onlyIfTerminal?: boolean;
 }
 
 /**
@@ -105,7 +95,7 @@ export interface TaskInterventionRouteDeps {
     "admit" | "beginDispatch" | "recordResult" | "recordFailure"
       | "recordNotificationPublished" | "recordNotificationFailure"
       | "recordReservationRetry"
-  >;
+  > & Partial<Pick<TaskDeliveryLedgerGate, "reserveRetry">>;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
 }
 
@@ -127,12 +117,10 @@ export class TaskInterventionRoute {
     const request = this.deps.deliveryLedgerGate
       ? ensureHumanDeliveryIdentity(params)
       : params;
-    // Human sends must prove local ownership before the first ledger write.
-    // Durable completion/runtime retries keep their existing admission-first
-    // suppression: a consumed semantic relation is final even without a task.
-    let task = request.deliveryIntent === "human_live_steer"
-      ? await this.resolveTask(params.agentSessionId)
-      : undefined;
+    // Every session-directed message enters through the same ownership check.
+    // Producer intent affects durable identity and notification projection only,
+    // never whether an active conversation hears the message.
+    const task = await this.resolveTask(params.agentSessionId);
     const admission = this.deps.deliveryLedgerGate
       ? await this.deps.deliveryLedgerGate.admit(request)
       : { kind: "legacy" } as const;
@@ -165,7 +153,6 @@ export class TaskInterventionRoute {
         reason: admission.reason,
       };
     }
-    task ??= await this.resolveTask(params.agentSessionId);
     const message = admission.kind === "admitted"
       ? hydrateStoredDeliveryMessage(initialMessage, admission.row)
       : initialMessage;
@@ -185,22 +172,6 @@ export class TaskInterventionRoute {
     };
     try {
       await this.awaitInitializingTask(task);
-      if (request.onlyIfTerminal === true && !isTerminalTaskStatus(task.status)) {
-        const result = {
-          delivered: false,
-          deferred: true,
-          retryWhen: "terminal_state",
-          reason: "terminal_only_policy",
-        } as const;
-        if (this.deps.deliveryLedgerGate) {
-          await this.deps.deliveryLedgerGate.recordResult(
-            admission,
-            result,
-            request.deliveryNextAttemptAt,
-          );
-        }
-        return result;
-      }
       if (this.deps.deliveryLedgerGate) {
         const rechecked = await this.deps.deliveryLedgerGate.beginDispatch(
           admission,
@@ -274,7 +245,6 @@ export class TaskInterventionRoute {
         await this.deps.deliveryLedgerGate.recordResult(
           admission,
           result,
-          request.deliveryNextAttemptAt,
         );
         ledgerResultRecorded = true;
       }
@@ -367,6 +337,25 @@ export class TaskInterventionRoute {
       }
       throw err;
     }
+  }
+
+  /** Persist a delayed retry reservation; this is not a conversation entry. */
+  async reserveDeliveryRetry(
+    params: AddInterventionParams,
+    deliveryNextAttemptAt: string,
+  ): Promise<void> {
+    if (!this.deps.deliveryLedgerGate) return;
+    await this.resolveTask(params.agentSessionId);
+    const admission = await this.deps.deliveryLedgerGate.admit(params);
+    const reserveRetry = this.deps.deliveryLedgerGate.reserveRetry;
+    if (!reserveRetry) {
+      throw new Error("Delivery retry reservation capability is unavailable");
+    }
+    await reserveRetry.call(
+      this.deps.deliveryLedgerGate,
+      admission,
+      deliveryNextAttemptAt,
+    );
   }
 
   private async awaitInitializingTask(task: Task): Promise<void> {

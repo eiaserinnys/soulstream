@@ -50,10 +50,10 @@ export interface RunningInterventionTransitionDeps {
 }
 
 /**
- * Running task intervention transition.
+ * First-class conversation entry for a running task.
  *
- * Owns live delivery for engines that can accept input during a running turn,
- * then falls back to the queue policy for unsupported or unsafe boundary cases.
+ * Delivery failure may preserve an accepted message in the existing queue, but
+ * producer intent and backend never select a different conversation path.
  */
 export class RunningInterventionTransition {
   constructor(private readonly deps: RunningInterventionTransitionDeps) {}
@@ -129,7 +129,7 @@ export class RunningInterventionTransition {
         } catch (error) {
           // The caller asked not to queue, but an unconfirmed discard cannot be
           // allowed to leave a replay fence that permanently blocks the session.
-          // This exceptional path reports the durable fallback explicitly.
+          // An unconfirmed discard reports the durable preservation explicitly.
           const unknown = {
             status: "unknown",
             reason: "verdict_unknown",

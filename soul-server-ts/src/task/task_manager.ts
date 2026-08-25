@@ -461,12 +461,12 @@ export class TaskManager {
   }
 
   /**
-   * Turn 사이 개입 메시지 추가 (B-4, 분석 캐시
+   * 진행 중인 대화의 1급 진입점 (B-4, 분석 캐시
    * `20260517-1410-codex-ts-folder-resume-intervene.md` §D-3).
    *
  * Python `service/task_manager.py:563-642 add_intervention` 정본의 codex 적응판.
  *
- * 분기:
+ * 세션 상태 분기:
  *   - Running: `EnginePort.intervene()`가 백엔드별 전달 방식을 감춘다.
  *     현재 전달하면 `{delivered: true}`, 지금 전달할 수 없으면 사유와 다음 소비 시점을
  *     포함한 queue/defer 결과를 반환한다.
@@ -483,6 +483,17 @@ export class TaskManager {
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
     return await this.interventionRoute.addIntervention(params, onResume);
+  }
+
+  /** Persist retry timing without pretending that a message entered the conversation. */
+  async reserveInterventionRetry(
+    params: AddInterventionParams,
+    deliveryNextAttemptAt: string,
+  ): Promise<void> {
+    await this.interventionRoute.reserveDeliveryRetry(
+      params,
+      deliveryNextAttemptAt,
+    );
   }
 
   private async resolveNotificationTask(sessionId: string): Promise<Task | null> {
