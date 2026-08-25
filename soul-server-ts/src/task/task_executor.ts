@@ -29,6 +29,8 @@ import type {
 } from "../engine/protocol.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { ClaudeDeliveryTranscriptReceiptReader } from
+  "../engine/claude_delivery_transcript_receipt.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import {
@@ -189,6 +191,10 @@ export class TaskExecutor {
     transientEventLogAggregator?: TransientEventLogAggregator,
     private readonly executionOwnershipBackoff?: ExecutionOwnershipBackoff,
     executionOwnershipNodeId?: string,
+    private readonly deliveryTranscriptReceipt?: Pick<
+      ClaudeDeliveryTranscriptReceiptReader,
+      "inspect"
+    >,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -1190,9 +1196,10 @@ export class TaskExecutor {
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
       const turnReceipt = this.deliveryConsumption
-        ? new TaskDeliveryTurnReceipt(
+          ? new TaskDeliveryTurnReceipt(
             this.deliveryConsumption,
             currentTurnIntervention,
+            this.deliveryTranscriptReceipt,
           )
         : undefined;
       try {
