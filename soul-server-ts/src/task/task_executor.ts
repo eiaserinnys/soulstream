@@ -206,7 +206,6 @@ export class TaskExecutor {
       ...(transientEventLogAggregator ? { transientEventLogAggregator } : {}),
     });
     this.engineFailureRecovery = new TaskEngineFailureRecovery({
-      broadcaster,
       logger: this.logger,
     });
     this.initialMessagePublisher = new TaskInitialMessagePublisher({
