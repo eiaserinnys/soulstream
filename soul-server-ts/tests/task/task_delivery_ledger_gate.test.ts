@@ -438,7 +438,7 @@ describe("TaskDeliveryLedgerGate", () => {
     });
   });
 
-  it("reserves a terminal-only retry as pending at its due time", async () => {
+  it("reserves a delayed retry without dispatching a conversation message", async () => {
     const deliveryId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
     const retryLeasedDelivery = vi.fn().mockResolvedValue(row(deliveryId, "pending"));
     const gate = new TaskDeliveryLedgerGate(true, {
@@ -457,16 +457,13 @@ describe("TaskDeliveryLedgerGate", () => {
     });
     const dueAt = "2026-08-18T04:00:05.000Z";
 
-    await gate.recordResult({
+    await gate.reserveRetry({
       kind: "admitted",
       deliveryId,
       row: {
         ...row(deliveryId, "claimed"),
         lease_owner: "route-1",
       },
-    }, {
-      deferred: true,
-      reason: "terminal_only_policy",
     }, dueAt);
 
     expect(retryLeasedDelivery).toHaveBeenCalledWith(

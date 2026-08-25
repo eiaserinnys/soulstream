@@ -74,7 +74,7 @@ export interface ClaudeRuntimeScheduledFallback {
 }
 
 export interface ClaudeRuntimeTaskFollowupDeps {
-  taskManager: Pick<TaskManager, "addIntervention">;
+  taskManager: Pick<TaskManager, "addIntervention" | "reserveInterventionRetry">;
   onResume: StartExecutionCallback;
   releaseRetainedRunner(task: Task): Promise<void>;
   logger: Logger;
@@ -429,10 +429,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     task.pendingClaudeRuntimeFollowupRetry = false;
     try {
       const result = await this.deps.taskManager.addIntervention(
-        {
-          ...fallbackMessage,
-          onlyIfTerminal: this.deps.deliveryV2Enabled !== true,
-        },
+        fallbackMessage,
         this.deps.onResume,
       );
       if ("deferred" in result && result.deferred) {
@@ -455,23 +452,10 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     delayMs: number,
   ): Promise<void> {
     if (this.deps.deliveryV2Enabled !== true) return;
-    const result = await this.deps.taskManager.addIntervention(
-      {
-        ...fallbackMessage,
-        onlyIfTerminal: true,
-        deliveryNextAttemptAt: new Date(Date.now() + delayMs).toISOString(),
-      },
-      this.deps.onResume,
+    await this.deps.taskManager.reserveInterventionRetry(
+      fallbackMessage,
+      new Date(Date.now() + delayMs).toISOString(),
     );
-    if (
-      "deferred" in result
-      || "suppressed" in result
-      || "queued" in result
-      || "autoResumed" in result
-    ) {
-      return;
-    }
-    throw new Error("Runtime follow-up fallback reservation returned no durable disposition");
   }
 
   private isCurrentFallback(followupKey: string, token: symbol): boolean {

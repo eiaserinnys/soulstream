@@ -192,14 +192,15 @@ export async function claimRunnerInterventionExecution(
   command: Extract<RunnerCommandFrame, { kind: "execute" }>,
   outbox: RunnerSqliteEventOutbox,
 ): Promise<RunnerCommandResultFrame | null> {
-  const interventionId = command.params.runnerInterventionId;
-  if (!interventionId) return null;
-  if (await outbox.claimIntervention(interventionId, command.commandId)) return null;
+  const interventionIds = command.params.runnerInterventionIds
+    ?? (command.params.runnerInterventionId ? [command.params.runnerInterventionId] : []);
+  if (interventionIds.length === 0) return null;
+  if (await outbox.claimInterventions(interventionIds, command.commandId)) return null;
   return runnerCommandResultFrame(command.commandId, {
     status: "error",
     error: {
       code: "execute_intervention_claim_failed",
-      message: `runner intervention unavailable: ${interventionId}`,
+      message: `runner intervention unavailable: ${interventionIds.join(", ")}`,
     },
   });
 }

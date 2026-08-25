@@ -36,11 +36,12 @@ function makeController(
   recordInlineConsumed?: ReturnType<typeof vi.fn>,
 ) {
   const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+  const reserveInterventionRetry = vi.fn(async () => undefined);
   const onResume = vi.fn();
   const sleep = vi.fn(async () => undefined);
   const releaseRetainedRunner = vi.fn(async () => undefined);
   const controller = new ClaudeRuntimeTaskFollowupController({
-    taskManager: { addIntervention },
+    taskManager: { addIntervention, reserveInterventionRetry },
     onResume,
     logger: silentLogger,
     sleep,
@@ -50,7 +51,14 @@ function makeController(
       ? { recordInlineConsumed }
       : undefined,
   });
-  return { controller, addIntervention, onResume, sleep, releaseRetainedRunner };
+  return {
+    controller,
+    addIntervention,
+    reserveInterventionRetry,
+    onResume,
+    sleep,
+    releaseRetainedRunner,
+  };
 }
 
 describe("ClaudeRuntimeTaskFollowupController", () => {
@@ -595,7 +603,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(addIntervention.mock.calls[0]![0].followupKey).toBe("sess-1:task-a,task-b");
   });
 
-  it("fallback은 execution drain 뒤 5초를 기다려 terminal auto-resume route로 보낸다", async () => {
+  it("fallback은 execution drain 뒤 5초를 기다린 뒤 현재 세션 창구로 보낸다", async () => {
     const task = makeTask();
     task.executionPromise = Promise.resolve();
     const { controller, addIntervention, onResume, sleep } = makeController();
@@ -618,11 +626,11 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       expect.objectContaining({
         followupAttempt: 2,
         followupKey: "sess-1:task-1",
-        onlyIfTerminal: true,
         text: expect.stringContaining("빈 응답으로 끝났습니다"),
       }),
       onResume,
     );
+    expect(addIntervention.mock.calls[0]![0]).not.toHaveProperty("onlyIfTerminal");
     expect(sleep).toHaveBeenCalledWith(5_000);
     const text = addIntervention.mock.calls[0]![0].text;
     expect(text).toContain("원래 follow-up 지시");
@@ -689,9 +697,10 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
 
     expect(sleep).toHaveBeenCalledWith(30_000);
     expect(addIntervention).toHaveBeenCalledWith(
-      expect.objectContaining({ followupAttempt: 3, onlyIfTerminal: true }),
+      expect.objectContaining({ followupAttempt: 3 }),
       expect.any(Function),
     );
+    expect(addIntervention.mock.calls[0]![0]).not.toHaveProperty("onlyIfTerminal");
   });
 
   it("attempt 2와 3 retry는 부모 relation·delivery identity를 재사용하지 않는다", () => {
@@ -742,8 +751,9 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       releaseSleep = resolve;
     }));
     const addIntervention = vi.fn(async () => ({ autoResumed: true as const }));
+    const reserveInterventionRetry = vi.fn(async () => undefined);
     const controller = new ClaudeRuntimeTaskFollowupController({
-      taskManager: { addIntervention },
+      taskManager: { addIntervention, reserveInterventionRetry },
       onResume: vi.fn(),
       releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
@@ -775,8 +785,9 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       releaseSleep = resolve;
     }));
     const addIntervention = vi.fn(async () => ({ autoResumed: true as const }));
+    const reserveInterventionRetry = vi.fn(async () => undefined);
     const controller = new ClaudeRuntimeTaskFollowupController({
-      taskManager: { addIntervention },
+      taskManager: { addIntervention, reserveInterventionRetry },
       onResume: vi.fn(),
       releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
@@ -815,12 +826,13 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       releaseSleep = resolve;
     }));
     const addIntervention = vi.fn(async () => ({
-      deferred: true as const,
-      reason: "terminal_only_policy" as const,
+      queued: true as const,
+      queuePosition: 1,
     }));
+    const reserveInterventionRetry = vi.fn(async () => undefined);
     const recordPendingSuperseded = vi.fn().mockResolvedValue(true);
     const controller = new ClaudeRuntimeTaskFollowupController({
-      taskManager: { addIntervention },
+      taskManager: { addIntervention, reserveInterventionRetry },
       onResume: vi.fn(),
       releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
@@ -862,7 +874,8 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     releaseSleep();
     await scheduled.completed;
 
-    expect(addIntervention).toHaveBeenCalledTimes(1);
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(reserveInterventionRetry).toHaveBeenCalledOnce();
     expect(recordPendingSuperseded).toHaveBeenCalledWith(
       expect.objectContaining({
         deliveryIntent: "runtime_followup",
@@ -879,8 +892,9 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       releaseSleep = resolve;
     }));
     const addIntervention = vi.fn(async () => ({ autoResumed: true as const }));
+    const reserveInterventionRetry = vi.fn(async () => undefined);
     const controller = new ClaudeRuntimeTaskFollowupController({
-      taskManager: { addIntervention },
+      taskManager: { addIntervention, reserveInterventionRetry },
       onResume: vi.fn(),
       releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
@@ -905,6 +919,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     await scheduled.completed;
 
     expect(addIntervention).not.toHaveBeenCalled();
+    expect(reserveInterventionRetry).not.toHaveBeenCalled();
     expect(task.pendingClaudeRuntimeFollowupRetry).toBe(false);
   });
 });

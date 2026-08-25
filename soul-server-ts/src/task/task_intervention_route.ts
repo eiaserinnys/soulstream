@@ -19,7 +19,6 @@ import type {
   DeliveryLedgerAdmission,
   TaskDeliveryLedgerGate,
 } from "./task_delivery_ledger_gate.js";
-import { decideNotificationDelivery } from "./delivery_policy.js";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
 import { isExecutionOwnershipConflictError } from "./execution_ownership.js";
@@ -39,12 +38,6 @@ type NotificationPublication = Awaited<
 export type AddInterventionResult =
   | RunningInterventionResult
   | { autoResumed: true }
-  | {
-      delivered: false;
-      deferred: true;
-      retryWhen: "terminal_state";
-      reason: "terminal_only_policy";
-    }
   | { suppressed: true; deliveryId: string; reason: string };
 
 /** addIntervention이 받는 메시지. dispatcher가 wire payload에서 조립. */
@@ -65,8 +58,6 @@ export interface AddInterventionParams {
   callerTurnId?: string;
   deliveryCreatedAt?: string;
   deliveryLeaseOwner?: string;
-  /** Durable delayed retry due time. Internal ledger scheduling metadata. */
-  deliveryNextAttemptAt?: string;
   followupAttempt?: number;
   followupKey?: string;
   followupTaskIds?: string[];
@@ -79,8 +70,6 @@ export interface AddInterventionParams {
    * the caller can keep its durable store active and retry later.
    */
   queueIfRunning?: boolean;
-  /** Delayed retries must use the terminal auto-resume path, never live steering. */
-  onlyIfTerminal?: boolean;
 }
 
 /**
@@ -98,7 +87,7 @@ export interface TaskInterventionRouteDeps {
   rememberTask(task: Task): void;
   runningInterventionTransition: Pick<
     RunningInterventionTransition,
-    "deliver" | "queueOnly"
+    "deliver"
   >;
   autoResumeTransition: Pick<AutoResumeTransition, "resume">;
   deliveryLedgerGate?: Pick<
@@ -106,7 +95,7 @@ export interface TaskInterventionRouteDeps {
     "admit" | "beginDispatch" | "recordResult" | "recordFailure"
       | "recordNotificationPublished" | "recordNotificationFailure"
       | "recordReservationRetry"
-  >;
+  > & Partial<Pick<TaskDeliveryLedgerGate, "reserveRetry">>;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
 }
 
@@ -128,12 +117,10 @@ export class TaskInterventionRoute {
     const request = this.deps.deliveryLedgerGate
       ? ensureHumanDeliveryIdentity(params)
       : params;
-    // Human sends must prove local ownership before the first ledger write.
-    // Durable completion/runtime retries keep their existing admission-first
-    // suppression: a consumed semantic relation is final even without a task.
-    let task = request.deliveryIntent === "human_live_steer"
-      ? await this.resolveTask(params.agentSessionId)
-      : undefined;
+    // Every session-directed message enters through the same ownership check.
+    // Producer intent affects durable identity and notification projection only,
+    // never whether an active conversation hears the message.
+    const task = await this.resolveTask(params.agentSessionId);
     const admission = this.deps.deliveryLedgerGate
       ? await this.deps.deliveryLedgerGate.admit(request)
       : { kind: "legacy" } as const;
@@ -166,7 +153,6 @@ export class TaskInterventionRoute {
         reason: admission.reason,
       };
     }
-    task ??= await this.resolveTask(params.agentSessionId);
     const message = admission.kind === "admitted"
       ? hydrateStoredDeliveryMessage(initialMessage, admission.row)
       : initialMessage;
@@ -186,22 +172,6 @@ export class TaskInterventionRoute {
     };
     try {
       await this.awaitInitializingTask(task);
-      if (request.onlyIfTerminal === true && !isTerminalTaskStatus(task.status)) {
-        const result = {
-          delivered: false,
-          deferred: true,
-          retryWhen: "terminal_state",
-          reason: "terminal_only_policy",
-        } as const;
-        if (this.deps.deliveryLedgerGate) {
-          await this.deps.deliveryLedgerGate.recordResult(
-            admission,
-            result,
-            request.deliveryNextAttemptAt,
-          );
-        }
-        return result;
-      }
       if (this.deps.deliveryLedgerGate) {
         const rechecked = await this.deps.deliveryLedgerGate.beginDispatch(
           admission,
@@ -221,33 +191,8 @@ export class TaskInterventionRoute {
         );
       }
       const isRunning = taskRoute === "running";
-      const notificationDecision =
-        admission.kind === "admitted" &&
-        isNotificationIntent(message.deliveryIntent)
-          ? decideNotificationDelivery(
-              "pending",
-              isRunning ? "generating" : "terminal",
-            )
-          : undefined;
       let result: AddInterventionResult;
-      if (isRunning && admission.kind === "admitted") {
-        if (notificationDecision?.action === "queue_only") {
-          result = await this.deps.runningInterventionTransition.queueOnly(
-            task,
-            message,
-            { publishEvent: false },
-          );
-          notificationDisposition = "queued";
-        } else if (message.deliveryIntent === "human_live_steer") {
-          result = await this.deps.runningInterventionTransition.deliver(
-            task,
-            message,
-            { queueIfUndelivered: request.queueIfRunning ?? true },
-          );
-        } else {
-          result = await this.deps.runningInterventionTransition.queueOnly(task, message);
-        }
-      } else if (isRunning) {
+      if (isRunning) {
         result = await this.deps.runningInterventionTransition.deliver(task, message, {
           queueIfUndelivered: request.queueIfRunning ?? true,
         });
@@ -255,36 +200,34 @@ export class TaskInterventionRoute {
         const deferResumeUntilQueued: StartExecutionCallback = (resumedTask) => {
           deferredResumeTask = resumedTask;
         };
-        if (notificationDecision?.action === "resume_next_turn") {
-          result = await this.deps.autoResumeTransition.resume(
-            task,
-            message,
-            deferResumeUntilQueued,
-            { publishUserMessage: false },
-          );
-          notificationDisposition = "auto_resume";
-        } else if (admission.row.attempt_count > 0) {
-          result = await this.deps.autoResumeTransition.resume(
-            task,
-            message,
-            deferResumeUntilQueued,
-            { publishUserMessage: false },
-          );
-        } else {
-          result = await this.deps.autoResumeTransition.resume(
-            task,
-            message,
-            deferResumeUntilQueued,
-          );
-        }
+        result = await this.deps.autoResumeTransition.resume(
+          task,
+          message,
+          deferResumeUntilQueued,
+          ...(admission.row.attempt_count > 0
+            ? [{ publishUserMessage: false }]
+            : []),
+        );
       } else {
         result = await this.deps.autoResumeTransition.resume(task, message, onResume);
+      }
+      if (
+        admission.kind === "admitted"
+        && (
+          message.deliveryIntent === "completion_notification"
+          || message.deliveryIntent === "runtime_followup"
+        )
+      ) {
+        notificationDisposition = "autoResumed" in result
+          ? "auto_resume"
+          : "queued" in result && result.queued
+            ? "queued"
+            : undefined;
       }
       if (this.deps.deliveryLedgerGate) {
         await this.deps.deliveryLedgerGate.recordResult(
           admission,
           result,
-          request.deliveryNextAttemptAt,
         );
         ledgerResultRecorded = true;
       }
@@ -377,6 +320,25 @@ export class TaskInterventionRoute {
       }
       throw err;
     }
+  }
+
+  /** Persist a delayed retry reservation; this is not a conversation entry. */
+  async reserveDeliveryRetry(
+    params: AddInterventionParams,
+    deliveryNextAttemptAt: string,
+  ): Promise<void> {
+    if (!this.deps.deliveryLedgerGate) return;
+    await this.resolveTask(params.agentSessionId);
+    const admission = await this.deps.deliveryLedgerGate.admit(params);
+    const reserveRetry = this.deps.deliveryLedgerGate.reserveRetry;
+    if (!reserveRetry) {
+      throw new Error("Delivery retry reservation capability is unavailable");
+    }
+    await reserveRetry.call(
+      this.deps.deliveryLedgerGate,
+      admission,
+      deliveryNextAttemptAt,
+    );
   }
 
   private async awaitInitializingTask(task: Task): Promise<void> {
@@ -476,10 +438,4 @@ function hydrateStoredDeliveryMessage(
     storedDeliveryPayload: row.payload,
     storedDeliveryPayloadHash: row.payload_hash,
   };
-}
-
-function isNotificationIntent(
-  intent: DeliveryIntent | undefined,
-): intent is "completion_notification" | "runtime_followup" {
-  return intent === "completion_notification" || intent === "runtime_followup";
 }

@@ -51,6 +51,10 @@ export type ClaudePermissionMode = (typeof CLAUDE_PERMISSION_MODES)[number];
 export interface EngineUserInput {
   prompt: string;
   imageAttachmentPaths?: string[];
+  /** Stable durable-delivery identity forwarded to a long-lived engine input stream. */
+  inputUuid?: string;
+  /** Producer identity retained when a live intervention becomes the next engine turn. */
+  turnOrigin?: TurnOrigin;
 }
 
 export type TurnOriginKind =
@@ -97,6 +101,8 @@ export interface EngineExecuteParams {
   inputUuid?: string;
   /** Durable runner inbox entry consumed by this turn. Runner boundary only. */
   runnerInterventionId?: string;
+  /** Durable runner inbox entries consumed atomically by one model turn. Runner boundary only. */
+  runnerInterventionIds?: string[];
   /** Durable producer of this turn, propagated unchanged across the runner boundary. */
   turnOrigin?: TurnOrigin;
   /** Codex SDK `UserInput[]`로 전달할 로컬 이미지 첨부 경로. */
@@ -199,11 +205,10 @@ export interface EnginePort {
   sendControlFrame?(frame: RunnerControlFrame): Promise<boolean> | boolean;
 
   /**
-   * 실행 중인 엔진에 사용자 의도를 개입시킨다.
+   * 진행 중인 대화에 사용자 메시지를 전달하는 1급 진입점.
    *
-   * 백엔드가 현재 turn에 직접 전달하는지, turn을 중단해 다음 turn 경계를
-   * 만드는지는 어댑터 내부 책임이다. 호출자는 status만으로 전달 여부를
-   * 판단하며 mechanism/reason은 관측과 진단에만 사용한다.
+   * turn 중단은 전달 메커니즘이지 실행 실패가 아니다. 호출자는 status만으로
+   * 전달 여부를 판단하며 mechanism/reason은 관측과 진단에만 사용한다.
    */
   intervene(input: EngineUserInput): Promise<EngineInterventionResult>;
 
@@ -260,7 +265,7 @@ export interface SupportsThreadFork {
 }
 
 /**
- * 어댑터 내부의 live user input 결과 분류.
+ * 어댑터 내부의 실행 중 대화 입력 결과 분류.
  *
  * Claude Agent SDK는 열린 `AsyncIterable<SDKUserMessage>` input stream에 user message를
  * yield하여 현재 query stdin에 전달한다. Codex app-server는 `turn/steer`로 현재 active

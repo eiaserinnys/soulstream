@@ -220,28 +220,63 @@ export async function claimRunnerIntervention(
   interventionId: string,
   commandId: string,
 ): Promise<boolean> {
+  return await claimRunnerInterventions(
+    database,
+    transaction,
+    [interventionId],
+    commandId,
+  );
+}
+
+export async function claimRunnerInterventions(
+  database: SqliteDatabase,
+  transaction: Transaction,
+  interventionIds: readonly string[],
+  commandId: string,
+): Promise<boolean> {
+  if (interventionIds.length === 0) return true;
+  if (new Set(interventionIds).size !== interventionIds.length) {
+    throw new Error("runner intervention ids must be unique");
+  }
+  if (interventionIds.some((interventionId) => interventionId.length === 0)) {
+    throw new Error("runner intervention id is required");
+  }
   return await transaction(() => {
-    const current = database.prepare(`
+    const selectCurrent = database.prepare(`
       SELECT claimed_execution_command_id, application_state
       FROM runner_intervention_inbox
       WHERE intervention_id = ?
-    `).get(interventionId) as {
+    `);
+    const currents = interventionIds.map((interventionId) => selectCurrent.get(
+      interventionId,
+    ) as {
       claimed_execution_command_id: string | null;
       application_state: "pending" | "claimed" | "ambiguous";
-    } | undefined;
-    if (!current) return false;
-    if (
-      (current.application_state === "claimed" || current.application_state === "ambiguous")
-      && current.claimed_execution_command_id === commandId
-    ) return true;
-    if (current.application_state !== "pending") return false;
-    const result = database.prepare(`
+    } | undefined);
+    if (currents.some((current) => !current)) return false;
+    if (currents.some((current) => current !== undefined && !(
+      current.application_state === "pending"
+      || (
+        (current.application_state === "claimed" || current.application_state === "ambiguous")
+        && current.claimed_execution_command_id === commandId
+      )
+    ))) return false;
+
+    const claim = database.prepare(`
       UPDATE runner_intervention_inbox
       SET claimed_execution_command_id = ?, claimed_at = ?, application_state = 'claimed'
       WHERE intervention_id = ? AND claimed_execution_command_id IS NULL
         AND application_state = 'pending'
-    `).run(commandId, new Date().toISOString(), interventionId);
-    return Number(result.changes) === 1;
+    `);
+    const claimedAt = new Date().toISOString();
+    for (const [index, interventionId] of interventionIds.entries()) {
+      if (currents[index]?.application_state !== "pending") continue;
+      const result = claim.run(commandId, claimedAt, interventionId);
+      if (Number(result.changes) !== 1) {
+        throw new Error(`runner intervention claim mismatch: ${interventionId}`);
+      }
+    }
+    return true;
   });
 }
 
@@ -251,15 +286,32 @@ export async function markRunnerInterventionAmbiguous(
   interventionId: string,
   commandId: string,
 ): Promise<void> {
+  await markRunnerInterventionsAmbiguous(
+    database,
+    transaction,
+    [interventionId],
+    commandId,
+  );
+}
+
+export async function markRunnerInterventionsAmbiguous(
+  database: SqliteDatabase,
+  transaction: Transaction,
+  interventionIds: readonly string[],
+  commandId: string,
+): Promise<void> {
   await transaction(() => {
-    const result = database.prepare(`
+    const mark = database.prepare(`
       UPDATE runner_intervention_inbox
       SET application_state = 'ambiguous'
       WHERE intervention_id = ? AND claimed_execution_command_id = ?
         AND application_state IN ('claimed', 'ambiguous')
-    `).run(interventionId, commandId);
-    if (Number(result.changes) !== 1) {
-      throw new Error(`runner intervention claim mismatch: ${interventionId}`);
+    `);
+    for (const interventionId of interventionIds) {
+      const result = mark.run(interventionId, commandId);
+      if (Number(result.changes) !== 1) {
+        throw new Error(`runner intervention claim mismatch: ${interventionId}`);
+      }
     }
   });
 }
@@ -298,6 +350,7 @@ export async function finishRunnerExecutionAndIntervention(
   input: {
     commandId: string;
     interventionId?: string;
+    interventionIds?: string[];
     state: "completed" | "failed";
     progressedAt: string;
     terminalError: { code: string; message: string } | null;
@@ -316,6 +369,11 @@ export async function finishRunnerExecutionAndIntervention(
   const terminalError = input.terminalError === null
     ? null
     : stringifyRunnerJson(input.terminalError, "terminal runner error");
+  const interventionIds = input.interventionIds
+    ?? (input.interventionId ? [input.interventionId] : []);
+  if (new Set(interventionIds).size !== interventionIds.length) {
+    throw new Error("runner intervention ids must be unique");
+  }
   await transaction(() => {
     const assignments = `
       execution_state = ?, progress_seq = progress_seq + 1,
@@ -347,25 +405,31 @@ export async function finishRunnerExecutionAndIntervention(
     if (Number(result.changes) !== 1) {
       throw new Error(`runner lifecycle command mismatch: ${input.commandId}`);
     }
-    if (input.state === "completed" && input.interventionId) {
-      const completed = database.prepare(`
+    if (input.state === "completed") {
+      const complete = database.prepare(`
         DELETE FROM runner_intervention_inbox
         WHERE application_state = 'claimed'
           AND intervention_id = ?
           AND claimed_execution_command_id = ?
-      `).run(input.interventionId, input.commandId);
-      if (Number(completed.changes) !== 1) {
-        throw new Error(`runner intervention claim mismatch: ${input.interventionId}`);
+      `);
+      for (const interventionId of interventionIds) {
+        const completed = complete.run(interventionId, input.commandId);
+        if (Number(completed.changes) !== 1) {
+          throw new Error(`runner intervention claim mismatch: ${interventionId}`);
+        }
       }
-    } else if (input.state === "failed" && input.interventionId) {
-      const ambiguous = database.prepare(`
+    } else {
+      const markAmbiguous = database.prepare(`
         UPDATE runner_intervention_inbox SET application_state = 'ambiguous'
         WHERE application_state = 'claimed'
           AND intervention_id = ?
           AND claimed_execution_command_id = ?
-      `).run(input.interventionId, input.commandId);
-      if (Number(ambiguous.changes) !== 1) {
-        throw new Error(`runner intervention claim mismatch: ${input.interventionId}`);
+      `);
+      for (const interventionId of interventionIds) {
+        const ambiguous = markAmbiguous.run(interventionId, input.commandId);
+        if (Number(ambiguous.changes) !== 1) {
+          throw new Error(`runner intervention claim mismatch: ${interventionId}`);
+        }
       }
     }
   });

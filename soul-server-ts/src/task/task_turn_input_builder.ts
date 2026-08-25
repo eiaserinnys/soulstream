@@ -13,7 +13,7 @@ import { formatContextItems } from "../context/prompt_assembler.js";
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { truncateClaudeTextToEstimatedTokens } from "./claude_context_recovery.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
-import { dequeueIntervention } from "./task_intervention_queue.js";
+import { dequeueInterventions } from "./task_intervention_queue.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 import { effectiveTaskBackend } from "./task_model_preset.js";
@@ -35,8 +35,9 @@ export interface TaskTurnInput {
   systemPrompt?: string;
   inputUuid?: string;
   runnerInterventionId?: string;
+  runnerInterventionIds?: string[];
   turnOrigin?: TurnOrigin;
-  intervention?: InterventionMessage;
+  interventions?: InterventionMessage[];
   backendSessionRolloverFrom?: string;
 }
 
@@ -55,8 +56,7 @@ export class TaskTurnInputBuilder {
 
   async prepareInitialTurnInput(task: Task, agent: AgentProfile): Promise<TaskTurnInput> {
     if (task.interventionQueue.length > 0) {
-      const intervention = dequeueIntervention(task)!;
-      return this.prepareFollowupTurnInput(task, agent, intervention);
+      return this.prepareFollowupTurnInput(task, agent, dequeueInterventions(task));
     }
 
     const ctx = await this.buildContext(task, agent);
@@ -69,9 +69,11 @@ export class TaskTurnInputBuilder {
   async prepareFollowupTurnInput(
     task: Task,
     agent: AgentProfile,
-    intervention: InterventionMessage,
+    interventions: InterventionMessage[],
   ): Promise<TaskTurnInput> {
-    const currentCallerInfo = intervention.callerInfo ?? task.callerInfo;
+    const firstIntervention = interventions[0];
+    if (!firstIntervention) throw new Error("follow-up turn requires an intervention");
+    const currentCallerInfo = interventions.at(-1)?.callerInfo ?? task.callerInfo;
     const includeFullContext = task.needsFullContextReinjection === true;
     const includeClaudeSessionIdUpdate =
       Boolean(task.codexThreadId) &&
@@ -90,25 +92,29 @@ export class TaskTurnInputBuilder {
       this.recordFollowupContextInjection(task, currentCallerInfo);
     }
 
-    const composed = composeInterventionTurnPrompt(intervention);
+    const composed = composeInterventionTurnPrompt(interventions);
     const prompt = appendContextBlock(composed.prompt, ctx?.contextItems ?? []);
     const systemPrompt =
       effectiveTaskBackend(task, agent) === "claude" && includeFullContext
         ? ctx?.effectiveSystemPrompt
         : undefined;
-    const inputUuid = intervention.deliveryId
-      ? buildDeliveryInputUuid(intervention.deliveryId)
+    const inputUuid = firstIntervention.deliveryId
+      ? buildDeliveryInputUuid(firstIntervention.deliveryId)
       : undefined;
+    const runnerInterventionIds = interventions
+      .map((message) => message.runnerInterventionId)
+      .filter((id): id is string => id !== undefined);
     return {
       prompt,
       imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
       ...(inputUuid ? { inputUuid } : {}),
-      ...(intervention.runnerInterventionId
-        ? { runnerInterventionId: intervention.runnerInterventionId }
+      ...(firstIntervention.runnerInterventionId
+        ? { runnerInterventionId: firstIntervention.runnerInterventionId }
         : {}),
-      turnOrigin: interventionTurnOrigin(intervention, inputUuid),
-      intervention,
+      ...(runnerInterventionIds.length > 0 ? { runnerInterventionIds } : {}),
+      turnOrigin: interventionTurnOrigin(firstIntervention, inputUuid),
+      interventions,
     };
   }
 
@@ -118,7 +124,7 @@ export class TaskTurnInputBuilder {
     failedInput: TaskTurnInput,
     backendSessionRolloverFrom: string,
   ): Promise<TaskTurnInput> {
-    const currentCallerInfo = failedInput.intervention?.callerInfo ?? task.callerInfo;
+    const currentCallerInfo = failedInput.interventions?.at(-1)?.callerInfo ?? task.callerInfo;
     const taskForContext = currentCallerInfo
       ? { ...task, callerInfo: currentCallerInfo }
       : task;
@@ -126,8 +132,8 @@ export class TaskTurnInputBuilder {
     task.needsFullContextReinjection = false;
     this.recordFollowupContextInjection(task, currentCallerInfo);
 
-    const replayBase = failedInput.intervention
-      ? composeInterventionTurnPrompt(failedInput.intervention)
+    const replayBase = failedInput.interventions
+      ? composeInterventionTurnPrompt(failedInput.interventions)
       : {
           prompt: failedInput.prompt,
           imageAttachmentPaths: failedInput.imageAttachmentPaths,
@@ -152,11 +158,14 @@ export class TaskTurnInputBuilder {
       ...(failedInput.runnerInterventionId !== undefined
         ? { runnerInterventionId: failedInput.runnerInterventionId }
         : {}),
+      ...(failedInput.runnerInterventionIds !== undefined
+        ? { runnerInterventionIds: failedInput.runnerInterventionIds }
+        : {}),
       ...(failedInput.turnOrigin !== undefined
         ? { turnOrigin: failedInput.turnOrigin }
         : {}),
-      ...(failedInput.intervention !== undefined
-        ? { intervention: failedInput.intervention }
+      ...(failedInput.interventions !== undefined
+        ? { interventions: failedInput.interventions }
         : {}),
       backendSessionRolloverFrom,
     };

@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TaskEngineFailureRecovery } from "../../src/task/task_engine_failure_recovery.js";
 import type { Task } from "../../src/task/task_models.js";
-import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -20,19 +19,15 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 }
 
 function makeRecovery() {
-  const emitEventEnvelope = vi.fn(async () => undefined);
-  const broadcaster = { emitEventEnvelope } as unknown as SessionBroadcaster;
   const logger = {
     error: vi.fn(),
     warn: vi.fn(),
   } as unknown as Logger;
   const recovery = new TaskEngineFailureRecovery({
-    broadcaster,
     logger,
   });
 
   return {
-    emitEventEnvelope,
     logger,
     recovery,
   };
@@ -40,7 +35,7 @@ function makeRecovery() {
 
 describe("TaskEngineFailureRecovery", () => {
   it("records engine errors on running tasks", async () => {
-    const { emitEventEnvelope, recovery } = makeRecovery();
+    const { recovery } = makeRecovery();
     const task = makeTask();
 
     await recovery.recoverFromExecuteFailure(task, new Error("engine boom"));
@@ -49,7 +44,6 @@ describe("TaskEngineFailureRecovery", () => {
     expect(task.error).toBe("engine boom");
     expect(task.pendingTerminationHint).toBe("error_aborted");
     expect(task.pendingTerminationDetail).toBe("engine boom");
-    expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 
   it("does not overwrite a non-running status while recovering", async () => {
@@ -65,8 +59,8 @@ describe("TaskEngineFailureRecovery", () => {
     expect(task.error).toBe("already interrupted");
   });
 
-  it("clears skipped queued interventions and broadcasts a wire-only error", async () => {
-    const { emitEventEnvelope, recovery } = makeRecovery();
+  it("preserves queued interventions when the active turn fails", async () => {
+    const { recovery } = makeRecovery();
     const task = makeTask({
       interventionQueue: [
         { text: "first", user: "u" },
@@ -76,37 +70,27 @@ describe("TaskEngineFailureRecovery", () => {
 
     await recovery.recoverFromExecuteFailure(task, new Error("engine boom"));
 
-    expect(task.interventionQueue).toEqual([]);
-    expect(emitEventEnvelope).toHaveBeenCalledWith("sess-1", {
-      type: "error",
-      message: "Turn failed; 2 queued intervention(s) skipped",
-      fatal: false,
-    });
+    expect(task.interventionQueue).toEqual([
+      { text: "first", user: "u" },
+      { text: "second", user: "u" },
+    ]);
   });
 
-  it("isolates skipped-intervention broadcast failure after clearing the queue", async () => {
-    const { emitEventEnvelope, logger, recovery } = makeRecovery();
-    emitEventEnvelope.mockRejectedValueOnce(new Error("upstream down"));
+  it("records a real engine failure without consuming queued input", async () => {
+    const { recovery } = makeRecovery();
     const task = makeTask({
       interventionQueue: [{ text: "pending", user: "u" }],
     });
 
     await expect(
       recovery.recoverFromExecuteFailure(task, new Error("engine boom")),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe("stop_on_error");
 
-    expect(task.interventionQueue).toEqual([]);
-    expect(logger.warn).toHaveBeenCalledWith(
-      {
-        err: expect.any(Error),
-        sessionId: "sess-1",
-      },
-      "queue-skipped error broadcast failed",
-    );
+    expect(task.interventionQueue).toEqual([{ text: "pending", user: "u" }]);
   });
 
-  it("recovers outer execution failures with startExecution error policy and queue notification", async () => {
-    const { emitEventEnvelope, logger, recovery } = makeRecovery();
+  it("recovers outer execution failures without deleting queued interventions", async () => {
+    const { logger, recovery } = makeRecovery();
     const task = makeTask({
       status: "interrupted",
       error: "already interrupted",
@@ -119,12 +103,7 @@ describe("TaskEngineFailureRecovery", () => {
     expect(task.error).toBe("prepare boom");
     expect(task.pendingTerminationHint).toBe("error_aborted");
     expect(task.pendingTerminationDetail).toBe("prepare boom");
-    expect(task.interventionQueue).toEqual([]);
-    expect(emitEventEnvelope).toHaveBeenCalledWith("sess-1", {
-      type: "error",
-      message: "Turn failed; 1 queued intervention(s) skipped",
-      fatal: false,
-    });
+    expect(task.interventionQueue).toEqual([{ text: "pending", user: "u" }]);
     expect(logger.error).toHaveBeenCalledWith(
       {
         err: expect.any(Error),

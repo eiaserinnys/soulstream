@@ -25,7 +25,6 @@ const DIRECT_EVENT_APPEND_INVENTORY = {};
 
 const WIRE_EVENT_ENVELOPE_INVENTORY = {
   "task/task_engine_event_publisher.ts": 1,
-  "task/task_engine_failure_recovery.ts": 1,
   "upstream/session_broadcaster.ts": 3,
 };
 

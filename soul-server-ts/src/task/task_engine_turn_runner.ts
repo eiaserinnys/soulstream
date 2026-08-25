@@ -28,6 +28,7 @@ export interface TaskEngineTurnInput {
   prompt: string;
   inputUuid?: string;
   runnerInterventionId?: string;
+  runnerInterventionIds?: string[];
   turnOrigin?: TurnOrigin;
   imageAttachmentPaths?: string[];
   systemPrompt?: string;
@@ -108,6 +109,9 @@ export class TaskEngineTurnRunner {
       ...(input.inputUuid ? { inputUuid: input.inputUuid } : {}),
       ...(input.runnerInterventionId
         ? { runnerInterventionId: input.runnerInterventionId }
+        : {}),
+      ...(input.runnerInterventionIds
+        ? { runnerInterventionIds: input.runnerInterventionIds }
         : {}),
       ...(input.turnOrigin ? { turnOrigin: input.turnOrigin } : {}),
       ...(input.imageAttachmentPaths !== undefined

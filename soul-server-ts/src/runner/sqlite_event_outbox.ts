@@ -62,8 +62,10 @@ import {
 } from "./sqlite_ipc_journal.js";
 import {
   claimRunnerIntervention,
+  claimRunnerInterventions,
   finishRunnerExecutionAndIntervention,
   markRunnerInterventionAmbiguous,
+  markRunnerInterventionsAmbiguous,
   migrateRunnerInterventionInboxV9,
   readPendingRunnerInterventions,
   resolveRunnerInterventionAmbiguity,
@@ -387,12 +389,35 @@ export class RunnerSqliteEventOutbox {
     );
   }
 
+  async claimInterventions(interventionIds: readonly string[], commandId: string): Promise<boolean> {
+    this.requireOpen();
+    return await claimRunnerInterventions(
+      this.database,
+      (operation) => this.transaction("claim_interventions", operation),
+      interventionIds,
+      commandId,
+    );
+  }
+
   async markInterventionAmbiguous(interventionId: string, commandId: string): Promise<void> {
     this.requireOpen();
     await markRunnerInterventionAmbiguous(
       this.database,
       (operation) => this.transaction("mark_intervention_ambiguous", operation),
       interventionId,
+      commandId,
+    );
+  }
+
+  async markInterventionsAmbiguous(
+    interventionIds: readonly string[],
+    commandId: string,
+  ): Promise<void> {
+    this.requireOpen();
+    await markRunnerInterventionsAmbiguous(
+      this.database,
+      (operation) => this.transaction("mark_interventions_ambiguous", operation),
+      interventionIds,
       commandId,
     );
   }
@@ -413,6 +438,7 @@ export class RunnerSqliteEventOutbox {
   async finishExecution(input: {
     commandId: string;
     interventionId?: string;
+    interventionIds?: string[];
     state: "completed" | "failed";
     progressedAt: string;
     terminalError: { code: string; message: string } | null;

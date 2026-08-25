@@ -245,7 +245,6 @@ describe("TaskInterventionRoute.addIntervention", () => {
       followupAttempt: 2,
       followupKey: "sess-intervention:agent-task",
       followupTaskIds: ["agent-task"],
-      onlyIfTerminal: true,
     }, onResume)).resolves.toEqual({ autoResumed: true });
 
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
@@ -480,6 +479,43 @@ describe("TaskInterventionRoute.addIntervention", () => {
     );
   });
 
+  it.each([
+    "human_live_steer",
+    "durable_next_turn",
+    "completion_notification",
+    "runtime_followup",
+  ] as const)(
+    "selects first idle resume inputs from delivery facts, not %s intent",
+    async (intent) => {
+      const deliveryId = `73737373-7373-4737-8737-${intent.length.toString().padStart(12, "0")}`;
+      const gate = {
+        admit: vi.fn().mockResolvedValue(admitted(deliveryId, intent)),
+        beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+        recordResult: vi.fn().mockResolvedValue(undefined),
+        recordFailure: vi.fn().mockResolvedValue(undefined),
+      } satisfies Pick<
+        TaskDeliveryLedgerGate,
+        "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      >;
+      const task = makeTask({ status: "completed" });
+      const { route, autoResumeTransition } = makeSubject([task], gate);
+
+      await expect(route.addIntervention({
+        agentSessionId: task.agentSessionId,
+        text: "first idle delivery",
+        user: "agent",
+        deliveryId,
+        deliveryIntent: intent,
+        completionId: `completion:${deliveryId}`,
+        relationKey: `delivery:${deliveryId}`,
+        source: "test",
+      }, vi.fn())).resolves.toEqual({ autoResumed: true });
+
+      expect(autoResumeTransition.resume).toHaveBeenCalledOnce();
+      expect(vi.mocked(autoResumeTransition.resume).mock.calls[0]).toHaveLength(3);
+    },
+  );
+
   it("projects terminal notification delivery only after ownership activation", async () => {
     const deliveryId = "61616161-6161-4161-8161-616161616161";
     let resolveActivation!: () => void;
@@ -627,7 +663,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
   });
 
   it.each(["running"] as const)(
-    "terminal-only delivery never enters the %s intervention path",
+    "runtime follow-up uses the same first-class %s intervention entry",
     async (status) => {
     const task = makeTask({ status });
     const { route, runningInterventionTransition, autoResumeTransition } = makeSubject([task]);
@@ -637,15 +673,15 @@ describe("TaskInterventionRoute.addIntervention", () => {
       text: "delayed background follow-up retry",
       user: "system",
       source: "claude_runtime_task_followup",
-      onlyIfTerminal: true,
     }, vi.fn())).resolves.toEqual({
       delivered: false,
-      deferred: true,
-      retryWhen: "terminal_state",
-      reason: "terminal_only_policy",
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
     });
 
-    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledOnce();
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
     },
   );
@@ -781,7 +817,6 @@ describe("TaskInterventionRoute.addIntervention", () => {
       task,
       expect.objectContaining({ deliveryId }),
       expect.any(Function),
-      { publishUserMessage: false },
     );
     expect(sessionNotificationPublisher.publish).toHaveBeenCalledTimes(1);
     expect(vi.mocked(autoResumeTransition.resume).mock.invocationCallOrder[0]).toBeLessThan(
@@ -800,7 +835,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
   });
 
-  it("generating 중 완료는 interrupt 없이 notification+queueOnly로만 전달한다", async () => {
+  it("generating 중 완료도 running deliver로 즉시 전달한다", async () => {
     const deliveryId = "55555555-5555-4555-8555-555555555555";
     const admission = admitted(deliveryId, "runtime_followup");
     const gate = {
@@ -843,15 +878,15 @@ describe("TaskInterventionRoute.addIntervention", () => {
       "queued",
     );
     expect(
-      vi.mocked(runningInterventionTransition.queueOnly).mock.invocationCallOrder[0],
+      vi.mocked(runningInterventionTransition.deliver).mock.invocationCallOrder[0],
     ).toBeLessThan(
       vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
     );
     expect(vi.mocked(gate.recordResult).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
     );
-    expect(runningInterventionTransition.queueOnly).toHaveBeenCalledTimes(1);
-    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledTimes(1);
+    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 
@@ -917,7 +952,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       runningInterventionTransition,
       sessionNotificationPublisher,
     } = makeSubject([task], gate);
-    vi.mocked(runningInterventionTransition.queueOnly).mockRejectedValueOnce(
+    vi.mocked(runningInterventionTransition.deliver).mockRejectedValueOnce(
       new Error("queue unavailable"),
     );
 
@@ -1089,7 +1124,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(onResume).toHaveBeenCalledTimes(1);
   });
 
-  it("durable_next_turn은 notification으로 오인하지 않고 queue-only user delivery를 유지한다", async () => {
+  it("durable_next_turn도 running deliver로 즉시 전달하되 notification은 발행하지 않는다", async () => {
     const deliveryId = "66666666-6666-4666-8666-666666666666";
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId, "durable_next_turn")),
@@ -1124,11 +1159,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
       reason: "queue_only_policy",
     });
 
-    expect(runningInterventionTransition.queueOnly).toHaveBeenCalledWith(
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledWith(
       task,
       expect.objectContaining({ deliveryId, deliveryIntent: "durable_next_turn" }),
+      { queueIfUndelivered: true },
     );
-    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
     expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
   });
 });

@@ -9,39 +9,49 @@ import type { InterventionMessage, Task } from "./task_models.js";
  * the input, so the delivery remains replayable until a later turn event.
  */
 export class TaskDeliveryTurnReceipt {
-  private recorded = false;
-  private consumed = false;
-  private consumedTurnId: string | undefined;
+  private readonly receipts: Array<{
+    intervention: InterventionMessage;
+    recorded: boolean;
+    consumed: boolean;
+    consumedTurnId?: string;
+  }>;
 
   constructor(
     private readonly consumption: TaskDeliveryConsumption,
-    private readonly intervention: InterventionMessage | undefined,
-  ) {}
+    interventions: readonly InterventionMessage[],
+  ) {
+    this.receipts = interventions.map((intervention) => ({
+      intervention,
+      recorded: false,
+      consumed: false,
+    }));
+  }
 
   async observe(task: Task, event: SSEEventPayload): Promise<void> {
-    if (
-      this.recorded ||
-      event.type === "session" ||
-      event.type === "error"
-    ) {
-      return;
-    }
+    if (event.type === "session" || event.type === "error") return;
     const consumedTurnId = turnReceiptId(task);
-    this.recorded = await this.consumption.recordTurnStarted(task, this.intervention);
-    if (this.recorded) this.consumedTurnId = consumedTurnId;
+    for (const receipt of this.receipts) {
+      if (receipt.recorded) continue;
+      receipt.recorded = await this.consumption.recordTurnStarted(
+        task,
+        receipt.intervention,
+      );
+      if (receipt.recorded) receipt.consumedTurnId = consumedTurnId;
+    }
   }
 
   async consume(task: Task): Promise<void> {
-    if (this.consumed) return;
-    // Without an observed turn receipt the delivery stays replayable. Startup
-    // transcript recovery owns the durable completed/absent decision.
-    if (!this.recorded) return;
-    await this.consumption.recordConsumed(
-      task,
-      this.intervention,
-      this.consumedTurnId,
-    );
-    this.consumed = true;
+    for (const receipt of this.receipts) {
+      if (receipt.consumed || !receipt.recorded) continue;
+      // Without an observed turn receipt the delivery stays replayable. Startup
+      // transcript recovery owns the durable completed/absent decision.
+      await this.consumption.recordConsumed(
+        task,
+        receipt.intervention,
+        receipt.consumedTurnId,
+      );
+      receipt.consumed = true;
+    }
   }
 }
 

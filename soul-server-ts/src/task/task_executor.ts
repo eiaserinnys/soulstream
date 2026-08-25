@@ -206,7 +206,6 @@ export class TaskExecutor {
       ...(transientEventLogAggregator ? { transientEventLogAggregator } : {}),
     });
     this.engineFailureRecovery = new TaskEngineFailureRecovery({
-      broadcaster,
       logger: this.logger,
     });
     this.initialMessagePublisher = new TaskInitialMessagePublisher({
@@ -1123,7 +1122,8 @@ export class TaskExecutor {
    *   - generator 정상 종료 + foreground runtime pending → status="error" → loop 종료.
    *   - generator 정상 종료 + status="running" + queue empty → status="completed" → loop 종료.
    *   - generator 정상 종료 + status="running" + queue 비어있지 않음 → dequeue → 다음 turn.
-   *   - generator throw → status="error" → loop 종료.
+   *   - generator throw + distinct accepted successor owner → 같은 execution에서 다음 대화 진입.
+   *   - generator throw + successor owner 증거 없음 → status="error" → loop 종료.
    *   - 외부에서 status="interrupted" 박힘 (cancelTask) → loop 종료.
    *
    * codex_adapter는 같은 인스턴스에서 연속 turn 호출 안전 (concurrent 가드는 turn 종료 시
@@ -1167,12 +1167,11 @@ export class TaskExecutor {
       const rolloverCycleFromForTurn = task.claudeBackendRolloverCycleFrom
         ?? turnInput.backendSessionRolloverFrom;
       const contextRecovery = createClaudeContextRecoveryObservation();
-      let currentTurnIntervention = turnInput.intervention;
-      if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
-        await this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
-          task,
-          currentTurnIntervention,
-        );
+      let currentTurnInterventions = turnInput.interventions ?? [];
+      if (this.claudeRuntimeTaskFollowup) {
+        for (const intervention of currentTurnInterventions) {
+          await this.claudeRuntimeTaskFollowup.cancelScheduledFallback(task, intervention);
+        }
       }
       const compactedBeforeTurn = await this.compactClaudeContextIfNeeded(
         task,
@@ -1180,19 +1179,19 @@ export class TaskExecutor {
         runner,
         turnInput,
       );
-      if (compactedBeforeTurn && currentTurnIntervention) {
+      if (compactedBeforeTurn && currentTurnInterventions.length > 0) {
         turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,
-          currentTurnIntervention,
+          currentTurnInterventions,
         );
-        currentTurnIntervention = turnInput.intervention;
+        currentTurnInterventions = turnInput.interventions ?? [];
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
       const turnReceipt = this.deliveryConsumption
         ? new TaskDeliveryTurnReceipt(
             this.deliveryConsumption,
-            currentTurnIntervention,
+            currentTurnInterventions,
           )
         : undefined;
       try {
@@ -1207,6 +1206,9 @@ export class TaskExecutor {
               : {}),
             ...(turnInput.runnerInterventionId !== undefined
               ? { runnerInterventionId: turnInput.runnerInterventionId }
+              : {}),
+            ...(turnInput.runnerInterventionIds !== undefined
+              ? { runnerInterventionIds: turnInput.runnerInterventionIds }
               : {}),
             ...(turnInput.turnOrigin !== undefined
               ? { turnOrigin: turnInput.turnOrigin }
@@ -1228,7 +1230,24 @@ export class TaskExecutor {
           this.collectClaudeRuntimeTaskFollowup(task, event);
         }
       } catch (err) {
-        await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
+        await task.interruptRequest;
+        const disposition = await this.engineFailureRecovery.recoverFromExecuteFailure(
+          task,
+          err,
+          currentTurnInterventions,
+        );
+        if (disposition === "continue_with_accepted_successor") {
+          if (turnReceipt) await turnReceipt.consume(task);
+          const transition = resolveTurnLoopTransition(task, agent);
+          if (transition.kind === "continue") {
+            turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+              task,
+              agent,
+              transition.interventions,
+            );
+            continue;
+          }
+        }
         break;
       }
       try {
@@ -1314,11 +1333,13 @@ export class TaskExecutor {
         await this.compactClaudeContextIfNeeded(task, agent, runner);
       }
       await this.flushClaudeRuntimeTaskFollowups(task);
-      await this.handleClaudeRuntimeFollowupStall(
-        task,
-        currentTurnIntervention,
-        previousAssistantText,
-      );
+      for (const intervention of currentTurnInterventions) {
+        await this.handleClaudeRuntimeFollowupStall(
+          task,
+          intervention,
+          previousAssistantText,
+        );
+      }
       await task.interruptRequest;
       const transition = resolveTurnLoopTransition(task, agent);
       if (transition.kind === "awaiting_runtime") {
@@ -1329,7 +1350,7 @@ export class TaskExecutor {
       turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
         task,
         agent,
-        transition.intervention,
+        transition.interventions,
       );
       } finally {
         if (turnReceipt) await turnReceipt.consume(task);
@@ -1464,7 +1485,7 @@ export class TaskExecutor {
         const followupTurnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,
-          transition.intervention,
+          transition.interventions,
         );
         await this.consumeTurnLoop(task, agent, runner, followupTurnInput);
       }

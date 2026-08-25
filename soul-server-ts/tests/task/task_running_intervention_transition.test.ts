@@ -193,7 +193,11 @@ describe("RunningInterventionTransition", () => {
       expect(intervene).toHaveBeenCalledTimes(2);
       expect(applyIntervention).toHaveBeenCalledWith(expect.objectContaining({
         interventionId: expect.any(String),
-        input: { prompt: `redirect ${backendId}`, imageAttachmentPaths: [] },
+        input: expect.objectContaining({
+          prompt: `redirect ${backendId}`,
+          imageAttachmentPaths: [],
+          turnOrigin: expect.objectContaining({ kind: "user_message" }),
+        }),
       }));
       if (backendId === "claude") {
         expect(stageIntervention).toHaveBeenNthCalledWith(1, expect.objectContaining({
@@ -502,6 +506,7 @@ describe("RunningInterventionTransition", () => {
     expect(intervene).toHaveBeenCalledWith({
       prompt: "reach the active turn\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
       imageAttachmentPaths: ["/tmp/a.png"],
+      turnOrigin: { kind: "user_message" },
     });
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",

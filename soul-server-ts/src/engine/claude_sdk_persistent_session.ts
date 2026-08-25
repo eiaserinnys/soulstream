@@ -40,6 +40,7 @@ import {
   type ClaudeRuntimeCloseReason,
   type ClaudeSessionRuntimeSnapshot,
 } from "./claude_session_runtime.js";
+import type { EngineUserInput, LiveTurnSteerResult } from "./protocol.js";
 
 export type {
   ClaudeDetachedEventSink,
@@ -162,6 +163,54 @@ export class ClaudeSdkPersistentSession {
     if (this.runtime.snapshot().foregroundPhase !== "generating") return false;
     await this.runtime.interruptForeground();
     return true;
+  }
+
+  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
+    const active = this.activeForeground;
+    if (!active) return { status: "no_active_turn" };
+    if (this.runtime.snapshot().foregroundPhase !== "generating") {
+      return { status: "not_accepting_input" };
+    }
+
+    const uuid = input.inputUuid ?? randomUUID();
+    const message = makeUserMessage(
+      input.prompt,
+      input.imageAttachmentPaths,
+      { uuid, priority: "next" },
+    );
+    const registered = this.runtime.enqueueInput({
+      uuid,
+      payloadHash: hashSdkUserMessage(message),
+      message,
+    });
+    if (!registered) {
+      return {
+        status: "not_accepting_input",
+        message: `Claude intervention input is already registered: ${uuid}`,
+      };
+    }
+
+    const interruptedOwnerUuid = active.uuid;
+    this.clearForegroundTimers(active);
+    active.interruptedOwnerUuid = interruptedOwnerUuid;
+    active.uuid = uuid;
+    active.origin = {
+      kind: input.turnOrigin?.kind ?? "user_message",
+      id: input.turnOrigin?.id ?? uuid,
+    };
+    active.timedOut = false;
+    active.rateLimitTerminationState = "none";
+    await this.runtime.interruptForeground();
+    this.logger.info(
+      {
+        interruptedOwnerUuid,
+        interventionUuid: uuid,
+        turnOriginKind: active.origin.kind,
+        turnOriginId: active.origin.id,
+      },
+      "Persistent Claude intervention enqueued and interrupted active owner",
+    );
+    return { status: "delivered" };
   }
 
   phase(): ClaudeForegroundPhase {
@@ -301,6 +350,33 @@ export class ClaudeSdkPersistentSession {
       return;
     }
     if (
+      active?.interruptedOwnerUuid
+      && explicitUserMessageUuid === active.interruptedOwnerUuid
+    ) {
+      const interruptedOwnerUuid = active.interruptedOwnerUuid;
+      this.runtime.observeResult({
+        userMessageUuid: interruptedOwnerUuid,
+        interrupted: true,
+      });
+      active.interruptedOwnerUuid = undefined;
+      this.runtime.beginForegroundTurn(active.uuid);
+      this.turnInactivityWatchdog.arm(active.uuid);
+      if (active.origin.kind === "runtime_followup") {
+        this.followupWatchdog.arm(active.uuid, active.origin);
+      }
+      const terminalEvents = this.eventMapper.mapResultMessage(message);
+      this.logger.info(
+        {
+          interruptedOwnerUuid,
+          interventionUuid: active.uuid,
+          errorDuringExecution: terminalEvents.some(isExpectedInterruptDiagnostic),
+          ...describeResultProvenance(message),
+        },
+        "Fenced the first interrupted-owner Result before accepting the intervention Result",
+      );
+      return;
+    }
+    if (
       (!active || explicitUserMessageUuid !== active.uuid)
     ) {
       const observation = this.runtime.observeDetachedResult(explicitUserMessageUuid);
@@ -354,7 +430,6 @@ export class ClaudeSdkPersistentSession {
     } else {
       const terminalEvents = this.eventMapper.mapResultMessage(message);
       for (const event of terminalEvents) {
-        if (phase === "interrupting" && isExpectedInterruptDiagnostic(event)) continue;
         if (active) {
           active.output.push(event);
         } else {

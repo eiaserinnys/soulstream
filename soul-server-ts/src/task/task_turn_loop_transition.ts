@@ -5,7 +5,7 @@ import type { SupportsDetachedClaudeRuntime } from "../engine/protocol.js";
 import { appendAttachmentPathNotes } from "./attachment_path_note.js";
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { hasPendingClaudeRuntimeWork } from "./claude_runtime_state.js";
-import { dequeueIntervention } from "./task_intervention_queue.js";
+import { dequeueInterventions } from "./task_intervention_queue.js";
 import type { Task, InterventionMessage } from "./task_models.js";
 import { effectiveTaskBackend } from "./task_model_preset.js";
 
@@ -17,7 +17,7 @@ export type TurnLoopTransitionDecision =
       kind: "continue";
       prompt: string;
       imageAttachmentPaths: string[];
-      intervention: InterventionMessage;
+      interventions: InterventionMessage[];
     };
 
 export function resolveTurnLoopTransition(
@@ -37,8 +37,8 @@ export function resolveTurnLoopTransition(
     return { kind: "awaiting_runtime" };
   }
 
-  const next = dequeueIntervention(task);
-  if (!next) {
+  const next = dequeueInterventions(task);
+  if (next.length === 0) {
     task.status = "completed";
     return { kind: "stop" };
   }
@@ -48,7 +48,7 @@ export function resolveTurnLoopTransition(
     kind: "continue",
     prompt: composed.prompt,
     imageAttachmentPaths: composed.imageAttachmentPaths,
-    intervention: next,
+    interventions: next,
   };
 }
 
@@ -67,16 +67,21 @@ export function isOpenAiAgentsApprovalPending(task: Task): boolean {
   );
 }
 
-export function composeInterventionTurnPrompt(message: InterventionMessage): {
+export function composeInterventionTurnPrompt(messages: readonly InterventionMessage[]): {
   prompt: string;
   imageAttachmentPaths: string[];
 } {
-  const { imagePaths } = splitAttachmentPaths(message.attachmentPaths);
-  const contextItems = message.context ?? [];
-  const contextBlock = formatContextItems(contextItems);
-  const text = appendAttachmentPathNotes(message.text, message.attachmentPaths);
+  const prompts: string[] = [];
+  const imageAttachmentPaths: string[] = [];
+  for (const message of messages) {
+    const { imagePaths } = splitAttachmentPaths(message.attachmentPaths);
+    imageAttachmentPaths.push(...imagePaths);
+    const contextBlock = formatContextItems(message.context ?? []);
+    const text = appendAttachmentPathNotes(message.text, message.attachmentPaths);
+    prompts.push(contextBlock ? `${contextBlock}\n\n${text}` : text);
+  }
   return {
-    prompt: contextBlock ? `${contextBlock}\n\n${text}` : text,
-    imageAttachmentPaths: imagePaths,
+    prompt: prompts.join("\n\n"),
+    imageAttachmentPaths,
   };
 }

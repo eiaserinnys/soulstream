@@ -276,7 +276,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     expect(completeCalls).toHaveLength(2);
   });
 
-  it("post-result drain 중 도착한 intervention은 큐에 남아 다음 SDK query로 전달된다", async () => {
+  it("legacy non-persistent post-result drain은 전달 불가를 명시하고 큐에 보존한다", async () => {
     const mocks = makeMocks();
     const readyDuringPostResultDrain = deferred<void>();
     const releaseDrain = deferred<void>();
@@ -334,7 +334,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       queued: true,
       queuePosition: 1,
       consumeWhen: "next_turn",
-      reason: "next_turn_required",
+      reason: "not_supported",
     });
     expect(task.interventionQueue.map((item) => item.text)).toEqual([
       "second at 80ms",
@@ -354,7 +354,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     expect(task.status).toBe("completed");
   });
 
-  it("처리 중 Continue trailer intervention은 현재 query를 interrupt하고 다음 SDK query로 resume된다", async () => {
+  it("legacy non-persistent client는 개입을 버리지 않고 다음 query로 보존한다", async () => {
     const mocks = makeMocks();
     const readyForIntervention = deferred<void>();
     const interrupted = deferred<void>();
@@ -436,8 +436,11 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       queued: true,
       queuePosition: 1,
       consumeWhen: "next_turn",
-      reason: "next_turn_required",
+      reason: "not_supported",
     });
+    // This fixture intentionally exercises the legacy non-persistent client,
+    // so it must finish its current query before the preserved input can run.
+    interrupted.resolve();
     await task.executionPromise;
 
     expect(queryCalls).toBe(2);

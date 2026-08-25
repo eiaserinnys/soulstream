@@ -245,12 +245,12 @@ export class RunnerChildRuntime {
     if (
       result.result.status !== "ok"
       && command.kind === "execute"
-      && command.params.runnerInterventionId
     ) {
-      await this.outbox.markInterventionAmbiguous(
-        command.params.runnerInterventionId,
-        command.commandId,
-      );
+      const interventionIds = command.params.runnerInterventionIds
+        ?? (command.params.runnerInterventionId ? [command.params.runnerInterventionId] : []);
+      if (interventionIds.length > 0) {
+        await this.outbox.markInterventionsAmbiguous(interventionIds, command.commandId);
+      }
     }
     await connection.send(result);
     if (result.result.status !== "ok") return;
@@ -627,6 +627,9 @@ export class RunnerChildRuntime {
   ): Promise<void> {
     await this.outbox.finishExecution({
       commandId: command.commandId,
+      ...(command.params.runnerInterventionIds
+        ? { interventionIds: command.params.runnerInterventionIds }
+        : {}),
       ...(command.params.runnerInterventionId
         ? { interventionId: command.params.runnerInterventionId }
         : {}),
