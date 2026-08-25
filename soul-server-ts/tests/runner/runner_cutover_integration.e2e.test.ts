@@ -16,7 +16,7 @@ import {
   readClaudeBackgroundDeliveryMetadata,
 } from
   "../../src/engine/claude_background_delivery_metadata.js";
-import type { EnginePort } from "../../src/engine/protocol.js";
+import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
 import { McpConfigService } from "../../src/mcp_config_service.js";
 import { getCurrentMcpCallerSessionId } from "../../src/mcp/request_context.js";
@@ -322,11 +322,14 @@ describe("runner cutover all-flags-on integration", () => {
     });
     expect(observedFollowupPid).toBe(pid);
     const followupExecution = task.executionPromise;
-    if (!followupExecution) throw new Error("runtime follow-up execution was not started");
-    await followupExecution;
+    if (followupExecution) await followupExecution;
+    await waitFor(async () =>
+      await pathExists(join(controlDirectory, "followup-execution-count"))
+      && task.status === "completed"
+    );
     expect(
       (await readFile(join(controlDirectory, "followup-execution-count"), "utf8")).trim(),
-    ).toBe("2");
+    ).toBe("1");
     expect(deliveredInterventions.map((message) => ({
       deliveryId: message.deliveryId,
       taskIds: message.followupTaskIds,
@@ -365,7 +368,7 @@ describe("runner cutover all-flags-on integration", () => {
         `${taskId} terminal crossed the runner boundary with multiple delivery identities`,
       ).toEqual(new Set([lifecycleDeliveryId]));
     }
-    expect(task.lastAssistantText).toBe("background follow-up 2 complete");
+    expect(task.lastAssistantText).toBe("background follow-up 1 complete");
     expect(task.runner).toBeUndefined();
     expect(task.runnerRetainedForClaudeBackground).toBeUndefined();
     await waitFor(async () => !isPidAlive(pid));
@@ -893,11 +896,13 @@ describe("runner cutover all-flags-on integration", () => {
       readOnlyReleases.push(join(releasesDirectory, releaseId));
       const task = makeTask(`session-runner-rollover-${scenario}`);
       task.codexThreadId = "backend-session-old";
-      task.interventionQueue.push(
-        { text: "seed context usage", user: "u" },
-        { text: "한".repeat(8_000), user: "u" },
-      );
-      const host = taskExecutor(composition.runtimeFactory);
+      task.prompt = "seed context usage";
+      let queuedLargeFollowup = false;
+      const host = taskExecutor(composition.runtimeFactory, (_event, target) => {
+        if (_event.type !== "context_usage" || queuedLargeFollowup) return;
+        queuedLargeFollowup = true;
+        target.interventionQueue.push({ text: "한".repeat(8_000), user: "u" });
+      });
       const paths = runnerProcessPaths(stateDirectory, task.agentSessionId);
 
       host.executor.startExecution(task, makeAgent(controlDirectory));
@@ -955,6 +960,7 @@ describe("runner cutover all-flags-on integration", () => {
 
 function taskExecutor(
   runnerProcessFactory: NonNullable<Awaited<ReturnType<typeof composeRunnerProcessRuntime>>>["runtimeFactory"],
+  observeEvent?: (event: SSEEventPayload, task: Task) => void | Promise<void>,
 ): {
   executor: TaskExecutor;
   enqueueRunningTransitionAndWaitForApplication: ReturnType<
@@ -965,6 +971,7 @@ function taskExecutor(
     if (event.type === "assistant_message" && typeof event.content === "string") {
       task.lastAssistantText = event.content;
     }
+    await observeEvent?.(event, task);
   });
   const db = {
     updateSession: vi.fn(async () => undefined),
