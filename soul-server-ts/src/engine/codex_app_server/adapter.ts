@@ -167,43 +167,49 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     ];
 
     try {
-      await this.ensureInitialized();
-      if (!this.closed) {
-        const threadId = await this.openThread(params, queue);
-        if (!this.closed && threadId) {
-          const turnResponse = await this.client.startTurn(
-            buildTurnStartParams(threadId, params, this.workspaceDir),
-          );
-          if (!this.closed) {
-            const turnStart = recordTurnStartResponse(
-              this.notificationLifecycle,
-              threadId,
-              turnResponse.turn,
+      try {
+        await this.ensureInitialized();
+        if (!this.closed) {
+          const threadId = await this.openThread(params, queue);
+          if (!this.closed && threadId) {
+            const turnResponse = await this.client.startTurn(
+              buildTurnStartParams(threadId, params, this.workspaceDir),
             );
-            this.notificationLifecycle = turnStart.state;
-            if (turnStart.closeQueue) {
-              queue.close();
+            if (!this.closed) {
+              const turnStart = recordTurnStartResponse(
+                this.notificationLifecycle,
+                threadId,
+                turnResponse.turn,
+              );
+              this.notificationLifecycle = turnStart.state;
+              if (turnStart.closeQueue) {
+                queue.close();
+              }
             }
           }
         }
+      } catch (error) {
+        if (this.closed) {
+          for await (const payload of queue) {
+            yield engineEventFrame(payload as Record<string, unknown>);
+          }
+          return;
+        }
+        queue.push(
+          fatalErrorPayload(error instanceof Error ? error : new Error(String(error))),
+        );
+        queue.close();
       }
 
       for await (const payload of queue) {
         yield engineEventFrame(payload as Record<string, unknown>);
-      }
-    } catch (error) {
-      if (this.closed) {
-        for await (const payload of queue) {
-          yield engineEventFrame(payload as Record<string, unknown>);
+        const event = payload as { type?: unknown; fatal?: unknown; message?: unknown };
+        if (event.type === "error" && event.fatal !== false) {
+          throw new Error(
+            typeof event.message === "string" ? event.message : "Codex app-server fatal error",
+          );
         }
-        return;
       }
-      yield engineEventFrame(
-        fatalErrorPayload(error instanceof Error ? error : new Error(String(error))) as Record<
-          string,
-          unknown
-        >,
-      );
     } finally {
       for (const off of unsubscribe) off();
       this.notificationLifecycle = clearActiveTurn(this.notificationLifecycle);

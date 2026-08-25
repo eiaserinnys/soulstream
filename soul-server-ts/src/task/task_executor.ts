@@ -357,8 +357,16 @@ export class TaskExecutor {
               retryAt: err.retryAt,
               reason: err.reason,
             },
-            "Execution ownership conflict deferred to durable delivery recovery",
+            "Execution ownership conflict rejected before message delivery",
           );
+          await this.persistence.enqueueEvent(task.agentSessionId, {
+            type: "error",
+            message: "This message was not delivered because another runner owns the session.",
+            error_code: "execution_ownership_conflict",
+            fatal: false,
+            recoverable: true,
+            recovery_hint: "Retry the message if no response appears.",
+          } as SSEEventPayload);
           return;
         }
         this.executionOwnershipBackoff?.clear(task.agentSessionId);
@@ -1311,6 +1319,10 @@ export class TaskExecutor {
         );
         const fatalEventId = await this.persistence.waitForSessionAck(task.agentSessionId);
         if (fatalEventId !== null) task.lastEventId = fatalEventId;
+        this.engineFailureRecovery.recoverFromSynthesizedFailure(
+          task,
+          contextRecovery.promptTooLongMessage,
+        );
         break;
       }
       if (
@@ -1460,6 +1472,10 @@ export class TaskExecutor {
         );
         const fatalEventId = await this.persistence.waitForSessionAck(task.agentSessionId);
         if (fatalEventId !== null) task.lastEventId = fatalEventId;
+        this.engineFailureRecovery.recoverFromSynthesizedFailure(
+          task,
+          contextRecovery.promptTooLongMessage,
+        );
         return;
       }
       if (
@@ -1554,16 +1570,18 @@ export class TaskExecutor {
       task,
       CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE,
     );
+    const message = `${CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE} Pending task(s): ${failedTasks
+      .map((runtimeTask) => runtimeTask.taskId)
+      .join(", ") || "unknown"}.`;
     await this.engineEventPublisher.publishEngineEvent(task, {
       type: "error",
-      message: `${CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE} Pending task(s): ${failedTasks
-        .map((runtimeTask) => runtimeTask.taskId)
-        .join(", ") || "unknown"}.`,
+      message,
       error_code: "claude_runtime_pending_after_turn",
       fatal: true,
       recoverable: true,
       recovery_hint: "Send another message to resume this session in a fresh turn.",
     } as SSEEventPayload);
+    this.engineFailureRecovery.recoverFromSynthesizedFailure(task, message);
   }
 
   private collectClaudeRuntimeTaskFollowup(task: Task, event: SSEEventPayload): void {
@@ -1693,8 +1711,6 @@ export class TaskExecutor {
     const message =
       `Background task follow-up retry could not be queued: ${formatErrorMessage(err)}. ` +
       "Automatic follow-up cannot continue; send another message to resume and inspect the background task result.";
-    task.status = "error";
-    task.error = message;
     await this.engineEventPublisher.publishEngineEvent(task, {
       type: "error",
       message,
@@ -1704,6 +1720,7 @@ export class TaskExecutor {
       recovery_hint:
         "Send another message to resume this session in a fresh turn and inspect the background task result.",
     } as SSEEventPayload);
+    this.engineFailureRecovery.recoverFromSynthesizedFailure(task, message);
   }
 
   private async publishClaudeRuntimeFollowupExhausted(
@@ -1713,8 +1730,6 @@ export class TaskExecutor {
     const message =
       `Background task follow-up did not produce a new response after ${attempt} attempt(s); ` +
       "automatic retries were exhausted. Send another message to resume and inspect the background task result.";
-    task.status = "error";
-    task.error = message;
     await this.engineEventPublisher.publishEngineEvent(task, {
       type: "error",
       message,
@@ -1724,6 +1739,7 @@ export class TaskExecutor {
       recovery_hint:
         "Send another message to resume this session in a fresh turn and inspect the background task result.",
     } as SSEEventPayload);
+    this.engineFailureRecovery.recoverFromSynthesizedFailure(task, message);
   }
 
   /**

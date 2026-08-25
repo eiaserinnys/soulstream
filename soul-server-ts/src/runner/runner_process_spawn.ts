@@ -371,14 +371,18 @@ export class RunnerProcessSpawner {
     expected?: { pid: number; startIdentity: string },
   ): Promise<void> {
     const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
-    const lifecycle = await this.readLifecycle(paths.databasePath);
-    const pid = resolveRegisteredRunnerPid(
-      await readRunnerPid(paths.pidPath),
-      lifecycle?.runner_pid ?? null,
+    const pidFilePid = await readRunnerPid(paths.pidPath);
+    const pid = expected?.pid ?? resolveRegisteredRunnerPid(
+      pidFilePid,
+      (await this.readLifecycle(paths.databasePath))?.runner_pid ?? null,
       identity?.pid ?? null,
       paths.sessionDirectory,
       this.deps.isPidAlive,
     );
+    const expectedOwnsIdentity = expected !== undefined
+      && identity?.pid === expected.pid
+      && identity.startIdentity !== null
+      && processStartIdentitiesMatch(identity.startIdentity, expected.startIdentity);
     if (pid !== null && this.deps.isPidAlive(pid)) {
       const owner = expected ?? (identity?.pid === pid && identity.startIdentity
         ? { pid, startIdentity: identity.startIdentity }
@@ -404,8 +408,16 @@ export class RunnerProcessSpawner {
         throw new Error(`existing runner pid ${pid} did not terminate`);
       }
     }
-    await unlinkIfPresent(paths.pidPath);
-    await unlinkIfPresent(paths.socketPath);
+    if (expectedOwnsIdentity) {
+      await invalidateRunnerRegistrationFiles(paths, identity.registrationId);
+      return;
+    }
+    if (expected === undefined || pidFilePid === expected.pid) {
+      await unlinkIfPresent(paths.pidPath);
+    }
+    if (expected === undefined) {
+      await unlinkIfPresent(paths.socketPath);
+    }
   }
 
   private async assertSameProcess(

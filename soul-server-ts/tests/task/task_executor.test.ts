@@ -1171,6 +1171,7 @@ describe("TaskExecutor.startExecution", () => {
           error_code: "claude_runtime_timeout",
           fatal: true,
         } as SSEEventPayload;
+        throw new Error("Claude runtime drain timed out after 30ms; closing query.");
       },
       async interrupt() { return true; },
       async close() {},
