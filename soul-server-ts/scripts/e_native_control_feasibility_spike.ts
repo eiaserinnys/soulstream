@@ -1,8 +1,12 @@
-// Test-only installed Claude SDK native input + interrupt feasibility executable.
+// module-size-limit exception: this one-shot test-only evidence generator keeps
+// the live event clock, owner fence, two delivery orders, and raw verdict in one
+// executable so no cross-module state can falsify the captured causal ordering.
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { watch } from "node:fs";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import {
@@ -58,8 +62,10 @@ export type TrialEvidence = {
   consumeCount: number;
   completeCount: number;
   parentStatusOverwriteCount: number;
+  naturalReleaseLatchEntered: boolean;
+  naturalReleaseLatchEnteredMs: number;
+  naturalReleaseWriterCount: number;
   naturalReleaseMarkerObserved: boolean;
-  naturalReleaseEarliestMs: number;
   newInputProofMs: number;
   newInputAssistantText: string | null;
   interruptReceipt: SDKControlInterruptResponse | undefined;
@@ -73,8 +79,14 @@ export type TrialCheck = {
 
 export function evaluateTrial(evidence: TrialEvidence): TrialCheck[] {
   return [
-    check("a-natural-release-latch-closed", !evidence.naturalReleaseMarkerObserved,
-      evidence.naturalReleaseMarkerObserved),
+    check("a-natural-release-latch-closed", evidence.naturalReleaseLatchEntered
+      && evidence.naturalReleaseWriterCount === 0
+      && !evidence.naturalReleaseMarkerObserved,
+    {
+      entered: evidence.naturalReleaseLatchEntered,
+      writerCount: evidence.naturalReleaseWriterCount,
+      markerObserved: evidence.naturalReleaseMarkerObserved,
+    }),
     check("b-stable-delivery-registered-once", evidence.deliveryRegisterCount === 1,
       evidence.deliveryRegisterCount),
     check("c-native-interrupt-exactly-once", evidence.nativeInterruptCount === 1,
@@ -103,12 +115,14 @@ export function evaluateTrial(evidence: TrialEvidence): TrialCheck[] {
       querySettledAtProof: evidence.querySettledAtProof,
       inputCloseCountAfterCleanup: evidence.inputCloseCountAfterCleanup,
     }),
-    check("f-new-input-before-natural-release", evidence.newInputProofMs < evidence.naturalReleaseEarliestMs
+    check("f-new-input-before-natural-release", evidence.newInputProofMs > evidence.naturalReleaseLatchEnteredMs
+      && evidence.naturalReleaseWriterCount === 0
       && evidence.inputCloseCountAtProof === 0
       && evidence.newInputAssistantText?.includes("NATIVE_INPUT_CONSUMED") === true,
     {
       newInputProofMs: evidence.newInputProofMs,
-      naturalReleaseEarliestMs: evidence.naturalReleaseEarliestMs,
+      naturalReleaseLatchEnteredMs: evidence.naturalReleaseLatchEnteredMs,
+      naturalReleaseWriterCount: evidence.naturalReleaseWriterCount,
       inputCloseCountAtProof: evidence.inputCloseCountAtProof,
       newInputAssistantText: evidence.newInputAssistantText,
     }),
@@ -293,6 +307,17 @@ async function runTrial(
   executable: string,
 ): Promise<{ evidence: TrialEvidence; checks: TrialCheck[]; trace: TraceEvent[] }> {
   const workingDirectory = await mkdtemp(resolve(tmpdir(), `e-native-${order}-${index}-`));
+  const latchPath = resolve(workingDirectory, "natural-release.fifo");
+  const latchEnteredPath = resolve(workingDirectory, "latch-entered.txt");
+  const latchScriptPath = resolve(workingDirectory, "hold-natural-release.sh");
+  execFileSync("mkfifo", [latchPath]);
+  await writeFile(latchScriptPath, [
+    "#!/bin/sh",
+    `printf LATCH_ENTERED > ${shellQuote(latchEnteredPath)}`,
+    `cat ${shellQuote(latchPath)}`,
+    `printf NATURAL_RELEASE_SHOULD_NOT_WIN_${index}`,
+  ].join("\n"), "utf8");
+  await chmod(latchScriptPath, 0o700);
   const input = new InputQueue();
   const trace = new TraceCollector();
   const spawnCommands: string[] = [];
@@ -331,21 +356,25 @@ async function runTrial(
     const deliveryUuid = randomUUID();
     const naturalReleaseMarker = `NATURAL_RELEASE_SHOULD_NOT_WIN_${index}`;
     const newInputMarker = `NATIVE_INPUT_CONSUMED_${index}`;
+    const latchEntered = waitForFileContent(latchEnteredPath, "LATCH_ENTERED");
     input.push(makeUserMessage(
-      `Use Bash exactly once with command "sleep 45; printf ${naturalReleaseMarker}". `
-        + "Do not use any other tool. After it finishes, reply with exactly NATURAL_RELEASED.",
+      `Use Bash exactly once to run ${shellQuote(latchScriptPath)}. `
+        + "Do not use any other tool. Wait for it to finish, then reply with exactly NATURAL_RELEASED.",
       ownerUuid,
       "now",
     ));
     trace.record("input", { kind: "owner_input", ownerUuid });
     const init = await trace.waitFor((event) => event.type === "system" && event.subtype === "init", "init");
-    const toolUse = await trace.waitFor(
+    await trace.waitFor(
       (event) => event.type === "assistant" && event.toolNames?.includes("Bash") === true,
       "long Bash tool use",
     );
-    const toolUseTrace = trace.events.find((entry) => entry.event === toolUse);
-    if (!toolUseTrace) throw new Error("Missing tool use trace entry");
-    const naturalReleaseEarliestMs = toolUseTrace.elapsedMs + 45_000;
+    await latchEntered;
+    const latchEnteredTrace = trace.record("harness", {
+      kind: "natural_release_latch_entered",
+      latchPath,
+      writerCount: 0,
+    });
     const resultStartIndex = trace.sdkEvents.length;
     let nativeInterruptCount = 0;
     let deliveryRegisterCount = 1;
@@ -419,8 +448,10 @@ async function runTrial(
       consumeCount: consumedResults.length,
       completeCount: consumedResults.filter((event) => event.isError !== true).length,
       parentStatusOverwriteCount,
+      naturalReleaseLatchEntered: true,
+      naturalReleaseLatchEnteredMs: latchEnteredTrace.elapsedMs,
+      naturalReleaseWriterCount: 0,
       naturalReleaseMarkerObserved: toolResultText.includes(naturalReleaseMarker),
-      naturalReleaseEarliestMs,
       newInputProofMs: newResultTrace.elapsedMs,
       newInputAssistantText: assistantText ?? stringValue(newResult.result),
       interruptReceipt: receipt,
@@ -457,6 +488,34 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function waitForFileContent(path: string, expected: string, timeoutMs = 60_000): Promise<void> {
+  return new Promise((resolveWaiter, rejectWaiter) => {
+    const watcher = watch(dirname(path), () => void verify());
+    const timer = setTimeout(() => finish(new Error(`Timed out waiting for ${basename(path)}`)), timeoutMs);
+    let finished = false;
+    async function verify(): Promise<void> {
+      try {
+        if ((await readFile(path, "utf8")) === expected) finish();
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") finish(error as Error);
+      }
+    }
+    function finish(error?: Error): void {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      watcher.close();
+      if (error) rejectWaiter(error);
+      else resolveWaiter();
+    }
+    void verify();
+  });
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 async function main(): Promise<void> {
