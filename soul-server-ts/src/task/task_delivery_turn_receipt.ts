@@ -60,11 +60,11 @@ export class TaskDeliveryTurnReceipt {
 
   private async recordFromClaudeInputProof(task: Task): Promise<void> {
     const deliveryId = this.intervention?.deliveryId;
-    if (!this.transcriptReceipt) return;
+    if (!this.transcriptReceipt || !deliveryId) return;
     let receipt: ClaudeDeliveryTranscriptReceipt;
     try {
       receipt = await this.transcriptReceipt.inspect({
-        delivery_id: deliveryId!,
+        delivery_id: deliveryId,
         target_session_id: task.agentSessionId,
       });
     } catch {
