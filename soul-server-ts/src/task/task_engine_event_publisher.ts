@@ -46,7 +46,6 @@ export class TaskEngineEventPublisher {
     this.captureClaudeRuntimeState(task, event);
     this.captureCompactReinjectionNeed(task, eventType);
     this.captureTerminationHint(task, event, eventType);
-    this.captureFatalEngineError(task, event, eventType);
     const persistent = options.alreadyPersisted && shouldPersistEvent(event)
       ? true
       : await this.enqueuePersistentEventIfNeeded(task, event, sessionEffect);
@@ -66,15 +65,6 @@ export class TaskEngineEventPublisher {
     task.needsFullContextReinjection = true;
   }
 
-  private captureFatalEngineError(task: Task, event: SSEEventPayload, eventType: string): void {
-    if (eventType !== "error") return;
-    const payload = event as { fatal?: unknown; message?: unknown };
-    if (payload.fatal === false) return;
-    task.status = "error";
-    task.error = typeof payload.message === "string" ? payload.message : "Engine fatal error";
-    task.result = undefined;
-  }
-
   private captureTerminationHint(
     task: Task,
     event: SSEEventPayload,
@@ -91,18 +81,7 @@ export class TaskEngineEventPublisher {
         "limit_hit",
         typeof detail === "string" ? detail : "credential_alert",
       );
-      return;
     }
-    if (eventType !== "error") return;
-    const payload = event as { fatal?: unknown; message?: unknown; error_code?: unknown };
-    if (payload.fatal === false) return;
-    const detail =
-      typeof payload.error_code === "string"
-        ? payload.error_code
-        : typeof payload.message === "string"
-          ? payload.message
-          : "Engine fatal error";
-    recordTerminationHint(task, "error_aborted", detail);
   }
 
   private captureSessionId(

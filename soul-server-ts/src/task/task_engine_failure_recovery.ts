@@ -60,6 +60,10 @@ export class TaskEngineFailureRecovery {
     this.recordError(task, message, { overwriteNonRunning: true });
   }
 
+  recoverFromSynthesizedFailure(task: Task, message: string): void {
+    this.recordError(task, message, { overwriteNonRunning: true });
+  }
+
   private errorMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
   }
@@ -74,6 +78,7 @@ export class TaskEngineFailureRecovery {
     recordTerminationHint(task, "error_aborted", message);
     task.status = "error";
     task.error = message;
+    task.result = undefined;
   }
 }
 
