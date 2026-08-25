@@ -1554,6 +1554,79 @@ describe("TaskExecutor.startExecution", () => {
     );
   });
 
+  it("live intervention stays inside the same execution until its result completes", async () => {
+    const mocks = makeMocks();
+    const turnStarted = deferred<void>();
+    const interventionAccepted = deferred<void>();
+    const finishIntervention = deferred<void>();
+    const execute = vi.fn(async function* (): AsyncIterable<SSEEventPayload> {
+      turnStarted.resolve();
+      yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
+      await interventionAccepted.promise;
+      await finishIntervention.promise;
+      yield { type: "assistant_message", content: "heard" } as SSEEventPayload;
+      yield { type: "complete", result: "heard", timestamp: 1 } as SSEEventPayload;
+    });
+    const intervene = vi.fn(async () => {
+      interventionAccepted.resolve();
+      return {
+        status: "delivered" as const,
+        mechanism: "interrupt_then_next_turn" as const,
+      };
+    });
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      execute,
+      intervene,
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const factory = vi.fn(() => engine);
+    const executor = new TaskExecutor(
+      factory,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+
+    executor.startExecution(task, claudeAgent);
+    await turnStarted.promise;
+    const executionPromise = task.executionPromise;
+    const delivery = await task.runner!.engine.intervene({ prompt: "new input" });
+
+    expect(delivery.status).toBe("delivered");
+    expect(task.status).toBe("running");
+    expect(task.error).toBeUndefined();
+    expect(task.pendingTerminationHint).toBeUndefined();
+    expect(task.executionPromise).toBe(executionPromise);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).not.toHaveBeenCalled();
+
+    finishIntervention.resolve();
+    await task.executionPromise;
+
+    expect(task.status).toBe("completed");
+    expect(task.error).toBeUndefined();
+    expect(task.pendingTerminationHint).toBeUndefined();
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended", status: "completed" }),
+      expect.objectContaining({
+        kind: "terminal_transition",
+        status: "completed",
+        termination_reason: "completed_ok",
+      }),
+    );
+  });
+
   it("engineFactory throw → status=error, finalize 호출", async () => {
     const mocks = makeMocks();
     const factory = vi.fn(() => {
@@ -1567,7 +1640,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.runner).toBeUndefined();
   });
 
-  it("outer execution failure finalizes and notifies skipped queued interventions", async () => {
+  it("outer execution failure finalizes without deleting queued interventions", async () => {
     const mocks = makeMocks();
     const engine = makeFakeEngine([]);
     const executor = new TaskExecutor(
@@ -1596,7 +1669,10 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.status).toBe("error");
     expect(task.error).toBe("prepare boom");
     expect(task.completedAt).toBeInstanceOf(Date);
-    expect(task.interventionQueue).toEqual([]);
+    expect(task.interventionQueue).toEqual([
+      { text: "pending 1", user: "u" },
+      { text: "pending 2", user: "u" },
+    ]);
     expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended", status: "error" }),
@@ -1607,12 +1683,12 @@ describe("TaskExecutor.startExecution", () => {
         termination_detail: "prepare boom",
       }),
     );
-    const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(
-      (c) =>
-        (c[1] as { type: string }).type === "error" &&
-        /2 queued intervention\(s\) skipped/.test((c[1] as { message: string }).message),
+    const skippedBroadcast = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => /queued intervention\(s\) skipped/.test(
+        String((c[1] as { message?: string }).message),
+      ),
     );
-    expect(errorBroadcast).toBeDefined();
+    expect(skippedBroadcast).toBeUndefined();
   });
 
   // === B-7: 피위임 완료 회송 (CompletionNotifier 주입 회귀) ===
@@ -3142,11 +3218,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(pendingAfterTurnError).toBeUndefined();
   });
 
-  it("P1-3: turn 진행 중 intervention 도착 후 turn throw → interventionQueue 미처리 메시지 wire error 이벤트 발행 + queue 정리", async () => {
-    // 사용자가 인터벤션을 보냈는데(intervention_sent broadcast 수신) 그 직후 turn이 throw하면
-    // 메시지가 silent로 사라진다. 사용자에게 명시 error 이벤트로 통지하여 재전송 결정 가능하게 한다.
-    // B-5 P0 fix 반영: queue가 비어있는 신규 task로 시작 → engine generator 진행 중 push →
-    // generator throw → catch 분기에서 queue 비어있지 않으면 error 발행 (PR #52 의도 유지).
+  it("P1-3: turn 진행 중 intervention 도착 후 진짜 crash → error 분류하되 queued input 보존", async () => {
     const mocks = makeMocks();
     const task = makeTask();
 
@@ -3167,12 +3239,14 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     await task.executionPromise;
 
     expect(task.status).toBe("error");
-    expect(task.interventionQueue).toHaveLength(0);  // 재처리 방지로 비움
-    // 사용자 통지를 위한 wire error 이벤트가 broadcast됨
-    const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(
-      (c) => (c[1] as { type: string }).type === "error" && /skipped/.test((c[1] as { message: string }).message),
+    expect(task.pendingTerminationHint).toBe("error_aborted");
+    expect(task.interventionQueue).toEqual([{ text: "pending", user: "u" }]);
+    const skippedBroadcast = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => /queued intervention\(s\) skipped/.test(
+        String((c[1] as { message?: string }).message),
+      ),
     );
-    expect(errorBroadcast).toBeDefined();
+    expect(skippedBroadcast).toBeUndefined();
   });
 
   it("turn 종료 시 interventionQueue 비어있으면 status=completed로 종료 (단일 turn 회귀)", async () => {
