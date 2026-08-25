@@ -140,8 +140,11 @@ async function runProcess(command, args, options) {
   return { code, stdout, stderr };
 }
 
+// Same cold-start budget as the main-bundle startup gate: a Windows deploy node
+// needs several seconds before the isolated runner listens, and this runs while
+// the other verify files are still going.
 async function waitForSocketOrExit(path, child, readStderr) {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (process.platform === "win32") {
       if (await canConnect(path)) return;
