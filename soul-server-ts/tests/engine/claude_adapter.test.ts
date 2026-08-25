@@ -681,10 +681,10 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     ).resolves.toEqual({ status: "expired" });
   });
 
-  it("intervene exposes next-turn delivery while preserving a clean client interrupt", async () => {
+  it("intervene forwards native input and reports delivery without aborting the turn", async () => {
     const release = deferred<void>();
     const captured: ClaudeRunOptions[] = [];
-    const interruptActiveTurnForSteer = vi.fn().mockResolvedValue(true);
+    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" as const });
     let activeSignal: AbortSignal | null = null;
     const client: ClaudeClient = {
       async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
@@ -694,7 +694,7 @@ describe("ClaudeEngineAdapter fake client flow", () => {
         await release.promise;
         yield { type: "complete" };
       },
-      interruptActiveTurnForSteer,
+      steerActiveTurn,
     };
     const engine = new ClaudeEngineAdapter(
       { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
@@ -708,11 +708,10 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     });
 
     await expect(engine.intervene({ prompt: "redirect" })).resolves.toEqual({
-      status: "not_delivered",
+      status: "delivered",
       mechanism: "interrupt_then_next_turn",
-      reason: "next_turn_required",
     });
-    expect(interruptActiveTurnForSteer).toHaveBeenCalledTimes(1);
+    expect(steerActiveTurn).toHaveBeenCalledWith({ prompt: "redirect" });
     expect(activeSignal?.aborted).toBe(false);
     expect(captured[0]).not.toHaveProperty("onIntervention");
     expect(onIntervention).not.toHaveBeenCalled();

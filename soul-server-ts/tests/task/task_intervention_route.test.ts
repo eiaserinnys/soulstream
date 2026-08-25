@@ -800,7 +800,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
   });
 
-  it("generating 중 완료는 interrupt 없이 notification+queueOnly로만 전달한다", async () => {
+  it("generating 중 완료도 running deliver로 즉시 전달한다", async () => {
     const deliveryId = "55555555-5555-4555-8555-555555555555";
     const admission = admitted(deliveryId, "runtime_followup");
     const gate = {
@@ -843,15 +843,15 @@ describe("TaskInterventionRoute.addIntervention", () => {
       "queued",
     );
     expect(
-      vi.mocked(runningInterventionTransition.queueOnly).mock.invocationCallOrder[0],
+      vi.mocked(runningInterventionTransition.deliver).mock.invocationCallOrder[0],
     ).toBeLessThan(
       vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
     );
     expect(vi.mocked(gate.recordResult).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
     );
-    expect(runningInterventionTransition.queueOnly).toHaveBeenCalledTimes(1);
-    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledTimes(1);
+    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 
@@ -917,7 +917,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       runningInterventionTransition,
       sessionNotificationPublisher,
     } = makeSubject([task], gate);
-    vi.mocked(runningInterventionTransition.queueOnly).mockRejectedValueOnce(
+    vi.mocked(runningInterventionTransition.deliver).mockRejectedValueOnce(
       new Error("queue unavailable"),
     );
 
@@ -1089,7 +1089,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(onResume).toHaveBeenCalledTimes(1);
   });
 
-  it("durable_next_turn은 notification으로 오인하지 않고 queue-only user delivery를 유지한다", async () => {
+  it("durable_next_turn도 running deliver로 즉시 전달하되 notification은 발행하지 않는다", async () => {
     const deliveryId = "66666666-6666-4666-8666-666666666666";
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId, "durable_next_turn")),
@@ -1124,11 +1124,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
       reason: "queue_only_policy",
     });
 
-    expect(runningInterventionTransition.queueOnly).toHaveBeenCalledWith(
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledWith(
       task,
       expect.objectContaining({ deliveryId, deliveryIntent: "durable_next_turn" }),
+      { queueIfUndelivered: true },
     );
-    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
     expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
   });
 });

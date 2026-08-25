@@ -1071,7 +1071,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
     expect(harness.close).toHaveBeenCalledTimes(1);
   });
 
-  it("interrupts only generating and suppresses the expected EDE error event", async () => {
+  it("does not globally suppress the EDE diagnostic from a direct interrupt", async () => {
     const harness = makeHarness({
       receipt: { still_queued: [] },
     });
@@ -1095,10 +1095,51 @@ describe("ClaudeSdkClient persistent runtime", () => {
     expect(events).toContainEqual(
       expect.objectContaining({ type: "result", success: false }),
     );
-    expect(events.filter((event) => event.type === "error")).toEqual([]);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "error",
+      fatal: false,
+      errorCode: "error_during_execution",
+    }));
     expect(harness.detached).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "error" }),
     );
+    await client.close();
+  });
+
+  it("enqueues native input, fences one bare old Result, and completes the new UUID once", async () => {
+    const harness = makeHarness({ receipt: { still_queued: [] } });
+    const client = new ClaudeSdkClient(
+      { query: harness.queryFn, detachedEventSink: harness.detached },
+      silentLogger,
+    );
+    const ownerUuid = "11111111-1111-5111-8111-111111111111";
+    const deliveryUuid = "22222222-2222-5222-8222-222222222222";
+    const turn = collect(client.runPersistent(
+      { ...runOptions("long work"), inputUuid: ownerUuid },
+      abortSignal(),
+    ));
+    const ownerInput = await harness.nextInput();
+    expect(ownerInput.uuid).toBe(ownerUuid);
+
+    await expect(client.steerActiveTurn({
+      prompt: "native intervention",
+      inputUuid: deliveryUuid,
+      turnOrigin: { kind: "completion_notification", id: "delivery-1" },
+    })).resolves.toEqual({ status: "delivered" });
+    const deliveryInput = await harness.nextInput();
+    expect(deliveryInput).toMatchObject({ uuid: deliveryUuid, priority: "next" });
+    expect(harness.interrupt).toHaveBeenCalledTimes(1);
+
+    harness.push(sdkInterruptedResult("sdk-session", undefined));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    harness.push(sdkResult("sdk-session", deliveryUuid, "native complete"));
+
+    const events = await turn;
+    expect(events.filter((event) => event.type === "error")).toEqual([]);
+    expect(events.filter((event) => event.type === "complete")).toEqual([
+      expect.objectContaining({ result: "native complete" }),
+    ]);
+    expect(harness.captured).toHaveLength(1);
     await client.close();
   });
 
@@ -1255,7 +1296,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
     await expect(engine.intervene({ prompt: "too late" })).resolves.toEqual({
       status: "not_delivered",
       mechanism: "interrupt_then_next_turn",
-      reason: "not_accepting_input",
+      reason: "no_active_turn",
     });
     expect(harness.interrupt).not.toHaveBeenCalled();
     const firstTail = await collectRemaining(firstIterator);
