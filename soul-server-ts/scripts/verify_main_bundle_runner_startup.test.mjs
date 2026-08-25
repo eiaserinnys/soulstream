@@ -27,9 +27,20 @@ test("every Haniel build hook uses the cross-platform release env entrypoint", a
   }
 });
 
+test("the release env entrypoint spawns pnpm in a way Windows allows", async () => {
+  // The hook above resolves to pnpm.cmd on Windows, and Node >=18.20.2 refuses to
+  // spawn .cmd/.bat without a shell. Nothing else here executes the entrypoint, so
+  // this is what keeps a Windows-only EINVAL from shipping again.
+  const source = await readFile(
+    join(packageRoot, "scripts", "build_with_release_env.mjs"),
+    "utf8",
+  );
+  assert.match(source, /shell:\s*process\.platform === "win32"/);
+});
+
 test(
   "dist/main.js prewarms the exact manifest and stays starting until receipt ACK",
-  { timeout: 20_000 },
+  { timeout: 60_000 },
   async () => {
     const temporaryRoot = await mkdtemp(join(packageRoot, ".tmp-main-bundle-"));
     const runnerStateDirectory = await mkdtemp(join(tmpdir(), "ss-runner-"));
@@ -156,8 +167,11 @@ async function reservePort() {
   return port;
 }
 
+// Cold-starting the bundle costs ~5s on a Windows deploy node, and `node --test`
+// runs the verify files concurrently, so the observed worst case doubles. Keep the
+// budget well above that: this gate blocks the whole deploy when it flakes.
 async function waitForHealth(child, port, readOutput) {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       throw new Error(

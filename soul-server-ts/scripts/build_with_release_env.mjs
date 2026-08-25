@@ -12,6 +12,9 @@ const result = spawnSync(command, ["run", "build"], {
     SOULSTREAM_RELEASE_ENV_FILE: resolve(envFile),
   },
   stdio: "inherit",
+  // Node >=18.20.2 refuses to spawn .cmd/.bat without a shell (CVE-2024-27980).
+  // Without this every Windows deploy node fails the build hook with EINVAL.
+  shell: process.platform === "win32",
 });
 
 if (result.error) throw result.error;
