@@ -1195,11 +1195,15 @@ export class TaskExecutor {
         currentTurnIntervention = turnInput.intervention;
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
+      const requiresClaudeDeliveryInputProof =
+        effectiveTaskBackend(task, agent) === "claude"
+        && this.deliveryTranscriptReceipt !== undefined;
       const turnReceipt = this.deliveryConsumption
           ? new TaskDeliveryTurnReceipt(
             this.deliveryConsumption,
             currentTurnIntervention,
             this.deliveryTranscriptReceipt,
+            requiresClaudeDeliveryInputProof,
           )
         : undefined;
       try {

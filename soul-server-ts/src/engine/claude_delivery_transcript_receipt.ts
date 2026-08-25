@@ -45,7 +45,7 @@ export class ClaudeDeliveryTranscriptReceiptReader {
   }
 
   async inspect(
-    delivery: SessionDeliveryRow,
+    delivery: Pick<SessionDeliveryRow, "delivery_id" | "target_session_id">,
   ): Promise<ClaudeDeliveryTranscriptReceipt> {
     const inputUuid = buildDeliveryInputUuid(delivery.delivery_id);
     const targetSessionId = delivery.target_session_id;
