@@ -243,7 +243,7 @@ export class RunningInterventionTransition {
         message: "Task runner engine is unavailable",
       };
     }
-    const composed = composeInterventionTurnPrompt(message);
+    const composed = composeInterventionTurnPrompt([message]);
     const inputUuid = message.deliveryId
       ? buildDeliveryInputUuid(message.deliveryId)
       : undefined;

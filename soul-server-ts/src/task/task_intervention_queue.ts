@@ -58,11 +58,10 @@ export function enqueueInterventionOnce(
   return task.interventionQueue.indexOf(message) + 1;
 }
 
-export function dequeueIntervention(task: Task): InterventionMessage | undefined {
-  if (task.interventionQueue.length > 1) {
-    task.interventionQueue = sortInterventionsByPriority(task.interventionQueue);
-  }
-  return task.interventionQueue.shift();
+export function dequeueInterventions(task: Task): InterventionMessage[] {
+  const drained = sortInterventionsByPriority(task.interventionQueue);
+  task.interventionQueue = [];
+  return drained;
 }
 
 function laneRank(lane: InterventionPriorityLane): number {

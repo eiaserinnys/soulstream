@@ -1167,12 +1167,11 @@ export class TaskExecutor {
       const rolloverCycleFromForTurn = task.claudeBackendRolloverCycleFrom
         ?? turnInput.backendSessionRolloverFrom;
       const contextRecovery = createClaudeContextRecoveryObservation();
-      let currentTurnIntervention = turnInput.intervention;
-      if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
-        await this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
-          task,
-          currentTurnIntervention,
-        );
+      let currentTurnInterventions = turnInput.interventions ?? [];
+      if (this.claudeRuntimeTaskFollowup) {
+        for (const intervention of currentTurnInterventions) {
+          await this.claudeRuntimeTaskFollowup.cancelScheduledFallback(task, intervention);
+        }
       }
       const compactedBeforeTurn = await this.compactClaudeContextIfNeeded(
         task,
@@ -1180,19 +1179,19 @@ export class TaskExecutor {
         runner,
         turnInput,
       );
-      if (compactedBeforeTurn && currentTurnIntervention) {
+      if (compactedBeforeTurn && currentTurnInterventions.length > 0) {
         turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,
-          currentTurnIntervention,
+          currentTurnInterventions,
         );
-        currentTurnIntervention = turnInput.intervention;
+        currentTurnInterventions = turnInput.interventions ?? [];
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
       const turnReceipt = this.deliveryConsumption
         ? new TaskDeliveryTurnReceipt(
             this.deliveryConsumption,
-            currentTurnIntervention,
+            currentTurnInterventions,
           )
         : undefined;
       try {
@@ -1207,6 +1206,9 @@ export class TaskExecutor {
               : {}),
             ...(turnInput.runnerInterventionId !== undefined
               ? { runnerInterventionId: turnInput.runnerInterventionId }
+              : {}),
+            ...(turnInput.runnerInterventionIds !== undefined
+              ? { runnerInterventionIds: turnInput.runnerInterventionIds }
               : {}),
             ...(turnInput.turnOrigin !== undefined
               ? { turnOrigin: turnInput.turnOrigin }
@@ -1232,7 +1234,7 @@ export class TaskExecutor {
         const disposition = await this.engineFailureRecovery.recoverFromExecuteFailure(
           task,
           err,
-          currentTurnIntervention,
+          currentTurnInterventions,
         );
         if (disposition === "continue_with_accepted_successor") {
           if (turnReceipt) await turnReceipt.consume(task);
@@ -1241,7 +1243,7 @@ export class TaskExecutor {
             turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
               task,
               agent,
-              transition.intervention,
+              transition.interventions,
             );
             continue;
           }
@@ -1331,11 +1333,13 @@ export class TaskExecutor {
         await this.compactClaudeContextIfNeeded(task, agent, runner);
       }
       await this.flushClaudeRuntimeTaskFollowups(task);
-      await this.handleClaudeRuntimeFollowupStall(
-        task,
-        currentTurnIntervention,
-        previousAssistantText,
-      );
+      for (const intervention of currentTurnInterventions) {
+        await this.handleClaudeRuntimeFollowupStall(
+          task,
+          intervention,
+          previousAssistantText,
+        );
+      }
       await task.interruptRequest;
       const transition = resolveTurnLoopTransition(task, agent);
       if (transition.kind === "awaiting_runtime") {
@@ -1346,7 +1350,7 @@ export class TaskExecutor {
       turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
         task,
         agent,
-        transition.intervention,
+        transition.interventions,
       );
       } finally {
         if (turnReceipt) await turnReceipt.consume(task);
@@ -1481,7 +1485,7 @@ export class TaskExecutor {
         const followupTurnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,
-          transition.intervention,
+          transition.interventions,
         );
         await this.consumeTurnLoop(task, agent, runner, followupTurnInput);
       }

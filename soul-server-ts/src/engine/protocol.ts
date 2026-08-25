@@ -101,6 +101,8 @@ export interface EngineExecuteParams {
   inputUuid?: string;
   /** Durable runner inbox entry consumed by this turn. Runner boundary only. */
   runnerInterventionId?: string;
+  /** Durable runner inbox entries consumed atomically by one model turn. Runner boundary only. */
+  runnerInterventionIds?: string[];
   /** Durable producer of this turn, propagated unchanged across the runner boundary. */
   turnOrigin?: TurnOrigin;
   /** Codex SDK `UserInput[]`로 전달할 로컬 이미지 첨부 경로. */

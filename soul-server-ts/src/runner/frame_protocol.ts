@@ -32,6 +32,7 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   prompt: z.string(),
   inputUuid: z.string().min(1).optional(),
   runnerInterventionId: z.string().min(1).optional(),
+  runnerInterventionIds: z.array(z.string().min(1)).min(1).optional(),
   turnOrigin: z.object({
     kind: z.enum([
       "initial_prompt",

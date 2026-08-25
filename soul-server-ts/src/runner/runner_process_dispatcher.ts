@@ -720,17 +720,18 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   ): Promise<void> {
     try {
       await this.ready;
-      let flushedFallback = false;
-      if (params.runnerInterventionId) {
-        flushedFallback = await this.flushInterventionFallback(
-          params.runnerInterventionId,
-          true,
-        );
+      const interventionIds = params.runnerInterventionIds
+        ?? (params.runnerInterventionId ? [params.runnerInterventionId] : []);
+      const flushedFallbackIds: string[] = [];
+      for (const interventionId of interventionIds) {
+        if (await this.flushInterventionFallback(interventionId, true)) {
+          flushedFallbackIds.push(interventionId);
+        }
       }
       this.observeActiveExecution(commandId, "execute");
       assertCommandAccepted(await this.dispatch(executeCommandFrame(commandId, params)));
-      if (flushedFallback && params.runnerInterventionId) {
-        this.outbox.removeInterventionFallback(params.runnerInterventionId);
+      for (const interventionId of flushedFallbackIds) {
+        this.outbox.removeInterventionFallback(interventionId);
       }
       await this.replayPendingFrames();
     } catch (error) {

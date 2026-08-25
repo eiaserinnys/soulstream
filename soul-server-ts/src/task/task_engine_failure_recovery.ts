@@ -25,15 +25,15 @@ export class TaskEngineFailureRecovery {
   async recoverFromExecuteFailure(
     task: Task,
     err: unknown,
-    activeIntervention?: InterventionMessage,
+    activeInterventions: readonly InterventionMessage[] = [],
   ): Promise<ExecuteFailureDisposition> {
     const message = this.errorMessage(err);
-    const successorOwner = distinctAcceptedSuccessorOwner(task, activeIntervention);
+    const successorOwner = distinctAcceptedSuccessorOwner(task, activeInterventions);
     if (task.status === "running" && successorOwner !== undefined) {
       this.deps.logger.info(
         {
           sessionId: task.agentSessionId,
-          activeOwner: interventionOwner(activeIntervention) ?? "initial_prompt",
+          activeOwners: activeInterventions.map(interventionOwner).filter(Boolean),
           successorOwner,
           interruptedTurnDetail: message,
         },
@@ -79,12 +79,12 @@ export class TaskEngineFailureRecovery {
 
 function distinctAcceptedSuccessorOwner(
   task: Task,
-  activeIntervention: InterventionMessage | undefined,
+  activeInterventions: readonly InterventionMessage[],
 ): string | undefined {
   const successorOwner = interventionOwner(task.interventionQueue[0]);
   if (successorOwner === undefined) return undefined;
-  const activeOwner = interventionOwner(activeIntervention);
-  return successorOwner !== activeOwner ? successorOwner : undefined;
+  const activeOwners = new Set(activeInterventions.map(interventionOwner));
+  return !activeOwners.has(successorOwner) ? successorOwner : undefined;
 }
 
 function interventionOwner(message: InterventionMessage | undefined): string | undefined {
