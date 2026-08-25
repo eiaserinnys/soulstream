@@ -138,6 +138,8 @@ export class HumanLiveSteerModelInputHarness {
       },
       this.message,
       this.transcriptReceipt,
+      true,
+      `event:${task.lastEventId ?? "unknown"}`,
     );
     this.journal.push({
       kind: "turn",
