@@ -751,6 +751,28 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
   });
 
+  it("queues behind an existing execution reservation instead of racing its runner", async () => {
+    const task = makeTask({
+      executionOwnershipReservation: {
+        ownerKind: "adopted_runner",
+        manifestId: "sha-restart",
+        runtimeEnvIdentity: "env-restart",
+        ownershipGeneration: 42,
+        entryPath: "adopt",
+      },
+    });
+    const { route, runningInterventionTransition } = makeSubject([task]);
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "wait for the reserved runner",
+      user: "alice",
+    }, vi.fn())).resolves.toMatchObject({ queued: true });
+
+    expect(runningInterventionTransition.queueOnly).toHaveBeenCalledOnce();
+    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+  });
+
   it("normalizes unresolved task lookup to the existing Task not found error shape", async () => {
     const { route, loadEvictedTask, runningInterventionTransition, autoResumeTransition } =
       makeSubject();
