@@ -1,6 +1,6 @@
 import type { InterventionMessage, Task } from "./task_models.js";
 
-export async function discardRestoreSuppressedRunnerIntervention(
+export async function discardConsumedRunnerIntervention(
   task: Task,
   deliveryId: string,
 ): Promise<void> {
@@ -21,7 +21,7 @@ export async function discardRestoreSuppressedRunnerIntervention(
   );
 }
 
-export function matchesRestoreSuppressedDelivery(
+export function matchesConsumedDelivery(
   row: {
     delivery_id: string;
     relation_key: string;
@@ -33,19 +33,13 @@ export function matchesRestoreSuppressedDelivery(
     "deliveryId" | "relationKey" | "completionId"
   >,
 ): boolean {
-  if (
-    !row
-    || (row.aggregate_state !== "consumed"
-      && row.aggregate_state !== "dead_letter")
-  ) return false;
+  if (!row || row.aggregate_state !== "consumed") return false;
   if (
     row.delivery_id !== message.deliveryId
     || row.relation_key !== message.relationKey
     || row.completion_id !== message.completionId
   ) {
-    throw new Error(
-      `Restore-suppressed delivery identity mismatch: ${message.deliveryId}`,
-    );
+    throw new Error(`Consumed delivery identity mismatch: ${message.deliveryId}`);
   }
   return true;
 }

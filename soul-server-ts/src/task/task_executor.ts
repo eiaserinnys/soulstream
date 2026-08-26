@@ -182,7 +182,7 @@ export class TaskExecutor {
     private readonly claudeRuntimeTaskFollowup?: ClaudeRuntimeTaskFollowupPort,
     deliveryConsumptionRecorder?: Pick<
       TaskDeliveryLedgerGate,
-      "recordConsumed" | "recordTurnStarted" | "discardIfRestoreSuppressed"
+      "recordConsumed" | "recordTurnStarted" | "discardIfConsumed"
     >,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
@@ -1548,7 +1548,7 @@ export class TaskExecutor {
         runnerInterventionId: pending.interventionId,
       };
       if (message.deliveryId) {
-        const discarded = await this.deliveryConsumption?.discardIfRestoreSuppressed(
+        const discarded = await this.deliveryConsumption?.discardIfConsumed(
           task,
           message,
         ) ?? false;

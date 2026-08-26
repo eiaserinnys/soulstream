@@ -22,9 +22,9 @@ import { buildNotificationOutboxPayload, isNotificationDeliveryIntent } from
   "./session_delivery_notification_payload.js";
 import { projectNotificationReceipt } from "./notification_receipt_projection.js";
 import {
-  discardRestoreSuppressedRunnerIntervention,
-  matchesRestoreSuppressedDelivery,
-} from "./restore_suppressed_runner_intervention.js";
+  discardConsumedRunnerIntervention,
+  matchesConsumedDelivery,
+} from "./consumed_runner_intervention.js";
 
 export type DeliveryLedgerAdmission =
   | { kind: "legacy" }
@@ -183,18 +183,18 @@ export class TaskDeliveryLedgerGate {
       `event:${task.lastEventId ?? "unknown"}`,
     );
     if (consumed?.state !== "consumed") return false;
-    await discardRestoreSuppressedRunnerIntervention(task, consumed.delivery_id);
+    await discardConsumedRunnerIntervention(task, consumed.delivery_id);
     return true;
   }
 
-  async discardIfRestoreSuppressed(
+  async discardIfConsumed(
     message: InterventionMessage,
     task: Task,
   ): Promise<boolean> {
     if (!this.enabled || !isControlledMessage(message) || !message.deliveryId) return false;
     const row = await this.requireRepository().get(message.deliveryId);
-    if (!matchesRestoreSuppressedDelivery(row, message)) return false;
-    await discardRestoreSuppressedRunnerIntervention(task, message.deliveryId);
+    if (!matchesConsumedDelivery(row, message)) return false;
+    await discardConsumedRunnerIntervention(task, message.deliveryId);
     return true;
   }
 
