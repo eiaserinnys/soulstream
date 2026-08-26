@@ -18,6 +18,7 @@ const directory = dirname(fileURLToPath(import.meta.url));
 const shellScripts = [
   "common.sh",
   "bootstrap.sh",
+  "clean-run-common.sh",
   "clean-run.sh",
   "start.sh",
   "stop.sh",
@@ -52,14 +53,17 @@ test("mutable-state reset preserves only the lab credential", () => {
       writeFileSync(join(root, path, "residue"), "dirty\n");
     }
     writeFileSync(join(root, "state", "claude-auth.json"), "lab-auth\n");
+    chmodSync(join(root, "state", "config", "residue"), 0o444);
+    chmodSync(join(root, "state", "config"), 0o555);
 
     const outcome = spawnSync(
       "bash",
       [
         "-c",
-        'source "$1"; LAB_ROOT="$2"; LAB_DEFAULT_ROOT="$2"; reset_lab_mutable_state',
+        'source "$1"; source "$2"; LAB_ROOT="$3"; LAB_DEFAULT_ROOT="$3"; reset_lab_mutable_state',
         "lab-test",
         join(directory, "common.sh"),
+        join(directory, "clean-run-common.sh"),
         root,
       ],
       { encoding: "utf8", timeout: 10_000 },
@@ -111,9 +115,10 @@ test("provenance output fetches origin main without moving the checkout", () => 
       "bash",
       [
         "-c",
-        'source "$1"; LAB_REPO="$2"; print_fresh_lab_provenance',
+        'source "$1"; source "$2"; LAB_REPO="$3"; print_fresh_lab_provenance',
         "lab-test",
         join(directory, "common.sh"),
+        join(directory, "clean-run-common.sh"),
         clone,
       ],
       { encoding: "utf8", timeout: 10_000 },

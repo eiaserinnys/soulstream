@@ -144,6 +144,28 @@ The harness exits nonzero when a scenario verdict or invariant fails. It may
 write only the dedicated lab PostgreSQL container and may signal only PIDs
 whose command line and runtime root match the lab clone.
 
+## Idempotent clean run
+
+Use `clean-run.sh` when the result must not inherit any earlier lab execution:
+
+```bash
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/clean-run.sh all
+```
+
+With no arguments it also runs `all`. The command owns the host verification
+lock for the complete reset, build, start, harness, and stop sequence. Before
+resetting anything it fetches `origin/main` and prints the checkout commit,
+fresh `origin/main` commit, branch, and dirty flag. A checkout that intentionally
+tests an unmerged commit is reported rather than silently moved.
+
+The reset stops only lab-owned process groups, requires the PostgreSQL
+container and volume labels, recreates the lab database, and empties runtime
+logs, outbox, runner state, workspace, PID files, release artifacts, caches,
+and migration journals. The lab OAuth credential and completed fault-harness
+evidence are preserved. Bootstrap then rebuilds the bundle from the reported
+checkout, and the existing harness provenance and dirty-baseline preflight
+remain authoritative post-reset guards.
+
 ### Proving the judges still work
 
 ```bash

@@ -7,10 +7,16 @@ source "$SCRIPT_DIR/common.sh"
 
 load_lab_env
 export LAB_ROOT
-export SOULSTREAM_HEAVY_LOCK_HELD=1
 export LAB_INTERVENTION_ACCEPTANCE_TIMEOUT_MS=$((LAB_INTERVENTION_ACCEPTANCE_SECONDS * 1000))
 harness_entry="$LAB_REPO/scripts/lab-node/fault-harness.mjs"
-run_with_process_group_ceiling \
-  "$LAB_HARNESS_PROCESS_CEILING_SECONDS" "$harness_entry" \
-  flock -w 300 /tmp/soulstream-heavy-verify.lock \
-  /usr/bin/node "$harness_entry" "$@"
+if [[ "${SOULSTREAM_HEAVY_LOCK_HELD:-}" == "1" ]]; then
+  run_with_process_group_ceiling \
+    "$LAB_HARNESS_PROCESS_CEILING_SECONDS" "$harness_entry" \
+    /usr/bin/node "$harness_entry" "$@"
+else
+  export SOULSTREAM_HEAVY_LOCK_HELD=1
+  run_with_process_group_ceiling \
+    "$LAB_HARNESS_PROCESS_CEILING_SECONDS" "$harness_entry" \
+    flock -w 300 /tmp/soulstream-heavy-verify.lock \
+    /usr/bin/node "$harness_entry" "$@"
+fi

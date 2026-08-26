@@ -78,8 +78,7 @@ lifecycle, not the product recovery implementation.
 | Runner state | 16 retained directories | Empty the isolated runner-state root before worker start |
 | Outbox | 2 retained entries in the independent observation | Empty the isolated outbox root before worker start |
 | PID and runtime state | Prior runs can leave files and releases | Empty mutable state while preserving the lab OAuth credential |
-| Evidence | 281 earlier run directories in the independent observation | Start each command from a new empty lab state; keep the completed run until the next clean-run |
+| Evidence | 281 earlier run directories in the independent observation | Preserve completed evidence because it does not participate in startup or recovery |
 
 The existing `refused_dirty_baseline` preflight remains the post-reset guard.
 No scenario, mock, verdict, timeout, or product source is changed by the repair.
-
