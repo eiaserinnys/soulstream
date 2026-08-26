@@ -1155,7 +1155,7 @@ describe("RunningInterventionTransition", () => {
     expect(task.interventionQueue).toEqual([]);
   });
 
-  it("falls back to a claim-free memory queue when receipt recovery also fails", async () => {
+  it("returns an honest unknown verdict when receipt recovery also fails", async () => {
     const stageIntervention = vi.fn()
       .mockRejectedValueOnce(new Error("receipt command timed out"))
       .mockRejectedValueOnce(new Error("receipt recovery timed out"));
@@ -1191,24 +1191,18 @@ describe("RunningInterventionTransition", () => {
 
     await expect(transition.deliver(
       task,
-      { text: "keep this in memory", user: "alice" },
+      { text: "keep this in the central delivery", user: "alice" },
     )).resolves.toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
+      delivered: null,
       reason: "verdict_unknown",
+      consumeWhen: null,
     });
-    expect(task.interventionQueue).toEqual([expect.objectContaining({
-      text: "keep this in memory",
-    })]);
-    expect(task.interventionQueue[0]).not.toHaveProperty("runnerInterventionId");
+    expect(task.interventionQueue).toEqual([]);
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         interventionId: expect.any(String),
-        durability: "memory_only",
       }),
-      "runner intervention durable queue recovery failed; queued in memory",
+      "runner intervention durable queue recovery failed; verdict remains unknown",
     );
   });
 });
