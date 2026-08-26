@@ -225,7 +225,7 @@ export function makeCompletionRepository() {
       consumed.push(message.deliveryId);
       stored = { ...stored, state: "consumed" };
     }),
-    discardIfRestoreSuppressed: vi.fn(async () => false),
+    discardIfConsumed: vi.fn(async () => false),
   };
   return {
     value,
