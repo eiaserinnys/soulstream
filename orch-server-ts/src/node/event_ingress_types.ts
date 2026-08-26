@@ -99,6 +99,10 @@ function parseEnvelope(
     throw new EventIngressValidationError("event_append_batch source_seq must be contiguous");
   }
   const sessionId = nonEmptyString(value.session_id, `events[${index}].session_id`);
+  const executionGeneration = value.execution_generation === undefined
+    || value.execution_generation === null
+    ? value.execution_generation
+    : positiveInteger(value.execution_generation, `events[${index}].execution_generation`);
   const eventType = nonEmptyString(value.event_type, `events[${index}].event_type`);
   const createdAt = nonEmptyString(value.created_at, `events[${index}].created_at`);
   if (!Number.isFinite(Date.parse(createdAt))) {
@@ -118,6 +122,9 @@ function parseEnvelope(
     stream_id: streamId,
     source_seq: sourceSeq,
     session_id: sessionId,
+    ...(executionGeneration === undefined
+      ? {}
+      : { execution_generation: executionGeneration }),
     event_type: eventType,
     payload: sanitizePgJsonValue(value.payload),
     searchable_text: searchableText === null ? null : sanitizePgText(searchableText),
@@ -180,6 +187,50 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
     );
     return {
       kind: value.kind,
+      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.expected_terminal_event_id === undefined
+        ? {}
+        : {
+            expected_terminal_event_id: value.expected_terminal_event_id === null
+              ? null
+              : positiveInteger(
+                  value.expected_terminal_event_id,
+                  `${field}.expected_terminal_event_id`,
+                ),
+          }),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
+  if (value.kind === "execution_acquire") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "owner_kind", "manifest_id", "runtime_env_identity",
+        "registration_id", "pid", "start_identity", "execution_command_id",
+        "lease_expires_at", "review_state", "expected_terminal_event_id", "updated_at",
+      ],
+      field,
+    );
+    const ownerKind = nonEmptyString(value.owner_kind, `${field}.owner_kind`);
+    if (!["runner_process", "adopted_runner", "in_process"].includes(ownerKind)) {
+      throw new EventIngressValidationError(`${field}.owner_kind is invalid`);
+    }
+    return {
+      kind: value.kind,
+      owner_kind: ownerKind as "runner_process" | "adopted_runner" | "in_process",
+      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      runtime_env_identity: nonEmptyString(
+        value.runtime_env_identity,
+        `${field}.runtime_env_identity`,
+      ),
+      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
+      pid: positiveInteger(value.pid, `${field}.pid`),
+      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
+      lease_expires_at: isoTimestamp(value.lease_expires_at, `${field}.lease_expires_at`),
       review_state: nonEmptyString(value.review_state, `${field}.review_state`),
       ...(value.expected_terminal_event_id === undefined
         ? {}

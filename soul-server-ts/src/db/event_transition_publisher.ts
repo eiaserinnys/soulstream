@@ -1,7 +1,6 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type {
   CanonicalExecutionOwnership,
-  ExecutionIdentityProof,
   ExecutionOwnershipObservation,
   ExecutionOwnerKind,
 } from "../task/execution_ownership.js";
@@ -61,118 +60,40 @@ export abstract class EventTransitionPublisher {
     return await this.waitForTransitionApplication(sessionId, record, "running");
   }
 
-  async reserveExecutionOwnershipAndWaitForApplication(
+  async acquireExecutionOwnershipAndWaitForApplication(
     sessionId: string,
     input: {
-      ownershipGeneration: number;
       ownerKind: ExecutionOwnerKind;
       manifestId: string;
       runtimeEnvIdentity: string;
-      updatedAt?: Date;
-    },
-  ): Promise<EventSessionTransitionApplication> {
-    return await this.enqueueExecutionEffectAndWait(
-      sessionId,
-      `reserve:${input.ownershipGeneration}`,
-      {
-        kind: "execution_reserve",
-        ownership_generation: input.ownershipGeneration,
-        owner_kind: input.ownerKind,
-        manifest_id: input.manifestId,
-        runtime_env_identity: input.runtimeEnvIdentity,
-        updated_at: (input.updatedAt ?? new Date()).toISOString(),
-      },
-    );
-  }
-
-  async proveExecutionOwnershipAndWaitForApplication(
-    sessionId: string,
-    ownershipGeneration: number,
-    proof: ExecutionIdentityProof,
-    updatedAt = new Date(),
-  ): Promise<EventSessionTransitionApplication> {
-    return await this.enqueueExecutionEffectAndWait(
-      sessionId,
-      `prove:${ownershipGeneration}`,
-      {
-        kind: "execution_prove",
-        ownership_generation: ownershipGeneration,
-        registration_id: proof.registrationId,
-        pid: proof.pid,
-        start_identity: proof.startIdentity,
-        execution_command_id: proof.executionCommandId,
-        updated_at: updatedAt.toISOString(),
-      },
-    );
-  }
-
-  async reserveExecutionAdoptionAndWaitForApplication(
-    sessionId: string,
-    input: {
-      ownershipGeneration: number;
-      manifestId: string;
-      runtimeEnvIdentity: string;
-      previousRegistrationId: string;
+      registrationId: string;
       pid: number;
       startIdentity: string;
       executionCommandId: string;
-      updatedAt?: Date;
-    },
-  ): Promise<EventSessionTransitionApplication> {
-    return await this.enqueueExecutionEffectAndWait(
-      sessionId,
-      `adopt-reserve:${input.ownershipGeneration}`,
-      {
-        kind: "execution_adopt_reserve",
-        ownership_generation: input.ownershipGeneration,
-        manifest_id: input.manifestId,
-        runtime_env_identity: input.runtimeEnvIdentity,
-        previous_registration_id: input.previousRegistrationId,
-        pid: input.pid,
-        start_identity: input.startIdentity,
-        execution_command_id: input.executionCommandId,
-        updated_at: (input.updatedAt ?? new Date()).toISOString(),
-      },
-    );
-  }
-
-  async activateExecutionOwnershipAndWaitForApplication(
-    sessionId: string,
-    input: {
-      ownershipGeneration: number;
+      leaseExpiresAt: Date;
       reviewState: string;
       expectedTerminalEventId?: number | null;
       updatedAt?: Date;
     },
   ): Promise<EventSessionTransitionApplication> {
+    const updatedAt = input.updatedAt ?? new Date();
     return await this.enqueueExecutionEffectAndWait(
       sessionId,
-      `activate:${input.ownershipGeneration}`,
+      `acquire:${input.executionCommandId}`,
       {
-        kind: "execution_activate",
-        ownership_generation: input.ownershipGeneration,
+        kind: "execution_acquire",
+        owner_kind: input.ownerKind,
+        manifest_id: input.manifestId,
+        runtime_env_identity: input.runtimeEnvIdentity,
+        registration_id: input.registrationId,
+        pid: input.pid,
+        start_identity: input.startIdentity,
+        execution_command_id: input.executionCommandId,
+        lease_expires_at: input.leaseExpiresAt.toISOString(),
         review_state: input.reviewState,
         ...(input.expectedTerminalEventId === undefined
           ? {}
           : { expected_terminal_event_id: input.expectedTerminalEventId }),
-        updated_at: (input.updatedAt ?? new Date()).toISOString(),
-      },
-    );
-  }
-
-  async failExecutionOwnershipAndWaitForApplication(
-    sessionId: string,
-    ownershipGeneration: number,
-    failureReason: string,
-    updatedAt = new Date(),
-  ): Promise<EventSessionTransitionApplication> {
-    return await this.enqueueExecutionEffectAndWait(
-      sessionId,
-      `fail:${ownershipGeneration}`,
-      {
-        kind: "execution_fail",
-        ownership_generation: ownershipGeneration,
-        failure_reason: failureReason,
         updated_at: updatedAt.toISOString(),
       },
     );
@@ -198,27 +119,6 @@ export abstract class EventTransitionPublisher {
         start_identity: input.startIdentity,
         failure_reason: input.failureReason,
         updated_at: (input.updatedAt ?? new Date()).toISOString(),
-      },
-    );
-  }
-
-  async markExecutionOrphanedSpawnAndWaitForApplication(
-    sessionId: string,
-    ownershipGeneration: number,
-    proof: ExecutionIdentityProof,
-    updatedAt = new Date(),
-  ): Promise<EventSessionTransitionApplication> {
-    return await this.enqueueExecutionEffectAndWait(
-      sessionId,
-      `orphaned-spawn:${ownershipGeneration}`,
-      {
-        kind: "execution_orphaned_spawn",
-        ownership_generation: ownershipGeneration,
-        registration_id: proof.registrationId,
-        pid: proof.pid,
-        start_identity: proof.startIdentity,
-        execution_command_id: proof.executionCommandId,
-        updated_at: updatedAt.toISOString(),
       },
     );
   }
@@ -301,13 +201,8 @@ export abstract class EventTransitionPublisher {
     sessionId: string,
     transitionId: string,
     effect: Extract<EventOutboxSessionEffect, { kind:
-      | "execution_reserve"
-      | "execution_prove"
-      | "execution_adopt_reserve"
-      | "execution_activate"
-      | "execution_fail"
+      | "execution_acquire"
       | "execution_expire_dead_owner"
-      | "execution_orphaned_spawn"
       | "execution_backfill" }>,
   ): Promise<EventSessionTransitionApplication> {
     const event = {

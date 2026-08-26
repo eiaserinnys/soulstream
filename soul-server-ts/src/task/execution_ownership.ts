@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import type { TaskStatus, TerminationReason } from "./task_models.js";
 
@@ -138,11 +138,6 @@ export interface ExecutionOwnershipObservation {
   startIdentity: string | null;
   executionCommandId: string | null;
   observedAt: Date;
-}
-
-export function newExecutionOwnershipGeneration(): number {
-  const generation = randomBytes(6).readUIntBE(0, 6);
-  return generation === 0 ? 1 : generation;
 }
 
 export function executionEntryTransitionId(

@@ -38,9 +38,9 @@ describe("AutoResumeTransition", () => {
   it("keeps an owned auto-resume initializing until executor activation", async () => {
     const task = makeTerminalTask({ status: "error" });
     const persistenceDouble = makeEventPersistenceTestDouble();
-    const reserveExecutionOwnershipAndWaitForApplication = vi.fn();
+    const acquireExecutionOwnershipAndWaitForApplication = vi.fn();
     const persistence = Object.assign(persistenceDouble.persistence, {
-      reserveExecutionOwnershipAndWaitForApplication,
+      acquireExecutionOwnershipAndWaitForApplication,
     });
     const onResume = vi.fn((resumedTask: Task) => {
       expect(resumedTask.status).toBe("initializing");
@@ -58,7 +58,7 @@ describe("AutoResumeTransition", () => {
     expect(onResume).toHaveBeenCalledWith(task);
     expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
       .not.toHaveBeenCalled();
-    expect(reserveExecutionOwnershipAndWaitForApplication).not.toHaveBeenCalled();
+    expect(acquireExecutionOwnershipAndWaitForApplication).not.toHaveBeenCalled();
   });
 
   it("fences an owned resume to the terminal revision captured before async metadata work", async () => {
@@ -68,7 +68,7 @@ describe("AutoResumeTransition", () => {
     const persistenceDouble = makeEventPersistenceTestDouble();
     const enqueueMetadataEffect = vi.fn(async () => await metadataBlocked);
     const persistence = Object.assign(persistenceDouble.persistence, {
-      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
+      acquireExecutionOwnershipAndWaitForApplication: vi.fn(),
       enqueueMetadataEffect,
     });
     const transition = new AutoResumeTransition({ logger: silentLogger, persistence });

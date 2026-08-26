@@ -47,6 +47,47 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
     )`;
     return canonicalTransitionApplication(rows, "running");
   }
+  if (effect.kind === "execution_acquire") {
+    const rows = await sql<AcquireTransitionRow[]>`
+      SELECT * FROM session_acquire_execution_ownership(
+        ${envelope.session_id},
+        ${effect.manifest_id},
+        ${effect.runtime_env_identity},
+        ${effect.registration_id},
+        ${effect.pid},
+        ${effect.start_identity},
+        ${effect.execution_command_id},
+        ${new Date(effect.lease_expires_at)},
+        ${effect.review_state},
+        ${effect.expected_terminal_event_id ?? null},
+        ${effect.expected_terminal_event_id !== undefined},
+        ${new Date(effect.updated_at)}
+      )
+    `;
+    const application = canonicalTransitionApplication(rows, "execution acquire");
+    const row = rows[0]!;
+    const generation = Number(row.execution_generation);
+    if (!Number.isSafeInteger(generation) || generation < 0) {
+      throw new Error("execution acquire returned an invalid generation");
+    }
+    return {
+      ...application,
+      canonicalExecutionOwnership: generation === 0
+        ? null
+        : {
+            ownership_generation: generation,
+            owner_kind: effect.owner_kind,
+            manifest_id: effect.manifest_id,
+            runtime_env_identity: effect.runtime_env_identity,
+            registration_id: effect.registration_id,
+            pid: effect.pid,
+            start_identity: effect.start_identity,
+            execution_command_id: effect.execution_command_id,
+            phase: "active",
+            failure_reason: null,
+          },
+    };
+  }
   if (effect.kind === "execution_reserve") {
     const rows = effect.runtime_env_identity === undefined
       ? await sql<CanonicalTransitionRow[]>`
@@ -361,6 +402,11 @@ type CanonicalTransitionRow = {
   termination_event_id: number | null;
   updated_at: Date | string;
   last_event_id: number | null;
+};
+
+type AcquireTransitionRow = CanonicalTransitionRow & {
+  execution_generation: string | number;
+  execution_lease_expires_at: Date | string | null;
 };
 
 async function applyTerminalTransition(

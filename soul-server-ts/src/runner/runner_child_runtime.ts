@@ -298,7 +298,7 @@ export class RunnerChildRuntime {
     try {
       await this.prepareExecution(command);
       for await (const frame of this.dispatcher.events(command.commandId)) {
-        await this.forwardRunnerFrame(frame, preBootstrap);
+        await this.forwardRunnerFrame(frame, preBootstrap, command.params.executionGeneration);
       }
       if (requiresBackendSessionId(this.config.backend) && !(await this.outbox.readBootstrap())) {
         this.discardPreBootstrapFrames(preBootstrap, "backend_session_id_missing");
@@ -334,6 +334,7 @@ export class RunnerChildRuntime {
   private async forwardRunnerFrame(
     frame: RunnerEventFrame,
     preBootstrap: PreBootstrapFrameBuffer,
+    executionGeneration?: number,
   ): Promise<void> {
     if (frame.kind === "run_state_snapshot") {
       await this.callHostSnapshot("persistRunState", frame.snapshot);
@@ -392,7 +393,7 @@ export class RunnerChildRuntime {
         return;
       }
       await this.ensureBootstrap(backendSessionId, this.requireActiveCommandId());
-      await this.flushPreBootstrapFrames(preBootstrap);
+      await this.flushPreBootstrapFrames(preBootstrap, executionGeneration);
     } else if (!bootstrap) {
       await this.ensureBootstrap(null, this.requireActiveCommandId());
     }
@@ -401,6 +402,7 @@ export class RunnerChildRuntime {
       event,
       effect,
       backendSessionRotation,
+      executionGeneration,
     );
     if (backendSessionRotation) this.pendingBackendSessionRolloverFrom = undefined;
   }
@@ -413,6 +415,7 @@ export class RunnerChildRuntime {
       expectedBackendSessionId: string;
       backendSessionId: string;
     },
+    executionGeneration?: number,
   ): Promise<void> {
     if (!shouldPersistEvent(event)) {
       await this.sendBestEffort(frame);
@@ -423,6 +426,7 @@ export class RunnerChildRuntime {
       event,
       effect,
       frame.metadata,
+      executionGeneration,
     );
     const durable = await this.outbox.appendEngineFrame(
       durableEvent.appendInput,
@@ -432,12 +436,21 @@ export class RunnerChildRuntime {
     await this.sendBestEffort(outboxAvailableControlFrame(durable.source_seq));
   }
 
-  private async flushPreBootstrapFrames(buffer: PreBootstrapFrameBuffer): Promise<void> {
+  private async flushPreBootstrapFrames(
+    buffer: PreBootstrapFrameBuffer,
+    executionGeneration?: number,
+  ): Promise<void> {
     const pending = buffer.frames.splice(0);
     buffer.bytes = 0;
     for (const frame of pending) {
       const event = frame.payload as SSEEventPayload;
-      await this.forwardBootstrappedEvent(frame, event, sessionIdEffect(event));
+      await this.forwardBootstrappedEvent(
+        frame,
+        event,
+        sessionIdEffect(event),
+        undefined,
+        executionGeneration,
+      );
     }
   }
 

@@ -32,6 +32,7 @@ export type EventOutboxRecord = {
   stream_id: string;
   source_seq: number;
   session_id: string;
+  execution_generation?: number | null;
   event_type: string;
   payload: unknown;
   searchable_text: string | null;
@@ -346,6 +347,9 @@ export function computeEventOutboxPayloadHash(
     stream_id: record.stream_id,
     source_seq: record.source_seq,
     session_id: record.session_id,
+    ...(record.execution_generation === undefined
+      ? {}
+      : { execution_generation: record.execution_generation }),
     event_type: record.event_type,
     payload: record.payload,
     searchable_text: record.searchable_text,
@@ -371,6 +375,11 @@ function validateAppendInput(input: EventOutboxAppendInput): void {
   if (!Number.isFinite(Date.parse(input.created_at))) throw new Error("event outbox created_at invalid");
   if (JSON.stringify(input.payload) === undefined) {
     throw new Error("event outbox payload must be JSON serializable");
+  }
+  if (input.execution_generation !== undefined
+    && input.execution_generation !== null
+    && (!Number.isSafeInteger(input.execution_generation) || input.execution_generation <= 0)) {
+    throw new Error("event outbox execution_generation must be a positive integer");
   }
 }
 

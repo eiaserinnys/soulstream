@@ -1,14 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ExecutionOwnershipCoordinator } from
   "../../src/task/execution_ownership_coordinator.js";
 
 describe("ExecutionOwnershipCoordinator", () => {
-  it("accepts applied=false only when the canonical owner token and phase match", () => {
-    const coordinator = new ExecutionOwnershipCoordinator({} as never);
+  it("exposes one sessions-row acquire admission boundary", async () => {
     const application = {
       eventId: 1,
-      applied: false,
+      applied: true,
       canonicalSession: {} as never,
       canonicalExecutionOwnership: {
         ownershipGeneration: 17,
@@ -22,24 +21,26 @@ describe("ExecutionOwnershipCoordinator", () => {
         failureReason: null,
       },
     };
-
-    expect(coordinator.isAppliedOrSameOwner(application, {
-      ownershipGeneration: 17,
+    const acquireExecutionOwnershipAndWaitForApplication = vi.fn(
+      async () => application,
+    );
+    const coordinator = new ExecutionOwnershipCoordinator({
+      acquireExecutionOwnershipAndWaitForApplication,
+    } as never);
+    const input = {
       ownerKind: "runner_process",
       manifestId: "release-a",
+      runtimeEnvIdentity: "env-a",
       registrationId: "registration-a",
       pid: 4101,
       startIdentity: "start-4101",
       executionCommandId: "execute-a",
-      phases: ["active"],
-    })).toBe(true);
-    expect(coordinator.isAppliedOrSameOwner(application, {
-      ownershipGeneration: 18,
-      phases: ["active"],
-    })).toBe(false);
-    expect(coordinator.isAppliedOrSameOwner(application, {
-      ownershipGeneration: 17,
-      phases: ["identity_proven"],
-    })).toBe(false);
+      leaseExpiresAt: new Date("2026-08-27T00:01:00.000Z"),
+      reviewState: "not_required",
+    };
+
+    await expect(coordinator.acquire("sess-1", input)).resolves.toBe(application);
+    expect(acquireExecutionOwnershipAndWaitForApplication)
+      .toHaveBeenCalledWith("sess-1", input);
   });
 });

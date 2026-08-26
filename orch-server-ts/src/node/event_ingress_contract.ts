@@ -17,6 +17,20 @@ export type EventSessionEffect =
       updated_at: string;
     }
   | {
+      kind: "execution_acquire";
+      owner_kind: "runner_process" | "adopted_runner" | "in_process";
+      manifest_id: string;
+      runtime_env_identity: string;
+      registration_id: string;
+      pid: number;
+      start_identity: string;
+      execution_command_id: string;
+      lease_expires_at: string;
+      review_state: string;
+      expected_terminal_event_id?: number | null;
+      updated_at: string;
+    }
+  | {
       kind: "execution_reserve";
       ownership_generation: number;
       owner_kind: "runner_process" | "adopted_runner" | "in_process";
@@ -138,6 +152,7 @@ export type EventIngressEnvelope = {
   stream_id: string;
   source_seq: number;
   session_id: string;
+  execution_generation?: number | null;
   event_type: string;
   payload: unknown;
   searchable_text: string | null;

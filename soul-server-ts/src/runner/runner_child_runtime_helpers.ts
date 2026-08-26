@@ -30,11 +30,17 @@ export function buildDurableRunnerEvent(
   event: SSEEventPayload,
   effect?: EventOutboxSessionEffect,
   metadata?: unknown,
+  executionGeneration?: number,
 ): {
   appendInput: ReturnType<typeof buildEventOutboxAppendInput>;
   frame: ReturnType<typeof engineEventFrame>;
 } {
-  const appendInput = buildEventOutboxAppendInput(sessionId, event, effect);
+  const appendInput = buildEventOutboxAppendInput(
+    sessionId,
+    event,
+    effect,
+    executionGeneration,
+  );
   return {
     appendInput,
     frame: engineEventFrame(appendInput.payload, metadata),

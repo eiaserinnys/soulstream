@@ -481,11 +481,12 @@ describe("EventPersistence durable ingress", () => {
           ownership_generation: 17,
           owner_kind: "runner_process",
           manifest_id: "release-a",
-          registration_id: null,
-          pid: null,
-          start_identity: null,
-          execution_command_id: null,
-          phase: "reserved",
+          runtime_env_identity: "env-a",
+          registration_id: "registration-a",
+          pid: 4101,
+          start_identity: "start-a",
+          execution_command_id: "owner-a",
+          phase: "active",
           failure_reason: null,
         },
       },
@@ -498,17 +499,24 @@ describe("EventPersistence durable ingress", () => {
       ingress.pump,
     );
 
-    await expect(ep.reserveExecutionOwnershipAndWaitForApplication("sess-1", {
-      ownershipGeneration: 17,
+    await expect(ep.acquireExecutionOwnershipAndWaitForApplication("sess-1", {
       ownerKind: "runner_process",
       manifestId: "release-a",
+      runtimeEnvIdentity: "env-a",
+      registrationId: "registration-a",
+      pid: 4101,
+      startIdentity: "start-a",
+      executionCommandId: "owner-a",
+      leaseExpiresAt: new Date("2026-08-18T00:01:00.000Z"),
+      reviewState: "not_required",
     })).resolves.toMatchObject({
       applied: false,
       canonicalExecutionOwnership: {
         ownershipGeneration: 17,
         ownerKind: "runner_process",
         manifestId: "release-a",
-        phase: "reserved",
+        runtimeEnvIdentity: "env-a",
+        phase: "active",
       },
     });
   });

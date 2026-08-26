@@ -24,9 +24,9 @@ describe("EventIngressRepository", () => {
         expect(values).toEqual(["node-a", STREAM_ID, 2]);
         return [];
       }
-      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
         order.push("session-lock");
-        return [{ session_id: "session-a" }];
+        return [{ execution_generation: 0 }];
       }
       if (text.includes("pg_advisory_xact_lock")) {
         order.push("semantic-lock");
@@ -181,8 +181,8 @@ describe("EventIngressRepository", () => {
     let semanticEventId: number | undefined;
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
-        return [{ session_id: "session-a" }];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_generation: 0 }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) {
@@ -235,8 +235,8 @@ describe("EventIngressRepository", () => {
     let receiptValues: unknown[] = [];
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
-        return [{ session_id: "session-a" }];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_generation: 0 }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
@@ -281,8 +281,8 @@ describe("EventIngressRepository", () => {
     let receiptValues: unknown[] = [];
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
-        return [{ session_id: "session-a" }];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_generation: 0 }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
@@ -319,8 +319,8 @@ describe("EventIngressRepository", () => {
   it("raises a protocol conflict when a replayed transition has no canonical effect", async () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts") && text.includes("FOR UPDATE")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
-        return [{ session_id: "session-a" }];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_generation: 0 }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) {
@@ -349,8 +349,8 @@ describe("EventIngressRepository", () => {
   it("raises a protocol conflict when the canonical row is double-encoded", async () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts") && text.includes("FOR UPDATE")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
-        return [{ session_id: "session-a" }];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_generation: 0 }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) {
@@ -386,7 +386,7 @@ describe("EventIngressRepository", () => {
       const sql = fakeSql(async (text) => {
         statements.push(text);
         if (text.includes("FROM event_ingress_receipts")) return [];
-        if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) return [];
+        if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) return [];
         if (text.includes("SELECT 1 AS event_ingress_health")) return [{ event_ingress_health: 1 }];
         throw new Error(`deleted-session event must not reach another statement: ${text}`);
       });
@@ -475,8 +475,8 @@ describe("EventIngressRepository", () => {
     });
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
-        return [{ session_id: "session-a" }];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_generation: 0 }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) return [];

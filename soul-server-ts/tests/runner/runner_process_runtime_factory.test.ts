@@ -65,12 +65,6 @@ describe("createRunnerProcessRuntimeFactory", () => {
       agentSessionId: "session-pinned",
       prompt: "start",
       status: "pending",
-      executionOwnershipReservation: {
-        ownerKind: "runner_process",
-        manifestId: "manifest-pinned",
-        runtimeEnvIdentity: "runtime-pinned",
-        ownershipGeneration: 1,
-      },
     } as Task;
     const runtime = factory(task, agent, "codex", {
       persistRunState: vi.fn(async () => undefined),

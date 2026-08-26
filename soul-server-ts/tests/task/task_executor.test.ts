@@ -103,7 +103,8 @@ function makeMocks() {
 
   const updateSession = vi.fn().mockResolvedValue(undefined);
   const setClaudeSessionId = vi.fn().mockResolvedValue(undefined);
-  const db = { updateSession, setClaudeSessionId } as unknown as SessionDB;
+  const getSession = vi.fn().mockResolvedValue(null);
+  const db = { updateSession, setClaudeSessionId, getSession } as unknown as SessionDB;
 
   const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
   const emitSessionUpdated = vi.fn().mockResolvedValue(undefined);
@@ -125,6 +126,7 @@ function makeMocks() {
     handleSideEffects,
     updateSession,
     setClaudeSessionId,
+    getSession,
     emitEventEnvelope,
     emitSessionUpdated,
   };
@@ -782,6 +784,7 @@ describe("TaskExecutor.startExecution", () => {
         kind: "set_backend_session_id",
         backend_session_id: "claude-sess-1",
       },
+      1,
     );
   });
 
@@ -1492,6 +1495,7 @@ describe("TaskExecutor.startExecution", () => {
         kind: "set_backend_session_id",
         backend_session_id: "thr-codex-1",
       },
+      1,
     );
   });
 
@@ -1501,7 +1505,7 @@ describe("TaskExecutor.startExecution", () => {
     const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
     executor.startExecution(task, agent);
-    expect(() => executor.startExecution(task, agent)).toThrow(/already has a runner/);
+    expect(() => executor.startExecution(task, agent)).toThrow(/admission in flight/);
   });
 
   it("정상 turn 종료가 진행 중인 interrupt ACK를 기다려 completed로 덮지 않는다", async () => {
@@ -1628,17 +1632,19 @@ describe("TaskExecutor.startExecution", () => {
     );
   });
 
-  it("engineFactory throw → status=error, finalize 호출", async () => {
+  it("engineFactory throw → admission reject + status=error, finalize 호출", async () => {
     const mocks = makeMocks();
     const factory = vi.fn(() => {
       throw new Error("factory boom");
     });
     const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
-    // startExecution 자체는 engine 설정 단계에서 throw 발생 — *동기 throw*는 호출자에게 직접 전파
-    expect(() => executor.startExecution(task, agent)).toThrow(/factory boom/);
-    // task.runner는 설정 안 됨
+    const execution = executor.startExecution(task, agent);
+    const activation = task.executionActivationPromise!;
+    await execution;
+    await expect(activation).rejects.toThrow(/factory boom/);
     expect(task.runner).toBeUndefined();
+    expect(task.status).toBe("error");
   });
 
   it("outer execution failure finalizes without deleting queued interventions", async () => {
@@ -1809,6 +1815,11 @@ describe("TaskExecutor runner process boundary", () => {
       { type: "complete", result: "done", timestamp: 1 },
     ]);
     const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+    processFactory.describe = vi.fn(async () => ({
+      ownerKind: "runner_process",
+      manifestId: "release-1",
+      runtimeEnvIdentity: "env-1",
+    }));
     const executor = new TaskExecutor(
       engineFactory,
       mocks.db,
@@ -1847,11 +1858,11 @@ describe("TaskExecutor runner process boundary", () => {
     { entryPath: "initial" as const, expectedTerminalEventId: undefined },
     { entryPath: "auto_resume" as const, expectedTerminalEventId: 77 },
   ])(
-    "$entryPath ownership은 reserve → identity proof → activation 뒤 실행한다",
+    "$entryPath ownership은 complete identity proof → sessions acquire 뒤 실행한다",
     async ({ entryPath, expectedTerminalEventId }) => {
       const mocks = makeMocks();
-      const transition = (status: "initializing" | "running" | "completed") => ({
-        eventId: status === "initializing" ? 10 : status === "running" ? 11 : 12,
+      const transition = (status: "running" | "completed") => ({
+        eventId: status === "running" ? 11 : 12,
         applied: true,
         canonicalSession: {
           status,
@@ -1864,16 +1875,24 @@ describe("TaskExecutor runner process boundary", () => {
           last_event_id: status === "completed" ? 12 : null,
         },
       });
-      const reserve = vi.fn(async () => transition("initializing"));
-      const prove = vi.fn(async () => transition("initializing"));
-      const activate = vi.fn(async () => transition("running"));
-      const fail = vi.fn(async () => transition("initializing"));
+      const acquire = vi.fn(async (_sessionId, input) => ({
+        ...transition("running"),
+        canonicalExecutionOwnership: {
+          ownershipGeneration: 7,
+          ownerKind: input.ownerKind,
+          manifestId: input.manifestId,
+          runtimeEnvIdentity: input.runtimeEnvIdentity,
+          registrationId: input.registrationId,
+          pid: input.pid,
+          startIdentity: input.startIdentity,
+          executionCommandId: input.executionCommandId,
+          phase: "active",
+          failureReason: null,
+        },
+      }));
       const terminal = vi.fn(async () => transition("completed"));
       Object.assign(mocks.persistence, {
-        reserveExecutionOwnershipAndWaitForApplication: reserve,
-        proveExecutionOwnershipAndWaitForApplication: prove,
-        activateExecutionOwnershipAndWaitForApplication: activate,
-        failExecutionOwnershipAndWaitForApplication: fail,
+        acquireExecutionOwnershipAndWaitForApplication: acquire,
         enqueueRunnerTerminalFactAndWaitForApplication: terminal,
       });
       const { runner, dispatcher } = makeRunnerProcessRuntime([
@@ -1890,6 +1909,7 @@ describe("TaskExecutor runner process boundary", () => {
       processFactory.describe = vi.fn(async () => ({
         ownerKind: "runner_process",
         manifestId: "release-1",
+        runtimeEnvIdentity: "env-1",
       }));
       const executor = new TaskExecutor(
         () => makeFakeEngine([]),
@@ -1911,52 +1931,40 @@ describe("TaskExecutor runner process boundary", () => {
 
       await executor.startExecution(task, agent);
 
-      expect(reserve).toHaveBeenCalledWith(task.agentSessionId, expect.objectContaining({
+      expect(acquire).toHaveBeenCalledWith(task.agentSessionId, expect.objectContaining({
         ownerKind: "runner_process",
         manifestId: "release-1",
-      }));
-      expect(prove).toHaveBeenCalledWith(
-        task.agentSessionId,
-        expect.any(Number),
-        proof,
-      );
-      expect(activate).toHaveBeenCalledWith(task.agentSessionId, {
-        ownershipGeneration: expect.any(Number),
+        runtimeEnvIdentity: "env-1",
+        ...proof,
         reviewState: "not_required",
         ...(expectedTerminalEventId === undefined
           ? {}
           : { expectedTerminalEventId }),
-      });
-      expect(reserve.mock.invocationCallOrder[0]).toBeLessThan(
-        dispatcher.prepareExecutionIdentity.mock.invocationCallOrder[0]!,
-      );
+      }));
       expect(dispatcher.prepareExecutionIdentity.mock.invocationCallOrder[0]).toBeLessThan(
-        prove.mock.invocationCallOrder[0]!,
+        acquire.mock.invocationCallOrder[0]!,
       );
-      expect(prove.mock.invocationCallOrder[0]).toBeLessThan(
-        activate.mock.invocationCallOrder[0]!,
-      );
-      expect(activate.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(acquire.mock.invocationCallOrder[0]).toBeLessThan(
         dispatcher.executeFrames.mock.invocationCallOrder[0]!,
       );
       expect(task.executionOwnership).toMatchObject({
         ...proof,
         ownerKind: "runner_process",
         manifestId: "release-1",
+        runtimeEnvIdentity: "env-1",
+        ownershipGeneration: 7,
       });
-      expect(task.executionOwnershipReservation).toBeUndefined();
       expect(task.pendingExecutionExpectedTerminalEventId).toBeUndefined();
-      expect(fail).not.toHaveBeenCalled();
       expect(entryPath).toBe(
         expectedTerminalEventId === undefined ? "initial" : "auto_resume",
       );
     },
   );
 
-  it("새 스폰은 복구된 과거 manifest 대신 현재 호스트 manifest로 예약한다", async () => {
+  it("새 스폰은 복구된 과거 manifest 대신 현재 호스트 identity로 acquire한다", async () => {
     const mocks = makeMocks();
-    const transition = (status: "initializing" | "running" | "completed") => ({
-      eventId: status === "initializing" ? 10 : status === "running" ? 11 : 12,
+    const transition = (status: "running" | "completed") => ({
+      eventId: status === "running" ? 11 : 12,
       applied: true,
       canonicalSession: {
         status,
@@ -1969,16 +1977,24 @@ describe("TaskExecutor runner process boundary", () => {
         last_event_id: status === "completed" ? 12 : null,
       },
     });
-    const reserve = vi.fn(async () => transition("initializing"));
-    const prove = vi.fn(async () => transition("initializing"));
-    const activate = vi.fn(async () => transition("running"));
-    const fail = vi.fn(async () => transition("initializing"));
+    const acquire = vi.fn(async (_sessionId, input) => ({
+      ...transition("running"),
+      canonicalExecutionOwnership: {
+        ownershipGeneration: 8,
+        ownerKind: input.ownerKind,
+        manifestId: input.manifestId,
+        runtimeEnvIdentity: input.runtimeEnvIdentity,
+        registrationId: input.registrationId,
+        pid: input.pid,
+        startIdentity: input.startIdentity,
+        executionCommandId: input.executionCommandId,
+        phase: "active",
+        failureReason: null,
+      },
+    }));
     const terminal = vi.fn(async () => transition("completed"));
     Object.assign(mocks.persistence, {
-      reserveExecutionOwnershipAndWaitForApplication: reserve,
-      proveExecutionOwnershipAndWaitForApplication: prove,
-      activateExecutionOwnershipAndWaitForApplication: activate,
-      failExecutionOwnershipAndWaitForApplication: fail,
+      acquireExecutionOwnershipAndWaitForApplication: acquire,
       enqueueRunnerTerminalFactAndWaitForApplication: terminal,
       enqueueRecoveredRunnerTerminalFactAndWaitForApplication: terminal,
     });
@@ -2030,9 +2046,10 @@ describe("TaskExecutor runner process boundary", () => {
     await expect(activation).resolves.toBeUndefined();
 
     expect(processFactory.describe).toHaveBeenCalledWith(agent);
-    expect(reserve).toHaveBeenCalledWith(task.agentSessionId, expect.objectContaining({
+    expect(acquire).toHaveBeenCalledWith(task.agentSessionId, expect.objectContaining({
       manifestId: currentManifestId,
       runtimeEnvIdentity: "env-b",
+      ...proof,
     }));
     expect(task.executionOwnership).toMatchObject({
       ...proof,
@@ -2040,14 +2057,13 @@ describe("TaskExecutor runner process boundary", () => {
       runtimeEnvIdentity: "env-b",
     });
     expect(task.recoveredExecutionOwnership).toBeUndefined();
-    expect(fail).not.toHaveBeenCalled();
   });
 
-  it("does not reserve again while the shared ownership retry deadline is active", async () => {
+  it("does not acquire again while the shared ownership retry deadline is active", async () => {
     const mocks = makeMocks();
-    const reserve = vi.fn();
+    const acquire = vi.fn();
     Object.assign(mocks.persistence, {
-      reserveExecutionOwnershipAndWaitForApplication: reserve,
+      acquireExecutionOwnershipAndWaitForApplication: acquire,
     });
     const backoff = new ExecutionOwnershipBackoff({
       logger: { warn: vi.fn(), error: vi.fn() },
@@ -2059,6 +2075,7 @@ describe("TaskExecutor runner process boundary", () => {
     processFactory.describe = vi.fn(async () => ({
       ownerKind: "runner_process",
       manifestId: "release-1",
+      runtimeEnvIdentity: "env-1",
     }));
     const executor = new TaskExecutor(
       () => makeFakeEngine([]),
@@ -2084,48 +2101,33 @@ describe("TaskExecutor runner process boundary", () => {
     await execution;
     await expect(activation).rejects.toThrow("Execution ownership conflict");
 
-    expect(reserve).not.toHaveBeenCalled();
+    expect(acquire).not.toHaveBeenCalled();
     expect(processFactory.describe).not.toHaveBeenCalled();
   });
 
-  it.each(
-    (["initial", "auto_resume"] as const).flatMap((entryPath) =>
-      (["reserve", "spawn", "prove", "prepare_session", "activate"] as const)
-        .map((failurePoint) => ({ entryPath, failurePoint })),
-    ),
-  )(
-    "$entryPath $failurePoint failure closes its reservation despite a stale owner token",
-    async ({ entryPath, failurePoint }) => {
+  it.each(["identity", "acquire"] as const)(
+    "%s failure closes the dormant runner before engine input",
+    async (failurePoint) => {
       const mocks = makeMocks();
-      const transition = (status: "initializing" | "running") => ({
-        eventId: status === "initializing" ? 10 : 11,
-        applied: true,
-        canonicalSession: {
-          status,
-          termination_reason: null,
-          termination_detail: null,
-          review_state: "not_required",
-          last_assistant_text: null,
-          termination_event_id: null,
-          updated_at: "2026-08-19T00:00:00.000Z",
-          last_event_id: 10,
-        },
-      });
-      const reserve = failurePoint === "reserve"
-        ? vi.fn(async () => ({ ...transition("initializing"), applied: false }))
-        : vi.fn(async () => transition("initializing"));
-      const prove = failurePoint === "prove"
-        ? vi.fn(async () => { throw new Error("prove boom"); })
-        : vi.fn(async () => transition("initializing"));
-      const activate = failurePoint === "activate"
-        ? vi.fn(async () => ({ ...transition("initializing"), applied: false }))
-        : vi.fn(async () => transition("running"));
-      const fail = vi.fn(async () => transition("initializing"));
+      const acquire = failurePoint === "acquire"
+        ? vi.fn(async () => ({
+          eventId: 10,
+          applied: false,
+          canonicalSession: {
+            status: "running",
+            termination_reason: null,
+            termination_detail: null,
+            review_state: "not_required",
+            last_assistant_text: null,
+            termination_event_id: null,
+            updated_at: "2026-08-19T00:00:00.000Z",
+            last_event_id: 10,
+          },
+          canonicalExecutionOwnership: null,
+        }))
+        : vi.fn();
       Object.assign(mocks.persistence, {
-        reserveExecutionOwnershipAndWaitForApplication: reserve,
-        proveExecutionOwnershipAndWaitForApplication: prove,
-        activateExecutionOwnershipAndWaitForApplication: activate,
-        failExecutionOwnershipAndWaitForApplication: fail,
+        acquireExecutionOwnershipAndWaitForApplication: acquire,
       });
       const { runner, dispatcher } = makeRunnerProcessRuntime([]);
       const proof = {
@@ -2134,17 +2136,15 @@ describe("TaskExecutor runner process boundary", () => {
         startIdentity: "start-new",
         executionCommandId: "execute-new",
       };
-      dispatcher.prepareExecutionIdentity = failurePoint === "spawn"
-        ? vi.fn(async () => { throw new Error("spawn identity boom"); })
+      dispatcher.prepareExecutionIdentity = failurePoint === "identity"
+        ? vi.fn(async () => undefined)
         : vi.fn(async () => proof);
-      dispatcher.prepareSession = failurePoint === "prepare_session"
-        ? vi.fn(async () => { throw new Error("prepare session boom"); })
-        : vi.fn(async () => {});
       dispatcher.rollbackExecutionIdentity = vi.fn(async () => {});
       const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
       processFactory.describe = vi.fn(async () => ({
         ownerKind: "runner_process",
         manifestId: "release-new",
+        runtimeEnvIdentity: "env-new",
       }));
       const executor = new TaskExecutor(
         () => makeFakeEngine([]),
@@ -2162,66 +2162,27 @@ describe("TaskExecutor runner process boundary", () => {
       );
       const task = makeTask();
       task.status = "initializing";
-      task.pendingExecutionExpectedTerminalEventId = entryPath === "auto_resume" ? 77 : undefined;
-      task.executionOwnership = {
-        ownerKind: "runner_process",
-        manifestId: "release-old",
-        ownershipGeneration: 1,
-        registrationId: "registration-old",
-        pid: 1234,
-        startIdentity: "start-old",
-        executionCommandId: "execute-old",
-      };
 
       const execution = executor.startExecution(task, agent);
       const activation = task.executionActivationPromise!;
       await execution;
       await expect(activation).rejects.toThrow();
 
-      if (["prove", "prepare_session", "activate"].includes(failurePoint)) {
+      expect(dispatcher.executeFrames).not.toHaveBeenCalled();
+      expect(task.runner).toBeUndefined();
+      if (failurePoint === "acquire") {
         expect(dispatcher.rollbackExecutionIdentity).toHaveBeenCalledWith(proof);
       } else {
-        expect(dispatcher.rollbackExecutionIdentity).not.toHaveBeenCalled();
+        expect(dispatcher.close).toHaveBeenCalledOnce();
       }
-      if (failurePoint === "spawn") expect(dispatcher.close).toHaveBeenCalledOnce();
-      expect(fail).toHaveBeenCalledWith(
-        task.agentSessionId,
-        expect.any(Number),
-        expect.stringContaining(failurePoint),
-      );
-      if (["prove", "prepare_session", "activate"].includes(failurePoint)) {
-        expect(dispatcher.rollbackExecutionIdentity.mock.invocationCallOrder[0]).toBeLessThan(
-          fail.mock.invocationCallOrder[0]!,
-        );
-      }
-      expect(task.executionOwnershipReservation).toBeUndefined();
-      expect(task.runner).toBeUndefined();
     },
   );
 
-  it("keeps an unkillable post-spawn child recoverable instead of finalizing the session", async () => {
+  it("RunnerOrphanedSpawnError before acquire cannot claim or feed the dormant child", async () => {
     const mocks = makeMocks();
-    const transition = {
-      eventId: 10,
-      applied: true,
-      canonicalSession: {
-        status: "initializing",
-        termination_reason: null,
-        termination_detail: null,
-        review_state: "not_required",
-        last_assistant_text: null,
-        termination_event_id: null,
-        updated_at: "2026-08-18T00:00:00.000Z",
-        last_event_id: 10,
-      },
-    };
-    const reserve = vi.fn(async () => transition);
-    const markOrphaned = vi.fn(async () => transition);
-    const fail = vi.fn(async () => transition);
+    const acquire = vi.fn();
     Object.assign(mocks.persistence, {
-      reserveExecutionOwnershipAndWaitForApplication: reserve,
-      markExecutionOrphanedSpawnAndWaitForApplication: markOrphaned,
-      failExecutionOwnershipAndWaitForApplication: fail,
+      acquireExecutionOwnershipAndWaitForApplication: acquire,
     });
     const { runner, dispatcher } = makeRunnerProcessRuntime([]);
     const proof = {
@@ -2236,6 +2197,7 @@ describe("TaskExecutor runner process boundary", () => {
     processFactory.describe = vi.fn(async () => ({
       ownerKind: "runner_process",
       manifestId: "release-1",
+      runtimeEnvIdentity: "env-1",
     }));
     const executor = new TaskExecutor(
       () => makeFakeEngine([]),
@@ -2257,23 +2219,17 @@ describe("TaskExecutor runner process boundary", () => {
     await executor.startExecution(task, agent);
 
     await expect(task.executionActivationPromise).rejects.toBe(orphaned);
-    expect(markOrphaned).toHaveBeenCalledWith(
-      task.agentSessionId,
-      expect.any(Number),
-      proof,
-    );
-    expect(fail).not.toHaveBeenCalled();
-    expect(dispatcher.close).not.toHaveBeenCalled();
+    expect(acquire).not.toHaveBeenCalled();
+    expect(dispatcher.executeFrames).not.toHaveBeenCalled();
+    expect(dispatcher.close).toHaveBeenCalledOnce();
     expect(task.runner).toBeUndefined();
-    expect(task.status).toBe("initializing");
   });
 
   it("does not adopt again while the shared ownership retry deadline is active", async () => {
     const mocks = makeMocks();
-    const reserveAdoption = vi.fn();
+    const acquire = vi.fn();
     Object.assign(mocks.persistence, {
-      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
-      reserveExecutionAdoptionAndWaitForApplication: reserveAdoption,
+      acquireExecutionOwnershipAndWaitForApplication: acquire,
     });
     const backoff = new ExecutionOwnershipBackoff({
       logger: { warn: vi.fn(), error: vi.fn() },
@@ -2310,7 +2266,7 @@ describe("TaskExecutor runner process boundary", () => {
     )).rejects.toThrow("Execution ownership conflict");
 
     expect(dispatcher.prepareExecutionIdentity).not.toHaveBeenCalled();
-    expect(reserveAdoption).not.toHaveBeenCalled();
+    expect(acquire).not.toHaveBeenCalled();
   });
 
   it("실행이 끝나면 성공이든 소유권 거부든 execution slot을 비운다", async () => {
@@ -2338,7 +2294,7 @@ describe("TaskExecutor runner process boundary", () => {
     // finalizes the task and nothing else would clear the slot.
     const rejectingMocks = makeMocks();
     Object.assign(rejectingMocks.persistence, {
-      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
+      acquireExecutionOwnershipAndWaitForApplication: vi.fn(),
     });
     const backoff = new ExecutionOwnershipBackoff({
       logger: { warn: vi.fn(), error: vi.fn() },
@@ -2366,10 +2322,10 @@ describe("TaskExecutor runner process boundary", () => {
     expect(rejectedTask.executionPromise).toBeUndefined();
   });
 
-  it("adopt ownership은 host release와 비교하지 않고 old identity로 activation한다", async () => {
+  it("adopt recovery는 sessions owner token으로 exact reconnect acquire한다", async () => {
     const mocks = makeMocks();
-    const transition = (status: "initializing" | "running" | "completed") => ({
-      eventId: status === "initializing" ? 20 : status === "running" ? 21 : 22,
+    const transition = (status: "running" | "completed") => ({
+      eventId: status === "running" ? 21 : 22,
       applied: true,
       canonicalSession: {
         status,
@@ -2382,17 +2338,24 @@ describe("TaskExecutor runner process boundary", () => {
         last_event_id: status === "completed" ? 22 : null,
       },
     });
-    const adoptReserve = vi.fn(async () => transition("initializing"));
-    const prove = vi.fn(async () => transition("initializing"));
-    const activate = vi.fn(async () => transition("running"));
-    const fail = vi.fn(async () => transition("initializing"));
+    const acquire = vi.fn(async () => ({
+      ...transition("running"),
+      canonicalExecutionOwnership: {
+        ownershipGeneration: 7,
+        ownerKind: "adopted_runner",
+        manifestId: "release-old",
+        runtimeEnvIdentity: "env-old",
+        registrationId: "old-registration",
+        pid: 654,
+        startIdentity: "old-start",
+        executionCommandId: "execute-old",
+        phase: "active",
+        failureReason: null,
+      },
+    }));
     const terminal = vi.fn(async () => transition("completed"));
     Object.assign(mocks.persistence, {
-      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
-      reserveExecutionAdoptionAndWaitForApplication: adoptReserve,
-      proveExecutionOwnershipAndWaitForApplication: prove,
-      activateExecutionOwnershipAndWaitForApplication: activate,
-      failExecutionOwnershipAndWaitForApplication: fail,
+      acquireExecutionOwnershipAndWaitForApplication: acquire,
       enqueueRunnerTerminalFactAndWaitForApplication: terminal,
     });
     const { runner, dispatcher } = makeRunnerProcessRuntime([
@@ -2405,12 +2368,15 @@ describe("TaskExecutor runner process boundary", () => {
       executionCommandId: "execute-old",
     };
     dispatcher.prepareExecutionIdentity = vi.fn(async () => proof);
-    const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
-    processFactory.describe = vi.fn(async () => ({
-      ownerKind: "runner_process",
-      manifestId: "release-current",
-      runtimeEnvIdentity: "env-current",
-    }));
+    mocks.getSession.mockResolvedValue({
+      execution_generation: 7,
+      execution_manifest_id: "release-old",
+      execution_runtime_env_identity: "env-old",
+      execution_registration_id: proof.registrationId,
+      execution_pid: proof.pid,
+      execution_start_identity: proof.startIdentity,
+      execution_command_id: proof.executionCommandId,
+    });
     const executor = new TaskExecutor(
       () => makeFakeEngine([]),
       mocks.db,
@@ -2422,8 +2388,6 @@ describe("TaskExecutor runner process boundary", () => {
       undefined,
       undefined,
       undefined,
-      undefined,
-      processFactory,
     );
     const task = makeTask();
 
@@ -2434,34 +2398,31 @@ describe("TaskExecutor runner process boundary", () => {
       proof.executionCommandId,
       "adopt",
       "release-old",
+      "env-old",
     );
 
-    expect(adoptReserve).toHaveBeenCalledWith(task.agentSessionId, expect.objectContaining({
+    expect(dispatcher.prepareExecutionIdentity).toHaveBeenCalledWith(
+      proof.executionCommandId,
+    );
+    expect(acquire).toHaveBeenCalledWith(task.agentSessionId, expect.objectContaining({
+      ownerKind: "adopted_runner",
       manifestId: "release-old",
-      previousRegistrationId: proof.registrationId,
-      pid: proof.pid,
-      startIdentity: proof.startIdentity,
+      runtimeEnvIdentity: "env-old",
+      ...proof,
     }));
-    expect(adoptReserve.mock.invocationCallOrder[0]).toBeLessThan(
-      prove.mock.invocationCallOrder[0]!,
-    );
-    expect(prove.mock.invocationCallOrder[0]).toBeLessThan(
-      activate.mock.invocationCallOrder[0]!,
-    );
-    expect(activate.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(acquire.mock.invocationCallOrder[0]).toBeLessThan(
       dispatcher.recoverFrames.mock.invocationCallOrder[0]!,
     );
     expect(task.executionOwnership).toMatchObject({
       ...proof,
       ownerKind: "adopted_runner",
       manifestId: "release-old",
+      runtimeEnvIdentity: "env-old",
+      ownershipGeneration: 7,
     });
-    expect(task.executionOwnershipReservation).toBeUndefined();
-    expect(fail).not.toHaveBeenCalled();
-    expect(processFactory.describe).not.toHaveBeenCalled();
   });
 
-  it("adopt activation rejection detaches the adopted identity before failing its reservation", async () => {
+  it("adopt reconnect rejection detaches the dormant identity before input", async () => {
     const mocks = makeMocks();
     const transition = {
       eventId: 20,
@@ -2477,16 +2438,12 @@ describe("TaskExecutor runner process boundary", () => {
         last_event_id: 20,
       },
     };
-    const fail = vi.fn(async () => transition);
     Object.assign(mocks.persistence, {
-      reserveExecutionOwnershipAndWaitForApplication: vi.fn(),
-      reserveExecutionAdoptionAndWaitForApplication: vi.fn(async () => transition),
-      proveExecutionOwnershipAndWaitForApplication: vi.fn(async () => transition),
-      activateExecutionOwnershipAndWaitForApplication: vi.fn(async () => ({
+      acquireExecutionOwnershipAndWaitForApplication: vi.fn(async () => ({
         ...transition,
         applied: false,
+        canonicalExecutionOwnership: null,
       })),
-      failExecutionOwnershipAndWaitForApplication: fail,
     });
     const { runner, dispatcher } = makeRunnerProcessRuntime([]);
     const proof = {
@@ -2497,6 +2454,15 @@ describe("TaskExecutor runner process boundary", () => {
     };
     dispatcher.prepareExecutionIdentity = vi.fn(async () => proof);
     dispatcher.rollbackExecutionIdentity = vi.fn(async () => {});
+    mocks.getSession.mockResolvedValue({
+      execution_generation: 7,
+      execution_manifest_id: "release-old",
+      execution_runtime_env_identity: "env-old",
+      execution_registration_id: proof.registrationId,
+      execution_pid: proof.pid,
+      execution_start_identity: proof.startIdentity,
+      execution_command_id: proof.executionCommandId,
+    });
     const executor = new TaskExecutor(
       () => makeFakeEngine([]),
       mocks.db,
@@ -2513,18 +2479,11 @@ describe("TaskExecutor runner process boundary", () => {
       proof.executionCommandId,
       "adopt",
       "release-old",
+      "env-old",
     )).rejects.toThrow("Execution ownership conflict");
 
     expect(dispatcher.rollbackExecutionIdentity).toHaveBeenCalledWith(proof);
-    expect(fail).toHaveBeenCalledWith(
-      task.agentSessionId,
-      expect.any(Number),
-      expect.stringContaining("activate"),
-    );
-    expect(dispatcher.rollbackExecutionIdentity.mock.invocationCallOrder[0]).toBeLessThan(
-      fail.mock.invocationCallOrder[0]!,
-    );
-    expect(task.executionOwnershipReservation).toBeUndefined();
+    expect(dispatcher.recoverFrames).not.toHaveBeenCalled();
     expect(task.runner).toBeUndefined();
   });
 
@@ -2761,6 +2720,12 @@ function makeRunnerProcessRuntime(events: SSEEventPayload[]): {
     dispatch: vi.fn(),
     executeFrames: vi.fn(() => frameStream(events)),
     recoverFrames: vi.fn(() => frameStream(events)),
+    prepareExecutionIdentity: vi.fn(async () => ({
+      registrationId: "registration-1",
+      pid: 321,
+      startIdentity: "start-1",
+      executionCommandId: "execute-1",
+    })),
     prepareSession: vi.fn(async () => {}),
     interrupt: vi.fn(async () => true),
     close: vi.fn(async () => {}),
@@ -3594,6 +3559,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
         expected_backend_session_id: "claude-over-limit",
         backend_session_id: "claude-fresh",
       },
+      1,
     );
     expect(task.codexThreadId).toBe("claude-fresh");
     expect(task.status).toBe("completed");
@@ -3731,6 +3697,11 @@ describe("TaskExecutor multi-turn (B-4)", () => {
         );
         const runner = { ...baseRunner, engine };
         processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+        processFactory.describe = vi.fn(async () => ({
+          ownerKind: "runner_process",
+          manifestId: "release-1",
+          runtimeEnvIdentity: "env-1",
+        }));
       }
       const executor = new TaskExecutor(
         () => engine,
@@ -4056,6 +4027,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       task.agentSessionId,
       expect.objectContaining({ type: "compact", trigger: "auto_preemptive" }),
       undefined,
+      1,
     );
   });
 

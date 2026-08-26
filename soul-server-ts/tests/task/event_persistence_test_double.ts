@@ -186,6 +186,69 @@ export function makeEventPersistenceTestDouble(
       };
     },
   );
+  const acquireExecutionOwnershipAndWaitForApplication = vi.fn(
+    async (
+      _sessionId: string,
+      input: {
+        ownerKind: "runner_process" | "adopted_runner" | "in_process";
+        manifestId: string;
+        runtimeEnvIdentity: string;
+        registrationId: string;
+        pid: number;
+        startIdentity: string;
+        executionCommandId: string;
+        reviewState: string;
+        updatedAt?: Date;
+      },
+    ) => ({
+      eventId: ++sourceSeq,
+      applied: true,
+      canonicalSession: {
+        status: "running",
+        termination_reason: null,
+        termination_detail: null,
+        review_state: input.reviewState,
+        last_assistant_text: null,
+        termination_event_id: null,
+        updated_at: input.updatedAt?.toISOString() ?? new Date().toISOString(),
+        last_event_id: null,
+      },
+      canonicalExecutionOwnership: {
+        ownershipGeneration: 1,
+        ownerKind: input.ownerKind,
+        manifestId: input.manifestId,
+        runtimeEnvIdentity: input.runtimeEnvIdentity,
+        registrationId: input.registrationId,
+        pid: input.pid,
+        startIdentity: input.startIdentity,
+        executionCommandId: input.executionCommandId,
+        phase: "active" as const,
+        failureReason: null,
+      },
+    }),
+  );
+  const enqueueRunnerTerminalFactAndWaitForApplication = vi.fn(
+    async (
+      sessionId: string,
+      event: SSEEventPayload,
+      effect: Extract<EventOutboxSessionEffect, { kind: "runner_terminal_fact" }>,
+    ) => await enqueueTerminalTransitionAndWaitForApplication(
+      sessionId,
+      event,
+      {
+        kind: "terminal_transition",
+        status: String((event as Record<string, unknown>).status),
+        termination_reason: String(
+          (event as Record<string, unknown>).termination_reason,
+        ),
+        termination_detail: ((event as Record<string, unknown>)
+          .termination_detail as string | null | undefined) ?? null,
+        review_state: effect.review_state,
+        last_assistant_text: effect.last_assistant_text ?? null,
+        updated_at: effect.updated_at,
+      },
+    ),
+  );
   const handleSideEffects = vi.fn(
     sideEffect ?? (async () => undefined),
   );
@@ -197,6 +260,8 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForAck,
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
+    acquireExecutionOwnershipAndWaitForApplication,
+    enqueueRunnerTerminalFactAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
   } as unknown as EventPersistence;
@@ -210,6 +275,8 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForAck,
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
+    acquireExecutionOwnershipAndWaitForApplication,
+    enqueueRunnerTerminalFactAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
     getEventById(eventId: number): SSEEventPayload | undefined {

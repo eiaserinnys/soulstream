@@ -150,8 +150,23 @@ export class EventIngressRepository {
         ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
       };
     }
-    if (!await lockSession(transaction, envelope.session_id)) {
+    const sessionGeneration = await lockSession(transaction, envelope.session_id);
+    if (sessionGeneration === null) {
       throw new Error(`session ${envelope.session_id} does not exist`);
+    }
+    if (envelope.execution_generation !== undefined
+      && envelope.execution_generation !== null
+      && envelope.execution_generation !== sessionGeneration) {
+      return {
+        outcome: "dead_lettered",
+        envelope,
+        deadLetter: {
+          code: "STALE_EXECUTION_GENERATION",
+          reason: `execution generation ${envelope.execution_generation} is not current`,
+          rejectedAt: new Date().toISOString(),
+          path: "execution_generation",
+        },
+      };
     }
 
     const semanticReceipt = envelope.semantic_dedupe_key
@@ -208,14 +223,19 @@ export class EventIngressRepository {
 async function lockSession(
   sql: EventIngressQuerySql,
   sessionId: string,
-): Promise<boolean> {
-  const rows = await sql<Array<{ session_id: string }>>`
-    SELECT session_id
+): Promise<number | null> {
+  const rows = await sql<Array<{ execution_generation: string | number }>>`
+    SELECT execution_generation
     FROM sessions
     WHERE session_id = ${sessionId}
-    FOR KEY SHARE
+    FOR UPDATE
   `;
-  return rows.length > 0;
+  if (!rows[0]) return null;
+  const generation = Number(rows[0].execution_generation);
+  if (!Number.isSafeInteger(generation) || generation < 0) {
+    throw new Error(`session ${sessionId} has an invalid execution generation`);
+  }
+  return generation;
 }
 
 function deadLetterResult(
@@ -325,6 +345,7 @@ function isCanonicalTransitionEffect(
     kind:
       | "running_transition"
       | "terminal_transition"
+      | "execution_acquire"
       | "execution_reserve"
       | "execution_prove"
       | "execution_adopt_reserve"
@@ -338,6 +359,7 @@ function isCanonicalTransitionEffect(
 > {
   return effect?.kind === "running_transition"
     || effect?.kind === "terminal_transition"
+    || effect?.kind === "execution_acquire"
     || effect?.kind === "execution_reserve"
     || effect?.kind === "execution_prove"
     || effect?.kind === "execution_adopt_reserve"

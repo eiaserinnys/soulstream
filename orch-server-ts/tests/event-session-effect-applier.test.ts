@@ -10,6 +10,7 @@ describe("applyEventSessionEffect", () => {
     ["set_backend_session_id", "session_set_claude_id"],
     ["rotate_backend_session_id", "session_rotate_claude_id"],
     ["running_transition", "session_apply_running_transition"],
+    ["execution_acquire", "session_acquire_execution_ownership"],
     ["execution_reserve", "session_reserve_execution_ownership"],
     ["execution_prove", "session_prove_execution_ownership"],
     ["execution_adopt_reserve", "session_reserve_execution_adoption"],
@@ -29,6 +30,13 @@ describe("applyEventSessionEffect", () => {
       statements.push(statement);
       if (statement.includes("FROM session_execution_ownerships")) {
         return [canonicalOwnershipRow()];
+      }
+      if (statement.includes("session_acquire_execution_ownership")) {
+        return [{
+          ...canonicalRow(true),
+          execution_generation: 1,
+          execution_lease_expires_at: new Date("2026-08-06T00:01:00.000Z"),
+        }];
       }
       return statement.includes("session_apply_running_transition")
         || statement.includes("session_apply_terminal_transition")
@@ -50,7 +58,9 @@ describe("applyEventSessionEffect", () => {
 
     const ownershipEffect = kind.startsWith("execution_")
       && kind !== "execution_backfill";
-    expect(statements).toHaveLength(ownershipEffect ? 2 : 1);
+    expect(statements).toHaveLength(
+      ownershipEffect && kind !== "execution_acquire" ? 2 : 1,
+    );
     expect(statements[0]).toContain(procedure);
     if (
       kind !== "execution_prove"
@@ -251,6 +261,19 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
   };
   if (kind === "running_transition") return {
     kind,
+    review_state: "not_required",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_acquire") return {
+    kind,
+    owner_kind: "runner_process",
+    manifest_id: "release-1",
+    runtime_env_identity: "runtime-env-1",
+    registration_id: "registration-1",
+    pid: 123,
+    start_identity: "start-1",
+    execution_command_id: "owner-1",
+    lease_expires_at: "2026-08-06T00:01:00.000Z",
     review_state: "not_required",
     updated_at: "2026-08-06T00:00:00.000Z",
   };

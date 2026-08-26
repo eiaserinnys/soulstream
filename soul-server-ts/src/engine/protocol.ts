@@ -92,6 +92,8 @@ export type ScheduleToolUseHandler = (
 /** EnginePort.execute 파라미터. 위임자 §R1 시그니처 그대로. */
 export interface EngineExecuteParams {
   agentSessionId?: string;
+  /** Sessions-row owner generation fencing every persistent engine output. */
+  executionGeneration?: number;
   prompt: string;
   /**
    * Stable logical input identity. Persistent Claude runtimes bind durable

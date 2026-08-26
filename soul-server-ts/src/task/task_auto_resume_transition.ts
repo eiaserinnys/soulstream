@@ -52,10 +52,10 @@ export class AutoResumeTransition {
     const originalStatus = task.status;
     const originalTerminalEventId = task.terminalEventId;
     const ownershipPersistence = this.deps.persistence as EventPersistence & {
-      reserveExecutionOwnershipAndWaitForApplication?: unknown;
+      acquireExecutionOwnershipAndWaitForApplication?: unknown;
     } | undefined;
     const ownershipEnabled =
-      typeof ownershipPersistence?.reserveExecutionOwnershipAndWaitForApplication === "function";
+      typeof ownershipPersistence?.acquireExecutionOwnershipAndWaitForApplication === "function";
     const activationHandoff = ownershipEnabled ? deferredActivationHandoff() : undefined;
     if (activationHandoff) {
       task.status = "initializing";
