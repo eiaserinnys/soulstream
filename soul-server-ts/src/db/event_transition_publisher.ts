@@ -26,6 +26,7 @@ export abstract class EventTransitionPublisher {
     sessionId: string,
     event: SSEEventPayload,
     explicitEffect?: EventOutboxSessionEffect,
+    executionGeneration?: number | null,
   ): Promise<EventOutboxRecord>;
 
   protected abstract waitForTransitionApplication(
@@ -134,6 +135,39 @@ export abstract class EventTransitionPublisher {
     );
   }
 
+  async releaseExecutionOwnershipAndWaitForApplication(
+    sessionId: string,
+    event: SSEEventPayload,
+    input: {
+      ownershipGeneration: number;
+      executionCommandId: string;
+      runnerFact: "completed" | "failed" | "reaped" | "closed";
+      terminationDetail: string | null;
+      reviewState: string;
+      lastAssistantText?: string | null;
+      updatedAt?: Date;
+    },
+  ): Promise<EventSessionTransitionApplication> {
+    const updatedAt = input.updatedAt ?? new Date();
+    const effect: Extract<EventOutboxSessionEffect, { kind: "execution_release" }> = {
+      kind: "execution_release",
+      ownership_generation: input.ownershipGeneration,
+      execution_command_id: input.executionCommandId,
+      runner_fact: input.runnerFact,
+      termination_detail: input.terminationDetail,
+      review_state: input.reviewState,
+      last_assistant_text: input.lastAssistantText ?? null,
+      updated_at: updatedAt.toISOString(),
+    };
+    const record = await this.enqueueEvent(
+      sessionId,
+      event,
+      effect,
+      input.ownershipGeneration,
+    );
+    return await this.waitForTransitionApplication(sessionId, record, "execution release");
+  }
+
   async backfillExecutionOwnershipAndWaitForApplication(
     sessionId: string,
     input: {
@@ -180,19 +214,6 @@ export abstract class EventTransitionPublisher {
   ): Promise<EventSessionTransitionApplication> {
     const record = await this.enqueueEvent(sessionId, event, effect);
     return await this.waitForTransitionApplication(sessionId, record, "terminal");
-  }
-
-  async enqueueRunnerTerminalFactAndWaitForApplication(
-    sessionId: string,
-    event: SSEEventPayload,
-    effect: Extract<EventOutboxSessionEffect, { kind: "runner_terminal_fact" }>,
-  ): Promise<EventSessionTransitionApplication> {
-    const record = await this.enqueueEvent(sessionId, event, effect);
-    return await this.waitForTransitionApplication(
-      sessionId,
-      record,
-      "runner terminal fact",
-    );
   }
 
   async enqueueRecoveredRunnerTerminalFactAndWaitForApplication(

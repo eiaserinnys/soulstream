@@ -219,7 +219,7 @@ describe("applyEventSessionEffect", () => {
       ...canonicalRow(false),
       execution_generation: 8,
       execution_lease_expires_at: new Date("2026-08-06T00:01:00.000Z"),
-    }]) as EventIngressQuerySql;
+    }]) as unknown as EventIngressQuerySql;
     const renewal = {
       ...effect("execution_renew"),
       ownership_generation: 7,
@@ -391,6 +391,16 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     updated_at: "2026-08-06T00:00:15.000Z",
   };
   if (kind === "runner_terminal_fact") return {
+    kind,
+    ownership_generation: 1,
+    execution_command_id: "execute-1",
+    runner_fact: "completed",
+    termination_detail: null,
+    review_state: "not_required",
+    last_assistant_text: "done",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_release") return {
     kind,
     ownership_generation: 1,
     execution_command_id: "execute-1",

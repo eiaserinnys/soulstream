@@ -1,6 +1,20 @@
+import { randomUUID } from "node:crypto";
+
 import type postgres from "postgres";
 
+import {
+  EventIngressRepository,
+  type EventIngressSql,
+} from "../../../orch-server-ts/src/node/event_ingress_repository.js";
+import { applyEventSessionEffect } from
+  "../../../orch-server-ts/src/node/event_session_effect_applier.js";
+import type {
+  EventAppendBatch,
+  EventIngressEnvelope,
+  EventSessionEffect,
+} from "../../../orch-server-ts/src/node/event_ingress_types.js";
 import type { SqlClient } from "../../src/db/session_db.js";
+import { computeEventOutboxPayloadHash } from "../../src/upstream/event_outbox.js";
 import type { FullSchemaPostgresHarness } from "./full_schema_postgres_harness.js";
 import type {
   AcquireInput,
@@ -20,84 +34,90 @@ export function createCurrentProductBoundary(
 }
 
 class CurrentProductBoundary implements V1OwnerBoundary {
-  readonly label = "origin-main:legacy-ownership";
+  readonly label = "v1:sessions-row-owner";
   private readonly sql: PgSql;
+  private readonly streamId = randomUUID();
+  private sourceSeq = 0;
+  private readonly ingress: EventIngressRepository;
 
   constructor(private readonly harness: FullSchemaPostgresHarness) {
     this.sql = asPg(harness.sql);
+    this.ingress = new EventIngressRepository(
+      { resolveSql: async () => harness.sql as unknown as EventIngressSql },
+      applyEventSessionEffect,
+    );
   }
 
   async resetSession(sessionId: string, status = "initializing"): Promise<void> {
-    await this.sql`DELETE FROM session_execution_ownerships WHERE session_id = ${sessionId}`;
     await this.sql`DELETE FROM sessions WHERE session_id = ${sessionId}`;
     await this.sql`
       INSERT INTO sessions (session_id, session_type, status, agent_id)
-      VALUES (${sessionId}, 'codex', ${status}, 'v1-red')
+      VALUES (${sessionId}, 'codex', ${status}, 'v1-green')
     `;
   }
 
   async acquire(input: AcquireInput): Promise<AcquireResult> {
     const connection = asPg(this.harness.createPeer());
-    if (input.path === "legacy_adopt") {
-      const adopted = await connection<Array<{ applied: boolean }>>`
-        SELECT * FROM session_reserve_execution_adoption_v2(
-          ${input.sessionId}, ${input.candidateGeneration},
-          ${input.identity.manifestId}, ${input.identity.runtimeEnvIdentity},
-          ${input.identity.registrationId}, ${input.identity.pid},
-          ${input.identity.startIdentity}, ${input.identity.executionCommandId},
-          ${input.acquiredAt}
-        )
-      `;
-      if (adopted[0]?.applied !== true) return { applied: false, generation: null };
-    } else {
-      const reserved = await connection<Array<{
-        applied: boolean;
-        ownership_generation: string | number;
-      }>>`
-        SELECT * FROM session_reserve_execution_ownership_v2(
-          ${input.sessionId}, ${input.candidateGeneration}, 'in_process',
-          ${input.identity.manifestId}, ${input.identity.runtimeEnvIdentity},
-          ${input.acquiredAt}
-        )
-      `;
-      if (reserved[0]?.applied !== true) {
-        return {
-          applied: false,
-          generation: Number(reserved[0]?.ownership_generation ?? 0) || null,
-        };
-      }
-    }
-    const proof = await connection<Array<{ applied: boolean }>>`
-      SELECT session_prove_execution_ownership(
-        ${input.sessionId}, ${input.candidateGeneration},
-        ${input.identity.registrationId}, ${input.identity.pid},
-        ${input.identity.startIdentity}, ${input.identity.executionCommandId},
+    const rows = await connection<Array<{
+      applied: boolean;
+      execution_generation: string | number;
+    }>>`
+      SELECT * FROM session_acquire_execution_ownership(
+        ${input.sessionId},
+        ${input.identity.manifestId},
+        ${input.identity.runtimeEnvIdentity},
+        ${input.identity.registrationId},
+        ${input.identity.pid},
+        ${input.identity.startIdentity},
+        ${input.identity.executionCommandId},
+        ${input.leaseExpiresAt},
+        'not_required',
+        NULL,
+        FALSE,
         ${input.acquiredAt}
-      ) AS applied
-    `;
-    if (proof[0]?.applied !== true) return { applied: false, generation: null };
-    const activation = await connection<Array<{ applied: boolean }>>`
-      SELECT * FROM session_activate_execution_ownership(
-        ${input.sessionId}, ${input.candidateGeneration}, 'not_required',
-        NULL, FALSE, ${input.acquiredAt}
       )
     `;
+    const row = requireRow(rows[0], input.sessionId);
     return {
-      applied: activation[0]?.applied === true,
-      generation: activation[0]?.applied === true ? input.candidateGeneration : null,
+      applied: row.applied,
+      generation: Number(row.execution_generation) || null,
     };
   }
 
-  async renew(): Promise<number> {
-    return 0;
+  async renew(
+    sessionId: string,
+    generation: number,
+    identity: AcquireInput["identity"],
+    leaseExpiresAt: Date,
+  ): Promise<number> {
+    const rows = await this.sql<Array<{ applied: boolean }>>`
+      SELECT * FROM session_renew_execution_ownership(
+        ${sessionId}, ${generation}, ${identity.manifestId},
+        ${identity.runtimeEnvIdentity}, ${identity.registrationId}, ${identity.pid},
+        ${identity.startIdentity}, ${identity.executionCommandId},
+        ${leaseExpiresAt}, NOW()
+      )
+    `;
+    return rows[0]?.applied === true ? 1 : 0;
   }
 
-  async writeStatus(): Promise<number> {
-    return 0;
+  async writeStatus(sessionId: string, generation: number, status: string): Promise<number> {
+    const outcome = await this.commitGenerationEvent(sessionId, generation, {
+      kind: "running_transition",
+      review_state: "not_required",
+      updated_at: new Date().toISOString(),
+    }, { requested_status: status });
+    return outcome === "committed" ? 1 : 0;
   }
 
-  async writeEffect(): Promise<number> {
-    return 0;
+  async writeEffect(sessionId: string, generation: number): Promise<number> {
+    const now = new Date().toISOString();
+    const outcome = await this.commitGenerationEvent(sessionId, generation, {
+      kind: "append_metadata",
+      entry: { type: "v1_strict_effect", value: generation },
+      updated_at: now,
+    }, { effect: "v1_strict_effect" });
+    return outcome === "committed" ? 1 : 0;
   }
 
   async release(
@@ -107,78 +127,139 @@ class CurrentProductBoundary implements V1OwnerBoundary {
     options: { faultAfterTerminal?: boolean } = {},
   ): Promise<ReleaseResult> {
     if (options.faultAfterTerminal) {
-      return { supported: false, appliedRows: 0, faulted: false };
+      try {
+        await this.sql.begin(async (transaction) => {
+          await releaseRow(transaction as PgSql, sessionId, generation, executionCommandId);
+          throw new Error("V1_STRICT_RELEASE_FAULT");
+        });
+      } catch (error) {
+        if ((error as Error).message !== "V1_STRICT_RELEASE_FAULT") throw error;
+      }
+      return { supported: true, appliedRows: 0, faulted: true };
     }
-    const rows = await this.sql<Array<{ applied: boolean }>>`
-      SELECT * FROM session_project_runner_terminal_fact(
-        ${sessionId}, ${generation}, ${executionCommandId}, 'completed',
-        NULL, 'not_required', NULL, 9001, NOW()
-      )
+    const appliedRows = await releaseRow(this.sql, sessionId, generation, executionCommandId);
+    return { supported: true, appliedRows, faulted: false };
+  }
+
+  async injectPartialIdentity(sessionId: string): Promise<PartialIdentityResult> {
+    let rejected = false;
+    try {
+      await this.sql`
+        UPDATE sessions SET execution_manifest_id = 'partial-only'
+        WHERE session_id = ${sessionId}
+      `;
+    } catch {
+      rejected = true;
+    }
+    const rows = await this.sql<Array<{ execution_manifest_id: string | null }>>`
+      SELECT execution_manifest_id FROM sessions WHERE session_id = ${sessionId}
     `;
     return {
       supported: true,
-      appliedRows: rows[0]?.applied === true ? 1 : 0,
-      faulted: false,
+      rejected,
+      partialPersisted: rows[0]?.execution_manifest_id !== null,
     };
   }
 
-  async injectPartialIdentity(): Promise<PartialIdentityResult> {
-    return { supported: false, rejected: false, partialPersisted: false };
-  }
-
   async snapshot(sessionId: string): Promise<OwnerSnapshot> {
-    const sessionsRows = await this.sql<Array<{
-      session_id: string;
+    const rows = await this.sql<Array<{
       status: string;
       termination_event_id: number | null;
-    }>>`
-      SELECT session_id, status, termination_event_id
-      FROM sessions WHERE session_id = ${sessionId}
-    `;
-    const session = requireRow(sessionsRows[0], sessionId);
-    const ownershipRows = await this.sql<Array<{
-      ownership_generation: string | number;
-      manifest_id: string | null;
-      runtime_env_identity: string | null;
-      registration_id: string | null;
-      pid: number | null;
-      start_identity: string | null;
+      execution_generation: string | number;
+      execution_manifest_id: string | null;
+      execution_runtime_env_identity: string | null;
+      execution_registration_id: string | null;
+      execution_pid: number | null;
+      execution_start_identity: string | null;
       execution_command_id: string | null;
-      reservation_expires_at: Date | null;
-      phase: string;
+      execution_lease_expires_at: Date | null;
+      effect_writes: string | number;
     }>>`
-      SELECT ownership_generation, manifest_id, runtime_env_identity,
-             registration_id, pid, start_identity, execution_command_id,
-             reservation_expires_at, phase
-      FROM session_execution_ownerships
-      WHERE session_id = ${sessionId}
-      ORDER BY ownership_generation DESC
-      LIMIT 1
+      SELECT session.status, session.termination_event_id,
+             session.execution_generation, session.execution_manifest_id,
+             session.execution_runtime_env_identity,
+             session.execution_registration_id, session.execution_pid,
+             session.execution_start_identity, session.execution_command_id,
+             session.execution_lease_expires_at,
+             (SELECT COUNT(*) FROM events WHERE session_id = ${sessionId}) AS effect_writes
+      FROM sessions AS session WHERE session.session_id = ${sessionId}
     `;
-    const owner = ownershipRows[0];
-    const identity = owner && owner.phase !== "terminal" && owner.manifest_id
-      && owner.runtime_env_identity && owner.registration_id && owner.pid
-      && owner.start_identity && owner.execution_command_id
+    const row = requireRow(rows[0], sessionId);
+    const identity = row.execution_manifest_id
+      && row.execution_runtime_env_identity
+      && row.execution_registration_id
+      && row.execution_pid
+      && row.execution_start_identity
+      && row.execution_command_id
       ? {
-          manifestId: owner.manifest_id,
-          runtimeEnvIdentity: owner.runtime_env_identity,
-          registrationId: owner.registration_id,
-          pid: owner.pid,
-          startIdentity: owner.start_identity,
-          executionCommandId: owner.execution_command_id,
+          manifestId: row.execution_manifest_id,
+          runtimeEnvIdentity: row.execution_runtime_env_identity,
+          registrationId: row.execution_registration_id,
+          pid: row.execution_pid,
+          startIdentity: row.execution_start_identity,
+          executionCommandId: row.execution_command_id,
         }
       : null;
     return {
       sessionId,
-      status: session.status,
-      terminalEventId: session.termination_event_id,
-      generation: Number(owner?.ownership_generation ?? 0),
+      status: row.status,
+      terminalEventId: row.termination_event_id,
+      generation: Number(row.execution_generation),
       identity,
-      leaseExpiresAt: owner?.reservation_expires_at ?? null,
-      effectWrites: 0,
-      ownerStoredOnSessionsRow: false,
+      leaseExpiresAt: row.execution_lease_expires_at,
+      effectWrites: Number(row.effect_writes),
+      ownerStoredOnSessionsRow: true,
     };
   }
+
+  private async commitGenerationEvent(
+    sessionId: string,
+    generation: number,
+    sessionEffect: EventSessionEffect,
+    payload: Record<string, unknown>,
+  ): Promise<"committed" | "dead_lettered"> {
+    const sourceSeq = ++this.sourceSeq;
+    const createdAt = new Date().toISOString();
+    const unsigned = {
+      stream_id: this.streamId,
+      source_seq: sourceSeq,
+      session_id: sessionId,
+      execution_generation: generation,
+      event_type: "metadata",
+      payload,
+      searchable_text: null,
+      created_at: createdAt,
+      semantic_dedupe_key: `v1-strict:${sessionId}:${sourceSeq}`,
+      session_effect: sessionEffect,
+    } satisfies Omit<EventIngressEnvelope, "payload_hash">;
+    const envelope: EventIngressEnvelope = {
+      ...unsigned,
+      payload_hash: computeEventOutboxPayloadHash(unsigned),
+    };
+    const batch: EventAppendBatch = {
+      type: "event_append_batch",
+      protocol_version: 1,
+      stream_id: this.streamId,
+      first_seq: sourceSeq,
+      events: [envelope],
+    };
+    return (await this.ingress.commitBatch("v1-strict", batch))[0]!.outcome;
+  }
+}
+
+async function releaseRow(
+  sql: PgSql,
+  sessionId: string,
+  generation: number,
+  executionCommandId: string,
+): Promise<number> {
+  const rows = await sql<Array<{ applied: boolean }>>`
+    SELECT * FROM session_release_execution_ownership(
+      ${sessionId}, ${generation}, ${executionCommandId}, 'completed',
+      NULL, 'not_required', NULL, 9001, NOW()
+    )
+  `;
+  return rows[0]?.applied === true ? 1 : 0;
 }
 
 function asPg(sql: SqlClient): PgSql {

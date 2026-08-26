@@ -227,11 +227,15 @@ export function makeEventPersistenceTestDouble(
       },
     }),
   );
-  const enqueueRunnerTerminalFactAndWaitForApplication = vi.fn(
+  const releaseExecutionOwnershipAndWaitForApplication = vi.fn(
     async (
       sessionId: string,
       event: SSEEventPayload,
-      effect: Extract<EventOutboxSessionEffect, { kind: "runner_terminal_fact" }>,
+      input: {
+        reviewState: string;
+        lastAssistantText?: string | null;
+        updatedAt?: Date;
+      },
     ) => await enqueueTerminalTransitionAndWaitForApplication(
       sessionId,
       event,
@@ -243,9 +247,9 @@ export function makeEventPersistenceTestDouble(
         ),
         termination_detail: ((event as Record<string, unknown>)
           .termination_detail as string | null | undefined) ?? null,
-        review_state: effect.review_state,
-        last_assistant_text: effect.last_assistant_text ?? null,
-        updated_at: effect.updated_at,
+        review_state: input.reviewState,
+        last_assistant_text: input.lastAssistantText ?? null,
+        updated_at: (input.updatedAt ?? new Date()).toISOString(),
       },
     ),
   );
@@ -261,7 +265,7 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
     acquireExecutionOwnershipAndWaitForApplication,
-    enqueueRunnerTerminalFactAndWaitForApplication,
+    releaseExecutionOwnershipAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
   } as unknown as EventPersistence;
@@ -276,7 +280,7 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
     acquireExecutionOwnershipAndWaitForApplication,
-    enqueueRunnerTerminalFactAndWaitForApplication,
+    releaseExecutionOwnershipAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
     getEventById(eventId: number): SSEEventPayload | undefined {

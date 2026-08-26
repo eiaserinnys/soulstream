@@ -1893,7 +1893,7 @@ describe("TaskExecutor runner process boundary", () => {
       const terminal = vi.fn(async () => transition("completed"));
       Object.assign(mocks.persistence, {
         acquireExecutionOwnershipAndWaitForApplication: acquire,
-        enqueueRunnerTerminalFactAndWaitForApplication: terminal,
+        releaseExecutionOwnershipAndWaitForApplication: terminal,
       });
       const { runner, dispatcher } = makeRunnerProcessRuntime([
         { type: "complete", result: "done", timestamp: 1 },
@@ -1947,13 +1947,15 @@ describe("TaskExecutor runner process boundary", () => {
       expect(acquire.mock.invocationCallOrder[0]).toBeLessThan(
         dispatcher.executeFrames.mock.invocationCallOrder[0]!,
       );
-      expect(task.executionOwnership).toMatchObject({
-        ...proof,
-        ownerKind: "runner_process",
-        manifestId: "release-1",
-        runtimeEnvIdentity: "env-1",
-        ownershipGeneration: 7,
-      });
+      expect(terminal).toHaveBeenCalledWith(
+        task.agentSessionId,
+        expect.objectContaining({ type: "session_ended" }),
+        expect.objectContaining({
+          ownershipGeneration: 7,
+          executionCommandId: proof.executionCommandId,
+        }),
+      );
+      expect(task.executionOwnership).toBeUndefined();
       expect(task.pendingExecutionExpectedTerminalEventId).toBeUndefined();
       expect(entryPath).toBe(
         expectedTerminalEventId === undefined ? "initial" : "auto_resume",
@@ -1995,7 +1997,7 @@ describe("TaskExecutor runner process boundary", () => {
     const terminal = vi.fn(async () => transition("completed"));
     Object.assign(mocks.persistence, {
       acquireExecutionOwnershipAndWaitForApplication: acquire,
-      enqueueRunnerTerminalFactAndWaitForApplication: terminal,
+      releaseExecutionOwnershipAndWaitForApplication: terminal,
       enqueueRecoveredRunnerTerminalFactAndWaitForApplication: terminal,
     });
     const { runner, dispatcher } = makeRunnerProcessRuntime([
@@ -2051,11 +2053,12 @@ describe("TaskExecutor runner process boundary", () => {
       runtimeEnvIdentity: "env-b",
       ...proof,
     }));
-    expect(task.executionOwnership).toMatchObject({
-      ...proof,
-      manifestId: currentManifestId,
-      runtimeEnvIdentity: "env-b",
-    });
+    expect(terminal).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ type: "session_ended" }),
+      expect.objectContaining({ executionCommandId: proof.executionCommandId }),
+    );
+    expect(task.executionOwnership).toBeUndefined();
     expect(task.recoveredExecutionOwnership).toBeUndefined();
   });
 
@@ -2356,7 +2359,7 @@ describe("TaskExecutor runner process boundary", () => {
     const terminal = vi.fn(async () => transition("completed"));
     Object.assign(mocks.persistence, {
       acquireExecutionOwnershipAndWaitForApplication: acquire,
-      enqueueRunnerTerminalFactAndWaitForApplication: terminal,
+      releaseExecutionOwnershipAndWaitForApplication: terminal,
     });
     const { runner, dispatcher } = makeRunnerProcessRuntime([
       { type: "complete", result: "adopted", timestamp: 1 },
@@ -2413,13 +2416,15 @@ describe("TaskExecutor runner process boundary", () => {
     expect(acquire.mock.invocationCallOrder[0]).toBeLessThan(
       dispatcher.recoverFrames.mock.invocationCallOrder[0]!,
     );
-    expect(task.executionOwnership).toMatchObject({
-      ...proof,
-      ownerKind: "adopted_runner",
-      manifestId: "release-old",
-      runtimeEnvIdentity: "env-old",
-      ownershipGeneration: 7,
-    });
+    expect(terminal).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ type: "session_ended" }),
+      expect.objectContaining({
+        ownershipGeneration: 7,
+        executionCommandId: proof.executionCommandId,
+      }),
+    );
+    expect(task.executionOwnership).toBeUndefined();
   });
 
   it("adopt reconnect rejection detaches the dormant identity before input", async () => {

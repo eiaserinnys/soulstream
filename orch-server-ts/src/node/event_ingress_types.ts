@@ -513,6 +513,43 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }
+  if (value.kind === "execution_release") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "ownership_generation", "execution_command_id", "runner_fact",
+        "termination_detail", "review_state", "last_assistant_text", "updated_at",
+      ],
+      field,
+    );
+    const runnerFact = nonEmptyString(value.runner_fact, `${field}.runner_fact`);
+    if (!["completed", "failed", "reaped", "closed"].includes(runnerFact)) {
+      throw new EventIngressValidationError(`${field}.runner_fact is invalid`);
+    }
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(
+        value.ownership_generation,
+        `${field}.ownership_generation`,
+      ),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
+      runner_fact: runnerFact as "completed" | "failed" | "reaped" | "closed",
+      termination_detail: nullableString(value.termination_detail, `${field}.termination_detail`),
+      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.last_assistant_text === undefined
+        ? {}
+        : {
+            last_assistant_text: nullableString(
+              value.last_assistant_text,
+              `${field}.last_assistant_text`,
+            ),
+          }),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
   if (value.kind === "recovered_runner_terminal_fact") {
     assertExactKeys(
       value,

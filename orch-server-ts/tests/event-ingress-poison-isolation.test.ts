@@ -26,8 +26,8 @@ describe("event ingress poison isolation", () => {
       const appendedPayloads: string[] = [];
       const sql = fakeSql(async (text, values) => {
         if (text.includes("FROM event_ingress_receipts")) return [];
-        if (text.includes("FROM sessions") && text.includes("FOR KEY SHARE")) {
-          return [{ session_id: "session-a" }];
+        if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+          return [{ execution_generation: 0, execution_command_id: null }];
         }
         if (text.includes("SELECT event_append")) {
           const payload = JSON.parse(String(values[2])) as { content: string };

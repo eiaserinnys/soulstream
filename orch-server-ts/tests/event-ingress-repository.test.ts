@@ -26,7 +26,7 @@ describe("EventIngressRepository", () => {
       }
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
         order.push("session-lock");
-        return [{ execution_generation: 0 }];
+        return [{ execution_generation: 0, execution_command_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) {
         order.push("semantic-lock");
@@ -182,7 +182,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0 }];
+        return [{ execution_generation: 0, execution_command_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) {
@@ -236,7 +236,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0 }];
+        return [{ execution_generation: 0, execution_command_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
@@ -282,7 +282,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0 }];
+        return [{ execution_generation: 0, execution_command_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
@@ -320,7 +320,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts") && text.includes("FOR UPDATE")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0 }];
+        return [{ execution_generation: 0, execution_command_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) {
@@ -350,7 +350,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts") && text.includes("FOR UPDATE")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0 }];
+        return [{ execution_generation: 0, execution_command_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) {
@@ -476,7 +476,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0 }];
+        return [{ execution_generation: 0, execution_command_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) return [];

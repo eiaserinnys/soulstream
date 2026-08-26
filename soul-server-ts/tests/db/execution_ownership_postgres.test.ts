@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -12,11 +14,19 @@ const describePostgres = hasFullSchemaPostgresBackend || hasDockerBinary()
   ? describe
   : describe.skip;
 
-describePostgres("execution ownership PostgreSQL contract", () => {
+describePostgres("execution ownership PostgreSQL rollback compatibility", () => {
   let harness: FullSchemaPostgresHarness;
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
+    // V1 makes post-cut legacy reserve/adopt drain-only. This suite preserves
+    // the old contract as rollback coverage by explicitly restoring the two
+    // legacy writer bodies before exercising their lifecycle invariants.
+    const rollbackSql = readFileSync(fileURLToPath(new URL(
+      "../../../packages/db-schema/sql/rollback/073_sessions_execution_owner_v1_rollback.sql",
+      import.meta.url,
+    )), "utf8");
+    await harness.sql.unsafe(rollbackSql);
   }, 45_000);
 
   beforeEach(async () => {

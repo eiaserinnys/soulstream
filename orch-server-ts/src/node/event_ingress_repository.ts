@@ -150,13 +150,16 @@ export class EventIngressRepository {
         ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
       };
     }
-    const sessionGeneration = await lockSession(transaction, envelope.session_id);
-    if (sessionGeneration === null) {
+    const sessionOwner = await lockSession(transaction, envelope.session_id);
+    if (sessionOwner === null) {
       throw new Error(`session ${envelope.session_id} does not exist`);
     }
     if (envelope.execution_generation !== undefined
       && envelope.execution_generation !== null
-      && envelope.execution_generation !== sessionGeneration) {
+      && (
+        envelope.execution_generation !== sessionOwner.executionGeneration
+        || sessionOwner.executionCommandId === null
+      )) {
       return {
         outcome: "dead_lettered",
         envelope,
@@ -223,9 +226,12 @@ export class EventIngressRepository {
 async function lockSession(
   sql: EventIngressQuerySql,
   sessionId: string,
-): Promise<number | null> {
-  const rows = await sql<Array<{ execution_generation: string | number }>>`
-    SELECT execution_generation
+): Promise<{ executionGeneration: number; executionCommandId: string | null } | null> {
+  const rows = await sql<Array<{
+    execution_generation: string | number;
+    execution_command_id: string | null;
+  }>>`
+    SELECT execution_generation, execution_command_id
     FROM sessions
     WHERE session_id = ${sessionId}
     FOR UPDATE
@@ -235,7 +241,10 @@ async function lockSession(
   if (!Number.isSafeInteger(generation) || generation < 0) {
     throw new Error(`session ${sessionId} has an invalid execution generation`);
   }
-  return generation;
+  return {
+    executionGeneration: generation,
+    executionCommandId: rows[0].execution_command_id,
+  };
 }
 
 function deadLetterResult(
@@ -353,6 +362,7 @@ function isCanonicalTransitionEffect(
       | "execution_fail"
       | "execution_expire_dead_owner"
       | "execution_orphaned_spawn"
+      | "execution_release"
       | "runner_terminal_fact"
       | "recovered_runner_terminal_fact";
   }
@@ -367,6 +377,7 @@ function isCanonicalTransitionEffect(
     || effect?.kind === "execution_fail"
     || effect?.kind === "execution_expire_dead_owner"
     || effect?.kind === "execution_orphaned_spawn"
+    || effect?.kind === "execution_release"
     || effect?.kind === "runner_terminal_fact"
     || effect?.kind === "recovered_runner_terminal_fact";
 }

@@ -43,10 +43,27 @@ export class ExecutionOwnershipCoordinator {
     return application;
   }
 
+  async release(
+    sessionId: string,
+    event: Parameters<EventPersistence["releaseExecutionOwnershipAndWaitForApplication"]>[1],
+    input: Parameters<EventPersistence["releaseExecutionOwnershipAndWaitForApplication"]>[2],
+  ): Promise<EventSessionTransitionApplication> {
+    const application = await this.persistence
+      .releaseExecutionOwnershipAndWaitForApplication(sessionId, event, input);
+    this.logTransition(
+      "release",
+      sessionId,
+      input.ownershipGeneration,
+      application,
+    );
+    return application;
+  }
+
   private logTransition(
     operation:
       | "acquire"
-      | "renew",
+      | "renew"
+      | "release",
     sessionId: string,
     ownershipGeneration: number,
     application: EventSessionTransitionApplication,
