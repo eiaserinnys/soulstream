@@ -322,12 +322,6 @@ export class RunningInterventionTransition {
         reason: "verdict_unknown",
       };
     } catch (error) {
-      // The durable create-or-release result is still unknown. Drop its durable
-      // id so the next execute does not require a row that may not exist, then
-      // preserve the intervention at the same in-memory level as non-runner mode.
-      const memoryMessage = { ...message };
-      delete memoryMessage.runnerInterventionId;
-      const queuePosition = enqueueInterventionOnce(task, memoryMessage);
       this.deps.logger.warn(
         {
           err: error,
@@ -335,17 +329,13 @@ export class RunningInterventionTransition {
           interventionId: message.runnerInterventionId,
           reason: result.reason,
           detail: result.message,
-          queuePosition,
-          durability: "memory_only",
         },
-        "runner intervention durable queue recovery failed; queued in memory",
+        "runner intervention durable queue recovery failed; verdict remains unknown",
       );
       return {
-        delivered: false,
-        queued: true,
-        queuePosition,
-        consumeWhen: "next_turn",
+        delivered: null,
         reason: "verdict_unknown",
+        consumeWhen: null,
       };
     }
   }
