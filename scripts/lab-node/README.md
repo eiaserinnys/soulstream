@@ -105,8 +105,18 @@ Run one scenario or the complete prioritized set:
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario dead-owner
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario runner-death-live-host
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario activate-rollback
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh faults
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh all
 ```
+
+`faults` runs F1, F11, F9, dead-owner, and F7. `all` retains the complete
+canonical inventory. Both suite commands run every scenario through a separate
+`clean-run.sh scenario ...` lifecycle. The unchanged 180-second hard ceiling is
+therefore owned by each scenario process rather than by the aggregate. A
+timeout is recorded for that scenario and cannot prevent any later scenario
+from starting. Each scenario receives a fresh database and mutable-state reset,
+and the ordered aggregate is preserved as
+`state/fault-harness/aggregate-<command>-<timestamp>.json`.
 
 `all` first runs steady-state, restart-adopt, and restart-intervention-window.
 The transparency oracle is authored before execution from the required normal

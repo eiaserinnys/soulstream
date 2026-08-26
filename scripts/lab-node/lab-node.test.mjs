@@ -230,6 +230,8 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
   assert.match(wrapper, /flock -w 300 \/tmp\/soulstream-heavy-verify\.lock/);
   assert.match(wrapper, /LAB_HARNESS_PROCESS_CEILING_SECONDS/);
   assert.match(wrapper, /run_with_process_group_ceiling/);
+  assert.match(wrapper, /fault-harness-suite\.mjs/);
+  assert.match(wrapper, /"\$suite_entry" "\$1"/);
   assert.match(wrapper, /\$LAB_REPO\/scripts\/lab-node\/fault-harness\.mjs/);
   assert.match(runtime, /unsafe LAB_ROOT/);
   assert.match(runtime, /protectedPorts\.includes/);
