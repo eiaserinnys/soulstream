@@ -86,10 +86,6 @@ function distinctAcceptedSuccessorOwner(
   task: Task,
   activeInterventions: readonly InterventionMessage[],
 ): string | undefined {
-  const runner = task.runner;
-  if (runner === undefined || runner.dispatcher.isClosed?.() === true) {
-    return undefined;
-  }
   const successorOwner = interventionOwner(task.interventionQueue[0]);
   if (successorOwner === undefined) return undefined;
   const activeOwners = new Set(activeInterventions.map(interventionOwner));

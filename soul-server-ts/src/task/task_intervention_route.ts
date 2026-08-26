@@ -102,10 +102,10 @@ export interface TaskInterventionRouteDeps {
 /**
  * Owns public intervention route policy.
  *
- * Active status plus an attached active runner execution decides whether an
- * intervention can be delivered in place. RunningInterventionTransition and
- * AutoResumeTransition own side-effect order. This route owns task resolution,
- * transition selection, public result forwarding, and onResume callback wiring.
+ * Active status is the single authority for routing an intervention to the
+ * attached runner. RunningInterventionTransition and AutoResumeTransition own
+ * side-effect order. This route owns task resolution, transition selection,
+ * public result forwarding, and onResume callback wiring.
  */
 export class TaskInterventionRoute {
   constructor(private readonly deps: TaskInterventionRouteDeps) {}
@@ -388,7 +388,7 @@ function interventionTaskRoute(
 ): "running" | "activating" | "auto-resume" {
   if (task.status === "initializing") return "activating";
   if (!isActiveTaskStatus(task.status)) return "auto-resume";
-  return task.runner !== undefined && task.runner.dispatcher.hasActiveExecution()
+  return task.runner === undefined || task.runner.dispatcher.hasActiveExecution()
     ? "running"
     : "auto-resume";
 }

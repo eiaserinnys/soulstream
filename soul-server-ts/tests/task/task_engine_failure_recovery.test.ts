@@ -21,7 +21,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 function makeRecovery() {
   const logger = {
     error: vi.fn(),
-    info: vi.fn(),
     warn: vi.fn(),
   } as unknown as Logger;
   const recovery = new TaskEngineFailureRecovery({
@@ -91,51 +90,6 @@ describe("TaskEngineFailureRecovery", () => {
     expect(task.interventionQueue).toEqual([{ text: "pending", user: "u" }]);
   });
 
-  it.each([
-    ["missing", undefined],
-    ["closed", runner(true)],
-  ] as const)(
-    "records terminal truth when the accepted successor runner is %s",
-    async (_label, taskRunner) => {
-      const { recovery } = makeRecovery();
-      const task = makeTask({
-        runner: taskRunner,
-        interventionQueue: [{
-          text: "accepted successor",
-          user: "u",
-          deliveryId: "delivery-successor",
-        }],
-      });
-
-      await expect(
-        recovery.recoverFromExecuteFailure(task, new Error("engine boom")),
-      ).resolves.toBe("stop_on_error");
-
-      expect(task.status).toBe("error");
-      expect(task.pendingTerminationHint).toBe("error_aborted");
-      expect(task.interventionQueue).toHaveLength(1);
-    },
-  );
-
-  it("continues an accepted successor when the attached runner is still usable", async () => {
-    const { recovery } = makeRecovery();
-    const task = makeTask({
-      runner: runner(false),
-      interventionQueue: [{
-        text: "accepted successor",
-        user: "u",
-        deliveryId: "delivery-successor",
-      }],
-    });
-
-    await expect(
-      recovery.recoverFromExecuteFailure(task, new Error("old turn yielded")),
-    ).resolves.toBe("continue_with_accepted_successor");
-
-    expect(task.status).toBe("running");
-    expect(task.pendingTerminationHint).toBeUndefined();
-  });
-
   it("recovers outer execution failures without deleting queued interventions", async () => {
     const { logger, recovery } = makeRecovery();
     const task = makeTask({
@@ -175,14 +129,3 @@ describe("TaskEngineFailureRecovery", () => {
     expect(task.pendingTerminationDetail).toBe("runtime stalled");
   });
 });
-
-function runner(closed: boolean): NonNullable<Task["runner"]> {
-  return {
-    engine: {} as never,
-    dispatcher: {
-      hasActiveExecution: vi.fn().mockReturnValue(false),
-      isClosed: vi.fn().mockReturnValue(closed),
-    } as never,
-    eventPersistence: "runner",
-  };
-}
