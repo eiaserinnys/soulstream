@@ -103,6 +103,17 @@ function makeLedgerGate(terminalStates: ReadonlyMap<string, TerminalDeliveryStat
   const recordReservationRetry = vi.fn(async () => "retryable" as const);
   const recordConsumed = vi.fn(async () => undefined);
   const recordTurnStarted = vi.fn(async () => "turn-contract");
+  const discardIfConsumed = vi.fn(async (
+    message: InterventionMessage,
+    task: Task,
+  ) => {
+    const deliveryId = message.deliveryId;
+    if (!deliveryId || terminalStates.get(deliveryId) !== "consumed") return false;
+    await task.runner?.dispatcher.discardIntervention?.(
+      message.runnerInterventionId ?? deliveryId,
+    );
+    return true;
+  });
   return {
     admit,
     beginDispatch,
@@ -111,10 +122,12 @@ function makeLedgerGate(terminalStates: ReadonlyMap<string, TerminalDeliveryStat
     recordReservationRetry,
     recordConsumed,
     recordTurnStarted,
+    discardIfConsumed,
   } as unknown as Pick<
     TaskDeliveryLedgerGate,
     "admit" | "beginDispatch" | "recordResult" | "recordFailure"
       | "recordReservationRetry" | "recordConsumed" | "recordTurnStarted"
+      | "discardIfConsumed"
   >;
 }
 
@@ -141,6 +154,9 @@ function makeRunner(localRows: readonly LocalInboxRow[]) {
     detachHost: vi.fn(async () => undefined),
     waitForSessionAck: vi.fn(async () => null),
     recoverPendingInterventions: vi.fn(async () => [...openRows.values()]),
+    discardIntervention: vi.fn(async (interventionId: string) => {
+      openRows.delete(interventionId);
+    }),
     invoke: vi.fn(async () => undefined),
   };
   const runner: TaskRunnerRuntime = {
