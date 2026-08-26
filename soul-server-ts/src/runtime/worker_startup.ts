@@ -11,6 +11,7 @@ export interface WorkerStartupCoordinator {
 export interface WorkerStartupRuntime {
   createUpstreamAdapter(): WorkerStartupAdapter;
   runnerRecoveryCoordinator?: WorkerStartupCoordinator;
+  completionDeliveryRecoveryWorker?: { start(): void };
 }
 
 export async function startWorkerRuntime<
@@ -46,7 +47,9 @@ export async function startWorkerRuntime<
     void runtime.runnerRecoveryCoordinator.start().then(
       () => options.logger.info("Runner recovery initial scan completed"),
       options.onRunnerRecoveryFailure,
-    );
+    ).finally(() => runtime.completionDeliveryRecoveryWorker?.start());
+  } else {
+    runtime.completionDeliveryRecoveryWorker?.start();
   }
 
   return { runtime, upstreamAdapter };

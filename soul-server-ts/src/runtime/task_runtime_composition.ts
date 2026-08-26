@@ -166,7 +166,6 @@ export function composeTaskRuntime(
     executionOwnershipBackoff,
     env.SOULSTREAM_NODE_ID,
   );
-  completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(
     { nodeId: env.SOULSTREAM_NODE_ID },
     scheduleService,
