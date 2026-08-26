@@ -87,7 +87,7 @@ export interface TaskInterventionRouteDeps {
   rememberTask(task: Task): void;
   runningInterventionTransition: Pick<
     RunningInterventionTransition,
-    "deliver"
+    "deliver" | "queueOnly"
   >;
   autoResumeTransition: Pick<AutoResumeTransition, "resume">;
   deliveryLedgerGate?: Pick<
@@ -193,9 +193,11 @@ export class TaskInterventionRoute {
       const isRunning = taskRoute === "running";
       let result: AddInterventionResult;
       if (isRunning) {
-        result = await this.deps.runningInterventionTransition.deliver(task, message, {
-          queueIfUndelivered: request.queueIfRunning ?? true,
-        });
+        result = task.executionOwnershipReservation
+          ? await this.deps.runningInterventionTransition.queueOnly(task, message)
+          : await this.deps.runningInterventionTransition.deliver(task, message, {
+              queueIfUndelivered: request.queueIfRunning ?? true,
+            });
       } else if (admission.kind === "admitted") {
         const deferResumeUntilQueued: StartExecutionCallback = (resumedTask) => {
           deferredResumeTask = resumedTask;
