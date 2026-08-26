@@ -6,7 +6,7 @@ import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 
 type ConsumptionRecorder = Pick<
   TaskDeliveryLedgerGate,
-  "recordConsumed" | "recordTurnStarted" | "discardIfConsumed"
+  "recordConsumed" | "recordTurnStarted" | "discardIfRestoreSuppressed"
 >;
 
 export class TaskDeliveryConsumption {
@@ -58,12 +58,12 @@ export class TaskDeliveryConsumption {
     }
   }
 
-  async discardIfConsumed(
+  async discardIfRestoreSuppressed(
     task: Task,
     intervention: InterventionMessage,
   ): Promise<boolean> {
     if (!this.recorder) return false;
-    return await this.recorder.discardIfConsumed(intervention, task);
+    return await this.recorder.discardIfRestoreSuppressed(intervention, task);
   }
 }
 
