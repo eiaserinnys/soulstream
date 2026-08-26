@@ -225,6 +225,29 @@ export class UpstreamAdapter {
     const registrationPromise = new Promise<NodeRegisterAck>((resolve) => {
       resolveRegistration = resolve;
     });
+    // A registered transport is not mutation-ready until the durable runner
+    // inventory has either admitted adoption or proved that no runner returns.
+    // Data commands and control-channel activation share this one barrier.
+    const registrationReadyPromise = registrationPromise.then(async (ack) => {
+      if (this.config.releaseActivationState) {
+        const activationReceipt = (ack as NodeRegisterAck & {
+          release_activation_receipt?: import("../release/release_activation_state.js").ReleaseActivationReceipt;
+        }).release_activation_receipt;
+        if (!activationReceipt) {
+          throw new Error("node registration ACK missing release activation receipt");
+        }
+        this.config.releaseActivationState.acceptReceipt(activationReceipt);
+      }
+      await this.deps.waitForRunnerReconciliation?.();
+      if (
+        this.controlChannelService
+        && ack.capabilities?.control_channel_v1 === true
+        && typeof ack.connection_id === "string"
+      ) {
+        this.controlChannelService.activate(ack.connection_id);
+      }
+      return ack;
+    });
     const activeHandlers = new Set<Promise<void>>();
     const servePromise = new Promise<void>((resolve) => {
       let settled = false;
@@ -264,6 +287,9 @@ export class UpstreamAdapter {
           }
           if (this.config.releaseActivationState?.isReady() === false)
             throw new Error("upstream command before release activation receipt ACK");
+          if (this.deps.waitForRunnerReconciliation) {
+            await registrationReadyPromise;
+          }
           await this.commandTransportObserver.observe(
             cmd,
             () => this.dispatcher.dispatch(cmd),
@@ -337,27 +363,10 @@ export class UpstreamAdapter {
       // ACK 협상이나 초기 inventory가 지연되어도 half-open 연결 감지는 즉시 시작한다.
       this.startAppHeartbeat(ws);
       const registrationAck = await Promise.race([
-        registrationPromise,
+        registrationReadyPromise,
         servePromise.then(() => undefined),
       ]);
       if (!registrationAck) return;
-      if (this.config.releaseActivationState) {
-        const activationReceipt = (registrationAck as NodeRegisterAck & {
-          release_activation_receipt?: import("../release/release_activation_state.js").ReleaseActivationReceipt;
-        }).release_activation_receipt;
-        if (!activationReceipt) {
-          throw new Error("node registration ACK missing release activation receipt");
-        }
-        this.config.releaseActivationState.acceptReceipt(activationReceipt);
-      }
-      if (
-        this.controlChannelService
-        && registrationAck.capabilities?.control_channel_v1 === true
-        && typeof registrationAck.connection_id === "string"
-      ) {
-        this.controlChannelService.activate(registrationAck.connection_id);
-      }
-      await this.deps.waitForRunnerReconciliation?.();
       await sendInitialRunnerState({
         ws,
         nodeId: this.config.nodeId,
