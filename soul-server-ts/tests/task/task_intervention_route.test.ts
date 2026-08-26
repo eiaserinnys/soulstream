@@ -25,6 +25,14 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
+function activationBarrier(promise: Promise<void>): NonNullable<Task["executionActivation"]> {
+  return {
+    promise,
+    resolve: () => undefined,
+    reject: () => undefined,
+  };
+}
+
 function makeSubject(
   initialTasks: Task[] = [],
   deliveryLedgerGate?: Pick<
@@ -278,7 +286,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       return { autoResumed: true };
     });
     const onResume = vi.fn((resumedTask: Task) => {
-      resumedTask.executionActivationPromise = activation;
+      resumedTask.executionActivation = activationBarrier(activation);
     });
 
     let settled = false;
@@ -310,9 +318,9 @@ describe("TaskInterventionRoute.addIntervention", () => {
       return { autoResumed: true };
     });
     const onResume = vi.fn((resumedTask: Task) => {
-      resumedTask.executionActivationPromise = Promise.reject(
+      resumedTask.executionActivation = activationBarrier(Promise.reject(
         new Error("execution activation rejected"),
-      );
+      ));
     });
 
     await expect(route.addIntervention({
@@ -363,7 +371,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       completionId: `message:${deliveryId}`,
       relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
     }, (resumedTask) => {
-      resumedTask.executionActivationPromise = Promise.reject(rejected);
+      resumedTask.executionActivation = activationBarrier(Promise.reject(rejected));
     })).resolves.toEqual({
       delivered: false,
       queued: true,
@@ -559,7 +567,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       relationKey: "child_session:activation:1",
       source: "completion_notifier",
     }, (resumedTask) => {
-      resumedTask.executionActivationPromise = activation;
+      resumedTask.executionActivation = activationBarrier(activation);
     });
 
     await vi.waitFor(() => expect(sessionNotificationPublisher.publish).toHaveBeenCalled());
@@ -611,9 +619,9 @@ describe("TaskInterventionRoute.addIntervention", () => {
       relationKey: "child_session:activation:2",
       source: "completion_notifier",
     }, (resumedTask) => {
-      resumedTask.executionActivationPromise = Promise.reject(
+      resumedTask.executionActivation = activationBarrier(Promise.reject(
         new Error("activation rejected"),
-      );
+      ));
     })).rejects.toThrow("activation rejected");
 
     expect(gate.recordNotificationPublished).not.toHaveBeenCalled();
@@ -627,12 +635,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
     const deliveryId = "63636363-6363-4363-8363-636363636363";
     let resolveActivation!: () => void;
     const task = makeTask({ status: "initializing" });
-    task.executionActivationPromise = new Promise<void>((resolve) => {
+    task.executionActivation = activationBarrier(new Promise<void>((resolve) => {
       resolveActivation = () => {
         task.status = "running";
         resolve();
       };
-    });
+    }));
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId, "durable_next_turn")),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),

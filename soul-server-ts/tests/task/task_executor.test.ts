@@ -1640,7 +1640,7 @@ describe("TaskExecutor.startExecution", () => {
     const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
     const execution = executor.startExecution(task, agent);
-    const activation = task.executionActivationPromise!;
+    const activation = task.executionActivation!.promise;
     await execution;
     await expect(activation).rejects.toThrow(/factory boom/);
     expect(task.runner).toBeUndefined();
@@ -2043,7 +2043,7 @@ describe("TaskExecutor runner process boundary", () => {
     };
 
     const execution = executor.startExecution(task, agent);
-    const activation = task.executionActivationPromise!;
+    const activation = task.executionActivation!.promise;
     await execution;
     await expect(activation).resolves.toBeUndefined();
 
@@ -2060,6 +2060,102 @@ describe("TaskExecutor runner process boundary", () => {
     );
     expect(task.executionOwnership).toBeUndefined();
     expect(task.recoveredExecutionOwnership).toBeUndefined();
+  });
+
+  it("[A3] clears the settled activation token before a second registered restart", async () => {
+    const mocks = makeMocks();
+    let generation = 0;
+    const transition = (status: "running" | "completed") => ({
+      eventId: status === "running" ? 11 : 12,
+      applied: true,
+      canonicalSession: {
+        status,
+        termination_reason: status === "completed" ? "completed_ok" : null,
+        termination_detail: null,
+        review_state: "not_required",
+        last_assistant_text: null,
+        termination_event_id: status === "completed" ? 12 : null,
+        updated_at: "2026-08-27T00:00:00.000Z",
+        last_event_id: status === "completed" ? 12 : 11,
+      },
+    });
+    const acquire = vi.fn(async (_sessionId, input) => ({
+      ...transition("running"),
+      canonicalExecutionOwnership: {
+        ownershipGeneration: ++generation,
+        ownerKind: input.ownerKind,
+        manifestId: input.manifestId,
+        runtimeEnvIdentity: input.runtimeEnvIdentity,
+        registrationId: input.registrationId,
+        pid: input.pid,
+        startIdentity: input.startIdentity,
+        executionCommandId: input.executionCommandId,
+        phase: "active",
+        failureReason: null,
+      },
+    }));
+    const terminal = vi.fn(async () => transition("completed"));
+    Object.assign(mocks.persistence, {
+      acquireExecutionOwnershipAndWaitForApplication: acquire,
+      releaseExecutionOwnershipAndWaitForApplication: terminal,
+    });
+    const first = makeRunnerProcessRuntime([
+      { type: "complete", result: "first", timestamp: 1 },
+    ]);
+    const second = makeRunnerProcessRuntime([
+      { type: "complete", result: "second", timestamp: 2 },
+    ]);
+    first.dispatcher.prepareExecutionIdentity = vi.fn(async () => ({
+      registrationId: "registration-a",
+      pid: 321,
+      startIdentity: "start-a",
+      executionCommandId: "execute-a",
+    }));
+    second.dispatcher.prepareExecutionIdentity = vi.fn(async () => ({
+      registrationId: "registration-b",
+      pid: 322,
+      startIdentity: "start-b",
+      executionCommandId: "execute-b",
+    }));
+    const processFactory = vi.fn()
+      .mockReturnValueOnce(first.runner)
+      .mockReturnValueOnce(second.runner) as unknown as RunnerProcessRuntimeFactory;
+    processFactory.describe = vi.fn(async () => ({
+      ownerKind: "runner_process",
+      manifestId: "release-a",
+      runtimeEnvIdentity: "env-a",
+    }));
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+    const task = makeTask();
+    task.status = "initializing";
+
+    const firstExecution = executor.startExecution(task, agent);
+    const firstActivation = task.executionActivation!;
+    await firstActivation.promise;
+    await firstExecution;
+    expect(task.executionActivation).toBeUndefined();
+
+    const secondExecution = executor.restartRegisteredRunner(task, { agent } as never);
+    const secondActivation = task.executionActivation!;
+    expect(secondActivation).not.toBe(firstActivation);
+    await secondActivation.promise;
+    await secondExecution;
+
+    expect(task.executionActivation).toBeUndefined();
+    expect(acquire).toHaveBeenCalledTimes(2);
   });
 
   it("does not acquire again while the shared ownership retry deadline is active", async () => {
@@ -2100,7 +2196,7 @@ describe("TaskExecutor runner process boundary", () => {
     task.status = "initializing";
 
     const execution = executor.startExecution(task, agent);
-    const activation = task.executionActivationPromise!;
+    const activation = task.executionActivation!.promise;
     await execution;
     await expect(activation).rejects.toThrow("Execution ownership conflict");
 
@@ -2167,7 +2263,7 @@ describe("TaskExecutor runner process boundary", () => {
       task.status = "initializing";
 
       const execution = executor.startExecution(task, agent);
-      const activation = task.executionActivationPromise!;
+      const activation = task.executionActivation!.promise;
       await execution;
       await expect(activation).rejects.toThrow();
 
@@ -2219,9 +2315,11 @@ describe("TaskExecutor runner process boundary", () => {
     const task = makeTask();
     task.status = "initializing";
 
-    await executor.startExecution(task, agent);
+    const execution = executor.startExecution(task, agent);
+    const activation = task.executionActivation!.promise;
+    await execution;
 
-    await expect(task.executionActivationPromise).rejects.toBe(orphaned);
+    await expect(activation).rejects.toBe(orphaned);
     expect(acquire).not.toHaveBeenCalled();
     expect(dispatcher.executeFrames).not.toHaveBeenCalled();
     expect(dispatcher.close).toHaveBeenCalledOnce();

@@ -17,13 +17,21 @@ describe("createDetachedClaudeEventBridge", () => {
       collectDetached,
     });
 
-    await bridge("session-a", { type: "text", text: "hello", timestamp: 1 });
+    const continueAfterResponse = await bridge(
+      "session-a",
+      { type: "text", text: "hello", timestamp: 1 },
+    );
 
     expect(publishEngineEvent).toHaveBeenCalledWith(task, {
       type: "assistant_message",
       content: "hello",
       timestamp: 1,
     });
+    expect(collectDetached).not.toHaveBeenCalled();
+    expect(order).toEqual(["publish"]);
+
+    await continueAfterResponse();
+
     expect(collectDetached).toHaveBeenCalledWith(task, {
       type: "assistant_message",
       content: "hello",
