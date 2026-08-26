@@ -1284,6 +1284,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       async close() {},
       intervene,
     } as unknown as EnginePort);
+    vi.spyOn(task.runner.dispatcher, "hasActiveExecution").mockReturnValue(true);
 
     const result = await tm.addIntervention(
       {
@@ -1331,6 +1332,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       async close() {},
       intervene,
     } as unknown as EnginePort);
+    vi.spyOn(task.runner.dispatcher, "hasActiveExecution").mockReturnValue(true);
 
     const result = await tm.addIntervention(
       {

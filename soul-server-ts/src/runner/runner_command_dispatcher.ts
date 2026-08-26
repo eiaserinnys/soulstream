@@ -27,6 +27,7 @@ import {
   InProcessRunnerFrameChannel,
   type InProcessRunnerFrameChannelOptions,
 } from "./in_process_frame_channel.js";
+import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
 
 /**
  * The host-side command boundary for one runner instance.
@@ -46,6 +47,7 @@ export interface RunnerCommandDispatcher {
   detachHost(): Promise<void>;
   releaseEventStreamRegistration?(): Promise<void>;
   isClosed?(): boolean;
+  hasActiveExecution(): boolean;
   dispatcherId?(): string;
   registrationId(): string | undefined;
   sendControlFrame(frame: RunnerControlFrame): Promise<boolean>;
@@ -214,6 +216,10 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     await this.close();
   }
 
+  hasActiveExecution(): boolean {
+    return this.activeExecuteCommandId !== undefined;
+  }
+
   async sendControlFrame(frame: RunnerControlFrame): Promise<boolean> {
     const parsed = RunnerControlFrameSchema.parse(
       JSON.parse(JSON.stringify(RunnerControlFrameSchema.parse(frame))),
@@ -282,7 +288,15 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     channel: InProcessRunnerFrameChannel,
   ): AsyncIterable<RunnerEventFrame> {
     try {
-      yield* channel;
+      for await (const frame of channel) {
+        if (
+          isLogicalTurnCompleteFrame(frame)
+          && this.activeExecuteCommandId === commandId
+        ) {
+          this.activeExecuteCommandId = undefined;
+        }
+        yield frame;
+      }
     } finally {
       this.eventStreams.delete(commandId);
       if (this.activeExecuteCommandId === commandId) {

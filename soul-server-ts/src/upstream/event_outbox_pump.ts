@@ -436,6 +436,8 @@ export class EventOutboxPump {
         this.resolveReadiness(true, generation);
         return;
       }
+      await this.options.beforePublish?.(batch);
+      if (sender !== this.sender || generation !== this.generation) return;
       this.inFlight = batch;
       try {
         await sender(batch);
