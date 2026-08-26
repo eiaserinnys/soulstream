@@ -52,18 +52,29 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     },
   );
 
-  it.each(["completed", "error", "interrupted"] as const)(
-    "hydrates terminal status %s with updated_at as completedAt",
-    (status) => {
+  it.each([
+    ["completed_ok", "completed"],
+    ["killed", "interrupted"],
+    ["limit_hit", "error"],
+    ["error_aborted", "error"],
+    ["unknown", "error"],
+  ] as const)(
+    "projects durable terminal reason %s to status %s despite stale active status",
+    (terminationReason, expectedStatus) => {
       const logger = makeLogger();
       const updatedAt = new Date("2026-05-23T02:30:00.000Z");
 
       const task = hydrateEvictedTaskFromSessionRow(
-        makeRow({ status, updated_at: updatedAt }),
+        makeRow({
+          status: "running",
+          updated_at: updatedAt,
+          termination_reason: terminationReason,
+          termination_event_id: 41,
+        }),
         logger,
       );
 
-      expect(task?.status).toBe(status);
+      expect(task?.status).toBe(expectedStatus);
       expect(task?.completedAt).toBe(updatedAt);
       expect(logger.warn).not.toHaveBeenCalled();
     },
@@ -75,7 +86,13 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     const updatedAt = new Date("2026-05-23T02:30:00.000Z");
 
     const task = hydrateEvictedTaskFromSessionRow(
-      makeRow({ status, updated_at: updatedAt }),
+      makeRow({
+        status,
+        updated_at: updatedAt,
+        termination_reason: null,
+        termination_detail: null,
+        termination_event_id: null,
+      }),
       makeLogger(),
     );
 

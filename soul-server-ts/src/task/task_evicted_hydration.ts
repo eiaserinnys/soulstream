@@ -47,6 +47,12 @@ function terminationReasonFromRow(value: string | null | undefined): Termination
     : undefined;
 }
 
+function terminalStatusFromReason(reason: TerminationReason): TaskStatus {
+  if (reason === "completed_ok") return "completed";
+  if (reason === "killed") return "interrupted";
+  return "error";
+}
+
 function positiveEventId(value: number | null | undefined): number | undefined {
   return Number.isSafeInteger(value) && value! > 0 ? value! : undefined;
 }
@@ -92,6 +98,9 @@ export function hydrateEvictedTaskFromSessionRow(
     );
     return null;
   }
+  const hydratedStatus = terminationReason === undefined
+    ? status
+    : terminalStatusFromReason(terminationReason);
 
   const claudeBackendRollover = extractClaudeBackendRolloverState(metadata);
   const rolloverCycleFrom = claudeBackendRollover.phase === "pending"
@@ -100,7 +109,7 @@ export function hydrateEvictedTaskFromSessionRow(
   return {
     agentSessionId: row.session_id,
     prompt: row.prompt ?? "",
-    status,
+    status: hydratedStatus,
     reviewRequired: row.review_required === true,
     reviewState: row.review_state ?? "not_required",
     hydratedFromDb: true,
@@ -129,7 +138,7 @@ export function hydrateEvictedTaskFromSessionRow(
     modelPreset: row.model_preset,
     model: row.model,
     createdAt: row.created_at,
-    completedAt: completedAtFromRow(row, status),
+    completedAt: completedAtFromRow(row, hydratedStatus),
     lastAssistantText: row.last_assistant_text ?? undefined,
     terminationReason,
     terminationDetail: terminationReason ? row.termination_detail : undefined,
