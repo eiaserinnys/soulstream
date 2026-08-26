@@ -11,6 +11,7 @@ import { UpstreamAdapter, isConnectionError } from "../src/upstream/adapter.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
 import type { Task } from "../src/task/task_models.js";
+import { TaskInterventionRoute } from "../src/task/task_intervention_route.js";
 import type { SessionDB } from "../src/db/session_db.js";
 import type { EventOutboxPump } from "../src/upstream/event_outbox_pump.js";
 import type { ReconnectPolicyBoundary } from "../src/upstream/adapter.js";
@@ -343,6 +344,97 @@ describe("UpstreamAdapter", () => {
     ]);
 
     await adapter.shutdown();
+  });
+
+  it("holds an intervention behind startup reconciliation until a live runner is adopted", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({ acknowledgeRegistration: true });
+    const sessionId = "sess-restart-window";
+    const task: Task = {
+      agentSessionId: sessionId,
+      prompt: "keep running",
+      status: "running",
+      profileId: codexAgent.id,
+      createdAt: new Date("2026-08-26T10:00:00.000Z"),
+      lastEventId: 1,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    };
+    const runningDelivery = vi.fn(async () => ({ delivered: true as const }));
+    const autoResume = vi.fn(async () => ({ autoResumed: true as const }));
+    const route = new TaskInterventionRoute({
+      getTask: () => task,
+      loadEvictedTask: vi.fn().mockResolvedValue(null),
+      rememberTask: vi.fn(),
+      runningInterventionTransition: { deliver: runningDelivery },
+      autoResumeTransition: { resume: autoResume },
+    });
+    const addIntervention = vi.fn((params, onResume) =>
+      route.addIntervention(params, onResume));
+    const taskManager = {
+      listTasks: () => [task],
+      addIntervention,
+    } as unknown as TaskManager;
+    const startExecution = vi.fn();
+    const reconciliation = deferred<void>();
+    const waitForRunnerReconciliation = vi.fn(async () => {
+      await reconciliation.promise;
+      task.runner = {
+        engine: {} as never,
+        eventPersistence: "runner",
+        dispatcher: {
+          hasActiveExecution: () => true,
+        } as never,
+      };
+    });
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      makeDeps({
+        taskManager,
+        taskExecutor: { startExecution } as unknown as TaskExecutor,
+        waitForRunnerReconciliation,
+      }),
+    );
+
+    try {
+      void adapter.run();
+      await waitFor(() => waitForRunnerReconciliation.mock.calls.length === 1);
+      orch.sockets[0]!.send(JSON.stringify({
+        type: "intervene",
+        requestId: "req-restart-window",
+        agentSessionId: sessionId,
+        text: "stay in the adopted turn",
+      }));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(addIntervention).not.toHaveBeenCalled();
+
+      reconciliation.resolve();
+      await waitFor(() => orch.receivedMessages.some(
+        (message) => (message as Record<string, unknown>).type === "intervene_ack",
+      ));
+      expect(runningDelivery).toHaveBeenCalledOnce();
+      expect(autoResume).not.toHaveBeenCalled();
+      expect(startExecution).not.toHaveBeenCalled();
+      expect(orch.receivedMessages).toContainEqual(expect.objectContaining({
+        type: "intervene_ack",
+        requestId: "req-restart-window",
+        outcome: "delivered",
+      }));
+    } finally {
+      reconciliation.resolve();
+      await adapter.shutdown();
+    }
   });
 
   it("node_register 뒤 outbox pump를 연결하고 event_append_ack를 전용 처리한다", async () => {

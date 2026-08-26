@@ -57,7 +57,6 @@ function createRuntime(opts: {
   createTask?: TaskManager["createTask"];
   addIntervention?: TaskManager["addIntervention"];
   startExecution?: TaskExecutor["startExecution"];
-  withSessionRecoveryLease?: TaskExecutor["withSessionRecoveryLease"];
   presets?: ModelPreset[];
   agentProfileSource?: NewSessionAgentProfileSource;
 } = {}) {
@@ -70,9 +69,7 @@ function createRuntime(opts: {
   } as Pick<TaskManager, "createTask" | "addIntervention">;
   const taskExecutor = {
     startExecution: opts.startExecution ?? vi.fn(),
-    withSessionRecoveryLease: opts.withSessionRecoveryLease
-      ?? vi.fn(async (_sessionId, operation) => await operation()),
-  } as Pick<TaskExecutor, "startExecution" | "withSessionRecoveryLease">;
+  } as Pick<TaskExecutor, "startExecution">;
 
   const runtime = new TaskRuntimeCommands({
     agentRegistry: opts.agentRegistry ?? {
@@ -419,70 +416,6 @@ describe("TaskRuntimeCommands.createSession", () => {
 });
 
 describe("TaskRuntimeCommands.intervene", () => {
-  it("waits for an imminent restart adoption before routing a runnerless active task", async () => {
-    const task = makeTask({ agentSessionId: "sess-restart-adoption", runner: undefined });
-    const autoResume = vi.fn(async () => ({ autoResumed: true as const }));
-    const runningDelivery = vi.fn(async () => ({ delivered: true as const }));
-    const route = new (await import("../../src/task/task_intervention_route.js"))
-      .TaskInterventionRoute({
-        getTask: () => task,
-        loadEvictedTask: vi.fn().mockResolvedValue(null),
-        rememberTask: vi.fn(),
-        runningInterventionTransition: { deliver: runningDelivery },
-        autoResumeTransition: { resume: autoResume },
-      });
-    const addIntervention = vi.fn((params, onResume) =>
-      route.addIntervention(params, onResume));
-
-    let leaseTail = Promise.resolve();
-    const withSessionRecoveryLease = vi.fn(async <T>(
-      _sessionId: string,
-      operation: () => Promise<T>,
-    ): Promise<T> => {
-      const previous = leaseTail;
-      let release!: () => void;
-      const current = new Promise<void>((resolve) => { release = resolve; });
-      leaseTail = previous.then(() => current);
-      await previous;
-      try {
-        return await operation();
-      } finally {
-        release();
-      }
-    });
-    let finishAdoption!: () => void;
-    const adoptionBarrier = new Promise<void>((resolve) => { finishAdoption = resolve; });
-    const adoptionEntered = Promise.withResolvers<void>();
-    const adoption = withSessionRecoveryLease(task.agentSessionId, async () => {
-      adoptionEntered.resolve();
-      await adoptionBarrier;
-      task.runner = {
-        engine: {} as never,
-        eventPersistence: "runner",
-        dispatcher: {
-          hasActiveExecution: () => true,
-        } as never,
-      };
-    });
-    await adoptionEntered.promise;
-
-    const { runtime } = createRuntime({ addIntervention, withSessionRecoveryLease });
-    const intervention = runtime.intervene({
-      agentSessionId: task.agentSessionId,
-      text: "keep this inside the adopted turn",
-    });
-    await Promise.resolve();
-
-    expect(task.runner).toBeUndefined();
-    expect(addIntervention).not.toHaveBeenCalled();
-
-    finishAdoption();
-    await adoption;
-    await expect(intervention).resolves.toEqual({ delivered: true });
-    expect(runningDelivery).toHaveBeenCalledOnce();
-    expect(autoResume).not.toHaveBeenCalled();
-  });
-
   it("keeps the session-scoped DB profile on auto-resume instead of refreshing it", async () => {
     const snapshot = { ...codexAgent, name: "DB snapshot" };
     const resumedTask = makeTask({ agentProfileSnapshot: snapshot });

@@ -23,7 +23,7 @@ import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 interface TaskRuntimeCommandsDeps {
   agentRegistry: Pick<AgentRegistry, "get">;
   taskManager: Pick<TaskManager, "createTask" | "addIntervention">;
-  taskExecutor: Pick<TaskExecutor, "startExecution" | "withSessionRecoveryLease">;
+  taskExecutor: Pick<TaskExecutor, "startExecution">;
   logger: Logger;
   modelCatalog?: Pick<ModelCatalog, "resolve">;
   agentProfileSource?: NewSessionAgentProfileSource;
@@ -212,29 +212,26 @@ export class TaskRuntimeCommands {
   }
 
   async intervene(params: InterveneRuntimeParams): Promise<AddInterventionResult> {
-    return await this.deps.taskExecutor.withSessionRecoveryLease(
-      params.agentSessionId,
-      async () => await this.deps.taskManager.addIntervention(
-        {
-          agentSessionId: params.agentSessionId,
-          text: appendAttachmentPathNotes(params.text, params.attachmentPaths),
-          user: params.user ?? "upstream",
-          callerInfo: params.callerInfo,
-          attachmentPaths: params.attachmentPaths,
-          context: params.extraContextItems,
-          deliveryId: params.deliveryId,
-          deliveryIntent: params.deliveryIntent,
-          source: params.source,
-          completionId: params.completionId,
-          relationKey: params.relationKey,
-          producerTerminalRevision: params.producerTerminalRevision,
-          parentDeliveryId: params.parentDeliveryId,
-          callerTurnId: params.callerTurnId,
-          deliveryCreatedAt: params.deliveryCreatedAt,
-          deliveryLeaseOwner: params.deliveryLeaseOwner,
-        },
-        (task) => this.startResumedTask(task),
-      ),
+    return await this.deps.taskManager.addIntervention(
+      {
+        agentSessionId: params.agentSessionId,
+        text: appendAttachmentPathNotes(params.text, params.attachmentPaths),
+        user: params.user ?? "upstream",
+        callerInfo: params.callerInfo,
+        attachmentPaths: params.attachmentPaths,
+        context: params.extraContextItems,
+        deliveryId: params.deliveryId,
+        deliveryIntent: params.deliveryIntent,
+        source: params.source,
+        completionId: params.completionId,
+        relationKey: params.relationKey,
+        producerTerminalRevision: params.producerTerminalRevision,
+        parentDeliveryId: params.parentDeliveryId,
+        callerTurnId: params.callerTurnId,
+        deliveryCreatedAt: params.deliveryCreatedAt,
+        deliveryLeaseOwner: params.deliveryLeaseOwner,
+      },
+      (task) => this.startResumedTask(task),
     );
   }
 
