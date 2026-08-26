@@ -253,6 +253,7 @@ function makeRunningSubject(
     return { status: "delivered" as const, mechanism: "active_turn" as const };
   });
   const dispatcher = {
+    hasActiveExecution: vi.fn().mockReturnValue(true),
     stageIntervention,
     applyIntervention,
     waitForSessionAck: vi.fn().mockResolvedValue(101),

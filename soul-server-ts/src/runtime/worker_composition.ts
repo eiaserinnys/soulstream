@@ -134,13 +134,14 @@ export async function composeWorkerRuntime(
     modelCatalog,
   });
   const orchProxyConfig = buildOrchProxyConfig(env);
-  const sessionMutations = new SessionMutationHostClient({ orch: orchProxyConfig, logger });
-  const claudeRuntimeHost = new ClaudeRuntimeHostClient({ orch: orchProxyConfig, logger });
+  const orchHostClientDeps = { orch: orchProxyConfig, logger };
+  const sessionMutations = new SessionMutationHostClient(orchHostClientDeps);
+  const claudeRuntimeHost = new ClaudeRuntimeHostClient(orchHostClientDeps);
   db.configurePersistenceHosts({
-    deliveries: new SessionDeliveryHostClient({ orch: orchProxyConfig, logger }),
+    deliveries: new SessionDeliveryHostClient(orchHostClientDeps),
     claudeRuntime: claudeRuntimeHost,
-    sessionPageBindings: new SessionPageBindingHostClient({ orch: orchProxyConfig, logger }),
-    sessionData: new SessionDataHostClient({ orch: orchProxyConfig, logger }),
+    sessionPageBindings: new SessionPageBindingHostClient(orchHostClientDeps),
+    sessionData: new SessionDataHostClient(orchHostClientDeps),
   });
   const boardYjsAuth = {
     authBearerToken: env.AUTH_BEARER_TOKEN,
@@ -148,26 +149,17 @@ export async function composeWorkerRuntime(
     dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
     jwtSecret: env.JWT_SECRET,
   };
-  const boardYjsService = new BoardYjsHostClient({
-    orch: orchProxyConfig,
-    logger,
-  });
+  const boardYjsService = new BoardYjsHostClient(orchHostClientDeps);
   db.configureBoardProjectionHost(boardYjsService);
   logger.info(
     { nodeId: env.SOULSTREAM_NODE_ID },
     "Board Yjs mutations and projections delegated to orchestrator",
   );
   const sessionPageBindingRepository = db.sessionPageBindings();
-  const pageHost = new PageYjsHostClient({ orch: orchProxyConfig, logger });
-  const taskIdentityHost = new TaskIdentityHostClient({
-    orch: orchProxyConfig,
-    logger,
-  });
-  const folderProjectIdentityHost = new FolderProjectIdentityHostClient({
-    orch: orchProxyConfig,
-    logger,
-  });
-  db.configureFolderHost(new FolderHostClient({ orch: orchProxyConfig, logger }));
+  const pageHost = new PageYjsHostClient(orchHostClientDeps);
+  const taskIdentityHost = new TaskIdentityHostClient(orchHostClientDeps);
+  const folderProjectIdentityHost = new FolderProjectIdentityHostClient(orchHostClientDeps);
+  db.configureFolderHost(new FolderHostClient(orchHostClientDeps));
   const sessionPageBindingService = new SessionPageBindingService({
     nodeId: env.SOULSTREAM_NODE_ID,
     repository: sessionPageBindingRepository,
@@ -247,7 +239,7 @@ export async function composeWorkerRuntime(
     modelCatalog,
     sessionMutations,
   );
-  db.configureScheduleHost(new ScheduleHostClient({ orch: orchProxyConfig, logger }));
+  db.configureScheduleHost(new ScheduleHostClient(orchHostClientDeps));
   const scheduleService = new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
   const engineFactory = createEngineFactory({
     env,
@@ -303,7 +295,7 @@ export async function composeWorkerRuntime(
     taskExecutor: taskRuntime.taskExecutor,
     logger,
   });
-  const taskService = new TaskService({ orch: orchProxyConfig, logger });
+  const taskService = new TaskService(orchHostClientDeps);
   db.configureTaskReader(taskService);
   const catalogService = new CatalogService(
     db,

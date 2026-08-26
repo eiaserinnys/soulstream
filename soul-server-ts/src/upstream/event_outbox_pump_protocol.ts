@@ -109,6 +109,8 @@ export class EventOutboxQuarantinedError extends Error {
 }
 
 export type EventOutboxPumpOptions = {
+  /** Orders local runner consumption before the same durable batch is published upstream. */
+  beforePublish?: (batch: EventOutboxBatch) => Promise<void>;
   rejectionThreshold?: number;
   /** Delay before re-sending a batch the far side rejected as retryable. */
   retryFlushDelayMs?: number;

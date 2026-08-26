@@ -387,7 +387,10 @@ function interventionTaskRoute(
   task: Task,
 ): "running" | "activating" | "auto-resume" {
   if (task.status === "initializing") return "activating";
-  return isActiveTaskStatus(task.status) ? "running" : "auto-resume";
+  if (!isActiveTaskStatus(task.status)) return "auto-resume";
+  return task.runner === undefined || task.runner.dispatcher.hasActiveExecution()
+    ? "running"
+    : "auto-resume";
 }
 
 export function ensureHumanDeliveryIdentity(

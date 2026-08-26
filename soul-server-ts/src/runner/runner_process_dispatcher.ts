@@ -11,6 +11,7 @@ import type {
   EngineExecuteParams,
   EngineInterventionResult,
 } from "../engine/protocol.js";
+import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 import type { ExecutionIdentityProof } from "../task/execution_ownership.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
@@ -346,6 +347,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
    */
   isClosed(): boolean {
     return this.closed;
+  }
+
+  hasActiveExecution(): boolean {
+    return this.activeExecuteCommandId !== undefined;
   }
 
   dispatcherId(): string {
@@ -1008,7 +1013,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         return;
       }
       if (frame.kind === "request") this.startRequestLifetime(frame);
-      this.activeStream?.push(frame);
+      this.pushActiveFrame(frame);
       return;
     }
     if (frame.channel !== "control") {
@@ -1016,8 +1021,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
     if (frame.kind === "outbox_available") {
       await this.ensurePump();
-      this.pump?.notifyAvailable();
       await this.replayPendingFrames();
+      this.pump?.notifyAvailable();
       return;
     }
     if (frame.kind === "host_call_applied") {
@@ -1032,6 +1037,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
     if (frame.kind === "execution_ended") {
       await this.replayPendingFrames();
+      if (this.activeExecuteCommandId === undefined) {
+        this.activeStream?.finish();
+        this.activeStream = undefined;
+        return;
+      }
       if (frame.error) this.activeStream?.fail(new Error(frame.error.message));
       else this.activeStream?.finish();
       this.clearActiveExecution(frame.commandId);
@@ -1115,6 +1125,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     const pump = new EventOutboxPump(this.outbox, (error) => {
       this.options.logger.error({ err: error }, "Runner event outbox pump failed");
     }, {
+      beforePublish: async () => await this.replayPendingFrames(),
       onQuarantine: (result) => {
         this.options.logger.warn({
           path: result.path,
@@ -1142,10 +1153,28 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     await this.ensurePump();
     const pending = await this.outbox.readPendingIpcFrames();
     for (const entry of pending) {
-      if (!this.activeStream.push(entry.frame, entry.frame_seq)) continue;
+      if (!this.pushActiveFrame(entry.frame, entry.frame_seq)) continue;
       const record = await this.outbox.readRecord(entry.outbox_source_seq);
       if (record) this.latestPendingRecord = record;
     }
+  }
+
+  private pushActiveFrame(frame: RunnerEventFrame, frameSeq?: number): boolean {
+    const stream = this.activeStream;
+    if (!stream) return false;
+    const pushed = stream.push(frame, frameSeq);
+    if (!pushed || !isLogicalTurnCompleteFrame(frame)) return pushed;
+    const commandId = this.activeExecuteCommandId;
+    if (commandId) this.releaseActiveExecution(commandId);
+    return true;
+  }
+
+  private releaseActiveExecution(commandId: string): void {
+    if (this.activeExecuteCommandId !== commandId) return;
+    this.finishActiveRunnerObservation?.();
+    this.finishActiveRunnerObservation = undefined;
+    this.activeExecuteCommandId = undefined;
+    this.abortRequestLifetimes(new Error("Runner execution completed"));
   }
 
   private startRequestLifetime(frame: Extract<RunnerEventFrame, { kind: "request" }>): void {
