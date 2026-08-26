@@ -66,6 +66,7 @@ describe("RunnerHostCallIdempotency", () => {
     expect(isMutatingRunnerHostCall("snapshot", "persistSessionItems")).toBe(true);
     expect(isMutatingRunnerHostCall("claude_runtime", "observe")).toBe(true);
     expect(isMutatingRunnerHostCall("detached_event", "publish")).toBe(true);
+    expect(isMutatingRunnerHostCall("execution_ownership", "renew")).toBe(true);
     expect(() => isMutatingRunnerHostCall("snapshot", "unknown"))
       .toThrow("unsupported runner host call inventory");
   });

@@ -164,7 +164,7 @@ export function composeTaskRuntime(
     runnerProcessFactory,
     transientEventLogAggregator,
     executionOwnershipBackoff,
-    env.SOULSTREAM_NODE_ID,
+    env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(

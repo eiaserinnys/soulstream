@@ -285,28 +285,10 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
   };
 
   Object.assign(persistenceDouble.persistence, {
-    reserveExecutionOwnershipAndWaitForApplication: vi.fn(async () => {
-      trace.push("reserve_applied");
-      return transition(true, "initializing", canonicalOwner);
-    }),
-    proveExecutionOwnershipAndWaitForApplication: vi.fn(async () => {
-      trace.push("prove_applied");
-      return transition(true, "initializing", canonicalOwner);
-    }),
-    activateExecutionOwnershipAndWaitForApplication: vi.fn(async () => {
-      trace.push("activate_rejected");
+    acquireExecutionOwnershipAndWaitForApplication: vi.fn(async () => {
+      trace.push("acquire_rejected");
       return transition(false, "running", canonicalOwner);
     }),
-    markExecutionOrphanedSpawnAndWaitForApplication: vi.fn(async () => {
-      trace.push("orphaned_spawn_rejected");
-      return transition(false, "running", canonicalOwner);
-    }),
-    failExecutionOwnershipAndWaitForApplication: vi.fn(async () =>
-      transition(true, "error", {
-        ...canonicalOwner,
-        phase: "failed",
-        failureReason: "activation_rejected",
-      })),
   });
 
   const processFactory = vi.fn(() => {

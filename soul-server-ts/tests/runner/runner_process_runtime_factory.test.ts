@@ -65,12 +65,6 @@ describe("createRunnerProcessRuntimeFactory", () => {
       agentSessionId: "session-pinned",
       prompt: "start",
       status: "pending",
-      executionOwnershipReservation: {
-        ownerKind: "runner_process",
-        manifestId: "manifest-pinned",
-        runtimeEnvIdentity: "runtime-pinned",
-        ownershipGeneration: 1,
-      },
     } as Task;
     const runtime = factory(task, agent, "codex", {
       persistRunState: vi.fn(async () => undefined),
@@ -301,7 +295,7 @@ function runnerEnv() {
 }
 
 describe("applyRunnerHostCall", () => {
-  it("threads correlation to all six mutating owner operations", async () => {
+  it("threads correlation to all seven mutating owner operations", async () => {
     const sessionStore = {
       appendIdempotent: vi.fn(async () => undefined),
       deleteIdempotent: vi.fn(async () => undefined),
@@ -312,11 +306,26 @@ describe("applyRunnerHostCall", () => {
     };
     const observeClaudeRuntime = vi.fn(async () => true);
     const publishDetachedClaudeEvent = vi.fn(async () => undefined);
+    const renewExecutionOwnership = vi.fn(async () => true);
     const options = {
       sessionStore,
       observeClaudeRuntime,
       publishDetachedClaudeEvent,
+      renewExecutionOwnership,
     } as never;
+    const task = {
+      agentSessionId: "session-a",
+      executionOwnership: {
+        ownershipGeneration: 7,
+        ownerKind: "runner_process",
+        manifestId: "manifest-a",
+        runtimeEnvIdentity: "runtime-a",
+        registrationId: "registration-a",
+        pid: 4101,
+        startIdentity: "start-a",
+        executionCommandId: "owner-a",
+      },
+    } as Task;
     const key = { projectKey: "project-a", sessionId: "sdk-session-a" };
     const entries = [{ type: "user", message: { content: "hello" } }];
     const event = { type: "text", text: "hello", timestamp: 1 };
@@ -335,12 +344,17 @@ describe("applyRunnerHostCall", () => {
       },
       { service: "claude_runtime" as const, operation: "observe", args: ["session-a", event] },
       { service: "detached_event" as const, operation: "publish", args: ["session-a", event] },
+      {
+        service: "execution_ownership" as const,
+        operation: "renew",
+        args: ["session-a", "2026-08-27T00:00:00.000Z"],
+      },
     ];
 
     for (const [index, call] of calls.entries()) {
       await applyRunnerHostCall(
         { ...call, correlationId: `host:${index}` },
-        "session-a",
+        task,
         snapshots,
         options,
       );
@@ -367,6 +381,10 @@ describe("applyRunnerHostCall", () => {
     );
     expect(observeClaudeRuntime).toHaveBeenCalledWith("session-a", event, "host:4");
     expect(publishDetachedClaudeEvent).toHaveBeenCalledWith("session-a", event, "host:5");
+    expect(renewExecutionOwnership).toHaveBeenCalledWith(
+      task,
+      new Date("2026-08-27T00:00:00.000Z"),
+    );
   });
 
   it("restores process-local Claude metadata before an observational host call", async () => {
@@ -397,7 +415,7 @@ describe("applyRunnerHostCall", () => {
         ],
         correlationId: "host:metadata",
       },
-      "session-a",
+      { agentSessionId: "session-a" } as Task,
       {
         persistRunState: vi.fn(async () => undefined),
         persistSessionItems: vi.fn(async () => undefined),

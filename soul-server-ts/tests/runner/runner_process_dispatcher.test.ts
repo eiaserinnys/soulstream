@@ -366,7 +366,7 @@ describe("RunnerProcessDispatcher", () => {
         registrationId: expect.any(String),
         pid: 7101,
         startIdentity: "start-7101",
-        executionCommandId: expect.stringMatching(/^execute:/),
+        executionCommandId: expect.stringMatching(/^owner:/),
       },
     });
   });
@@ -851,8 +851,8 @@ describe("RunnerProcessDispatcher", () => {
       handleHostCall: async () => null,
     });
 
-    await expect(dispatcher.prepareExecutionIdentity("execute-old")).resolves.toMatchObject({
-      executionCommandId: "execute-old",
+    await expect(dispatcher.prepareExecutionIdentity("owner-old")).resolves.toMatchObject({
+      executionCommandId: "owner-old",
     });
     await expect(collect(dispatcher.recoverFrames("execute-old"))).resolves.toEqual([
       expect.objectContaining({

@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import type { EventPersistence } from "../db/event_persistence.js";
+import { ExecutionOwnershipCoordinator } from "./execution_ownership_coordinator.js";
 
 import {
   isActiveTaskStatus,
@@ -37,7 +38,13 @@ export interface TaskFinalStatePersistenceResult {
 }
 
 export class TaskLifecycleTransition {
-  constructor(private readonly deps: TaskLifecycleTransitionDeps) {}
+  private readonly executionOwnership?: ExecutionOwnershipCoordinator;
+
+  constructor(private readonly deps: TaskLifecycleTransitionDeps) {
+    this.executionOwnership = deps.persistence
+      ? new ExecutionOwnershipCoordinator(deps.persistence, deps.logger)
+      : undefined;
+  }
 
   async cancelRunningTask(task: Task | undefined): Promise<boolean> {
     if (!task) return false;
@@ -233,15 +240,17 @@ export class TaskLifecycleTransition {
     };
     const ownership = task.executionOwnership;
     const application = ownership
-      ? await this.deps.persistence.enqueueRunnerTerminalFactAndWaitForApplication(
+      ? await this.executionOwnership!.release(
           task.agentSessionId,
           event,
           {
-            kind: "runner_terminal_fact",
-            ownership_generation: ownership.ownershipGeneration,
-            execution_command_id: ownership.executionCommandId,
-            runner_fact: task.runnerTerminalFact ?? runnerFactForTask(task),
-            ...common,
+            ownershipGeneration: ownership.ownershipGeneration,
+            executionCommandId: ownership.executionCommandId,
+            runnerFact: task.runnerTerminalFact ?? runnerFactForTask(task),
+            terminationDetail,
+            reviewState: task.reviewState ?? "not_required",
+            lastAssistantText: task.lastAssistantText ?? null,
+            updatedAt: task.completedAt ?? new Date(),
           },
         )
       : task.recoveredExecutionOwnership
@@ -271,6 +280,7 @@ export class TaskLifecycleTransition {
           },
         );
     applyCanonicalSessionProjection(task, application.canonicalSession);
+    if (ownership && application.applied) task.executionOwnership = undefined;
     return application.applied;
   }
 

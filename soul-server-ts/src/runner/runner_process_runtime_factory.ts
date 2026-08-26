@@ -84,6 +84,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
     event: ClaudeClientEvent,
     idempotencyKey: string,
   ): Promise<unknown>;
+  renewExecutionOwnership?(task: Task, renewedAt: Date): Promise<boolean>;
   spawner?: Pick<RunnerProcessSpawner, "adopt" | "spawn">
     & Partial<Pick<RunnerProcessSpawner, "terminate">>;
 }
@@ -113,7 +114,7 @@ export function createRunnerProcessRuntimeFactory(
       ...(options.nodeStallMonitor ? { nodeStallMonitor: options.nodeStallMonitor } : {}),
       handleHostCall: async (call) => await applyRunnerHostCall(
         call,
-        task.agentSessionId,
+        task,
         snapshots,
         options,
       ),
@@ -302,7 +303,7 @@ function storedRuntimeMcpConfig(
 
 export async function applyRunnerHostCall(
   call: RunnerHostCall,
-  expectedSessionId: string,
+  task: Task,
   snapshots: {
     persistRunState(
       snapshot: EngineRunStateSnapshot,
@@ -315,6 +316,7 @@ export async function applyRunnerHostCall(
   },
   options: RunnerProcessRuntimeFactoryOptions,
 ): Promise<unknown> {
+  const expectedSessionId = task.agentSessionId;
   if (call.service === "session_store") {
     return await callSessionStore(
       options.sessionStore,
@@ -344,6 +346,16 @@ export async function applyRunnerHostCall(
       return null;
     }
     throw new Error(`unsupported snapshot host operation: ${call.operation}`);
+  }
+  if (call.service === "execution_ownership" && call.operation === "renew") {
+    if (!options.renewExecutionOwnership) {
+      throw new Error("execution ownership renewal unavailable");
+    }
+    const renewedAt = new Date(asString(call.args[1], "execution ownership renewed at"));
+    if (!Number.isFinite(renewedAt.getTime())) {
+      throw new Error("execution ownership renewed at must be ISO-8601");
+    }
+    return await options.renewExecutionOwnership(task, renewedAt);
   }
   const event = call.args[1] as ClaudeClientEvent;
   restoreRunnerEngineEventMetadata(event, call.args[2]);

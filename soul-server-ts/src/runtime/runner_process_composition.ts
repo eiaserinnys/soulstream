@@ -96,8 +96,6 @@ export async function composeRunnerRecoveryCoordinator(options: {
     TaskExecutor,
     | "recoverRegisteredRunner"
     | "restartRegisteredRunner"
-    | "restartRegisteredRunnerUnderRecoveryLease"
-    | "withSessionRecoveryLease"
   >;
   ownershipBackoff?: ExecutionOwnershipBackoff;
   logger: Logger;

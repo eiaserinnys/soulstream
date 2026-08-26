@@ -37,8 +37,6 @@ export interface RunnerRecoveryCoordinatorOptions {
     TaskExecutor,
     | "recoverRegisteredRunner"
     | "restartRegisteredRunner"
-    | "restartRegisteredRunnerUnderRecoveryLease"
-    | "withSessionRecoveryLease"
   >;
   closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain">;
   logger: Pick<Logger, "error" | "info" | "warn">;

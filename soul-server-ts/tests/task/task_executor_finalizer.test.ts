@@ -288,7 +288,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     expect(notify).toHaveBeenCalledWith(task);
   });
 
-  it("releases the runner even when final-state persistence fails", async () => {
+  it("keeps the runner until final-state persistence can release ownership", async () => {
     const close = vi.fn(async () => undefined);
     const notify = vi.fn();
     const finalizer = new TaskExecutorFinalizer({
@@ -303,8 +303,8 @@ describe("TaskExecutorFinalizer.finalize", () => {
 
     await expect(finalizer.finalize(task)).rejects.toThrow("persist boom");
 
-    expect(close).toHaveBeenCalledOnce();
-    expect(task.runner).toBeUndefined();
+    expect(close).not.toHaveBeenCalled();
+    expect(task.runner).toBeDefined();
     expect(notify).not.toHaveBeenCalled();
   });
 

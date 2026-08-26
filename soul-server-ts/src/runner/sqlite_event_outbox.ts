@@ -224,12 +224,21 @@ export class RunnerSqliteEventOutbox {
             )
           `);
         }
+        if (!hasColumn(database, "runner_event_outbox", "execution_generation")) {
+          database.exec(`
+            ALTER TABLE runner_event_outbox
+            ADD COLUMN execution_generation INTEGER CHECK (
+              execution_generation IS NULL OR execution_generation > 0
+            )
+          `);
+        }
         ensureRunnerLifecycleColumns(database);
         ensureRunnerIpcJournalV4(database);
         const next = recover(database, {
           migrateLegacyAckCheckpoint: version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
         });
         migrateRunnerInterventionInboxV9(database, version);
+        if (version < 10) database.exec("PRAGMA user_version = 10");
         return next;
       });
       return new RunnerSqliteEventOutbox(

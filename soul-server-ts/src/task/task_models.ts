@@ -24,9 +24,7 @@ import type { DeliveryIntent } from "./delivery_contract.js";
 import type { AgentProfile } from "../agent_registry.js";
 import type { TaskRunnerRuntime } from "../runner/task_runner_runtime.js";
 import type {
-  ExecutionEntryPath,
   ExecutionOwnershipToken,
-  ExecutionOwnerKind,
   RecoveredExecutionOwnershipIdentity,
   RunnerTerminalFact,
 } from "./execution_ownership.js";
@@ -384,13 +382,6 @@ export interface Task {
 
   /** Durable generation fence for the materialized runner that may project terminal state. */
   executionOwnership?: ExecutionOwnershipToken;
-  executionOwnershipReservation?: {
-    ownerKind: ExecutionOwnerKind;
-    manifestId: string;
-    runtimeEnvIdentity: string;
-    ownershipGeneration: number;
-    entryPath: ExecutionEntryPath;
-  };
   runnerTerminalFact?: RunnerTerminalFact;
   /** Identity proof restored from runner storage before its generation token is known. */
   recoveredExecutionOwnership?: RecoveredExecutionOwnershipIdentity;

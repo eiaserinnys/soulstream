@@ -105,6 +105,9 @@ export class TaskEngineTurnRunner {
 
     const executeParams: EngineExecuteParams = {
       agentSessionId: task.agentSessionId,
+      ...(task.executionOwnership
+        ? { executionGeneration: task.executionOwnership.ownershipGeneration }
+        : {}),
       prompt: input.prompt,
       ...(input.inputUuid ? { inputUuid: input.inputUuid } : {}),
       ...(input.runnerInterventionId

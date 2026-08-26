@@ -98,7 +98,6 @@ export class TaskRunnerRecovery {
     );
     if (
       task.terminationEventRecorded
-      || task.executionOwnershipReservation
       || ownershipChanged
       || (task.runner && !activeOwnership && isActiveTaskStatus(task.status))
     ) return false;

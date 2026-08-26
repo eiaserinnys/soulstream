@@ -13,7 +13,10 @@ import type {
 } from "../engine/protocol.js";
 import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
-import type { ExecutionIdentityProof } from "../task/execution_ownership.js";
+import {
+  newExecutionOwnerToken,
+  type ExecutionIdentityProof,
+} from "../task/execution_ownership.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
@@ -96,7 +99,12 @@ interface RequestLifetime {
 
 export interface RunnerHostCall {
   correlationId: string;
-  service: "session_store" | "claude_runtime" | "detached_event" | "snapshot";
+  service:
+    | "session_store"
+    | "claude_runtime"
+    | "detached_event"
+    | "execution_ownership"
+    | "snapshot";
   operation: string;
   args: unknown[];
 }
@@ -158,7 +166,6 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private reconnectCause: Error | undefined;
   private reconnectExhaustedError: Error | undefined;
   private activeExecuteCommandId: string | undefined;
-  private preparedExecuteCommandId: string | undefined;
   private spawnedProcess: import("./runner_process_spawn.js").SpawnedRunnerProcess | undefined;
   private activeStream: ProcessFrameStream | undefined;
   private latestPendingRecord: EventOutboxRecord | undefined;
@@ -199,8 +206,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
-    const commandId = this.preparedExecuteCommandId ?? `execute:${randomUUID()}`;
-    this.preparedExecuteCommandId = undefined;
+    const commandId = `execute:${randomUUID()}`;
     const stream = new ProcessFrameStream(async (frameSeq) => {
       await this.acknowledgeConsumedFrame(frameSeq);
     });
@@ -226,7 +232,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     ));
   }
 
-  async prepareExecutionIdentity(commandId?: string): Promise<ExecutionIdentityProof> {
+  async prepareExecutionIdentity(ownerToken?: string): Promise<ExecutionIdentityProof> {
     await this.ready;
     const spawned = this.spawnedProcess;
     if (!spawned) throw new Error("runner process identity unavailable");
@@ -238,17 +244,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     ) {
       throw new Error(`runner registration identity incomplete: ${this.spawnInput.sessionId}`);
     }
-    const executionCommandId = commandId
-      ?? this.preparedExecuteCommandId
-      ?? `execute:${randomUUID()}`;
-    // An explicit command id proves an execution that already exists (adopt/recover).
-    // Only a newly allocated identity may reserve the next execute turn.
-    if (commandId === undefined) this.preparedExecuteCommandId = executionCommandId;
     return {
       registrationId: identity.registrationId,
       pid: identity.pid,
       startIdentity: identity.startIdentity,
-      executionCommandId,
+      executionCommandId: ownerToken ?? newExecutionOwnerToken(),
     };
   }
 
@@ -637,9 +637,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       registrationId: identity.registrationId,
       pid: identity.pid,
       startIdentity: identity.startIdentity,
-      executionCommandId: `execute:${randomUUID()}`,
+      executionCommandId: newExecutionOwnerToken(),
     };
-    this.preparedExecuteCommandId = proof.executionCommandId;
     return proof;
   }
 

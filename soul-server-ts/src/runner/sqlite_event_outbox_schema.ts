@@ -1,6 +1,6 @@
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 
-export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 9;
+export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 10;
 export const RUNNER_BOOTSTRAP_EVENT_TYPE = "runner_bootstrap";
 
 export const RUNNER_IPC_JOURNAL_DDL = `
@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS runner_event_outbox (
   record_kind TEXT NOT NULL CHECK (record_kind IN ('bootstrap', 'event')),
   stream_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
+  execution_generation INTEGER CHECK (
+    execution_generation IS NULL OR execution_generation > 0
+  ),
   event_type TEXT NOT NULL,
   payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
   searchable_text TEXT,
@@ -189,6 +192,7 @@ export type RunnerEventOutboxRow = {
   record_kind: "bootstrap" | "event";
   stream_id: string;
   session_id: string;
+  execution_generation: number | null;
   event_type: string;
   payload_json: string;
   searchable_text: string | null;

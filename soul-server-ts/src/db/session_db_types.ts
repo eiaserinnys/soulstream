@@ -235,6 +235,14 @@ export interface SessionRow {
   last_assistant_text?: string | null;
   review_required?: boolean;
   review_state?: ReviewState;
+  execution_generation?: string | number;
+  execution_manifest_id?: string | null;
+  execution_runtime_env_identity?: string | null;
+  execution_registration_id?: string | null;
+  execution_pid?: number | null;
+  execution_start_identity?: string | null;
+  execution_command_id?: string | null;
+  execution_lease_expires_at?: Date | string | null;
 }
 
 export interface RunningSessionSummaryRow {

@@ -169,16 +169,17 @@ export function insertRunnerRecord(
 ): void {
   database.prepare(`
     INSERT INTO runner_event_outbox (
-      source_seq, record_kind, stream_id, session_id, event_type,
+      source_seq, record_kind, stream_id, session_id, execution_generation, event_type,
       payload_json, searchable_text, created_at, semantic_dedupe_key,
       session_effect_json, payload_hash, runner_metadata_json, acked_through,
       ack_checkpoint_hash
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     record.source_seq,
     kind,
     record.stream_id,
     record.session_id,
+    record.execution_generation ?? null,
     record.event_type,
     stringifyRunnerJson(record.payload, "payload"),
     record.searchable_text,

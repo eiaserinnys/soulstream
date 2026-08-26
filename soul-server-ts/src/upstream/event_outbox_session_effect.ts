@@ -23,6 +23,43 @@ export type EventOutboxSessionEffect =
       updated_at: string;
     }
   | {
+      kind: "execution_acquire";
+      owner_kind: "runner_process" | "adopted_runner" | "in_process";
+      manifest_id: string;
+      runtime_env_identity: string;
+      registration_id: string;
+      pid: number;
+      start_identity: string;
+      execution_command_id: string;
+      lease_expires_at: string;
+      review_state: string;
+      expected_terminal_event_id?: number | null;
+      updated_at: string;
+    }
+  | {
+      kind: "execution_renew";
+      ownership_generation: number;
+      owner_kind: "runner_process" | "adopted_runner" | "in_process";
+      manifest_id: string;
+      runtime_env_identity: string;
+      registration_id: string;
+      pid: number;
+      start_identity: string;
+      execution_command_id: string;
+      lease_expires_at: string;
+      updated_at: string;
+    }
+  | {
+      kind: "execution_release";
+      ownership_generation: number;
+      execution_command_id: string;
+      runner_fact: "completed" | "failed" | "reaped" | "closed";
+      termination_detail: string | null;
+      review_state: string;
+      last_assistant_text?: string | null;
+      updated_at: string;
+    }
+  | {
       kind: "execution_reserve";
       ownership_generation: number;
       owner_kind: "runner_process" | "adopted_runner" | "in_process";

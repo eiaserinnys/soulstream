@@ -244,10 +244,7 @@ export class RunnerRecoveryCoordinator {
           continue;
         }
       }
-      const recovery = this.options.taskExecutor.withSessionRecoveryLease(
-        sessionId,
-        async () => await this.handleWithFailureTracking(registration, disposition, task),
-      )
+      const recovery = this.handleWithFailureTracking(registration, disposition, task)
         .finally(() => {
           if (this.active.get(sessionId) === recovery) this.active.delete(sessionId);
         });
@@ -309,7 +306,7 @@ export class RunnerRecoveryCoordinator {
       message,
       (resumedTask) => {
         if (this.stopped) return;
-        return this.options.taskExecutor.restartRegisteredRunnerUnderRecoveryLease(
+        return this.options.taskExecutor.restartRegisteredRunner(
           resumedTask,
           config,
         );

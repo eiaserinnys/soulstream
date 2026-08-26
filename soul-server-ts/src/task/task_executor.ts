@@ -40,9 +40,7 @@ import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
-import { inspectProcessIdentity } from "../runner/runner_process_lock.js";
 import type { ExecutionOwnershipBackoff } from "./execution_ownership_backoff.js";
-import { ExecutionOwnershipExpiry } from "./execution_ownership_expiry.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
 import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
@@ -87,8 +85,6 @@ import {
   ExecutionOwnershipConflictError,
   isCompleteExecutionIdentity,
   isExecutionOwnershipConflictError,
-  newExecutionOwnershipGeneration,
-  type ExecutionEntryPath,
   type ExecutionOwnerKind,
 } from "./execution_ownership.js";
 import { ExecutionOwnershipCoordinator } from
@@ -158,10 +154,9 @@ export class TaskExecutor {
   private readonly turnInputBuilder: TaskTurnInputBuilder;
   private readonly deliveryConsumption?: TaskDeliveryConsumption;
   private readonly executionOwnershipCoordinator: ExecutionOwnershipCoordinator;
-  private readonly executionOwnershipExpiry: ExecutionOwnershipExpiry;
   constructor(
     private readonly engineFactory: EngineFactory,
-    db: SessionDB,
+    private readonly db: SessionDB,
     private readonly persistence: EventPersistence,
     broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
@@ -188,7 +183,7 @@ export class TaskExecutor {
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
     transientEventLogAggregator?: TransientEventLogAggregator,
     private readonly executionOwnershipBackoff?: ExecutionOwnershipBackoff,
-    executionOwnershipNodeId?: string,
+    private readonly executionOwnershipLeaseMs = 60_000,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -233,17 +228,6 @@ export class TaskExecutor {
       persistence,
       this.logger,
     );
-    this.executionOwnershipExpiry = new ExecutionOwnershipExpiry({
-      expireDeadOwner: (sessionId, input) =>
-        this.executionOwnershipCoordinator.expireDeadOwner(sessionId, input),
-      inspectProcess: inspectProcessIdentity,
-      isSessionExecutedHere: async (sessionId) => {
-        if (!executionOwnershipNodeId) return false;
-        const session = await db.getSession(sessionId);
-        return session?.node_id === executionOwnershipNodeId;
-      },
-      logger: this.logger,
-    });
   }
 
   /**
@@ -253,35 +237,12 @@ export class TaskExecutor {
    * promise 실패는 task.error에 박히고 status="error"로 전환.
    */
   startExecution(task: Task, agent: AgentProfile): Promise<void> {
-    return this.startExecutionWithOwnership(
-      task,
-      agent,
-      async (operation, start) => await this.executionOwnershipCoordinator.withSessionLease(
-        task.agentSessionId,
-        operation,
-        start,
-      ),
-    );
-  }
-
-  private startExecutionUnderRecoveryLease(
-    task: Task,
-    agent: AgentProfile,
-  ): Promise<void> {
-    return this.startExecutionWithOwnership(
-      task,
-      agent,
-      async (_operation, start) => await start(),
-    );
+    return this.startExecutionWithOwnership(task, agent);
   }
 
   private startExecutionWithOwnership(
     task: Task,
     agent: AgentProfile,
-    runOwnedAttempt: (
-      operation: "attach" | "spawn",
-      start: () => Promise<void>,
-    ) => Promise<void>,
   ): Promise<void> {
     const retainedRunner = task.runnerRetainedForClaudeBackground === true
       ? task.runner
@@ -289,6 +250,11 @@ export class TaskExecutor {
     if (task.runner && !retainedRunner) {
       throw new Error(
         `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
+      );
+    }
+    if (task.executionActivationPromise) {
+      throw new Error(
+        `Task ${task.agentSessionId} already has an execution admission in flight`,
       );
     }
     const presetRuntime = applyModelPresetRuntime(task, agent, this.modelCatalog);
@@ -339,7 +305,6 @@ export class TaskExecutor {
       backend,
       retainedRunner,
       () => activation.resolve(undefined),
-      runOwnedAttempt,
     ).catch(
       async (err: unknown) => {
         activation.reject(err);
@@ -415,10 +380,6 @@ export class TaskExecutor {
     backend: BackendId,
     retainedRunner: TaskRunnerRuntime | undefined,
     resolveActivation: () => void,
-    runOwnedAttempt: (
-      operation: "attach" | "spawn",
-      start: () => Promise<void>,
-    ) => Promise<void>,
   ): Promise<void> {
     // An attempt that lost to an owner it then proved dead has displaced the
     // only thing in its way, and giving up there left the session waiting on a
@@ -430,15 +391,12 @@ export class TaskExecutor {
     // conflict means somebody genuinely holds the session.
     for (let attempt = 0; ; attempt += 1) {
       try {
-        await runOwnedAttempt(
-          retainedRunner ? "attach" : "spawn",
-          async () => await this.startOwnedExecutionLocked(
-            task,
-            agent,
-            backend,
-            retainedRunner,
-            resolveActivation,
-          ),
+        await this.startOwnedExecutionLocked(
+          task,
+          agent,
+          backend,
+          retainedRunner,
+          resolveActivation,
         );
         return;
       } catch (error) {
@@ -472,45 +430,11 @@ export class TaskExecutor {
         "active",
       );
     }
-    const entryPath: ExecutionEntryPath =
-      task.pendingExecutionExpectedTerminalEventId !== undefined
-        ? "auto_resume"
-        : "initial";
     const descriptor = await this.executionOwnerDescriptor(agent, backend);
-    const ownershipGeneration = newExecutionOwnershipGeneration();
     task.executionOwnership = undefined;
-    let stage: ExecutionReservationStage = "reserve";
-    let reservationAttempted = false;
-    let activated = false;
     let runner: TaskRunnerRuntime | undefined;
     let proof: import("./execution_ownership.js").ExecutionIdentityProof | undefined;
     try {
-      reservationAttempted = true;
-      const reservation = await this.executionOwnershipCoordinator
-        .reserve(task.agentSessionId, {
-          ownershipGeneration,
-          ownerKind: descriptor.ownerKind,
-          manifestId: descriptor.manifestId,
-          runtimeEnvIdentity: descriptor.runtimeEnvIdentity,
-        });
-      applyCanonicalSessionProjection(task, reservation.canonicalSession);
-      if (!this.executionOwnershipCoordinator.isAppliedOrSameOwner(reservation, {
-        ownershipGeneration,
-        ownerKind: descriptor.ownerKind,
-        manifestId: descriptor.manifestId,
-        runtimeEnvIdentity: descriptor.runtimeEnvIdentity,
-        phases: ["reserved", "identity_proven", "active"],
-      })) {
-        throw this.executionOwnershipConflict(task.agentSessionId, reservation);
-      }
-      this.executionOwnershipBackoff?.clear(task.agentSessionId);
-      task.executionOwnershipReservation = {
-        ...descriptor,
-        ownershipGeneration,
-        entryPath,
-      };
-
-      stage = "spawn";
       runner = retainedRunner ?? (this.runnerProcessFactory
         ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
         : createInProcessTaskRunnerRuntime(
@@ -531,26 +455,12 @@ export class TaskExecutor {
       if (!proof || !isCompleteExecutionIdentity(proof)) {
         throw new Error(`Runner identity proof unavailable: ${task.agentSessionId}`);
       }
-      stage = "prove";
-      const proofApplication = await this.executionOwnershipCoordinator
-        .prove(
-          task.agentSessionId,
-          ownershipGeneration,
-          proof,
-        );
-      if (!this.executionOwnershipCoordinator.isAppliedOrSameOwner(proofApplication, {
-        ownershipGeneration,
-        ...proof,
-        phases: ["identity_proven", "active"],
-      })) {
-        throw this.executionOwnershipConflict(task.agentSessionId, proofApplication);
-      }
-      stage = "prepare_session";
-      await runner.dispatcher.prepareSession(task.agentSessionId);
-      stage = "activate";
-      const activation = await this.executionOwnershipCoordinator
-        .activate(task.agentSessionId, {
-          ownershipGeneration,
+      const acquisition = await this.executionOwnershipCoordinator.acquire(
+        task.agentSessionId,
+        {
+          ...descriptor,
+          ...proof,
+          leaseExpiresAt: new Date(Date.now() + this.executionOwnershipLeaseMs),
           reviewState: task.reviewState ?? "not_required",
           ...(task.pendingExecutionExpectedTerminalEventId === undefined
             ? {}
@@ -558,40 +468,43 @@ export class TaskExecutor {
                 expectedTerminalEventId:
                   task.pendingExecutionExpectedTerminalEventId,
               }),
-        });
-      applyCanonicalSessionProjection(task, activation.canonicalSession);
-      if (!this.executionOwnershipCoordinator.isAppliedOrSameOwner(activation, {
-        ownershipGeneration,
-        ...proof,
-        phases: ["active"],
-      })) {
-        throw this.executionOwnershipConflict(task.agentSessionId, activation);
+        },
+      );
+      applyCanonicalSessionProjection(task, acquisition.canonicalSession);
+      const canonical = acquisition.canonicalExecutionOwnership;
+      if (!acquisition.applied || !canonical
+        || canonical.manifestId !== descriptor.manifestId
+        || canonical.runtimeEnvIdentity !== descriptor.runtimeEnvIdentity
+        || canonical.registrationId !== proof.registrationId
+        || canonical.pid !== proof.pid
+        || canonical.startIdentity !== proof.startIdentity
+        || canonical.executionCommandId !== proof.executionCommandId) {
+        throw this.executionOwnershipConflict(task.agentSessionId, acquisition);
       }
-      activated = true;
+      this.executionOwnershipBackoff?.clear(task.agentSessionId);
       task.executionOwnership = {
         ...descriptor,
         ...proof,
-        ownershipGeneration,
+        ownershipGeneration: canonical.ownershipGeneration,
       };
-      task.executionOwnershipReservation = undefined;
       task.recoveredExecutionOwnership = undefined;
       task.runnerTerminalFact = undefined;
       task.pendingExecutionExpectedTerminalEventId = undefined;
       resolveActivation();
-      stage = "restore";
+      await runner.dispatcher.prepareSession(task.agentSessionId);
       await this.restoreDurableRunnerInterventions(task, runner);
       await this._consumeEventStream(task, runner, agent);
     } catch (error) {
-      if (reservationAttempted && !activated) {
-        throw await this.compensateUnactivatedExecution({
-          task,
-          ownershipGeneration,
-          stage,
-          runner,
-          proof,
-          error,
-          label: "Execution",
-        });
+      if (runner && task.executionOwnership === undefined) {
+        try {
+          if (proof && runner.dispatcher.rollbackExecutionIdentity) {
+            await runner.dispatcher.rollbackExecutionIdentity(proof);
+          } else {
+            await runner.dispatcher.close();
+          }
+        } finally {
+          releaseTaskRunner(task, runner);
+        }
       }
       throw error;
     }
@@ -599,129 +512,16 @@ export class TaskExecutor {
 
   private executionOwnershipConflict(
     sessionId: string,
-    application: Awaited<ReturnType<ExecutionOwnershipCoordinator["reserve"]>>,
+    application: Awaited<ReturnType<ExecutionOwnershipCoordinator["acquire"]>>,
   ): ExecutionOwnershipConflictError {
     const ownership = application.canonicalExecutionOwnership;
-    const retryAt = new Date(Date.now() + 60_000).toISOString();
+    const retryAt = new Date(Date.now() + this.executionOwnershipLeaseMs).toISOString();
     return new ExecutionOwnershipConflictError(
       sessionId,
       retryAt,
       ownership?.phase ?? "reserved",
       ownership ?? undefined,
     );
-  }
-
-  private async compensateUnactivatedExecution(params: {
-    task: Task;
-    ownershipGeneration: number;
-    stage: ExecutionReservationStage;
-    runner: TaskRunnerRuntime | undefined;
-    proof: import("./execution_ownership.js").ExecutionIdentityProof | undefined;
-    error: unknown;
-    label: "Execution" | "Adopted execution";
-  }): Promise<unknown> {
-    const {
-      task,
-      ownershipGeneration,
-      stage,
-      runner,
-      proof,
-      label,
-    } = params;
-    let error = params.error;
-    const orphaned = error instanceof RunnerOrphanedSpawnError ? error : undefined;
-    if (!orphaned && runner) {
-      try {
-        if (proof && runner.dispatcher.rollbackExecutionIdentity) {
-          await runner.dispatcher.rollbackExecutionIdentity(proof);
-        } else {
-          await runner.dispatcher.close();
-        }
-      } catch (rollbackError) {
-        if (rollbackError instanceof RunnerOrphanedSpawnError) {
-          error = rollbackError;
-        } else {
-          this.logger.error(
-            { err: rollbackError, sessionId: task.agentSessionId, ownershipGeneration, stage },
-            `${label} runner rollback cleanup failed after ownership rejection`,
-          );
-        }
-      }
-    }
-
-    if (error instanceof RunnerOrphanedSpawnError) {
-      await this.projectOrphanedSpawn(task, ownershipGeneration, error);
-      task.executionOwnershipReservation = undefined;
-      if (runner) releaseTaskRunner(task, runner);
-      return error;
-    }
-
-    const failureReason = `execution ${stage} failed: ${errorMessage(error)}`;
-    try {
-      const failure = await this.executionOwnershipCoordinator.fail(
-        task.agentSessionId,
-        ownershipGeneration,
-        failureReason,
-      );
-      if (
-        isExecutionOwnershipConflictError(error)
-        && this.executionOwnershipCoordinator.isAppliedOrSameOwner(failure, {
-          ownershipGeneration,
-          phases: ["failed"],
-        })
-      ) {
-        error.retryImmediately();
-      } else if (isExecutionOwnershipConflictError(error)) {
-        // Failing our own generation cannot dislodge the owner that beat us.
-        // If that owner's process is gone, nothing else ever will.
-        const outcome = await this.executionOwnershipExpiry.expireIfOwnerIsGone(
-          task.agentSessionId,
-          error.ownership,
-        );
-        if (outcome === "expired") {
-          this.executionOwnershipBackoff?.clear(task.agentSessionId);
-          error.displaceBlockingOwner();
-        }
-      }
-    } catch (failureError) {
-      this.logger.error(
-        { err: failureError, sessionId: task.agentSessionId, ownershipGeneration, stage },
-        `${label} ownership failure projection failed`,
-      );
-    }
-    task.executionOwnershipReservation = undefined;
-    if (runner) releaseTaskRunner(task, runner);
-    return error;
-  }
-
-  private async projectOrphanedSpawn(
-    task: Task,
-    ownershipGeneration: number,
-    error: RunnerOrphanedSpawnError,
-  ): Promise<void> {
-    try {
-      const orphaned = await this.executionOwnershipCoordinator.markOrphanedSpawn(
-        task.agentSessionId,
-        ownershipGeneration,
-        error.proof,
-      );
-      if (!this.executionOwnershipCoordinator.isAppliedOrSameOwner(orphaned, {
-        ownershipGeneration,
-        ...error.proof,
-        phases: ["identity_proven"],
-        failureReason: "orphaned_spawn",
-      })) {
-        this.logger.error(
-          { sessionId: task.agentSessionId, ownershipGeneration },
-          "Orphaned spawn ownership projection conflicted with the canonical owner",
-        );
-      }
-    } catch (projectionError) {
-      this.logger.error(
-        { err: projectionError, sessionId: task.agentSessionId, ownershipGeneration },
-        "Orphaned spawn ownership projection failed; recovery lease will expire safely",
-      );
-    }
   }
 
   private async executionOwnerDescriptor(
@@ -743,7 +543,7 @@ export class TaskExecutor {
   }
 
   private supportsExecutionOwnership(): boolean {
-    return typeof this.persistence.reserveExecutionOwnershipAndWaitForApplication === "function";
+    return typeof this.persistence.acquireExecutionOwnershipAndWaitForApplication === "function";
   }
 
   async releaseRetainedClaudeRunner(task: Task): Promise<void> {
@@ -778,7 +578,7 @@ export class TaskExecutor {
   }
 
   /** Reattaches host-side consumption to an execution already owned by a runner child. */
-  recoverRunnerExecution(
+  async recoverRunnerExecution(
     task: Task,
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
@@ -787,28 +587,14 @@ export class TaskExecutor {
     manifestId?: string,
     runtimeEnvIdentity?: string,
   ): Promise<void> {
-    return this.withSessionRecoveryLease(
-      task.agentSessionId,
-      async () => await this.recoverRunnerExecutionLocked(
-        task,
-        agent,
-        runner,
-        commandId,
-        mode,
-        manifestId,
-        runtimeEnvIdentity,
-      ),
-    );
-  }
-
-  withSessionRecoveryLease<T>(
-    sessionId: string,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    return this.executionOwnershipCoordinator.withSessionLease(
-      sessionId,
-      "recovery",
-      operation,
+    return await this.recoverRunnerExecutionLocked(
+      task,
+      agent,
+      runner,
+      commandId,
+      mode,
+      manifestId,
+      runtimeEnvIdentity,
     );
   }
 
@@ -894,75 +680,53 @@ export class TaskExecutor {
     }
     task.executionOwnership = undefined;
     this.attachRunner(task, runner);
-    const ownershipGeneration = newExecutionOwnershipGeneration();
-    let reservationAttempted = false;
-    let activated = false;
-    let stage: ExecutionReservationStage = "reserve";
     let proof: import("./execution_ownership.js").ExecutionIdentityProof | undefined;
     const promise = (async () => {
       try {
-        proof = await runner.dispatcher.prepareExecutionIdentity?.(commandId);
+        const session = await this.db.getSession(task.agentSessionId);
+        const ownershipGeneration = Number(session?.execution_generation ?? 0);
+        const ownerToken = session?.execution_command_id;
+        if (!session
+          || !Number.isSafeInteger(ownershipGeneration)
+          || ownershipGeneration <= 0
+          || session.execution_manifest_id !== manifestId
+          || session.execution_runtime_env_identity !== runtimeEnvIdentity
+          || !session.execution_registration_id
+          || !session.execution_pid
+          || !session.execution_start_identity
+          || !ownerToken) {
+          throw new Error(
+            `Sessions-row execution owner unavailable for recovery: ${task.agentSessionId}`,
+          );
+        }
+        proof = await runner.dispatcher.prepareExecutionIdentity?.(ownerToken);
         if (!proof || !isCompleteExecutionIdentity(proof)) {
           throw new Error(`Adopted runner identity proof unavailable: ${task.agentSessionId}`);
         }
-        reservationAttempted = true;
-        const reservation = await this.executionOwnershipCoordinator
-          .reserveAdoption(task.agentSessionId, {
-            ownershipGeneration,
+        if (proof.registrationId !== session.execution_registration_id
+          || proof.pid !== session.execution_pid
+          || proof.startIdentity !== session.execution_start_identity
+          || proof.executionCommandId !== ownerToken) {
+          throw new Error(`Recovered runner identity mismatch: ${task.agentSessionId}`);
+        }
+        const acquisition = await this.executionOwnershipCoordinator.acquire(
+          task.agentSessionId,
+          {
+            ownerKind: "adopted_runner",
             manifestId,
             runtimeEnvIdentity,
-            previousRegistrationId: proof.registrationId,
-            pid: proof.pid,
-            startIdentity: proof.startIdentity,
-            executionCommandId: proof.executionCommandId,
-          });
-        applyCanonicalSessionProjection(task, reservation.canonicalSession);
-        if (!this.executionOwnershipCoordinator.isAppliedOrSameOwner(reservation, {
-          ownershipGeneration,
-          ownerKind: "adopted_runner",
-          manifestId,
-          runtimeEnvIdentity,
-          phases: ["reserved", "identity_proven", "active"],
-        })) {
-          throw this.executionOwnershipConflict(task.agentSessionId, reservation);
+            ...proof,
+            leaseExpiresAt: new Date(Date.now() + this.executionOwnershipLeaseMs),
+            reviewState: task.reviewState ?? "not_required",
+          },
+        );
+        applyCanonicalSessionProjection(task, acquisition.canonicalSession);
+        if (!acquisition.applied
+          || acquisition.canonicalExecutionOwnership?.ownershipGeneration
+            !== ownershipGeneration) {
+          throw this.executionOwnershipConflict(task.agentSessionId, acquisition);
         }
         this.executionOwnershipBackoff?.clear(task.agentSessionId);
-        task.executionOwnershipReservation = {
-          ownerKind: "adopted_runner",
-          manifestId,
-          runtimeEnvIdentity,
-          ownershipGeneration,
-          entryPath: "adopt",
-        };
-        stage = "prove";
-        const proofApplication = await this.executionOwnershipCoordinator
-          .prove(
-            task.agentSessionId,
-            ownershipGeneration,
-            proof,
-          );
-        if (!this.executionOwnershipCoordinator.isAppliedOrSameOwner(proofApplication, {
-          ownershipGeneration,
-          ...proof,
-          phases: ["identity_proven", "active"],
-        })) {
-          throw this.executionOwnershipConflict(task.agentSessionId, proofApplication);
-        }
-        stage = "activate";
-        const activation = await this.executionOwnershipCoordinator
-          .activate(task.agentSessionId, {
-            ownershipGeneration,
-            reviewState: task.reviewState ?? "not_required",
-          });
-        applyCanonicalSessionProjection(task, activation.canonicalSession);
-        if (!this.executionOwnershipCoordinator.isAppliedOrSameOwner(activation, {
-          ownershipGeneration,
-          ...proof,
-          phases: ["active"],
-        })) {
-          throw this.executionOwnershipConflict(task.agentSessionId, activation);
-        }
-        activated = true;
         task.executionOwnership = {
           ownerKind: "adopted_runner",
           manifestId,
@@ -970,21 +734,20 @@ export class TaskExecutor {
           ownershipGeneration,
           ...proof,
         };
-        task.executionOwnershipReservation = undefined;
         const frames = runner.dispatcher.recoverFrames?.(commandId);
         if (!frames) throw new Error("runner dispatcher does not support execution recovery");
         await this.consumeRecoveredRunnerFrames(task, agent, runner, frames, true);
       } catch (error) {
-        if (reservationAttempted && !activated) {
-          throw await this.compensateUnactivatedExecution({
-            task,
-            ownershipGeneration,
-            stage,
-            runner,
-            proof,
-            error,
-            label: "Adopted execution",
-          });
+        if (task.executionOwnership === undefined) {
+          try {
+            if (proof && runner.dispatcher.rollbackExecutionIdentity) {
+              await runner.dispatcher.rollbackExecutionIdentity(proof);
+            } else {
+              await runner.dispatcher.close();
+            }
+          } finally {
+            releaseTaskRunner(task, runner);
+          }
         }
         throw error;
       }
@@ -1061,23 +824,6 @@ export class TaskExecutor {
   restartRegisteredRunner(task: Task, config: RunnerChildConfig): Promise<void> {
     if (this.supportsExecutionOwnership()) {
       return this.startExecution(task, config.agent);
-    }
-    const runner = this.runnerProcessFactory?.restart?.(
-      task,
-      config,
-      this.snapshotPersistenceFor(task),
-    );
-    if (!runner) throw new Error("runner process restart factory unavailable");
-    this.startExecutionWithRunner(task, config.agent, runner);
-    return task.executionPromise!;
-  }
-
-  restartRegisteredRunnerUnderRecoveryLease(
-    task: Task,
-    config: RunnerChildConfig,
-  ): Promise<void> {
-    if (this.supportsExecutionOwnership()) {
-      return this.startExecutionUnderRecoveryLease(task, config.agent);
     }
     const runner = this.runnerProcessFactory?.restart?.(
       task,
@@ -1765,14 +1511,6 @@ export class TaskExecutor {
     await this.executorFinalizer.finalize(task);
   }
 }
-
-type ExecutionReservationStage =
-  | "reserve"
-  | "spawn"
-  | "prove"
-  | "prepare_session"
-  | "activate"
-  | "restore";
 
 function deferred<T>(): {
   promise: Promise<T>;

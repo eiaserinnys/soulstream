@@ -150,8 +150,26 @@ export class EventIngressRepository {
         ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
       };
     }
-    if (!await lockSession(transaction, envelope.session_id)) {
+    const sessionOwner = await lockSession(transaction, envelope.session_id);
+    if (sessionOwner === null) {
       throw new Error(`session ${envelope.session_id} does not exist`);
+    }
+    if (envelope.execution_generation !== undefined
+      && envelope.execution_generation !== null
+      && (
+        envelope.execution_generation !== sessionOwner.executionGeneration
+        || sessionOwner.executionCommandId === null
+      )) {
+      return {
+        outcome: "dead_lettered",
+        envelope,
+        deadLetter: {
+          code: "STALE_EXECUTION_GENERATION",
+          reason: `execution generation ${envelope.execution_generation} is not current`,
+          rejectedAt: new Date().toISOString(),
+          path: "execution_generation",
+        },
+      };
     }
 
     const semanticReceipt = envelope.semantic_dedupe_key
@@ -208,14 +226,25 @@ export class EventIngressRepository {
 async function lockSession(
   sql: EventIngressQuerySql,
   sessionId: string,
-): Promise<boolean> {
-  const rows = await sql<Array<{ session_id: string }>>`
-    SELECT session_id
+): Promise<{ executionGeneration: number; executionCommandId: string | null } | null> {
+  const rows = await sql<Array<{
+    execution_generation: string | number;
+    execution_command_id: string | null;
+  }>>`
+    SELECT execution_generation, execution_command_id
     FROM sessions
     WHERE session_id = ${sessionId}
-    FOR KEY SHARE
+    FOR UPDATE
   `;
-  return rows.length > 0;
+  if (!rows[0]) return null;
+  const generation = Number(rows[0].execution_generation);
+  if (!Number.isSafeInteger(generation) || generation < 0) {
+    throw new Error(`session ${sessionId} has an invalid execution generation`);
+  }
+  return {
+    executionGeneration: generation,
+    executionCommandId: rows[0].execution_command_id,
+  };
 }
 
 function deadLetterResult(
@@ -325,6 +354,7 @@ function isCanonicalTransitionEffect(
     kind:
       | "running_transition"
       | "terminal_transition"
+      | "execution_acquire"
       | "execution_reserve"
       | "execution_prove"
       | "execution_adopt_reserve"
@@ -332,12 +362,14 @@ function isCanonicalTransitionEffect(
       | "execution_fail"
       | "execution_expire_dead_owner"
       | "execution_orphaned_spawn"
+      | "execution_release"
       | "runner_terminal_fact"
       | "recovered_runner_terminal_fact";
   }
 > {
   return effect?.kind === "running_transition"
     || effect?.kind === "terminal_transition"
+    || effect?.kind === "execution_acquire"
     || effect?.kind === "execution_reserve"
     || effect?.kind === "execution_prove"
     || effect?.kind === "execution_adopt_reserve"
@@ -345,6 +377,7 @@ function isCanonicalTransitionEffect(
     || effect?.kind === "execution_fail"
     || effect?.kind === "execution_expire_dead_owner"
     || effect?.kind === "execution_orphaned_spawn"
+    || effect?.kind === "execution_release"
     || effect?.kind === "runner_terminal_fact"
     || effect?.kind === "recovered_runner_terminal_fact";
 }

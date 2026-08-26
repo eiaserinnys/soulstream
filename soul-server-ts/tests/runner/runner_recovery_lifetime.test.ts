@@ -203,7 +203,7 @@ describe("RunnerRecoveryCoordinator recovery lifetime", () => {
     await harness.coordinator.waitForSettled();
 
     expect(heldUntilTimeout).toBe(true);
-    expect(harness.restartRegisteredRunnerUnderRecoveryLease).toHaveBeenCalledOnce();
+    expect(harness.restartRegisteredRunner).toHaveBeenCalledOnce();
   });
 
   it("does not start a replacement after stop returns when an admitted recovery later fails", async () => {
@@ -221,10 +221,10 @@ describe("RunnerRecoveryCoordinator recovery lifetime", () => {
     adoption.reject(new Error("runner turn inactivity timeout"));
     await harness.coordinator.waitForSettled();
 
-    expect(harness.restartRegisteredRunnerUnderRecoveryLease).toHaveBeenCalledTimes(0);
+    expect(harness.restartRegisteredRunner).toHaveBeenCalledTimes(0);
   });
 
-  it("reaches replacement after failed adoption without recursively acquiring its recovery lease", async () => {
+  it("reaches replacement after failed adoption without a host-local recovery lease", async () => {
     const running = runnerRegistration({ lifecycleState: "running", pidAlive: true });
     const stopped = runnerRegistration({ lifecycleState: "running", pidAlive: false });
     const harness = makeHarness({
@@ -238,7 +238,6 @@ describe("RunnerRecoveryCoordinator recovery lifetime", () => {
     await harness.coordinator.scanOnce();
     await harness.coordinator.waitForSettled();
 
-    expect(harness.nestedLeaseAttempts).toBe(0);
     expect(harness.replacementStarts).toBe(1);
   });
 });
@@ -275,30 +274,8 @@ function makeHarness(input: {
   const terminate = vi.fn(async () => {});
   const invalidateRegistration = vi.fn(async () => {});
   const retireTerminalRegistration = vi.fn(async () => {});
-  let recoveryLeaseHeld = false;
-  let nestedLeaseAttempts = 0;
   let replacementStarts = 0;
-  const withSessionRecoveryLease = async <T>(
-    _sessionId: string,
-    operation: () => Promise<T>,
-  ): Promise<T> => {
-    if (recoveryLeaseHeld) {
-      nestedLeaseAttempts += 1;
-      throw new Error("recursive session recovery lease acquisition");
-    }
-    recoveryLeaseHeld = true;
-    try {
-      return await operation();
-    } finally {
-      recoveryLeaseHeld = false;
-    }
-  };
   const restartRegisteredRunner = vi.fn(async () => {
-    await withSessionRecoveryLease("session-a", async () => {
-      replacementStarts += 1;
-    });
-  });
-  const restartRegisteredRunnerUnderRecoveryLease = vi.fn(async () => {
     replacementStarts += 1;
   });
   const recoverRegisteredRunner = vi.fn((
@@ -336,8 +313,6 @@ function makeHarness(input: {
     taskExecutor: {
       recoverRegisteredRunner: recoverRegisteredRunner as never,
       restartRegisteredRunner,
-      restartRegisteredRunnerUnderRecoveryLease,
-      withSessionRecoveryLease,
     },
     closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
@@ -357,11 +332,7 @@ function makeHarness(input: {
     detachHost,
     terminate,
     restartRegisteredRunner,
-    restartRegisteredRunnerUnderRecoveryLease,
     recoveryModes,
-    get nestedLeaseAttempts() {
-      return nestedLeaseAttempts;
-    },
     get replacementStarts() {
       return replacementStarts;
     },
