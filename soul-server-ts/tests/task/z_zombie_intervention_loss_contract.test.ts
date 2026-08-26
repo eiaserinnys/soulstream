@@ -22,7 +22,6 @@ import { makeEventPersistenceTestDouble } from
   "./event_persistence_test_double.js";
 import {
   applyZombieInterventionMutation,
-  fixedZombieInterventionCounterfactual,
   readZombieInterventionMutation,
   ZOMBIE_INTERVENTION_MUTATIONS,
   type InterventionAttemptObservation,
@@ -42,12 +41,13 @@ const MUTATION_SENTINELS: Record<ZombieInterventionMutation, string> = {
   admit_without_consumer: "terminal_without_consumer_admitted:zombie",
   drop_durable_input: "durable_input_not_exactly_once:recovered",
   drop_model_consumption: "model_input_not_exactly_once:recovered",
+  drop_auto_resume: "auto_resume_not_exactly_once:zombie",
 };
 
 describe("zombie intervention strict causal contract", () => {
-  it("fixed counterfactual GREEN satisfies all four axes", () => {
+  it("same-harness terminal-truth counterfactual GREEN reaches every axis", async () => {
     const observation = applyZombieInterventionMutation(
-      fixedZombieInterventionCounterfactual(),
+      await observeZombieInterventionContract(projectTerminalTruthDouble),
       MUTATION,
     );
     const violations = zombieInterventionViolations(observation);
@@ -58,11 +58,11 @@ describe("zombie intervention strict causal contract", () => {
   });
 
   it.each(ZOMBIE_INTERVENTION_MUTATIONS)(
-    "turns the fixed counterfactual RED under %s",
-    (mutation) => {
+    "turns the same-harness counterfactual RED under %s",
+    async (mutation) => {
       const violations = zombieInterventionViolations(
         applyZombieInterventionMutation(
-          fixedZombieInterventionCounterfactual(),
+          await observeZombieInterventionContract(projectTerminalTruthDouble),
           mutation,
         ),
       );
@@ -74,13 +74,16 @@ describe("zombie intervention strict causal contract", () => {
     },
   );
 
-  it("observes every axis through a product boundary", async () => {
-    const observation = await observeZombieInterventionContract();
+  it("counterfactual reaches the corrected product boundary balance", async () => {
+    const observation = await observeZombieInterventionContract(
+      projectTerminalTruthDouble,
+    );
     expect(observation.productBoundaryCalls).toEqual({
       terminalTruth: 1,
-      admission: 2,
+      runningInterventionAdmission: 1,
+      autoResume: 1,
       durableInput: 2,
-      modelConsumption: 1,
+      modelConsumption: 2,
     });
   });
 
@@ -98,13 +101,15 @@ describe("zombie intervention strict causal contract", () => {
   });
 });
 
-async function observeZombieInterventionContract(): Promise<
-ZombieInterventionObservation> {
+async function observeZombieInterventionContract(
+  terminalTruthProjection: (task: Task) => void = () => {},
+): Promise<ZombieInterventionObservation> {
   const zombieTask = hydrateEvictedTaskFromSessionRow(
     zombieSessionRow(),
     silentLogger,
   );
   if (!zombieTask) throw new Error("zombie session row did not hydrate");
+  terminalTruthProjection(zombieTask);
 
   const zombie = await observeAttempt(zombieTask, ZOMBIE_DELIVERY_ID, false);
   const recoveredTask = healthyRunningTask();
@@ -122,7 +127,9 @@ ZombieInterventionObservation> {
     attempts: [zombie.observation, recovered.observation],
     productBoundaryCalls: {
       terminalTruth: terminalEventIds.length,
-      admission: zombie.admissionCalls + recovered.admissionCalls,
+      runningInterventionAdmission:
+        zombie.runningInterventionCalls + recovered.runningInterventionCalls,
+      autoResume: zombie.autoResumeCalls + recovered.autoResumeCalls,
       durableInput: zombie.durableCalls + recovered.durableCalls,
       modelConsumption: zombie.modelCalls + recovered.modelCalls,
     },
@@ -139,12 +146,15 @@ async function observeAttempt(
   consumerReady: boolean,
 ): Promise<{
   observation: InterventionAttemptObservation;
-  admissionCalls: number;
+  runningInterventionCalls: number;
+  autoResumeCalls: number;
   durableCalls: number;
   modelCalls: number;
   result: string;
 }> {
-  const admittedDeliveryIds: string[] = [];
+  const ledgerClaimedDeliveryIds: string[] = [];
+  const runningInterventionDeliveryIds: string[] = [];
+  const autoResumeDeliveryIds: string[] = [];
   const durableInputDeliveryIds: string[] = [];
   const modelInputDeliveryIds: string[] = [];
   const persistence = makeEventPersistenceTestDouble(async (_sessionId, event) => {
@@ -161,15 +171,28 @@ async function observeAttempt(
   if (consumerReady) {
     attachRecoveredRunner(task, durableInputDeliveryIds, modelInputDeliveryIds);
   }
-  const ledger = ledgerGate(admittedDeliveryIds);
+  const ledger = ledgerGate(ledgerClaimedDeliveryIds);
   const route = new TaskInterventionRoute({
     getTask: () => task,
     loadEvictedTask: vi.fn().mockResolvedValue(null),
     rememberTask: vi.fn(),
-    runningInterventionTransition: running,
+    runningInterventionTransition: {
+      deliver: vi.fn(async (...args: Parameters<typeof running.deliver>) => {
+        runningInterventionDeliveryIds.push(deliveryId);
+        return await running.deliver(...args);
+      }),
+    },
     autoResumeTransition: {
-      resume: vi.fn(async () => {
-        throw new Error("running observation must not auto-resume");
+      resume: vi.fn(async (resumedTask, message, onResume) => {
+        const resumedDeliveryId = requireValue(
+          message.deliveryId,
+          "auto-resume deliveryId",
+        );
+        autoResumeDeliveryIds.push(resumedDeliveryId);
+        durableInputDeliveryIds.push(resumedDeliveryId);
+        resumedTask.status = "running";
+        await onResume(resumedTask);
+        return { autoResumed: true as const };
       }),
     },
     deliveryLedgerGate: ledger.gate,
@@ -177,7 +200,7 @@ async function observeAttempt(
   const result = await route.addIntervention(
     request(task.agentSessionId, deliveryId),
     () => {
-      throw new Error("running observation must not start a replacement");
+      modelInputDeliveryIds.push(deliveryId);
     },
   );
   return {
@@ -185,17 +208,23 @@ async function observeAttempt(
       label: consumerReady ? "recovered" : "zombie",
       deliveryId,
       consumerReady,
-      admittedDeliveryIds,
+      runningInterventionDeliveryIds,
+      autoResumeDeliveryIds,
       durableInputDeliveryIds,
       modelInputDeliveryIds,
     },
-    admissionCalls: ledger.admitSpy.mock.calls.length,
-    durableCalls: consumerReady
-      ? durableInputDeliveryIds.length
-      : persistence.handleSideEffects.mock.calls.length,
+    runningInterventionCalls: runningInterventionDeliveryIds.length,
+    autoResumeCalls: autoResumeDeliveryIds.length,
+    durableCalls: durableInputDeliveryIds.length,
     modelCalls: modelInputDeliveryIds.length,
     result: JSON.stringify(result),
   };
+}
+
+function projectTerminalTruthDouble(task: Task): void {
+  if (task.terminationEventRecorded && task.terminationReason === "error_aborted") {
+    task.status = "error";
+  }
 }
 
 function attachRecoveredRunner(

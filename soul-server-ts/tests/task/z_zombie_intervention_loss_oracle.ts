@@ -3,6 +3,7 @@ export const ZOMBIE_INTERVENTION_MUTATIONS = [
   "admit_without_consumer",
   "drop_durable_input",
   "drop_model_consumption",
+  "drop_auto_resume",
 ] as const;
 
 export type ZombieInterventionMutation =
@@ -12,7 +13,8 @@ export interface InterventionAttemptObservation {
   label: "zombie" | "recovered";
   deliveryId: string;
   consumerReady: boolean;
-  admittedDeliveryIds: string[];
+  runningInterventionDeliveryIds: string[];
+  autoResumeDeliveryIds: string[];
   durableInputDeliveryIds: string[];
   modelInputDeliveryIds: string[];
 }
@@ -22,7 +24,8 @@ export interface ZombieInterventionObservation {
   attempts: InterventionAttemptObservation[];
   productBoundaryCalls: {
     terminalTruth: number;
-    admission: number;
+    runningInterventionAdmission: number;
+    autoResume: number;
     durableInput: number;
     modelConsumption: number;
   };
@@ -45,21 +48,28 @@ export function zombieInterventionViolations(
   }
 
   for (const attempt of observation.attempts) {
-    if (!attempt.consumerReady && attempt.admittedDeliveryIds.length !== 0) {
-      violations.push(`terminal_without_consumer_admitted:${attempt.label}`);
+    if (attempt.label === "zombie") {
+      if (attempt.runningInterventionDeliveryIds.length !== 0) {
+        violations.push(`terminal_without_consumer_admitted:${attempt.label}`);
+      }
+      if (!isExactIdentity(attempt.autoResumeDeliveryIds, attempt.deliveryId)) {
+        violations.push(`auto_resume_not_exactly_once:${attempt.label}`);
+      }
+    } else {
+      if (!isExactIdentity(
+        attempt.runningInterventionDeliveryIds,
+        attempt.deliveryId,
+      )) {
+        violations.push(`running_admission_not_exactly_once:${attempt.label}`);
+      }
+      if (attempt.autoResumeDeliveryIds.length !== 0) {
+        violations.push(`unexpected_auto_resume:${attempt.label}`);
+      }
     }
-    if (!sameExactIdentity(
-      attempt.durableInputDeliveryIds,
-      attempt.admittedDeliveryIds,
-      attempt.deliveryId,
-    )) {
+    if (!isExactIdentity(attempt.durableInputDeliveryIds, attempt.deliveryId)) {
       violations.push(`durable_input_not_exactly_once:${attempt.label}`);
     }
-    if (!sameExactIdentity(
-      attempt.modelInputDeliveryIds,
-      attempt.durableInputDeliveryIds,
-      attempt.deliveryId,
-    )) {
+    if (!isExactIdentity(attempt.modelInputDeliveryIds, attempt.deliveryId)) {
       violations.push(`model_input_not_exactly_once:${attempt.label}`);
     }
   }
@@ -68,43 +78,6 @@ export function zombieInterventionViolations(
     if (calls < 1) violations.push(`product_boundary_unreachable:${axis}`);
   }
   return violations;
-}
-
-export function fixedZombieInterventionCounterfactual():
-ZombieInterventionObservation {
-  const zombieDeliveryId = "92000000-0000-4000-8000-000000000001";
-  const recoveredDeliveryId = "92000000-0000-4000-8000-000000000002";
-  return {
-    terminalEventIds: [387],
-    attempts: [
-      {
-        label: "zombie",
-        deliveryId: zombieDeliveryId,
-        consumerReady: false,
-        admittedDeliveryIds: [],
-        durableInputDeliveryIds: [],
-        modelInputDeliveryIds: [],
-      },
-      {
-        label: "recovered",
-        deliveryId: recoveredDeliveryId,
-        consumerReady: true,
-        admittedDeliveryIds: [recoveredDeliveryId],
-        durableInputDeliveryIds: [recoveredDeliveryId],
-        modelInputDeliveryIds: [recoveredDeliveryId],
-      },
-    ],
-    productBoundaryCalls: {
-      terminalTruth: 1,
-      admission: 1,
-      durableInput: 1,
-      modelConsumption: 1,
-    },
-    diagnostic: {
-      hydratedStatus: "terminal projection repaired",
-      zombieRouteResult: "rejected before admission",
-    },
-  };
 }
 
 export function applyZombieInterventionMutation(
@@ -118,14 +91,13 @@ export function applyZombieInterventionMutation(
   if (mutation === "erase_terminal_truth") {
     mutated.terminalEventIds = [];
   } else if (mutation === "admit_without_consumer") {
-    zombie.admittedDeliveryIds = [zombie.deliveryId];
-    zombie.durableInputDeliveryIds = [zombie.deliveryId];
-    zombie.modelInputDeliveryIds = [zombie.deliveryId];
+    zombie.runningInterventionDeliveryIds = [zombie.deliveryId];
   } else if (mutation === "drop_durable_input") {
     recovered.durableInputDeliveryIds = [];
+  } else if (mutation === "drop_model_consumption") {
     recovered.modelInputDeliveryIds = [];
   } else {
-    recovered.modelInputDeliveryIds = [];
+    zombie.autoResumeDeliveryIds = [];
   }
   return mutated;
 }
@@ -136,16 +108,9 @@ export function readZombieInterventionMutation(
   return ZOMBIE_INTERVENTION_MUTATIONS.find((mutation) => mutation === value);
 }
 
-function sameExactIdentity(
-  actual: string[],
-  expectedSource: string[],
-  deliveryId: string,
-): boolean {
-  const expectedCount = expectedSource.filter((id) => id === deliveryId).length;
+function isExactIdentity(actual: string[], deliveryId: string): boolean {
   const actualCount = actual.filter((id) => id === deliveryId).length;
-  return expectedSource.length === expectedCount
-    && actual.length === actualCount
-    && actualCount === expectedCount;
+  return actual.length === actualCount && actualCount === 1;
 }
 
 function requireAttempt(
