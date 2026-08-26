@@ -39,7 +39,7 @@ export class RunnerProcessEngineProxy implements EnginePort {
   async interrupt(): Promise<boolean> { return await this.dispatcher.interrupt(); }
   async close(): Promise<void> { await this.dispatcher.close(); }
   async compact(sessionId: string): Promise<void> {
-    await this.dispatcher.invoke("compact", [sessionId]);
+    await this.dispatcher.invoke("compact", [sessionId], "turn");
   }
   async intervene(input: EngineUserInput): Promise<EngineInterventionResult> {
     const result = await this.dispatcher.invoke("intervene", [input]);

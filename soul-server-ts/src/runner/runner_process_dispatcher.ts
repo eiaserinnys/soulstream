@@ -84,6 +84,8 @@ const DEFAULT_RECONNECT_POLICY: RunnerIpcReconnectPolicy = {
   stableConnectionMs: 30_000,
 };
 
+type RunnerCommandTimeoutScope = "command" | "turn";
+
 interface RunnerIpcReconnectPolicy {
   initialDelayMs: number;
   maxDelayMs: number;
@@ -185,9 +187,15 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     this.ready = this.initialize();
   }
 
-  async dispatch(frame: unknown): Promise<RunnerCommandResultFrame> {
+  async dispatch(
+    frame: unknown,
+    timeoutScope: RunnerCommandTimeoutScope = "command",
+  ): Promise<RunnerCommandResultFrame> {
     await this.ready;
     const command = frame as RunnerCommandFrame;
+    const timeoutMs = timeoutScope === "turn"
+      ? this.spawnInput.claudeRuntimeTurnTimeoutMs
+      : COMMAND_TIMEOUT_MS;
     const finishObservation = this.options.nodeStallMonitor?.beginRunnerOperation({
       sessionId: this.spawnInput.sessionId,
       commandId: command.commandId,
@@ -195,7 +203,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     });
     try {
       const connection = await this.ensureConnection();
-      const response = await connection.request(command, { timeoutMs: COMMAND_TIMEOUT_MS });
+      const response = await connection.request(command, { timeoutMs });
       if (response.kind !== "command_result") {
         throw new Error("Runner command received a non-command result");
       }
@@ -553,12 +561,16 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     return (await this.reconcilePendingInterventions()).interventions;
   }
 
-  async invoke(capability: string, args: unknown[]): Promise<unknown> {
+  async invoke(
+    capability: string,
+    args: unknown[],
+    timeoutScope: RunnerCommandTimeoutScope = "command",
+  ): Promise<unknown> {
     const result = await this.dispatch(invokeCommandFrame(
       `invoke:${capability}:${randomUUID()}`,
       capability,
       args,
-    ));
+    ), timeoutScope);
     assertCommandAccepted(result);
     return result.result.status === "ok" ? result.result.data : undefined;
   }
