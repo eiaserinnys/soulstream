@@ -7,7 +7,10 @@ describe("worker startup ordering", () => {
     const order: string[] = [];
     const info = vi.fn();
     const onRunnerRecoveryFailure = vi.fn();
-    const waitForApplication = new Promise<void>(() => {});
+    let finishRecovery!: () => void;
+    const waitForApplication = new Promise<void>((resolve) => {
+      finishRecovery = resolve;
+    });
     const ownerNullRunningSession = {
       sessionId: "owner-null-running",
       status: "running",
@@ -32,6 +35,7 @@ describe("worker startup ordering", () => {
     const runtime = {
       createUpstreamAdapter: () => upstreamAdapter,
       runnerRecoveryCoordinator,
+      completionDeliveryRecoveryWorker: { start: vi.fn() },
     };
 
     const started = await Promise.race([
@@ -55,6 +59,7 @@ describe("worker startup ordering", () => {
     expect(started).toEqual({ runtime, upstreamAdapter });
     expect(order).toEqual(["compose", "listen", "adapter", "scan"]);
     expect(runnerRecoveryCoordinator.start).toHaveBeenCalledOnce();
+    expect(runtime.completionDeliveryRecoveryWorker.start).not.toHaveBeenCalled();
     expect(info.mock.calls.map(([message]) => message)).toEqual([
       "Worker runtime composition starting",
       "Worker runtime composition completed",
@@ -63,6 +68,11 @@ describe("worker startup ordering", () => {
       "Runner recovery initial scan starting after listeners and upstream adapter startup",
     ]);
     expect(onRunnerRecoveryFailure).not.toHaveBeenCalled();
+
+    finishRecovery();
+    await vi.waitFor(() => {
+      expect(runtime.completionDeliveryRecoveryWorker.start).toHaveBeenCalledOnce();
+    });
   });
 
   it("reports an initial recovery failure after readiness instead of hiding it", async () => {
