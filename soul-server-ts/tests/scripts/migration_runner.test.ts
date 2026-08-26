@@ -125,6 +125,8 @@ describe.sequential("versioned migration runner", () => {
             "053_retire_supervisor.sql",
             "058_session_delete_ydoc_guard.sql",
             "059_scope_board_seed_items.sql",
+            "073_sessions_execution_owner_v1.sql",
+            "075_sessions_execution_owner_release.sql",
           ],
         });
       expect(existsSync(join(backupDirectory, "database.dump"))).toBe(true);
@@ -151,7 +153,7 @@ describe.sequential("versioned migration runner", () => {
             WHERE migration_id = '042_runbook_to_task.sql') AS migration_042_kind
       `;
       expect(rows[0]).toMatchObject({
-        migration_count: 73,
+        migration_count: 76,
         operation_count: 1,
         applied_kind_count: 2,
         applied_kind: "bootstrap",
@@ -164,7 +166,7 @@ describe.sequential("versioned migration runner", () => {
       const afterRetry = await sql`
         SELECT COUNT(*)::int AS count FROM schema_migrations
       `;
-      expect(afterRetry[0].count).toBe(73);
+      expect(afterRetry[0].count).toBe(76);
     } finally {
       await sql.end({ timeout: 5 });
     }

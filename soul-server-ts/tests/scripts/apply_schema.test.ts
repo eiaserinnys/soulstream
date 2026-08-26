@@ -131,7 +131,7 @@ describe("apply-schema.mjs", () => {
         supervisor_table_count: 0,
         supervisor_function_count: 0,
         supervisor_role_column_count: 0,
-        migration_count: 73,
+        migration_count: 76,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -637,6 +637,21 @@ describe("apply-schema.mjs", () => {
           {
             migration_id: "072_owner_null_backfill_identity_guard.sql",
             ordinal: 73,
+            applied_kind: "migration",
+          },
+          {
+            migration_id: "073_sessions_execution_owner_v1.sql",
+            ordinal: 74,
+            applied_kind: "migration",
+          },
+          {
+            migration_id: "074_sessions_execution_owner_renew.sql",
+            ordinal: 75,
+            applied_kind: "migration",
+          },
+          {
+            migration_id: "075_sessions_execution_owner_release.sql",
+            ordinal: 76,
             applied_kind: "migration",
           },
         ]);
