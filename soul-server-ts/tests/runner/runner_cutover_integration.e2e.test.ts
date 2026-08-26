@@ -153,7 +153,7 @@ describe("runner cutover all-flags-on integration", () => {
           if (task.status === "initializing") {
             // Match TaskInterventionRoute: a second detached completion waits
             // for the first V1 owner admission before choosing queue vs resume.
-            const activation = task.executionActivationPromise;
+            const activation = task.executionActivation?.promise;
             if (!activation) throw new Error("initializing follow-up lost its activation barrier");
             await activation;
           }
@@ -166,7 +166,8 @@ describe("runner cutover all-flags-on integration", () => {
         }),
         reserveInterventionRetry: vi.fn(async () => undefined),
       },
-      onResume: (resumedTask) => executor.startExecution(resumedTask, agent),
+      onResume: (resumedTask, activation) =>
+        executor.startExecution(resumedTask, agent, activation),
       releaseRetainedRunner: async (retainedTask) =>
         await executor.releaseRetainedClaudeRunner(retainedTask),
       logger,
@@ -229,7 +230,7 @@ describe("runner cutover all-flags-on integration", () => {
         const taskId = "taskId" in event ? event.taskId : event.type;
         const delivery = readClaudeBackgroundDeliveryMetadata(event);
         if (delivery) publishedDeliveryIds.set(taskId, delivery.deliveryId);
-        await publishDetached(sessionId, event, idempotencyKey);
+        return await publishDetached(sessionId, event, idempotencyKey);
       },
       buildChildProcessEnv: () => ({
         ...process.env,
