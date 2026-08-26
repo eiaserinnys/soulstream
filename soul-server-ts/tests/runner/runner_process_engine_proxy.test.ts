@@ -1,9 +1,51 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { runnerCommandResultFrame } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessEngineProxy } from
   "../../src/runner/runner_process_engine_proxy.js";
+import { RunnerProcessDispatcher } from
+  "../../src/runner/runner_process_dispatcher.js";
 
 describe("RunnerProcessEngineProxy", () => {
+  it("gives compact the configured turn boundary without widening control commands", async () => {
+    const turnTimeoutMs = 1_800_000;
+    const controlTimeoutMs = 30_000;
+    const request = vi.fn(async (frame: { commandId: string; kind: string }) => (
+      runnerCommandResultFrame(frame.commandId, {
+        status: "ok",
+        ...(frame.kind === "interrupt" ? { data: { interrupted: true } } : {}),
+      })
+    ));
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as RunnerProcessDispatcher;
+    Object.assign(dispatcher, {
+      ready: Promise.resolve(),
+      spawnInput: {
+        sessionId: "session-a",
+        claudeRuntimeTurnTimeoutMs: turnTimeoutMs,
+      },
+      connection: { request },
+      options: {},
+      requestLifetimes: new Map(),
+    });
+    const proxy = new RunnerProcessEngineProxy(
+      "claude",
+      "/workspace/a",
+      dispatcher,
+    );
+
+    await proxy.compact("backend-session-a");
+    await expect(proxy.interrupt()).resolves.toBe(true);
+
+    const observedTimeouts = request.mock.calls.map(([, options]) => options.timeoutMs);
+    expect({
+      observedTimeouts,
+      compactToControlRatio: observedTimeouts[0] / observedTimeouts[1],
+    }).toEqual({
+      observedTimeouts: [turnTimeoutMs, controlTimeoutMs],
+      compactToControlRatio: 60,
+    });
+  });
+
   it("routes lifecycle and delivery capabilities through the process dispatcher", async () => {
     const dispatcher = {
       interrupt: vi.fn(async () => true),
