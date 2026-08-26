@@ -56,6 +56,23 @@ export type PendingTerminationHint = Exclude<
   "completed_ok" | "unknown"
 >;
 
+/** Single in-memory barrier for one execution ownership admission. */
+export interface ExecutionActivation {
+  promise: Promise<void>;
+  resolve(): void;
+  reject(error: unknown): void;
+}
+
+export function createExecutionActivation(): ExecutionActivation {
+  let resolve!: () => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 /**
  * 진행 중인 대화에 들어오는 메시지. 세션 생성·재개와 동등한 대화 진입점이며,
  * claude `task_manager.py:603-608`의 message dict와 *키 동등*이다.
@@ -405,13 +422,8 @@ export interface Task {
   /** task_executor.startExecution 반환 promise. shutdown 시 await. */
   executionPromise?: Promise<void>;
 
-  /** Execution ownership activation barrier; auto-resume ACK waits for this promise. */
-  executionActivationPromise?: Promise<void>;
-  executionActivationHandoff?: {
-    promise: Promise<void>;
-    resolve(): void;
-    reject(error: unknown): void;
-  };
+  /** Single execution ownership admission barrier. */
+  executionActivation?: ExecutionActivation;
 
   /** Runtime-only explicit cancel request serialized against turn finalization. */
   interruptRequest?: Promise<boolean>;

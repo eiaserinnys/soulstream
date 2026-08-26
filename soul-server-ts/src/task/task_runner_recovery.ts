@@ -62,9 +62,9 @@ export class TaskRunnerRecovery {
         ...(task.attachmentPaths ? { attachmentPaths: task.attachmentPaths } : {}),
         ...(task.contextItems ? { context: task.contextItems } : {}),
         source: "runner-recovery",
-      }, (resumedTask) => {
+      }, (resumedTask, activation) => {
         replacementCallbackStarted = true;
-        onResume(resumedTask);
+        onResume(resumedTask, activation);
       }, { publishUserMessage: false });
     } catch (error) {
       // Do not compensate a rejected running CAS: its canonical running owner

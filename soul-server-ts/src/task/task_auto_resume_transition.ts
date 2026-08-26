@@ -4,7 +4,13 @@ import type { AgentRegistry } from "../agent_registry.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 
-import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
+import {
+  createExecutionActivation,
+  type CallerInfo,
+  type ExecutionActivation,
+  type InterventionMessage,
+  type Task,
+} from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
@@ -17,7 +23,10 @@ import {
   persistUserMessageEvent,
 } from "./task_user_message_events.js";
 
-export type AutoResumeCallback = (task: Task) => void | Promise<void>;
+export type AutoResumeCallback = (
+  task: Task,
+  activation?: ExecutionActivation,
+) => void | Promise<void>;
 
 export interface AutoResumeTransitionDeps {
   logger: Logger;
@@ -56,12 +65,11 @@ export class AutoResumeTransition {
     } | undefined;
     const ownershipEnabled =
       typeof ownershipPersistence?.acquireExecutionOwnershipAndWaitForApplication === "function";
-    const activationHandoff = ownershipEnabled ? deferredActivationHandoff() : undefined;
-    if (activationHandoff) {
+    const activation = ownershipEnabled ? createExecutionActivation() : undefined;
+    if (activation) {
       task.status = "initializing";
-      task.executionActivationHandoff = activationHandoff;
-      task.executionActivationPromise = activationHandoff.promise;
-      void activationHandoff.promise.catch(() => {
+      task.executionActivation = activation;
+      void activation.promise.catch(() => {
         if (task.status !== "initializing") return;
         task.status = originalStatus;
         task.terminalEventId = originalTerminalEventId;
@@ -113,14 +121,14 @@ export class AutoResumeTransition {
         task.pendingExecutionExpectedTerminalEventId = expectedTerminalEventId;
       }
       prepareTaskForAutoResume(task, message, ownershipEnabled ? "initializing" : "running");
-      onResume(task);
+      onResume(task, activation);
       return { autoResumed: true };
     } catch (error) {
-      activationHandoff?.reject(error);
-      if (task.executionActivationHandoff === activationHandoff) {
-        task.executionActivationHandoff = undefined;
+      if (activation && task.executionActivation === activation) {
+        activation.reject(error);
+        task.executionActivation = undefined;
       }
-      if (activationHandoff && task.status === "initializing") {
+      if (activation && task.status === "initializing") {
         task.status = originalStatus;
         task.terminalEventId = originalTerminalEventId;
       }
@@ -253,14 +261,4 @@ function prepareTaskForAutoResume(
   task.terminationEventRecorded = false;
   task.terminalEventId = undefined;
   enqueueInterventionOnce(task, message);
-}
-
-function deferredActivationHandoff(): NonNullable<Task["executionActivationHandoff"]> {
-  let resolve!: () => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
 }

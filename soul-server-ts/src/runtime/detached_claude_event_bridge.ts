@@ -22,7 +22,11 @@ interface DetachedClaudeEventBridgeOptions {
 /** Maps child-owned Claude lifecycle events back onto the existing host publisher path. */
 export function createDetachedClaudeEventBridge(
   options: DetachedClaudeEventBridgeOptions,
-): (sessionId: string, event: ClaudeClientEvent, idempotencyKey?: string) => Promise<void> {
+): (
+  sessionId: string,
+  event: ClaudeClientEvent,
+  idempotencyKey?: string,
+) => Promise<() => Promise<void>> {
   return async (sessionId, event, idempotencyKey) => {
     const task = options.findTask(sessionId);
     const publisher = options.getPublisher();
@@ -31,15 +35,21 @@ export function createDetachedClaudeEventBridge(
         { sessionId, eventType: event.type },
         "Detached Claude runtime event has no in-memory task",
       );
-      return;
+      return async () => undefined;
     }
+    const detachedPayloads: SSEEventPayload[] = [];
     for (const [index, payload] of mapClaudeClientEvent(event).entries()) {
       if (idempotencyKey) {
         (payload as Record<string, unknown>)._dedupe_key = `${idempotencyKey}:${index}`;
       }
       if (isPostResultDrainEvent(event)) markPostResultDrainEvent(payload);
       await publisher.publishEngineEvent(task, payload);
-      await options.collectDetached(task, payload);
+      detachedPayloads.push(payload);
     }
+    return async () => {
+      for (const payload of detachedPayloads) {
+        await options.collectDetached(task, payload);
+      }
+    };
   };
 }

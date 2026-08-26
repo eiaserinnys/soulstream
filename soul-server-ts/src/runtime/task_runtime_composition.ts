@@ -88,7 +88,7 @@ export function composeTaskRuntime(
   // runner recovery scan borrows the same instance to honour the backoff.
   const executionOwnershipBackoff = new ExecutionOwnershipBackoff({ logger });
   let taskExecutor: TaskExecutor;
-  const onResume: StartExecutionCallback = (task) => {
+  const onResume: StartExecutionCallback = (task, activation) => {
     if (!task.profileId) {
       throw new Error(`Cannot auto-resume ${task.agentSessionId}: task is missing profileId`);
     }
@@ -98,7 +98,7 @@ export function composeTaskRuntime(
         `Cannot auto-resume ${task.agentSessionId}: unknown agent profile ${task.profileId}`,
       );
     }
-    return taskExecutor.startExecution(task, agent);
+    return taskExecutor.startExecution(task, agent, activation);
   };
 
   const completionDeliveryRepository = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED

@@ -158,17 +158,17 @@ export class TaskInterventionRoute {
       : initialMessage;
 
     let ledgerResultRecorded = false;
-    let deferredResumeTask: Task | undefined;
+    let deferredResume: { task: Task; activation?: Task["executionActivation"] } | undefined;
     let deferredResumeStarted = false;
     let activationCompleted = false;
     let notificationDisposition: "queued" | "auto_resume" | undefined;
     let notificationPublication: NotificationPublication | undefined;
     const startDeferredResumeOnce = (): void => {
-      if (deferredResumeStarted || !deferredResumeTask) return;
+      if (deferredResumeStarted || !deferredResume) return;
       deferredResumeStarted = true;
-      const resumedTask = deferredResumeTask;
-      deferredResumeTask = undefined;
-      onResume(resumedTask);
+      const resume = deferredResume;
+      deferredResume = undefined;
+      onResume(resume.task, resume.activation);
     };
     try {
       await this.awaitInitializingTask(task);
@@ -197,8 +197,8 @@ export class TaskInterventionRoute {
           queueIfUndelivered: request.queueIfRunning ?? true,
         });
       } else if (admission.kind === "admitted") {
-        const deferResumeUntilQueued: StartExecutionCallback = (resumedTask) => {
-          deferredResumeTask = resumedTask;
+        const deferResumeUntilQueued: StartExecutionCallback = (resumedTask, activation) => {
+          deferredResume = { task: resumedTask, activation };
         };
         result = await this.deps.autoResumeTransition.resume(
           task,
@@ -249,7 +249,7 @@ export class TaskInterventionRoute {
       // the ledger; starting first would leave a running task with no receipt.
       startDeferredResumeOnce();
       if ("autoResumed" in result && task.status === "initializing") {
-        const activation = task.executionActivationPromise;
+        const activation = task.executionActivation?.promise;
         if (!activation) {
           throw new Error(
             `auto-resume executor did not expose activation barrier for ${task.agentSessionId}`,
@@ -343,7 +343,7 @@ export class TaskInterventionRoute {
 
   private async awaitInitializingTask(task: Task): Promise<void> {
     if (task.status !== "initializing") return;
-    const activation = task.executionActivationPromise;
+    const activation = task.executionActivation?.promise;
     if (!activation) {
       throw new Error(
         `initializing task has no activation barrier: ${task.agentSessionId}`,

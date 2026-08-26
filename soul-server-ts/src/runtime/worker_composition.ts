@@ -220,7 +220,10 @@ export async function composeWorkerRuntime(
         maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
         turnInactivityTimeoutMs: env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
         logger,
-        detachedEventSink: publishDetachedClaudeEvent,
+        detachedEventSink: async (sessionId, event) => {
+          const collectDetached = await publishDetachedClaudeEvent(sessionId, event);
+          await collectDetached();
+        },
       })
     : {};
   const claudeSessionClientRegistry = claudeRuntime.registry;
