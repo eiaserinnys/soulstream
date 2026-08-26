@@ -58,12 +58,12 @@ describe("runnerless active task revival loop strict causal contract", () => {
     },
   );
 
-  it("reaches route, queue, executor, and failure-recovery product boundaries", async () => {
+  it("reaches the corrected route, executor, and failure-recovery boundaries", async () => {
     const product = await observeRevivalLoop();
     const counterfactual = await observeRevivalLoop(projectStartableCounterfactual);
     expect({
       route: product.productBoundaryCalls.route + counterfactual.productBoundaryCalls.route,
-      runningTransition: product.productBoundaryCalls.runningTransition,
+      runnerlessRunningTransition: product.productBoundaryCalls.runningTransition,
       autoResume: counterfactual.productBoundaryCalls.autoResume,
       executor: counterfactual.productBoundaryCalls.executor,
       failureRecovery:
@@ -71,7 +71,7 @@ describe("runnerless active task revival loop strict causal contract", () => {
         + counterfactual.productBoundaryCalls.failureRecovery,
     }).toEqual({
       route: 2,
-      runningTransition: 1,
+      runnerlessRunningTransition: 0,
       autoResume: 1,
       executor: 1,
       failureRecovery: 2,
