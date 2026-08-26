@@ -40,9 +40,7 @@ import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
-import { inspectProcessIdentity } from "../runner/runner_process_lock.js";
 import type { ExecutionOwnershipBackoff } from "./execution_ownership_backoff.js";
-import { ExecutionOwnershipExpiry } from "./execution_ownership_expiry.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
 import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
@@ -156,7 +154,6 @@ export class TaskExecutor {
   private readonly turnInputBuilder: TaskTurnInputBuilder;
   private readonly deliveryConsumption?: TaskDeliveryConsumption;
   private readonly executionOwnershipCoordinator: ExecutionOwnershipCoordinator;
-  private readonly executionOwnershipExpiry: ExecutionOwnershipExpiry;
   constructor(
     private readonly engineFactory: EngineFactory,
     private readonly db: SessionDB,
@@ -186,7 +183,7 @@ export class TaskExecutor {
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
     transientEventLogAggregator?: TransientEventLogAggregator,
     private readonly executionOwnershipBackoff?: ExecutionOwnershipBackoff,
-    executionOwnershipNodeId?: string,
+    private readonly executionOwnershipLeaseMs = 60_000,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -231,17 +228,6 @@ export class TaskExecutor {
       persistence,
       this.logger,
     );
-    this.executionOwnershipExpiry = new ExecutionOwnershipExpiry({
-      expireDeadOwner: (sessionId, input) =>
-        this.executionOwnershipCoordinator.expireDeadOwner(sessionId, input),
-      inspectProcess: inspectProcessIdentity,
-      isSessionExecutedHere: async (sessionId) => {
-        if (!executionOwnershipNodeId) return false;
-        const session = await this.db.getSession(sessionId);
-        return session?.node_id === executionOwnershipNodeId;
-      },
-      logger: this.logger,
-    });
   }
 
   /**
@@ -474,7 +460,7 @@ export class TaskExecutor {
         {
           ...descriptor,
           ...proof,
-          leaseExpiresAt: new Date(Date.now() + 60_000),
+          leaseExpiresAt: new Date(Date.now() + this.executionOwnershipLeaseMs),
           reviewState: task.reviewState ?? "not_required",
           ...(task.pendingExecutionExpectedTerminalEventId === undefined
             ? {}
@@ -529,7 +515,7 @@ export class TaskExecutor {
     application: Awaited<ReturnType<ExecutionOwnershipCoordinator["acquire"]>>,
   ): ExecutionOwnershipConflictError {
     const ownership = application.canonicalExecutionOwnership;
-    const retryAt = new Date(Date.now() + 60_000).toISOString();
+    const retryAt = new Date(Date.now() + this.executionOwnershipLeaseMs).toISOString();
     return new ExecutionOwnershipConflictError(
       sessionId,
       retryAt,
@@ -730,7 +716,7 @@ export class TaskExecutor {
             manifestId,
             runtimeEnvIdentity,
             ...proof,
-            leaseExpiresAt: new Date(Date.now() + 60_000),
+            leaseExpiresAt: new Date(Date.now() + this.executionOwnershipLeaseMs),
             reviewState: task.reviewState ?? "not_required",
           },
         );

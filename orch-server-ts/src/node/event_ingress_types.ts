@@ -245,6 +245,43 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }
+  if (value.kind === "execution_renew") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "ownership_generation", "owner_kind", "manifest_id",
+        "runtime_env_identity", "registration_id", "pid", "start_identity",
+        "execution_command_id", "lease_expires_at", "updated_at",
+      ],
+      field,
+    );
+    const ownerKind = nonEmptyString(value.owner_kind, `${field}.owner_kind`);
+    if (!["runner_process", "adopted_runner", "in_process"].includes(ownerKind)) {
+      throw new EventIngressValidationError(`${field}.owner_kind is invalid`);
+    }
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(
+        value.ownership_generation,
+        `${field}.ownership_generation`,
+      ),
+      owner_kind: ownerKind as "runner_process" | "adopted_runner" | "in_process",
+      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      runtime_env_identity: nonEmptyString(
+        value.runtime_env_identity,
+        `${field}.runtime_env_identity`,
+      ),
+      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
+      pid: positiveInteger(value.pid, `${field}.pid`),
+      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
+      lease_expires_at: isoTimestamp(value.lease_expires_at, `${field}.lease_expires_at`),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
   if (value.kind === "execution_reserve") {
     assertExactKeys(
       value,

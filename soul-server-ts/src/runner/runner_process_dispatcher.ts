@@ -99,7 +99,12 @@ interface RequestLifetime {
 
 export interface RunnerHostCall {
   correlationId: string;
-  service: "session_store" | "claude_runtime" | "detached_event" | "snapshot";
+  service:
+    | "session_store"
+    | "claude_runtime"
+    | "detached_event"
+    | "execution_ownership"
+    | "snapshot";
   operation: string;
   args: unknown[];
 }

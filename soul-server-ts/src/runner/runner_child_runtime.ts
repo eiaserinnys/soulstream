@@ -67,6 +67,7 @@ export class RunnerChildRuntime {
   private lifecycle!: RunnerSqliteLifecycle;
   private lock!: RunnerWriterLock;
   private dispatcher!: InProcessRunnerCommandDispatcher;
+  private host!: RunnerHostRequestClient;
   private readonly closedPromise: Promise<void>;
   private resolveClosed!: () => void;
   private closing = false;
@@ -132,6 +133,7 @@ export class RunnerChildRuntime {
       (drop) => this.logDroppedFrame(drop),
     );
     const host = new RunnerHostRequestClient(() => this.endpoint.currentConnection);
+    this.host = host;
     this.dispatcher = new InProcessRunnerCommandDispatcher(
       this.deps.createEngine(this.config, host, this.logger),
       { onFrameDropped: (drop) => this.logDroppedFrame(drop) },
@@ -609,9 +611,16 @@ export class RunnerChildRuntime {
     this.lifecycle.progress(this.activeCommandId, progressedAt);
   }
 
-  private recordLiveness(): void {
+  private async recordLiveness(): Promise<void> {
     if (!this.activeCommandId || !this.lifecycle.read()) return;
-    this.lifecycle.liveness(this.activeCommandId, new Date().toISOString());
+    const observedAt = new Date().toISOString();
+    this.lifecycle.liveness(this.activeCommandId, observedAt);
+    await this.host.call(
+      "execution_ownership",
+      "renew",
+      [this.config.sessionId, observedAt],
+      { timeoutMs: Math.min(this.config.runnerLeaseTimeoutMs ?? 30_000, 30_000) },
+    );
   }
 
   private startLiveness(): void {
@@ -620,11 +629,9 @@ export class RunnerChildRuntime {
     if (leaseTimeoutMs === undefined) return;
     const intervalMs = runnerLivenessIntervalMs(leaseTimeoutMs);
     this.livenessTimer = setInterval(() => {
-      try {
-        this.recordLiveness();
-      } catch (error) {
+      void this.recordLiveness().catch((error) => {
         this.logger.error({ err: error }, "Runner lifecycle liveness update failed");
-      }
+      });
     }, intervalMs);
     this.livenessTimer.unref?.();
   }

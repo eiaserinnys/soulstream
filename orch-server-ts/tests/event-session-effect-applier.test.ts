@@ -11,6 +11,7 @@ describe("applyEventSessionEffect", () => {
     ["rotate_backend_session_id", "session_rotate_claude_id"],
     ["running_transition", "session_apply_running_transition"],
     ["execution_acquire", "session_acquire_execution_ownership"],
+    ["execution_renew", "session_renew_execution_ownership"],
     ["execution_reserve", "session_reserve_execution_ownership"],
     ["execution_prove", "session_prove_execution_ownership"],
     ["execution_adopt_reserve", "session_reserve_execution_adoption"],
@@ -31,7 +32,8 @@ describe("applyEventSessionEffect", () => {
       if (statement.includes("FROM session_execution_ownerships")) {
         return [canonicalOwnershipRow()];
       }
-      if (statement.includes("session_acquire_execution_ownership")) {
+      if (statement.includes("session_acquire_execution_ownership")
+        || statement.includes("session_renew_execution_ownership")) {
         return [{
           ...canonicalRow(true),
           execution_generation: 1,
@@ -59,7 +61,9 @@ describe("applyEventSessionEffect", () => {
     const ownershipEffect = kind.startsWith("execution_")
       && kind !== "execution_backfill";
     expect(statements).toHaveLength(
-      ownershipEffect && kind !== "execution_acquire" ? 2 : 1,
+      ownershipEffect
+        && kind !== "execution_acquire"
+        && kind !== "execution_renew" ? 2 : 1,
     );
     expect(statements[0]).toContain(procedure);
     if (
@@ -209,6 +213,28 @@ describe("applyEventSessionEffect", () => {
       },
     });
   });
+
+  it("returns no owner claim when a stale sessions-row renewal updates zero rows", async () => {
+    const sql = (async () => [{
+      ...canonicalRow(false),
+      execution_generation: 8,
+      execution_lease_expires_at: new Date("2026-08-06T00:01:00.000Z"),
+    }]) as EventIngressQuerySql;
+    const renewal = {
+      ...effect("execution_renew"),
+      ownership_generation: 7,
+    } as EventSessionEffect;
+
+    await expect(applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 42,
+      envelope: envelope(renewal),
+      effect: renewal,
+    })).resolves.toMatchObject({
+      applied: false,
+      canonicalExecutionOwnership: null,
+    });
+  });
 });
 
 function canonicalRow(
@@ -275,6 +301,19 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     execution_command_id: "owner-1",
     lease_expires_at: "2026-08-06T00:01:00.000Z",
     review_state: "not_required",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_renew") return {
+    kind,
+    ownership_generation: 1,
+    owner_kind: "runner_process",
+    manifest_id: "release-1",
+    runtime_env_identity: "runtime-env-1",
+    registration_id: "registration-1",
+    pid: 123,
+    start_identity: "start-1",
+    execution_command_id: "owner-1",
+    lease_expires_at: "2026-08-06T00:01:00.000Z",
     updated_at: "2026-08-06T00:00:00.000Z",
   };
   if (kind === "execution_reserve") return {

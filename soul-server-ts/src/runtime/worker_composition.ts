@@ -259,6 +259,23 @@ export async function composeWorkerRuntime(
     observeClaudeRuntime: claudeRuntime.backgroundLifecycle
       ? (sessionId, event, idempotencyKey) =>
         claudeRuntime.backgroundLifecycle!.observe(sessionId, event, idempotencyKey) : undefined,
+    renewExecutionOwnership: async (task, renewedAt) => {
+      const ownership = task.executionOwnership;
+      if (!ownership) {
+        throw new Error(`Execution ownership unavailable for renewal: ${task.agentSessionId}`);
+      }
+      const application = await persistence.renewExecutionOwnershipAndWaitForApplication(
+        task.agentSessionId,
+        {
+          ...ownership,
+          leaseExpiresAt: new Date(
+            renewedAt.getTime() + env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+          ),
+          updatedAt: renewedAt,
+        },
+      );
+      return application.applied;
+    },
     releaseManifest: params.releaseActivationState.manifest,
   });
   params.releaseActivationState.markPrewarmed({

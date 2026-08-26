@@ -521,7 +521,7 @@ describe("EventPersistence durable ingress", () => {
     });
   });
 
-  it("publishes dead-owner expiry with the exact generation and process identity", async () => {
+  it("publishes sessions-row renewal with the exact generation and complete identity", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
@@ -533,23 +533,34 @@ describe("EventPersistence durable ingress", () => {
       ingress.pump,
     );
 
-    await ep.expireDeadExecutionOwnerAndWaitForApplication("sess-1", {
+    await ep.renewExecutionOwnershipAndWaitForApplication("sess-1", {
       ownershipGeneration: 17,
+      ownerKind: "runner_process",
+      manifestId: "manifest-1",
+      runtimeEnvIdentity: "runtime-1",
+      registrationId: "registration-1",
       pid: 968_764,
       startIdentity: "start-1",
-      failureReason: "owner process is gone",
+      executionCommandId: "owner-1",
+      leaseExpiresAt: new Date("2026-08-21T00:30:00.000Z"),
       updatedAt: new Date("2026-08-21T00:00:00.000Z"),
     });
 
     expect(ingress.append).toHaveBeenCalledWith(expect.objectContaining({
       session_id: "sess-1",
-      semantic_dedupe_key: "execution_ownership:sess-1:expire-dead-owner:17",
+      semantic_dedupe_key:
+        "execution_ownership:sess-1:renew:17:2026-08-21T00:00:00.000Z",
       session_effect: {
-        kind: "execution_expire_dead_owner",
+        kind: "execution_renew",
         ownership_generation: 17,
+        owner_kind: "runner_process",
+        manifest_id: "manifest-1",
+        runtime_env_identity: "runtime-1",
+        registration_id: "registration-1",
         pid: 968_764,
         start_identity: "start-1",
-        failure_reason: "owner process is gone",
+        execution_command_id: "owner-1",
+        lease_expires_at: "2026-08-21T00:30:00.000Z",
         updated_at: "2026-08-21T00:00:00.000Z",
       },
     }));

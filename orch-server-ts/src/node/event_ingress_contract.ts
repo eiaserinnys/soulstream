@@ -31,6 +31,19 @@ export type EventSessionEffect =
       updated_at: string;
     }
   | {
+      kind: "execution_renew";
+      ownership_generation: number;
+      owner_kind: "runner_process" | "adopted_runner" | "in_process";
+      manifest_id: string;
+      runtime_env_identity: string;
+      registration_id: string;
+      pid: number;
+      start_identity: string;
+      execution_command_id: string;
+      lease_expires_at: string;
+      updated_at: string;
+    }
+  | {
       kind: "execution_reserve";
       ownership_generation: number;
       owner_kind: "runner_process" | "adopted_runner" | "in_process";

@@ -88,6 +88,45 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
           },
     };
   }
+  if (effect.kind === "execution_renew") {
+    const rows = await sql<RenewTransitionRow[]>`
+      SELECT * FROM session_renew_execution_ownership(
+        ${envelope.session_id},
+        ${effect.ownership_generation},
+        ${effect.manifest_id},
+        ${effect.runtime_env_identity},
+        ${effect.registration_id},
+        ${effect.pid},
+        ${effect.start_identity},
+        ${effect.execution_command_id},
+        ${new Date(effect.lease_expires_at)},
+        ${new Date(effect.updated_at)}
+      )
+    `;
+    const application = canonicalTransitionApplication(rows, "execution renew");
+    const row = rows[0]!;
+    const generation = Number(row.execution_generation);
+    if (!Number.isSafeInteger(generation) || generation < 0) {
+      throw new Error("execution renew returned an invalid generation");
+    }
+    return {
+      ...application,
+      canonicalExecutionOwnership: application.applied
+        ? {
+            ownership_generation: generation,
+            owner_kind: effect.owner_kind,
+            manifest_id: effect.manifest_id,
+            runtime_env_identity: effect.runtime_env_identity,
+            registration_id: effect.registration_id,
+            pid: effect.pid,
+            start_identity: effect.start_identity,
+            execution_command_id: effect.execution_command_id,
+            phase: "active",
+            failure_reason: null,
+          }
+        : null,
+    };
+  }
   if (effect.kind === "execution_reserve") {
     const rows = effect.runtime_env_identity === undefined
       ? await sql<CanonicalTransitionRow[]>`
@@ -408,6 +447,8 @@ type AcquireTransitionRow = CanonicalTransitionRow & {
   execution_generation: string | number;
   execution_lease_expires_at: Date | string | null;
 };
+
+type RenewTransitionRow = AcquireTransitionRow;
 
 async function applyTerminalTransition(
   sql: EventIngressQuerySql,

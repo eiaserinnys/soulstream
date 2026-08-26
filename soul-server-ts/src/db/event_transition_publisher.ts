@@ -99,26 +99,37 @@ export abstract class EventTransitionPublisher {
     );
   }
 
-  async expireDeadExecutionOwnerAndWaitForApplication(
+  async renewExecutionOwnershipAndWaitForApplication(
     sessionId: string,
     input: {
       ownershipGeneration: number;
+      ownerKind: ExecutionOwnerKind;
+      manifestId: string;
+      runtimeEnvIdentity: string;
+      registrationId: string;
       pid: number;
       startIdentity: string;
-      failureReason: string;
+      executionCommandId: string;
+      leaseExpiresAt: Date;
       updatedAt?: Date;
     },
   ): Promise<EventSessionTransitionApplication> {
+    const updatedAt = input.updatedAt ?? new Date();
     return await this.enqueueExecutionEffectAndWait(
       sessionId,
-      `expire-dead-owner:${input.ownershipGeneration}`,
+      `renew:${input.ownershipGeneration}:${updatedAt.toISOString()}`,
       {
-        kind: "execution_expire_dead_owner",
+        kind: "execution_renew",
         ownership_generation: input.ownershipGeneration,
+        owner_kind: input.ownerKind,
+        manifest_id: input.manifestId,
+        runtime_env_identity: input.runtimeEnvIdentity,
+        registration_id: input.registrationId,
         pid: input.pid,
         start_identity: input.startIdentity,
-        failure_reason: input.failureReason,
-        updated_at: (input.updatedAt ?? new Date()).toISOString(),
+        execution_command_id: input.executionCommandId,
+        lease_expires_at: input.leaseExpiresAt.toISOString(),
+        updated_at: updatedAt.toISOString(),
       },
     );
   }
@@ -202,7 +213,7 @@ export abstract class EventTransitionPublisher {
     transitionId: string,
     effect: Extract<EventOutboxSessionEffect, { kind:
       | "execution_acquire"
-      | "execution_expire_dead_owner"
+      | "execution_renew"
       | "execution_backfill" }>,
   ): Promise<EventSessionTransitionApplication> {
     const event = {

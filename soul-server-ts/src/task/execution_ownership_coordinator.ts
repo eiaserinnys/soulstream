@@ -28,18 +28,17 @@ export class ExecutionOwnershipCoordinator {
     return application;
   }
 
-  async expireDeadOwner(
+  async renew(
     sessionId: string,
-    input: Parameters<EventPersistence["expireDeadExecutionOwnerAndWaitForApplication"]>[1],
+    input: Parameters<EventPersistence["renewExecutionOwnershipAndWaitForApplication"]>[1],
   ): Promise<EventSessionTransitionApplication> {
     const application = await this.persistence
-      .expireDeadExecutionOwnerAndWaitForApplication(sessionId, input);
+      .renewExecutionOwnershipAndWaitForApplication(sessionId, input);
     this.logTransition(
-      "expire_dead_owner",
+      "renew",
       sessionId,
       input.ownershipGeneration,
       application,
-      input.failureReason,
     );
     return application;
   }
@@ -47,7 +46,7 @@ export class ExecutionOwnershipCoordinator {
   private logTransition(
     operation:
       | "acquire"
-      | "expire_dead_owner",
+      | "renew",
     sessionId: string,
     ownershipGeneration: number,
     application: EventSessionTransitionApplication,

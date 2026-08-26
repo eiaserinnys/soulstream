@@ -74,6 +74,7 @@
     { "id": "070_release_manifest_activation_receipts.sql", "sha256": "18d0f33d18e25289b0b87d422e64747c741f007e0152c3298fafe46c26a40e45", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "071_execution_dead_owner_expiry.sql", "sha256": "7bcb74bb68d95ece7ba29e5240abd85caa111c819c802a59ddf2a255bc4f5176", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "072_owner_null_backfill_identity_guard.sql", "sha256": "f445fd51e8d37f8587b88e441acefaa09549d819071e75ca5d1de0737d3e5202", "destructive": false, "rollback_compatibility": "previous_release_safe" },
-    { "id": "073_sessions_execution_owner_v1.sql", "sha256": "a9458d0221529cd85297730dddcfc1205ce938bd6888214c94d6904ea9b5d034", "destructive": false, "rollback_compatibility": "restore_required" }
+    { "id": "073_sessions_execution_owner_v1.sql", "sha256": "a9458d0221529cd85297730dddcfc1205ce938bd6888214c94d6904ea9b5d034", "destructive": false, "rollback_compatibility": "restore_required" },
+    { "id": "074_sessions_execution_owner_renew.sql", "sha256": "f2deb23e05e33a4ae3fbddea2116696312ecec5a8801763896b5ad5c42d63d7d", "destructive": false, "rollback_compatibility": "previous_release_safe" }
   ]
 }

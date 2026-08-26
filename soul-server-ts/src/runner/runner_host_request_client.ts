@@ -12,6 +12,7 @@ export type RunnerHostService =
   | "session_store"
   | "claude_runtime"
   | "detached_event"
+  | "execution_ownership"
   | "snapshot";
 
 export interface RunnerHostRequestOptions {
