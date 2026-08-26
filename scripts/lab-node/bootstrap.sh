@@ -110,16 +110,18 @@ MCP_REQUIRE_AUTH=false
 EOF
 chmod 600 "$LAB_REPO/.env.soul-server-ts"
 
-available_mb="$(free -m | awk '/^Mem:/{print $7}')"
-if (( available_mb < 2000 )); then
-  printf 'available memory is %sMB; waiting 60 seconds before one retry\n' "$available_mb"
-  sleep 60
+if [[ "${SOULSTREAM_HEAVY_LOCK_HELD:-}" != "1" ]]; then
   available_mb="$(free -m | awk '/^Mem:/{print $7}')"
-fi
-(( available_mb >= 2000 )) || fail "available memory remains below 2000MB"
+  if (( available_mb < 2000 )); then
+    printf 'available memory is %sMB; waiting 60 seconds before one retry\n' "$available_mb"
+    sleep 60
+    available_mb="$(free -m | awk '/^Mem:/{print $7}')"
+  fi
+  (( available_mb >= 2000 )) || fail "available memory remains below 2000MB"
 
-exec 9>/tmp/soulstream-heavy-verify.lock
-flock -w 300 9 || fail "timed out waiting for the host verification lock"
+  exec 9>/tmp/soulstream-heavy-verify.lock
+  flock -w 300 9 || fail "timed out waiting for the host verification lock"
+fi
 timeout 300s env NODE_ENV=development pnpm --dir "$LAB_REPO" install --frozen-lockfile
 timeout 300s node "$LAB_REPO/soul-server-ts/scripts/build_with_release_env.mjs" \
   --env-file "$LAB_REPO/.env.soul-server-ts"

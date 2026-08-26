@@ -105,8 +105,18 @@ Run one scenario or the complete prioritized set:
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario dead-owner
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario runner-death-live-host
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh scenario activate-rollback
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh faults
 /home/eias/services/soulstream-lab/repo/scripts/lab-node/fault-harness.sh all
 ```
+
+`faults` runs F1, F11, F9, dead-owner, and F7. `all` retains the complete
+canonical inventory. Both suite commands run every scenario through a separate
+`clean-run.sh scenario ...` lifecycle. The unchanged 180-second hard ceiling is
+therefore owned by each scenario process rather than by the aggregate. A
+timeout is recorded for that scenario and cannot prevent any later scenario
+from starting. Each scenario receives a fresh database and mutable-state reset,
+and the ordered aggregate is preserved as
+`state/fault-harness/aggregate-<command>-<timestamp>.json`.
 
 `all` first runs steady-state, restart-adopt, and restart-intervention-window.
 The transparency oracle is authored before execution from the required normal
@@ -143,6 +153,28 @@ The bounded traffic loop supports at most two concurrent sessions:
 The harness exits nonzero when a scenario verdict or invariant fails. It may
 write only the dedicated lab PostgreSQL container and may signal only PIDs
 whose command line and runtime root match the lab clone.
+
+## Idempotent clean run
+
+Use `clean-run.sh` when the result must not inherit any earlier lab execution:
+
+```bash
+/home/eias/services/soulstream-lab/repo/scripts/lab-node/clean-run.sh all
+```
+
+With no arguments it also runs `all`. The command owns the host verification
+lock for the complete reset, build, start, harness, and stop sequence. Before
+resetting anything it fetches `origin/main` and prints the checkout commit,
+fresh `origin/main` commit, branch, and dirty flag. A checkout that intentionally
+tests an unmerged commit is reported rather than silently moved.
+
+The reset stops only lab-owned process groups, requires the PostgreSQL
+container and volume labels, recreates the lab database, and empties runtime
+logs, outbox, runner state, workspace, PID files, release artifacts, caches,
+and migration journals. The lab OAuth credential and completed fault-harness
+evidence are preserved. Bootstrap then rebuilds the bundle from the reported
+checkout, and the existing harness provenance and dirty-baseline preflight
+remain authoritative post-reset guards.
 
 ### Proving the judges still work
 
