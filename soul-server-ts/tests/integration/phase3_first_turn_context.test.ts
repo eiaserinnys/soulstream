@@ -155,6 +155,7 @@ describe("Phase 3 first-turn page context integration", () => {
             order.push("context");
           });
         },
+        withSessionRecoveryLease: async (_sessionId, operation) => await operation(),
       },
       logger,
     });
