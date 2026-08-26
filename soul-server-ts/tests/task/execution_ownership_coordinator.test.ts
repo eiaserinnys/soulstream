@@ -1,34 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { ExecutionOwnershipCoordinator } from
   "../../src/task/execution_ownership_coordinator.js";
 
 describe("ExecutionOwnershipCoordinator", () => {
-  it("serializes attach and recovery for one session while leaving other sessions independent", async () => {
-    const coordinator = new ExecutionOwnershipCoordinator({} as never);
-    const order: string[] = [];
-    let releaseAttach!: () => void;
-    const attachBlocked = new Promise<void>((resolve) => { releaseAttach = resolve; });
-
-    const attach = coordinator.withSessionLease("session-a", "attach", async () => {
-      order.push("attach:start");
-      await attachBlocked;
-      order.push("attach:end");
-    });
-    const recovery = coordinator.withSessionLease("session-a", "recovery", async () => {
-      order.push("recovery");
-    });
-    const other = coordinator.withSessionLease("session-b", "recovery", async () => {
-      order.push("other");
-    });
-
-    await vi.waitFor(() => expect(order).toEqual(["attach:start", "other"]));
-    releaseAttach();
-    await Promise.all([attach, recovery, other]);
-
-    expect(order).toEqual(["attach:start", "other", "attach:end", "recovery"]);
-  });
-
   it("accepts applied=false only when the canonical owner token and phase match", () => {
     const coordinator = new ExecutionOwnershipCoordinator({} as never);
     const application = {

@@ -1828,11 +1828,6 @@ function makeSubject(
     taskExecutor: {
       recoverRegisteredRunner,
       restartRegisteredRunner,
-      restartRegisteredRunnerUnderRecoveryLease:
-        overrides.taskExecutor?.restartRegisteredRunnerUnderRecoveryLease
-        ?? overrides.taskExecutor?.restartRegisteredRunner
-        ?? restartRegisteredRunner,
-      withSessionRecoveryLease: async (_sessionId, operation) => await operation(),
       ...overrides.taskExecutor,
     },
     taskManager: {

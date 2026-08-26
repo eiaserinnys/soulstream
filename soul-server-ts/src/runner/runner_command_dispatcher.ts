@@ -6,7 +6,10 @@ import type {
   EnginePort,
   EngineUserInput,
 } from "../engine/protocol.js";
-import type { ExecutionIdentityProof } from "../task/execution_ownership.js";
+import {
+  newExecutionOwnerToken,
+  type ExecutionIdentityProof,
+} from "../task/execution_ownership.js";
 import { inspectProcessIdentity } from "./runner_process_lock.js";
 
 import {
@@ -62,7 +65,7 @@ export interface RunnerCommandDispatcher {
   ): Promise<EngineInterventionResult>;
   discardIntervention?(interventionId: string): Promise<void>;
   recoverPendingInterventions?(): Promise<RunnerPendingIntervention[]>;
-  prepareExecutionIdentity?(commandId?: string): Promise<ExecutionIdentityProof>;
+  prepareExecutionIdentity?(ownerToken?: string): Promise<ExecutionIdentityProof>;
   rollbackExecutionIdentity?(proof: ExecutionIdentityProof): Promise<void>;
 }
 
@@ -93,7 +96,6 @@ export interface RunnerPendingIntervention {
 export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher {
   private readonly eventStreams = new Map<string, InProcessRunnerFrameChannel>();
   private activeExecuteCommandId: string | undefined;
-  private preparedExecuteCommandId: string | undefined;
   private readonly attachedRegistrationId = `in-process:${randomUUID()}`;
 
   constructor(
@@ -163,8 +165,7 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   }
 
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
-    const commandId = this.preparedExecuteCommandId ?? `execute:${randomUUID()}`;
-    this.preparedExecuteCommandId = undefined;
+    const commandId = `execute:${randomUUID()}`;
     const command = executeCommandFrame(commandId, params);
     const result = this.dispatch(command);
     return this.executeCommand(commandId, result);
@@ -177,18 +178,16 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     ));
   }
 
-  async prepareExecutionIdentity(commandId?: string): Promise<ExecutionIdentityProof> {
+  async prepareExecutionIdentity(ownerToken?: string): Promise<ExecutionIdentityProof> {
     const observed = await inspectProcessIdentity(process.pid);
     if (!observed.alive || !observed.startIdentity) {
       throw new Error("in-process runner identity unavailable");
     }
-    const executionCommandId = commandId ?? `execute:${randomUUID()}`;
-    this.preparedExecuteCommandId = executionCommandId;
     return {
       registrationId: this.attachedRegistrationId,
       pid: process.pid,
       startIdentity: observed.startIdentity,
-      executionCommandId,
+      executionCommandId: ownerToken ?? newExecutionOwnerToken(),
     };
   }
 

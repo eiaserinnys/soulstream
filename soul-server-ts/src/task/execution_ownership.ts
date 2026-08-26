@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import type { TaskStatus, TerminationReason } from "./task_models.js";
 
@@ -25,6 +25,17 @@ export interface ExecutionIdentityProof {
   pid: number;
   startIdentity: string;
   executionCommandId: string;
+}
+
+/**
+ * Stable correlation token for one database-owned execution generation.
+ *
+ * This is deliberately not a runner command id. Runner command ids identify
+ * individual execute/recover frames and may change many times while this token
+ * remains fixed on the sessions owner row.
+ */
+export function newExecutionOwnerToken(): string {
+  return `owner:${randomUUID()}`;
 }
 
 export interface ExecutionOwnershipToken extends ExecutionIdentityProof {

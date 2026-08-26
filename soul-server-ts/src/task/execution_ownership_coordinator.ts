@@ -9,13 +9,6 @@ import type {
   ExecutionOwnershipPhase,
 } from "./execution_ownership.js";
 
-export type ExecutionOwnershipOperation =
-  | "reserve"
-  | "spawn"
-  | "attach"
-  | "adopt"
-  | "recovery";
-
 export interface ExpectedCanonicalExecutionOwnership {
   ownershipGeneration: number;
   ownerKind?: CanonicalExecutionOwnership["ownerKind"];
@@ -30,38 +23,13 @@ export interface ExpectedCanonicalExecutionOwnership {
 }
 
 /**
- * One host-side entry gate for all execution ownership paths.
- *
- * The promise tail is only a local optimization. Every caller must still use
- * the generation-fenced persistence transitions; their canonical owner token
- * is the final authority after restart or cross-process races.
+ * One persistence boundary for all execution ownership paths.
  */
 export class ExecutionOwnershipCoordinator {
-  private readonly tails = new Map<string, Promise<void>>();
-
   constructor(
     readonly persistence: EventPersistence,
     private readonly logger?: Pick<Logger, "info">,
   ) {}
-
-  async withSessionLease<T>(
-    sessionId: string,
-    _operation: ExecutionOwnershipOperation,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    const previous = this.tails.get(sessionId) ?? Promise.resolve();
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => { release = resolve; });
-    const tail = previous.then(() => current);
-    this.tails.set(sessionId, tail);
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (this.tails.get(sessionId) === tail) this.tails.delete(sessionId);
-    }
-  }
 
   async reserve(
     sessionId: string,
