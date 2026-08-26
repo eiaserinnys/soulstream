@@ -18,6 +18,7 @@ const directory = dirname(fileURLToPath(import.meta.url));
 const shellScripts = [
   "common.sh",
   "bootstrap.sh",
+  "clean-run.sh",
   "start.sh",
   "stop.sh",
   "restart-node.sh",
@@ -25,6 +26,109 @@ const shellScripts = [
   "smoke.sh",
   "fault-harness.sh",
 ];
+
+test("clean-run resets before bootstrap and always stops the isolated stack", () => {
+  const cleanRun = readFileSync(join(directory, "clean-run.sh"), "utf8");
+  const provenanceAt = cleanRun.indexOf("print_fresh_lab_provenance");
+  const resetAt = cleanRun.indexOf("reset_lab_mutable_state");
+  const bootstrapAt = cleanRun.indexOf('"$SCRIPT_DIR/bootstrap.sh"');
+  const startAt = cleanRun.indexOf('"$SCRIPT_DIR/start.sh"');
+  const harnessAt = cleanRun.indexOf('"$SCRIPT_DIR/fault-harness.sh"');
+
+  assert.ok(provenanceAt >= 0, "clean-run does not print fresh provenance");
+  assert.ok(resetAt > provenanceAt, "clean-run reset must follow provenance output");
+  assert.ok(bootstrapAt > resetAt, "bootstrap must follow reset");
+  assert.ok(startAt > bootstrapAt, "start must follow bootstrap");
+  assert.ok(harnessAt > startAt, "harness must follow start");
+  assert.match(cleanRun, /trap cleanup EXIT/);
+  assert.match(cleanRun, /LAB_CLAUDE_AUTH_SOURCE="\$LAB_CLAUDE_AUTH_FILE"/);
+});
+
+test("mutable-state reset preserves only the lab credential", () => {
+  const root = mkdtempSync(join(tmpdir(), "lab-clean-state-"));
+  try {
+    for (const path of ["state/config", "logs", "outbox", "runner-state", "workspace"]) {
+      mkdirSync(join(root, path), { recursive: true });
+      writeFileSync(join(root, path, "residue"), "dirty\n");
+    }
+    writeFileSync(join(root, "state", "claude-auth.json"), "lab-auth\n");
+
+    const outcome = spawnSync(
+      "bash",
+      [
+        "-c",
+        'source "$1"; LAB_ROOT="$2"; LAB_DEFAULT_ROOT="$2"; reset_lab_mutable_state',
+        "lab-test",
+        join(directory, "common.sh"),
+        root,
+      ],
+      { encoding: "utf8", timeout: 10_000 },
+    );
+    assert.equal(outcome.status, 0, outcome.stderr);
+    assert.equal(readFileSync(join(root, "state", "claude-auth.json"), "utf8"), "lab-auth\n");
+    for (const path of ["logs", "outbox", "runner-state", "workspace"]) {
+      assert.deepEqual(execFileSync("find", [join(root, path), "-mindepth", "1"], {
+        encoding: "utf8",
+      }).trim(), "");
+    }
+    assert.equal(existsSync(join(root, "state", "config")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("provenance output fetches origin main without moving the checkout", () => {
+  const root = mkdtempSync(join(tmpdir(), "lab-clean-provenance-"));
+  const origin = join(root, "origin.git");
+  const seed = join(root, "seed");
+  const clone = join(root, "clone");
+  try {
+    execFileSync("git", ["init", "--bare", origin], { stdio: "pipe" });
+    execFileSync("git", ["init", seed], { stdio: "pipe" });
+    execFileSync("git", ["-C", seed, "config", "user.email", "lab@example.invalid"]);
+    execFileSync("git", ["-C", seed, "config", "user.name", "Lab Test"]);
+    writeFileSync(join(seed, "fixture.txt"), "first\n");
+    execFileSync("git", ["-C", seed, "add", "fixture.txt"]);
+    execFileSync("git", ["-C", seed, "commit", "-m", "first"], { stdio: "pipe" });
+    execFileSync("git", ["-C", seed, "branch", "-M", "main"]);
+    execFileSync("git", ["-C", seed, "remote", "add", "origin", origin]);
+    execFileSync("git", ["-C", seed, "push", "origin", "main"], { stdio: "pipe" });
+    execFileSync("git", ["--git-dir", origin, "symbolic-ref", "HEAD", "refs/heads/main"]);
+    execFileSync("git", ["clone", origin, clone], { stdio: "pipe" });
+    const checkout = execFileSync("git", ["-C", clone, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+
+    writeFileSync(join(seed, "fixture.txt"), "second\n");
+    execFileSync("git", ["-C", seed, "add", "fixture.txt"]);
+    execFileSync("git", ["-C", seed, "commit", "-m", "second"], { stdio: "pipe" });
+    execFileSync("git", ["-C", seed, "push", "origin", "main"], { stdio: "pipe" });
+    const freshOriginMain = execFileSync("git", ["-C", seed, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+
+    const outcome = spawnSync(
+      "bash",
+      [
+        "-c",
+        'source "$1"; LAB_REPO="$2"; print_fresh_lab_provenance',
+        "lab-test",
+        join(directory, "common.sh"),
+        clone,
+      ],
+      { encoding: "utf8", timeout: 10_000 },
+    );
+    assert.equal(outcome.status, 0, outcome.stderr);
+    assert.match(outcome.stdout, new RegExp(`checkout=${checkout}`));
+    assert.match(outcome.stdout, new RegExp(`origin_main=${freshOriginMain}`));
+    assert.equal(
+      execFileSync("git", ["-C", clone, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+      checkout,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("all lab shell scripts pass bash syntax validation", () => {
   for (const script of shellScripts) {
