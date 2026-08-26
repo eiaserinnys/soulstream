@@ -21,18 +21,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     lastEventId: 7,
     lastReadEventId: 3,
     interventionQueue: [],
-    runner: liveRunner(),
     ...overrides,
-  };
-}
-
-function liveRunner(): NonNullable<Task["runner"]> {
-  return {
-    engine: {} as never,
-    dispatcher: {
-      hasActiveExecution: vi.fn().mockReturnValue(true),
-    } as never,
-    eventPersistence: "host",
   };
 }
 
@@ -722,13 +711,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }), onResume);
   });
 
-  it("auto-resumes hydrated active tasks that have no runner consumer", async () => {
+  it("routes hydrated running tasks to the existing runner queue", async () => {
     const hydrated = makeTask({
       agentSessionId: "sess-stale-running",
       status: "running",
       hydratedFromDb: true,
       codexThreadId: "thr-stale",
-      runner: undefined,
     });
     const { route, tasks, loadEvictedTask, runningInterventionTransition, autoResumeTransition } =
       makeSubject();
@@ -738,17 +726,24 @@ describe("TaskInterventionRoute.addIntervention", () => {
       agentSessionId: "sess-stale-running",
       text: "resume stale running",
       user: "alice",
-    }, vi.fn())).resolves.toEqual({ autoResumed: true });
+    }, vi.fn())).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
+    });
 
     expect(tasks.get("sess-stale-running")).toBe(hydrated);
-    expect(autoResumeTransition.resume).toHaveBeenCalledWith(
+    expect(hydrated.status).toBe("running");
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledWith(
       hydrated,
       expect.objectContaining({
-        text: "resume stale running",
+      text: "resume stale running",
       }),
-      expect.any(Function),
+      { queueIfUndelivered: true },
     );
-    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 
   it("normalizes unresolved task lookup to the existing Task not found error shape", async () => {
