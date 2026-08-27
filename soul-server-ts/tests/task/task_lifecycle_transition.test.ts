@@ -4,6 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import { InProcessRunnerCommandDispatcher } from
   "../../src/runner/runner_command_dispatcher.js";
+import { TaskExecutor } from "../../src/task/task_executor.js";
+import { TaskExecutorFinalizer } from
+  "../../src/task/task_executor_finalizer.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -199,6 +202,96 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     expect(task.runner).toBeUndefined();
     expect(task.executionPromise).toBeUndefined();
     expect(task.interventionQueue).toEqual([pendingDelivery]);
+  });
+
+  it("retries the same stop fence after executor finalization releases the runner", async () => {
+    const releaseExecutionOwnershipAndWaitForApplication = vi.fn()
+      .mockRejectedValueOnce(new Error("persistence unavailable"))
+      .mockImplementation(async (
+        _sessionId: string,
+        event: {
+          status: string;
+          termination_reason: string;
+          termination_detail: string | null;
+          _dedupe_key: string;
+          timestamp: number;
+        },
+      ) => ({
+        eventId: 9,
+        applied: true,
+        canonicalSession: {
+          status: event.status,
+          termination_reason: event.termination_reason,
+          termination_detail: event.termination_detail,
+          review_state: "acknowledged",
+          last_assistant_text: null,
+          termination_event_id: 9,
+          updated_at: "2026-05-23T01:05:00.000Z",
+          last_event_id: 9,
+        },
+        canonicalExecutionOwnership: null,
+      }));
+    const transition = new TaskLifecycleTransition({
+      logger: silentLogger,
+      persistence: { releaseExecutionOwnershipAndWaitForApplication } as never,
+    });
+    const pendingDelivery = {
+      text: "held input",
+      user: "user",
+      deliveryId: "held-finalizer-race",
+    };
+    const interrupt = vi.fn().mockResolvedValue(true);
+    const close = vi.fn().mockResolvedValue(undefined);
+    const engine = { interrupt, close } as unknown as EnginePort;
+    const task = makeTask({
+      executionPromise: Promise.resolve(),
+      executionOwnership: {
+        ownerKind: "in_process",
+        manifestId: "manifest-1",
+        runtimeEnvIdentity: "runtime-1",
+        ownershipGeneration: 1,
+        registrationId: "registration-1",
+        pid: 123,
+        startIdentity: "start-1",
+        executionCommandId: "execute-1",
+      },
+      interventionQueue: [pendingDelivery],
+      runner: {
+        engine,
+        dispatcher: new InProcessRunnerCommandDispatcher(engine),
+      },
+    });
+    const consumeSuccessfulDeliveries = vi.fn().mockResolvedValue(undefined);
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: transition,
+      logger: silentLogger,
+    });
+    const holdExecutionSlot = Reflect.get(
+      TaskExecutor.prototype,
+      "holdExecutionSlot",
+    ) as (task: Task, promise: Promise<void>) => Promise<void>;
+
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(false);
+    await holdExecutionSlot.call(
+      Object.create(TaskExecutor.prototype),
+      task,
+      finalizer.finalize(task, consumeSuccessfulDeliveries),
+    );
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
+
+    expect(interrupt).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    expect(releaseExecutionOwnershipAndWaitForApplication).toHaveBeenCalledTimes(2);
+    const terminalEvents = releaseExecutionOwnershipAndWaitForApplication.mock.calls
+      .map((call) => call[1] as { _dedupe_key: string; timestamp: number });
+    expect(terminalEvents[1]?._dedupe_key).toBe(terminalEvents[0]?._dedupe_key);
+    expect(terminalEvents[1]?.timestamp).toBe(terminalEvents[0]?.timestamp);
+    expect(task.status).toBe("interrupted");
+    expect(task.executionOwnership).toBeUndefined();
+    expect(task.runner).toBeUndefined();
+    expect(task.executionPromise).toBeUndefined();
+    expect(task.interventionQueue).toEqual([pendingDelivery]);
+    expect(consumeSuccessfulDeliveries).not.toHaveBeenCalled();
   });
 
   it("cleans stale local execution after a CAS miss proves canonical terminal", async () => {
