@@ -100,10 +100,10 @@ export async function observeActivationFailureOutcome({
   observeRetryHorizon,
   followupInventoryPromise,
 }) {
-  const [reach, followupInventory, deadLetterOutcome] = await Promise.all([
+  const deadLetterOutcome = await deadLetterPromise;
+  const [reach, followupInventory] = await Promise.all([
     observeRetryHorizon(),
     followupInventoryPromise,
-    deadLetterPromise,
   ]);
   return { reach, followupInventory, deadLetterOutcome };
 }

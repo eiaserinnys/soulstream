@@ -326,12 +326,12 @@ test("harness deadlines are 60 seconds for intervention acceptance and 180 secon
 });
 
 test("activate rollback starts the retry horizon only after the exact dead-letter", () => {
-  const scenarios = readFileSync(join(directory, "fault-scenarios.mjs"), "utf8");
-  const deadLetterCompletedAt = scenarios.indexOf(
+  const oracle = readFileSync(join(directory, "fault-activate-rollback.mjs"), "utf8");
+  const deadLetterCompletedAt = oracle.indexOf(
     "const deadLetterOutcome = await deadLetterPromise",
   );
-  const retryHorizonStartedAt = scenarios.indexOf(
-    "runtime.activationFailureFaultCountAfterHorizon(",
+  const retryHorizonStartedAt = oracle.indexOf(
+    "observeRetryHorizon()",
   );
 
   assert.ok(deadLetterCompletedAt >= 0, "activate rollback never awaits the dead-letter first");
