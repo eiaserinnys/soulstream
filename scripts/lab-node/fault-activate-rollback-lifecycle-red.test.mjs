@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-
 import { runCanonicalScenario } from "./fault-scenarios.mjs";
-
 const SESSION_ID = "session-lifecycle-red";
 const BASELINE_REGISTRATION_ID = "registration-baseline";
 const FOLLOWUP_REGISTRATION_ID = "registration-followup";
@@ -19,6 +17,7 @@ function predicateLifecycleHarness({
 } = {}) {
   const trace = [];
   const events = [];
+  const calls = { followupMarker: 0, retryHorizon: 0, deadLetter: 0 };
   let logOffset = 0;
   let ownershipReadCount = 0;
   let followupAcquireObserved = false;
@@ -26,7 +25,6 @@ function predicateLifecycleHarness({
   let baselineTerminalObserved = false;
   let runnerAlive = true;
   let registrationPresent = true;
-
   const baselineOwner = {
     pid: BASELINE_PID,
     registrationId: BASELINE_REGISTRATION_ID,
@@ -119,6 +117,7 @@ function predicateLifecycleHarness({
     async executionCommandFingerprint() { return "101"; },
     async waitForMarker(_sessionId, marker) {
       if (marker.includes("BASELINE")) return { messages: [] };
+      calls.followupMarker += 1;
       trace.push("followup-marker-wait");
       return { messages: [] };
     },
@@ -183,6 +182,7 @@ function predicateLifecycleHarness({
       };
     },
     async activationFailureFaultCountAfterHorizon(horizonMs) {
+      calls.retryHorizon += 1;
       return {
         semanticReachCount: counter,
         semanticReachCountBeforeHorizon: counter,
@@ -191,6 +191,10 @@ function predicateLifecycleHarness({
         retryHorizonMs: horizonMs,
         stable: true,
       };
+    },
+    async waitForEventIngressDeadLetterSince() {
+      calls.deadLetter += 1;
+      return { code: "REPEATED_FAILURE", sourceSeq: 8 };
     },
     async executionAcquireEnvelopeSourceSeq(sessionId, registrationId, pid) {
       trace.push(`envelope:${sessionId}:${registrationId}:${pid}`);
@@ -254,9 +258,8 @@ function predicateLifecycleHarness({
     async captureLogs() { return { node: [], orch: [] }; },
     async scenario() {},
   };
-  return { runtime, recorder, trace, events };
+  return { runtime, recorder, trace, events, calls };
 }
-
 async function runPredicateScenario(t, options) {
   const previousMutation = process.env.LAB_ACTIVATE_ROLLBACK_MUTATION;
   process.env.LAB_ACTIVATE_ROLLBACK_MUTATION = "predicate_misplaced";
@@ -299,9 +302,9 @@ test("applied follow-up acquire is bound before a zero counter is classified", a
     JSON.stringify(trace),
   );
 });
-
 test("zero after an applied acquire is classified as a missed predicate", async (t) => {
-  const { result } = await runPredicateScenario(t, { appliedAcquire: true });
+  const { calls, result } = await runPredicateScenario(t, { appliedAcquire: true });
+  assert.deepEqual(calls, { followupMarker: 0, retryHorizon: 0, deadLetter: 0 });
   assert.equal(result.status, "passed", JSON.stringify(result.failure));
   assert.deepEqual(result.verdict.mutationObservation, {
     sentinel: "fault_predicate_missed_applied_acquire",
@@ -315,7 +318,6 @@ test("zero after an applied acquire is classified as a missed predicate", async 
     semanticReachCount: 0,
   });
 });
-
 test("mutation observation cannot finalize or clean up before exact release and retirement", async (t) => {
   const { events, result, trace } = await runPredicateScenario(t, { appliedAcquire: true });
   const observed = events.find((event) => event.details?.mutationObservation != null);
@@ -328,7 +330,6 @@ test("mutation observation cannot finalize or clean up before exact release and 
     "followup-retirement",
     "scenario-finalized",
   ].includes(entry));
-
   assert.equal(result.status, "passed", JSON.stringify(result.failure));
   assert.equal(observed?.action, "fault_reached", JSON.stringify(events));
   assert.deepEqual(lifecycle, [
@@ -344,14 +345,15 @@ test("mutation observation cannot finalize or clean up before exact release and 
     JSON.stringify(trace),
   );
 });
-
 test("only a terminal follow-up with no applied acquire emits the no-transition verdict once", async (t) => {
-  const { events, result, trace } = await runPredicateScenario(t, { appliedAcquire: false });
+  const { calls, events, result, trace } = await runPredicateScenario(t, {
+    appliedAcquire: false,
+  });
+  assert.deepEqual(calls, { followupMarker: 0, retryHorizon: 0, deadLetter: 0 });
   const sentinelEvents = events.filter(
     (event) => event.details?.mutationObservation?.sentinel
       === "sessions_row_acquire_transition_not_reached",
   );
-
   assert.equal(result.status, "passed", JSON.stringify(result.failure));
   assert.equal(trace.includes("followup-acquire"), false, JSON.stringify(trace));
   assert.equal(trace.includes("followup-owner-point-read"), false, JSON.stringify(trace));
@@ -385,7 +387,6 @@ test("only a terminal follow-up with no applied acquire emits the no-transition 
     sentinel: "sessions_row_acquire_transition_not_reached",
   });
 });
-
 test("wrong follow-up session cannot pass the applied-acquire evidence gate", async (t) => {
   const { result } = await runPredicateScenario(t, {
     appliedAcquire: true,
@@ -393,7 +394,6 @@ test("wrong follow-up session cannot pass the applied-acquire evidence gate", as
       sessionId: "wrong-session",
     },
   });
-
   assert.equal(result.status, "failed");
   assert.match(result.failure.message, /exact follow-up execution acquire/i);
   assert.equal(result.verdict?.mutationObservation ?? null, null);
@@ -408,7 +408,6 @@ test("the exact follow-up envelope is the identity control for acquire evidence"
     JSON.stringify(trace),
   );
 });
-
 test("wrong follow-up generation cannot pass the applied-acquire evidence gate", async (t) => {
   const { result } = await runPredicateScenario(t, {
     appliedAcquire: true,
