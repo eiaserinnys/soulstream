@@ -579,8 +579,9 @@ const SCENARIOS = {
           baselineAdmission.registrationId,
         ),
       );
+      const initialObservationWindowMs = mutation === "predicate_misplaced" ? 5_000 : 30_000;
       const initialReach = await runtime.waitForActivationFailureFault(
-        mutation === "predicate_misplaced" ? 5_000 : 30_000,
+        initialObservationWindowMs,
       );
       const followupRegistrationOutcome = await followupRegistrationPromise;
       assertScenario(
@@ -595,6 +596,20 @@ const SCENARIOS = {
         followupRegistration.registrationId,
         followupRegistration.identityPid,
       );
+      const confirmedPredicateReach = mutation === "predicate_misplaced"
+        ? await runtime.activationFailureFaultCount()
+        : null;
+      const mutationObservation = confirmedPredicateReach === null
+        ? null
+        : {
+            sentinel: "sessions_row_acquire_transition_not_reached",
+            observationPoint: "after_followup_registration",
+            initialObservationWindowMs,
+            initialSemanticReachCount: initialReach.semanticReachCount,
+            confirmedSemanticReachCount: confirmedPredicateReach.semanticReachCount,
+            followupRegistrationId: followupRegistration.registrationId,
+            followupPid: followupRegistration.identityPid,
+          };
       const followupAdmissionDistinct = followupRegistration.registrationId
           !== baselineAdmission.registrationId
         && initialReach.attemptedGeneration === before.executionGeneration + 1
@@ -610,6 +625,7 @@ const SCENARIOS = {
         attemptedCommandFingerprint: initialReach.attemptedCommandFingerprint,
         followupRegistration,
         baselineAdmission,
+        mutationObservation,
       });
       const deadLetterPromise = mutation === "raise_removed"
           || mutation === "predicate_misplaced"
@@ -649,12 +665,9 @@ const SCENARIOS = {
             rejectedMarker,
           ),
         });
-      } else if (mutation === "predicate_misplaced") {
-        await settle(runtime.waitForMarker(sessionId, rejectedMarker, 120_000));
-        await settle(runtime.waitForTerminal(sessionId, 30_000));
       } else if (mutation === "cleanup_removed") {
         await delay(2_000);
-      } else {
+      } else if (mutation !== "predicate_misplaced") {
         await waitFor(
           () => runtime.runnerAlive(runner.pid) ? undefined : true,
           15_000,
@@ -662,14 +675,25 @@ const SCENARIOS = {
           100,
         );
       }
-      const { reach, followupInventory, deadLetterOutcome } =
-        await observeActivationFailureOutcome({
-          deadLetterPromise,
-          observeRetryHorizon: () => runtime.activationFailureFaultCountAfterHorizon(
-            ACTIVATE_ROLLBACK_RETRY_HORIZON_MS,
-          ),
-          followupInventoryPromise,
-        });
+      const { reach, followupInventory, deadLetterOutcome } = mutationObservation === null
+        ? await observeActivationFailureOutcome({
+            deadLetterPromise,
+            observeRetryHorizon: () => runtime.activationFailureFaultCountAfterHorizon(
+              ACTIVATE_ROLLBACK_RETRY_HORIZON_MS,
+            ),
+            followupInventoryPromise,
+          })
+        : {
+            reach: {
+              ...confirmedPredicateReach,
+              semanticReachCountBeforeHorizon: initialReach.semanticReachCount,
+              retryHorizonMs: 0,
+              stable: initialReach.semanticReachCount
+                === confirmedPredicateReach.semanticReachCount,
+            },
+            followupInventory: await followupInventoryPromise,
+            deadLetterOutcome: await deadLetterPromise,
+          };
       const after = await runtime.sessionExecutionOwnership(sessionId);
       const markerCount = await runtime.countTimelineEvents(
         sessionId,
@@ -749,6 +773,7 @@ const SCENARIOS = {
         ],
         childAlive: observation.childAlive,
         markerCount: observation.markerCount,
+        mutationObservation,
         violations,
         mutationDetection,
       };
