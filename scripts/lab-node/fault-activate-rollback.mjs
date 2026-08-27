@@ -95,6 +95,19 @@ export function activateRollbackViolations(observation) {
   return violations;
 }
 
+export async function observeActivationFailureOutcome({
+  deadLetterPromise,
+  observeRetryHorizon,
+  followupInventoryPromise,
+}) {
+  const [reach, followupInventory, deadLetterOutcome] = await Promise.all([
+    observeRetryHorizon(),
+    followupInventoryPromise,
+    deadLetterPromise,
+  ]);
+  return { reach, followupInventory, deadLetterOutcome };
+}
+
 export function activateRollbackMutationDetection(mutation, observation) {
   if (!ACTIVATE_ROLLBACK_MUTATIONS.includes(mutation)) {
     throw new Error(`unsupported activate-rollback mutation: ${mutation}`);

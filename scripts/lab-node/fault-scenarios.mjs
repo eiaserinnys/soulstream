@@ -31,6 +31,7 @@ import {
   ACTIVATE_ROLLBACK_RETRY_BUDGET,
   activateRollbackMutationDetection,
   activateRollbackViolations,
+  observeActivationFailureOutcome,
   requestedActivateRollbackMutation,
 } from "./fault-activate-rollback.mjs";
 import {
@@ -639,13 +640,14 @@ const SCENARIOS = {
           100,
         );
       }
-      const [reach, followupInventory, deadLetterOutcome] = await Promise.all([
-        runtime.activationFailureFaultCountAfterHorizon(
-          ACTIVATE_ROLLBACK_RETRY_HORIZON_MS,
-        ),
-        followupInventoryPromise,
-        deadLetterPromise,
-      ]);
+      const { reach, followupInventory, deadLetterOutcome } =
+        await observeActivationFailureOutcome({
+          deadLetterPromise,
+          observeRetryHorizon: () => runtime.activationFailureFaultCountAfterHorizon(
+            ACTIVATE_ROLLBACK_RETRY_HORIZON_MS,
+          ),
+          followupInventoryPromise,
+        });
       const after = await runtime.sessionExecutionOwnership(sessionId);
       const markerCount = await runtime.countTimelineEvents(
         sessionId,
