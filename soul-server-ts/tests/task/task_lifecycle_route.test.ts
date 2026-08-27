@@ -281,6 +281,40 @@ describe("TaskLifecycleRoute.cancelTask", () => {
     expect(closeSessionRuntime).toHaveBeenCalledOnce();
     expect(task.interventionQueue).toEqual([]);
   });
+
+  it("does not report stop success while a V2 runtime remains present", async () => {
+    const task = makeTask({ agentSessionId: "s1", status: "completed" });
+    let runtimePresent = true;
+    const hasSessionRuntime = vi.fn(() => runtimePresent);
+    const closeSessionRuntime = vi.fn().mockResolvedValue(false);
+    const lifecycleTransition = {
+      cancelRunningTask: vi.fn().mockResolvedValue(true),
+      interruptAndDrain: vi.fn().mockResolvedValue(undefined),
+      markRunningTaskInterruptedForShutdown: vi.fn().mockResolvedValue(undefined),
+      interruptForShutdown: vi.fn().mockResolvedValue(undefined),
+      getDrainPromise: vi.fn().mockReturnValue(Promise.resolve()),
+      finalizeExternalTask: vi.fn(async (current: Task) => current),
+    } satisfies TaskLifecycleTransitionPort;
+    const route = new TaskLifecycleRoute({
+      getTask: () => task,
+      listTasks: () => [task],
+      forgetTask: vi.fn(),
+      lifecycleTransition,
+      sessionMutations: { deleteSession: vi.fn() } as never,
+      broadcaster: { emitSessionDeleted: vi.fn() } as never,
+      logger: silentLogger,
+      hasSessionRuntime,
+      closeSessionRuntime,
+    });
+
+    await expect(route.cancelTask("s1")).resolves.toBe(false);
+    await expect(route.cancelTask("s1")).resolves.toBe(false);
+    runtimePresent = false;
+    await expect(route.cancelTask("s1")).resolves.toBe(true);
+
+    expect(closeSessionRuntime).toHaveBeenCalledTimes(2);
+    expect(lifecycleTransition.cancelRunningTask).not.toHaveBeenCalled();
+  });
 });
 
 describe("TaskLifecycleRoute.deleteTask", () => {
