@@ -127,7 +127,10 @@ export interface RunnerProcessDispatcherOptions {
     NodeStallMonitor,
     "beginRunnerOperation" | "sqliteTransactionObserver"
   >;
-  handleHostCall(call: RunnerHostCall): Promise<unknown>;
+  handleHostCall(
+    call: RunnerHostCall,
+    registerPostResponse: (continuation: () => Promise<void>) => void,
+  ): Promise<unknown>;
 }
 
 export class RunnerOrphanedSpawnError extends Error {
@@ -1081,6 +1084,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       return;
     }
     let response: RunnerControlFrame;
+    let postResponse = async (): Promise<void> => undefined;
     try {
       const call = {
         correlationId: frame.correlationId,
@@ -1094,7 +1098,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
           if (idempotencyKey !== call.correlationId) {
             throw new Error("runner host-call idempotency key mismatch");
           }
-          return await this.options.handleHostCall(call);
+          return await this.options.handleHostCall(call, (continuation) => {
+            postResponse = continuation;
+          });
         },
       );
       response = runnerControlResponseFrame(frame.correlationId, {
@@ -1114,6 +1120,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.recentHostResponses.delete(oldest);
     }
     await this.sendBestEffort(response);
+    await postResponse().catch((error) => {
+      this.options.logger.warn({
+        err: error,
+        correlationId: frame.correlationId,
+      }, "Runner host post-response continuation failed; durable delivery remains pending");
+    });
   }
 
   private async ensurePump(): Promise<void> {

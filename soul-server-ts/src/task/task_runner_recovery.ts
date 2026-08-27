@@ -20,9 +20,7 @@ export interface TaskRunnerRecoveryDeps {
 export interface ExecutionOwnershipReconciliationInput {
   first: ExecutionOwnershipObservation;
   second: ExecutionOwnershipObservation;
-  evidenceHash: string;
-  minimumLeaseIntervalMs: number;
-  probeOnly: boolean;
+  leaseExpiresAt: Date;
 }
 
 /**
@@ -62,9 +60,9 @@ export class TaskRunnerRecovery {
         ...(task.attachmentPaths ? { attachmentPaths: task.attachmentPaths } : {}),
         ...(task.contextItems ? { context: task.contextItems } : {}),
         source: "runner-recovery",
-      }, (resumedTask) => {
+      }, (resumedTask, activation) => {
         replacementCallbackStarted = true;
-        onResume(resumedTask);
+        onResume(resumedTask, activation);
       }, { publishUserMessage: false });
     } catch (error) {
       // Do not compensate a rejected running CAS: its canonical running owner
@@ -116,12 +114,55 @@ export class TaskRunnerRecovery {
     input: ExecutionOwnershipReconciliationInput,
   ): Promise<boolean> {
     if (!this.deps.persistence) {
-      throw new Error("execution ownership backfill persistence is required");
+      throw new Error("execution ownership recovery persistence is required");
+    }
+    const { first, second } = input;
+    const stableCompleteIdentity = (
+      typeof first.manifestId === "string"
+      && first.manifestId.length > 0
+      && typeof first.runtimeEnvIdentity === "string"
+      && first.runtimeEnvIdentity.length > 0
+      && typeof first.registrationId === "string"
+      && first.registrationId.length > 0
+      && typeof first.pid === "number"
+      && Number.isSafeInteger(first.pid)
+      && first.pid > 0
+      && typeof first.startIdentity === "string"
+      && first.startIdentity.length > 0
+      && typeof first.executionCommandId === "string"
+      && first.executionCommandId.length > 0
+      && second.manifestId === first.manifestId
+      && second.runtimeEnvIdentity === first.runtimeEnvIdentity
+      && second.registrationId === first.registrationId
+      && second.pid === first.pid
+      && second.startIdentity === first.startIdentity
+      && second.executionCommandId === first.executionCommandId
+    ) ? {
+        manifestId: first.manifestId,
+        runtimeEnvIdentity: first.runtimeEnvIdentity,
+        registrationId: first.registrationId,
+        pid: first.pid,
+        startIdentity: first.startIdentity,
+        executionCommandId: first.executionCommandId,
+      }
+      : undefined;
+    if (!stableCompleteIdentity) {
+      task.status = "interrupted";
+      task.completedAt = second.observedAt;
+      task.pendingTerminationDetail =
+        "owner-null running migration could not prove a stable runner identity";
+      const result = await this.deps.lifecycleTransition.persistExecutorFinalState(task);
+      return result.terminalTransitionApplied;
     }
     const application =
-      await this.deps.persistence.backfillExecutionOwnershipAndWaitForApplication(
+      await this.deps.persistence.acquireExecutionOwnershipAndWaitForApplication(
         task.agentSessionId,
-        input,
+        {
+          ownerKind: "adopted_runner",
+          ...stableCompleteIdentity,
+          leaseExpiresAt: input.leaseExpiresAt,
+          reviewState: task.reviewState ?? "not_required",
+        },
       );
     applyCanonicalSessionProjection(task, application.canonicalSession);
     return application.applied;

@@ -73,9 +73,9 @@ export const SCENARIO_DEFINITIONS = Object.freeze({
     verdict: "A post-fault host snapshot no longer contains the session operation, the session is terminal, and only then a later turn completes once on a replacement runner.",
   }),
   "activate-rollback": Object.freeze({
-    injection: "Delay and reject activation in the lab database while replacing runner.pid with conflicting live pid evidence.",
-    expectedOutcome: "The failed activation leaves no spawned child and converges the provisional turn to a terminal ownership state.",
-    verdict: "The spawned pid is dead, the session is error, and no open or orphaned_spawn ownership remains after a retry interval.",
+    injection: "Delay and reject the locked sessions-row all-null to all-complete execution acquire transition for a terminal follow-up.",
+    expectedOutcome: "The acquire rolls back without changing generation, owner, or terminal revision, and the rejected follow-up never runs.",
+    verdict: "The semantic transition is reached once, the child is dead, the follow-up marker is absent, and the canonical sessions row is unchanged.",
   }),
   F7: Object.freeze({
     injection: "Point a completion target at a missing node and repeatedly advance only its lab retry clock.",

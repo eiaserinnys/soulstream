@@ -150,6 +150,13 @@ describe("runner cutover all-flags-on integration", () => {
       taskManager: {
         addIntervention: vi.fn(async (message, onResume) => {
           deliveredInterventions.push(message);
+          if (task.status === "initializing") {
+            // Match TaskInterventionRoute: a second detached completion waits
+            // for the first V1 owner admission before choosing queue vs resume.
+            const activation = task.executionActivation?.promise;
+            if (!activation) throw new Error("initializing follow-up lost its activation barrier");
+            await activation;
+          }
           if (task.status === "running") {
             const queuePosition = enqueueInterventionOnce(task, message);
             return { queued: true, queuePosition };
@@ -157,8 +164,10 @@ describe("runner cutover all-flags-on integration", () => {
           await autoResume.resume(task, message, onResume, { publishUserMessage: false });
           return { queued: true, queuePosition: 1 };
         }),
+        reserveInterventionRetry: vi.fn(async () => undefined),
       },
-      onResume: (resumedTask) => executor.startExecution(resumedTask, agent),
+      onResume: (resumedTask, activation) =>
+        executor.startExecution(resumedTask, agent, activation),
       releaseRetainedRunner: async (retainedTask) =>
         await executor.releaseRetainedClaudeRunner(retainedTask),
       logger,
@@ -221,7 +230,7 @@ describe("runner cutover all-flags-on integration", () => {
         const taskId = "taskId" in event ? event.taskId : event.type;
         const delivery = readClaudeBackgroundDeliveryMetadata(event);
         if (delivery) publishedDeliveryIds.set(taskId, delivery.deliveryId);
-        await publishDetached(sessionId, event, idempotencyKey);
+        return await publishDetached(sessionId, event, idempotencyKey);
       },
       buildChildProcessEnv: () => ({
         ...process.env,
@@ -507,6 +516,8 @@ describe("runner cutover all-flags-on integration", () => {
     });
 
     const oldExecution = task.executionPromise;
+    const executionOwnership = task.executionOwnership;
+    if (!executionOwnership) throw new Error("execution ownership missing before host restart");
     await (task.runner!.dispatcher as RunnerProcessDispatcher).detachHost();
     task.runner = undefined;
     task.executionPromise = undefined;
@@ -518,7 +529,11 @@ describe("runner cutover all-flags-on integration", () => {
     expect(isPidAlive(pid)).toBe(true);
 
     const registration = await readRunnerRegistrationSummary(paths.sessionDirectory);
-    const restartedHost = taskExecutor(composition.runtimeFactory);
+    const restartedHost = taskExecutor(
+      composition.runtimeFactory,
+      undefined,
+      executionOwnership,
+    );
     const recovery = restartedHost.executor.recoverRegisteredRunner(
       task,
       registration,
@@ -546,13 +561,14 @@ describe("runner cutover all-flags-on integration", () => {
     await writeFile(join(controlDirectory, "finish"), "go\n");
     await recovery;
 
-    expect(restartedHost.enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledTimes(1);
-    expect(restartedHost.enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledWith(
+    expect(restartedHost.acquireExecutionOwnershipAndWaitForApplication).toHaveBeenCalledTimes(1);
+    expect(restartedHost.acquireExecutionOwnershipAndWaitForApplication).toHaveBeenCalledWith(
       task.agentSessionId,
-      {
+      expect.objectContaining({
+        ownerKind: "adopted_runner",
         reviewState: "not_required",
-        transitionId: expect.stringMatching(/^adopt:/),
-      },
+        executionCommandId: executionOwnership.executionCommandId,
+      }),
     );
     expect(task.status).toBe("completed");
     expect(task.lastAssistantText).toBe("after-detach");
@@ -961,11 +977,15 @@ describe("runner cutover all-flags-on integration", () => {
 function taskExecutor(
   runnerProcessFactory: NonNullable<Awaited<ReturnType<typeof composeRunnerProcessRuntime>>>["runtimeFactory"],
   observeEvent?: (event: SSEEventPayload, task: Task) => void | Promise<void>,
+  recoveredOwnership?: NonNullable<Task["executionOwnership"]>,
 ): {
   executor: TaskExecutor;
   enqueueRunningTransitionAndWaitForApplication: ReturnType<
     typeof makeEventPersistenceTestDouble
   >["enqueueRunningTransitionAndWaitForApplication"];
+  acquireExecutionOwnershipAndWaitForApplication: ReturnType<
+    typeof makeEventPersistenceTestDouble
+  >["acquireExecutionOwnershipAndWaitForApplication"];
 } {
   const persistenceDouble = makeEventPersistenceTestDouble(async (_sessionId, event, task) => {
     if (event.type === "assistant_message" && typeof event.content === "string") {
@@ -974,6 +994,20 @@ function taskExecutor(
     await observeEvent?.(event, task);
   });
   const db = {
+    getSession: vi.fn(async () => {
+      // A replacement host reads the sessions-row owner written by the first
+      // host; its fresh persistence test double cannot reconstruct that row.
+      if (!recoveredOwnership) return null;
+      return {
+        execution_generation: recoveredOwnership.ownershipGeneration,
+        execution_manifest_id: recoveredOwnership.manifestId,
+        execution_runtime_env_identity: recoveredOwnership.runtimeEnvIdentity,
+        execution_registration_id: recoveredOwnership.registrationId,
+        execution_pid: recoveredOwnership.pid,
+        execution_start_identity: recoveredOwnership.startIdentity,
+        execution_command_id: recoveredOwnership.executionCommandId,
+      };
+    }),
     updateSession: vi.fn(async () => undefined),
     setClaudeSessionId: vi.fn(async () => undefined),
   } as unknown as SessionDB;
@@ -1001,6 +1035,8 @@ function taskExecutor(
     ),
     enqueueRunningTransitionAndWaitForApplication:
       persistenceDouble.enqueueRunningTransitionAndWaitForApplication,
+    acquireExecutionOwnershipAndWaitForApplication:
+      persistenceDouble.acquireExecutionOwnershipAndWaitForApplication,
   };
 }
 

@@ -430,6 +430,106 @@ export class LabRuntime {
     );
   }
 
+  async waitForExecutionOwnershipTransitionSince(
+    sessionId,
+    offset,
+    operation,
+    timeoutMs = 75_000,
+  ) {
+    assertIdentifier(sessionId, "session id");
+    if (!["acquire", "release"].includes(operation)) {
+      throw new Error(`invalid execution ownership operation: ${operation}`);
+    }
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error(`invalid node log offset: ${offset}`);
+    }
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const log = await readFile(this.nodeLog);
+      const from = offset <= log.length ? offset : 0;
+      const transitions = executionOwnershipTransitions(
+        log.subarray(from).toString("utf8"),
+      );
+      const match = transitions.find((transition) => (
+        transition.sessionId === sessionId
+        && transition.operation === operation
+        && transition.applied === true
+      ));
+      if (match) return match;
+      await delay(500);
+    }
+    throw new Error(
+      `node log did not show applied execution ${operation} for ${sessionId} after offset ${offset}`,
+    );
+  }
+
+  async waitForEventIngressDeadLetterSince(
+    sessionId,
+    sourceSeq,
+    offset,
+    timeoutMs = 75_000,
+  ) {
+    assertIdentifier(sessionId, "session id");
+    if (!Number.isSafeInteger(sourceSeq) || sourceSeq < 1) {
+      throw new Error(`invalid event ingress source sequence: ${sourceSeq}`);
+    }
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error(`invalid node log offset: ${offset}`);
+    }
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const log = await readFile(this.nodeLog);
+      const from = offset <= log.length ? offset : 0;
+      const deadLetter = eventIngressDeadLetters(
+        log.subarray(from).toString("utf8"),
+      ).find((candidate) => (
+        candidate.sessionId === sessionId && candidate.sourceSeq === sourceSeq
+      ));
+      if (deadLetter) return deadLetter;
+      await delay(500);
+    }
+    throw new Error(
+      `node log did not show event ingress dead-letter for ${sessionId}:${sourceSeq} `
+      + `after offset ${offset}`,
+    );
+  }
+
+  async waitForTerminalRunnerRetirementSince(
+    sessionId,
+    offset,
+    expectedRegistrationId,
+    expectedPid,
+    timeoutMs = 75_000,
+  ) {
+    assertIdentifier(sessionId, "session id");
+    assertIdentifier(expectedRegistrationId, "registration id");
+    if (!Number.isSafeInteger(expectedPid) || expectedPid < 1) {
+      throw new Error(`invalid runner pid: ${expectedPid}`);
+    }
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error(`invalid node log offset: ${offset}`);
+    }
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const log = await readFile(this.nodeLog);
+      const from = offset <= log.length ? offset : 0;
+      const retirement = terminalRunnerRetirements(
+        log.subarray(from).toString("utf8"),
+      ).find((candidate) => candidate.sessionId === sessionId);
+      const registration = await this.runnerExecutionRegistration(sessionId);
+      const baselineRetired = !registration.present
+        && registration.registrationId === expectedRegistrationId
+        && registration.identityPid === null
+        && registration.pidFilePid === null
+        && !this.runnerAlive(expectedPid);
+      if (retirement && baselineRetired) return { retirement, registration };
+      await delay(500);
+    }
+    throw new Error(
+      `terminal runner did not retire baseline registration ${expectedRegistrationId} for ${sessionId}`,
+    );
+  }
+
   async removeFaultRunnerDirectory(directory) {
     const prefix = join(this.runnerStateDirectory, "_fault-");
     if (!directory.startsWith(prefix)) {
@@ -438,37 +538,398 @@ export class LabRuntime {
     await rm(directory, { recursive: true, force: true });
   }
 
-  async installActivationFailureFault(delaySeconds = 8) {
+  async installActivationFailureFault(delaySeconds = 8, mutation = null) {
     if (!Number.isInteger(delaySeconds) || delaySeconds < 1 || delaySeconds > 30) {
       throw new Error(`invalid activation fault delay: ${delaySeconds}`);
     }
+    if (![null, "raise_removed", "predicate_misplaced", "cleanup_removed"].includes(mutation)) {
+      throw new Error(`invalid activation fault mutation: ${mutation}`);
+    }
+    const predicate = mutation === "predicate_misplaced"
+      ? `OLD.execution_manifest_id IS NULL
+           AND OLD.execution_runtime_env_identity IS NULL
+           AND OLD.execution_registration_id IS NULL
+           AND OLD.execution_pid IS NULL
+           AND OLD.execution_start_identity IS NULL
+           AND OLD.execution_command_id IS NULL
+           AND OLD.execution_lease_expires_at IS NULL
+           AND NEW.execution_manifest_id IS NOT NULL
+           AND NEW.execution_runtime_env_identity IS NOT NULL
+           AND NEW.execution_registration_id IS NOT NULL
+           AND NEW.execution_pid IS NOT NULL
+           AND NEW.execution_start_identity IS NOT NULL
+           AND NEW.execution_command_id IS NOT NULL
+           AND NEW.execution_lease_expires_at IS NOT NULL
+           AND NEW.execution_generation = OLD.execution_generation + 2`
+      : `OLD.execution_manifest_id IS NULL
+           AND OLD.execution_runtime_env_identity IS NULL
+           AND OLD.execution_registration_id IS NULL
+           AND OLD.execution_pid IS NULL
+           AND OLD.execution_start_identity IS NULL
+           AND OLD.execution_command_id IS NULL
+           AND OLD.execution_lease_expires_at IS NULL
+           AND NEW.execution_manifest_id IS NOT NULL
+           AND NEW.execution_runtime_env_identity IS NOT NULL
+           AND NEW.execution_registration_id IS NOT NULL
+           AND NEW.execution_pid IS NOT NULL
+           AND NEW.execution_start_identity IS NOT NULL
+           AND NEW.execution_command_id IS NOT NULL
+           AND NEW.execution_lease_expires_at IS NOT NULL
+           AND NEW.execution_generation = OLD.execution_generation + 1`;
+    const rejectTransition = mutation === "raise_removed"
+      ? ""
+      : "RAISE EXCEPTION 'lab injected sessions-row execution acquire failure';";
     return await this.psqlOne(`
-      DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation
-        ON session_execution_ownerships;
-      CREATE OR REPLACE FUNCTION lab_fault_fail_execution_activation()
+      DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation ON session_execution_ownerships;
+      DROP FUNCTION IF EXISTS lab_fault_fail_execution_activation();
+      DROP TRIGGER IF EXISTS lab_fault_fail_execution_acquire ON sessions;
+      DROP FUNCTION IF EXISTS lab_fault_fail_execution_acquire();
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_reach_seq;
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_generation_seq;
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_command_seq;
+      CREATE SEQUENCE lab_fault_execution_acquire_reach_seq
+        START WITH 1 INCREMENT BY 1 MINVALUE 1;
+      CREATE SEQUENCE lab_fault_execution_acquire_generation_seq
+        START WITH 1 INCREMENT BY 1 MINVALUE 0;
+      CREATE SEQUENCE lab_fault_execution_acquire_command_seq
+        START WITH 1 INCREMENT BY 1 MINVALUE -2147483648 MAXVALUE 2147483647;
+      CREATE OR REPLACE FUNCTION lab_fault_fail_execution_acquire()
       RETURNS trigger LANGUAGE plpgsql AS $lab$
       BEGIN
-        IF OLD.phase = 'identity_proven' AND NEW.phase = 'active' THEN
+        IF ${predicate} THEN
+          PERFORM nextval('lab_fault_execution_acquire_reach_seq');
+          PERFORM setval(
+            'lab_fault_execution_acquire_generation_seq',
+            NEW.execution_generation,
+            true
+          );
+          PERFORM setval(
+            'lab_fault_execution_acquire_command_seq',
+            hashtext(NEW.execution_command_id),
+            true
+          );
+          PERFORM pg_advisory_xact_lock(741925, 2);
           PERFORM pg_sleep(${delaySeconds});
-          RAISE EXCEPTION 'lab injected execution activation failure';
+          ${rejectTransition}
         END IF;
         RETURN NEW;
       END;
       $lab$;
-      CREATE TRIGGER lab_fault_fail_execution_activation
-        BEFORE UPDATE OF phase ON session_execution_ownerships
-        FOR EACH ROW EXECUTE FUNCTION lab_fault_fail_execution_activation();
+      CREATE TRIGGER lab_fault_fail_execution_acquire
+        BEFORE UPDATE OF execution_generation, execution_manifest_id,
+          execution_runtime_env_identity, execution_registration_id,
+          execution_pid, execution_start_identity, execution_command_id,
+          execution_lease_expires_at ON sessions
+        FOR EACH ROW EXECUTE FUNCTION lab_fault_fail_execution_acquire();
       SELECT json_build_object('installed', true);
+    `);
+  }
+
+  async waitForActivationFailureFault(timeoutMs = 30_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const observation = await this.activationFailureFaultCount();
+      if (observation.semanticReachCount > 0) return observation;
+      await delay(100);
+    }
+    return await this.activationFailureFaultCount();
+  }
+
+  async activationFailureFaultCount() {
+    return await this.psqlOne(`
+      SELECT json_build_object(
+        'semanticReachCount', CASE
+          WHEN reach.is_called THEN reach.last_value ELSE 0
+        END,
+        'attemptedGeneration', CASE
+          WHEN generation.is_called THEN generation.last_value ELSE NULL
+        END,
+        'attemptedCommandFingerprint', CASE
+          WHEN command.is_called THEN command.last_value::text ELSE NULL
+        END
+      )
+      FROM lab_fault_execution_acquire_reach_seq AS reach,
+        lab_fault_execution_acquire_generation_seq AS generation,
+        lab_fault_execution_acquire_command_seq AS command
+    `);
+  }
+
+  async activationFailureFaultCountAfterHorizon(horizonMs) {
+    if (!Number.isSafeInteger(horizonMs) || horizonMs < 1) {
+      throw new Error(`invalid activation fault retry horizon: ${horizonMs}`);
+    }
+    const before = await this.activationFailureFaultCount();
+    await delay(horizonMs);
+    const after = await this.activationFailureFaultCount();
+    return {
+      semanticReachCount: after.semanticReachCount,
+      semanticReachCountBeforeHorizon: before.semanticReachCount,
+      attemptedGeneration: after.attemptedGeneration,
+      attemptedCommandFingerprint: after.attemptedCommandFingerprint,
+      retryHorizonMs: horizonMs,
+      stable: before.semanticReachCount === after.semanticReachCount,
+    };
+  }
+
+  async activationFailureFaultResidue() {
+    return await this.psqlOne(`
+      SELECT json_build_object(
+        'triggerCount', (
+          SELECT COUNT(*)::integer FROM pg_trigger
+          WHERE tgname = 'lab_fault_fail_execution_acquire' AND NOT tgisinternal
+        ),
+        'functionCount', (
+          SELECT COUNT(*)::integer
+          FROM pg_proc AS procedure
+          JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+          WHERE namespace.nspname = current_schema()
+            AND procedure.proname = 'lab_fault_fail_execution_acquire'
+        ),
+        'counterCount', (
+          SELECT COUNT(*)::integer
+          FROM pg_class AS relation
+          JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = current_schema()
+            AND relation.relkind = 'S'
+            AND relation.relname IN (
+              'lab_fault_execution_acquire_reach_seq',
+              'lab_fault_execution_acquire_generation_seq',
+              'lab_fault_execution_acquire_command_seq'
+            )
+        )
+      )
     `);
   }
 
   async removeActivationFailureFault() {
     return await this.psqlOne(`
-      DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation
-        ON session_execution_ownerships;
+      DROP TRIGGER IF EXISTS lab_fault_fail_execution_acquire ON sessions;
+      DROP FUNCTION IF EXISTS lab_fault_fail_execution_acquire();
+      DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation ON session_execution_ownerships;
       DROP FUNCTION IF EXISTS lab_fault_fail_execution_activation();
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_reach_seq;
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_generation_seq;
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_command_seq;
       SELECT json_build_object('removed', true);
     `);
+  }
+
+  async runnerExecutionRegistration(sessionId) {
+    const directory = this.runnerDirectory(sessionId);
+    let identity = null;
+    let pidFilePid = null;
+    try {
+      identity = JSON.parse(await readFile(join(directory, "runner-identity.json"), "utf8"));
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    try {
+      const value = Number((await readFile(join(directory, "runner.pid"), "utf8")).trim());
+      if (Number.isSafeInteger(value) && value > 0) pidFilePid = value;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    return {
+      present: Number.isSafeInteger(identity?.pid)
+        && identity.pid > 0
+        && typeof identity.startIdentity === "string"
+        && identity.startIdentity.length > 0,
+      identityPid: Number.isSafeInteger(identity?.pid) ? identity.pid : null,
+      pidFilePid,
+      registrationId: typeof identity?.registrationId === "string"
+        ? identity.registrationId
+        : null,
+    };
+  }
+
+  async waitForDistinctRunnerRegistration(
+    sessionId,
+    baselineRegistrationId,
+    timeoutMs = 30_000,
+  ) {
+    return await waitFor(
+      async () => {
+        const registration = await this.runnerExecutionRegistration(sessionId);
+        return registration.present
+          && registration.registrationId !== baselineRegistrationId
+          && this.runnerAlive(registration.identityPid)
+          ? registration
+          : undefined;
+      },
+      timeoutMs,
+      `follow-up runner registration did not replace baseline: ${sessionId}`,
+      100,
+    );
+  }
+
+  async observeDistinctRunnerRegistrationInventoryUntil(
+    sessionId,
+    baselineRegistrationId,
+    completionPromise,
+    seed = [],
+  ) {
+    assertIdentifier(sessionId, "session id");
+    assertIdentifier(baselineRegistrationId, "registration id");
+    const samples = [];
+    const record = (registration) => {
+      if (
+        registration?.present
+        && registration.registrationId !== baselineRegistrationId
+      ) {
+        samples.push({
+          registrationId: registration.registrationId,
+          identityPid: registration.identityPid,
+        });
+      }
+    };
+    for (const registration of seed) record(registration);
+    let complete = false;
+    const completion = Promise.resolve(completionPromise).then(
+      () => { complete = true; },
+      () => { complete = true; },
+    );
+    while (!complete) {
+      record(await this.runnerExecutionRegistration(sessionId));
+      await Promise.race([delay(100), completion]);
+    }
+    record(await this.runnerExecutionRegistration(sessionId));
+    return distinctRunnerRegistrationInventory(samples, baselineRegistrationId);
+  }
+
+  async executionAcquireEnvelopeSourceSeq(sessionId, registrationId, pid) {
+    assertIdentifier(sessionId, "session id");
+    assertIdentifier(registrationId, "registration id");
+    if (!Number.isSafeInteger(pid) || pid < 1) throw new Error(`invalid runner pid: ${pid}`);
+    const text = await readFile(join(this.root, "outbox", "events.jsonl"), "utf8");
+    const matches = executionAcquireEnvelopes(text).filter((envelope) => (
+      envelope.sessionId === sessionId
+      && envelope.registrationId === registrationId
+      && envelope.pid === pid
+    ));
+    if (matches.length !== 1) {
+      throw new Error(
+        `expected one execution acquire envelope for ${sessionId}:${registrationId}:${pid}, `
+        + `found ${matches.length}`,
+      );
+    }
+    return matches[0].sourceSeq;
+  }
+
+  async executionAcquireApplicationEvidence({
+    sessionId,
+    expectedGeneration,
+    registrationId,
+    pid,
+  }) {
+    assertIdentifier(sessionId, "session id");
+    if (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 1) {
+      throw new Error(`invalid expected execution generation: ${expectedGeneration}`);
+    }
+    assertIdentifier(registrationId, "registration id");
+    if (!Number.isSafeInteger(pid) || pid < 1) throw new Error(`invalid runner pid: ${pid}`);
+    const snapshot = await this.psqlOne(`
+      WITH acquire_events AS (
+        SELECT
+          event.id AS event_id,
+          event.session_id,
+          event.payload #>> '{value,phase}' AS phase,
+          event.payload #>> '{value,transition_id}' AS transition_id,
+          event.dedupe_key,
+          receipt.node_id,
+          receipt.stream_id,
+          receipt.source_seq,
+          receipt.payload_hash,
+          receipt.effect_application,
+          receipt.created_at
+        FROM events AS event
+        LEFT JOIN event_ingress_receipts AS receipt
+          ON receipt.session_id = event.session_id
+          AND receipt.event_id = event.id
+        WHERE event.session_id = ${sqlLiteral(sessionId)}
+          AND event.event_type = 'metadata'
+          AND event.payload->>'metadata_type' = 'execution_ownership_transition'
+          AND event.payload #>> '{value,phase}' = 'execution_acquire'
+      )
+      SELECT json_build_object(
+        'rows', COALESCE((
+          SELECT json_agg(json_build_object(
+            'eventId', acquire.event_id,
+            'sessionId', acquire.session_id,
+            'phase', acquire.phase,
+            'transitionId', acquire.transition_id,
+            'dedupeKey', acquire.dedupe_key,
+            'nodeId', acquire.node_id,
+            'streamId', acquire.stream_id,
+            'sourceSeq', acquire.source_seq,
+            'payloadHash', acquire.payload_hash,
+            'effectApplication', acquire.effect_application
+          ) ORDER BY acquire.event_id, acquire.created_at, acquire.source_seq)
+          FROM acquire_events AS acquire
+        ), '[]'::json),
+        'finalOwnership', (
+          SELECT json_build_object(
+            'executionGeneration', session.execution_generation,
+            'owner', CASE
+              WHEN session.execution_manifest_id IS NULL THEN NULL
+              ELSE json_build_object(
+                'registrationId', session.execution_registration_id,
+                'pid', session.execution_pid,
+                'executionCommandId', session.execution_command_id
+              )
+            END
+          )
+          FROM sessions AS session
+          WHERE session.session_id = ${sqlLiteral(sessionId)}
+        )
+      )
+    `);
+    return classifyExecutionAcquireApplicationEvidence(snapshot, {
+      sessionId,
+      expectedGeneration,
+      registrationId,
+      pid,
+    });
+  }
+
+  async executionCommandFingerprint(executionCommandId) {
+    assertIdentifier(executionCommandId, "execution command id");
+    const value = await this.psqlOne(`
+      SELECT json_build_object(
+        'fingerprint', hashtext(${sqlLiteral(executionCommandId)})::text
+      )
+    `);
+    return value?.fingerprint ?? null;
+  }
+
+  async removeLabRunnerRegistration(sessionId, expectedPid) {
+    const registration = await this.runnerExecutionRegistration(sessionId);
+    if (
+      registration.identityPid !== expectedPid
+      || registration.pidFilePid !== expectedPid
+      || this.runnerAlive(expectedPid)
+    ) {
+      throw new Error(`unsafe lab runner registration cleanup: ${sessionId}`);
+    }
+    await rm(this.runnerDirectory(sessionId), { recursive: true, force: true });
+  }
+
+  async terminateObservedLabRunnerRegistration(sessionId, expectedPid) {
+    const registration = await this.runnerExecutionRegistration(sessionId);
+    if (
+      !registration.present
+      || registration.identityPid !== expectedPid
+      || registration.pidFilePid !== expectedPid
+      || !this.runnerAlive(expectedPid)
+    ) {
+      throw new Error(`lab runner identity changed before cleanup: ${sessionId}`);
+    }
+    await this.killRunnerPid(expectedPid, "SIGKILL");
+    await this.removeLabRunnerRegistration(sessionId, expectedPid);
+    const residue = await this.runnerExecutionRegistration(sessionId);
+    if (residue.present) {
+      throw new Error(`lab runner registration survived cleanup: ${sessionId}`);
+    }
+    return residue;
   }
 
   async installAdoptionWindow(sessionId, delaySeconds = 20) {
@@ -660,6 +1121,31 @@ export class LabRuntime {
     `) ?? [];
   }
 
+  async sessionExecutionOwnership(sessionId) {
+    assertIdentifier(sessionId, "session id");
+    return await this.psqlOne(`
+      SELECT json_build_object(
+        'status', session.status,
+        'executionGeneration', session.execution_generation,
+        'owner', CASE
+          WHEN session.execution_manifest_id IS NULL THEN NULL
+          ELSE json_build_object(
+            'manifestId', session.execution_manifest_id,
+            'runtimeEnvIdentity', session.execution_runtime_env_identity,
+            'registrationId', session.execution_registration_id,
+            'pid', session.execution_pid,
+            'startIdentity', session.execution_start_identity,
+            'executionCommandId', session.execution_command_id,
+            'leaseExpiresAt', session.execution_lease_expires_at
+          )
+        END,
+        'terminalRevision', session.termination_event_id
+      )
+      FROM sessions AS session
+      WHERE session.session_id = ${sqlLiteral(sessionId)}
+    `);
+  }
+
   async consumptionCount(relationKey) {
     const value = await this.psqlOne(`
       SELECT json_build_object('count', COUNT(*)::integer)
@@ -815,6 +1301,114 @@ export function runnerOperationSnapshots(logText) {
   return snapshots;
 }
 
+export function executionOwnershipTransitions(logText) {
+  const transitions = [];
+  for (const line of logText.split("\n")) {
+    if (!line.includes("Execution ownership lifecycle transition applied")) continue;
+    try {
+      const record = JSON.parse(line);
+      if (typeof record.sessionId !== "string") continue;
+      if (typeof record.operation !== "string") continue;
+      transitions.push({
+        time: record.time,
+        sessionId: record.sessionId,
+        ownershipGeneration: record.ownershipGeneration,
+        operation: record.operation,
+        applied: record.applied,
+        canonicalPhase: record.canonicalPhase,
+      });
+    } catch {}
+  }
+  return transitions;
+}
+
+export function terminalRunnerRetirements(logText) {
+  const retirements = [];
+  for (const line of logText.split("\n")) {
+    if (!line.includes("terminal runner with no live process replayed offline and retired")) {
+      continue;
+    }
+    try {
+      const record = JSON.parse(line);
+      if (typeof record.sessionId !== "string") continue;
+      if (record.disposition !== "replay_terminal_dead") continue;
+      retirements.push({
+        time: record.time,
+        sessionId: record.sessionId,
+        disposition: record.disposition,
+      });
+    } catch {}
+  }
+  return retirements;
+}
+
+export function eventIngressDeadLetters(logText) {
+  const deadLetters = [];
+  for (const line of logText.split("\n")) {
+    if (!line.includes("REPEATED_FAILURE")) continue;
+    try {
+      const record = JSON.parse(line);
+      if (typeof record.sessionId !== "string") continue;
+      if (record.err?.code !== "REPEATED_FAILURE") continue;
+      deadLetters.push({
+        time: record.time,
+        sessionId: record.sessionId,
+        sourceSeq: record.err.sourceSeq,
+        code: record.err.code,
+        rejectedAt: record.err.rejectedAt,
+      });
+    } catch {}
+  }
+  return deadLetters;
+}
+
+export function executionAcquireEnvelopes(logText) {
+  const envelopes = [];
+  for (const line of logText.split("\n")) {
+    if (!line.includes('"kind":"execution_acquire"')) continue;
+    try {
+      const record = JSON.parse(line);
+      const effect = record.session_effect;
+      if (effect?.kind !== "execution_acquire") continue;
+      if (!Number.isSafeInteger(record.source_seq) || record.source_seq < 1) continue;
+      envelopes.push({
+        sourceSeq: record.source_seq,
+        sessionId: record.session_id,
+        registrationId: effect.registration_id,
+        pid: effect.pid,
+      });
+    } catch {}
+  }
+  return envelopes;
+}
+
+export function distinctRunnerRegistrationInventory(samples, baselineRegistrationId) {
+  const registrationIds = new Set();
+  const pids = new Set();
+  const identities = new Map();
+  for (const sample of samples) {
+    if (
+      !sample
+      || sample.registrationId === baselineRegistrationId
+      || typeof sample.registrationId !== "string"
+      || !Number.isSafeInteger(sample.identityPid)
+      || sample.identityPid < 1
+    ) continue;
+    registrationIds.add(sample.registrationId);
+    pids.add(sample.identityPid);
+    identities.set(`${sample.registrationId}:${sample.identityPid}`, {
+      registrationId: sample.registrationId,
+      identityPid: sample.identityPid,
+    });
+  }
+  return {
+    observations: [...identities.values()],
+    registrationCount: registrationIds.size,
+    pidCount: pids.size,
+    identityCount: identities.size,
+  };
+}
+
 function requireEnv(env, key) {
   const value = env[key]?.trim();
   if (!value) throw new Error(`${key} is required`);
@@ -835,6 +1429,166 @@ function requirePositiveInteger(env, key) {
     throw new Error(`${key} must be a positive integer`);
   }
   return value;
+}
+
+function classifyExecutionAcquireApplicationEvidence(snapshot, expected) {
+  const rows = Array.isArray(snapshot?.rows) ? snapshot.rows : [];
+  const finalOwnership = snapshot?.finalOwnership;
+  if (
+    !Number.isSafeInteger(finalOwnership?.executionGeneration)
+    || (finalOwnership.owner !== null && typeof finalOwnership.owner !== "object")
+  ) {
+    return executionAcquireEvidenceConflict("invalid_final_ownership", rows);
+  }
+  const groups = new Map();
+  for (const row of rows) {
+    const eventId = Number(row?.eventId);
+    if (
+      !Number.isSafeInteger(eventId)
+      || eventId < 1
+      || row?.sessionId !== expected.sessionId
+      || row?.phase !== "execution_acquire"
+      || typeof row?.transitionId !== "string"
+      || !row.transitionId.startsWith("acquire:")
+    ) {
+      return executionAcquireEvidenceConflict("invalid_event", rows);
+    }
+    const group = groups.get(eventId) ?? {
+      event: {
+        eventId,
+        sessionId: row.sessionId,
+        phase: row.phase,
+        transitionId: row.transitionId,
+      },
+      rows: [],
+    };
+    if (
+      group.event.transitionId !== row.transitionId
+      || group.event.sessionId !== row.sessionId
+    ) {
+      return executionAcquireEvidenceConflict("mixed_event_identity", rows);
+    }
+    group.rows.push(row);
+    groups.set(eventId, group);
+  }
+
+  const logicalEvents = [];
+  for (const group of groups.values()) {
+    if (group.rows.some((row) => row.sourceSeq === null || row.effectApplication === null)) {
+      return executionAcquireEvidenceConflict("partial_evidence", rows);
+    }
+    const applications = group.rows.map((row) => normalizeAcquireApplication(
+      row.effectApplication,
+      group.event,
+      expected.sessionId,
+    ));
+    if (applications.some((application) => application === null)) {
+      return executionAcquireEvidenceConflict("invalid_application", rows);
+    }
+    const signatures = new Set(group.rows.map((row) => JSON.stringify(row.effectApplication)));
+    if (signatures.size !== 1) {
+      return executionAcquireEvidenceConflict("mixed_application", rows);
+    }
+    const application = applications[0];
+    const relevant = application.applied === false
+      || application.ownershipGeneration === expected.expectedGeneration
+      || application.registrationId === expected.registrationId
+      || application.pid === expected.pid;
+    if (relevant) {
+      logicalEvents.push({
+        event: group.event,
+        application,
+        transportReceiptCount: group.rows.length,
+      });
+    }
+  }
+
+  if (logicalEvents.length > 1) {
+    return executionAcquireEvidenceConflict("logical_event_duplicate", rows, logicalEvents.length);
+  }
+  const logicalEvent = logicalEvents[0];
+  if (!logicalEvent) {
+    return finalOwnership.executionGeneration === expected.expectedGeneration - 1
+        && finalOwnership.owner === null
+      ? {
+          classification: "no_transition",
+          logicalAcquireEventCount: 0,
+          transportReceiptCount: 0,
+          event: null,
+          application: null,
+        }
+      : executionAcquireEvidenceConflict("absent_event_final_state_mismatch", rows);
+  }
+  if (logicalEvent.application.applied === false) {
+    return finalOwnership.executionGeneration === expected.expectedGeneration - 1
+        && finalOwnership.owner === null
+      ? {
+          classification: "no_transition",
+          logicalAcquireEventCount: 1,
+          transportReceiptCount: logicalEvent.transportReceiptCount,
+          event: logicalEvent.event,
+          application: logicalEvent.application,
+        }
+      : executionAcquireEvidenceConflict("unapplied_event_final_state_mismatch", rows);
+  }
+  const commandId = logicalEvent.application.executionCommandId;
+  const identityMatches = logicalEvent.application.sessionId === expected.sessionId
+    && logicalEvent.application.ownershipGeneration === expected.expectedGeneration
+    && logicalEvent.application.registrationId === expected.registrationId
+    && logicalEvent.application.pid === expected.pid
+    && typeof commandId === "string"
+    && logicalEvent.event.transitionId === `acquire:${commandId}`;
+  if (!identityMatches) {
+    return executionAcquireEvidenceConflict("applied_identity_mismatch", rows);
+  }
+  if (
+    finalOwnership.executionGeneration !== expected.expectedGeneration
+    || finalOwnership.owner !== null
+  ) {
+    return executionAcquireEvidenceConflict("applied_event_final_state_mismatch", rows);
+  }
+  return {
+    classification: "applied",
+    logicalAcquireEventCount: 1,
+    transportReceiptCount: logicalEvent.transportReceiptCount,
+    event: logicalEvent.event,
+    application: logicalEvent.application,
+  };
+}
+
+function normalizeAcquireApplication(value, event, sessionId) {
+  if (typeof value !== "object" || value === null || typeof value.applied !== "boolean") {
+    return null;
+  }
+  const owner = value.canonical_execution_ownership;
+  if (value.applied === true && (typeof owner !== "object" || owner === null)) return null;
+  if (owner !== null && owner !== undefined && typeof owner !== "object") return null;
+  const eventCommandId = event.transitionId.slice("acquire:".length);
+  return {
+    applied: value.applied,
+    sessionId,
+    ownershipGeneration: Number.isSafeInteger(owner?.ownership_generation)
+      ? Number(owner.ownership_generation)
+      : null,
+    registrationId: typeof owner?.registration_id === "string"
+      ? owner.registration_id
+      : null,
+    pid: Number.isSafeInteger(owner?.pid) ? Number(owner.pid) : null,
+    executionCommandId: typeof owner?.execution_command_id === "string"
+      ? owner.execution_command_id
+      : eventCommandId,
+  };
+}
+
+function executionAcquireEvidenceConflict(conflict, rows, logicalAcquireEventCount = 1) {
+  return {
+    classification: "conflict",
+    logicalAcquireEventCount,
+    transportReceiptCount: rows.filter((row) => row?.sourceSeq !== null).length,
+    event: null,
+    application: null,
+    conflict,
+  };
 }
 
 function assertIdentifier(value, field) {

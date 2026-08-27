@@ -53,7 +53,9 @@ import { applyCanonicalSessionProjection } from
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
 import {
+  createExecutionActivation,
   isTerminalTaskStatus,
+  type ExecutionActivation,
   type InterventionMessage,
   type Task,
   type TaskStatus,
@@ -236,13 +238,18 @@ export class TaskExecutor {
    * task.executionPromise에 drain promise를 박아 *후속 shutdown/cancel*이 drain 가능.
    * promise 실패는 task.error에 박히고 status="error"로 전환.
    */
-  startExecution(task: Task, agent: AgentProfile): Promise<void> {
-    return this.startExecutionWithOwnership(task, agent);
+  startExecution(
+    task: Task,
+    agent: AgentProfile,
+    transferredActivation?: ExecutionActivation,
+  ): Promise<void> {
+    return this.startExecutionWithOwnership(task, agent, transferredActivation);
   }
 
   private startExecutionWithOwnership(
     task: Task,
     agent: AgentProfile,
+    transferredActivation?: ExecutionActivation,
   ): Promise<void> {
     const retainedRunner = task.runnerRetainedForClaudeBackground === true
       ? task.runner
@@ -250,11 +257,6 @@ export class TaskExecutor {
     if (task.runner && !retainedRunner) {
       throw new Error(
         `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
-      );
-    }
-    if (task.executionActivationPromise) {
-      throw new Error(
-        `Task ${task.agentSessionId} already has an execution admission in flight`,
       );
     }
     const presetRuntime = applyModelPresetRuntime(task, agent, this.modelCatalog);
@@ -285,29 +287,33 @@ export class TaskExecutor {
       return task.executionPromise!;
     }
 
-    const activationHandoff = task.executionActivationHandoff;
-    const activation = deferred<void>();
-    task.executionActivationPromise = activation.promise;
-    void activation.promise.catch(() => undefined);
-    if (activationHandoff) {
-      void activation.promise.then(
-        () => activationHandoff.resolve(),
-        (error) => activationHandoff.reject(error),
-      ).finally(() => {
-        if (task.executionActivationHandoff === activationHandoff) {
-          task.executionActivationHandoff = undefined;
-        }
-      });
+    const activation = transferredActivation ?? createExecutionActivation();
+    if (
+      task.executionPromise
+      || (task.executionActivation && task.executionActivation !== activation)
+    ) {
+      throw new Error(
+        `Task ${task.agentSessionId} already has an execution admission in flight`,
+      );
     }
+    task.executionActivation = activation;
+    void activation.promise.catch(() => undefined);
+    const releaseActivation = (): void => {
+      if (task.executionActivation === activation) task.executionActivation = undefined;
+    };
     const promise = this.startOwnedExecution(
       task,
       agent,
       backend,
       retainedRunner,
-      () => activation.resolve(undefined),
+      () => {
+        activation.resolve();
+        releaseActivation();
+      },
     ).catch(
       async (err: unknown) => {
         activation.reject(err);
+        releaseActivation();
         if (isExecutionOwnershipConflictError(err)) {
           // Recovery scans consult this so they stop re-attempting a session
           // faster than the rejection said was worth trying.
@@ -1510,20 +1516,6 @@ export class TaskExecutor {
   private async _finalize(task: Task): Promise<void> {
     await this.executorFinalizer.finalize(task);
   }
-}
-
-function deferred<T>(): {
-  promise: Promise<T>;
-  resolve(value: T | PromiseLike<T>): void;
-  reject(reason?: unknown): void;
-} {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
 }
 
 function errorMessage(error: unknown): string {

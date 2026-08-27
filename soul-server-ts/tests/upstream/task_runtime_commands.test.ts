@@ -10,7 +10,10 @@ import {
 } from "../../src/upstream/task_runtime_commands.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
-import type { Task } from "../../src/task/task_models.js";
+import {
+  createExecutionActivation,
+  type Task,
+} from "../../src/task/task_models.js";
 import type { ModelPreset } from "../../src/model_catalog.js";
 import type { NewSessionAgentProfileSource } from "../../src/agent_profile_source.js";
 
@@ -419,8 +422,9 @@ describe("TaskRuntimeCommands.intervene", () => {
   it("keeps the session-scoped DB profile on auto-resume instead of refreshing it", async () => {
     const snapshot = { ...codexAgent, name: "DB snapshot" };
     const resumedTask = makeTask({ agentProfileSnapshot: snapshot });
+    const activation = createExecutionActivation();
     const addIntervention = vi.fn(async (_params, onResume) => {
-      onResume(resumedTask);
+      onResume(resumedTask, activation);
       return { autoResumed: true };
     });
     const source = {
@@ -433,16 +437,17 @@ describe("TaskRuntimeCommands.intervene", () => {
     await runtime.intervene({ agentSessionId: resumedTask.agentSessionId, text: "continue" });
 
     expect(source.resolve).not.toHaveBeenCalled();
-    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, snapshot);
+    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, snapshot, activation);
   });
 
   it("forwards intervention params and auto-resume callback starts execution with the task profile", async () => {
     const resumedTask = makeTask({ agentSessionId: "sess-resume", profileId: codexAgent.id });
+    const activation = createExecutionActivation();
     const extraContextItems = [
       { key: "review", label: "Review", content: "fresh context" },
     ];
     const addIntervention = vi.fn(async (_params, onResume) => {
-      onResume(resumedTask);
+      onResume(resumedTask, activation);
       return { autoResumed: true };
     });
     const { runtime, taskManager, taskExecutor } = createRuntime({ addIntervention });
@@ -466,7 +471,7 @@ describe("TaskRuntimeCommands.intervene", () => {
       },
       expect.any(Function),
     );
-    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, codexAgent);
+    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, codexAgent, activation);
     expect(result).toEqual({ autoResumed: true });
   });
 
@@ -479,8 +484,9 @@ describe("TaskRuntimeCommands.intervene", () => {
       codexThreadId: "736ddf46-4c72-4b02-a44a-fab3e5e58fe5",
       lastEventId: 581,
     });
+    const activation = createExecutionActivation();
     const addIntervention = vi.fn(async (_params, onResume) => {
-      onResume(resumedTask);
+      onResume(resumedTask, activation);
       return { autoResumed: true };
     });
     const { runtime, taskExecutor } = createRuntime({
@@ -502,7 +508,7 @@ describe("TaskRuntimeCommands.intervene", () => {
       }),
       expect.any(Function),
     );
-    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, claudeAgent);
+    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, claudeAgent, activation);
     expect(result).toEqual({ autoResumed: true });
   });
 

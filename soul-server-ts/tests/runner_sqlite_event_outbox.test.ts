@@ -1234,6 +1234,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
     const legacy = new DatabaseSync(path);
     legacy.exec(`
+      ALTER TABLE runner_event_outbox DROP COLUMN execution_generation;
       ALTER TABLE runner_event_outbox DROP COLUMN in_flight_tools_json;
       ALTER TABLE runner_event_outbox DROP COLUMN liveness_at;
       ALTER TABLE runner_prebootstrap_lifecycle DROP COLUMN in_flight_tools_json;
@@ -1253,8 +1254,11 @@ describe("RunnerSqliteEventOutbox", () => {
         const columns = rows.map((column) => column.name);
         expect(columns).toContain("liveness_at");
         expect(columns).toContain("in_flight_tools_json");
+        if (table === "runner_event_outbox") {
+          expect(columns).toContain("execution_generation");
+        }
       }
-      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 9 });
+      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 10 });
     } finally {
       verified.close();
     }
@@ -1316,7 +1320,7 @@ describe("RunnerSqliteEventOutbox", () => {
       application_state: "claimed",
       claimed_execution_command_id: "execute-v8",
     });
-    expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 9 });
+    expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 10 });
     verified.close();
     migrated.close();
   });
@@ -1361,7 +1365,7 @@ describe("RunnerSqliteEventOutbox", () => {
       application_state: "claimed",
       claimed_execution_command_id: "execute-interrupted-v9",
     });
-    expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 9 });
+    expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 10 });
     verified.close();
     recovered.close();
   });
@@ -1859,7 +1863,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
     const verified = new DatabaseSync(path);
     try {
-      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 9 });
+      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 10 });
       expect(verified.prepare(`
         SELECT acked_through, ack_checkpoint_hash
         FROM runner_event_outbox WHERE record_kind = 'bootstrap'

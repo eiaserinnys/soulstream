@@ -28,6 +28,14 @@ import {
   withBaselineHonesty,
 } from "./fault-scenario-result.mjs";
 import {
+  ACTIVATE_ROLLBACK_RETRY_BUDGET,
+  activateRollbackMutationDetection,
+  activateRollbackViolations,
+  observeActivationFailureOutcome,
+  observeRaiseRemovedMutationViolation,
+  requestedActivateRollbackMutation,
+} from "./fault-activate-rollback.mjs";
+import {
   DELIVERY_LOG_TERMS,
   DELIVERY_SCENARIOS,
 } from "./fault-scenarios-delivery.mjs";
@@ -75,12 +83,171 @@ const LOG_TERMS = {
   ],
   "activate-rollback": [
     "ACTIVATE_ROLLBACK_",
-    "lab injected execution activation failure",
+    "lab injected sessions-row execution acquire failure",
     "spawned runner rollback failed",
-    "execution_orphaned_spawn",
+    "execution acquire",
   ],
   F7: ["F7_", "dead_letter", "completion_notification", "delivery"],
 };
+// The isolated lab fixes the recovery scan at 15 seconds. One full scan plus
+// scheduling slack proves the non-transactional counter did not advance again.
+const ACTIVATE_ROLLBACK_RETRY_HORIZON_MS = 17_000;
+
+async function observePredicateMisplacedLifecycle({
+  runtime,
+  recorder,
+  sessionId,
+  followupRegistration,
+  baselineAdmission,
+  expectedGeneration,
+  faultObservationOffset,
+}) {
+  await runtime.waitForTerminal(sessionId, 30_000);
+  await runtime.waitForTerminalRunnerRetirementSince(
+    sessionId,
+    faultObservationOffset,
+    followupRegistration.registrationId,
+    followupRegistration.identityPid,
+  );
+  const evidence = await runtime.executionAcquireApplicationEvidence({
+    sessionId,
+    expectedGeneration,
+    registrationId: followupRegistration.registrationId,
+    pid: followupRegistration.identityPid,
+  });
+  assertScenario(
+    evidence?.classification !== "conflict",
+    `harness evidence conflict: ${evidence?.conflict ?? "unknown"}`,
+  );
+  assertScenario(
+    evidence?.classification === "applied" || evidence?.classification === "no_transition",
+    "harness evidence conflict: invalid acquire classification",
+  );
+  const event = evidence.event;
+  const application = evidence.application;
+  if (event !== null) {
+    assertScenario(
+      event.sessionId === sessionId
+        && event.phase === "execution_acquire"
+        && Number.isSafeInteger(event.eventId)
+        && event.eventId > 0,
+      "central acquire evidence identity mismatch",
+    );
+  }
+  if (evidence.classification === "applied") {
+    assertScenario(
+      application?.applied === true
+        && application.sessionId === sessionId
+        && application.ownershipGeneration === expectedGeneration
+        && application.registrationId === followupRegistration.registrationId
+        && application.pid === followupRegistration.identityPid
+        && typeof application.executionCommandId === "string"
+        && event?.transitionId === `acquire:${application.executionCommandId}`,
+      "central acquire evidence identity mismatch",
+    );
+  } else if (event !== null || application !== null) {
+    assertScenario(
+      event !== null
+        && application?.applied === false
+        && application.sessionId === sessionId
+        && typeof application.executionCommandId === "string"
+        && event.transitionId === `acquire:${application.executionCommandId}`,
+      "central acquire evidence identity mismatch",
+    );
+  }
+
+  let acquireTransition = null;
+  if (evidence.classification === "applied") {
+    acquireTransition = await runtime.waitForExecutionOwnershipTransitionSince(
+      sessionId,
+      faultObservationOffset,
+      "acquire",
+    );
+    assertScenario(
+      acquireTransition.sessionId === sessionId
+        && acquireTransition.operation === "acquire"
+        && acquireTransition.applied === true
+        && acquireTransition.ownershipGeneration === expectedGeneration,
+      "activate rollback did not observe the exact follow-up execution acquire",
+    );
+  }
+  const counter = await runtime.activationFailureFaultCount();
+  let releaseTransition = null;
+  if (evidence.classification === "applied") {
+    releaseTransition = await runtime.waitForExecutionOwnershipTransitionSince(
+      sessionId,
+      faultObservationOffset,
+      "release",
+    );
+    assertScenario(
+      releaseTransition.sessionId === sessionId
+        && releaseTransition.operation === "release"
+        && releaseTransition.applied === true
+        && releaseTransition.ownershipGeneration === expectedGeneration,
+      "activate rollback did not observe the exact follow-up execution release",
+    );
+  }
+  const commandId = application?.executionCommandId ?? null;
+  const attemptedCommandFingerprint = typeof commandId === "string"
+    ? await runtime.executionCommandFingerprint(commandId)
+    : null;
+  const mutationObservation = counter.semanticReachCount !== 0
+    ? null
+    : evidence.classification === "applied"
+      ? {
+          sentinel: "fault_predicate_missed_applied_acquire",
+          observationPoint: "after_durable_followup_lifecycle",
+          acquireEvidence: {
+            source: "central_event_receipt_join",
+            eventId: event.eventId,
+            sessionId,
+            ownershipGeneration: application.ownershipGeneration,
+            registrationId: application.registrationId,
+            pid: application.pid,
+            executionCommandId: application.executionCommandId,
+          },
+          semanticReachCount: 0,
+        }
+      : {
+          sentinel: "sessions_row_acquire_transition_not_reached",
+          observationPoint: "after_durable_followup_lifecycle",
+          semanticReachCount: 0,
+        };
+  const reach = {
+    semanticReachCount: counter.semanticReachCount,
+    semanticReachCountBeforeHorizon: counter.semanticReachCount,
+    attemptedGeneration: evidence.classification === "applied" ? expectedGeneration : null,
+    attemptedCommandFingerprint,
+    retryHorizonMs: 0,
+    stable: true,
+  };
+  const followupAdmissionDistinct = followupRegistration.registrationId
+      !== baselineAdmission.registrationId
+    && (evidence.classification !== "applied"
+      || application.ownershipGeneration === expectedGeneration)
+    && commandId !== baselineAdmission.executionCommandId;
+  await recorder.event("fault_reached", {
+    id: "activate-rollback",
+    sessionId,
+    runnerPid: followupRegistration.identityPid,
+    mutation: "predicate_misplaced",
+    semanticReachCount: reach.semanticReachCount,
+    attemptedGeneration: reach.attemptedGeneration,
+    attemptedCommandFingerprint: reach.attemptedCommandFingerprint,
+    followupRegistration,
+    baselineAdmission,
+    mutationObservation,
+    evidenceClassification: evidence.classification,
+    acquireTransition,
+    releaseTransition,
+  });
+  return {
+    reach,
+    mutationObservation,
+    followupAdmissionDistinct,
+    evidence,
+  };
+}
 
 export function canonicalScenarioOrder() {
   return [...SCENARIO_ORDER];
@@ -469,97 +636,320 @@ const SCENARIOS = {
 
   async "activate-rollback"(runtime, recorder) {
     const seed = shortId();
+    const baselineMarker = `ACTIVATE_ROLLBACK_BASELINE_${seed}`;
+    const rejectedMarker = `ACTIVATE_ROLLBACK_SHOULD_NOT_RUN_${seed}`;
+    const mutation = requestedActivateRollbackMutation();
     let runner;
     let scenarioError;
-    await runtime.installActivationFailureFault(8);
+    let scenarioResult;
+    let cleanupResidue;
+    let cleanupFailure;
+    let postCleanupRegistration;
+    let postCleanupOwnership;
+    const baselineAdmissionOffset = await runtime.nodeLogOffset();
+    const sessionId = await runtime.createSession(`Reply with exactly ${baselineMarker}.`);
+    const baselineRunner = await runtime.waitForRunner(sessionId);
+    const baselineAcquire = await runtime.waitForExecutionOwnershipTransitionSince(
+      sessionId,
+      baselineAdmissionOffset,
+      "acquire",
+    );
+    const baselineOwnership = await waitFor(
+      async () => {
+        const snapshot = await runtime.sessionExecutionOwnership(sessionId);
+        return snapshot?.owner !== null ? snapshot : undefined;
+      },
+      30_000,
+      "activate-rollback baseline never acquired sessions-row execution ownership",
+      100,
+    );
+    assertScenario(
+      baselineOwnership.owner.pid === baselineRunner.pid,
+      "activate-rollback baseline runner did not match sessions-row owner",
+    );
+    const baselineCommandFingerprint = await runtime.executionCommandFingerprint(
+      baselineOwnership.owner.executionCommandId,
+    );
+    const baselineDrainOffset = await runtime.nodeLogOffset();
+    await runtime.waitForMarker(sessionId, baselineMarker);
+    await runtime.waitForTerminal(sessionId);
+    const before = await waitFor(
+      async () => {
+        const snapshot = await runtime.sessionExecutionOwnership(sessionId);
+        return snapshot?.status === "completed"
+          && snapshot.owner === null
+          && Number.isSafeInteger(snapshot.executionGeneration)
+          && Number.isSafeInteger(snapshot.terminalRevision)
+          ? snapshot
+          : undefined;
+      },
+      30_000,
+      "activate-rollback baseline did not settle with an ownerless terminal revision",
+      250,
+    );
+    const baselineRelease = await runtime.waitForExecutionOwnershipTransitionSince(
+      sessionId,
+      baselineDrainOffset,
+      "release",
+    );
+    assertScenario(
+      baselineAcquire.ownershipGeneration === baselineOwnership.executionGeneration
+        && baselineRelease.ownershipGeneration === baselineOwnership.executionGeneration,
+      "activate-rollback baseline acquire/release generation did not match sessions-row ownership",
+    );
+    const baselineRetirement = await runtime.waitForTerminalRunnerRetirementSince(
+      sessionId,
+      baselineDrainOffset,
+      baselineOwnership.owner.registrationId,
+      baselineRunner.pid,
+    );
+    const baselineAdmission = {
+      pid: baselineRunner.pid,
+      executionGeneration: baselineOwnership.executionGeneration,
+      registrationId: baselineOwnership.owner.registrationId,
+      executionCommandId: baselineOwnership.owner.executionCommandId,
+      commandFingerprint: baselineCommandFingerprint,
+      acquiredAt: baselineAcquire.time,
+      releasedAt: baselineRelease.time,
+      retiredAt: baselineRetirement.retirement.time,
+      retiredRegistration: baselineRetirement.registration,
+    };
+    await recorder.event("baseline_admission_drained", {
+      id: "activate-rollback",
+      sessionId,
+      baselineAdmission,
+    });
+    await runtime.installActivationFailureFault(8, mutation);
     try {
-      const activationLogOffset = await runtime.nodeLogOffset();
-      const sessionId = await runtime.createSession(
-        `Reply with exactly ACTIVATE_ROLLBACK_SHOULD_NOT_RUN_${seed}.`,
-      );
-      runner = await runtime.waitForRunner(sessionId);
-      const ownership = await waitFor(
-        async () => (await runtime.ownerships(sessionId)).find(
-          (row) => row.phase === "identity_proven",
-        ),
-        30_000,
-        "activate-rollback never reached identity_proven",
-        100,
-      );
-      await runtime.writeRunnerPidEvidence(sessionId, process.pid);
-      await recorder.event("fault_injected", {
-        id: "activate-rollback",
+      const faultObservationOffset = await runtime.nodeLogOffset();
+      const deliveryId = randomUUID();
+      const interventionOutcomePromise = settle(runtime.intervene(
         sessionId,
-        runnerPid: runner.pid,
-        conflictingPidEvidence: process.pid,
-        ownershipGeneration: ownership.ownership_generation,
-      });
-      const activationOutcome = await waitFor(
-        async () => {
-          const nodeLog = await readFile(runtime.nodeLog);
-          const from = activationLogOffset <= nodeLog.length ? activationLogOffset : 0;
-          const activationApplied = nodeLog.subarray(from).toString("utf8").split("\n").some(
-            (line) => {
-              try {
-                const entry = JSON.parse(line);
-                return entry.sessionId === sessionId
-                  && entry.ownershipGeneration === ownership.ownership_generation
-                  && entry.operation === "activate"
-                  && entry.applied === true;
-              } catch {
-                return false;
-              }
-            },
-          );
-          if (activationApplied) return "applied";
-          const rows = await runtime.ownerships(sessionId);
-          return rows.some((row) => (
-            row.ownership_generation === ownership.ownership_generation
-            && row.phase === "failed"
-            && String(row.failure_reason).includes("execution activate failed")
-          )) ? "failed" : undefined;
-        },
-        60_000,
-        "activate failure did not converge to failed ownership",
-        500,
-      );
-      if (activationOutcome === "applied") {
-        throw new Error("activate-rollback fault injection failed: activate applied:true");
-      }
-      await waitFor(
-        () => runtime.runnerAlive(runner.pid) ? undefined : true,
-        15_000,
-        "activate rollback left the spawned child live",
-        100,
-      );
-      const status = await runtime.waitForTerminal(sessionId, 60_000);
-      assertScenario(status === "error", `activate rollback session status was ${status}`);
-      await delay(6_000);
-      const convergedOwnerships = await runtime.ownerships(sessionId);
-      const openPhases = new Set(["reserved", "spawned", "identity_proven", "active"]);
-      assertScenario(
-        convergedOwnerships.every((row) => !openPhases.has(row.phase)),
-        "activate rollback left an open ownership generation",
-      );
-      assertScenario(
-        convergedOwnerships.every(
-          (row) => !String(row.failure_reason ?? "").includes("orphaned_spawn"),
+        buildInterventionPayload(
+          deliveryId,
+          `Reply with exactly ${rejectedMarker}.`,
         ),
-        "activate rollback converged through orphaned_spawn",
+      ));
+      const followupRegistrationPromise = settle(
+        runtime.waitForDistinctRunnerRegistration(
+          sessionId,
+          baselineAdmission.registrationId,
+        ),
       );
-      return {
+      const predicateMutation = mutation === "predicate_misplaced";
+      const initialReach = predicateMutation
+        ? null
+        : await runtime.waitForActivationFailureFault(30_000);
+      const followupRegistrationOutcome = await followupRegistrationPromise;
+      assertScenario(
+        followupRegistrationOutcome.status === "fulfilled",
+        `activate rollback did not observe a distinct follow-up runner: `
+          + `${followupRegistrationOutcome.reason?.message ?? "unknown"}`,
+      );
+      const followupRegistration = followupRegistrationOutcome.value;
+      runner = { pid: followupRegistration.identityPid };
+      const faultEnvelopeSourceSeq = predicateMutation
+        ? null
+        : await runtime.executionAcquireEnvelopeSourceSeq(
+          sessionId,
+          followupRegistration.registrationId,
+          followupRegistration.identityPid,
+        );
+      if (!predicateMutation) {
+        await recorder.event("fault_reached", {
+          id: "activate-rollback",
+          sessionId,
+          runnerPid: runner.pid,
+          mutation,
+          semanticReachCount: initialReach.semanticReachCount,
+          attemptedGeneration: initialReach.attemptedGeneration,
+          attemptedCommandFingerprint: initialReach.attemptedCommandFingerprint,
+          followupRegistration,
+          baselineAdmission,
+          mutationObservation: null,
+        });
+      }
+      const deadLetterPromise = mutation === "raise_removed" || predicateMutation
+        ? Promise.resolve({ status: "not_expected", value: null })
+        : settle(runtime.waitForEventIngressDeadLetterSince(
+          sessionId,
+          faultEnvelopeSourceSeq,
+          faultObservationOffset,
+        ));
+      const followupInventoryPromise = runtime.observeDistinctRunnerRegistrationInventoryUntil(
+        sessionId,
+        baselineAdmission.registrationId,
+        mutation === "raise_removed" || predicateMutation
+          ? interventionOutcomePromise
+          : deadLetterPromise,
+        [followupRegistration],
+      );
+      const interventionOutcome = await interventionOutcomePromise;
+      let mutationObservation = null;
+      let followupAdmissionDistinct;
+      let reach;
+      let followupInventory;
+      let deadLetterOutcome;
+      if (predicateMutation) {
+        const predicateLifecycle = await observePredicateMisplacedLifecycle({
+          runtime,
+          recorder,
+          sessionId,
+          followupRegistration,
+          baselineAdmission,
+          expectedGeneration: before.executionGeneration + 1,
+          faultObservationOffset,
+        });
+        mutationObservation = predicateLifecycle.mutationObservation;
+        followupAdmissionDistinct = predicateLifecycle.followupAdmissionDistinct;
+        reach = predicateLifecycle.reach;
+        followupInventory = await followupInventoryPromise;
+        deadLetterOutcome = await deadLetterPromise;
+      } else if (mutation === "raise_removed") {
+        await observeRaiseRemovedMutationViolation({
+          waitForObservation: (observe) => waitFor(
+            observe,
+            120_000,
+            "activate rollback did not observe an owner commit or rejected marker",
+            1_000,
+          ),
+          observeOwnerCommit: async () => {
+            const ownership = await runtime.sessionExecutionOwnership(sessionId);
+            return ownership.executionGeneration === before.executionGeneration + 1
+              && ownership.owner === null
+              ? ownership
+              : undefined;
+          },
+          observeMarker: () => runtime.countTimelineEvents(
+            sessionId,
+            "assistant_message",
+            rejectedMarker,
+          ),
+        });
+      } else if (mutation === "cleanup_removed") {
+        await delay(2_000);
+      } else {
+        await waitFor(
+          () => runtime.runnerAlive(runner.pid) ? undefined : true,
+          15_000,
+          "activate rollback left the spawned child live",
+          100,
+        );
+      }
+      if (!predicateMutation) {
+        ({ reach, followupInventory, deadLetterOutcome } = await observeActivationFailureOutcome({
+            deadLetterPromise,
+            observeRetryHorizon: () => runtime.activationFailureFaultCountAfterHorizon(
+              ACTIVATE_ROLLBACK_RETRY_HORIZON_MS,
+            ),
+            followupInventoryPromise,
+          }));
+        followupAdmissionDistinct = followupRegistration.registrationId
+            !== baselineAdmission.registrationId
+          && initialReach.attemptedGeneration === before.executionGeneration + 1
+          && initialReach.attemptedCommandFingerprint !== null
+          && initialReach.attemptedCommandFingerprint !== baselineAdmission.commandFingerprint;
+      }
+      const after = await runtime.sessionExecutionOwnership(sessionId);
+      const markerCount = await runtime.countTimelineEvents(
+        sessionId,
+        "assistant_message",
+        rejectedMarker,
+      );
+      const observation = {
+        semanticReachCount: reach.semanticReachCount,
+        semanticReachCountBeforeHorizon: reach.semanticReachCountBeforeHorizon,
+        retryHorizonStable: reach.stable,
+        retryBudget: ACTIVATE_ROLLBACK_RETRY_BUDGET,
+        retryHorizonMs: reach.retryHorizonMs,
+        faultEnvelopeSourceSeq,
+        deadLetterCode: deadLetterOutcome.status === "fulfilled"
+          ? deadLetterOutcome.value.code
+          : null,
+        deadLetterSourceSeq: deadLetterOutcome.status === "fulfilled"
+          ? deadLetterOutcome.value.sourceSeq
+          : null,
+        baselineAdmissionDrained: true,
+        followupAdmissionDistinct,
+        followupRegistrationObservationCount: followupInventory.registrationCount,
+        followupPidObservationCount: followupInventory.pidCount,
+        followupRegistrationIdentityObservationCount: followupInventory.identityCount,
+        followupRegistrationObservations: followupInventory.observations,
+        baselineRegistrationId: baselineAdmission.registrationId,
+        followupRegistrationId: followupRegistration.registrationId,
+        baselineCommandFingerprint: baselineAdmission.commandFingerprint,
+        attemptedCommandFingerprint: reach.attemptedCommandFingerprint,
+        attemptedGeneration: reach.attemptedGeneration,
+        acquireApplied: after.executionGeneration !== before.executionGeneration
+          || after.owner !== null,
+        generationBefore: before.executionGeneration,
+        generationAfter: after.executionGeneration,
+        ownerBefore: before.owner,
+        ownerAfter: after.owner,
+        terminalRevisionBefore: before.terminalRevision,
+        terminalRevisionAfter: after.terminalRevision,
+        childAlive: runtime.runnerAlive(runner.pid),
+        registrationPresent: (await runtime.runnerExecutionRegistration(sessionId)).present,
+        markerCount,
+      };
+      const violations = activateRollbackViolations(observation);
+      let mutationDetection;
+      if (mutation) {
+        mutationDetection = activateRollbackMutationDetection(mutation, observation);
+        assertScenario(
+          mutationDetection.detected,
+          `activate-rollback mutation was not detected: ${mutation}`,
+        );
+      } else {
+        assertScenario(
+          violations.length === 0,
+          `activate-rollback contract failed: ${violations.join("; ")}`,
+        );
+      }
+      const verdict = {
+        mutation,
+        semanticReachCount: observation.semanticReachCount,
+        retryBudget: observation.retryBudget,
+        retryHorizonStable: observation.retryHorizonStable,
+        deadLetter: {
+          code: observation.deadLetterCode,
+          faultEnvelopeSourceSeq: observation.faultEnvelopeSourceSeq,
+          sourceSeq: observation.deadLetterSourceSeq,
+        },
+        followupAdmissions: {
+          registrationCount: observation.followupRegistrationObservationCount,
+          pidCount: observation.followupPidObservationCount,
+          identityCount: observation.followupRegistrationIdentityObservationCount,
+        },
+        acquireApplied: observation.acquireApplied,
+        generation: [observation.generationBefore, observation.generationAfter],
+        terminalRevision: [
+          observation.terminalRevisionBefore,
+          observation.terminalRevisionAfter,
+        ],
+        childAlive: observation.childAlive,
+        markerCount: observation.markerCount,
+        mutationObservation,
+        violations,
+        mutationDetection,
+      };
+      scenarioResult = {
         id: "activate-rollback",
         status: "passed",
         sessionId,
+        deliveryId,
         runnerPid: runner.pid,
-        ownershipGeneration: ownership.ownership_generation,
-        sessionStatus: status,
-        childAlive: false,
-        ownerships: convergedOwnerships,
+        mutation,
+        mutationDetection,
+        interventionOutcome,
+        before,
+        after,
+        observation,
+        violations,
+        verdict,
       };
     } catch (error) {
       scenarioError = error;
-      throw error;
     } finally {
       const cleanupErrors = [];
       try {
@@ -567,20 +957,83 @@ const SCENARIOS = {
       } catch (error) {
         cleanupErrors.push(error);
       }
-      if (runner && runtime.runnerAlive(runner.pid)) {
+      if (runner) {
         try {
-          await runtime.killRunnerPid(runner.pid, "SIGKILL");
+          postCleanupRegistration = await runtime.runnerExecutionRegistration(sessionId);
+          if (runtime.runnerAlive(runner.pid)) {
+            if (!postCleanupRegistration.present) {
+              throw new Error("activate rollback left an unregistered runner child live");
+            }
+            postCleanupRegistration = await runtime.terminateObservedLabRunnerRegistration(
+              sessionId,
+              runner.pid,
+            );
+          }
+          if (postCleanupRegistration.present) {
+            await runtime.removeLabRunnerRegistration(sessionId, runner.pid);
+            postCleanupRegistration = await runtime.runnerExecutionRegistration(sessionId);
+          }
+          if (postCleanupRegistration.present) {
+            throw new Error("activate rollback left a live runner registration");
+          }
         } catch (error) {
           cleanupErrors.push(error);
         }
       }
+      try {
+        cleanupResidue = await runtime.activationFailureFaultResidue();
+        if (
+          cleanupResidue.triggerCount !== 0
+          || cleanupResidue.functionCount !== 0
+          || cleanupResidue.counterCount !== 0
+        ) {
+          throw new Error(`activate rollback fault residue: ${JSON.stringify(cleanupResidue)}`);
+        }
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+      try {
+        postCleanupOwnership = await runtime.sessionExecutionOwnership(sessionId);
+        if (postCleanupOwnership?.owner !== null) {
+          throw new Error("activate rollback left a sessions-row execution registration");
+        }
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
       if (cleanupErrors.length > 0) {
-        throw new AggregateError(
+        const cleanupAggregate = new AggregateError(
           [...(scenarioError ? [scenarioError] : []), ...cleanupErrors],
           "activate-rollback injection and cleanup failed",
         );
+        if (scenarioError || scenarioResult?.verdict?.mutationObservation == null) {
+          throw cleanupAggregate;
+        }
+        cleanupFailure = serializeError(
+          cleanupErrors.length === 1 ? cleanupErrors[0] : cleanupAggregate,
+        );
+        scenarioResult = {
+          ...scenarioResult,
+          status: "failed",
+          cleanupFailure,
+        };
       }
     }
+    if (scenarioError) throw scenarioError;
+    const completedResult = {
+      ...scenarioResult,
+      cleanup: {
+        faultObjects: cleanupResidue,
+        childAlive: runner ? runtime.runnerAlive(runner.pid) : false,
+        registrationPresent: postCleanupRegistration?.present ?? false,
+        sessionsRowOwner: postCleanupOwnership?.owner ?? null,
+      },
+      ...(cleanupFailure ? { cleanupFailure } : {}),
+    };
+    process.stdout.write(
+      `ACTIVATE_ROLLBACK_${mutation ? "MUTATION" : "VERDICT"} `
+        + `${JSON.stringify({ ...completedResult.verdict, cleanup: completedResult.cleanup })}\n`,
+    );
+    return completedResult;
   },
 
   async F1(runtime, recorder) {

@@ -35,16 +35,22 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
 }
 
 describe("AutoResumeTransition", () => {
-  it("keeps an owned auto-resume initializing until executor activation", async () => {
+  it("[A1] passes the exact activation token while keeping owned auto-resume initializing", async () => {
     const task = makeTerminalTask({ status: "error" });
     const persistenceDouble = makeEventPersistenceTestDouble();
     const acquireExecutionOwnershipAndWaitForApplication = vi.fn();
     const persistence = Object.assign(persistenceDouble.persistence, {
       acquireExecutionOwnershipAndWaitForApplication,
     });
-    const onResume = vi.fn((resumedTask: Task) => {
+    let observedActivation: Task["executionActivation"];
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: Task["executionActivation"],
+    ) => {
       expect(resumedTask.status).toBe("initializing");
       expect(resumedTask.pendingExecutionExpectedTerminalEventId).toBe(6);
+      expect(activation).toBe(resumedTask.executionActivation);
+      observedActivation = activation;
     });
     const transition = new AutoResumeTransition({
       logger: silentLogger,
@@ -55,7 +61,8 @@ describe("AutoResumeTransition", () => {
       transition.resume(task, { text: "owned resume", user: "u" }, onResume),
     ).resolves.toEqual({ autoResumed: true });
 
-    expect(onResume).toHaveBeenCalledWith(task);
+    expect(onResume).toHaveBeenCalledWith(task, observedActivation);
+    expect(observedActivation).toBe(task.executionActivation);
     expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
       .not.toHaveBeenCalled();
     expect(acquireExecutionOwnershipAndWaitForApplication).not.toHaveBeenCalled();
@@ -288,7 +295,14 @@ describe("AutoResumeTransition", () => {
         workspace_dir: "/tmp/db-profile",
       },
     });
-    const onResume = vi.fn();
+    let forwardedActivation: Task["executionActivation"];
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: Task["executionActivation"],
+    ) => {
+      expect(activation).toBe(resumedTask.executionActivation);
+      forwardedActivation = activation;
+    });
     const transition = new AutoResumeTransition({
       persistence: makeEventPersistenceTestDouble().persistence,
       logger: silentLogger,
@@ -298,7 +312,8 @@ describe("AutoResumeTransition", () => {
     await expect(
       transition.resume(task, { text: "resume", user: "u" }, onResume),
     ).resolves.toEqual({ autoResumed: true });
-    expect(onResume).toHaveBeenCalledWith(task);
+    expect(onResume).toHaveBeenCalledWith(task, forwardedActivation);
+    expect(forwardedActivation).toBe(task.executionActivation);
   });
 
   it("clears termination state so a resumed turn can finalize with a fresh session_ended event", async () => {
@@ -413,16 +428,23 @@ describe("AutoResumeTransition", () => {
       logger: silentLogger,
       persistence: makeEventPersistenceTestDouble().persistence,
     });
-    const onResume = vi.fn((resumedTask: Task) => {
+    let forwardedActivation: Task["executionActivation"];
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: Task["executionActivation"],
+    ) => {
       expect(resumedTask.runner).toBe(runner);
       expect(resumedTask.runnerRetainedForClaudeBackground).toBe(true);
       expect(resumedTask.executionPromise).toBeUndefined();
+      expect(activation).toBe(resumedTask.executionActivation);
+      forwardedActivation = activation;
     });
 
     await transition.resume(task, { text: "runtime result", user: "system" }, onResume);
 
     expect(close).not.toHaveBeenCalled();
-    expect(onResume).toHaveBeenCalledWith(task);
+    expect(onResume).toHaveBeenCalledWith(task, forwardedActivation);
+    expect(forwardedActivation).toBe(task.executionActivation);
   });
 
   it("auto-acknowledges a needs_review result before terminal follow-up resumes", async () => {

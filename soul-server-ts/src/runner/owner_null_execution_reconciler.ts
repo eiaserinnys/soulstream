@@ -5,8 +5,6 @@ import { isTerminalTaskStatus } from "../task/task_models.js";
 import type { RunnerRecoveryCoordinatorOptions } from
   "./runner_recovery_coordinator_options.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
-import { executionOwnershipEvidenceHash } from
-  "./execution_ownership_observation_evidence.js";
 
 type OwnerNullExecutionReconcilerOptions = Pick<
   RunnerRecoveryCoordinatorOptions,
@@ -49,15 +47,6 @@ export class OwnerNullExecutionReconciler {
     );
     const first = this.observations.get(task.agentSessionId);
     if (!first) {
-      const applied = await reconcile.call(this.options.taskManager, task, {
-        first: current,
-        second: current,
-        evidenceHash: executionOwnershipEvidenceHash(current, current),
-        minimumLeaseIntervalMs,
-        probeOnly: true,
-      });
-      if (applied) return "proceed";
-      if (isTerminalTaskStatus(task.status)) return "terminal";
       this.observations.set(task.agentSessionId, current);
       return "wait";
     }
@@ -69,9 +58,7 @@ export class OwnerNullExecutionReconciler {
     const applied = await reconcile.call(this.options.taskManager, task, {
       first,
       second: current,
-      evidenceHash: executionOwnershipEvidenceHash(first, current),
-      minimumLeaseIntervalMs,
-      probeOnly: false,
+      leaseExpiresAt: new Date(observedAt.getTime() + this.options.leaseTimeoutMs),
     });
     if (applied) return "proceed";
     return isTerminalTaskStatus(task.status) ? "terminal" : "wait";

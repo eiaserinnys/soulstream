@@ -69,6 +69,62 @@ describe("RunnerProcessDispatcher", () => {
     expect(registerPump).not.toHaveBeenCalled();
   });
 
+  it("[A2] sends the host response before continuation and logs continuation failure", async () => {
+    const order: string[] = [];
+    const sent: unknown[] = [];
+    const warn = vi.fn();
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher & {
+        handleHostRequest(frame: ReturnType<typeof runnerRequestFrame>): Promise<void>;
+      };
+    Object.assign(dispatcher, {
+      options: {
+        logger: { warn },
+        handleHostCall: async (
+          _call: unknown,
+          registerPostResponse: (continuation: () => Promise<void>) => void,
+        ) => {
+          order.push("publish");
+          registerPostResponse(async () => {
+            order.push("continuation");
+            throw new Error("follow-up failed");
+          });
+          return { published: true };
+        },
+      },
+      recentHostResponses: new Map(),
+      hostCallIdempotency: {
+        execute: async (
+          _call: unknown,
+          apply: (idempotencyKey: string) => Promise<unknown>,
+        ) => ({ data: await apply("host:a2"), replayed: false }),
+      },
+      sendBestEffort: async (frame: unknown) => {
+        order.push("response");
+        sent.push(frame);
+      },
+    });
+
+    await dispatcher.handleHostRequest(runnerRequestFrame("host:a2", {
+      kind: "host_call",
+      service: "detached_event",
+      operation: "publish",
+      args: ["session-a", { type: "text", text: "done", timestamp: 1 }],
+    }));
+
+    expect(order).toEqual(["publish", "response", "continuation"]);
+    expect(sent).toEqual([
+      expect.objectContaining({
+        kind: "response",
+        result: expect.objectContaining({ status: "ok" }),
+      }),
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ correlationId: "host:a2" }),
+      "Runner host post-response continuation failed; durable delivery remains pending",
+    );
+  });
+
   it("prefers the first-durable child intervention and consumes a conflicting host fallback", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");

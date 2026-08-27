@@ -14,8 +14,10 @@ import { canonicalScenarioOrder } from "./fault-scenarios.mjs";
 import {
   assertMatchingProvenance,
   assertFetchRefspecCoversMain,
+  executionOwnershipTransitions,
   LabRuntime,
   runnerOperationSnapshots,
+  terminalRunnerRetirements,
 } from "./fault-harness-runtime.mjs";
 import {
   SCENARIO_DEFINITIONS,
@@ -65,6 +67,60 @@ test("runner operation snapshots expose active-turn presence without patch-speci
   assert.equal(snapshots.length, 2);
   assert.equal(snapshots[0].activeRunnerOperations[0].sessionId, "session-a");
   assert.deepEqual(snapshots[1].activeRunnerOperations, []);
+});
+
+test("execution ownership transition logs expose baseline admission acquire and release", () => {
+  const transitions = executionOwnershipTransitions([
+    "not json",
+    JSON.stringify({
+      time: 1,
+      sessionId: "session-a",
+      ownershipGeneration: 4,
+      operation: "acquire",
+      applied: true,
+      canonicalPhase: "active",
+      msg: "Execution ownership lifecycle transition applied",
+    }),
+    JSON.stringify({
+      time: 2,
+      sessionId: "session-a",
+      ownershipGeneration: 4,
+      operation: "release",
+      applied: true,
+      canonicalPhase: null,
+      msg: "Execution ownership lifecycle transition applied",
+    }),
+  ].join("\n"));
+  assert.deepEqual(transitions.map(({ operation, applied, ownershipGeneration }) => ({
+    operation,
+    applied,
+    ownershipGeneration,
+  })), [
+    { operation: "acquire", applied: true, ownershipGeneration: 4 },
+    { operation: "release", applied: true, ownershipGeneration: 4 },
+  ]);
+});
+
+test("terminal runner retirement logs expose recovery after the execution guard clears", () => {
+  const retirements = terminalRunnerRetirements([
+    JSON.stringify({
+      time: 3,
+      sessionId: "session-a",
+      disposition: "replay_terminal_dead",
+      msg: "terminal runner with no live process replayed offline and retired",
+    }),
+    JSON.stringify({
+      time: 4,
+      sessionId: "session-b",
+      disposition: "replay_terminal_dead",
+      msg: "terminal runner replay was skipped; registration kept for a later scan",
+    }),
+  ].join("\n"));
+  assert.deepEqual(retirements, [{
+    time: 3,
+    sessionId: "session-a",
+    disposition: "replay_terminal_dead",
+  }]);
 });
 
 test("lab verdict refuses a bundle built from a different checkout", () => {

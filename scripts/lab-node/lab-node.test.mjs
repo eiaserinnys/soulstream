@@ -43,6 +43,9 @@ test("clean-run resets before bootstrap and always stops the isolated stack", ()
   assert.ok(harnessAt > startAt, "harness must follow start");
   assert.match(cleanRun, /trap cleanup EXIT/);
   assert.match(cleanRun, /LAB_CLAUDE_AUTH_SOURCE="\$LAB_CLAUDE_AUTH_FILE"/);
+  assert.match(cleanRun, /fault-h2-product-mutation\.mjs/);
+  assert.match(cleanRun, /apply "\$LAB_REPO" "\$h2_mutation_backup"/);
+  assert.match(cleanRun, /restore "\$LAB_REPO" "\$h2_mutation_backup"/);
 });
 
 test("mutable-state reset preserves only the lab credential", () => {
@@ -249,9 +252,36 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
   assert.match(scenarios, /dead-owner injection and lab restoration failed/);
   assert.match(scenarios, /runner-death-live-host injection and cleanup failed/);
   assert.match(scenarios, /activate-rollback injection and cleanup failed/);
-  assert.match(scenarios, /activate-rollback fault injection failed: activate applied:true/);
+  assert.match(scenarios, /activate-rollback contract failed/);
+  assert.match(scenarios, /semanticReachCount: reach\.semanticReachCount/);
+  assert.match(scenarios, /deadLetterCode: deadLetterOutcome\.status === "fulfilled"/);
+  assert.match(scenarios, /followupRegistrationObservationCount/);
+  assert.match(scenarios, /followupPidObservationCount/);
+  assert.match(scenarios, /faultEnvelopeSourceSeq/);
+  assert.match(scenarios, /deadLetterSourceSeq/);
+  assert.match(scenarios, /followupRegistrationIdentityObservationCount/);
+  assert.match(scenarios, /followupAdmissions:/);
+  assert.match(scenarios, /faultEnvelopeSourceSeq: observation\.faultEnvelopeSourceSeq/);
+  assert.match(runtime, /waitForEventIngressDeadLetterSince/);
+  assert.match(runtime, /candidate\.sourceSeq === sourceSeq/);
+  assert.match(runtime, /observeDistinctRunnerRegistrationInventoryUntil/);
+  assert.match(runtime, /executionAcquireEnvelopeSourceSeq/);
+  assert.match(runtime, /CREATE SEQUENCE lab_fault_execution_acquire_reach_seq/);
+  assert.match(runtime, /nextval\('lab_fault_execution_acquire_reach_seq'/);
+  assert.match(runtime, /lab_fault_execution_acquire_generation_seq/);
+  assert.match(runtime, /lab_fault_execution_acquire_command_seq/);
+  assert.match(runtime, /last_value/);
+  assert.match(runtime, /DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_reach_seq/);
+  assert.doesNotMatch(runtime, /return \{ semanticReachCount: 1 \}/);
+  assert.match(runtime, /terminateObservedLabRunnerRegistration/);
   assert.ok(
-    scenarios.indexOf("activate failure did not converge to failed ownership")
+    scenarios.indexOf("registrationPresent: (await runtime.runnerExecutionRegistration")
+      < scenarios.indexOf("runtime.terminateObservedLabRunnerRegistration"),
+  );
+  assert.match(scenarios, /waitForRunnerOperationStateSince/);
+  assert.match(scenarios, /followupAdmissionDistinct/);
+  assert.ok(
+    scenarios.indexOf('recorder.event("fault_reached"')
       < scenarios.indexOf("activate rollback left the spawned child live"),
   );
   for (const scenario of [
@@ -293,6 +323,22 @@ test("harness deadlines are 60 seconds for intervention acceptance and 180 secon
   const smoke = readFileSync(join(directory, "smoke.sh"), "utf8");
   assert.match(smoke, /LAB_INTERVENTION_ACCEPTANCE_SECONDS/);
   assert.doesNotMatch(smoke, /LAB_SMOKE_TIMEOUT_SECONDS:-600/);
+});
+
+test("activate rollback starts the retry horizon only after the exact dead-letter", () => {
+  const oracle = readFileSync(join(directory, "fault-activate-rollback.mjs"), "utf8");
+  const deadLetterCompletedAt = oracle.indexOf(
+    "const deadLetterOutcome = await deadLetterPromise",
+  );
+  const retryHorizonStartedAt = oracle.indexOf(
+    "observeRetryHorizon()",
+  );
+
+  assert.ok(deadLetterCompletedAt >= 0, "activate rollback never awaits the dead-letter first");
+  assert.ok(
+    retryHorizonStartedAt > deadLetterCompletedAt,
+    "activate rollback starts the retry horizon before the dead-letter completes",
+  );
 });
 
 test("the process ceiling kills the whole child process group", async (t) => {

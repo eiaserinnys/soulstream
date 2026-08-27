@@ -305,7 +305,7 @@ describe("applyRunnerHostCall", () => {
       persistSessionItems: vi.fn(async () => undefined),
     };
     const observeClaudeRuntime = vi.fn(async () => true);
-    const publishDetachedClaudeEvent = vi.fn(async () => undefined);
+    const publishDetachedClaudeEvent = vi.fn(async () => async () => undefined);
     const renewExecutionOwnership = vi.fn(async () => true);
     const options = {
       sessionStore,

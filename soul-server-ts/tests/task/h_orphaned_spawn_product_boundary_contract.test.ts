@@ -332,7 +332,7 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
   };
 
   await executor.startExecution(task, agent);
-  await task.executionActivationPromise?.catch(() => undefined);
+  await task.executionActivation?.promise.catch(() => undefined);
 
   const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
   const authoritativeLifecycle = await readAuthoritativeRunnerLifecycle(paths.databasePath);

@@ -83,7 +83,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
     sessionId: string,
     event: ClaudeClientEvent,
     idempotencyKey: string,
-  ): Promise<unknown>;
+  ): Promise<() => Promise<void>>;
   renewExecutionOwnership?(task: Task, renewedAt: Date): Promise<boolean>;
   spawner?: Pick<RunnerProcessSpawner, "adopt" | "spawn">
     & Partial<Pick<RunnerProcessSpawner, "terminate">>;
@@ -112,11 +112,12 @@ export function createRunnerProcessRuntimeFactory(
       pumpMux: options.pumpMux,
       logger: options.logger,
       ...(options.nodeStallMonitor ? { nodeStallMonitor: options.nodeStallMonitor } : {}),
-      handleHostCall: async (call) => await applyRunnerHostCall(
+      handleHostCall: async (call, registerPostResponse) => await applyRunnerHostCall(
         call,
         task,
         snapshots,
         options,
+        registerPostResponse,
       ),
     });
     const engine = new RunnerProcessEngineProxy(
@@ -315,6 +316,7 @@ export async function applyRunnerHostCall(
     ): Promise<void>;
   },
   options: RunnerProcessRuntimeFactoryOptions,
+  registerPostResponse: (continuation: () => Promise<void>) => void = () => undefined,
 ): Promise<unknown> {
   const expectedSessionId = task.agentSessionId;
   if (call.service === "session_store") {
@@ -365,7 +367,10 @@ export async function applyRunnerHostCall(
     return buildRunnerClaudeRuntimeObservationResult(accepted, event);
   }
   if (call.service === "detached_event" && call.operation === "publish") {
-    await options.publishDetachedClaudeEvent?.(sessionId, event, call.correlationId);
+    registerPostResponse(
+      await options.publishDetachedClaudeEvent?.(sessionId, event, call.correlationId)
+        ?? (async () => undefined),
+    );
     return null;
   }
   throw new Error(`unsupported runner host call: ${call.service}.${call.operation}`);

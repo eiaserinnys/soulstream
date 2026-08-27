@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { Task } from "../../src/task/task_models.js";
+import {
+  createExecutionActivation,
+  type Task,
+} from "../../src/task/task_models.js";
 import { TaskRunnerRecovery } from "../../src/task/task_runner_recovery.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
@@ -38,6 +41,7 @@ describe("TaskRunnerRecovery", () => {
 
   it("persists an explicit runner error before resuming without a duplicate user message", async () => {
     const order: string[] = [];
+    const activation = createExecutionActivation();
     const task = makeTask({
       runner: { dispatcher: {} as never },
       runnerRetainedForClaudeBackground: true,
@@ -63,7 +67,7 @@ describe("TaskRunnerRecovery", () => {
         attachmentPaths: ["/tmp/reference.png"],
       });
       expect(options).toEqual({ publishUserMessage: false });
-      callback(task);
+      callback(task, activation);
       return { autoResumed: true as const };
     });
     const recovery = new TaskRunnerRecovery({
@@ -77,7 +81,7 @@ describe("TaskRunnerRecovery", () => {
     await recovery.markFailureAndResume(task, "runner lease expired", onResume);
 
     expect(order).toEqual(["persist-error", "resume"]);
-    expect(onResume).toHaveBeenCalledWith(task);
+    expect(onResume).toHaveBeenCalledWith(task, activation);
   });
 
   it("terminalizes a replacement start that throws after the running transition", async () => {
