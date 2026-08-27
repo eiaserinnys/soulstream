@@ -546,8 +546,21 @@ export class LabRuntime {
       throw new Error(`invalid activation fault mutation: ${mutation}`);
     }
     const predicate = mutation === "predicate_misplaced"
-      ? `OLD.execution_manifest_id IS NOT NULL
-           AND NEW.execution_manifest_id IS NULL`
+      ? `OLD.execution_manifest_id IS NULL
+           AND OLD.execution_runtime_env_identity IS NULL
+           AND OLD.execution_registration_id IS NULL
+           AND OLD.execution_pid IS NULL
+           AND OLD.execution_start_identity IS NULL
+           AND OLD.execution_command_id IS NULL
+           AND OLD.execution_lease_expires_at IS NULL
+           AND NEW.execution_manifest_id IS NOT NULL
+           AND NEW.execution_runtime_env_identity IS NOT NULL
+           AND NEW.execution_registration_id IS NOT NULL
+           AND NEW.execution_pid IS NOT NULL
+           AND NEW.execution_start_identity IS NOT NULL
+           AND NEW.execution_command_id IS NOT NULL
+           AND NEW.execution_lease_expires_at IS NOT NULL
+           AND NEW.execution_generation = OLD.execution_generation + 2`
       : `OLD.execution_manifest_id IS NULL
            AND OLD.execution_runtime_env_identity IS NULL
            AND OLD.execution_registration_id IS NULL
