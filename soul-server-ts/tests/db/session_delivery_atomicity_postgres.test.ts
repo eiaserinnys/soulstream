@@ -435,8 +435,11 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       delivery_id: deliveryId,
       delivery_state: "queued",
       aggregate_state: "pending",
-      delivery_lease_owner: null,
-      delivery_lease_expires_at: null,
+      // The queued aggregate keeps its dispatch lease by design; recovery
+      // replaces stale ownership. See the expired same-owner contract below
+      // ("stages an expired same-owner dispatch...", lines 589-635).
+      delivery_lease_owner: leaseOwner,
+      delivery_lease_expires_at: expect.any(Date),
       delivery_last_error:
         "auto-resume activation failed: activation rejected after durable publish",
       notification_state: "pending",
