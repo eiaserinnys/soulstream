@@ -4,10 +4,8 @@ import type { ExecutionOwnershipObservation } from
 import type { OwnerNullRunningSessionRow } from "../db/session_db_types.js";
 import type { Task } from "../task/task_models.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
-import {
-  emptyExecutionOwnershipObservation,
-  executionOwnershipEvidenceHash,
-} from "./execution_ownership_observation_evidence.js";
+import { emptyExecutionOwnershipObservation } from
+  "./execution_ownership_observation_evidence.js";
 
 interface OwnerNullInventoryTaskManager {
   listOwnerNullRunningInventory(
@@ -20,9 +18,7 @@ interface OwnerNullInventoryTaskManager {
     input: {
       first: ExecutionOwnershipObservation;
       second: ExecutionOwnershipObservation;
-      evidenceHash: string;
-      minimumLeaseIntervalMs: number;
-      probeOnly: boolean;
+      leaseExpiresAt: Date;
     },
   ): Promise<boolean>;
 }
@@ -89,17 +85,7 @@ export class OwnerNullInventoryReconciler {
     );
     const first = this.observations.get(row.session_id);
     if (!first) {
-      const applied = await this.options.taskManager
-        .reconcileExecutionOwnershipObservations(task, {
-          first: current,
-          second: current,
-          evidenceHash: executionOwnershipEvidenceHash(current, current),
-          minimumLeaseIntervalMs,
-          probeOnly: true,
-        });
-      if (!applied && task.status === "running") {
-        this.observations.set(row.session_id, current);
-      }
+      this.observations.set(row.session_id, current);
       return;
     }
     if (current.observedAt.getTime() - first.observedAt.getTime() < minimumLeaseIntervalMs) {
@@ -109,9 +95,7 @@ export class OwnerNullInventoryReconciler {
     await this.options.taskManager.reconcileExecutionOwnershipObservations(task, {
       first,
       second: current,
-      evidenceHash: executionOwnershipEvidenceHash(first, current),
-      minimumLeaseIntervalMs,
-      probeOnly: false,
+      leaseExpiresAt: new Date(current.observedAt.getTime() + this.options.leaseTimeoutMs),
     });
   }
 }

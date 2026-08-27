@@ -233,13 +233,16 @@ export class RunnerRecoveryCoordinator {
         continue;
       }
       const task = outcome?.status === "ready" ? outcome.task : undefined;
-      if (task) {
+      if (
+        task
+        && (disposition === "adopt_prebootstrap" || disposition === "adopt_running")
+      ) {
         const ownerNullDisposition = await this.ownerNullExecutionReconciler.reconcile(
           task,
           registration,
         );
         if (ownerNullDisposition === "wait") continue;
-        if (ownerNullDisposition === "terminal" && disposition !== "closed") {
+        if (ownerNullDisposition === "terminal") {
           if (registration.pidAlive) await this.registrationControl.terminate(registration);
           continue;
         }

@@ -183,10 +183,12 @@ export class SessionReadRepository {
     limit: number;
   }): Promise<HostOwnerNullRunningSessionRow[]> {
     return await this.sql<HostOwnerNullRunningSessionRow[]>`
-      SELECT session_id, node_id, updated_at
-      FROM session_owner_null_running_inventory
-      WHERE node_id = ${params.nodeId}
-      ORDER BY updated_at, session_id
+      SELECT inventory.session_id, inventory.node_id, inventory.updated_at
+      FROM session_owner_null_running_inventory AS inventory
+      JOIN sessions AS session ON session.session_id = inventory.session_id
+      WHERE inventory.node_id = ${params.nodeId}
+        AND session.execution_manifest_id IS NULL
+      ORDER BY inventory.updated_at, inventory.session_id
       LIMIT ${params.limit}
     `;
   }

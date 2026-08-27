@@ -1,7 +1,6 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type {
   CanonicalExecutionOwnership,
-  ExecutionOwnershipObservation,
   ExecutionOwnerKind,
 } from "../task/execution_ownership.js";
 import type {
@@ -168,45 +167,6 @@ export abstract class EventTransitionPublisher {
     return await this.waitForTransitionApplication(sessionId, record, "execution release");
   }
 
-  async backfillExecutionOwnershipAndWaitForApplication(
-    sessionId: string,
-    input: {
-      first: ExecutionOwnershipObservation;
-      second: ExecutionOwnershipObservation;
-      evidenceHash: string;
-      minimumLeaseIntervalMs: number;
-      probeOnly: boolean;
-      updatedAt?: Date;
-    },
-  ): Promise<EventSessionTransitionApplication> {
-    const updatedAt = input.updatedAt ?? new Date();
-    return await this.enqueueExecutionEffectAndWait(
-      sessionId,
-      `backfill:${input.evidenceHash}:${input.probeOnly ? "probe" : "commit"}`,
-      {
-        kind: "execution_backfill",
-        first_manifest_id: input.first.manifestId,
-        first_runtime_env_identity: input.first.runtimeEnvIdentity,
-        first_registration_id: input.first.registrationId,
-        first_pid: input.first.pid,
-        first_start_identity: input.first.startIdentity,
-        first_execution_command_id: input.first.executionCommandId,
-        first_observed_at: input.first.observedAt.toISOString(),
-        second_manifest_id: input.second.manifestId,
-        second_runtime_env_identity: input.second.runtimeEnvIdentity,
-        second_registration_id: input.second.registrationId,
-        second_pid: input.second.pid,
-        second_start_identity: input.second.startIdentity,
-        second_execution_command_id: input.second.executionCommandId,
-        second_observed_at: input.second.observedAt.toISOString(),
-        evidence_hash: input.evidenceHash,
-        minimum_lease_interval_ms: input.minimumLeaseIntervalMs,
-        probe_only: input.probeOnly,
-        updated_at: updatedAt.toISOString(),
-      },
-    );
-  }
-
   async enqueueTerminalTransitionAndWaitForApplication(
     sessionId: string,
     event: SSEEventPayload,
@@ -234,8 +194,7 @@ export abstract class EventTransitionPublisher {
     transitionId: string,
     effect: Extract<EventOutboxSessionEffect, { kind:
       | "execution_acquire"
-      | "execution_renew"
-      | "execution_backfill" }>,
+      | "execution_renew" }>,
   ): Promise<EventSessionTransitionApplication> {
     const event = {
       type: "metadata",
