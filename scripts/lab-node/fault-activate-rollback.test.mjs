@@ -5,6 +5,7 @@ import {
   ACTIVATE_ROLLBACK_MUTATIONS,
   activateRollbackMutationDetection,
   activateRollbackViolations,
+  observeActivationFailureOutcome,
 } from "./fault-activate-rollback.mjs";
 import {
   distinctRunnerRegistrationInventory,
@@ -54,6 +55,36 @@ test("activate rollback accepts transactional retries that dead-letter without a
     followupPidObservationCount: 1,
     registrationPresent: false,
   }), []);
+});
+
+test("activate rollback observes the retry horizon only after the dead-letter resolves", async () => {
+  let resolveDeadLetter;
+  const deadLetterPromise = new Promise((resolve) => {
+    resolveDeadLetter = resolve;
+  });
+  const reach = { semanticReachCount: 2, stable: true };
+  const followupInventory = { registrationCount: 1 };
+  let horizonObservationCount = 0;
+
+  const outcomePromise = observeActivationFailureOutcome({
+    deadLetterPromise,
+    observeRetryHorizon: async () => {
+      horizonObservationCount += 1;
+      return reach;
+    },
+    followupInventoryPromise: Promise.resolve(followupInventory),
+  });
+  await Promise.resolve();
+
+  assert.equal(horizonObservationCount, 0);
+  const deadLetterOutcome = { status: "fulfilled", value: { sourceSeq: 8 } };
+  resolveDeadLetter(deadLetterOutcome);
+  assert.deepEqual(await outcomePromise, {
+    reach,
+    followupInventory,
+    deadLetterOutcome,
+  });
+  assert.equal(horizonObservationCount, 1);
 });
 
 test("activate rollback retry allowance cannot hide core contract violations", () => {
