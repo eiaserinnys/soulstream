@@ -486,13 +486,13 @@ const SCENARIOS = {
     let cleanupResidue;
     let postCleanupRegistration;
     let postCleanupOwnership;
-    const baselineOperationOffset = await runtime.nodeLogOffset();
+    const baselineAdmissionOffset = await runtime.nodeLogOffset();
     const sessionId = await runtime.createSession(`Reply with exactly ${baselineMarker}.`);
     const baselineRunner = await runtime.waitForRunner(sessionId);
-    const baselineActiveOperation = await runtime.waitForRunnerOperationStateSince(
+    const baselineAcquire = await runtime.waitForExecutionOwnershipTransitionSince(
       sessionId,
-      baselineOperationOffset,
-      true,
+      baselineAdmissionOffset,
+      "acquire",
     );
     const baselineOwnership = await waitFor(
       async () => {
@@ -527,10 +527,21 @@ const SCENARIOS = {
       "activate-rollback baseline did not settle with an ownerless terminal revision",
       250,
     );
-    const baselineInactiveOperation = await runtime.waitForRunnerOperationStateSince(
+    const baselineRelease = await runtime.waitForExecutionOwnershipTransitionSince(
       sessionId,
       baselineDrainOffset,
-      false,
+      "release",
+    );
+    assertScenario(
+      baselineAcquire.ownershipGeneration === baselineOwnership.executionGeneration
+        && baselineRelease.ownershipGeneration === baselineOwnership.executionGeneration,
+      "activate-rollback baseline acquire/release generation did not match sessions-row ownership",
+    );
+    const baselineRetirement = await runtime.waitForTerminalRunnerRetirementSince(
+      sessionId,
+      baselineDrainOffset,
+      baselineOwnership.owner.registrationId,
+      baselineRunner.pid,
     );
     const baselineAdmission = {
       pid: baselineRunner.pid,
@@ -538,8 +549,10 @@ const SCENARIOS = {
       registrationId: baselineOwnership.owner.registrationId,
       executionCommandId: baselineOwnership.owner.executionCommandId,
       commandFingerprint: baselineCommandFingerprint,
-      activeOperationAt: baselineActiveOperation.time,
-      inactiveOperationAt: baselineInactiveOperation.time,
+      acquiredAt: baselineAcquire.time,
+      releasedAt: baselineRelease.time,
+      retiredAt: baselineRetirement.retirement.time,
+      retiredRegistration: baselineRetirement.registration,
     };
     await recorder.event("baseline_admission_drained", {
       id: "activate-rollback",

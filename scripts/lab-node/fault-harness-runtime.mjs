@@ -430,6 +430,75 @@ export class LabRuntime {
     );
   }
 
+  async waitForExecutionOwnershipTransitionSince(
+    sessionId,
+    offset,
+    operation,
+    timeoutMs = 75_000,
+  ) {
+    assertIdentifier(sessionId, "session id");
+    if (!["acquire", "release"].includes(operation)) {
+      throw new Error(`invalid execution ownership operation: ${operation}`);
+    }
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error(`invalid node log offset: ${offset}`);
+    }
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const log = await readFile(this.nodeLog);
+      const from = offset <= log.length ? offset : 0;
+      const transitions = executionOwnershipTransitions(
+        log.subarray(from).toString("utf8"),
+      );
+      const match = transitions.find((transition) => (
+        transition.sessionId === sessionId
+        && transition.operation === operation
+        && transition.applied === true
+      ));
+      if (match) return match;
+      await delay(500);
+    }
+    throw new Error(
+      `node log did not show applied execution ${operation} for ${sessionId} after offset ${offset}`,
+    );
+  }
+
+  async waitForTerminalRunnerRetirementSince(
+    sessionId,
+    offset,
+    expectedRegistrationId,
+    expectedPid,
+    timeoutMs = 75_000,
+  ) {
+    assertIdentifier(sessionId, "session id");
+    assertIdentifier(expectedRegistrationId, "registration id");
+    if (!Number.isSafeInteger(expectedPid) || expectedPid < 1) {
+      throw new Error(`invalid runner pid: ${expectedPid}`);
+    }
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error(`invalid node log offset: ${offset}`);
+    }
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const log = await readFile(this.nodeLog);
+      const from = offset <= log.length ? offset : 0;
+      const retirement = terminalRunnerRetirements(
+        log.subarray(from).toString("utf8"),
+      ).find((candidate) => candidate.sessionId === sessionId);
+      const registration = await this.runnerExecutionRegistration(sessionId);
+      const baselineRetired = !registration.present
+        && registration.registrationId === expectedRegistrationId
+        && registration.identityPid === null
+        && registration.pidFilePid === null
+        && !this.runnerAlive(expectedPid);
+      if (retirement && baselineRetired) return { retirement, registration };
+      await delay(500);
+    }
+    throw new Error(
+      `terminal runner did not retire baseline registration ${expectedRegistrationId} for ${sessionId}`,
+    );
+  }
+
   async removeFaultRunnerDirectory(directory) {
     const prefix = join(this.runnerStateDirectory, "_fault-");
     if (!directory.startsWith(prefix)) {
@@ -1057,6 +1126,47 @@ export function runnerOperationSnapshots(logText) {
     } catch {}
   }
   return snapshots;
+}
+
+export function executionOwnershipTransitions(logText) {
+  const transitions = [];
+  for (const line of logText.split("\n")) {
+    if (!line.includes("Execution ownership lifecycle transition applied")) continue;
+    try {
+      const record = JSON.parse(line);
+      if (typeof record.sessionId !== "string") continue;
+      if (typeof record.operation !== "string") continue;
+      transitions.push({
+        time: record.time,
+        sessionId: record.sessionId,
+        ownershipGeneration: record.ownershipGeneration,
+        operation: record.operation,
+        applied: record.applied,
+        canonicalPhase: record.canonicalPhase,
+      });
+    } catch {}
+  }
+  return transitions;
+}
+
+export function terminalRunnerRetirements(logText) {
+  const retirements = [];
+  for (const line of logText.split("\n")) {
+    if (!line.includes("terminal runner with no live process replayed offline and retired")) {
+      continue;
+    }
+    try {
+      const record = JSON.parse(line);
+      if (typeof record.sessionId !== "string") continue;
+      if (record.disposition !== "replay_terminal_dead") continue;
+      retirements.push({
+        time: record.time,
+        sessionId: record.sessionId,
+        disposition: record.disposition,
+      });
+    } catch {}
+  }
+  return retirements;
 }
 
 function requireEnv(env, key) {
