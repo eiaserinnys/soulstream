@@ -7,6 +7,7 @@ import {
   activateRollbackViolations,
   observeActivationFailureOutcome,
 } from "./fault-activate-rollback.mjs";
+import { runCanonicalScenario } from "./fault-scenarios.mjs";
 import {
   distinctRunnerRegistrationInventory,
   eventIngressDeadLetters,
@@ -85,6 +86,146 @@ test("activate rollback observes the retry horizon only after the dead-letter re
     deadLetterOutcome,
   });
   assert.equal(horizonObservationCount, 1);
+});
+
+test("raise-removed mutation completes from an owner commit without waiting for a marker", async (t) => {
+  const previousMutation = process.env.LAB_ACTIVATE_ROLLBACK_MUTATION;
+  process.env.LAB_ACTIVATE_ROLLBACK_MUTATION = "raise_removed";
+  t.after(() => {
+    if (previousMutation === undefined) {
+      delete process.env.LAB_ACTIVATE_ROLLBACK_MUTATION;
+    } else {
+      process.env.LAB_ACTIVATE_ROLLBACK_MUTATION = previousMutation;
+    }
+  });
+
+  let ownershipReadCount = 0;
+  let rejectedMarkerWaitCount = 0;
+  const baselineOwner = {
+    pid: 101,
+    registrationId: "registration-baseline",
+    executionCommandId: "command-baseline",
+  };
+  const ownerlessBaseline = {
+    status: "completed",
+    executionGeneration: 4,
+    terminalRevision: 18,
+    owner: null,
+  };
+  const committedMutation = {
+    status: "completed",
+    executionGeneration: 5,
+    terminalRevision: 19,
+    owner: null,
+  };
+  const runtime = {
+    async nodeLogOffset() { return 0; },
+    async createSession() { return "session-a"; },
+    async waitForRunner() { return { pid: baselineOwner.pid }; },
+    async waitForExecutionOwnershipTransitionSince(
+      _sessionId,
+      _offset,
+      operation,
+    ) {
+      return { operation, ownershipGeneration: 4, time: operation === "acquire" ? 10 : 20 };
+    },
+    async sessionExecutionOwnership() {
+      ownershipReadCount += 1;
+      if (ownershipReadCount === 1) {
+        return { ...ownerlessBaseline, status: "running", owner: baselineOwner };
+      }
+      if (ownershipReadCount === 2) return ownerlessBaseline;
+      return committedMutation;
+    },
+    async executionCommandFingerprint(commandId) {
+      return commandId === baselineOwner.executionCommandId ? "101" : "202";
+    },
+    async waitForMarker(_sessionId, marker) {
+      if (marker.includes("BASELINE")) return { messages: [] };
+      rejectedMarkerWaitCount += 1;
+      throw new Error("owner commit should finish before the rejected marker wait");
+    },
+    async waitForTerminal() { return "completed"; },
+    async waitForTerminalRunnerRetirementSince() {
+      return {
+        retirement: { time: 30 },
+        registration: {
+          present: false,
+          identityPid: null,
+          pidFilePid: null,
+          registrationId: baselineOwner.registrationId,
+        },
+      };
+    },
+    async installActivationFailureFault() {},
+    async intervene() { return { status: "accepted" }; },
+    async waitForDistinctRunnerRegistration() {
+      return {
+        present: true,
+        identityPid: 202,
+        pidFilePid: 202,
+        registrationId: "registration-followup",
+      };
+    },
+    async waitForActivationFailureFault() {
+      return {
+        semanticReachCount: 1,
+        attemptedGeneration: 5,
+        attemptedCommandFingerprint: "202",
+      };
+    },
+    async executionAcquireEnvelopeSourceSeq() { return 8; },
+    async observeDistinctRunnerRegistrationInventoryUntil() {
+      return {
+        observations: [{ registrationId: "registration-followup", identityPid: 202 }],
+        registrationCount: 1,
+        pidCount: 1,
+        identityCount: 1,
+      };
+    },
+    async activationFailureFaultCountAfterHorizon(horizonMs) {
+      return {
+        semanticReachCount: 1,
+        semanticReachCountBeforeHorizon: 1,
+        attemptedGeneration: 5,
+        attemptedCommandFingerprint: "202",
+        retryHorizonMs: horizonMs,
+        stable: true,
+      };
+    },
+    async countTimelineEvents() { return 0; },
+    runnerAlive() { return false; },
+    async runnerExecutionRegistration() {
+      return {
+        present: false,
+        identityPid: null,
+        pidFilePid: null,
+        registrationId: "registration-followup",
+      };
+    },
+    async removeActivationFailureFault() {},
+    async activationFailureFaultResidue() {
+      return { triggerCount: 0, functionCount: 0, counterCount: 0 };
+    },
+  };
+  const recorder = {
+    async logOffsets() { return { node: 0, orch: 0 }; },
+    async invariant() {
+      return { violations: [], newViolations: [], settled: true };
+    },
+    async event() {},
+    async captureLogs() { return { node: [], orch: [] }; },
+    async scenario() {},
+  };
+
+  const result = await runCanonicalScenario("activate-rollback", runtime, recorder);
+
+  assert.equal(result.status, "passed", JSON.stringify(result.failure));
+  assert.deepEqual(result.mutationDetection, {
+    detected: true,
+    sentinel: "acquire_committed_without_fault_raise",
+  });
+  assert.equal(rejectedMarkerWaitCount, 0);
 });
 
 test("activate rollback retry allowance cannot hide core contract violations", () => {
