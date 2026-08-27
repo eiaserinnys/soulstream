@@ -1,6 +1,8 @@
 import pino from "pino";
 import { vi } from "vitest";
 
+import type { AgentProfile } from "../../src/agent_registry.js";
+import type { EnginePort } from "../../src/engine/protocol.js";
 import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
 import { createTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
@@ -10,6 +12,7 @@ import type {
 } from "../../src/task/task_delivery_ledger_gate.js";
 import type { AddInterventionParams } from "../../src/task/task_intervention_route.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
+import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import { RunningInterventionTransition } from
   "../../src/task/task_running_intervention_transition.js";
@@ -122,8 +125,54 @@ async function observeIdle(
   const admissionIds: string[] = [];
   const eventOrder = ["route_idle"];
   const modelInputDeliveryIds: string[] = [];
+  const consumedDeliveryIds: string[] = [];
   const persistence = makeEventPersistenceTestDouble();
   const task = makeTask(`unified-idle-${axis.key}`, "completed");
+  const text = textFor(axis);
+  const agent = {
+    id: requireParam(task.profileId, "profileId"),
+    name: "Unified route idle agent",
+    backend: "codex",
+    workspace_dir: "/workspace/unified",
+  } satisfies AgentProfile;
+  const engine: EnginePort = {
+    backendId: "codex",
+    workspaceDir: agent.workspace_dir,
+    async *execute(params) {
+      if (params.prompt === text) {
+        eventOrder.push("model_input");
+        modelInputDeliveryIds.push(deliveryId);
+      }
+      yield { type: "assistant_message", content: "idle next turn", timestamp: 1 };
+    },
+    async intervene() {
+      return {
+        status: "not_delivered",
+        mechanism: "interrupt_then_next_turn",
+        reason: "next_turn_required",
+      };
+    },
+    async interrupt() { return true; },
+    async close() {},
+  };
+  const executor = new TaskExecutor(
+    () => engine,
+    {} as never,
+    persistence.persistence,
+    broadcaster(),
+    silentLogger,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
+      recordConsumed: vi.fn(async (message: InterventionMessage) => {
+        if (message.deliveryId === deliveryId) consumedDeliveryIds.push(deliveryId);
+      }),
+      discardIfConsumed: vi.fn().mockResolvedValue(false),
+    },
+  );
   const autoResume = new AutoResumeTransition({
     logger: silentLogger,
     persistence: persistence.persistence,
@@ -151,15 +200,18 @@ async function observeIdle(
       ? { deliveryLedgerGate: makeLedgerGate(admissionIds).gate }
       : {}),
   });
-  const text = textFor(axis);
+  let execution: Promise<void> | undefined;
   const result = await route.addIntervention(
     requestFor(axis, task.agentSessionId, deliveryId),
-    (resumedTask) => {
-      if (resumedTask.prompt !== text) return;
-      eventOrder.push("model_input");
-      modelInputDeliveryIds.push(deliveryId);
+    (resumedTask, activation) => {
+      execution = executor.startExecution(resumedTask, agent, activation);
     },
   );
+  if (!execution) throw new Error(`idle execution was not started: ${axis.key}`);
+  await execution;
+  if (count(consumedDeliveryIds, deliveryId) !== 1) {
+    throw new Error(`idle delivery was not consumed exactly once: ${deliveryId}`);
+  }
   return {
     caseKey: axis.key,
     intent: axis.intent,
