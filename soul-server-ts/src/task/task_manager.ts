@@ -147,6 +147,9 @@ export class TaskManager {
       closeSessionRuntime: gatedSessionRuntimeControl
         ? (sessionId, reason) => gatedSessionRuntimeControl.close(sessionId, reason)
         : undefined,
+      hasSessionRuntime: gatedSessionRuntimeControl
+        ? (sessionId) => gatedSessionRuntimeControl.has(sessionId)
+        : undefined,
     });
     const runningInterventionTransition = new RunningInterventionTransition({
       broadcaster,

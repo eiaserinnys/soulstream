@@ -507,7 +507,7 @@ describe("TaskCompletionNotifier.notify", () => {
     });
   });
 
-  it("v2 cross-node unknown 판정은 source ledger를 pending으로 되돌려 재시도한다", async () => {
+  it("v2 cross-node unknown 판정은 pending으로 보존하고 periodic 재시도하지 않는다", async () => {
     let stored: Record<string, unknown> | undefined;
     const markUncertain = vi.fn();
     const retryLeasedDelivery = vi.fn(async (deliveryId: string) => {
@@ -599,7 +599,7 @@ describe("TaskCompletionNotifier.notify", () => {
     );
     expect(markUncertain).not.toHaveBeenCalled();
     expect(stored).toMatchObject({ state: "pending" });
-    expect(claimRecoverableCompletionDeliveries).toHaveBeenCalledTimes(1);
+    expect(claimRecoverableCompletionDeliveries).not.toHaveBeenCalled();
   });
 
   it("1c. notifyCompletion=false면 callerSessionId가 있어도 완료통지를 보내지 않는다", async () => {
@@ -653,7 +653,7 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("v2 target claim 실패는 durable pending을 남기고 같은 identity로 recovery한다", async () => {
+  it("v2 target claim 실패는 pending을 남기고 같은 explicit identity만 재시도한다", async () => {
     const tm = makeTaskManagerStub();
     let stored: Record<string, unknown> | undefined;
     const claimForTarget = vi.fn()
@@ -740,6 +740,14 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(tm.addIntervention).not.toHaveBeenCalled();
     const deliveryId = stored?.delivery_id;
     await notifier.recoverPending();
+    expect(tm.addIntervention).not.toHaveBeenCalled();
+    await notifier.notify(makeChild({
+      callerSessionId: "caller-old",
+      callerInfo: {
+        source: "agent",
+        agent_id: "seosoyoung-opus",
+      },
+    }));
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
     expect(tm.addIntervention.mock.calls[0]![0].deliveryId).toBe(deliveryId);
   });

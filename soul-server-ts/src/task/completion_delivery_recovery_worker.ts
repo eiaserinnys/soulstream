@@ -19,11 +19,13 @@ export interface CompletionDeliveryRecoveryWorkerDeps {
 }
 
 /**
- * Replays durable completion rows until they leave pending/claimed state.
+ * Reconciles durable delivery bookkeeping without replaying held input.
  *
  * The lane semantics — per-step deadlines, isolation of a hung step from its
  * siblings, and the stalled-tick watchdog — belong to PeriodicMaintenanceLoop.
- * This class only declares which steps the session-delivery lane runs.
+ * `recoverPending` only releases abandoned admission leases; it cannot claim,
+ * dispatch, or auto-resume queued input. Transcript-proven ACK reconciliation
+ * is a separate one-shot startup boundary.
  */
 export class CompletionDeliveryRecoveryWorker {
   private readonly loop: PeriodicMaintenanceLoop;

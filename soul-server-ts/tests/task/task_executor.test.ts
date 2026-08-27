@@ -26,6 +26,8 @@ import {
 } from "../../src/task/task_executor.js";
 import { TaskDeliveryTurnReceipt } from
   "../../src/task/task_delivery_turn_receipt.js";
+import { TaskDeliveryLedgerGate } from
+  "../../src/task/task_delivery_ledger_gate.js";
 import { ExecutionOwnershipBackoff } from
   "../../src/task/execution_ownership_backoff.js";
 import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
@@ -393,7 +395,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
-  it("iterator 성공 뒤 ACK barrier 실패도 delivery를 정확히 한 번 consume한다", async () => {
+  it("iterator 성공 뒤 ACK barrier 실패는 delivery를 consume하지 않는다", async () => {
     const mocks = makeMocks();
     mocks.waitForSessionAck.mockRejectedValueOnce(new Error("post-iterator ACK failed"));
     const message: InterventionMessage = {
@@ -427,12 +429,242 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
-      message,
-      task,
-      "event:0",
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+  });
+
+  it("awaiting-runtime synthesized failure는 observed delivery를 consume하지 않는다", async () => {
+    const mocks = makeMocks();
+    const message: InterventionMessage = {
+      text: "runtime result",
+      user: "system",
+      deliveryId: "a2a2a2a2-a2a2-4a2a-8a2a-a2a2a2a2a2a2",
+      deliveryIntent: "runtime_followup",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(true),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
+    const executor = new TaskExecutor(
+      () => ({
+        ...makeFakeEngine([
+          {
+            type: "claude_runtime_session_state",
+            state: "running",
+            session_id: "claude-awaiting-runtime",
+          },
+          {
+            type: "claude_runtime_task_started",
+            task_id: "runtime-pending",
+            task_type: "local_agent",
+          },
+          { type: "assistant_message", content: "foreground done", timestamp: 1 },
+          { type: "complete", result: "foreground done", timestamp: 2 },
+        ] as SSEEventPayload[]),
+        backendId: "claude" as const,
+      }),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
     );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.interventionQueue.push(message);
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("error");
+    expect(task.error).toContain("remained active");
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalled();
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "completion_notification",
+    "human_live_steer",
+  ] as const)(
+    "replays failed %s with the same delivery id and consumes only the successful resume",
+    async (deliveryIntent) => {
+      const mocks = makeMocks();
+      const deliveryId = `failed-replay-${deliveryIntent}`;
+      const message: InterventionMessage = {
+        text: "same durable input",
+        user: "user",
+        deliveryId,
+        deliveryIntent,
+        completionId: `completion-${deliveryId}`,
+        relationKey: deliveryIntent === "completion_notification"
+          ? `child_session:${deliveryId}`
+          : `user_message:${deliveryId}`,
+      };
+      let row: {
+        delivery_id: string;
+        state: string;
+        aggregate_state: string;
+        target_receipt_id?: string;
+      } = {
+        delivery_id: deliveryId,
+        state: "queued",
+        aggregate_state: "pending",
+      };
+      const markDelivered = vi.fn(async (_id: string, receiptId: string) => {
+        row = {
+          ...row,
+          state: "delivered",
+          aggregate_state: "delivered",
+          target_receipt_id: receiptId,
+        };
+        return row;
+      });
+      const markConsumed = vi.fn(async (_id: string, receiptId: string) => {
+        if (row.aggregate_state === "consumed") return null;
+        row = {
+          ...row,
+          state: "consumed",
+          aggregate_state: "consumed",
+          target_receipt_id: receiptId,
+        };
+        return row;
+      });
+      const gate = new TaskDeliveryLedgerGate(true, {
+        get: vi.fn(async () => row),
+        markDelivered,
+        markConsumed,
+        markConsumedByRelation: vi.fn().mockResolvedValue(null),
+        recordRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      } as never);
+      let attempt = 0;
+      const executor = new TaskExecutor(
+        () => attempt++ === 0
+          ? makeFakeEngine([
+              { type: "assistant_message", content: "partial", timestamp: 1 },
+            ] as SSEEventPayload[], { throwAt: 1 })
+          : makeFakeEngine([
+              { type: "assistant_message", content: "done", timestamp: 2 },
+            ] as SSEEventPayload[]),
+        mocks.db,
+        mocks.persistence,
+        mocks.broadcaster,
+        silentLogger,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        gate,
+      );
+      const failedTask = makeTask();
+      failedTask.interventionQueue.push(message);
+
+      executor.startExecution(failedTask, agent);
+      await failedTask.executionPromise;
+
+      expect(failedTask.status).toBe("error");
+      expect(row).toMatchObject({ state: "queued", aggregate_state: "pending" });
+      expect(markConsumed).not.toHaveBeenCalled();
+
+      const resumedTask = makeTask();
+      resumedTask.interventionQueue.push(message);
+      executor.startExecution(resumedTask, agent);
+      await resumedTask.executionPromise;
+
+      expect(resumedTask.status).toBe("completed");
+      expect(row).toMatchObject({ state: "consumed", aggregate_state: "consumed" });
+      expect(markConsumed).toHaveBeenCalledTimes(1);
+      expect(markConsumed).toHaveBeenCalledWith(
+        deliveryId,
+        expect.stringMatching(/^event:/),
+      );
+      const release = vi.mocked(
+        mocks.persistence.releaseExecutionOwnershipAndWaitForApplication,
+      );
+      expect(release.mock.invocationCallOrder.at(-1)).toBeLessThan(
+        markConsumed.mock.invocationCallOrder[0]!,
+      );
+    },
+  );
+
+  it("does not consume a late successful turn when its terminal generation CAS loses", async () => {
+    const mocks = makeMocks();
+    const deliveryId = "late-generation-success";
+    const message: InterventionMessage = {
+      text: "old generation input",
+      user: "user",
+      deliveryId,
+      deliveryIntent: "human_live_steer",
+      completionId: `completion-${deliveryId}`,
+      relationKey: `user_message:${deliveryId}`,
+    };
+    let row = {
+      delivery_id: deliveryId,
+      state: "queued",
+      aggregate_state: "pending",
+    };
+    const markConsumed = vi.fn(async () => {
+      row = {
+        ...row,
+        state: "consumed",
+        aggregate_state: "consumed",
+      };
+      return row;
+    });
+    const gate = new TaskDeliveryLedgerGate(true, {
+      get: vi.fn(async () => row),
+      markConsumed,
+      markConsumedByRelation: vi.fn().mockResolvedValue(null),
+      recordRelationConsumed: vi.fn().mockResolvedValue(undefined),
+    } as never);
+    vi.mocked(
+      mocks.persistence.releaseExecutionOwnershipAndWaitForApplication,
+    ).mockResolvedValue({
+      eventId: 91,
+      applied: false,
+      canonicalSession: {
+        status: "interrupted",
+        termination_reason: "killed",
+        termination_detail: "newer generation already terminal",
+        review_state: "not_required",
+        last_assistant_text: null,
+        termination_event_id: 90,
+        updated_at: new Date().toISOString(),
+        last_event_id: 90,
+      },
+      canonicalExecutionOwnership: null,
+    });
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "assistant_message", content: "late success", timestamp: 1 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      gate,
+    );
+    const task = makeTask();
+    task.interventionQueue.push(message);
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(
+      mocks.persistence.releaseExecutionOwnershipAndWaitForApplication,
+    ).toHaveBeenCalledOnce();
+    expect(markConsumed).not.toHaveBeenCalled();
+    expect(row).toEqual({
+      delivery_id: deliveryId,
+      state: "queued",
+      aggregate_state: "pending",
+    });
   });
 
   it("turn-start receipt 기록 실패는 transcript recovery에 맡긴다", async () => {
@@ -1084,15 +1316,30 @@ describe("TaskExecutor.startExecution", () => {
       async interrupt() { return true; },
       async close() {},
     };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(true),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
     const executor = new TaskExecutor(
       () => engine,
       mocks.db,
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
     );
     const task = makeTask();
     task.profileId = claudeAgent.id;
+    task.interventionQueue.push({
+      text: "retry after quota reset",
+      user: "user",
+      deliveryId: "a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3",
+      deliveryIntent: "human_live_steer",
+    });
 
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
@@ -1135,6 +1382,8 @@ describe("TaskExecutor.startExecution", () => {
         termination_detail: "credential_alert",
       }),
     );
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalled();
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
   it("Claude runtime timeout fatal event clears pending runtime and finalizes as error", async () => {
@@ -3322,6 +3571,23 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const mocks = makeMocks();
     const task = makeTask();
     let turnCount = 0;
+    const interruptedDelivery: InterventionMessage = {
+      text: "work that loses its stream",
+      user: "u",
+      deliveryId: "delivery-interrupted-1",
+      runnerInterventionId: "delivery-interrupted-1",
+    };
+    const successorDelivery: InterventionMessage = {
+      text: "correct the active work",
+      user: "u",
+      deliveryId: "delivery-successor-1",
+      runnerInterventionId: "delivery-successor-1",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(true),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
+    task.interventionQueue.push(interruptedDelivery);
 
     const engine: EnginePort = {
       backendId: "codex",
@@ -3329,13 +3595,12 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       async *execute(params): AsyncIterable<SSEEventPayload> {
         turnCount += 1;
         if (turnCount === 1) {
-          yield { type: "session", session_id: "thr-1" } as SSEEventPayload;
-          task.interventionQueue.push({
-            text: "correct the active work",
-            user: "u",
-            deliveryId: "delivery-successor-1",
-            runnerInterventionId: "delivery-successor-1",
-          });
+          yield {
+            type: "assistant_message",
+            content: "partial",
+            timestamp: 1,
+          } as SSEEventPayload;
+          task.interventionQueue.push(successorDelivery);
           throw new Error("aborted_streaming: read ECONNRESET");
         }
         expect(params.runnerInterventionId).toBe("delivery-successor-1");
@@ -3355,6 +3620,11 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
     );
 
     executor.startExecution(task, agent);
@@ -3366,6 +3636,17 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(task.error).toBeUndefined();
     expect(task.pendingTerminationHint).toBeUndefined();
     expect(task.interventionQueue).toHaveLength(0);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
+      successorDelivery,
+      task,
+      expect.stringMatching(/^event:/),
+    );
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalledWith(
+      interruptedDelivery,
+      task,
+      expect.any(String),
+    );
   });
 
   it("큐의 세 delivery를 순서대로 한 model turn에 넣고 각각 한 번 consume한다", async () => {

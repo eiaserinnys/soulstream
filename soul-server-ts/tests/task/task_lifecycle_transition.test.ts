@@ -4,6 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import { InProcessRunnerCommandDispatcher } from
   "../../src/runner/runner_command_dispatcher.js";
+import { TaskExecutor } from "../../src/task/task_executor.js";
+import { TaskExecutorFinalizer } from
+  "../../src/task/task_executor_finalizer.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -61,8 +64,8 @@ function makeMocks() {
 }
 
 describe("TaskLifecycleTransition.cancelRunningTask", () => {
-  it("marks a running task interrupted only after a positive interrupt ACK", async () => {
-    const { transition } = makeMocks();
+  it("marks a running task interrupted once and treats repeated stop as success", async () => {
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask();
     const interrupt = vi.fn(async () => {
       expect(task.status).toBe("running");
@@ -74,6 +77,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     task.runner = { engine, dispatcher: runnerCommandDispatcher };
 
     await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
 
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
       channel: "command",
@@ -81,15 +85,22 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
       commandId: expect.any(String),
     }));
     expect(interrupt).toHaveBeenCalledOnce();
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
     expect(task.status).toBe("interrupted");
   });
 
   it.each([
     { label: "negative ACK", interrupt: async () => false },
     { label: "transport failure", interrupt: async () => { throw new Error("ipc down"); } },
-  ])("keeps status running after $label", async ({ interrupt }) => {
-    const { transition } = makeMocks();
+  ])("fences stop_failed after $label", async ({ interrupt }) => {
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask();
+    const pendingDelivery = {
+      text: "held input",
+      user: "user",
+      deliveryId: "held-stop-delivery",
+    };
+    task.interventionQueue.push(pendingDelivery);
     const engine = { interrupt: vi.fn(interrupt) } as unknown as EnginePort;
     task.runner = {
       engine,
@@ -97,27 +108,290 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     };
 
     await expect(transition.cancelRunningTask(task)).resolves.toBe(false);
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
 
-    expect(task.status).toBe("running");
-    expect(task.pendingTerminationHint).toBeUndefined();
+    expect(task.status).toBe("error");
+    expect(task.terminationReason).toBe("error_aborted");
+    expect(task.terminationDetail).toBe("runner stop was not confirmed");
+    expect(task.runner).toBeUndefined();
+    expect(engine.interrupt).toHaveBeenCalledOnce();
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
+    expect(task.interventionQueue).toEqual([pendingDelivery]);
   });
 
-  it("returns false without mutation when task is missing, terminal, or has no engine", async () => {
+  it("accepts only a fully converged terminal task as an idempotent no-op", async () => {
     const { transition } = makeMocks();
-    const terminal = makeTask({ status: "completed" });
+    const terminalZombie = makeTask({ status: "completed" });
+    const terminalConverged = makeTask({ status: "completed" });
     const engine = { interrupt: vi.fn() } as unknown as EnginePort;
-    terminal.runner = {
+    terminalZombie.runner = {
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };
     const noEngine = makeTask();
 
     await expect(transition.cancelRunningTask(undefined)).resolves.toBe(false);
-    await expect(transition.cancelRunningTask(terminal)).resolves.toBe(false);
+    await expect(transition.cancelRunningTask(terminalZombie)).resolves.toBe(false);
+    await expect(transition.cancelRunningTask(terminalConverged)).resolves.toBe(true);
     await expect(transition.cancelRunningTask(noEngine)).resolves.toBe(false);
 
-    expect(terminal.status).toBe("completed");
+    expect(terminalZombie.status).toBe("completed");
+    expect(terminalConverged.status).toBe("completed");
     expect(noEngine.status).toBe("running");
+  });
+
+  it("retries terminal persistence after a transport failure without interrupting twice", async () => {
+    const enqueueTerminalTransitionAndWaitForApplication = vi.fn()
+      .mockRejectedValueOnce(new Error("persistence unavailable"))
+      .mockImplementation(async (
+        _sessionId: string,
+        _event: unknown,
+        effect: {
+          status: string;
+          termination_reason: string;
+          termination_detail: string | null;
+          review_state: string;
+          updated_at: string;
+        },
+      ) => ({
+        eventId: 9,
+        applied: true,
+        canonicalSession: {
+          status: effect.status,
+          termination_reason: effect.termination_reason,
+          termination_detail: effect.termination_detail,
+          review_state: effect.review_state,
+          last_assistant_text: null,
+          termination_event_id: 9,
+          updated_at: effect.updated_at,
+          last_event_id: 9,
+        },
+      }));
+    const transition = new TaskLifecycleTransition({
+      logger: silentLogger,
+      persistence: { enqueueTerminalTransitionAndWaitForApplication } as never,
+    });
+    const task = makeTask({ executionPromise: Promise.resolve() });
+    const pendingDelivery = {
+      text: "held input",
+      user: "user",
+      deliveryId: "held-transport-failure",
+    };
+    task.interventionQueue.push(pendingDelivery);
+    const interrupt = vi.fn().mockResolvedValue(true);
+    const engine = { interrupt } as unknown as EnginePort;
+    task.runner = {
+      engine,
+      dispatcher: new InProcessRunnerCommandDispatcher(engine),
+    };
+
+    const first = await transition.cancelRunningTask(task).then(
+      (succeeded) => ({ succeeded }),
+      () => ({ succeeded: false }),
+    );
+    expect(first.succeeded).toBe(false);
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
+
+    expect(interrupt).toHaveBeenCalledOnce();
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledTimes(2);
+    const terminalEvents = enqueueTerminalTransitionAndWaitForApplication.mock.calls
+      .map((call) => call[1] as { _dedupe_key: string; timestamp: number });
+    expect(terminalEvents[0]?._dedupe_key).toMatch(/^session_terminal:/);
+    expect(terminalEvents[1]?._dedupe_key).toBe(terminalEvents[0]?._dedupe_key);
+    expect(terminalEvents[1]?.timestamp).toBe(terminalEvents[0]?.timestamp);
+    expect(task.runner).toBeUndefined();
+    expect(task.executionPromise).toBeUndefined();
+    expect(task.interventionQueue).toEqual([pendingDelivery]);
+  });
+
+  it("retries the same stop fence after executor finalization releases the runner", async () => {
+    const releaseExecutionOwnershipAndWaitForApplication = vi.fn()
+      .mockRejectedValueOnce(new Error("persistence unavailable"))
+      .mockImplementation(async (
+        _sessionId: string,
+        event: {
+          status: string;
+          termination_reason: string;
+          termination_detail: string | null;
+          _dedupe_key: string;
+          timestamp: number;
+        },
+      ) => ({
+        eventId: 9,
+        applied: true,
+        canonicalSession: {
+          status: event.status,
+          termination_reason: event.termination_reason,
+          termination_detail: event.termination_detail,
+          review_state: "acknowledged",
+          last_assistant_text: null,
+          termination_event_id: 9,
+          updated_at: "2026-05-23T01:05:00.000Z",
+          last_event_id: 9,
+        },
+        canonicalExecutionOwnership: null,
+      }));
+    const transition = new TaskLifecycleTransition({
+      logger: silentLogger,
+      persistence: { releaseExecutionOwnershipAndWaitForApplication } as never,
+    });
+    const pendingDelivery = {
+      text: "held input",
+      user: "user",
+      deliveryId: "held-finalizer-race",
+    };
+    const interrupt = vi.fn().mockResolvedValue(true);
+    const close = vi.fn().mockResolvedValue(undefined);
+    const engine = { interrupt, close } as unknown as EnginePort;
+    const task = makeTask({
+      executionPromise: Promise.resolve(),
+      executionOwnership: {
+        ownerKind: "in_process",
+        manifestId: "manifest-1",
+        runtimeEnvIdentity: "runtime-1",
+        ownershipGeneration: 1,
+        registrationId: "registration-1",
+        pid: 123,
+        startIdentity: "start-1",
+        executionCommandId: "execute-1",
+      },
+      interventionQueue: [pendingDelivery],
+      runner: {
+        engine,
+        dispatcher: new InProcessRunnerCommandDispatcher(engine),
+      },
+    });
+    const consumeSuccessfulDeliveries = vi.fn().mockResolvedValue(undefined);
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: transition,
+      logger: silentLogger,
+    });
+    const holdExecutionSlot = Reflect.get(
+      TaskExecutor.prototype,
+      "holdExecutionSlot",
+    ) as (task: Task, promise: Promise<void>) => Promise<void>;
+
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(false);
+    await holdExecutionSlot.call(
+      Object.create(TaskExecutor.prototype),
+      task,
+      finalizer.finalize(task, consumeSuccessfulDeliveries),
+    );
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
+
+    expect(interrupt).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    expect(releaseExecutionOwnershipAndWaitForApplication).toHaveBeenCalledTimes(2);
+    const terminalEvents = releaseExecutionOwnershipAndWaitForApplication.mock.calls
+      .map((call) => call[1] as { _dedupe_key: string; timestamp: number });
+    expect(terminalEvents[1]?._dedupe_key).toBe(terminalEvents[0]?._dedupe_key);
+    expect(terminalEvents[1]?.timestamp).toBe(terminalEvents[0]?.timestamp);
+    expect(task.status).toBe("interrupted");
+    expect(task.executionOwnership).toBeUndefined();
+    expect(task.runner).toBeUndefined();
+    expect(task.executionPromise).toBeUndefined();
+    expect(task.interventionQueue).toEqual([pendingDelivery]);
+    expect(consumeSuccessfulDeliveries).not.toHaveBeenCalled();
+  });
+
+  it("cleans stale local execution after a CAS miss proves canonical terminal", async () => {
+    const enqueueTerminalTransitionAndWaitForApplication = vi.fn(async () => ({
+      eventId: 9,
+      applied: false,
+      canonicalSession: {
+        status: "interrupted",
+        termination_reason: "killed",
+        termination_detail: "user_stop",
+        review_state: "acknowledged",
+        last_assistant_text: null,
+        termination_event_id: 9,
+        updated_at: "2026-05-23T01:05:00.000Z",
+        last_event_id: 9,
+      },
+    }));
+    const transition = new TaskLifecycleTransition({
+      logger: silentLogger,
+      persistence: { enqueueTerminalTransitionAndWaitForApplication } as never,
+    });
+    const task = makeTask({ executionPromise: Promise.resolve() });
+    const interrupt = vi.fn().mockResolvedValue(true);
+    const engine = { interrupt } as unknown as EnginePort;
+    task.runner = {
+      engine,
+      dispatcher: new InProcessRunnerCommandDispatcher(engine),
+    };
+
+    await transition.cancelRunningTask(task);
+
+    expect(task.status).toBe("interrupted");
+    expect(task.runner).toBeUndefined();
+    expect(task.executionPromise).toBeUndefined();
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
+    expect(interrupt).toHaveBeenCalledOnce();
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
+  });
+
+  it("retries a CAS miss with canonical active without interrupting twice", async () => {
+    const enqueueTerminalTransitionAndWaitForApplication = vi.fn()
+      .mockResolvedValueOnce({
+        eventId: 9,
+        applied: false,
+        canonicalSession: {
+          status: "running",
+          termination_reason: null,
+          termination_detail: null,
+          review_state: "not_required",
+          last_assistant_text: null,
+          termination_event_id: null,
+          updated_at: "2026-05-23T01:05:00.000Z",
+          last_event_id: 9,
+        },
+      })
+      .mockImplementation(async (
+        _sessionId: string,
+        _event: unknown,
+        effect: {
+          status: string;
+          termination_reason: string;
+          termination_detail: string | null;
+          review_state: string;
+          updated_at: string;
+        },
+      ) => ({
+        eventId: 10,
+        applied: true,
+        canonicalSession: {
+          status: effect.status,
+          termination_reason: effect.termination_reason,
+          termination_detail: effect.termination_detail,
+          review_state: effect.review_state,
+          last_assistant_text: null,
+          termination_event_id: 10,
+          updated_at: effect.updated_at,
+          last_event_id: 10,
+        },
+      }));
+    const transition = new TaskLifecycleTransition({
+      logger: silentLogger,
+      persistence: { enqueueTerminalTransitionAndWaitForApplication } as never,
+    });
+    const task = makeTask({ executionPromise: Promise.resolve() });
+    const interrupt = vi.fn().mockResolvedValue(true);
+    const engine = { interrupt } as unknown as EnginePort;
+    task.runner = {
+      engine,
+      dispatcher: new InProcessRunnerCommandDispatcher(engine),
+    };
+
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(false);
+    expect(task.status).toBe("running");
+    expect(task.runner).toBeDefined();
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
+
+    expect(interrupt).toHaveBeenCalledOnce();
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledTimes(2);
+    expect(task.runner).toBeUndefined();
+    expect(task.executionPromise).toBeUndefined();
   });
 });
 

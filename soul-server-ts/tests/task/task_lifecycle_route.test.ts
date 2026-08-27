@@ -8,6 +8,8 @@ import {
   TaskLifecycleRoute,
   type TaskLifecycleTransitionPort,
 } from "../../src/task/task_lifecycle_route.js";
+import { TaskLifecycleTransition } from
+  "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -95,12 +97,223 @@ describe("TaskLifecycleRoute.cancelTask", () => {
     expect(task.status).toBe("completed");
   });
 
-  it("returns directly for a completed legacy task without the feature close seam", async () => {
+  it("returns success for a converged completed task without the feature close seam", async () => {
     const task = makeTask({ agentSessionId: "s1", status: "completed" });
     const { route, lifecycleTransition } = makeRoute([task]);
     vi.mocked(lifecycleTransition.cancelRunningTask).mockResolvedValueOnce(false);
 
+    await expect(route.cancelTask("s1")).resolves.toBe(true);
+    expect(lifecycleTransition.cancelRunningTask).not.toHaveBeenCalled();
+  });
+
+  it("routes repeated stop through the real transition with one interrupt and persistence", async () => {
+    const task = makeTask({ agentSessionId: "s1" });
+    const interrupt = vi.fn().mockResolvedValue(true);
+    const engine = { interrupt } as unknown as EnginePort;
+    task.runner = createInProcessTaskRunnerRuntime(engine);
+    const enqueueTerminalTransitionAndWaitForApplication = vi.fn(async (
+      _sessionId: string,
+      _event: unknown,
+      effect: {
+        status: string;
+        termination_reason: string;
+        termination_detail: string | null;
+        review_state: string;
+        updated_at: string;
+      },
+    ) => ({
+      eventId: 8,
+      applied: true,
+      canonicalSession: {
+        status: effect.status,
+        termination_reason: effect.termination_reason,
+        termination_detail: effect.termination_detail,
+        review_state: effect.review_state,
+        last_assistant_text: null,
+        termination_event_id: 8,
+        updated_at: effect.updated_at,
+        last_event_id: 8,
+      },
+    }));
+    const transition = new TaskLifecycleTransition({
+      logger: silentLogger,
+      persistence: { enqueueTerminalTransitionAndWaitForApplication } as never,
+    });
+    const tasks = new Map([[task.agentSessionId, task]]);
+    const route = new TaskLifecycleRoute({
+      getTask: (sessionId) => tasks.get(sessionId),
+      listTasks: () => Array.from(tasks.values()),
+      forgetTask: (sessionId) => { tasks.delete(sessionId); },
+      lifecycleTransition: transition,
+      sessionMutations: { deleteSession: vi.fn() } as never,
+      broadcaster: { emitSessionDeleted: vi.fn() } as never,
+      logger: silentLogger,
+    });
+
+    await expect(route.cancelTask("s1")).resolves.toBe(true);
+    await expect(route.cancelTask("s1")).resolves.toBe(true);
+
+    expect(interrupt).toHaveBeenCalledOnce();
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
+    expect(task.runner).toBeUndefined();
+    expect(task.executionPromise).toBeUndefined();
+  });
+
+  it("closes the V2 runtime before first stop success and does not close it again", async () => {
+    const task = makeTask({ agentSessionId: "s1" });
+    const interrupt = vi.fn().mockResolvedValue(true);
+    const engine = { interrupt } as unknown as EnginePort;
+    task.runner = createInProcessTaskRunnerRuntime(engine);
+    const enqueueTerminalTransitionAndWaitForApplication = vi.fn(async (
+      _sessionId: string,
+      _event: unknown,
+      effect: {
+        status: string;
+        termination_reason: string;
+        termination_detail: string | null;
+        review_state: string;
+        updated_at: string;
+      },
+    ) => ({
+      eventId: 8,
+      applied: true,
+      canonicalSession: {
+        status: effect.status,
+        termination_reason: effect.termination_reason,
+        termination_detail: effect.termination_detail,
+        review_state: effect.review_state,
+        last_assistant_text: null,
+        termination_event_id: 8,
+        updated_at: effect.updated_at,
+        last_event_id: 8,
+      },
+    }));
+    const transition = new TaskLifecycleTransition({
+      logger: silentLogger,
+      persistence: { enqueueTerminalTransitionAndWaitForApplication } as never,
+    });
+    let runtimePresent = true;
+    const hasSessionRuntime = vi.fn(() => runtimePresent);
+    const closeSessionRuntime = vi.fn(async () => {
+      runtimePresent = false;
+      return true;
+    });
+    const deps = {
+      getTask: () => task,
+      listTasks: () => [task],
+      forgetTask: vi.fn(),
+      lifecycleTransition: transition,
+      sessionMutations: { deleteSession: vi.fn() } as never,
+      broadcaster: { emitSessionDeleted: vi.fn() } as never,
+      logger: silentLogger,
+      hasSessionRuntime,
+      closeSessionRuntime,
+    };
+    const route = new TaskLifecycleRoute(deps);
+
+    await expect(route.cancelTask("s1")).resolves.toBe(true);
+    expect(closeSessionRuntime).toHaveBeenCalledOnce();
+    expect(
+      enqueueTerminalTransitionAndWaitForApplication.mock.invocationCallOrder[0],
+    ).toBeLessThan(closeSessionRuntime.mock.invocationCallOrder[0]!);
+    await expect(route.cancelTask("s1")).resolves.toBe(true);
+
+    expect(interrupt).toHaveBeenCalledOnce();
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
+    expect(closeSessionRuntime).toHaveBeenCalledOnce();
+  });
+
+  it("closes the V2 runtime once before a repeated stop_failed becomes success", async () => {
+    const task = makeTask({ agentSessionId: "s1" });
+    const interrupt = vi.fn().mockResolvedValue(false);
+    const engine = { interrupt } as unknown as EnginePort;
+    task.runner = createInProcessTaskRunnerRuntime(engine);
+    const enqueueTerminalTransitionAndWaitForApplication = vi.fn(async (
+      _sessionId: string,
+      _event: unknown,
+      effect: {
+        status: string;
+        termination_reason: string;
+        termination_detail: string | null;
+        review_state: string;
+        updated_at: string;
+      },
+    ) => ({
+      eventId: 8,
+      applied: true,
+      canonicalSession: {
+        status: effect.status,
+        termination_reason: effect.termination_reason,
+        termination_detail: effect.termination_detail,
+        review_state: effect.review_state,
+        last_assistant_text: null,
+        termination_event_id: 8,
+        updated_at: effect.updated_at,
+        last_event_id: 8,
+      },
+    }));
+    const transition = new TaskLifecycleTransition({
+      logger: silentLogger,
+      persistence: { enqueueTerminalTransitionAndWaitForApplication } as never,
+    });
+    let runtimePresent = true;
+    const closeSessionRuntime = vi.fn(async () => {
+      runtimePresent = false;
+      return true;
+    });
+    const route = new TaskLifecycleRoute({
+      getTask: () => task,
+      listTasks: () => [task],
+      forgetTask: vi.fn(),
+      lifecycleTransition: transition,
+      sessionMutations: { deleteSession: vi.fn() } as never,
+      broadcaster: { emitSessionDeleted: vi.fn() } as never,
+      logger: silentLogger,
+      hasSessionRuntime: () => runtimePresent,
+      closeSessionRuntime,
+    });
+
     await expect(route.cancelTask("s1")).resolves.toBe(false);
+    await expect(route.cancelTask("s1")).resolves.toBe(true);
+
+    expect(interrupt).toHaveBeenCalledOnce();
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
+    expect(closeSessionRuntime).toHaveBeenCalledOnce();
+    expect(task.interventionQueue).toEqual([]);
+  });
+
+  it("does not report stop success while a V2 runtime remains present", async () => {
+    const task = makeTask({ agentSessionId: "s1", status: "completed" });
+    let runtimePresent = true;
+    const hasSessionRuntime = vi.fn(() => runtimePresent);
+    const closeSessionRuntime = vi.fn().mockResolvedValue(false);
+    const lifecycleTransition = {
+      cancelRunningTask: vi.fn().mockResolvedValue(true),
+      interruptAndDrain: vi.fn().mockResolvedValue(undefined),
+      markRunningTaskInterruptedForShutdown: vi.fn().mockResolvedValue(undefined),
+      interruptForShutdown: vi.fn().mockResolvedValue(undefined),
+      getDrainPromise: vi.fn().mockReturnValue(Promise.resolve()),
+      finalizeExternalTask: vi.fn(async (current: Task) => current),
+    } satisfies TaskLifecycleTransitionPort;
+    const route = new TaskLifecycleRoute({
+      getTask: () => task,
+      listTasks: () => [task],
+      forgetTask: vi.fn(),
+      lifecycleTransition,
+      sessionMutations: { deleteSession: vi.fn() } as never,
+      broadcaster: { emitSessionDeleted: vi.fn() } as never,
+      logger: silentLogger,
+      hasSessionRuntime,
+      closeSessionRuntime,
+    });
+
+    await expect(route.cancelTask("s1")).resolves.toBe(false);
+    await expect(route.cancelTask("s1")).resolves.toBe(false);
+    runtimePresent = false;
+    await expect(route.cancelTask("s1")).resolves.toBe(true);
+
+    expect(closeSessionRuntime).toHaveBeenCalledTimes(2);
+    expect(lifecycleTransition.cancelRunningTask).not.toHaveBeenCalled();
   });
 });
 

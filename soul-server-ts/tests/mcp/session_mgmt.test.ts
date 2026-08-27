@@ -477,7 +477,7 @@ describe("agent profile backend boundary", () => {
     );
   });
 
-  it("create_agent_session은 notify_completion=false에서 caller 표시는 유지하고 구조 링크만 비운다", async () => {
+  it("create_agent_session은 notify_completion=false에서도 caller provenance를 유지한다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
       undefined,
@@ -511,7 +511,7 @@ describe("agent profile backend boundary", () => {
     expect(result.isError).not.toBe(true);
     expect(runtime.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
-        callerSessionId: null,
+        callerSessionId: "caller-sess-1",
         callerInfo: expect.objectContaining({
           source: "agent",
           agent_node: "node-test",
@@ -968,7 +968,7 @@ describe("create_remote_agent_session", () => {
       expect(body.nodeId).toBe("node-remote");
       expect(body.folderId).toBe("folder-1");
       expect(body.model_preset).toBe("codex-5.6-sol");
-      expect(body).not.toHaveProperty("caller_session_id");
+      expect(body.caller_session_id).toBe("caller-sess-1");
       expect(body.notify_completion).toBe(false);
       expect(body.caller_info.agent_id).toBe("codex-default");
       expect(body.caller_info.agent_node).toBe("node-test");
@@ -1109,7 +1109,7 @@ describe("create_remote_agent_session", () => {
     }
   });
 
-  it("notify_completion=false도 caller의 task은 상속하고 구조 링크만 remote body에서 생략한다", async () => {
+  it("notify_completion=false도 caller의 task과 provenance를 remote body에 보존한다", async () => {
     const capture = await createOrchCapture(200, (req) => {
       if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
         return { body: { agents: [{ id: "roselin_codex", name: "로젤린", backend: "codex" }] } };
@@ -1156,7 +1156,7 @@ describe("create_remote_agent_session", () => {
       expect(body.folderId).toBe("root");
       expect(body.container).toEqual({ kind: "task", id: "rb-1" });
       expect(body.notify_completion).toBe(false);
-      expect(body).not.toHaveProperty("caller_session_id");
+      expect(body.caller_session_id).toBe("caller-sess-1");
       expect(body.caller_info).toEqual(expect.objectContaining({
         source: "agent",
         agent_node: "node-test",

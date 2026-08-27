@@ -1123,6 +1123,143 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     ]);
   });
 
+  it.each([
+    "completion_notification",
+    "human_live_steer",
+  ] as const)(
+    "keeps failed %s delivery replayable until one successful resume consumes it",
+    async (intent) => {
+      const deliveryId = `delivery-failed-replay-${intent}`;
+      const relationKey = `relation-failed-replay-${intent}`;
+      await register(deliveryId, relationKey, intent);
+      const gate = new TaskDeliveryLedgerGate(true, repository);
+      const request = {
+        agentSessionId: "caller-old",
+        text: "retry the same input",
+        user: "user",
+        deliveryId,
+        deliveryIntent: intent,
+        completionId: `completion-${relationKey}`,
+        relationKey,
+        source: intent === "completion_notification"
+          ? "completion_notifier"
+          : "user_message",
+      };
+
+      const firstAdmission = await gate.beginDispatch(await gate.admit({
+        ...request,
+        deliveryLeaseOwner: "route-first",
+      }));
+      expect(firstAdmission.kind).toBe("admitted");
+      await gate.recordResult(firstAdmission, { delivered: true });
+
+      await expect(repository.get(deliveryId)).resolves.toMatchObject({
+        state: "queued",
+        aggregate_state: "pending",
+        consumed_at: null,
+      });
+
+      const recovered = await repository.recovery.claimRecoverableQueued(
+        {
+          recoveryNodeId: "recovery-node",
+          staleNodeAfterMs: 0,
+          queuedAfterMs: 0,
+        },
+        "recovery-worker",
+        10,
+        15_000,
+      );
+      expect(recovered.map((row) => row.delivery_id)).toContain(deliveryId);
+      await expect(repository.retryLeasedDelivery(
+        deliveryId,
+        "recovery-worker",
+        "failed turn kept for explicit resume",
+        0,
+      )).resolves.toMatchObject({
+        state: "pending",
+        aggregate_state: "pending",
+      });
+
+      const resumeAdmission = await gate.beginDispatch(await gate.admit({
+        ...request,
+        deliveryLeaseOwner: "route-resume",
+      }));
+      expect(resumeAdmission.kind).toBe("admitted");
+      await expect(repository.markQueued(
+        deliveryId,
+        "route-resume",
+      )).resolves.toMatchObject({
+        state: "queued",
+        aggregate_state: "pending",
+      });
+      await expect(repository.markConsumed(
+        deliveryId,
+        "event:resume-success",
+      )).resolves.toMatchObject({
+        state: "consumed",
+        aggregate_state: "consumed",
+        target_receipt_id: "event:resume-success",
+        caller_turn_id: "event:resume-success",
+      });
+      await expect(repository.markConsumed(
+        deliveryId,
+        "event:duplicate",
+      )).resolves.toBeNull();
+      await expect(gate.admit(request)).resolves.toEqual({
+        kind: "suppressed",
+        deliveryId,
+        reason: "delivery_consumed",
+      });
+    },
+  );
+
+  it("consumes only queued or transcript-proven delivered input", async () => {
+    for (const state of ["pending", "claimed", "dispatching"] as const) {
+      const deliveryId = `delivery-consume-rejected-${state}`;
+      await register(deliveryId, `relation-consume-rejected-${state}`);
+      if (state !== "pending") {
+        await repository.claimForTarget(deliveryId, "caller-old", `worker-${state}`);
+      }
+      if (state === "dispatching") {
+        await repository.beginDispatch(deliveryId, `worker-${state}`);
+      }
+      await expect(repository.markConsumed(
+        deliveryId,
+        `event:${state}`,
+      )).resolves.toBeNull();
+      await expect(repository.get(deliveryId)).resolves.toMatchObject({
+        state,
+        aggregate_state: "pending",
+        consumed_at: null,
+      });
+    }
+
+    const queuedId = "delivery-consume-queued-success";
+    await register(queuedId, "relation-consume-queued-success");
+    await repository.claimForTarget(queuedId, "caller-old", "worker-queued");
+    await repository.beginDispatch(queuedId, "worker-queued");
+    await repository.markQueued(queuedId, "worker-queued");
+    await expect(repository.markConsumed(queuedId, "event:queued-success"))
+      .resolves.toMatchObject({
+        state: "consumed",
+        aggregate_state: "consumed",
+        target_receipt_id: "event:queued-success",
+      });
+
+    const deliveredId = "delivery-consume-transcript-success";
+    await register(deliveredId, "relation-consume-transcript-success");
+    await repository.claimForTarget(deliveredId, "caller-old", "worker-transcript");
+    await repository.beginDispatch(deliveredId, "worker-transcript");
+    await repository.markDelivered(deliveredId, "event:transcript-proof");
+    await expect(repository.markConsumed(deliveredId, "event:resume-success"))
+      .resolves.toMatchObject({
+        state: "consumed",
+        aggregate_state: "consumed",
+        target_receipt_id: "event:transcript-proof",
+        caller_turn_id: "event:resume-success",
+      });
+  });
+
   it("covers every intent × attempt outcome × aggregate state × receipt decision", async () => {
     const intents = [
       "durable_next_turn",
@@ -1437,7 +1574,8 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
   async function register(
     deliveryId: string,
     relationKey: string,
-    intent: "durable_next_turn" | "completion_notification" | "runtime_followup" =
+    intent: "durable_next_turn" | "completion_notification" | "runtime_followup"
+      | "human_live_steer" =
       "completion_notification",
   ): Promise<void> {
     await repository.register({

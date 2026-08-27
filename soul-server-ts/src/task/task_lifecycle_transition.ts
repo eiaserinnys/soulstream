@@ -20,6 +20,7 @@ import {
   finalizeTaskTermination,
   recordTerminationHint,
 } from "./task_termination.js";
+import { releaseTaskRunner } from "./task_runner_release.js";
 
 export interface ExternalFinalizeParams {
   result?: string;
@@ -37,6 +38,33 @@ export interface TaskFinalStatePersistenceResult {
   terminalTransitionApplied: boolean;
 }
 
+const USER_STOP_PROJECTION = {
+  true: {
+    status: "interrupted",
+    error: undefined,
+    terminationReason: "killed",
+    terminationDetail: "user_stop",
+  },
+  false: {
+    status: "error",
+    error: "runner stop was not confirmed",
+    terminationReason: "error_aborted",
+    terminationDetail: "runner stop was not confirmed",
+  },
+} as const;
+
+/** A repeated user stop succeeds only after every execution projection converged. */
+export function isUserStopConverged(task: Task | undefined): boolean {
+  return Boolean(
+    task
+    && isTerminalTaskStatus(task.status)
+    && !task.executionOwnership
+    && !task.recoveredExecutionOwnership
+    && !task.runner
+    && !task.executionPromise,
+  );
+}
+
 export class TaskLifecycleTransition {
   private readonly executionOwnership?: ExecutionOwnershipCoordinator;
 
@@ -48,43 +76,109 @@ export class TaskLifecycleTransition {
 
   async cancelRunningTask(task: Task | undefined): Promise<boolean> {
     if (!task) return false;
+    if (isUserStopConverged(task)) {
+      task.interruptRequest = undefined;
+      return true;
+    }
+    if (task.interruptRequest) {
+      const previousRequest = task.interruptRequest;
+      await previousRequest.catch(() => false);
+      if (isUserStopConverged(task)) {
+        task.interruptRequest = undefined;
+        return true;
+      }
+      if (task.interruptRequest !== previousRequest) {
+        return await task.interruptRequest;
+      }
+      const retry = this.retryUserStopFinalization(task);
+      task.interruptRequest = retry;
+      return await retry;
+    }
     if (!isActiveTaskStatus(task.status)) return false;
     if (!task.runner) return false;
-    if (task.interruptRequest) return await task.interruptRequest;
 
-    let request!: Promise<boolean>;
-    request = (async (): Promise<boolean> => {
+    const runner = task.runner;
+    const executionPromise = task.executionPromise;
+    const request = (async (): Promise<boolean> => {
+      let interrupted = false;
       try {
-        const interrupted = await task.runner!.dispatcher.interrupt();
-        if (!interrupted) {
-          this.deps.logger.info(
-            { sessionId: task.agentSessionId },
-            "Runner rejected explicit interrupt; task remains running",
-          );
-          return false;
-        }
-        if (!isActiveTaskStatus(task.status)) {
-          this.deps.logger.info(
-            { sessionId: task.agentSessionId, status: task.status },
-            "Runner interrupt ACK arrived after task reached a terminal state",
-          );
-          return false;
-        }
-        task.status = "interrupted";
-        recordTerminationHint(task, "killed", "cancelled");
-        return true;
+        interrupted = await runner.dispatcher.interrupt();
       } catch (err) {
         this.deps.logger.warn(
           { err, sessionId: task.agentSessionId },
-          "Runner interrupt delivery failed; task remains running",
+          "Runner interrupt delivery failed; fencing task as stop_failed",
         );
-        return false;
-      } finally {
-        if (task.interruptRequest === request) task.interruptRequest = undefined;
       }
+      return await this.finalizeUserStop(
+        task,
+        runner,
+        executionPromise,
+        interrupted,
+      );
     })();
     task.interruptRequest = request;
     return await request;
+  }
+
+  private retryUserStopFinalization(task: Task): Promise<boolean> {
+    return this.finalizeUserStop(
+      task,
+      task.runner,
+      task.executionPromise,
+      task.pendingTerminationHint === "killed",
+    );
+  }
+
+  private async finalizeUserStop(
+    task: Task,
+    runner: Task["runner"],
+    executionPromise: Promise<void> | undefined,
+    interrupted: boolean,
+  ): Promise<boolean> {
+    if (isActiveTaskStatus(task.status)) {
+      const projection = USER_STOP_PROJECTION[String(interrupted) as "true" | "false"];
+      task.status = projection.status;
+      task.completedAt ??= new Date();
+      task.error = projection.error;
+      recordTerminationHint(
+        task,
+        projection.terminationReason,
+        projection.terminationDetail,
+      );
+    }
+
+    const stopCompletedAt = task.completedAt ?? new Date();
+    task.completedAt = stopCompletedAt;
+    try {
+      await this.persistFinalState(task, true);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "Explicit stop terminal persistence failed; awaiting explicit retry",
+      );
+      return false;
+    }
+    if (!isTerminalTaskStatus(task.status)) {
+      task.completedAt = stopCompletedAt;
+      return false;
+    }
+
+    if (runner) {
+      try {
+        await runner.dispatcher.close();
+      } catch (err) {
+        this.deps.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "runner close failed after explicit stop was fenced",
+        );
+      }
+      releaseTaskRunner(task, runner);
+    }
+    if (task.executionPromise === executionPromise) {
+      task.executionPromise = undefined;
+    }
+    task.interruptRequest = undefined;
+    return interrupted;
   }
 
   async interruptAndDrain(task: Task): Promise<void> {
@@ -204,13 +298,20 @@ export class TaskLifecycleTransition {
     return application.applied;
   }
 
-  private async persistFinalState(task: Task): Promise<TaskFinalStatePersistenceResult> {
+  private async persistFinalState(
+    task: Task,
+    retryUnrecordedTerminal = false,
+  ): Promise<TaskFinalStatePersistenceResult> {
     const termination = finalizeTaskTermination(task);
     if (termination.newlyFinalized) {
       task.reviewState = reviewStateAfterTerminal(task.reviewRequired === true);
     }
     let terminalTransitionApplied = false;
-    if (termination.newlyFinalized && !task.terminationEventRecorded) {
+    if (
+      (termination.newlyFinalized || retryUnrecordedTerminal)
+      && isTerminalTaskStatus(task.status)
+      && !task.terminationEventRecorded
+    ) {
       terminalTransitionApplied = await this.enqueueAndAwaitSessionEnded(
         task,
         termination.reason,
@@ -280,7 +381,13 @@ export class TaskLifecycleTransition {
           },
         );
     applyCanonicalSessionProjection(task, application.canonicalSession);
-    if (ownership && application.applied) task.executionOwnership = undefined;
+    if (
+      isTerminalTaskStatus(task.status)
+      && application.canonicalExecutionOwnership == null
+    ) {
+      task.executionOwnership = undefined;
+      task.recoveredExecutionOwnership = undefined;
+    }
     return application.applied;
   }
 

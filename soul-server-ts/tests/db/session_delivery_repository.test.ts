@@ -206,7 +206,7 @@ describe("SessionDeliveryRepository", () => {
 
     expect(calls[0].query).toContain("target_session_id");
     expect(calls[0].query).toContain("state = 'claimed'");
-    expect(calls[0].query).toContain("state = 'pending'");
+    expect(calls[0].query).toContain("state IN ('pending', 'queued')");
   });
 
   it("uses claimed to dispatching as the exclusive dispatch CAS", async () => {
@@ -264,8 +264,9 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[3].values).toContain("accepted");
     expect(calls[4].query).toContain("aggregate_state = 'delivered'");
     expect(calls[5].query).toContain("'consumed'");
-    expect(calls[5].query).toContain("target_receipt_id IS NOT NULL");
-    expect(calls[5].query).not.toContain("target_receipt_id =");
+    expect(calls[5].query).toContain("aggregate_state IN ('pending', 'delivered')");
+    expect(calls[5].query).toContain("'queued', 'delivered'");
+    expect(calls[5].query).toContain("target_receipt_id = COALESCE");
   });
 
   it("marks consumed by relation and completion identity", async () => {

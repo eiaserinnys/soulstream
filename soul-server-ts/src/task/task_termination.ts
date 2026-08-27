@@ -56,6 +56,7 @@ export function buildSessionEndedEvent(task: Task): {
   termination_reason: TerminationReason;
   termination_detail: string | null;
   timestamp: number;
+  _dedupe_key: string;
 } {
   return {
     type: "session_ended",
@@ -63,7 +64,21 @@ export function buildSessionEndedEvent(task: Task): {
     termination_reason: task.terminationReason ?? "unknown",
     termination_detail: task.terminationDetail ?? null,
     timestamp: Math.floor((task.completedAt ?? new Date()).getTime() / 1000),
+    _dedupe_key: terminalDedupeKey(task),
   };
+}
+
+function terminalDedupeKey(task: Task): string {
+  const ownership = task.executionOwnership;
+  const recovered = task.recoveredExecutionOwnership;
+  const completedAt = task.completedAt ?? task.createdAt;
+  const transitionIdentity = [
+    ownership && `generation:${ownership.ownershipGeneration}`,
+    recovered
+      && `runner:${recovered.registrationId}:${recovered.executionCommandId ?? "legacy"}`,
+    `completed_at:${completedAt.toISOString()}`,
+  ].find(Boolean);
+  return `session_terminal:${task.agentSessionId}:${String(transitionIdentity)}`;
 }
 
 function resolveTerminationReason(task: Task): TerminationReason {

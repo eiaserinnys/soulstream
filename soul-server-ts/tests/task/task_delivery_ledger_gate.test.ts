@@ -56,24 +56,24 @@ describe("TaskDeliveryLedgerGate", () => {
     );
   });
 
-  it("settles a live-steer apply acknowledgement as one consumed delivery", async () => {
+  it("records live-steer apply without consuming before turn success", async () => {
     const deliveryId = "78787878-7878-4878-8878-787878787878";
-    const markDelivered = vi.fn(async () => ({
-      ...row(deliveryId, "delivered"),
-      aggregate_state: "delivered",
-      target_receipt_id: `intervention:${deliveryId}`,
+    const markQueued = vi.fn(async () => ({
+      ...row(deliveryId, "queued"),
+      aggregate_state: "pending",
     }));
     const markConsumed = vi.fn(async () => ({
       ...row(deliveryId, "consumed"),
       aggregate_state: "consumed",
     }));
+    const markDelivered = vi.fn();
     const markUncertain = vi.fn();
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
       claimForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
-      markQueued: vi.fn(),
+      markQueued,
       markDelivered,
       markUncertain,
       markConsumed,
@@ -91,14 +91,12 @@ describe("TaskDeliveryLedgerGate", () => {
       },
     }, { delivered: true });
 
-    expect(markDelivered).toHaveBeenCalledWith(
+    expect(markQueued).toHaveBeenCalledWith(
       deliveryId,
-      `intervention:${deliveryId}`,
+      "route-live",
     );
-    expect(markConsumed).toHaveBeenCalledWith(
-      deliveryId,
-      `intervention:${deliveryId}`,
-    );
+    expect(markDelivered).not.toHaveBeenCalled();
+    expect(markConsumed).not.toHaveBeenCalled();
     expect(markUncertain).not.toHaveBeenCalled();
   });
 
@@ -519,10 +517,20 @@ describe("TaskDeliveryLedgerGate", () => {
 
   it("treats a queued CAS miss as accepted when the durable row already advanced", async () => {
     const deliveryId = "edededed-eded-4ded-8ded-edededededed";
+    const exactIdentity = {
+      target_session_id: "caller-1",
+      intent: "durable_next_turn" as const,
+      relation_key: `user_message:caller-1:${deliveryId}`,
+      completion_id: `message:${deliveryId}`,
+      payload_hash: "hash-durable-acceptance",
+    };
     const markQueued = vi.fn()
       .mockResolvedValueOnce(row(deliveryId, "queued"))
       .mockResolvedValueOnce(null);
-    const get = vi.fn().mockResolvedValue(row(deliveryId, "queued"));
+    const get = vi.fn().mockResolvedValue({
+      ...row(deliveryId, "queued"),
+      ...exactIdentity,
+    });
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
       claimForTarget: vi.fn(),
@@ -540,8 +548,7 @@ describe("TaskDeliveryLedgerGate", () => {
       deliveryId,
       row: {
         ...row(deliveryId, "dispatching"),
-        intent: "durable_next_turn" as const,
-        target_session_id: "caller-1",
+        ...exactIdentity,
         lease_owner: "route-durable-acceptance",
       },
     };
@@ -552,6 +559,47 @@ describe("TaskDeliveryLedgerGate", () => {
 
     expect(markQueued).toHaveBeenCalledTimes(2);
     expect(get).toHaveBeenCalledWith(deliveryId);
+  });
+
+  it("rejects a queued CAS miss when the durable identity does not match", async () => {
+    const deliveryId = "edededed-eded-4ded-8ded-edededededed";
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get: vi.fn().mockResolvedValue({
+        ...row(deliveryId, "queued"),
+        target_session_id: "different-session",
+        intent: "durable_next_turn",
+        relation_key: `user_message:different-session:${deliveryId}`,
+        completion_id: `message:${deliveryId}`,
+        payload_hash: "different-hash",
+      }),
+      markQueued: vi.fn().mockResolvedValue(null),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+    });
+    const admission = {
+      kind: "admitted" as const,
+      deliveryId,
+      row: {
+        ...row(deliveryId, "dispatching"),
+        target_session_id: "caller-1",
+        intent: "durable_next_turn" as const,
+        relation_key: `user_message:caller-1:${deliveryId}`,
+        completion_id: `message:${deliveryId}`,
+        payload_hash: "hash-durable-acceptance",
+        lease_owner: "route-durable-acceptance",
+      },
+    };
+
+    await expect(gate.recordResult(admission, {
+      queued: true,
+      reason: "session_busy",
+    })).rejects.toThrow(`Delivery ${deliveryId} lost queued-state CAS`);
   });
 
   it("supersedes only the pending durable retry selected by id", async () => {
@@ -630,7 +678,7 @@ describe("TaskDeliveryLedgerGate", () => {
     const deliveryId = "acacacac-acac-4cac-8cac-acacacacacac";
     const markUncertain = vi.fn();
     const retryLeasedDelivery = vi.fn().mockResolvedValue(
-      row(deliveryId, "uncertain"),
+      row(deliveryId, "pending"),
     );
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
@@ -662,8 +710,8 @@ describe("TaskDeliveryLedgerGate", () => {
     expect(retryLeasedDelivery).toHaveBeenCalledWith(
       deliveryId,
       "route-exhausted",
-      "reservation_in_flight",
-      expect.any(Number),
+      "automatic ownership retry budget exhausted; explicit intent required",
+      0,
     );
     expect(markUncertain).not.toHaveBeenCalled();
   });

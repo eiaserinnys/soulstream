@@ -39,8 +39,6 @@ import type {
   TaskManager,
 } from "./task_manager.js";
 import type { Task } from "./task_models.js";
-import type { QueuedDeliveryTranscriptRecovery } from
-  "./queued_delivery_transcript_recovery.js";
 
 /** Matches the persistence host transport deadline for cross-service HTTP. */
 const CROSS_NODE_RELAY_TIMEOUT_MS = 10_000;
@@ -77,8 +75,6 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     >,
     private readonly deliveryV2Enabled = false,
     deliveryRepository?: SessionDeliveryRepository,
-    queuedRecoveryMaxAgeMs?: number,
-    queuedDeliveryRecovery?: QueuedDeliveryTranscriptRecovery,
   ) {
     // 테스트가 fetch mock을 주입 — 운영 시 globalThis.fetch (Node 18+ 내장).
     this.fetchImpl = fetchImpl ?? ((...args) => fetch(...args));
@@ -102,9 +98,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
           }
         },
         logger,
-        sourceNode: nodeId,
-        queuedDeliveryRecovery,
-      }, undefined, undefined, queuedRecoveryMaxAgeMs);
+      });
     }
   }
 

@@ -13,8 +13,6 @@ import {
   readCanonicalDeliveryPayload,
 } from "./delivery_payload.js";
 import type { CallerInfo } from "./task_models.js";
-import type { QueuedDeliveryTranscriptRecovery } from
-  "./queued_delivery_transcript_recovery.js";
 import {
   DELIVERY_NOTIFICATION_MAX_AGE_MS,
   DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
@@ -40,7 +38,6 @@ type CompletionDeliveryRepository = Pick<
   | "register"
   | "get"
   | "claimForTarget"
-  | "claimRecoverableCompletionDeliveries"
   | "deferPending"
   | "retryLeasedDelivery"
   | "releaseExpiredDeliveryLeases"
@@ -51,11 +48,6 @@ export interface CompletionDeliveryCoordinatorDeps {
   repository: CompletionDeliveryRepository;
   dispatch(params: AddInterventionParams): Promise<void>;
   logger: Pick<Logger, "error" | "warn" | "info">;
-  sourceNode?: string;
-  queuedDeliveryRecovery?: Pick<
-    QueuedDeliveryTranscriptRecovery,
-    "recoverPeriodic"
-  >;
 }
 
 /**
@@ -64,13 +56,6 @@ export interface CompletionDeliveryCoordinatorDeps {
  * Registration always precedes target claiming, so a transient failure leaves a
  * replayable `pending` row instead of losing the finalizer's only call.
  */
-/**
- * Schedule heartbeats run every 30s; two minutes absorbs a few missed beats
- * while still recovering a genuinely dead node quickly. Evaluated against the
- * database clock, so it means the same thing on every node.
- */
-const STALE_NODE_HEARTBEAT_MS = 120_000;
-
 export class DeliveryDispatchTimeoutError extends Error {
   constructor(readonly deliveryId: string, readonly timeoutMs: number) {
     super(`Delivery ${deliveryId} dispatch exceeded ${timeoutMs}ms`);
@@ -90,16 +75,13 @@ export class CompletionDeliveryCoordinator {
    * the row to `pending` underneath its own owner and the next scan claimed it
    * again (260820 incident).
    *
-   * One claim covers a whole batch, so bounding a single dispatch is not
-   * enough; `dispatchClaimed` stops accepting rows once too little lease
-   * remains to cover another dispatch. Rows left over simply wait for the next
-   * scan, which is five seconds away.
+   * Periodic recovery only releases abandoned admission leases. It never
+   * dispatches accepted input; a new explicit intent must claim it again.
    */
   constructor(
     private readonly deps: CompletionDeliveryCoordinatorDeps,
     workerId = `completion:${randomUUID()}`,
     private readonly leaseMs = 60_000,
-    private readonly queuedRecoveryMaxAgeMs = 1_800_000,
     private readonly dispatchTimeoutMs = 15_000,
   ) {
     if (dispatchTimeoutMs >= leaseMs) {
@@ -132,40 +114,11 @@ export class CompletionDeliveryCoordinator {
     await this.attemptPending(registered.row.delivery_id);
   }
 
-  async recoverPending(limit = 100): Promise<void> {
-    let rows: SessionDeliveryRow[];
+  async recoverPending(_limit = 100): Promise<void> {
     try {
-      if (this.deps.sourceNode && this.deps.queuedDeliveryRecovery) {
-        await this.deps.queuedDeliveryRecovery.recoverPeriodic({
-          recoveryNodeId: this.deps.sourceNode,
-          staleNodeAfterMs: STALE_NODE_HEARTBEAT_MS,
-          queuedAfterMs: this.queuedRecoveryMaxAgeMs,
-        }, limit);
-      }
       await this.deps.repository.releaseExpiredDeliveryLeases();
-      rows = await this.deps.repository.claimRecoverableCompletionDeliveries(
-        this.workerId,
-        limit,
-        this.leaseMs,
-      );
     } catch (err) {
       this.deps.logger.warn({ err }, "Completion delivery recovery scan failed");
-      return;
-    }
-    const acceptUntilMs = Date.now() + (this.leaseMs - this.dispatchTimeoutMs);
-    let deferredForLease = 0;
-    for (const row of rows) {
-      if (Date.now() >= acceptUntilMs) {
-        deferredForLease += 1;
-        continue;
-      }
-      await this.dispatchClaimed(row);
-    }
-    if (deferredForLease > 0) {
-      this.deps.logger.warn(
-        { deferredForLease, claimed: rows.length, leaseMs: this.leaseMs },
-        "Completion delivery batch ran out of lease; remaining rows wait for the next scan",
-      );
     }
   }
 
@@ -199,8 +152,9 @@ export class CompletionDeliveryCoordinator {
   private async dispatchClaimed(row: SessionDeliveryRow): Promise<void> {
     const leaseOwner = requiredLeaseOwner(row);
     const targetSessionId = requiredTarget(row);
-    // TaskCompletionNotifier.notify() is the canonical admission guard. This
-    // recovery fence only drains stale durable rows created before that guard.
+    // TaskCompletionNotifier.notify() is the explicit admission boundary. The
+    // dispatch below belongs only to that enqueue attempt; periodic maintenance
+    // cannot enter this method or create execution intent.
     if (isStaleSelfCompletionDelivery(row, targetSessionId)) {
       try {
         const terminal = await this.deps.repository.markUncertain(
@@ -236,6 +190,14 @@ export class CompletionDeliveryCoordinator {
       );
     } catch (err) {
       const failure = errorText(err);
+      const persisted = await this.deps.repository.get(row.delivery_id);
+      if (persisted?.state === "queued") {
+        this.deps.logger.info(
+          { deliveryId: row.delivery_id, state: persisted.state },
+          "Completion delivery dispatch returned ambiguously after durable acceptance",
+        );
+        return;
+      }
       if (isRetryExhausted(row)) {
         const terminal = await this.deps.repository.markUncertain(
           row.delivery_id,

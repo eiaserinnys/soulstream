@@ -3,7 +3,10 @@ import type { Logger } from "pino";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 
-import type { ExternalFinalizeParams } from "./task_lifecycle_transition.js";
+import {
+  isUserStopConverged,
+  type ExternalFinalizeParams,
+} from "./task_lifecycle_transition.js";
 import { isActiveTaskStatus, type Task } from "./task_models.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
 import type { ClaudeRuntimeRegistryCloseReason } from
@@ -40,6 +43,7 @@ interface TaskLifecycleRouteDeps {
     sessionId: string,
     reason: ClaudeRuntimeRegistryCloseReason,
   ) => Promise<boolean>;
+  hasSessionRuntime?: (sessionId: string) => boolean;
 }
 
 export class TaskLifecycleRoute {
@@ -47,10 +51,28 @@ export class TaskLifecycleRoute {
 
   async cancelTask(sessionId: string): Promise<boolean> {
     const task = this.deps.getTask(sessionId);
+    const wasActive = Boolean(task && isActiveTaskStatus(task.status));
+    if (isUserStopConverged(task)) {
+      return await this.closeSessionRuntimeIfPresent(sessionId);
+    }
     const cancelled = await this.deps.lifecycleTransition.cancelRunningTask(task);
-    if (cancelled || !task || isActiveTaskStatus(task.status)) return cancelled;
-    if (!this.deps.closeSessionRuntime) return false;
-    return await this.deps.closeSessionRuntime(sessionId, "explicit_cancel");
+    if (!task || isActiveTaskStatus(task.status)) return cancelled;
+    const runtimeClosed = await this.closeSessionRuntimeIfPresent(sessionId);
+    if (!runtimeClosed) return false;
+    if (wasActive && !cancelled) return false;
+    return isUserStopConverged(task);
+  }
+
+  private async closeSessionRuntimeIfPresent(sessionId: string): Promise<boolean> {
+    const runtimePresent = this.deps.hasSessionRuntime?.(sessionId)
+      ?? Boolean(this.deps.closeSessionRuntime);
+    if (!runtimePresent) return true;
+    const closeSessionRuntime = this.deps.closeSessionRuntime;
+    const closed = await closeSessionRuntime?.(
+      sessionId,
+      "explicit_cancel",
+    ) ?? false;
+    return closed && !(this.deps.hasSessionRuntime?.(sessionId) ?? false);
   }
 
   async deleteTask(sessionId: string): Promise<void> {

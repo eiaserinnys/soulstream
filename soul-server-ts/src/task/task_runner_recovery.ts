@@ -25,8 +25,8 @@ export interface ExecutionOwnershipReconciliationInput {
 
 /**
  * Rehydrates runner-owned tasks and converts an unrecoverable runner lease into
- * the ordinary terminal-error -> auto-resume transition. The explicit error is
- * persisted before a replacement execution is allowed to start.
+ * the ordinary terminal-error transition. A later explicit input or resume owns
+ * any replacement execution.
  */
 export class TaskRunnerRecovery {
   constructor(private readonly deps: TaskRunnerRecoveryDeps) {}
@@ -42,7 +42,7 @@ export class TaskRunnerRecovery {
   async markFailureAndResume(
     task: Task,
     message: string,
-    onResume: StartExecutionCallback,
+    _onResume: StartExecutionCallback,
   ): Promise<void> {
     const runner = task.runner;
     if (runner) releaseTaskRunner(task, runner);
@@ -51,34 +51,6 @@ export class TaskRunnerRecovery {
     task.error = message;
     task.completedAt = new Date();
     await this.deps.lifecycleTransition.persistExecutorFinalState(task);
-    let replacementCallbackStarted = false;
-    try {
-      await this.deps.autoResumeTransition.resume(task, {
-        text: task.prompt,
-        user: task.clientId ?? "runner-recovery",
-        ...(task.callerInfo ? { callerInfo: task.callerInfo } : {}),
-        ...(task.attachmentPaths ? { attachmentPaths: task.attachmentPaths } : {}),
-        ...(task.contextItems ? { context: task.contextItems } : {}),
-        source: "runner-recovery",
-      }, (resumedTask, activation) => {
-        replacementCallbackStarted = true;
-        onResume(resumedTask, activation);
-      }, { publishUserMessage: false });
-    } catch (error) {
-      // Do not compensate a rejected running CAS: its canonical running owner
-      // may be another execution. Only a callback that failed before creating
-      // local ownership proves this transition has no executor behind it.
-      if (
-        !replacementCallbackStarted
-        || task.runner !== undefined
-        || task.executionPromise !== undefined
-      ) throw error;
-      task.status = "error";
-      task.error = `runner replacement start failed: ${errorMessage(error)}`;
-      task.completedAt = new Date();
-      await this.deps.lifecycleTransition.persistExecutorFinalState(task);
-      throw error;
-    }
   }
 
   async projectClosed(task: Task, detail: string): Promise<boolean> {
@@ -167,8 +139,4 @@ export class TaskRunnerRecovery {
     applyCanonicalSessionProjection(task, application.canonicalSession);
     return application.applied;
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
