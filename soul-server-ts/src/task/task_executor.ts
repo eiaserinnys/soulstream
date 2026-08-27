@@ -895,13 +895,23 @@ export class TaskExecutor {
     agent: AgentProfile,
   ): Promise<void> {
     const initialTurnInput = await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
+    const successfulTurnReceipts: TaskDeliveryTurnReceipt[] = [];
     try {
-      await this.consumeTurnLoop(task, agent, runner, initialTurnInput);
+      await this.consumeTurnLoop(
+        task,
+        agent,
+        runner,
+        initialTurnInput,
+        successfulTurnReceipts,
+      );
     } finally {
       if (!isOpenAiAgentsApprovalPending(task)) {
         task.completedAt = new Date();
       }
-      await this._finalize(task);
+      await this._finalize(
+        task,
+        () => this.consumeSuccessfulTurnReceipts(task, successfulTurnReceipts),
+      );
     }
   }
 
@@ -910,6 +920,7 @@ export class TaskExecutor {
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
     initialTurnInput: TaskTurnInput,
+    successfulTurnReceipts: TaskDeliveryTurnReceipt[],
   ): Promise<void> {
     let turnInput = initialTurnInput;
     while (true) {
@@ -1111,7 +1122,7 @@ export class TaskExecutor {
         turnReceipt
         && (task.status === "completed" || transition.kind === "continue")
       ) {
-        await turnReceipt.consume(task);
+        successfulTurnReceipts.push(turnReceipt);
       }
       if (transition.kind !== "continue") break;
       turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
@@ -1199,6 +1210,7 @@ export class TaskExecutor {
     propagateFailure: boolean,
   ): Promise<void> {
     const contextRecovery = createClaudeContextRecoveryObservation();
+    const successfulTurnReceipts: TaskDeliveryTurnReceipt[] = [];
     let recoveryFailed = false;
     let recoveryFailure: unknown;
     try {
@@ -1255,7 +1267,13 @@ export class TaskExecutor {
           agent,
           transition.interventions,
         );
-        await this.consumeTurnLoop(task, agent, runner, followupTurnInput);
+        await this.consumeTurnLoop(
+          task,
+          agent,
+          runner,
+          followupTurnInput,
+          successfulTurnReceipts,
+        );
       }
     } catch (error) {
       await this.engineFailureRecovery.recoverFromExecuteFailure(task, error);
@@ -1272,7 +1290,10 @@ export class TaskExecutor {
         );
       }
       task.completedAt = new Date();
-      await this._finalize(task);
+      await this._finalize(
+        task,
+        () => this.consumeSuccessfulTurnReceipts(task, successfulTurnReceipts),
+      );
     }
     // Startup adoption owns a live child. Its caller must be able to re-check
     // that ownership and replace a dead/unreachable registration. Offline
@@ -1513,8 +1534,18 @@ export class TaskExecutor {
     task.runnerIsOfflineReplay = offlineReplay;
   }
 
-  private async _finalize(task: Task): Promise<void> {
-    await this.executorFinalizer.finalize(task);
+  private async _finalize(
+    task: Task,
+    consumeSuccessfulDeliveries?: () => Promise<void>,
+  ): Promise<void> {
+    await this.executorFinalizer.finalize(task, consumeSuccessfulDeliveries);
+  }
+
+  private async consumeSuccessfulTurnReceipts(
+    task: Task,
+    receipts: readonly TaskDeliveryTurnReceipt[],
+  ): Promise<void> {
+    for (const receipt of receipts) await receipt.consume(task);
   }
 }
 

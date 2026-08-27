@@ -119,7 +119,7 @@ export class SessionDeliveryRepository {
         lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
         updated_at = NOW()
       WHERE delivery_id = ${deliveryId}
-        AND state = 'pending'
+        AND state IN ('pending', 'queued')
         AND EXISTS (
           SELECT 1 FROM sessions WHERE session_id = ${targetSessionId}
         )

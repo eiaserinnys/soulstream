@@ -38,6 +38,18 @@ export interface TaskFinalStatePersistenceResult {
   terminalTransitionApplied: boolean;
 }
 
+/** A repeated user stop succeeds only after every execution projection converged. */
+export function isUserStopConverged(task: Task | undefined): boolean {
+  return Boolean(
+    task
+    && isTerminalTaskStatus(task.status)
+    && !task.executionOwnership
+    && !task.recoveredExecutionOwnership
+    && !task.runner
+    && !task.executionPromise,
+  );
+}
+
 export class TaskLifecycleTransition {
   private readonly executionOwnership?: ExecutionOwnershipCoordinator;
 
@@ -49,9 +61,10 @@ export class TaskLifecycleTransition {
 
   async cancelRunningTask(task: Task | undefined): Promise<boolean> {
     if (!task) return false;
+    if (task.interruptRequest) return await task.interruptRequest;
+    if (isUserStopConverged(task)) return true;
     if (!isActiveTaskStatus(task.status)) return false;
     if (!task.runner) return false;
-    if (task.interruptRequest) return await task.interruptRequest;
 
     const runner = task.runner;
     const executionPromise = task.executionPromise;

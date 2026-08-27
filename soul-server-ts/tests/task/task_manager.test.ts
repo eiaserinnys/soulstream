@@ -1051,7 +1051,7 @@ describe("TaskManager.deliverInputResponse", () => {
     })).resolves.toMatchObject({
       status: "session_not_running",
     });
-    await expect(tm.cancelTask(task.agentSessionId)).resolves.toBe(false);
+    await expect(tm.cancelTask(task.agentSessionId)).resolves.toBe(true);
 
     expect(sessionRuntimeControl.has).not.toHaveBeenCalled();
     expect(sessionRuntimeControl.deliverInputResponse).not.toHaveBeenCalled();
@@ -1199,8 +1199,8 @@ describe("TaskManager.finalizeTask", () => {
 
 describe("TaskManager.cancelTask", () => {
   it("진행 중 engine이 있으면 interrupt 호출 + status='interrupted' 박힘 + true 반환", async () => {
-    const { db, broadcaster } = makeMocks();
-    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const { db, broadcaster, persistence } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
     const interrupt = vi.fn().mockResolvedValue(true);
     task.runner = createInProcessTaskRunnerRuntime(

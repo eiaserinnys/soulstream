@@ -116,7 +116,9 @@ export class TaskDeliveryLedgerGate {
         row: registered.row,
       };
     }
-    if (registered.row.state !== "pending") {
+    const explicitQueuedIntent =
+      registered.row.state === "queued" && !params.deliveryLeaseOwner;
+    if (registered.row.state !== "pending" && !explicitQueuedIntent) {
       return {
         kind: "suppressed",
         deliveryId: registered.row.delivery_id,
@@ -225,20 +227,30 @@ export class TaskDeliveryLedgerGate {
       } else {
         const queued = await repository.markQueued(admission.deliveryId, leaseOwner);
         if (!queued) {
-          throw new Error(`Delivery ${admission.deliveryId} lost queued-state CAS`);
+          const current = await repository.get(admission.deliveryId);
+          const sameQueuedDelivery = current?.state === "queued"
+            && current.delivery_id === admission.row.delivery_id
+            && current.target_session_id === admission.row.target_session_id
+            && current.intent === admission.row.intent
+            && current.relation_key === admission.row.relation_key
+            && current.completion_id === admission.row.completion_id
+            && current.payload_hash === admission.row.payload_hash;
+          if (!sameQueuedDelivery) {
+            throw new Error(`Delivery ${admission.deliveryId} lost queued-state CAS`);
+          }
         }
       }
       return;
     }
     if ("delivered" in result && result.delivered === true) {
-      const receiptId = `intervention:${admission.deliveryId}`;
-      const delivered = await repository.markDelivered(
-        admission.deliveryId,
-        receiptId,
-      );
-      if (!delivered) {
-        throw new Error(`Delivery ${admission.deliveryId} lost delivered-state CAS`);
+      const leaseOwner = admission.row.lease_owner;
+      if (!leaseOwner) {
+        throw new Error(`Delivery ${admission.deliveryId} lost its dispatch lease`);
       }
+      await repository.markQueued(
+        admission.deliveryId,
+        leaseOwner,
+      );
       return;
     }
     const leaseOwner = admission.row.lease_owner;
@@ -310,7 +322,7 @@ export class TaskDeliveryLedgerGate {
   async recordReservationRetry(
     admission: DeliveryLedgerAdmission,
     retryAt: string,
-  ): Promise<"scheduled" | "lost" | "exhausted"> {
+  ): Promise<"scheduled" | "parked" | "lost"> {
     if (admission.kind !== "admitted") return "lost";
     const leaseOwner = admission.row.lease_owner;
     if (!leaseOwner) return "lost";
@@ -323,12 +335,13 @@ export class TaskDeliveryLedgerGate {
       || admission.row.created_at <= notificationOldestAllowedCreatedAt();
     const repository = this.requireRepository();
     if (exhausted) {
-      const uncertain = await repository.markUncertain(
+      const parked = await repository.retryLeasedDelivery(
         admission.deliveryId,
         leaseOwner,
-        "automatic ownership retry budget exhausted",
+        "automatic ownership retry budget exhausted; explicit intent required",
+        0,
       );
-      return uncertain ? "exhausted" : "lost";
+      return parked ? "parked" : "lost";
     }
     // All three candidates become durations before the minimum is taken: the
     // requested instant is the only one that came from another clock, and
@@ -430,13 +443,11 @@ export class TaskDeliveryLedgerGate {
 
   async recordTurnStarted(
     message: InterventionMessage,
-    task: Task,
+    _task: Task,
   ): Promise<void> {
     if (!this.enabled || !isControlledMessage(message) || !message.deliveryId) return;
-    await this.requireRepository().markDelivered(
-      message.deliveryId,
-      `event:${task.lastEventId ?? "unknown"}`,
-    );
+    // Turn observation is an in-memory eligibility fact. The durable row stays
+    // queued/pending until success consumes it, so a failed turn is replayable.
   }
 
   private requireRepository(): LedgerRepository {

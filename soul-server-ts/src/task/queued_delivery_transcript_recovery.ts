@@ -3,10 +3,8 @@ import type { Logger } from "pino";
 
 import type { SessionDeliveryRepository } from
   "../db/repositories/session_delivery_repository.js";
-import type {
-  QueuedDeliveryRecoveryScan,
-  SessionDeliveryRecoveryRepository,
-} from "../db/repositories/session_delivery_recovery_repository.js";
+import type { SessionDeliveryRecoveryRepository } from
+  "../db/repositories/session_delivery_recovery_repository.js";
 import type {
   ClaudeDeliveryTranscriptReceiptReader,
 } from "../engine/claude_delivery_transcript_receipt.js";
@@ -19,7 +17,6 @@ export interface QueuedDeliveryTranscriptRecoveryDeps {
   recoveryRepository: Pick<
     SessionDeliveryRecoveryRepository,
     | "claimQueuedAfterNodeRestart"
-    | "claimRecoverableQueued"
     | "markDeliveredFromTranscript"
     | "deferQueuedTranscriptCheck"
   >;
@@ -31,15 +28,16 @@ export interface QueuedDeliveryTranscriptRecoveryDeps {
 }
 
 /**
- * Reconciles the SDK receiver receipt before replaying queued delivery input.
+ * Reconciles the SDK receiver receipt once during node-startup recovery.
  *
  * A stable input UUID prevents duplicate execution, but SDK 0.3.218 does not
  * emit another Result when that UUID is re-sent after resume. A completed
- * transcript therefore settles the ledger directly; an input without its
- * assistant result remains queued and is polled instead of being re-injected.
+ * transcript therefore settles the ledger directly. An absent or incomplete
+ * receipt returns the same delivery to queued/held state. Periodic maintenance
+ * does not consume or re-inject it; only a later explicit intent may claim it.
  */
-/** Poll cadence for a transcript that has not yet settled. */
-const TRANSCRIPT_RECHECK_DELAY_MS = 1_000;
+/** Delay recorded with a deferred one-shot check; it is not an execution timer. */
+const QUEUED_HOLD_METADATA_DELAY_MS = 1_000;
 /**
  * One claim covers the whole batch, so the batch — not just one row — has to
  * finish inside the lease. Reading a transcript is bounded, and the loop stops
@@ -77,22 +75,9 @@ export class QueuedDeliveryTranscriptRecovery {
     return await this.reconcile(rows);
   }
 
-  async recoverPeriodic(
-    scan: QueuedDeliveryRecoveryScan,
-    limit = 100,
-  ): Promise<number> {
-    const rows = await this.deps.recoveryRepository.claimRecoverableQueued(
-      scan,
-      this.workerId,
-      limit,
-      this.leaseMs,
-    );
-    return await this.reconcile(rows);
-  }
-
   private async reconcile(
     rows: Awaited<
-      ReturnType<SessionDeliveryRecoveryRepository["claimRecoverableQueued"]>
+      ReturnType<SessionDeliveryRecoveryRepository["claimQueuedAfterNodeRestart"]>
     >,
   ): Promise<number> {
     let settled = 0;
@@ -139,13 +124,7 @@ export class QueuedDeliveryTranscriptRecovery {
           continue;
         }
         if (receipt.kind === "absent") {
-          const replayable = await this.deps.deliveryRepository.retryLeasedDelivery(
-            row.delivery_id,
-            this.workerId,
-            "queued_transcript_input_absent",
-            0,
-          );
-          if (replayable) settled += 1;
+          await this.defer(row.delivery_id, "queued_transcript_input_absent");
           continue;
         }
         const reason = receipt.kind === "input_pending"
@@ -166,7 +145,7 @@ export class QueuedDeliveryTranscriptRecovery {
     if (deferredForLease > 0) {
       this.deps.logger.warn(
         { deferredForLease, claimed: rows.length, leaseMs: this.leaseMs },
-        "Queued transcript batch ran out of lease; remaining rows wait for the next scan",
+        "Queued transcript startup batch ran out of lease; remaining rows stay held",
       );
     }
     return settled;
@@ -177,7 +156,7 @@ export class QueuedDeliveryTranscriptRecovery {
       deliveryId,
       this.workerId,
       reason,
-      TRANSCRIPT_RECHECK_DELAY_MS,
+      QUEUED_HOLD_METADATA_DELAY_MS,
     );
   }
 }

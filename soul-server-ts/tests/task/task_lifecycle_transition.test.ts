@@ -61,8 +61,8 @@ function makeMocks() {
 }
 
 describe("TaskLifecycleTransition.cancelRunningTask", () => {
-  it("marks a running task interrupted only after a positive interrupt ACK", async () => {
-    const { transition } = makeMocks();
+  it("marks a running task interrupted once and treats repeated stop as success", async () => {
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask();
     const interrupt = vi.fn(async () => {
       expect(task.status).toBe("running");
@@ -74,6 +74,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     task.runner = { engine, dispatcher: runnerCommandDispatcher };
 
     await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
 
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
       channel: "command",
@@ -81,6 +82,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
       commandId: expect.any(String),
     }));
     expect(interrupt).toHaveBeenCalledOnce();
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
     expect(task.status).toBe("interrupted");
   });
 
@@ -88,8 +90,14 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     { label: "negative ACK", interrupt: async () => false },
     { label: "transport failure", interrupt: async () => { throw new Error("ipc down"); } },
   ])("fences stop_failed after $label", async ({ interrupt }) => {
-    const { transition } = makeMocks();
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask();
+    const pendingDelivery = {
+      text: "held input",
+      user: "user",
+      deliveryId: "held-stop-delivery",
+    };
+    task.interventionQueue.push(pendingDelivery);
     const engine = { interrupt: vi.fn(interrupt) } as unknown as EnginePort;
     task.runner = {
       engine,
@@ -97,28 +105,35 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     };
 
     await expect(transition.cancelRunningTask(task)).resolves.toBe(false);
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
 
     expect(task.status).toBe("error");
     expect(task.terminationReason).toBe("error_aborted");
     expect(task.terminationDetail).toBe("runner stop was not confirmed");
     expect(task.runner).toBeUndefined();
+    expect(engine.interrupt).toHaveBeenCalledOnce();
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
+    expect(task.interventionQueue).toEqual([pendingDelivery]);
   });
 
-  it("returns false without mutation when task is missing, terminal, or has no engine", async () => {
+  it("accepts only a fully converged terminal task as an idempotent no-op", async () => {
     const { transition } = makeMocks();
-    const terminal = makeTask({ status: "completed" });
+    const terminalZombie = makeTask({ status: "completed" });
+    const terminalConverged = makeTask({ status: "completed" });
     const engine = { interrupt: vi.fn() } as unknown as EnginePort;
-    terminal.runner = {
+    terminalZombie.runner = {
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };
     const noEngine = makeTask();
 
     await expect(transition.cancelRunningTask(undefined)).resolves.toBe(false);
-    await expect(transition.cancelRunningTask(terminal)).resolves.toBe(false);
+    await expect(transition.cancelRunningTask(terminalZombie)).resolves.toBe(false);
+    await expect(transition.cancelRunningTask(terminalConverged)).resolves.toBe(true);
     await expect(transition.cancelRunningTask(noEngine)).resolves.toBe(false);
 
-    expect(terminal.status).toBe("completed");
+    expect(terminalZombie.status).toBe("completed");
+    expect(terminalConverged.status).toBe("completed");
     expect(noEngine.status).toBe("running");
   });
 });

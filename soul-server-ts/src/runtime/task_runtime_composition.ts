@@ -22,8 +22,6 @@ import { CompletionDeliveryRecoveryWorker } from
   "../task/completion_delivery_recovery_worker.js";
 import { ClaudeRuntimeTaskFollowupController } from
   "../task/claude_runtime_task_followup.js";
-import type { QueuedDeliveryTranscriptRecovery } from
-  "../task/queued_delivery_transcript_recovery.js";
 import type { StartExecutionCallback, TaskManager } from "../task/task_manager.js";
 import type { TransientEventLogAggregator } from
   "../task/transient_event_log_aggregator.js";
@@ -45,7 +43,6 @@ export interface TaskRuntimeCompositionParams {
   broadcaster: SessionBroadcaster;
   scheduleService: SoulstreamScheduleService;
   orchProxyConfig: OrchProxyConfig;
-  queuedDeliveryRecovery?: QueuedDeliveryTranscriptRecovery;
   runnerProcessFactory?: RunnerProcessRuntimeFactory;
   transientEventLogAggregator: TransientEventLogAggregator;
 }
@@ -81,7 +78,6 @@ export function composeTaskRuntime(
     broadcaster,
     scheduleService,
     orchProxyConfig,
-    queuedDeliveryRecovery,
     transientEventLogAggregator,
   } = params;
   // Owned here because the executor is where conflicts are observed; the
@@ -118,8 +114,6 @@ export function composeTaskRuntime(
     db,
     env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     completionDeliveryRepository,
-    undefined, // Delivery recovery retains its independent 30-minute policy.
-    queuedDeliveryRecovery,
   );
   const completionDeliveryRecoveryWorker = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? new CompletionDeliveryRecoveryWorker({

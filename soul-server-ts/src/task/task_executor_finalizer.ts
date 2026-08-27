@@ -16,11 +16,21 @@ interface TaskExecutorFinalizerDeps {
 export class TaskExecutorFinalizer {
   constructor(private readonly deps: TaskExecutorFinalizerDeps) {}
 
-  async finalize(task: Task): Promise<void> {
+  async finalize(
+    task: Task,
+    consumeSuccessfulDeliveries?: () => Promise<void>,
+  ): Promise<void> {
     const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task);
     // The sessions-row release ACK is the durable terminal/owner boundary. Keep
     // the runner handle until it commits so the same owner can retry on failure.
     await this.closeEngine(task);
+    if (
+      persistence.terminalTransitionApplied
+      && task.status === "completed"
+      && consumeSuccessfulDeliveries
+    ) {
+      await consumeSuccessfulDeliveries();
+    }
     if (persistence.newlyFinalized && persistence.terminalTransitionApplied) {
       await this.notifyCompletion(task);
     }

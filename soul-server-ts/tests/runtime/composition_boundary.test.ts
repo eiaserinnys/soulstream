@@ -158,6 +158,7 @@ describe("worker composition boundary", () => {
   it("keeps gate-OFF intervention wiring free of feature-only awaits", () => {
     const taskManager = source("task/task_manager.ts");
     const taskExecutor = source("task/task_executor.ts");
+    const taskExecutorFinalizer = source("task/task_executor_finalizer.ts");
     const interventionRoute = source("task/task_intervention_route.ts");
     const lifecycleRoute = source("task/task_lifecycle_route.ts");
     const workerComposition = source("runtime/worker_composition.ts");
@@ -175,7 +176,7 @@ describe("worker composition boundary", () => {
       /await this\.deps\.(deliveryLedgerGate|sessionNotificationPublisher)\?\./,
     );
     expect(lifecycleRoute).toContain(
-      "if (!this.deps.closeSessionRuntime) return false;",
+      "if (isUserStopConverged(task))",
     );
     expect(lifecycleRoute).not.toMatch(
       /await this\.deps\.closeSessionRuntime\?\./,
@@ -193,12 +194,16 @@ describe("worker composition boundary", () => {
       "if (turnReceipt) await turnReceipt.observe(task, event);",
     );
     expect(taskExecutor).toMatch(
-      /turnReceipt\s+&&\s+\(task\.status === "completed" \|\| transition\.kind === "continue"\)\s+\) \{\s+await turnReceipt\.consume\(task\);/,
+      /turnReceipt\s+&&\s+\(task\.status === "completed" \|\| transition\.kind === "continue"\)\s+\) \{\s+successfulTurnReceipts\.push\(turnReceipt\);/,
     );
     expect(taskExecutor).not.toMatch(
       /(?<!if \(turnReceipt\) )await turnReceipt\.observe\(/,
     );
-    expect(taskExecutor.match(/await turnReceipt\.consume\(/g)).toHaveLength(1);
+    expect(taskExecutor).not.toContain("await turnReceipt.consume(task);");
+    expect(taskExecutor.match(/await receipt\.consume\(task\)/g)).toHaveLength(1);
+    expect(taskExecutorFinalizer).toMatch(
+      /persistence\.terminalTransitionApplied\s+&&\s+task\.status === "completed"\s+&&\s+consumeSuccessfulDeliveries/,
+    );
   });
 
   it("starts delivery recovery only after the crash-resume executor is bound", () => {

@@ -9,8 +9,18 @@ import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
 import { CompletionDeliveryCoordinator } from
   "../../src/task/completion_delivery_coordinator.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildCanonicalDeliveryPayload } from
+  "../../src/task/delivery_payload.js";
 import { QueuedDeliveryTranscriptRecovery } from
   "../../src/task/queued_delivery_transcript_recovery.js";
+import { TaskDeliveryLedgerGate } from
+  "../../src/task/task_delivery_ledger_gate.js";
+import { TaskExecutorFinalizer } from
+  "../../src/task/task_executor_finalizer.js";
+import { TaskInterventionRoute } from
+  "../../src/task/task_intervention_route.js";
+import type { InterventionMessage, Task } from
+  "../../src/task/task_models.js";
 import {
   createFullSchemaPostgresHarness,
   hasFullSchemaPostgresBackend,
@@ -162,6 +172,268 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     }]);
   });
 
+  it.each([
+    ["long-running turn", "running"],
+    ["quota/retryable terminal", "error"],
+    ["user_stop terminal", "interrupted"],
+  ] as const)(
+    "holds accepted human input outside periodic recovery through %s",
+    async (_scenario, terminalStatus) => {
+      const suffix = terminalStatus.replaceAll("_", "-");
+      const deliveryId = `human-held-${suffix}`;
+      const task: Task = {
+        agentSessionId: "caller-session",
+        prompt: "previous turn",
+        status: "running",
+        createdAt: new Date("2026-08-28T00:00:00.000Z"),
+        lastEventId: 42,
+        lastReadEventId: 0,
+        interventionQueue: [],
+      };
+      const params = {
+        agentSessionId: task.agentSessionId,
+        text: `held input for ${terminalStatus}`,
+        user: "alice",
+        deliveryId,
+        deliveryIntent: "human_live_steer" as const,
+        source: "user_message",
+        completionId: `message:${deliveryId}`,
+        relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
+      };
+      const gate = new TaskDeliveryLedgerGate(true, repository);
+      const liveDeliver = vi.fn(async () => ({ delivered: true } as const));
+      const modelStart = vi.fn();
+      const autoResume = vi.fn(async (
+        resumedTask: Task,
+        message: InterventionMessage,
+        callback: (task: Task) => void,
+      ) => {
+        resumedTask.interventionQueue.push(message);
+        resumedTask.status = "running";
+        callback(resumedTask);
+        return { autoResumed: true } as const;
+      });
+      const route = new TaskInterventionRoute({
+        getTask: () => task,
+        loadEvictedTask: async () => null,
+        rememberTask: () => {},
+        runningInterventionTransition: { deliver: liveDeliver },
+        autoResumeTransition: { resume: autoResume },
+        deliveryLedgerGate: gate,
+      });
+
+      await expect(route.addIntervention(params, modelStart)).resolves.toEqual({
+        delivered: true,
+      });
+      expect(liveDeliver).toHaveBeenCalledOnce();
+      await expect(repository.get(deliveryId)).resolves.toMatchObject({
+        state: "queued",
+        aggregate_state: "pending",
+      });
+
+      if (terminalStatus !== "running") task.status = terminalStatus;
+      const transcriptProbe = vi.fn(async () => ({
+        kind: "absent" as const,
+        inputUuid: buildDeliveryInputUuid(deliveryId),
+      }));
+      const queuedRecovery = makeQueuedRecovery(
+        `queued-${suffix}`,
+        transcriptProbe,
+      );
+      const recoveryDispatch = vi.fn(async (
+        recovered: Parameters<TaskInterventionRoute["addIntervention"]>[0],
+      ) => {
+        await route.addIntervention(recovered, modelStart);
+      });
+      const coordinator = new CompletionDeliveryCoordinator({
+        repository,
+        dispatch: recoveryDispatch,
+        logger: { error() {}, warn() {}, info() {} },
+      }, `periodic-${suffix}`, 60_000, 15_000);
+
+      await coordinator.recoverPending(10);
+      await coordinator.recoverPending(10);
+
+      expect({
+        transcriptProbe: transcriptProbe.mock.calls.length,
+        recoveryDispatch: recoveryDispatch.mock.calls.length,
+        modelStart: modelStart.mock.calls.length,
+        autoResume: autoResume.mock.calls.length,
+        liveDeliver: liveDeliver.mock.calls.length,
+      }).toEqual({
+        transcriptProbe: 0,
+        recoveryDispatch: 0,
+        modelStart: 0,
+        autoResume: 0,
+        liveDeliver: 1,
+      });
+      await expect(repository.get(deliveryId)).resolves.toMatchObject({
+        state: "queued",
+        aggregate_state: "pending",
+        payload: expect.objectContaining({ text: params.text }),
+      });
+
+      task.status = "error";
+      await expect(route.addIntervention(params, modelStart)).resolves.toEqual({
+        autoResumed: true,
+      });
+      expect(autoResume).toHaveBeenCalledOnce();
+      expect(modelStart).toHaveBeenCalledOnce();
+
+      task.status = "completed";
+      task.lastEventId = 43;
+      const finalizer = new TaskExecutorFinalizer({
+        lifecycleTransition: {
+          persistExecutorFinalState: vi.fn(async () => ({
+            newlyFinalized: true,
+            terminalTransitionApplied: true,
+          })),
+        },
+        logger: { warn() {} } as never,
+      });
+      await finalizer.finalize(task, async () => {
+        await gate.recordConsumed({
+          text: params.text,
+          user: params.user,
+          deliveryId,
+          deliveryIntent: params.deliveryIntent,
+          completionId: params.completionId,
+          relationKey: params.relationKey,
+          source: params.source,
+        }, task, "event:43");
+      });
+      await expect(repository.get(deliveryId)).resolves.toMatchObject({
+        state: "consumed",
+        aggregate_state: "consumed",
+        target_receipt_id: "event:43",
+      });
+
+      await expect(route.addIntervention(params, modelStart)).resolves.toMatchObject({
+        suppressed: true,
+        reason: "delivery_consumed",
+      });
+      await coordinator.recoverPending(10);
+      expect(autoResume).toHaveBeenCalledOnce();
+      expect(modelStart).toHaveBeenCalledOnce();
+      expect(recoveryDispatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a terminal-parent completion notification out of periodic model recovery", async () => {
+    const deliveryId = "completion-held-terminal-parent";
+    const task: Task = {
+      agentSessionId: "caller-session",
+      prompt: "finished parent",
+      status: "completed",
+      createdAt: new Date("2026-08-28T00:00:00.000Z"),
+      completedAt: new Date("2026-08-28T00:01:00.000Z"),
+      lastEventId: 42,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    };
+    const gate = new TaskDeliveryLedgerGate(true, repository);
+    const autoResume = vi.fn();
+    const modelStart = vi.fn();
+    const route = new TaskInterventionRoute({
+      getTask: () => task,
+      loadEvictedTask: async () => null,
+      rememberTask: () => {},
+      runningInterventionTransition: {
+        deliver: vi.fn(async () => {
+          throw new Error("terminal notification reached live delivery");
+        }),
+      },
+      autoResumeTransition: { resume: autoResume },
+      deliveryLedgerGate: gate,
+      sessionNotificationPublisher: {
+        publish: vi.fn(async () => ({ published: false as const })),
+      },
+    });
+    const params = {
+      agentSessionId: task.agentSessionId,
+      text: "child finished",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "completion_notification" as const,
+      source: "completion_notifier",
+      sourceSessionId: "child-session",
+      producerKind: "child_session",
+      producerId: "child-session",
+      producerTerminalRevision: "42",
+      completionId: `completion:${deliveryId}`,
+      relationKey: `child_session:child-session:42:${deliveryId}`,
+    };
+    const canonical = buildCanonicalDeliveryPayload({
+      text: params.text,
+      user: params.user,
+      source: params.source,
+      completionId: params.completionId,
+      relationKey: params.relationKey,
+    });
+    await repository.register({
+      deliveryId,
+      targetSessionId: task.agentSessionId,
+      sourceSessionId: "child-session",
+      relationKey: params.relationKey,
+      completionId: params.completionId,
+      intent: params.deliveryIntent,
+      source: params.source,
+      producerKind: "child_session",
+      producerId: "child-session",
+      producerTerminalRevision: "42",
+      payloadHash: canonical.payloadHash,
+      payload: canonical.payload,
+    });
+
+    await expect(route.addIntervention(params, modelStart)).resolves.toMatchObject({
+      queued: true,
+      consumeWhen: "next_turn",
+    });
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "queued",
+      aggregate_state: "pending",
+    });
+
+    const transcriptProbe = vi.fn(async () => ({
+      kind: "absent" as const,
+      inputUuid: buildDeliveryInputUuid(deliveryId),
+    }));
+    const queuedRecovery = makeQueuedRecovery(
+      "queued-terminal-completion",
+      transcriptProbe,
+    );
+    const recoveryDispatch = vi.fn(async (
+      recovered: Parameters<TaskInterventionRoute["addIntervention"]>[0],
+    ) => {
+      await route.addIntervention(recovered, modelStart);
+    });
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository,
+      dispatch: recoveryDispatch,
+      logger: { error() {}, warn() {}, info() {} },
+    }, "periodic-terminal-completion", 60_000, 15_000);
+
+    await coordinator.recoverPending(10);
+    await coordinator.recoverPending(10);
+
+    expect({
+      transcriptProbe: transcriptProbe.mock.calls.length,
+      recoveryDispatch: recoveryDispatch.mock.calls.length,
+      autoResume: autoResume.mock.calls.length,
+      modelStart: modelStart.mock.calls.length,
+    }).toEqual({
+      transcriptProbe: 0,
+      recoveryDispatch: 0,
+      autoResume: 0,
+      modelStart: 0,
+    });
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "queued",
+      aggregate_state: "pending",
+      payload: expect.objectContaining({ text: params.text }),
+    });
+  });
+
   it("coalesces pending runtime siblings before recovery claim and preserves claimed work", async () => {
     const createdAt = new Date("2026-08-18T00:00:00.000Z");
     for (const [deliveryId, relationKey, state] of [
@@ -210,7 +482,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
   });
 
-  it("claims a due durable user turn through the existing delivery recovery worker", async () => {
+  it("keeps a due durable user turn pending until explicit intent claims it", async () => {
     await harness.sql`
       INSERT INTO session_deliveries (
         delivery_id, target_session_id, relation_key, completion_id,
@@ -226,19 +498,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       )
     `;
 
-    const dispatch = vi.fn(async (params) => {
-      expect(params).toMatchObject({
-        agentSessionId: "caller-session",
-        text: "retry me",
-        deliveryId: "delivery-user-retry",
-        deliveryIntent: "durable_next_turn",
-        deliveryLeaseOwner: "worker-user-retry",
-      });
-      await repository.beginDispatch(params.deliveryId!, params.deliveryLeaseOwner!);
-      await repository.markQueued(params.deliveryId!, params.deliveryLeaseOwner!);
-      await repository.markDelivered(params.deliveryId!, "event:auto-resumed-turn");
-      await repository.markConsumed(params.deliveryId!, "event:auto-resumed-turn");
-    });
+    const dispatch = vi.fn();
     const coordinator = new CompletionDeliveryCoordinator({
       repository,
       dispatch,
@@ -246,16 +506,17 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     }, "worker-user-retry");
 
     await coordinator.recoverPending(1);
+    await coordinator.recoverPending(1);
 
-    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).not.toHaveBeenCalled();
     await expect(repository.get("delivery-user-retry")).resolves.toMatchObject({
       intent: "durable_next_turn",
-      state: "consumed",
-      caller_turn_id: "event:auto-resumed-turn",
+      state: "pending",
+      aggregate_state: "pending",
     });
   });
 
-  it("revives an uncertain delivery only after a newer active execution owns the target", async () => {
+  it("does not revive an uncertain delivery when a newer execution activates", async () => {
     await registerUserDelivery("delivery-revive", "revive me");
     await harness.sql`
       UPDATE sessions SET status = 'running' WHERE session_id = 'caller-session'
@@ -278,16 +539,15 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await expect(repository.claimRecoverableCompletionDeliveries(
       "worker-after-revival",
       10,
-    )).resolves.toMatchObject([{
-      delivery_id: "delivery-revive",
-      state: "claimed",
+    )).resolves.toEqual([]);
+    await expect(repository.get("delivery-revive")).resolves.toMatchObject({
+      state: "uncertain",
       aggregate_state: "pending",
       attempt_count: 16,
-      lease_owner: "worker-after-revival",
-    }]);
+    });
   });
 
-  it("reconciles a queued delivery immediately after a newer execution activates", async () => {
+  it("does not probe a fresh queued delivery when a newer execution activates", async () => {
     await registerUserDelivery("delivery-queued-revive", "queued before restart");
     await repository.claimForTarget(
       "delivery-queued-revive",
@@ -311,14 +571,14 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       recoveryNodeId: "node-test",
       staleNodeAfterMs: 120_000,
       queuedAfterMs: 1_800_000,
-    }, "queued-after-revival", 10)).resolves.toMatchObject([{
-      delivery_id: "delivery-queued-revive",
-      state: "claimed",
-      lease_owner: "queued-after-revival",
-    }]);
+    }, "queued-after-revival", 10)).resolves.toEqual([]);
+    await expect(repository.get("delivery-queued-revive")).resolves.toMatchObject({
+      state: "queued",
+      aggregate_state: "pending",
+    });
   });
 
-  it("claims deliveries in enqueue order even when the older row is uncertain", async () => {
+  it("periodic maintenance does not bypass an uncertain row to dispatch newer input", async () => {
     await registerUserDelivery("delivery-fifo-old", "first");
     await registerUserDelivery("delivery-fifo-new", "second");
     await harness.sql`
@@ -332,29 +592,24 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     `;
     await activateTarget("caller-session", 1);
 
-    await expect(repository.claimRecoverableCompletionDeliveries(
-      "worker-fifo-old",
-      10,
-    )).resolves.toMatchObject([{
-      delivery_id: "delivery-fifo-old",
-      state: "claimed",
-    }]);
+    const dispatch = vi.fn();
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository,
+      dispatch,
+      logger: { error() {}, warn() {} },
+    }, "worker-fifo");
+    await coordinator.recoverPending(10);
+    await coordinator.recoverPending(10);
+
+    expect(dispatch).not.toHaveBeenCalled();
+    await expect(repository.get("delivery-fifo-old")).resolves.toMatchObject({
+      state: "uncertain",
+      aggregate_state: "pending",
+    });
     await expect(repository.get("delivery-fifo-new")).resolves.toMatchObject({
       state: "pending",
+      aggregate_state: "pending",
     });
-
-    await repository.beginDispatch("delivery-fifo-old", "worker-fifo-old");
-    await repository.markQueued("delivery-fifo-old", "worker-fifo-old");
-    await repository.markDelivered("delivery-fifo-old", "event:first");
-    await repository.markConsumed("delivery-fifo-old", "event:first");
-
-    await expect(repository.claimRecoverableCompletionDeliveries(
-      "worker-fifo-new",
-      10,
-    )).resolves.toMatchObject([{
-      delivery_id: "delivery-fifo-new",
-      state: "claimed",
-    }]);
   });
 
   it("upgrades the pre-manifest delivery ledger to the recovery schema idempotently", async () => {
@@ -486,7 +741,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     )).resolves.toMatchObject({ state: "dispatching" });
   });
 
-  it("recovers every pre-receipt crash boundary once and preserves the SDK input UUID", async () => {
+  it("reconciles only transcript-proven startup success and never periodically replays held input", async () => {
     await harness.sql`
       INSERT INTO sessions (session_id, node_id, session_type, status, agent_id)
       VALUES ('other-node-target', 'node-other', 'claude', 'running', 'other')
@@ -549,54 +804,37 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       kind: "absent",
       inputUuid: "not-persisted",
     }));
-    // Startup recovery leases queued memory, checks the transcript receipt,
-    // and only replays when the stable input UUID is absent.
+    // Startup recovery may settle transcript-proven success. An absent receipt
+    // returns the exact row to queued/held and never re-injects it.
     await expect(
       queuedRecovery.recoverAfterNodeRestart("node-test"),
-    ).resolves.toBe(1);
+    ).resolves.toBe(0);
     await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(2);
-    await harness.sql`
-      UPDATE session_deliveries
-      SET next_attempt_at = NOW()
-      WHERE state = 'pending'
-    `;
 
-    const dispatched: string[] = [];
-    const seenInputUuids = new Map<string, string>();
+    const dispatch = vi.fn();
     const coordinator = new CompletionDeliveryCoordinator({
       repository,
-      dispatch: async (params) => {
-        const deliveryId = params.deliveryId!;
-        const leaseOwner = params.deliveryLeaseOwner!;
-        dispatched.push(deliveryId);
-        seenInputUuids.set(deliveryId, buildDeliveryInputUuid(deliveryId));
-        await repository.beginDispatch(deliveryId, leaseOwner);
-        await repository.markQueued(deliveryId, leaseOwner);
-        await repository.markDelivered(deliveryId, `event:${deliveryId}`);
-      },
+      dispatch,
       logger: { error() {}, warn() {} },
-      sourceNode: "node-test",
-      queuedDeliveryRecovery: queuedRecovery,
     }, "recovery-worker");
 
     await coordinator.recoverPending(10);
     await coordinator.recoverPending(10);
 
-    expect(dispatched.sort()).toEqual([
-      "delivery-after-dispatching",
-      "delivery-after-memory-enqueue",
-      "delivery-after-queued",
-    ]);
-    expect(new Set(dispatched)).toHaveLength(3);
-    expect(dispatched).not.toContain("delivery-after-turn-started");
-    for (const deliveryId of dispatched) {
-      expect(seenInputUuids.get(deliveryId)).toBe(
-        buildDeliveryInputUuid(deliveryId),
-      );
-      await expect(repository.get(deliveryId)).resolves.toMatchObject({
-        state: "delivered",
-      });
-    }
+    expect(dispatch).not.toHaveBeenCalled();
+    await expect(repository.get("delivery-after-dispatching")).resolves.toMatchObject({
+      state: "pending",
+      aggregate_state: "pending",
+    });
+    await expect(repository.get("delivery-after-memory-enqueue")).resolves.toMatchObject({
+      state: "pending",
+      aggregate_state: "pending",
+    });
+    await expect(repository.get("delivery-after-queued")).resolves.toMatchObject({
+      state: "queued",
+      aggregate_state: "pending",
+      last_error: "queued_transcript_input_absent",
+    });
     await expect(repository.get("delivery-after-turn-started")).resolves.toMatchObject({
       state: "delivered",
       caller_turn_id: "event:turn-started",
@@ -606,8 +844,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       target_session_id: "other-node-target",
     });
 
-    // Startup intentionally touches only this node. The periodic worker must
-    // later recover a queued delivery whose remote owner stopped heartbeating.
+    // A stale remote heartbeat does not authorize periodic model execution.
     await harness.sql`
       INSERT INTO soulstream_node_heartbeats (node_id, last_seen_at)
       VALUES ('node-other', NOW() - INTERVAL '10 minutes')
@@ -616,11 +853,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     `;
     await coordinator.recoverPending(10);
     await expect(repository.get("delivery-other-node-queued")).resolves.toMatchObject({
-      state: "delivered",
+      state: "queued",
+      aggregate_state: "pending",
       target_session_id: "other-node-target",
     });
-    expect(dispatched.filter((id) => id === "delivery-other-node-queued"))
-      .toHaveLength(1);
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it("settles a queued delivery from the transcript without replaying its SDK input", async () => {
@@ -656,8 +893,6 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         dispatched.push(params.deliveryId!);
       },
       logger: { error() {}, warn() {} },
-      sourceNode: "node-test",
-      queuedDeliveryRecovery: queuedRecovery,
     }, "transcript-coordinator");
 
     await queuedRecovery.recoverAfterNodeRestart("node-test");
@@ -782,7 +1017,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
   });
 
-  it("bounds a stale exact transcript identity at the canonical retry budget", async () => {
+  it("keeps transcript-absent identity queued without spending attempt budget", async () => {
     await register("delivery-stale-identity", "relation-stale-identity", {
       targetSessionId: "caller-session",
     });
@@ -814,17 +1049,23 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     );
     await expect(
       queuedRecovery.recoverAfterNodeRestart("node-test"),
-    ).resolves.toBe(1);
+    ).resolves.toBe(0);
     await expect(repository.get("delivery-stale-identity")).resolves
       .toMatchObject({
-        state: "uncertain",
-        aggregate_state: "dead_letter",
-        attempt_count: 16,
+        state: "queued",
+        aggregate_state: "pending",
+        attempt_count: 15,
         last_error: "queued_transcript_input_absent",
       });
     await expect(
       queuedRecovery.recoverAfterNodeRestart("node-test"),
     ).resolves.toBe(0);
+    await expect(repository.get("delivery-stale-identity")).resolves
+      .toMatchObject({
+        state: "queued",
+        aggregate_state: "pending",
+        attempt_count: 15,
+      });
   });
 
   it("rolls ledger and notification outbox forward atomically", async () => {
