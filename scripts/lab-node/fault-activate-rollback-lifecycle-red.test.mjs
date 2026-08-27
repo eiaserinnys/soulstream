@@ -21,7 +21,7 @@ function durableEvidence(classification = "applied", patch = {}) {
       eventId: 81,
       sessionId: SESSION_ID,
       phase: "execution_acquire",
-      executionCommandId: FOLLOWUP_COMMAND_ID,
+      transitionId: `acquire:${FOLLOWUP_COMMAND_ID}`,
     },
     application: {
       applied,
@@ -136,7 +136,6 @@ function predicateLifecycleHarness({
         expectedGeneration: FOLLOWUP_GENERATION,
         registrationId: FOLLOWUP_REGISTRATION_ID,
         pid: FOLLOWUP_PID,
-        executionCommandId: FOLLOWUP_COMMAND_ID,
       });
       return evidence;
     },
@@ -389,15 +388,27 @@ test("wrong applied transition generation cannot open the mutation observation",
   assert.equal(observations(events).length, 0);
 });
 
-test("canonical owner generation must match the applied transition", async (t) => {
-  const { events, result } = await runPredicateScenario(t, {
-    evidence: durableEvidence("applied", {
-      application: { ownershipGeneration: FOLLOWUP_GENERATION + 1 },
-    }),
-  });
-  assert.equal(result.status, "failed");
-  assert.match(result.failure.message, /central acquire evidence identity/i);
-  assert.equal(observations(events).length, 0);
+test("canonical owner generation and command must match the central event", async (t) => {
+  const cases = [
+    { application: { ownershipGeneration: FOLLOWUP_GENERATION + 1 } },
+    { application: { executionCommandId: "wrong-command" } },
+  ];
+  const outcomes = [];
+  for (const patch of cases) {
+    const run = await runPredicateScenario(t, {
+      evidence: durableEvidence("applied", patch),
+    });
+    outcomes.push({
+      status: run.result.status,
+      message: run.result.failure?.message ?? "",
+      observations: observations(run.events).length,
+    });
+  }
+  assert.deepEqual(outcomes.map(({ status, observations }) => ({ status, observations })),
+    cases.map(() => ({ status: "failed", observations: 0 })));
+  for (const outcome of outcomes) {
+    assert.match(outcome.message, /central acquire evidence identity/i);
+  }
 });
 
 test("logical duplicate, mixed application, and partial evidence are conflicts", async (t) => {
@@ -441,6 +452,11 @@ test("a nonzero counter remains a no-sentinel control", async (t) => {
 });
 
 test("durable evidence fixtures form an explicit MECE control", () => {
+  const applied = durableEvidence();
+  assert.equal(
+    applied.event.transitionId,
+    `acquire:${applied.application.executionCommandId}`,
+  );
   assert.deepEqual(
     ["applied", "no_transition", "conflict"].map((kind) => (
       durableEvidence(kind).classification
