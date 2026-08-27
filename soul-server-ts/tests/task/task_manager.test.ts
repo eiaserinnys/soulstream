@@ -1063,9 +1063,13 @@ describe("TaskManager.deliverInputResponse", () => {
     Object.assign(mocks.db, {
       sessionDeliveries: vi.fn().mockReturnValue({}),
     });
+    let runtimePresent = true;
     const sessionRuntimeControl = {
-      has: vi.fn().mockReturnValue(true),
-      close: vi.fn().mockResolvedValue(true),
+      has: vi.fn(() => runtimePresent),
+      close: vi.fn(async () => {
+        runtimePresent = false;
+        return true;
+      }),
       deliverInputResponse: vi.fn().mockResolvedValue({ status: "delivered" }),
       backgroundClaudeRuntimeTasks: vi.fn().mockResolvedValue({ status: "ok" }),
       stopClaudeRuntimeTask: vi.fn().mockResolvedValue({ status: "ok" }),

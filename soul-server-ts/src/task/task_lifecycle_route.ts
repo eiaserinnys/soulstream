@@ -53,20 +53,26 @@ export class TaskLifecycleRoute {
     const task = this.deps.getTask(sessionId);
     const wasActive = Boolean(task && isActiveTaskStatus(task.status));
     if (isUserStopConverged(task)) {
-      await this.closeSessionRuntimeIfPresent(sessionId);
-      return true;
+      return await this.closeSessionRuntimeIfPresent(sessionId);
     }
     const cancelled = await this.deps.lifecycleTransition.cancelRunningTask(task);
     if (!task || isActiveTaskStatus(task.status)) return cancelled;
-    await this.closeSessionRuntimeIfPresent(sessionId);
+    const runtimeClosed = await this.closeSessionRuntimeIfPresent(sessionId);
+    if (!runtimeClosed) return false;
     if (wasActive && !cancelled) return false;
     return isUserStopConverged(task);
   }
 
-  private async closeSessionRuntimeIfPresent(sessionId: string): Promise<void> {
-    if (!this.deps.closeSessionRuntime) return;
-    if (this.deps.hasSessionRuntime && !this.deps.hasSessionRuntime(sessionId)) return;
-    await this.deps.closeSessionRuntime(sessionId, "explicit_cancel");
+  private async closeSessionRuntimeIfPresent(sessionId: string): Promise<boolean> {
+    const runtimePresent = this.deps.hasSessionRuntime?.(sessionId)
+      ?? Boolean(this.deps.closeSessionRuntime);
+    if (!runtimePresent) return true;
+    const closeSessionRuntime = this.deps.closeSessionRuntime;
+    const closed = await closeSessionRuntime?.(
+      sessionId,
+      "explicit_cancel",
+    ) ?? false;
+    return closed && !(this.deps.hasSessionRuntime?.(sessionId) ?? false);
   }
 
   async deleteTask(sessionId: string): Promise<void> {

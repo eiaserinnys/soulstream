@@ -169,6 +169,12 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
       persistence: { enqueueTerminalTransitionAndWaitForApplication } as never,
     });
     const task = makeTask({ executionPromise: Promise.resolve() });
+    const pendingDelivery = {
+      text: "held input",
+      user: "user",
+      deliveryId: "held-transport-failure",
+    };
+    task.interventionQueue.push(pendingDelivery);
     const interrupt = vi.fn().mockResolvedValue(true);
     const engine = { interrupt } as unknown as EnginePort;
     task.runner = {
@@ -185,8 +191,14 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
 
     expect(interrupt).toHaveBeenCalledOnce();
     expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledTimes(2);
+    const terminalEvents = enqueueTerminalTransitionAndWaitForApplication.mock.calls
+      .map((call) => call[1] as { _dedupe_key: string; timestamp: number });
+    expect(terminalEvents[0]?._dedupe_key).toMatch(/^session_terminal:/);
+    expect(terminalEvents[1]?._dedupe_key).toBe(terminalEvents[0]?._dedupe_key);
+    expect(terminalEvents[1]?.timestamp).toBe(terminalEvents[0]?.timestamp);
     expect(task.runner).toBeUndefined();
     expect(task.executionPromise).toBeUndefined();
+    expect(task.interventionQueue).toEqual([pendingDelivery]);
   });
 
   it("cleans stale local execution after a CAS miss proves canonical terminal", async () => {
