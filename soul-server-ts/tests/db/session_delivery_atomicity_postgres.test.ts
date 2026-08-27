@@ -9,6 +9,9 @@ import {
   DELIVERY_MAX_ATTEMPTS,
 } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_retry_policy.js";
 import type { SqlClient } from "../../src/db/session_db.js";
+import { runnerRequestFrame } from "../../src/runner/frame_protocol.js";
+import { RunnerProcessDispatcher } from
+  "../../src/runner/runner_process_dispatcher.js";
 import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import { isDeliveryLayerCombinationAllowed } from
@@ -306,6 +309,151 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       aggregate_state: "delivered",
       target_receipt_id: targetReceiptId,
     });
+  });
+
+  it("[A2 durability] responds before activation failure returns the real notification row to pending", async () => {
+    const deliveryId = "delivery-a2-post-response-retry";
+    const leaseOwner = "route-a2-post-response";
+    await repository.register({
+      deliveryId,
+      targetSessionId: "caller-old",
+      sourceSessionId: "child-session",
+      relationKey: "relation-a2-post-response-retry",
+      completionId: "completion-relation-a2-post-response-retry",
+      intent: "completion_notification",
+      source: "completion_notifier",
+      producerKind: "child_session",
+      producerId: "child-session",
+      producerTerminalRevision: "42",
+      payloadHash: "hash-relation-a2-post-response-retry",
+      payload: { text: "done", user: "agent", caller_info: null },
+    });
+    await repository.claimForTarget(deliveryId, "caller-old", leaseOwner);
+    const dispatching = await repository.beginDispatch(deliveryId, leaseOwner);
+    expect(dispatching).toMatchObject({
+      delivery_id: deliveryId,
+      state: "dispatching",
+      lease_owner: leaseOwner,
+    });
+    const gate = new TaskDeliveryLedgerGate(true, repository);
+    const sent: unknown[] = [];
+    const order: string[] = [];
+    const logger = silentLogger();
+    const activationError = new Error("activation rejected after durable publish");
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher & {
+        handleHostRequest(frame: ReturnType<typeof runnerRequestFrame>): Promise<void>;
+      };
+    Object.assign(dispatcher, {
+      options: {
+        logger,
+        handleHostCall: async (
+          _call: unknown,
+          registerPostResponse: (continuation: () => Promise<void>) => void,
+        ) => {
+          await gate.recordResult({
+            kind: "admitted",
+            deliveryId,
+            row: dispatching!,
+          }, { autoResumed: true });
+          order.push("durable-publish");
+          registerPostResponse(async () => {
+            order.push("activation");
+            expect(sent).toHaveLength(1);
+            try {
+              await Promise.reject(activationError);
+            } catch (error) {
+              await gate.recordNotificationFailure(
+                { kind: "admitted", deliveryId, row: dispatching! },
+                `auto-resume activation failed: ${(error as Error).message}`,
+              );
+              throw error;
+            }
+          });
+          return null;
+        },
+      },
+      recentHostResponses: new Map(),
+      hostCallIdempotency: {
+        execute: async (
+          _call: unknown,
+          apply: (idempotencyKey: string) => Promise<unknown>,
+        ) => ({ data: await apply("host:a2-durability"), replayed: false }),
+      },
+      sendBestEffort: async (frame: unknown) => {
+        order.push("response");
+        sent.push(frame);
+      },
+    });
+
+    await dispatcher.handleHostRequest(runnerRequestFrame("host:a2-durability", {
+      kind: "host_call",
+      service: "detached_event",
+      operation: "publish",
+      args: ["caller-old", { type: "text", text: "done", timestamp: 1 }],
+    }));
+
+    expect(order).toEqual(["durable-publish", "response", "activation"]);
+    expect(sent).toEqual([
+      expect.objectContaining({
+        kind: "response",
+        result: expect.objectContaining({ status: "ok" }),
+      }),
+    ]);
+    await expect(harness.sql<Array<{
+      delivery_id: string;
+      delivery_state: string;
+      aggregate_state: string;
+      delivery_lease_owner: string | null;
+      delivery_lease_expires_at: Date | null;
+      delivery_last_error: string | null;
+      notification_state: string;
+      projection_state: string;
+      notification_lease_owner: string | null;
+      notification_lease_expires_at: Date | null;
+      notification_attempt_count: number;
+      notification_last_error: string | null;
+    }>>`
+      SELECT
+        delivery.delivery_id,
+        delivery.state AS delivery_state,
+        delivery.aggregate_state,
+        delivery.lease_owner AS delivery_lease_owner,
+        delivery.lease_expires_at AS delivery_lease_expires_at,
+        delivery.last_error AS delivery_last_error,
+        notification.state AS notification_state,
+        notification.projection_state,
+        notification.lease_owner AS notification_lease_owner,
+        notification.lease_expires_at AS notification_lease_expires_at,
+        notification.attempt_count AS notification_attempt_count,
+        notification.last_error AS notification_last_error
+      FROM session_deliveries AS delivery
+      JOIN session_delivery_notification_outbox AS notification
+        USING (delivery_id)
+      WHERE delivery.delivery_id = ${deliveryId}
+    `).resolves.toEqual([{
+      delivery_id: deliveryId,
+      delivery_state: "queued",
+      aggregate_state: "pending",
+      delivery_lease_owner: null,
+      delivery_lease_expires_at: null,
+      delivery_last_error:
+        "auto-resume activation failed: activation rejected after durable publish",
+      notification_state: "pending",
+      projection_state: "staged",
+      notification_lease_owner: null,
+      notification_lease_expires_at: null,
+      notification_attempt_count: 1,
+      notification_last_error:
+        "auto-resume activation failed: activation rejected after durable publish",
+    }]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        correlationId: "host:a2-durability",
+        err: activationError,
+      }),
+      "Runner host post-response continuation failed; durable delivery remains pending",
+    );
   });
 
   it("consumes a cross-node notification after the target lastEventId advances", async () => {
