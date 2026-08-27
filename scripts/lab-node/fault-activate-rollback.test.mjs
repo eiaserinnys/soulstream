@@ -24,6 +24,7 @@ test("activate rollback accepts only an observed rolled-back sessions-row acquir
   assert.deepEqual(activateRollbackViolations(CLEAN_OBSERVATION), []);
   for (const mutation of [
     { semanticReachCount: 0 },
+    { semanticReachCount: 2 },
     { acquireApplied: true },
     { generationAfter: 5 },
     { ownerAfter: { manifestId: "manifest" } },

@@ -470,10 +470,15 @@ export class LabRuntime {
       DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation ON session_execution_ownerships;
       DROP FUNCTION IF EXISTS lab_fault_fail_execution_activation();
       DROP TRIGGER IF EXISTS lab_fault_fail_execution_acquire ON sessions;
+      DROP FUNCTION IF EXISTS lab_fault_fail_execution_acquire();
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_reach_seq;
+      CREATE SEQUENCE lab_fault_execution_acquire_reach_seq
+        START WITH 1 INCREMENT BY 1 MINVALUE 1;
       CREATE OR REPLACE FUNCTION lab_fault_fail_execution_acquire()
       RETURNS trigger LANGUAGE plpgsql AS $lab$
       BEGIN
         IF ${predicate} THEN
+          PERFORM nextval('lab_fault_execution_acquire_reach_seq');
           PERFORM pg_advisory_xact_lock(741925, 2);
           PERFORM pg_sleep(${delaySeconds});
           ${rejectTransition}
@@ -494,24 +499,57 @@ export class LabRuntime {
   async waitForActivationFailureFault(timeoutMs = 30_000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const observation = await this.psqlOne(`
-        SELECT json_build_object(
-          'reached', EXISTS (
-            SELECT 1
-              FROM pg_locks AS lock
-              JOIN pg_stat_activity AS activity ON activity.pid = lock.pid
-             WHERE lock.locktype = 'advisory'
-               AND lock.classid = 741925
-               AND lock.objid = 2
-               AND lock.granted
-               AND activity.query LIKE '%session_acquire_execution_ownership%'
-          )
-        )
-      `);
-      if (observation?.reached === true) return { semanticReachCount: 1 };
+      const observation = await this.activationFailureFaultCount();
+      if (observation.semanticReachCount > 0) return observation;
       await delay(100);
     }
-    return { semanticReachCount: 0 };
+    return await this.activationFailureFaultCount();
+  }
+
+  async activationFailureFaultCount() {
+    return await this.psqlOne(`
+      SELECT json_build_object(
+        'semanticReachCount', CASE WHEN is_called THEN last_value ELSE 0 END
+      )
+      FROM lab_fault_execution_acquire_reach_seq
+    `);
+  }
+
+  async activationFailureFaultCountAfterHorizon(horizonMs) {
+    if (!Number.isSafeInteger(horizonMs) || horizonMs < 1) {
+      throw new Error(`invalid activation fault retry horizon: ${horizonMs}`);
+    }
+    const before = await this.activationFailureFaultCount();
+    await delay(horizonMs);
+    const after = await this.activationFailureFaultCount();
+    return {
+      semanticReachCount: after.semanticReachCount,
+      semanticReachCountBeforeHorizon: before.semanticReachCount,
+      retryHorizonMs: horizonMs,
+      stable: before.semanticReachCount === after.semanticReachCount,
+    };
+  }
+
+  async activationFailureFaultResidue() {
+    return await this.psqlOne(`
+      SELECT json_build_object(
+        'triggerCount', (
+          SELECT COUNT(*)::integer FROM pg_trigger
+          WHERE tgname = 'lab_fault_fail_execution_acquire' AND NOT tgisinternal
+        ),
+        'functionCount', (
+          SELECT COUNT(*)::integer
+          FROM pg_proc AS procedure
+          JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+          WHERE namespace.nspname = current_schema()
+            AND procedure.proname = 'lab_fault_fail_execution_acquire'
+        ),
+        'counterCount', CASE
+          WHEN to_regclass('lab_fault_execution_acquire_reach_seq') IS NULL THEN 0
+          ELSE 1
+        END
+      )
+    `);
   }
 
   async removeActivationFailureFault() {
@@ -520,8 +558,68 @@ export class LabRuntime {
       DROP FUNCTION IF EXISTS lab_fault_fail_execution_acquire();
       DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation ON session_execution_ownerships;
       DROP FUNCTION IF EXISTS lab_fault_fail_execution_activation();
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_reach_seq;
       SELECT json_build_object('removed', true);
     `);
+  }
+
+  async runnerExecutionRegistration(sessionId) {
+    const directory = this.runnerDirectory(sessionId);
+    let identity = null;
+    let pidFilePid = null;
+    try {
+      identity = JSON.parse(await readFile(join(directory, "runner-identity.json"), "utf8"));
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    try {
+      const value = Number((await readFile(join(directory, "runner.pid"), "utf8")).trim());
+      if (Number.isSafeInteger(value) && value > 0) pidFilePid = value;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    return {
+      present: Number.isSafeInteger(identity?.pid)
+        && identity.pid > 0
+        && typeof identity.startIdentity === "string"
+        && identity.startIdentity.length > 0,
+      identityPid: Number.isSafeInteger(identity?.pid) ? identity.pid : null,
+      pidFilePid,
+      registrationId: typeof identity?.registrationId === "string"
+        ? identity.registrationId
+        : null,
+    };
+  }
+
+  async removeLabRunnerRegistration(sessionId, expectedPid) {
+    const registration = await this.runnerExecutionRegistration(sessionId);
+    if (
+      registration.identityPid !== expectedPid
+      || registration.pidFilePid !== expectedPid
+      || this.runnerAlive(expectedPid)
+    ) {
+      throw new Error(`unsafe lab runner registration cleanup: ${sessionId}`);
+    }
+    await rm(this.runnerDirectory(sessionId), { recursive: true, force: true });
+  }
+
+  async terminateObservedLabRunnerRegistration(sessionId, expectedPid) {
+    const registration = await this.runnerExecutionRegistration(sessionId);
+    if (
+      !registration.present
+      || registration.identityPid !== expectedPid
+      || registration.pidFilePid !== expectedPid
+      || !this.runnerAlive(expectedPid)
+    ) {
+      throw new Error(`lab runner identity changed before cleanup: ${sessionId}`);
+    }
+    await this.killRunnerPid(expectedPid, "SIGKILL");
+    await this.removeLabRunnerRegistration(sessionId, expectedPid);
+    const residue = await this.runnerExecutionRegistration(sessionId);
+    if (residue.present) {
+      throw new Error(`lab runner registration survived cleanup: ${sessionId}`);
+    }
+    return residue;
   }
 
   async installAdoptionWindow(sessionId, delaySeconds = 20) {

@@ -86,6 +86,9 @@ const LOG_TERMS = {
   ],
   F7: ["F7_", "dead_letter", "completion_notification", "delivery"],
 };
+// The isolated lab fixes the recovery scan at 15 seconds. One full scan plus
+// scheduling slack proves the non-transactional counter did not advance again.
+const ACTIVATE_ROLLBACK_RETRY_HORIZON_MS = 17_000;
 
 export function canonicalScenarioOrder() {
   return [...SCENARIO_ORDER];
@@ -479,6 +482,10 @@ const SCENARIOS = {
     const mutation = requestedActivateRollbackMutation();
     let runner;
     let scenarioError;
+    let scenarioResult;
+    let cleanupResidue;
+    let postCleanupRegistration;
+    let postCleanupOwnership;
     const sessionId = await runtime.createSession(`Reply with exactly ${baselineMarker}.`);
     await runtime.waitForRunner(sessionId);
     await runtime.waitForMarker(sessionId, baselineMarker);
@@ -508,7 +515,7 @@ const SCENARIOS = {
         ),
       ));
       runner = await runtime.waitForRunner(sessionId);
-      const reach = await runtime.waitForActivationFailureFault(
+      const initialReach = await runtime.waitForActivationFailureFault(
         mutation === "predicate_misplaced" ? 5_000 : 30_000,
       );
       await recorder.event("fault_reached", {
@@ -516,7 +523,7 @@ const SCENARIOS = {
         sessionId,
         runnerPid: runner.pid,
         mutation,
-        semanticReachCount: reach.semanticReachCount,
+        semanticReachCount: initialReach.semanticReachCount,
       });
       const interventionOutcome = await interventionOutcomePromise;
       if (mutation === "raise_removed" || mutation === "predicate_misplaced") {
@@ -532,6 +539,15 @@ const SCENARIOS = {
           100,
         );
       }
+      const reach = await runtime.activationFailureFaultCountAfterHorizon(
+        ACTIVATE_ROLLBACK_RETRY_HORIZON_MS,
+      );
+      const expectedReachCount = mutation === "predicate_misplaced" ? 0 : 1;
+      assertScenario(
+        reach.stable && reach.semanticReachCount === expectedReachCount,
+        "activate rollback semantic reach count was not stable through the retry horizon: "
+          + `${reach.semanticReachCountBeforeHorizon}->${reach.semanticReachCount}`,
+      );
       const after = await runtime.sessionExecutionOwnership(sessionId);
       const markerCount = await runtime.countTimelineEvents(
         sessionId,
@@ -540,6 +556,8 @@ const SCENARIOS = {
       );
       const observation = {
         semanticReachCount: reach.semanticReachCount,
+        semanticReachCountBeforeHorizon: reach.semanticReachCountBeforeHorizon,
+        retryHorizonMs: reach.retryHorizonMs,
         acquireApplied: after.executionGeneration !== before.executionGeneration
           || after.owner !== null,
         generationBefore: before.executionGeneration,
@@ -549,6 +567,7 @@ const SCENARIOS = {
         terminalRevisionBefore: before.terminalRevision,
         terminalRevisionAfter: after.terminalRevision,
         childAlive: runtime.runnerAlive(runner.pid),
+        registrationPresent: (await runtime.runnerExecutionRegistration(sessionId)).present,
         markerCount,
       };
       const violations = activateRollbackViolations(observation);
@@ -579,10 +598,7 @@ const SCENARIOS = {
         violations,
         mutationDetection,
       };
-      process.stdout.write(
-        `ACTIVATE_ROLLBACK_${mutation ? "MUTATION" : "VERDICT"} ${JSON.stringify(verdict)}\n`,
-      );
-      return {
+      scenarioResult = {
         id: "activate-rollback",
         status: "passed",
         sessionId,
@@ -599,7 +615,6 @@ const SCENARIOS = {
       };
     } catch (error) {
       scenarioError = error;
-      throw error;
     } finally {
       const cleanupErrors = [];
       try {
@@ -607,12 +622,48 @@ const SCENARIOS = {
       } catch (error) {
         cleanupErrors.push(error);
       }
-      if (runner && runtime.runnerAlive(runner.pid)) {
+      if (runner) {
         try {
-          await runtime.killRunnerPid(runner.pid, "SIGKILL");
+          postCleanupRegistration = await runtime.runnerExecutionRegistration(sessionId);
+          if (runtime.runnerAlive(runner.pid)) {
+            if (!postCleanupRegistration.present) {
+              throw new Error("activate rollback left an unregistered runner child live");
+            }
+            postCleanupRegistration = await runtime.terminateObservedLabRunnerRegistration(
+              sessionId,
+              runner.pid,
+            );
+          }
+          if (postCleanupRegistration.present) {
+            await runtime.removeLabRunnerRegistration(sessionId, runner.pid);
+            postCleanupRegistration = await runtime.runnerExecutionRegistration(sessionId);
+          }
+          if (postCleanupRegistration.present) {
+            throw new Error("activate rollback left a live runner registration");
+          }
         } catch (error) {
           cleanupErrors.push(error);
         }
+      }
+      try {
+        cleanupResidue = await runtime.activationFailureFaultResidue();
+        if (
+          cleanupResidue.triggerCount !== 0
+          || cleanupResidue.functionCount !== 0
+          || cleanupResidue.counterCount !== 0
+        ) {
+          throw new Error(`activate rollback fault residue: ${JSON.stringify(cleanupResidue)}`);
+        }
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+      try {
+        postCleanupOwnership = await runtime.sessionExecutionOwnership(sessionId);
+        if (postCleanupOwnership?.owner !== null) {
+          throw new Error("activate rollback left a sessions-row execution registration");
+        }
+      } catch (error) {
+        cleanupErrors.push(error);
       }
       if (cleanupErrors.length > 0) {
         throw new AggregateError(
@@ -621,6 +672,21 @@ const SCENARIOS = {
         );
       }
     }
+    if (scenarioError) throw scenarioError;
+    const completedResult = {
+      ...scenarioResult,
+      cleanup: {
+        faultObjects: cleanupResidue,
+        childAlive: runner ? runtime.runnerAlive(runner.pid) : false,
+        registrationPresent: postCleanupRegistration?.present ?? false,
+        sessionsRowOwner: postCleanupOwnership?.owner ?? null,
+      },
+    };
+    process.stdout.write(
+      `ACTIVATE_ROLLBACK_${mutation ? "MUTATION" : "VERDICT"} `
+        + `${JSON.stringify({ ...completedResult.verdict, cleanup: completedResult.cleanup })}\n`,
+    );
+    return completedResult;
   },
 
   async F1(runtime, recorder) {
