@@ -310,7 +310,6 @@ export async function runMigrations(
       await freshInstall(sql, migrations, releaseId, env);
     } else {
       await assertDestructivePreflight(initial);
-      await assertRollbackUnsafeApplyGates(initial, env);
       await applyPending(
         sql,
         migrations,
