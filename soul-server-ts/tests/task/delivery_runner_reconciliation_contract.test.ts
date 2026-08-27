@@ -13,7 +13,10 @@ import type {
   DeliveryLedgerAdmission,
   TaskDeliveryLedgerGate,
 } from "../../src/task/task_delivery_ledger_gate.js";
-import { TaskExecutor } from "../../src/task/task_executor.js";
+import {
+  TaskExecutor,
+  type RunnerProcessRuntimeFactory,
+} from "../../src/task/task_executor.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { RunningInterventionTransition } from
@@ -103,6 +106,20 @@ function makeLedgerGate(terminalStates: ReadonlyMap<string, TerminalDeliveryStat
   const recordReservationRetry = vi.fn(async () => "retryable" as const);
   const recordConsumed = vi.fn(async () => undefined);
   const recordTurnStarted = vi.fn(async () => "turn-contract");
+  const discardIfConsumed = vi.fn(async (
+    message: InterventionMessage,
+    task: Task,
+  ) => {
+    const deliveryId = message.deliveryId;
+    if (!deliveryId || !terminalStates.has(deliveryId)) return false;
+    const runnerInterventionId = message.runnerInterventionId;
+    const discardIntervention = task.runner?.dispatcher.discardIntervention;
+    if (!runnerInterventionId || !discardIntervention) {
+      throw new Error(`runner intervention discard unavailable:${deliveryId}`);
+    }
+    await discardIntervention.call(task.runner?.dispatcher, runnerInterventionId);
+    return true;
+  });
   return {
     admit,
     beginDispatch,
@@ -111,10 +128,12 @@ function makeLedgerGate(terminalStates: ReadonlyMap<string, TerminalDeliveryStat
     recordReservationRetry,
     recordConsumed,
     recordTurnStarted,
+    discardIfConsumed,
   } as unknown as Pick<
     TaskDeliveryLedgerGate,
     "admit" | "beginDispatch" | "recordResult" | "recordFailure"
       | "recordReservationRetry" | "recordConsumed" | "recordTurnStarted"
+      | "discardIfConsumed"
   >;
 }
 
@@ -122,6 +141,12 @@ function makeRunner(localRows: readonly LocalInboxRow[]) {
   const openRows = new Map(localRows.map((row) => [row.interventionId, row]));
   const executed: EngineExecuteParams[] = [];
   const dispatcher = {
+    prepareExecutionIdentity: vi.fn(async () => ({
+      registrationId: "registration-d-reconciliation",
+      pid: 8_382,
+      startIdentity: "start-d-reconciliation",
+      executionCommandId: "execute-d-reconciliation",
+    })),
     executeFrames: vi.fn((params: EngineExecuteParams) => (async function* () {
       executed.push(params);
       const interventionId = params.runnerInterventionId;
@@ -141,6 +166,9 @@ function makeRunner(localRows: readonly LocalInboxRow[]) {
     detachHost: vi.fn(async () => undefined),
     waitForSessionAck: vi.fn(async () => null),
     recoverPendingInterventions: vi.fn(async () => [...openRows.values()]),
+    discardIntervention: vi.fn(async (interventionId: string) => {
+      openRows.delete(interventionId);
+    }),
     invoke: vi.fn(async () => undefined),
   };
   const runner: TaskRunnerRuntime = {
@@ -175,6 +203,12 @@ function makeHarness(input: {
   const persistenceDouble = makeEventPersistenceTestDouble();
   const ledgerGate = makeLedgerGate(input.terminalStates ?? new Map());
   const { runner, openRows, executed, dispatcher } = makeRunner(input.localRows ?? []);
+  const runnerProcessFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+  runnerProcessFactory.describe = vi.fn(async () => ({
+    ownerKind: "runner_process",
+    manifestId: "release-d-reconciliation",
+    runtimeEnvIdentity: "env-d-reconciliation",
+  }));
   const db = {
     updateSession: vi.fn(async () => undefined),
     setClaudeSessionId: vi.fn(async () => undefined),
@@ -194,6 +228,8 @@ function makeHarness(input: {
     undefined,
     undefined,
     ledgerGate,
+    undefined,
+    runnerProcessFactory,
   );
   const autoResumeTransition = new AutoResumeTransition({
     logger: silentLogger,
