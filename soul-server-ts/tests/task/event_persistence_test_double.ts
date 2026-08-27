@@ -6,6 +6,14 @@ import type { Task } from "../../src/task/task_models.js";
 import type { EventOutboxRecord } from "../../src/upstream/event_outbox.js";
 import type { EventOutboxSessionEffect } from "../../src/upstream/event_outbox.js";
 
+export type EventPersistenceTestDoubleCapabilityProfile =
+  | "legacy_transition_only"
+  | "execution_ownership";
+
+export interface EventPersistenceTestDoubleOptions {
+  readonly capabilityProfile: EventPersistenceTestDoubleCapabilityProfile;
+}
+
 export function makeEventPersistenceTestDouble(
   sideEffect?: (
     sessionId: string,
@@ -16,6 +24,9 @@ export function makeEventPersistenceTestDouble(
     eventId: number;
     event: SSEEventPayload;
   }> = [],
+  options: EventPersistenceTestDoubleOptions = {
+    capabilityProfile: "execution_ownership",
+  },
 ) {
   let sourceSeq = initialEvents.reduce(
     (highest, fixture) => Math.max(highest, fixture.eventId),
@@ -264,8 +275,12 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForAck,
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
-    acquireExecutionOwnershipAndWaitForApplication,
-    releaseExecutionOwnershipAndWaitForApplication,
+    ...(options.capabilityProfile === "execution_ownership"
+      ? {
+          acquireExecutionOwnershipAndWaitForApplication,
+          releaseExecutionOwnershipAndWaitForApplication,
+        }
+      : {}),
     waitForSessionAck,
     handleSideEffects,
   } as unknown as EventPersistence;

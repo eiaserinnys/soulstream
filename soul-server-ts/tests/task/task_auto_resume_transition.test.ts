@@ -37,7 +37,9 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
 describe("AutoResumeTransition", () => {
   it("[A1] passes the exact activation token while keeping owned auto-resume initializing", async () => {
     const task = makeTerminalTask({ status: "error" });
-    const persistenceDouble = makeEventPersistenceTestDouble();
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "execution_ownership",
+    });
     const acquireExecutionOwnershipAndWaitForApplication = vi.fn();
     const persistence = Object.assign(persistenceDouble.persistence, {
       acquireExecutionOwnershipAndWaitForApplication,
@@ -72,7 +74,9 @@ describe("AutoResumeTransition", () => {
     const task = makeTerminalTask();
     let releaseMetadata!: () => void;
     const metadataBlocked = new Promise<void>((resolve) => { releaseMetadata = resolve; });
-    const persistenceDouble = makeEventPersistenceTestDouble();
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "execution_ownership",
+    });
     const enqueueMetadataEffect = vi.fn(async () => await metadataBlocked);
     const persistence = Object.assign(persistenceDouble.persistence, {
       acquireExecutionOwnershipAndWaitForApplication: vi.fn(),
@@ -208,7 +212,9 @@ describe("AutoResumeTransition", () => {
       reviewState: "needs_review",
       lastAssistantText: "canonical answer",
     });
-    const persistenceDouble = makeEventPersistenceTestDouble();
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "legacy_transition_only",
+    });
     persistenceDouble.enqueueRunningTransitionAndWaitForApplication
       .mockResolvedValueOnce({
         eventId: 9,
@@ -304,7 +310,9 @@ describe("AutoResumeTransition", () => {
       forwardedActivation = activation;
     });
     const transition = new AutoResumeTransition({
-      persistence: makeEventPersistenceTestDouble().persistence,
+      persistence: makeEventPersistenceTestDouble(undefined, [], {
+        capabilityProfile: "execution_ownership",
+      }).persistence,
       logger: silentLogger,
       agentRegistry: { get: vi.fn().mockReturnValue(undefined) } as unknown as AgentRegistry,
     });
@@ -324,7 +332,9 @@ describe("AutoResumeTransition", () => {
       pendingTerminationDetail: "stale limit",
       terminationEventRecorded: true,
     });
-    const persistenceDouble = makeEventPersistenceTestDouble();
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "legacy_transition_only",
+    });
     const autoResume = new AutoResumeTransition({
       logger: silentLogger,
       persistence: persistenceDouble.persistence,
@@ -376,9 +386,13 @@ describe("AutoResumeTransition", () => {
       runner: createInProcessTaskRunnerRuntime(engine),
       executionPromise: Promise.resolve(),
     });
-    const persistenceDouble = makeEventPersistenceTestDouble(async () => {
-      order.push("handleSideEffects");
-    });
+    const persistenceDouble = makeEventPersistenceTestDouble(
+      async () => {
+        order.push("handleSideEffects");
+      },
+      [],
+      { capabilityProfile: "execution_ownership" },
+    );
 
     const transition = new AutoResumeTransition({
       logger: silentLogger,
@@ -426,7 +440,9 @@ describe("AutoResumeTransition", () => {
     });
     const transition = new AutoResumeTransition({
       logger: silentLogger,
-      persistence: makeEventPersistenceTestDouble().persistence,
+      persistence: makeEventPersistenceTestDouble(undefined, [], {
+        capabilityProfile: "execution_ownership",
+      }).persistence,
     });
     let forwardedActivation: Task["executionActivation"];
     const onResume = vi.fn((
@@ -452,7 +468,9 @@ describe("AutoResumeTransition", () => {
       reviewRequired: true,
       reviewState: "needs_review",
     });
-    const persistenceDouble = makeEventPersistenceTestDouble();
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "legacy_transition_only",
+    });
     const transition = new AutoResumeTransition({
       logger: silentLogger,
       persistence: persistenceDouble.persistence,
@@ -494,7 +512,9 @@ describe("AutoResumeTransition", () => {
       workspace_dir: "/tmp/codex",
     };
     const agentRegistry = { get: vi.fn().mockReturnValue(agent) } as unknown as AgentRegistry;
-    const persistenceDouble = makeEventPersistenceTestDouble();
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "legacy_transition_only",
+    });
     const transition = new AutoResumeTransition({
       logger: silentLogger,
       persistence: persistenceDouble.persistence,
