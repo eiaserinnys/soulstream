@@ -381,6 +381,42 @@ test("predicate-misplaced mutation completes from a confirmed post-registration 
     followupRegistrationId: "registration-followup",
     followupPid: 202,
   });
+
+  await t.test("confirmed nonzero retains the existing marker and horizon path", async () => {
+    ownershipReadCount = 0;
+    rejectedMarkerWaitCount = 0;
+    confirmationReadCount = 0;
+    retryHorizonObservationCount = 0;
+    runtime.activationFailureFaultCount = async () => {
+      confirmationReadCount += 1;
+      return {
+        semanticReachCount: 1,
+        attemptedGeneration: 5,
+        attemptedCommandFingerprint: "202",
+      };
+    };
+    runtime.activationFailureFaultCountAfterHorizon = async (horizonMs) => {
+      retryHorizonObservationCount += 1;
+      return {
+        semanticReachCount: 1,
+        semanticReachCountBeforeHorizon: 1,
+        attemptedGeneration: 5,
+        attemptedCommandFingerprint: "202",
+        retryHorizonMs: horizonMs,
+        stable: true,
+      };
+    };
+
+    const nonzeroResult = await runCanonicalScenario("activate-rollback", runtime, recorder);
+    assert.equal(nonzeroResult.status, "failed");
+    assert.match(
+      nonzeroResult.failure.message,
+      /activate-rollback mutation was not detected: predicate_misplaced/,
+    );
+    assert.equal(rejectedMarkerWaitCount, 1);
+    assert.equal(retryHorizonObservationCount, 1);
+    assert.equal(confirmationReadCount, 1);
+  });
 });
 
 test("raise-removed mutation resolves on either observation and delegates the empty case", async () => {
