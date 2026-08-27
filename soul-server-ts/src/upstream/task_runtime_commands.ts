@@ -231,7 +231,7 @@ export class TaskRuntimeCommands {
         deliveryCreatedAt: params.deliveryCreatedAt,
         deliveryLeaseOwner: params.deliveryLeaseOwner,
       },
-      (task) => this.startResumedTask(task),
+      (task, activation) => this.startResumedTask(task, activation),
     );
   }
 
@@ -261,14 +261,17 @@ export class TaskRuntimeCommands {
     };
   }
 
-  private startResumedTask(task: Task): void {
+  private startResumedTask(
+    task: Task,
+    activation?: Task["executionActivation"],
+  ): void {
     if (!task.profileId) {
       throw new Error(
         `Cannot auto-resume ${task.agentSessionId}: task is missing profileId`,
       );
     }
     const agent = task.agentProfileSnapshot ?? this.requireAgent(task.profileId);
-    this.deps.taskExecutor.startExecution(task, agent);
+    this.deps.taskExecutor.startExecution(task, agent, activation);
   }
 }
 
