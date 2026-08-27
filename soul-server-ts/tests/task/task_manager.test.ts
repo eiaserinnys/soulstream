@@ -1,7 +1,7 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile, AgentRegistry } from "../../src/agent_registry.js";
 import type { BoardYjsHostClient } from "../../src/collaboration/board_yjs_host_client.js";
 import type { SessionMutationHost } from "../../src/control_plane/persistence_host_clients.js";
 import type { SessionDB } from "../../src/db/session_db.js";
@@ -11,6 +11,12 @@ import type {
 } from "../../src/engine/protocol.js";
 import { createInProcessTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
+import { TaskExecutor } from "../../src/task/task_executor.js";
+import type {
+  AddInterventionParams,
+  AddInterventionResult,
+  StartExecutionCallback,
+} from "../../src/task/task_intervention_route.js";
 import { TaskManager as ProductionTaskManager } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -22,6 +28,32 @@ const silentLogger = pino({ level: "silent" });
 type BoardYjsService = Pick<BoardYjsHostClient, "upsertSessionBoardItem">;
 
 const boardYjsServices = new WeakMap<SessionDB, BoardYjsService>();
+
+const activationHarnessAgent: AgentProfile = {
+  id: "task-manager-activation-harness",
+  name: "TaskManager activation harness",
+  backend: "codex",
+  workspace_dir: "/tmp/task-manager-activation-harness",
+};
+
+function makeActivationHarnessEngine(): EnginePort {
+  return {
+    backendId: "codex",
+    workspaceDir: activationHarnessAgent.workspace_dir,
+    async *execute() {
+      await new Promise<void>(() => undefined);
+    },
+    async intervene() {
+      return {
+        status: "not_delivered",
+        mechanism: "interrupt_then_next_turn",
+        reason: "next_turn_required",
+      };
+    },
+    async interrupt() { return true; },
+    async close() {},
+  };
+}
 
 function legacyMutationHost(db: SessionDB): SessionMutationHost {
   const legacy = db as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
@@ -38,10 +70,39 @@ function legacyMutationHost(db: SessionDB): SessionMutationHost {
 }
 
 class TaskManager extends ProductionTaskManager {
+  private readonly activationExecutor?: TaskExecutor;
+
   constructor(...args: ConstructorParameters<typeof ProductionTaskManager>) {
     args[7] ??= boardYjsServices.get(args[1]);
     args[12] ??= legacyMutationHost(args[1]);
     super(...args);
+    if (args[4]) {
+      this.activationExecutor = new TaskExecutor(
+        makeActivationHarnessEngine,
+        args[1],
+        args[4],
+        args[2],
+        silentLogger,
+      );
+    }
+  }
+
+  override addIntervention(
+    params: AddInterventionParams,
+    observeResume: StartExecutionCallback,
+  ): Promise<AddInterventionResult> {
+    return super.addIntervention(params, (task, activation) => {
+      observeResume(task);
+      if (!activation) return;
+      if (!this.activationExecutor) {
+        throw new Error("activation harness requires event persistence");
+      }
+      return this.activationExecutor.startExecution(
+        task,
+        activationHarnessAgent,
+        activation,
+      );
+    });
   }
 }
 
@@ -105,6 +166,8 @@ function makeMocks() {
       persistenceDouble.enqueueEventAndWaitForSessionAck,
     enqueueTerminalTransitionAndWaitForApplication:
       persistenceDouble.enqueueTerminalTransitionAndWaitForApplication,
+    acquireExecutionOwnershipAndWaitForApplication:
+      persistenceDouble.acquireExecutionOwnershipAndWaitForApplication,
     enqueueRunningTransition: persistenceDouble.enqueueRunningTransition,
     db,
     broadcaster,
@@ -1461,13 +1524,19 @@ describe("TaskManager.addIntervention (B-4)", () => {
       "s1",
       expect.objectContaining({ type: "user_message", text: "resume" }),
     );
-    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledWith(
+    expect(
+      broadcasterMocks.acquireExecutionOwnershipAndWaitForApplication,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      broadcasterMocks.acquireExecutionOwnershipAndWaitForApplication,
+    ).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
         reviewState: "not_required",
-        transitionId: expect.stringMatching(/^resume:/),
+        expectedTerminalEventId: null,
       }),
     );
+    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledTimes(0);
     expect(broadcasterMocks.emitSessionUpdated).not.toHaveBeenCalled();
     expect(broadcasterMocks.updateSession).not.toHaveBeenCalled();
   });
@@ -1522,7 +1591,10 @@ describe("TaskManager.addIntervention (B-4)", () => {
       "s1",
       expect.objectContaining({ type: "user_message", text: "resume" }),
     );
-    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
+    expect(
+      broadcasterMocks.acquireExecutionOwnershipAndWaitForApplication,
+    ).toHaveBeenCalledTimes(1);
+    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledTimes(0);
     expect(broadcasterMocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(broadcasterMocks.emitSessionUpdated).not.toHaveBeenCalled();
     expect(task.prompt).toBe("resume");
@@ -1569,7 +1641,10 @@ describe("TaskManager.addIntervention (B-4)", () => {
       "s1",
       expect.objectContaining({ type: "user_message", text: "resume" }),
     );
-    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
+    expect(
+      broadcasterMocks.acquireExecutionOwnershipAndWaitForApplication,
+    ).toHaveBeenCalledTimes(1);
+    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledTimes(0);
     expect(broadcasterMocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(broadcasterMocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
@@ -1600,7 +1675,10 @@ describe("TaskManager.addIntervention (B-4)", () => {
       "s1",
       expect.objectContaining({ type: "user_message", text: "resume" }),
     );
-    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
+    expect(
+      broadcasterMocks.acquireExecutionOwnershipAndWaitForApplication,
+    ).toHaveBeenCalledTimes(1);
+    expect(broadcasterMocks.enqueueRunningTransition).toHaveBeenCalledTimes(0);
     expect(broadcasterMocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(broadcasterMocks.emitSessionUpdated).not.toHaveBeenCalled();
     expect(task.prompt).toBe("resume");
@@ -1646,12 +1724,16 @@ describe("TaskManager.addIntervention (B-4)", () => {
     const finalizePromise = new Promise<void>((r) => { resolveFinalize = r; });
     task.executionPromise = finalizePromise;
     const engineCloseSpy = vi.fn().mockResolvedValue(undefined);
-    task.runner = createInProcessTaskRunnerRuntime(
+    const previousRunner = createInProcessTaskRunnerRuntime(
       { interrupt: async () => true, close: engineCloseSpy } as unknown as EnginePort,
     );
+    task.runner = previousRunner;
 
     const onResumeCalled: Task[] = [];
-    const onResume = (t: Task) => onResumeCalled.push(t);
+    const onResume = (t: Task) => {
+      expect(t.runner).toBeUndefined();
+      onResumeCalled.push(t);
+    };
 
     // addIntervention을 트리거하지만 await — finalize가 아직 끝나지 않아 await 멈춤.
     const addPromise = tm.addIntervention(
@@ -1668,8 +1750,12 @@ describe("TaskManager.addIntervention (B-4)", () => {
     const result = await addPromise;
     expect(result).toEqual({ autoResumed: true });
     expect(onResumeCalled).toHaveLength(1);
-    // onResume이 호출된 시점에는 task.runner가 undefined여야 startExecution이 throw하지 않음.
-    expect(task.runner).toBeUndefined();
+    expect(task.runner).toBeDefined();
+    expect(task.runner).not.toBe(previousRunner);
+    expect(task.executionOwnership).toMatchObject({
+      ownerKind: "in_process",
+      ownershipGeneration: 1,
+    });
   });
 
   it("completed task에 stale engine만 남아도 정리 후 auto-resume한다", async () => {
@@ -1684,13 +1770,14 @@ describe("TaskManager.addIntervention (B-4)", () => {
     task.completedAt = new Date();
 
     const close = vi.fn().mockResolvedValue(undefined);
-    task.runner = createInProcessTaskRunnerRuntime({
+    const staleRunner = createInProcessTaskRunnerRuntime({
       backendId: "claude",
       workspaceDir: "/tmp/claude-work",
       execute: vi.fn(),
       interrupt: vi.fn(),
       close,
     } as unknown as EnginePort);
+    task.runner = staleRunner;
     task.executionPromise = undefined;
 
     const onResume = vi.fn((resumedTask: Task) => {
@@ -1702,7 +1789,12 @@ describe("TaskManager.addIntervention (B-4)", () => {
     ).resolves.toEqual({ autoResumed: true });
 
     expect(close).toHaveBeenCalledTimes(1);
-    expect(task.runner).toBeUndefined();
+    expect(task.runner).toBeDefined();
+    expect(task.runner).not.toBe(staleRunner);
+    expect(task.executionOwnership).toMatchObject({
+      ownerKind: "in_process",
+      ownershipGeneration: 1,
+    });
     expect(onResume).toHaveBeenCalledWith(task);
   });
 
@@ -2010,7 +2102,10 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
       "s1",
       expect.objectContaining({ type: "user_message", text: "재개" }),
     );
-    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.acquireExecutionOwnershipAndWaitForApplication,
+    ).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(0);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
@@ -2028,7 +2123,10 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
       "s1",
       expect.objectContaining({ type: "user_message", text: "x" }),
     );
-    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.acquireExecutionOwnershipAndWaitForApplication,
+    ).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(0);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
@@ -2141,7 +2239,10 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       "sess-evicted",
       expect.objectContaining({ type: "user_message", text: "이어서" }),
     );
-    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.acquireExecutionOwnershipAndWaitForApplication,
+    ).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(0);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
     expect(mocks.updateSession).not.toHaveBeenCalled();
@@ -2197,7 +2298,10 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
         text: "resume from last event",
       }),
     );
-    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.acquireExecutionOwnershipAndWaitForApplication,
+    ).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(0);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(mocks.updateSession).not.toHaveBeenCalled();
     expect(onResume).toHaveBeenCalledWith(memTask);
