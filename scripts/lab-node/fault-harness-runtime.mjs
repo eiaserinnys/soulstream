@@ -463,6 +463,37 @@ export class LabRuntime {
     );
   }
 
+  async waitForEventIngressDeadLetterSince(
+    sessionId,
+    sourceSeq,
+    offset,
+    timeoutMs = 75_000,
+  ) {
+    assertIdentifier(sessionId, "session id");
+    if (!Number.isSafeInteger(sourceSeq) || sourceSeq < 1) {
+      throw new Error(`invalid event ingress source sequence: ${sourceSeq}`);
+    }
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error(`invalid node log offset: ${offset}`);
+    }
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const log = await readFile(this.nodeLog);
+      const from = offset <= log.length ? offset : 0;
+      const deadLetter = eventIngressDeadLetters(
+        log.subarray(from).toString("utf8"),
+      ).find((candidate) => (
+        candidate.sessionId === sessionId && candidate.sourceSeq === sourceSeq
+      ));
+      if (deadLetter) return deadLetter;
+      await delay(500);
+    }
+    throw new Error(
+      `node log did not show event ingress dead-letter for ${sessionId}:${sourceSeq} `
+      + `after offset ${offset}`,
+    );
+  }
+
   async waitForTerminalRunnerRetirementSince(
     sessionId,
     offset,
@@ -716,6 +747,59 @@ export class LabRuntime {
       `follow-up runner registration did not replace baseline: ${sessionId}`,
       100,
     );
+  }
+
+  async observeDistinctRunnerRegistrationInventoryUntil(
+    sessionId,
+    baselineRegistrationId,
+    completionPromise,
+    seed = [],
+  ) {
+    assertIdentifier(sessionId, "session id");
+    assertIdentifier(baselineRegistrationId, "registration id");
+    const samples = [];
+    const record = (registration) => {
+      if (
+        registration?.present
+        && registration.registrationId !== baselineRegistrationId
+      ) {
+        samples.push({
+          registrationId: registration.registrationId,
+          identityPid: registration.identityPid,
+        });
+      }
+    };
+    for (const registration of seed) record(registration);
+    let complete = false;
+    const completion = Promise.resolve(completionPromise).then(
+      () => { complete = true; },
+      () => { complete = true; },
+    );
+    while (!complete) {
+      record(await this.runnerExecutionRegistration(sessionId));
+      await Promise.race([delay(100), completion]);
+    }
+    record(await this.runnerExecutionRegistration(sessionId));
+    return distinctRunnerRegistrationInventory(samples, baselineRegistrationId);
+  }
+
+  async executionAcquireEnvelopeSourceSeq(sessionId, registrationId, pid) {
+    assertIdentifier(sessionId, "session id");
+    assertIdentifier(registrationId, "registration id");
+    if (!Number.isSafeInteger(pid) || pid < 1) throw new Error(`invalid runner pid: ${pid}`);
+    const text = await readFile(join(this.root, "outbox", "events.jsonl"), "utf8");
+    const matches = executionAcquireEnvelopes(text).filter((envelope) => (
+      envelope.sessionId === sessionId
+      && envelope.registrationId === registrationId
+      && envelope.pid === pid
+    ));
+    if (matches.length !== 1) {
+      throw new Error(
+        `expected one execution acquire envelope for ${sessionId}:${registrationId}:${pid}, `
+        + `found ${matches.length}`,
+      );
+    }
+    return matches[0].sourceSeq;
   }
 
   async executionCommandFingerprint(executionCommandId) {
@@ -1167,6 +1251,73 @@ export function terminalRunnerRetirements(logText) {
     } catch {}
   }
   return retirements;
+}
+
+export function eventIngressDeadLetters(logText) {
+  const deadLetters = [];
+  for (const line of logText.split("\n")) {
+    if (!line.includes("REPEATED_FAILURE")) continue;
+    try {
+      const record = JSON.parse(line);
+      if (typeof record.sessionId !== "string") continue;
+      if (record.err?.code !== "REPEATED_FAILURE") continue;
+      deadLetters.push({
+        time: record.time,
+        sessionId: record.sessionId,
+        sourceSeq: record.err.sourceSeq,
+        code: record.err.code,
+        rejectedAt: record.err.rejectedAt,
+      });
+    } catch {}
+  }
+  return deadLetters;
+}
+
+export function executionAcquireEnvelopes(logText) {
+  const envelopes = [];
+  for (const line of logText.split("\n")) {
+    if (!line.includes('"kind":"execution_acquire"')) continue;
+    try {
+      const record = JSON.parse(line);
+      const effect = record.session_effect;
+      if (effect?.kind !== "execution_acquire") continue;
+      if (!Number.isSafeInteger(record.source_seq) || record.source_seq < 1) continue;
+      envelopes.push({
+        sourceSeq: record.source_seq,
+        sessionId: record.session_id,
+        registrationId: effect.registration_id,
+        pid: effect.pid,
+      });
+    } catch {}
+  }
+  return envelopes;
+}
+
+export function distinctRunnerRegistrationInventory(samples, baselineRegistrationId) {
+  const registrationIds = new Set();
+  const pids = new Set();
+  const identities = new Map();
+  for (const sample of samples) {
+    if (
+      !sample
+      || sample.registrationId === baselineRegistrationId
+      || typeof sample.registrationId !== "string"
+      || !Number.isSafeInteger(sample.identityPid)
+      || sample.identityPid < 1
+    ) continue;
+    registrationIds.add(sample.registrationId);
+    pids.add(sample.identityPid);
+    identities.set(`${sample.registrationId}:${sample.identityPid}`, {
+      registrationId: sample.registrationId,
+      identityPid: sample.identityPid,
+    });
+  }
+  return {
+    observations: [...identities.values()],
+    registrationCount: registrationIds.size,
+    pidCount: pids.size,
+    identityCount: identities.size,
+  };
 }
 
 function requireEnv(env, key) {

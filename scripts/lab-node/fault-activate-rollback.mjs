@@ -4,6 +4,8 @@ export const ACTIVATE_ROLLBACK_MUTATIONS = Object.freeze([
   "cleanup_removed",
 ]);
 
+export const ACTIVATE_ROLLBACK_RETRY_BUDGET = 5;
+
 export function requestedActivateRollbackMutation(env = process.env) {
   const mutation = env.LAB_ACTIVATE_ROLLBACK_MUTATION;
   if (mutation === undefined || mutation === "") return null;
@@ -15,16 +17,23 @@ export function requestedActivateRollbackMutation(env = process.env) {
 
 export function activateRollbackViolations(observation) {
   const violations = [];
-  if (observation.semanticReachCount !== 1) {
-    violations.push(
-      `sessions_row_acquire_transition_reach_count:${observation.semanticReachCount}`,
-    );
-  }
   if (observation.baselineAdmissionDrained !== true) {
     violations.push("baseline_execution_admission_not_drained");
   }
   if (observation.followupAdmissionDistinct !== true) {
     violations.push("followup_execution_admission_not_distinct");
+  }
+  if (
+    observation.followupRegistrationObservationCount !== 1
+    || observation.followupPidObservationCount !== 1
+    || observation.followupRegistrationIdentityObservationCount !== 1
+  ) {
+    violations.push(
+      "followup_runner_readmission:"
+      + `${observation.followupRegistrationObservationCount}/`
+      + `${observation.followupPidObservationCount}/`
+      + observation.followupRegistrationIdentityObservationCount,
+    );
   }
   if (observation.followupRegistrationId === observation.baselineRegistrationId) {
     violations.push("followup_runner_registration_reused");
@@ -53,8 +62,35 @@ export function activateRollbackViolations(observation) {
     );
   }
   if (observation.childAlive) violations.push("runner_child_live");
+  if (observation.registrationPresent) violations.push("runner_registration_present");
   if (observation.markerCount !== 0) {
     violations.push(`assistant_marker_emitted:${observation.markerCount}`);
+  }
+  if (
+    !Number.isSafeInteger(observation.semanticReachCount)
+    || observation.semanticReachCount < 1
+    || observation.semanticReachCount > ACTIVATE_ROLLBACK_RETRY_BUDGET
+  ) {
+    violations.push(
+      `sessions_row_acquire_transition_reach_count:${observation.semanticReachCount}`,
+    );
+  }
+  if (
+    observation.retryHorizonStable !== true
+    || observation.semanticReachCountBeforeHorizon !== observation.semanticReachCount
+  ) {
+    violations.push(
+      "sessions_row_acquire_transition_retry_horizon_unstable:"
+      + `${observation.semanticReachCountBeforeHorizon}->${observation.semanticReachCount}`,
+    );
+  }
+  if (observation.deadLetterCode !== "REPEATED_FAILURE") {
+    violations.push(`event_ingress_dead_letter:${observation.deadLetterCode ?? "missing"}`);
+  } else if (observation.deadLetterSourceSeq !== observation.faultEnvelopeSourceSeq) {
+    violations.push(
+      `event_ingress_dead_letter_source_seq:${observation.faultEnvelopeSourceSeq}`
+      + `->${observation.deadLetterSourceSeq}`,
+    );
   }
   return violations;
 }

@@ -254,6 +254,18 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
   assert.match(scenarios, /activate-rollback injection and cleanup failed/);
   assert.match(scenarios, /activate-rollback contract failed/);
   assert.match(scenarios, /semanticReachCount: reach\.semanticReachCount/);
+  assert.match(scenarios, /deadLetterCode: deadLetterOutcome\.status === "fulfilled"/);
+  assert.match(scenarios, /followupRegistrationObservationCount/);
+  assert.match(scenarios, /followupPidObservationCount/);
+  assert.match(scenarios, /faultEnvelopeSourceSeq/);
+  assert.match(scenarios, /deadLetterSourceSeq/);
+  assert.match(scenarios, /followupRegistrationIdentityObservationCount/);
+  assert.match(scenarios, /followupAdmissions:/);
+  assert.match(scenarios, /faultEnvelopeSourceSeq: observation\.faultEnvelopeSourceSeq/);
+  assert.match(runtime, /waitForEventIngressDeadLetterSince/);
+  assert.match(runtime, /candidate\.sourceSeq === sourceSeq/);
+  assert.match(runtime, /observeDistinctRunnerRegistrationInventoryUntil/);
+  assert.match(runtime, /executionAcquireEnvelopeSourceSeq/);
   assert.match(runtime, /CREATE SEQUENCE lab_fault_execution_acquire_reach_seq/);
   assert.match(runtime, /nextval\('lab_fault_execution_acquire_reach_seq'/);
   assert.match(runtime, /lab_fault_execution_acquire_generation_seq/);

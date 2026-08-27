@@ -28,6 +28,7 @@ import {
   withBaselineHonesty,
 } from "./fault-scenario-result.mjs";
 import {
+  ACTIVATE_ROLLBACK_RETRY_BUDGET,
   activateRollbackMutationDetection,
   activateRollbackViolations,
   requestedActivateRollbackMutation,
@@ -561,6 +562,7 @@ const SCENARIOS = {
     });
     await runtime.installActivationFailureFault(8, mutation);
     try {
+      const faultObservationOffset = await runtime.nodeLogOffset();
       const deliveryId = randomUUID();
       const interventionOutcomePromise = settle(runtime.intervene(
         sessionId,
@@ -586,6 +588,11 @@ const SCENARIOS = {
       );
       const followupRegistration = followupRegistrationOutcome.value;
       runner = { pid: followupRegistration.identityPid };
+      const faultEnvelopeSourceSeq = await runtime.executionAcquireEnvelopeSourceSeq(
+        sessionId,
+        followupRegistration.registrationId,
+        followupRegistration.identityPid,
+      );
       const followupAdmissionDistinct = followupRegistration.registrationId
           !== baselineAdmission.registrationId
         && initialReach.attemptedGeneration === before.executionGeneration + 1
@@ -602,6 +609,22 @@ const SCENARIOS = {
         followupRegistration,
         baselineAdmission,
       });
+      const deadLetterPromise = mutation === "raise_removed"
+          || mutation === "predicate_misplaced"
+        ? Promise.resolve({ status: "not_expected", value: null })
+        : settle(runtime.waitForEventIngressDeadLetterSince(
+          sessionId,
+          faultEnvelopeSourceSeq,
+          faultObservationOffset,
+        ));
+      const followupInventoryPromise = runtime.observeDistinctRunnerRegistrationInventoryUntil(
+        sessionId,
+        baselineAdmission.registrationId,
+        mutation === "raise_removed" || mutation === "predicate_misplaced"
+          ? interventionOutcomePromise
+          : deadLetterPromise,
+        [followupRegistration],
+      );
       const interventionOutcome = await interventionOutcomePromise;
       if (mutation === "raise_removed" || mutation === "predicate_misplaced") {
         await settle(runtime.waitForMarker(sessionId, rejectedMarker, 120_000));
@@ -616,15 +639,13 @@ const SCENARIOS = {
           100,
         );
       }
-      const reach = await runtime.activationFailureFaultCountAfterHorizon(
-        ACTIVATE_ROLLBACK_RETRY_HORIZON_MS,
-      );
-      const expectedReachCount = mutation === "predicate_misplaced" ? 0 : 1;
-      assertScenario(
-        reach.stable && reach.semanticReachCount === expectedReachCount,
-        "activate rollback semantic reach count was not stable through the retry horizon: "
-          + `${reach.semanticReachCountBeforeHorizon}->${reach.semanticReachCount}`,
-      );
+      const [reach, followupInventory, deadLetterOutcome] = await Promise.all([
+        runtime.activationFailureFaultCountAfterHorizon(
+          ACTIVATE_ROLLBACK_RETRY_HORIZON_MS,
+        ),
+        followupInventoryPromise,
+        deadLetterPromise,
+      ]);
       const after = await runtime.sessionExecutionOwnership(sessionId);
       const markerCount = await runtime.countTimelineEvents(
         sessionId,
@@ -634,9 +655,22 @@ const SCENARIOS = {
       const observation = {
         semanticReachCount: reach.semanticReachCount,
         semanticReachCountBeforeHorizon: reach.semanticReachCountBeforeHorizon,
+        retryHorizonStable: reach.stable,
+        retryBudget: ACTIVATE_ROLLBACK_RETRY_BUDGET,
         retryHorizonMs: reach.retryHorizonMs,
+        faultEnvelopeSourceSeq,
+        deadLetterCode: deadLetterOutcome.status === "fulfilled"
+          ? deadLetterOutcome.value.code
+          : null,
+        deadLetterSourceSeq: deadLetterOutcome.status === "fulfilled"
+          ? deadLetterOutcome.value.sourceSeq
+          : null,
         baselineAdmissionDrained: true,
         followupAdmissionDistinct,
+        followupRegistrationObservationCount: followupInventory.registrationCount,
+        followupPidObservationCount: followupInventory.pidCount,
+        followupRegistrationIdentityObservationCount: followupInventory.identityCount,
+        followupRegistrationObservations: followupInventory.observations,
         baselineRegistrationId: baselineAdmission.registrationId,
         followupRegistrationId: followupRegistration.registrationId,
         baselineCommandFingerprint: baselineAdmission.commandFingerprint,
@@ -671,6 +705,18 @@ const SCENARIOS = {
       const verdict = {
         mutation,
         semanticReachCount: observation.semanticReachCount,
+        retryBudget: observation.retryBudget,
+        retryHorizonStable: observation.retryHorizonStable,
+        deadLetter: {
+          code: observation.deadLetterCode,
+          faultEnvelopeSourceSeq: observation.faultEnvelopeSourceSeq,
+          sourceSeq: observation.deadLetterSourceSeq,
+        },
+        followupAdmissions: {
+          registrationCount: observation.followupRegistrationObservationCount,
+          pidCount: observation.followupPidObservationCount,
+          identityCount: observation.followupRegistrationIdentityObservationCount,
+        },
         acquireApplied: observation.acquireApplied,
         generation: [observation.generationBefore, observation.generationAfter],
         terminalRevision: [
