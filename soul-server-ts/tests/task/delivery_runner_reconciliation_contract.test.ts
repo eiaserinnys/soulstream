@@ -222,7 +222,7 @@ function makeHarness(input: {
     const result = await route.addIntervention({
       agentSessionId: task.agentSessionId,
       ...message,
-    }, (resumedTask) => executor.startExecutionWithRunner(resumedTask, agent, runner));
+    }, (resumedTask, activation) => executor.startExecution(resumedTask, agent, activation));
     await task.executionPromise;
     return result;
   };
