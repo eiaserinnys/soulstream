@@ -1030,9 +1030,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
     const task = makeTask({ status: "completed" });
     const { route, autoResumeTransition, sessionNotificationPublisher } =
       makeSubject([task], gate);
+    const activation = activationBarrier(Promise.resolve());
     vi.mocked(autoResumeTransition.resume).mockImplementation(
       async (resumedTask, _message, callback) => {
-        callback(resumedTask);
+        callback(resumedTask, activation);
         return { autoResumed: true };
       },
     );
@@ -1050,7 +1051,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }, onResume)).rejects.toBe(stageError);
 
     expect(onResume).toHaveBeenCalledTimes(1);
-    expect(onResume).toHaveBeenCalledWith(task);
+    expect(onResume).toHaveBeenCalledWith(task, activation);
     expect(gate.recordFailure).toHaveBeenCalledTimes(1);
     expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
   });

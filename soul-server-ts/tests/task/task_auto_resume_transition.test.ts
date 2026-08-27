@@ -295,7 +295,14 @@ describe("AutoResumeTransition", () => {
         workspace_dir: "/tmp/db-profile",
       },
     });
-    const onResume = vi.fn();
+    let forwardedActivation: Task["executionActivation"];
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: Task["executionActivation"],
+    ) => {
+      expect(activation).toBe(resumedTask.executionActivation);
+      forwardedActivation = activation;
+    });
     const transition = new AutoResumeTransition({
       persistence: makeEventPersistenceTestDouble().persistence,
       logger: silentLogger,
@@ -305,7 +312,8 @@ describe("AutoResumeTransition", () => {
     await expect(
       transition.resume(task, { text: "resume", user: "u" }, onResume),
     ).resolves.toEqual({ autoResumed: true });
-    expect(onResume).toHaveBeenCalledWith(task);
+    expect(onResume).toHaveBeenCalledWith(task, forwardedActivation);
+    expect(forwardedActivation).toBe(task.executionActivation);
   });
 
   it("clears termination state so a resumed turn can finalize with a fresh session_ended event", async () => {
@@ -420,16 +428,23 @@ describe("AutoResumeTransition", () => {
       logger: silentLogger,
       persistence: makeEventPersistenceTestDouble().persistence,
     });
-    const onResume = vi.fn((resumedTask: Task) => {
+    let forwardedActivation: Task["executionActivation"];
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: Task["executionActivation"],
+    ) => {
       expect(resumedTask.runner).toBe(runner);
       expect(resumedTask.runnerRetainedForClaudeBackground).toBe(true);
       expect(resumedTask.executionPromise).toBeUndefined();
+      expect(activation).toBe(resumedTask.executionActivation);
+      forwardedActivation = activation;
     });
 
     await transition.resume(task, { text: "runtime result", user: "system" }, onResume);
 
     expect(close).not.toHaveBeenCalled();
-    expect(onResume).toHaveBeenCalledWith(task);
+    expect(onResume).toHaveBeenCalledWith(task, forwardedActivation);
+    expect(forwardedActivation).toBe(task.executionActivation);
   });
 
   it("auto-acknowledges a needs_review result before terminal follow-up resumes", async () => {
