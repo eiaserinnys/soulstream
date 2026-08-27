@@ -599,7 +599,10 @@ const SCENARIOS = {
       const confirmedPredicateReach = mutation === "predicate_misplaced"
         ? await runtime.activationFailureFaultCount()
         : null;
-      const mutationObservation = confirmedPredicateReach === null
+      const predicateZeroConfirmed = mutation === "predicate_misplaced"
+        && initialReach.semanticReachCount === 0
+        && confirmedPredicateReach?.semanticReachCount === 0;
+      const mutationObservation = !predicateZeroConfirmed
         ? null
         : {
             sentinel: "sessions_row_acquire_transition_not_reached",
@@ -665,6 +668,9 @@ const SCENARIOS = {
             rejectedMarker,
           ),
         });
+      } else if (mutation === "predicate_misplaced" && !predicateZeroConfirmed) {
+        await settle(runtime.waitForMarker(sessionId, rejectedMarker, 120_000));
+        await settle(runtime.waitForTerminal(sessionId, 30_000));
       } else if (mutation === "cleanup_removed") {
         await delay(2_000);
       } else if (mutation !== "predicate_misplaced") {
