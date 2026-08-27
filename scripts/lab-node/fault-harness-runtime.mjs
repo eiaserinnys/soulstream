@@ -472,13 +472,29 @@ export class LabRuntime {
       DROP TRIGGER IF EXISTS lab_fault_fail_execution_acquire ON sessions;
       DROP FUNCTION IF EXISTS lab_fault_fail_execution_acquire();
       DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_reach_seq;
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_generation_seq;
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_command_seq;
       CREATE SEQUENCE lab_fault_execution_acquire_reach_seq
         START WITH 1 INCREMENT BY 1 MINVALUE 1;
+      CREATE SEQUENCE lab_fault_execution_acquire_generation_seq
+        START WITH 1 INCREMENT BY 1 MINVALUE 0;
+      CREATE SEQUENCE lab_fault_execution_acquire_command_seq
+        START WITH 1 INCREMENT BY 1 MINVALUE -2147483648 MAXVALUE 2147483647;
       CREATE OR REPLACE FUNCTION lab_fault_fail_execution_acquire()
       RETURNS trigger LANGUAGE plpgsql AS $lab$
       BEGIN
         IF ${predicate} THEN
           PERFORM nextval('lab_fault_execution_acquire_reach_seq');
+          PERFORM setval(
+            'lab_fault_execution_acquire_generation_seq',
+            NEW.execution_generation,
+            true
+          );
+          PERFORM setval(
+            'lab_fault_execution_acquire_command_seq',
+            hashtext(NEW.execution_command_id),
+            true
+          );
           PERFORM pg_advisory_xact_lock(741925, 2);
           PERFORM pg_sleep(${delaySeconds});
           ${rejectTransition}
@@ -509,9 +525,19 @@ export class LabRuntime {
   async activationFailureFaultCount() {
     return await this.psqlOne(`
       SELECT json_build_object(
-        'semanticReachCount', CASE WHEN is_called THEN last_value ELSE 0 END
+        'semanticReachCount', CASE
+          WHEN reach.is_called THEN reach.last_value ELSE 0
+        END,
+        'attemptedGeneration', CASE
+          WHEN generation.is_called THEN generation.last_value ELSE NULL
+        END,
+        'attemptedCommandFingerprint', CASE
+          WHEN command.is_called THEN command.last_value::text ELSE NULL
+        END
       )
-      FROM lab_fault_execution_acquire_reach_seq
+      FROM lab_fault_execution_acquire_reach_seq AS reach,
+        lab_fault_execution_acquire_generation_seq AS generation,
+        lab_fault_execution_acquire_command_seq AS command
     `);
   }
 
@@ -525,6 +551,8 @@ export class LabRuntime {
     return {
       semanticReachCount: after.semanticReachCount,
       semanticReachCountBeforeHorizon: before.semanticReachCount,
+      attemptedGeneration: after.attemptedGeneration,
+      attemptedCommandFingerprint: after.attemptedCommandFingerprint,
       retryHorizonMs: horizonMs,
       stable: before.semanticReachCount === after.semanticReachCount,
     };
@@ -544,10 +572,18 @@ export class LabRuntime {
           WHERE namespace.nspname = current_schema()
             AND procedure.proname = 'lab_fault_fail_execution_acquire'
         ),
-        'counterCount', CASE
-          WHEN to_regclass('lab_fault_execution_acquire_reach_seq') IS NULL THEN 0
-          ELSE 1
-        END
+        'counterCount', (
+          SELECT COUNT(*)::integer
+          FROM pg_class AS relation
+          JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = current_schema()
+            AND relation.relkind = 'S'
+            AND relation.relname IN (
+              'lab_fault_execution_acquire_reach_seq',
+              'lab_fault_execution_acquire_generation_seq',
+              'lab_fault_execution_acquire_command_seq'
+            )
+        )
       )
     `);
   }
@@ -559,6 +595,8 @@ export class LabRuntime {
       DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation ON session_execution_ownerships;
       DROP FUNCTION IF EXISTS lab_fault_fail_execution_activation();
       DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_reach_seq;
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_generation_seq;
+      DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_command_seq;
       SELECT json_build_object('removed', true);
     `);
   }
@@ -589,6 +627,36 @@ export class LabRuntime {
         ? identity.registrationId
         : null,
     };
+  }
+
+  async waitForDistinctRunnerRegistration(
+    sessionId,
+    baselineRegistrationId,
+    timeoutMs = 30_000,
+  ) {
+    return await waitFor(
+      async () => {
+        const registration = await this.runnerExecutionRegistration(sessionId);
+        return registration.present
+          && registration.registrationId !== baselineRegistrationId
+          && this.runnerAlive(registration.identityPid)
+          ? registration
+          : undefined;
+      },
+      timeoutMs,
+      `follow-up runner registration did not replace baseline: ${sessionId}`,
+      100,
+    );
+  }
+
+  async executionCommandFingerprint(executionCommandId) {
+    assertIdentifier(executionCommandId, "execution command id");
+    const value = await this.psqlOne(`
+      SELECT json_build_object(
+        'fingerprint', hashtext(${sqlLiteral(executionCommandId)})::text
+      )
+    `);
+    return value?.fingerprint ?? null;
   }
 
   async removeLabRunnerRegistration(sessionId, expectedPid) {

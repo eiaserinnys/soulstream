@@ -256,6 +256,8 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
   assert.match(scenarios, /semanticReachCount: reach\.semanticReachCount/);
   assert.match(runtime, /CREATE SEQUENCE lab_fault_execution_acquire_reach_seq/);
   assert.match(runtime, /nextval\('lab_fault_execution_acquire_reach_seq'/);
+  assert.match(runtime, /lab_fault_execution_acquire_generation_seq/);
+  assert.match(runtime, /lab_fault_execution_acquire_command_seq/);
   assert.match(runtime, /last_value/);
   assert.match(runtime, /DROP SEQUENCE IF EXISTS lab_fault_execution_acquire_reach_seq/);
   assert.doesNotMatch(runtime, /return \{ semanticReachCount: 1 \}/);
@@ -264,6 +266,8 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
     scenarios.indexOf("registrationPresent: (await runtime.runnerExecutionRegistration")
       < scenarios.indexOf("runtime.terminateObservedLabRunnerRegistration"),
   );
+  assert.match(scenarios, /waitForRunnerOperationStateSince/);
+  assert.match(scenarios, /followupAdmissionDistinct/);
   assert.ok(
     scenarios.indexOf('recorder.event("fault_reached"')
       < scenarios.indexOf("activate rollback left the spawned child live"),

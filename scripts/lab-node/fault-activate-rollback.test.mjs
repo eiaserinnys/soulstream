@@ -9,6 +9,13 @@ import {
 
 const CLEAN_OBSERVATION = Object.freeze({
   semanticReachCount: 1,
+  baselineAdmissionDrained: true,
+  followupAdmissionDistinct: true,
+  baselineRegistrationId: "registration-baseline",
+  followupRegistrationId: "registration-followup",
+  baselineCommandFingerprint: "101",
+  attemptedCommandFingerprint: "202",
+  attemptedGeneration: 5,
   acquireApplied: false,
   generationBefore: 4,
   generationAfter: 4,
@@ -25,6 +32,11 @@ test("activate rollback accepts only an observed rolled-back sessions-row acquir
   for (const mutation of [
     { semanticReachCount: 0 },
     { semanticReachCount: 2 },
+    { baselineAdmissionDrained: false },
+    { followupAdmissionDistinct: false },
+    { followupRegistrationId: "registration-baseline" },
+    { attemptedCommandFingerprint: "101" },
+    { attemptedGeneration: 4 },
     { acquireApplied: true },
     { generationAfter: 5 },
     { ownerAfter: { manifestId: "manifest" } },

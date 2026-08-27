@@ -20,6 +20,23 @@ export function activateRollbackViolations(observation) {
       `sessions_row_acquire_transition_reach_count:${observation.semanticReachCount}`,
     );
   }
+  if (observation.baselineAdmissionDrained !== true) {
+    violations.push("baseline_execution_admission_not_drained");
+  }
+  if (observation.followupAdmissionDistinct !== true) {
+    violations.push("followup_execution_admission_not_distinct");
+  }
+  if (observation.followupRegistrationId === observation.baselineRegistrationId) {
+    violations.push("followup_runner_registration_reused");
+  }
+  if (observation.attemptedCommandFingerprint === observation.baselineCommandFingerprint) {
+    violations.push("followup_execution_command_reused");
+  }
+  if (observation.attemptedGeneration !== observation.generationBefore + 1) {
+    violations.push(
+      `attempted_execution_generation:${observation.attemptedGeneration}`,
+    );
+  }
   if (observation.acquireApplied) violations.push("acquire_applied");
   if (observation.generationAfter !== observation.generationBefore) {
     violations.push(

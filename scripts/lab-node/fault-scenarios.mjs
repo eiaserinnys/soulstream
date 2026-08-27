@@ -486,8 +486,31 @@ const SCENARIOS = {
     let cleanupResidue;
     let postCleanupRegistration;
     let postCleanupOwnership;
+    const baselineOperationOffset = await runtime.nodeLogOffset();
     const sessionId = await runtime.createSession(`Reply with exactly ${baselineMarker}.`);
-    await runtime.waitForRunner(sessionId);
+    const baselineRunner = await runtime.waitForRunner(sessionId);
+    const baselineActiveOperation = await runtime.waitForRunnerOperationStateSince(
+      sessionId,
+      baselineOperationOffset,
+      true,
+    );
+    const baselineOwnership = await waitFor(
+      async () => {
+        const snapshot = await runtime.sessionExecutionOwnership(sessionId);
+        return snapshot?.owner !== null ? snapshot : undefined;
+      },
+      30_000,
+      "activate-rollback baseline never acquired sessions-row execution ownership",
+      100,
+    );
+    assertScenario(
+      baselineOwnership.owner.pid === baselineRunner.pid,
+      "activate-rollback baseline runner did not match sessions-row owner",
+    );
+    const baselineCommandFingerprint = await runtime.executionCommandFingerprint(
+      baselineOwnership.owner.executionCommandId,
+    );
+    const baselineDrainOffset = await runtime.nodeLogOffset();
     await runtime.waitForMarker(sessionId, baselineMarker);
     await runtime.waitForTerminal(sessionId);
     const before = await waitFor(
@@ -504,6 +527,25 @@ const SCENARIOS = {
       "activate-rollback baseline did not settle with an ownerless terminal revision",
       250,
     );
+    const baselineInactiveOperation = await runtime.waitForRunnerOperationStateSince(
+      sessionId,
+      baselineDrainOffset,
+      false,
+    );
+    const baselineAdmission = {
+      pid: baselineRunner.pid,
+      executionGeneration: baselineOwnership.executionGeneration,
+      registrationId: baselineOwnership.owner.registrationId,
+      executionCommandId: baselineOwnership.owner.executionCommandId,
+      commandFingerprint: baselineCommandFingerprint,
+      activeOperationAt: baselineActiveOperation.time,
+      inactiveOperationAt: baselineInactiveOperation.time,
+    };
+    await recorder.event("baseline_admission_drained", {
+      id: "activate-rollback",
+      sessionId,
+      baselineAdmission,
+    });
     await runtime.installActivationFailureFault(8, mutation);
     try {
       const deliveryId = randomUUID();
@@ -514,16 +556,38 @@ const SCENARIOS = {
           `Reply with exactly ${rejectedMarker}.`,
         ),
       ));
-      runner = await runtime.waitForRunner(sessionId);
+      const followupRegistrationPromise = settle(
+        runtime.waitForDistinctRunnerRegistration(
+          sessionId,
+          baselineAdmission.registrationId,
+        ),
+      );
       const initialReach = await runtime.waitForActivationFailureFault(
         mutation === "predicate_misplaced" ? 5_000 : 30_000,
       );
+      const followupRegistrationOutcome = await followupRegistrationPromise;
+      assertScenario(
+        followupRegistrationOutcome.status === "fulfilled",
+        `activate rollback did not observe a distinct follow-up runner: `
+          + `${followupRegistrationOutcome.reason?.message ?? "unknown"}`,
+      );
+      const followupRegistration = followupRegistrationOutcome.value;
+      runner = { pid: followupRegistration.identityPid };
+      const followupAdmissionDistinct = followupRegistration.registrationId
+          !== baselineAdmission.registrationId
+        && initialReach.attemptedGeneration === before.executionGeneration + 1
+        && initialReach.attemptedCommandFingerprint !== null
+        && initialReach.attemptedCommandFingerprint !== baselineAdmission.commandFingerprint;
       await recorder.event("fault_reached", {
         id: "activate-rollback",
         sessionId,
         runnerPid: runner.pid,
         mutation,
         semanticReachCount: initialReach.semanticReachCount,
+        attemptedGeneration: initialReach.attemptedGeneration,
+        attemptedCommandFingerprint: initialReach.attemptedCommandFingerprint,
+        followupRegistration,
+        baselineAdmission,
       });
       const interventionOutcome = await interventionOutcomePromise;
       if (mutation === "raise_removed" || mutation === "predicate_misplaced") {
@@ -558,6 +622,13 @@ const SCENARIOS = {
         semanticReachCount: reach.semanticReachCount,
         semanticReachCountBeforeHorizon: reach.semanticReachCountBeforeHorizon,
         retryHorizonMs: reach.retryHorizonMs,
+        baselineAdmissionDrained: true,
+        followupAdmissionDistinct,
+        baselineRegistrationId: baselineAdmission.registrationId,
+        followupRegistrationId: followupRegistration.registrationId,
+        baselineCommandFingerprint: baselineAdmission.commandFingerprint,
+        attemptedCommandFingerprint: reach.attemptedCommandFingerprint,
+        attemptedGeneration: reach.attemptedGeneration,
         acquireApplied: after.executionGeneration !== before.executionGeneration
           || after.owner !== null,
         generationBefore: before.executionGeneration,
