@@ -121,7 +121,6 @@ export class TaskLifecycleTransition {
   }
 
   private retryUserStopFinalization(task: Task): Promise<boolean> {
-    if (!task.runner) return Promise.resolve(false);
     return this.finalizeUserStop(
       task,
       task.runner,
@@ -132,7 +131,7 @@ export class TaskLifecycleTransition {
 
   private async finalizeUserStop(
     task: Task,
-    runner: NonNullable<Task["runner"]>,
+    runner: Task["runner"],
     executionPromise: Promise<void> | undefined,
     interrupted: boolean,
   ): Promise<boolean> {
@@ -164,15 +163,17 @@ export class TaskLifecycleTransition {
       return false;
     }
 
-    try {
-      await runner.dispatcher.close();
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "runner close failed after explicit stop was fenced",
-      );
+    if (runner) {
+      try {
+        await runner.dispatcher.close();
+      } catch (err) {
+        this.deps.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "runner close failed after explicit stop was fenced",
+        );
+      }
+      releaseTaskRunner(task, runner);
     }
-    releaseTaskRunner(task, runner);
     if (task.executionPromise === executionPromise) {
       task.executionPromise = undefined;
     }
