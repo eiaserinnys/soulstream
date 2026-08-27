@@ -27,6 +27,20 @@ const CLEAN_OBSERVATION = Object.freeze({
   markerCount: 0,
 });
 
+test("activate rollback accepts transactional retries that dead-letter without applying state", () => {
+  assert.deepEqual(activateRollbackViolations({
+    ...CLEAN_OBSERVATION,
+    semanticReachCount: 2,
+    semanticReachCountBeforeHorizon: 2,
+    retryHorizonStable: true,
+    retryBudget: 5,
+    deadLetterCode: "REPEATED_FAILURE",
+    followupRegistrationObservationCount: 1,
+    followupPidObservationCount: 1,
+    registrationPresent: false,
+  }), []);
+});
+
 test("activate rollback accepts only an observed rolled-back sessions-row acquire", () => {
   assert.deepEqual(activateRollbackViolations(CLEAN_OBSERVATION), []);
   for (const mutation of [
