@@ -639,12 +639,12 @@ const SCENARIOS = {
           100,
         );
       }
-      const deadLetterOutcome = await deadLetterPromise;
-      const [reach, followupInventory] = await Promise.all([
+      const [reach, followupInventory, deadLetterOutcome] = await Promise.all([
         runtime.activationFailureFaultCountAfterHorizon(
           ACTIVATE_ROLLBACK_RETRY_HORIZON_MS,
         ),
         followupInventoryPromise,
+        deadLetterPromise,
       ]);
       const after = await runtime.sessionExecutionOwnership(sessionId);
       const markerCount = await runtime.countTimelineEvents(
