@@ -24,7 +24,7 @@ function assignCanonicalEnvironmentValue(env, name, actual) {
 }
 
 export async function applyManifestContract(manifestPath, databaseContractPath, env) {
-  if (!manifestPath && !databaseContractPath) return;
+  if (!manifestPath && !databaseContractPath) return null;
   if (!manifestPath || !databaseContractPath) {
     throw new Error("JOURNAL_GATE_FAILED: manifest and database contract must be paired");
   }
@@ -38,6 +38,11 @@ export async function applyManifestContract(manifestPath, databaseContractPath, 
   assignCanonicalEnvironmentValue(env, "HANIEL_MANIFEST_DIGEST", sha256(bytes));
   if (!manifest.migration || !manifest.environment_service) {
     throw new Error("JOURNAL_GATE_FAILED: database release manifest is incomplete");
+  }
+  const hasBackup = Object.hasOwn(manifest.migration, "backup");
+  const hasVerifyBackup = Object.hasOwn(manifest.migration, "verify_backup");
+  if (hasBackup !== hasVerifyBackup) {
+    throw new Error("JOURNAL_GATE_FAILED: inline backup commands must be declared together");
   }
   const isStringList = (value) => Array.isArray(value)
     && value.every((item) => typeof item === "string" && item.trim())
@@ -62,6 +67,7 @@ export async function applyManifestContract(manifestPath, databaseContractPath, 
     "HANIEL_DATABASE_CONTRACT_DIGEST",
     sha256(contractBytes),
   );
+  return manifest.migration;
 }
 
 export async function runDatabaseReleaseCli(
@@ -77,10 +83,15 @@ export async function runDatabaseReleaseCli(
   try {
     const manifestPath = optionArgument(args, "--manifest");
     const databaseContractPath = optionArgument(args, "--database-contract");
-    await applyManifestContract(manifestPath, databaseContractPath, env);
+    const manifestMigration = await applyManifestContract(
+      manifestPath,
+      databaseContractPath,
+      env,
+    );
     const separator = args.indexOf("--");
     stdout(serializeDatabaseReleaseResult(await runDatabaseRelease(command, {
       env,
+      manifestMigration,
       subphase: optionArgument(args, "--subphase"),
       childCommand: separator < 0 ? undefined : args.slice(separator + 1),
     }), env));

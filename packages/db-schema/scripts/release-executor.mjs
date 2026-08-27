@@ -7,6 +7,7 @@ import { runDatabaseReleaseCli } from "./database-release-cli.mjs";
 import { resolveDatabaseReleaseContext } from "./database-release-context.mjs";
 import {
   DATABASE_RELEASE_SCHEMA_VERSION,
+  assertNoInlineDatabaseReleaseGate,
   assertDatabaseReleaseIdentity,
   classifyLedgerReconciliation,
   createDatabaseReleaseJournal,
@@ -83,7 +84,17 @@ async function dispatch(command, context, options) {
   if (command === "apply") return await apply(context, options);
   if (command === "verify") return await verify(context);
   if (command === "run-subphase") return await runSubphase(context, options);
-  return await recover(context);
+  return await recover(context, options);
+}
+
+function manifestHasNoInlineBackup(manifestMigration) {
+  if (!manifestMigration || typeof manifestMigration !== "object") return false;
+  const hasBackup = Object.hasOwn(manifestMigration, "backup");
+  const hasVerifyBackup = Object.hasOwn(manifestMigration, "verify_backup");
+  if (hasBackup !== hasVerifyBackup) {
+    throw new Error("JOURNAL_GATE_FAILED: inline backup commands must be declared together");
+  }
+  return !hasBackup && !hasVerifyBackup;
 }
 
 export async function planDatabaseRelease({ expectedOperation, env = process.env, ...options }) {
@@ -335,17 +346,26 @@ async function apply(context, options) {
     if (state === "ambiguous") throw new Error("AMBIGUOUS_COMMIT_STATE");
     retryableNone = true;
   }
+  const noInlineBackup = journal.operation === "upgrade"
+    && journal.backup === null
+    && manifestHasNoInlineBackup(options.manifestMigration);
   const allowed = journal.operation === "fresh_install"
     ? journal.status === "preflight_complete" || retryableNone
-    : journal.status === "backup_verified" || retryableNone;
+    : journal.status === "backup_verified"
+      || (noInlineBackup && journal.status === "preflight_complete")
+      || (retryableNone && (journal.backup?.verified_at || noInlineBackup));
   if (!allowed) throw new Error("JOURNAL_GATE_FAILED: release phases are incomplete");
+  let noInlineEvidence = null;
   if (journal.operation === "upgrade") {
     const evidence = await readHanielReleaseEvidence({
       env: context.env,
       journal,
       phase: "apply",
     });
-    if (
+    if (noInlineBackup) {
+      assertNoInlineDatabaseReleaseGate({ journal, plan, inventory });
+      noInlineEvidence = evidence;
+    } else if (
       evidence.receipt_digest !== journal.quiescence_receipt_digest
       || evidence.owner_instance !== journal.quiescence_owner_instance
       || evidence.quiescence_nonce !== journal.quiescence_nonce
@@ -355,7 +375,14 @@ async function apply(context, options) {
   }
   journal = await transitionFrom(path, journal, "apply_started", {
     phase: "apply",
-    details: { apply_started_at: new Date().toISOString() },
+    details: {
+      apply_started_at: new Date().toISOString(),
+      ...(noInlineEvidence ? {
+        quiescence_receipt_digest: noInlineEvidence.receipt_digest,
+        quiescence_owner_instance: noInlineEvidence.owner_instance,
+        quiescence_nonce: noInlineEvidence.quiescence_nonce,
+      } : {}),
+    },
   });
   context.env.HANIEL_DATABASE_JOURNAL_REVISION = String(journal.revision);
   const mode = journal.operation === "fresh_install" ? "fresh-install" : "apply";
@@ -436,7 +463,7 @@ async function verify(context) {
   });
 }
 
-async function recover(context) {
+async function recover(context, options) {
   let { journal, path } = await currentJournal(context);
   if (journal.status === "recovered") {
     return result(context, "recovery", path, "recovered", "recovery", {
@@ -453,6 +480,28 @@ async function recover(context) {
     || context.env.HANIEL_FAILED_DATABASE_OPERATION !== journal.operation
   ) {
     throw new Error("RECOVERY_FORBIDDEN: failed operation identity differs");
+  }
+  const noInlineBackup = journal.backup === null
+    && manifestHasNoInlineBackup(options.manifestMigration)
+    && ["apply_started", "apply_failed"].includes(journal.status);
+  if (noInlineBackup) {
+    const plan = await context.planRead();
+    const inventory = await context.inventoryRead();
+    assertNoInlineDatabaseReleaseGate({ journal, plan, inventory });
+    try {
+      await readHanielReleaseEvidence({ env: context.env, journal, phase: "recovery" });
+    } catch (error) {
+      throw stableError("RECOVERY_FORBIDDEN", error);
+    }
+    journal = await transitionFrom(path, journal, "recovered", {
+      phase: "recovery",
+      details: { failed_operation: "upgrade" },
+    });
+    return result(context, "recovery", path, "recovered", "recovery", {
+      backup_path: null,
+      failed_operation: "upgrade",
+      recovered: true,
+    });
   }
   if (
     !journal.backup?.verified_at
