@@ -56,7 +56,7 @@ describe("TaskDeliveryLedgerGate", () => {
     );
   });
 
-  it("settles a live-steer apply acknowledgement as one consumed delivery", async () => {
+  it("records live-steer apply without consuming before turn success", async () => {
     const deliveryId = "78787878-7878-4878-8878-787878787878";
     const markDelivered = vi.fn(async () => ({
       ...row(deliveryId, "delivered"),
@@ -95,10 +95,7 @@ describe("TaskDeliveryLedgerGate", () => {
       deliveryId,
       `intervention:${deliveryId}`,
     );
-    expect(markConsumed).toHaveBeenCalledWith(
-      deliveryId,
-      `intervention:${deliveryId}`,
-    );
+    expect(markConsumed).not.toHaveBeenCalled();
     expect(markUncertain).not.toHaveBeenCalled();
   });
 

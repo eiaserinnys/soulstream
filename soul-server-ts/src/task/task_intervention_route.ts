@@ -22,6 +22,9 @@ import type {
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
 import { isExecutionOwnershipConflictError } from "./execution_ownership.js";
+import {
+  isNotificationDeliveryIntent,
+} from "./session_delivery_notification_payload.js";
 
 type NotificationPublication = Awaited<
   ReturnType<SessionNotificationPublisher["publish"]>
@@ -32,8 +35,8 @@ type NotificationPublication = Awaited<
  *
  * - running 세션 → `engine.intervene()`가 현재 전달하면 `{delivered: true}`,
  *   전달하지 못하면 소비 시점과 사유가 명시된 queue/defer 결과.
- * - completed/error/interrupted → `{autoResumed: true}` — task_executor.startExecution이
- *   resumeSessionId(task.codexThreadId)로 다음 turn 자동 시작.
+ * - completed/error/interrupted → 사용자 입력은 `{autoResumed: true}`, ledger로
+ *   식별된 system delivery는 다음 명시적 turn까지 queued 상태를 유지.
  */
 export type AddInterventionResult =
   | RunningInterventionResult
@@ -196,6 +199,26 @@ export class TaskInterventionRoute {
         result = await this.deps.runningInterventionTransition.deliver(task, message, {
           queueIfUndelivered: request.queueIfRunning ?? true,
         });
+        if (
+          admission.kind === "admitted"
+          && isNotificationDeliveryIntent(admission.row.intent)
+          && "queued" in result
+          && result.queued
+        ) {
+          notificationDisposition = "queued";
+        }
+      } else if (
+        admission.kind === "admitted"
+        && isNotificationDeliveryIntent(admission.row.intent)
+      ) {
+        result = {
+          delivered: false,
+          queued: true,
+          queuePosition: 1,
+          consumeWhen: "next_turn",
+          reason: "queue_only_policy",
+        };
+        notificationDisposition = "queued";
       } else if (admission.kind === "admitted") {
         const deferResumeUntilQueued: StartExecutionCallback = (resumedTask, activation) => {
           deferredResume = { task: resumedTask, activation };
@@ -210,19 +233,6 @@ export class TaskInterventionRoute {
         );
       } else {
         result = await this.deps.autoResumeTransition.resume(task, message, onResume);
-      }
-      if (
-        admission.kind === "admitted"
-        && (
-          message.deliveryIntent === "completion_notification"
-          || message.deliveryIntent === "runtime_followup"
-        )
-      ) {
-        notificationDisposition = "autoResumed" in result
-          ? "auto_resume"
-          : "queued" in result && result.queued
-            ? "queued"
-            : undefined;
       }
       if (this.deps.deliveryLedgerGate) {
         await this.deps.deliveryLedgerGate.recordResult(

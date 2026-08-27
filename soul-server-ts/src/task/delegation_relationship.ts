@@ -8,8 +8,7 @@
  */
 export function resolveStructuralCallerSessionId(
   callerSessionId: string | null | undefined,
-  notifyCompletion: boolean | undefined,
+  _notifyCompletion: boolean | undefined,
 ): string | null {
-  if (notifyCompletion === false) return null;
   return callerSessionId ?? null;
 }

@@ -192,15 +192,13 @@ describe("worker composition boundary", () => {
     expect(taskExecutor).toContain(
       "if (turnReceipt) await turnReceipt.observe(task, event);",
     );
-    expect(taskExecutor).toContain(
-      "if (turnReceipt) await turnReceipt.consume(task);",
+    expect(taskExecutor).toMatch(
+      /turnReceipt\s+&&\s+\(task\.status === "completed" \|\| transition\.kind === "continue"\)\s+\) \{\s+await turnReceipt\.consume\(task\);/,
     );
     expect(taskExecutor).not.toMatch(
       /(?<!if \(turnReceipt\) )await turnReceipt\.observe\(/,
     );
-    expect(taskExecutor).not.toMatch(
-      /(?<!if \(turnReceipt\) )await turnReceipt\.consume\(/,
-    );
+    expect(taskExecutor.match(/await turnReceipt\.consume\(/g)).toHaveLength(1);
   });
 
   it("starts delivery recovery only after the crash-resume executor is bound", () => {

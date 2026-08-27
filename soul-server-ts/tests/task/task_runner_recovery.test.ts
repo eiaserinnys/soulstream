@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  createExecutionActivation,
   type Task,
 } from "../../src/task/task_models.js";
 import { TaskRunnerRecovery } from "../../src/task/task_runner_recovery.js";
@@ -39,9 +38,8 @@ describe("TaskRunnerRecovery", () => {
     expect(rememberTask).toHaveBeenCalledWith(task);
   });
 
-  it("persists an explicit runner error before resuming without a duplicate user message", async () => {
+  it("persists an explicit runner error without an automatic replacement", async () => {
     const order: string[] = [];
-    const activation = createExecutionActivation();
     const task = makeTask({
       runner: { dispatcher: {} as never },
       runnerRetainedForClaudeBackground: true,
@@ -58,18 +56,7 @@ describe("TaskRunnerRecovery", () => {
       expect(persistedTask.executionPromise).toBeUndefined();
     });
     const onResume = vi.fn();
-    const resume = vi.fn(async (_task, message, callback, options) => {
-      order.push("resume");
-      expect(message).toMatchObject({
-        text: "resume this turn",
-        user: "caller-1",
-        source: "runner-recovery",
-        attachmentPaths: ["/tmp/reference.png"],
-      });
-      expect(options).toEqual({ publishUserMessage: false });
-      callback(task, activation);
-      return { autoResumed: true as const };
-    });
+    const resume = vi.fn();
     const recovery = new TaskRunnerRecovery({
       getTask: vi.fn(),
       loadTask: vi.fn(),
@@ -80,11 +67,12 @@ describe("TaskRunnerRecovery", () => {
 
     await recovery.markFailureAndResume(task, "runner lease expired", onResume);
 
-    expect(order).toEqual(["persist-error", "resume"]);
-    expect(onResume).toHaveBeenCalledWith(task, activation);
+    expect(order).toEqual(["persist-error"]);
+    expect(resume).not.toHaveBeenCalled();
+    expect(onResume).not.toHaveBeenCalled();
   });
 
-  it("terminalizes a replacement start that throws after the running transition", async () => {
+  it("does not start a replacement after terminalizing runner failure", async () => {
     const task = makeTask();
     const persistExecutorFinalState = vi.fn(async () => ({
       newlyFinalized: true,
@@ -107,38 +95,39 @@ describe("TaskRunnerRecovery", () => {
       task,
       "runner exited",
       () => { throw new Error("snapshot missing"); },
-    )).rejects.toThrow("snapshot missing");
+    )).resolves.toBeUndefined();
 
-    expect(persistExecutorFinalState).toHaveBeenCalledTimes(2);
+    expect(persistExecutorFinalState).toHaveBeenCalledOnce();
+    expect(resume).not.toHaveBeenCalled();
     expect(task).toMatchObject({
       status: "error",
-      error: "runner replacement start failed: snapshot missing",
+      error: "runner exited",
       executionPromise: undefined,
     });
     expect(task.runner).toBeUndefined();
     expect(task.completedAt).toBeInstanceOf(Date);
   });
 
-  it("does not terminalize a running-transition rejection before the replacement callback", async () => {
+  it("does not enter the running transition after terminalizing runner failure", async () => {
     const task = makeTask();
     const persistExecutorFinalState = vi.fn(async () => ({
       newlyFinalized: true,
       terminalTransitionApplied: true,
     }));
+    const resume = vi.fn().mockRejectedValue(new Error("running transition rejected"));
     const recovery = new TaskRunnerRecovery({
       getTask: vi.fn(),
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: { persistExecutorFinalState } as never,
-      autoResumeTransition: {
-        resume: vi.fn().mockRejectedValue(new Error("running transition rejected")),
-      } as never,
+      autoResumeTransition: { resume } as never,
     });
 
     await expect(recovery.markFailureAndResume(task, "runner exited", vi.fn()))
-      .rejects.toThrow("running transition rejected");
+      .resolves.toBeUndefined();
 
     expect(persistExecutorFinalState).toHaveBeenCalledOnce();
+    expect(resume).not.toHaveBeenCalled();
   });
 
   it("does not let a stale closed projection erase a newly active owner", async () => {

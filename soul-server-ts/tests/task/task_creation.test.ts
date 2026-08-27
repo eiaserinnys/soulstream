@@ -161,7 +161,7 @@ describe("TaskCreation", () => {
     );
   });
 
-  it("keeps fire-and-forget caller metadata and task placement without a structural parent link", async () => {
+  it("keeps fire-and-forget caller provenance, metadata, and task placement", async () => {
     const h = makeHarness();
 
     const task = await h.creation.createTask({
@@ -181,7 +181,7 @@ describe("TaskCreation", () => {
     });
 
     expect(task).toMatchObject({
-      callerSessionId: undefined,
+      callerSessionId: "sess-coordinator",
       notifyCompletion: false,
       callerInfo: expect.objectContaining({
         source: "agent",
@@ -191,7 +191,7 @@ describe("TaskCreation", () => {
     expect(h.registerSession).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "sess-fire-and-forget",
-        callerSessionId: null,
+        callerSessionId: "sess-coordinator",
         notifyCompletion: false,
       }),
       "register_session:sess-fire-and-forget",

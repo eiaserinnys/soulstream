@@ -20,6 +20,7 @@ import {
   finalizeTaskTermination,
   recordTerminationHint,
 } from "./task_termination.js";
+import { releaseTaskRunner } from "./task_runner_release.js";
 
 export interface ExternalFinalizeParams {
   result?: string;
@@ -52,17 +53,21 @@ export class TaskLifecycleTransition {
     if (!task.runner) return false;
     if (task.interruptRequest) return await task.interruptRequest;
 
+    const runner = task.runner;
+    const executionPromise = task.executionPromise;
     let request!: Promise<boolean>;
     request = (async (): Promise<boolean> => {
+      let interrupted = false;
       try {
-        const interrupted = await task.runner!.dispatcher.interrupt();
-        if (!interrupted) {
-          this.deps.logger.info(
-            { sessionId: task.agentSessionId },
-            "Runner rejected explicit interrupt; task remains running",
-          );
-          return false;
-        }
+        interrupted = await runner.dispatcher.interrupt();
+      } catch (err) {
+        this.deps.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "Runner interrupt delivery failed; fencing task as stop_failed",
+        );
+      }
+
+      try {
         if (!isActiveTaskStatus(task.status)) {
           this.deps.logger.info(
             { sessionId: task.agentSessionId, status: task.status },
@@ -70,15 +75,37 @@ export class TaskLifecycleTransition {
           );
           return false;
         }
-        task.status = "interrupted";
-        recordTerminationHint(task, "killed", "cancelled");
-        return true;
-      } catch (err) {
-        this.deps.logger.warn(
-          { err, sessionId: task.agentSessionId },
-          "Runner interrupt delivery failed; task remains running",
-        );
-        return false;
+
+        task.status = interrupted ? "interrupted" : "error";
+        task.completedAt = new Date();
+        if (interrupted) {
+          task.error = undefined;
+          recordTerminationHint(task, "killed", "user_stop");
+        } else {
+          task.error = "runner stop was not confirmed";
+          recordTerminationHint(
+            task,
+            "error_aborted",
+            "runner stop was not confirmed",
+          );
+        }
+
+        const persistence = await this.persistFinalState(task);
+        if (!persistence.terminalTransitionApplied) return false;
+
+        try {
+          await runner.dispatcher.close();
+        } catch (err) {
+          this.deps.logger.warn(
+            { err, sessionId: task.agentSessionId },
+            "runner close failed after explicit stop was fenced",
+          );
+        }
+        releaseTaskRunner(task, runner);
+        if (task.executionPromise === executionPromise) {
+          task.executionPromise = undefined;
+        }
+        return interrupted;
       } finally {
         if (task.interruptRequest === request) task.interruptRequest = undefined;
       }

@@ -997,7 +997,6 @@ export class TaskExecutor {
           currentTurnInterventions,
         );
         if (disposition === "continue_with_accepted_successor") {
-          if (turnReceipt) await turnReceipt.consume(task);
           const transition = resolveTurnLoopTransition(task, agent);
           if (transition.kind === "continue") {
             turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
@@ -1010,7 +1009,6 @@ export class TaskExecutor {
         }
         break;
       }
-      try {
       const lastAcknowledgedEventId = runner.eventPersistence === "runner"
         ? await runner.dispatcher.waitForSessionAck()
         : await this.persistence.waitForSessionAck(task.agentSessionId);
@@ -1108,7 +1106,12 @@ export class TaskExecutor {
       const transition = resolveTurnLoopTransition(task, agent);
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);
-        break;
+      }
+      if (
+        turnReceipt
+        && (task.status === "completed" || transition.kind === "continue")
+      ) {
+        await turnReceipt.consume(task);
       }
       if (transition.kind !== "continue") break;
       turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
@@ -1116,9 +1119,6 @@ export class TaskExecutor {
         agent,
         transition.interventions,
       );
-      } finally {
-        if (turnReceipt) await turnReceipt.consume(task);
-      }
     }
   }
 

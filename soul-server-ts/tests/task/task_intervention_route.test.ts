@@ -493,7 +493,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     "completion_notification",
     "runtime_followup",
   ] as const)(
-    "selects first idle resume inputs from delivery facts, not %s intent",
+    "selects explicit idle input or durable system queue from %s intent",
     async (intent) => {
       const deliveryId = `73737373-7373-4737-8737-${intent.length.toString().padStart(12, "0")}`;
       const gate = {
@@ -508,7 +508,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       const task = makeTask({ status: "completed" });
       const { route, autoResumeTransition } = makeSubject([task], gate);
 
-      await expect(route.addIntervention({
+      const result = await route.addIntervention({
         agentSessionId: task.agentSessionId,
         text: "first idle delivery",
         user: "agent",
@@ -517,22 +517,27 @@ describe("TaskInterventionRoute.addIntervention", () => {
         completionId: `completion:${deliveryId}`,
         relationKey: `delivery:${deliveryId}`,
         source: "test",
-      }, vi.fn())).resolves.toEqual({ autoResumed: true });
+      }, vi.fn());
 
-      expect(autoResumeTransition.resume).toHaveBeenCalledOnce();
-      expect(vi.mocked(autoResumeTransition.resume).mock.calls[0]).toHaveLength(3);
+      const isSystemDelivery = intent === "completion_notification"
+        || intent === "runtime_followup";
+      if (isSystemDelivery) {
+        expect(result).toMatchObject({
+          delivered: false,
+          queued: true,
+          consumeWhen: "next_turn",
+        });
+        expect(autoResumeTransition.resume).not.toHaveBeenCalled();
+      } else {
+        expect(result).toEqual({ autoResumed: true });
+        expect(autoResumeTransition.resume).toHaveBeenCalledOnce();
+        expect(vi.mocked(autoResumeTransition.resume).mock.calls[0]).toHaveLength(3);
+      }
     },
   );
 
-  it("projects terminal notification delivery only after ownership activation", async () => {
+  it("projects a queued terminal notification without ownership activation", async () => {
     const deliveryId = "61616161-6161-4161-8161-616161616161";
-    let resolveActivation!: () => void;
-    const activation = new Promise<void>((resolve) => {
-      resolveActivation = () => {
-        task.status = "running";
-        resolve();
-      };
-    });
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
@@ -548,16 +553,8 @@ describe("TaskInterventionRoute.addIntervention", () => {
     const task = makeTask({ status: "completed" });
     const { route, autoResumeTransition, sessionNotificationPublisher } =
       makeSubject([task], gate);
-    vi.mocked(autoResumeTransition.resume).mockImplementation(async (
-      resumedTask,
-      _message,
-      onResume,
-    ) => {
-      resumedTask.status = "initializing";
-      onResume(resumedTask);
-      return { autoResumed: true };
-    });
-    const request = route.addIntervention({
+    const onResume = vi.fn();
+    const result = await route.addIntervention({
       agentSessionId: task.agentSessionId,
       text: "child completed",
       user: "agent",
@@ -566,24 +563,22 @@ describe("TaskInterventionRoute.addIntervention", () => {
       completionId: "completion-activation",
       relationKey: "child_session:activation:1",
       source: "completion_notifier",
-    }, (resumedTask) => {
-      resumedTask.executionActivation = activationBarrier(activation);
-    });
+    }, onResume);
 
-    await vi.waitFor(() => expect(sessionNotificationPublisher.publish).toHaveBeenCalled());
+    expect(result).toMatchObject({ delivered: false, queued: true });
     expect(gate.recordResult).toHaveBeenCalledOnce();
-    expect(gate.recordNotificationPublished).not.toHaveBeenCalled();
-
-    resolveActivation();
-    await expect(request).resolves.toEqual({ autoResumed: true });
     expect(gate.recordNotificationPublished).toHaveBeenCalledWith(
       expect.objectContaining({ deliveryId }),
       "event:notification",
     );
     expect(gate.recordNotificationFailure).not.toHaveBeenCalled();
+    expect(sessionNotificationPublisher.publish).toHaveBeenCalledOnce();
+    expect(autoResumeTransition.resume).not.toHaveBeenCalled();
+    expect(onResume).not.toHaveBeenCalled();
+    expect(task.status).toBe("completed");
   });
 
-  it("returns a staged terminal notification to retryable when activation fails", async () => {
+  it("does not enter activation for a staged terminal notification", async () => {
     const deliveryId = "62626262-6262-4262-8262-626262626262";
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
@@ -599,15 +594,6 @@ describe("TaskInterventionRoute.addIntervention", () => {
     >;
     const task = makeTask({ status: "completed" });
     const { route, autoResumeTransition } = makeSubject([task], gate);
-    vi.mocked(autoResumeTransition.resume).mockImplementation(async (
-      resumedTask,
-      _message,
-      onResume,
-    ) => {
-      resumedTask.status = "initializing";
-      onResume(resumedTask);
-      return { autoResumed: true };
-    });
 
     await expect(route.addIntervention({
       agentSessionId: task.agentSessionId,
@@ -618,17 +604,14 @@ describe("TaskInterventionRoute.addIntervention", () => {
       completionId: "completion-activation-failed",
       relationKey: "child_session:activation:2",
       source: "completion_notifier",
-    }, (resumedTask) => {
-      resumedTask.executionActivation = activationBarrier(Promise.reject(
-        new Error("activation rejected"),
-      ));
-    })).rejects.toThrow("activation rejected");
+    }, vi.fn())).resolves.toMatchObject({ delivered: false, queued: true });
 
-    expect(gate.recordNotificationPublished).not.toHaveBeenCalled();
-    expect(gate.recordNotificationFailure).toHaveBeenCalledWith(
+    expect(gate.recordNotificationPublished).toHaveBeenCalledWith(
       expect.objectContaining({ deliveryId }),
-      "auto-resume activation failed: activation rejected",
+      "event:notification",
     );
+    expect(gate.recordNotificationFailure).not.toHaveBeenCalled();
+    expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 
   it("waits for an initializing execution before admitting a concurrent delivery", async () => {
@@ -769,7 +752,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 
-  it("terminal+미전달 완료를 정확히 한 번 auto-resume하고 재시도는 suppress한다", async () => {
+  it("terminal+미전달 완료를 queued로 보존하고 재시도는 suppress한다", async () => {
     const deliveryId = "44444444-4444-4444-8444-444444444444";
     const gate = {
       admit: vi.fn()
@@ -811,8 +794,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       source: "completion_notifier",
     };
 
-    await expect(route.addIntervention(params, onResume)).resolves.toEqual({
-      autoResumed: true,
+    await expect(route.addIntervention(params, onResume)).resolves.toMatchObject({
+      delivered: false,
+      queued: true,
+      consumeWhen: "next_turn",
     });
     await expect(route.addIntervention(params, vi.fn())).resolves.toEqual({
       suppressed: true,
@@ -820,25 +805,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
       reason: "delivery_consumed",
     });
 
-    expect(autoResumeTransition.resume).toHaveBeenCalledTimes(1);
-    expect(autoResumeTransition.resume).toHaveBeenCalledWith(
-      task,
-      expect.objectContaining({ deliveryId }),
-      expect.any(Function),
-    );
+    expect(autoResumeTransition.resume).not.toHaveBeenCalled();
     expect(sessionNotificationPublisher.publish).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(autoResumeTransition.resume).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
-    );
     expect(vi.mocked(gate.recordResult).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
     );
-    expect(vi.mocked(gate.recordResult).mock.invocationCallOrder[0]).toBeLessThan(
-      onResume.mock.invocationCallOrder[0]!,
-    );
-    expect(
-      vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0],
-    ).toBeLessThan(onResume.mock.invocationCallOrder[0]!);
+    expect(onResume).not.toHaveBeenCalled();
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
   });
@@ -979,7 +951,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(gate.recordFailure).toHaveBeenCalledTimes(1);
   });
 
-  it("does not publish completion UI when terminal auto-resume fails", async () => {
+  it("queues and publishes terminal completion without invoking auto-resume", async () => {
     const deliveryId = "88888888-8888-4888-8888-888888888888";
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
@@ -1009,13 +981,14 @@ describe("TaskInterventionRoute.addIntervention", () => {
       completionId: "completion-4",
       relationKey: "child_session:child-4:101",
       source: "completion_notifier",
-    }, vi.fn())).rejects.toThrow("resume unavailable");
+    }, vi.fn())).resolves.toMatchObject({ delivered: false, queued: true });
 
-    expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
-    expect(gate.recordFailure).toHaveBeenCalledTimes(1);
+    expect(autoResumeTransition.resume).not.toHaveBeenCalled();
+    expect(sessionNotificationPublisher.publish).toHaveBeenCalledOnce();
+    expect(gate.recordFailure).not.toHaveBeenCalled();
   });
 
-  it("starts an already-resumed terminal task exactly once when ledger staging fails", async () => {
+  it("does not start a terminal task when ledger staging fails", async () => {
     const deliveryId = "89898989-8989-4898-8989-898989898989";
     const stageError = new Error("notification staging lease expired");
     const gate = {
@@ -1050,13 +1023,13 @@ describe("TaskInterventionRoute.addIntervention", () => {
       source: "claude_runtime_task_followup",
     }, onResume)).rejects.toBe(stageError);
 
-    expect(onResume).toHaveBeenCalledTimes(1);
-    expect(onResume).toHaveBeenCalledWith(task, activation);
+    expect(onResume).not.toHaveBeenCalled();
+    expect(autoResumeTransition.resume).not.toHaveBeenCalled();
     expect(gate.recordFailure).toHaveBeenCalledTimes(1);
     expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
   });
 
-  it("starts an already-resumed terminal task exactly once when publishing throws", async () => {
+  it("does not start a terminal task when queued notification publishing throws", async () => {
     const deliveryId = "90909090-9090-4909-8909-909090909090";
     const publishError = new Error("notification publish unavailable");
     const gate = {
@@ -1091,11 +1064,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
       source: "completion_notifier",
     }, onResume)).rejects.toBe(publishError);
 
-    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(onResume).not.toHaveBeenCalled();
+    expect(autoResumeTransition.resume).not.toHaveBeenCalled();
     expect(gate.recordFailure).not.toHaveBeenCalled();
   });
 
-  it("does not retry the executor callback when the callback itself throws", async () => {
+  it("does not invoke the executor callback for a terminal runtime followup", async () => {
     const deliveryId = "91919191-9191-4919-8919-919191919191";
     const callbackError = new Error("executor already owns a runner");
     const gate = {
@@ -1128,9 +1102,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       completionId: "completion-callback-failure",
       relationKey: "runtime_task:callback-failure",
       source: "claude_runtime_task_followup",
-    }, onResume)).rejects.toBe(callbackError);
+    }, onResume)).resolves.toMatchObject({ delivered: false, queued: true });
 
-    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(onResume).not.toHaveBeenCalled();
+    expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 
   it("durable_next_turn도 running deliver로 즉시 전달하되 notification은 발행하지 않는다", async () => {

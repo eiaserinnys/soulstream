@@ -239,13 +239,6 @@ export class TaskDeliveryLedgerGate {
       if (!delivered) {
         throw new Error(`Delivery ${admission.deliveryId} lost delivered-state CAS`);
       }
-      const consumed = await repository.markConsumed(
-        admission.deliveryId,
-        receiptId,
-      );
-      if (!consumed) {
-        throw new Error(`Delivery ${admission.deliveryId} lost consumed-state CAS`);
-      }
       return;
     }
     const leaseOwner = admission.row.lease_owner;

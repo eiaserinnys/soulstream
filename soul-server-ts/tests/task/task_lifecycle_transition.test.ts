@@ -87,7 +87,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
   it.each([
     { label: "negative ACK", interrupt: async () => false },
     { label: "transport failure", interrupt: async () => { throw new Error("ipc down"); } },
-  ])("keeps status running after $label", async ({ interrupt }) => {
+  ])("fences stop_failed after $label", async ({ interrupt }) => {
     const { transition } = makeMocks();
     const task = makeTask();
     const engine = { interrupt: vi.fn(interrupt) } as unknown as EnginePort;
@@ -98,8 +98,10 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
 
     await expect(transition.cancelRunningTask(task)).resolves.toBe(false);
 
-    expect(task.status).toBe("running");
-    expect(task.pendingTerminationHint).toBeUndefined();
+    expect(task.status).toBe("error");
+    expect(task.terminationReason).toBe("error_aborted");
+    expect(task.terminationDetail).toBe("runner stop was not confirmed");
+    expect(task.runner).toBeUndefined();
   });
 
   it("returns false without mutation when task is missing, terminal, or has no engine", async () => {
