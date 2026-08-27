@@ -325,6 +325,22 @@ test("harness deadlines are 60 seconds for intervention acceptance and 180 secon
   assert.doesNotMatch(smoke, /LAB_SMOKE_TIMEOUT_SECONDS:-600/);
 });
 
+test("activate rollback starts the retry horizon only after the exact dead-letter", () => {
+  const scenarios = readFileSync(join(directory, "fault-scenarios.mjs"), "utf8");
+  const deadLetterCompletedAt = scenarios.indexOf(
+    "const deadLetterOutcome = await deadLetterPromise",
+  );
+  const retryHorizonStartedAt = scenarios.indexOf(
+    "runtime.activationFailureFaultCountAfterHorizon(",
+  );
+
+  assert.ok(deadLetterCompletedAt >= 0, "activate rollback never awaits the dead-letter first");
+  assert.ok(
+    retryHorizonStartedAt > deadLetterCompletedAt,
+    "activate rollback starts the retry horizon before the dead-letter completes",
+  );
+});
+
 test("the process ceiling kills the whole child process group", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "lab-process-ceiling-"));
   mkdirSync(join(root, "state"));
