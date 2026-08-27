@@ -163,14 +163,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.terminate).not.toHaveBeenCalled();
   });
 
-  it("uses two stable production scans before backfilling an owner-null running session", async () => {
+  it("uses two stable production scans before acquiring an owner-null running session", async () => {
     let now = RECOVERY_NOW_MS;
     const recoveredTask = task("session-a");
     recoveredTask.hydratedFromDb = true;
-    const reconcileExecutionOwnershipObservations = vi.fn(async (
-      _task: Task,
-      input: { probeOnly: boolean },
-    ) => !input.probeOnly);
+    const reconcileExecutionOwnershipObservations = vi.fn(async () => true);
     const subject = makeSubject([registration()], now, [], {
       now: () => now,
       taskManager: {
@@ -186,8 +183,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     now += 15_000;
     await subject.coordinator.scanOnce();
 
-    expect(reconcileExecutionOwnershipObservations).toHaveBeenCalledTimes(2);
-    expect(reconcileExecutionOwnershipObservations.mock.calls[1]?.[1]).toMatchObject({
+    expect(reconcileExecutionOwnershipObservations).toHaveBeenCalledOnce();
+    expect(reconcileExecutionOwnershipObservations.mock.calls[0]?.[1]).toMatchObject({
       first: {
         manifestId: "sha-a",
         registrationId: "registration-a",
@@ -202,8 +199,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         startIdentity: "start-4123",
         executionCommandId: "execute-a",
       },
-      evidenceHash: expect.stringMatching(/^[0-9a-f]{64}$/),
-      probeOnly: false,
+      leaseExpiresAt: expect.any(Date),
     });
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
   });
@@ -213,11 +209,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const current = registration();
     const recoveredTask = task("session-a");
     recoveredTask.hydratedFromDb = true;
-    const reconcileExecutionOwnershipObservations = vi.fn(async (
-      candidate: Task,
-      input: { probeOnly: boolean },
-    ) => {
-      if (input.probeOnly) return false;
+    const reconcileExecutionOwnershipObservations = vi.fn(async (candidate: Task) => {
       candidate.status = "interrupted";
       return false;
     });
@@ -236,10 +228,10 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     now += 15_000;
     await subject.coordinator.scanOnce();
 
-    expect(reconcileExecutionOwnershipObservations.mock.calls[1]?.[1]).toMatchObject({
+    expect(reconcileExecutionOwnershipObservations.mock.calls[0]?.[1]).toMatchObject({
       first: { registrationId: "registration-a" },
       second: { registrationId: "registration-b" },
-      probeOnly: false,
+      leaseExpiresAt: expect.any(Date),
     });
     expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
     expect(subject.terminate).toHaveBeenCalledOnce();
@@ -253,11 +245,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       candidate.hydratedFromDb = true;
       return [sessionId, candidate] as const;
     }));
-    const reconcileExecutionOwnershipObservations = vi.fn(async (
-      candidate: Task,
-      input: { probeOnly: boolean },
-    ) => {
-      if (!input.probeOnly) candidate.status = "interrupted";
+    const reconcileExecutionOwnershipObservations = vi.fn(async (candidate: Task) => {
+      candidate.status = "interrupted";
       return false;
     });
     const subject = makeSubject([], now, [], {
@@ -279,7 +268,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     now += 15_000;
     await subject.coordinator.scanOnce();
 
-    expect(reconcileExecutionOwnershipObservations).toHaveBeenCalledTimes(4);
+    expect(reconcileExecutionOwnershipObservations).toHaveBeenCalledTimes(2);
     for (const sessionId of sessions) {
       expect(tasks.get(sessionId)?.status).toBe("interrupted");
     }
@@ -299,7 +288,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
           startIdentity: null,
           executionCommandId: null,
         },
-        evidenceHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+        leaseExpiresAt: expect.any(Date),
       });
     }
   });
