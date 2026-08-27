@@ -16,7 +16,11 @@ import type { SessionDB } from "../src/db/session_db.js";
 import type { RealtimeBroker } from "../src/realtime/realtime_broker.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import { TaskManager } from "../src/task/task_manager.js";
-import type { Task } from "../src/task/task_models.js";
+import {
+  createExecutionActivation,
+  type ExecutionActivation,
+  type Task,
+} from "../src/task/task_models.js";
 import type { SessionBroadcaster } from "../src/upstream/session_broadcaster.js";
 
 import { makeEventPersistenceTestDouble } from "./task/event_persistence_test_double.js";
@@ -849,8 +853,9 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       lastReadEventId: 0,
       interventionQueue: [],
     };
+    const activation = createExecutionActivation();
     const addIntervention = vi.fn(async (_params, onResume) => {
-      onResume(fakeTask);
+      onResume(fakeTask, activation);
       return { autoResumed: true };
     });
     const { dispatcher, sent } = createDispatcher({
@@ -864,7 +869,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       text: "resume me",
       requestId: "i2",
     });
-    expect(startExecution).toHaveBeenCalledWith(fakeTask, fakeAgent);
+    expect(startExecution).toHaveBeenCalledWith(fakeTask, fakeAgent, activation);
     expect(sent[0]).toMatchObject({
       type: "intervene_ack",
       requestId: "i2",
@@ -949,7 +954,22 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       undefined,
       sessionMutations as never,
     );
-    const startExecution = vi.fn();
+    let forwardedActivation!: ExecutionActivation;
+    const startExecution = vi.fn((
+      resumedTask: Task,
+      _agent: AgentProfile,
+      activation?: ExecutionActivation,
+    ) => {
+      expect(activation).toBe(resumedTask.executionActivation);
+      expect(activation).toBeDefined();
+      forwardedActivation = activation!;
+      resumedTask.status = "running";
+      activation!.resolve();
+      if (resumedTask.executionActivation === activation) {
+        resumedTask.executionActivation = undefined;
+      }
+      return Promise.resolve();
+    });
     const dispatcher = new CommandDispatcher(
       send,
       silentLogger,
@@ -986,10 +1006,16 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       sessionId,
       expect.objectContaining({ type: "user_message", text: "이어가" }),
     );
-    expect(persistenceDouble.enqueueRunningTransition).toHaveBeenCalledTimes(1);
+    expect(persistenceDouble.enqueueRunningTransition).not.toHaveBeenCalled();
     expect(startExecution).toHaveBeenCalledTimes(1);
-    const [resumedTask, agent] = startExecution.mock.calls[0] as [Task, AgentProfile];
+    const [resumedTask, agent, activation] = startExecution.mock.calls[0] as [
+      Task,
+      AgentProfile,
+      ExecutionActivation,
+    ];
     expect(agent).toBe(prodClaudeAgent);
+    expect(activation).toBe(forwardedActivation);
+    await expect(forwardedActivation.promise).resolves.toBeUndefined();
     expect(resumedTask).toMatchObject({
       agentSessionId: sessionId,
       status: "running",
