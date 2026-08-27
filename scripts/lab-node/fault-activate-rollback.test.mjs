@@ -229,7 +229,7 @@ test("raise-removed mutation completes from an owner commit without waiting for 
   assert.equal(rejectedMarkerWaitCount, 0);
 });
 
-test("predicate-misplaced mutation completes from a confirmed post-registration zero", async (t) => {
+test("predicate-misplaced mutation completes from durable no-transition evidence", async (t) => {
   const previousMutation = process.env.LAB_ACTIVATE_ROLLBACK_MUTATION;
   process.env.LAB_ACTIVATE_ROLLBACK_MUTATION = "predicate_misplaced";
   t.after(() => {
@@ -273,7 +273,9 @@ test("predicate-misplaced mutation completes from a confirmed post-registration 
       }
       return ownerlessBaseline;
     },
-    async executionCommandFingerprint() { return "101"; },
+    async executionCommandFingerprint(commandId) {
+      return commandId === baselineOwner.executionCommandId ? "101" : "202";
+    },
     async waitForMarker(_sessionId, marker) {
       if (marker.includes("BASELINE")) return { messages: [] };
       rejectedMarkerWaitCount += 1;
@@ -301,12 +303,31 @@ test("predicate-misplaced mutation completes from a confirmed post-registration 
         registrationId: "registration-followup",
       };
     },
-    async waitForActivationFailureFault(timeoutMs) {
-      assert.equal(timeoutMs, 5_000);
+    async executionAcquireApplicationEvidence(input) {
+      assert.deepEqual(input, {
+        sessionId: "session-a",
+        expectedGeneration: 5,
+        registrationId: "registration-followup",
+        pid: 202,
+      });
       return {
-        semanticReachCount: 0,
-        attemptedGeneration: null,
-        attemptedCommandFingerprint: null,
+        classification: "no_transition",
+        logicalAcquireEventCount: 1,
+        transportReceiptCount: 1,
+        event: {
+          eventId: 81,
+          sessionId: "session-a",
+          phase: "execution_acquire",
+          transitionId: "acquire:command-followup",
+        },
+        application: {
+          applied: false,
+          sessionId: "session-a",
+          ownershipGeneration: null,
+          registrationId: null,
+          pid: null,
+          executionCommandId: "command-followup",
+        },
       };
     },
     async activationFailureFaultCount() {
@@ -317,7 +338,9 @@ test("predicate-misplaced mutation completes from a confirmed post-registration 
         attemptedCommandFingerprint: null,
       };
     },
-    async executionAcquireEnvelopeSourceSeq() { return 8; },
+    async executionAcquireEnvelopeSourceSeq() {
+      throw new Error("predicate mutation must not read the local outbox");
+    },
     async observeDistinctRunnerRegistrationInventoryUntil() {
       return {
         observations: [{ registrationId: "registration-followup", identityPid: 202 }],
@@ -374,15 +397,11 @@ test("predicate-misplaced mutation completes from a confirmed post-registration 
   assert.equal(confirmationReadCount, 1);
   assert.deepEqual(result.verdict.mutationObservation, {
     sentinel: "sessions_row_acquire_transition_not_reached",
-    observationPoint: "after_followup_registration",
-    initialObservationWindowMs: 5_000,
-    initialSemanticReachCount: 0,
-    confirmedSemanticReachCount: 0,
-    followupRegistrationId: "registration-followup",
-    followupPid: 202,
+    observationPoint: "after_durable_followup_lifecycle",
+    semanticReachCount: 0,
   });
 
-  await t.test("confirmed nonzero retains the existing marker and horizon path", async () => {
+  await t.test("nonzero counter keeps the durable short path without a sentinel", async () => {
     ownershipReadCount = 0;
     rejectedMarkerWaitCount = 0;
     confirmationReadCount = 0;
@@ -413,8 +432,8 @@ test("predicate-misplaced mutation completes from a confirmed post-registration 
       nonzeroResult.failure.message,
       /activate-rollback mutation was not detected: predicate_misplaced/,
     );
-    assert.equal(rejectedMarkerWaitCount, 1);
-    assert.equal(retryHorizonObservationCount, 1);
+    assert.equal(rejectedMarkerWaitCount, 0);
+    assert.equal(retryHorizonObservationCount, 0);
     assert.equal(confirmationReadCount, 1);
   });
 });

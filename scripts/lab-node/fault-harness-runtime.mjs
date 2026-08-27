@@ -815,6 +815,82 @@ export class LabRuntime {
     return matches[0].sourceSeq;
   }
 
+  async executionAcquireApplicationEvidence({
+    sessionId,
+    expectedGeneration,
+    registrationId,
+    pid,
+  }) {
+    assertIdentifier(sessionId, "session id");
+    if (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 1) {
+      throw new Error(`invalid expected execution generation: ${expectedGeneration}`);
+    }
+    assertIdentifier(registrationId, "registration id");
+    if (!Number.isSafeInteger(pid) || pid < 1) throw new Error(`invalid runner pid: ${pid}`);
+    const snapshot = await this.psqlOne(`
+      WITH acquire_events AS (
+        SELECT
+          event.id AS event_id,
+          event.session_id,
+          event.payload #>> '{value,phase}' AS phase,
+          event.payload #>> '{value,transition_id}' AS transition_id,
+          event.dedupe_key,
+          receipt.node_id,
+          receipt.stream_id,
+          receipt.source_seq,
+          receipt.payload_hash,
+          receipt.effect_application,
+          receipt.created_at
+        FROM events AS event
+        LEFT JOIN event_ingress_receipts AS receipt
+          ON receipt.session_id = event.session_id
+          AND receipt.event_id = event.id
+        WHERE event.session_id = ${sqlLiteral(sessionId)}
+          AND event.event_type = 'metadata'
+          AND event.payload->>'metadata_type' = 'execution_ownership_transition'
+          AND event.payload #>> '{value,phase}' = 'execution_acquire'
+      )
+      SELECT json_build_object(
+        'rows', COALESCE((
+          SELECT json_agg(json_build_object(
+            'eventId', acquire.event_id,
+            'sessionId', acquire.session_id,
+            'phase', acquire.phase,
+            'transitionId', acquire.transition_id,
+            'dedupeKey', acquire.dedupe_key,
+            'nodeId', acquire.node_id,
+            'streamId', acquire.stream_id,
+            'sourceSeq', acquire.source_seq,
+            'payloadHash', acquire.payload_hash,
+            'effectApplication', acquire.effect_application
+          ) ORDER BY acquire.event_id, acquire.created_at, acquire.source_seq)
+          FROM acquire_events AS acquire
+        ), '[]'::json),
+        'finalOwnership', (
+          SELECT json_build_object(
+            'executionGeneration', session.execution_generation,
+            'owner', CASE
+              WHEN session.execution_manifest_id IS NULL THEN NULL
+              ELSE json_build_object(
+                'registrationId', session.execution_registration_id,
+                'pid', session.execution_pid,
+                'executionCommandId', session.execution_command_id
+              )
+            END
+          )
+          FROM sessions AS session
+          WHERE session.session_id = ${sqlLiteral(sessionId)}
+        )
+      )
+    `);
+    return classifyExecutionAcquireApplicationEvidence(snapshot, {
+      sessionId,
+      expectedGeneration,
+      registrationId,
+      pid,
+    });
+  }
+
   async executionCommandFingerprint(executionCommandId) {
     assertIdentifier(executionCommandId, "execution command id");
     const value = await this.psqlOne(`
@@ -1353,6 +1429,166 @@ function requirePositiveInteger(env, key) {
     throw new Error(`${key} must be a positive integer`);
   }
   return value;
+}
+
+function classifyExecutionAcquireApplicationEvidence(snapshot, expected) {
+  const rows = Array.isArray(snapshot?.rows) ? snapshot.rows : [];
+  const finalOwnership = snapshot?.finalOwnership;
+  if (
+    !Number.isSafeInteger(finalOwnership?.executionGeneration)
+    || (finalOwnership.owner !== null && typeof finalOwnership.owner !== "object")
+  ) {
+    return executionAcquireEvidenceConflict("invalid_final_ownership", rows);
+  }
+  const groups = new Map();
+  for (const row of rows) {
+    const eventId = Number(row?.eventId);
+    if (
+      !Number.isSafeInteger(eventId)
+      || eventId < 1
+      || row?.sessionId !== expected.sessionId
+      || row?.phase !== "execution_acquire"
+      || typeof row?.transitionId !== "string"
+      || !row.transitionId.startsWith("acquire:")
+    ) {
+      return executionAcquireEvidenceConflict("invalid_event", rows);
+    }
+    const group = groups.get(eventId) ?? {
+      event: {
+        eventId,
+        sessionId: row.sessionId,
+        phase: row.phase,
+        transitionId: row.transitionId,
+      },
+      rows: [],
+    };
+    if (
+      group.event.transitionId !== row.transitionId
+      || group.event.sessionId !== row.sessionId
+    ) {
+      return executionAcquireEvidenceConflict("mixed_event_identity", rows);
+    }
+    group.rows.push(row);
+    groups.set(eventId, group);
+  }
+
+  const logicalEvents = [];
+  for (const group of groups.values()) {
+    if (group.rows.some((row) => row.sourceSeq === null || row.effectApplication === null)) {
+      return executionAcquireEvidenceConflict("partial_evidence", rows);
+    }
+    const applications = group.rows.map((row) => normalizeAcquireApplication(
+      row.effectApplication,
+      group.event,
+      expected.sessionId,
+    ));
+    if (applications.some((application) => application === null)) {
+      return executionAcquireEvidenceConflict("invalid_application", rows);
+    }
+    const signatures = new Set(group.rows.map((row) => JSON.stringify(row.effectApplication)));
+    if (signatures.size !== 1) {
+      return executionAcquireEvidenceConflict("mixed_application", rows);
+    }
+    const application = applications[0];
+    const relevant = application.applied === false
+      || application.ownershipGeneration === expected.expectedGeneration
+      || application.registrationId === expected.registrationId
+      || application.pid === expected.pid;
+    if (relevant) {
+      logicalEvents.push({
+        event: group.event,
+        application,
+        transportReceiptCount: group.rows.length,
+      });
+    }
+  }
+
+  if (logicalEvents.length > 1) {
+    return executionAcquireEvidenceConflict("logical_event_duplicate", rows, logicalEvents.length);
+  }
+  const logicalEvent = logicalEvents[0];
+  if (!logicalEvent) {
+    return finalOwnership.executionGeneration === expected.expectedGeneration - 1
+        && finalOwnership.owner === null
+      ? {
+          classification: "no_transition",
+          logicalAcquireEventCount: 0,
+          transportReceiptCount: 0,
+          event: null,
+          application: null,
+        }
+      : executionAcquireEvidenceConflict("absent_event_final_state_mismatch", rows);
+  }
+  if (logicalEvent.application.applied === false) {
+    return finalOwnership.executionGeneration === expected.expectedGeneration - 1
+        && finalOwnership.owner === null
+      ? {
+          classification: "no_transition",
+          logicalAcquireEventCount: 1,
+          transportReceiptCount: logicalEvent.transportReceiptCount,
+          event: logicalEvent.event,
+          application: logicalEvent.application,
+        }
+      : executionAcquireEvidenceConflict("unapplied_event_final_state_mismatch", rows);
+  }
+  const commandId = logicalEvent.application.executionCommandId;
+  const identityMatches = logicalEvent.application.sessionId === expected.sessionId
+    && logicalEvent.application.ownershipGeneration === expected.expectedGeneration
+    && logicalEvent.application.registrationId === expected.registrationId
+    && logicalEvent.application.pid === expected.pid
+    && typeof commandId === "string"
+    && logicalEvent.event.transitionId === `acquire:${commandId}`;
+  if (!identityMatches) {
+    return executionAcquireEvidenceConflict("applied_identity_mismatch", rows);
+  }
+  if (
+    finalOwnership.executionGeneration !== expected.expectedGeneration
+    || finalOwnership.owner !== null
+  ) {
+    return executionAcquireEvidenceConflict("applied_event_final_state_mismatch", rows);
+  }
+  return {
+    classification: "applied",
+    logicalAcquireEventCount: 1,
+    transportReceiptCount: logicalEvent.transportReceiptCount,
+    event: logicalEvent.event,
+    application: logicalEvent.application,
+  };
+}
+
+function normalizeAcquireApplication(value, event, sessionId) {
+  if (typeof value !== "object" || value === null || typeof value.applied !== "boolean") {
+    return null;
+  }
+  const owner = value.canonical_execution_ownership;
+  if (value.applied === true && (typeof owner !== "object" || owner === null)) return null;
+  if (owner !== null && owner !== undefined && typeof owner !== "object") return null;
+  const eventCommandId = event.transitionId.slice("acquire:".length);
+  return {
+    applied: value.applied,
+    sessionId,
+    ownershipGeneration: Number.isSafeInteger(owner?.ownership_generation)
+      ? Number(owner.ownership_generation)
+      : null,
+    registrationId: typeof owner?.registration_id === "string"
+      ? owner.registration_id
+      : null,
+    pid: Number.isSafeInteger(owner?.pid) ? Number(owner.pid) : null,
+    executionCommandId: typeof owner?.execution_command_id === "string"
+      ? owner.execution_command_id
+      : eventCommandId,
+  };
+}
+
+function executionAcquireEvidenceConflict(conflict, rows, logicalAcquireEventCount = 1) {
+  return {
+    classification: "conflict",
+    logicalAcquireEventCount,
+    transportReceiptCount: rows.filter((row) => row?.sourceSeq !== null).length,
+    event: null,
+    application: null,
+    conflict,
+  };
 }
 
 function assertIdentifier(value, field) {

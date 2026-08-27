@@ -134,7 +134,9 @@ export function activateRollbackMutationDetection(mutation, observation) {
   if (mutation === "predicate_misplaced") {
     return {
       detected: observation.semanticReachCount === 0,
-      sentinel: "sessions_row_acquire_transition_not_reached",
+      sentinel: observation.acquireApplied
+        ? "fault_predicate_missed_applied_acquire"
+        : "sessions_row_acquire_transition_not_reached",
     };
   }
   return {
