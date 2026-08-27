@@ -48,7 +48,7 @@ function predicateLifecycleHarness({
   };
   const followupActiveOwnership = {
     status: "running",
-    executionGeneration: BASELINE_GENERATION + 1,
+    executionGeneration: followupOwner.executionGeneration ?? BASELINE_GENERATION + 1,
     terminalRevision: 18,
     owner: {
       pid: followupOwner.pid ?? FOLLOWUP_PID,
@@ -82,14 +82,7 @@ function predicateLifecycleHarness({
       }
       trace.push(`followup-${operation}`);
       if (!appliedAcquire && operation === "acquire") {
-        trace.push("followup-acquire:not-applied");
-        return {
-          sessionId,
-          operation,
-          ownershipGeneration: BASELINE_GENERATION,
-          time: 30,
-          applied: false,
-        };
+        throw new Error("no applied follow-up acquire transition");
       }
       if (operation === "acquire") {
         followupAcquireObserved = true;
@@ -120,6 +113,7 @@ function predicateLifecycleHarness({
         trace.push("followup-owner-point-read");
         return followupActiveOwnership;
       }
+      if (!appliedAcquire) trace.push("followup-ownerless-final-point-read");
       return finalOwnership;
     },
     async executionCommandFingerprint() { return "101"; },
@@ -285,7 +279,6 @@ async function runPredicateScenario(t, options) {
 
 test("applied follow-up acquire is bound before a zero counter is classified", async (t) => {
   const { trace } = await runPredicateScenario(t, { appliedAcquire: true });
-
   assert.ok(trace.indexOf("followup-acquire") >= 0, JSON.stringify(trace));
   assert.ok(trace.indexOf("followup-acquire:applied") >= 0, JSON.stringify(trace));
   assert.ok(trace.indexOf("followup-owner-point-read") >= 0, JSON.stringify(trace));
@@ -309,7 +302,6 @@ test("applied follow-up acquire is bound before a zero counter is classified", a
 
 test("zero after an applied acquire is classified as a missed predicate", async (t) => {
   const { result } = await runPredicateScenario(t, { appliedAcquire: true });
-
   assert.equal(result.status, "passed", JSON.stringify(result.failure));
   assert.deepEqual(result.verdict.mutationObservation, {
     sentinel: "fault_predicate_missed_applied_acquire",
@@ -361,18 +353,16 @@ test("only a terminal follow-up with no applied acquire emits the no-transition 
   );
 
   assert.equal(result.status, "passed", JSON.stringify(result.failure));
-  assert.ok(trace.includes("followup-acquire"), JSON.stringify(trace));
-  assert.ok(trace.includes("followup-acquire:not-applied"), JSON.stringify(trace));
-  assert.equal(trace.includes("followup-acquire:applied"), false, JSON.stringify(trace));
+  assert.equal(trace.includes("followup-acquire"), false, JSON.stringify(trace));
   assert.equal(trace.includes("followup-owner-point-read"), false, JSON.stringify(trace));
   assert.ok(trace.includes("followup-operation-active"), JSON.stringify(trace));
   assert.ok(trace.includes("followup-operation-inactive"), JSON.stringify(trace));
   assert.ok(trace.includes("followup-retirement"), JSON.stringify(trace));
   for (const prerequisite of [
-    "followup-acquire:not-applied",
     "followup-operation-inactive",
     "followup-terminal",
     "followup-retirement",
+    "followup-ownerless-final-point-read",
   ]) {
     assert.ok(
       sentinelEvents[0]?.trace.includes(prerequisite),
@@ -384,6 +374,8 @@ test("only a terminal follow-up with no applied acquire emits the no-transition 
     JSON.stringify(trace),
   );
   assert.equal(sentinelEvents.length, 1, JSON.stringify(events));
+  assert.equal(result.after.executionGeneration, BASELINE_GENERATION);
+  assert.equal(result.after.owner, null);
   assert.equal(
     sentinelEvents[0].details.mutationObservation.observationPoint,
     "after_followup_terminal",
@@ -409,7 +401,6 @@ test("wrong follow-up session cannot pass the applied-acquire evidence gate", as
 
 test("the exact follow-up envelope is the identity control for acquire evidence", async (t) => {
   const { trace } = await runPredicateScenario(t, { appliedAcquire: true });
-
   assert.ok(
     trace.includes(
       `envelope:${SESSION_ID}:${FOLLOWUP_REGISTRATION_ID}:${FOLLOWUP_PID}`,
@@ -426,6 +417,16 @@ test("wrong follow-up generation cannot pass the applied-acquire evidence gate",
     },
   });
 
+  assert.equal(result.status, "failed");
+  assert.match(result.failure.message, /exact follow-up execution acquire/i);
+  assert.equal(result.verdict?.mutationObservation ?? null, null);
+});
+
+test("active-owner generation must match the applied transition generation", async (t) => {
+  const { result } = await runPredicateScenario(t, {
+    appliedAcquire: true,
+    followupOwner: { executionGeneration: BASELINE_GENERATION + 2 },
+  });
   assert.equal(result.status, "failed");
   assert.match(result.failure.message, /exact follow-up execution acquire/i);
   assert.equal(result.verdict?.mutationObservation ?? null, null);
