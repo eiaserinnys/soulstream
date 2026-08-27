@@ -457,6 +457,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
         content: "handled after steer",
       }),
       undefined,
+      1,
     );
     expect(task.status).toBe("completed");
   });
