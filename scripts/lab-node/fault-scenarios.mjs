@@ -28,6 +28,11 @@ import {
   withBaselineHonesty,
 } from "./fault-scenario-result.mjs";
 import {
+  activateRollbackMutationDetection,
+  activateRollbackViolations,
+  requestedActivateRollbackMutation,
+} from "./fault-activate-rollback.mjs";
+import {
   DELIVERY_LOG_TERMS,
   DELIVERY_SCENARIOS,
 } from "./fault-scenarios-delivery.mjs";
@@ -75,9 +80,9 @@ const LOG_TERMS = {
   ],
   "activate-rollback": [
     "ACTIVATE_ROLLBACK_",
-    "lab injected execution activation failure",
+    "lab injected sessions-row execution acquire failure",
     "spawned runner rollback failed",
-    "execution_orphaned_spawn",
+    "execution acquire",
   ],
   F7: ["F7_", "dead_letter", "completion_notification", "delivery"],
 };
@@ -469,93 +474,128 @@ const SCENARIOS = {
 
   async "activate-rollback"(runtime, recorder) {
     const seed = shortId();
+    const baselineMarker = `ACTIVATE_ROLLBACK_BASELINE_${seed}`;
+    const rejectedMarker = `ACTIVATE_ROLLBACK_SHOULD_NOT_RUN_${seed}`;
+    const mutation = requestedActivateRollbackMutation();
     let runner;
     let scenarioError;
-    await runtime.installActivationFailureFault(8);
+    const sessionId = await runtime.createSession(`Reply with exactly ${baselineMarker}.`);
+    await runtime.waitForRunner(sessionId);
+    await runtime.waitForMarker(sessionId, baselineMarker);
+    await runtime.waitForTerminal(sessionId);
+    const before = await waitFor(
+      async () => {
+        const snapshot = await runtime.sessionExecutionOwnership(sessionId);
+        return snapshot?.status === "completed"
+          && snapshot.owner === null
+          && Number.isSafeInteger(snapshot.executionGeneration)
+          && Number.isSafeInteger(snapshot.terminalRevision)
+          ? snapshot
+          : undefined;
+      },
+      30_000,
+      "activate-rollback baseline did not settle with an ownerless terminal revision",
+      250,
+    );
+    await runtime.installActivationFailureFault(8, mutation);
     try {
-      const activationLogOffset = await runtime.nodeLogOffset();
-      const sessionId = await runtime.createSession(
-        `Reply with exactly ACTIVATE_ROLLBACK_SHOULD_NOT_RUN_${seed}.`,
-      );
-      runner = await runtime.waitForRunner(sessionId);
-      const ownership = await waitFor(
-        async () => (await runtime.ownerships(sessionId)).find(
-          (row) => row.phase === "identity_proven",
+      const deliveryId = randomUUID();
+      const interventionOutcomePromise = settle(runtime.intervene(
+        sessionId,
+        buildInterventionPayload(
+          deliveryId,
+          `Reply with exactly ${rejectedMarker}.`,
         ),
-        30_000,
-        "activate-rollback never reached identity_proven",
-        100,
+      ));
+      runner = await runtime.waitForRunner(sessionId);
+      const reach = await runtime.waitForActivationFailureFault(
+        mutation === "predicate_misplaced" ? 5_000 : 30_000,
       );
-      await runtime.writeRunnerPidEvidence(sessionId, process.pid);
-      await recorder.event("fault_injected", {
+      await recorder.event("fault_reached", {
         id: "activate-rollback",
         sessionId,
         runnerPid: runner.pid,
-        conflictingPidEvidence: process.pid,
-        ownershipGeneration: ownership.ownership_generation,
+        mutation,
+        semanticReachCount: reach.semanticReachCount,
       });
-      const activationOutcome = await waitFor(
-        async () => {
-          const nodeLog = await readFile(runtime.nodeLog);
-          const from = activationLogOffset <= nodeLog.length ? activationLogOffset : 0;
-          const activationApplied = nodeLog.subarray(from).toString("utf8").split("\n").some(
-            (line) => {
-              try {
-                const entry = JSON.parse(line);
-                return entry.sessionId === sessionId
-                  && entry.ownershipGeneration === ownership.ownership_generation
-                  && entry.operation === "activate"
-                  && entry.applied === true;
-              } catch {
-                return false;
-              }
-            },
-          );
-          if (activationApplied) return "applied";
-          const rows = await runtime.ownerships(sessionId);
-          return rows.some((row) => (
-            row.ownership_generation === ownership.ownership_generation
-            && row.phase === "failed"
-            && String(row.failure_reason).includes("execution activate failed")
-          )) ? "failed" : undefined;
-        },
-        60_000,
-        "activate failure did not converge to failed ownership",
-        500,
-      );
-      if (activationOutcome === "applied") {
-        throw new Error("activate-rollback fault injection failed: activate applied:true");
+      const interventionOutcome = await interventionOutcomePromise;
+      if (mutation === "raise_removed" || mutation === "predicate_misplaced") {
+        await settle(runtime.waitForMarker(sessionId, rejectedMarker, 120_000));
+        await settle(runtime.waitForTerminal(sessionId, 30_000));
+      } else if (mutation === "cleanup_removed") {
+        await delay(2_000);
+      } else {
+        await waitFor(
+          () => runtime.runnerAlive(runner.pid) ? undefined : true,
+          15_000,
+          "activate rollback left the spawned child live",
+          100,
+        );
       }
-      await waitFor(
-        () => runtime.runnerAlive(runner.pid) ? undefined : true,
-        15_000,
-        "activate rollback left the spawned child live",
-        100,
+      const after = await runtime.sessionExecutionOwnership(sessionId);
+      const markerCount = await runtime.countTimelineEvents(
+        sessionId,
+        "assistant_message",
+        rejectedMarker,
       );
-      const status = await runtime.waitForTerminal(sessionId, 60_000);
-      assertScenario(status === "error", `activate rollback session status was ${status}`);
-      await delay(6_000);
-      const convergedOwnerships = await runtime.ownerships(sessionId);
-      const openPhases = new Set(["reserved", "spawned", "identity_proven", "active"]);
-      assertScenario(
-        convergedOwnerships.every((row) => !openPhases.has(row.phase)),
-        "activate rollback left an open ownership generation",
-      );
-      assertScenario(
-        convergedOwnerships.every(
-          (row) => !String(row.failure_reason ?? "").includes("orphaned_spawn"),
-        ),
-        "activate rollback converged through orphaned_spawn",
+      const observation = {
+        semanticReachCount: reach.semanticReachCount,
+        acquireApplied: after.executionGeneration !== before.executionGeneration
+          || after.owner !== null,
+        generationBefore: before.executionGeneration,
+        generationAfter: after.executionGeneration,
+        ownerBefore: before.owner,
+        ownerAfter: after.owner,
+        terminalRevisionBefore: before.terminalRevision,
+        terminalRevisionAfter: after.terminalRevision,
+        childAlive: runtime.runnerAlive(runner.pid),
+        markerCount,
+      };
+      const violations = activateRollbackViolations(observation);
+      let mutationDetection;
+      if (mutation) {
+        mutationDetection = activateRollbackMutationDetection(mutation, observation);
+        assertScenario(
+          mutationDetection.detected,
+          `activate-rollback mutation was not detected: ${mutation}`,
+        );
+      } else {
+        assertScenario(
+          violations.length === 0,
+          `activate-rollback contract failed: ${violations.join("; ")}`,
+        );
+      }
+      const verdict = {
+        mutation,
+        semanticReachCount: observation.semanticReachCount,
+        acquireApplied: observation.acquireApplied,
+        generation: [observation.generationBefore, observation.generationAfter],
+        terminalRevision: [
+          observation.terminalRevisionBefore,
+          observation.terminalRevisionAfter,
+        ],
+        childAlive: observation.childAlive,
+        markerCount: observation.markerCount,
+        violations,
+        mutationDetection,
+      };
+      process.stdout.write(
+        `ACTIVATE_ROLLBACK_${mutation ? "MUTATION" : "VERDICT"} ${JSON.stringify(verdict)}\n`,
       );
       return {
         id: "activate-rollback",
         status: "passed",
         sessionId,
+        deliveryId,
         runnerPid: runner.pid,
-        ownershipGeneration: ownership.ownership_generation,
-        sessionStatus: status,
-        childAlive: false,
-        ownerships: convergedOwnerships,
+        mutation,
+        mutationDetection,
+        interventionOutcome,
+        before,
+        after,
+        observation,
+        violations,
+        verdict,
       };
     } catch (error) {
       scenarioError = error;

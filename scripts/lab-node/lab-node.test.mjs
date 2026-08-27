@@ -43,6 +43,9 @@ test("clean-run resets before bootstrap and always stops the isolated stack", ()
   assert.ok(harnessAt > startAt, "harness must follow start");
   assert.match(cleanRun, /trap cleanup EXIT/);
   assert.match(cleanRun, /LAB_CLAUDE_AUTH_SOURCE="\$LAB_CLAUDE_AUTH_FILE"/);
+  assert.match(cleanRun, /fault-h2-product-mutation\.mjs/);
+  assert.match(cleanRun, /apply "\$LAB_REPO" "\$h2_mutation_backup"/);
+  assert.match(cleanRun, /restore "\$LAB_REPO" "\$h2_mutation_backup"/);
 });
 
 test("mutable-state reset preserves only the lab credential", () => {
@@ -249,9 +252,10 @@ test("fault harness is lab-only, bounded, and inventories transparent plus fault
   assert.match(scenarios, /dead-owner injection and lab restoration failed/);
   assert.match(scenarios, /runner-death-live-host injection and cleanup failed/);
   assert.match(scenarios, /activate-rollback injection and cleanup failed/);
-  assert.match(scenarios, /activate-rollback fault injection failed: activate applied:true/);
+  assert.match(scenarios, /activate-rollback contract failed/);
+  assert.match(scenarios, /semanticReachCount: reach\.semanticReachCount/);
   assert.ok(
-    scenarios.indexOf("activate failure did not converge to failed ownership")
+    scenarios.indexOf('recorder.event("fault_reached"')
       < scenarios.indexOf("activate rollback left the spawned child live"),
   );
   for (const scenario of [

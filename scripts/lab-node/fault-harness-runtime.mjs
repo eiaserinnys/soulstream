@@ -438,34 +438,87 @@ export class LabRuntime {
     await rm(directory, { recursive: true, force: true });
   }
 
-  async installActivationFailureFault(delaySeconds = 8) {
+  async installActivationFailureFault(delaySeconds = 8, mutation = null) {
     if (!Number.isInteger(delaySeconds) || delaySeconds < 1 || delaySeconds > 30) {
       throw new Error(`invalid activation fault delay: ${delaySeconds}`);
     }
+    if (![null, "raise_removed", "predicate_misplaced", "cleanup_removed"].includes(mutation)) {
+      throw new Error(`invalid activation fault mutation: ${mutation}`);
+    }
+    const predicate = mutation === "predicate_misplaced"
+      ? `OLD.execution_manifest_id IS NOT NULL
+           AND NEW.execution_manifest_id IS NULL`
+      : `OLD.execution_manifest_id IS NULL
+           AND OLD.execution_runtime_env_identity IS NULL
+           AND OLD.execution_registration_id IS NULL
+           AND OLD.execution_pid IS NULL
+           AND OLD.execution_start_identity IS NULL
+           AND OLD.execution_command_id IS NULL
+           AND OLD.execution_lease_expires_at IS NULL
+           AND NEW.execution_manifest_id IS NOT NULL
+           AND NEW.execution_runtime_env_identity IS NOT NULL
+           AND NEW.execution_registration_id IS NOT NULL
+           AND NEW.execution_pid IS NOT NULL
+           AND NEW.execution_start_identity IS NOT NULL
+           AND NEW.execution_command_id IS NOT NULL
+           AND NEW.execution_lease_expires_at IS NOT NULL
+           AND NEW.execution_generation = OLD.execution_generation + 1`;
+    const rejectTransition = mutation === "raise_removed"
+      ? ""
+      : "RAISE EXCEPTION 'lab injected sessions-row execution acquire failure';";
     return await this.psqlOne(`
-      DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation
-        ON session_execution_ownerships;
-      CREATE OR REPLACE FUNCTION lab_fault_fail_execution_activation()
+      DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation ON session_execution_ownerships;
+      DROP FUNCTION IF EXISTS lab_fault_fail_execution_activation();
+      DROP TRIGGER IF EXISTS lab_fault_fail_execution_acquire ON sessions;
+      CREATE OR REPLACE FUNCTION lab_fault_fail_execution_acquire()
       RETURNS trigger LANGUAGE plpgsql AS $lab$
       BEGIN
-        IF OLD.phase = 'identity_proven' AND NEW.phase = 'active' THEN
+        IF ${predicate} THEN
+          PERFORM pg_advisory_xact_lock(741925, 2);
           PERFORM pg_sleep(${delaySeconds});
-          RAISE EXCEPTION 'lab injected execution activation failure';
+          ${rejectTransition}
         END IF;
         RETURN NEW;
       END;
       $lab$;
-      CREATE TRIGGER lab_fault_fail_execution_activation
-        BEFORE UPDATE OF phase ON session_execution_ownerships
-        FOR EACH ROW EXECUTE FUNCTION lab_fault_fail_execution_activation();
+      CREATE TRIGGER lab_fault_fail_execution_acquire
+        BEFORE UPDATE OF execution_generation, execution_manifest_id,
+          execution_runtime_env_identity, execution_registration_id,
+          execution_pid, execution_start_identity, execution_command_id,
+          execution_lease_expires_at ON sessions
+        FOR EACH ROW EXECUTE FUNCTION lab_fault_fail_execution_acquire();
       SELECT json_build_object('installed', true);
     `);
   }
 
+  async waitForActivationFailureFault(timeoutMs = 30_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const observation = await this.psqlOne(`
+        SELECT json_build_object(
+          'reached', EXISTS (
+            SELECT 1
+              FROM pg_locks AS lock
+              JOIN pg_stat_activity AS activity ON activity.pid = lock.pid
+             WHERE lock.locktype = 'advisory'
+               AND lock.classid = 741925
+               AND lock.objid = 2
+               AND lock.granted
+               AND activity.query LIKE '%session_acquire_execution_ownership%'
+          )
+        )
+      `);
+      if (observation?.reached === true) return { semanticReachCount: 1 };
+      await delay(100);
+    }
+    return { semanticReachCount: 0 };
+  }
+
   async removeActivationFailureFault() {
     return await this.psqlOne(`
-      DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation
-        ON session_execution_ownerships;
+      DROP TRIGGER IF EXISTS lab_fault_fail_execution_acquire ON sessions;
+      DROP FUNCTION IF EXISTS lab_fault_fail_execution_acquire();
+      DROP TRIGGER IF EXISTS lab_fault_fail_execution_activation ON session_execution_ownerships;
       DROP FUNCTION IF EXISTS lab_fault_fail_execution_activation();
       SELECT json_build_object('removed', true);
     `);
@@ -658,6 +711,31 @@ export class LabRuntime {
         ORDER BY ownership_generation
       ) AS ownership
     `) ?? [];
+  }
+
+  async sessionExecutionOwnership(sessionId) {
+    assertIdentifier(sessionId, "session id");
+    return await this.psqlOne(`
+      SELECT json_build_object(
+        'status', session.status,
+        'executionGeneration', session.execution_generation,
+        'owner', CASE
+          WHEN session.execution_manifest_id IS NULL THEN NULL
+          ELSE json_build_object(
+            'manifestId', session.execution_manifest_id,
+            'runtimeEnvIdentity', session.execution_runtime_env_identity,
+            'registrationId', session.execution_registration_id,
+            'pid', session.execution_pid,
+            'startIdentity', session.execution_start_identity,
+            'executionCommandId', session.execution_command_id,
+            'leaseExpiresAt', session.execution_lease_expires_at
+          )
+        END,
+        'terminalRevision', session.termination_event_id
+      )
+      FROM sessions AS session
+      WHERE session.session_id = ${sqlLiteral(sessionId)}
+    `);
   }
 
   async consumptionCount(relationKey) {

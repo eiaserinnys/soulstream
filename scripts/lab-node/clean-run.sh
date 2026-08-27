@@ -20,13 +20,27 @@ stop_lab_for_reset
 remove_lab_postgres
 reset_lab_mutable_state
 
+activate_rollback_mutation="${LAB_ACTIVATE_ROLLBACK_MUTATION:-}"
+h2_mutation_backup="$LAB_ROOT/state/h2-product-mutation.json"
+
 cleanup() {
   local status="$?"
   trap - EXIT
   "$SCRIPT_DIR/stop.sh" || status=1
+  if [[ -f "$h2_mutation_backup" ]]; then
+    node "$SCRIPT_DIR/fault-h2-product-mutation.mjs" \
+      restore "$LAB_REPO" "$h2_mutation_backup" || status=1
+    git -C "$LAB_REPO" diff --exit-code -- \
+      soul-server-ts/src/task/task_executor.ts || status=1
+  fi
   exit "$status"
 }
 trap cleanup EXIT
+
+if [[ "$activate_rollback_mutation" == "cleanup_removed" ]]; then
+  node "$SCRIPT_DIR/fault-h2-product-mutation.mjs" \
+    apply "$LAB_REPO" "$h2_mutation_backup"
+fi
 
 export LAB_CLAUDE_AUTH_SOURCE="$LAB_CLAUDE_AUTH_FILE"
 "$SCRIPT_DIR/bootstrap.sh"
