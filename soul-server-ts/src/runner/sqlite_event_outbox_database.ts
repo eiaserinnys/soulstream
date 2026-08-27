@@ -3,9 +3,12 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { advanceUnacknowledgedSourceSequence } from "../event_outbox_recovery.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
-import type {
-  RunnerBootstrapRecord,
-  RunnerEventOutboxRow,
+import {
+  RUNNER_EVENT_OUTBOX_READ_ONLY_REQUIRED_COLUMNS,
+  RUNNER_EVENT_OUTBOX_READ_ONLY_SCHEMA_VERSIONS,
+  RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
+  type RunnerBootstrapRecord,
+  type RunnerEventOutboxRow,
 } from "./sqlite_event_outbox_schema.js";
 import {
   runnerRowToBootstrap,
@@ -213,6 +216,23 @@ export function runnerRowCount(database: DatabaseSync): number {
 
 export function readRunnerSchemaVersion(database: DatabaseSync): number {
   return (database.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+}
+
+export function assertRunnerReadOnlySchema(database: DatabaseSync, version: number): void {
+  if (!RUNNER_EVENT_OUTBOX_READ_ONLY_SCHEMA_VERSIONS.has(version)) {
+    throw new Error(`runner event outbox schema version ${version} is not supported read-only`);
+  }
+  const requiredColumns = version === RUNNER_EVENT_OUTBOX_SCHEMA_VERSION
+    ? [...RUNNER_EVENT_OUTBOX_READ_ONLY_REQUIRED_COLUMNS, "execution_generation"]
+    : RUNNER_EVENT_OUTBOX_READ_ONLY_REQUIRED_COLUMNS;
+  const columns = new Set(
+    (database.prepare("PRAGMA table_info(runner_event_outbox)").all() as Array<{ name: string }>)
+      .map((column) => column.name),
+  );
+  const missing = requiredColumns.find((column) => !columns.has(column));
+  if (missing) {
+    throw new Error(`runner event outbox schema is missing required column ${missing}`);
+  }
 }
 
 export function readRunnerAcknowledgedThrough(database: DatabaseSync): number {

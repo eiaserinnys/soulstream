@@ -1,6 +1,31 @@
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 
 export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 10;
+export const RUNNER_EVENT_OUTBOX_READ_ONLY_SCHEMA_VERSIONS: ReadonlySet<number> = new Set([9, 10]);
+export const RUNNER_EVENT_OUTBOX_READ_ONLY_REQUIRED_COLUMNS = [
+  "source_seq",
+  "record_kind",
+  "stream_id",
+  "session_id",
+  "event_type",
+  "payload_json",
+  "searchable_text",
+  "created_at",
+  "semantic_dedupe_key",
+  "session_effect_json",
+  "payload_hash",
+  "runner_metadata_json",
+  "acked_through",
+  "ack_checkpoint_hash",
+  "runner_pid",
+  "execution_command_id",
+  "execution_state",
+  "progress_seq",
+  "progress_at",
+  "liveness_at",
+  "in_flight_tools_json",
+  "terminal_error_json",
+] as const;
 export const RUNNER_BOOTSTRAP_EVENT_TYPE = "runner_bootstrap";
 
 export const RUNNER_IPC_JOURNAL_DDL = `
@@ -192,7 +217,7 @@ export type RunnerEventOutboxRow = {
   record_kind: "bootstrap" | "event";
   stream_id: string;
   session_id: string;
-  execution_generation: number | null;
+  execution_generation?: number | null;
   event_type: string;
   payload_json: string;
   searchable_text: string | null;
