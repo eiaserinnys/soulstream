@@ -106,6 +106,17 @@ function planIdentity(plan) {
   };
 }
 
+function inventoryObjectCount(inventory) {
+  return Number(inventory.object_count ?? (
+    Number(inventory.relation_count) + Number(inventory.routine_count)
+    + Number(inventory.type_count) + Number(inventory.ledger_count)
+  ));
+}
+
+function sameJson(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export async function readDatabaseReleaseJournal(path) {
   const value = JSON.parse(await readFile(path, "utf8"));
   if (value?.schema_version !== DATABASE_RELEASE_SCHEMA_VERSION) {
@@ -194,6 +205,127 @@ function journalIdentityFromJournal(journal) {
   };
 }
 
+function matchesOuterAttemptIdentity(attempt, identity) {
+  return attempt?.request_id === identity.request_id
+    && attempt.repo === identity.repo
+    && attempt.release_id === identity.release_id
+    && attempt.previous_head === identity.previous_head
+    && attempt.target_head === identity.target_head
+    && attempt.manifest_digest === identity.manifest_checksum
+    && attempt.expected_operation === identity.operation;
+}
+
+function matchesFreshOuterAttempt(outer, identity) {
+  return matchesOuterAttemptIdentity(outer, identity)
+    && outer.state === "preflight"
+    && outer.recovered === false;
+}
+
+function matchesRecoveredOuterAttempt(attempt, journal, path) {
+  return matchesOuterAttemptIdentity(attempt, journalIdentityFromJournal(journal))
+    && attempt.operation === journal.operation
+    && resolve(attempt.database_journal_path ?? "") === resolve(path)
+    && attempt.state === "failed"
+    && attempt.recovered === true;
+}
+
+function assertUnchangedReleasePlanAndInventory(journal, plan, inventory) {
+  const expectedPlan = planIdentity(plan);
+  const bootstrap = expectedPlan.bootstrap;
+  const pending = expectedPlan.pending;
+  if (
+    journal.pre_schema_fingerprint !== fingerprintInventory(inventory)
+    || journal.pre_object_count !== inventoryObjectCount(inventory)
+    || !sameJson(journal.bootstrap_migrations, bootstrap)
+    || !sameJson(journal.pending_migrations, pending)
+    || !sameJson(journal.planned_migrations, [...bootstrap, ...pending])
+    || !sameJson(journal.pre_migration_plan, expectedPlan)
+  ) {
+    throw new Error("JOURNAL_GATE_FAILED: migration plan or database inventory changed");
+  }
+}
+
+function assertUnchangedZeroEffectPreflight(journal, plan, inventory) {
+  const history = journal.history;
+  if (
+    journal.revision !== 1
+    || journal.status !== "preflight_complete"
+    || journal.last_committed_phase !== "preflight"
+    || journal.failed_operation !== null
+    || journal.backup !== null
+    || journal.apply_started_at !== null
+    || journal.apply_committed_at !== null
+    || journal.quiescence_receipt_digest !== null
+    || journal.quiescence_owner_instance !== null
+    || journal.quiescence_nonce !== null
+    || !Array.isArray(journal.completed_subphases)
+    || journal.completed_subphases.length !== 0
+    || !Array.isArray(journal.applied_ledger)
+    || journal.applied_ledger.length !== 0
+    || journal.error !== null
+    || !Array.isArray(history)
+    || history.length !== 1
+    || history[0].phase !== "preflight"
+    || history[0].status !== "preflight_complete"
+    || typeof history[0].occurred_at !== "string"
+    || journal.updated_at !== history[0].occurred_at
+  ) {
+    throw new Error("JOURNAL_IDENTITY_CONFLICT: preflight journal has effects or unknown fields");
+  }
+  try {
+    assertUnchangedReleasePlanAndInventory(journal, plan, inventory);
+  } catch {
+    throw new Error("JOURNAL_IDENTITY_CONFLICT: preflight plan or inventory changed");
+  }
+}
+
+async function retireRecoveredPreflightJournal({ path, current, identity, plan, inventory, now }) {
+  if (
+    current.repo !== identity.repo
+    || current.operation !== identity.operation
+    || current.database_contract_checksum !== identity.database_contract_checksum
+    || current.haniel_journal_path !== identity.haniel_journal_path
+    || !sameJson(current.writer_services, identity.writer_services)
+    || !sameJson(current.required_subphases, identity.required_subphases)
+  ) {
+    throw new Error("JOURNAL_IDENTITY_CONFLICT: database release contract differs");
+  }
+  let outer;
+  try {
+    outer = JSON.parse(await readFile(identity.haniel_journal_path, "utf8"));
+  } catch {
+    throw new Error("JOURNAL_IDENTITY_CONFLICT: outer release evidence is unavailable");
+  }
+  if (!matchesFreshOuterAttempt(outer, identity)) {
+    throw new Error("JOURNAL_IDENTITY_CONFLICT: fresh outer attempt differs");
+  }
+  const matches = Array.isArray(outer.previous_attempts)
+    ? outer.previous_attempts.filter((attempt) => matchesRecoveredOuterAttempt(attempt, current, path))
+    : [];
+  if (matches.length !== 1) {
+    throw new Error("JOURNAL_IDENTITY_CONFLICT: recovered outer attempt differs");
+  }
+  assertUnchangedZeroEffectPreflight(current, plan, inventory);
+  const observed = await readDatabaseReleaseJournal(path);
+  if (observed.revision !== current.revision || journalDigest(observed) !== journalDigest(current)) {
+    throw new Error("JOURNAL_REVISION_CONFLICT: database release journal changed");
+  }
+  const occurredAt = now().toISOString();
+  const recovered = {
+    ...current,
+    revision: current.revision + 1,
+    status: "recovered",
+    last_committed_phase: "recovery",
+    history: [
+      ...current.history,
+      { phase: "recovery", status: "recovered", occurred_at: occurredAt },
+    ],
+    updated_at: occurredAt,
+  };
+  await writeDatabaseReleaseJournal(path, recovered);
+  await rotateTerminalJournal(path, recovered);
+}
+
 export async function createDatabaseReleaseJournal({
   env,
   operation,
@@ -209,9 +341,19 @@ export async function createDatabaseReleaseJournal({
       try {
         assertDatabaseReleaseIdentity(current, identity);
         return current;
-      } catch (error) {
-        if (!TERMINAL.has(current.status)) throw error;
-        await rotateTerminalJournal(path, current);
+      } catch {
+        if (TERMINAL.has(current.status)) {
+          await rotateTerminalJournal(path, current);
+        } else {
+          await retireRecoveredPreflightJournal({
+            path,
+            current,
+            identity,
+            plan,
+            inventory,
+            now,
+          });
+        }
       }
     } catch (error) {
       if (!(error instanceof Error) || error.code !== "ENOENT") throw error;
@@ -225,10 +367,7 @@ export async function createDatabaseReleaseJournal({
       ...identity,
       failed_operation: null,
       pre_schema_fingerprint: fingerprintInventory(inventory),
-      pre_object_count: Number(inventory.object_count ?? (
-        Number(inventory.relation_count) + Number(inventory.routine_count)
-        + Number(inventory.type_count)
-      )),
+      pre_object_count: inventoryObjectCount(inventory),
       bootstrap_migrations: bootstrap,
       pending_migrations: pending,
       planned_migrations: [...bootstrap, ...pending],
@@ -395,7 +534,11 @@ export async function assertDatabaseReleaseApplyGate({ env, operation, plan, inv
     throw new Error("JOURNAL_GATE_FAILED: journal revision differs");
   }
   if (operation === "upgrade") {
-    if (!journal.backup?.verified_at) {
+    const noInlineBackup = journal.backup === null
+      && typeof journal.quiescence_receipt_digest === "string"
+      && typeof journal.quiescence_owner_instance === "string"
+      && typeof journal.quiescence_nonce === "string";
+    if (!noInlineBackup && !journal.backup?.verified_at) {
       throw new Error("JOURNAL_GATE_FAILED: verified backup phase is required");
     }
     const evidence = await readHanielReleaseEvidence({ env, journal, phase: "apply" });
@@ -406,7 +549,11 @@ export async function assertDatabaseReleaseApplyGate({ env, operation, plan, inv
     ) {
       throw new Error("JOURNAL_GATE_FAILED: quiescence evidence changed");
     }
-    await assertCurrentBackup({ env, journal, plan });
+    if (noInlineBackup) {
+      assertNoInlineDatabaseReleaseGate({ journal, plan, inventory });
+    } else {
+      await assertCurrentBackup({ env, journal, plan });
+    }
   }
   if (fingerprintInventory(inventory) !== journal.pre_schema_fingerprint) {
     throw new Error("JOURNAL_GATE_FAILED: database inventory changed after preflight");
@@ -420,6 +567,18 @@ export async function assertDatabaseReleaseApplyGate({ env, operation, plan, inv
   ) {
     throw new Error("JOURNAL_GATE_FAILED: migration plan differs");
   }
+  return journal;
+}
+
+export function assertNoInlineDatabaseReleaseGate({ journal, plan, inventory }) {
+  if (journal.operation !== "upgrade" || journal.backup !== null) {
+    throw new Error("JOURNAL_GATE_FAILED: no-inline upgrade evidence differs");
+  }
+  if (!Array.isArray(plan.pending)
+    || plan.pending.some((migration) => migration.destructive !== false)) {
+    throw new Error("JOURNAL_GATE_FAILED: no-inline migration is destructive or unclassified");
+  }
+  assertUnchangedReleasePlanAndInventory(journal, plan, inventory);
   return journal;
 }
 

@@ -23,16 +23,6 @@
       "command": "node packages/db-schema/scripts/release-executor.mjs preflight --manifest deploy/release-manifest.json --database-contract deploy/database-release-central.json",
       "timeout_seconds": 300
     },
-    "backup": {
-      "name": "database-backup",
-      "command": "node packages/db-schema/scripts/release-executor.mjs backup --manifest deploy/release-manifest.json --database-contract deploy/database-release-central.json",
-      "timeout_seconds": 300
-    },
-    "verify_backup": {
-      "name": "verify-database-backup",
-      "command": "node packages/db-schema/scripts/release-executor.mjs verify-backup --manifest deploy/release-manifest.json --database-contract deploy/database-release-central.json",
-      "timeout_seconds": 300
-    },
     "apply": {
       "name": "apply-migrations-and-board-yjs-residue",
       "command": "node orch-server-ts/node_modules/tsx/dist/cli.mjs orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts --migrate",
