@@ -6,6 +6,7 @@ import {
   activateRollbackMutationDetection,
   activateRollbackViolations,
   observeActivationFailureOutcome,
+  observeRaiseRemovedMutationViolation,
 } from "./fault-activate-rollback.mjs";
 import { runCanonicalScenario } from "./fault-scenarios.mjs";
 import {
@@ -226,6 +227,38 @@ test("raise-removed mutation completes from an owner commit without waiting for 
     sentinel: "acquire_committed_without_fault_raise",
   });
   assert.equal(rejectedMarkerWaitCount, 0);
+});
+
+test("raise-removed mutation resolves on either observation and delegates the empty case", async () => {
+  let markerObservationCount = 0;
+  const ownerCommit = { executionGeneration: 5, owner: null };
+  assert.deepEqual(await observeRaiseRemovedMutationViolation({
+    waitForObservation: (observe) => observe(),
+    observeOwnerCommit: async () => ownerCommit,
+    observeMarker: async () => {
+      markerObservationCount += 1;
+      return 0;
+    },
+  }), { kind: "owner_commit", ownerCommit });
+  assert.equal(markerObservationCount, 0);
+
+  assert.deepEqual(await observeRaiseRemovedMutationViolation({
+    waitForObservation: (observe) => observe(),
+    observeOwnerCommit: async () => undefined,
+    observeMarker: async () => 1,
+  }), { kind: "marker", markerCount: 1 });
+
+  let emptyObservationDelegated = false;
+  await assert.rejects(observeRaiseRemovedMutationViolation({
+    waitForObservation: async (observe) => {
+      emptyObservationDelegated = true;
+      assert.equal(await observe(), undefined);
+      throw new Error("existing wait timeout");
+    },
+    observeOwnerCommit: async () => undefined,
+    observeMarker: async () => 0,
+  }), /existing wait timeout/);
+  assert.equal(emptyObservationDelegated, true);
 });
 
 test("activate rollback retry allowance cannot hide core contract violations", () => {

@@ -32,6 +32,7 @@ import {
   activateRollbackMutationDetection,
   activateRollbackViolations,
   observeActivationFailureOutcome,
+  observeRaiseRemovedMutationViolation,
   requestedActivateRollbackMutation,
 } from "./fault-activate-rollback.mjs";
 import {
@@ -627,7 +628,28 @@ const SCENARIOS = {
         [followupRegistration],
       );
       const interventionOutcome = await interventionOutcomePromise;
-      if (mutation === "raise_removed" || mutation === "predicate_misplaced") {
+      if (mutation === "raise_removed") {
+        await observeRaiseRemovedMutationViolation({
+          waitForObservation: (observe) => waitFor(
+            observe,
+            120_000,
+            "activate rollback did not observe an owner commit or rejected marker",
+            1_000,
+          ),
+          observeOwnerCommit: async () => {
+            const ownership = await runtime.sessionExecutionOwnership(sessionId);
+            return ownership.executionGeneration === before.executionGeneration + 1
+              && ownership.owner === null
+              ? ownership
+              : undefined;
+          },
+          observeMarker: () => runtime.countTimelineEvents(
+            sessionId,
+            "assistant_message",
+            rejectedMarker,
+          ),
+        });
+      } else if (mutation === "predicate_misplaced") {
         await settle(runtime.waitForMarker(sessionId, rejectedMarker, 120_000));
         await settle(runtime.waitForTerminal(sessionId, 30_000));
       } else if (mutation === "cleanup_removed") {

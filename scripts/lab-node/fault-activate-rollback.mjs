@@ -108,6 +108,19 @@ export async function observeActivationFailureOutcome({
   return { reach, followupInventory, deadLetterOutcome };
 }
 
+export async function observeRaiseRemovedMutationViolation({
+  waitForObservation,
+  observeOwnerCommit,
+  observeMarker,
+}) {
+  return await waitForObservation(async () => {
+    const ownerCommit = await observeOwnerCommit();
+    if (ownerCommit) return { kind: "owner_commit", ownerCommit };
+    const markerCount = await observeMarker();
+    return markerCount > 0 ? { kind: "marker", markerCount } : undefined;
+  });
+}
+
 export function activateRollbackMutationDetection(mutation, observation) {
   if (!ACTIVATE_ROLLBACK_MUTATIONS.includes(mutation)) {
     throw new Error(`unsupported activate-rollback mutation: ${mutation}`);
