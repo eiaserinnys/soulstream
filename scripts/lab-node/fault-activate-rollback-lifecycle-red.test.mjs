@@ -14,13 +14,16 @@ function predicateLifecycleHarness({
   appliedAcquire = true,
   counter = 0,
   cleanupFailure = false,
-  envelopeMatches = true,
   followupTransition = {},
+  followupOwner = {},
 } = {}) {
   const trace = [];
   const events = [];
   let logOffset = 0;
   let ownershipReadCount = 0;
+  let followupAcquireObserved = false;
+  let followupOwnerRead = false;
+  let baselineTerminalObserved = false;
   let runnerAlive = true;
   let registrationPresent = true;
 
@@ -42,6 +45,16 @@ function predicateLifecycleHarness({
       : BASELINE_GENERATION,
     terminalRevision: appliedAcquire ? 19 : 18,
     owner: null,
+  };
+  const followupActiveOwnership = {
+    status: "running",
+    executionGeneration: BASELINE_GENERATION + 1,
+    terminalRevision: 18,
+    owner: {
+      pid: followupOwner.pid ?? FOLLOWUP_PID,
+      registrationId: followupOwner.registrationId ?? FOLLOWUP_REGISTRATION_ID,
+      executionCommandId: "command-followup",
+    },
   };
   const followupRegistration = {
     present: true,
@@ -68,6 +81,20 @@ function predicateLifecycleHarness({
         };
       }
       trace.push(`followup-${operation}`);
+      if (!appliedAcquire && operation === "acquire") {
+        trace.push("followup-acquire:not-applied");
+        return {
+          sessionId,
+          operation,
+          ownershipGeneration: BASELINE_GENERATION,
+          time: 30,
+          applied: false,
+        };
+      }
+      if (operation === "acquire") {
+        followupAcquireObserved = true;
+        trace.push("followup-acquire:applied");
+      }
       return {
         sessionId: followupTransition.sessionId ?? sessionId,
         operation,
@@ -81,12 +108,18 @@ function predicateLifecycleHarness({
       trace.push(`followup-operation-${expectedActive ? "active" : "inactive"}`);
       return { activeRunnerOperations: expectedActive ? [{ sessionId: SESSION_ID }] : [] };
     },
-    async sessionExecutionOwnership() {
+    async sessionExecutionOwnership(sessionId) {
+      assert.equal(sessionId, SESSION_ID);
       ownershipReadCount += 1;
       if (ownershipReadCount === 1) {
         return { ...ownerlessBaseline, status: "running", owner: baselineOwner };
       }
       if (ownershipReadCount === 2) return ownerlessBaseline;
+      if (followupAcquireObserved && !followupOwnerRead) {
+        followupOwnerRead = true;
+        trace.push("followup-owner-point-read");
+        return followupActiveOwnership;
+      }
       return finalOwnership;
     },
     async executionCommandFingerprint() { return "101"; },
@@ -95,14 +128,21 @@ function predicateLifecycleHarness({
       trace.push("followup-marker-wait");
       return { messages: [] };
     },
-    async waitForTerminal() {
-      trace.push(ownershipReadCount < 2 ? "baseline-terminal" : "followup-terminal");
+    async waitForTerminal(sessionId) {
+      assert.equal(sessionId, SESSION_ID);
+      if (!baselineTerminalObserved) {
+        baselineTerminalObserved = true;
+        trace.push("baseline-terminal");
+      } else {
+        trace.push("followup-terminal");
+      }
       return "completed";
     },
     async waitForTerminalRunnerRetirementSince(
       _sessionId,
       _offset,
       registrationId,
+      expectedPid,
     ) {
       if (registrationId === BASELINE_REGISTRATION_ID) {
         return {
@@ -115,6 +155,8 @@ function predicateLifecycleHarness({
           },
         };
       }
+      assert.equal(registrationId, FOLLOWUP_REGISTRATION_ID);
+      assert.equal(expectedPid, FOLLOWUP_PID);
       trace.push("followup-retirement");
       runnerAlive = false;
       registrationPresent = false;
@@ -158,11 +200,9 @@ function predicateLifecycleHarness({
     },
     async executionAcquireEnvelopeSourceSeq(sessionId, registrationId, pid) {
       trace.push(`envelope:${sessionId}:${registrationId}:${pid}`);
-      if (!envelopeMatches) {
-        throw new Error(
-          `expected one execution acquire envelope for ${sessionId}:${registrationId}:${pid}, found 0`,
-        );
-      }
+      assert.equal(sessionId, SESSION_ID);
+      assert.equal(registrationId, FOLLOWUP_REGISTRATION_ID);
+      assert.equal(pid, FOLLOWUP_PID);
       return 8;
     },
     async observeDistinctRunnerRegistrationInventoryUntil() {
@@ -239,6 +279,7 @@ async function runPredicateScenario(t, options) {
     harness.runtime,
     harness.recorder,
   );
+  harness.trace.push("scenario-finalized");
   return { ...harness, result };
 }
 
@@ -246,8 +287,22 @@ test("applied follow-up acquire is bound before a zero counter is classified", a
   const { trace } = await runPredicateScenario(t, { appliedAcquire: true });
 
   assert.ok(trace.indexOf("followup-acquire") >= 0, JSON.stringify(trace));
+  assert.ok(trace.indexOf("followup-acquire:applied") >= 0, JSON.stringify(trace));
+  assert.ok(trace.indexOf("followup-owner-point-read") >= 0, JSON.stringify(trace));
+  const envelopeIndex = trace.indexOf(
+    `envelope:${SESSION_ID}:${FOLLOWUP_REGISTRATION_ID}:${FOLLOWUP_PID}`,
+  );
   assert.ok(
-    trace.indexOf("followup-acquire") < trace.indexOf("counter-confirmed"),
+    trace.indexOf("followup-acquire")
+      < trace.indexOf("followup-owner-point-read"),
+    JSON.stringify(trace),
+  );
+  assert.ok(
+    trace.indexOf("followup-owner-point-read") < envelopeIndex,
+    JSON.stringify(trace),
+  );
+  assert.ok(
+    envelopeIndex < trace.indexOf("counter-confirmed"),
     JSON.stringify(trace),
   );
 });
@@ -259,41 +314,75 @@ test("zero after an applied acquire is classified as a missed predicate", async 
   assert.deepEqual(result.verdict.mutationObservation, {
     sentinel: "fault_predicate_missed_applied_acquire",
     observationPoint: "after_exact_followup_acquire",
-    sessionId: SESSION_ID,
-    ownershipGeneration: BASELINE_GENERATION + 1,
-    followupRegistrationId: FOLLOWUP_REGISTRATION_ID,
-    followupPid: FOLLOWUP_PID,
+    acquireEvidence: {
+      sessionId: SESSION_ID,
+      ownershipGeneration: BASELINE_GENERATION + 1,
+      registrationId: FOLLOWUP_REGISTRATION_ID,
+      pid: FOLLOWUP_PID,
+    },
     semanticReachCount: 0,
   });
 });
 
 test("mutation observation cannot finalize or clean up before exact release and retirement", async (t) => {
   const { events, result, trace } = await runPredicateScenario(t, { appliedAcquire: true });
-  const observed = events.find((event) => event.details.mutationObservation !== null);
-  const observationIndex = trace.indexOf(observed?.action);
-  const releaseIndex = trace.indexOf("followup-release");
-  const retirementIndex = trace.indexOf("followup-retirement");
+  const observed = events.find((event) => event.details?.mutationObservation != null);
   const cleanupIndex = trace.indexOf("cleanup-terminate-runner");
+  const lifecycle = trace.filter((entry) => [
+    "followup-acquire",
+    "counter-confirmed",
+    "followup-release",
+    "followup-terminal",
+    "followup-retirement",
+    "scenario-finalized",
+  ].includes(entry));
 
   assert.equal(result.status, "passed", JSON.stringify(result.failure));
-  assert.ok(releaseIndex >= 0, JSON.stringify(trace));
-  assert.ok(retirementIndex > releaseIndex, JSON.stringify(trace));
-  assert.ok(observationIndex > retirementIndex, JSON.stringify(trace));
-  assert.ok(cleanupIndex === -1 || cleanupIndex > retirementIndex, JSON.stringify(trace));
+  assert.equal(observed?.action, "fault_reached", JSON.stringify(events));
+  assert.deepEqual(lifecycle, [
+    "followup-acquire",
+    "counter-confirmed",
+    "followup-release",
+    "followup-terminal",
+    "followup-retirement",
+    "scenario-finalized",
+  ]);
+  assert.ok(
+    cleanupIndex === -1 || cleanupIndex > trace.indexOf("followup-retirement"),
+    JSON.stringify(trace),
+  );
 });
 
 test("only a terminal follow-up with no applied acquire emits the no-transition verdict once", async (t) => {
   const { events, result, trace } = await runPredicateScenario(t, { appliedAcquire: false });
   const sentinelEvents = events.filter(
-    (event) => event.details.mutationObservation?.sentinel
+    (event) => event.details?.mutationObservation?.sentinel
       === "sessions_row_acquire_transition_not_reached",
   );
 
   assert.equal(result.status, "passed", JSON.stringify(result.failure));
-  assert.equal(trace.includes("followup-acquire"), false, JSON.stringify(trace));
+  assert.ok(trace.includes("followup-acquire"), JSON.stringify(trace));
+  assert.ok(trace.includes("followup-acquire:not-applied"), JSON.stringify(trace));
+  assert.equal(trace.includes("followup-acquire:applied"), false, JSON.stringify(trace));
+  assert.equal(trace.includes("followup-owner-point-read"), false, JSON.stringify(trace));
   assert.ok(trace.includes("followup-operation-active"), JSON.stringify(trace));
   assert.ok(trace.includes("followup-operation-inactive"), JSON.stringify(trace));
   assert.ok(trace.includes("followup-retirement"), JSON.stringify(trace));
+  for (const prerequisite of [
+    "followup-acquire:not-applied",
+    "followup-operation-inactive",
+    "followup-terminal",
+    "followup-retirement",
+  ]) {
+    assert.ok(
+      sentinelEvents[0]?.trace.includes(prerequisite),
+      `${prerequisite} missing before no-transition observation: ${JSON.stringify(sentinelEvents)}`,
+    );
+  }
+  assert.ok(
+    trace.indexOf("followup-terminal") < trace.indexOf("scenario-finalized"),
+    JSON.stringify(trace),
+  );
   assert.equal(sentinelEvents.length, 1, JSON.stringify(events));
   assert.equal(
     sentinelEvents[0].details.mutationObservation.observationPoint,
@@ -305,11 +394,34 @@ test("only a terminal follow-up with no applied acquire emits the no-transition 
   });
 });
 
-test("wrong follow-up transition identity cannot pass the applied-acquire gate", async (t) => {
+test("wrong follow-up session cannot pass the applied-acquire evidence gate", async (t) => {
   const { result } = await runPredicateScenario(t, {
     appliedAcquire: true,
     followupTransition: {
       sessionId: "wrong-session",
+    },
+  });
+
+  assert.equal(result.status, "failed");
+  assert.match(result.failure.message, /exact follow-up execution acquire/i);
+  assert.equal(result.verdict?.mutationObservation ?? null, null);
+});
+
+test("the exact follow-up envelope is the identity control for acquire evidence", async (t) => {
+  const { trace } = await runPredicateScenario(t, { appliedAcquire: true });
+
+  assert.ok(
+    trace.includes(
+      `envelope:${SESSION_ID}:${FOLLOWUP_REGISTRATION_ID}:${FOLLOWUP_PID}`,
+    ),
+    JSON.stringify(trace),
+  );
+});
+
+test("wrong follow-up generation cannot pass the applied-acquire evidence gate", async (t) => {
+  const { result } = await runPredicateScenario(t, {
+    appliedAcquire: true,
+    followupTransition: {
       ownershipGeneration: BASELINE_GENERATION + 2,
     },
   });
@@ -319,14 +431,29 @@ test("wrong follow-up transition identity cannot pass the applied-acquire gate",
   assert.equal(result.verdict?.mutationObservation ?? null, null);
 });
 
-test("wrong follow-up registration or PID cannot pass the envelope gate", async (t) => {
+test("wrong follow-up registration cannot pass the applied-acquire evidence gate", async (t) => {
   const { result } = await runPredicateScenario(t, {
     appliedAcquire: true,
-    envelopeMatches: false,
+    followupOwner: {
+      registrationId: "wrong-registration",
+    },
   });
 
   assert.equal(result.status, "failed");
-  assert.match(result.failure.message, /expected one execution acquire envelope/);
+  assert.match(result.failure.message, /exact follow-up execution acquire/i);
+  assert.equal(result.verdict?.mutationObservation ?? null, null);
+});
+
+test("wrong follow-up PID cannot pass the applied-acquire evidence gate", async (t) => {
+  const { result } = await runPredicateScenario(t, {
+    appliedAcquire: true,
+    followupOwner: {
+      pid: FOLLOWUP_PID + 1,
+    },
+  });
+
+  assert.equal(result.status, "failed");
+  assert.match(result.failure.message, /exact follow-up execution acquire/i);
   assert.equal(result.verdict?.mutationObservation ?? null, null);
 });
 
@@ -338,18 +465,27 @@ test("a nonzero semantic counter emits no predicate-missed sentinel", async (t) 
 
   assert.equal(result.status, "failed");
   assert.equal(
-    events.filter((event) => event.details.mutationObservation != null).length,
+    events.filter((event) => event.details?.mutationObservation != null).length,
     0,
   );
 });
 
 test("cleanup failure is reported alongside an already observed mutation verdict", async (t) => {
-  const { result } = await runPredicateScenario(t, {
+  const { events, result } = await runPredicateScenario(t, {
     appliedAcquire: false,
     cleanupFailure: true,
   });
+  const observed = events.find((event) => (
+    event.details?.mutationObservation?.sentinel
+      === "sessions_row_acquire_transition_not_reached"
+  ));
 
+  assert.ok(observed, `mutation observation was not recorded: ${JSON.stringify(events)}`);
   assert.equal(result.status, "failed");
+  assert.ok(
+    result.verdict,
+    `recorded mutation observation was lost during cleanup: ${JSON.stringify(result)}`,
+  );
   assert.deepEqual(result.verdict.mutationDetection, {
     detected: true,
     sentinel: "sessions_row_acquire_transition_not_reached",
