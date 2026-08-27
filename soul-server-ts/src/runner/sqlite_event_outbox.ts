@@ -43,6 +43,7 @@ import {
 } from "./sqlite_event_outbox_records.js";
 import {
   assertRunnerAckCheckpoint,
+  assertRunnerReadOnlySchema,
   computeRunnerAckCheckpointHash,
   insertRunnerRecord as insertRecord,
   latestRunnerSequence as latestSequence,
@@ -147,11 +148,7 @@ export class RunnerSqliteEventOutbox {
     try {
       requireRunnerSqliteWal(database);
       const version = readUserVersion(database);
-      if (version !== RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
-        throw new Error(
-          `runner event outbox schema version ${version} requires writer migration`,
-        );
-      }
+      assertRunnerReadOnlySchema(database, version);
       const recovered = recover(database);
       return new RunnerSqliteEventOutbox(
         database,
@@ -175,11 +172,7 @@ export class RunnerSqliteEventOutbox {
     try {
       requireRunnerSqliteWal(database);
       const version = readUserVersion(database);
-      if (version !== RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
-        throw new Error(
-          `runner event outbox schema version ${version} requires writer migration`,
-        );
-      }
+      assertRunnerReadOnlySchema(database, version);
       const recovered = recoverTail(database);
       return new RunnerSqliteEventOutbox(
         database,

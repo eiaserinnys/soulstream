@@ -9,15 +9,13 @@ import {
   requireRunnerSqliteWal,
 } from "./runner_sqlite_connection.js";
 import {
+  assertRunnerReadOnlySchema,
   assertRunnerAckCheckpoint,
   latestRunnerSequence,
   readRunnerSchemaVersion,
 } from "./sqlite_event_outbox_database.js";
 import { runnerRowToBootstrap } from "./sqlite_event_outbox_records.js";
-import {
-  RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
-  type RunnerEventOutboxRow,
-} from "./sqlite_event_outbox_schema.js";
+import type { RunnerEventOutboxRow } from "./sqlite_event_outbox_schema.js";
 
 export type ClosedRunnerTailState = {
   status: "empty_prebootstrap";
@@ -46,9 +44,7 @@ export function readClosedRunnerTailState(
     database = openRunnerSqliteReadOnlyDatabase(databasePath);
     requireRunnerSqliteWal(database);
     const version = readRunnerSchemaVersion(database);
-    if (version !== RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
-      throw new Error(`runner event outbox schema version ${version} requires writer migration`);
-    }
+    assertRunnerReadOnlySchema(database, version);
     const latestDurableSourceSeq = latestRunnerSequence(database);
     const row = database.prepare(`
       SELECT * FROM runner_event_outbox WHERE record_kind = 'bootstrap'

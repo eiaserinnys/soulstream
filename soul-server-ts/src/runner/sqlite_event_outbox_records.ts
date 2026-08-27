@@ -30,7 +30,7 @@ export function runnerRowToRecord(row: RunnerEventOutboxRow): EventOutboxRecord 
     stream_id: row.stream_id,
     source_seq: row.source_seq,
     session_id: row.session_id,
-    ...(row.execution_generation === null
+    ...(row.execution_generation == null
       ? {}
       : { execution_generation: row.execution_generation }),
     event_type: row.event_type,
