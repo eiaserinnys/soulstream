@@ -329,6 +329,83 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     }
   });
 
+  it("retires an exact active ownership left behind after its canonical session terminated", async () => {
+    const sessionId = "93a0a37e-restart-regression";
+    const recoveredTask = task(sessionId);
+    recoveredTask.hydratedFromDb = true;
+    recoveredTask.status = "interrupted";
+    recoveredTask.terminationReason = "killed";
+    const trace: string[] = [];
+    const reconcileTerminalExecutionOwnership = vi.fn(async () => {
+      trace.push("ownership-terminal");
+      return true;
+    });
+    const retireTerminalOwnership = vi.fn(async (
+      input: {
+        registrationId: string;
+        pid: number;
+        startIdentity: string;
+      },
+      commit: () => Promise<boolean>,
+    ) => {
+      expect(input).toMatchObject({
+        registrationId: "d5e9d471-restart-regression",
+        pid: 1_765_295,
+        startIdentity: "linux-proc-17126017",
+      });
+      trace.push("exact-exit-proved");
+      await commit();
+      trace.push("registration-retired");
+    });
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        listOwnerNullRunningInventory: vi.fn(async () => [{
+          session_id: sessionId,
+          node_id: "node-a",
+          updated_at: new Date("2026-08-29T00:00:00.000Z"),
+          reconciliation_kind: "terminal_active_ownership",
+          status: "interrupted",
+          termination_reason: "killed",
+          manifest_id: "manifest-db2871e2",
+          registration_id: "d5e9d471-restart-regression",
+          pid: 1_765_295,
+          start_identity: "linux-proc-17126017",
+          execution_command_id: "execute-restart-regression",
+        }]),
+        hydrateRunnerRecoveryTask: vi.fn(async () => recoveredTask),
+        markRunnerFailureAndResume: vi.fn(async () => {}),
+        projectClosedRunner: vi.fn(async () => true),
+        reconcileExecutionOwnershipObservations: vi.fn(async () => false),
+        reconcileTerminalExecutionOwnership,
+      } as RunnerRecoveryCoordinatorOptions["taskManager"],
+      spawner: {
+        terminate: vi.fn(async () => "registration_absent" as const),
+        invalidateRegistration: vi.fn(async () => {}),
+        retireTerminalRegistration: vi.fn(async () => {}),
+        retireTerminalOwnership,
+      } as unknown as RunnerRecoveryCoordinatorOptions["spawner"],
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(retireTerminalOwnership).toHaveBeenCalledOnce();
+    expect(reconcileTerminalExecutionOwnership).toHaveBeenCalledWith(
+      recoveredTask,
+      expect.objectContaining({
+        registration_id: "d5e9d471-restart-regression",
+        pid: 1_765_295,
+        start_identity: "linux-proc-17126017",
+      }),
+    );
+    expect(trace).toEqual([
+      "exact-exit-proved",
+      "ownership-terminal",
+      "registration-retired",
+    ]);
+    expect(recoveredTask.status).toBe("interrupted");
+    expect(recoveredTask.terminationReason).toBe("killed");
+  });
+
   it("isolates owner-null inventory read failure from registration recovery", async () => {
     const current = registration({ lifecycleState: "running" });
     const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
