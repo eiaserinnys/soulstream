@@ -166,7 +166,6 @@ async function observeAttempt(
     broadcaster: broadcaster(),
     logger: silentLogger,
     persistence: persistence.persistence,
-    liveRetryDelayMs: 0,
   });
   if (consumerReady) {
     attachRecoveredRunner(task, durableInputDeliveryIds, modelInputDeliveryIds);

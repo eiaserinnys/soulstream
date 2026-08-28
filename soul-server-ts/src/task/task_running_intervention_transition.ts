@@ -45,8 +45,6 @@ export interface RunningInterventionTransitionDeps {
   broadcaster: SessionBroadcaster;
   logger: Logger;
   persistence?: EventPersistence;
-  liveRetryDelayMs?: number;
-  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -125,33 +123,15 @@ export class RunningInterventionTransition {
       }
       return { delivered: true };
     }
-    const retryResult = initialResult.status === "unknown"
-      ? null
-      : await this.retryTransientBoundary(
-          task,
-          deliveryMessage,
-          initialResult,
-        );
-    if (retryResult?.status === "delivered") {
-      if (!publishBeforeDelivery && !durableRunnerInbox) {
-        await this.publishAcceptance(task, deliveryMessage);
-      }
-      return { delivered: true };
-    }
-    const finalResult = retryResult ?? initialResult;
-
-    // A runner apply timeout leaves an ambiguous replay fence. Preserve the
-    // non-runner contract by staging the same message for the next turn:
-    // duplicate delivery is recoverable, silently losing the intervention is not.
+    const finalResult = options.queueIfUndelivered === false
+      ? initialResult
+      : await this.cancelOwnedTurnAfterFalseIdle(task, initialResult);
 
     if (options.queueIfUndelivered === false) {
       if (durableRunnerInbox) {
         try {
           await this.discardDurableIntervention(task, deliveryMessage);
         } catch (error) {
-          // The caller asked not to queue, but an unconfirmed discard cannot be
-          // allowed to leave a replay fence that permanently blocks the session.
-          // An unconfirmed discard reports the durable preservation explicitly.
           const unknown = {
             status: "unknown",
             reason: "verdict_unknown",
@@ -331,8 +311,6 @@ export class RunningInterventionTransition {
     result: Extract<EngineInterventionResult, { status: "unknown" }>,
   ): Promise<RunningInterventionResult> {
     try {
-      // The first receipt command or its host ACK may have succeeded. Reusing
-      // the intervention id makes this a durable create-or-release operation.
       const queuePosition = await this.stageRunnerQueue(task, message, true);
       enqueueInterventionOnce(task, message);
       this.logQueued(task, result, queuePosition);
@@ -452,28 +430,37 @@ export class RunningInterventionTransition {
     );
   }
 
-  private async retryTransientBoundary(
+  private async cancelOwnedTurnAfterFalseIdle(
     task: Task,
-    message: InterventionMessage,
-    interventionResult: EngineInterventionResult,
-  ): Promise<EngineInterventionResult | null> {
-    if (!isTransientInterventionBoundary(interventionResult)) return null;
-    const delayMs = this.deps.liveRetryDelayMs ?? 50;
-    if (delayMs > 0) {
-      await (this.deps.sleep ?? sleep)(delayMs);
+    interventionResult: Exclude<EngineInterventionResult, { status: "delivered" }>,
+  ): Promise<Exclude<EngineInterventionResult, { status: "delivered" }>> {
+    if (
+      interventionResult.status !== "not_delivered"
+      || interventionResult.reason !== "no_active_turn"
+    ) {
+      return interventionResult;
     }
-    const retryResult = await this.tryIntervene(task, message);
-    if (retryResult.status !== "delivered") {
-      this.deps.logger.debug?.(
-        {
-          sessionId: task.agentSessionId,
-          initialReason: interventionResult.reason,
-          retryReason: retryResult.reason,
-        },
-        "running engine intervention boundary retry did not deliver",
+    const runner = task.runner;
+    if (!runner) return interventionResult;
+    try {
+      const interrupted = await runner.dispatcher.interrupt();
+      if (!interrupted) return interventionResult;
+      return {
+        status: "not_delivered",
+        mechanism: "interrupt_then_next_turn",
+        reason: "next_turn_required",
+      };
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "running task owner cancellation failed",
       );
+      return {
+        status: "unknown",
+        reason: "verdict_unknown",
+        message: err instanceof Error ? err.message : String(err),
+      };
     }
-    return retryResult;
   }
 }
 
@@ -500,13 +487,6 @@ function toRunnerJsonRecord(message: InterventionMessage): Record<string, unknow
   return JSON.parse(JSON.stringify(message)) as Record<string, unknown>;
 }
 
-function isTransientInterventionBoundary(
-  result: EngineInterventionResult,
-): result is Extract<EngineInterventionResult, { status: "not_delivered" }> {
-  return result.status === "not_delivered"
-    && (result.reason === "no_active_turn" || result.reason === "not_accepting_input");
-}
-
 function formatRecoveryFailure(
   primary: string | undefined,
   recoveryError: unknown,
@@ -515,10 +495,4 @@ function formatRecoveryFailure(
     ? recoveryError.message
     : String(recoveryError);
   return primary ? `${primary}; recovery failed: ${recovery}` : recovery;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }

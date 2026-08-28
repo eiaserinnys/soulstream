@@ -58,6 +58,11 @@ describe("active runner intervention with one runtime follow-up", () => {
             type: "session",
             session_id: "claude-active-owner",
           } as SSEEventPayload;
+          yield {
+            type: "complete",
+            result: "assistant result arrived before the child command settled",
+            timestamp: 1,
+          } as SSEEventPayload;
           activeOwner.resolve();
           await releasePriorTurn.promise;
           priorTurnEnded.resolve();
@@ -80,20 +85,21 @@ describe("active runner intervention with one runtime follow-up", () => {
       },
       async intervene(input: EngineUserInput) {
         if (input.prompt.includes(HUMAN_MARKER)) {
-          interruptDeliveryIds.push(HUMAN_DELIVERY_ID);
+          return {
+            status: "not_delivered",
+            mechanism: "interrupt_then_next_turn",
+            reason: "no_active_turn",
+          } as const;
         }
+        throw new Error("unexpected intervention input");
+      },
+      async interrupt() {
+        interruptDeliveryIds.push(HUMAN_DELIVERY_ID);
         releasePriorTurn.resolve();
         await priorTurnEnded.promise;
         await new Promise((resolve) => setTimeout(resolve, 0));
         task.interventionQueue.push(runtimeFollowup);
         runtimeFollowupIds.push(RUNTIME_FOLLOWUP_ID);
-        return {
-          status: "not_delivered",
-          mechanism: "interrupt_then_next_turn",
-          reason: "next_turn_required",
-        } as const;
-      },
-      async interrupt() {
         return true;
       },
       async close() {},
@@ -142,7 +148,6 @@ describe("active runner intervention with one runtime follow-up", () => {
       broadcaster,
       logger: pino({ level: "silent" }),
       persistence: persistenceDouble.persistence,
-      liveRetryDelayMs: 0,
     });
 
     executor.startExecutionWithRunner(task, agent, runner);
@@ -193,6 +198,7 @@ describe("active runner intervention with one runtime follow-up", () => {
       violations,
       JSON.stringify(observation, null, 2),
     ).toEqual([]);
+    expect(interruptDeliveryIds).toEqual([HUMAN_DELIVERY_ID]);
   });
 });
 

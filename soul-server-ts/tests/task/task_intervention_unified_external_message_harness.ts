@@ -143,6 +143,7 @@ async function observeIdle(
         eventOrder.push("model_input");
         modelInputDeliveryIds.push(deliveryId);
       }
+      task.lastAssistantText = "idle next turn";
       yield { type: "assistant_message", content: "idle next turn", timestamp: 1 };
     },
     async intervene() {
@@ -186,7 +187,6 @@ async function observeIdle(
     broadcaster: broadcaster(),
     logger: silentLogger,
     persistence: persistence.persistence,
-    liveRetryDelayMs: 0,
   });
   const deliver = vi.spyOn(running, "deliver");
   const queueOnly = vi.spyOn(running, "queueOnly");
@@ -330,7 +330,6 @@ function makeRunningSubject(
     broadcaster: broadcaster(),
     logger: silentLogger,
     persistence: persistence.persistence,
-    liveRetryDelayMs: 0,
   });
   const originalDeliver = transition.deliver.bind(transition);
   const deliver = vi.spyOn(transition, "deliver").mockImplementation(async (...args) => {
