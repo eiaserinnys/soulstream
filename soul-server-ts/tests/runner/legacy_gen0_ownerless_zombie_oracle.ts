@@ -21,6 +21,8 @@ export interface LegacyOwnerlessRowSnapshot {
 export interface LegacyGen0OwnerlessMatrixObservation {
   inventorySessionIds: string[];
   scanPhases: ["startup", "reconnect"];
+  gen0InitialTerminalEventId: number;
+  gen0InitialTerminalEventCount: number;
   gen0NoOwnershipRow: LegacyOwnerlessRowSnapshot;
   genPositiveClosedOwner: LegacyOwnerlessRowSnapshot;
   fullProvenLiveOwner: LegacyOwnerlessRowSnapshot;
@@ -62,8 +64,17 @@ export function legacyGen0OwnerlessViolations(
     !isTerminal(rowA.status)
       ? "ROW_A_GEN0_NO_OWNERSHIP_ROW_DID_NOT_CONVERGE"
       : null,
-    rowA.status !== "running" && !hasCanonicalTerminalEvidence(rowA)
+    rowA.status !== "running" && !hasCanonicalTerminalEvidence(
+      rowA,
+      observation.gen0InitialTerminalEventCount + 1,
+    )
       ? "ROW_A_STATUS_ONLY_TERMINAL_WRITE"
+      : null,
+    rowA.status !== "running" && (
+      rowA.terminationEventId === null
+      || rowA.terminationEventId <= observation.gen0InitialTerminalEventId
+    )
+      ? "ROW_A_STALE_TERMINAL_EVENT_POINTER_NOT_ADVANCED"
       : null,
     rowA.generation !== 0 || hasSessionOwner(rowA) || rowA.activeOwnershipRows !== 0
       ? "ROW_A_GEN0_TERMINAL_RETAINED_OWNER_EVIDENCE"
@@ -94,7 +105,13 @@ export function idealLegacyGen0OwnerlessMatrix(): LegacyGen0OwnerlessMatrixObser
   return {
     inventorySessionIds: ["legacy-gen0-no-ownership-row"],
     scanPhases: ["startup", "reconnect"],
-    gen0NoOwnershipRow: terminalSnapshot(0),
+    gen0InitialTerminalEventId: 100,
+    gen0InitialTerminalEventCount: 1,
+    gen0NoOwnershipRow: {
+      ...terminalSnapshot(0),
+      terminationEventId: 101,
+      terminalEventCount: 2,
+    },
     genPositiveClosedOwner: terminalSnapshot(1),
     fullProvenLiveOwner: liveOwnerSnapshot(),
     terminalControl: terminalSnapshot(0),
@@ -178,7 +195,10 @@ function liveOwnerSnapshot(): LegacyOwnerlessRowSnapshot {
   };
 }
 
-function hasCanonicalTerminalEvidence(snapshot: LegacyOwnerlessRowSnapshot): boolean {
+function hasCanonicalTerminalEvidence(
+  snapshot: LegacyOwnerlessRowSnapshot,
+  expectedTerminalEventCount = 1,
+): boolean {
   return isTerminal(snapshot.status)
     && typeof snapshot.terminationReason === "string"
     && snapshot.terminationReason.length > 0
@@ -186,7 +206,7 @@ function hasCanonicalTerminalEvidence(snapshot: LegacyOwnerlessRowSnapshot): boo
     && snapshot.terminationDetail.length > 0
     && Number.isSafeInteger(snapshot.terminationEventId)
     && snapshot.terminationEventId! > 0
-    && snapshot.terminalEventCount === 1;
+    && snapshot.terminalEventCount === expectedTerminalEventCount;
 }
 
 function isExactProvenLiveOwner(snapshot: LegacyOwnerlessRowSnapshot): boolean {

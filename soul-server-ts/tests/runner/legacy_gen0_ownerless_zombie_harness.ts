@@ -33,6 +33,7 @@ const GEN0_SESSION_ID = "legacy-gen0-no-ownership-row";
 const GEN_POSITIVE_CLOSED_ID = "legacy-gen-positive-closed-owner";
 const LIVE_OWNER_ID = "legacy-full-proven-live-owner";
 const TERMINAL_CONTROL_ID = "legacy-terminal-control";
+const STALE_TERMINAL_EVENT_ID = 1;
 const STARTUP_AT_MS = Date.parse("2026-08-28T00:00:00.000Z");
 const SCAN_INTERVAL_MS = 1_000;
 const LEASE_TIMEOUT_MS = 60_000;
@@ -58,6 +59,7 @@ export class LegacyGen0OwnerlessZombieHarness {
 
   async observeStartupReconnectMatrix(): Promise<LegacyGen0OwnerlessMatrixObservation> {
     await this.insertRunning(GEN0_SESSION_ID);
+    await this.seedStaleTerminalEvidence(GEN0_SESSION_ID);
     await this.insertRunning(GEN_POSITIVE_CLOSED_ID);
     await this.acquireOwner(GEN_POSITIVE_CLOSED_ID, STARTUP_AT_MS - 3_000);
     await this.insertRunning(LIVE_OWNER_ID);
@@ -65,6 +67,7 @@ export class LegacyGen0OwnerlessZombieHarness {
     await this.insertRunning(TERMINAL_CONTROL_ID);
     await this.terminalizeControl(TERMINAL_CONTROL_ID, STARTUP_AT_MS - 1_000);
 
+    const initialGen0 = await this.snapshot(GEN0_SESSION_ID);
     const initialTerminalControl = await this.snapshot(TERMINAL_CONTROL_ID);
     const inventory = await this.ingress.sessionReads.listOwnerNullRunningInventory({
       nodeId: OWNERLESS_NODE_ID,
@@ -108,6 +111,8 @@ export class LegacyGen0OwnerlessZombieHarness {
     return {
       inventorySessionIds: inventory.map((row) => row.session_id).sort(),
       scanPhases: ["startup", "reconnect"],
+      gen0InitialTerminalEventId: initialGen0.terminationEventId!,
+      gen0InitialTerminalEventCount: initialGen0.terminalEventCount,
       gen0NoOwnershipRow,
       genPositiveClosedOwner,
       fullProvenLiveOwner,
@@ -194,6 +199,27 @@ export class LegacyGen0OwnerlessZombieHarness {
         ${sessionId}, 'codex', 'running', 'agent-legacy-gen0-red',
         ${OWNERLESS_NODE_ID}, 'not_required'
       )
+    `;
+  }
+
+  private async seedStaleTerminalEvidence(sessionId: string): Promise<void> {
+    await this.postgres.sql`
+      INSERT INTO events (session_id, id, event_type, payload, created_at)
+      VALUES (
+        ${sessionId}, ${STALE_TERMINAL_EVENT_ID}, 'session_ended',
+        ${JSON.stringify({
+          type: "session_ended",
+          status: "completed",
+          termination_reason: "completed_ok",
+        })},
+        ${new Date(STARTUP_AT_MS - 2_000)}
+      )
+    `;
+    await this.postgres.sql`
+      UPDATE sessions
+      SET termination_event_id = ${STALE_TERMINAL_EVENT_ID},
+          last_event_id = ${STALE_TERMINAL_EVENT_ID}
+      WHERE session_id = ${sessionId}
     `;
   }
 
