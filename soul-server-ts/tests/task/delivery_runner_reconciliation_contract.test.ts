@@ -118,6 +118,10 @@ function makeLedgerGate(terminalStates: ReadonlyMap<string, TerminalDeliveryStat
       throw new Error(`runner intervention discard unavailable:${deliveryId}`);
     }
     await discardIntervention.call(task.runner?.dispatcher, runnerInterventionId);
+    const queuedIndex = task.interventionQueue.findIndex(
+      (queued) => queued.deliveryId === deliveryId,
+    );
+    if (queuedIndex >= 0) task.interventionQueue.splice(queuedIndex, 1);
     return true;
   });
   return {

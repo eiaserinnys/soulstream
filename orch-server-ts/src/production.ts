@@ -223,7 +223,7 @@ export async function createLiveProductionApplication(
     onNodeReady: async (nodeId, connectionId) => {
       const deliveries = (await persistenceRepositoryProvider()).deliveries;
       const leaseOwner = `node-ready:${nodeId}:${connectionId}`;
-      const claimed = await deliveries.recovery.claimPendingHumanLiveSteerForNode(
+      const claimed = await deliveries.recovery.claimPendingImmediateIntentsForNode(
         nodeId,
         leaseOwner,
       );
