@@ -19,10 +19,12 @@ import {
   processStartIdentitiesMatch,
   type ProcessIdentity,
 } from "./runner_process_lock.js";
+import { RunnerMutationFailure } from "./runner_mutation_failure.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
 import {
   stopExistingRunnerLocked,
   terminateExactRunner,
+  type ExactRunnerProcess,
   type RunnerTerminationOutcome,
 } from "./runner_process_termination.js";
 import {
@@ -33,14 +35,13 @@ import {
   writeRunnerRegistrationIdentity,
 } from "./runner_registration_identity.js";
 import {
+  invalidateRunnerRegistrationFilesLocked,
   invalidateRunnerRegistrationFiles,
   retireTerminalRunnerRegistrationFilesLocked,
-  unlinkIfPresent,
 } from "./runner_registration_mutation.js";
 import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 
-const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
 const RunnerProcessPathsSchema = z.object({
   sessionDirectory: z.string().min(1),
   databasePath: z.string().min(1),
@@ -237,7 +238,8 @@ export class RunnerProcessSpawner {
       }
       throw new Error("detached runner spawn returned no pid");
     }
-    let preserveLiveChild = false;
+    let childProcessProof: ExactRunnerProcess | undefined;
+    let childAbsenceProven = false;
     try {
       await log.close();
       const childIdentity = await this.deps.waitForChildRegistrationIdentity?.(
@@ -253,19 +255,27 @@ export class RunnerProcessSpawner {
         ) {
           throw new Error(`detached runner published invalid identity: ${child.pid}`);
         }
+        childProcessProof = {
+          pid: child.pid,
+          startIdentity: childIdentity.startIdentity,
+        };
       } else {
         const observed = await this.deps.inspectProcess(child.pid);
         if (!observed.alive) {
+          childAbsenceProven = true;
           throw new Error(`detached runner process exited before registration: ${child.pid}`);
         }
         if (!observed.startIdentity) {
-          preserveLiveChild = true;
           this.logger?.info(
             { sessionId: input.sessionId, pid: child.pid },
             "Live runner identity lookup was unavailable; child was left intact",
           );
-          throw new Error(`detached runner process identity unavailable: ${child.pid}`);
+          throw new RunnerMutationFailure(
+            "runner_registration_identity_proof_failed",
+            `detached runner process identity unavailable: ${child.pid}`,
+          );
         }
+        childProcessProof = { pid: child.pid, startIdentity: observed.startIdentity };
         await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
           ...registrationIdentity,
           pid: child.pid,
@@ -274,31 +284,31 @@ export class RunnerProcessSpawner {
       }
       await this.deps.registerPid(paths.pidPath, child.pid);
     } catch (registrationError) {
-      if (preserveLiveChild) {
-        child.unref();
-        throw registrationError;
-      }
-      const cleanupErrors: unknown[] = [];
       try {
-        await this.terminateSpawnedChild(child, child.pid);
-      } catch (cleanupError) {
-        cleanupErrors.push(cleanupError);
-      }
-      try {
-        await unlinkIfPresent(paths.pidPath);
-      } catch (cleanupError) {
-        cleanupErrors.push(cleanupError);
-      }
-      try {
-        await writeRunnerRegistrationIdentity(paths.sessionDirectory, registrationIdentity);
-      } catch (cleanupError) {
-        cleanupErrors.push(cleanupError);
-      }
-      if (cleanupErrors.length > 0) {
-        throw new AggregateError(
-          [registrationError, ...cleanupErrors],
-          `runner pid registration failed and child cleanup was incomplete: ${String(registrationError)}`,
+        if (childProcessProof) {
+          await terminateExactRunner(childProcessProof, this.deps);
+        } else if (!childAbsenceProven) {
+          if (registrationError instanceof RunnerMutationFailure) throw registrationError;
+          throw new RunnerMutationFailure(
+            "runner_registration_identity_proof_failed",
+            `detached runner cleanup has no exact process identity: ${child.pid}`,
+            { cause: registrationError },
+          );
+        }
+        await invalidateRunnerRegistrationFilesLocked(
+          paths,
+          registrationIdentity.registrationId,
+          "replacement",
         );
+      } catch (cleanupError) {
+        if (cleanupError instanceof RunnerMutationFailure) throw cleanupError;
+        throw new RunnerMutationFailure(
+          "runner_registration_persistence_failed",
+          `detached runner cleanup could not preserve registration: ${child.pid}`,
+          { cause: new AggregateError([registrationError, cleanupError]) },
+        );
+      } finally {
+        child.unref();
       }
       throw registrationError;
     }
@@ -359,7 +369,10 @@ export class RunnerProcessSpawner {
       const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
       if (!identity || expectedRegistrationId === null
         || identity.registrationId !== expectedRegistrationId) {
-        throw new Error(`runner registration changed before terminal retirement: ${paths.sessionDirectory}`);
+        throw new RunnerMutationFailure(
+          "runner_registration_identity_proof_failed",
+          `runner registration changed before terminal retirement: ${paths.sessionDirectory}`,
+        );
       }
       if (identity.pid !== null && identity.startIdentity !== null) {
         await terminateExactRunner(
@@ -373,24 +386,6 @@ export class RunnerProcessSpawner {
         new Date(this.deps.now()),
       );
     });
-  }
-
-  private async terminateSpawnedChild(
-    child: Pick<ChildProcess, "unref">,
-    pid: number,
-  ): Promise<void> {
-    try {
-      if (this.deps.isPidAlive(pid)) this.deps.signalPid(pid, "SIGKILL");
-      const deadline = this.deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
-      while (this.deps.isPidAlive(pid) && this.deps.now() < deadline) {
-        await this.deps.delay(25);
-      }
-      if (this.deps.isPidAlive(pid)) {
-        throw new Error(`unregistered runner pid ${pid} did not terminate`);
-      }
-    } finally {
-      child.unref();
-    }
   }
 
 }

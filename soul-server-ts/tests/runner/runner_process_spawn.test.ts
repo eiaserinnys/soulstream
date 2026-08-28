@@ -716,11 +716,11 @@ describe("RunnerProcessSpawner", () => {
     expect(spawnProcess).not.toHaveBeenCalled();
   });
 
-  it("kills the detached child when pid registration fails", async () => {
+  it("terminates the detached child by exact identity when pid registration fails", async () => {
     let alive = true;
     const unref = vi.fn();
     const signalPid = vi.fn((_pid: number, signal: NodeJS.Signals) => {
-      expect(signal).toBe("SIGKILL");
+      expect(signal).toBe("SIGTERM");
       alive = false;
     });
     const spawner = new RunnerProcessSpawner({

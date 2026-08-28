@@ -1,3 +1,4 @@
+import { RunnerMutationFailure } from "./runner_mutation_failure.js";
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import type { RunnerTerminationOutcome } from "./runner_process_termination.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
@@ -12,7 +13,8 @@ export class RunnerRegistrationControl {
 
   async terminate(registration: RunnerRegistration): Promise<RunnerTerminationOutcome> {
     if (registration.pid === null || !registration.pidStartIdentity) {
-      throw new Error(
+      throw new RunnerMutationFailure(
+        "runner_registration_identity_proof_failed",
         `runner process identity unavailable before termination: ${registration.config.sessionId}`,
       );
     }
