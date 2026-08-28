@@ -1,6 +1,12 @@
 import { vi } from "vitest";
 
-import { loadContractFixtures, type NodeRegistrationPayload } from "../src/index.js";
+import {
+  createNodeSessionEventBroadcasterSink,
+  InMemorySseReplayBroadcaster,
+  loadContractFixtures,
+  type NodeRegistrationPayload,
+  type SessionStreamEvent,
+} from "../src/index.js";
 import { createSessionCacheSeedSink } from
   "../src/node/session_cache_seed_sink.js";
 import { SessionDeliveryRecoveryRepository } from
@@ -12,21 +18,26 @@ import type {
 import { createHarnessCore } from "./session-action-command-test-helpers.js";
 import {
   ACTIVE_TURN_DELIVERY_IDS,
-  ALL_RUNTIME_FOLLOWUP_DELIVERY_IDS,
-  RECONNECT_PENDING_DELIVERY_IDS,
   RUNTIME_FOLLOWUP_NODE_ID as NODE_ID,
   RUNTIME_FOLLOWUP_SESSION_ID as SESSION_ID,
   runtimeFollowupCommand,
-  runtimeFollowupRow,
   runtimeFollowupSessionSnapshot,
   type RuntimeFollowupFixtureRow,
 } from "./runtime-followup-reconnect-wake-fixture.js";
-import type {
-  DeliveryPhaseCounts,
-  RuntimeFollowupWakeObservation,
+import {
+  deriveLifecycle,
+  type LifecycleEvidence,
+  type LifecycleEvidenceKind,
+  type ReconnectAttemptObservation,
+  type RuntimeFollowupWakeObservation,
 } from "./runtime-followup-reconnect-wake-oracle.js";
+import {
+  DeterministicBarrier,
+  FakeClock,
+  RuntimeFollowupLedger,
+} from "./runtime-followup-reconnect-wake-test-doubles.js";
 
-type RecoveryMode = "product" | "counterfactual_runtime_claim";
+type RecoveryMode = "product" | "counterfactual";
 type RuntimeConstructor = new (...args: any[]) => LedgerGate;
 
 interface RuntimeInterventionMessage {
@@ -73,6 +84,10 @@ interface LedgerGate {
   ): Promise<boolean>;
 }
 
+interface RuntimeReconnectAttempt extends ReconnectAttemptObservation {
+  ready: DeterministicBarrier;
+}
+
 async function loadTaskDeliveryLedgerGate(): Promise<RuntimeConstructor> {
   const module = await vi.importActual<Record<string, unknown>>(
     "../../soul-server-ts/src/task/task_delivery_ledger_gate.js",
@@ -80,195 +95,43 @@ async function loadTaskDeliveryLedgerGate(): Promise<RuntimeConstructor> {
   return module.TaskDeliveryLedgerGate as RuntimeConstructor;
 }
 
-class FakeClock {
-  private value = Date.parse("2026-08-28T10:05:00.000Z");
-
-  nowMs = (): number => this.value;
-
-  advance(ms: number): void {
-    this.value += ms;
-  }
-}
-
-class DeterministicBarrier {
-  private releaseBarrier!: () => void;
-  private arriveBarrier!: () => void;
-  readonly arrived = new Promise<void>((resolve) => {
-    this.arriveBarrier = resolve;
-  });
-  private readonly released = new Promise<void>((resolve) => {
-    this.releaseBarrier = resolve;
-  });
-
-  async arriveAndWait(): Promise<void> {
-    this.arriveBarrier();
-    await this.released;
-  }
-
-  release(): void {
-    this.releaseBarrier();
-  }
-}
-
-class RuntimeFollowupLedger {
-  private readonly rows = new Map<string, RuntimeFollowupFixtureRow>();
-  readonly counts: Record<string, DeliveryPhaseCounts> = {};
-  readonly consumeOrder: string[] = [];
-
-  constructor() {
-    RECONNECT_PENDING_DELIVERY_IDS.forEach((deliveryId, index) => {
-      this.seed(runtimeFollowupRow(deliveryId, 5170 + index));
-    });
-  }
-
-  seed(row: RuntimeFollowupFixtureRow): void {
-    this.rows.set(row.delivery_id, structuredClone(row));
-    this.counts[row.delivery_id] = {
-      claim: 0,
-      dispatch: 0,
-      receipt: 0,
-      consume: 0,
-      stale: 0,
-    };
-  }
-
-  seedActiveTurn(): RuntimeFollowupFixtureRow[] {
-    return ACTIVE_TURN_DELIVERY_IDS.map((deliveryId, index) => {
-      const row = runtimeFollowupRow(deliveryId, 5173 + index);
-      row.state = "queued";
-      row.claimed_at = row.created_at;
-      row.queued_at = row.created_at;
-      this.seed(row);
-      this.counts[deliveryId]!.claim = 1;
-      this.counts[deliveryId]!.dispatch = 1;
-      return structuredClone(row);
-    });
-  }
-
-  claimRuntimeRows(leaseOwner: string): SessionDeliveryRow[] {
-    const claimed = [...this.rows.values()]
-      .filter((row) => row.intent === "runtime_followup" && row.state === "pending")
-      .sort((left, right) => left.enqueue_sequence - right.enqueue_sequence);
-    for (const row of claimed) {
-      row.state = "claimed";
-      row.claimed_at = new Date("2026-08-28T10:05:01.000Z");
-      row.lease_owner = leaseOwner;
-      this.counts[row.delivery_id]!.claim += 1;
-    }
-    return claimed.map((row) => structuredClone(row) as SessionDeliveryRow);
-  }
-
-  releaseToPending(deliveryId: string): void {
-    const row = this.require(deliveryId);
-    row.state = "pending";
-    row.claimed_at = null;
-    row.lease_owner = null;
-  }
-
-  noteDispatch(deliveryId: string): void {
-    const row = this.require(deliveryId);
-    row.state = "queued";
-    row.queued_at = new Date("2026-08-28T10:05:02.000Z");
-    this.counts[deliveryId]!.dispatch += 1;
-  }
-
-  noteReceipt(deliveryId: string): void {
-    this.counts[deliveryId]!.receipt += 1;
-  }
-
-  async get(deliveryId: string): Promise<SessionDeliveryRow | null> {
-    const row = this.rows.get(deliveryId);
-    return row ? structuredClone(row) as SessionDeliveryRow : null;
-  }
-
-  async markConsumed(
-    deliveryId: string,
-    receiptId: string,
-  ): Promise<SessionDeliveryRow | null> {
-    const row = this.rows.get(deliveryId);
-    if (!row) return null;
-    row.state = "consumed";
-    row.aggregate_state = "consumed";
-    row.target_receipt_id = receiptId;
-    row.target_receipt_at = new Date("2026-08-28T10:05:03.000Z");
-    row.consumed_at = row.target_receipt_at;
-    row.consumed_reason = "foreground turn result";
-    this.counts[deliveryId]!.consume += 1;
-    this.consumeOrder.push(deliveryId);
-    return structuredClone(row) as SessionDeliveryRow;
-  }
-
-  pendingIds(): string[] {
-    return [...this.rows.values()]
-      .filter((row) => row.state === "pending")
-      .sort((left, right) => left.enqueue_sequence - right.enqueue_sequence)
-      .map((row) => row.delivery_id);
-  }
-
-  private require(deliveryId: string): RuntimeFollowupFixtureRow {
-    const row = this.rows.get(deliveryId);
-    if (!row) throw new Error(`Missing runtime follow-up fixture ${deliveryId}`);
-    return row;
-  }
-}
-
 export async function observeRuntimeFollowupReconnect(input: {
   recoveryMode?: RecoveryMode;
   transportAvailable?: boolean;
-  socketCloseRace?: boolean;
 } = {}): Promise<RuntimeFollowupWakeObservation> {
   const recoveryMode = input.recoveryMode ?? "product";
   const transportAvailable = input.transportAvailable ?? true;
-  const socketCloseRace = input.socketCloseRace ?? true;
   const TaskDeliveryLedgerGate = await loadTaskDeliveryLedgerGate();
   const ledger = new RuntimeFollowupLedger();
   const clock = new FakeClock();
   const trace: string[] = ["disconnect:pending:5170-5172"];
   const task = makeTask();
   const gate = new TaskDeliveryLedgerGate(true, ledger as never);
+  const attempts: RuntimeReconnectAttempt[] = [];
+  const attemptsByConnection = new Map<string, RuntimeReconnectAttempt>();
+  const terminalRelease = new DeterministicBarrier();
+  const socketClosed = new DeterministicBarrier();
+  const secondCacheSeeded = new DeterministicBarrier();
   let followupQueueErrors = 0;
   let discardInterventionErrors = 0;
   let runnerSocketSendErrors = 0;
-  let foregroundTurns = 0;
-  let assistantTurns = 0;
-  let generations = 1;
-  let earlyNewTurns = 0;
-  let earlyCompletedTransitions = 0;
 
   const { registry, transports, router, bridge } = createHarnessCore({
     findSessionOwnerNodeId: async (sessionId) =>
       sessionId === SESSION_ID ? NODE_ID : null,
   });
-  const registration = loadContractFixtures().fakeNodeReconnect.registration as
-    NodeRegistrationPayload;
-  const registered = registry.registerNode({ ...registration, node_id: NODE_ID });
-  const connectionId = registered.node.connectionId;
-  if (transportAvailable) {
-    transports.attach({
-      nodeId: NODE_ID,
-      connectionId,
-      transport: {
-        send: async (data) => {
-          const command = JSON.parse(data) as Record<string, unknown>;
-          const deliveryId = String(command.delivery_id ?? command.deliveryId);
-          const row = await ledger.get(deliveryId);
-          if (!row) throw new Error(`Unknown routed delivery ${deliveryId}`);
-          ledger.noteDispatch(deliveryId);
-          task.interventionQueue.push(messageFor(row));
-          registry.receiveNodeMessage({ nodeId: NODE_ID, connectionId }, {
-            type: "intervene_ack",
-            status: "ok",
-            requestId: command.requestId,
-          });
-        },
-      },
-    });
-  }
-
+  const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
+    instanceId: "runtime-followup-reconnect-fixture",
+  });
+  const nodeEventSink = createNodeSessionEventBroadcasterSink(
+    broadcaster,
+    registry,
+  );
   const sql = makeRecoverySql(ledger, recoveryMode);
   const recovery = new SessionDeliveryRecoveryRepository(sql);
-  const seedBarrier = new DeterministicBarrier();
-  let nodeReadyWork: Promise<void> | undefined;
+  const registration = loadContractFixtures().fakeNodeReconnect.registration as
+    NodeRegistrationPayload;
+
   const sessionCacheSeed = createSessionCacheSeedSink({
     registry,
     repository: {
@@ -285,16 +148,24 @@ export async function observeRuntimeFollowupReconnect(input: {
       throw error;
     },
     nowMs: clock.nowMs,
-    onNodeReady: (_nodeId, readyConnectionId) => {
-      nodeReadyWork = (async () => {
-        trace.push("reconnect:cache-seed-complete");
-        await seedBarrier.arriveAndWait();
-        const leaseOwner = `node-ready:${NODE_ID}:${readyConnectionId}`;
+    onNodeReady: async (_nodeId, connectionId) => {
+      const attempt = attemptsByConnection.get(connectionId);
+      if (!attempt) throw new Error(`Missing reconnect attempt ${connectionId}`);
+      trace.push(`reconnect:${attempt.phase}:cache-seed`);
+      if (attempt.phase === "post_terminal_release") {
+        secondCacheSeeded.release();
+        await socketClosed.wait();
+      }
+      try {
+        const leaseOwner = `node-ready:${NODE_ID}:${connectionId}`;
         const claimed = await recovery.claimPendingHumanLiveSteerForNode(
           NODE_ID,
           leaseOwner,
         );
-        trace.push(`reconnect:claimed:${claimed.length}`);
+        for (const row of claimed) {
+          attempt.claimOrder.push(row.delivery_id);
+          trace.push(`claim:${attempt.phase}:${row.delivery_id}`);
+        }
         for (const row of claimed) {
           try {
             const routed = await router.routeExistingSessionPendingCommand(
@@ -305,43 +176,127 @@ export async function observeRuntimeFollowupReconnect(input: {
             ledger.releaseToPending(row.delivery_id);
           }
         }
-      })();
-      return nodeReadyWork;
+      } finally {
+        attempt.ready.release();
+      }
     },
   });
-  sessionCacheSeed(registered.events);
-  await seedBarrier.arrived;
-  earlyNewTurns = generations - 1;
-  earlyCompletedTransitions = task.status === "completed" ? 1 : 0;
-  seedBarrier.release();
-  await nodeReadyWork;
-  clock.advance(1_000);
 
+  const reconnect = async (
+    phase: ReconnectAttemptObservation["phase"],
+  ): Promise<void> => {
+    const registered = registry.registerNode({ ...registration, node_id: NODE_ID });
+    const connectionId = registered.node.connectionId;
+    const attempt: RuntimeReconnectAttempt = {
+      phase,
+      connectionId,
+      pendingBefore: ledger.pendingReconnectIds(),
+      claimOrder: [],
+      dispatchOrder: [],
+      ready: new DeterministicBarrier(),
+    };
+    attempts.push(attempt);
+    attemptsByConnection.set(connectionId, attempt);
+    trace.push(`reconnect:${phase}:registered`);
+    nodeEventSink(registered.events);
+    if (transportAvailable) {
+      transports.attach({
+        nodeId: NODE_ID,
+        connectionId,
+        transport: {
+          send: async (data) => {
+            const command = JSON.parse(data) as Record<string, unknown>;
+            const deliveryId = String(command.delivery_id ?? command.deliveryId);
+            const row = await ledger.get(deliveryId);
+            if (!row) throw new Error(`Unknown routed delivery ${deliveryId}`);
+            attempt.dispatchOrder.push(deliveryId);
+            trace.push(`dispatch:${phase}:${deliveryId}`);
+            ledger.noteDispatch(deliveryId);
+            task.interventionQueue.push(messageFor(row));
+            nodeEventSink(registry.receiveNodeMessage(
+              { nodeId: NODE_ID, connectionId },
+              {
+                type: "intervene_ack",
+                status: "ok",
+                requestId: command.requestId,
+              },
+            ));
+          },
+        },
+      });
+    }
+    sessionCacheSeed(registered.events);
+    await attempt.ready.wait();
+    clock.advance(100);
+  };
+
+  const emitSessionUpdate = (
+    status: "running" | "completed",
+    lifecycle?: { kind: LifecycleEvidenceKind; id: string },
+  ): void => {
+    const connectionId = registry.getConnectedNode(NODE_ID)?.connectionId;
+    if (!connectionId) throw new Error("Session update has no connected node");
+    const events = registry.receiveNodeMessage(
+      { nodeId: NODE_ID, connectionId },
+      {
+        type: "session_updated",
+        agentSessionId: SESSION_ID,
+        status,
+        updated_at: new Date(clock.nowMs()),
+        ...(lifecycle === undefined
+          ? {}
+          : {
+              lifecycle_kind: lifecycle.kind,
+              lifecycle_id: lifecycle.id,
+            }),
+        ...(lifecycle?.kind === "assistant_turn"
+          ? { last_assistant_text: "runtime follow-ups observed" }
+          : {}),
+        ...(status === "completed"
+          ? { termination_reason: "completed_ok" }
+          : {}),
+      },
+    );
+    nodeEventSink(events);
+    clock.advance(1);
+  };
+
+  await reconnect("pre_terminal");
+  emitSessionUpdate("running", { kind: "generation", id: "generation-1" });
+  emitSessionUpdate("running", { kind: "foreground_turn", id: "turn-1" });
+  const preTerminalLifecycle = lifecycleFrom(broadcaster);
   for (const row of ledger.seedActiveTurn()) {
     task.interventionQueue.push(messageFor(row as SessionDeliveryRow));
   }
   trace.push("active-turn:queued:5173-5174");
-  const turnMessages = [...task.interventionQueue];
-  task.interventionQueue = [];
-  foregroundTurns += 1;
-  for (const message of turnMessages) {
-    const deliveryId = requireDeliveryId(message);
-    ledger.noteReceipt(deliveryId);
-    await gate.recordTurnStarted(message, task);
-  }
-  assistantTurns += 1;
-  for (const message of turnMessages) {
-    await gate.recordConsumed(message, task, "event:9001");
-  }
-  task.status = "completed";
-  trace.push("terminal:result-complete-runner-close");
 
-  if (socketCloseRace) {
+  const terminalWork = (async () => {
+    await terminalRelease.wait();
+    trace.push("terminal:result-started");
+    const turnMessages = [...task.interventionQueue];
+    task.interventionQueue = [];
+    for (const message of turnMessages) {
+      const deliveryId = requireDeliveryId(message);
+      ledger.noteReceipt(deliveryId);
+      await gate.recordTurnStarted(message, task);
+    }
+    emitSessionUpdate("running", { kind: "assistant_turn", id: "assistant-1" });
+    for (const message of turnMessages) {
+      await gate.recordConsumed(message, task, "event:9001");
+    }
+    task.status = "completed";
+    emitSessionUpdate("completed");
+    trace.push("runner:socket-closed");
+    socketClosed.release();
+    await secondCacheSeeded.wait();
     task.runner = runnerWithDiscard(async () => {
-      throw new Error(
-        "discard_intervention_failed: connect ENOENT /fixture/runner.sock",
-      );
+      if (recoveryMode === "product") {
+        throw new Error(
+          "discard_intervention_failed: connect ENOENT /fixture/runner.sock",
+        );
+      }
     });
+    trace.push("runner:discard-after-close");
     try {
       await gate.discardIfConsumed(messageFor(
         (await ledger.get(ACTIVE_TURN_DELIVERY_IDS[0]))!,
@@ -356,23 +311,30 @@ export async function observeRuntimeFollowupReconnect(input: {
         runnerSocketSendErrors += 1;
       }
     }
-  }
+  })();
+  const secondReconnectWork = (async () => {
+    await terminalRelease.wait();
+    await reconnect("post_terminal_release");
+  })();
+  trace.push("terminal:barrier-released");
+  terminalRelease.release();
+  await Promise.all([terminalWork, secondReconnectWork]);
 
-  const duplicateDeliveries = duplicateCount(ledger.consumeOrder);
+  const lifecycle = lifecycleFrom(broadcaster);
+  const sessionUpdates = broadcaster.bufferedEvents
+    .map((event) => event.payload)
+    .filter((payload) => payload.type === "session_updated");
   return {
     counts: structuredClone(ledger.counts),
     pendingIds: ledger.pendingIds(),
     trace,
-    parentStatus: task.status,
-    foregroundTurns,
-    generations,
-    duplicateDeliveries,
-    duplicateAssistantTurns: Math.max(0, assistantTurns - 1),
+    reconnectAttempts: attempts.map(({ ready: _ready, ...attempt }) => attempt),
+    lifecycle,
+    preTerminalLifecycle,
+    parentStatus: String(sessionUpdates.at(-1)?.status ?? "missing"),
     followupQueueErrors,
     discardInterventionErrors,
     runnerSocketSendErrors,
-    earlyNewTurns,
-    earlyCompletedTransitions,
   };
 }
 
@@ -390,9 +352,27 @@ function makeRecoverySql(
     }
     const productQueryIncludesRuntime = statement.includes("'runtime_followup'");
     if (mode === "product" && !productQueryIncludesRuntime) return [];
-    const leaseOwner = String(values[2]);
-    return ledger.claimRuntimeRows(leaseOwner);
+    return ledger.claimRuntimeRows(String(values[2]));
   }) as unknown as SqlClient;
+}
+
+function lifecycleFrom(
+  broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
+) {
+  const evidence = broadcaster.bufferedEvents.flatMap(({ payload }) => {
+    const kind = payload.lifecycle_kind;
+    const id = payload.lifecycle_id;
+    return isLifecycleKind(kind) && typeof id === "string"
+      ? [{ kind, id } satisfies LifecycleEvidence]
+      : [];
+  });
+  return deriveLifecycle(evidence);
+}
+
+function isLifecycleKind(value: unknown): value is LifecycleEvidenceKind {
+  return value === "generation"
+    || value === "foreground_turn"
+    || value === "assistant_turn";
 }
 
 function messageFor(row: SessionDeliveryRow): RuntimeInterventionMessage {
@@ -433,12 +413,4 @@ function runnerWithDiscard(discardIntervention: () => Promise<void>) {
 function requireDeliveryId(message: RuntimeInterventionMessage): string {
   if (!message.deliveryId) throw new Error("runtime follow-up lost delivery id");
   return message.deliveryId;
-}
-
-function duplicateCount(values: string[]): number {
-  return values.length - new Set(values).size;
-}
-
-export function expectedRuntimeFollowupIds(): string[] {
-  return [...ALL_RUNTIME_FOLLOWUP_DELIVERY_IDS];
 }
