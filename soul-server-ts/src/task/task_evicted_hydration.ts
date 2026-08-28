@@ -5,6 +5,7 @@ import {
   TaskHydrationFailedError,
   TaskOwnedByAnotherNodeError,
 } from "./task_hydration_errors.js";
+import type { ExecutionOwnershipToken } from "./execution_ownership.js";
 import type { Task, TaskStatus, TerminationReason } from "./task_models.js";
 import {
   extractAgentsRunStateFromMetadata,
@@ -57,6 +58,71 @@ function positiveEventId(value: number | null | undefined): number | undefined {
   return Number.isSafeInteger(value) && value! > 0 ? value! : undefined;
 }
 
+function executionOwnershipFromRow(
+  row: SessionRow,
+  logger: Logger,
+): ExecutionOwnershipToken | null | undefined {
+  const ownerFields = [
+    row.execution_generation,
+    row.execution_manifest_id,
+    row.execution_runtime_env_identity,
+    row.execution_registration_id,
+    row.execution_pid,
+    row.execution_start_identity,
+    row.execution_command_id,
+    row.execution_lease_expires_at,
+  ];
+  if (ownerFields.every((value) => value == null)) return undefined;
+
+  const ownershipGeneration = Number(row.execution_generation);
+  const leaseExpiresAt = row.execution_lease_expires_at instanceof Date
+    ? row.execution_lease_expires_at
+    : new Date(row.execution_lease_expires_at ?? Number.NaN);
+  const complete = Number.isSafeInteger(ownershipGeneration)
+    && ownershipGeneration > 0
+    && typeof row.execution_manifest_id === "string"
+    && row.execution_manifest_id.length > 0
+    && typeof row.execution_runtime_env_identity === "string"
+    && row.execution_runtime_env_identity.length > 0
+    && typeof row.execution_registration_id === "string"
+    && row.execution_registration_id.length > 0
+    && Number.isSafeInteger(row.execution_pid)
+    && row.execution_pid! > 0
+    && typeof row.execution_start_identity === "string"
+    && row.execution_start_identity.length > 0
+    && typeof row.execution_command_id === "string"
+    && row.execution_command_id.length > 0
+    && Number.isFinite(leaseExpiresAt.getTime());
+  if (!complete) {
+    logger.warn(
+      {
+        sessionId: row.session_id,
+        ownershipGeneration: row.execution_generation ?? null,
+        hasManifestId: Boolean(row.execution_manifest_id),
+        hasRuntimeEnvIdentity: Boolean(row.execution_runtime_env_identity),
+        hasRegistrationId: Boolean(row.execution_registration_id),
+        hasPid: row.execution_pid != null,
+        hasStartIdentity: Boolean(row.execution_start_identity),
+        hasExecutionCommandId: Boolean(row.execution_command_id),
+        hasLease: row.execution_lease_expires_at != null,
+      },
+      "loadEvictedTask: partial sessions-row execution owner",
+    );
+    return null;
+  }
+
+  return {
+    ownerKind: "runner_process",
+    manifestId: row.execution_manifest_id!,
+    runtimeEnvIdentity: row.execution_runtime_env_identity!,
+    registrationId: row.execution_registration_id!,
+    pid: row.execution_pid!,
+    startIdentity: row.execution_start_identity!,
+    executionCommandId: row.execution_command_id!,
+    ownershipGeneration,
+  };
+}
+
 /**
  * Reconstructs a runtime Task from the persisted sessions row used by lazy hydration.
  *
@@ -101,6 +167,8 @@ export function hydrateEvictedTaskFromSessionRow(
   const hydratedStatus = terminationReason === undefined
     ? status
     : terminalStatusFromReason(terminationReason);
+  const executionOwnership = executionOwnershipFromRow(row, logger);
+  if (executionOwnership === null) return null;
 
   const claudeBackendRollover = extractClaudeBackendRolloverState(metadata);
   const rolloverCycleFrom = claudeBackendRollover.phase === "pending"
@@ -147,6 +215,7 @@ export function hydrateEvictedTaskFromSessionRow(
     lastEventId: row.last_event_id ?? 0,
     lastReadEventId: row.last_read_event_id ?? 0,
     interventionQueue: [],
+    ...(executionOwnership === undefined ? {} : { executionOwnership }),
   };
 }
 

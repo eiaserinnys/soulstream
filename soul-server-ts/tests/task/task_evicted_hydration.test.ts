@@ -175,6 +175,63 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.callerSessionId).toBeUndefined();
   });
 
+  it("restores the complete sessions-row execution owner for restart adoption", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        status: "running",
+        termination_reason: null,
+        termination_detail: null,
+        termination_event_id: null,
+        execution_generation: "30",
+        execution_manifest_id: "manifest-a",
+        execution_runtime_env_identity: "runtime-a",
+        execution_registration_id: "registration-a",
+        execution_pid: 2207318,
+        execution_start_identity: "linux-proc-395121477",
+        execution_command_id: "owner:stable-a",
+        execution_lease_expires_at: "2026-08-28T04:28:49.261Z",
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.executionOwnership).toEqual({
+      ownerKind: "runner_process",
+      manifestId: "manifest-a",
+      runtimeEnvIdentity: "runtime-a",
+      registrationId: "registration-a",
+      pid: 2207318,
+      startIdentity: "linux-proc-395121477",
+      executionCommandId: "owner:stable-a",
+      ownershipGeneration: 30,
+    });
+  });
+
+  it("rejects a partial sessions-row execution owner", () => {
+    const logger = makeLogger();
+
+    expect(hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        status: "running",
+        termination_reason: null,
+        termination_detail: null,
+        termination_event_id: null,
+        execution_generation: 30,
+        execution_manifest_id: "manifest-a",
+      }),
+      logger,
+    )).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "sess-hydrated",
+        ownershipGeneration: 30,
+        hasManifestId: true,
+        hasRegistrationId: false,
+        hasLease: false,
+      }),
+      "loadEvictedTask: partial sessions-row execution owner",
+    );
+  });
+
   it("restores persisted notify_completion=false for resumed completion suppression", () => {
     const task = hydrateEvictedTaskFromSessionRow(
       makeRow({ notify_completion: false }),
