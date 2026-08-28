@@ -63,6 +63,28 @@ export class RunningInterventionTransition {
     message: InterventionMessage,
     options: { queueIfUndelivered?: boolean } = {},
   ): Promise<RunningInterventionResult> {
+    let releaseTurnBarrier!: () => void;
+    const ownTurnBarrier = new Promise<boolean>((resolve) => {
+      releaseTurnBarrier = () => resolve(false);
+    });
+    const previousTurnBarrier = task.interruptRequest;
+    const turnBarrier = previousTurnBarrier
+      ? Promise.all([previousTurnBarrier, ownTurnBarrier]).then(([interrupted]) => interrupted)
+      : ownTurnBarrier;
+    task.interruptRequest = turnBarrier;
+    try {
+      return await this.deliverAfterTurnBarrier(task, message, options);
+    } finally {
+      releaseTurnBarrier();
+      if (task.interruptRequest === turnBarrier) task.interruptRequest = undefined;
+    }
+  }
+
+  private async deliverAfterTurnBarrier(
+    task: Task,
+    message: InterventionMessage,
+    options: { queueIfUndelivered?: boolean },
+  ): Promise<RunningInterventionResult> {
     const publishBeforeDelivery = options.queueIfUndelivered !== false;
     const durableRunnerInbox = usesDurableRunnerInterventionInbox(task);
     const deliveryMessage = durableRunnerInbox
