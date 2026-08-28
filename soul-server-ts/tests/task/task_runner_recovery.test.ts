@@ -254,4 +254,67 @@ describe("TaskRunnerRecovery", () => {
     expect(projectRecoveredRunnerTerminalFact).toHaveBeenCalledOnce();
     expect(task.runner).toBeUndefined();
   });
+
+  it.each(["active", "identity_proven"] as const)(
+    "retires terminal canonical %s ownership with the ledger generation and exact identity",
+    async (ownershipPhase) => {
+      const task = makeTask({
+        status: "interrupted",
+        terminationReason: "killed",
+        terminationDetail: "host stopped",
+      });
+      const retireTerminalExecutionOwnershipAndWaitForApplication = vi.fn(async () => ({
+        applied: true,
+        eventId: 51,
+        canonicalSession: {
+          status: "interrupted",
+          termination_reason: "killed",
+          termination_detail: "host stopped",
+          review_state: "not_required",
+          last_assistant_text: null,
+          termination_event_id: 50,
+          updated_at: "2026-08-29T00:00:00.000Z",
+          last_event_id: 51,
+        },
+      }));
+      const recovery = new TaskRunnerRecovery({
+        getTask: vi.fn(),
+        loadTask: vi.fn(),
+        rememberTask: vi.fn(),
+        lifecycleTransition: {} as never,
+        autoResumeTransition: {} as never,
+        persistence: { retireTerminalExecutionOwnershipAndWaitForApplication } as never,
+      });
+
+      await expect(recovery.reconcileTerminalExecutionOwnership(task, {
+        session_id: task.agentSessionId,
+        node_id: "node-a",
+        updated_at: new Date("2026-08-29T00:00:00.000Z"),
+        reconciliation_kind: "terminal_nonterminal_ownership",
+        status: "interrupted",
+        termination_reason: "killed",
+        ownership_generation: "113641988538614",
+        ownership_phase: ownershipPhase,
+        manifest_id: "manifest-db2871e2",
+        registration_id: "registration-old",
+        pid: 4141,
+        start_identity: "start-4141",
+        execution_command_id: "execute-old",
+      })).resolves.toBe(true);
+
+      expect(retireTerminalExecutionOwnershipAndWaitForApplication)
+        .toHaveBeenCalledWith(task.agentSessionId, expect.anything(), {
+          ownershipGeneration: 113_641_988_538_614,
+          manifestId: "manifest-db2871e2",
+          registrationId: "registration-old",
+          pid: 4141,
+          startIdentity: "start-4141",
+          executionCommandId: "execute-old",
+          runnerFact: "closed",
+          updatedAt: expect.any(Date),
+        });
+      expect(task.status).toBe("interrupted");
+      expect(task.terminationReason).toBe("killed");
+    },
+  );
 });

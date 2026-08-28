@@ -329,7 +329,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     }
   });
 
-  it("retires an exact active ownership left behind after its canonical session terminated", async () => {
+  it.each(["active", "identity_proven"] as const)(
+    "retires an exact %s ownership through the same proof path after canonical termination",
+    async (ownershipPhase) => {
     const sessionId = "93a0a37e-restart-regression";
     const recoveredTask = task(sessionId);
     recoveredTask.hydratedFromDb = true;
@@ -363,9 +365,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
           session_id: sessionId,
           node_id: "node-a",
           updated_at: new Date("2026-08-29T00:00:00.000Z"),
-          reconciliation_kind: "terminal_active_ownership",
+          reconciliation_kind: "terminal_nonterminal_ownership",
           status: "interrupted",
           termination_reason: "killed",
+          ownership_generation: 113_641_988_538_614,
+          ownership_phase: ownershipPhase,
           manifest_id: "manifest-db2871e2",
           registration_id: "d5e9d471-restart-regression",
           pid: 1_765_295,
@@ -393,6 +397,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       recoveredTask,
       expect.objectContaining({
         registration_id: "d5e9d471-restart-regression",
+        ownership_generation: 113_641_988_538_614,
+        ownership_phase: ownershipPhase,
         pid: 1_765_295,
         start_identity: "linux-proc-17126017",
       }),
@@ -404,7 +410,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     ]);
     expect(recoveredTask.status).toBe("interrupted");
     expect(recoveredTask.terminationReason).toBe("killed");
-  });
+    },
+  );
 
   it("isolates owner-null inventory read failure from registration recovery", async () => {
     const current = registration({ lifecycleState: "running" });

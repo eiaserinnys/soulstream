@@ -136,6 +136,28 @@ describe("parseEventAppendBatch sanitization", () => {
     }))).toThrow("session_effect.start_identity must be a non-empty string");
   });
 
+  it("requires ledger generation and the complete registration identity on terminal retirement", () => {
+    const effect = {
+      kind: "execution_retire_terminal_ownership",
+      ownership_generation: 113_641_988_538_614,
+      manifest_id: "manifest-1",
+      registration_id: "registration-1",
+      pid: 968_764,
+      start_identity: "start-1",
+      execution_command_id: "execute-1",
+      runner_fact: "closed",
+      updated_at: "2026-08-29T00:00:00.000Z",
+    };
+
+    expect(
+      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
+    ).toEqual(effect);
+    expect(() => parseEventAppendBatch(batchWithEffect({
+      ...effect,
+      registration_id: "",
+    }))).toThrow("session_effect.registration_id must be a non-empty string");
+  });
+
   it("keeps the two owner-null observations and evidence hash intact", () => {
     const effect = {
       kind: "execution_backfill",

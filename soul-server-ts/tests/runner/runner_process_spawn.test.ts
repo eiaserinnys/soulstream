@@ -289,6 +289,78 @@ describe("RunnerProcessSpawner", () => {
     await expect(readFile(paths.pidPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("keeps ownership retirement fail-closed when the registration sidecar is absent", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.pidPath, "2000000000\n", { mode: 0o600 });
+    const commitOwnership = vi.fn(async () => true);
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 4127, unref: vi.fn() }),
+      registerPid: async () => {},
+      inspectProcess: async () => ({ alive: false, startIdentity: null }),
+      isPidAlive: () => false,
+      signalPid: vi.fn(),
+      now: () => Date.parse("2026-08-29T00:00:00.000Z"),
+      delay: async () => {},
+    });
+
+    await expect(spawner.retireTerminalOwnership({
+      paths,
+      registrationId: "registration-a",
+      pid: 2_000_000_000,
+      startIdentity: "start-2000000000",
+    }, commitOwnership)).rejects.toThrow("registration changed before ownership retirement");
+    expect(commitOwnership).not.toHaveBeenCalled();
+  });
+
+  it("reclaims a proven stale writer lock before committing ownership retirement", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    const pid = 2_000_000_000;
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      schemaVersion: 1,
+      registrationId: "registration-a",
+      sessionId: params.sessionId,
+      codeSha: params.codeSha,
+      pid,
+      startIdentity: "start-2000000000",
+    });
+    await writeFile(paths.pidPath, `${pid}\n`, { mode: 0o600 });
+    await writeFile(paths.socketPath, "stale socket");
+    await writeFile(paths.lockPath, `${JSON.stringify({
+      pid,
+      startIdentity: "start-2000000000",
+    })}\n`);
+    const commitOwnership = vi.fn(async () => true);
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 4127, unref: vi.fn() }),
+      registerPid: async () => {},
+      inspectProcess: async () => ({ alive: false, startIdentity: null }),
+      isPidAlive: () => false,
+      signalPid: vi.fn(),
+      now: () => Date.parse("2026-08-29T00:00:00.000Z"),
+      delay: async () => {},
+    });
+
+    await spawner.retireTerminalOwnership({
+      paths,
+      registrationId: "registration-a",
+      pid,
+      startIdentity: "start-2000000000",
+    }, commitOwnership);
+
+    expect(commitOwnership).toHaveBeenCalledOnce();
+    await expect(readFile(paths.lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(paths.pidPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(paths.socketPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("terminates a live prior pid before spawning its replacement", async () => {
     let alive = true;
     const signals: NodeJS.Signals[] = [];

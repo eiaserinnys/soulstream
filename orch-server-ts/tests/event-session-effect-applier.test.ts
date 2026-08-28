@@ -18,6 +18,7 @@ describe("applyEventSessionEffect", () => {
     ["execution_activate", "session_activate_execution_ownership"],
     ["execution_fail", "session_fail_execution_ownership"],
     ["execution_expire_dead_owner", "session_expire_dead_execution_owner"],
+    ["execution_retire_terminal_ownership", "session_retire_terminal_execution_ownership"],
     ["execution_orphaned_spawn", "session_mark_execution_orphaned_spawn"],
     ["execution_backfill", "session_backfill_execution_ownership"],
     ["runner_terminal_fact", "session_project_runner_terminal_fact"],
@@ -360,6 +361,17 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     pid: 123,
     start_identity: "start-1",
     failure_reason: "owner process is gone",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_retire_terminal_ownership") return {
+    kind,
+    ownership_generation: 1,
+    manifest_id: "release-1",
+    registration_id: "registration-1",
+    pid: 123,
+    start_identity: "start-1",
+    execution_command_id: "execute-1",
+    runner_fact: "closed",
     updated_at: "2026-08-06T00:00:00.000Z",
   };
   if (kind === "execution_orphaned_spawn") return {
