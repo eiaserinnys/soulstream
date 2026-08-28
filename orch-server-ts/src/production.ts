@@ -79,6 +79,7 @@ import { UsageSummaryService } from "./usage/usage_summary_service.js";
 import { SessionDeletionRepository } from "./session/session_deletion_repository.js";
 import { SessionDeletionService } from "./session/session_deletion_service.js";
 import { SessionBoardMoveService } from "./session/session_board_move_service.js";
+import { intervenePayload } from "./session/session_action_command_payloads.js";
 import {
   createLiveTurnSummaryPipeline,
   type LiveTurnSummaryPipeline,
@@ -219,6 +220,67 @@ export async function createLiveProductionApplication(
     registry,
     repository: dbCatalogRepository,
     logError: (error, message) => context.warn(`${message}: ${String(error)}`),
+    onNodeReady: async (nodeId, connectionId) => {
+      const deliveries = (await persistenceRepositoryProvider()).deliveries;
+      const leaseOwner = `node-ready:${nodeId}:${connectionId}`;
+      const claimed = await deliveries.recovery.claimPendingHumanLiveSteerForNode(
+        nodeId,
+        leaseOwner,
+      );
+      for (const row of claimed) {
+        try {
+          if (row.target_session_id === null || row.completion_id === null) {
+            throw new Error(`Delivery ${row.delivery_id} has incomplete identity`);
+          }
+          const parsed = intervenePayload(row.target_session_id, {
+            text: row.payload.text,
+            user: row.payload.user,
+            caller_info: row.payload.caller_info,
+            ...(row.payload.attachment_paths === null
+              ? {}
+              : { attachment_paths: row.payload.attachment_paths }),
+            ...(row.payload.context === null
+              ? {}
+              : { context_items: row.payload.context }),
+            delivery_id: row.delivery_id,
+            delivery_intent: row.intent,
+            source: row.source,
+            completion_id: row.completion_id,
+            relation_key: row.relation_key,
+            producer_terminal_revision: row.producer_terminal_revision,
+            parent_delivery_id: row.parent_delivery_id,
+            caller_turn_id: row.caller_turn_id,
+            created_at: row.created_at.toISOString(),
+            delivery_lease_owner: leaseOwner,
+          });
+          if (!parsed.ok) throw new Error(parsed.message);
+          const routed = await runtimeServices.sessionRouter
+            .routeExistingSessionPendingCommand(parsed.value);
+          const response = await runtimeServices.sessionBridge.sendPendingCommand(routed);
+          if (response.status === "error") {
+            throw new Error(String(response.message ?? response.code ?? "intervene failed"));
+          }
+        } catch (error) {
+          const failure = warningMessage(
+            `node-ready delivery ${row.delivery_id} dispatch failed`,
+            error,
+          );
+          const current = await deliveries.get(row.delivery_id);
+          if (
+            current?.lease_owner === leaseOwner
+            && (current.state === "claimed" || current.state === "dispatching")
+          ) {
+            await deliveries.retryLeasedDelivery(
+              row.delivery_id,
+              leaseOwner,
+              failure,
+              0,
+            );
+          }
+          context.warn(failure);
+        }
+      }
+    },
   });
   let logPushNotification: ((event: PushNotificationLogEvent) => void) | undefined;
   const pushNotifier = new PushNotifier({

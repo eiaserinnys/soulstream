@@ -17,10 +17,15 @@ describe("createSessionCacheSeedSink", () => {
       nextCursor: null,
       hasMore: offset === 0,
     }));
+    const onNodeReady = vi.fn((nodeId: string, connectionId: string) => {
+      expect(registry.getConnectedNode(nodeId)?.connectionId).toBe(connectionId);
+      expect(registry.sessionCache.getSessionsForNode(nodeId)).toHaveLength(2);
+    });
     const sink = createSessionCacheSeedSink({
       registry,
       repository: { listSessionSnapshots },
       logError: vi.fn(),
+      onNodeReady,
       pageSize: 1,
       nowMs: () => 100,
     });
@@ -39,6 +44,11 @@ describe("createSessionCacheSeedSink", () => {
       offset: 1,
       limit: 1,
     });
+    expect(onNodeReady).toHaveBeenCalledTimes(1);
+    expect(onNodeReady).toHaveBeenCalledWith(
+      "node-a",
+      registered.node.connectionId,
+    );
   });
 
   it("discards a stale DB result after a newer node connection replaces it", async () => {
@@ -48,6 +58,7 @@ describe("createSessionCacheSeedSink", () => {
     const pending = new Promise<void>((resolve) => {
       release = resolve;
     });
+    const onNodeReady = vi.fn();
     const sink = createSessionCacheSeedSink({
       registry,
       repository: {
@@ -64,6 +75,7 @@ describe("createSessionCacheSeedSink", () => {
         },
       },
       logError: vi.fn(),
+      onNodeReady,
     });
 
     sink([first.event]);
@@ -72,5 +84,6 @@ describe("createSessionCacheSeedSink", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(registry.sessionCache.findSession("stale-session")).toBeUndefined();
+    expect(onNodeReady).not.toHaveBeenCalled();
   });
 });
