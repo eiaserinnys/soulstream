@@ -22,6 +22,7 @@ import {
 import { RunnerMutationFailure } from "./runner_mutation_failure.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
 import {
+  retireAbsentRunnerOwnership,
   stopExistingRunnerLocked,
   terminateExactRunner,
   type ExactRunnerProcess,
@@ -405,7 +406,10 @@ export class RunnerProcessSpawner {
     const { paths, ...expected } = input;
     return withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
       const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
-      if (!identity || identity.registrationId !== expected.registrationId) {
+      if (!identity) {
+        return await retireAbsentRunnerOwnership(paths, expected, commitOwnership, this.deps);
+      }
+      if (identity.registrationId !== expected.registrationId) {
         throw new RunnerMutationFailure(
           "runner_registration_identity_proof_failed",
           `runner registration changed before ownership retirement: ${paths.sessionDirectory}`,
