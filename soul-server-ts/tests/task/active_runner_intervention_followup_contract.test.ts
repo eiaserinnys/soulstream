@@ -38,9 +38,13 @@ describe("active runner intervention with one runtime follow-up", () => {
   it("keeps the accepted successor active after the prior engine turn ends", async () => {
     const activeOwner = deferred<void>();
     const releasePriorTurn = deferred<void>();
+    const priorTurnEnded = deferred<void>();
     const executeInputs: EngineExecuteParams[] = [];
     const interruptDeliveryIds: string[] = [];
+    const runtimeFollowupIds: string[] = [];
     const nextTurnCompletedDeliveryIds: string[] = [];
+    let task!: Task;
+    let runtimeFollowup!: InterventionMessage;
     let executeCount = 0;
 
     const engine: EnginePort = {
@@ -56,15 +60,7 @@ describe("active runner intervention with one runtime follow-up", () => {
           } as SSEEventPayload;
           activeOwner.resolve();
           await releasePriorTurn.promise;
-          yield {
-            type: "error",
-            fatal: true,
-            error_code: "error_during_execution",
-            message: "prior tool turn ended while the successor input was accepted",
-            stop_reason: "tool_use",
-            terminal_reason: "aborted_tools",
-            timestamp: 1,
-          } as unknown as SSEEventPayload;
+          priorTurnEnded.resolve();
           return;
         }
 
@@ -86,6 +82,11 @@ describe("active runner intervention with one runtime follow-up", () => {
         if (input.prompt.includes(HUMAN_MARKER)) {
           interruptDeliveryIds.push(HUMAN_DELIVERY_ID);
         }
+        releasePriorTurn.resolve();
+        await priorTurnEnded.promise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        task.interventionQueue.push(runtimeFollowup);
+        runtimeFollowupIds.push(RUNTIME_FOLLOWUP_ID);
         return {
           status: "not_delivered",
           mechanism: "interrupt_then_next_turn",
@@ -124,8 +125,8 @@ describe("active runner intervention with one runtime follow-up", () => {
       deliveryRecorder,
     );
     const runner = createInProcessTaskRunnerRuntime(engine);
-    const task = makeTask();
-    const runtimeFollowup: InterventionMessage = {
+    task = makeTask();
+    runtimeFollowup = {
       text: "runtime follow-up arrived",
       user: "runtime",
       deliveryId: RUNTIME_FOLLOWUP_ID,
@@ -150,11 +151,6 @@ describe("active runner intervention with one runtime follow-up", () => {
     const activeOwnerCount = task.status === "running" && task.executionPromise === execution
       ? 1
       : 0;
-    task.interventionQueue.push(runtimeFollowup);
-    const runtimeFollowupIds = task.interventionQueue
-      .filter((message) => message.deliveryIntent === "runtime_followup")
-      .map((message) => message.deliveryId)
-      .filter((deliveryId): deliveryId is string => deliveryId !== undefined);
     await transition.deliver(task, humanLiveSteer);
     releasePriorTurn.resolve();
     await execution;
