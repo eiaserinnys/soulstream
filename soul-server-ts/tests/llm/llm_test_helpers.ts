@@ -137,6 +137,7 @@ function makeAppliedTransitionAcknowledgement(
     "execution_activate",
     "execution_fail",
     "execution_expire_dead_owner",
+    "execution_retire_terminal_ownership",
     "runner_terminal_fact",
     "recovered_runner_terminal_fact",
   ].includes(effect.kind)) {

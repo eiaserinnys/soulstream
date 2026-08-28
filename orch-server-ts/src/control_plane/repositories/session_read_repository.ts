@@ -16,9 +16,11 @@ export interface HostOwnerNullRunningSessionRow extends Record<string, unknown> 
   session_id: string;
   node_id: string | null;
   updated_at: Date;
-  reconciliation_kind: "owner_null_running" | "terminal_active_ownership";
+  reconciliation_kind: "owner_null_running" | "terminal_nonterminal_ownership";
   status: string;
   termination_reason: string | null;
+  ownership_generation: string | number | null;
+  ownership_phase: "reserved" | "identity_proven" | "active" | null;
   manifest_id: string | null;
   registration_id: string | null;
   pid: number | null;
@@ -198,6 +200,8 @@ export class SessionReadRepository {
                'owner_null_running'::TEXT AS reconciliation_kind,
                session.status,
                session.termination_reason,
+               NULL::BIGINT AS ownership_generation,
+               NULL::TEXT AS ownership_phase,
                NULL::TEXT AS manifest_id,
                NULL::TEXT AS registration_id,
                NULL::INTEGER AS pid,
@@ -212,10 +216,17 @@ export class SessionReadRepository {
 
         SELECT session.session_id,
                session.node_id,
-               GREATEST(session.updated_at, ownership.activated_at) AS updated_at,
-               'terminal_active_ownership'::TEXT AS reconciliation_kind,
+               GREATEST(
+                 session.updated_at,
+                 ownership.reserved_at,
+                 ownership.identity_proven_at,
+                 ownership.activated_at
+               ) AS updated_at,
+               'terminal_nonterminal_ownership'::TEXT AS reconciliation_kind,
                session.status,
                session.termination_reason,
+               ownership.ownership_generation,
+               ownership.phase AS ownership_phase,
                ownership.manifest_id,
                ownership.registration_id,
                ownership.pid,
@@ -224,7 +235,7 @@ export class SessionReadRepository {
         FROM sessions AS session
         JOIN session_execution_ownerships AS ownership
           ON ownership.session_id = session.session_id
-         AND ownership.phase = 'active'
+         AND ownership.phase IN ('reserved', 'identity_proven', 'active')
         WHERE session.node_id = ${params.nodeId}
           AND session.status IN ('completed', 'error', 'interrupted')
       )

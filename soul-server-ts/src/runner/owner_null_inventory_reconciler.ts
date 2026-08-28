@@ -57,7 +57,7 @@ export class OwnerNullInventoryReconciler {
       return new Set();
     }
     const terminalOwnerships = inventory.filter(
-      (row) => row.reconciliation_kind === "terminal_active_ownership",
+      (row) => row.reconciliation_kind === "terminal_nonterminal_ownership",
     );
     for (const row of terminalOwnerships) {
       try {
@@ -65,12 +65,12 @@ export class OwnerNullInventoryReconciler {
       } catch (error) {
         this.options.logger.error(
           { err: error, sessionId: row.session_id },
-          "terminal active ownership reconciliation failed",
+          "terminal canonical ownership reconciliation failed",
         );
       }
     }
     const runningInventory = inventory.filter(
-      (row) => row.reconciliation_kind !== "terminal_active_ownership",
+      (row) => row.reconciliation_kind !== "terminal_nonterminal_ownership",
     );
     const registeredSessionIds = new Set(
       registrations

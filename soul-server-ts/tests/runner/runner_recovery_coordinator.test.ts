@@ -329,7 +329,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     }
   });
 
-  it.each(["active", "identity_proven"] as const)(
+  it.each(["reserved", "identity_proven", "active"] as const)(
     "retires an exact %s ownership through the same proof path after canonical termination",
     async (ownershipPhase) => {
     const sessionId = "93a0a37e-restart-regression";

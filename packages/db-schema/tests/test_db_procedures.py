@@ -178,6 +178,26 @@ async def test_terminal_receipt_migration_contract_is_mirrored_in_schema_sql():
         assert required in schema_sql
 
 
+async def test_terminal_execution_ownership_retirement_is_exact_and_mirrored():
+    migration_sql = _migration_sql(
+        "078_terminal_execution_ownership_retirement.sql"
+    ).strip()
+    schema_sql = _schema_sql()
+
+    assert migration_sql in schema_sql
+    for required in [
+        "ownership.ownership_generation = p_ownership_generation",
+        "ownership.manifest_id = p_manifest_id",
+        "ownership.registration_id = p_registration_id",
+        "ownership.pid = p_pid",
+        "ownership.start_identity = p_start_identity",
+        "ownership.execution_command_id = p_execution_command_id",
+        "ownership.phase IN ('reserved', 'identity_proven', 'active')",
+        "IF p_retired_at IS NULL THEN",
+    ]:
+        assert required in migration_sql
+
+
 async def test_completion_terminal_revision_fence_is_mirrored_in_schema_sql():
     migration_sql = _migration_sql("065_completion_terminal_revision_fence.sql")
     schema_sql = _schema_sql()

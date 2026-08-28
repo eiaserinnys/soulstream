@@ -109,6 +109,17 @@ export type EventOutboxSessionEffect =
       updated_at: string;
     }
   | {
+      kind: "execution_retire_terminal_ownership";
+      ownership_generation: number;
+      manifest_id: string;
+      registration_id: string;
+      pid: number;
+      start_identity: string;
+      execution_command_id: string;
+      runner_fact: "completed" | "failed" | "reaped" | "closed";
+      updated_at: string;
+    }
+  | {
       kind: "execution_orphaned_spawn";
       ownership_generation: number;
       registration_id: string;

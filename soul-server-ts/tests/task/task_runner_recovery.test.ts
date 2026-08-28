@@ -255,7 +255,7 @@ describe("TaskRunnerRecovery", () => {
     expect(task.runner).toBeUndefined();
   });
 
-  it.each(["active", "identity_proven"] as const)(
+  it.each(["reserved", "identity_proven", "active"] as const)(
     "retires terminal canonical %s ownership with the ledger generation and exact identity",
     async (ownershipPhase) => {
       const task = makeTask({

@@ -148,16 +148,22 @@ export class RunnerRecoveryCoordinator {
     commit: () => Promise<boolean>,
   ): Promise<void> {
     const registrationId = row.registration_id;
+    const ownershipGeneration = Number(row.ownership_generation);
+    const ownershipPhase = row.ownership_phase;
     const pid = row.pid;
     const startIdentity = row.start_identity;
     if (
       !registrationId
+      || !Number.isSafeInteger(ownershipGeneration)
+      || ownershipGeneration <= 0
+      || !ownershipPhase
+      || !["reserved", "identity_proven", "active"].includes(ownershipPhase)
       || typeof pid !== "number"
       || !Number.isSafeInteger(pid)
       || pid <= 0
       || !startIdentity
     ) {
-      throw new Error(`terminal active ownership identity incomplete: ${row.session_id}`);
+      throw new Error(`terminal canonical ownership identity incomplete: ${row.session_id}`);
     }
     await this.registrationControl.retireTerminalOwnership(
       runnerProcessPaths(this.options.stateDirectory, row.session_id),

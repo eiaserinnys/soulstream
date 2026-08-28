@@ -169,13 +169,21 @@ export class TaskRunnerRecovery {
     }
     const manifestId = row.manifest_id;
     const registrationId = row.registration_id;
+    const ownershipGeneration = Number(row.ownership_generation);
+    const ownershipPhase = row.ownership_phase;
     const pid = row.pid;
     const startIdentity = row.start_identity;
     const executionCommandId = row.execution_command_id;
     if (
       !manifestId
       || !registrationId
+      || !Number.isSafeInteger(ownershipGeneration)
+      || ownershipGeneration <= 0
+      || !ownershipPhase
+      || !["reserved", "identity_proven", "active"].includes(ownershipPhase)
       || typeof pid !== "number"
+      || !Number.isSafeInteger(pid)
+      || pid <= 0
       || !startIdentity
       || !executionCommandId
     ) {
@@ -184,6 +192,7 @@ export class TaskRunnerRecovery {
     const updatedAt = new Date();
     const transitionId = [
       "restart-terminal-retire",
+      ownershipGeneration,
       registrationId,
       pid,
       startIdentity,
@@ -197,26 +206,22 @@ export class TaskRunnerRecovery {
       _dedupe_key: `execution_ownership:${task.agentSessionId}:${transitionId}`,
     } as unknown as SSEEventPayload;
     const application = await this.deps.persistence
-      .enqueueRecoveredRunnerTerminalFactAndWaitForApplication(
+      .retireTerminalExecutionOwnershipAndWaitForApplication(
         task.agentSessionId,
         event,
         {
-          kind: "recovered_runner_terminal_fact",
-          manifest_id: manifestId,
-          registration_id: registrationId,
+          ownershipGeneration,
+          manifestId,
+          registrationId,
           pid,
-          start_identity: startIdentity,
-          execution_command_id: executionCommandId,
-          runner_fact: task.status === "completed"
+          startIdentity,
+          executionCommandId,
+          runnerFact: task.status === "completed"
             ? "completed"
             : task.status === "interrupted"
               ? "closed"
               : "failed",
-          termination_detail:
-            task.terminationDetail ?? "terminal ownership survived host restart",
-          review_state: task.reviewState ?? "not_required",
-          last_assistant_text: task.lastAssistantText ?? null,
-          updated_at: updatedAt.toISOString(),
+          updatedAt,
         },
       );
     applyCanonicalSessionProjection(task, application.canonicalSession);

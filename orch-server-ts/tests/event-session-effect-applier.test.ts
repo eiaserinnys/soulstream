@@ -71,6 +71,7 @@ describe("applyEventSessionEffect", () => {
       kind !== "execution_prove"
       && kind !== "execution_fail"
       && kind !== "execution_expire_dead_owner"
+      && kind !== "execution_retire_terminal_ownership"
       && kind !== "execution_orphaned_spawn"
       && kind !== "execution_backfill"
     ) {

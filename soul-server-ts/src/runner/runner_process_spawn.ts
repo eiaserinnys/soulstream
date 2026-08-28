@@ -38,7 +38,6 @@ import { readRunnerPid } from "./runner_process_registration.js";
 import {
   invalidateRunnerRegistrationFilesLocked,
   invalidateRunnerRegistrationFiles,
-  removeRunnerRegistrationEvidenceForReplacementLocked,
   retireTerminalRunnerRegistrationFilesLocked,
 } from "./runner_registration_mutation.js";
 import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
@@ -406,20 +405,17 @@ export class RunnerProcessSpawner {
     const { paths, ...expected } = input;
     return withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
       const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
-      if (identity && identity.registrationId !== expected.registrationId) {
+      if (!identity || identity.registrationId !== expected.registrationId) {
         throw new RunnerMutationFailure(
           "runner_registration_identity_proof_failed",
           `runner registration changed before ownership retirement: ${paths.sessionDirectory}`,
         );
       }
       if (
-        identity?.pid !== null
-        && identity?.pid !== undefined
-        && identity.startIdentity !== null
-        && (
-          identity.pid !== expected.pid
-          || !processStartIdentitiesMatch(identity.startIdentity, expected.startIdentity)
-        )
+        identity.pid === null
+        || identity.startIdentity === null
+        || identity.pid !== expected.pid
+        || !processStartIdentitiesMatch(identity.startIdentity, expected.startIdentity)
       ) {
         throw new RunnerMutationFailure(
           "runner_registration_identity_proof_failed",
@@ -435,21 +431,18 @@ export class RunnerProcessSpawner {
       }
 
       await terminateExactRunner(expected, this.deps);
+      await prepareRunnerWriterLockForSpawn(paths.lockPath);
       if (!await commitOwnership()) {
         throw new Error(
           `terminal execution ownership changed before retirement: ${paths.sessionDirectory}`,
         );
       }
 
-      if (identity) {
-        await retireTerminalRunnerRegistrationFilesLocked(
-          paths,
-          expected.registrationId,
-          new Date(this.deps.now()),
-        );
-      } else {
-        await removeRunnerRegistrationEvidenceForReplacementLocked(paths);
-      }
+      await retireTerminalRunnerRegistrationFilesLocked(
+        paths,
+        expected.registrationId,
+        new Date(this.deps.now()),
+      );
     });
   }
 
