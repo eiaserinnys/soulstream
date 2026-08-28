@@ -204,6 +204,42 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
   });
 
+  it("adopts a hydrated sessions-row owner without owner-null reconciliation", async () => {
+    const recoveredTask = task("session-a");
+    recoveredTask.hydratedFromDb = true;
+    recoveredTask.executionOwnership = {
+      ownerKind: "runner_process",
+      manifestId: "sha-a",
+      runtimeEnvIdentity: "env-a",
+      registrationId: "registration-a",
+      pid: 4123,
+      startIdentity: "start-4123",
+      executionCommandId: "owner:stable-a",
+      ownershipGeneration: 30,
+    };
+    const reconcileExecutionOwnershipObservations = vi.fn(async () => false);
+    const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => recoveredTask),
+        markRunnerFailureAndResume: vi.fn(async () => {}),
+        projectClosedRunner: vi.fn(async () => true),
+        reconcileExecutionOwnershipObservations,
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(reconcileExecutionOwnershipObservations).not.toHaveBeenCalled();
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      recoveredTask,
+      expect.anything(),
+      "execute-a",
+      "adopt",
+      expect.any(Function),
+    );
+  });
+
   it("interrupts instead of adopting when one owner identity field changes between scans", async () => {
     let now = RECOVERY_NOW_MS;
     const current = registration();
