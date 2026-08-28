@@ -261,6 +261,10 @@ describe("versioned migration contract", () => {
       "SELECT * FROM session_release_execution_ownership(",
     );
     expect(migration?.sql).not.toContain("session_execution_ownerships");
+    expect(migration?.sql).toContain("FROM events AS terminal");
+    expect(migration?.sql).toContain(
+      "terminal.id = session.termination_event_id",
+    );
     expect(schema).toContain(
       "session.status NOT IN ('completed', 'error', 'interrupted')",
     );

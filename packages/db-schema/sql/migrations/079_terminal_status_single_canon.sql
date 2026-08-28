@@ -109,3 +109,24 @@ CREATE OR REPLACE FUNCTION session_project_runner_terminal_fact(
         p_updated_at
     );
 $$;
+
+UPDATE sessions AS session
+   SET status = terminal.payload->>'status',
+       termination_reason = terminal.payload->>'termination_reason',
+       termination_detail = terminal.payload->>'termination_detail'
+  FROM events AS terminal
+ WHERE session.status = 'running'
+   AND session.termination_event_id IS NOT NULL
+   AND terminal.session_id = session.session_id
+   AND terminal.id = session.termination_event_id
+   AND terminal.event_type = 'session_ended'
+   AND terminal.payload->>'status' IN ('completed', 'error', 'interrupted')
+   AND terminal.payload->>'termination_reason' IS NOT NULL
+   AND session.execution_generation = 0
+   AND session.execution_manifest_id IS NULL
+   AND session.execution_runtime_env_identity IS NULL
+   AND session.execution_registration_id IS NULL
+   AND session.execution_pid IS NULL
+   AND session.execution_start_identity IS NULL
+   AND session.execution_command_id IS NULL
+   AND session.execution_lease_expires_at IS NULL;

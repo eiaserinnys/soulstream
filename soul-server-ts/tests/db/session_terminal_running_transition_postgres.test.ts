@@ -18,11 +18,6 @@ describePostgres("terminal receipt running-transition fence", () => {
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
-    const migration = readFileSync(fileURLToPath(new URL(
-      "../../../packages/db-schema/sql/migrations/079_terminal_status_single_canon.sql",
-      import.meta.url,
-    )), "utf8");
-    await harness.sql.unsafe(migration);
   }, 45_000);
 
   afterAll(async () => {
@@ -152,7 +147,89 @@ describePostgres("terminal receipt running-transition fence", () => {
       execution_lease_expires_at: null,
     }]);
   });
+
+  it("repairs a pre-existing running row from its terminal receipt", async () => {
+    await harness.sql`
+      INSERT INTO sessions (
+        session_id,
+        session_type,
+        status,
+        agent_id,
+        termination_event_id,
+        last_event_id
+      ) VALUES (
+        'running-with-terminal-receipt',
+        'codex',
+        'running',
+        'worker',
+        533,
+        533
+      )
+    `;
+    await harness.sql`
+      INSERT INTO events (session_id, id, event_type, payload)
+      VALUES (
+        'running-with-terminal-receipt',
+        533,
+        'session_ended',
+        jsonb_build_object(
+          'type', 'session_ended',
+          'status', 'interrupted',
+          'termination_reason', 'unknown',
+          'termination_detail',
+          'owner-null running migration could not prove a stable runner identity'
+        )
+      )
+    `;
+
+    await expect(harness.sql`
+      SELECT session.execution_generation,
+             terminal.payload->>'status' AS event_status,
+             terminal.payload->>'termination_reason' AS event_reason
+      FROM sessions AS session
+      JOIN events AS terminal
+        ON terminal.session_id = session.session_id
+       AND terminal.id = session.termination_event_id
+      WHERE session.session_id = 'running-with-terminal-receipt'
+    `).resolves.toEqual([{
+      execution_generation: "0",
+      event_status: "interrupted",
+      event_reason: "unknown",
+    }]);
+
+    await harness.sql.unsafe(readTerminalStatusMigration());
+
+    await expect(harness.sql`
+      SELECT status, termination_reason, termination_detail,
+             termination_event_id, execution_manifest_id,
+             execution_registration_id, execution_pid
+      FROM sessions
+      WHERE session_id = 'running-with-terminal-receipt'
+    `).resolves.toEqual([{
+      status: "interrupted",
+      termination_reason: "unknown",
+      termination_detail:
+        "owner-null running migration could not prove a stable runner identity",
+      termination_event_id: 533,
+      execution_manifest_id: null,
+      execution_registration_id: null,
+      execution_pid: null,
+    }]);
+    await expect(harness.sql<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM events
+      WHERE session_id = 'running-with-terminal-receipt'
+        AND event_type = 'session_ended'
+    `).resolves.toEqual([{ count: 1 }]);
+  });
 });
+
+function readTerminalStatusMigration(): string {
+  return readFileSync(fileURLToPath(new URL(
+    "../../../packages/db-schema/sql/migrations/079_terminal_status_single_canon.sql",
+    import.meta.url,
+  )), "utf8");
+}
 
 function hasDockerBinary(): boolean {
   return spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
