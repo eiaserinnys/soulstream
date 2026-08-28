@@ -188,10 +188,10 @@ describe("versioned migration contract", () => {
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {
     const migrations = await loadMigrationManifest();
 
-    expect(migrations).toHaveLength(78);
+    expect(migrations).toHaveLength(79);
     expect(migrations[0].id).toBe("001_list_sessions_folder_node_filter.sql");
     expect(migrations.at(-1)?.id).toBe(
-      "077_ownerless_terminal_stale_event_cas.sql",
+      "078_terminal_execution_ownership_retirement.sql",
     );
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
@@ -345,6 +345,7 @@ describe("versioned migration contract", () => {
       "075_sessions_execution_owner_release.sql",
       "076_ownerless_terminal_generation_cas.sql",
       "077_ownerless_terminal_stale_event_cas.sql",
+      "078_terminal_execution_ownership_retirement.sql",
     ]);
   });
 
@@ -390,6 +391,7 @@ describe("versioned migration contract", () => {
       "075_sessions_execution_owner_release.sql",
       "076_ownerless_terminal_generation_cas.sql",
       "077_ownerless_terminal_stale_event_cas.sql",
+      "078_terminal_execution_ownership_retirement.sql",
     ]);
   });
 
