@@ -6,6 +6,8 @@ import {
   registerSessionActionCommandRoutes,
   type NodeRegistrationPayload,
 } from "../src/index.js";
+import { createSessionCacheSeedSink } from
+  "../src/node/session_cache_seed_sink.js";
 import { createHarnessCore } from "./session-action-command-test-helpers.js";
 import {
   completedSessionRow,
@@ -22,6 +24,17 @@ import type { CompletedDeliveryReconnectObservation } from
 
 type RuntimeConstructor = new (...args: any[]) => any;
 type ReconnectMode = "product" | "counterfactual_wake";
+type SessionCacheSeedInputWithNodeReady =
+  Parameters<typeof createSessionCacheSeedSink>[0] & {
+    onNodeReady?: (
+      nodeId: string,
+      connectionId?: string,
+    ) => Promise<void> | void;
+  };
+
+const createSessionCacheSeedSinkWithNodeReady = createSessionCacheSeedSink as (
+  input: SessionCacheSeedInputWithNodeReady,
+) => ReturnType<typeof createSessionCacheSeedSink>;
 
 interface RuntimeTask {
   agentSessionId: string;
@@ -340,7 +353,52 @@ export async function observeCompletedDeliveryReconnect(
       delete: vi.fn(),
     } as never,
   );
-  const connectNode = (): void => {
+  const wakePendingForReadyNode = async (
+    nodeId: string,
+    readyConnectionId?: string,
+  ): Promise<void> => {
+    if (nodeId !== NODE_ID) return;
+    if (
+      readyConnectionId !== undefined
+      && registry.getConnectedNode(nodeId)?.connectionId !== readyConnectionId
+    ) return;
+    for (const deliveryId of ledger.pendingEligibleFor(SESSION_ID)) {
+      reconnectWakeIds.push(deliveryId);
+      const routed = await router.routeExistingSessionPendingCommand(
+        interventionCommand(deliveryId) as never,
+      );
+      await bridge.sendPendingCommand(routed);
+    }
+  };
+  let nodeReadyWork: Promise<void> | undefined;
+  const sessionCacheSeed = createSessionCacheSeedSinkWithNodeReady({
+    registry,
+    repository: {
+      listSessionSnapshots: async () => {
+        const session = {
+          ...completedSessionRow(scenario.targetStatus),
+          agent_session_id: SESSION_ID,
+          agentSessionId: SESSION_ID,
+          nodeId: NODE_ID,
+        };
+        return {
+          sessions: [session],
+          sessionList: [session],
+          total: 1,
+          cursor: null,
+          nextCursor: null,
+          hasMore: false,
+        };
+      },
+    },
+    logError: (error, message) => silentLogger.error({ error }, message),
+    onNodeReady: (nodeId, readyConnectionId) => {
+      nodeReadyWork = wakePendingForReadyNode(nodeId, readyConnectionId);
+      return nodeReadyWork;
+    },
+  });
+  const connectNode = async (): Promise<void> => {
+    nodeReadyWork = undefined;
     const registered = registry.registerNode({ ...registration, node_id: NODE_ID });
     connectionId = registered.node.connectionId;
     transports.attach({
@@ -355,8 +413,11 @@ export async function observeCompletedDeliveryReconnect(
         },
       },
     });
+    sessionCacheSeed(registered.events);
+    await Promise.resolve();
+    await nodeReadyWork;
   };
-  if (scenario.initiallyConnected) connectNode();
+  if (scenario.initiallyConnected) await connectNode();
 
   const app = createApp({
     config: {
@@ -387,17 +448,11 @@ export async function observeCompletedDeliveryReconnect(
   }
 
   if (scenario.reconnect) {
-    connectNode();
+    await connectNode();
     reconnectSignals += 1;
-    const eligible = ledger.pendingEligibleFor(SESSION_ID);
+    ledger.pendingEligibleFor(SESSION_ID);
     if (reconnectMode === "counterfactual_wake") {
-      for (const deliveryId of eligible) {
-        reconnectWakeIds.push(deliveryId);
-        const routed = await router.routeExistingSessionPendingCommand(
-          interventionCommand(deliveryId) as never,
-        );
-        await bridge.sendPendingCommand(routed);
-      }
+      await wakePendingForReadyNode(NODE_ID, connectionId);
     }
   }
 
