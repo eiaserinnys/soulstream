@@ -351,6 +351,16 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     const gate = new TaskDeliveryLedgerGate(true, repository);
     const autoResume = vi.fn();
     const modelStart = vi.fn();
+    const queueOnly = vi.fn(async (
+      queuedTask: Task,
+      message: InterventionMessage,
+    ) => ({
+      delivered: false as const,
+      queued: true as const,
+      queuePosition: enqueueInterventionOnce(queuedTask, message),
+      consumeWhen: "next_turn" as const,
+      reason: "queue_only_policy" as const,
+    }));
     const route = new TaskInterventionRoute({
       getTask: () => task,
       loadEvictedTask: async () => null,
@@ -359,6 +369,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         deliver: vi.fn(async () => {
           throw new Error("terminal notification reached live delivery");
         }),
+        queueOnly,
       },
       autoResumeTransition: { resume: autoResume },
       deliveryLedgerGate: gate,

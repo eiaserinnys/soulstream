@@ -32,9 +32,9 @@ export interface QueuedDeliveryTranscriptRecoveryDeps {
  *
  * A stable input UUID prevents duplicate execution, but SDK 0.3.218 does not
  * emit another Result when that UUID is re-sent after resume. A completed
- * transcript therefore settles the ledger directly. An absent or incomplete
- * receipt returns the same delivery to queued/held state. Periodic maintenance
- * does not consume or re-inject it; only a later explicit intent may claim it.
+ * transcript therefore settles the ledger directly. An absent input returns
+ * the delivery to pending for reconnect admission; an incomplete receipt stays
+ * queued/held. Periodic maintenance does not consume or re-inject either row.
  */
 /** Delay recorded with a deferred one-shot check; it is not an execution timer. */
 const QUEUED_HOLD_METADATA_DELAY_MS = 1_000;
@@ -124,7 +124,12 @@ export class QueuedDeliveryTranscriptRecovery {
           continue;
         }
         if (receipt.kind === "absent") {
-          await this.defer(row.delivery_id, "queued_transcript_input_absent");
+          await this.deps.deliveryRepository.retryLeasedDelivery(
+            row.delivery_id,
+            this.workerId,
+            "queued_transcript_input_absent",
+            0,
+          );
           continue;
         }
         const reason = receipt.kind === "input_pending"

@@ -29,7 +29,7 @@ describe("queued transcript recovery rolling contract", () => {
       "delivery-deferred",
       "rolling-worker",
       "queued_transcript_input_absent",
-      1_000,
+      0,
     );
     expect(harness.deferQueuedTranscriptCheck).not.toHaveBeenCalled();
   });
