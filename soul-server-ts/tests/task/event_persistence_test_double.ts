@@ -36,12 +36,10 @@ export function makeEventPersistenceTestDouble(
     initialEvents.map((fixture) => [fixture.eventId, fixture.event] as const),
   );
   const latestBySession = new Map<string, number>();
+  type EnqueueEventArgs = Parameters<EventPersistence["enqueueEvent"]>;
   const persistSemanticEvent = vi.fn(
-    async (
-      sessionId: string,
-      event: SSEEventPayload,
-      effect?: EventOutboxSessionEffect,
-    ): Promise<unknown> => {
+    async (...args: EnqueueEventArgs): Promise<unknown> => {
+      const [sessionId, event, effect] = args;
       sourceSeq += 1;
       latestBySession.set(sessionId, sourceSeq);
       eventsById.set(sourceSeq, event);
@@ -49,11 +47,8 @@ export function makeEventPersistenceTestDouble(
     },
   );
   const semanticEvents = new Map<string, unknown>();
-  const enqueueEvent = async (
-    sessionId: string,
-    event: SSEEventPayload,
-    effect?: EventOutboxSessionEffect,
-  ): Promise<unknown> => {
+  const enqueueEvent = async (...args: EnqueueEventArgs): Promise<unknown> => {
+    const [sessionId, event] = args;
     const dedupeKey = (event as Record<string, unknown>)._dedupe_key;
     const identity = typeof dedupeKey === "string"
       ? `${sessionId}\u0000${dedupeKey}`
@@ -61,9 +56,7 @@ export function makeEventPersistenceTestDouble(
     if (identity && semanticEvents.has(identity)) {
       return semanticEvents.get(identity);
     }
-    const persisted = effect === undefined
-      ? await persistSemanticEvent(sessionId, event)
-      : await persistSemanticEvent(sessionId, event, effect);
+    const persisted = await persistSemanticEvent(...args);
     if (identity) semanticEvents.set(identity, persisted);
     return persisted;
   };

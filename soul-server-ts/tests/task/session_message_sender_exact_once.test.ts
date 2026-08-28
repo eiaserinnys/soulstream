@@ -96,16 +96,23 @@ class SharedDeliveryLedger {
       },
       beginDispatch: async (admission) => {
         if (admission.kind !== "admitted") return admission;
-        admission.row.state = "dispatching";
-        admission.row.dispatching_at = new Date(this.clock.now);
-        return admission;
+        const stored = this.rows.get(admission.deliveryId);
+        if (!stored) throw new Error(`unknown delivery ${admission.deliveryId}`);
+        stored.row = {
+          ...stored.row,
+          state: "dispatching",
+          dispatching_at: new Date(this.clock.now),
+        };
+        return { ...admission, row: stored.row };
       },
       recordResult: async (admission, result) => {
         if (admission.kind !== "admitted") return;
         if ("autoResumed" in result || "queued" in result) {
-          admission.row.state = "queued";
-          admission.row.aggregate_state = "queued";
-          admission.row.queued_at = new Date(this.clock.now);
+          const stored = this.rows.get(admission.deliveryId);
+          if (!stored) throw new Error(`unknown delivery ${admission.deliveryId}`);
+          stored.row.state = "queued";
+          stored.row.aggregate_state = "queued";
+          stored.row.queued_at = new Date(this.clock.now);
         }
       },
       recordFailure: async (admission) => {
