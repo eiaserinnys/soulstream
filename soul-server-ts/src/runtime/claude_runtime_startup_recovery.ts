@@ -1,5 +1,7 @@
 import type { Logger } from "pino";
 
+import type { QueuedDeliveryTranscriptRecoveryPass } from
+  "../task/queued_delivery_transcript_recovery.js";
 import { PeriodicMaintenanceLoop } from "./periodic_maintenance_loop.js";
 
 /**
@@ -10,7 +12,7 @@ import { PeriodicMaintenanceLoop } from "./periodic_maintenance_loop.js";
 const STARTUP_RECOVERY_STEP_TIMEOUT_MS = 15_000;
 
 export interface ClaudeRuntimeStartupRecoveryDeps {
-  recoverQueuedDeliveries(): Promise<number>;
+  recoverQueuedDeliveries(): Promise<QueuedDeliveryTranscriptRecoveryPass>;
   recoverBackgroundTasks(): Promise<number>;
   logger: Pick<Logger, "info" | "warn" | "error">;
   nodeId: string;
@@ -62,14 +64,18 @@ export class ClaudeRuntimeStartupRecovery {
 
   private async recoverQueuedDeliveries(): Promise<void> {
     if (this.queuedDeliveriesRecovered) return;
-    const count = await this.deps.recoverQueuedDeliveries();
-    this.queuedDeliveriesRecovered = true;
-    if (count > 0) {
+    const pass = await this.deps.recoverQueuedDeliveries();
+    if (pass.settled > 0) {
       this.deps.logger.warn(
-        { count, nodeId: this.deps.nodeId },
+        { count: pass.settled, nodeId: this.deps.nodeId },
         "Reconciled queued deliveries after worker restart",
       );
     }
+    // A claimed row may still have only an input receipt. Keep the existing
+    // startup lane alive until a later empty pass proves that every queued
+    // delivery either reached consumed or returned to replayable pending.
+    if (pass.claimed > 0) return;
+    this.queuedDeliveriesRecovered = true;
     this.retireIfComplete();
   }
 
