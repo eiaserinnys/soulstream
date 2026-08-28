@@ -21,6 +21,9 @@ export function buildInterventionSentEvent(
     text: message.text,
     timestamp: Date.now() / 1000,
   };
+  if (message.deliveryId) {
+    interventionEvent._dedupe_key = `intervention_sent:${message.deliveryId}`;
+  }
   if (message.callerInfo) {
     interventionEvent.caller_info = message.callerInfo;
   }

@@ -29,11 +29,16 @@ describe("publishInterventionSent", () => {
     } as unknown as Logger;
     const append = vi.fn(async (record: {
       payload: Record<string, unknown>;
+      semantic_dedupe_key: string | null;
       session_effect: Record<string, unknown> | null;
     }) => {
       const payload = JSON.stringify(record.payload);
       expect(payload).not.toContain("\\ud83d");
       expect(payload).not.toContain("followupTaskIds");
+      expect(payload).not.toContain("_dedupe_key");
+      expect(record.semantic_dedupe_key).toBe(
+        "intervention_sent:deduped-intervention",
+      );
       expect(record.payload.text).toBe(`${"a".repeat(199)}�tail`);
       expect(record.session_effect).toMatchObject({
         kind: "last_message",
@@ -52,7 +57,7 @@ describe("publishInterventionSent", () => {
         payload: record.payload,
         searchable_text: `${"a".repeat(199)}�tail`,
         created_at: "2026-06-10T00:00:00.000Z",
-        semantic_dedupe_key: null,
+        semantic_dedupe_key: record.semantic_dedupe_key,
         session_effect: null,
         payload_hash: "a".repeat(64),
       };
@@ -76,6 +81,7 @@ describe("publishInterventionSent", () => {
       {
         text: `${"a".repeat(199)}\ud83dtail`,
         user: "alice",
+        deliveryId: "deduped-intervention",
         followupTaskIds: ["internal-runtime-task"],
       },
       { broadcaster, logger, persistence },

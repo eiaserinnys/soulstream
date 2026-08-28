@@ -90,7 +90,7 @@ export interface TaskInterventionRouteDeps {
   rememberTask(task: Task): void;
   runningInterventionTransition: Pick<
     RunningInterventionTransition,
-    "deliver"
+    "deliver" | "queueOnly"
   >;
   autoResumeTransition: Pick<AutoResumeTransition, "resume">;
   deliveryLedgerGate?: Pick<
@@ -194,11 +194,16 @@ export class TaskInterventionRoute {
         );
       }
       const isRunning = taskRoute === "running";
+      const heldHumanRetry = admission.kind === "admitted"
+        && admission.row.intent === "human_live_steer"
+        && hasPriorDispatchAttempt(admission.row);
       let result: AddInterventionResult;
       if (isRunning) {
-        result = await this.deps.runningInterventionTransition.deliver(task, message, {
-          queueIfUndelivered: request.queueIfRunning ?? true,
-        });
+        result = heldHumanRetry
+          ? await this.deps.runningInterventionTransition.queueOnly(task, message)
+          : await this.deps.runningInterventionTransition.deliver(task, message, {
+              queueIfUndelivered: request.queueIfRunning ?? true,
+            });
         if (
           admission.kind === "admitted"
           && isNotificationDeliveryIntent(admission.row.intent)
@@ -207,6 +212,8 @@ export class TaskInterventionRoute {
         ) {
           notificationDisposition = "queued";
         }
+      } else if (heldHumanRetry) {
+        result = await this.deps.runningInterventionTransition.queueOnly(task, message);
       } else if (
         admission.kind === "admitted"
         && isNotificationDeliveryIntent(admission.row.intent)
@@ -385,6 +392,12 @@ export class TaskInterventionRoute {
     this.deps.rememberTask(loaded);
     return loaded;
   }
+}
+
+function hasPriorDispatchAttempt(row: SessionDeliveryRow): boolean {
+  return row.attempt_count > 0
+    || Boolean(row.dispatching_at)
+    || Boolean(row.queued_at);
 }
 
 function interventionTaskRoute(

@@ -19,6 +19,8 @@ import { TaskExecutorFinalizer } from
   "../../src/task/task_executor_finalizer.js";
 import { TaskInterventionRoute } from
   "../../src/task/task_intervention_route.js";
+import { enqueueInterventionOnce } from
+  "../../src/task/task_intervention_queue.js";
 import type { InterventionMessage, Task } from
   "../../src/task/task_models.js";
 import {
@@ -202,6 +204,16 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       };
       const gate = new TaskDeliveryLedgerGate(true, repository);
       const liveDeliver = vi.fn(async () => ({ delivered: true } as const));
+      const queueOnly = vi.fn(async (
+        queuedTask: Task,
+        message: InterventionMessage,
+      ) => ({
+        delivered: false as const,
+        queued: true as const,
+        queuePosition: enqueueInterventionOnce(queuedTask, message),
+        consumeWhen: "next_turn" as const,
+        reason: "queue_only_policy" as const,
+      }));
       const modelStart = vi.fn();
       const autoResume = vi.fn(async (
         resumedTask: Task,
@@ -217,7 +229,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         getTask: () => task,
         loadEvictedTask: async () => null,
         rememberTask: () => {},
-        runningInterventionTransition: { deliver: liveDeliver },
+        runningInterventionTransition: { deliver: liveDeliver, queueOnly },
         autoResumeTransition: { resume: autoResume },
         deliveryLedgerGate: gate,
       });
@@ -275,10 +287,15 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
 
       task.status = "error";
       await expect(route.addIntervention(params, modelStart)).resolves.toEqual({
-        autoResumed: true,
+        delivered: false,
+        queued: true,
+        queuePosition: 1,
+        consumeWhen: "next_turn",
+        reason: "queue_only_policy",
       });
-      expect(autoResume).toHaveBeenCalledOnce();
-      expect(modelStart).toHaveBeenCalledOnce();
+      expect(queueOnly).toHaveBeenCalledOnce();
+      expect(autoResume).not.toHaveBeenCalled();
+      expect(modelStart).not.toHaveBeenCalled();
 
       task.status = "completed";
       task.lastEventId = 43;
@@ -313,8 +330,8 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         reason: "delivery_consumed",
       });
       await coordinator.recoverPending(10);
-      expect(autoResume).toHaveBeenCalledOnce();
-      expect(modelStart).toHaveBeenCalledOnce();
+      expect(autoResume).not.toHaveBeenCalled();
+      expect(modelStart).not.toHaveBeenCalled();
       expect(recoveryDispatch).not.toHaveBeenCalled();
     },
   );
