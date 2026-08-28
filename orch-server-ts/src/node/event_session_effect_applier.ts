@@ -290,6 +290,36 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
       "dead execution owner expiry",
     );
   }
+  if (effect.kind === "execution_retire_terminal_ownership") {
+    const rows = await sql<CanonicalTransitionRow[]>`
+      WITH application AS (
+        SELECT session_retire_terminal_execution_ownership(
+          ${envelope.session_id},
+          ${effect.ownership_generation},
+          ${effect.manifest_id},
+          ${effect.registration_id},
+          ${effect.pid},
+          ${effect.start_identity},
+          ${effect.execution_command_id},
+          ${effect.runner_fact},
+          ${new Date(effect.updated_at)}
+        ) AS applied
+      )
+      SELECT application.applied, session.status, session.termination_reason,
+             session.termination_detail, session.review_state,
+             session.last_assistant_text, session.termination_event_id,
+             session.updated_at, session.last_event_id
+      FROM application
+      JOIN sessions AS session ON session.session_id = ${envelope.session_id}
+    `;
+    return await canonicalOwnershipTransitionApplication(
+      sql,
+      envelope.session_id,
+      effect.ownership_generation,
+      rows,
+      "terminal execution ownership retirement",
+    );
+  }
   if (effect.kind === "execution_orphaned_spawn") {
     const rows = await sql<CanonicalTransitionRow[]>`
       WITH application AS (

@@ -8,6 +8,7 @@ import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { AcknowledgeReviewOutcome, SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
+import type { OwnerNullRunningSessionRow } from "../db/session_db_types.js";
 import type { ClaudeSessionRuntimeControl } from "../engine/claude_session_client_registry.js";
 import {
   createMissingSessionMutationHost,
@@ -301,6 +302,13 @@ export class TaskManager {
     input: ExecutionOwnershipReconciliationInput,
   ): Promise<boolean> {
     return await this.runnerRecovery.reconcileExecutionOwnershipObservations(task, input);
+  }
+
+  async reconcileTerminalExecutionOwnership(
+    task: Task,
+    row: OwnerNullRunningSessionRow,
+  ): Promise<boolean> {
+    return await this.runnerRecovery.reconcileTerminalExecutionOwnership(task, row);
   }
 
   getDeliveryConsumptionRecorder(): Pick<

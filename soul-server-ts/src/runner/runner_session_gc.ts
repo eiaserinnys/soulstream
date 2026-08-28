@@ -199,6 +199,12 @@ function terminalCandidateReason(
   nowMs: number,
   retentionMs: number,
 ): string | null {
+  if (registration.retiredAt) {
+    const retiredAt = Date.parse(registration.retiredAt);
+    if (!Number.isFinite(retiredAt)) return "retirement_timestamp_invalid";
+    if (nowMs - retiredAt < retentionMs) return "retention_window";
+    return null;
+  }
   if (registration.pid === null) return "pid_evidence_missing";
   if (registration.pidAlive) return "live_runner";
   const lifecycle = registration.lifecycle;

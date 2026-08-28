@@ -189,6 +189,48 @@ export abstract class EventTransitionPublisher {
     );
   }
 
+  async retireTerminalExecutionOwnershipAndWaitForApplication(
+    sessionId: string,
+    event: SSEEventPayload,
+    input: {
+      ownershipGeneration: number;
+      manifestId: string;
+      registrationId: string;
+      pid: number;
+      startIdentity: string;
+      executionCommandId: string;
+      runnerFact: "completed" | "failed" | "reaped" | "closed";
+      updatedAt?: Date;
+    },
+  ): Promise<EventSessionTransitionApplication> {
+    const updatedAt = input.updatedAt ?? new Date();
+    const effect: Extract<
+      EventOutboxSessionEffect,
+      { kind: "execution_retire_terminal_ownership" }
+    > = {
+      kind: "execution_retire_terminal_ownership",
+      ownership_generation: input.ownershipGeneration,
+      manifest_id: input.manifestId,
+      registration_id: input.registrationId,
+      pid: input.pid,
+      start_identity: input.startIdentity,
+      execution_command_id: input.executionCommandId,
+      runner_fact: input.runnerFact,
+      updated_at: updatedAt.toISOString(),
+    };
+    const record = await this.enqueueEvent(
+      sessionId,
+      event,
+      effect,
+      input.ownershipGeneration,
+    );
+    return await this.waitForTransitionApplication(
+      sessionId,
+      record,
+      "terminal execution ownership retirement",
+    );
+  }
+
   private async enqueueExecutionEffectAndWait(
     sessionId: string,
     transitionId: string,

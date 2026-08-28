@@ -136,6 +136,7 @@ export function classifyRunnerRegistration(
     || leaseTimeoutMs <= 0) {
     throw new Error("runner recovery clock and lease timeout must be positive");
   }
+  if (registration.retiredAt) return "retired_terminal";
   const lifecycle = registration.lifecycle;
   if (lifecycle?.execution_state === "reaped") return "already_reaped";
   if (lifecycle?.execution_state === "closed") return "closed";
@@ -151,10 +152,6 @@ export function classifyRunnerRegistration(
     // in-memory runner handle to a process that had already exited, which
     // `startExecution` then refused to displace (260820 incident).
     if (registration.pidAlive) return "replay_terminal";
-    if (
-      (lifecycle.execution_state === "completed" || lifecycle.execution_state === "failed")
-      && registration.retiredAt
-    ) return "retired_terminal";
     return "replay_terminal_dead";
   }
   if (!registration.pidAlive) return "reap_dead";
