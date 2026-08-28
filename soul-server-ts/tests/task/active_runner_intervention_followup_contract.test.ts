@@ -153,9 +153,7 @@ describe("active runner intervention with one runtime follow-up", () => {
     executor.startExecutionWithRunner(task, agent, runner);
     const execution = task.executionPromise!;
     await activeOwner.promise;
-    const activeOwnerCount = task.status === "running"
-        && task.executionPromise === execution
-        && runner.dispatcher.hasActiveExecution()
+    const activeOwnerCount = task.status === "running" && task.executionPromise === execution
       ? 1
       : 0;
     await transition.deliver(task, humanLiveSteer);

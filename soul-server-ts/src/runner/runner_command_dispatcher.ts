@@ -30,6 +30,7 @@ import {
   InProcessRunnerFrameChannel,
   type InProcessRunnerFrameChannelOptions,
 } from "./in_process_frame_channel.js";
+import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
 
 /**
  * The host-side command boundary for one runner instance.
@@ -287,6 +288,12 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   ): AsyncIterable<RunnerEventFrame> {
     try {
       for await (const frame of channel) {
+        if (
+          isLogicalTurnCompleteFrame(frame)
+          && this.activeExecuteCommandId === commandId
+        ) {
+          this.activeExecuteCommandId = undefined;
+        }
         yield frame;
       }
     } finally {
