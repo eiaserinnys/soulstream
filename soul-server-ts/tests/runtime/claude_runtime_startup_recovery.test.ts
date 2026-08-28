@@ -15,7 +15,8 @@ describe("ClaudeRuntimeStartupRecovery", () => {
     vi.useFakeTimers();
     const recoverQueuedDeliveries = vi.fn()
       .mockRejectedValueOnce(new Error("orchestrator unavailable"))
-      .mockResolvedValue(2);
+      .mockResolvedValueOnce({ claimed: 2, settled: 2 })
+      .mockResolvedValue({ claimed: 0, settled: 0 });
     const recoverBackgroundTasks = vi.fn()
       .mockRejectedValueOnce(new Error("orchestrator unavailable"))
       .mockRejectedValueOnce(new Error("still unavailable"))
@@ -40,7 +41,7 @@ describe("ClaudeRuntimeStartupRecovery", () => {
     expect(recoverBackgroundTasks).toHaveBeenCalledTimes(2);
 
     await vi.advanceTimersByTimeAsync(50);
-    expect(recoverQueuedDeliveries).toHaveBeenCalledTimes(2);
+    expect(recoverQueuedDeliveries).toHaveBeenCalledTimes(3);
     expect(recoverBackgroundTasks).toHaveBeenCalledTimes(3);
     expect(logger.warn).toHaveBeenCalledWith(
       { count: 2, nodeId: "windows-node" },
@@ -52,13 +53,16 @@ describe("ClaudeRuntimeStartupRecovery", () => {
     );
 
     await vi.advanceTimersByTimeAsync(100);
-    expect(recoverQueuedDeliveries).toHaveBeenCalledTimes(2);
+    expect(recoverQueuedDeliveries).toHaveBeenCalledTimes(3);
     expect(recoverBackgroundTasks).toHaveBeenCalledTimes(3);
   });
 
   it("does not retry a successful step while another step remains unavailable", async () => {
     vi.useFakeTimers();
-    const recoverQueuedDeliveries = vi.fn().mockResolvedValue(0);
+    const recoverQueuedDeliveries = vi.fn().mockResolvedValue({
+      claimed: 0,
+      settled: 0,
+    });
     const recoverBackgroundTasks = vi.fn()
       .mockRejectedValueOnce(new Error("orchestrator unavailable"))
       .mockResolvedValue(0);
@@ -140,8 +144,8 @@ describe("ClaudeRuntimeStartupRecovery", () => {
 
   it("drains an active recovery attempt during graceful shutdown", async () => {
     let release!: () => void;
-    const blocked = new Promise<number>((resolve) => {
-      release = () => resolve(0);
+    const blocked = new Promise<{ claimed: number; settled: number }>((resolve) => {
+      release = () => resolve({ claimed: 0, settled: 0 });
     });
     const recoverQueuedDeliveries = vi.fn(() => blocked);
     const recoverBackgroundTasks = vi.fn().mockResolvedValue(0);

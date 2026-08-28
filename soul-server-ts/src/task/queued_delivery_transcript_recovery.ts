@@ -27,14 +27,20 @@ export interface QueuedDeliveryTranscriptRecoveryDeps {
   logger: Pick<Logger, "warn">;
 }
 
+export interface QueuedDeliveryTranscriptRecoveryPass {
+  claimed: number;
+  settled: number;
+}
+
 /**
- * Reconciles the SDK receiver receipt once during node-startup recovery.
+ * Reconciles one SDK receiver receipt pass during node-startup recovery.
  *
  * A stable input UUID prevents duplicate execution, but SDK 0.3.218 does not
  * emit another Result when that UUID is re-sent after resume. A completed
  * transcript therefore settles the ledger directly. An absent input returns
  * the delivery to pending for reconnect admission; an incomplete receipt stays
- * queued/held. Periodic maintenance does not consume or re-inject either row.
+ * queued/held and keeps the startup lane alive for another pass. Periodic
+ * maintenance does not consume or re-inject either row.
  */
 /** Delay recorded with a deferred one-shot check; it is not an execution timer. */
 const QUEUED_HOLD_METADATA_DELAY_MS = 1_000;
@@ -64,7 +70,7 @@ export class QueuedDeliveryTranscriptRecovery {
   async recoverAfterNodeRestart(
     nodeId: string,
     limit = 100,
-  ): Promise<number> {
+  ): Promise<QueuedDeliveryTranscriptRecoveryPass> {
     const rows = await this.deps.recoveryRepository
       .claimQueuedAfterNodeRestart(
         nodeId,
@@ -72,7 +78,10 @@ export class QueuedDeliveryTranscriptRecovery {
         limit,
         this.leaseMs,
       );
-    return await this.reconcile(rows);
+    return {
+      claimed: rows.length,
+      settled: await this.reconcile(rows),
+    };
   }
 
   private async reconcile(

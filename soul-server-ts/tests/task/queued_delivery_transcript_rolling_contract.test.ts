@@ -10,21 +10,30 @@ describe("queued transcript recovery rolling contract", () => {
   it("new soul converges with an old orch through the legacy delivered action", async () => {
     const harness = makeHarness("old_orch");
 
-    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toBe(1);
+    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 1,
+      settled: 1,
+    });
     await harness.assertExactlyOnce();
   });
 
   it("new soul converges with a new orch whose legacy response remains delivered", async () => {
     const harness = makeHarness("new_orch");
 
-    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toBe(1);
+    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 1,
+      settled: 1,
+    });
     await harness.assertExactlyOnce();
   });
 
   it("returns transcript-absent input to pending for reconnect reclaim", async () => {
     const harness = makeDeferredHarness("absent");
 
-    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toBe(0);
+    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 1,
+      settled: 0,
+    });
     expect(harness.retryLeasedDelivery).toHaveBeenCalledWith(
       "delivery-deferred",
       "rolling-worker",
@@ -37,7 +46,10 @@ describe("queued transcript recovery rolling contract", () => {
   it("keeps transcript-pending input queued for receipt recheck", async () => {
     const harness = makeDeferredHarness("input_pending");
 
-    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toBe(0);
+    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 1,
+      settled: 0,
+    });
     expect(harness.deferQueuedTranscriptCheck).toHaveBeenCalledWith(
       "delivery-deferred",
       "rolling-worker",
@@ -202,7 +214,10 @@ function makeHarness(orchVersion: "old_orch" | "new_orch") {
       expect(recoveryRepository.markDeliveredFromTranscript).toHaveBeenCalledOnce();
       expect(recoveryRepository.markConsumedFromTranscript).not.toHaveBeenCalled();
       expect(deliveryRepository.retryLeasedDelivery).not.toHaveBeenCalled();
-      await expect(recovery.recoverAfterNodeRestart("node-a")).resolves.toBe(0);
+      await expect(recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+        claimed: 0,
+        settled: 0,
+      });
       expect(deliveredTransitions).toBe(1);
       expect(consumedTransitions).toBe(1);
     },
