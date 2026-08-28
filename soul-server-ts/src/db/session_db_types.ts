@@ -258,16 +258,6 @@ export interface OwnerNullRunningSessionRow {
   session_id: string;
   node_id: string | null;
   updated_at: Date;
-  reconciliation_kind?: "owner_null_running" | "terminal_nonterminal_ownership";
-  status?: string | null;
-  termination_reason?: string | null;
-  ownership_generation?: string | number | null;
-  ownership_phase?: "identity_proven" | "active" | null;
-  manifest_id?: string | null;
-  registration_id?: string | null;
-  pid?: number | null;
-  start_identity?: string | null;
-  execution_command_id?: string | null;
 }
 
 export interface ListSessionSummaryRow {
