@@ -329,7 +329,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     }
   });
 
-  it.each(["reserved", "identity_proven", "active"] as const)(
+  it.each(["identity_proven", "active"] as const)(
     "retires an exact %s ownership through the startup proof path without a resume trigger",
     async (ownershipPhase) => {
     const sessionId = "93a0a37e-restart-regression";
@@ -413,6 +413,51 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(recoveredTask.terminationReason).toBe("killed");
     },
   );
+
+  it("does not retire ownership while auto-resume has made the task non-terminal", async () => {
+    const sessionId = "resume-in-progress";
+    const recoveredTask = task(sessionId);
+    recoveredTask.hydratedFromDb = true;
+    recoveredTask.status = "initializing";
+    const reconcileTerminalExecutionOwnership = vi.fn(async () => true);
+    const retireTerminalOwnership = vi.fn(async () => {});
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        listOwnerNullRunningInventory: vi.fn(async () => [{
+          session_id: sessionId,
+          node_id: "node-a",
+          updated_at: new Date("2026-08-29T00:00:00.000Z"),
+          reconciliation_kind: "terminal_nonterminal_ownership",
+          status: "completed",
+          termination_reason: null,
+          ownership_generation: 41,
+          ownership_phase: "identity_proven",
+          manifest_id: "manifest-db2871e2",
+          registration_id: "registration-resume",
+          pid: 4_141,
+          start_identity: "start-4141",
+          execution_command_id: "execute-resume",
+        }]),
+        hydrateRunnerRecoveryTask: vi.fn(async () => recoveredTask),
+        markRunnerFailureAndResume: vi.fn(async () => {}),
+        projectClosedRunner: vi.fn(async () => true),
+        reconcileExecutionOwnershipObservations: vi.fn(async () => false),
+        reconcileTerminalExecutionOwnership,
+      } as RunnerRecoveryCoordinatorOptions["taskManager"],
+      spawner: {
+        terminate: vi.fn(async () => "registration_absent" as const),
+        invalidateRegistration: vi.fn(async () => {}),
+        retireTerminalRegistration: vi.fn(async () => {}),
+        retireTerminalOwnership,
+      } as unknown as RunnerRecoveryCoordinatorOptions["spawner"],
+    });
+
+    await subject.coordinator.start();
+    await subject.coordinator.stop();
+
+    expect(retireTerminalOwnership).not.toHaveBeenCalled();
+    expect(reconcileTerminalExecutionOwnership).not.toHaveBeenCalled();
+  });
 
   it("isolates owner-null inventory read failure from registration recovery", async () => {
     const current = registration({ lifecycleState: "running" });

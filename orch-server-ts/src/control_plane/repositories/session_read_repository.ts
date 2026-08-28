@@ -20,7 +20,7 @@ export interface HostOwnerNullRunningSessionRow extends Record<string, unknown> 
   status: string;
   termination_reason: string | null;
   ownership_generation: string | number | null;
-  ownership_phase: "reserved" | "identity_proven" | "active" | null;
+  ownership_phase: "identity_proven" | "active" | null;
   manifest_id: string | null;
   registration_id: string | null;
   pid: number | null;
@@ -235,7 +235,7 @@ export class SessionReadRepository {
         FROM sessions AS session
         JOIN session_execution_ownerships AS ownership
           ON ownership.session_id = session.session_id
-         AND ownership.phase IN ('reserved', 'identity_proven', 'active')
+         AND ownership.phase IN ('identity_proven', 'active')
         WHERE session.node_id = ${params.nodeId}
           AND session.status IN ('completed', 'error', 'interrupted')
       )

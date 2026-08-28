@@ -192,10 +192,11 @@ async def test_terminal_execution_ownership_retirement_is_exact_and_mirrored():
         "ownership.pid = p_pid",
         "ownership.start_identity = p_start_identity",
         "ownership.execution_command_id = p_execution_command_id",
-        "ownership.phase IN ('reserved', 'identity_proven', 'active')",
+        "ownership.phase IN ('identity_proven', 'active')",
         "IF p_retired_at IS NULL THEN",
     ]:
         assert required in migration_sql
+    assert "'reserved'" not in migration_sql
 
 
 async def test_completion_terminal_revision_fence_is_mirrored_in_schema_sql():

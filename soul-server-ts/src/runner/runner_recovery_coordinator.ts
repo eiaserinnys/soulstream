@@ -157,7 +157,7 @@ export class RunnerRecoveryCoordinator {
       || !Number.isSafeInteger(ownershipGeneration)
       || ownershipGeneration <= 0
       || !ownershipPhase
-      || !["reserved", "identity_proven", "active"].includes(ownershipPhase)
+      || !["identity_proven", "active"].includes(ownershipPhase)
       || typeof pid !== "number"
       || !Number.isSafeInteger(pid)
       || pid <= 0

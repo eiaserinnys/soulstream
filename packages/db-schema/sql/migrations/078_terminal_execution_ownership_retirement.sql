@@ -32,7 +32,6 @@ BEGIN
     UPDATE session_execution_ownerships AS ownership
        SET phase = 'terminal',
            runner_fact = p_runner_fact,
-           identity_proven_at = COALESCE(ownership.identity_proven_at, p_retired_at),
            terminal_at = p_retired_at,
            reservation_expires_at = NULL,
            failure_reason = NULL
@@ -43,7 +42,7 @@ BEGIN
        AND ownership.pid = p_pid
        AND ownership.start_identity = p_start_identity
        AND ownership.execution_command_id = p_execution_command_id
-       AND ownership.phase IN ('reserved', 'identity_proven', 'active');
+       AND ownership.phase IN ('identity_proven', 'active');
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
     RETURN v_row_count = 1;
 END;

@@ -262,7 +262,7 @@ export interface OwnerNullRunningSessionRow {
   status?: string | null;
   termination_reason?: string | null;
   ownership_generation?: string | number | null;
-  ownership_phase?: "reserved" | "identity_proven" | "active" | null;
+  ownership_phase?: "identity_proven" | "active" | null;
   manifest_id?: string | null;
   registration_id?: string | null;
   pid?: number | null;
