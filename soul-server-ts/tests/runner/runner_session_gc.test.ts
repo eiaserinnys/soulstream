@@ -94,6 +94,20 @@ describe("RunnerSessionGarbageCollector", () => {
     );
   });
 
+  it("uses the proven retirement marker to collect stale running lifecycle and pid evidence", async () => {
+    const subject = makeSubject();
+
+    await expect(subject.collector.collect(scan([
+      registration({
+        sessionId: "retired-running",
+        lifecycleState: "running",
+        pidAlive: true,
+        retiredAt: "2026-08-10T00:00:00.000Z",
+      }),
+    ]))).resolves.toEqual({ removed: ["retired-running"], retained: [] });
+    expect(subject.removeDirectory).toHaveBeenCalledWith("/state/retired-running");
+  });
+
   it("never removes a legacy terminal session whose orch ACK is behind the durable tail", async () => {
     const subject = makeSubject({ pendingSessions: new Set(["pending"]) });
 
@@ -241,6 +255,7 @@ function registration(options: {
   pidStartIdentity?: string | null;
   bootstrap?: boolean;
   lifecycleState?: "running" | "completed" | "failed" | "reaped" | "closed";
+  retiredAt?: string;
 }): RunnerRegistration {
   const sessionId = options.sessionId;
   return {
@@ -260,6 +275,7 @@ function registration(options: {
     pidStartIdentity: options.pidStartIdentity === undefined
       ? "process-start-a"
       : options.pidStartIdentity,
+    retiredAt: options.retiredAt ?? null,
     registeredAtMs: NOW - RETENTION_MS * 2,
     bootstrap: options.bootstrap === false
       ? null
