@@ -330,7 +330,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   });
 
   it.each(["reserved", "identity_proven", "active"] as const)(
-    "retires an exact %s ownership through the same proof path after canonical termination",
+    "retires an exact %s ownership through the startup proof path without a resume trigger",
     async (ownershipPhase) => {
     const sessionId = "93a0a37e-restart-regression";
     const recoveredTask = task(sessionId);
@@ -390,7 +390,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       } as unknown as RunnerRecoveryCoordinatorOptions["spawner"],
     });
 
-    await subject.coordinator.scanOnce();
+    await subject.coordinator.start();
+    await subject.coordinator.stop();
 
     expect(retireTerminalOwnership).toHaveBeenCalledOnce();
     expect(reconcileTerminalExecutionOwnership).toHaveBeenCalledWith(
