@@ -158,15 +158,10 @@ async function mutateEvidenceFiles(
   } catch (error) {
     await rollbackEvidenceOrThrow(paths, error, quarantined);
   }
-  try {
-    for (const snapshot of quarantined) await removeQuarantinedEvidence(snapshot);
-  } catch (error) {
-    throw new RunnerMutationFailure(
-      "runner_registration_persistence_failed",
-      `quarantined registration evidence could not be removed: ${paths.sessionDirectory}`,
-      { cause: error },
-    );
-  }
+  // The sidecar commit is the point of no return. Quarantine paths are no
+  // longer canonical evidence, so their best-effort removal cannot turn a
+  // committed mutation into a recoverable failure.
+  await Promise.allSettled(quarantined.map(removeQuarantinedEvidence));
 }
 
 async function snapshotEvidence(
