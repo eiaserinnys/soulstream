@@ -285,17 +285,24 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         payload: expect.objectContaining({ text: params.text }),
       });
 
-      task.status = "error";
-      await expect(route.addIntervention(params, modelStart)).resolves.toEqual({
-        delivered: false,
-        queued: true,
-        queuePosition: 1,
-        consumeWhen: "next_turn",
-        reason: "queue_only_policy",
-      });
-      expect(queueOnly).toHaveBeenCalledOnce();
-      expect(autoResume).not.toHaveBeenCalled();
-      expect(modelStart).not.toHaveBeenCalled();
+      const retryResult = await route.addIntervention(params, modelStart);
+      if (terminalStatus === "running") {
+        expect(retryResult).toEqual({
+          delivered: false,
+          queued: true,
+          queuePosition: 1,
+          consumeWhen: "next_turn",
+          reason: "queue_only_policy",
+        });
+        expect(queueOnly).toHaveBeenCalledOnce();
+        expect(autoResume).not.toHaveBeenCalled();
+        expect(modelStart).not.toHaveBeenCalled();
+      } else {
+        expect(retryResult).toEqual({ autoResumed: true });
+        expect(queueOnly).not.toHaveBeenCalled();
+        expect(autoResume).toHaveBeenCalledOnce();
+        expect(modelStart).toHaveBeenCalledOnce();
+      }
 
       task.status = "completed";
       task.lastEventId = 43;
@@ -330,8 +337,8 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         reason: "delivery_consumed",
       });
       await coordinator.recoverPending(10);
-      expect(autoResume).not.toHaveBeenCalled();
-      expect(modelStart).not.toHaveBeenCalled();
+      expect(autoResume).toHaveBeenCalledTimes(terminalStatus === "running" ? 0 : 1);
+      expect(modelStart).toHaveBeenCalledTimes(terminalStatus === "running" ? 0 : 1);
       expect(recoveryDispatch).not.toHaveBeenCalled();
     },
   );
