@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
 import { ClaudeRuntimeStartupRecovery } from
   "../../src/runtime/claude_runtime_startup_recovery.js";
+import { QueuedDeliveryTranscriptRecovery } from
+  "../../src/task/queued_delivery_transcript_recovery.js";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -74,6 +77,65 @@ describe("ClaudeRuntimeStartupRecovery", () => {
 
     expect(recoverQueuedDeliveries).toHaveBeenCalledTimes(1);
     expect(recoverBackgroundTasks).toHaveBeenCalledTimes(2);
+  });
+
+  it("rechecks an input-pending delivery until its completed transcript is consumed", async () => {
+    vi.useFakeTimers();
+    const claimedRow = {
+      delivery_id: "delivery-restart-ack-gap",
+      state: "claimed",
+      lease_owner: "startup-worker",
+    } as SessionDeliveryRow;
+    const inspect = vi.fn()
+      .mockResolvedValueOnce({
+        kind: "input_pending" as const,
+        inputUuid: "delivery:delivery-restart-ack-gap",
+      })
+      .mockResolvedValueOnce({
+        kind: "completed" as const,
+        inputUuid: "delivery:delivery-restart-ack-gap",
+        assistantMessageUuid: "assistant-after-restart",
+      });
+    const markConsumed = vi.fn(async () => ({
+      ...claimedRow,
+      state: "consumed",
+      aggregate_state: "consumed",
+      target_receipt_id: "transcript:assistant-after-restart",
+    }) as SessionDeliveryRow);
+    const queuedRecovery = new QueuedDeliveryTranscriptRecovery({
+      deliveryRepository: {
+        get: vi.fn(async () => claimedRow),
+        markConsumed,
+        retryLeasedDelivery: vi.fn(async () => null),
+      },
+      recoveryRepository: {
+        claimQueuedAfterNodeRestart: vi.fn(async () => [claimedRow]),
+        markDeliveredFromTranscript: vi.fn(async () => claimedRow),
+        deferQueuedTranscriptCheck: vi.fn(async () => claimedRow),
+      },
+      transcriptReceipt: { inspect },
+      logger: { warn: vi.fn() },
+    } as never, "startup-worker");
+    const recovery = new ClaudeRuntimeStartupRecovery(
+      {
+        recoverQueuedDeliveries: () =>
+          queuedRecovery.recoverAfterNodeRestart("node-a"),
+        recoverBackgroundTasks: vi.fn(async () => 0),
+        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+        nodeId: "node-a",
+      },
+      50,
+    );
+
+    await recovery.start();
+    expect(inspect).toHaveBeenCalledTimes(1);
+    expect(markConsumed).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(inspect).toHaveBeenCalledTimes(2);
+    expect(markConsumed).toHaveBeenCalledOnce();
+    await recovery.stop();
   });
 
   it("drains an active recovery attempt during graceful shutdown", async () => {
