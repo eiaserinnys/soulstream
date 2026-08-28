@@ -822,7 +822,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       inputUuid: "not-persisted",
     }));
     // Startup recovery may settle transcript-proven success. An absent receipt
-    // returns the exact row to queued/held and never re-injects it.
+    // returns the exact row to pending so reconnect admission can reclaim it.
     await expect(
       queuedRecovery.recoverAfterNodeRestart("node-test"),
     ).resolves.toBe(0);
@@ -848,7 +848,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       aggregate_state: "pending",
     });
     await expect(repository.get("delivery-after-queued")).resolves.toMatchObject({
-      state: "queued",
+      state: "pending",
       aggregate_state: "pending",
       last_error: "queued_transcript_input_absent",
     });
@@ -1034,7 +1034,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
   });
 
-  it("keeps transcript-absent identity queued without spending attempt budget", async () => {
+  it("returns transcript-absent identity to pending for reconnect reclaim", async () => {
     await register("delivery-stale-identity", "relation-stale-identity", {
       targetSessionId: "caller-session",
     });
@@ -1051,12 +1051,6 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       "delivery-stale-identity",
       "worker-before-crash",
     );
-    await harness.sql`
-      UPDATE session_deliveries
-      SET attempt_count = 15
-      WHERE delivery_id = 'delivery-stale-identity'
-    `;
-
     const queuedRecovery = makeQueuedRecovery(
       "stale-identity-worker",
       async (row) => ({
@@ -1069,9 +1063,9 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     ).resolves.toBe(0);
     await expect(repository.get("delivery-stale-identity")).resolves
       .toMatchObject({
-        state: "queued",
+        state: "pending",
         aggregate_state: "pending",
-        attempt_count: 15,
+        attempt_count: 1,
         last_error: "queued_transcript_input_absent",
       });
     await expect(
@@ -1079,9 +1073,9 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     ).resolves.toBe(0);
     await expect(repository.get("delivery-stale-identity")).resolves
       .toMatchObject({
-        state: "queued",
+        state: "pending",
         aggregate_state: "pending",
-        attempt_count: 15,
+        attempt_count: 1,
       });
   });
 
