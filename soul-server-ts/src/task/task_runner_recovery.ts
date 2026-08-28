@@ -1,4 +1,6 @@
 import type { EventPersistence } from "../db/event_persistence.js";
+import type { OwnerNullRunningSessionRow } from "../db/session_db_types.js";
+import type { SSEEventPayload } from "../engine/protocol.js";
 import type { ExecutionOwnershipObservation } from "./execution_ownership.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
@@ -152,6 +154,69 @@ export class TaskRunnerRecovery {
           ...stableCompleteIdentity,
           leaseExpiresAt: input.leaseExpiresAt,
           reviewState: task.reviewState ?? "not_required",
+        },
+      );
+    applyCanonicalSessionProjection(task, application.canonicalSession);
+    return application.applied;
+  }
+
+  async reconcileTerminalExecutionOwnership(
+    task: Task,
+    row: OwnerNullRunningSessionRow,
+  ): Promise<boolean> {
+    if (!this.deps.persistence) {
+      throw new Error("terminal execution ownership persistence is required");
+    }
+    const manifestId = row.manifest_id;
+    const registrationId = row.registration_id;
+    const pid = row.pid;
+    const startIdentity = row.start_identity;
+    const executionCommandId = row.execution_command_id;
+    if (
+      !manifestId
+      || !registrationId
+      || typeof pid !== "number"
+      || !startIdentity
+      || !executionCommandId
+    ) {
+      throw new Error(`terminal execution ownership identity incomplete: ${task.agentSessionId}`);
+    }
+    const updatedAt = new Date();
+    const transitionId = [
+      "restart-terminal-retire",
+      registrationId,
+      pid,
+      startIdentity,
+      executionCommandId,
+    ].join(":");
+    const event = {
+      type: "metadata",
+      metadata_type: "execution_ownership_transition",
+      value: { transition_id: transitionId, phase: "terminal" },
+      timestamp: updatedAt.toISOString(),
+      _dedupe_key: `execution_ownership:${task.agentSessionId}:${transitionId}`,
+    } as unknown as SSEEventPayload;
+    const application = await this.deps.persistence
+      .enqueueRecoveredRunnerTerminalFactAndWaitForApplication(
+        task.agentSessionId,
+        event,
+        {
+          kind: "recovered_runner_terminal_fact",
+          manifest_id: manifestId,
+          registration_id: registrationId,
+          pid,
+          start_identity: startIdentity,
+          execution_command_id: executionCommandId,
+          runner_fact: task.status === "completed"
+            ? "completed"
+            : task.status === "interrupted"
+              ? "closed"
+              : "failed",
+          termination_detail:
+            task.terminationDetail ?? "terminal ownership survived host restart",
+          review_state: task.reviewState ?? "not_required",
+          last_assistant_text: task.lastAssistantText ?? null,
+          updated_at: updatedAt.toISOString(),
         },
       );
     applyCanonicalSessionProjection(task, application.canonicalSession);

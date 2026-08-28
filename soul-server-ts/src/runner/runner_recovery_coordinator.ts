@@ -44,6 +44,8 @@ import { OwnerNullExecutionReconciler } from "./owner_null_execution_reconciler.
 import { OwnerNullInventoryReconciler } from "./owner_null_inventory_reconciler.js";
 import { RunnerSessionGarbageCollectionScheduler } from "./runner_session_gc_scheduler.js";
 import { UnreadableRunnerRegistrationHandler } from "./unreadable_runner_registration_handler.js";
+import { runnerProcessPaths } from "./runner_process_paths.js";
+import type { OwnerNullRunningSessionRow } from "../db/session_db_types.js";
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
@@ -77,7 +79,10 @@ export class RunnerRecoveryCoordinator {
         typeof options.taskManager,
         "listOwnerNullRunningInventory" | "hydrateRunnerRecoveryTask"
           | "reconcileExecutionOwnershipObservations"
+          | "reconcileTerminalExecutionOwnership"
       >>,
+      retireTerminalOwnership: async (row, commit) =>
+        await this.retireTerminalOwnership(row, commit),
       logger: options.logger,
       now: options.now ?? Date.now,
     });
@@ -137,6 +142,29 @@ export class RunnerRecoveryCoordinator {
         this.recoveryLogger.failure(registration, disposition, error),
     });
   }
+
+  private async retireTerminalOwnership(
+    row: OwnerNullRunningSessionRow,
+    commit: () => Promise<boolean>,
+  ): Promise<void> {
+    const registrationId = row.registration_id;
+    const pid = row.pid;
+    const startIdentity = row.start_identity;
+    if (
+      !registrationId
+      || typeof pid !== "number"
+      || !Number.isSafeInteger(pid)
+      || pid <= 0
+      || !startIdentity
+    ) {
+      throw new Error(`terminal active ownership identity incomplete: ${row.session_id}`);
+    }
+    await this.registrationControl.retireTerminalOwnership(
+      runnerProcessPaths(this.options.stateDirectory, row.session_id),
+      { registrationId, pid, startIdentity },
+      commit,
+    );
+  }
   async start(): Promise<void> {
     if (this.timer) return;
     this.stopped = false;
@@ -166,7 +194,8 @@ export class RunnerRecoveryCoordinator {
       this.options.stateDirectory,
     );
     this.ownerNullExecutionReconciler.prune(scan.registrations);
-    await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
+    const terminalOwnershipSessionIds =
+      await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
     await this.unreadableRegistrationHandler.handle(scan.errors);
     this.recoveryLogger.prune(scan.registrations);
     this.ownershipBackoff.prune(
@@ -182,7 +211,8 @@ export class RunnerRecoveryCoordinator {
     for (const registration of scan.registrations) {
       const sessionId = registration.config.sessionId;
       if (
-        this.active.has(sessionId)
+        terminalOwnershipSessionIds.has(sessionId)
+        || this.active.has(sessionId)
         || this.adoptionFailureRecovery.has(sessionId)
       ) continue;
       const disposition = classifyRunnerRegistrationSafely(

@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 import type { ExecutionOwnershipObservation } from
   "../task/execution_ownership.js";
 import type { OwnerNullRunningSessionRow } from "../db/session_db_types.js";
-import type { Task } from "../task/task_models.js";
+import { isTerminalTaskStatus, type Task } from "../task/task_models.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 import { emptyExecutionOwnershipObservation } from
   "./execution_ownership_observation_evidence.js";
@@ -21,6 +21,10 @@ interface OwnerNullInventoryTaskManager {
       leaseExpiresAt: Date;
     },
   ): Promise<boolean>;
+  reconcileTerminalExecutionOwnership(
+    task: Task,
+    row: OwnerNullRunningSessionRow,
+  ): Promise<boolean>;
 }
 
 export class OwnerNullInventoryReconciler {
@@ -31,11 +35,15 @@ export class OwnerNullInventoryReconciler {
     scanIntervalMs: number;
     leaseTimeoutMs: number;
     taskManager: OwnerNullInventoryTaskManager;
+    retireTerminalOwnership(
+      row: OwnerNullRunningSessionRow,
+      commit: () => Promise<boolean>,
+    ): Promise<void>;
     logger: Pick<Logger, "error">;
     now: () => number;
   }) {}
 
-  async reconcile(registrations: RunnerRegistration[]): Promise<void> {
+  async reconcile(registrations: RunnerRegistration[]): Promise<Set<string>> {
     let inventory: OwnerNullRunningSessionRow[];
     try {
       inventory = await this.options.taskManager.listOwnerNullRunningInventory(
@@ -46,14 +54,30 @@ export class OwnerNullInventoryReconciler {
         { err: error, nodeId: this.options.nodeId },
         "owner-null running inventory read failed",
       );
-      return;
+      return new Set();
     }
+    const terminalOwnerships = inventory.filter(
+      (row) => row.reconciliation_kind === "terminal_active_ownership",
+    );
+    for (const row of terminalOwnerships) {
+      try {
+        await this.reconcileTerminalOwnership(row);
+      } catch (error) {
+        this.options.logger.error(
+          { err: error, sessionId: row.session_id },
+          "terminal active ownership reconciliation failed",
+        );
+      }
+    }
+    const runningInventory = inventory.filter(
+      (row) => row.reconciliation_kind !== "terminal_active_ownership",
+    );
     const registeredSessionIds = new Set(
       registrations
         .filter((registration) => registration.lifecycle?.execution_state !== "closed")
         .map((registration) => registration.config.sessionId),
     );
-    const absent = inventory.filter(
+    const absent = runningInventory.filter(
       (row) => !registeredSessionIds.has(row.session_id),
     );
     const absentSessionIds = new Set(absent.map((row) => row.session_id));
@@ -70,6 +94,19 @@ export class OwnerNullInventoryReconciler {
         );
       }
     }
+    return new Set(terminalOwnerships.map((row) => row.session_id));
+  }
+
+  private async reconcileTerminalOwnership(
+    row: OwnerNullRunningSessionRow,
+  ): Promise<void> {
+    const task = await this.options.taskManager.hydrateRunnerRecoveryTask(row.session_id);
+    if (!task || !isTerminalTaskStatus(task.status)) return;
+    await this.options.retireTerminalOwnership(
+      row,
+      async () => await this.options.taskManager
+        .reconcileTerminalExecutionOwnership(task, row),
+    );
   }
 
   private async reconcileAbsentRegistration(

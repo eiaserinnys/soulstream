@@ -32,6 +32,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   > & Partial<Pick<
     TaskManager,
     "projectClosedRunner" | "reconcileExecutionOwnershipObservations"
+      | "reconcileTerminalExecutionOwnership"
   >>;
   taskExecutor: Pick<
     TaskExecutor,
@@ -43,7 +44,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   spawner?: Pick<
     RunnerProcessSpawner,
     "invalidateRegistration" | "retireTerminalRegistration" | "terminate"
-  >;
+  > & Partial<Pick<RunnerProcessSpawner, "retireTerminalOwnership">>;
   scan?: typeof scanRunnerRegistrations;
   hydrate?: typeof hydrateRunnerRegistration;
   refreshRegistration?: (
