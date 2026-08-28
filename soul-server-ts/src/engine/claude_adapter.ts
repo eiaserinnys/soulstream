@@ -306,6 +306,7 @@ export class ClaudeEngineAdapter
   }
 
   async intervene(input: EngineUserInput): Promise<EngineInterventionResult> {
+    void input;
     if (!this.currentTurn) {
       return {
         status: "not_delivered",
@@ -314,29 +315,29 @@ export class ClaudeEngineAdapter
       };
     }
     const client = this.activeClient ?? this.client;
-    if (!client.steerActiveTurn) {
+    const interrupt = client.persistentRuntimeActivity?.() === null
+      ? undefined
+      : client.interruptActiveTurnForSteer;
+    if (!interrupt) {
       return {
         status: "not_delivered",
         mechanism: "unsupported",
         reason: "not_supported",
-        message: "Claude client does not support native intervention input",
+        message: "Claude client does not support intervention interrupts",
       };
     }
-    const result = await client.steerActiveTurn(input);
-    if (result.status === "delivered") {
-      return {
-        status: "delivered",
-        mechanism: "interrupt_then_next_turn",
-      };
-    }
-    return {
-      status: "not_delivered",
-      mechanism: result.status === "not_supported"
-        ? "unsupported"
-        : "interrupt_then_next_turn",
-      reason: result.status,
-      ...(result.message ? { message: result.message } : {}),
-    };
+    const interrupted = await interrupt.call(client);
+    return interrupted
+      ? {
+          status: "not_delivered",
+          mechanism: "interrupt_then_next_turn",
+          reason: "next_turn_required",
+        }
+      : {
+          status: "not_delivered",
+          mechanism: "interrupt_then_next_turn",
+          reason: "no_active_turn",
+        };
   }
 
   async compact(sessionId: string): Promise<void> {
