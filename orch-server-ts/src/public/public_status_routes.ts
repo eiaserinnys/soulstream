@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
+import type { PublicDatabaseSchemaProvider } from "./database_schema_provider.js";
+
 export type PublicStatusRouteConfig = {
   nodeName?: string | null;
   authEnabled: boolean;
@@ -37,6 +39,7 @@ export type PublicStatusFolderCountsProvider = {
 export type PublicStatusRouteOptions = {
   configProvider: PublicStatusRouteConfigProvider;
   folderCountsProvider: PublicStatusFolderCountsProvider;
+  databaseSchemaProvider?: PublicDatabaseSchemaProvider;
   startTimeSeconds?: number;
   nowSeconds?: () => number;
   healthVersion?: string;
@@ -57,11 +60,17 @@ export function registerPublicStatusRoutes(
   const nowSeconds = options.nowSeconds ?? currentSeconds;
   const healthVersion = options.healthVersion ?? "0.1.0";
 
-  app.get("/api/health", async () => ({
-    status: "ok",
-    version: healthVersion,
-    uptime_seconds: Math.max(0, Math.trunc(nowSeconds() - startTimeSeconds)),
-  }));
+  app.get("/api/health", async () => {
+    const databaseSchema = options.databaseSchemaProvider === undefined
+      ? undefined
+      : await options.databaseSchemaProvider.getDatabaseSchema();
+    return {
+      status: "ok",
+      version: healthVersion,
+      uptime_seconds: Math.max(0, Math.trunc(nowSeconds() - startTimeSeconds)),
+      ...(databaseSchema === undefined ? {} : { database_schema: databaseSchema }),
+    };
+  });
 
   app.get("/api/config", async () => {
     const config = await options.configProvider.getConfig();

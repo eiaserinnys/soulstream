@@ -74,13 +74,20 @@ export class LegacyGen0OwnerlessZombieHarness {
       limit: 100,
     });
     const clock = { value: STARTUP_AT_MS };
+    const adoptedSessionIds: string[] = [];
+    const retiredSessionIds: string[] = [];
     const registrations = [
       closedRegistration(GEN0_SESSION_ID, clock.value),
       closedRegistration(GEN_POSITIVE_CLOSED_ID, clock.value),
       makeOwnerlessRegistration(LIVE_OWNER_ID, clock.value),
       closedRegistration(TERMINAL_CONTROL_ID, clock.value),
     ];
-    const coordinator = this.composeCoordinator(registrations, clock);
+    const coordinator = this.composeCoordinator(
+      registrations,
+      clock,
+      adoptedSessionIds,
+      retiredSessionIds,
+    );
     const reporter = composeRunnerReconciliationReporter(
       {
         SOUL_RUNNER_STATE_DIR: "/runner/legacy-gen0-red",
@@ -97,6 +104,14 @@ export class LegacyGen0OwnerlessZombieHarness {
     await reporter.waitForRunnerReconciliation!();
     await coordinator.waitForSettled();
     await coordinator.stop();
+
+    const renewal = await this.ingress.persistence
+      .renewExecutionOwnershipAndWaitForApplication(LIVE_OWNER_ID, {
+        ...LIVE_OWNER_IDENTITY,
+        ownershipGeneration: 1,
+        leaseExpiresAt: new Date(clock.value + LEASE_TIMEOUT_MS),
+        updatedAt: new Date(clock.value),
+      });
 
     const gen0NoOwnershipRow = await this.snapshot(GEN0_SESSION_ID);
     const genPositiveClosedOwner = await this.snapshot(GEN_POSITIVE_CLOSED_ID);
@@ -128,12 +143,21 @@ export class LegacyGen0OwnerlessZombieHarness {
           || row.terminationEventId === null
         ),
       ).length,
+      liveRunnerAdoptionCount: adoptedSessionIds.filter(
+        (sessionId) => sessionId === LIVE_OWNER_ID,
+      ).length,
+      liveRunnerRenewApplied: renewal.applied,
+      liveRunnerRetireCount: retiredSessionIds.filter(
+        (sessionId) => sessionId === LIVE_OWNER_ID,
+      ).length,
     };
   }
 
   private composeCoordinator(
     registrations: RunnerRegistration[],
     clock: { value: number },
+    adoptedSessionIds: string[],
+    retiredSessionIds: string[],
   ): RunnerRecoveryCoordinator {
     const tasks = new Map<string, Task>();
     const logger = silentLogger();
@@ -172,13 +196,24 @@ export class LegacyGen0OwnerlessZombieHarness {
           recovery.reconcileExecutionOwnershipObservations.bind(recovery),
       },
       taskExecutor: {
-        recoverRegisteredRunner: async () => undefined,
+        recoverRegisteredRunner: async (task, registration) => {
+          adoptedSessionIds.push(registration.config.sessionId);
+          task.runner = {
+            dispatcher: {
+              isClosed: () => false,
+              dispatcherId: () => `adopted:${registration.registrationId}`,
+            },
+          } as never;
+        },
         restartRegisteredRunner: async () => undefined,
       },
       spawner: {
         terminate: async () => undefined,
         invalidateRegistration: async () => undefined,
-        retireTerminalRegistration: async () => undefined,
+        retireTerminalRegistration: async (paths) => {
+          const sessionId = paths.sessionDirectory.split("/").at(-1);
+          if (sessionId !== undefined) retiredSessionIds.push(sessionId);
+        },
       },
     };
     return new RunnerRecoveryCoordinator(options);

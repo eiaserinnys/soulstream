@@ -285,7 +285,6 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         payload: expect.objectContaining({ text: params.text }),
       });
 
-      task.status = "error";
       await expect(route.addIntervention(params, modelStart)).resolves.toEqual({
         delivered: false,
         queued: true,

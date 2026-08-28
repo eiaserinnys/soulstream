@@ -213,7 +213,7 @@ export class TaskInterventionRoute {
         ) {
           notificationDisposition = "queued";
         }
-      } else if (heldHumanRetry) {
+      } else if (heldHumanRetry && task.status !== "completed") {
         result = await this.deps.runningInterventionTransition.queueOnly(task, message);
       } else if (
         isTerminalTaskStatus(task.status)

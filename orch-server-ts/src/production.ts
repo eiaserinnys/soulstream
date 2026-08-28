@@ -41,6 +41,10 @@ import { createSessionCacheSeedSink } from "./node/session_cache_seed_sink.js";
 import { ReleaseActivationReceiptRepository } from "./node/release_activation_receipt_repository.js";
 import { createExpoPushProvider } from "./push/expo_push_provider.js";
 import {
+  LiveDatabaseSchemaProvider,
+  type PublicDatabaseSchemaProvider,
+} from "./public/database_schema_provider.js";
+import {
   PushNotifier,
   SessionForegroundObserverTracker,
   type PushNotificationLogEvent,
@@ -525,6 +529,7 @@ export async function createLiveProductionApplication(
     }),
     createScheduleRepositoryProvider(sqlResolver),
     createFolderControlPlaneServiceProvider(sqlResolver),
+    new LiveDatabaseSchemaProvider(sqlResolver),
   ));
   logPushNotification = (event) => {
     app.log.info(
@@ -612,6 +617,7 @@ export function buildProductionRouteOptions(
   taskControlPlaneServiceProvider?: NonNullable<CreateAppOptions["taskRoutes"]>["taskControlPlaneServiceProvider"],
   scheduleRepositoryProvider?: NonNullable<CreateAppOptions["scheduleHostRoutes"]>["repositoryProvider"],
   folderControlPlaneServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["controlPlaneServiceProvider"],
+  databaseSchemaProvider?: PublicDatabaseSchemaProvider,
 ): CreateAppOptions {
   return {
     config,
@@ -660,6 +666,7 @@ export function buildProductionRouteOptions(
     publicStatusRoutes: {
       ...providers.publicStatusRoutes,
       configProvider: providers.configProviders.publicStatusRoutes.configProvider,
+      ...(databaseSchemaProvider ? { databaseSchemaProvider } : {}),
     },
     pushRoutes: providers.pushRoutes,
     taskRoutes: {
