@@ -77,21 +77,6 @@ export class SessionDeliveryRecoveryRepository {
     });
   }
 
-  /** Backward-compatible name; both entry points share one query. */
-  async claimPendingHumanLiveSteerForNode(
-    nodeId: string,
-    leaseOwner: string,
-    limit = 100,
-    leaseMs = 15_000,
-  ): Promise<SessionDeliveryRow[]> {
-    return await this.claimPendingImmediateIntentsForNode(
-      nodeId,
-      leaseOwner,
-      limit,
-      leaseMs,
-    );
-  }
-
   async claimRecoverableCompletionDeliveries(
     leaseOwner: string,
     limit = 100,
