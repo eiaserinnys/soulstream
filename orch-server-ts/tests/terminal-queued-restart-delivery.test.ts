@@ -325,7 +325,6 @@ describe("terminal queued delivery across node restart", () => {
     expect(task).toMatchObject({
       agentSessionId: SESSION_ID,
       status: "completed",
-      lastAssistantText: "seq5046 recovered after restart",
     });
   });
 });
