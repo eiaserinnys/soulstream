@@ -1635,7 +1635,10 @@ BEGIN
        AND session.execution_command_id IS NULL
        AND session.execution_lease_expires_at IS NULL
        AND session.status NOT IN ('completed', 'error', 'interrupted')
-       AND session.termination_event_id IS NULL;
+       AND (
+           session.termination_event_id IS NULL
+           OR session.termination_event_id < p_terminal_event_id
+       );
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
 
     RETURN QUERY

@@ -20,7 +20,76 @@ describe("queued transcript recovery rolling contract", () => {
     await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toBe(1);
     await harness.assertExactlyOnce();
   });
+
+  it("returns transcript-absent input to pending for reconnect reclaim", async () => {
+    const harness = makeDeferredHarness("absent");
+
+    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toBe(0);
+    expect(harness.retryLeasedDelivery).toHaveBeenCalledWith(
+      "delivery-deferred",
+      "rolling-worker",
+      "queued_transcript_input_absent",
+      0,
+    );
+    expect(harness.deferQueuedTranscriptCheck).not.toHaveBeenCalled();
+  });
+
+  it("keeps transcript-pending input queued for receipt recheck", async () => {
+    const harness = makeDeferredHarness("input_pending");
+
+    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toBe(0);
+    expect(harness.deferQueuedTranscriptCheck).toHaveBeenCalledWith(
+      "delivery-deferred",
+      "rolling-worker",
+      "queued_transcript_input_pending",
+      1_000,
+    );
+    expect(harness.retryLeasedDelivery).not.toHaveBeenCalled();
+  });
 });
+
+function makeDeferredHarness(receiptKind: "absent" | "input_pending") {
+  const claimedRow = {
+    delivery_id: "delivery-deferred",
+    state: "claimed",
+    lease_owner: "rolling-worker",
+  } as SessionDeliveryRow;
+  const retryLeasedDelivery = vi.fn(async () => ({
+    ...claimedRow,
+    state: "pending",
+    lease_owner: null,
+  }) as SessionDeliveryRow);
+  const deferQueuedTranscriptCheck = vi.fn(async () => ({
+    ...claimedRow,
+    state: "queued",
+    lease_owner: null,
+  }) as SessionDeliveryRow);
+  const recovery = new QueuedDeliveryTranscriptRecovery({
+    deliveryRepository: {
+      get: vi.fn(async () => claimedRow),
+      markConsumed: vi.fn(async () => null),
+      retryLeasedDelivery,
+    },
+    recoveryRepository: {
+      claimQueuedAfterNodeRestart: vi.fn(async () => [claimedRow]),
+      markDeliveredFromTranscript: vi.fn(async () => null),
+      deferQueuedTranscriptCheck,
+    },
+    transcriptReceipt: {
+      inspect: vi.fn(async () => ({
+        kind: receiptKind,
+        inputUuid: "delivery:delivery-deferred",
+      })),
+    },
+    logger: { warn: vi.fn() },
+  } as never, "rolling-worker");
+
+  return {
+    recovery,
+    retryLeasedDelivery,
+    deferQueuedTranscriptCheck,
+  };
+}
 
 function makeHarness(orchVersion: "old_orch" | "new_orch") {
   let state: LedgerState = "claimed";

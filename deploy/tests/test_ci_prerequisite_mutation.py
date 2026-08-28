@@ -44,12 +44,12 @@ class CiPrerequisiteMutationTest(unittest.TestCase):
             lambda: assert_central_manifest(mutated),
         )
 
-    def test_ownerless_terminal_generation_cas_false_to_true_is_detected(self) -> None:
+    def test_ownerless_terminal_stale_event_cas_false_to_true_is_detected(self) -> None:
         mutated = load_json(MIGRATION_MANIFEST_PATH)
         entry = next(
             item
             for item in mutated["migrations"]
-            if item["id"] == "076_ownerless_terminal_generation_cas.sql"
+            if item["id"] == "077_ownerless_terminal_stale_event_cas.sql"
         )
         entry["destructive"] = True
         self.assert_named_violation(
