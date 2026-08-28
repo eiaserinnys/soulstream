@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import { parseEnv } from "../../src/config.js";
+import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import {
   attachClaudeBackgroundDeliveryMetadata,
@@ -57,6 +58,7 @@ import {
 import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import { makeEventPersistenceTestDouble } from "../task/event_persistence_test_double.js";
+import { RunnerCutoverOwnershipLedger } from "./runner_cutover_ownership_ledger.js";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const packageDirectory = resolve(testDirectory, "../..");
@@ -470,9 +472,15 @@ describe("runner cutover all-flags-on integration", () => {
     const releaseRoot = join(releasesDirectory, releaseId);
     readOnlyReleases.push(releaseRoot);
 
+    const ownershipLedger = new RunnerCutoverOwnershipLedger();
     const task = makeTask();
     const agent = makeAgent(controlDirectory);
-    const firstHost = taskExecutor(composition.runtimeFactory);
+    const firstHost = taskExecutor(
+      composition.runtimeFactory,
+      undefined,
+      undefined,
+      ownershipLedger,
+    );
     firstHost.executor.startExecution(task, agent);
     const paths = runnerProcessPaths(stateDirectory, task.agentSessionId);
     await waitFor(async () => await pathExists(paths.pidPath));
@@ -533,6 +541,7 @@ describe("runner cutover all-flags-on integration", () => {
       composition.runtimeFactory,
       undefined,
       executionOwnership,
+      ownershipLedger,
     );
     const recovery = restartedHost.executor.recoverRegisteredRunner(
       task,
@@ -552,12 +561,13 @@ describe("runner cutover all-flags-on integration", () => {
         emitEventEnvelope: vi.fn(async () => undefined),
       } as unknown as SessionBroadcaster,
       logger: pino({ level: "silent" }),
-      persistence: makeEventPersistenceTestDouble().persistence,
+      persistence: restartedHost.persistence,
     });
     await expect(transition.deliver(task, {
       text: "post-recovery intervention",
       user: "soak",
-    })).resolves.toMatchObject({ queued: true });
+      runnerInterventionId: "cutover-live-intervention",
+    })).resolves.toMatchObject({ delivered: true });
     await writeFile(join(controlDirectory, "finish"), "go\n");
     await recovery;
 
@@ -572,20 +582,84 @@ describe("runner cutover all-flags-on integration", () => {
     );
     expect(task.status).toBe("completed");
     expect(task.lastAssistantText).toBe("after-detach");
-    expect(await pathExists(join(controlDirectory, "followup-executed"))).toBe(true);
+    await waitFor(async () => !isPidAlive(pid));
+    childPids.delete(pid);
     expect(batches.flatMap((batch) => batch.events).filter(
       (event) => event.event_type === "intervention_sent",
     )).toHaveLength(1);
     expect(durableContents(batches)).toEqual([
       "before-detach",
       "after-detach",
-      "before-detach",
-      "after-detach",
     ]);
+    expect(JSON.parse(await readFile(
+      join(controlDirectory, "live-intervention-received.json"),
+      "utf8",
+    ))).toMatchObject({ count: 1, input: { prompt: "post-recovery intervention" } });
+    expect(runnerInterventionInboxCount(
+      paths.databasePath,
+      "cutover-live-intervention",
+    )).toBe(0);
     expect(await pendingFrameCount(paths.databasePath)).toBe(0);
-    await waitFor(async () => !isPidAlive(pid));
-    childPids.delete(pid);
+    expect(ownershipLedger.rowsFor(task.agentSessionId)).toMatchObject([
+      {
+        ownershipGeneration: 1,
+        ownerKind: "runner_process",
+        phase: "terminal",
+        terminalAt: expect.any(String),
+        runnerFact: "completed",
+      },
+    ]);
+    expect(ownershipLedger.nonTerminalRowsFor(task.agentSessionId)).toEqual([]);
+    expect(task.executionOwnership).toBeUndefined();
     void oldExecution;
+
+    await rm(join(controlDirectory, "finish"));
+    const resumeHost = taskExecutor(
+      composition.runtimeFactory,
+      undefined,
+      undefined,
+      ownershipLedger,
+    );
+    const explicitResume = new AutoResumeTransition({
+      logger: pino({ level: "silent" }),
+      persistence: resumeHost.persistence,
+    });
+    await explicitResume.resume(
+      task,
+      { text: "explicit resume after adopt", user: "soak" },
+      (resumedTask, activation) =>
+        resumeHost.executor.startExecution(resumedTask, agent, activation),
+    );
+    const resumedPid = await waitForReplacementPid(paths.pidPath, pid);
+    childPids.add(resumedPid);
+    const resumedExecution = task.executionPromise;
+    if (!resumedExecution) throw new Error("explicit resume execution promise missing");
+    await writeFile(join(controlDirectory, "finish"), "go\n");
+    await resumedExecution;
+    expect(resumeHost.acquireExecutionOwnershipAndWaitForApplication).toHaveBeenCalledTimes(1);
+    expect(resumeHost.acquireExecutionOwnershipAndWaitForApplication).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({
+        ownerKind: "runner_process",
+        expectedTerminalEventId: expect.any(Number),
+      }),
+    );
+    expect(task.status).toBe("completed");
+    await waitFor(async () => !isPidAlive(resumedPid));
+    childPids.delete(resumedPid);
+    const resumedRows = ownershipLedger.rowsFor(task.agentSessionId);
+    expect(resumedRows).toHaveLength(2);
+    expect(resumedRows[1]).toMatchObject({
+      ownershipGeneration: 2,
+      ownerKind: "runner_process",
+      phase: "terminal",
+      terminalAt: expect.any(String),
+      runnerFact: "completed",
+    });
+    expect(resumedRows[1]?.registrationId).not.toBe(resumedRows[0]?.registrationId);
+    expect(resumedRows[1]?.pid).toBe(resumedPid);
+    expect(resumedPid).not.toBe(pid);
+    expect(ownershipLedger.nonTerminalRowsFor(task.agentSessionId)).toEqual([]);
     await composition.hostOwnership.release();
 
     const secondControlDirectory = join(root, "control-second");
@@ -614,8 +688,14 @@ describe("runner cutover all-flags-on integration", () => {
     });
     if (!secondComposition) throw new Error("second runner composition unexpectedly disabled");
     const secondTask = makeTask("session-cutover-stale-lock");
-    const secondHost = taskExecutor(secondComposition.runtimeFactory);
-    secondHost.executor.startExecution(secondTask, makeAgent(secondControlDirectory));
+    const secondAgent = makeAgent(secondControlDirectory);
+    const secondHost = taskExecutor(
+      secondComposition.runtimeFactory,
+      undefined,
+      undefined,
+      ownershipLedger,
+    );
+    secondHost.executor.startExecution(secondTask, secondAgent);
     const secondPaths = runnerProcessPaths(stateDirectory, secondTask.agentSessionId);
     await waitFor(async () => await pathExists(secondPaths.pidPath));
     const secondPid = Number.parseInt((await readFile(secondPaths.pidPath, "utf8")).trim(), 10);
@@ -625,14 +705,102 @@ describe("runner cutover all-flags-on integration", () => {
       join(secondControlDirectory, "internal-mcp-called"),
       "utf8",
     ))).toMatchObject({ path: "/mcp/internal", isError: false });
+    const secondTransition = new RunningInterventionTransition({
+      broadcaster: {
+        emitEventEnvelope: vi.fn(async () => undefined),
+      } as unknown as SessionBroadcaster,
+      logger: pino({ level: "silent" }),
+      persistence: secondHost.persistence,
+    });
+    await expect(secondTransition.deliver(secondTask, {
+      text: "clean-start live intervention",
+      user: "soak",
+      runnerInterventionId: "clean-start-live-intervention",
+    })).resolves.toMatchObject({ delivered: true });
     await writeExecutionControls(secondControlDirectory);
-    await secondTask.executionPromise;
+    const secondExecution = secondTask.executionPromise;
+    if (!secondExecution) throw new Error("clean-start execution promise missing");
+    await secondExecution;
     expect(secondTask.status).toBe("completed");
     await waitFor(async () => !isPidAlive(secondPid));
     childPids.delete(secondPid);
+    expect(JSON.parse(await readFile(
+      join(secondControlDirectory, "live-intervention-received.json"),
+      "utf8",
+    ))).toMatchObject({ count: 1, input: { prompt: "clean-start live intervention" } });
+    expect(runnerInterventionInboxCount(
+      secondPaths.databasePath,
+      "clean-start-live-intervention",
+    )).toBe(0);
+    expect(batches.flatMap((batch) => batch.events).filter(
+      (event) => event.event_type === "intervention_sent"
+        && (event.payload as { text?: string }).text === "clean-start live intervention",
+    )).toHaveLength(1);
+    expect(secondHost.acquireExecutionOwnershipAndWaitForApplication).toHaveBeenCalledTimes(1);
+    expect(ownershipLedger.rowsFor(secondTask.agentSessionId)).toMatchObject([{
+      ownershipGeneration: 1,
+      ownerKind: "runner_process",
+      pid: secondPid,
+      phase: "terminal",
+      terminalAt: expect.any(String),
+      runnerFact: "completed",
+    }]);
+    expect(ownershipLedger.nonTerminalRowsFor(secondTask.agentSessionId)).toEqual([]);
+    expect(secondTask.executionOwnership).toBeUndefined();
+
+    await rm(join(secondControlDirectory, "finish"));
+    const secondResumeHost = taskExecutor(
+      secondComposition.runtimeFactory,
+      undefined,
+      undefined,
+      ownershipLedger,
+    );
+    const secondExplicitResume = new AutoResumeTransition({
+      logger: pino({ level: "silent" }),
+      persistence: secondResumeHost.persistence,
+    });
+    await secondExplicitResume.resume(
+      secondTask,
+      { text: "explicit resume after clean completion", user: "soak" },
+      (resumedTask, activation) =>
+        secondResumeHost.executor.startExecution(resumedTask, secondAgent, activation),
+    );
+    const secondResumedPid = await waitForReplacementPid(secondPaths.pidPath, secondPid);
+    childPids.add(secondResumedPid);
+    const secondResumedExecution = secondTask.executionPromise;
+    if (!secondResumedExecution) throw new Error("clean-start resume promise missing");
+    await writeFile(join(secondControlDirectory, "finish"), "go\n");
+    await secondResumedExecution;
+    expect(secondResumeHost.acquireExecutionOwnershipAndWaitForApplication)
+      .toHaveBeenCalledTimes(1);
+    expect(secondResumeHost.acquireExecutionOwnershipAndWaitForApplication).toHaveBeenCalledWith(
+      secondTask.agentSessionId,
+      expect.objectContaining({
+        ownerKind: "runner_process",
+        expectedTerminalEventId: expect.any(Number),
+      }),
+    );
+    expect(secondTask.status).toBe("completed");
+    await waitFor(async () => !isPidAlive(secondResumedPid));
+    childPids.delete(secondResumedPid);
+    const secondResumedRows = ownershipLedger.rowsFor(secondTask.agentSessionId);
+    expect(secondResumedRows).toHaveLength(2);
+    expect(secondResumedRows[1]).toMatchObject({
+      ownershipGeneration: 2,
+      ownerKind: "runner_process",
+      phase: "terminal",
+      terminalAt: expect.any(String),
+      runnerFact: "completed",
+    });
+    expect(secondResumedRows[1]?.registrationId)
+      .not.toBe(secondResumedRows[0]?.registrationId);
+    expect(secondResumedRows[1]?.pid).toBe(secondResumedPid);
+    expect(secondResumedPid).not.toBe(secondPid);
+    expect(ownershipLedger.nonTerminalRowsFor(secondTask.agentSessionId)).toEqual([]);
     expect(callerSessionIds).toEqual([
       task.agentSessionId,
       task.agentSessionId,
+      secondTask.agentSessionId,
       secondTask.agentSessionId,
     ]);
     await secondComposition.hostOwnership.release();
@@ -978,8 +1146,10 @@ function taskExecutor(
   runnerProcessFactory: NonNullable<Awaited<ReturnType<typeof composeRunnerProcessRuntime>>>["runtimeFactory"],
   observeEvent?: (event: SSEEventPayload, task: Task) => void | Promise<void>,
   recoveredOwnership?: NonNullable<Task["executionOwnership"]>,
+  ownershipLedger?: RunnerCutoverOwnershipLedger,
 ): {
   executor: TaskExecutor;
+  persistence: EventPersistence;
   enqueueRunningTransitionAndWaitForApplication: ReturnType<
     typeof makeEventPersistenceTestDouble
   >["enqueueRunningTransitionAndWaitForApplication"];
@@ -987,12 +1157,15 @@ function taskExecutor(
     typeof makeEventPersistenceTestDouble
   >["acquireExecutionOwnershipAndWaitForApplication"];
 } {
-  const persistenceDouble = makeEventPersistenceTestDouble(async (_sessionId, event, task) => {
+  const observe = async (_sessionId: string, event: SSEEventPayload, task: Task) => {
     if (event.type === "assistant_message" && typeof event.content === "string") {
       task.lastAssistantText = event.content;
     }
     await observeEvent?.(event, task);
-  });
+  };
+  const persistenceDouble = ownershipLedger
+    ? ownershipLedger.createHostPersistence(observe)
+    : makeEventPersistenceTestDouble(observe);
   const db = {
     getSession: vi.fn(async () => {
       // A replacement host reads the sessions-row owner written by the first
@@ -1033,6 +1206,7 @@ function taskExecutor(
       undefined,
       runnerProcessFactory,
     ),
+    persistence: persistenceDouble.persistence,
     enqueueRunningTransitionAndWaitForApplication:
       persistenceDouble.enqueueRunningTransitionAndWaitForApplication,
     acquireExecutionOwnershipAndWaitForApplication:
@@ -1213,6 +1387,33 @@ async function hasCompleteJson(path: string): Promise<boolean> {
   } catch (error) {
     if (error instanceof SyntaxError) return false;
     throw error;
+  }
+}
+
+async function waitForReplacementPid(path: string, previousPid: number): Promise<number> {
+  let replacementPid: number | null = null;
+  await waitFor(async () => {
+    const candidate = await readPidIfExists(path);
+    if (candidate === null || candidate === previousPid || !isPidAlive(candidate)) return false;
+    replacementPid = candidate;
+    return true;
+  });
+  if (replacementPid === null) throw new Error("replacement runner pid missing");
+  return replacementPid;
+}
+
+function runnerInterventionInboxCount(databasePath: string, interventionId: string): number {
+  const database = new DatabaseSync(databasePath, { readOnly: true });
+  database.exec("PRAGMA query_only = ON");
+  try {
+    const row = database.prepare(`
+      SELECT COUNT(*) AS count
+      FROM runner_intervention_inbox
+      WHERE intervention_id = ?
+    `).get(interventionId) as { count: number };
+    return row.count;
+  } finally {
+    database.close();
   }
 }
 

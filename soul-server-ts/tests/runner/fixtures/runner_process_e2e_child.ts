@@ -11,7 +11,9 @@ import {
 import { buildMcpOptions } from "../../../src/engine/claude_sdk_mcp_options.js";
 import type {
   EngineExecuteParams,
+  EngineInterventionResult,
   EnginePort,
+  EngineUserInput,
   SSEEventPayload,
 } from "../../../src/engine/protocol.js";
 import {
@@ -35,6 +37,7 @@ class ControlledEngine implements EnginePort {
   readonly detachedClaudeRuntime = config.backend === "claude" ? true : undefined;
   private executionCount = 0;
   private backgroundTaskCount = 0;
+  private liveInterventionCount = 0;
 
   constructor(
     private readonly controlDirectory: string,
@@ -223,6 +226,15 @@ class ControlledEngine implements EnginePort {
 
   async interrupt(): Promise<boolean> {
     return true;
+  }
+
+  async intervene(input: EngineUserInput): Promise<EngineInterventionResult> {
+    this.liveInterventionCount += 1;
+    await writeFile(
+      `${this.controlDirectory}/live-intervention-received.json`,
+      JSON.stringify({ count: this.liveInterventionCount, input }),
+    );
+    return { status: "delivered", mechanism: "active_turn" };
   }
 
   async compact(_resumeSessionId: string): Promise<void> {
