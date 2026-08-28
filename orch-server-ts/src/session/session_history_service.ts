@@ -8,6 +8,7 @@ export type SessionHistoryRawEvent = {
   eventId: number;
   eventType: string;
   payloadText: string;
+  sessionEffectApplied?: boolean;
 };
 
 export const SESSION_TIMELINE_EVENT_TYPES = [

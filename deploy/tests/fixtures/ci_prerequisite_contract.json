@@ -1,0 +1,43 @@
+{
+  "schema_version": "soulstream.ci-prerequisite-contract.v1",
+  "haniel_contracts": {
+    "pinned": "3d02d57eb4a78b2eca18acb69c9f099424537c6e",
+    "rolling": "560d251504b71d1c634f4f33cae708bd9d3733bd"
+  },
+  "central": {
+    "destructive": false,
+    "inline_backup_commands": []
+  },
+  "standalone": {
+    "destructive": true,
+    "inline_backup_commands": {
+      "backup": {
+        "name": "database-backup",
+        "command": "node packages/db-schema/scripts/release-executor.mjs backup --manifest deploy/release-manifest-standalone.json --database-contract deploy/database-release-standalone.json",
+        "timeout_seconds": 300
+      },
+      "verify_backup": {
+        "name": "verify-database-backup",
+        "command": "node packages/db-schema/scripts/release-executor.mjs verify-backup --manifest deploy/release-manifest-standalone.json --database-contract deploy/database-release-standalone.json",
+        "timeout_seconds": 300
+      }
+    }
+  },
+  "pending_migration": {
+    "id": "076_ownerless_terminal_generation_cas.sql",
+    "destructive": false
+  },
+  "composition": {
+    "required_command_order": [
+      "migration-preflight",
+      "apply-migrations-and-board-yjs-residue",
+      "verify-migration-ledger"
+    ],
+    "required_state_order": [
+      "preflight",
+      "migrating",
+      "verifying",
+      "success"
+    ]
+  }
+}

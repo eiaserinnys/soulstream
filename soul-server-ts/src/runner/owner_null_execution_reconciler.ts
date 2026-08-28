@@ -54,14 +54,15 @@ export class OwnerNullExecutionReconciler {
       return "wait";
     }
 
-    this.observations.delete(task.agentSessionId);
     const applied = await reconcile.call(this.options.taskManager, task, {
       first,
       second: current,
       leaseExpiresAt: new Date(observedAt.getTime() + this.options.leaseTimeoutMs),
     });
+    this.observations.delete(task.agentSessionId);
+    if (isTerminalTaskStatus(task.status)) return "terminal";
     if (applied) return "proceed";
-    return isTerminalTaskStatus(task.status) ? "terminal" : "wait";
+    return "wait";
   }
 }
 

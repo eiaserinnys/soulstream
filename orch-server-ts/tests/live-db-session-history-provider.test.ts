@@ -34,7 +34,12 @@ describe("live DB session history provider", () => {
       if (text.includes("event_stream_raw")) {
         return [
           { id: 11, event_type: "text_delta", payload_text: "{\"text\":\"a\"}" },
-          { id: 12, event_type: "text_end", payload_text: "{\"type\":\"text_end\"}" },
+          {
+            id: 12,
+            event_type: "text_end",
+            payload_text: "{\"type\":\"text_end\"}",
+            effect_applied: false,
+          },
         ];
       }
       return [];
@@ -61,13 +66,18 @@ describe("live DB session history provider", () => {
     }
     expect(raw).toEqual([
       { eventId: 11, eventType: "text_delta", payloadText: "{\"text\":\"a\"}" },
-      { eventId: 12, eventType: "text_end", payloadText: "{\"type\":\"text_end\"}" },
+      {
+        eventId: 12,
+        eventType: "text_end",
+        payloadText: "{\"type\":\"text_end\"}",
+        sessionEffectApplied: false,
+      },
     ]);
     expect(harness.normalizedCalls()).toEqual([
       "SELECT COUNT(*)::int FROM events WHERE session_id = ? AND parent_event_id IS NULL",
       "SELECT * FROM events_viewport(?, ?, ?)",
       "SELECT COALESCE(MAX(id), 0)::int AS last_event_id FROM events WHERE session_id = ?",
-      "SELECT * FROM event_stream_raw(?, ?) ORDER BY id ASC",
+      "SELECT raw_event.*, semantic_receipt.effect_applied FROM event_stream_raw(?, ?) AS raw_event LEFT JOIN LATERAL ( SELECT (receipt.effect_application->>'applied')::boolean AS effect_applied FROM event_ingress_receipts AS receipt WHERE receipt.session_id = ? AND receipt.event_id = raw_event.id AND receipt.effect_application IS NOT NULL ORDER BY receipt.created_at ASC, receipt.source_seq ASC LIMIT 1 ) AS semantic_receipt ON TRUE ORDER BY raw_event.id ASC",
     ]);
   });
 

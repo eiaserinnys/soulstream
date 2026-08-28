@@ -1,4 +1,6 @@
 import type { NodeRegistryEvent } from "./registry.js";
+import { shouldPublishSessionEventSemantically } from
+  "../session/session_event_semantic_publication.js";
 import type { EventIngressRepository } from "./event_ingress_repository.js";
 import {
   EventIngressValidationError,
@@ -110,11 +112,16 @@ export class NodeEventIngressController {
             value: item.envelope.payload,
             _event_id: item.eventId,
           };
-      const registryEvents = this.options.receiveCommittedEvent({
-        type: "event",
-        agentSessionId: item.envelope.session_id,
-        event: payload,
-      });
+      const registryEvents = shouldPublishSessionEventSemantically({
+        eventType: item.envelope.event_type,
+        sessionEffectApplied: item.sessionEffectApplication?.applied,
+      })
+        ? this.options.receiveCommittedEvent({
+            type: "event",
+            agentSessionId: item.envelope.session_id,
+            event: payload,
+          })
+        : [];
       const sessionUpdate = item.duplicateReceipt
         && !item.sessionEffectApplication?.canonicalSession
         ? null

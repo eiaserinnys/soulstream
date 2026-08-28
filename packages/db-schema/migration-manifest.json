@@ -76,6 +76,7 @@
     { "id": "072_owner_null_backfill_identity_guard.sql", "sha256": "f445fd51e8d37f8587b88e441acefaa09549d819071e75ca5d1de0737d3e5202", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "073_sessions_execution_owner_v1.sql", "sha256": "a9458d0221529cd85297730dddcfc1205ce938bd6888214c94d6904ea9b5d034", "destructive": false, "rollback_compatibility": "restore_required" },
     { "id": "074_sessions_execution_owner_renew.sql", "sha256": "f2deb23e05e33a4ae3fbddea2116696312ecec5a8801763896b5ad5c42d63d7d", "destructive": false, "rollback_compatibility": "previous_release_safe" },
-    { "id": "075_sessions_execution_owner_release.sql", "sha256": "af32642292dd594addf2bc8d692ee2225bd10a2a1e7a46bf8668089386bf3e7a", "destructive": false, "rollback_compatibility": "restore_required" }
+    { "id": "075_sessions_execution_owner_release.sql", "sha256": "af32642292dd594addf2bc8d692ee2225bd10a2a1e7a46bf8668089386bf3e7a", "destructive": false, "rollback_compatibility": "restore_required" },
+    { "id": "076_ownerless_terminal_generation_cas.sql", "sha256": "d900ad89fb451a735778e6c7f4e0848903710dc48d65b10aa1d83530f3ed6bf9", "destructive": false, "rollback_compatibility": "previous_release_safe" }
   ]
 }

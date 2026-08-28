@@ -197,15 +197,30 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
                     self.assertNotIn(shlex.split(command)[0], {"pnpm", "tsx"})
 
     def test_database_manifests_use_the_operation_aware_result_contract(self) -> None:
-        for path, scope in (
-            (MANIFEST_PATH, "cluster"),
-            (STANDALONE_MANIFEST_PATH, "standalone"),
+        for path, scope, destructive, policy in (
+            (
+                MANIFEST_PATH,
+                "cluster",
+                False,
+                "CENTRAL_NO_INLINE_MIGRATION_MUST_BE_NON_DESTRUCTIVE",
+            ),
+            (
+                STANDALONE_MANIFEST_PATH,
+                "standalone",
+                True,
+                "STANDALONE_MIGRATION_MUST_STAY_DESTRUCTIVE",
+            ),
         ):
             with self.subTest(manifest=path.name):
                 manifest = ReleaseManifest.load(path)
                 self.assertIsNotNone(manifest.migration)
                 migration = manifest.migration
                 assert migration is not None
+                self.assertIs(
+                    migration.destructive,
+                    destructive,
+                    f"{policy}: {path.name} destructive policy drifted",
+                )
                 self.assertEqual(migration.operation, "discover")
                 self.assertEqual(
                     migration.result_contract,
@@ -213,8 +228,25 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
                 )
                 self.assertIsNotNone(migration.provenance_probe)
                 self.assertIn("release-executor.mjs", migration.preflight.command)
-                self.assertIn("release-executor.mjs", migration.backup.command)
-                self.assertIn("release-executor.mjs", migration.verify_backup.command)
+                if destructive:
+                    self.assertIsNotNone(migration.backup)
+                    self.assertIsNotNone(migration.verify_backup)
+                    assert migration.backup is not None
+                    assert migration.verify_backup is not None
+                    self.assertIn("release-executor.mjs", migration.backup.command)
+                    self.assertIn(
+                        "release-executor.mjs",
+                        migration.verify_backup.command,
+                    )
+                else:
+                    self.assertIsNone(
+                        migration.backup,
+                        "nondestructive central migration may omit optional backup",
+                    )
+                    self.assertIsNone(
+                        migration.verify_backup,
+                        "nondestructive central migration may omit optional verify_backup",
+                    )
                 self.assertIn("release-executor.mjs", manifest.recovery.command.command)
                 for command in _find_commands(
                     json.loads(path.read_text(encoding="utf8"))

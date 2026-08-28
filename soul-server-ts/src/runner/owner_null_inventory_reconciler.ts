@@ -91,11 +91,11 @@ export class OwnerNullInventoryReconciler {
     if (current.observedAt.getTime() - first.observedAt.getTime() < minimumLeaseIntervalMs) {
       return;
     }
-    this.observations.delete(row.session_id);
     await this.options.taskManager.reconcileExecutionOwnershipObservations(task, {
       first,
       second: current,
       leaseExpiresAt: new Date(current.observedAt.getTime() + this.options.leaseTimeoutMs),
     });
+    this.observations.delete(row.session_id);
   }
 }

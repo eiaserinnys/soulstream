@@ -169,14 +169,28 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
   ): AsyncIterable<SessionHistoryRawEvent> {
     const sql = await this.sqlResolver.resolveSql();
     const rows = await sql`
-      SELECT * FROM event_stream_raw(${sessionId}, ${afterId})
-      ORDER BY id ASC
+      SELECT raw_event.*, semantic_receipt.effect_applied
+      FROM event_stream_raw(${sessionId}, ${afterId}) AS raw_event
+      LEFT JOIN LATERAL (
+        SELECT (receipt.effect_application->>'applied')::boolean AS effect_applied
+        FROM event_ingress_receipts AS receipt
+        WHERE receipt.session_id = ${sessionId}
+          AND receipt.event_id = raw_event.id
+          AND receipt.effect_application IS NOT NULL
+        ORDER BY receipt.created_at ASC, receipt.source_seq ASC
+        LIMIT 1
+      ) AS semantic_receipt ON TRUE
+      ORDER BY raw_event.id ASC
     `;
     for (const row of rows) {
+      const sessionEffectApplied = typeof row.effect_applied === "boolean"
+        ? row.effect_applied
+        : undefined;
       yield {
         eventId: numberValue(row.id) ?? 0,
         eventType: String(row.event_type ?? ""),
         payloadText: payloadText(row.payload_text),
+        ...(sessionEffectApplied === undefined ? {} : { sessionEffectApplied }),
       };
     }
   }

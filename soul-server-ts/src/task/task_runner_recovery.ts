@@ -119,12 +119,28 @@ export class TaskRunnerRecovery {
       }
       : undefined;
     if (!stableCompleteIdentity) {
+      const previous = {
+        status: task.status,
+        completedAt: task.completedAt,
+        reviewState: task.reviewState,
+        terminationReason: task.terminationReason,
+        terminationDetail: task.terminationDetail,
+        pendingTerminationHint: task.pendingTerminationHint,
+        pendingTerminationDetail: task.pendingTerminationDetail,
+        terminationEventRecorded: task.terminationEventRecorded,
+        terminalEventId: task.terminalEventId,
+      };
       task.status = "interrupted";
       task.completedAt = second.observedAt;
       task.pendingTerminationDetail =
         "owner-null running migration could not prove a stable runner identity";
-      const result = await this.deps.lifecycleTransition.persistExecutorFinalState(task);
-      return result.terminalTransitionApplied;
+      try {
+        const result = await this.deps.lifecycleTransition.persistExecutorFinalState(task);
+        return result.terminalTransitionApplied;
+      } catch (error) {
+        Object.assign(task, previous);
+        throw error;
+      }
     }
     const application =
       await this.deps.persistence.acquireExecutionOwnershipAndWaitForApplication(

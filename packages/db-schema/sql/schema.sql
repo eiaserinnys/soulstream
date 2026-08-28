@@ -1626,6 +1626,15 @@ BEGIN
            termination_event_id = p_terminal_event_id,
            updated_at = p_updated_at
      WHERE session.session_id = p_session_id
+       AND session.execution_generation = 0
+       AND session.execution_manifest_id IS NULL
+       AND session.execution_runtime_env_identity IS NULL
+       AND session.execution_registration_id IS NULL
+       AND session.execution_pid IS NULL
+       AND session.execution_start_identity IS NULL
+       AND session.execution_command_id IS NULL
+       AND session.execution_lease_expires_at IS NULL
+       AND session.status NOT IN ('completed', 'error', 'interrupted')
        AND session.termination_event_id IS NULL;
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
 

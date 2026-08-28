@@ -3,7 +3,7 @@
   "release_id": "soulstream-claude-runtime-v2",
   "environment_service": "soulstream-orch-server",
   "migration": {
-    "destructive": true,
+    "destructive": false,
     "operation": "discover",
     "result_contract": "soulstream.database-release.v1",
     "provenance_probe": {
