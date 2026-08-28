@@ -107,7 +107,10 @@ async function observeCurrentLateIntervention(h: ContractHarness) {
     startObservedExecution(resumed, activation, state.generation.id);
   });
   const route = new TaskInterventionRoute({ getTask: () => task,
-    loadEvictedTask: vi.fn(), rememberTask: vi.fn(), runningInterventionTransition: {} as never,
+    loadEvictedTask: vi.fn(), rememberTask: vi.fn(), runningInterventionTransition: {
+      queueOnly: vi.fn().mockResolvedValue({ delivered: false, queued: true,
+        queuePosition: 1, consumeWhen: "next_turn", reason: "queue_only_policy" }),
+    } as never,
     autoResumeTransition: autoResume, deliveryLedgerGate: gate });
   const result = await route.addIntervention({ agentSessionId: task.agentSessionId,
     text: "late", user: "system",

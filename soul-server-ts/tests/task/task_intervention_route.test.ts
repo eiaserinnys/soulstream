@@ -835,7 +835,11 @@ describe("TaskInterventionRoute.addIntervention", () => {
     );
     expect(onResume).not.toHaveBeenCalled();
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
-    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.queueOnly).toHaveBeenCalledWith(
+      task,
+      expect.objectContaining({ deliveryId, deliveryIntent: "completion_notification" }),
+      { publishEvent: false },
+    );
   });
 
   it("generating 중 완료도 running deliver로 즉시 전달한다", async () => {

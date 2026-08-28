@@ -220,13 +220,11 @@ export class TaskInterventionRoute {
         && admission.kind === "admitted"
         && admission.row.intent === "completion_notification"
       ) {
-        result = {
-          delivered: false,
-          queued: true,
-          queuePosition: 1,
-          consumeWhen: "next_turn",
-          reason: "queue_only_policy",
-        };
+        result = await this.deps.runningInterventionTransition.queueOnly(
+          task,
+          message,
+          { publishEvent: false },
+        );
         notificationDisposition = "queued";
       } else if (admission.kind === "admitted") {
         const deferResumeUntilQueued: StartExecutionCallback = (resumedTask, activation) => {
