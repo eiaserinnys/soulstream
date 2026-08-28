@@ -58,6 +58,11 @@ describe("active runner intervention with one runtime follow-up", () => {
             type: "session",
             session_id: "claude-active-owner",
           } as SSEEventPayload;
+          yield {
+            type: "complete",
+            result: "assistant result arrived before the child command settled",
+            timestamp: 1,
+          } as SSEEventPayload;
           activeOwner.resolve();
           await releasePriorTurn.promise;
           priorTurnEnded.resolve();
@@ -149,7 +154,9 @@ describe("active runner intervention with one runtime follow-up", () => {
     executor.startExecutionWithRunner(task, agent, runner);
     const execution = task.executionPromise!;
     await activeOwner.promise;
-    const activeOwnerCount = task.status === "running" && task.executionPromise === execution
+    const activeOwnerCount = task.status === "running"
+        && task.executionPromise === execution
+        && runner.dispatcher.hasActiveExecution()
       ? 1
       : 0;
     await transition.deliver(task, humanLiveSteer);
