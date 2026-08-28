@@ -293,7 +293,6 @@ describe("E report intervention control-timeout contract", () => {
       broadcaster: mocks.broadcaster,
       logger: logger.value,
       persistence: mocks.persistence,
-      liveRetryDelayMs: 0,
     });
 
     executor.startExecutionWithRunner(parent, claudeAgent, runner);

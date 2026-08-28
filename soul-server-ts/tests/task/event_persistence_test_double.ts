@@ -322,6 +322,7 @@ function makeRecord(
   event: SSEEventPayload,
   effect?: EventOutboxSessionEffect,
 ): EventOutboxRecord {
+  const semanticDedupeKey = (event as Record<string, unknown>)._dedupe_key;
   return {
     stream_id: "stream-test",
     source_seq: sourceSeq,
@@ -330,10 +331,9 @@ function makeRecord(
     payload: event,
     searchable_text: null,
     created_at: new Date().toISOString(),
-    semantic_dedupe_key:
-      typeof (event as Record<string, unknown>)._dedupe_key === "string"
-        ? (event as Record<string, string>)._dedupe_key
-        : null,
+    semantic_dedupe_key: typeof semanticDedupeKey === "string"
+      ? semanticDedupeKey
+      : null,
     session_effect: effect ?? null,
     payload_hash: `${sourceSeq}`.padStart(64, "0"),
   };

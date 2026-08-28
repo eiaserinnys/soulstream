@@ -144,9 +144,9 @@ describe("runner process registry", () => {
     }), NOW, 120_000)).toBe("replay_terminal_dead");
   });
 
-  it("does not replay a dead terminal registration after its durable replay retired it", () => {
+  it("never revives a retired registration from stale lifecycle or a reused pid", () => {
     expect(classifyRunnerRegistration({
-      ...registration({ pidAlive: false, lifecycleState: "completed" }),
+      ...registration({ pidAlive: true, lifecycleState: "running" }),
       retiredAt: "2026-08-11T00:00:29.000Z",
     }, NOW, 120_000)).toBe("retired_terminal");
   });

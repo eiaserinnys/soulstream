@@ -90,6 +90,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
     | "markRunnerFailureAndResume"
     | "projectClosedRunner"
     | "reconcileExecutionOwnershipObservations"
+    | "reconcileTerminalExecutionOwnership"
     | "listOwnerNullRunningInventory"
   >;
   taskExecutor: Pick<

@@ -58,6 +58,20 @@ describe("session-data read repositories", () => {
     expect(summaryQuery!.indexOf("LIMIT")).toBeLessThan(summaryQuery!.indexOf("FROM events"));
   });
 
+  it("enumerates live blocking ownership phases with their ledger generation", async () => {
+    const { sql, calls } = createSql(() => []);
+    const repository = new SessionReadRepository(sql);
+
+    await repository.listOwnerNullRunningInventory({ nodeId: "node-a", limit: 100 });
+
+    const query = calls[0]?.text;
+    expect(query).toBeDefined();
+    expect(query).toContain("ownership.ownership_generation");
+    expect(query).toContain("ownership.phase AS ownership_phase");
+    expect(query).toContain("ownership.phase IN ('identity_proven', 'active')");
+    expect(query).not.toContain("'reserved'");
+  });
+
   it("owns all seven event read operations and preserves payload contracts", async () => {
     const now = new Date("2026-08-06T00:00:00.000Z");
     const event = {

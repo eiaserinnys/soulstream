@@ -390,6 +390,37 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
   }
   const executionFailureEffect = parseExecutionFailureEffect(value, field);
   if (executionFailureEffect) return executionFailureEffect;
+  if (value.kind === "execution_retire_terminal_ownership") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "ownership_generation", "manifest_id", "registration_id", "pid",
+        "start_identity", "execution_command_id", "runner_fact", "updated_at",
+      ],
+      field,
+    );
+    const runnerFact = nonEmptyString(value.runner_fact, `${field}.runner_fact`);
+    if (!["completed", "failed", "reaped", "closed"].includes(runnerFact)) {
+      throw new EventIngressValidationError(`${field}.runner_fact is invalid`);
+    }
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(
+        value.ownership_generation,
+        `${field}.ownership_generation`,
+      ),
+      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
+      pid: positiveInteger(value.pid, `${field}.pid`),
+      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
+      runner_fact: runnerFact as "completed" | "failed" | "reaped" | "closed",
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
   if (value.kind === "execution_orphaned_spawn") {
     assertExactKeys(
       value,
