@@ -92,7 +92,7 @@ def assert_standalone_manifest(
 
 def assert_pending_migration(
     payload: dict[str, Any],
-    migration_id: str = "076_ownerless_terminal_generation_cas.sql",
+    migration_id: str = "077_ownerless_terminal_stale_event_cas.sql",
 ) -> None:
     migrations = payload.get("migrations", [])
     matches = [entry for entry in migrations if entry.get("id") == migration_id]

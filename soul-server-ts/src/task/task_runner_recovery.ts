@@ -134,6 +134,8 @@ export class TaskRunnerRecovery {
       task.completedAt = second.observedAt;
       task.pendingTerminationDetail =
         "owner-null running migration could not prove a stable runner identity";
+      task.terminationEventRecorded = false;
+      task.terminalEventId = undefined;
       try {
         const result = await this.deps.lifecycleTransition.persistExecutorFinalState(task);
         return result.terminalTransitionApplied;

@@ -24,7 +24,7 @@
     }
   },
   "pending_migration": {
-    "id": "076_ownerless_terminal_generation_cas.sql",
+    "id": "077_ownerless_terminal_stale_event_cas.sql",
     "destructive": false
   },
   "composition": {
