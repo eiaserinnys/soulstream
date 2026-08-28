@@ -1,29 +1,5 @@
-import type { Logger } from "pino";
 import { vi } from "vitest";
 
-import { AutoResumeTransition } from
-  "../../soul-server-ts/src/task/task_auto_resume_transition.js";
-import { CompletionDeliveryCoordinator } from
-  "../../soul-server-ts/src/task/completion_delivery_coordinator.js";
-import { CompletionDeliveryRecoveryWorker } from
-  "../../soul-server-ts/src/task/completion_delivery_recovery_worker.js";
-import { TaskDeliveryLedgerGate } from
-  "../../soul-server-ts/src/task/task_delivery_ledger_gate.js";
-import { hydrateEvictedTaskFromSessionRow } from
-  "../../soul-server-ts/src/task/task_evicted_hydration.js";
-import { TaskInterventionRoute } from
-  "../../soul-server-ts/src/task/task_intervention_route.js";
-import { RunningInterventionTransition } from
-  "../../soul-server-ts/src/task/task_running_intervention_transition.js";
-import { QueuedDeliveryTranscriptRecovery } from
-  "../../soul-server-ts/src/task/queued_delivery_transcript_recovery.js";
-import { ClaudeRuntimeStartupRecovery } from
-  "../../soul-server-ts/src/runtime/claude_runtime_startup_recovery.js";
-import type { Task } from "../../soul-server-ts/src/task/task_models.js";
-import { CommandDispatcher } from
-  "../../soul-server-ts/src/upstream/dispatcher.js";
-import { makeEventPersistenceTestDouble } from
-  "../../soul-server-ts/tests/task/event_persistence_test_double.js";
 import {
   createApp,
   loadContractFixtures,
@@ -41,13 +17,116 @@ import {
 } from "./completed-resume-ingress-fixture.js";
 import type { CompletedResumeObservation } from
   "./completed-resume-ingress-oracle.js";
+
+type RuntimeConstructor = new (...args: any[]) => any;
+
+interface RuntimeTask {
+  agentSessionId: string;
+  status: string;
+  executionPromise?: Promise<void>;
+  executionActivation?: {
+    promise?: Promise<void>;
+    resolve(): void;
+  };
+}
+
+interface SoulRuntimeModules {
+  AutoResumeTransition: RuntimeConstructor;
+  CompletionDeliveryCoordinator: RuntimeConstructor;
+  CompletionDeliveryRecoveryWorker: RuntimeConstructor;
+  TaskDeliveryLedgerGate: RuntimeConstructor;
+  hydrateEvictedTaskFromSessionRow(
+    row: Record<string, unknown>,
+    logger: unknown,
+  ): RuntimeTask | null;
+  TaskInterventionRoute: RuntimeConstructor;
+  RunningInterventionTransition: RuntimeConstructor;
+  QueuedDeliveryTranscriptRecovery: RuntimeConstructor;
+  ClaudeRuntimeStartupRecovery: RuntimeConstructor;
+  CommandDispatcher: RuntimeConstructor;
+  makeEventPersistenceTestDouble(): any;
+}
+
+async function loadSoulRuntimeModules(): Promise<SoulRuntimeModules> {
+  const [
+    autoResume,
+    deliveryCoordinator,
+    recoveryWorker,
+    ledgerGate,
+    evictedHydration,
+    interventionRoute,
+    runningIntervention,
+    transcriptRecovery,
+    startupRecovery,
+    dispatcher,
+    persistenceDouble,
+  ] = await Promise.all([
+    vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/task/task_auto_resume_transition.js",
+    ),
+    vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/task/completion_delivery_coordinator.js",
+    ),
+    vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/task/completion_delivery_recovery_worker.js",
+    ),
+    vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/task/task_delivery_ledger_gate.js",
+    ),
+    vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/task/task_evicted_hydration.js",
+    ),
+    vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/task/task_intervention_route.js",
+    ),
+    vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/task/task_running_intervention_transition.js",
+    ),
+    vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/task/queued_delivery_transcript_recovery.js",
+    ),
+    vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/runtime/claude_runtime_startup_recovery.js",
+    ),
+    vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/upstream/dispatcher.js",
+    ),
+    vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/tests/task/event_persistence_test_double.js",
+    ),
+  ]);
+  return {
+    AutoResumeTransition: autoResume.AutoResumeTransition as RuntimeConstructor,
+    CompletionDeliveryCoordinator:
+      deliveryCoordinator.CompletionDeliveryCoordinator as RuntimeConstructor,
+    CompletionDeliveryRecoveryWorker:
+      recoveryWorker.CompletionDeliveryRecoveryWorker as RuntimeConstructor,
+    TaskDeliveryLedgerGate: ledgerGate.TaskDeliveryLedgerGate as RuntimeConstructor,
+    hydrateEvictedTaskFromSessionRow:
+      evictedHydration.hydrateEvictedTaskFromSessionRow as SoulRuntimeModules[
+        "hydrateEvictedTaskFromSessionRow"
+      ],
+    TaskInterventionRoute:
+      interventionRoute.TaskInterventionRoute as RuntimeConstructor,
+    RunningInterventionTransition:
+      runningIntervention.RunningInterventionTransition as RuntimeConstructor,
+    QueuedDeliveryTranscriptRecovery:
+      transcriptRecovery.QueuedDeliveryTranscriptRecovery as RuntimeConstructor,
+    ClaudeRuntimeStartupRecovery:
+      startupRecovery.ClaudeRuntimeStartupRecovery as RuntimeConstructor,
+    CommandDispatcher: dispatcher.CommandDispatcher as RuntimeConstructor,
+    makeEventPersistenceTestDouble:
+      persistenceDouble.makeEventPersistenceTestDouble as () => any,
+  };
+}
+
 const silentLogger = {
   child: () => silentLogger,
   debug: vi.fn(),
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
-} as unknown as Logger;
+};
 
 export const COMPLETED_RESUME_TIMING_MATRIX: readonly CompletedResumeScenario[] = [
   {
@@ -100,8 +179,21 @@ export const COMPLETED_RESUME_TIMING_MATRIX: readonly CompletedResumeScenario[] 
 export async function observeCompletedResumeIngress(
   scenario: CompletedResumeScenario,
 ): Promise<CompletedResumeObservation> {
+  const {
+    AutoResumeTransition,
+    CompletionDeliveryCoordinator,
+    CompletionDeliveryRecoveryWorker,
+    TaskDeliveryLedgerGate,
+    hydrateEvictedTaskFromSessionRow,
+    TaskInterventionRoute,
+    RunningInterventionTransition,
+    QueuedDeliveryTranscriptRecovery,
+    ClaudeRuntimeStartupRecovery,
+    CommandDispatcher,
+    makeEventPersistenceTestDouble,
+  } = await loadSoulRuntimeModules();
   const ledger = new InMemoryDeliveryLedger();
-  const tasks = new Map<string, Task>();
+  const tasks = new Map<string, RuntimeTask>();
   const persistence = makeEventPersistenceTestDouble();
   let sessionLoads = 0;
   let autoResumes = 0;
@@ -115,7 +207,7 @@ export async function observeCompletedResumeIngress(
     warn: vi.fn((_fields: unknown, message: string) => {
       hydrationWarnings.push(message);
     }),
-  } as unknown as Logger;
+  };
   const autoResume = new AutoResumeTransition({
     logger,
     persistence: persistence.persistence,
@@ -124,13 +216,13 @@ export async function observeCompletedResumeIngress(
     } as never,
   });
   const route = new TaskInterventionRoute({
-    getTask: (sessionId) => tasks.get(sessionId),
-    loadEvictedTask: async (sessionId) => {
+    getTask: (sessionId: string) => tasks.get(sessionId),
+    loadEvictedTask: async (sessionId: string) => {
       sessionLoads += 1;
       if (sessionId !== SESSION_ID) return null;
       return hydrateEvictedTaskFromSessionRow(sessionRow(scenario), logger);
     },
-    rememberTask: (task) => tasks.set(task.agentSessionId, task),
+    rememberTask: (task: RuntimeTask) => tasks.set(task.agentSessionId, task),
     runningInterventionTransition: new RunningInterventionTransition({
       broadcaster: {} as never,
       logger,
@@ -139,7 +231,7 @@ export async function observeCompletedResumeIngress(
       sleep: async () => undefined,
     }),
     autoResumeTransition: {
-      resume: async (...args: Parameters<AutoResumeTransition["resume"]>) => {
+      resume: async (...args: any[]) => {
         autoResumes += 1;
         return await autoResume.resume(...args);
       },
@@ -178,7 +270,7 @@ export async function observeCompletedResumeIngress(
     listTasks: () => [...tasks.values()],
   };
   const taskExecutor = {
-    startExecution: vi.fn((task: Task, _agent: unknown, activation?: {
+    startExecution: vi.fn((task: RuntimeTask, _agent: unknown, activation?: {
       resolve(): void;
     }) => {
       executionStarts += 1;
@@ -187,7 +279,7 @@ export async function observeCompletedResumeIngress(
     }),
   };
   const dispatcher = new CommandDispatcher(
-    async (frame) => {
+    async (frame: unknown) => {
       registry.receiveNodeMessage(
         { nodeId: NODE_ID, connectionId },
         frame as Record<string, unknown>,
@@ -268,7 +360,10 @@ export async function observeCompletedResumeIngress(
       deliveryRepository: ledger as never,
       recoveryRepository: ledger as never,
       transcriptReceipt: {
-        inspect: async () => ({ kind: "absent" as const }),
+        inspect: async () => ({
+          kind: "absent" as const,
+          inputUuid: "completed-resume-input",
+        }),
       },
       logger,
     }, "completed-resume-startup");
@@ -286,7 +381,7 @@ export async function observeCompletedResumeIngress(
   }
   await app.close();
 
-  const semanticInputs = persistence.enqueueEvent.mock.calls.filter((call) => {
+  const semanticInputs = persistence.enqueueEvent.mock.calls.filter((call: unknown[]) => {
     const event = call[1] as Record<string, unknown>;
     return event.type === "user_message" || event.type === "intervention_sent";
   }).length;

@@ -1,9 +1,5 @@
 import { vi } from "vitest";
 
-import type { SessionRow } from
-  "../../soul-server-ts/src/db/session_db.js";
-import type { SessionDeliveryRow } from
-  "../../soul-server-ts/src/db/session_db_types.js";
 import type { CompletedResumeDeliveryObservation } from
   "./completed-resume-ingress-oracle.js";
 
@@ -21,14 +17,52 @@ export interface CompletedResumeScenario {
   historicalGeneration: number | null;
 }
 
+interface CompletedResumeDeliveryRow {
+  delivery_id: string;
+  target_session_id: string;
+  source_session_id: string | null;
+  relation_key: string;
+  completion_id: string;
+  intent: string;
+  source: string;
+  producer_kind: string | null;
+  producer_id: string | null;
+  producer_terminal_revision: string | null;
+  parent_delivery_id: string | null;
+  caller_turn_id: string | null;
+  payload_hash: string;
+  payload: Record<string, unknown>;
+  state: string;
+  aggregate_state: string;
+  created_at: Date;
+  updated_at: Date;
+  claimed_at: Date | null;
+  dispatching_at: Date | null;
+  lease_owner: string | null;
+  lease_expires_at: Date | null;
+  attempt_count: number;
+  next_attempt_at: Date;
+  last_error: string | null;
+  queued_at: Date | null;
+  delivered_at: Date | null;
+  consumed_at: Date | null;
+  superseded_at: Date | null;
+  superseded_terminal_revision: string | null;
+  target_receipt_id: string | null;
+  target_receipt_at: Date | null;
+  consumed_reason: string | null;
+  dead_letter_reason: string | null;
+  dead_lettered_at: Date | null;
+}
+
 export class InMemoryDeliveryLedger {
-  private readonly store = new Map<string, SessionDeliveryRow>();
+  private readonly store = new Map<string, CompletedResumeDeliveryRow>();
   registerCalls = 0;
   getCalls = 0;
   claimCalls = 0;
   beginCalls = 0;
 
-  rows(): SessionDeliveryRow[] {
+  rows(): CompletedResumeDeliveryRow[] {
     return [...this.store.values()].map((row) => structuredClone(row));
   }
 
@@ -40,7 +74,7 @@ export class InMemoryDeliveryLedger {
       return { row: structuredClone(existing), inserted: false, conflict: false };
     }
     const createdAt = params.createdAt instanceof Date ? params.createdAt : new Date();
-    const row: SessionDeliveryRow = {
+    const row: CompletedResumeDeliveryRow = {
       delivery_id: deliveryId,
       target_session_id: String(params.targetSessionId),
       source_session_id: null,
@@ -166,7 +200,7 @@ export class InMemoryDeliveryLedger {
   };
 }
 
-export function completedSessionRow(scenario: CompletedResumeScenario): SessionRow {
+export function completedSessionRow(scenario: CompletedResumeScenario) {
   return {
     session_id: COMPLETED_SESSION_ID,
     folder_id: "folder-linegames",
@@ -203,7 +237,7 @@ export function completedSessionRow(scenario: CompletedResumeScenario): SessionR
 }
 
 export function observeCompletedDelivery(
-  row: SessionDeliveryRow,
+  row: CompletedResumeDeliveryRow,
 ): CompletedResumeDeliveryObservation {
   return {
     deliveryId: row.delivery_id,
