@@ -10,6 +10,10 @@ import {
   type RunnerEventFrame,
 } from "./frame_protocol.js";
 
+export function isLogicalTurnCompleteFrame(frame: RunnerEventFrame): boolean {
+  return frame.kind === "engine_event" && frame.payload.type === "complete";
+}
+
 export function sseEventFromRunnerFrame(
   frame: Extract<RunnerEventFrame, { kind: "engine_event" }>,
 ): SSEEventPayload {
