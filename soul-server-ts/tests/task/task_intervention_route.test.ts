@@ -493,7 +493,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     "completion_notification",
     "runtime_followup",
   ] as const)(
-    "selects explicit idle input or durable system queue from %s intent",
+    "routes a completed %s delivery through its existing ownership boundary",
     async (intent) => {
       const deliveryId = `73737373-7373-4737-8737-${intent.length.toString().padStart(12, "0")}`;
       const gate = {
@@ -506,7 +506,20 @@ describe("TaskInterventionRoute.addIntervention", () => {
         "admit" | "beginDispatch" | "recordResult" | "recordFailure"
       >;
       const task = makeTask({ status: "completed" });
-      const { route, autoResumeTransition } = makeSubject([task], gate);
+      const {
+        route,
+        autoResumeTransition,
+        sessionNotificationPublisher,
+      } = makeSubject([task], gate);
+      if (intent === "runtime_followup") {
+        vi.mocked(autoResumeTransition.resume).mockImplementation(
+          async (resumedTask, _message, onResume) => {
+            onResume(resumedTask);
+            return { autoResumed: true };
+          },
+        );
+      }
+      const onResume = vi.fn();
 
       const result = await route.addIntervention({
         agentSessionId: task.agentSessionId,
@@ -517,21 +530,31 @@ describe("TaskInterventionRoute.addIntervention", () => {
         completionId: `completion:${deliveryId}`,
         relationKey: `delivery:${deliveryId}`,
         source: "test",
-      }, vi.fn());
+      }, onResume);
 
-      const isSystemDelivery = intent === "completion_notification"
-        || intent === "runtime_followup";
-      if (isSystemDelivery) {
+      if (intent === "completion_notification") {
         expect(result).toMatchObject({
           delivered: false,
           queued: true,
           consumeWhen: "next_turn",
         });
         expect(autoResumeTransition.resume).not.toHaveBeenCalled();
+        expect(onResume).not.toHaveBeenCalled();
       } else {
         expect(result).toEqual({ autoResumed: true });
         expect(autoResumeTransition.resume).toHaveBeenCalledOnce();
         expect(vi.mocked(autoResumeTransition.resume).mock.calls[0]).toHaveLength(3);
+        if (intent === "runtime_followup") {
+          expect(sessionNotificationPublisher.publish).toHaveBeenCalledWith(
+            task,
+            expect.objectContaining({ deliveryId }),
+            "auto_resume",
+          );
+          expect(onResume).toHaveBeenCalledOnce();
+        } else {
+          expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
+          expect(onResume).not.toHaveBeenCalled();
+        }
       }
     },
   );
