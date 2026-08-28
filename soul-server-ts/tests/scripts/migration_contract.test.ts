@@ -66,14 +66,18 @@ describe("versioned migration contract", () => {
     expect(migrationSha256(crlf)).toBe(migrationSha256(lf));
   });
 
-  it("pins migration execution to the central orch service and declares recovery", () => {
+  it("enforces CENTRAL_NO_INLINE_MIGRATION_MUST_BE_NON_DESTRUCTIVE for the central manifest", () => {
     const manifest = JSON.parse(readFileSync(fileURLToPath(
       new URL("../../../deploy/release-manifest.json", import.meta.url),
     ), "utf8"));
 
     expect(manifest.environment_service).toBe("soulstream-orch-server");
+    expect(
+      manifest.migration.destructive,
+      "CENTRAL_NO_INLINE_MIGRATION_MUST_BE_NON_DESTRUCTIVE: "
+        + "central migration has no inline backup owner and must declare destructive=false",
+    ).toBe(false);
     expect(manifest.migration).toMatchObject({
-      destructive: true,
       operation: "discover",
       result_contract: "soulstream.database-release.v1",
       provenance_probe: {
