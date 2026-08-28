@@ -36,6 +36,47 @@ export interface QueuedDeliveryRecoveryScan {
 export class SessionDeliveryRecoveryRepository {
   constructor(private readonly sql: SqlClient) {}
 
+  async claimPendingHumanLiveSteerForNode(
+    nodeId: string,
+    leaseOwner: string,
+    limit = 100,
+    leaseMs = 15_000,
+  ): Promise<SessionDeliveryRow[]> {
+    return await withRecoveryTransaction(this.sql, async (transaction) => {
+      return await transaction<SessionDeliveryRow[]>`
+        WITH due AS MATERIALIZED (
+          SELECT delivery.delivery_id
+          FROM session_deliveries AS delivery
+          JOIN sessions AS target
+            ON target.session_id = delivery.target_session_id
+          WHERE target.node_id = ${nodeId}
+            AND delivery.intent = 'human_live_steer'
+            AND delivery.state = 'pending'
+            AND delivery.next_attempt_at <= NOW()
+          ORDER BY delivery.enqueue_sequence
+          FOR UPDATE OF delivery SKIP LOCKED
+          LIMIT ${limit}
+        ), claimed AS (
+          UPDATE session_deliveries AS delivery
+          SET
+            state = 'claimed',
+            claimed_at = NOW(),
+            lease_owner = ${leaseOwner},
+            lease_expires_at = NOW()
+              + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
+            updated_at = NOW()
+          FROM due
+          WHERE delivery.delivery_id = due.delivery_id
+            AND delivery.state = 'pending'
+          RETURNING delivery.*
+        )
+        SELECT claimed.*
+        FROM claimed
+        ORDER BY claimed.enqueue_sequence
+      `;
+    });
+  }
+
   async claimRecoverableCompletionDeliveries(
     leaseOwner: string,
     limit = 100,

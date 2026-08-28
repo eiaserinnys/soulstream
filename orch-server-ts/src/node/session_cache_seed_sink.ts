@@ -16,6 +16,7 @@ export function createSessionCacheSeedSink(input: {
   registry: InMemoryNodeRegistry;
   repository: SessionCacheSeedRepository;
   logError(error: unknown, message: string): void;
+  onNodeReady?(nodeId: string, connectionId: string): Promise<void> | void;
   nowMs?: () => number;
   pageSize?: number;
 }): NodeRegistryEventSink {
@@ -61,5 +62,6 @@ export function createSessionCacheSeedSink(input: {
       snapshotStartedAtMs,
       nowMs: nowMs(),
     });
+    await input.onNodeReady?.(nodeId, connectionId);
   }
 }

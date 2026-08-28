@@ -49,7 +49,9 @@ export class OwnerNullInventoryReconciler {
       return;
     }
     const registeredSessionIds = new Set(
-      registrations.map((registration) => registration.config.sessionId),
+      registrations
+        .filter((registration) => registration.lifecycle?.execution_state !== "closed")
+        .map((registration) => registration.config.sessionId),
     );
     const absent = inventory.filter(
       (row) => !registeredSessionIds.has(row.session_id),

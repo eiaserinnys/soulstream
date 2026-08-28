@@ -2,7 +2,7 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { ExecutionOwnershipObservation } from "./execution_ownership.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
-import { isActiveTaskStatus, type Task } from "./task_models.js";
+import type { Task } from "./task_models.js";
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import type { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
@@ -69,7 +69,7 @@ export class TaskRunnerRecovery {
     if (
       task.terminationEventRecorded
       || ownershipChanged
-      || (task.runner && !activeOwnership && isActiveTaskStatus(task.status))
+      || !activeOwnership
     ) return false;
     const runner = task.runner;
     if (runner) releaseTaskRunner(task, runner);
