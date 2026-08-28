@@ -52,9 +52,16 @@ describePostgres("worker restart zero-downtime Z handoff", () => {
     expect(publicStatusRoutes).toContain("databaseSchemaProvider");
     expect(production).toContain("databaseSchemaProvider");
 
-    const { verifyCentralSchemaPrerequisite } = await import(
-      "../../scripts/verify-central-schema-prerequisite.mjs"
-    );
+    const [
+      { verifyCentralSchemaPrerequisite },
+      { LiveDatabaseSchemaProvider },
+      productionModule,
+    ] = await Promise.all([
+      import("../../scripts/verify-central-schema-prerequisite.mjs"),
+      import("../../../orch-server-ts/src/public/database_schema_provider.js"),
+      import("../../../orch-server-ts/src/production.js"),
+    ]);
+    expect(productionModule.buildProductionRouteOptions).toBeTypeOf("function");
     const migrationManifest = JSON.parse(readFileSync(
       fileURLToPath(new URL(
         "../../../packages/db-schema/migration-manifest.json",
@@ -74,6 +81,10 @@ describePostgres("worker restart zero-downtime Z handoff", () => {
       checksum: "d900ad89fb451a735778e6c7f4e0848903710dc48d65b10aa1d83530f3ed6bf9",
       ordinal: 77,
     };
+    const databaseSchemaProvider = new LiveDatabaseSchemaProvider({
+      resolveSql: async () => (() => Promise.resolve([ledgerHead])) as never,
+      close: async () => undefined,
+    });
     const config = parseOrchServerConfig({
       environment: "test",
       databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
@@ -90,10 +101,8 @@ describePostgres("worker restart zero-downtime Z handoff", () => {
           listFolders: async () => [],
           resolveAccess: async () => ({ restricted: false }),
         },
-        databaseSchemaProvider: {
-          getDatabaseSchema: async () => ledgerHead,
-        },
-      } as never,
+        databaseSchemaProvider,
+      },
     });
     await app.ready();
     const fetchFromApp = async (input: string | URL | Request): Promise<Response> => {
@@ -133,13 +142,16 @@ describePostgres("worker restart zero-downtime Z handoff", () => {
       activeOwnershipRows: 1,
     });
     expect(observation.gen0NoOwnershipRow).toMatchObject({
-      status: "completed",
+      status: "interrupted",
       activeOwnershipRows: 0,
     });
     expect(observation.gen0NoOwnershipRow.terminationEventId)
       .toBeGreaterThan(observation.gen0InitialTerminalEventId);
     expect(observation.ownerlessRunningCount).toBe(0);
     expect(observation.statusOnlyTerminalWrites).toBe(0);
+    expect(observation.liveRunnerAdoptionCount).toBe(1);
+    expect(observation.liveRunnerRenewApplied).toBe(true);
+    expect(observation.liveRunnerRetireCount).toBe(0);
     await app.close();
   }, 60_000);
 });

@@ -30,6 +30,9 @@ export interface LegacyGen0OwnerlessMatrixObservation {
   terminalControlInitialEventCount: number;
   ownerlessRunningCount: number;
   statusOnlyTerminalWrites: number;
+  liveRunnerAdoptionCount: number;
+  liveRunnerRenewApplied: boolean;
+  liveRunnerRetireCount: number;
 }
 
 export type LegacyGen0OwnerlessMutation =
@@ -98,6 +101,15 @@ export function legacyGen0OwnerlessViolations(
     observation.statusOnlyTerminalWrites !== 0
       ? "MATRIX_STATUS_ONLY_TERMINAL_WRITE"
       : null,
+    observation.liveRunnerAdoptionCount !== 1
+      ? "ROW_C_LIVE_RUNNER_ADOPTION_NOT_EXACTLY_ONCE"
+      : null,
+    !observation.liveRunnerRenewApplied
+      ? "ROW_C_LIVE_RUNNER_RENEW_REJECTED"
+      : null,
+    observation.liveRunnerRetireCount !== 0
+      ? "ROW_C_LIVE_RUNNER_RETIRED_DURING_RESTART"
+      : null,
   ]);
 }
 
@@ -118,6 +130,9 @@ export function idealLegacyGen0OwnerlessMatrix(): LegacyGen0OwnerlessMatrixObser
     terminalControlInitialEventCount: 1,
     ownerlessRunningCount: 0,
     statusOnlyTerminalWrites: 0,
+    liveRunnerAdoptionCount: 1,
+    liveRunnerRenewApplied: true,
+    liveRunnerRetireCount: 0,
   };
 }
 
