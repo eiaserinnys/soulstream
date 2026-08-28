@@ -289,32 +289,65 @@ describe("RunnerProcessSpawner", () => {
     await expect(readFile(paths.pidPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("keeps ownership retirement fail-closed when the registration sidecar is absent", async () => {
-    const params = await input();
-    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
-    await mkdir(paths.sessionDirectory, { recursive: true });
-    await writeFile(paths.pidPath, "2000000000\n", { mode: 0o600 });
-    const commitOwnership = vi.fn(async () => true);
-    const spawner = new RunnerProcessSpawner({
-      prepareDatabase,
-      validateEntry: async () => {},
-      spawnProcess: () => ({ pid: 4127, unref: vi.fn() }),
-      registerPid: async () => {},
-      inspectProcess: async () => ({ alive: false, startIdentity: null }),
-      isPidAlive: () => false,
-      signalPid: vi.fn(),
-      now: () => Date.parse("2026-08-29T00:00:00.000Z"),
-      delay: async () => {},
-    });
+  it.each([
+    {
+      condition: "the recorded pid is dead",
+      pidAlive: false,
+      observedStartIdentity: null,
+      shouldRetire: true,
+    },
+    {
+      condition: "the recorded pid has been reused",
+      pidAlive: true,
+      observedStartIdentity: "start-reused-process",
+      shouldRetire: true,
+    },
+    {
+      condition: "the exact recorded process is still live",
+      pidAlive: true,
+      observedStartIdentity: "start-2000000000",
+      shouldRetire: false,
+    },
+  ])(
+    "uses process absence proof when the registration sidecar is absent: $condition",
+    async ({ pidAlive, observedStartIdentity, shouldRetire }) => {
+      const params = await input();
+      const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+      const commitOwnership = vi.fn(async () => true);
+      const signalPid = vi.fn();
+      const spawner = new RunnerProcessSpawner({
+        prepareDatabase,
+        validateEntry: async () => {},
+        spawnProcess: () => ({ pid: 4127, unref: vi.fn() }),
+        registerPid: async () => {},
+        inspectProcess: async () => ({
+          alive: pidAlive,
+          startIdentity: observedStartIdentity,
+        }),
+        isPidAlive: () => pidAlive,
+        signalPid,
+        now: () => Date.parse("2026-08-29T00:00:00.000Z"),
+        delay: async () => {},
+      });
 
-    await expect(spawner.retireTerminalOwnership({
-      paths,
-      registrationId: "registration-a",
-      pid: 2_000_000_000,
-      startIdentity: "start-2000000000",
-    }, commitOwnership)).rejects.toThrow("registration changed before ownership retirement");
-    expect(commitOwnership).not.toHaveBeenCalled();
-  });
+      const retirement = spawner.retireTerminalOwnership({
+        paths,
+        registrationId: "registration-a",
+        pid: 2_000_000_000,
+        startIdentity: "start-2000000000",
+      }, commitOwnership);
+      if (shouldRetire) {
+        await expect(retirement).resolves.toBeUndefined();
+        expect(commitOwnership).toHaveBeenCalledOnce();
+      } else {
+        await expect(retirement).rejects.toThrow(
+          "runner process identity changed before ownership retirement",
+        );
+        expect(commitOwnership).not.toHaveBeenCalled();
+      }
+      expect(signalPid).not.toHaveBeenCalled();
+    },
+  );
 
   it("reclaims a proven stale writer lock before committing ownership retirement", async () => {
     const params = await input();
