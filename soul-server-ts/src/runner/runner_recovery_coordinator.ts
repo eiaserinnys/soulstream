@@ -367,7 +367,9 @@ export class RunnerRecoveryCoordinator {
       if (closedRunnerTailRequiresDrain(closedRegistration)) {
         await this.options.closedTailDrainer.drain(closedRegistration);
       }
-      prepareRecoveredTask(recoveredTask, closedRegistration);
+      if (recoveredTask.executionOwnership) {
+        prepareRecoveredTask(recoveredTask, closedRegistration);
+      }
       const projectClosedRunner = this.options.taskManager.projectClosedRunner;
       if (!projectClosedRunner) {
         throw new Error("closed runner central projection is not configured");
