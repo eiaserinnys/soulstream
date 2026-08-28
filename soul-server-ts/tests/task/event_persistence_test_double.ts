@@ -36,7 +36,7 @@ export function makeEventPersistenceTestDouble(
     initialEvents.map((fixture) => [fixture.eventId, fixture.event] as const),
   );
   const latestBySession = new Map<string, number>();
-  const enqueueEvent = vi.fn(
+  const persistSemanticEvent = vi.fn(
     async (
       sessionId: string,
       event: SSEEventPayload,
@@ -48,6 +48,25 @@ export function makeEventPersistenceTestDouble(
       return makeRecord(sourceSeq, sessionId, event, effect);
     },
   );
+  const semanticEvents = new Map<string, unknown>();
+  const enqueueEvent = async (
+    sessionId: string,
+    event: SSEEventPayload,
+    effect?: EventOutboxSessionEffect,
+  ): Promise<unknown> => {
+    const dedupeKey = (event as Record<string, unknown>)._dedupe_key;
+    const identity = typeof dedupeKey === "string"
+      ? `${sessionId}\u0000${dedupeKey}`
+      : undefined;
+    if (identity && semanticEvents.has(identity)) {
+      return semanticEvents.get(identity);
+    }
+    const persisted = effect === undefined
+      ? await persistSemanticEvent(sessionId, event)
+      : await persistSemanticEvent(sessionId, event, effect);
+    if (identity) semanticEvents.set(identity, persisted);
+    return persisted;
+  };
   const waitForSessionAck = vi.fn(
     async (sessionId: string): Promise<number | null> => latestBySession.get(sessionId) ?? null,
   );
@@ -287,7 +306,7 @@ export function makeEventPersistenceTestDouble(
 
   return {
     persistence,
-    enqueueEvent,
+    enqueueEvent: persistSemanticEvent,
     enqueueEventAndWaitForSessionAck,
     enqueueMetadataEffect,
     enqueueRunningTransition,
@@ -318,7 +337,10 @@ function makeRecord(
     payload: event,
     searchable_text: null,
     created_at: new Date().toISOString(),
-    semantic_dedupe_key: null,
+    semantic_dedupe_key:
+      typeof (event as Record<string, unknown>)._dedupe_key === "string"
+        ? (event as Record<string, string>)._dedupe_key
+        : null,
     session_effect: effect ?? null,
     payload_hash: `${sourceSeq}`.padStart(64, "0"),
   };
