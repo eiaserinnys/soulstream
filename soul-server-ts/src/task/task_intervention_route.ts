@@ -5,7 +5,6 @@ import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import {
   isActiveTaskStatus,
-  isTerminalTaskStatus,
   type CallerInfo,
   type InterventionMessage,
   type Task,
@@ -35,9 +34,8 @@ type NotificationPublication = Awaited<
  *
  * - running 세션 → `engine.intervene()`가 현재 전달하면 `{delivered: true}`,
  *   전달하지 못하면 소비 시점과 사유가 명시된 queue/defer 결과.
- * - active + logical turn complete → 새 generation으로 `{autoResumed: true}`.
- * - completed/error/interrupted → 사용자 입력과 runtime follow-up은
- *   `{autoResumed: true}`, completion notification은 다음 명시적 turn까지 queued.
+ *   logical result 뒤에도 중앙 세션이 running이면 같은 실행 owner에 전달한다.
+ * - completed/error/interrupted → 모든 세션 메시지를 새 턴으로 auto-resume.
  */
 export type AddInterventionResult =
   | RunningInterventionResult
@@ -215,17 +213,6 @@ export class TaskInterventionRoute {
         }
       } else if (heldHumanRetry && task.status !== "completed") {
         result = await this.deps.runningInterventionTransition.queueOnly(task, message);
-      } else if (
-        isTerminalTaskStatus(task.status)
-        && admission.kind === "admitted"
-        && admission.row.intent === "completion_notification"
-      ) {
-        result = await this.deps.runningInterventionTransition.queueOnly(
-          task,
-          message,
-          { publishEvent: false },
-        );
-        notificationDisposition = "queued";
       } else if (admission.kind === "admitted") {
         const deferResumeUntilQueued: StartExecutionCallback = (resumedTask, activation) => {
           deferredResume = { task: resumedTask, activation };
@@ -412,9 +399,7 @@ function interventionTaskRoute(
 ): "running" | "activating" | "auto-resume" {
   if (task.status === "initializing") return "activating";
   if (!isActiveTaskStatus(task.status)) return "auto-resume";
-  return task.runner === undefined || task.runner.dispatcher.hasActiveExecution()
-    ? "running"
-    : "auto-resume";
+  return "running";
 }
 
 export function ensureHumanDeliveryIdentity(

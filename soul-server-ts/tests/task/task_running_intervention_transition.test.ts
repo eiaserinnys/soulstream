@@ -166,7 +166,6 @@ describe("RunningInterventionTransition", () => {
         broadcaster: makeBroadcaster(),
         logger: silentLogger,
         persistence: makeEventPersistenceTestDouble().persistence,
-        liveRetryDelayMs: 0,
       });
       const inProcessTask = makeRunningTask({
         runner: createInProcessTaskRunnerRuntime(adapter),
@@ -435,43 +434,6 @@ describe("RunningInterventionTransition", () => {
     ]);
   });
 
-  it("keeps the queued message when intervention races with turn completion", async () => {
-    const intervene = vi.fn().mockResolvedValue({
-      status: "not_delivered",
-      mechanism: "interrupt_then_next_turn",
-      reason: "no_active_turn",
-    });
-    const task = makeRunningTask({
-      runner: createInProcessTaskRunnerRuntime({
-        backendId: "claude",
-        workspaceDir: "/tmp/claude",
-        async *execute(): AsyncIterable<never> {},
-        async interrupt() { return true; },
-        async close() {},
-        intervene,
-      } as unknown as EnginePort),
-    });
-    const persistenceDouble = makeEventPersistenceTestDouble();
-    const transition = new RunningInterventionTransition({
-      broadcaster: makeBroadcaster(),
-      logger: silentLogger,
-      persistence: persistenceDouble.persistence,
-    });
-
-    await expect(
-      transition.deliver(task, { text: "race-safe steer", user: "alice" }),
-    ).resolves.toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "no_active_turn",
-    });
-
-    expect(intervene).toHaveBeenCalledTimes(2);
-    expect(task.interventionQueue).toEqual([{ text: "race-safe steer", user: "alice" }]);
-  });
-
   it("delivers running interventions to a live engine and publishes intervention_sent immediately", async () => {
     const intervene = vi.fn().mockResolvedValue({
       status: "delivered",
@@ -520,7 +482,7 @@ describe("RunningInterventionTransition", () => {
     expect(task.interventionQueue).toEqual([]);
   });
 
-  it("retries one transient live-steer boundary before falling back", async () => {
+  it("does not retry a transient live-steer boundary", async () => {
     const intervene = vi
       .fn()
       .mockResolvedValueOnce({
@@ -529,7 +491,6 @@ describe("RunningInterventionTransition", () => {
         reason: "not_accepting_input",
       })
       .mockResolvedValueOnce({ status: "delivered", mechanism: "active_turn" });
-    const sleep = vi.fn().mockResolvedValue(undefined);
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
@@ -546,25 +507,30 @@ describe("RunningInterventionTransition", () => {
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
       persistence: persistenceDouble.persistence,
-      liveRetryDelayMs: 25,
-      sleep,
     });
 
     await expect(
       transition.deliver(task, { text: "safe boundary", user: "alice" }),
-    ).resolves.toEqual({ delivered: true });
+    ).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "not_accepting_input",
+    });
 
-    expect(sleep).toHaveBeenCalledWith(25);
-    expect(intervene).toHaveBeenCalledTimes(2);
+    expect(intervene).toHaveBeenCalledOnce();
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({ type: "intervention_sent", text: "safe boundary" }),
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
-    expect(task.interventionQueue).toEqual([]);
+    expect(task.interventionQueue).toEqual([
+      { text: "safe boundary", user: "alice" },
+    ]);
   });
 
-  it("falls back to the next-turn queue when transient live-steer boundary remains unsafe", async () => {
+  it("cancels the owned turn once when its engine reports no active turn", async () => {
     const intervene = vi
       .fn()
       .mockResolvedValueOnce({
@@ -577,12 +543,13 @@ describe("RunningInterventionTransition", () => {
         mechanism: "active_turn",
         reason: "not_accepting_input",
       });
+    const interrupt = vi.fn().mockResolvedValue(true);
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
         workspaceDir: "/tmp/claude",
         async *execute(): AsyncIterable<never> {},
-        async interrupt() { return true; },
+        interrupt,
         async close() {},
         intervene,
       } as unknown as EnginePort),
@@ -593,7 +560,6 @@ describe("RunningInterventionTransition", () => {
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
       persistence: persistenceDouble.persistence,
-      liveRetryDelayMs: 0,
     });
 
     await expect(
@@ -603,10 +569,11 @@ describe("RunningInterventionTransition", () => {
       queued: true,
       queuePosition: 1,
       consumeWhen: "next_turn",
-      reason: "not_accepting_input",
+      reason: "next_turn_required",
     });
 
-    expect(intervene).toHaveBeenCalledTimes(2);
+    expect(intervene).toHaveBeenCalledOnce();
+    expect(interrupt).toHaveBeenCalledOnce();
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({
@@ -787,7 +754,7 @@ describe("RunningInterventionTransition", () => {
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 
-  it("defer durable callers after a transient live-steer retry still cannot deliver", async () => {
+  it("defers durable callers without retrying or cancelling when queueing is disabled", async () => {
     const intervene = vi
       .fn()
       .mockResolvedValueOnce({
@@ -800,13 +767,13 @@ describe("RunningInterventionTransition", () => {
         mechanism: "active_turn",
         reason: "no_active_turn",
       });
-    const sleep = vi.fn().mockResolvedValue(undefined);
+    const interrupt = vi.fn().mockResolvedValue(true);
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
         workspaceDir: "/tmp/claude",
         async *execute(): AsyncIterable<never> {},
-        async interrupt() { return true; },
+        interrupt,
         async close() {},
         intervene,
       } as unknown as EnginePort),
@@ -817,8 +784,6 @@ describe("RunningInterventionTransition", () => {
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
       persistence: persistenceDouble.persistence,
-      liveRetryDelayMs: 10,
-      sleep,
     });
 
     await expect(
@@ -831,11 +796,11 @@ describe("RunningInterventionTransition", () => {
       delivered: false,
       deferred: true,
       retryWhen: "engine_available",
-      reason: "no_active_turn",
+      reason: "not_accepting_input",
     });
 
-    expect(sleep).toHaveBeenCalledWith(10);
-    expect(intervene).toHaveBeenCalledTimes(2);
+    expect(intervene).toHaveBeenCalledOnce();
+    expect(interrupt).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([]);
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });

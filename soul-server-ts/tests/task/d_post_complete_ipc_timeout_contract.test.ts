@@ -303,7 +303,6 @@ async function observeCurrentProductBoundary(): Promise<DFixtureResult> {
     broadcaster: mocks.broadcaster,
     logger,
     persistence: mocks.persistence,
-    liveRetryDelayMs: 0,
   });
   let runningDeliveryCalls = 0;
   let autoResumeCalls = 0;

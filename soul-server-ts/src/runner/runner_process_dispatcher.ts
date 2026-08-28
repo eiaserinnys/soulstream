@@ -11,7 +11,6 @@ import type {
   EngineExecuteParams,
   EngineInterventionResult,
 } from "../engine/protocol.js";
-import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 import {
   newExecutionOwnerToken,
@@ -1185,19 +1184,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private pushActiveFrame(frame: RunnerEventFrame, frameSeq?: number): boolean {
     const stream = this.activeStream;
     if (!stream) return false;
-    const pushed = stream.push(frame, frameSeq);
-    if (!pushed || !isLogicalTurnCompleteFrame(frame)) return pushed;
-    const commandId = this.activeExecuteCommandId;
-    if (commandId) this.releaseActiveExecution(commandId);
-    return true;
-  }
-
-  private releaseActiveExecution(commandId: string): void {
-    if (this.activeExecuteCommandId !== commandId) return;
-    this.finishActiveRunnerObservation?.();
-    this.finishActiveRunnerObservation = undefined;
-    this.activeExecuteCommandId = undefined;
-    this.abortRequestLifetimes(new Error("Runner execution completed"));
+    return stream.push(frame, frameSeq);
   }
 
   private startRequestLifetime(frame: Extract<RunnerEventFrame, { kind: "request" }>): void {

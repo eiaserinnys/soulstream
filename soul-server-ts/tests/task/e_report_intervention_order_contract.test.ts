@@ -368,7 +368,6 @@ describe("E Claude intervention event-order contract", () => {
       broadcaster: mocks.broadcaster,
       logger: logger.value,
       persistence: mocks.persistence,
-      liveRetryDelayMs: 0,
     });
 
     executor.startExecutionWithRunner(parent, claudeAgent, runner);

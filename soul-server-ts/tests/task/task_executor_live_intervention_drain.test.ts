@@ -105,7 +105,6 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
       broadcaster: mocks.broadcaster,
       logger: silentLogger,
       persistence: mocks.persistence,
-      liveRetryDelayMs: 0,
     });
 
     const executor = new TaskExecutor(

@@ -148,7 +148,6 @@ describe("active runner intervention with one runtime follow-up", () => {
       broadcaster,
       logger: pino({ level: "silent" }),
       persistence: persistenceDouble.persistence,
-      liveRetryDelayMs: 0,
     });
 
     executor.startExecutionWithRunner(task, agent, runner);
