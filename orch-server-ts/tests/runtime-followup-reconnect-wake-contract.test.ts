@@ -7,6 +7,7 @@ import {
   duplicateLifecycleControlViolations,
   noTransportControlViolations,
   runtimeFollowupMatrixViolations,
+  runtimeFollowupProductCompositionViolations,
 } from "./runtime-followup-reconnect-wake-oracle.js";
 
 describe("runtime_followup reconnect and turn-end wake starvation", () => {
@@ -35,7 +36,7 @@ describe("runtime_followup reconnect and turn-end wake starvation", () => {
 
   it("fresh main RED: wakes all reconnect follow-ups before turn-end cleanup", async () => {
     const observation = await observeRuntimeFollowupReconnect();
-    const violations = runtimeFollowupMatrixViolations(observation);
+    const violations = runtimeFollowupProductCompositionViolations(observation);
     process.stdout.write(
       `RUNTIME_FOLLOWUP_RECONNECT_RED ${JSON.stringify({ observation, violations })}\n`,
     );

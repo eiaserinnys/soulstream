@@ -28,6 +28,8 @@ import {
   deriveLifecycle,
   type LifecycleEvidence,
   type LifecycleEvidenceKind,
+  type PublicClaimCompositionObservation,
+  type PublicClaimEntryName,
   type ReconnectAttemptObservation,
   type RuntimeFollowupWakeObservation,
 } from "./runtime-followup-reconnect-wake-oracle.js";
@@ -88,6 +90,51 @@ interface RuntimeReconnectAttempt extends ReconnectAttemptObservation {
   ready: DeterministicBarrier;
 }
 
+type PendingImmediateClaim = (
+  nodeId: string,
+  leaseOwner: string,
+  limit?: number,
+  leaseMs?: number,
+) => Promise<SessionDeliveryRow[]>;
+
+export interface PublicClaimCandidate {
+  claimPendingImmediateIntentsForNode?: PendingImmediateClaim;
+  claimPendingHumanLiveSteerForNode?: PendingImmediateClaim;
+}
+
+export interface PublicClaimComposition {
+  claim: PendingImmediateClaim;
+  observation: PublicClaimCompositionObservation;
+}
+
+export function composePendingImmediateClaim(
+  candidate: PublicClaimCandidate,
+): PublicClaimComposition {
+  const generalized = candidate.claimPendingImmediateIntentsForNode;
+  const legacy = candidate.claimPendingHumanLiveSteerForNode;
+  const discoveredEntries: PublicClaimEntryName[] = [
+    ...(typeof generalized === "function"
+      ? ["claimPendingImmediateIntentsForNode" as const]
+      : []),
+    ...(typeof legacy === "function"
+      ? ["claimPendingHumanLiveSteerForNode" as const]
+      : []),
+  ];
+  const selectedEntry = typeof generalized === "function"
+    ? "claimPendingImmediateIntentsForNode"
+    : "claimPendingHumanLiveSteerForNode";
+  const selected = generalized ?? legacy;
+  if (!selected) throw new Error("No public immediate-delivery claim entry");
+  return {
+    claim: selected.bind(candidate),
+    observation: {
+      discoveredEntries,
+      reportedEntries: [...discoveredEntries],
+      selectedEntry,
+    },
+  };
+}
+
 async function loadTaskDeliveryLedgerGate(): Promise<RuntimeConstructor> {
   const module = await vi.importActual<Record<string, unknown>>(
     "../../soul-server-ts/src/task/task_delivery_ledger_gate.js",
@@ -129,6 +176,7 @@ export async function observeRuntimeFollowupReconnect(input: {
   );
   const sql = makeRecoverySql(ledger, recoveryMode);
   const recovery = new SessionDeliveryRecoveryRepository(sql);
+  const publicClaimComposition = composePendingImmediateClaim(recovery);
   const registration = loadContractFixtures().fakeNodeReconnect.registration as
     NodeRegistrationPayload;
 
@@ -158,7 +206,7 @@ export async function observeRuntimeFollowupReconnect(input: {
       }
       try {
         const leaseOwner = `node-ready:${NODE_ID}:${connectionId}`;
-        const claimed = await recovery.claimPendingHumanLiveSteerForNode(
+        const claimed = await publicClaimComposition.claim(
           NODE_ID,
           leaseOwner,
         );
@@ -329,6 +377,7 @@ export async function observeRuntimeFollowupReconnect(input: {
     pendingIds: ledger.pendingIds(),
     trace,
     reconnectAttempts: attempts.map(({ ready: _ready, ...attempt }) => attempt),
+    publicClaimComposition: structuredClone(publicClaimComposition.observation),
     lifecycle,
     preTerminalLifecycle,
     parentStatus: String(sessionUpdates.at(-1)?.status ?? "missing"),

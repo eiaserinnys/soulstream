@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { observeRuntimeFollowupReconnect } from
+import {
+  composePendingImmediateClaim,
+  observeRuntimeFollowupReconnect,
+} from
   "./runtime-followup-reconnect-wake-harness.js";
 import {
   applyDuplicateLifecycleMutation,
+  applyPublicClaimStructuralOracleHiddenMutation,
   applyRuntimeFollowupOracleGapMutation,
   applyRuntimeFollowupWakeMutation,
+  publicClaimCompositionViolations,
   RUNTIME_FOLLOWUP_ORACLE_GAP_MUTATIONS,
+  RUNTIME_FOLLOWUP_STRUCTURAL_ORACLE_MUTATION,
   RUNTIME_FOLLOWUP_WAKE_MUTATIONS,
   runtimeFollowupMatrixViolations,
   runtimeFollowupOracleGapViolations,
@@ -52,5 +58,58 @@ describe("runtime_followup reconnect wake mutation oracle", () => {
       );
       expect(violations).toEqual([mutation]);
     }
+
+    const legacyCalls: string[] = [];
+    const legacyOnly = composePendingImmediateClaim({
+      claimPendingHumanLiveSteerForNode: async () => {
+        legacyCalls.push("legacy");
+        return [];
+      },
+    });
+    await legacyOnly.claim("node", "lease");
+    expect(legacyCalls).toEqual(["legacy"]);
+    expect(publicClaimCompositionViolations(legacyOnly.observation)).toEqual([]);
+
+    const generalizedCalls: string[] = [];
+    const generalizedOnly = composePendingImmediateClaim({
+      claimPendingImmediateIntentsForNode: async () => {
+        generalizedCalls.push("generalized");
+        return [];
+      },
+    });
+    await generalizedOnly.claim("node", "lease");
+    expect(generalizedCalls).toEqual(["generalized"]);
+    expect(publicClaimCompositionViolations(
+      generalizedOnly.observation,
+    )).toEqual([]);
+
+    const bothCalls: string[] = [];
+    const bothEntries = composePendingImmediateClaim({
+      claimPendingImmediateIntentsForNode: async () => {
+        bothCalls.push("generalized");
+        return [];
+      },
+      claimPendingHumanLiveSteerForNode: async () => {
+        bothCalls.push("legacy");
+        return [];
+      },
+    });
+    await bothEntries.claim("node", "lease");
+    expect(bothCalls).toEqual(["generalized"]);
+    expect(publicClaimCompositionViolations(bothEntries.observation)).toEqual([
+      "duplicate_public_claim_entry",
+    ]);
+
+    const hiddenStructuralViolations = publicClaimCompositionViolations(
+      applyPublicClaimStructuralOracleHiddenMutation(bothEntries.observation),
+    );
+    process.stdout.write(
+      `RUNTIME_FOLLOWUP_RECONNECT_STRUCTURAL_MUTATION `
+        + `${RUNTIME_FOLLOWUP_STRUCTURAL_ORACLE_MUTATION} `
+        + `${JSON.stringify(hiddenStructuralViolations)}\n`,
+    );
+    expect(hiddenStructuralViolations).toEqual([
+      RUNTIME_FOLLOWUP_STRUCTURAL_ORACLE_MUTATION,
+    ]);
   });
 });

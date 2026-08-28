@@ -16,10 +16,25 @@ export const RUNTIME_FOLLOWUP_ORACLE_GAP_MUTATIONS = [
   "socket_race_disabled",
 ] as const;
 
+export const PUBLIC_CLAIM_ENTRY_NAMES = [
+  "claimPendingImmediateIntentsForNode",
+  "claimPendingHumanLiveSteerForNode",
+] as const;
+
+export const RUNTIME_FOLLOWUP_STRUCTURAL_ORACLE_MUTATION =
+  "public_claim_entry_inventory_hidden" as const;
+
 export type RuntimeFollowupWakeMutation =
   (typeof RUNTIME_FOLLOWUP_WAKE_MUTATIONS)[number];
 export type RuntimeFollowupOracleGapMutation =
   (typeof RUNTIME_FOLLOWUP_ORACLE_GAP_MUTATIONS)[number];
+export type PublicClaimEntryName = (typeof PUBLIC_CLAIM_ENTRY_NAMES)[number];
+
+export interface PublicClaimCompositionObservation {
+  discoveredEntries: PublicClaimEntryName[];
+  reportedEntries: PublicClaimEntryName[];
+  selectedEntry: PublicClaimEntryName;
+}
 
 export interface DeliveryPhaseCounts {
   claim: number;
@@ -59,12 +74,57 @@ export interface RuntimeFollowupWakeObservation {
   pendingIds: string[];
   trace: string[];
   reconnectAttempts: ReconnectAttemptObservation[];
+  publicClaimComposition: PublicClaimCompositionObservation;
   lifecycle: LifecycleObservation;
   preTerminalLifecycle: LifecycleObservation;
   parentStatus: string;
   followupQueueErrors: number;
   discardInterventionErrors: number;
   runnerSocketSendErrors: number;
+}
+
+export function runtimeFollowupProductCompositionViolations(
+  observation: RuntimeFollowupWakeObservation,
+): string[] {
+  return [
+    ...runtimeFollowupMatrixViolations(observation),
+    ...publicClaimCompositionViolations(observation.publicClaimComposition),
+  ];
+}
+
+export function publicClaimCompositionViolations(
+  observation: PublicClaimCompositionObservation,
+): string[] {
+  if (!sameOrder(
+    observation.discoveredEntries,
+    observation.reportedEntries,
+  )) {
+    return [RUNTIME_FOLLOWUP_STRUCTURAL_ORACLE_MUTATION];
+  }
+  if (observation.reportedEntries.length === 0) {
+    return ["public_claim_entry_missing"];
+  }
+  if (observation.reportedEntries.length > 1) {
+    return ["duplicate_public_claim_entry"];
+  }
+  const expectedEntry = observation.reportedEntries.includes(
+    "claimPendingImmediateIntentsForNode",
+  )
+    ? "claimPendingImmediateIntentsForNode"
+    : "claimPendingHumanLiveSteerForNode";
+  return observation.selectedEntry === expectedEntry
+    ? []
+    : ["generalized_public_claim_entry_not_selected"];
+}
+
+export function applyPublicClaimStructuralOracleHiddenMutation(
+  input: PublicClaimCompositionObservation,
+): PublicClaimCompositionObservation {
+  const observation = structuredClone(input);
+  observation.reportedEntries = observation.reportedEntries.filter(
+    (entry) => entry !== "claimPendingHumanLiveSteerForNode",
+  );
+  return observation;
 }
 
 export function runtimeFollowupWakeViolations(
