@@ -15,6 +15,8 @@ import {
   SessionResourceAccessError,
   type SessionResourceAccessProvider,
 } from "./session_resource_access.js";
+import { shouldPublishSessionEventSemantically } from
+  "./session_event_semantic_publication.js";
 import { registerSessionTurnSummaryRoute } from
   "./session_turn_summary_routes.js";
 
@@ -348,7 +350,12 @@ async function buildSessionHistoryInitialState(
     replayEvents.push(event);
   }
 
-  for (const event of filterFinalizedAppServerReplayEvents(replayEvents)) {
+  const semanticReplayEvents = replayEvents.filter((event) =>
+    shouldPublishSessionEventSemantically({
+      eventType: event.eventType,
+      sessionEffectApplied: event.sessionEffectApplied,
+    }));
+  for (const event of filterFinalizedAppServerReplayEvents(semanticReplayEvents)) {
     frames.push({
       event: event.eventType,
       id: event.eventId,
