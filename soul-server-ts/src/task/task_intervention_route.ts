@@ -35,6 +35,7 @@ type NotificationPublication = Awaited<
  *
  * - running 세션 → `engine.intervene()`가 현재 전달하면 `{delivered: true}`,
  *   전달하지 못하면 소비 시점과 사유가 명시된 queue/defer 결과.
+ * - active + logical turn complete → 새 generation으로 `{autoResumed: true}`.
  * - completed/error/interrupted → 사용자 입력과 runtime follow-up은
  *   `{autoResumed: true}`, completion notification은 다음 명시적 turn까지 queued.
  */
@@ -215,7 +216,8 @@ export class TaskInterventionRoute {
       } else if (heldHumanRetry) {
         result = await this.deps.runningInterventionTransition.queueOnly(task, message);
       } else if (
-        admission.kind === "admitted"
+        isTerminalTaskStatus(task.status)
+        && admission.kind === "admitted"
         && admission.row.intent === "completion_notification"
       ) {
         result = {
@@ -238,11 +240,15 @@ export class TaskInterventionRoute {
             ? [{ publishUserMessage: false }]
             : []),
         );
-        notificationDisposition = isNotificationDeliveryIntent(admission.row.intent)
-          ? "auto_resume"
-          : undefined;
       } else {
         result = await this.deps.autoResumeTransition.resume(task, message, onResume);
+      }
+      if (
+        admission.kind === "admitted"
+        && isNotificationDeliveryIntent(admission.row.intent)
+        && "autoResumed" in result
+      ) {
+        notificationDisposition = "auto_resume";
       }
       if (this.deps.deliveryLedgerGate) {
         await this.deps.deliveryLedgerGate.recordResult(
