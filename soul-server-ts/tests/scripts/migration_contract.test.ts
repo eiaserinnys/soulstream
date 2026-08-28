@@ -201,10 +201,10 @@ describe("versioned migration contract", () => {
       "042_runbook_to_task.sql",
       "053_retire_supervisor.sql",
     ]);
-    expect(migrations.slice(0, -36).every(
+    expect(migrations.slice(0, -37).every(
       (item) => item.rollback_compatibility === "bootstrap_only",
     )).toBe(true);
-    expect(migrations.slice(-36).map((item) => item.rollback_compatibility)).toEqual([
+    expect(migrations.slice(-37).map((item) => item.rollback_compatibility)).toEqual([
       "restore_required",
       "restore_required",
       "previous_release_safe",
@@ -239,6 +239,7 @@ describe("versioned migration contract", () => {
       "restore_required",
       "previous_release_safe",
       "restore_required",
+      "previous_release_safe",
       "previous_release_safe",
       "previous_release_safe",
     ]);
