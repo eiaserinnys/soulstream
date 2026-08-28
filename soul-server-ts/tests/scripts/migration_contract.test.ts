@@ -188,10 +188,10 @@ describe("versioned migration contract", () => {
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {
     const migrations = await loadMigrationManifest();
 
-    expect(migrations).toHaveLength(79);
+    expect(migrations).toHaveLength(80);
     expect(migrations[0].id).toBe("001_list_sessions_folder_node_filter.sql");
     expect(migrations.at(-1)?.id).toBe(
-      "078_terminal_execution_ownership_retirement.sql",
+      "079_terminal_status_single_canon.sql",
     );
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
@@ -201,10 +201,10 @@ describe("versioned migration contract", () => {
       "042_runbook_to_task.sql",
       "053_retire_supervisor.sql",
     ]);
-    expect(migrations.slice(0, -37).every(
+    expect(migrations.slice(0, -38).every(
       (item) => item.rollback_compatibility === "bootstrap_only",
     )).toBe(true);
-    expect(migrations.slice(-37).map((item) => item.rollback_compatibility)).toEqual([
+    expect(migrations.slice(-38).map((item) => item.rollback_compatibility)).toEqual([
       "restore_required",
       "restore_required",
       "previous_release_safe",
@@ -239,10 +239,34 @@ describe("versioned migration contract", () => {
       "restore_required",
       "previous_release_safe",
       "restore_required",
+      "previous_release_safe",
       "previous_release_safe",
       "previous_release_safe",
       "previous_release_safe",
     ]);
+  });
+
+  it("keeps terminal status and runner facts on the sessions-row canon", async () => {
+    const migration = (await loadMigrationManifest()).find((item) =>
+      item.id === "079_terminal_status_single_canon.sql"
+    );
+    const schema = readFileSync(fileURLToPath(
+      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
+    ), "utf8");
+
+    expect(migration?.sql).toContain(
+      "session.status NOT IN ('completed', 'error', 'interrupted')",
+    );
+    expect(migration?.sql).toContain(
+      "SELECT * FROM session_release_execution_ownership(",
+    );
+    expect(migration?.sql).not.toContain("session_execution_ownerships");
+    expect(schema).toContain(
+      "session.status NOT IN ('completed', 'error', 'interrupted')",
+    );
+    expect(schema).toContain(
+      "SELECT * FROM session_release_execution_ownership(",
+    );
   });
 
   it("keeps source task item references relational and removes the legacy duplicate FK", async () => {
@@ -347,6 +371,7 @@ describe("versioned migration contract", () => {
       "076_ownerless_terminal_generation_cas.sql",
       "077_ownerless_terminal_stale_event_cas.sql",
       "078_terminal_execution_ownership_retirement.sql",
+      "079_terminal_status_single_canon.sql",
     ]);
   });
 
@@ -393,6 +418,7 @@ describe("versioned migration contract", () => {
       "076_ownerless_terminal_generation_cas.sql",
       "077_ownerless_terminal_stale_event_cas.sql",
       "078_terminal_execution_ownership_retirement.sql",
+      "079_terminal_status_single_canon.sql",
     ]);
   });
 
