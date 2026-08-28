@@ -1321,18 +1321,19 @@ export class TaskExecutor {
         runnerInterventionId: pending.interventionId,
       };
       if (message.deliveryId) {
-        const discarded = await this.deliveryConsumption?.discardIfConsumed(
-          task,
-          message,
-        ) ?? false;
-        if (discarded) continue;
         const admitted = task.interventionQueue.find(
           (queued) => queued.deliveryId === message.deliveryId,
         );
         if (admitted) {
           admitted.runnerInterventionId = pending.interventionId;
-          continue;
+        } else {
+          enqueueInterventionOnce(task, message);
         }
+        await this.deliveryConsumption?.discardIfConsumed(
+          task,
+          admitted ?? message,
+        );
+        continue;
       }
       enqueueInterventionOnce(task, message);
     }
