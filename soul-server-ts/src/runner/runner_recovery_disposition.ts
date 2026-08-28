@@ -152,7 +152,9 @@ export async function recoverRunnerByDisposition(input: {
     task: Task,
     prepare: (registration: RunnerRegistration) => Promise<RunnerRegistration>,
   ): Promise<{ task: Task; replayed: boolean }>;
-  terminate(registration: RunnerRegistration): Promise<void>;
+  terminate(
+    registration: RunnerRegistration,
+  ): Promise<"registration_invalidated" | "registration_absent" | void>;
   retireTerminal(registration: RunnerRegistration): Promise<void>;
   logger: Pick<Logger, "info" | "warn">;
 }): Promise<Task> {
@@ -166,16 +168,22 @@ export async function recoverRunnerByDisposition(input: {
       input.disposition,
     );
   }
+  const termination: {
+    outcome: "registration_invalidated" | "registration_absent" | void;
+  } = { outcome: undefined };
   const recovered = await input.recoverOffline(
     input.registration,
     input.task,
     async (guardedRegistration) => {
       if (!guardedRegistration.pidAlive) return guardedRegistration;
-      await input.terminate(guardedRegistration);
+      termination.outcome = await input.terminate(guardedRegistration);
       return { ...guardedRegistration, pidAlive: false };
     },
   );
-  if (input.disposition === "replay_terminal_dead") {
+  if (
+    input.disposition === "replay_terminal_dead"
+    || termination.outcome === "registration_invalidated"
+  ) {
     // Retiring is irreversible: `retired_terminal` is dropped by every later
     // scan, so the registration is the last thing that could still carry this
     // runner's terminal facts. Retiring one whose replay never ran seals the
@@ -185,7 +193,7 @@ export async function recoverRunnerByDisposition(input: {
       input.logger.warn(
         {
           sessionId: input.registration.config.sessionId,
-          disposition: "replay_terminal_dead",
+          disposition: input.disposition,
         },
         "terminal runner replay was skipped; registration kept for a later scan",
       );
@@ -195,9 +203,11 @@ export async function recoverRunnerByDisposition(input: {
     input.logger.info(
       {
         sessionId: input.registration.config.sessionId,
-        disposition: "replay_terminal_dead",
+        disposition: input.disposition,
       },
-      "terminal runner with no live process replayed offline and retired",
+      input.disposition === "replay_terminal_dead"
+        ? "terminal runner with no live process replayed offline and retired"
+        : "terminal runner stopped, replayed offline, and retired",
     );
   }
   return recovered.task;

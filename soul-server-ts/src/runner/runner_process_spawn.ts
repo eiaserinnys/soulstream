@@ -11,12 +11,7 @@ import {
   AgentsSdkMcpServerSchema,
 } from "../agent_registry.js";
 import { assertRunnerJsonValue } from "./frame_protocol.js";
-import { readAuthoritativeRunnerLifecycle } from "./runner_lifecycle_reader.js";
 import { runnerProcessPaths, type RunnerProcessPaths } from "./runner_process_paths.js";
-import {
-  readRunnerPid,
-  resolveRegisteredRunnerPid,
-} from "./runner_process_registration.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 import {
@@ -26,6 +21,11 @@ import {
 } from "./runner_process_lock.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
 import {
+  stopExistingRunnerLocked,
+  terminateExactRunner,
+  type RunnerTerminationOutcome,
+} from "./runner_process_termination.js";
+import {
   pendingRunnerRegistrationIdentity,
   readRunnerRegistrationIdentity,
   type RunnerRegistrationIdentity,
@@ -34,7 +34,7 @@ import {
 } from "./runner_registration_identity.js";
 import {
   invalidateRunnerRegistrationFiles,
-  retireTerminalRunnerRegistrationFiles,
+  retireTerminalRunnerRegistrationFilesLocked,
   unlinkIfPresent,
 } from "./runner_registration_mutation.js";
 import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
@@ -154,7 +154,7 @@ export class RunnerProcessSpawner {
     // Registration is deliberately before spawn. A server crash after this
     // point leaves a discoverable SQLite identity instead of an orphan child.
     await this.deps.prepareDatabase(paths.databasePath);
-    await this.stopExistingRunner(paths);
+    await stopExistingRunnerLocked(paths, this.deps, undefined, "replacement");
     // stopExistingRunner proves any registered child dead (or identity-fenced)
     // before a current-host orphan is reclaimed. Active host/child owners remain
     // fail-closed, so this cannot open a split-brain spawn window.
@@ -312,22 +312,36 @@ export class RunnerProcessSpawner {
     };
   }
   async adopt(registration: RunnerRegistration): Promise<SpawnedRunnerProcess | null> {
-    const { config, pid, pidAlive, pidStartIdentity, registrationId } = registration;
-    if (pid === null || !pidAlive || !this.deps.isPidAlive(pid)) return null;
+    const { config, pid, pidStartIdentity, registrationId } = registration;
     if (!registrationId || !pidStartIdentity) return null;
-    const observed = await this.deps.inspectProcess(pid);
-    if (
-      !observed.alive
-      || !observed.startIdentity
-      || !processStartIdentitiesMatch(observed.startIdentity, pidStartIdentity)
-    ) return null;
-    return { pid, registrationId, paths: config.paths, config, adopted: true };
+    if (pid === null) return null;
+    return await withRunnerSessionMutationLock(config.paths.sessionDirectory, async () => {
+      const current = await readRunnerRegistrationIdentity(config.paths.sessionDirectory);
+      if (
+        !current
+        || current.retiredAt
+        || current.registrationId !== registrationId
+        || current.pid !== pid
+        || current.startIdentity === null
+        || !processStartIdentitiesMatch(current.startIdentity, pidStartIdentity)
+      ) return null;
+      if (!this.deps.isPidAlive(pid)) return null;
+      const observed = await this.deps.inspectProcess(pid);
+      if (
+        !observed.alive
+        || !observed.startIdentity
+        || !processStartIdentitiesMatch(observed.startIdentity, current.startIdentity)
+      ) return null;
+      return { pid, registrationId, paths: config.paths, config, adopted: true };
+    });
   }
   async terminate(
     paths: RunnerProcessPaths,
     expected?: { pid: number; startIdentity: string },
-  ): Promise<void> {
-    await this.stopExistingRunner(paths, expected);
+  ): Promise<RunnerTerminationOutcome> {
+    return await withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
+      return await stopExistingRunnerLocked(paths, this.deps, expected, "strict");
+    });
   }
 
   invalidateRegistration(
@@ -341,11 +355,24 @@ export class RunnerProcessSpawner {
     paths: RunnerProcessPaths,
     expectedRegistrationId: string | null,
   ): Promise<void> {
-    return retireTerminalRunnerRegistrationFiles(
-      paths,
-      expectedRegistrationId,
-      new Date(this.deps.now()),
-    );
+    return withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
+      const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
+      if (!identity || expectedRegistrationId === null
+        || identity.registrationId !== expectedRegistrationId) {
+        throw new Error(`runner registration changed before terminal retirement: ${paths.sessionDirectory}`);
+      }
+      if (identity.pid !== null && identity.startIdentity !== null) {
+        await terminateExactRunner(
+          { pid: identity.pid, startIdentity: identity.startIdentity },
+          this.deps,
+        );
+      }
+      await retireTerminalRunnerRegistrationFilesLocked(
+        paths,
+        expectedRegistrationId,
+        new Date(this.deps.now()),
+      );
+    });
   }
 
   private async terminateSpawnedChild(
@@ -366,81 +393,6 @@ export class RunnerProcessSpawner {
     }
   }
 
-  private async stopExistingRunner(
-    paths: RunnerProcessPaths,
-    expected?: { pid: number; startIdentity: string },
-  ): Promise<void> {
-    const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
-    const pidFilePid = await readRunnerPid(paths.pidPath);
-    const pid = expected?.pid ?? resolveRegisteredRunnerPid(
-      pidFilePid,
-      (await this.readLifecycle(paths.databasePath))?.runner_pid ?? null,
-      identity?.pid ?? null,
-      paths.sessionDirectory,
-      this.deps.isPidAlive,
-    );
-    const expectedOwnsIdentity = expected !== undefined
-      && identity?.pid === expected.pid
-      && identity.startIdentity !== null
-      && processStartIdentitiesMatch(identity.startIdentity, expected.startIdentity);
-    if (pid !== null && this.deps.isPidAlive(pid)) {
-      const owner = expected ?? (identity?.pid === pid && identity.startIdentity
-        ? { pid, startIdentity: identity.startIdentity }
-        : undefined);
-      if (!owner || owner.pid !== pid) {
-        throw new Error(`runner process identity unavailable before termination: ${pid}`);
-      }
-      await this.assertSameProcess(owner, "SIGTERM");
-      this.deps.signalPid(pid, "SIGTERM");
-      const deadline = this.deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
-      while (this.deps.isPidAlive(pid) && this.deps.now() < deadline) {
-        await this.deps.delay(25);
-      }
-      if (this.deps.isPidAlive(pid)) {
-        await this.assertSameProcess(owner, "SIGKILL");
-        this.deps.signalPid(pid, "SIGKILL");
-        const killDeadline = this.deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
-        while (this.deps.isPidAlive(pid) && this.deps.now() < killDeadline) {
-          await this.deps.delay(25);
-        }
-      }
-      if (this.deps.isPidAlive(pid)) {
-        throw new Error(`existing runner pid ${pid} did not terminate`);
-      }
-    }
-    if (expectedOwnsIdentity) {
-      await invalidateRunnerRegistrationFiles(paths, identity.registrationId);
-      return;
-    }
-    if (expected === undefined || pidFilePid === expected.pid) {
-      await unlinkIfPresent(paths.pidPath);
-    }
-    if (expected === undefined) {
-      await unlinkIfPresent(paths.socketPath);
-    }
-  }
-
-  private async assertSameProcess(
-    expected: { pid: number; startIdentity: string },
-    signal: NodeJS.Signals,
-  ): Promise<void> {
-    const observed = await this.deps.inspectProcess(expected.pid);
-    if (
-      !observed.alive
-      || observed.startIdentity === null
-      || !processStartIdentitiesMatch(observed.startIdentity, expected.startIdentity)
-    ) {
-      throw new Error(
-        `runner process identity changed before ${signal}: ${expected.pid}`,
-      );
-    }
-  }
-
-  private async readLifecycle(
-    databasePath: string,
-  ): Promise<RunnerLifecycleRecord | null> {
-    return await (this.deps.readLifecycle ?? readAuthoritativeRunnerLifecycle)(databasePath);
-  }
 }
 
 function defaultDependencies(): SpawnDependencies {

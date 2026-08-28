@@ -1,4 +1,5 @@
 import { RunnerProcessSpawner } from "./runner_process_spawn.js";
+import type { RunnerTerminationOutcome } from "./runner_process_termination.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 
 type RegistrationSpawner = Pick<
@@ -9,16 +10,16 @@ type RegistrationSpawner = Pick<
 export class RunnerRegistrationControl {
   constructor(private readonly spawner: RegistrationSpawner = new RunnerProcessSpawner()) {}
 
-  async terminate(registration: RunnerRegistration): Promise<void> {
+  async terminate(registration: RunnerRegistration): Promise<RunnerTerminationOutcome> {
     if (registration.pid === null || !registration.pidStartIdentity) {
       throw new Error(
         `runner process identity unavailable before termination: ${registration.config.sessionId}`,
       );
     }
-    await this.spawner.terminate(
+    return await this.spawner.terminate(
       registration.config.paths,
       { pid: registration.pid, startIdentity: registration.pidStartIdentity },
-    );
+    ) ?? "registration_invalidated";
   }
 
   async invalidate(registration: RunnerRegistration): Promise<void> {

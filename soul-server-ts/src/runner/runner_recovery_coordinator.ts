@@ -117,8 +117,9 @@ export class RunnerRecoveryCoordinator {
         ? { refreshRegistration: options.refreshRegistration }
         : {}),
       ...(options.hydrate ? { hydrateRegistration: options.hydrate } : {}),
-      terminateRegistration: async (registration) =>
-        await this.registrationControl.terminate(registration),
+      terminateRegistration: async (registration) => {
+        await this.registrationControl.terminate(registration);
+      },
       invalidateRegistration: async (registration) =>
         await this.registrationControl.invalidate(registration),
       markReaped: async (registration, progressedAt, error) => {
@@ -383,7 +384,9 @@ export class RunnerRecoveryCoordinator {
         registration,
         task: requireRecoveryTask(task, registration),
         ...(this.options.hydrate ? { hydrate: this.options.hydrate } : {}),
-        terminate: async (owned) => await this.registrationControl.terminate(owned),
+        terminate: async (owned) => {
+          await this.registrationControl.terminate(owned);
+        },
         invalidate: async (owned) => await this.registrationControl.invalidate(owned),
         recoverOffline: async (owned, recoveredTask) =>
           (await this.recoverRegistered(owned, recoveredTask, "offline")).task,
