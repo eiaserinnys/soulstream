@@ -173,7 +173,7 @@ export class OwnerlessIngressHarness {
       effect,
     );
     const unsigned = {
-      stream_id: "ownerless-race-direct",
+      stream_id: "00000000-0000-4000-8000-000000000202",
       source_seq: this.directSourceSeq,
       ...input,
     };
