@@ -62,8 +62,7 @@ function executionOwnershipFromRow(
   row: SessionRow,
   logger: Logger,
 ): ExecutionOwnershipToken | null | undefined {
-  const ownerFields = [
-    row.execution_generation,
+  const activeOwnerFields = [
     row.execution_manifest_id,
     row.execution_runtime_env_identity,
     row.execution_registration_id,
@@ -72,7 +71,7 @@ function executionOwnershipFromRow(
     row.execution_command_id,
     row.execution_lease_expires_at,
   ];
-  if (ownerFields.every((value) => value == null)) return undefined;
+  if (activeOwnerFields.every((value) => value == null)) return undefined;
 
   const ownershipGeneration = Number(row.execution_generation);
   const leaseExpiresAt = row.execution_lease_expires_at instanceof Date
