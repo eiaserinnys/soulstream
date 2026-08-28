@@ -28,7 +28,7 @@ describe("active runner intervention follow-up oracle", () => {
         "human_delivery_consume_not_exactly_once",
       ],
     ],
-    ["double_interrupt", ["interrupt_more_than_once"]],
+    ["double_interrupt", ["interrupt_not_exactly_once"]],
     ["lose_next_turn", ["next_turn_not_activated", "next_turn_not_completed"]],
     [
       "promote_parent_error",

@@ -37,8 +37,8 @@ export function activeRunnerViolations(
   if (!sameStrings(observation.runtimeFollowupIds, runtimeFollowup)) {
     violations.push("runtime_followup_not_exactly_once");
   }
-  if (observation.interruptDeliveryIds.length > 1) {
-    violations.push("interrupt_more_than_once");
+  if (!sameStrings(observation.interruptDeliveryIds, humanDelivery)) {
+    violations.push("interrupt_not_exactly_once");
   }
   if (!sameStrings(observation.humanModelInputDeliveryIds, humanDelivery)) {
     violations.push("human_marker_model_input_not_exactly_once");
