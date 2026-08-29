@@ -11,6 +11,23 @@ import {
 import { ClaudeSessionClientRegistry } from
   "../../src/engine/claude_session_client_registry.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
+import {
+  engineEventFrame,
+  runnerCommandResultFrame,
+  type RunnerCommandFrame,
+} from "../../src/runner/frame_protocol.js";
+import { RunnerProcessDispatcher } from
+  "../../src/runner/runner_process_dispatcher.js";
+import { RunnerProcessEngineProxy } from
+  "../../src/runner/runner_process_engine_proxy.js";
+import {
+  RunnerRecoveryCoordinator,
+  type RunnerRecoveryCoordinatorOptions,
+} from "../../src/runner/runner_recovery_coordinator.js";
+import type { RunnerRegistration } from
+  "../../src/runner/runner_process_registry.js";
+import { createTaskRunnerRuntime } from
+  "../../src/runner/task_runner_runtime.js";
 import { RunningInterventionTransition } from
   "../../src/task/task_running_intervention_transition.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
@@ -172,6 +189,124 @@ function persistedEvents(
 }
 
 describe("Lane E running intervention turn handoff", () => {
+  it("keeps the successor coherent when terminal cleanup wins the callback order", async () => {
+    const slice = makeFullSlice("lane-e-causal-order");
+    const cleanupCompleted = deferred<void>();
+    const successorWaiting = deferred<void>();
+    const callbackOrder: string[] = [];
+    const intervention: InterventionMessage = {
+      text: "apply the accepted successor",
+      user: "operator",
+      deliveryId: "delivery-lane-e-causal",
+      runnerInterventionId: "delivery-lane-e-causal",
+      deliveryIntent: "human_live_steer",
+    };
+    const probe = makeCausalDispatcherProbe({
+      task: slice.task,
+      intervention,
+      successorWaiting,
+      callbackOrder,
+      reconcileGate: cleanupCompleted.promise,
+    });
+    const runner = createTaskRunnerRuntime(
+      new RunnerProcessEngineProxy(
+        "claude",
+        agent.workspace_dir,
+        probe.dispatcher,
+        { retainDetachedRuntime: false },
+      ),
+      probe.dispatcher,
+      "runner",
+    );
+    const coordinator = makeTerminalCleanupCoordinator(
+      slice.task,
+      terminalRegistration(slice.task.agentSessionId),
+    );
+
+    slice.executor.startExecutionWithRunner(slice.task, agent, runner);
+    const execution = slice.task.executionPromise;
+    if (!execution) throw new Error("causal fixture did not start the execution");
+    await successorWaiting.promise;
+
+    await coordinator.scanOnce();
+    await coordinator.waitForSettled();
+    callbackOrder.push("callback_a_current_cleanup_complete");
+    cleanupCompleted.resolve();
+    await execution;
+    await slice.registry.shutdown();
+
+    expect(observeCausalOutcome(slice, probe, callbackOrder)).toEqual({
+      callbackOrder: [
+        "callback_a_current_cleanup_complete",
+        "callback_b_successor_reconcile",
+      ],
+      pendingStateReadFailures: 0,
+      pendingStateFailure: null,
+      finalStatus: "completed",
+      successorExecuteRecordsBeforeExplicitRetry: 1,
+      successorTurnRecordsBeforeExplicitRetry: 1,
+    });
+  });
+
+  it("keeps the successor coherent when reconciliation wins the callback order", async () => {
+    const slice = makeFullSlice("lane-e-causal-control");
+    const cleanupCompleted = deferred<void>();
+    const successorWaiting = deferred<void>();
+    const callbackOrder: string[] = [];
+    const intervention: InterventionMessage = {
+      text: "apply the accepted successor",
+      user: "operator",
+      deliveryId: "delivery-lane-e-control",
+      runnerInterventionId: "delivery-lane-e-control",
+      deliveryIntent: "human_live_steer",
+    };
+    const probe = makeCausalDispatcherProbe({
+      task: slice.task,
+      intervention,
+      successorWaiting,
+      callbackOrder,
+      reconcileGate: Promise.resolve(),
+    });
+    const runner = createTaskRunnerRuntime(
+      new RunnerProcessEngineProxy(
+        "claude",
+        agent.workspace_dir,
+        probe.dispatcher,
+        { retainDetachedRuntime: false },
+      ),
+      probe.dispatcher,
+      "runner",
+    );
+    const coordinator = makeTerminalCleanupCoordinator(
+      slice.task,
+      terminalRegistration(slice.task.agentSessionId),
+    );
+
+    slice.executor.startExecutionWithRunner(slice.task, agent, runner);
+    const execution = slice.task.executionPromise;
+    if (!execution) throw new Error("control fixture did not start the execution");
+    await successorWaiting.promise;
+    await execution;
+
+    await coordinator.scanOnce();
+    await coordinator.waitForSettled();
+    callbackOrder.push("callback_a_current_cleanup_complete");
+    cleanupCompleted.resolve();
+    await slice.registry.shutdown();
+
+    expect(observeCausalOutcome(slice, probe, callbackOrder)).toEqual({
+      callbackOrder: [
+        "callback_b_successor_reconcile",
+        "callback_a_current_cleanup_complete",
+      ],
+      pendingStateReadFailures: 0,
+      pendingStateFailure: null,
+      finalStatus: "completed",
+      successorExecuteRecordsBeforeExplicitRetry: 1,
+      successorTurnRecordsBeforeExplicitRetry: 1,
+    });
+  });
+
   it("interrupts one owner, consumes one successor, and never projects the EDE as session error", async () => {
     const slice = makeFullSlice("lane-e-intervention");
     const execution = slice.executor.startExecution(slice.task, agent);
@@ -251,3 +386,240 @@ describe("Lane E running intervention turn handoff", () => {
     await slice.registry.shutdown();
   });
 });
+
+function observeCausalOutcome(
+  slice: ReturnType<typeof makeFullSlice>,
+  probe: ReturnType<typeof makeCausalDispatcherProbe>,
+  callbackOrder: string[],
+) {
+  return {
+    callbackOrder,
+    pendingStateReadFailures: probe.pendingStateReadFailures(),
+    pendingStateFailure: slice.task.error ?? null,
+    finalStatus: slice.task.status,
+    successorExecuteRecordsBeforeExplicitRetry: probe.executeCommands.slice(1).length,
+    successorTurnRecordsBeforeExplicitRetry:
+      slice.delivery.recordTurnStarted.mock.calls.length,
+  };
+}
+
+function makeCausalDispatcherProbe(input: {
+  task: Task;
+  intervention: InterventionMessage;
+  successorWaiting: ReturnType<typeof deferred<void>>;
+  callbackOrder: string[];
+  reconcileGate: Promise<void>;
+}) {
+  const executeCommands: Array<Extract<RunnerCommandFrame, { kind: "execute" }>> = [];
+  let pendingStateReadFailures = 0;
+  const outbox = {
+    close: vi.fn(),
+    inspectPendingInterventions: vi.fn(async () => ({
+      interventions: [],
+      childInterventionIds: [],
+      shadowedFallbackIds: [],
+    })),
+    readInterventionFallback: vi.fn(() => null),
+    readPendingIpcFrames: vi.fn(async () => []),
+  };
+  const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+    RunnerProcessDispatcher;
+  Object.assign(dispatcher, {
+    activeExecuteCommandId: undefined,
+    activeStream: undefined,
+    closed: false,
+    connection: undefined,
+    eventStreamReleased: false,
+    inFlightFrameHandlers: new Set(),
+    instanceId: "lane-e-causal",
+    options: { logger: silentLogger },
+    outbox,
+    pump: {},
+    pumpInitialization: undefined,
+    recentHostResponses: new Map(),
+    requestLifetimes: new Map(),
+    spawnedProcess: { registrationId: "registration-lane-e-causal" },
+    stoppedRunnerWriter: undefined,
+    stoppedRunnerWriterLock: undefined,
+    unregisterPump: undefined,
+  });
+
+  let readyReadCount = 0;
+  Object.defineProperty(dispatcher, "ready", {
+    configurable: true,
+    get: () => {
+      readyReadCount += 1;
+      if (readyReadCount === 1) return Promise.resolve();
+      if (readyReadCount === 2) {
+        input.successorWaiting.resolve();
+        return input.reconcileGate.then(() => {
+          input.callbackOrder.push("callback_b_successor_reconcile");
+        });
+      }
+      return input.reconcileGate;
+    },
+  });
+
+  const reconcilePendingInterventions = (
+    RunnerProcessDispatcher.prototype as unknown as {
+      reconcilePendingInterventions(): Promise<{
+        interventions: unknown[];
+        childInterventionIds: string[];
+        shadowedFallbackIds: string[];
+      }>;
+    }
+  ).reconcilePendingInterventions;
+  Object.assign(dispatcher, {
+    reconcilePendingInterventions: vi.fn(async () => {
+      try {
+        return await reconcilePendingInterventions.call(dispatcher);
+      } catch (error) {
+        pendingStateReadFailures += 1;
+        throw error;
+      }
+    }),
+  });
+
+  const dispatch = vi.fn(async (frame: RunnerCommandFrame) => {
+    if (frame.kind !== "execute") {
+      return runnerCommandResultFrame(frame.commandId, { status: "ok" });
+    }
+    executeCommands.push(frame);
+    const stream = (dispatcher as unknown as {
+      activeStream?: {
+        fail(error: Error): void;
+        finish(): void;
+        push(frame: ReturnType<typeof engineEventFrame>): boolean;
+      };
+    }).activeStream;
+    if (!stream) throw new Error("causal fixture has no active stream");
+    if (executeCommands.length === 1) {
+      input.task.interventionQueue.push(input.intervention);
+      stream.fail(new Error("current tool-use owner interrupted"));
+    } else {
+      stream.push(engineEventFrame({
+        type: "complete",
+        result: "successor terminal",
+        timestamp: 1,
+      }));
+      stream.finish();
+    }
+    return runnerCommandResultFrame(frame.commandId, { status: "ok" });
+  });
+  Object.assign(dispatcher, { dispatch });
+  return {
+    dispatcher,
+    executeCommands,
+    pendingStateReadFailures: () => pendingStateReadFailures,
+  };
+}
+
+function makeTerminalCleanupCoordinator(
+  task: Task,
+  registration: RunnerRegistration,
+): RunnerRecoveryCoordinator {
+  const options = {
+    nodeId: "node-lane-e",
+    stateDirectory: "/runner",
+    leaseTimeoutMs: 120_000,
+    scanIntervalMs: 15_000,
+    taskManager: {
+      hydrateRunnerRecoveryTask: vi.fn(async () => task),
+      markRunnerFailureAndResume: vi.fn(),
+      listOwnerNullRunningInventory: vi.fn(async () => []),
+      projectClosedRunner: vi.fn(async () => true),
+      reconcileExecutionOwnershipObservations: vi.fn(async () => false),
+    },
+    taskExecutor: {
+      recoverRegisteredRunner: vi.fn(async () => undefined),
+      restartRegisteredRunner: vi.fn(async () => undefined),
+    },
+    closedTailDrainer: { drain: vi.fn(async () => undefined) },
+    logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    spawner: {
+      terminate: vi.fn(async () => undefined),
+      invalidateRegistration: vi.fn(async () => undefined),
+      retireTerminalRegistration: vi.fn(async () => undefined),
+    },
+    scan: async () => ({ registrations: [registration], errors: [] }),
+    hydrate: async (candidate: RunnerRegistration) => candidate,
+    now: () => Date.parse("2026-08-29T00:00:10.000Z"),
+    markReaped: vi.fn(async () => undefined),
+  } as unknown as RunnerRecoveryCoordinatorOptions;
+  return new RunnerRecoveryCoordinator(options);
+}
+
+function terminalRegistration(sessionId: string): RunnerRegistration {
+  return {
+    config: {
+      schemaVersion: 1,
+      sessionId,
+      backend: "claude",
+      agent,
+      paths: {
+        sessionDirectory: `/runner/${sessionId}`,
+        databasePath: `/runner/${sessionId}/runner.sqlite`,
+        socketPath: `/runner/${sessionId}/runner.sock`,
+        pidPath: `/runner/${sessionId}/runner.pid`,
+        lockPath: `/runner/${sessionId}/runner.lock`,
+        configPath: `/runner/${sessionId}/runner-config.json`,
+      },
+      codeSha: "sha-lane-e",
+      snapshotPath: "/release/sha-lane-e/soul-server-ts",
+      codexAdapterMode: "sdk",
+      claudeRuntimeV2Enabled: true,
+      claudeRuntimeIdleTtlMs: 300_000,
+      claudeRuntimeMaxEntries: 16,
+      claudeRuntimeTurnTimeoutMs: 600_000,
+      internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
+      codexHome: "/home/test/.codex",
+      rolloutRoot: "/home/test/.codex/sessions",
+    },
+    pid: 260829,
+    registrationId: "registration-lane-e-causal",
+    pidStartIdentity: "start-260829",
+    pidAlive: false,
+    registeredAtMs: Date.parse("2026-08-29T00:00:00.000Z"),
+    bootstrap: {
+      stream_id: "stream-lane-e",
+      source_seq: 1,
+      session_id: sessionId,
+      event_type: "runner_bootstrap",
+      payload: {
+        schema_version: 1,
+        backend_session_id: "claude-lane-e",
+        cwd: agent.workspace_dir,
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-lane-e",
+        snapshot_path: "/release/sha-lane-e/soul-server-ts",
+      },
+      searchable_text: null,
+      created_at: "2026-08-29T00:00:00.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+      payload_hash: "0".repeat(64),
+    },
+    lifecycle: {
+      session_id: sessionId,
+      runner_pid: 260829,
+      execution_command_id: "execute-current",
+      execution_state: "completed",
+      progress_seq: 3,
+      progress_at: "2026-08-29T00:00:09.000Z",
+      liveness_at: "2026-08-29T00:00:09.000Z",
+      in_flight_tools: [],
+      terminal_error: null,
+    },
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
