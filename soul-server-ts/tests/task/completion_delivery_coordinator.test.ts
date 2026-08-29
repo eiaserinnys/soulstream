@@ -1,11 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CompletionDeliveryCoordinator } from
   "../../src/task/completion_delivery_coordinator.js";
-import { DELIVERY_NOTIFICATION_MAX_ATTEMPTS } from
+import {
+  DELIVERY_NOTIFICATION_MAX_AGE_MS,
+  DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
+} from
   "../../src/task/session_delivery_notification_policy.js";
 
-const createdAt = new Date("2026-08-28T00:00:00.000Z");
+const nowMs = new Date("2026-08-28T00:00:00.000Z").getTime();
+const createdAt = new Date(nowMs - 1_000);
 
 function pendingRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -79,6 +83,14 @@ function loggerFixture() {
 }
 
 describe("CompletionDeliveryCoordinator", () => {
+  beforeEach(() => {
+    vi.spyOn(Date, "now").mockReturnValue(nowMs);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("periodic recovery only releases expired leases and never dispatches held input", async () => {
     const repository = repositoryFixture();
     const dispatch = vi.fn();
@@ -246,6 +258,56 @@ describe("CompletionDeliveryCoordinator", () => {
       text: "done",
       callerInfo: { source: "agent" },
       createdAt,
+    });
+
+    expect(repository.markUncertain).toHaveBeenCalledOnce();
+    expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
+  });
+
+  it("retries a failed delivery immediately before the 24-hour age limit", async () => {
+    const boundaryCreatedAt = new Date(nowMs - DELIVERY_NOTIFICATION_MAX_AGE_MS + 1);
+    const repository = repositoryFixture(pendingRow({
+      created_at: boundaryCreatedAt,
+    }));
+    const dispatch = vi.fn().mockRejectedValue(new Error("route unavailable"));
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository: repository as never,
+      dispatch,
+      logger: loggerFixture(),
+    }, "completion:test-worker");
+
+    await coordinator.enqueue({
+      targetSessionId: "caller-session",
+      sourceSessionId: "child-session",
+      terminalRevision: "42",
+      text: "done",
+      callerInfo: { source: "agent" },
+      createdAt: boundaryCreatedAt,
+    });
+
+    expect(repository.retryLeasedDelivery).toHaveBeenCalledOnce();
+    expect(repository.markUncertain).not.toHaveBeenCalled();
+  });
+
+  it("terminalizes a failed delivery immediately after the 24-hour age limit", async () => {
+    const boundaryCreatedAt = new Date(nowMs - DELIVERY_NOTIFICATION_MAX_AGE_MS - 1);
+    const repository = repositoryFixture(pendingRow({
+      created_at: boundaryCreatedAt,
+    }));
+    const dispatch = vi.fn().mockRejectedValue(new Error("route unavailable"));
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository: repository as never,
+      dispatch,
+      logger: loggerFixture(),
+    }, "completion:test-worker");
+
+    await coordinator.enqueue({
+      targetSessionId: "caller-session",
+      sourceSessionId: "child-session",
+      terminalRevision: "42",
+      text: "done",
+      callerInfo: { source: "agent" },
+      createdAt: boundaryCreatedAt,
     });
 
     expect(repository.markUncertain).toHaveBeenCalledOnce();
