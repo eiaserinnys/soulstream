@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -20,24 +20,32 @@ const retiredSurfaceRoots = [
   ".env.soul-server-ts.example",
 ];
 
+function listFiles(relativePath: string): string[] {
+  const absolutePath = path.join(repositoryRoot, relativePath);
+  const stats = lstatSync(absolutePath);
+  if (stats.isFile()) return [relativePath];
+  if (!stats.isDirectory()) return [];
+
+  return readdirSync(absolutePath, { withFileTypes: true }).flatMap((entry) => {
+    const childPath = path.join(relativePath, entry.name);
+    if (entry.isDirectory()) return listFiles(childPath);
+    return entry.isFile() ? [childPath] : [];
+  });
+}
+
+function findSupervisorMatches(relativePath: string): string[] {
+  return readFileSync(path.join(repositoryRoot, relativePath), "utf8")
+    .split(/\r?\n/)
+    .flatMap((line, index) =>
+      /supervisor/i.test(line) ? [`${relativePath}:${index + 1}:${line}`] : [],
+    );
+}
+
 describe("retired runtime surface", () => {
   it("contains no supervisor subsystem identifiers", () => {
-    let matches = "";
-    try {
-      matches = execFileSync(
-        "rg",
-        ["-n", "-i", "supervisor", ...retiredSurfaceRoots],
-        { cwd: repositoryRoot, encoding: "utf8" },
-      );
-    } catch (error) {
-      const result = error as { status?: number; stdout?: string };
-      if (result.status !== 1) throw error;
-      matches = result.stdout ?? "";
-    }
-
-    const forbiddenMatches = matches
-      .split("\n")
-      .filter(Boolean)
+    const forbiddenMatches = retiredSurfaceRoots
+      .flatMap(listFiles)
+      .flatMap(findSupervisorMatches)
       .filter((line) => !line.endsWith('migrationId: "053_retire_supervisor.sql",'));
     expect(forbiddenMatches).toEqual([]);
   });
