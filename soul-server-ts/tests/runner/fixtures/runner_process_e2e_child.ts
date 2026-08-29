@@ -39,6 +39,8 @@ class ControlledEngine implements EnginePort {
   private backgroundTaskCount = 0;
   private liveInterventionCount = 0;
   private s4CloseCount = 0;
+  private p0r2InterruptCount = 0;
+  private p0r2CloseCount = 0;
 
   constructor(
     private readonly controlDirectory: string,
@@ -108,6 +110,43 @@ class ControlledEngine implements EnginePort {
         timestamp: 1,
       });
       yield engineEventFrame({ type: "complete", result: "S4 initial reply" });
+      return;
+    }
+    if (process.env.RUNNER_E2E_P0R2_SCENARIO === "1") {
+      const firstExecutionPath = `${this.controlDirectory}/p0r2-first-execution.json`;
+      const firstExecutionExists = await access(firstExecutionPath)
+        .then(() => true)
+        .catch((error) => {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+          throw error;
+        });
+      const generation = firstExecutionExists ? 2 : 1;
+      if (generation === 1) {
+        await writeJsonAtomically(
+          firstExecutionPath,
+          { pid: process.pid, params },
+        );
+        await waitForFile(`${this.controlDirectory}/p0r2-continue-first`);
+      } else {
+        await writeJsonAtomically(
+          `${this.controlDirectory}/p0r2-successor-execution.json`,
+          { pid: process.pid, params },
+        );
+        await waitForFile(`${this.controlDirectory}/p0r2-release-successor`);
+      }
+      yield engineEventFrame({
+        type: "session",
+        session_id: "backend-session-p0r2-1",
+      });
+      yield engineEventFrame({
+        type: "assistant_message",
+        content: generation === 1 ? "initial reply" : "successor reply",
+        timestamp: generation,
+      });
+      yield engineEventFrame({
+        type: "complete",
+        result: generation === 1 ? "initial reply" : "successor reply",
+      });
       return;
     }
     if (process.env.RUNNER_E2E_BACKGROUND_SCENARIO === "multi-terminal") {
@@ -287,6 +326,13 @@ class ControlledEngine implements EnginePort {
   }
 
   async interrupt(): Promise<boolean> {
+    if (process.env.RUNNER_E2E_P0R2_SCENARIO === "1") {
+      this.p0r2InterruptCount += 1;
+      await writeFile(
+        `${this.controlDirectory}/p0r2-interrupt-${process.pid}-${this.p0r2InterruptCount}`,
+        "interrupted\n",
+      );
+    }
     return true;
   }
 
@@ -307,10 +353,21 @@ class ControlledEngine implements EnginePort {
   }
 
   async close(): Promise<void> {
-    if (process.env.RUNNER_E2E_S4_SCENARIO !== "1") return;
-    this.s4CloseCount += 1;
-    if (this.s4CloseCount === 2) {
-      await new Promise((resolve) => setTimeout(resolve, 750));
+    if (process.env.RUNNER_E2E_S4_SCENARIO === "1") {
+      this.s4CloseCount += 1;
+      if (this.s4CloseCount === 2) {
+        await new Promise((resolve) => setTimeout(resolve, 750));
+      }
+    }
+    if (process.env.RUNNER_E2E_P0R2_SCENARIO === "1") {
+      this.p0r2CloseCount += 1;
+      await writeFile(
+        `${this.controlDirectory}/p0r2-close-${process.pid}-${this.p0r2CloseCount}`,
+        "closed\n",
+      );
+      if (this.p0r2CloseCount === 2) {
+        await new Promise((resolve) => setTimeout(resolve, 750));
+      }
     }
   }
 
