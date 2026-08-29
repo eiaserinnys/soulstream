@@ -173,7 +173,12 @@ export class TaskInterventionRoute {
       deferredResumeStarted = true;
       const resume = deferredResume;
       deferredResume = undefined;
-      onResume(resume.task, resume.activation);
+      try {
+        onResume(resume.task, resume.activation);
+      } catch (error) {
+        resume.activation?.reject(error);
+        throw error;
+      }
     };
     try {
       await this.awaitInitializingTask(task);
@@ -290,10 +295,10 @@ export class TaskInterventionRoute {
       return result;
     } catch (err) {
       let recoveryError: unknown;
-      try {
-        startDeferredResumeOnce();
-      } catch (resumeError) {
-        recoveryError = resumeError;
+      if (!deferredResumeStarted && deferredResume) {
+        const abandonedResume = deferredResume;
+        deferredResume = undefined;
+        abandonedResume.activation?.reject(err);
       }
       if (
         this.deps.deliveryLedgerGate
