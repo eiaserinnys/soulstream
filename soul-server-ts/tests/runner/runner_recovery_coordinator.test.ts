@@ -2000,6 +2000,7 @@ function abandonedRunner(): NonNullable<Task["runner"]> {
     dispatcher: {
       detachHost: vi.fn(async () => {}),
       isClosed: () => true,
+      hasActiveExecution: () => false,
       registrationId: () => "registration-a",
     } as unknown as NonNullable<Task["runner"]>["dispatcher"],
     engine: {} as NonNullable<Task["runner"]>["engine"],
@@ -2030,6 +2031,7 @@ function failedRecoveryRunner(): {
     runner: {
       dispatcher: {
         detachHost,
+        hasActiveExecution: () => false,
         registrationId: () => "registration-a",
       } as NonNullable<Task["runner"]>["dispatcher"],
       engine: {} as NonNullable<Task["runner"]>["engine"],
