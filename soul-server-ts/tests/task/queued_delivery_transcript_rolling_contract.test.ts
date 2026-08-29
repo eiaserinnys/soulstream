@@ -43,20 +43,20 @@ describe("queued transcript recovery rolling contract", () => {
     expect(harness.deferQueuedTranscriptCheck).not.toHaveBeenCalled();
   });
 
-  it("keeps transcript-pending input queued for receipt recheck", async () => {
+  it("returns transcript-pending input to pending for reconnect reclaim", async () => {
     const harness = makeDeferredHarness("input_pending");
 
     await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
       claimed: 1,
       settled: 0,
     });
-    expect(harness.deferQueuedTranscriptCheck).toHaveBeenCalledWith(
+    expect(harness.retryLeasedDelivery).toHaveBeenCalledWith(
       "delivery-deferred",
       "rolling-worker",
       "queued_transcript_input_pending",
-      1_000,
+      0,
     );
-    expect(harness.retryLeasedDelivery).not.toHaveBeenCalled();
+    expect(harness.deferQueuedTranscriptCheck).not.toHaveBeenCalled();
   });
 });
 
