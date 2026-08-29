@@ -209,6 +209,33 @@ export function makeEventPersistenceTestDouble(
       };
     },
   );
+  const enqueueRecoveredRunnerTerminalFactAndWaitForApplication = vi.fn(
+    async (
+      sessionId: string,
+      event: SSEEventPayload,
+      effect: Extract<EventOutboxSessionEffect, { kind: "recovered_runner_terminal_fact" }>,
+    ) => {
+      const result = await enqueueEvent(sessionId, event, effect);
+      const eventId = eventIdFromResult(result, latestBySession.get(sessionId));
+      latestBySession.delete(sessionId);
+      return {
+        eventId,
+        applied: true,
+        canonicalSession: {
+          status: String((event as Record<string, unknown>).status),
+          termination_reason: String(
+            (event as Record<string, unknown>).termination_reason,
+          ),
+          termination_detail: effect.termination_detail,
+          review_state: effect.review_state,
+          last_assistant_text: effect.last_assistant_text ?? null,
+          termination_event_id: eventId,
+          updated_at: effect.updated_at,
+          last_event_id: eventId,
+        },
+      };
+    },
+  );
   const acquireExecutionOwnershipAndWaitForApplication = vi.fn(
     async (
       _sessionId: string,
@@ -287,6 +314,7 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForAck,
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
+    enqueueRecoveredRunnerTerminalFactAndWaitForApplication,
     ...(options.capabilityProfile === "execution_ownership"
       ? {
           acquireExecutionOwnershipAndWaitForApplication,
@@ -306,6 +334,7 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForAck,
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
+    enqueueRecoveredRunnerTerminalFactAndWaitForApplication,
     acquireExecutionOwnershipAndWaitForApplication,
     releaseExecutionOwnershipAndWaitForApplication,
     waitForSessionAck,
