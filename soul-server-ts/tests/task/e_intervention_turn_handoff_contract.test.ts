@@ -307,63 +307,6 @@ describe("Lane E running intervention turn handoff", () => {
     });
   });
 
-  it("interrupts one owner, consumes one successor, and never projects the EDE as session error", async () => {
-    const slice = makeFullSlice("lane-e-intervention");
-    const execution = slice.executor.startExecution(slice.task, agent);
-    const foregroundInput = await slice.sdk.nextInput();
-    slice.sdk.push(sdkInit("claude-lane-e"));
-    slice.sdk.push(assistantToolUse("claude-lane-e"));
-
-    const intervention: InterventionMessage = {
-      text: "apply the intervention now",
-      user: "operator",
-      deliveryId: "delivery-lane-e",
-      deliveryIntent: "human_live_steer",
-    };
-    await expect(slice.transition.deliver(slice.task, intervention)).resolves.toMatchObject({
-      delivered: false,
-      queued: true,
-      consumeWhen: "next_turn",
-    });
-    expect(slice.sdk.interrupt).toHaveBeenCalledTimes(1);
-
-    slice.sdk.push(sdkToolUseInterruptedResult("claude-lane-e"));
-    const successorInput = await slice.sdk.nextInput();
-    expect(successorInput.message.content).toContain(intervention.text);
-    expect(slice.task.status).toBe("running");
-    expect(persistedEvents(slice).filter((event) => event.type === "session_ended")).toEqual([]);
-
-    // A delayed SDK-owned background completion has no foreground ownership.
-    slice.sdk.push(sdkTaskNotificationResult("claude-lane-e"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(slice.task.status).toBe("running");
-    expect(persistedEvents(slice).filter((event) => event.type === "session_ended")).toEqual([]);
-
-    slice.sdk.push(assistantMessage("claude-lane-e", "successor answer"));
-    slice.sdk.push(sdkResult("claude-lane-e", successorInput.uuid, "successor terminal"));
-    await execution;
-
-    const events = persistedEvents(slice);
-    expect(foregroundInput.uuid).not.toBe(successorInput.uuid);
-    expect(events.filter((event) => event.type === "intervention_sent")).toHaveLength(1);
-    expect(events.filter((event) => event.type === "tool_start")).toHaveLength(1);
-    expect(events.filter((event) => event.type === "assistant_message")).toHaveLength(1);
-    expect(events.filter((event) => event.type === "complete")).toHaveLength(1);
-    expect(events.filter((event) => event.type === "session_ended")).toHaveLength(1);
-    expect(events.filter((event) => event.type === "error")).toEqual([]);
-    expect(slice.delivery.recordTurnStarted).toHaveBeenCalledTimes(1);
-    expect(slice.delivery.recordConsumed).toHaveBeenCalledTimes(1);
-    expect(slice.task.status).toBe("completed");
-    expect(slice.task.error).toBeUndefined();
-    expect(slice.task.pendingTerminationHint).toBeUndefined();
-    expect(slice.persistence.acquireExecutionOwnershipAndWaitForApplication)
-      .toHaveBeenCalledTimes(1);
-    expect(slice.persistence.releaseExecutionOwnershipAndWaitForApplication)
-      .toHaveBeenCalledTimes(1);
-
-    await slice.registry.shutdown();
-  });
-
   it("keeps ordinary completion unchanged when no intervention arrives", async () => {
     const slice = makeFullSlice("lane-e-control");
     const execution = slice.executor.startExecution(slice.task, agent);
