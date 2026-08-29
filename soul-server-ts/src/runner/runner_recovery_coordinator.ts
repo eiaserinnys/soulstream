@@ -333,12 +333,6 @@ export class RunnerRecoveryCoordinator {
       && !task.runner
       && !task.executionPromise
     ) {
-      if (
-        !task.executionOwnership
-        && registration.registrationId === null
-        && registration.pidStartIdentity === null
-        && !registration.pidAlive
-      ) return;
       await this.retireRecordedTerminalExecution(registration, task);
       return;
     }
@@ -429,6 +423,19 @@ export class RunnerRecoveryCoordinator {
     const registrationId = ownership?.registrationId ?? registration.registrationId;
     const pid = ownership?.pid ?? registration.pid;
     const startIdentity = ownership?.startIdentity ?? registration.pidStartIdentity;
+    if (
+      !ownership
+      && registration.registrationId === null
+      && registration.pidStartIdentity === null
+      && !registration.pidAlive
+    ) {
+      await this.registrationControl.retireReleasedTerminal(registration);
+      this.options.logger.info(
+        { sessionId: registration.config.sessionId },
+        "released terminal runner evidence retired without replay",
+      );
+      return;
+    }
     if (
       !registrationId
       || typeof pid !== "number"

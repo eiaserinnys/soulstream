@@ -24,6 +24,11 @@ export interface TerminalExecutionOwnershipRetirement
   paths: RunnerProcessPaths;
 }
 
+export interface ReleasedTerminalExecutionEvidence {
+  paths: RunnerProcessPaths;
+  pid: number | null;
+}
+
 export async function retireTerminalExecutionIdentity(
   input: TerminalExecutionOwnershipRetirement,
   commitOwnership: () => Promise<boolean>,
@@ -68,6 +73,35 @@ export async function retireTerminalExecutionIdentity(
       expected.registrationId,
       new Date(deps.now()),
     );
+  });
+}
+
+export async function retireReleasedTerminalExecutionEvidence(
+  input: ReleasedTerminalExecutionEvidence,
+  deps: RunnerProcessTerminationDependencies,
+): Promise<void> {
+  const { paths } = input;
+  await withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
+    const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
+    if (identity) {
+      throw identityProofFailure(
+        `runner registration appeared before released terminal retirement: ${paths.sessionDirectory}`,
+      );
+    }
+    const pidEvidence = await readRunnerPid(paths.pidPath);
+    if (input.pid !== null && pidEvidence !== null && pidEvidence !== input.pid) {
+      throw identityProofFailure(
+        `runner pid evidence changed before released terminal retirement: ${paths.sessionDirectory}`,
+      );
+    }
+    const observedPid = pidEvidence ?? input.pid;
+    if (observedPid !== null && deps.isPidAlive(observedPid)) {
+      throw identityProofFailure(
+        `live runner has no registration before released terminal retirement: ${paths.sessionDirectory}`,
+      );
+    }
+    await prepareRunnerWriterLockForSpawn(paths.lockPath);
+    await removeRunnerRegistrationEvidenceForReplacementLocked(paths);
   });
 }
 

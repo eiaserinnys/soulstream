@@ -324,7 +324,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   async close(): Promise<void> {
-    if (this.closed) return;
+    if (this.closed) {
+      if (this.reconnectExhaustedError) await this.retireClosedSpawn();
+      return;
+    }
     this.closed = true;
     this.abortRequestLifetimes(new Error("Runner closed"));
     if (this.options.offlineExisting) {
@@ -371,6 +374,26 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         }
       }
     }
+  }
+
+  private async retireClosedSpawn(): Promise<void> {
+    if (this.options.offlineExisting) return;
+    const spawned = this.spawnedProcess;
+    if (!spawned || spawned.adopted) return;
+    const identity = await readRunnerRegistrationIdentity(spawned.paths.sessionDirectory);
+    if (!identity || identity.pid === null || identity.startIdentity === null) return;
+    if (identity.registrationId !== spawned.registrationId || identity.pid !== spawned.pid) {
+      throw new Error(
+        `runner registration identity changed before closed retirement: ${this.spawnInput.sessionId}`,
+      );
+    }
+    const spawner = this.options.spawner ?? new RunnerProcessSpawner();
+    if (!spawner.terminate) throw new Error("runner close terminator unavailable");
+    await spawner.terminate(spawned.paths, {
+      registrationId: identity.registrationId,
+      pid: identity.pid,
+      startIdentity: identity.startIdentity,
+    });
   }
 
   /**

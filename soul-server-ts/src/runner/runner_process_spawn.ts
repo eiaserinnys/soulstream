@@ -42,6 +42,7 @@ import {
 import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 import {
+  retireReleasedTerminalExecutionEvidence,
   retireTerminalExecutionIdentity,
   type TerminalExecutionOwnershipRetirement,
 } from "./runner_terminal_identity_retirement.js";
@@ -351,8 +352,22 @@ export class RunnerProcessSpawner {
   }
   async terminate(
     paths: RunnerProcessPaths,
-    expected?: { pid: number; startIdentity: string },
+    expected?: ExactRunnerProcess,
+    releasedRegistration?: RunnerRegistration,
   ): Promise<RunnerTerminationOutcome> {
+    if (!expected) {
+      if (!releasedRegistration) {
+        throw new RunnerMutationFailure(
+          "runner_registration_identity_proof_failed",
+          `released terminal evidence required before termination: ${paths.sessionDirectory}`,
+        );
+      }
+      await retireReleasedTerminalExecutionEvidence(
+        { paths, pid: releasedRegistration.pid },
+        this.deps,
+      );
+      return "registration_absent";
+    }
     return await withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
       return await stopExistingRunnerLocked(paths, this.deps, expected, "strict");
     });
