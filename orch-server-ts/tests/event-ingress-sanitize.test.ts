@@ -136,7 +136,7 @@ describe("parseEventAppendBatch sanitization", () => {
     }))).toThrow("session_effect.start_identity must be a non-empty string");
   });
 
-  it("requires ledger generation and the complete registration identity on terminal retirement", () => {
+  it("replays the persisted legacy terminal ownership effect unchanged", () => {
     const effect = {
       kind: "execution_retire_terminal_ownership",
       ownership_generation: 113_641_988_538_614,
@@ -145,7 +145,27 @@ describe("parseEventAppendBatch sanitization", () => {
       pid: 968_764,
       start_identity: "start-1",
       execution_command_id: "execute-1",
-      runner_fact: "closed",
+      runner_fact: "reaped",
+      updated_at: "2026-08-29T00:00:00.000Z",
+    };
+    const persisted = JSON.parse(JSON.stringify(effect));
+
+    expect(
+      parseEventAppendBatch(batchWithEffect(persisted)).events[0]!.session_effect,
+    ).toEqual(effect);
+  });
+
+  it("requires the terminal receipt and complete sessions-row identity on the new effect", () => {
+    const effect = {
+      kind: "execution_retire_recorded_terminal_identity",
+      ownership_generation: 113_641_988_538_614,
+      manifest_id: "manifest-1",
+      runtime_env_identity: "runtime-1",
+      registration_id: "registration-1",
+      pid: 968_764,
+      start_identity: "start-1",
+      execution_command_id: "execute-1",
+      terminal_event_id: 3,
       updated_at: "2026-08-29T00:00:00.000Z",
     };
 

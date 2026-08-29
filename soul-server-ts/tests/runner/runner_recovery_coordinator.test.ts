@@ -783,6 +783,64 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     )).toHaveLength(1);
   });
 
+  it("retires a recorded terminal identity before offline replay can duplicate session_ended", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "completed" });
+    const trace: string[] = [];
+    const reconcileRecordedTerminalExecution = vi.fn(async () => {
+      trace.push("sessions-identity-retired");
+      return true;
+    });
+    const retireTerminalOwnership = vi.fn(async (
+      input: { registrationId: string; pid: number; startIdentity: string },
+      commit: () => Promise<boolean>,
+    ) => {
+      expect(input).toMatchObject({
+        registrationId: "registration-a",
+        pid: 4123,
+        startIdentity: "start-4123",
+      });
+      trace.push("exact-process-absent");
+      expect(await commit()).toBe(true);
+      trace.push("local-registration-retired");
+    });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskManager: { reconcileRecordedTerminalExecution } as never,
+      spawner: {
+        terminate: vi.fn(async () => {}),
+        invalidateRegistration: vi.fn(async () => {}),
+        retireTerminalRegistration: vi.fn(async () => {}),
+        retireTerminalOwnership,
+      } as never,
+    });
+    subject.task.status = "error";
+    subject.task.terminationReason = "error_aborted";
+    subject.task.terminationDetail = "event outbox acknowledgement timed out";
+    subject.task.terminationEventRecorded = true;
+    subject.task.terminalEventId = 3;
+    subject.task.executionOwnership = {
+      ownerKind: "spawned_runner",
+      ownershipGeneration: 1,
+      manifestId: "sha-a",
+      runtimeEnvIdentity: "legacy:sha-a",
+      registrationId: "registration-a",
+      pid: 4123,
+      startIdentity: "start-4123",
+      executionCommandId: "execute-a",
+    };
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(reconcileRecordedTerminalExecution).toHaveBeenCalledOnce();
+    expect(retireTerminalOwnership).toHaveBeenCalledOnce();
+    expect(trace).toEqual([
+      "exact-process-absent",
+      "sessions-identity-retired",
+      "local-registration-retired",
+    ]);
+  });
+
   it("does not block server startup on a dead terminal runner waiting for upstream ACK", async () => {
     let finishRecovery!: () => void;
     const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });
