@@ -109,6 +109,8 @@ function makeAppliedTransitionAcknowledgement(
   if (!effect || ![
     "running_transition",
     "terminal_transition",
+    "execution_acquire",
+    "execution_release",
     "execution_reserve",
     "execution_prove",
     "execution_adopt_reserve",
@@ -122,8 +124,10 @@ function makeAppliedTransitionAcknowledgement(
     throw new Error("transition acknowledgement requires a transition effect");
   }
   const terminal = effect.kind === "terminal_transition";
+  const acquired = effect.kind === "execution_acquire";
   const activated = effect.kind === "running_transition"
-    || effect.kind === "execution_activate";
+    || effect.kind === "execution_activate"
+    || acquired;
   const failed = effect.kind === "execution_fail"
     || effect.kind === "execution_expire_dead_owner";
   const runnerFact = "runner_fact" in effect ? effect.runner_fact : undefined;
@@ -170,6 +174,20 @@ function makeAppliedTransitionAcknowledgement(
         updated_at: effect.updated_at,
         last_event_id: record.source_seq,
       },
+      canonical_execution_ownership: acquired
+        ? {
+            ownership_generation: 1,
+            owner_kind: effect.owner_kind,
+            manifest_id: effect.manifest_id,
+            runtime_env_identity: effect.runtime_env_identity,
+            registration_id: effect.registration_id,
+            pid: effect.pid,
+            start_identity: effect.start_identity,
+            execution_command_id: effect.execution_command_id,
+            phase: "active",
+            failure_reason: null,
+          }
+        : null,
     },
   };
 }
@@ -309,8 +327,6 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     );
     expect(durableTypes).toEqual([
       "metadata",
-      "metadata",
-      "metadata",
       "user_message",
       "session",
       "assistant_message",
@@ -330,15 +346,13 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     expect(procNames.some((p) => p.includes("session_set_claude_id"))).toBe(false);
     expect(outbox.append.mock.calls.map(([input]) =>
       (input as Record<string, unknown>).session_effect)).toEqual([
-      expect.objectContaining({ kind: "execution_reserve" }),
-      expect.objectContaining({ kind: "execution_prove" }),
-      expect.objectContaining({ kind: "execution_activate" }),
+      expect.objectContaining({ kind: "execution_acquire" }),
       expect.objectContaining({ kind: "last_message" }),
       { kind: "set_backend_session_id", backend_session_id: "thr-codex-1" },
       expect.objectContaining({ kind: "last_message" }),
       null,
       expect.objectContaining({
-        kind: "runner_terminal_fact",
+        kind: "execution_release",
         runner_fact: "completed",
       }),
     ]);
@@ -346,7 +360,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     // task 상태
     expect(task!.status).toBe("completed");
     expect(task!.codexThreadId).toBe("thr-codex-1");
-    expect(task!.lastEventId).toBe(8);
+    expect(task!.lastEventId).toBe(6);
     expect(task!.lastAssistantText).toBe("Hello world");
   });
 
