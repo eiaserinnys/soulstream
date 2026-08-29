@@ -25,6 +25,7 @@ import {
   type IdentityConvergenceEvidence,
   type IdleRouteEvidence,
   type RunningRouteEvidence,
+  type StaleTerminalCompletionEvidence,
   type UnifiedBackend,
   type UnifiedExternalMessageObservation,
 } from "./task_intervention_unified_external_message_oracle.js";
@@ -169,7 +170,10 @@ async function observeIdle(
     {
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
       recordConsumed: vi.fn(async (message: InterventionMessage) => {
-        if (message.deliveryId === deliveryId) consumedDeliveryIds.push(deliveryId);
+        if (message.deliveryId === deliveryId) {
+          consumedDeliveryIds.push(deliveryId);
+          eventOrder.push("consumed");
+        }
       }),
       discardIfConsumed: vi.fn().mockResolvedValue(false),
     },
@@ -189,7 +193,13 @@ async function observeIdle(
     persistence: persistence.persistence,
   });
   const deliver = vi.spyOn(running, "deliver");
-  const queueOnly = vi.spyOn(running, "queueOnly");
+  const queueOnlyOriginal = running.queueOnly.bind(running);
+  const queueOnly = vi.spyOn(running, "queueOnly").mockImplementation(
+    async (...args) => {
+      eventOrder.push("queue_only");
+      return await queueOnlyOriginal(...args);
+    },
+  );
   const route = new TaskInterventionRoute({
     getTask: () => task,
     loadEvictedTask: vi.fn().mockResolvedValue(null),
@@ -207,6 +217,21 @@ async function observeIdle(
       execution = executor.startExecution(resumedTask, agent, activation);
     },
   );
+  const taskStatusAfterRoute = task.status;
+  const routeResult = "autoResumed" in result
+    ? "resumed" as const
+    : "queued" in result && result.queued
+    ? "queued" as const
+    : "other" as const;
+  const automaticExecutionStarts = execution ? 1 : 0;
+  const queuedBeforeExplicitTurn = countQueued(task, deliveryId);
+  let explicitTurnStarts = 0;
+  if (axis.key === "completion_notification" && !execution) {
+    task.status = "running";
+    explicitTurnStarts += 1;
+    eventOrder.push("explicit_turn");
+    execution = executor.startExecution(task, agent);
+  }
   if (!execution) throw new Error(`idle execution was not started: ${axis.key}`);
   await execution;
   if (count(consumedDeliveryIds, deliveryId) !== 1) {
@@ -223,8 +248,64 @@ async function observeIdle(
     queueOnlyCalls: queueOnly.mock.calls.length,
     admissionDeliveryIds: admissionIds,
     modelInputDeliveryIds,
-    result: "autoResumed" in result ? "resumed" : "other",
+    result: routeResult,
     eventOrder,
+    ...(axis.key === "completion_notification"
+      ? {
+          terminalCompletion: {
+            taskStatusAfterRoute,
+            automaticExecutionStarts,
+            explicitTurnStarts,
+            queuedBeforeExplicitTurn,
+            queuedAfterExplicitTurn: countQueued(task, deliveryId),
+            consumedDeliveryIds,
+            staleTerminal: await Promise.all(
+              (["interrupted", "error"] as const).map(
+                (status) => observeStaleTerminalCompletion(axis, status),
+              ),
+            ),
+          },
+        }
+      : {}),
+  };
+}
+
+async function observeStaleTerminalCompletion(
+  axis: ExternalMessageAxis,
+  status: "error" | "interrupted",
+): Promise<StaleTerminalCompletionEvidence> {
+  const deliveryId = status === "interrupted"
+    ? "82000000-0000-4200-8200-000000000001"
+    : "82000000-0000-4200-8200-000000000002";
+  const task = makeTask(`unified-stale-${status}`, status);
+  const transition = new RunningInterventionTransition({
+    broadcaster: broadcaster(),
+    logger: silentLogger,
+    persistence: makeEventPersistenceTestDouble().persistence,
+  });
+  const queueOnly = vi.spyOn(transition, "queueOnly");
+  const resume = vi.fn();
+  const executorCallback = vi.fn();
+  const route = new TaskInterventionRoute({
+    getTask: () => task,
+    loadEvictedTask: vi.fn().mockResolvedValue(null),
+    rememberTask: vi.fn(),
+    runningInterventionTransition: transition,
+    autoResumeTransition: { resume } as never,
+    deliveryLedgerGate: makeLedgerGate().gate,
+  });
+  const result = await route.addIntervention(
+    requestFor(axis, task.agentSessionId, deliveryId),
+    executorCallback,
+  );
+  return {
+    initialStatus: status,
+    statusAfterRoute: task.status,
+    resumeCalls: resume.mock.calls.length,
+    executorCallbackCalls: executorCallback.mock.calls.length,
+    queueOnlyCalls: queueOnly.mock.calls.length,
+    queueDepthAfterRoute: countQueued(task, deliveryId),
+    result: "queued" in result && result.queued ? "queued" : "other",
   };
 }
 
@@ -473,14 +554,17 @@ function deliveryIdFor(
   return `80000000-0000-4${laneNumber}00-8${String(index).padStart(3, "0")}-00000000000${index}`;
 }
 
-function makeTask(agentSessionId: string, status: "running" | "completed"): Task {
+function makeTask(
+  agentSessionId: string,
+  status: "running" | "completed" | "error" | "interrupted",
+): Task {
   return {
     agentSessionId,
     prompt: "foreground prompt",
     status,
     profileId: "unified-route-red",
     createdAt: new Date("2026-08-25T00:00:00.000Z"),
-    terminalEventId: status === "completed" ? 7 : undefined,
+    terminalEventId: status === "running" ? undefined : 7,
     lastEventId: 7,
     lastReadEventId: 3,
     interventionQueue: [],
@@ -527,4 +611,10 @@ function requireParam<T>(value: T | undefined, name: string): T {
 
 function count(values: string[], expected: string): number {
   return values.filter((value) => value === expected).length;
+}
+
+function countQueued(task: Task, deliveryId: string): number {
+  return task.interventionQueue.filter(
+    (message) => message.deliveryId === deliveryId,
+  ).length;
 }
