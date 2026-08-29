@@ -290,15 +290,21 @@ export class ClaudeSdkPersistentSession {
         this.followupWatchdog.arm(active.uuid, active.origin);
       }
       const terminalEvents = this.eventMapper.mapResultMessage(message);
+      const expectedInterruptDiagnostic = terminalEvents.some(isExpectedInterruptDiagnostic);
       this.logger.info(
         {
           interruptedOwnerUuid,
           interventionUuid: active.uuid,
-          errorDuringExecution: terminalEvents.some(isExpectedInterruptDiagnostic),
+          errorDuringExecution: expectedInterruptDiagnostic,
           ...describeResultProvenance(message),
         },
         "Fenced the first interrupted-owner Result before accepting the intervention Result",
       );
+      for (const event of terminalEvents) {
+        if (isExpectedInterruptDiagnostic(event)) continue;
+        markPostResultDrainEvent(event);
+        await this.emitDetached(event);
+      }
       return;
     }
     if (
