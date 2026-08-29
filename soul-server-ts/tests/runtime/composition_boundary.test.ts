@@ -252,6 +252,7 @@ describe("worker composition boundary", () => {
       "engine/claude_sdk_event_mapper.ts",
       "engine/claude_sdk_background_membership_mapper.ts",
       "engine/claude_sdk_persistent_session.ts",
+      "engine/claude_sdk_persistent_turn_handoff.ts",
       "engine/claude_persistent_background_lifecycle.ts",
       "engine/claude_session_client_registry.ts",
       "engine/claude_session_runtime.ts",

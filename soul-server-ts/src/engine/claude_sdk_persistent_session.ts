@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type {
   Query as ClaudeSdkQuery,
   SDKMessage,
@@ -14,12 +12,11 @@ import {
   observePersistentBackgroundEvent,
   terminalizePersistentBackgroundTasks,
 } from "./claude_persistent_background_lifecycle.js";
-import { createEventQueue, type EventQueue } from "./claude_sdk_event_queue.js";
+import type { EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
 import * as rateLimit from "./claude_sdk_rate_limit_stop_failure.js";
 import { isFatalClientError, isRuntimeClientEvent } from "./claude_sdk_runtime_state.js";
-import { makeUserMessage } from "./claude_sdk_user_message.js";
 import { ClaudeRuntimeFollowupWatchdog } from "./claude_runtime_followup_watchdog.js";
 import { ClaudeTurnInactivityWatchdog } from "./claude_turn_inactivity_watchdog.js";
 import {
@@ -28,12 +25,15 @@ import {
   type ClaudeRuntimeEventSink,
   type ClaudeSdkPersistentSessionConfig,
   describeResultProvenance,
-  hashSdkUserMessage,
   isExpectedInterruptDiagnostic,
   isTurnStartingUserInput,
   provableTurnResultOwner,
   turnInactivityError,
 } from "./claude_sdk_persistent_session_support.js";
+import {
+  startPersistentForegroundTurn,
+  steerPersistentActiveTurn,
+} from "./claude_sdk_persistent_turn_handoff.js";
 import {
   ClaudeSessionRuntime,
   type ClaudeForegroundPhase,
@@ -108,55 +108,18 @@ export class ClaudeSdkPersistentSession {
   }
 
   runTurn(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
-    if (!options.agentSessionId) {
-      throw new Error("Persistent Claude runtime requires agentSessionId");
-    }
-    if (signal.aborted) {
-      throw signal.reason instanceof Error
-        ? signal.reason
-        : new Error("Persistent Claude turn aborted before enqueue");
-    }
-    if (this.activeForeground) {
-      throw new Error("Persistent Claude runtime already has an active foreground turn");
-    }
-
-    const output = createEventQueue<ClaudeClientEvent>();
-    const uuid = options.inputUuid ?? randomUUID();
-    const message = makeUserMessage(
-      options.prompt,
-      options.imageAttachmentPaths,
-      {
-        uuid,
-        priority: this.runtime.snapshot().foregroundPhase === "idle" ? "now" : "next",
+    return startPersistentForegroundTurn({
+      options,
+      signal,
+      activeForeground: this.activeForeground,
+      runtime: this.runtime,
+      turnInactivityWatchdog: this.turnInactivityWatchdog,
+      followupWatchdog: this.followupWatchdog,
+      logger: this.logger,
+      setActiveForeground: (active) => {
+        this.activeForeground = active;
       },
-    );
-    this.runtime.enqueueInput({
-      uuid,
-      payloadHash: hashSdkUserMessage(message),
-      message,
     });
-    const origin = {
-      kind: options.turnOrigin?.kind ?? "initial_prompt",
-      id: options.turnOrigin?.id ?? uuid,
-    };
-    this.activeForeground = {
-      uuid,
-      output,
-      interruptResultTimer: null,
-      timedOut: false,
-      origin,
-      rateLimitTerminationState: "none",
-    };
-    this.turnInactivityWatchdog.arm(uuid);
-    if (origin.kind === "runtime_followup") {
-      this.followupWatchdog.arm(uuid, origin);
-    }
-    this.runtime.beginForegroundTurn(uuid);
-    this.logger.info(
-      { uuid, turnOriginKind: origin.kind, turnOriginId: origin.id },
-      "Persistent Claude foreground turn started",
-    );
-    return output;
   }
 
   async interruptForeground(): Promise<boolean> {
@@ -166,51 +129,13 @@ export class ClaudeSdkPersistentSession {
   }
 
   async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
-    const active = this.activeForeground;
-    if (!active) return { status: "no_active_turn" };
-    if (this.runtime.snapshot().foregroundPhase !== "generating") {
-      return { status: "not_accepting_input" };
-    }
-
-    const uuid = input.inputUuid ?? randomUUID();
-    const message = makeUserMessage(
-      input.prompt,
-      input.imageAttachmentPaths,
-      { uuid, priority: "next" },
-    );
-    const registered = this.runtime.enqueueInput({
-      uuid,
-      payloadHash: hashSdkUserMessage(message),
-      message,
+    return await steerPersistentActiveTurn({
+      input,
+      activeForeground: this.activeForeground,
+      runtime: this.runtime,
+      clearForegroundTimers: (active) => this.clearForegroundTimers(active),
+      logger: this.logger,
     });
-    if (!registered) {
-      return {
-        status: "not_accepting_input",
-        message: `Claude intervention input is already registered: ${uuid}`,
-      };
-    }
-
-    const interruptedOwnerUuid = active.uuid;
-    this.clearForegroundTimers(active);
-    active.interruptedOwnerUuid = interruptedOwnerUuid;
-    active.uuid = uuid;
-    active.origin = {
-      kind: input.turnOrigin?.kind ?? "user_message",
-      id: input.turnOrigin?.id ?? uuid,
-    };
-    active.timedOut = false;
-    active.rateLimitTerminationState = "none";
-    await this.runtime.interruptForeground();
-    this.logger.info(
-      {
-        interruptedOwnerUuid,
-        interventionUuid: uuid,
-        turnOriginKind: active.origin.kind,
-        turnOriginId: active.origin.id,
-      },
-      "Persistent Claude intervention enqueued and interrupted active owner",
-    );
-    return { status: "delivered" };
   }
 
   phase(): ClaudeForegroundPhase {
