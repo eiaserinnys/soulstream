@@ -259,11 +259,8 @@ export class ClaudeSdkPersistentSession {
         await this.close("followup_no_output");
         return;
       }
-      // The Query runs turns this session never enqueued. A finished background
-      // task makes the harness run its own notification turn, and that turn's
-      // terminal Result carries no correlation. Nothing local owns it, so it
-      // ends no local turn — and it is not a defect worth ending the session
-      // over either.
+      // A harness-owned turn (e.g. a background-task notification) ends with a
+      // Result carrying no correlation: it ends no local turn and is not fatal.
       this.logger.info(
         {
           activeForegroundUuid: active?.uuid,
@@ -290,29 +287,31 @@ export class ClaudeSdkPersistentSession {
         this.followupWatchdog.arm(active.uuid, active.origin);
       }
       const terminalEvents = this.eventMapper.mapResultMessage(message);
+      const expectedInterruptDiagnostic = terminalEvents.some(isExpectedInterruptDiagnostic);
       this.logger.info(
         {
           interruptedOwnerUuid,
           interventionUuid: active.uuid,
-          errorDuringExecution: terminalEvents.some(isExpectedInterruptDiagnostic),
+          errorDuringExecution: expectedInterruptDiagnostic,
           ...describeResultProvenance(message),
         },
         "Fenced the first interrupted-owner Result before accepting the intervention Result",
       );
+      for (const event of terminalEvents) {
+        if (isExpectedInterruptDiagnostic(event)) continue;
+        markPostResultDrainEvent(event);
+        await this.emitDetached(event);
+      }
       return;
     }
-    if (
-      (!active || explicitUserMessageUuid !== active.uuid)
-    ) {
+    if (!active || explicitUserMessageUuid !== active.uuid) {
       const observation = this.runtime.observeDetachedResult(explicitUserMessageUuid);
       if (observation === "duplicate") return;
       if (observation === "unknown") {
-        // The Result names a turn this session never enqueued. Unlike a bare
-        // Result that is a normal harness event, a named one that misses the
-        // ledger is a correlation this session cannot account for. It stays
-        // loud and non-fatal: a resumed Query can replay a Result from before
-        // this process, and killing the session over that would recreate the
-        // defect this path removes.
+        // A named Result missing from the ledger is a correlation this session
+        // cannot account for. It stays loud and non-fatal: a resumed Query can
+        // replay a Result from before this process, and killing the session
+        // over that would recreate the defect this path removes.
         this.logger.warn(
           {
             activeForegroundUuid: active?.uuid,
@@ -355,6 +354,7 @@ export class ClaudeSdkPersistentSession {
     } else {
       const terminalEvents = this.eventMapper.mapResultMessage(message);
       for (const event of terminalEvents) {
+        if (isExpectedInterruptDiagnostic(event)) continue;
         if (active) {
           active.output.push(event);
         } else {

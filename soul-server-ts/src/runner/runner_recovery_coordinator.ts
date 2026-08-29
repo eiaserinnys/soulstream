@@ -479,14 +479,15 @@ export class RunnerRecoveryCoordinator {
     // thirteen skips at fifteen seconds each before the runner process happens
     // to exit -- and when it never exits, forever (260822).
     //
-    // Detaching here cannot starve a turn: a terminal lifecycle means the turn
-    // is over, and the frames it has left are durable in the runner's own
-    // outbox, which is what the offline replay reads. That is the difference
-    // from `detachHost` on a runner still working, which stranded a live tool.
+    // Detaching here cannot starve a turn only when the attached dispatcher has
+    // no admitted execution. Its live ownership outranks the older terminal
+    // lifecycle on disk; the existing runner/execution guard below joins that
+    // successor instead of releasing the outbox underneath it.
     if (
       mode === "offline"
       && task.runner
       && registrationOwnsAttachedRunner(task, registration)
+      && task.runner.dispatcher.hasActiveExecution() !== true
     ) {
       this.options.logger.warn(
         {
