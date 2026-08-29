@@ -247,6 +247,7 @@ describe("worker composition boundary", () => {
       "task/task_creation.ts",
       "task/task_creation_hook.ts",
       "engine/claude_sdk_client.ts",
+      "engine/claude_sdk_options.ts",
       "engine/claude_sdk_legacy_pump.ts",
       "engine/claude_sdk_event_mapper.ts",
       "engine/claude_sdk_background_membership_mapper.ts",

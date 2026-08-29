@@ -17,19 +17,16 @@ import {
   type EventQueue,
 } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
-import { buildClaudeSdkHooks } from "./claude_sdk_hooks.js";
 import { pumpLegacyClaudeQuery } from "./claude_sdk_legacy_pump.js";
-import { buildMcpOptions } from "./claude_sdk_mcp_options.js";
+import { buildClaudeSdkOptions } from "./claude_sdk_options.js";
 import {
   ClaudeSdkPersistentSession,
   type ClaudeDetachedEventSink,
   type ClaudeRuntimeEventSink,
 } from "./claude_sdk_persistent_session.js";
-import { makeCacheableSystemPrompt } from "./claude_sdk_prompt.js";
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 import { ClaudeSdkToolPermissionController } from "./claude_sdk_tool_permissions.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
-import { spawnClaudeSessionEngine } from "./session_engine_oom_score.js";
 import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
 import type {
   ClaudeBackgroundTaskControlResult,
@@ -38,7 +35,6 @@ import type {
 } from "./protocol.js";
 
 export { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
-const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
 /**
  * Result 도착 후 SDK가 발행하는 `prompt_suggestion` 메시지를 받기 위한 short drain 시간.
@@ -151,7 +147,16 @@ export class ClaudeSdkClient implements ClaudeClient {
       signal.addEventListener("abort", abortSdk, { once: true });
     }
 
-    const queryOptions = this.buildSdkOptions(options, abortController, output);
+    const queryOptions = buildClaudeSdkOptions({
+      options,
+      abortController,
+      output,
+      logger: this.logger,
+      resolveClaudeExecutablePath: this.resolveClaudeExecutablePath,
+      eventMapper: this.eventMapper,
+      runtimeState: this.runtimeState,
+      toolPermissionController: this.toolPermissionController,
+    });
     let query: ClaudeSdkQuery;
     this.activeInput = input;
     try {
@@ -214,11 +219,16 @@ export class ClaudeSdkClient implements ClaudeClient {
       const hookOutput = createEventQueue<ClaudeClientEvent>();
       const abortController = new AbortController();
       const { maxTurns: _queryGlobalMaxTurns, ...persistentOptions } = options;
-      const queryOptions = this.buildSdkOptions(
-        persistentOptions,
+      const queryOptions = buildClaudeSdkOptions({
+        options: persistentOptions,
         abortController,
-        hookOutput,
-      );
+        output: hookOutput,
+        logger: this.logger,
+        resolveClaudeExecutablePath: this.resolveClaudeExecutablePath,
+        eventMapper: this.eventMapper,
+        runtimeState: this.runtimeState,
+        toolPermissionController: this.toolPermissionController,
+      });
       let createdSession!: ClaudeSdkPersistentSession;
       createdSession = new ClaudeSdkPersistentSession({
         createQuery: (input) => {
@@ -266,16 +276,21 @@ export class ClaudeSdkClient implements ClaudeClient {
 
     const controller = new AbortController();
     const output = createEventQueue<ClaudeClientEvent>();
-    const queryOptions = this.buildSdkOptions(
-      buildClaudeCompactRunOptions(
+    const queryOptions = buildClaudeSdkOptions({
+      options: buildClaudeCompactRunOptions(
         this.lastRunOptions,
         this.lastWorkspaceDir,
         sessionId,
         this.lastEnv,
       ),
-      controller,
+      abortController: controller,
       output,
-    );
+      logger: this.logger,
+      resolveClaudeExecutablePath: this.resolveClaudeExecutablePath,
+      eventMapper: this.eventMapper,
+      runtimeState: this.runtimeState,
+      toolPermissionController: this.toolPermissionController,
+    });
     let query: ClaudeSdkQuery;
     try {
       query = this.queryFn({ prompt: "/compact", options: queryOptions });
@@ -423,56 +438,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.closeActiveInput();
     this.activeQuery?.close();
     this.toolPermissionController.abortPendingInputRequests();
-  }
-
-  private buildSdkOptions(
-    options: ClaudeRunOptions,
-    abortController: AbortController,
-    output: EventQueue<ClaudeClientEvent>,
-  ): ClaudeSdkOptions {
-    const executablePath =
-      options.env?.[CLAUDE_CODE_EXECPATH_ENV]?.trim()
-      || this.resolveClaudeExecutablePath();
-    const systemPrompt = options.systemPrompt
-      ? makeCacheableSystemPrompt(options.systemPrompt)
-      : undefined;
-    const permissionMode = options.claudePermissionMode ?? "bypassPermissions";
-
-    return {
-      abortController,
-      cwd: options.workspaceDir,
-      ...(process.platform === "linux"
-        ? { spawnClaudeCodeProcess: (spawnOptions) => spawnClaudeSessionEngine(spawnOptions, this.logger) }
-        : {}),
-      ...(options.env !== undefined ? { env: options.env } : {}),
-      permissionMode,
-      ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
-      settingSources: ["project"],
-      promptSuggestions: true,
-      includePartialMessages: false,
-      toolConfig: { askUserQuestion: { previewFormat: "markdown" } },
-      canUseTool: this.toolPermissionController.makeCanUseTool(output, options),
-      hooks: buildClaudeSdkHooks({
-        output,
-        systemPrompt,
-        eventMapper: this.eventMapper,
-        runtimeState: this.runtimeState,
-        logger: this.logger,
-      }),
-      ...(options.model ? { model: options.model } : {}),
-      ...(systemPrompt ? { systemPrompt } : {}),
-      ...(options.resumeSessionId ? { resume: options.resumeSessionId } : {}),
-      ...(executablePath ? { pathToClaudeCodeExecutable: executablePath } : {}),
-      ...(options.allowedTools !== undefined ? { allowedTools: options.allowedTools } : {}),
-      ...(options.disallowedTools !== undefined ? { disallowedTools: options.disallowedTools } : {}),
-      ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
-      ...(options.sessionStore !== undefined ? { sessionStore: options.sessionStore } : {}),
-      ...(options.sessionStoreFlush !== undefined
-        ? { sessionStoreFlush: options.sessionStoreFlush }
-        : {}),
-      ...(options.loadTimeoutMs !== undefined ? { loadTimeoutMs: options.loadTimeoutMs } : {}),
-      ...buildMcpOptions(options, this.logger),
-    };
   }
 
   private isQueryActive(query: ClaudeSdkQuery): boolean {
