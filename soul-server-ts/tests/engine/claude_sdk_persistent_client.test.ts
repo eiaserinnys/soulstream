@@ -1092,7 +1092,9 @@ describe("ClaudeSdkClient persistent runtime", () => {
     harness.push(sdkInterruptedResult("sdk-session", input.uuid));
 
     const events = await turn;
-    expect(events).toEqual([]);
+    expect(events).toContainEqual({ type: "session", sessionId: "sdk-session" });
+    expect(events.filter((event) => event.type === "result")).toEqual([]);
+    expect(events.filter((event) => event.type === "error")).toEqual([]);
     expect(harness.detached).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "error" }),
     );
