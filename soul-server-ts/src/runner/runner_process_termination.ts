@@ -11,6 +11,7 @@ import {
   invalidateRunnerRegistrationFilesLocked,
   removeRunnerRegistrationEvidenceForReplacementLocked,
 } from "./runner_registration_mutation.js";
+import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
 import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 
 const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
@@ -80,6 +81,9 @@ export async function stopExistingRunnerLocked(
       identity.registrationId,
       cleanupMode,
     );
+    if (expected !== undefined) {
+      await prepareRunnerWriterLockForSpawn(paths.lockPath);
+    }
     return "registration_invalidated";
   }
   await removeRunnerRegistrationEvidenceForReplacementLocked(paths);
