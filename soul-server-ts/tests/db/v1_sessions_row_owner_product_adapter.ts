@@ -90,12 +90,15 @@ class CurrentProductBoundary implements V1OwnerBoundary {
     identity: AcquireInput["identity"],
     leaseExpiresAt: Date,
   ): Promise<number> {
+    // Contract scenarios run on a deterministic logical clock. Keep renewal on
+    // that clock instead of comparing the fixture lease with wall-clock NOW().
+    const renewedAt = new Date(leaseExpiresAt.getTime() - 1_000);
     const rows = await this.sql<Array<{ applied: boolean }>>`
       SELECT * FROM session_renew_execution_ownership(
         ${sessionId}, ${generation}, ${identity.manifestId},
         ${identity.runtimeEnvIdentity}, ${identity.registrationId}, ${identity.pid},
         ${identity.startIdentity}, ${identity.executionCommandId},
-        ${leaseExpiresAt}, NOW()
+        ${leaseExpiresAt}, ${renewedAt}
       )
     `;
     return rows[0]?.applied === true ? 1 : 0;
