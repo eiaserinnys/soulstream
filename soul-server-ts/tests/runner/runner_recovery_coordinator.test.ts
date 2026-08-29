@@ -52,6 +52,46 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
+  it("does not detach a terminal command while its execution generation opens a successor", async () => {
+    // Live incident 260829: an intervention interrupted a tool-use turn, then
+    // the same execution generation prepared its queued successor. Recovery
+    // detached the shared dispatcher between compact and execute, so
+    // startExecute read its released outbox and threw on
+    // `inspectPendingInterventions`. The sessions-row generation is the owner
+    // across both commands; a terminal command is not a terminal execution.
+    const finishedRegistration = registration({
+      lifecycleState: "completed",
+      pidAlive: false,
+    });
+    const continuingTask = task("session-a");
+    continuingTask.executionOwnership = {
+      ownerKind: "runner_process",
+      manifestId: "sha-a",
+      runtimeEnvIdentity: "env-a",
+      registrationId: "registration-a",
+      pid: 4123,
+      startIdentity: "start-4123",
+      executionCommandId: "owner:successor-a",
+      ownershipGeneration: 53,
+    };
+    const { runner, detachHost } = finishedRunner();
+    const execution = new Promise<void>(() => {});
+    continuingTask.runner = runner;
+    continuingTask.executionPromise = execution;
+    const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => continuingTask),
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(detachHost).not.toHaveBeenCalled();
+    expect(continuingTask.runner).toBe(runner);
+    expect(continuingTask.executionPromise).toBe(execution);
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
   it("does not detach a live successor while replaying an older terminal registration", async () => {
     const finishedRegistration = registration({ lifecycleState: "completed", pidAlive: false });
     const currentTask = task("session-a");

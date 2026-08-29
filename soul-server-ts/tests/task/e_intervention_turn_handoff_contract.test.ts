@@ -63,6 +63,37 @@ function assistantMessage(sessionId: string, text: string): SDKMessage {
   } as unknown as SDKMessage;
 }
 
+function assistantToolUse(sessionId: string): SDKMessage {
+  return {
+    type: "assistant",
+    uuid: `assistant-tool-${sessionId}`,
+    session_id: sessionId,
+    parent_tool_use_id: null,
+    message: {
+      id: `message-tool-${sessionId}`,
+      model: "claude",
+      role: "assistant",
+      content: [{
+        type: "tool_use",
+        id: `tool-${sessionId}`,
+        name: "Inspect",
+        input: { target: "foreground" },
+      }],
+    },
+  } as unknown as SDKMessage;
+}
+
+function sdkToolUseInterruptedResult(sessionId: string): SDKMessage {
+  return {
+    ...(sdkInterruptedResult(sessionId, undefined) as unknown as Record<string, unknown>),
+    stop_reason: "tool_use",
+    errors: [
+      "[ede_diagnostic] result_type=user last_content_type=n/a "
+        + "stop_reason=tool_use (aborted_streaming)",
+    ],
+  } as unknown as SDKMessage;
+}
+
 function makeFullSlice(sessionId: string) {
   const sdk = makeHarness({ receipt: { still_queued: [] } });
   const client = new ClaudeSdkClient(
@@ -146,6 +177,7 @@ describe("Lane E running intervention turn handoff", () => {
     const execution = slice.executor.startExecution(slice.task, agent);
     const foregroundInput = await slice.sdk.nextInput();
     slice.sdk.push(sdkInit("claude-lane-e"));
+    slice.sdk.push(assistantToolUse("claude-lane-e"));
 
     const intervention: InterventionMessage = {
       text: "apply the intervention now",
@@ -160,7 +192,7 @@ describe("Lane E running intervention turn handoff", () => {
     });
     expect(slice.sdk.interrupt).toHaveBeenCalledTimes(1);
 
-    slice.sdk.push(sdkInterruptedResult("claude-lane-e", undefined));
+    slice.sdk.push(sdkToolUseInterruptedResult("claude-lane-e"));
     const successorInput = await slice.sdk.nextInput();
     expect(successorInput.message.content).toContain(intervention.text);
     expect(slice.task.status).toBe("running");
@@ -179,6 +211,7 @@ describe("Lane E running intervention turn handoff", () => {
     const events = persistedEvents(slice);
     expect(foregroundInput.uuid).not.toBe(successorInput.uuid);
     expect(events.filter((event) => event.type === "intervention_sent")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "tool_use")).toHaveLength(1);
     expect(events.filter((event) => event.type === "assistant_message")).toHaveLength(1);
     expect(events.filter((event) => event.type === "complete")).toHaveLength(1);
     expect(events.filter((event) => event.type === "session_ended")).toHaveLength(1);
