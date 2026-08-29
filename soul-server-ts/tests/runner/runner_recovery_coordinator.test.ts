@@ -74,7 +74,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       executionCommandId: "owner:successor-a",
       ownershipGeneration: 53,
     };
-    const { runner, detachHost } = finishedRunner();
+    const { runner, detachHost } = finishedRunner("registration-a", true);
     const execution = new Promise<void>(() => {});
     continuingTask.runner = runner;
     continuingTask.executionPromise = execution;
@@ -1974,7 +1974,7 @@ function makeSubject(
   };
 }
 
-function finishedRunner(registrationId = "registration-a"): {
+function finishedRunner(registrationId = "registration-a", activeExecution = false): {
   runner: NonNullable<Task["runner"]>;
   detachHost: ReturnType<typeof vi.fn>;
 } {
@@ -1984,6 +1984,7 @@ function finishedRunner(registrationId = "registration-a"): {
       dispatcher: {
         detachHost,
         isClosed: () => false,
+        hasActiveExecution: () => activeExecution,
         dispatcherId: () => "live-one",
         registrationId: () => registrationId,
       } as unknown as NonNullable<Task["runner"]>["dispatcher"],

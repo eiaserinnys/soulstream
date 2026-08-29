@@ -8,6 +8,7 @@ import {
   errorMessage,
   asRecord,
 } from "./claude_sdk_helpers.js";
+import { isExpectedInterruptDiagnostic } from "./claude_sdk_persistent_session_support.js";
 import {
   ClaudeRuntimeState,
   isFatalClientError,
@@ -141,6 +142,9 @@ export class ClaudePostResultDrain {
         );
         if (msg?.type === "result") {
           const terminalEvents = this.eventMapper.mapResultMessage(msg);
+          const projectableTerminalEvents = terminalEvents.filter(
+            (event) => !isExpectedInterruptDiagnostic(event),
+          );
           const resultEvent = terminalEvents.find((event) => event.type === "result");
           const nextContinuations =
             resultEvent?.type === "result"
@@ -151,7 +155,7 @@ export class ClaudePostResultDrain {
             events.push(...drain.events);
             return { action: "continue", reason: drain.reason, events };
           }
-          events.push(...this.orderTerminalEvents(terminalEvents, drain.events));
+          events.push(...this.orderTerminalEvents(projectableTerminalEvents, drain.events));
           return { action: "continue", reason: "tool_use", events };
         }
         const mapped = this.eventMapper.mapSdkMessage(settled.value);

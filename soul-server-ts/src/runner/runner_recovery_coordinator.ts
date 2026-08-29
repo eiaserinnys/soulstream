@@ -487,7 +487,7 @@ export class RunnerRecoveryCoordinator {
       mode === "offline"
       && task.runner
       && registrationOwnsAttachedRunner(task, registration)
-      && task.runner.dispatcher.hasActiveExecution?.() !== true
+      && task.runner.dispatcher.hasActiveExecution() !== true
     ) {
       this.options.logger.warn(
         {
