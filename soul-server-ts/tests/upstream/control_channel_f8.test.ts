@@ -68,7 +68,18 @@ describe("F8 control/data isolation", () => {
     expect(result.maxLatencyMs.intervention).toBeLessThanOrEqual(1_000);
     expect(result.maxLatencyMs.session).toBeLessThanOrEqual(1_000);
     expect(result.maxLatencyMs.health).toBeLessThanOrEqual(1_000);
-    expect(result.healthStatuses).toEqual(["unavailable"]);
+    expect(result.healthResponses).toHaveLength(20);
+    expect(result.healthResponses).toContainEqual(expect.objectContaining({
+      status: "unavailable",
+    }));
+    for (const response of result.healthResponses) {
+      const expectedStatus = response.mainHeartbeatAgeMs <= 250
+        ? "healthy"
+        : response.mainHeartbeatAgeMs <= 1_000
+          ? "degraded"
+          : "unavailable";
+      expect(response.status).toBe(expectedStatus);
+    }
     for (const family of ["intervention", "session", "health"] as const) {
       expect(result.metrics[family]).toMatchObject({
         windowMs: 5 * 60_000,
@@ -90,7 +101,10 @@ type F8Result = {
   type: "f8_result";
   terminalCount: number;
   maxLatencyMs: Record<"intervention" | "session" | "health", number>;
-  healthStatuses: string[];
+  healthResponses: Array<{
+    status: string;
+    mainHeartbeatAgeMs: number;
+  }>;
   metrics: Record<string, Record<string, unknown>>;
 };
 
@@ -139,7 +153,7 @@ const ORCH_WORKER_SOURCE = String.raw`
   const sentAt = new Map();
   const terminal = [];
   const metrics = {};
-  const healthStatuses = new Set();
+  const healthResponses = [];
 
   server.once("listening", () => {
     parentPort.postMessage({ type: "listening", port: server.address().port });
@@ -173,7 +187,12 @@ const ORCH_WORKER_SOURCE = String.raw`
             family: frame.requestId.split("-")[1],
             latencyMs: Date.now() - started,
           });
-          if (frame.type === "health_status") healthStatuses.add(frame.status);
+          if (frame.type === "health_status") {
+            healthResponses.push({
+              status: frame.status,
+              mainHeartbeatAgeMs: frame.mainHeartbeatAgeMs,
+            });
+          }
           maybeFinish();
         }
       });
@@ -223,7 +242,7 @@ const ORCH_WORKER_SOURCE = String.raw`
       type: "f8_result",
       terminalCount: terminal.length,
       maxLatencyMs,
-      healthStatuses: [...healthStatuses],
+      healthResponses,
       metrics,
     });
   }
