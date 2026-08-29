@@ -333,6 +333,12 @@ export class RunnerRecoveryCoordinator {
       && !task.runner
       && !task.executionPromise
     ) {
+      if (
+        !task.executionOwnership
+        && registration.registrationId === null
+        && registration.pidStartIdentity === null
+        && !registration.pidAlive
+      ) return;
       await this.retireRecordedTerminalExecution(registration, task);
       return;
     }
