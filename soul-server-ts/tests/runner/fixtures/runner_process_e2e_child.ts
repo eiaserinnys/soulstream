@@ -1,4 +1,4 @@
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, readFile, rename, writeFile } from "node:fs/promises";
 
 import pino from "pino";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -48,6 +48,52 @@ class ControlledEngine implements EnginePort {
   async *execute(_params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {}
 
   async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+    if (process.env.RUNNER_E2E_S1_S2_SCENARIO === "1") {
+      const firstExecutionPath = `${this.controlDirectory}/s1s2-first-execution.json`;
+      const firstExecutionExists = await access(firstExecutionPath)
+        .then(() => true)
+        .catch((error) => {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+          throw error;
+        });
+      const generation = firstExecutionExists ? 2 : 1;
+      await writeJsonAtomically(
+        generation === 1
+          ? firstExecutionPath
+          : `${this.controlDirectory}/s1s2-successor-execution.json`,
+        { pid: process.pid, params },
+      );
+      yield engineEventFrame({
+        type: "session",
+        session_id: "backend-session-s1s2-1",
+      });
+      if (generation === 1) {
+        yield engineEventFrame({
+          type: "assistant_message",
+          content: "work at t+0s",
+          timestamp: 0,
+        });
+        await writeFile(`${this.controlDirectory}/s1s2-before-restart-emitted`, "ready\n");
+        await waitForFile(`${this.controlDirectory}/s1s2-host-detached`);
+        yield engineEventFrame({
+          type: "assistant_message",
+          content: "work at t+120s",
+          timestamp: 120,
+        });
+        await writeFile(`${this.controlDirectory}/s1s2-after-restart-emitted`, "ready\n");
+        await waitForFile(`${this.controlDirectory}/s1s2-finish-first`);
+        yield engineEventFrame({ type: "complete", result: "work at t+120s" });
+      } else {
+        await waitForFile(`${this.controlDirectory}/s1s2-release-successor`);
+        yield engineEventFrame({
+          type: "assistant_message",
+          content: "resume successor reply",
+          timestamp: 121,
+        });
+        yield engineEventFrame({ type: "complete", result: "resume successor reply" });
+      }
+      return;
+    }
     if (process.env.RUNNER_E2E_BACKGROUND_SCENARIO === "multi-terminal") {
       this.executionCount += 1;
       if (this.executionCount === 1) {
@@ -374,4 +420,10 @@ function argument(name: string): string {
 function required(value: string | undefined, name: string): string {
   if (!value) throw new Error(`${name} required`);
   return value;
+}
+
+async function writeJsonAtomically(path: string, value: unknown): Promise<void> {
+  const temporaryPath = `${path}.tmp-${process.pid}`;
+  await writeFile(temporaryPath, JSON.stringify(value), { flag: "wx" });
+  await rename(temporaryPath, path);
 }
