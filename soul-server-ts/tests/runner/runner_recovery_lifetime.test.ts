@@ -264,6 +264,7 @@ function makeHarness(input: {
     dispatcher: {
       detachHost,
       isClosed: () => detached,
+      hasActiveExecution: () => false,
       dispatcherId: () => "runner-a",
       registrationId: () => "registration-a",
     },
