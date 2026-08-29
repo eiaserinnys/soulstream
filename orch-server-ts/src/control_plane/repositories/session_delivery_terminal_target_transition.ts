@@ -1,0 +1,70 @@
+import type { SqlClient } from "../control_plane_types.js";
+
+/**
+ * Settles completion notifications whose target can no longer consume them.
+ *
+ * An exact relation receipt wins over target lifecycle: it proves the caller
+ * already observed this child revision even if the delivery-row ACK was lost.
+ * Without that proof, a terminal caller makes the notification obsolete, not
+ * rejected, so the existing superseded transition owns the final state.
+ */
+export async function settleTerminalTargetCompletionDeliveries(
+  sql: SqlClient,
+): Promise<void> {
+  await sql`
+    UPDATE session_deliveries AS delivery
+    SET
+      state = 'consumed',
+      aggregate_state = 'consumed',
+      caller_turn_id = consumption.consumed_turn_id,
+      target_receipt_id = COALESCE(
+        delivery.target_receipt_id,
+        consumption.consumed_turn_id
+      ),
+      target_receipt_at = COALESCE(
+        delivery.target_receipt_at,
+        consumption.consumed_at
+      ),
+      delivered_at = COALESCE(
+        delivery.delivered_at,
+        consumption.consumed_at
+      ),
+      consumed_at = consumption.consumed_at,
+      consumed_reason = 'exact relation receipt recovery',
+      lease_owner = NULL,
+      lease_expires_at = NULL,
+      updated_at = NOW()
+    FROM session_delivery_relation_consumptions AS consumption
+    WHERE delivery.relation_key = consumption.relation_key
+      AND delivery.completion_id = consumption.completion_id
+      AND delivery.target_session_id = consumption.caller_session_id
+      AND delivery.intent = 'completion_notification'
+      AND delivery.source = 'completion_notifier'
+      AND delivery.aggregate_state IN ('pending', 'delivered')
+      AND delivery.state IN (
+        'pending', 'claimed', 'dispatching', 'queued', 'delivered'
+      )
+  `;
+  await sql`
+    UPDATE session_deliveries AS delivery
+    SET
+      state = 'superseded',
+      aggregate_state = 'consumed',
+      consumed_at = NOW(),
+      consumed_reason = 'target session terminated before completion delivery',
+      superseded_at = NOW(),
+      superseded_terminal_revision = target.termination_event_id::text,
+      lease_owner = NULL,
+      lease_expires_at = NULL,
+      updated_at = NOW()
+    FROM sessions AS target
+    WHERE target.session_id = delivery.target_session_id
+      AND target.status IN ('completed', 'error', 'interrupted')
+      AND target.termination_event_id IS NOT NULL
+      AND delivery.intent = 'completion_notification'
+      AND delivery.source = 'completion_notifier'
+      AND delivery.producer_kind = 'child_session'
+      AND delivery.aggregate_state IN ('pending', 'delivered')
+      AND delivery.state IN ('pending', 'queued', 'delivered')
+  `;
+}

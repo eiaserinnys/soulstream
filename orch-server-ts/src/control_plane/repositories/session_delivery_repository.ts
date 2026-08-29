@@ -21,6 +21,8 @@ import {
   attemptOutcomeFor,
   deliveryRetryOrDeadLetterSet,
 } from "./session_delivery_retry_policy.js";
+import { settleTerminalTargetCompletionDeliveries } from
+  "./session_delivery_terminal_target_transition.js";
 import {
   getSessionDeliveryRelationConsumption,
   recordObservedChildCompletion,
@@ -277,6 +279,7 @@ export class SessionDeliveryRepository {
           leaseOwner: row.lease_owner,
         });
       }
+      await settleTerminalTargetCompletionDeliveries(transaction);
       return rows.length;
     });
   }
