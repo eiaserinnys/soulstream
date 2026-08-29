@@ -174,6 +174,95 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     }]);
   });
 
+  it("settles terminal-parent completion deliveries by exact evidence", async () => {
+    await harness.sql`
+      UPDATE sessions
+      SET termination_event_id = 77
+      WHERE session_id = 'caller-session'
+    `;
+    for (const [deliveryId, relationKey] of [
+      ["terminal-receipt", "relation-terminal-receipt"],
+      ["terminal-pending", "relation-terminal-pending"],
+      ["terminal-queued", "relation-terminal-queued"],
+    ] as const) {
+      await register(deliveryId, relationKey, {
+        targetSessionId: "caller-session",
+      });
+    }
+    for (const deliveryId of ["terminal-receipt", "terminal-queued"] as const) {
+      await repository.claimForTarget(
+        deliveryId,
+        "caller-session",
+        `worker-${deliveryId}`,
+      );
+      await repository.beginDispatch(deliveryId, `worker-${deliveryId}`);
+      await repository.markQueued(deliveryId, `worker-${deliveryId}`);
+    }
+    await harness.sql`
+      INSERT INTO session_delivery_relation_consumptions (
+        relation_key, completion_id, caller_session_id, consumed_turn_id
+      ) VALUES (
+        'relation-terminal-receipt',
+        'completion-relation-terminal-receipt',
+        'caller-session',
+        'event:terminal-receipt'
+      )
+    `;
+
+    await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(0);
+
+    const rows = await harness.sql<Array<{
+      delivery_id: string;
+      state: string;
+      aggregate_state: string;
+      target_receipt_id: string | null;
+      superseded_terminal_revision: string | null;
+    }>>`
+      SELECT delivery_id, state, aggregate_state, target_receipt_id,
+             superseded_terminal_revision
+      FROM session_deliveries
+      WHERE delivery_id LIKE 'terminal-%'
+      ORDER BY delivery_id
+    `;
+    const expected = new Map([
+      ["terminal-pending", {
+        state: "superseded",
+        aggregateState: "consumed",
+        targetReceiptId: null,
+        terminalRevision: "77",
+      }],
+      ["terminal-queued", {
+        state: "superseded",
+        aggregateState: "consumed",
+        targetReceiptId: null,
+        terminalRevision: "77",
+      }],
+      ["terminal-receipt", {
+        state: "consumed",
+        aggregateState: "consumed",
+        targetReceiptId: "event:terminal-receipt",
+        terminalRevision: null,
+      }],
+    ]);
+    const violations = rows.flatMap((row) => {
+      const ideal = expected.get(row.delivery_id);
+      if (
+        ideal
+        && row.state === ideal.state
+        && row.aggregate_state === ideal.aggregateState
+        && row.target_receipt_id === ideal.targetReceiptId
+        && row.superseded_terminal_revision === ideal.terminalRevision
+      ) return [];
+      return [row.delivery_id];
+    });
+
+    expect(violations).toEqual([]);
+    await expect(repository.claimRecoverableCompletionDeliveries(
+      "post-terminal-settlement",
+      10,
+    )).resolves.toEqual([]);
+  });
+
   it.each([
     ["long-running turn", "running"],
     ["quota/retryable terminal", "error"],
