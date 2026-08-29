@@ -211,7 +211,7 @@ describe("Lane E running intervention turn handoff", () => {
     const events = persistedEvents(slice);
     expect(foregroundInput.uuid).not.toBe(successorInput.uuid);
     expect(events.filter((event) => event.type === "intervention_sent")).toHaveLength(1);
-    expect(events.filter((event) => event.type === "tool_use")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "tool_start")).toHaveLength(1);
     expect(events.filter((event) => event.type === "assistant_message")).toHaveLength(1);
     expect(events.filter((event) => event.type === "complete")).toHaveLength(1);
     expect(events.filter((event) => event.type === "session_ended")).toHaveLength(1);
