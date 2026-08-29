@@ -44,7 +44,7 @@ describePostgres("worker restart zero-downtime Z handoff", () => {
     await postgres?.cleanup();
   });
 
-  it("keeps the old host serving until 077 is ready, then adopts live work and terminalizes 32b", async () => {
+  it("keeps the old host serving until the manifest head is ready, then adopts live work and terminalizes 32b", async () => {
     const buildWrapper = readFileSync(buildWrapperPath, "utf8");
     const publicStatusRoutes = readFileSync(publicStatusRoutesPath, "utf8");
     const production = readFileSync(productionPath, "utf8");
@@ -69,17 +69,18 @@ describePostgres("worker restart zero-downtime Z handoff", () => {
       )),
       "utf8",
     )) as { migrations: Array<{ id: string; sha256: string }> };
-    const target = migrationManifest.migrations.at(-1) as {
-      id: string;
-      sha256: string;
-    };
-    expect(target.id).toBe("077_ownerless_terminal_stale_event_cas.sql");
+    const targetOrdinal = migrationManifest.migrations.length;
+    const target = migrationManifest.migrations.at(-1);
+    const predecessor = migrationManifest.migrations.at(-2);
+    if (!target || !predecessor) {
+      throw new Error("restart fixture requires a target migration and its predecessor");
+    }
     const schemaGeneration = `${target.id}:${target.sha256}:sha256-manifest`;
 
     let ledgerHead: LedgerHead = {
-      migration_id: "076_ownerless_terminal_generation_cas.sql",
-      checksum: "d900ad89fb451a735778e6c7f4e0848903710dc48d65b10aa1d83530f3ed6bf9",
-      ordinal: 77,
+      migration_id: predecessor.id,
+      checksum: predecessor.sha256,
+      ordinal: targetOrdinal - 1,
     };
     const databaseSchemaProvider = new LiveDatabaseSchemaProvider({
       resolveSql: async () => (() => Promise.resolve([ledgerHead])) as never,
@@ -125,7 +126,7 @@ describePostgres("worker restart zero-downtime Z handoff", () => {
     ledgerHead = {
       migration_id: target.id,
       checksum: target.sha256,
-      ordinal: 78,
+      ordinal: targetOrdinal,
     };
     await verifyCentralSchemaPrerequisite({
       upstreamUrl: "ws://orch.test/ws/node",
@@ -139,11 +140,14 @@ describePostgres("worker restart zero-downtime Z handoff", () => {
     expect(cutoverCount).toBe(1);
     expect(observation.fullProvenLiveOwner).toMatchObject({
       status: "running",
-      activeOwnershipRows: 1,
+      generation: 1,
+      terminationEventId: null,
     });
     expect(observation.gen0NoOwnershipRow).toMatchObject({
       status: "interrupted",
-      activeOwnershipRows: 0,
+      generation: 0,
+      manifestId: null,
+      registrationId: null,
     });
     expect(observation.gen0NoOwnershipRow.terminationEventId)
       .toBeGreaterThan(observation.gen0InitialTerminalEventId);

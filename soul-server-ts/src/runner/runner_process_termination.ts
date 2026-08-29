@@ -12,7 +12,6 @@ import {
   invalidateRunnerRegistrationFilesLocked,
   removeRunnerRegistrationEvidenceForReplacementLocked,
 } from "./runner_registration_mutation.js";
-import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
 import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 
 const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
@@ -95,42 +94,6 @@ export async function terminateExactRunner(
     "runner_termination_exit_proof_failed",
     `exact runner remained live after SIGKILL: ${expected.pid}`,
   );
-}
-
-export async function retireAbsentRunnerOwnership(
-  paths: RunnerProcessPaths,
-  expected: ExactRunnerProcess,
-  commitOwnership: () => Promise<boolean>,
-  deps: RunnerProcessTerminationDependencies,
-): Promise<void> {
-  let expectedProcessAbsent = !deps.isPidAlive(expected.pid);
-  if (!expectedProcessAbsent) {
-    let observed: ProcessIdentity;
-    try {
-      observed = await deps.inspectProcess(expected.pid);
-    } catch (error) {
-      throw identityProofFailure(
-        `could not inspect runner pid ${expected.pid} before ownership retirement`,
-        error,
-      );
-    }
-    expectedProcessAbsent = !observed.alive
-      ? !deps.isPidAlive(expected.pid)
-      : observed.startIdentity !== null
-        && !processStartIdentitiesMatch(observed.startIdentity, expected.startIdentity);
-  }
-  if (!expectedProcessAbsent) {
-    throw identityProofFailure(
-      `runner process identity changed before ownership retirement: ${paths.sessionDirectory}`,
-    );
-  }
-  await prepareRunnerWriterLockForSpawn(paths.lockPath);
-  if (!await commitOwnership()) {
-    throw new Error(
-      `terminal execution ownership changed before retirement: ${paths.sessionDirectory}`,
-    );
-  }
-  await removeRunnerRegistrationEvidenceForReplacementLocked(paths);
 }
 
 async function waitForExactProcessExit(

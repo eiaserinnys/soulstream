@@ -16,9 +16,7 @@ export interface QueuedDeliveryTranscriptRecoveryDeps {
   >;
   recoveryRepository: Pick<
     SessionDeliveryRecoveryRepository,
-    | "claimQueuedAfterNodeRestart"
-    | "markDeliveredFromTranscript"
-    | "deferQueuedTranscriptCheck"
+    "claimQueuedAfterNodeRestart" | "markDeliveredFromTranscript"
   >;
   transcriptReceipt: Pick<
     ClaudeDeliveryTranscriptReceiptReader,
@@ -27,17 +25,21 @@ export interface QueuedDeliveryTranscriptRecoveryDeps {
   logger: Pick<Logger, "warn">;
 }
 
+export interface QueuedDeliveryTranscriptRecoveryPass {
+  claimed: number;
+  settled: number;
+}
+
 /**
- * Reconciles the SDK receiver receipt once during node-startup recovery.
+ * Reconciles one SDK receiver receipt pass during node-startup recovery.
  *
  * A stable input UUID prevents duplicate execution, but SDK 0.3.218 does not
  * emit another Result when that UUID is re-sent after resume. A completed
- * transcript therefore settles the ledger directly. An absent input returns
- * the delivery to pending for reconnect admission; an incomplete receipt stays
- * queued/held. Periodic maintenance does not consume or re-inject either row.
+ * transcript therefore settles the ledger directly. Any receipt that does not
+ * prove completion returns the same delivery identity to pending for reconnect
+ * admission. The stable UUID lets the SDK reject duplicate execution while an
+ * empty follow-up pass lets the startup-only lane retire.
  */
-/** Delay recorded with a deferred one-shot check; it is not an execution timer. */
-const QUEUED_HOLD_METADATA_DELAY_MS = 1_000;
 /**
  * One claim covers the whole batch, so the batch — not just one row — has to
  * finish inside the lease. Reading a transcript is bounded, and the loop stops
@@ -64,7 +66,7 @@ export class QueuedDeliveryTranscriptRecovery {
   async recoverAfterNodeRestart(
     nodeId: string,
     limit = 100,
-  ): Promise<number> {
+  ): Promise<QueuedDeliveryTranscriptRecoveryPass> {
     const rows = await this.deps.recoveryRepository
       .claimQueuedAfterNodeRestart(
         nodeId,
@@ -72,7 +74,10 @@ export class QueuedDeliveryTranscriptRecovery {
         limit,
         this.leaseMs,
       );
-    return await this.reconcile(rows);
+    return {
+      claimed: rows.length,
+      settled: await this.reconcile(rows),
+    };
   }
 
   private async reconcile(
@@ -84,10 +89,12 @@ export class QueuedDeliveryTranscriptRecovery {
     const startedAtMs = Date.now();
     // Leave one read's worth of lease so a row started here cannot outlive it.
     const acceptUntilMs = startedAtMs + (this.leaseMs - this.readTimeoutMs);
-    let deferredForLease = 0;
     for (const row of rows) {
       if (Date.now() >= acceptUntilMs) {
-        deferredForLease += 1;
+        await this.returnToPending(
+          row.delivery_id,
+          "queued_transcript_probe_budget_exhausted",
+        );
         continue;
       }
       try {
@@ -123,45 +130,35 @@ export class QueuedDeliveryTranscriptRecovery {
           settled += 1;
           continue;
         }
-        if (receipt.kind === "absent") {
-          await this.deps.deliveryRepository.retryLeasedDelivery(
-            row.delivery_id,
-            this.workerId,
-            "queued_transcript_input_absent",
-            0,
-          );
-          continue;
-        }
-        const reason = receipt.kind === "input_pending"
-          ? "queued_transcript_input_pending"
-          : receipt.reason;
-        await this.defer(row.delivery_id, reason);
+        const reason = receipt.kind === "absent"
+          ? "queued_transcript_input_absent"
+          : receipt.kind === "input_pending"
+            ? "queued_transcript_input_pending"
+            : receipt.reason;
+        await this.returnToPending(row.delivery_id, reason);
       } catch (err) {
-        await this.defer(
+        await this.returnToPending(
           row.delivery_id,
           `queued_transcript_read_failed:${errorText(err)}`,
         );
         this.deps.logger.warn(
           { err, deliveryId: row.delivery_id },
-          "Queued delivery transcript reconciliation deferred",
+          "Queued delivery transcript reconciliation returned input to pending",
         );
       }
-    }
-    if (deferredForLease > 0) {
-      this.deps.logger.warn(
-        { deferredForLease, claimed: rows.length, leaseMs: this.leaseMs },
-        "Queued transcript startup batch ran out of lease; remaining rows stay held",
-      );
     }
     return settled;
   }
 
-  private async defer(deliveryId: string, reason: string): Promise<void> {
-    await this.deps.recoveryRepository.deferQueuedTranscriptCheck(
+  private async returnToPending(
+    deliveryId: string,
+    reason: string,
+  ): Promise<void> {
+    await this.deps.deliveryRepository.retryLeasedDelivery(
       deliveryId,
       this.workerId,
       reason,
-      QUEUED_HOLD_METADATA_DELAY_MS,
+      0,
     );
   }
 }

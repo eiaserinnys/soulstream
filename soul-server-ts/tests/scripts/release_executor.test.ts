@@ -31,6 +31,19 @@ const itWithDatabase = hasTestDatabaseResource()
   ? it
   : it.skip;
 
+const migrationManifest = JSON.parse(readFileSync(
+  new URL("../../../packages/db-schema/migration-manifest.json", import.meta.url),
+  "utf8",
+)) as { migrations?: Array<{ id: string }> };
+if (!Array.isArray(migrationManifest.migrations)) {
+  throw new Error("release executor fixture requires a migration manifest");
+}
+const MANIFEST_MIGRATIONS = migrationManifest.migrations;
+if (!MANIFEST_MIGRATIONS.at(-1)) {
+  throw new Error("release executor fixture requires at least one migration");
+}
+const MANIFEST_MIGRATION_COUNT = MANIFEST_MIGRATIONS.length;
+
 afterEach(async () => {
   for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
@@ -396,7 +409,7 @@ describe("database release executor", () => {
     expect(retried).toMatchObject({ status: "applied_reconciled" });
     const verifySql = postgres(testDatabaseUrl, { max: 1, idle_timeout: 1 });
     const [count] = await verifySql`SELECT COUNT(*)::int AS count FROM schema_migrations`;
-    expect(count.count).toBe(79);
+    expect(count.count).toBe(MANIFEST_MIGRATION_COUNT);
     await verifySql.end({ timeout: 5 });
   }, 90_000);
 

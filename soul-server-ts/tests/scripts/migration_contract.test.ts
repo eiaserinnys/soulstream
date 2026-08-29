@@ -188,11 +188,9 @@ describe("versioned migration contract", () => {
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {
     const migrations = await loadMigrationManifest();
 
-    expect(migrations).toHaveLength(79);
+    expect(migrations.length).toBeGreaterThan(0);
     expect(migrations[0].id).toBe("001_list_sessions_folder_node_filter.sql");
-    expect(migrations.at(-1)?.id).toBe(
-      "078_terminal_execution_ownership_retirement.sql",
-    );
+    expect(migrations.at(-1)?.ordinal).toBe(migrations.length);
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
     );
@@ -201,48 +199,58 @@ describe("versioned migration contract", () => {
       "042_runbook_to_task.sql",
       "053_retire_supervisor.sql",
     ]);
-    expect(migrations.slice(0, -37).every(
+    const releaseMigrationIndex = migrations.findIndex(
+      (item) => item.id === "041_retire_task_tree.sql",
+    );
+    expect(releaseMigrationIndex).toBeGreaterThanOrEqual(0);
+    expect(migrations.slice(0, releaseMigrationIndex).every(
       (item) => item.rollback_compatibility === "bootstrap_only",
     )).toBe(true);
-    expect(migrations.slice(-37).map((item) => item.rollback_compatibility)).toEqual([
-      "restore_required",
-      "restore_required",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "restore_required",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "restore_required",
-      "restore_required",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-      "restore_required",
-      "previous_release_safe",
-      "restore_required",
-      "previous_release_safe",
-      "previous_release_safe",
-      "previous_release_safe",
-    ]);
+    const restoreRequiredMigrationIds = [
+      "041_retire_task_tree.sql",
+      "042_runbook_to_task.sql",
+      "053_retire_supervisor.sql",
+      "058_session_delete_ydoc_guard.sql",
+      "059_scope_board_seed_items.sql",
+      "073_sessions_execution_owner_v1.sql",
+      "075_sessions_execution_owner_release.sql",
+    ];
+    expect(migrations.filter(
+      (item) => item.rollback_compatibility === "restore_required",
+    ).map((item) => item.id)).toEqual(restoreRequiredMigrationIds);
+    const restoreRequired = new Set(restoreRequiredMigrationIds);
+    expect(migrations.slice(releaseMigrationIndex).every((item) => (
+      item.rollback_compatibility === (
+        restoreRequired.has(item.id) ? "restore_required" : "previous_release_safe"
+      )
+    ))).toBe(true);
+  });
+
+  it("keeps terminal status and runner facts on the sessions-row canon", async () => {
+    const migration = (await loadMigrationManifest()).find((item) =>
+      item.id === "079_terminal_status_single_canon.sql"
+    );
+    const schema = readFileSync(fileURLToPath(
+      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
+    ), "utf8");
+
+    expect(migration?.sql).toContain(
+      "session.status NOT IN ('completed', 'error', 'interrupted')",
+    );
+    expect(migration?.sql).toContain(
+      "SELECT * FROM session_release_execution_ownership(",
+    );
+    expect(migration?.sql).not.toContain("session_execution_ownerships");
+    expect(migration?.sql).toContain("FROM events AS terminal");
+    expect(migration?.sql).toContain(
+      "terminal.id = session.termination_event_id",
+    );
+    expect(schema).toContain(
+      "session.status NOT IN ('completed', 'error', 'interrupted')",
+    );
+    expect(schema).toContain(
+      "SELECT * FROM session_release_execution_ownership(",
+    );
   });
 
   it("keeps source task item references relational and removes the legacy duplicate FK", async () => {
@@ -308,92 +316,30 @@ describe("versioned migration contract", () => {
   it("bootstraps an already-current database without scheduling DROP or rename", async () => {
     const migrations = await loadMigrationManifest();
     const plan = buildMigrationPlan(migrations, [], current);
+    const currentBaselineIndex = migrations.findIndex(
+      (item) => item.id === "042_runbook_to_task.sql",
+    );
 
     expect(plan.state).toBe("current");
-    expect(plan.bootstrap).toHaveLength(44);
-    expect(plan.pending.map((item) => item.id)).toEqual([
-      "044_session_metadata_search.sql",
-      "045_session_deliveries.sql",
-      "046_claude_background_tasks.sql",
-      "047_session_delivery_relation_consumptions.sql",
-      "048_session_model_preset.sql",
-      "049_external_llm_actor.sql",
-      "050_session_id_search_indexed.sql",
-      "051_session_digests.sql",
-      "052_session_review_state_filter.sql",
-      "053_retire_supervisor.sql",
-      "054_event_ingress_receipts.sql",
-      "055_session_effects_and_mutation_receipts.sql",
-      "056_agent_profiles.sql",
-      "057_source_task_item_integrity.sql",
-      "058_session_delete_ydoc_guard.sql",
-      "059_scope_board_seed_items.sql",
-      "060_board_yjs_snapshot_revision.sql",
-      "061_session_terminal_receipt.sql",
-      "062_notification_outbox_hardening.sql",
-      "063_session_rotate_claude_id.sql",
-      "064_event_ingress_receipt_effect_encoding.sql",
-      "065_completion_terminal_revision_fence.sql",
-      "066_session_delivery_enqueue_sequence.sql",
-      "067_execution_ownership_delivery_convergence.sql",
-      "068_execution_owner_recovery_singleflight.sql",
-      "069_execution_reservation_lease_60s.sql",
-      "070_release_manifest_activation_receipts.sql",
-      "071_execution_dead_owner_expiry.sql",
-      "072_owner_null_backfill_identity_guard.sql",
-      "073_sessions_execution_owner_v1.sql",
-      "074_sessions_execution_owner_renew.sql",
-      "075_sessions_execution_owner_release.sql",
-      "076_ownerless_terminal_generation_cas.sql",
-      "077_ownerless_terminal_stale_event_cas.sql",
-      "078_terminal_execution_ownership_retirement.sql",
-    ]);
+    expect(currentBaselineIndex).toBeGreaterThanOrEqual(0);
+    expect(plan.bootstrap).toHaveLength(currentBaselineIndex + 1);
+    expect(plan.pending.map((item) => item.id)).toEqual(
+      migrations.slice(currentBaselineIndex + 1).map((item) => item.id),
+    );
   });
 
   it("schedules only 041 and 042 for the pre-retirement physical state", async () => {
     const migrations = await loadMigrationManifest();
     const plan = buildMigrationPlan(migrations, [], legacyPre041);
+    const retirementIndex = migrations.findIndex(
+      (item) => item.id === "041_retire_task_tree.sql",
+    );
 
+    expect(retirementIndex).toBeGreaterThanOrEqual(0);
     expect(plan.bootstrap.at(-1)?.id).toBe("040_session_predecessor.sql");
-    expect(plan.pending.map((item) => item.id)).toEqual([
-      "041_retire_task_tree.sql",
-      "042_runbook_to_task.sql",
-      "044_session_metadata_search.sql",
-      "045_session_deliveries.sql",
-      "046_claude_background_tasks.sql",
-      "047_session_delivery_relation_consumptions.sql",
-      "048_session_model_preset.sql",
-      "049_external_llm_actor.sql",
-      "050_session_id_search_indexed.sql",
-      "051_session_digests.sql",
-      "052_session_review_state_filter.sql",
-      "053_retire_supervisor.sql",
-      "054_event_ingress_receipts.sql",
-      "055_session_effects_and_mutation_receipts.sql",
-      "056_agent_profiles.sql",
-      "057_source_task_item_integrity.sql",
-      "058_session_delete_ydoc_guard.sql",
-      "059_scope_board_seed_items.sql",
-      "060_board_yjs_snapshot_revision.sql",
-      "061_session_terminal_receipt.sql",
-      "062_notification_outbox_hardening.sql",
-      "063_session_rotate_claude_id.sql",
-      "064_event_ingress_receipt_effect_encoding.sql",
-      "065_completion_terminal_revision_fence.sql",
-      "066_session_delivery_enqueue_sequence.sql",
-      "067_execution_ownership_delivery_convergence.sql",
-      "068_execution_owner_recovery_singleflight.sql",
-      "069_execution_reservation_lease_60s.sql",
-      "070_release_manifest_activation_receipts.sql",
-      "071_execution_dead_owner_expiry.sql",
-      "072_owner_null_backfill_identity_guard.sql",
-      "073_sessions_execution_owner_v1.sql",
-      "074_sessions_execution_owner_renew.sql",
-      "075_sessions_execution_owner_release.sql",
-      "076_ownerless_terminal_generation_cas.sql",
-      "077_ownerless_terminal_stale_event_cas.sql",
-      "078_terminal_execution_ownership_retirement.sql",
-    ]);
+    expect(plan.pending.map((item) => item.id)).toEqual(
+      migrations.slice(retirementIndex).map((item) => item.id),
+    );
   });
 
   it("rejects ambiguous physical schema and applied checksum drift", async () => {

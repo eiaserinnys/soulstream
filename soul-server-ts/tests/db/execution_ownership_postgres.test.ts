@@ -174,16 +174,11 @@ describePostgres("execution ownership PostgreSQL rollback compatibility", () => 
     `).rejects.toThrow(/node_release_activation_receipts_verification_check/);
   });
 
-  it("covers runner fact 4종 × existing central state 4종 and command fencing", async () => {
-    const factStatus = {
-      completed: "completed",
-      failed: "error",
-      reaped: "error",
-      closed: "interrupted",
-    } as const;
+  it("keeps legacy-ledger facts from overriding the sessions-row canon", async () => {
+    const runnerFacts = ["completed", "failed", "reaped", "closed"] as const;
     const centralStatuses = ["running", "completed", "error", "interrupted"] as const;
     let eventId = 100;
-    for (const [fact, projectedStatus] of Object.entries(factStatus)) {
+    for (const fact of runnerFacts) {
       for (const centralStatus of centralStatuses) {
         const sessionId = `fact-${fact}-${centralStatus}`;
         const commandId = `execute-${fact}-${centralStatus}`;
@@ -200,14 +195,14 @@ describePostgres("execution ownership PostgreSQL rollback compatibility", () => 
         }
         const projected = await projectFact(sessionId, commandId, fact, eventId++);
         expect(projected[0]).toMatchObject({
-          applied: centralStatus === "running",
-          status: centralStatus === "running" ? projectedStatus : centralStatus,
+          applied: false,
+          status: centralStatus,
         });
-        await expect(harness.sql<Array<{ phase: string; runner_fact: string }>>`
+        await expect(harness.sql<Array<{ phase: string; runner_fact: string | null }>>`
           SELECT phase, runner_fact
           FROM session_execution_ownerships
           WHERE session_id = ${sessionId} AND ownership_generation = 1
-        `).resolves.toEqual([{ phase: "terminal", runner_fact: fact }]);
+        `).resolves.toEqual([{ phase: "active", runner_fact: null }]);
       }
     }
 
@@ -217,7 +212,7 @@ describePostgres("execution ownership PostgreSQL rollback compatibility", () => 
       "closed",
       eventId,
     );
-    expect(duplicateClose[0]).toMatchObject({ applied: false, status: "completed" });
+    expect(duplicateClose[0]).toMatchObject({ applied: false, status: "running" });
 
     await insertSession("fact-command-fence", "initializing");
     await reserve("fact-command-fence", 1, "runner_process", "release-1");
@@ -235,7 +230,7 @@ describePostgres("execution ownership PostgreSQL rollback compatibility", () => 
     `).resolves.toEqual([{ phase: "active" }]);
   });
 
-  it("locks the e5d01ad7 closed and c643e966 reaped recovery regressions", async () => {
+  it("does not resurrect pre-sole-canon ledger terminal regressions", async () => {
     await insertSession("e5d01ad7-regression", "completed", 348);
     await reserve("e5d01ad7-regression", 1, "runner_process", "release-1");
     await prove(
@@ -275,8 +270,13 @@ describePostgres("execution ownership PostgreSQL rollback compatibility", () => 
         'runner_exited', 'not_required', NULL, 200, NOW()
       )
     `).resolves.toEqual([
-      expect.objectContaining({ applied: true, status: "error" }),
+      expect.objectContaining({ applied: false, status: "running" }),
     ]);
+    await expect(harness.sql<Array<{ phase: string; runner_fact: string | null }>>`
+      SELECT phase, runner_fact
+      FROM session_execution_ownerships
+      WHERE session_id = 'c643e966-regression' AND ownership_generation = 1
+    `).resolves.toEqual([{ phase: "active", runner_fact: null }]);
   });
 
   it("keeps the previous active owner until an adoption is fully activated", async () => {
@@ -348,7 +348,7 @@ describePostgres("execution ownership PostgreSQL rollback compatibility", () => 
     }]);
   });
 
-  it("projects a recovered reaped fact only through the exact durable identity", async () => {
+  it("rejects recovered facts whose identity exists only in the legacy ledger", async () => {
     await insertSession("recovered-reaped", "initializing");
     await reserve("recovered-reaped", 7, "runner_process", "release-1");
     await prove("recovered-reaped", 7, "registration-recovered", "execute-recovered");
@@ -370,11 +370,11 @@ describePostgres("execution ownership PostgreSQL rollback compatibility", () => 
         'not_required', null, 200, NOW()
       )
     `;
-    expect(projected[0]).toMatchObject({ applied: true, status: "error" });
-    await expect(harness.sql<Array<{ phase: string; runner_fact: string }>>`
+    expect(projected[0]).toMatchObject({ applied: false, status: "running" });
+    await expect(harness.sql<Array<{ phase: string; runner_fact: string | null }>>`
       SELECT phase, runner_fact FROM session_execution_ownerships
       WHERE session_id = 'recovered-reaped' AND ownership_generation = 7
-    `).resolves.toEqual([{ phase: "terminal", runner_fact: "reaped" }]);
+    `).resolves.toEqual([{ phase: "active", runner_fact: null }]);
   });
 
   it("backfills only a stable two-scan identity and interrupts the unproven row", async () => {

@@ -1,0 +1,55 @@
+name: Soul Server TypeScript
+
+env:
+  PNPM_VERSION: '10.32.1'
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'soul-server-ts/src/**'
+      - 'soul-server-ts/tests/**'
+      - 'soul-server-ts/package.json'
+      - 'soul-server-ts/tsconfig*.json'
+      - 'soul-server-ts/vitest.config.ts'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/soul-server-ts.yml'
+  pull_request:
+    paths:
+      - 'soul-server-ts/src/**'
+      - 'soul-server-ts/tests/**'
+      - 'soul-server-ts/package.json'
+      - 'soul-server-ts/tsconfig*.json'
+      - 'soul-server-ts/vitest.config.ts'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/soul-server-ts.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  soul-server-ts:
+    name: soul-server-ts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install repository dependencies
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+          corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
+
+      - name: Typecheck soul-server-ts
+        run: corepack pnpm --dir soul-server-ts typecheck
+
+      - name: Test soul-server-ts
+        run: corepack pnpm --dir soul-server-ts test -- --minWorkers=1 --maxWorkers=2

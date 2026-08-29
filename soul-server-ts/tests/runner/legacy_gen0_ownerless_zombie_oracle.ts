@@ -14,7 +14,6 @@ export interface LegacyOwnerlessRowSnapshot {
   startIdentity: string | null;
   executionCommandId: string | null;
   leaseExpiresAt: Date | null;
-  activeOwnershipRows: number;
   terminalEventCount: number;
 }
 
@@ -79,12 +78,13 @@ export function legacyGen0OwnerlessViolations(
     )
       ? "ROW_A_STALE_TERMINAL_EVENT_POINTER_NOT_ADVANCED"
       : null,
-    rowA.generation !== 0 || hasSessionOwner(rowA) || rowA.activeOwnershipRows !== 0
+    rowA.generation !== 0 || hasSessionOwner(rowA)
       ? "ROW_A_GEN0_TERMINAL_RETAINED_OWNER_EVIDENCE"
       : null,
     !isTerminal(rowB.status)
       || !hasCanonicalTerminalEvidence(rowB)
-      || rowB.activeOwnershipRows !== 0
+      || rowB.generation <= 0
+      || hasSessionOwner(rowB)
       ? "ROW_B_GEN_POSITIVE_CLOSED_OWNER_DID_NOT_CONVERGE"
       : null,
     !isExactProvenLiveOwner(rowC)
@@ -175,7 +175,6 @@ function terminalSnapshot(generation: number): LegacyOwnerlessRowSnapshot {
     startIdentity: null,
     executionCommandId: null,
     leaseExpiresAt: null,
-    activeOwnershipRows: 0,
     terminalEventCount: 1,
   };
 }
@@ -205,7 +204,6 @@ function liveOwnerSnapshot(): LegacyOwnerlessRowSnapshot {
     startIdentity: LIVE_OWNER_IDENTITY.startIdentity,
     executionCommandId: LIVE_OWNER_IDENTITY.executionCommandId,
     leaseExpiresAt: new Date("2026-08-28T00:02:00.000Z"),
-    activeOwnershipRows: 1,
     terminalEventCount: 0,
   };
 }
@@ -235,11 +233,10 @@ function isExactProvenLiveOwner(snapshot: LegacyOwnerlessRowSnapshot): boolean {
     && snapshot.executionCommandId === LIVE_OWNER_IDENTITY.executionCommandId
     && snapshot.leaseExpiresAt instanceof Date
     && Number.isFinite(snapshot.leaseExpiresAt.getTime())
-    && snapshot.activeOwnershipRows === 1
     && snapshot.terminationEventId === null;
 }
 
-function hasSessionOwner(snapshot: LegacyOwnerlessRowSnapshot): boolean {
+export function hasSessionOwner(snapshot: LegacyOwnerlessRowSnapshot): boolean {
   return snapshot.manifestId !== null
     || snapshot.runtimeEnvIdentity !== null
     || snapshot.registrationId !== null

@@ -22,7 +22,6 @@ import {
 import { RunnerMutationFailure } from "./runner_mutation_failure.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
 import {
-  retireAbsentRunnerOwnership,
   stopExistingRunnerLocked,
   terminateExactRunner,
   type ExactRunnerProcess,
@@ -35,7 +34,6 @@ import {
   waitForChildRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "./runner_registration_identity.js";
-import { readRunnerPid } from "./runner_process_registration.js";
 import {
   invalidateRunnerRegistrationFilesLocked,
   invalidateRunnerRegistrationFiles,
@@ -109,15 +107,6 @@ export interface SpawnedRunnerProcess {
   paths: RunnerProcessPaths;
   config: RunnerChildConfig;
   adopted: boolean;
-}
-
-export interface TerminalExecutionOwnershipIdentity extends ExactRunnerProcess {
-  registrationId: string;
-}
-
-export interface TerminalExecutionOwnershipRetirement
-  extends TerminalExecutionOwnershipIdentity {
-  paths: RunnerProcessPaths;
 }
 
 interface SpawnDependencies {
@@ -394,57 +383,6 @@ export class RunnerProcessSpawner {
       await retireTerminalRunnerRegistrationFilesLocked(
         paths,
         expectedRegistrationId,
-        new Date(this.deps.now()),
-      );
-    });
-  }
-
-  retireTerminalOwnership(
-    input: TerminalExecutionOwnershipRetirement,
-    commitOwnership: () => Promise<boolean>,
-  ): Promise<void> {
-    const { paths, ...expected } = input;
-    return withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
-      const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
-      if (!identity) {
-        return await retireAbsentRunnerOwnership(paths, expected, commitOwnership, this.deps);
-      }
-      if (identity.registrationId !== expected.registrationId) {
-        throw new RunnerMutationFailure(
-          "runner_registration_identity_proof_failed",
-          `runner registration changed before ownership retirement: ${paths.sessionDirectory}`,
-        );
-      }
-      if (
-        identity.pid === null
-        || identity.startIdentity === null
-        || identity.pid !== expected.pid
-        || !processStartIdentitiesMatch(identity.startIdentity, expected.startIdentity)
-      ) {
-        throw new RunnerMutationFailure(
-          "runner_registration_identity_proof_failed",
-          `runner process identity changed before ownership retirement: ${paths.sessionDirectory}`,
-        );
-      }
-      const pidEvidence = await readRunnerPid(paths.pidPath);
-      if (pidEvidence !== null && pidEvidence !== expected.pid) {
-        throw new RunnerMutationFailure(
-          "runner_registration_identity_proof_failed",
-          `runner pid evidence changed before ownership retirement: ${paths.sessionDirectory}`,
-        );
-      }
-
-      await terminateExactRunner(expected, this.deps);
-      await prepareRunnerWriterLockForSpawn(paths.lockPath);
-      if (!await commitOwnership()) {
-        throw new Error(
-          `terminal execution ownership changed before retirement: ${paths.sessionDirectory}`,
-        );
-      }
-
-      await retireTerminalRunnerRegistrationFilesLocked(
-        paths,
-        expected.registrationId,
         new Date(this.deps.now()),
       );
     });

@@ -83,8 +83,8 @@ export class InMemoryEventIngressSqlProvider implements EventIngressSqlProvider 
             }]
           : [];
       }
-      if (statement.includes("FROM sessions") && statement.includes("FOR KEY SHARE")) {
-        return [{ session_id: values[0] }];
+      if (statement.includes("FROM sessions") && statement.includes("FOR UPDATE")) {
+        return [{ execution_generation: 0, execution_command_id: null }];
       }
       if (statement.includes("SELECT event_append(")) {
         const [sessionId, eventType, payloadJson] = values as [string, string, string];

@@ -17,9 +17,10 @@ import type { Task } from "../../src/task/task_models.js";
 import { TaskRunnerRecovery } from "../../src/task/task_runner_recovery.js";
 import type { FullSchemaPostgresHarness } from
   "../db/full_schema_postgres_harness.js";
-import type {
-  LegacyGen0OwnerlessMatrixObservation,
-  LegacyOwnerlessRowSnapshot,
+import {
+  hasSessionOwner,
+  type LegacyGen0OwnerlessMatrixObservation,
+  type LegacyOwnerlessRowSnapshot,
 } from "./legacy_gen0_ownerless_zombie_oracle.js";
 import {
   LIVE_OWNER_IDENTITY,
@@ -134,7 +135,7 @@ export class LegacyGen0OwnerlessZombieHarness {
       terminalControl,
       terminalControlInitialEventCount: initialTerminalControl.terminalEventCount,
       ownerlessRunningCount: rows.filter(
-        (row) => row.status === "running" && row.activeOwnershipRows === 0,
+        (row) => row.status === "running" && !hasSessionOwner(row),
       ).length,
       statusOnlyTerminalWrites: rows.filter(
         (row) => isTerminal(row.status) && (
@@ -321,7 +322,6 @@ export class LegacyGen0OwnerlessZombieHarness {
       execution_start_identity: string | null;
       execution_command_id: string | null;
       execution_lease_expires_at: Date | null;
-      active_ownership_rows: string | number;
       terminal_event_count: string | number;
     }>>`
       SELECT session.status, session.termination_reason,
@@ -331,12 +331,6 @@ export class LegacyGen0OwnerlessZombieHarness {
              session.execution_registration_id, session.execution_pid,
              session.execution_start_identity, session.execution_command_id,
              session.execution_lease_expires_at,
-             (
-               SELECT COUNT(*)::int
-               FROM session_execution_ownerships AS ownership
-               WHERE ownership.session_id = session.session_id
-                 AND ownership.phase = 'active'
-             ) AS active_ownership_rows,
              (
                SELECT COUNT(*)::int
                FROM events
@@ -361,7 +355,6 @@ export class LegacyGen0OwnerlessZombieHarness {
       startIdentity: row.execution_start_identity,
       executionCommandId: row.execution_command_id,
       leaseExpiresAt: row.execution_lease_expires_at,
-      activeOwnershipRows: Number(row.active_ownership_rows),
       terminalEventCount: Number(row.terminal_event_count),
     };
   }

@@ -1696,7 +1696,7 @@ BEGIN
                review_state = p_review_state,
                updated_at = p_updated_at
          WHERE session.session_id = p_session_id
-           AND session.status NOT IN ('completed', 'error');
+           AND session.status NOT IN ('completed', 'error', 'interrupted');
     END IF;
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
 
@@ -3166,69 +3166,18 @@ CREATE OR REPLACE FUNCTION session_project_runner_terminal_fact(
     termination_event_id       INTEGER,
     updated_at                 TIMESTAMPTZ,
     last_event_id              INTEGER
-) LANGUAGE plpgsql AS $$
-DECLARE
-    v_status TEXT;
-    v_reason TEXT;
-    v_existing_status TEXT;
-    v_row_count INTEGER := 0;
-BEGIN
-    IF p_runner_fact NOT IN ('completed', 'failed', 'reaped', 'closed') THEN
-        RAISE EXCEPTION 'unsupported runner terminal fact: %', p_runner_fact;
-    END IF;
-    IF p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
-        RAISE EXCEPTION 'execution command id must be non-empty';
-    END IF;
-    IF p_terminal_event_id IS NULL OR p_terminal_event_id <= 0 THEN
-        RAISE EXCEPTION 'terminal event id must be a positive integer';
-    END IF;
-    v_status := CASE p_runner_fact
-        WHEN 'completed' THEN 'completed'
-        WHEN 'closed' THEN 'interrupted'
-        ELSE 'error'
-    END;
-    v_reason := CASE p_runner_fact
-        WHEN 'completed' THEN 'completed_ok'
-        WHEN 'closed' THEN 'killed'
-        ELSE 'error_aborted'
-    END;
-
-    SELECT session.status INTO v_existing_status
-      FROM sessions AS session
-     WHERE session.session_id = p_session_id
-     FOR UPDATE;
-
-    UPDATE session_execution_ownerships AS ownership
-       SET phase = 'terminal', runner_fact = p_runner_fact,
-           terminal_at = p_updated_at
-     WHERE ownership.session_id = p_session_id
-       AND ownership.ownership_generation = p_ownership_generation
-       AND ownership.execution_command_id = p_execution_command_id
-       AND ownership.phase = 'active';
-    GET DIAGNOSTICS v_row_count = ROW_COUNT;
-
-    IF v_row_count = 1
-       AND v_existing_status NOT IN ('completed', 'error', 'interrupted') THEN
-        UPDATE sessions AS session
-           SET status = v_status, termination_reason = v_reason,
-               termination_detail = p_termination_detail,
-               review_state = p_review_state,
-               last_assistant_text = p_last_assistant_text,
-               termination_event_id = p_terminal_event_id,
-               updated_at = p_updated_at
-         WHERE session.session_id = p_session_id;
-    END IF;
-
-    RETURN QUERY
-    SELECT v_row_count = 1
-             AND v_existing_status NOT IN ('completed', 'error', 'interrupted'),
-           session.status, session.termination_reason,
-           session.termination_detail, session.review_state,
-           session.last_assistant_text, session.termination_event_id,
-           session.updated_at, session.last_event_id
-      FROM sessions AS session
-     WHERE session.session_id = p_session_id;
-END;
+) LANGUAGE sql AS $$
+    SELECT * FROM session_release_execution_ownership(
+        p_session_id,
+        p_ownership_generation,
+        p_execution_command_id,
+        p_runner_fact,
+        p_termination_detail,
+        p_review_state,
+        p_last_assistant_text,
+        p_terminal_event_id,
+        p_updated_at
+    );
 $$;
 
 CREATE OR REPLACE FUNCTION session_project_recovered_runner_terminal_fact(

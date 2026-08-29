@@ -529,6 +529,11 @@ describe("UpstreamAdapter", () => {
         recoverRegisteredRunner,
         restartRegisteredRunner: vi.fn(async () => undefined),
       },
+      spawner: {
+        terminate: vi.fn(async () => undefined),
+        invalidateRegistration: vi.fn(async () => undefined),
+        retireTerminalRegistration: vi.fn(async () => undefined),
+      },
       closedTailDrainer: { drain: vi.fn(async () => undefined) },
       logger: silentLogger,
       scan: async () => ({ registrations, errors: [] }),

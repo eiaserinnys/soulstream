@@ -8,6 +8,8 @@ import { ClaudeBackgroundTaskRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/claude_background_task_repository.js";
 import { SessionDeliveryRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
+import { replayPendingImmediateDeliveriesForNode } from
+  "../../../orch-server-ts/src/production.js";
 import type { SqlClient } from "../../src/db/session_db.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
@@ -19,13 +21,15 @@ import { ClaudeBackgroundTaskLifecycle } from
   "../../src/task/claude_background_task_lifecycle.js";
 import { ClaudeRuntimeTaskFollowupController } from
   "../../src/task/claude_runtime_task_followup.js";
-import { CompletionDeliveryCoordinator } from
-  "../../src/task/completion_delivery_coordinator.js";
 import { TaskDeliveryLedgerGate } from
   "../../src/task/task_delivery_ledger_gate.js";
 import { TaskInterventionRoute } from
   "../../src/task/task_intervention_route.js";
 import type { Task } from "../../src/task/task_models.js";
+import { createInterventionCommandFamily } from
+  "../../src/upstream/intervention_command_family.js";
+import { TaskRuntimeCommands } from
+  "../../src/upstream/task_runtime_commands.js";
 import {
   createFullSchemaPostgresHarness,
   hasFullSchemaPostgresBackend,
@@ -125,8 +129,22 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
       const storedHash = await storedPayloadHash(harness.sql, taskId);
       const path = makeDeliveryPath(harness.sql);
 
-      await path.recovery.recoverPending();
-      await path.recovery.recoverPending();
+      await replayPendingImmediateDeliveriesForNode({
+        nodeId: "node-test",
+        connectionId: "background-recovery-test",
+        deliveries: path.deliveryRepository,
+        sessionRouter: path.sessionRouter,
+        sessionBridge: path.sessionBridge,
+        warn: () => undefined,
+      });
+      await replayPendingImmediateDeliveriesForNode({
+        nodeId: "node-test",
+        connectionId: "background-recovery-test",
+        deliveries: path.deliveryRepository,
+        sessionRouter: path.sessionRouter,
+        sessionBridge: path.sessionBridge,
+        warn: () => undefined,
+      });
 
       await expectStoredPayloadText(harness.sql, taskId, expectedText);
       await expectExactlyOnceDelivery(
@@ -239,12 +257,19 @@ async function storedPayloadHash(
 function makeDeliveryPath(sql: SqlClient): {
   task: Task;
   followup: ClaudeRuntimeTaskFollowupController;
-  recovery: CompletionDeliveryCoordinator;
+  deliveryRepository: SessionDeliveryRepository;
+  sessionRouter: Parameters<
+    typeof replayPendingImmediateDeliveriesForNode
+  >[0]["sessionRouter"];
+  sessionBridge: Parameters<
+    typeof replayPendingImmediateDeliveriesForNode
+  >[0]["sessionBridge"];
   counts: DeliveryPathCounts;
 } {
   const task: Task = {
     agentSessionId: "caller-session",
     prompt: "finished foreground",
+    profileId: "worker",
     status: "completed",
     createdAt: new Date("2026-07-26T09:00:00.000Z"),
     lastEventId: 41,
@@ -293,14 +318,46 @@ function makeDeliveryPath(sql: SqlClient): {
       },
     },
   });
-  const dispatch = async (
-    params: Parameters<TaskInterventionRoute["addIntervention"]>[0],
-  ): Promise<void> => {
-    await route.addIntervention(params, onResume);
-  };
+  const taskRuntimeCommands = new TaskRuntimeCommands({
+    agentRegistry: {
+      get: () => ({ id: "worker" }),
+    } as never,
+    taskManager: {
+      createTask: async () => {
+        throw new Error("unexpected task creation");
+      },
+      addIntervention: (params, callback) =>
+        route.addIntervention(params, callback),
+    } as never,
+    taskExecutor: {
+      startExecution: (resumedTask: Task) => onResume(resumedTask),
+    } as never,
+    logger: pino({ level: "silent" }),
+  });
+  const commands = createInterventionCommandFamily({
+    send: async () => undefined,
+    deliveryCommands: {} as never,
+    taskRuntimeCommands,
+  });
+  const sessionRouter = {
+    routeExistingSessionPendingCommand: async (payload: unknown) => payload,
+  } as unknown as Parameters<
+    typeof replayPendingImmediateDeliveriesForNode
+  >[0]["sessionRouter"];
+  const sessionBridge = {
+    sendPendingCommand: async (routed: unknown) => {
+      await commands.intervene?.(routed as never);
+      return { status: "ok" };
+    },
+  } as unknown as Parameters<
+    typeof replayPendingImmediateDeliveriesForNode
+  >[0]["sessionBridge"];
   return {
     task,
     counts,
+    deliveryRepository: repository,
+    sessionRouter,
+    sessionBridge,
     followup: new ClaudeRuntimeTaskFollowupController({
       taskManager: {
         addIntervention: (params, callback) =>
@@ -311,11 +368,6 @@ function makeDeliveryPath(sql: SqlClient): {
       logger: pino({ level: "silent" }),
       deliveryV2Enabled: true,
     }),
-    recovery: new CompletionDeliveryCoordinator({
-      repository,
-      dispatch,
-      logger: pino({ level: "silent" }),
-    }, "background-recovery-test"),
   };
 }
 

@@ -835,7 +835,13 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     // returns the exact row to pending so reconnect admission can reclaim it.
     await expect(
       queuedRecovery.recoverAfterNodeRestart("node-test"),
-    ).resolves.toBe(0);
+    ).resolves.toEqual({ claimed: 1, settled: 0 });
+    await expect(repository.get("delivery-after-queued")).resolves.toMatchObject({
+      state: "pending",
+      aggregate_state: "pending",
+      attempt_count: 1,
+      last_error: "queued_transcript_input_absent",
+    });
     await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(2);
 
     const dispatch = vi.fn();
@@ -1004,7 +1010,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     expect(afterRecovery?.consumed_at?.toISOString()).toBe(consumedAt);
   });
 
-  it("keeps an accepted SDK input queued while its assistant transcript is pending", async () => {
+  it("returns an accepted SDK input to pending while its assistant transcript is unproven", async () => {
     await register("delivery-input-pending", "relation-input-pending", {
       targetSessionId: "caller-session",
     });
@@ -1031,15 +1037,14 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     );
     await expect(
       queuedRecovery.recoverAfterNodeRestart("node-test"),
-    ).resolves.toBe(0);
+    ).resolves.toEqual({ claimed: 1, settled: 0 });
 
-    // A transcript re-check is a liveness probe, not a delivery attempt: it
-    // repeats every second, so charging it to the retry budget would
-    // dead-letter a good message about eighty seconds after its target node
-    // went quiet.
+    // The stable SDK input identity fences duplicate execution while the
+    // unproven delivery returns to the ordinary reconnect retry path.
     await expect(repository.get("delivery-input-pending")).resolves.toMatchObject({
-      state: "queued",
-      attempt_count: 0,
+      state: "pending",
+      aggregate_state: "pending",
+      attempt_count: 1,
       last_error: "queued_transcript_input_pending",
     });
   });
@@ -1070,7 +1075,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     );
     await expect(
       queuedRecovery.recoverAfterNodeRestart("node-test"),
-    ).resolves.toBe(0);
+    ).resolves.toEqual({ claimed: 1, settled: 0 });
     await expect(repository.get("delivery-stale-identity")).resolves
       .toMatchObject({
         state: "pending",
@@ -1080,7 +1085,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       });
     await expect(
       queuedRecovery.recoverAfterNodeRestart("node-test"),
-    ).resolves.toBe(0);
+    ).resolves.toEqual({ claimed: 0, settled: 0 });
     await expect(repository.get("delivery-stale-identity")).resolves
       .toMatchObject({
         state: "pending",

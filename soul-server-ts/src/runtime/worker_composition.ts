@@ -56,10 +56,10 @@ import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.
 import { createEngineFactory } from "./engine_factory.js";
 import {
   composeRunnerProcessRuntime,
-  composeRunnerReconciliationReporter,
   composeRunnerRecoveryCoordinator,
 } from "./runner_process_composition.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
+import { composeWorkerUpstreamAdapter } from "./worker_upstream_composition.js";
 
 export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 export async function composeWorkerRuntime(
@@ -445,45 +445,22 @@ export async function composeWorkerRuntime(
   });
   const createUpstreamAdapter = (): UpstreamAdapter => {
     if (upstreamAdapter) throw new Error("UpstreamAdapter already composed");
-    upstreamAdapter = new UpstreamAdapter(
-      {
-        url: env.SOULSTREAM_UPSTREAM_URL,
-        nodeId: env.SOULSTREAM_NODE_ID,
-        host: env.HOST,
-        port: env.PORT,
-        authBearerToken: env.AUTH_BEARER_TOKEN,
-        userName: env.DASH_USER_NAME,
-        userPortraitPath: env.DASH_USER_PORTRAIT,
-        isProduction: env.ENVIRONMENT === "production", runnerProcessEnabled: env.SOUL_RUNNER_PROCESS_ENABLED, runnerLeaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
-        ...(env.SOUL_RUNNER_STATE_DIR
-          ? { runnerStateDir: env.SOUL_RUNNER_STATE_DIR }
-          : {}),
-        releaseActivationState: params.releaseActivationState,
-      },
-      logger,
-      {
-        agentRegistry,
-        taskManager,
-        taskExecutor: taskRuntime.taskExecutor,
-        attachmentStore,
-        claudeAuth,
-        sessionDb: db,
-        realtimeBroker,
-        agentConfigService,
-        reflectionRuntime: mcpRuntime,
-        scheduleCommands: scheduleService,
-        deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
-        modelCatalog,
-        eventOutboxPump: eventOutboxPumpMux,
-        ...composeRunnerReconciliationReporter(
-          env,
-          runnerProcess?.runtimeFactory,
-          runnerRecoveryCoordinator,
-          logger,
-        ),
-        ...(agentProfileSource ? { agentProfileSource } : {}),
-      },
-    );
+    upstreamAdapter = composeWorkerUpstreamAdapter({
+      worker: params,
+      taskManager,
+      taskExecutor: taskRuntime.taskExecutor,
+      attachmentStore,
+      claudeAuth,
+      sessionDb: db,
+      realtimeBroker,
+      agentConfigService,
+      reflectionRuntime: mcpRuntime,
+      scheduleCommands: scheduleService,
+      modelCatalog,
+      eventOutboxPump: eventOutboxPumpMux,
+      runnerProcess,
+      runnerRecoveryCoordinator,
+    });
     return upstreamAdapter;
   };
   return {

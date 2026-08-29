@@ -58,7 +58,7 @@ describe("session-data read repositories", () => {
     expect(summaryQuery!.indexOf("LIMIT")).toBeLessThan(summaryQuery!.indexOf("FROM events"));
   });
 
-  it("enumerates live blocking ownership phases with their ledger generation", async () => {
+  it("reads restart ownership inventory only from the sessions-row owner canon", async () => {
     const { sql, calls } = createSql(() => []);
     const repository = new SessionReadRepository(sql);
 
@@ -66,10 +66,10 @@ describe("session-data read repositories", () => {
 
     const query = calls[0]?.text;
     expect(query).toBeDefined();
-    expect(query).toContain("ownership.ownership_generation");
-    expect(query).toContain("ownership.phase AS ownership_phase");
-    expect(query).toContain("ownership.phase IN ('identity_proven', 'active')");
-    expect(query).not.toContain("'reserved'");
+    expect(query).toContain("FROM session_owner_null_running_inventory AS inventory");
+    expect(query).toContain("session.execution_manifest_id IS NULL");
+    expect(query).not.toContain("session_execution_ownerships");
+    expect(query).not.toContain("reconciliation_kind");
   });
 
   it("owns all seven event read operations and preserves payload contracts", async () => {
