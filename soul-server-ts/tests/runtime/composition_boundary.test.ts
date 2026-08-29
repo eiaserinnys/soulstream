@@ -232,6 +232,7 @@ describe("worker composition boundary", () => {
     const files = [
       "main.ts",
       "runtime/worker_composition.ts",
+      "runtime/worker_upstream_composition.ts",
       "runtime/task_runtime_composition.ts",
       "context/context_builder.ts",
       "context/context_builder_helpers.ts",
