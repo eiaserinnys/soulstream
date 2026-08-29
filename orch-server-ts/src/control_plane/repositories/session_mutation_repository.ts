@@ -212,6 +212,7 @@ export class SessionMutationRepository {
         WHERE node_id = ${nodeId}
           AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
           AND status IN ('completed', 'error', 'interrupted')
+          AND termination_event_id IS NULL
           AND updated_at <= ${updatedAt}
         RETURNING session_id, status, termination_reason, termination_detail,
                   review_state, updated_at

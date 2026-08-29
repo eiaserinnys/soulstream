@@ -302,6 +302,7 @@ describe("SessionMutationRepository", () => {
     expect(statements).toContain("review_state = 'not_required'");
     expect(statements).toContain("status = 'interrupted'");
     expect(statements).toContain("status IN ('completed', 'error', 'interrupted')");
+    expect(statements).toContain("termination_event_id IS NULL");
     expect(statements.match(/updated_at <=/g)).toHaveLength(2);
     expect(calls.some((call) => call.values.some(
       (value) => Array.isArray(value) && value.includes("session-live"),
