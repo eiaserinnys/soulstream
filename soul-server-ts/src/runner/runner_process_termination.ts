@@ -16,6 +16,7 @@ import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
 
 export interface ExactRunnerProcess {
+  registrationId?: string;
   pid: number;
   startIdentity: string;
 }
@@ -58,11 +59,12 @@ export async function stopExistingRunnerLocked(
   const expectedOwnsIdentity = expected !== undefined
     && identity?.pid === expected.pid
     && identity.startIdentity !== null
-    && exactRunnerStartIdentitiesMatch(identity.startIdentity, expected.startIdentity);
+    && exactRunnerStartIdentitiesMatch(identity.startIdentity, expected.startIdentity)
+    && (expected.registrationId === undefined
+      || identity.registrationId === expected.registrationId);
   if (expected && !expectedOwnsIdentity) {
-    throw identityProofFailure(
-      `registration changed before exact termination: ${paths.sessionDirectory}`,
-    );
+    await terminateExactRunner(expected, deps);
+    return "registration_absent";
   }
   const owner = expected ?? exactOwner(identity, pid);
   if (pid !== null) {

@@ -65,6 +65,7 @@ import {
   type SpawnedRunnerProcess,
   type SpawnRunnerProcessInput,
 } from "./runner_process_spawn.js";
+import type { ExactRunnerProcess } from "./runner_process_termination.js";
 import { runnerProcessPaths } from "./runner_process_paths.js";
 import { ProcessFrameStream } from "./runner_process_frame_stream.js";
 import { connectRunnerSocket } from "./runner_socket_endpoint.js";
@@ -330,10 +331,45 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       await this.releaseHostResources();
       return;
     }
+    let retirement: {
+      spawned: SpawnedRunnerProcess;
+      proof: ExactRunnerProcess;
+    } | undefined;
     try {
+      await this.ready;
+      const spawned = this.spawnedProcess;
+      const identity = spawned
+        ? await readRunnerRegistrationIdentity(spawned.paths.sessionDirectory)
+        : null;
+      // The child acknowledges close before its queued shutdown releases the
+      // writer lock, so capture the exact owner while that identity still exists.
+      if (spawned && identity?.registrationId === spawned.registrationId) {
+        if (identity.pid !== spawned.pid || identity.startIdentity === null) {
+          throw new Error(
+            `runner registration identity incomplete before close: ${this.spawnInput.sessionId}`,
+          );
+        }
+        retirement = {
+          spawned,
+          proof: {
+            registrationId: identity.registrationId,
+            pid: identity.pid,
+            startIdentity: identity.startIdentity,
+          },
+        };
+      }
       assertCommandAccepted(await this.dispatch(closeCommandFrame(`close:${randomUUID()}`)));
     } finally {
-      await this.releaseHostResources();
+      const closeRetirement = retirement;
+      try {
+        await this.releaseHostResources();
+      } finally {
+        if (closeRetirement) {
+          const spawner = this.options.spawner ?? new RunnerProcessSpawner();
+          if (!spawner.terminate) throw new Error("runner close terminator unavailable");
+          await spawner.terminate(closeRetirement.spawned.paths, closeRetirement.proof);
+        }
+      }
     }
   }
 
