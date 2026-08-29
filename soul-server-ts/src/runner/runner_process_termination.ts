@@ -6,7 +6,6 @@ import {
   resolveRegisteredRunnerPid,
 } from "./runner_process_registration.js";
 import type { ProcessIdentity } from "./runner_process_lock.js";
-import { processStartIdentitiesMatch } from "./runner_process_lock.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
 import {
   invalidateRunnerRegistrationFilesLocked,
@@ -19,6 +18,10 @@ const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
 export interface ExactRunnerProcess {
   pid: number;
   startIdentity: string;
+}
+
+export function exactRunnerStartIdentitiesMatch(left: string, right: string): boolean {
+  return left === right;
 }
 
 export interface RunnerProcessTerminationDependencies {
@@ -55,7 +58,7 @@ export async function stopExistingRunnerLocked(
   const expectedOwnsIdentity = expected !== undefined
     && identity?.pid === expected.pid
     && identity.startIdentity !== null
-    && processStartIdentitiesMatch(identity.startIdentity, expected.startIdentity);
+    && exactRunnerStartIdentitiesMatch(identity.startIdentity, expected.startIdentity);
   if (expected && !expectedOwnsIdentity) {
     throw identityProofFailure(
       `registration changed before exact termination: ${paths.sessionDirectory}`,
@@ -128,7 +131,7 @@ async function exactProcessIsAbsent(
   if (observed.startIdentity === null) {
     throw identityProofFailure(`live runner start identity unavailable: ${expected.pid}`);
   }
-  if (processStartIdentitiesMatch(observed.startIdentity, expected.startIdentity)) {
+  if (exactRunnerStartIdentitiesMatch(observed.startIdentity, expected.startIdentity)) {
     return false;
   }
   if (mismatchIsAbsence) return true;

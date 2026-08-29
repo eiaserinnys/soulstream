@@ -320,6 +320,33 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
       "terminal execution ownership retirement",
     );
   }
+  if (effect.kind === "execution_retire_recorded_terminal_identity") {
+    const rows = await sql<CanonicalTransitionRow[]>`
+      WITH application AS (
+        SELECT session_retire_recorded_terminal_execution_identity(
+          ${envelope.session_id},
+          ${effect.ownership_generation},
+          ${effect.manifest_id},
+          ${effect.runtime_env_identity},
+          ${effect.registration_id},
+          ${effect.pid},
+          ${effect.start_identity},
+          ${effect.execution_command_id},
+          ${effect.terminal_event_id}
+        ) AS applied
+      )
+      SELECT application.applied, session.status, session.termination_reason,
+             session.termination_detail, session.review_state,
+             session.last_assistant_text, session.termination_event_id,
+             session.updated_at, session.last_event_id
+      FROM application
+      JOIN sessions AS session ON session.session_id = ${envelope.session_id}
+    `;
+    return {
+      ...canonicalTransitionApplication(rows, "recorded terminal execution identity retirement"),
+      canonicalExecutionOwnership: null,
+    };
+  }
   if (effect.kind === "execution_orphaned_spawn") {
     const rows = await sql<CanonicalTransitionRow[]>`
       WITH application AS (

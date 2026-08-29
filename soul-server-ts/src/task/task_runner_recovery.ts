@@ -1,8 +1,9 @@
 import type { EventPersistence } from "../db/event_persistence.js";
+import type { SSEEventPayload } from "../engine/protocol.js";
 import type { ExecutionOwnershipObservation } from "./execution_ownership.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
-import type { Task } from "./task_models.js";
+import { isTerminalTaskStatus, type Task } from "./task_models.js";
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import type { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
@@ -79,6 +80,61 @@ export class TaskRunnerRecovery {
       "closed",
       detail,
     );
+  }
+
+  async reconcileRecordedTerminalExecution(task: Task): Promise<boolean> {
+    const terminalEventId = task.terminalEventId;
+    if (
+      !isTerminalTaskStatus(task.status)
+      || !task.terminationEventRecorded
+      || typeof terminalEventId !== "number"
+      || !Number.isSafeInteger(terminalEventId)
+      || terminalEventId <= 0
+    ) return false;
+    const ownership = task.executionOwnership;
+    if (!ownership) return true;
+    if (!this.deps.persistence) {
+      throw new Error("terminal execution ownership recovery persistence is required");
+    }
+    const updatedAt = new Date();
+    const transitionId = [
+      "terminal-retire",
+      terminalEventId,
+      ownership.ownershipGeneration,
+      ownership.registrationId,
+      ownership.pid,
+      ownership.startIdentity,
+      ownership.executionCommandId,
+    ].join(":");
+    const event = {
+      type: "metadata",
+      metadata_type: "execution_ownership_transition",
+      value: { transition_id: transitionId, phase: "terminal_identity_retired" },
+      timestamp: updatedAt.toISOString(),
+      _dedupe_key: `execution_ownership:${task.agentSessionId}:${transitionId}`,
+    } as unknown as SSEEventPayload;
+    const application = await this.deps.persistence
+      .retireTerminalExecutionOwnershipAndWaitForApplication(
+        task.agentSessionId,
+        event,
+        {
+          ownershipGeneration: ownership.ownershipGeneration,
+          manifestId: ownership.manifestId,
+          runtimeEnvIdentity: ownership.runtimeEnvIdentity,
+          registrationId: ownership.registrationId,
+          pid: ownership.pid,
+          startIdentity: ownership.startIdentity,
+          executionCommandId: ownership.executionCommandId,
+          terminalEventId,
+          updatedAt,
+        },
+      );
+    applyCanonicalSessionProjection(task, application.canonicalSession);
+    if (application.applied) {
+      task.executionOwnership = undefined;
+      task.recoveredExecutionOwnership = undefined;
+    }
+    return application.applied;
   }
 
   async reconcileExecutionOwnershipObservations(

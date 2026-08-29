@@ -421,6 +421,41 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }
+  if (value.kind === "execution_retire_recorded_terminal_identity") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "ownership_generation", "manifest_id", "runtime_env_identity",
+        "registration_id", "pid", "start_identity", "execution_command_id",
+        "terminal_event_id", "updated_at",
+      ],
+      field,
+    );
+    return {
+      kind: value.kind,
+      ownership_generation: positiveInteger(
+        value.ownership_generation,
+        `${field}.ownership_generation`,
+      ),
+      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
+      runtime_env_identity: nonEmptyString(
+        value.runtime_env_identity,
+        `${field}.runtime_env_identity`,
+      ),
+      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
+      pid: positiveInteger(value.pid, `${field}.pid`),
+      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
+      terminal_event_id: positiveInteger(
+        value.terminal_event_id,
+        `${field}.terminal_event_id`,
+      ),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
   if (value.kind === "execution_orphaned_spawn") {
     assertExactKeys(
       value,
