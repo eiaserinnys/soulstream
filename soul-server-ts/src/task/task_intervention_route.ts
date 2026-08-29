@@ -223,9 +223,13 @@ export class TaskInterventionRoute {
         result = await this.deps.runningInterventionTransition.queueOnly(task, message);
       } else if (
         isTerminalTaskStatus(task.status)
-        && task.status !== "completed"
         && admission.kind === "admitted"
         && admission.row.intent === "completion_notification"
+        && (
+          task.status !== "completed"
+          || task.terminalEventId === undefined
+          || request.deliveryLeaseOwner === undefined
+        )
       ) {
         result = await this.deps.runningInterventionTransition.queueOnly(
           task,
