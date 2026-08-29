@@ -78,6 +78,7 @@ function parsePreviewBody(body: PreviewBody | undefined, nodeId: string): Previe
       ? { container_kind: session.container_kind as string }
       : {}),
     ...(nonEmptyString(session.agent) ? { agent: session.agent as string } : {}),
+    ...(nonEmptyString(session.backend) ? { backend: session.backend as string } : {}),
   };
   return { ok: true, value: { specs, parameters } };
 }

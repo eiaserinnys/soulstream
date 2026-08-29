@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { CallerInfo, Task } from "../task/task_models.js";
+import { effectiveTaskBackend } from "../task/task_model_preset.js";
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
 
@@ -158,6 +159,7 @@ export function buildContextFilterParameters(args: {
     node_id: args.nodeId,
     ...(args.primaryContainer ? { container_kind: args.primaryContainer.container.kind } : {}),
     agent: args.agent.id,
+    backend: effectiveTaskBackend(args.task, args.agent),
   };
 }
 
