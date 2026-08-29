@@ -881,6 +881,57 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     ]);
   });
 
+  it("drops an already released terminal row without weakening live incomplete fail-closed", async () => {
+    const releasedRegistration = registration({
+      pidAlive: false,
+      lifecycleState: "completed",
+    });
+    releasedRegistration.registrationId = null;
+    releasedRegistration.pidStartIdentity = null;
+    const released = makeSubject([releasedRegistration]);
+    released.task.status = "completed";
+    released.task.terminationReason = "completed_ok";
+    released.task.terminationEventRecorded = true;
+    released.task.terminalEventId = 3;
+
+    await released.coordinator.scanOnce();
+    await released.coordinator.waitForSettled();
+    await released.coordinator.scanOnce();
+    await released.coordinator.waitForSettled();
+
+    const liveIncompleteRegistration = registration({
+      pidAlive: true,
+      lifecycleState: "completed",
+    });
+    liveIncompleteRegistration.registrationId = null;
+    liveIncompleteRegistration.pidStartIdentity = null;
+    const liveIncomplete = makeSubject([liveIncompleteRegistration]);
+    liveIncomplete.task.status = "completed";
+    liveIncomplete.task.terminationReason = "completed_ok";
+    liveIncomplete.task.terminationEventRecorded = true;
+    liveIncomplete.task.terminalEventId = 3;
+
+    await liveIncomplete.coordinator.scanOnce();
+    await liveIncomplete.coordinator.waitForSettled();
+
+    const releasedRetries = released.logger.error.mock.calls.filter(
+      ([, message]) => message === "runner recovery action failed",
+    );
+    const liveIncompleteFailures = liveIncomplete.logger.error.mock.calls.filter(
+      ([context, message]) => message === "runner recovery action failed"
+        && context.err instanceof Error
+        && context.err.message
+          === "recorded terminal execution identity is incomplete: session-a",
+    );
+    const violations = [
+      ...releasedRetries.map(() => "released_terminal_retried"),
+      ...(liveIncompleteFailures.length === 1 ? [] : ["live_incomplete_not_fail_closed"]),
+    ];
+    expect(violations).toEqual([]);
+    expect(released.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(liveIncomplete.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
   it("does not block server startup on a dead terminal runner waiting for upstream ACK", async () => {
     let finishRecovery!: () => void;
     const recovery = new Promise<void>((resolve) => { finishRecovery = resolve; });

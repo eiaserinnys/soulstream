@@ -424,6 +424,19 @@ export class RunnerRecoveryCoordinator {
     const pid = ownership?.pid ?? registration.pid;
     const startIdentity = ownership?.startIdentity ?? registration.pidStartIdentity;
     if (
+      !ownership
+      && registration.registrationId === null
+      && registration.pidStartIdentity === null
+      && !registration.pidAlive
+    ) {
+      await this.registrationControl.retireReleasedTerminal(registration);
+      this.options.logger.info(
+        { sessionId: registration.config.sessionId },
+        "released terminal runner evidence retired without replay",
+      );
+      return;
+    }
+    if (
       !registrationId
       || typeof pid !== "number"
       || !Number.isSafeInteger(pid)

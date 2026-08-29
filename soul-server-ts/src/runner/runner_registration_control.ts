@@ -41,6 +41,24 @@ export class RunnerRegistrationControl {
     );
   }
 
+  async retireReleasedTerminal(registration: RunnerRegistration): Promise<void> {
+    if (
+      registration.pidAlive
+      || registration.registrationId !== null
+      || registration.pidStartIdentity !== null
+    ) {
+      throw new RunnerMutationFailure(
+        "runner_registration_identity_proof_failed",
+        `released terminal evidence is incomplete: ${registration.config.sessionId}`,
+      );
+    }
+    await this.spawner.terminate(
+      registration.config.paths,
+      undefined,
+      registration,
+    );
+  }
+
   async retireTerminalOwnership(
     paths: RunnerProcessPaths,
     expected: TerminalExecutionOwnershipIdentity,
