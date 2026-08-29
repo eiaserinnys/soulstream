@@ -31,6 +31,19 @@ const TEST_USER = "migration_runner_test";
 const TEST_PASSWORD = "migration_runner_secret";
 const TEST_DB = "migration_runner_test_db";
 
+const migrationManifest = JSON.parse(readFileSync(
+  new URL("../../../packages/db-schema/migration-manifest.json", import.meta.url),
+  "utf8",
+)) as { migrations?: Array<{ id: string }> };
+if (!Array.isArray(migrationManifest.migrations)) {
+  throw new Error("migration runner fixture requires a migration manifest");
+}
+const MANIFEST_MIGRATIONS = migrationManifest.migrations;
+if (!MANIFEST_MIGRATIONS.at(-1)) {
+  throw new Error("migration runner fixture requires at least one migration");
+}
+const MANIFEST_MIGRATION_COUNT = MANIFEST_MIGRATIONS.length;
+
 const databaseLeases: TestDatabaseLease[] = [];
 const tempDirs: string[] = [];
 const itWithDatabase = hasTestDatabaseResource()
@@ -153,7 +166,7 @@ describe.sequential("versioned migration runner", () => {
             WHERE migration_id = '042_runbook_to_task.sql') AS migration_042_kind
       `;
       expect(rows[0]).toMatchObject({
-        migration_count: 79,
+        migration_count: MANIFEST_MIGRATION_COUNT,
         operation_count: 1,
         applied_kind_count: 2,
         applied_kind: "bootstrap",
@@ -166,7 +179,7 @@ describe.sequential("versioned migration runner", () => {
       const afterRetry = await sql`
         SELECT COUNT(*)::int AS count FROM schema_migrations
       `;
-      expect(afterRetry[0].count).toBe(79);
+      expect(afterRetry[0].count).toBe(MANIFEST_MIGRATION_COUNT);
     } finally {
       await sql.end({ timeout: 5 });
     }

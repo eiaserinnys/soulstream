@@ -44,6 +44,32 @@ const TEST_DB_NAME = "apply_schema_test_db";
 const TEST_USER = "apply_schema_test";
 const TEST_PASSWORD = "apply_schema_secret";
 
+const migrationManifest = JSON.parse(readFileSync(
+  new URL("../../../packages/db-schema/migration-manifest.json", import.meta.url),
+  "utf8",
+)) as { migrations?: Array<{ id: string }> };
+if (!Array.isArray(migrationManifest.migrations)) {
+  throw new Error("apply-schema fixture requires a migration manifest");
+}
+const MANIFEST_MIGRATIONS = migrationManifest.migrations;
+if (!MANIFEST_MIGRATIONS.at(-1)) {
+  throw new Error("apply-schema fixture requires at least one migration");
+}
+const MANIFEST_MIGRATION_COUNT = MANIFEST_MIGRATIONS.length;
+const TERMINAL_RETIREMENT_INDEX = MANIFEST_MIGRATIONS.findIndex(
+  (migration) => migration.id === "078_terminal_execution_ownership_retirement.sql",
+);
+if (TERMINAL_RETIREMENT_INDEX < 0) {
+  throw new Error("apply-schema fixture requires the terminal retirement migration boundary");
+}
+const MANIFEST_TAIL_AFTER_TERMINAL_RETIREMENT = MANIFEST_MIGRATIONS
+  .slice(TERMINAL_RETIREMENT_INDEX + 1)
+  .map((migration, index) => ({
+    migration_id: migration.id,
+    ordinal: TERMINAL_RETIREMENT_INDEX + index + 2,
+    applied_kind: "migration",
+  }));
+
 const tempDirs: string[] = [];
 const databaseLeases: TestDatabaseLease[] = [];
 const itWithDatabase = hasTestDatabaseResource() ? it : it.skip;
@@ -131,7 +157,7 @@ describe("apply-schema.mjs", () => {
         supervisor_table_count: 0,
         supervisor_function_count: 0,
         supervisor_role_column_count: 0,
-        migration_count: 79,
+        migration_count: MANIFEST_MIGRATION_COUNT,
       });
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
@@ -669,6 +695,7 @@ describe("apply-schema.mjs", () => {
             ordinal: 79,
             applied_kind: "migration",
           },
+          ...MANIFEST_TAIL_AFTER_TERMINAL_RETIREMENT,
         ]);
 
         const objects = await sql<Array<{
