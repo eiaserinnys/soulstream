@@ -194,12 +194,16 @@ describe("worker composition boundary", () => {
       "if (turnReceipt) await turnReceipt.observe(task, event);",
     );
     expect(taskExecutor).toMatch(
-      /turnReceipt\s+&&\s+\(task\.status === "completed" \|\| transition\.kind === "continue"\)\s+\) \{\s+successfulTurnReceipts\.push\(turnReceipt\);/,
+      /turnReceipt\s+&&\s+transition\.kind === "continue"\) \{\s+await turnReceipt\.consume\(task\);/,
+    );
+    expect(taskExecutor).toMatch(
+      /turnReceipt\s+&&\s+task\.status === "completed"\) \{\s+terminalTurnReceipts\.push\(turnReceipt\);/,
     );
     expect(taskExecutor).not.toMatch(
       /(?<!if \(turnReceipt\) )await turnReceipt\.observe\(/,
     );
-    expect(taskExecutor).not.toContain("await turnReceipt.consume(task);");
+    expect(taskExecutor).not.toContain("successfulTurnReceipts");
+    expect(taskExecutor).not.toContain("consumeSuccessfulTurnReceipts");
     expect(taskExecutor.match(/await receipt\.consume\(task\)/g)).toHaveLength(1);
     expect(taskExecutorFinalizer).toMatch(
       /persistence\.terminalTransitionApplied\s+&&\s+task\.status === "completed"\s+&&\s+consumeSuccessfulDeliveries/,

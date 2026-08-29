@@ -19,6 +19,10 @@ describe("applyEventSessionEffect", () => {
     ["execution_fail", "session_fail_execution_ownership"],
     ["execution_expire_dead_owner", "session_expire_dead_execution_owner"],
     ["execution_retire_terminal_ownership", "session_retire_terminal_execution_ownership"],
+    [
+      "execution_retire_recorded_terminal_identity",
+      "session_retire_recorded_terminal_execution_identity",
+    ],
     ["execution_orphaned_spawn", "session_mark_execution_orphaned_spawn"],
     ["execution_backfill", "session_backfill_execution_ownership"],
     ["runner_terminal_fact", "session_project_runner_terminal_fact"],
@@ -46,6 +50,7 @@ describe("applyEventSessionEffect", () => {
         || statement.includes("execution_ownership")
         || statement.includes("expire_dead_execution_owner")
         || statement.includes("execution_adoption")
+        || statement.includes("terminal_execution_identity")
         || statement.includes("execution_orphaned_spawn")
         || statement.includes("runner_terminal_fact")
         ? [canonicalRow(true)]
@@ -64,14 +69,19 @@ describe("applyEventSessionEffect", () => {
     expect(statements).toHaveLength(
       ownershipEffect
         && kind !== "execution_acquire"
-        && kind !== "execution_renew" ? 2 : 1,
+        && kind !== "execution_renew"
+        && kind !== "execution_retire_recorded_terminal_identity" ? 2 : 1,
     );
     expect(statements[0]).toContain(procedure);
+    if (kind === "execution_retire_recorded_terminal_identity") {
+      expect(statements.join("\n")).not.toContain("FROM session_execution_ownerships");
+    }
     if (
       kind !== "execution_prove"
       && kind !== "execution_fail"
       && kind !== "execution_expire_dead_owner"
       && kind !== "execution_retire_terminal_ownership"
+      && kind !== "execution_retire_recorded_terminal_identity"
       && kind !== "execution_orphaned_spawn"
       && kind !== "execution_backfill"
     ) {
@@ -372,7 +382,19 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     pid: 123,
     start_identity: "start-1",
     execution_command_id: "execute-1",
-    runner_fact: "closed",
+    runner_fact: "reaped",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_retire_recorded_terminal_identity") return {
+    kind,
+    ownership_generation: 1,
+    manifest_id: "release-1",
+    runtime_env_identity: "runtime-1",
+    registration_id: "registration-1",
+    pid: 123,
+    start_identity: "start-1",
+    execution_command_id: "execute-1",
+    terminal_event_id: 3,
     updated_at: "2026-08-06T00:00:00.000Z",
   };
   if (kind === "execution_orphaned_spawn") return {

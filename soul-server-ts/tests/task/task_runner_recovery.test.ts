@@ -189,6 +189,72 @@ describe("TaskRunnerRecovery", () => {
     expect(projectRecoveredRunnerTerminalFact).not.toHaveBeenCalled();
   });
 
+  it("retires an exact recorded terminal identity with metadata instead of another terminal event", async () => {
+    const task = makeTask({
+      status: "error",
+      terminationReason: "error_aborted",
+      terminationDetail: "event outbox acknowledgement timed out",
+      terminationEventRecorded: true,
+      terminalEventId: 3,
+      executionOwnership: {
+        ownerKind: "spawned_runner",
+        ownershipGeneration: 1,
+        manifestId: "sha-a",
+        runtimeEnvIdentity: "runtime-a",
+        registrationId: "registration-a",
+        pid: 45716,
+        startIdentity: "node-start-1787806755465",
+        executionCommandId: "owner-a",
+      },
+    });
+    const retireTerminalExecutionOwnershipAndWaitForApplication = vi.fn(async () => ({
+      applied: true,
+      eventId: 4,
+      canonicalSession: {
+        status: "error",
+        termination_reason: "error_aborted",
+        termination_detail: "event outbox acknowledgement timed out",
+        review_state: "not_required",
+        last_assistant_text: null,
+        termination_event_id: 3,
+        updated_at: "2026-08-29T00:00:00.000Z",
+        last_event_id: 4,
+      },
+      canonicalExecutionOwnership: null,
+    }));
+    const recovery = new TaskRunnerRecovery({
+      getTask: vi.fn(),
+      loadTask: vi.fn(),
+      rememberTask: vi.fn(),
+      lifecycleTransition: {} as never,
+      autoResumeTransition: {} as never,
+      persistence: { retireTerminalExecutionOwnershipAndWaitForApplication } as never,
+    });
+
+    await expect(recovery.reconcileRecordedTerminalExecution(task)).resolves.toBe(true);
+
+    expect(retireTerminalExecutionOwnershipAndWaitForApplication).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({
+        type: "metadata",
+        metadata_type: "execution_ownership_transition",
+        value: expect.objectContaining({ phase: "terminal_identity_retired" }),
+      }),
+      {
+        ownershipGeneration: 1,
+        manifestId: "sha-a",
+        runtimeEnvIdentity: "runtime-a",
+        registrationId: "registration-a",
+        pid: 45716,
+        startIdentity: "node-start-1787806755465",
+        executionCommandId: "owner-a",
+        terminalEventId: 3,
+        updatedAt: expect.any(Date),
+      },
+    );
+    expect(task.executionOwnership).toBeUndefined();
+  });
+
   it("allows closed recovery to retry a missing terminal projection from an inactive owner", async () => {
     const task = makeTask({
       status: "error",

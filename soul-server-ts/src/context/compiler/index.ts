@@ -8,6 +8,7 @@
 import type { Logger } from "pino";
 import { createHash } from "node:crypto";
 
+import { AgentBackendSchema } from "../../agent_registry.js";
 import {
   ATOM_CONTEXT_HEADER,
   fetchAtomMarkdownResult,
@@ -25,7 +26,12 @@ import {
 
 type ContextCompilerLogger = Pick<Logger, "warn">;
 
-export type ContextFilterField = "source" | "node_id" | "container_kind" | "agent";
+export type ContextFilterField =
+  | "source"
+  | "node_id"
+  | "container_kind"
+  | "agent"
+  | "backend";
 
 export type ContextFilterParameters = Partial<Record<ContextFilterField, string>>;
 
@@ -126,6 +132,7 @@ const CONTEXT_FILTER_FIELDS = new Set<ContextFilterField>([
   "node_id",
   "container_kind",
   "agent",
+  "backend",
 ]);
 
 const KNOWN_CALLER_SOURCES = new Set([
@@ -217,6 +224,7 @@ function isKnownConditionValue(field: ContextFilterField, value: unknown): value
   if (typeof value !== "string" || value.length === 0) return false;
   if (field === "source") return KNOWN_CALLER_SOURCES.has(value);
   if (field === "container_kind") return KNOWN_CONTAINER_KINDS.has(value);
+  if (field === "backend") return AgentBackendSchema.safeParse(value).success;
   return IDENTIFIER_VALUE.test(value);
 }
 

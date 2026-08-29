@@ -79,7 +79,7 @@ describe("runner SQLite write inventory", () => {
     const dispatcher = readFileSync(resolve(SRC_ROOT, "runner/runner_process_dispatcher.ts"), "utf8");
     const offline = dispatcher.slice(
       dispatcher.indexOf("if (this.options.offlineExisting)"),
-      dispatcher.indexOf("const spawner ="),
+      dispatcher.indexOf("const spawned = await this.options.runnerProcess!;"),
     );
     expect(offline.indexOf("RunnerWriterLock.acquire")).toBeLessThan(
       offline.indexOf("RunnerSqliteEventOutbox.open"),

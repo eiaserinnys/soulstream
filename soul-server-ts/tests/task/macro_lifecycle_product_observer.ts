@@ -84,6 +84,7 @@ async function observeCurrentRecovery(h: ContractHarness) {
 
 async function observeCurrentLateIntervention(h: ContractHarness) {
   const deliveryId = "product-late-notification";
+  const deliveryLeaseOwner = "lease";
   const events = h.successTurn("product-previous").concat(h.accept(deliveryId));
   const state = h.run(events).at(-1)!;
   const task = productTask({ status: "completed", terminationReason: "completed_ok",
@@ -102,8 +103,19 @@ async function observeCurrentLateIntervention(h: ContractHarness) {
   const gate = new TaskDeliveryLedgerGate(true, repository as never);
   const autoResume = new AutoResumeTransition({ logger: pino({ level: "silent" }),
     persistence: { acquireExecutionOwnershipAndWaitForApplication: vi.fn() } as never });
+  const terminalFencePresent = task.terminalEventId !== undefined;
+  let acceptedInputStart = false;
   const start = vi.fn((resumed: Task, activation?: ExecutionActivation) => {
-    observeAutomaticGeneration(state);
+    acceptedInputStart = terminalFencePresent
+      && row.state === "dispatching"
+      && row.delivery_id === deliveryId
+      && row.target_session_id === resumed.agentSessionId
+      && row.lease_owner === deliveryLeaseOwner
+      && resumed.status === "initializing"
+      && activation !== undefined
+      && resumed.executionActivation === activation;
+    if (acceptedInputStart) observeAcceptedInputGeneration(state);
+    else observeAutomaticGeneration(state);
     startObservedExecution(resumed, activation, state.generation.id);
   });
   const route = new TaskInterventionRoute({ getTask: () => task,
@@ -115,12 +127,13 @@ async function observeCurrentLateIntervention(h: ContractHarness) {
   const result = await route.addIntervention({ agentSessionId: task.agentSessionId,
     text: "late", user: "system",
     source: "completion_notifier", deliveryId, deliveryIntent: "completion_notification",
-    completionId: "completion-late", relationKey: "relation-late", deliveryLeaseOwner: "lease" },
+    completionId: "completion-late", relationKey: "relation-late", deliveryLeaseOwner },
   start);
-  state.projection.automaticStarts = Math.max(
+  const startCount = Math.max(
     "autoResumed" in result ? 1 : 0,
     start.mock.calls.length,
   );
+  state.projection.automaticStarts = acceptedInputStart ? 0 : startCount;
   if (markConsumed.mock.calls.length > 0) {
     state.delivery.state = "consumed";
     state.delivery.ackCount = 1;
@@ -174,6 +187,16 @@ function observeAutomaticGeneration(state: MacroTuple): void {
   state.generation.id += 1;
   state.generation.fenced = false;
   state.generation.intent = false;
+  state.projection.outcome = null;
+  state.projection.reason = null;
+  state.projection.resetAt = null;
+}
+
+function observeAcceptedInputGeneration(state: MacroTuple): void {
+  state.generation.id += 1;
+  state.generation.fenced = false;
+  state.generation.intent = true;
+  state.delivery.generation = state.generation.id;
   state.projection.outcome = null;
   state.projection.reason = null;
   state.projection.resetAt = null;

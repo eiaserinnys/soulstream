@@ -1,6 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
-import type { Task } from "../task/task_models.js";
+import { isTerminalTaskStatus, type Task } from "../task/task_models.js";
 import { releaseTaskRunner } from "../task/task_runner_release.js";
 import {
   classifyRunnerRegistration,
@@ -324,6 +324,19 @@ export class RunnerRecoveryCoordinator {
     task?: Task,
   ): Promise<void> {
     if (
+      task
+      && isTerminalTaskStatus(task.status)
+      && task.terminationEventRecorded
+      && typeof task.terminalEventId === "number"
+      && Number.isSafeInteger(task.terminalEventId)
+      && task.terminalEventId > 0
+      && !task.runner
+      && !task.executionPromise
+    ) {
+      await this.retireRecordedTerminalExecution(registration, task);
+      return;
+    }
+    if (
       disposition === "adopt_prebootstrap"
       || disposition === "adopt_running"
       || disposition === "replay_terminal"
@@ -400,6 +413,40 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     throw new Error(`unsupported runner recovery disposition: ${disposition}`);
+  }
+
+  private async retireRecordedTerminalExecution(
+    registration: RunnerRegistration,
+    task: Task,
+  ): Promise<void> {
+    const ownership = task.executionOwnership;
+    const registrationId = ownership?.registrationId ?? registration.registrationId;
+    const pid = ownership?.pid ?? registration.pid;
+    const startIdentity = ownership?.startIdentity ?? registration.pidStartIdentity;
+    if (
+      !registrationId
+      || typeof pid !== "number"
+      || !Number.isSafeInteger(pid)
+      || pid <= 0
+      || !startIdentity
+    ) {
+      throw new Error(
+        `recorded terminal execution identity is incomplete: ${registration.config.sessionId}`,
+      );
+    }
+    const reconcile = this.options.taskManager.reconcileRecordedTerminalExecution;
+    if (!reconcile) {
+      throw new Error("terminal execution ownership reconciliation is not configured");
+    }
+    await this.registrationControl.retireTerminalOwnership(
+      registration.config.paths,
+      { registrationId, pid, startIdentity },
+      async () => await reconcile.call(this.options.taskManager, task),
+    );
+    this.options.logger.info(
+      { sessionId: registration.config.sessionId },
+      "recorded terminal execution identity retired without terminal replay",
+    );
   }
   private async handleWithFailureTracking(
     registration: RunnerRegistration,

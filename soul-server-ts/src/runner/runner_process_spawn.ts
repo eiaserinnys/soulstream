@@ -41,6 +41,10 @@ import {
 } from "./runner_registration_mutation.js";
 import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
+import {
+  retireTerminalExecutionIdentity,
+  type TerminalExecutionOwnershipRetirement,
+} from "./runner_terminal_identity_retirement.js";
 
 const RunnerProcessPathsSchema = z.object({
   sessionDirectory: z.string().min(1),
@@ -386,6 +390,13 @@ export class RunnerProcessSpawner {
         new Date(this.deps.now()),
       );
     });
+  }
+
+  retireTerminalOwnership(
+    input: TerminalExecutionOwnershipRetirement,
+    commitOwnership: () => Promise<boolean>,
+  ): Promise<void> {
+    return retireTerminalExecutionIdentity(input, commitOwnership, this.deps);
   }
 
 }

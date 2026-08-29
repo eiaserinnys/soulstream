@@ -36,8 +36,9 @@ type NotificationPublication = Awaited<
  * - running 세션 → `engine.intervene()`가 현재 전달하면 `{delivered: true}`,
  *   전달하지 못하면 소비 시점과 사유가 명시된 queue/defer 결과.
  * - active + logical turn complete → 새 generation으로 `{autoResumed: true}`.
- * - completed/error/interrupted → 사용자 입력과 runtime follow-up은
- *   `{autoResumed: true}`, completion notification은 다음 명시적 turn까지 queued.
+ * - completed → 모든 새 입력이 `{autoResumed: true}`.
+ * - error/interrupted → completion notification만 다음 명시적 turn까지 queued;
+ *   사용자 입력과 runtime follow-up은 `{autoResumed: true}`.
  */
 export type AddInterventionResult =
   | RunningInterventionResult
@@ -172,7 +173,12 @@ export class TaskInterventionRoute {
       deferredResumeStarted = true;
       const resume = deferredResume;
       deferredResume = undefined;
-      onResume(resume.task, resume.activation);
+      try {
+        onResume(resume.task, resume.activation);
+      } catch (error) {
+        resume.activation?.reject(error);
+        throw error;
+      }
     };
     try {
       await this.awaitInitializingTask(task);
@@ -219,6 +225,11 @@ export class TaskInterventionRoute {
         isTerminalTaskStatus(task.status)
         && admission.kind === "admitted"
         && admission.row.intent === "completion_notification"
+        && (
+          task.status !== "completed"
+          || task.terminalEventId === undefined
+          || request.deliveryLeaseOwner === undefined
+        )
       ) {
         result = await this.deps.runningInterventionTransition.queueOnly(
           task,
@@ -288,10 +299,10 @@ export class TaskInterventionRoute {
       return result;
     } catch (err) {
       let recoveryError: unknown;
-      try {
-        startDeferredResumeOnce();
-      } catch (resumeError) {
-        recoveryError = resumeError;
+      if (!deferredResumeStarted && deferredResume) {
+        const abandonedResume = deferredResume;
+        deferredResume = undefined;
+        abandonedResume.activation?.reject(err);
       }
       if (
         this.deps.deliveryLedgerGate
