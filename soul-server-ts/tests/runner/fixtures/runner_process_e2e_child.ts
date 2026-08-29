@@ -38,6 +38,7 @@ class ControlledEngine implements EnginePort {
   private executionCount = 0;
   private backgroundTaskCount = 0;
   private liveInterventionCount = 0;
+  private s4CloseCount = 0;
 
   constructor(
     private readonly controlDirectory: string,
@@ -92,6 +93,21 @@ class ControlledEngine implements EnginePort {
         });
         yield engineEventFrame({ type: "complete", result: "resume successor reply" });
       }
+      return;
+    }
+    if (process.env.RUNNER_E2E_S4_SCENARIO === "1") {
+      await writeFile(
+        `${this.controlDirectory}/s4-execution.json`,
+        JSON.stringify({ pid: process.pid, params }),
+        { flag: "wx" },
+      );
+      yield engineEventFrame({ type: "session", session_id: "backend-session-s4" });
+      yield engineEventFrame({
+        type: "assistant_message",
+        content: "S4 initial reply",
+        timestamp: 1,
+      });
+      yield engineEventFrame({ type: "complete", result: "S4 initial reply" });
       return;
     }
     if (process.env.RUNNER_E2E_BACKGROUND_SCENARIO === "multi-terminal") {
@@ -290,7 +306,13 @@ class ControlledEngine implements EnginePort {
     }
   }
 
-  async close(): Promise<void> {}
+  async close(): Promise<void> {
+    if (process.env.RUNNER_E2E_S4_SCENARIO !== "1") return;
+    this.s4CloseCount += 1;
+    if (this.s4CloseCount === 2) {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+  }
 
   async detachedClaudeRuntimeActivity() {
     return {
