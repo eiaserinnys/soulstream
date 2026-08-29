@@ -306,7 +306,7 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
     expect(harness.close).toHaveBeenCalledTimes(1);
   });
 
-  it("surfaces a direct interrupt diagnostic whose Result lost its user_message_uuid", async () => {
+  it("settles a direct interrupt whose Result lost its user_message_uuid without an EDE event", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(
       {
@@ -327,14 +327,7 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
     harness.push(sdkInterruptedResult("sdk-session", undefined));
 
     const interruptedEvents = await interrupted;
-    expect(interruptedEvents).toContainEqual(
-      expect.objectContaining({ type: "result", success: false }),
-    );
-    expect(interruptedEvents).toContainEqual(expect.objectContaining({
-      type: "error",
-      fatal: false,
-      errorCode: "error_during_execution",
-    }));
+    expect(interruptedEvents).toEqual([]);
     expect(harness.close).not.toHaveBeenCalled();
 
     const intervention = collect(

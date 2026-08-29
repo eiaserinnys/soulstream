@@ -1071,7 +1071,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
     expect(harness.close).toHaveBeenCalledTimes(1);
   });
 
-  it("does not globally suppress the EDE diagnostic from a direct interrupt", async () => {
+  it("settles a directly interrupted owner without projecting its EDE diagnostic", async () => {
     const harness = makeHarness({
       receipt: { still_queued: [] },
     });
@@ -1092,14 +1092,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
     harness.push(sdkInterruptedResult("sdk-session", input.uuid));
 
     const events = await turn;
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: "result", success: false }),
-    );
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "error",
-      fatal: false,
-      errorCode: "error_during_execution",
-    }));
+    expect(events).toEqual([]);
     expect(harness.detached).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "error" }),
     );
