@@ -947,6 +947,83 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     }
   });
 
+  it("retires the released sidecar in the same scan while terminal ownership is clearing", async () => {
+    const fixture = await releasedTerminalSidecarFixture({
+      lifecyclePid: 2_147_483_647,
+    });
+    try {
+      const initialIdentity = await readRunnerRegistrationIdentity(
+        fixture.paths.sessionDirectory,
+      );
+      const reconcileRecordedTerminalExecution = vi.fn(async (candidate: Task) => {
+        candidate.executionOwnership = undefined;
+        return true;
+      });
+      const subject = makeSubject([fixture.registration], RECOVERY_NOW_MS, [], {
+        spawner: fixture.spawner,
+        taskManager: { reconcileRecordedTerminalExecution } as never,
+      });
+      recordTerminalCompletion(subject.task);
+      subject.task.executionOwnership = {
+        ownerKind: "runner_process",
+        ownershipGeneration: 2,
+        manifestId: "sha256-b271cc86",
+        runtimeEnvIdentity: "sha256-51ae3e79",
+        registrationId: fixture.registration.registrationId,
+        pid: null,
+        startIdentity: null,
+        executionCommandId: "execute-a",
+      } as never;
+
+      expect(releasedTransitionWindowViolations({
+        readerRegistrationIdPresent: true,
+        sidecarProcessIdentityAbsent: true,
+        readerStartIdentityAbsent: true,
+        readerMarkedPidDead: true,
+        staleLifecyclePidObserved: true,
+        ownershipPresentBeforeScan: true,
+        centralOwnershipRetired: true,
+        sidecarRetired: true,
+        recoveryFailureCount: 0,
+        retirementMarkerCount: 1,
+        reconcileCount: 1,
+      })).toEqual([]);
+
+      const ownershipPresentBeforeScan = subject.task.executionOwnership !== undefined;
+      await subject.coordinator.scanOnce();
+      await subject.coordinator.waitForSettled();
+
+      const retiredIdentity = await readRunnerRegistrationIdentity(
+        fixture.paths.sessionDirectory,
+      );
+      const recoveryFailureCount = subject.logger.error.mock.calls.filter(
+        ([, message]) => message === "runner recovery action failed",
+      ).length;
+      const retirementMarkerCount = subject.logger.info.mock.calls.filter(
+        ([, message]) => message === "released terminal runner evidence retired without replay",
+      ).length;
+      expect(releasedTransitionWindowViolations({
+        readerRegistrationIdPresent: fixture.registration.registrationId !== null,
+        sidecarProcessIdentityAbsent:
+          initialIdentity?.pid === null && initialIdentity.startIdentity === null,
+        readerStartIdentityAbsent: fixture.registration.pidStartIdentity === null,
+        readerMarkedPidDead: !fixture.registration.pidAlive,
+        staleLifecyclePidObserved:
+          fixture.registration.pid === fixture.staleLifecyclePid
+          && fixture.registration.lifecycle?.runner_pid === fixture.staleLifecyclePid,
+        ownershipPresentBeforeScan,
+        centralOwnershipRetired: subject.task.executionOwnership === undefined,
+        sidecarRetired: Boolean(retiredIdentity?.retiredAt),
+        recoveryFailureCount,
+        retirementMarkerCount,
+        reconcileCount: reconcileRecordedTerminalExecution.mock.calls.length,
+      })).toEqual([]);
+      expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps live pid and residual start identity outside released cleanup", async () => {
     const livePid = await releasedTerminalSidecarFixture({
       lifecyclePid: process.pid,
@@ -2383,6 +2460,35 @@ function executionOwnership(
     startIdentity: "start-880003",
     executionCommandId: "execute-successor",
   };
+}
+
+function releasedTransitionWindowViolations(observation: {
+  readerRegistrationIdPresent: boolean;
+  sidecarProcessIdentityAbsent: boolean;
+  readerStartIdentityAbsent: boolean;
+  readerMarkedPidDead: boolean;
+  staleLifecyclePidObserved: boolean;
+  ownershipPresentBeforeScan: boolean;
+  centralOwnershipRetired: boolean;
+  sidecarRetired: boolean;
+  recoveryFailureCount: number;
+  retirementMarkerCount: number;
+  reconcileCount: number;
+}): string[] {
+  return [
+    ...(observation.readerRegistrationIdPresent ? [] : ["reader_registration_id_missing"]),
+    ...(observation.sidecarProcessIdentityAbsent ? [] : ["sidecar_process_identity_present"]),
+    ...(observation.readerStartIdentityAbsent ? [] : ["reader_start_identity_present"]),
+    ...(observation.readerMarkedPidDead ? [] : ["reader_marked_stale_pid_live"]),
+    ...(observation.staleLifecyclePidObserved ? [] : ["stale_lifecycle_pid_fixture_lost"]),
+    ...(observation.ownershipPresentBeforeScan ? [] : ["transition_ownership_missing"]),
+    ...(observation.centralOwnershipRetired ? [] : ["central_ownership_not_retired"]),
+    ...(observation.sidecarRetired ? [] : ["released_sidecar_not_retired"]),
+    ...(observation.recoveryFailureCount === 0 ? [] : ["released_terminal_retried"]),
+    ...(observation.retirementMarkerCount === 1
+      ? [] : ["released_retirement_marker_not_exactly_once"]),
+    ...(observation.reconcileCount === 1 ? [] : ["central_retirement_not_exactly_once"]),
+  ];
 }
 
 async function pathExists(path: string): Promise<boolean> {
