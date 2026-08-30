@@ -188,7 +188,10 @@ describe("worker composition boundary", () => {
       /:\s+\{\};\s+const claudeSessionClientRegistry = claudeRuntime\.registry/,
     );
     expect(taskExecutor).toMatch(
-      /const turnReceipt = this\.deliveryConsumption\s+\?\s+new TaskDeliveryTurnReceipt\(/,
+      /const turnReceipt = carriedTurnReceipt\s+\?\?\s+\(this\.deliveryConsumption\s+\?\s+new TaskDeliveryTurnReceipt\(/,
+    );
+    expect(taskExecutor).toMatch(
+      /if \(disposition\.source === "active"\) \{[\s\S]*?carriedTurnReceipt = turnReceipt;\s+continue;/,
     );
     expect(taskExecutor).toContain(
       "if (turnReceipt) await turnReceipt.observe(task, event);",
