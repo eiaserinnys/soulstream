@@ -48,7 +48,16 @@ const publishExpectedChildIdentity: WaitForChildIdentity = async (paths, expecte
 };
 class RunnerProcessSpawner extends ProductRunnerProcessSpawner {
   constructor(deps: ProductSpawnerArguments[0], logger?: ProductSpawnerArguments[1]) {
-    super({ waitForChildRegistrationIdentity: publishExpectedChildIdentity, ...deps }, logger);
+    super({
+      writerLockDependencies: {
+        now: () => 0,
+        delay: async () => {},
+        currentOwner: async () => ({ pid: process.pid, startIdentity: "test-host" }),
+        inspectProcess: async () => ({ alive: true, startIdentity: "test-host" }),
+      },
+      waitForChildRegistrationIdentity: publishExpectedChildIdentity,
+      ...deps,
+    }, logger);
   }
 }
 // Immutable runner snapshots deployed before the host update embed this

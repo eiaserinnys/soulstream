@@ -18,6 +18,7 @@ import {
   inspectProcessIdentity,
   processStartIdentitiesMatch,
   type ProcessIdentity,
+  type ProcessOwnershipLockDependencies,
 } from "./runner_process_lock.js";
 import { RunnerMutationFailure } from "./runner_mutation_failure.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
@@ -133,6 +134,7 @@ interface SpawnDependencies {
   openRunnerLog?(path: string): Promise<{ fd: number; close(): Promise<void> }>;
   registerPid(path: string, pid: number): Promise<void>;
   inspectProcess(pid: number): Promise<ProcessIdentity>;
+  writerLockDependencies?: ProcessOwnershipLockDependencies;
   waitForChildRegistrationIdentity?(
     paths: RunnerProcessPaths,
     expected: Pick<
@@ -174,7 +176,10 @@ export class RunnerProcessSpawner {
     // stopExistingRunner proves any registered child dead (or identity-fenced)
     // before a current-host orphan is reclaimed. Active host/child owners remain
     // fail-closed, so this cannot open a split-brain spawn window.
-    const reclaimedHostLock = await prepareRunnerWriterLockForSpawn(paths.lockPath);
+    const reclaimedHostLock = await prepareRunnerWriterLockForSpawn(
+      paths.lockPath,
+      this.deps.writerLockDependencies,
+    );
     if (reclaimedHostLock) {
       this.logger?.info(
         {
@@ -218,7 +223,7 @@ export class RunnerProcessSpawner {
       rolloutRoot: input.rolloutRoot,
     };
     const validatedConfig = parseRunnerChildConfig(config);
-    await withRunnerWriterBootstrap(paths.lockPath, undefined, async () => {
+    await withRunnerWriterBootstrap(paths.lockPath, this.deps.writerLockDependencies, async () => {
       await writeRunnerRegistrationIdentity(paths.sessionDirectory, pendingIdentity);
       await writeFile(paths.configPath, JSON.stringify(validatedConfig), { mode: 0o600 });
       await chmod(paths.configPath, 0o600);

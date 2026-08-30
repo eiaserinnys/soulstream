@@ -163,6 +163,12 @@ async function createSpawnFailureHarness(mode: SpawnFailureMode) {
     process.alive = false;
   });
   const spawner = new RunnerProcessSpawner({
+    writerLockDependencies: {
+      now: () => 0,
+      delay: async () => {},
+      currentOwner: async () => ({ pid: process.pid, startIdentity: "test-host" }),
+      inspectProcess: async () => ({ alive: true, startIdentity: "test-host" }),
+    },
     prepareDatabase: async (databasePath) => {
       const outbox = await RunnerSqliteEventOutbox.create(databasePath);
       outbox.close();
