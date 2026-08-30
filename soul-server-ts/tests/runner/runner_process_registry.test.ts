@@ -24,6 +24,7 @@ import {
   RunnerSqliteLifecycle,
 } from "../../src/runner/sqlite_runner_lifecycle.js";
 import {
+  completeRunnerRegistrationIdentityFromChild,
   pendingRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
@@ -38,29 +39,34 @@ afterEach(async () => {
 });
 
 describe("runner process registry", () => {
-  it("W1 hides a registration interrupted after pending identity and writer publication", async () => {
-    const visibilityViolations = (registrationCount: number): string[] => (
-      registrationCount === 0 ? [] : ["partial_registration_discoverable"]
-    );
-    expect(visibilityViolations(0)).toEqual([]);
-
-    const stateDirectory = await temporaryDirectory("pending-identity-writer-window");
-    const paths = runnerProcessPaths(stateDirectory, "session-pending-writer");
-    const current = registration({ sessionId: "session-pending-writer" });
-    current.config = { ...current.config, paths };
+  it("W1 fences a delayed A after B supersedes it and adopts only B", async () => {
+    const stateDirectory = await temporaryDirectory("registration-aba-window");
+    const paths = runnerProcessPaths(stateDirectory, "session-registration-aba");
+    const current = registration({ sessionId: "session-registration-aba" });
+    const registrationA = "registration-a";
+    const registrationB = "registration-b";
+    current.config = { ...current.config, paths, registrationId: registrationB };
     await mkdir(paths.sessionDirectory, { recursive: true });
     await writeFile(paths.configPath, JSON.stringify(current.config));
-    await writeRunnerRegistrationIdentity(
-      paths.sessionDirectory,
-      pendingRunnerRegistrationIdentity(current.config.sessionId, current.config.codeSha),
+    const pending = pendingRunnerRegistrationIdentity(
+      current.config.sessionId,
+      current.config.codeSha,
     );
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      ...pending,
+      registrationId: registrationA,
+    });
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      ...pending,
+      registrationId: registrationB,
+    });
     const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
     await outbox.initializeBootstrap({
       session_id: current.config.sessionId,
       created_at: "2026-08-11T00:00:00.000Z",
       resume: {
         schema_version: 1,
-        backend_session_id: "backend-pending-writer",
+        backend_session_id: "backend-registration-aba",
         cwd: "/workspace/a",
         codex_home: "/home/test/.codex",
         rollout_root: "/home/test/.codex/sessions",
@@ -70,10 +76,36 @@ describe("runner process registry", () => {
     });
     outbox.close();
 
-    const writerLock = await RunnerWriterLock.acquire(paths.lockPath);
+    const owner = { pid: process.pid, startIdentity: "boot-a-process-b" };
+    const lockDeps = {
+      now: () => 0,
+      delay: async () => {},
+      currentOwner: async () => owner,
+      inspectProcess: async () => ({ alive: true, startIdentity: owner.startIdentity }),
+    };
+    await expect(RunnerWriterLock.acquire(paths.lockPath, lockDeps, async () => {
+      await completeRunnerRegistrationIdentityFromChild(paths.sessionDirectory, {
+        registrationId: registrationA,
+        sessionId: current.config.sessionId,
+        codeSha: current.config.codeSha,
+        pid: owner.pid,
+        startIdentity: owner.startIdentity,
+      });
+    })).rejects.toThrow("runner registration changed before child startup");
+
+    const writerLock = await RunnerWriterLock.acquire(paths.lockPath, lockDeps, async () => {
+      await completeRunnerRegistrationIdentityFromChild(paths.sessionDirectory, {
+        registrationId: registrationB,
+        sessionId: current.config.sessionId,
+        codeSha: current.config.codeSha,
+        pid: owner.pid,
+        startIdentity: owner.startIdentity,
+      });
+    });
     try {
       const scan = await scanRunnerRegistrations(stateDirectory);
-      expect(visibilityViolations(scan.registrations.length)).toEqual([]);
+      expect(scan.errors).toEqual([]);
+      expect(scan.registrations.map((item) => item.registrationId)).toEqual([registrationB]);
     } finally {
       await writerLock.release();
     }
