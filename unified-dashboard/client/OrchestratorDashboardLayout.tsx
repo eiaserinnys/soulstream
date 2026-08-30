@@ -119,20 +119,10 @@ export function OrchestratorDashboardLayout() {
     [activeSessionKey, activeSessionSummary, sessions],
   );
 
-  // 활성 세션의 노드가 없거나 disconnected이면 ChatInput 비활성화
-  const isChatInputDisabled = useMemo(() => {
-    if (!activeSessionKey) return false;
-    if (!activeSession?.nodeId) return true;
-    const node = nodes.get(activeSession.nodeId);
-    return !node || node.status === "disconnected";
-  }, [activeSessionKey, activeSession, nodes]);
-
   const chatFileUploadUrl = useMemo(() => {
-    if (!activeSession?.nodeId || isChatInputDisabled) {
-      return undefined;
-    }
+    if (!activeSession?.nodeId) return undefined;
     return `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSession.nodeId)}`;
-  }, [activeSession, isChatInputDisabled]);
+  }, [activeSession]);
 
   // 세션 이동 후 빈 자리 보충
   const handleMoveSessions = useCallback(
@@ -198,7 +188,6 @@ export function OrchestratorDashboardLayout() {
       }
       rightPanel={
         <RightPanel
-          chatInputDisabled={isChatInputDisabled}
           fileUploadUrl={chatFileUploadUrl}
         />
       }
@@ -243,7 +232,6 @@ export function OrchestratorDashboardLayout() {
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={
         <ChatView
-          chatInputDisabled={isChatInputDisabled}
           fileUploadUrl={chatFileUploadUrl}
           showHeader={false}
         />

@@ -84,26 +84,46 @@ class RelationLedgerRepository {
   });
 
   readonly markConsumedByRelation = vi.fn(async (
-    relationKey: string,
-    completionId: string,
-    consumedTurnId: string,
+    params: {
+      deliveryId: string;
+      relationKey: string;
+      completionId: string;
+      callerSessionId: string;
+      consumedTurnId: string;
+    },
   ) => {
-    if (oracleMutation === "drop_central_consumption") return null;
-    const row = [...this.rows.values()].find(
-      (candidate) => candidate.relation_key === relationKey
-        && candidate.completion_id === completionId,
-    );
-    if (!row) return null;
+    if (oracleMutation === "drop_central_consumption") {
+      return { relation: {} as never, relationInserted: false, deliveryConsumed: false };
+    }
+    const row = this.rows.get(params.deliveryId);
+    if (
+      !row
+      || row.relation_key !== params.relationKey
+      || row.completion_id !== params.completionId
+      || row.target_session_id !== params.callerSessionId
+    ) {
+      return { relation: {} as never, relationInserted: false, deliveryConsumed: false };
+    }
     if (row.state !== "consumed") {
       row.state = "consumed";
       row.aggregate_state = "consumed";
-      row.caller_turn_id = consumedTurnId;
+      row.caller_turn_id = params.consumedTurnId;
       this.consumedTransitions.set(
-        relationKey,
-        (this.consumedTransitions.get(relationKey) ?? 0) + 1,
+        params.relationKey,
+        (this.consumedTransitions.get(params.relationKey) ?? 0) + 1,
       );
     }
-    return row;
+    return {
+      relation: {
+        relation_key: params.relationKey,
+        completion_id: params.completionId,
+        caller_session_id: params.callerSessionId,
+        consumed_turn_id: params.consumedTurnId,
+        consumed_at: new Date(),
+      },
+      relationInserted: true,
+      deliveryConsumed: true,
+    };
   });
 
   readonly markDelivered = vi.fn(async (

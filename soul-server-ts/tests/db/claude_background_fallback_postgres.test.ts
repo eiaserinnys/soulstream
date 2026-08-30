@@ -63,7 +63,6 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
     const repository = new SessionDeliveryRepository(harness.sql);
     const ledger = new TaskDeliveryLedgerGate(true, repository);
     const task = makeTask();
-    task.executionPromise = Promise.resolve();
     const counts = { resume: 0, wake: 0, notification: 0 };
     const dispatched: InterventionMessage[] = [];
     const route = makeRoute(task, ledger, counts, dispatched);
@@ -98,7 +97,9 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
       deliveryV2Enabled: true,
     });
 
+    task.executionPromise = Promise.resolve();
     const attempt2Schedule = controller.queueFallback(task, parent, "empty_response");
+    task.executionPromise = undefined;
     await attempt2Schedule.reserved;
     await attempt2Schedule.completed;
     expect(dispatched).toHaveLength(2);
@@ -108,7 +109,9 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
     expect(attempt2.followupAttempt).toBe(2);
     await ledger.recordTurnStarted(attempt2, task);
 
+    task.executionPromise = Promise.resolve();
     const attempt3Schedule = controller.queueFallback(task, attempt2, "repeated_response");
+    task.executionPromise = undefined;
     await attempt3Schedule.reserved;
     await attempt3Schedule.completed;
     expect(dispatched).toHaveLength(3);
@@ -231,7 +234,12 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
     });
 
     expect(conflict.conflict).toBe(true);
-    expect(conflict.row.state).toBe("uncertain");
+    expect(conflict.row.state).toBe("pending");
+    await expect(repository.get(first.params.deliveryId!)).resolves.toMatchObject({
+      state: "pending",
+      aggregate_state: "pending",
+      payload_hash: first.payloadHash,
+    });
   });
 });
 

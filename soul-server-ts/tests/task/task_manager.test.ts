@@ -1339,6 +1339,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       profileId: "codex-default",
     });
     task.status = "running";
+    task.executionPromise = Promise.resolve();
     const intervene = vi.fn().mockResolvedValue({
       status: "delivered",
       mechanism: "active_turn",
@@ -1386,6 +1387,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       profileId: "claude-default",
     });
     task.status = "running";
+    task.executionPromise = Promise.resolve();
     const intervene = vi.fn().mockResolvedValue({
       status: "not_delivered",
       mechanism: "interrupt_then_next_turn",
@@ -1433,6 +1435,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     task.status = "running";
+    task.executionPromise = Promise.resolve();
     expect(task.status).toBe("running");
     expect(task.interventionQueue).toEqual([]);
 
@@ -1468,6 +1471,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       profileId: "codex-default",
     });
     task.status = "running";
+    task.executionPromise = Promise.resolve();
     const onResume = vi.fn();
     const r1 = await tm.addIntervention({ agentSessionId: "s1", text: "a", user: "u" }, onResume);
     const r2 = await tm.addIntervention({ agentSessionId: "s1", text: "b", user: "u" }, onResume);
@@ -1716,50 +1720,38 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(onResume).not.toHaveBeenCalled();
   });
 
-  it("P1-1 race 보호: completed task의 executionPromise가 살아있으면 await 후 진행 (startExecution throw 차단)", async () => {
+  it("status가 completed여도 canonical execution slot이 살아있으면 active intervention으로 보낸다", async () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     task.status = "running";
     task.status = "completed";
 
-    // _finalize 미완료 상태를 시뮬레이션 — executionPromise는 살아있고 engine도 살아있음.
-    let resolveFinalize: () => void = () => undefined;
-    const finalizePromise = new Promise<void>((r) => { resolveFinalize = r; });
-    task.executionPromise = finalizePromise;
-    const engineCloseSpy = vi.fn().mockResolvedValue(undefined);
-    const previousRunner = createInProcessTaskRunnerRuntime(
-      { interrupt: async () => true, close: engineCloseSpy } as unknown as EnginePort,
-    );
-    task.runner = previousRunner;
+    task.executionPromise = Promise.resolve();
+    const intervene = vi.fn().mockResolvedValue({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    task.runner = createInProcessTaskRunnerRuntime({
+      backendId: "codex",
+      workspaceDir: "/tmp/codex",
+      async *execute(): AsyncIterable<never> {},
+      async interrupt() { return true; },
+      async close() {},
+      intervene,
+    } as unknown as EnginePort);
+    vi.spyOn(task.runner.dispatcher, "hasActiveExecution").mockReturnValue(true);
+    const onResume = vi.fn();
 
-    const onResumeCalled: Task[] = [];
-    const onResume = (t: Task) => {
-      expect(t.runner).toBeUndefined();
-      onResumeCalled.push(t);
-    };
-
-    // addIntervention을 트리거하지만 await — finalize가 아직 끝나지 않아 await 멈춤.
-    const addPromise = tm.addIntervention(
+    const result = await tm.addIntervention(
       { agentSessionId: "s1", text: "x", user: "u" },
       onResume,
     );
 
-    // 잠시 후 finalize가 끝났다고 신호 + task.runner 정리(시뮬레이션)
-    setTimeout(() => {
-      task.runner = undefined;
-      resolveFinalize();
-    }, 5);
-
-    const result = await addPromise;
-    expect(result).toEqual({ autoResumed: true });
-    expect(onResumeCalled).toHaveLength(1);
-    expect(task.runner).toBeDefined();
-    expect(task.runner).not.toBe(previousRunner);
-    expect(task.executionOwnership).toMatchObject({
-      ownerKind: "in_process",
-      ownershipGeneration: 1,
-    });
+    expect(result).toEqual({ delivered: true });
+    expect(intervene).toHaveBeenCalledOnce();
+    expect(onResume).not.toHaveBeenCalled();
+    expect(mocks.acquireExecutionOwnershipAndWaitForApplication).not.toHaveBeenCalled();
   });
 
   it("completed task에 stale engine만 남아도 정리 후 auto-resume한다", async () => {
@@ -1934,6 +1926,7 @@ describe("TaskManager.addIntervention — running fallback without live surface 
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     task.status = "running";
+    task.executionPromise = Promise.resolve();
     expect(task.status).toBe("running");
 
     await tm.addIntervention(
@@ -1962,6 +1955,7 @@ describe("TaskManager.addIntervention — running fallback without live surface 
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     task.status = "running";
+    task.executionPromise = Promise.resolve();
     await tm.addIntervention(
       { agentSessionId: "s1", text: "x", user: "u" },
       vi.fn(),
@@ -1982,6 +1976,7 @@ describe("TaskManager.addIntervention — running fallback without live surface 
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     task.status = "running";
+    task.executionPromise = Promise.resolve();
     await expect(
       tm.addIntervention(
         { agentSessionId: "s1", text: "x", user: "u" },
@@ -2008,6 +2003,7 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     task.status = "running";
+    task.executionPromise = Promise.resolve();
     expect(task.status).toBe("running");
 
     await tm.addIntervention(
@@ -2311,7 +2307,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
 
-  it("queues input for a hydrated running session without spawning a competing execution", async () => {
+  it("opens the canonical auto-resume path when a hydrated status-running row has no active execution slot", async () => {
     const mocks = makeMocks();
     mocks.getSession.mockResolvedValueOnce({
       session_id: "sess-stale-running",
@@ -2342,13 +2338,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       onResume,
     );
 
-    expect(result).toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "not_supported",
-    });
+    expect(result).toEqual({ autoResumed: true });
     const memTask = tm.getTask("sess-stale-running");
     expect(memTask).toBeDefined();
     expect(memTask!.status).toBe("running");
@@ -2358,12 +2348,13 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     ]);
     expect(mocks.enqueueEvent).toHaveBeenCalledWith(
       "sess-stale-running",
-      expect.objectContaining({ type: "intervention_sent", text: "resume" }),
+      expect.objectContaining({ type: "user_message", text: "resume" }),
     );
+    expect(mocks.acquireExecutionOwnershipAndWaitForApplication).toHaveBeenCalledOnce();
     expect(mocks.enqueueRunningTransition).not.toHaveBeenCalled();
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(mocks.updateSession).not.toHaveBeenCalled();
-    expect(onResume).not.toHaveBeenCalled();
+    expect(onResume).toHaveBeenCalledWith(memTask);
   });
 
   it.each(["error", "interrupted"] as const)("DB에 %s 세션도 hydrate 가능 (terminal 모두)", async (status) => {

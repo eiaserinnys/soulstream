@@ -13,7 +13,7 @@ import {
 const describePostgres =
   hasFullSchemaPostgresBackend || hasDockerBinary() ? describe : describe.skip;
 
-describePostgres("terminal target delivery settlement", () => {
+describePostgres("exact completion receipt authority", () => {
   let harness: FullSchemaPostgresHarness;
   let repository: SessionDeliveryRepository;
 
@@ -40,99 +40,58 @@ describePostgres("terminal target delivery settlement", () => {
     await harness.cleanup();
   });
 
-  it("settles terminal-parent completion deliveries by exact evidence", async () => {
-    for (const [deliveryId, relationKey] of [
-      ["terminal-receipt", "relation-terminal-receipt"],
-      ["terminal-pending", "relation-terminal-pending"],
-      ["terminal-queued", "relation-terminal-queued"],
-    ] as const) {
-      await repository.register({
-        deliveryId,
-        targetSessionId: "terminal-parent",
-        sourceSessionId: "child-session",
-        relationKey,
-        completionId: `completion-${relationKey}`,
-        intent: "completion_notification",
-        source: "completion_notifier",
-        producerKind: "child_session",
-        producerId: "child-session",
-        producerTerminalRevision: "42",
-        payloadHash: `hash-${relationKey}`,
-        payload: { text: "done", user: "agent" },
-      });
-    }
-    for (const deliveryId of ["terminal-receipt", "terminal-queued"] as const) {
-      await repository.claimForTarget(
-        deliveryId,
-        "terminal-parent",
-        `worker-${deliveryId}`,
-      );
-      await repository.beginDispatch(deliveryId, `worker-${deliveryId}`);
-      await repository.markQueued(deliveryId, `worker-${deliveryId}`);
-    }
+  it("keeps queued completion ownership until its exact late receipt consumes it", async () => {
+    await repository.register({
+      deliveryId: "terminal-queued",
+      targetSessionId: "terminal-parent",
+      sourceSessionId: "child-session",
+      relationKey: "relation-terminal-queued",
+      completionId: "completion-relation-terminal-queued",
+      intent: "completion_notification",
+      source: "completion_notifier",
+      producerKind: "child_session",
+      producerId: "child-session",
+      producerTerminalRevision: "42",
+      payloadHash: "hash-relation-terminal-queued",
+      payload: { text: "done", user: "agent" },
+    });
+    await repository.claimForTarget(
+      "terminal-queued",
+      "terminal-parent",
+      "worker-terminal-queued",
+    );
+    await repository.beginDispatch("terminal-queued", "worker-terminal-queued");
+    await repository.markQueued("terminal-queued", "worker-terminal-queued");
     await harness.sql`
-      INSERT INTO session_delivery_relation_consumptions (
-        relation_key, completion_id, caller_session_id, consumed_turn_id
-      ) VALUES (
-        'relation-terminal-receipt',
-        'completion-relation-terminal-receipt',
-        'terminal-parent',
-        'event:terminal-receipt'
-      )
+      UPDATE session_deliveries
+      SET lease_expires_at = NOW() - INTERVAL '1 second'
+      WHERE delivery_id = 'terminal-queued'
     `;
 
     await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(0);
-
-    const rows = await harness.sql<Array<{
-      delivery_id: string;
-      state: string;
-      aggregate_state: string;
-      target_receipt_id: string | null;
-      superseded_terminal_revision: string | null;
-    }>>`
-      SELECT delivery_id, state, aggregate_state, target_receipt_id,
-             superseded_terminal_revision
-      FROM session_deliveries
-      WHERE delivery_id LIKE 'terminal-%'
-      ORDER BY delivery_id
-    `;
-    const expected = new Map([
-      ["terminal-pending", {
-        state: "superseded",
-        aggregateState: "consumed",
-        targetReceiptId: null,
-        terminalRevision: "77",
-      }],
-      ["terminal-queued", {
-        state: "superseded",
-        aggregateState: "consumed",
-        targetReceiptId: null,
-        terminalRevision: "77",
-      }],
-      ["terminal-receipt", {
-        state: "consumed",
-        aggregateState: "consumed",
-        targetReceiptId: "event:terminal-receipt",
-        terminalRevision: null,
-      }],
-    ]);
-    const violations = rows.flatMap((row) => {
-      const ideal = expected.get(row.delivery_id);
-      if (
-        ideal
-        && row.state === ideal.state
-        && row.aggregate_state === ideal.aggregateState
-        && row.target_receipt_id === ideal.targetReceiptId
-        && row.superseded_terminal_revision === ideal.terminalRevision
-      ) return [];
-      return [row.delivery_id];
+    await expect(repository.get("terminal-queued")).resolves.toMatchObject({
+      state: "queued",
+      aggregate_state: "pending",
     });
 
-    expect(violations).toEqual([]);
+    await expect(repository.markConsumedByRelation({
+      deliveryId: "terminal-queued",
+      relationKey: "relation-terminal-queued",
+      completionId: "completion-relation-terminal-queued",
+      callerSessionId: "terminal-parent",
+      consumedTurnId: "event:late-exact-receipt",
+    })).resolves.toMatchObject({ deliveryConsumed: true });
+
     await expect(repository.claimRecoverableCompletionDeliveries(
-      "post-terminal-settlement",
+      "post-receipt-recovery",
       10,
     )).resolves.toEqual([]);
+    await expect(repository.get("terminal-queued")).resolves.toMatchObject({
+      state: "consumed",
+      aggregate_state: "consumed",
+      target_receipt_id: "event:late-exact-receipt",
+      consumed_reason: "exact relation receipt",
+    });
   });
 });
 

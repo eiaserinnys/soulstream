@@ -275,6 +275,7 @@ export async function observeCompletedResumeIngress(
     }) => {
       executionStarts += 1;
       task.status = "running";
+      task.executionPromise = new Promise<void>(() => undefined);
       activation?.resolve();
     }),
   };

@@ -182,8 +182,6 @@ export class SessionDeliveryNotificationHostClient {
     leaseOwner: string,
     error: string,
     nextAttemptAt: Date,
-    maxAttempts: number,
-    oldestAllowedCreatedAt: Date,
   ): Promise<SessionDeliveryNotificationOutboxRow | null> {
     return this.transport.request(
       "session-deliveries",
@@ -193,41 +191,14 @@ export class SessionDeliveryNotificationHostClient {
         leaseOwner,
         error,
         nextAttemptAt,
-        maxAttempts,
-        oldestAllowedCreatedAt,
       ],
     );
   }
-
-  deadLetter(deliveryId: string, leaseOwner: string, error: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
-    return this.transport.request(
-      "session-deliveries",
-      "dead_letter_notification",
-      [deliveryId, leaseOwner, error],
-    );
-  }
-
-  listDeadLetters(limit = 100): Promise<SessionDeliveryNotificationOutboxRow[]> {
-    return this.transport.request(
-      "session-deliveries",
-      "list_dead_letter_notifications",
-      [limit],
-    );
-  }
-
-  requeueDeadLetter(deliveryId: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
-    return this.transport.request(
-      "session-deliveries",
-      "requeue_dead_letter_notification",
-      [deliveryId],
-    );
-  }
-
-  releaseExpiredLeases(maxAttempts: number, oldestAllowedCreatedAt: Date): Promise<number> {
+  releaseExpiredLeases(): Promise<number> {
     return this.transport.request(
       "session-deliveries",
       "release_expired_notification_leases",
-      [maxAttempts, oldestAllowedCreatedAt],
+      [],
     );
   }
 }
@@ -281,9 +252,6 @@ export class SessionDeliveryHostClient {
   getRelationConsumption(relationKey: string): Promise<SessionDeliveryRelationConsumptionRow | null> {
     return this.transport.request("session-deliveries", "get_relation_consumption", [relationKey]);
   }
-  recordRelationConsumed(params: RecordSessionDeliveryRelationConsumptionParams): Promise<RecordSessionDeliveryRelationConsumptionResult> {
-    return this.transport.request("session-deliveries", "record_relation_consumed", [params]);
-  }
   recordObservedChildCompletion(params: RecordObservedChildCompletionParams): Promise<RecordObservedChildCompletionResult> {
     return this.transport.request("session-deliveries", "record_observed_child_completion", [params]);
   }
@@ -299,17 +267,14 @@ export class SessionDeliveryHostClient {
   beginDispatch(deliveryId: string, leaseOwner?: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "begin_dispatch", [deliveryId, leaseOwner]);
   }
-  claimRecoverableCompletionDeliveries(leaseOwner: string, limit = 100, leaseMs = 15_000): Promise<SessionDeliveryRow[]> {
-    return this.transport.request("session-deliveries", "claim_recoverable_completion_deliveries", [leaseOwner, limit, leaseMs]);
+  claimRecoverableCompletionDeliveries(leaseOwner: string, limit = 100, leaseMs = 15_000, deliveryId?: string): Promise<SessionDeliveryRow[]> {
+    return this.transport.request("session-deliveries", "claim_recoverable_completion_deliveries", [leaseOwner, limit, leaseMs, deliveryId]);
   }
   deferPending(deliveryId: string, error: string, retryDelayMs: number): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "defer_pending", [deliveryId, error, retryDelayMs]);
   }
   retryLeasedDelivery(deliveryId: string, leaseOwner: string, error: string, retryDelayMs: number): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "retry_leased_delivery", [deliveryId, leaseOwner, error, retryDelayMs]);
-  }
-  markPendingSuperseded(deliveryId: string, supersededTerminalRevision: string): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "mark_pending_superseded", [deliveryId, supersededTerminalRevision]);
   }
   releaseExpiredDeliveryLeases(): Promise<number> {
     return this.transport.request("session-deliveries", "release_expired_delivery_leases", []);
@@ -320,21 +285,13 @@ export class SessionDeliveryHostClient {
   markDelivered(deliveryId: string, callerTurnId: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "mark_delivered", [deliveryId, callerTurnId]);
   }
-  markConsumed(deliveryId: string, consumedTurnId: string): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "mark_consumed", [deliveryId, consumedTurnId]);
-  }
-  markConsumedByRelation(relationKey: string, completionId: string, callerTurnId: string): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "mark_consumed_by_relation", [relationKey, completionId, callerTurnId]);
-  }
-  markUncertain(
-    deliveryId: string,
-    leaseOwner?: string,
-    error?: string,
-  ): Promise<SessionDeliveryRow | null> {
+  markConsumedByRelation(
+    params: RecordSessionDeliveryRelationConsumptionParams,
+  ): Promise<RecordSessionDeliveryRelationConsumptionResult> {
     return this.transport.request(
       "session-deliveries",
-      "mark_uncertain",
-      [deliveryId, leaseOwner, error],
+      "mark_consumed_by_relation",
+      [params],
     );
   }
 }

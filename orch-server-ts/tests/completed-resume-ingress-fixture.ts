@@ -17,6 +17,14 @@ export interface CompletedResumeScenario {
   historicalGeneration: number | null;
 }
 
+interface ExactRelationConsumption {
+  deliveryId: string;
+  relationKey: string;
+  completionId: string;
+  callerSessionId: string;
+  consumedTurnId: string;
+}
+
 interface CompletedResumeDeliveryRow {
   delivery_id: string;
   target_session_id: string;
@@ -160,8 +168,39 @@ export class InMemoryDeliveryLedger {
 
   async markDelivered() { return null; }
   async markUncertain() { return null; }
-  async markConsumed() { return null; }
-  async markConsumedByRelation() { return null; }
+  async markConsumedByRelation(params: ExactRelationConsumption) {
+    const row = this.store.get(params.deliveryId);
+    const consumedAt = new Date();
+    const deliveryConsumed = Boolean(
+      row && ["pending", "claimed", "dispatching", "queued", "delivered"]
+        .includes(row.state),
+    );
+    if (row && deliveryConsumed) {
+      this.store.set(params.deliveryId, {
+        ...row,
+        state: "consumed",
+        aggregate_state: "consumed",
+        caller_turn_id: params.consumedTurnId,
+        target_receipt_id: params.consumedTurnId,
+        target_receipt_at: consumedAt,
+        consumed_at: consumedAt,
+        consumed_reason: "exact relation receipt",
+        lease_owner: null,
+        lease_expires_at: null,
+      });
+    }
+    return {
+      relation: {
+        relation_key: params.relationKey,
+        completion_id: params.completionId,
+        caller_session_id: params.callerSessionId,
+        consumed_turn_id: params.consumedTurnId,
+        consumed_at: consumedAt,
+      },
+      relationInserted: deliveryConsumed,
+      deliveryConsumed,
+    };
+  }
   async recordRelationConsumed() { return null; }
   async retryLeasedDelivery() { return null; }
   async releaseExpiredDeliveryLeases() { return 0; }

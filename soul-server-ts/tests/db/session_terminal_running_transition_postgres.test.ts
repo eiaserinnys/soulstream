@@ -75,6 +75,63 @@ describePostgres("terminal receipt running-transition fence", () => {
     })]);
   });
 
+  it("uses the exact terminal receipt rather than status for running admission", async () => {
+    await harness.sql`
+      INSERT INTO sessions (
+        session_id, session_type, status, agent_id, termination_event_id
+      ) VALUES
+        ('terminal-fence-with-running-status', 'codex', 'running', 'worker', 534),
+        ('no-terminal-fence-with-completed-status', 'codex', 'completed', 'worker', NULL)
+    `;
+
+    await expect(harness.sql`
+      SELECT * FROM session_apply_running_transition(
+        'terminal-fence-with-running-status', 'not_required', 534, TRUE, NOW()
+      )
+    `).resolves.toEqual([expect.objectContaining({
+      applied: true,
+      status: "running",
+      termination_event_id: null,
+    })]);
+    await expect(harness.sql`
+      SELECT * FROM session_apply_running_transition(
+        'no-terminal-fence-with-completed-status', 'not_required', NULL, FALSE, NOW()
+      )
+    `).resolves.toEqual([expect.objectContaining({
+      applied: true,
+      status: "running",
+      termination_event_id: null,
+    })]);
+  });
+
+  it("keeps all execution admission functions free of status predicates", () => {
+    const sources = [
+      readFileSync(fileURLToPath(new URL(
+        "../../../packages/db-schema/sql/schema.sql",
+        import.meta.url,
+      )), "utf8"),
+      readFileSync(fileURLToPath(new URL(
+        "../../../packages/db-schema/sql/migrations/081_delivery_receipt_single_authority.sql",
+        import.meta.url,
+      )), "utf8"),
+    ];
+    for (const source of sources) {
+      for (const functionName of [
+        "session_apply_running_transition",
+        "session_activate_execution_ownership",
+        "session_acquire_execution_ownership",
+      ]) {
+        const body = source.match(new RegExp(
+          `CREATE OR REPLACE FUNCTION ${functionName}\\([\\s\\S]*?\\n\\$\\$;`,
+        ))?.[0];
+        expect(body, functionName).toBeDefined();
+        expect(body, functionName).not.toMatch(
+          /status (?:IN|NOT IN) \('completed', 'error', 'interrupted'\)/,
+        );
+      }
+    }
+  });
+
   it("restores only receipt-free disconnect interruptions during node startup", async () => {
     const interruptedAt = new Date("2026-08-28T17:18:03.000Z");
     const startupAt = new Date("2026-08-28T22:08:37.947Z");

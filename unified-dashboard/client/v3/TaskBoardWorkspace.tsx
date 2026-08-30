@@ -68,7 +68,6 @@ export function TaskBoardWorkspace({
   runHistoryHasMore,
   runHistoryLoading,
   activeSession,
-  chatInputDisabled,
   fileUploadUrl,
   mobileMode,
   mobileTab,
@@ -93,7 +92,6 @@ export function TaskBoardWorkspace({
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
   activeSession: SessionSummary | undefined;
-  chatInputDisabled: boolean;
   fileUploadUrl: string | undefined;
   mobileMode: boolean;
   mobileTab: MobilePlannerTab;
@@ -535,7 +533,6 @@ export function TaskBoardWorkspace({
           <div className="v3-chat-content">
             {activeSession ? (
               <ChatView
-                chatInputDisabled={chatInputDisabled}
                 fileUploadUrl={fileUploadUrl}
                 showHeader={false}
               />

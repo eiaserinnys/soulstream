@@ -97,7 +97,7 @@ const repairReachability: ReadonlyArray<readonly [DRepair, DViolation[]]> = [
   ["deliver_successor_message", ["message_not_delivered_immediately"]],
 ];
 
-describe("D post-complete intervention IPC timeout contract", () => {
+describe("D post-complete canonical execution release contract", () => {
   let productFixture: DFixtureResult;
 
   beforeAll(async () => {
@@ -334,6 +334,8 @@ async function observeCurrentProductBoundary(): Promise<DFixtureResult> {
   const foregroundCommandId = await foregroundStarted.promise;
   await emitLogicalTerminalEvents(childOutbox, endpoint);
   await logicalCompleteObserved.promise;
+  await endpoint.currentConnection!.send(executionEndedControlFrame(foregroundCommandId));
+  await execution;
 
   vi.useFakeTimers();
   const routeResult = await route.addIntervention({
@@ -354,7 +356,6 @@ async function observeCurrentProductBoundary(): Promise<DFixtureResult> {
     resumedTask.status = "completed";
   });
 
-  await endpoint.currentConnection!.send(executionEndedControlFrame(foregroundCommandId));
   if (runningDeliveryCalls > 0) {
     await successorExecuteObserved.promise;
     await vi.advanceTimersByTimeAsync(30_000);

@@ -820,7 +820,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(task.pendingClaudeRuntimeFollowupRetry).toBe(false);
   });
 
-  it("v2 사용자 supersession은 예약된 retry delivery를 pending에서만 닫는다", async () => {
+  it("사용자 메시지는 예약된 runtime follow-up scheduling만 취소하고 delivery 상태를 쓰지 않는다", async () => {
     let releaseSleep!: () => void;
     const sleep = vi.fn(() => new Promise<void>((resolve) => {
       releaseSleep = resolve;
@@ -830,7 +830,6 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       queuePosition: 1,
     }));
     const reserveInterventionRetry = vi.fn(async () => undefined);
-    const recordPendingSuperseded = vi.fn().mockResolvedValue(true);
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: { addIntervention, reserveInterventionRetry },
       onResume: vi.fn(),
@@ -838,7 +837,6 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       logger: silentLogger,
       sleep,
       deliveryV2Enabled: true,
-      pendingSupersessionRecorder: { recordPendingSuperseded },
     });
     const task = makeTask();
     task.executionPromise = Promise.resolve();
@@ -864,7 +862,6 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       source: "completion_notifier",
       deliveryIntent: "completion_notification",
     });
-    expect(recordPendingSuperseded).not.toHaveBeenCalled();
 
     await controller.cancelScheduledFallback(task, {
       text: "user wins",
@@ -876,14 +873,6 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
 
     expect(addIntervention).not.toHaveBeenCalled();
     expect(reserveInterventionRetry).toHaveBeenCalledOnce();
-    expect(recordPendingSuperseded).toHaveBeenCalledWith(
-      expect.objectContaining({
-        deliveryIntent: "runtime_followup",
-        followupAttempt: 2,
-        followupKey: "sess-1:task-1",
-      }),
-      "browser",
-    );
   });
 
   it("graceful shutdown은 인메모리 예약을 회수해 명시 실패로 넘긴다", async () => {

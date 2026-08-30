@@ -208,11 +208,14 @@ export function makeCompletionRepository() {
       };
       return stored;
     }),
-    claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([]),
+    claimRecoverableCompletionDeliveries: vi.fn(async (leaseOwner: string) => {
+      if (!stored || stored.state !== "pending") return [];
+      stored = { ...stored, state: "claimed", lease_owner: leaseOwner };
+      return [stored];
+    }),
     deferPending: vi.fn(),
     retryLeasedDelivery: vi.fn(),
     releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
-    markUncertain: vi.fn(),
   };
   const consumptionRecorder = {
     recordTurnStarted: vi.fn(async (message: { deliveryId?: string }) => {

@@ -326,6 +326,7 @@ export class OwnerlessStaleTerminalPersistedReplayHarness {
       eventPersistence: "runner",
       dispatcher: { hasActiveExecution: () => true },
     } as unknown as Task["runner"];
+    task.executionPromise = Promise.resolve();
     let deliveryCount = 0;
     let turnCount = 0;
     let modelTurnCount = 0;

@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
-import { compareRuntimeFollowupCandidates } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_relation_repository.js";
 import type {
   SessionDeliveryRow,
   SqlClient,
@@ -74,63 +73,6 @@ const registration = {
 };
 
 describe("SessionDeliveryRepository", () => {
-  it("orders runtime follow-ups by attempt, createdAt, then enqueue sequence", () => {
-    expect(compareRuntimeFollowupCandidates(
-      { followupAttempt: 2, createdAt: new Date("2026-08-18T00:00:00Z"), enqueueSequence: 1n },
-      { followupAttempt: 1, createdAt: new Date("2026-08-18T01:00:00Z"), enqueueSequence: 2n },
-    )).toBeGreaterThan(0);
-    expect(compareRuntimeFollowupCandidates(
-      { followupAttempt: 2, createdAt: new Date("2026-08-18T02:00:00Z"), enqueueSequence: 1n },
-      { followupAttempt: 2, createdAt: new Date("2026-08-18T01:00:00Z"), enqueueSequence: 2n },
-    )).toBeGreaterThan(0);
-    expect(compareRuntimeFollowupCandidates(
-      { followupAttempt: 2, createdAt: new Date("2026-08-18T02:00:00Z"), enqueueSequence: 3n },
-      { followupAttempt: 2, createdAt: new Date("2026-08-18T02:00:00Z"), enqueueSequence: 2n },
-    )).toBeGreaterThan(0);
-  });
-
-  it("atomically supersedes only older pending runtime follow-ups", async () => {
-    const createdAt = new Date("2026-08-18T02:00:00Z");
-    const candidate = deliveryRow({
-      delivery_id: "00000000-0000-5000-8000-000000000020",
-      relation_key: "runtime:fallback:2",
-      completion_id: "runtime:fallback:2",
-      intent: "runtime_followup",
-      source: "claude_runtime_task_followup",
-      payload_hash: "runtime-hash-2",
-      payload: { followup_key: "session:task", followup_attempt: 2 },
-      created_at: createdAt,
-      updated_at: createdAt,
-    });
-    const older = deliveryRow({
-      delivery_id: "00000000-0000-5000-8000-000000000010",
-      relation_key: "runtime:fallback:1",
-      completion_id: "runtime:fallback:1",
-      intent: "runtime_followup",
-      source: "claude_runtime_task_followup",
-      payload: { followup_key: "session:task", followup_attempt: 1 },
-      created_at: new Date("2026-08-18T01:00:00Z"),
-    });
-    const { sql, calls } = createMockSql([[], [], [older], [candidate], []]);
-
-    await expect(new SessionDeliveryRepository(sql).register({
-      deliveryId: candidate.delivery_id,
-      targetSessionId: "caller-1",
-      relationKey: candidate.relation_key,
-      completionId: candidate.completion_id,
-      intent: "runtime_followup",
-      source: candidate.source,
-      payloadHash: candidate.payload_hash,
-      payload: candidate.payload,
-      createdAt,
-    })).resolves.toEqual({ row: candidate, inserted: true, conflict: false });
-
-    expect(calls[0].query).toContain("pg_advisory_xact_lock");
-    expect(calls[2].query).toContain("state = 'pending'");
-    expect(calls[2].query).toContain("followup_attempt");
-    expect(calls[4].query).toContain("state = 'superseded'");
-    expect(calls[4].query).toContain("state = 'pending'");
-  });
   it("registers a new delivery with an atomic conflict boundary", async () => {
     const row = deliveryRow();
     const { sql, calls } = createMockSql([[row]]);
@@ -153,15 +95,14 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[1].query).toContain("relation_key");
   });
 
-  it("marks payload/relation identity conflicts uncertain instead of dispatching", async () => {
+  it("quarantines payload/relation identity conflicts without mutating the canonical delivery", async () => {
     const conflicting = deliveryRow({ payload_hash: "other-hash" });
-    const uncertain = deliveryRow({ payload_hash: "other-hash", state: "uncertain" });
-    const { sql, calls } = createMockSql([[], [conflicting], [uncertain]]);
+    const { sql, calls } = createMockSql([[], [conflicting]]);
 
     const result = await new SessionDeliveryRepository(sql).register(registration);
 
-    expect(result).toEqual({ row: uncertain, inserted: false, conflict: true });
-    expect(calls[2].query).toContain("state = 'uncertain'");
+    expect(result).toEqual({ row: conflicting, inserted: false, conflict: true });
+    expect(calls).toHaveLength(2);
   });
 
   it("preserves a superseded audit row when a conflicting retry arrives", async () => {
@@ -170,12 +111,12 @@ describe("SessionDeliveryRepository", () => {
       state: "superseded",
       superseded_terminal_revision: "42",
     });
-    const { sql, calls } = createMockSql([[], [superseded], []]);
+    const { sql, calls } = createMockSql([[], [superseded]]);
 
     const result = await new SessionDeliveryRepository(sql).register(registration);
 
     expect(result).toEqual({ row: superseded, inserted: false, conflict: true });
-    expect(calls[2].query).toContain("state NOT IN ('consumed', 'superseded')");
+    expect(calls).toHaveLength(2);
   });
 
   it("defers retargeting until the atomic claim boundary", async () => {
@@ -239,7 +180,7 @@ describe("SessionDeliveryRepository", () => {
     expect(calls).toHaveLength(2);
   });
 
-  it("claims only pending rows and records explicit queued/delivered/consumed edges", async () => {
+  it("claims only pending rows and records explicit queued/delivered edges", async () => {
     const row = deliveryRow();
     const { sql, calls } = createMockSql([
       [{ ...row, state: "claimed" }],
@@ -247,7 +188,6 @@ describe("SessionDeliveryRepository", () => {
       [{ ...row, state: "queued" }],
       [],
       [{ ...row, state: "delivered", target_receipt_id: "receipt-9" }],
-      [{ ...row, state: "consumed", caller_turn_id: "turn-10" }],
     ]);
     const repository = new SessionDeliveryRepository(sql);
 
@@ -255,7 +195,6 @@ describe("SessionDeliveryRepository", () => {
     await repository.beginDispatch(row.delivery_id);
     await repository.markQueued(row.delivery_id);
     await repository.markDelivered(row.delivery_id, "receipt-9");
-    await repository.markConsumed(row.delivery_id, "turn-10");
 
     expect(calls[0].query).toContain("state = 'pending'");
     expect(calls[1].query).toContain("state = 'claimed'");
@@ -263,44 +202,31 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[3].query).toContain("session_delivery_attempts");
     expect(calls[3].values).toContain("accepted");
     expect(calls[4].query).toContain("aggregate_state = 'delivered'");
-    expect(calls[5].query).toContain("'consumed'");
-    expect(calls[5].query).toContain("aggregate_state IN ('pending', 'delivered')");
-    expect(calls[5].query).toContain("'queued', 'delivered'");
-    expect(calls[5].query).toContain("target_receipt_id = COALESCE");
   });
 
   it("marks consumed by relation and completion identity", async () => {
     const consumed = deliveryRow({ state: "consumed", caller_turn_id: "turn-inline" });
-    const { sql, calls } = createMockSql([[consumed]]);
+    const relation = {
+      relation_key: consumed.relation_key,
+      completion_id: consumed.completion_id!,
+      caller_session_id: "caller-1",
+      consumed_turn_id: "turn-inline",
+      consumed_at: consumed.updated_at,
+    };
+    const { sql, calls } = createMockSql([[], [relation], [consumed]]);
     const repository = new SessionDeliveryRepository(sql);
 
-    await expect(repository.markConsumedByRelation(
-      consumed.relation_key,
-      consumed.completion_id!,
-      "turn-inline",
-    )).resolves.toEqual(consumed);
+    await expect(repository.markConsumedByRelation({
+      deliveryId: consumed.delivery_id,
+      relationKey: consumed.relation_key,
+      completionId: consumed.completion_id!,
+      callerSessionId: "caller-1",
+      consumedTurnId: "turn-inline",
+    })).resolves.toMatchObject({ deliveryConsumed: true });
 
-    expect(calls[0].query).toContain("relation_key");
-    expect(calls[0].query).toContain("completion_id");
-    expect(calls[0].query).toContain("state = 'consumed'");
-    expect(calls[0].query).toContain("'pending', 'claimed'");
-    expect(calls[0].query).not.toContain("'queued'");
-    expect(calls[0].query).toContain("aggregate_state IN ('pending', 'delivered')");
-  });
-
-  it("supersedes only a pending delivery", async () => {
-    const superseded = deliveryRow({ state: "superseded" });
-    const { sql, calls } = createMockSql([[superseded]]);
-    const repository = new SessionDeliveryRepository(sql);
-
-    await expect(repository.markPendingSuperseded(
-      superseded.delivery_id,
-      "user_message",
-    )).resolves.toEqual(superseded);
-
-    expect(calls[0].query).toContain("state = 'superseded'");
-    expect(calls[0].query).toContain("state = 'pending'");
-    expect(calls[0].values).toContain("user_message");
+    expect(calls[1].query).toContain("session_delivery_relation_consumptions");
+    expect(calls[2].query).toContain("delivery_id");
+    expect(calls[2].query).toContain("'dispatching', 'queued'");
   });
 });
 
@@ -425,7 +351,7 @@ describe("session_deliveries migration safety", () => {
     expect(schema).toContain("DROP CONSTRAINT IF EXISTS session_deliveries_state_check");
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox");
     expect(schema).not.toContain("supervisor_");
-    for (const sql of [terminalRevisionMigration, schema]) {
+    for (const sql of [terminalRevisionMigration]) {
       expect(sql).toContain("'superseded'");
       expect(sql).toContain("superseded_at TIMESTAMPTZ");
       expect(sql).toContain("superseded_terminal_revision TEXT");
@@ -434,8 +360,14 @@ describe("session_deliveries migration safety", () => {
     expect(terminalRevisionMigration).toContain(
       "state IN ('pending', 'claimed', 'dispatching')",
     );
-    for (const sql of [convergenceMigration, schema]) {
-      expect(sql).toContain("state IN ('pending', 'claimed', 'dispatching', 'queued')");
-    }
+    expect(convergenceMigration).toContain(
+      "state IN ('pending', 'claimed', 'dispatching', 'queued')",
+    );
+    expect(schema).not.toContain(
+      "producer_terminal_revision = p_expected_terminal_event_id::text",
+    );
+    expect(schema).not.toContain(
+      "state IN ('pending', 'claimed', 'dispatching', 'queued')\n    AND intent = 'completion_notification'",
+    );
   });
 });

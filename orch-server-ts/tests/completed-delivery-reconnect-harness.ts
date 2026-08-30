@@ -47,7 +47,16 @@ interface RuntimeTask {
     text: string;
     user: string;
   }>;
+  executionPromise?: Promise<void>;
   executionActivation?: { resolve(): void };
+}
+
+interface ExactRelationConsumption {
+  deliveryId: string;
+  relationKey: string;
+  completionId: string;
+  callerSessionId: string;
+  consumedTurnId: string;
 }
 
 interface SoulRuntimeModules {
@@ -220,7 +229,23 @@ class ReconnectDeliveryLedger {
 
   async markDelivered() { return null; }
   async markUncertain() { return null; }
-  async markConsumedByRelation() { return null; }
+  async markConsumedByRelation(params: ExactRelationConsumption) {
+    const consumed = await this.markConsumed(
+      params.deliveryId,
+      params.consumedTurnId,
+    );
+    return {
+      relation: {
+        relation_key: params.relationKey,
+        completion_id: params.completionId,
+        caller_session_id: params.callerSessionId,
+        consumed_turn_id: params.consumedTurnId,
+        consumed_at: new Date(),
+      },
+      relationInserted: Boolean(consumed),
+      deliveryConsumed: Boolean(consumed),
+    };
+  }
   async recordRelationConsumed() { return null; }
   async retryLeasedDelivery() { return null; }
   async markPendingSuperseded() { return null; }
@@ -305,6 +330,7 @@ export async function observeCompletedDeliveryReconnect(
       profileId: "seosoyoung",
       lastEventId: 308,
       interventionQueue: [],
+      executionPromise: Promise.resolve(),
     });
   }
 
@@ -329,6 +355,7 @@ export async function observeCompletedDeliveryReconnect(
       proveIds.push(deliveryId);
       activateIds.push(deliveryId);
       task.status = "running";
+      task.executionPromise = new Promise<void>(() => undefined);
       task.executionActivation = undefined;
       activation?.resolve();
     }),

@@ -68,7 +68,6 @@ describe("D post-complete V2 finalizer regression", () => {
       recordFailure: vi.fn(),
       recordNotificationPublished: vi.fn(),
       recordNotificationFailure: vi.fn(),
-      recordReservationRetry: vi.fn(),
     };
     const route = new TaskInterventionRoute({
       getTask: (sessionId) => sessionId === caller.agentSessionId ? caller : undefined,
@@ -170,7 +169,14 @@ describe("D post-complete V2 finalizer regression", () => {
       loadEvictedTask: vi.fn().mockResolvedValue(null),
       rememberTask: vi.fn(),
       runningInterventionTransition: transition,
-      autoResumeTransition: { resume: vi.fn() } as never,
+      autoResumeTransition: {
+        resume: vi.fn(async (resumedTask, message, onResume) => {
+          resumedTask.interventionQueue.push(message);
+          resumedTask.status = "running";
+          await onResume(resumedTask);
+          return { autoResumed: true } as const;
+        }),
+      },
       deliveryLedgerGate: {
         admit: vi.fn().mockResolvedValue(admission),
         beginDispatch: vi.fn().mockResolvedValue(admission),
@@ -178,7 +184,6 @@ describe("D post-complete V2 finalizer regression", () => {
         recordFailure: vi.fn(),
         recordNotificationPublished: vi.fn(),
         recordNotificationFailure: vi.fn(),
-        recordReservationRetry: vi.fn(),
       },
       sessionNotificationPublisher: { publish: notificationPublish },
     });
@@ -193,7 +198,7 @@ describe("D post-complete V2 finalizer regression", () => {
       relationKey: "child_session:row5215",
       producerTerminalRevision: "5215",
       deliveryLeaseOwner: "d-live-red",
-    }, vi.fn())).resolves.toMatchObject({ queued: true, consumeWhen: "next_turn" });
+    }, vi.fn())).resolves.toEqual({ autoResumed: true });
 
     expect(deliveryState).toBe("queued");
     expect(recordResult).toHaveBeenCalledOnce();

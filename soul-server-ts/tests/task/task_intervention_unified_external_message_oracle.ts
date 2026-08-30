@@ -59,9 +59,9 @@ export const UNIFIED_ROUTE_MUTATIONS = [
   "human_only_special_case",
   "passive_wait_until_natural_complete",
   "duplicate_delivery_identity",
-  "terminal_completion_auto_resume",
+  "terminal_completion_status_suppression",
   "terminal_completion_duplicate_consumption",
-  "stale_terminal_completion_revival",
+  "stale_terminal_completion_suppression",
 ] as const;
 
 export type ExternalMessageCaseKey = (typeof EXTERNAL_MESSAGE_CASES)[number]["key"];
@@ -134,7 +134,7 @@ export interface StaleTerminalCompletionEvidence {
   executorCallbackCalls: number;
   queueOnlyCalls: number;
   queueDepthAfterRoute: number;
-  result: "queued" | "other";
+  result: "resumed" | "queued" | "other";
 }
 
 export interface IdentityConvergenceEvidence {
@@ -204,26 +204,23 @@ export function unifiedExternalMessageViolations(
       const completion = evidence.terminalCompletion;
       if (
         !completion
-        || evidence.resumeCalls !== 0
+        || evidence.resumeCalls !== 1
         || evidence.deliverCalls !== 0
-        || evidence.queueOnlyCalls !== 1
-        || evidence.result !== "queued"
-        || completion.taskStatusAfterRoute !== "completed"
-        || completion.automaticExecutionStarts !== 0
-        || completion.queuedBeforeExplicitTurn !== 1
+        || evidence.queueOnlyCalls !== 0
+        || evidence.result !== "resumed"
+        || completion.automaticExecutionStarts !== 1
+        || completion.explicitTurnStarts !== 0
       ) {
-        violations.push("terminal_completion_not_queue_only");
+        violations.push("terminal_completion_not_auto_resumed");
       }
       if (
         !completion
-        || completion.explicitTurnStarts !== 1
         || completion.queuedAfterExplicitTurn !== 0
         || !exactIdentity(evidence.modelInputDeliveryIds, evidence.deliveryId)
         || !exactIdentity(completion.consumedDeliveryIds, evidence.deliveryId)
         || !ordered(evidence.eventOrder, [
           "route_idle",
-          "queue_only",
-          "explicit_turn",
+          "resume",
           "model_input",
           "consumed",
         ])
@@ -244,14 +241,14 @@ export function unifiedExternalMessageViolations(
       }
       for (const stale of completion?.staleTerminal ?? []) {
         if (
-          stale.statusAfterRoute !== stale.initialStatus
-          || stale.resumeCalls !== 0
-          || stale.executorCallbackCalls !== 0
-          || stale.queueOnlyCalls !== 1
-          || stale.queueDepthAfterRoute !== 1
-          || stale.result !== "queued"
+          stale.statusAfterRoute !== "running"
+          || stale.resumeCalls !== 1
+          || stale.executorCallbackCalls !== 1
+          || stale.queueOnlyCalls !== 0
+          || stale.queueDepthAfterRoute !== 0
+          || stale.result !== "resumed"
         ) {
-          violations.push(`stale_terminal_completion_revived:${stale.initialStatus}`);
+          violations.push(`stale_terminal_completion_suppressed:${stale.initialStatus}`);
         }
       }
       continue;
@@ -302,34 +299,33 @@ export function idealUnifiedExternalMessageObservation(): UnifiedExternalMessage
         source: axis.source,
         durable: axis.durable,
         deliveryId,
-        resumeCalls: 0,
+        resumeCalls: 1,
         deliverCalls: 0,
-        queueOnlyCalls: 1,
+        queueOnlyCalls: 0,
         admissionDeliveryIds: [deliveryId],
         modelInputDeliveryIds: [deliveryId],
-        result: "queued" as const,
+        result: "resumed" as const,
         eventOrder: [
           "route_idle",
-          "queue_only",
-          "explicit_turn",
+          "resume",
           "model_input",
           "consumed",
         ],
         terminalCompletion: {
-          taskStatusAfterRoute: "completed" as const,
-          automaticExecutionStarts: 0,
-          explicitTurnStarts: 1,
-          queuedBeforeExplicitTurn: 1,
+          taskStatusAfterRoute: "running" as const,
+          automaticExecutionStarts: 1,
+          explicitTurnStarts: 0,
+          queuedBeforeExplicitTurn: 0,
           queuedAfterExplicitTurn: 0,
           consumedDeliveryIds: [deliveryId],
           staleTerminal: (["interrupted", "error"] as const).map((status) => ({
             initialStatus: status,
-            statusAfterRoute: status,
-            resumeCalls: 0,
-            executorCallbackCalls: 0,
-            queueOnlyCalls: 1,
-            queueDepthAfterRoute: 1,
-            result: "queued" as const,
+            statusAfterRoute: "running" as const,
+            resumeCalls: 1,
+            executorCallbackCalls: 1,
+            queueOnlyCalls: 0,
+            queueDepthAfterRoute: 0,
+            result: "resumed" as const,
           })),
         },
       };
@@ -393,12 +389,14 @@ export function applyUnifiedRouteMutation(
   } else if (mutation === "duplicate_delivery_identity") {
     mutated.identity.consumedDeliveryIds.push(mutated.identity.duplicateDeliveryId);
     mutated.identity.modelInputDeliveryIds.push(mutated.identity.duplicateDeliveryId);
-  } else if (mutation === "terminal_completion_auto_resume") {
+  } else if (mutation === "terminal_completion_status_suppression") {
     const completion = requireIdleCompletion(mutated);
-    completion.evidence.resumeCalls = 1;
-    completion.evidence.queueOnlyCalls = 0;
-    completion.evidence.result = "resumed";
-    completion.completion.automaticExecutionStarts = 1;
+    completion.evidence.resumeCalls = 0;
+    completion.evidence.queueOnlyCalls = 1;
+    completion.evidence.result = "queued";
+    completion.completion.taskStatusAfterRoute = "completed";
+    completion.completion.automaticExecutionStarts = 0;
+    completion.completion.queuedBeforeExplicitTurn = 1;
   } else if (mutation === "terminal_completion_duplicate_consumption") {
     const completion = requireIdleCompletion(mutated);
     completion.completion.consumedDeliveryIds.push(completion.evidence.deliveryId);
@@ -408,9 +406,12 @@ export function applyUnifiedRouteMutation(
       (candidate) => candidate.initialStatus === "interrupted",
     );
     if (!stale) throw new Error("missing interrupted stale completion evidence");
-    stale.statusAfterRoute = "running";
-    stale.resumeCalls = 1;
-    stale.executorCallbackCalls = 1;
+    stale.statusAfterRoute = stale.initialStatus;
+    stale.resumeCalls = 0;
+    stale.executorCallbackCalls = 0;
+    stale.queueOnlyCalls = 1;
+    stale.queueDepthAfterRoute = 1;
+    stale.result = "queued";
   }
   return mutated;
 }

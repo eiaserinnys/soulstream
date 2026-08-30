@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentProfile } from "../../soul-server-ts/src/agent_registry.js";
 import type { SessionDB } from "../../soul-server-ts/src/db/session_db.js";
 import type {
+  RecordSessionDeliveryRelationConsumptionParams,
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
 } from "../../soul-server-ts/src/db/session_db_types.js";
@@ -476,7 +477,25 @@ class RestartDeliveryLedger {
   readonly deferQueuedTranscriptCheck = vi.fn(async () => null);
   readonly markDelivered = vi.fn(async () => null);
   readonly markUncertain = vi.fn(async () => null);
-  readonly markConsumedByRelation = vi.fn(async () => null);
+  readonly markConsumedByRelation = vi.fn(async (
+    params: RecordSessionDeliveryRelationConsumptionParams,
+  ) => {
+    const consumed = await this.markConsumed(
+      params.deliveryId,
+      params.consumedTurnId,
+    );
+    return {
+      relation: {
+        relation_key: params.relationKey,
+        completion_id: params.completionId,
+        caller_session_id: params.callerSessionId,
+        consumed_turn_id: params.consumedTurnId,
+        consumed_at: new Date(),
+      },
+      relationInserted: Boolean(consumed),
+      deliveryConsumed: Boolean(consumed),
+    };
+  });
   readonly recordRelationConsumed = vi.fn(async () => null);
   readonly markPendingSuperseded = vi.fn(async () => null);
 }

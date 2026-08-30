@@ -1,17 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { CompletionDeliveryCoordinator } from
   "../../src/task/completion_delivery_coordinator.js";
-import {
-  DELIVERY_NOTIFICATION_MAX_AGE_MS,
-  DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
-} from
-  "../../src/task/session_delivery_notification_policy.js";
 
-const nowMs = new Date("2026-08-28T00:00:00.000Z").getTime();
-const createdAt = new Date(nowMs - 1_000);
+const createdAt = new Date("2026-08-28T00:00:00.000Z");
 
-function pendingRow(overrides: Record<string, unknown> = {}) {
+function claimedRow(overrides: Record<string, unknown> = {}) {
   return {
     delivery_id: "delivery-completion",
     target_session_id: "caller-session",
@@ -27,16 +21,16 @@ function pendingRow(overrides: Record<string, unknown> = {}) {
     caller_turn_id: null,
     payload_hash: "hash-completion",
     payload: { text: "done", user: "agent", caller_info: { source: "agent" } },
-    state: "pending",
+    state: "claimed",
     aggregate_state: "pending",
     attempt_count: 0,
     next_attempt_at: createdAt,
     last_error: null,
-    lease_owner: null,
-    lease_expires_at: null,
+    lease_owner: "completion:test-worker",
+    lease_expires_at: new Date(createdAt.getTime() + 60_000),
     created_at: createdAt,
     updated_at: createdAt,
-    claimed_at: null,
+    claimed_at: createdAt,
     dispatching_at: null,
     queued_at: null,
     delivered_at: null,
@@ -47,68 +41,36 @@ function pendingRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function repositoryFixture(row = pendingRow()) {
-  const claimed = {
-    ...row,
-    state: "claimed",
-    lease_owner: "completion:test-worker",
-    lease_expires_at: new Date(createdAt.getTime() + 60_000),
-  };
+function repositoryFixture(row = claimedRow()) {
   return {
-    register: vi.fn().mockResolvedValue({ row, inserted: true, conflict: false }),
+    register: vi.fn().mockResolvedValue({
+      row: { ...row, state: "pending", lease_owner: null },
+      inserted: true,
+      conflict: false,
+    }),
     get: vi.fn().mockResolvedValue(row),
-    claimForTarget: vi.fn().mockResolvedValue(claimed),
-    claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([claimed]),
-    deferPending: vi.fn(),
-    retryLeasedDelivery: vi.fn().mockResolvedValue({
-      ...claimed,
-      state: "pending",
-      lease_owner: null,
-    }),
+    claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([row]),
     releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
-    markUncertain: vi.fn().mockResolvedValue({
-      ...claimed,
-      state: "uncertain",
-      lease_owner: null,
-    }),
   };
 }
 
 function loggerFixture() {
+  return { error: vi.fn(), warn: vi.fn(), info: vi.fn() };
+}
+
+function input() {
   return {
-    error: vi.fn(),
-    warn: vi.fn(),
-    info: vi.fn(),
+    targetSessionId: "caller-session",
+    sourceSessionId: "child-session",
+    terminalRevision: "42",
+    text: "done",
+    callerInfo: { source: "agent" as const },
+    createdAt,
   };
 }
 
 describe("CompletionDeliveryCoordinator", () => {
-  beforeEach(() => {
-    vi.spyOn(Date, "now").mockReturnValue(nowMs);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("periodic recovery only releases expired leases and never dispatches held input", async () => {
-    const repository = repositoryFixture();
-    const dispatch = vi.fn();
-    const coordinator = new CompletionDeliveryCoordinator({
-      repository: repository as never,
-      dispatch,
-      logger: loggerFixture(),
-    }, "completion:test-worker");
-
-    await coordinator.recoverPending();
-    await coordinator.recoverPending();
-
-    expect(repository.releaseExpiredDeliveryLeases).toHaveBeenCalledTimes(2);
-    expect(repository.claimRecoverableCompletionDeliveries).not.toHaveBeenCalled();
-    expect(dispatch).not.toHaveBeenCalled();
-  });
-
-  it("dispatches a newly registered completion once during its explicit enqueue", async () => {
+  it("uses one claim-and-dispatch path for immediate enqueue", async () => {
     const repository = repositoryFixture();
     const dispatch = vi.fn().mockResolvedValue(undefined);
     const coordinator = new CompletionDeliveryCoordinator({
@@ -117,64 +79,41 @@ describe("CompletionDeliveryCoordinator", () => {
       logger: loggerFixture(),
     }, "completion:test-worker");
 
-    await coordinator.enqueue({
-      targetSessionId: "caller-session",
-      sourceSessionId: "child-session",
-      terminalRevision: "42",
-      text: "done",
-      callerInfo: { source: "agent" },
-      createdAt,
-    });
+    await coordinator.enqueue(input());
 
-    expect(repository.claimForTarget).toHaveBeenCalledOnce();
+    expect(repository.claimRecoverableCompletionDeliveries).toHaveBeenCalledWith(
+      "completion:test-worker",
+      1,
+      60_000,
+      "delivery-completion",
+    );
     expect(dispatch).toHaveBeenCalledOnce();
-    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
-      agentSessionId: "caller-session",
-      deliveryIntent: "completion_notification",
-      producerTerminalRevision: "42",
-      storedDeliveryPayloadHash: "hash-completion",
-    }));
   });
 
-  it("keeps an initial retryable failure durable without periodic redispatch", async () => {
+  it("uses the same claim-and-dispatch path for recovery", async () => {
     const repository = repositoryFixture();
-    const dispatch = vi.fn().mockRejectedValue(new Error("route unavailable"));
+    const dispatch = vi.fn().mockResolvedValue(undefined);
     const coordinator = new CompletionDeliveryCoordinator({
       repository: repository as never,
       dispatch,
       logger: loggerFixture(),
     }, "completion:test-worker");
 
-    await coordinator.enqueue({
-      targetSessionId: "caller-session",
-      sourceSessionId: "child-session",
-      terminalRevision: "42",
-      text: "done",
-      callerInfo: { source: "agent" },
-      createdAt,
-    });
-    await coordinator.recoverPending();
-    await coordinator.recoverPending();
+    await coordinator.recoverPending(7);
 
+    expect(repository.releaseExpiredDeliveryLeases).toHaveBeenCalledOnce();
+    expect(repository.claimRecoverableCompletionDeliveries).toHaveBeenCalledWith(
+      "completion:test-worker",
+      7,
+      60_000,
+      undefined,
+    );
     expect(dispatch).toHaveBeenCalledOnce();
-    expect(repository.retryLeasedDelivery).toHaveBeenCalledOnce();
-    expect(repository.claimRecoverableCompletionDeliveries).not.toHaveBeenCalled();
-    expect(repository.markUncertain).not.toHaveBeenCalled();
   });
 
-  it("does not redispatch when explicit enqueue returns ambiguously after durable queue", async () => {
-    const row = pendingRow();
-    const queued = pendingRow({
-      state: "queued",
-      queued_at: createdAt,
-    });
-    const repository = repositoryFixture(row);
-    repository.get
-      .mockResolvedValueOnce(row)
-      .mockResolvedValueOnce(queued);
-    const dispatch = vi.fn().mockRejectedValue(
-      new Error("timeout after target durable queue"),
-    );
+  it("keeps the exact claim intact when dispatch cannot prove acceptance", async () => {
+    const repository = repositoryFixture();
+    const dispatch = vi.fn().mockRejectedValue(new Error("dispatch timed out"));
     const logger = loggerFixture();
     const coordinator = new CompletionDeliveryCoordinator({
       repository: repository as never,
@@ -182,164 +121,34 @@ describe("CompletionDeliveryCoordinator", () => {
       logger,
     }, "completion:test-worker");
 
-    await coordinator.enqueue({
-      targetSessionId: "caller-session",
-      sourceSessionId: "child-session",
-      terminalRevision: "42",
-      text: "done",
-      callerInfo: { source: "agent" },
-      createdAt,
-    });
+    await coordinator.enqueue(input());
 
-    expect(dispatch).toHaveBeenCalledOnce();
-    expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
-    expect(repository.markUncertain).not.toHaveBeenCalled();
-    expect(logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({
-        deliveryId: "delivery-completion",
-        state: "queued",
-      }),
-      "Completion delivery dispatch returned ambiguously after durable acceptance",
-    );
-  });
-
-  it("reports an explicit enqueue lease CAS loss without claiming a retry", async () => {
-    const row = pendingRow();
-    const repository = repositoryFixture(row);
-    repository.get
-      .mockResolvedValueOnce(row)
-      .mockResolvedValueOnce(row);
-    repository.retryLeasedDelivery.mockResolvedValueOnce(null);
-    const dispatch = vi.fn().mockRejectedValue(new Error("dispatch failed"));
-    const logger = loggerFixture();
-    const coordinator = new CompletionDeliveryCoordinator({
-      repository: repository as never,
-      dispatch,
-      logger,
-    }, "completion:test-worker");
-
-    await coordinator.enqueue({
-      targetSessionId: "caller-session",
-      sourceSessionId: "child-session",
-      terminalRevision: "42",
-      text: "done",
-      callerInfo: { source: "agent" },
-      createdAt,
-    });
-
-    expect(dispatch).toHaveBeenCalledOnce();
-    expect(repository.retryLeasedDelivery).toHaveBeenCalledOnce();
-    expect(repository.markUncertain).not.toHaveBeenCalled();
+    expect(repository.get).toHaveBeenCalledWith("delivery-completion");
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ deliveryId: "delivery-completion" }),
-      "Completion delivery retry not scheduled because the dispatch lease was lost",
-    );
-    expect(logger.warn).not.toHaveBeenCalledWith(
-      expect.anything(),
-      "Completion delivery dispatch failed; durable retry scheduled",
+      "Completion dispatch did not prove acceptance; claim remains for lease recovery",
     );
   });
 
-  it("terminalizes an exhausted initial attempt without adding a recovery dispatch", async () => {
-    const repository = repositoryFixture(pendingRow({
-      attempt_count: DELIVERY_NOTIFICATION_MAX_ATTEMPTS - 1,
-    }));
-    const dispatch = vi.fn().mockRejectedValue(new Error("route unavailable"));
-    const coordinator = new CompletionDeliveryCoordinator({
-      repository: repository as never,
-      dispatch,
-      logger: loggerFixture(),
-    }, "completion:test-worker");
-
-    await coordinator.enqueue({
-      targetSessionId: "caller-session",
-      sourceSessionId: "child-session",
-      terminalRevision: "42",
-      text: "done",
-      callerInfo: { source: "agent" },
-      createdAt,
-    });
-
-    expect(repository.markUncertain).toHaveBeenCalledOnce();
-    expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
-  });
-
-  it("retries a failed delivery immediately before the 24-hour age limit", async () => {
-    const boundaryCreatedAt = new Date(nowMs - DELIVERY_NOTIFICATION_MAX_AGE_MS + 1);
-    const repository = repositoryFixture(pendingRow({
-      created_at: boundaryCreatedAt,
-    }));
-    const dispatch = vi.fn().mockRejectedValue(new Error("route unavailable"));
-    const coordinator = new CompletionDeliveryCoordinator({
-      repository: repository as never,
-      dispatch,
-      logger: loggerFixture(),
-    }, "completion:test-worker");
-
-    await coordinator.enqueue({
-      targetSessionId: "caller-session",
-      sourceSessionId: "child-session",
-      terminalRevision: "42",
-      text: "done",
-      callerInfo: { source: "agent" },
-      createdAt: boundaryCreatedAt,
-    });
-
-    expect(repository.retryLeasedDelivery).toHaveBeenCalledOnce();
-    expect(repository.markUncertain).not.toHaveBeenCalled();
-  });
-
-  it("terminalizes a failed delivery immediately after the 24-hour age limit", async () => {
-    const boundaryCreatedAt = new Date(nowMs - DELIVERY_NOTIFICATION_MAX_AGE_MS - 1);
-    const repository = repositoryFixture(pendingRow({
-      created_at: boundaryCreatedAt,
-    }));
-    const dispatch = vi.fn().mockRejectedValue(new Error("route unavailable"));
-    const coordinator = new CompletionDeliveryCoordinator({
-      repository: repository as never,
-      dispatch,
-      logger: loggerFixture(),
-    }, "completion:test-worker");
-
-    await coordinator.enqueue({
-      targetSessionId: "caller-session",
-      sourceSessionId: "child-session",
-      terminalRevision: "42",
-      text: "done",
-      callerInfo: { source: "agent" },
-      createdAt: boundaryCreatedAt,
-    });
-
-    expect(repository.markUncertain).toHaveBeenCalledOnce();
-    expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
-  });
-
-  it("suppresses a stale self completion during explicit enqueue", async () => {
-    const repository = repositoryFixture(pendingRow({
+  it("quarantines a self-completion identity without consuming it", async () => {
+    const repository = repositoryFixture(claimedRow({
       target_session_id: "child-session",
       source_session_id: "child-session",
     }));
     const dispatch = vi.fn();
+    const logger = loggerFixture();
     const coordinator = new CompletionDeliveryCoordinator({
       repository: repository as never,
       dispatch,
-      logger: loggerFixture(),
+      logger,
     }, "completion:test-worker");
 
-    await coordinator.enqueue({
-      targetSessionId: "child-session",
-      sourceSessionId: "child-session",
-      terminalRevision: "42",
-      text: "done",
-      callerInfo: { source: "agent" },
-      createdAt,
-    });
+    await coordinator.enqueue({ ...input(), targetSessionId: "child-session" });
 
-    expect(repository.markUncertain).toHaveBeenCalledWith(
-      "delivery-completion",
-      "completion:test-worker",
-      "stale_self_completion_delivery",
-    );
     expect(dispatch).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId: "delivery-completion" }),
+      "Self completion identity quarantined without consuming its delivery",
+    );
   });
 });

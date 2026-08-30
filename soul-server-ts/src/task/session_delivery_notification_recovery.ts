@@ -3,17 +3,13 @@ import type { Logger } from "pino";
 import type { SessionDeliveryNotificationRepository } from "../db/repositories/session_delivery_notification_repository.js";
 import type { SessionDeliveryNotificationOutboxRow } from "../db/session_db_types.js";
 import type { InterventionMessage, Task } from "./task_models.js";
-import {
-  DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
-  notificationOldestAllowedCreatedAt,
-  notificationRetryAt,
-} from "./session_delivery_notification_policy.js";
+import { notificationRetryAt } from "./session_delivery_notification_policy.js";
 import { projectNotificationReceipt } from "./notification_receipt_projection.js";
 
 export interface SessionDeliveryNotificationRecoveryDeps {
   repository: Pick<
     SessionDeliveryNotificationRepository,
-    "claimDue" | "deadLetter" | "get" | "markPublished" | "releaseExpiredLeases" | "retry"
+    "claimDue" | "get" | "markPublished" | "releaseExpiredLeases" | "retry"
   >;
   publish(
     task: Task,
@@ -29,11 +25,7 @@ export class SessionDeliveryNotificationRecovery {
   constructor(private readonly deps: SessionDeliveryNotificationRecoveryDeps) {}
 
   async recover(leaseOwner: string, limit = 100): Promise<number> {
-    const oldestAllowedCreatedAt = notificationOldestAllowedCreatedAt();
-    await this.deps.repository.releaseExpiredLeases(
-      DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
-      oldestAllowedCreatedAt,
-    );
+    await this.deps.repository.releaseExpiredLeases();
     const rows = await this.deps.repository.claimDue(
       this.deps.targetNodeId,
       leaseOwner,
@@ -54,7 +46,7 @@ export class SessionDeliveryNotificationRecovery {
     try {
       const task = await this.deps.resolveTask(row.target_session_id);
       if (!task) {
-        throw new NonRetryableNotificationError(
+        throw new NotificationPayloadError(
           `Notification target session not found: ${row.target_session_id}`,
         );
       }
@@ -74,25 +66,17 @@ export class SessionDeliveryNotificationRecovery {
       );
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      if (err instanceof NonRetryableNotificationError) {
-        await this.deps.repository.deadLetter(row.delivery_id, leaseOwner, error);
-      } else {
-        await this.deps.repository.retry(
-          row.delivery_id,
-          leaseOwner,
-          error,
-          notificationRetryAt(row.attempt_count),
-          DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
-          notificationOldestAllowedCreatedAt(),
-        );
-      }
+      await this.deps.repository.retry(
+        row.delivery_id,
+        leaseOwner,
+        error,
+        notificationRetryAt(row.attempt_count),
+      );
       this.deps.logger.warn(
         {
           err,
           deliveryId: row.delivery_id,
-          disposition: err instanceof NonRetryableNotificationError
-            ? "dead_letter"
-            : "retry",
+          disposition: "retry",
         },
         "Session notification outbox item was not published",
       );
@@ -109,7 +93,7 @@ function notificationMessageFromOutbox(
     intent !== "completion_notification" &&
     intent !== "runtime_followup"
   ) {
-    throw new NonRetryableNotificationError(
+    throw new NotificationPayloadError(
       `Unsupported outbox delivery intent: ${String(intent)}`,
     );
   }
@@ -134,7 +118,7 @@ function notificationMessageFromOutbox(
 
 function requiredString(value: unknown, name: string): string {
   if (typeof value !== "string" || value.length === 0) {
-    throw new NonRetryableNotificationError(
+    throw new NotificationPayloadError(
       `Notification outbox payload is missing ${name}`,
     );
   }
@@ -147,7 +131,7 @@ function optionalPositiveInteger(value: unknown): number | undefined {
     : undefined;
 }
 
-class NonRetryableNotificationError extends Error {}
+class NotificationPayloadError extends Error {}
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;

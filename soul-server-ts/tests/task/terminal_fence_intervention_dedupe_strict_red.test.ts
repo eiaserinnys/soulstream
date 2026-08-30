@@ -16,9 +16,6 @@ interface TerminalRetryObservation extends RuntimeCounters {
   ledgerState: string;
   aggregateState: string;
   attemptCount: number;
-  taskStatus: string;
-  terminalRevision: number | null;
-  expectedTerminalRevision: number;
   interventionSentEffects: number;
   callerSessionId: string | null;
   targetSessionId: string | null;
@@ -32,7 +29,7 @@ interface FreshIntentObservation extends RuntimeCounters {
 }
 
 describe("terminal fence intervention retry product RED", () => {
-  it("holds a pre-stop retried delivery without reopening execution", async () => {
+  it("reopens a pre-stop retried delivery through one canonical execution", async () => {
     const harness = await createStoppedProductHarness();
     const runtime = harness.startRuntime();
     try {
@@ -45,9 +42,6 @@ describe("terminal fence intervention retry product RED", () => {
         ledgerState: row.state,
         aggregateState: row.aggregate_state,
         attemptCount: row.attempt_count,
-        taskStatus: harness.task.status,
-        terminalRevision: harness.task.terminalEventId ?? null,
-        expectedTerminalRevision: harness.terminalRevision,
         interventionSentEffects: harness.interventionSentCount(),
         callerSessionId: harness.task.callerSessionId ?? null,
         targetSessionId: row.target_session_id,
@@ -104,14 +98,11 @@ describe("terminal fence intervention retry product RED", () => {
       ledgerState: "pending",
       aggregateState: "pending",
       attemptCount: 1,
-      taskStatus: "interrupted",
-      terminalRevision: 501,
-      expectedTerminalRevision: 501,
       interventionSentEffects: 1,
-      automaticStarts: 0,
-      executionAcquires: 0,
-      turnStarts: 0,
-      modelCalls: 0,
+      automaticStarts: 1,
+      executionAcquires: 1,
+      turnStarts: 1,
+      modelCalls: 1,
       callerSessionId: CALLER_SESSION_ID,
       targetSessionId: SESSION_ID,
     };
@@ -123,12 +114,12 @@ describe("terminal fence intervention retry product RED", () => {
       ["delete", { ledgerRowCount: 0 }, "pre-stop-retry-delivery-deleted"],
       ["consume", { ledgerState: "consumed", aggregateState: "consumed" },
         "pre-stop-retry-delivery-not-held"],
-      ["reopen", { taskStatus: "running" }, "canonical-user-stop-terminal-reopened"],
-      ["clear terminal revision", { terminalRevision: null }, "terminal-revision-fence-cleared"],
-      ["automatic start", { automaticStarts: 1 }, "automatic-start-after-terminal-retry"],
-      ["acquire", { executionAcquires: 1 }, "execution-acquire-after-terminal-retry"],
-      ["turn", { turnStarts: 1 }, "turn-start-after-terminal-retry"],
-      ["model", { modelCalls: 1 }, "model-call-after-terminal-retry"],
+      ["no automatic start", { automaticStarts: 0 }, "retry-generation-not-exactly-once"],
+      ["duplicate automatic start", { automaticStarts: 2 }, "retry-generation-not-exactly-once"],
+      ["no acquire", { executionAcquires: 0 }, "retry-acquire-not-exactly-once"],
+      ["duplicate acquire", { executionAcquires: 2 }, "retry-acquire-not-exactly-once"],
+      ["no turn", { turnStarts: 0 }, "retry-turn-not-exactly-once"],
+      ["no model", { modelCalls: 0 }, "retry-model-not-exactly-once"],
       ["duplicate semantic effect", { interventionSentEffects: 2 },
         "intervention-sent-semantic-effect-not-exactly-once"],
       ["caller lineage", { callerSessionId: "different-caller" },
@@ -183,20 +174,14 @@ function terminalRetryViolations(observation: TerminalRetryObservation): string[
     || (observation.ledgerState !== "pending" && observation.ledgerState !== "queued")
     || observation.attemptCount < 1
   ) violations.push("pre-stop-retry-delivery-not-held");
-  if (observation.taskStatus !== "interrupted") {
-    violations.push("canonical-user-stop-terminal-reopened");
+  if (observation.automaticStarts !== 1) {
+    violations.push("retry-generation-not-exactly-once");
   }
-  if (observation.terminalRevision !== observation.expectedTerminalRevision) {
-    violations.push("terminal-revision-fence-cleared");
+  if (observation.executionAcquires !== 1) {
+    violations.push("retry-acquire-not-exactly-once");
   }
-  if (observation.automaticStarts !== 0) {
-    violations.push("automatic-start-after-terminal-retry");
-  }
-  if (observation.executionAcquires !== 0) {
-    violations.push("execution-acquire-after-terminal-retry");
-  }
-  if (observation.turnStarts !== 0) violations.push("turn-start-after-terminal-retry");
-  if (observation.modelCalls !== 0) violations.push("model-call-after-terminal-retry");
+  if (observation.turnStarts !== 1) violations.push("retry-turn-not-exactly-once");
+  if (observation.modelCalls !== 1) violations.push("retry-model-not-exactly-once");
   if (observation.interventionSentEffects !== 1) {
     violations.push("intervention-sent-semantic-effect-not-exactly-once");
   }

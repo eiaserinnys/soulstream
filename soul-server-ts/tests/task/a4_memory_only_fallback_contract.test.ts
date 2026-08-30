@@ -84,7 +84,7 @@ describe("A4 durable staging failure strict causal contract", () => {
   it("counterfactual reaches the intended product-boundary balance", async () => {
     const observation = await observeContract(projectHonestFailure);
     expect(observation).toMatchObject({
-      centralState: "pending",
+      centralState: "dispatching",
       restoreAdmission: "admitted",
       runnerPendingAfterRestart: 0,
       memoryQueueCount: 0,
@@ -169,6 +169,7 @@ async function observeContract(
   recoveredRunner.close();
 
   const restartedRepository = repository.restart();
+  await restartedRepository.releaseExpiredDeliveryLeases();
   const restoreAdmission = await new TaskDeliveryLedgerGate(
     true,
     restartedRepository as never,
@@ -208,10 +209,12 @@ function contractViolations(observation: Observation): string[] {
   if (observation.runnerPendingAfterRestart !== 0) {
     violations.push("unexpected_runner_restore_entry");
   }
-  if (observation.centralState !== "pending") violations.push("central_retry_lost");
+  if (!centralDeliveryOwnsRetry(observation.centralState)) {
+    violations.push("central_retry_lost");
+  }
   if (observation.restoreAdmission !== "admitted") violations.push("restart_restore_blocked");
   const durableOwners = observation.runnerPendingAfterRestart
-    + Number(observation.centralState === "pending");
+    + Number(centralDeliveryOwnsRetry(observation.centralState));
   if (durableOwners !== 1) violations.push("durable_owner_not_exactly_one");
   return violations;
 }
@@ -268,6 +271,17 @@ class RestartableDeliveryRepository {
       attempt_count: this.current.attempt_count + 1,
     };
     return this.current;
+  });
+
+  readonly releaseExpiredDeliveryLeases = vi.fn(async () => {
+    if (this.current.state !== "claimed" && this.current.state !== "dispatching") return 0;
+    this.current = {
+      ...this.current,
+      state: "pending",
+      lease_owner: null,
+      attempt_count: this.current.attempt_count + 1,
+    };
+    return 1;
   });
 
   readonly markDelivered = vi.fn();
@@ -329,6 +343,10 @@ function request(): AddInterventionParams {
   };
 }
 
+function centralDeliveryOwnsRetry(state: SessionDeliveryRow["state"]): boolean {
+  return state === "pending" || state === "claimed" || state === "dispatching";
+}
+
 function runningTask(): Task {
   return {
     agentSessionId: SESSION_ID,
@@ -339,6 +357,7 @@ function runningTask(): Task {
     lastEventId: 10,
     lastReadEventId: 9,
     interventionQueue: [],
+    executionPromise: Promise.resolve(),
   };
 }
 

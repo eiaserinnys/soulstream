@@ -1,10 +1,3 @@
-export const DELIVERY_NOTIFICATION_MAX_ATTEMPTS = 16;
-export const DELIVERY_NOTIFICATION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-
-export function notificationOldestAllowedCreatedAt(now = new Date()): Date {
-  return new Date(now.getTime() - DELIVERY_NOTIFICATION_MAX_AGE_MS);
-}
-
 /**
  * Canonical delivery backoff ladder, expressed as a *duration*.
  *

@@ -1,19 +1,8 @@
-import type { SessionDeliveryRow, SqlClient } from "../control_plane_types.js";
-import type { SessionDeliveryAttemptOutcome } from
-  "./session_delivery_attempt_repository.js";
+import type { SqlClient } from "../control_plane_types.js";
 
-/**
- * Retry budget for `session_deliveries`.
- *
- * Mirrors `soul-server-ts/src/task/session_delivery_notification_policy.ts` so
- * the aggregate and its notification projection give up on the same terms.
- */
-export const DELIVERY_MAX_ATTEMPTS = 16;
-export const DELIVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-
-export interface DeliveryRetryOrDeadLetterInput {
+export interface DeliveryRetryInput {
   reason: string;
-  /** State to return to while the delivery still has budget. */
+  /** State to return to for the next scheduling pass. */
   retryState: "pending" | "queued";
   /**
    * Delay before the next attempt. Omit to use the canonical backoff ladder.
@@ -35,32 +24,20 @@ export interface DeliveryRetryOrDeadLetterInput {
    *
    * A liveness probe — "is the transcript settled yet?" — is not an attempt to
    * deliver anything, and it repeats on a one-second cadence. Charging it to
-   * the same 16-attempt budget would dead-letter a perfectly good user message
-   * about eighty seconds after its target node went quiet, which is the exact
-   * loss this budget exists to prevent. A probe spends time, not budget: only
-   * the age ceiling can end it.
+   * the attempt counter would misrepresent actual delivery attempts.
    */
   spendsAttempt?: boolean;
-  maxAttempts?: number;
-  maxAgeMs?: number;
 }
 
 /**
- * Canonical "spend one attempt, or give up" SET clause.
- *
- * Every retry path used to schedule the next attempt without ever consulting a
- * budget, so a delivery whose target never became dispatchable retried forever
- * — the 260820 incident left three user messages at 1,932 / 155 / 154 attempts
- * with no terminal state. Routing every one of those paths through this clause
- * makes "attempt again" and "dead-letter" a single decision with a single
- * definition, evaluated entirely on the database clock.
+ * Canonical scheduling-only retry SET clause. Time and attempt counts may move
+ * the next scheduling instant; they never decide whether accepted input still
+ * exists. Only an exact receipt or explicit invalidation owns that decision.
  */
-export function deliveryRetryOrDeadLetterSet(
+export function deliveryRetrySet(
   sql: SqlClient,
-  input: DeliveryRetryOrDeadLetterInput,
+  input: DeliveryRetryInput,
 ) {
-  const maxAttempts = input.maxAttempts ?? DELIVERY_MAX_ATTEMPTS;
-  const maxAgeMs = input.maxAgeMs ?? DELIVERY_MAX_AGE_MS;
   const spendsAttempt = input.spendsAttempt ?? true;
   const reason = input.preserveExistingError
     ? sql`COALESCE(last_error, ${input.reason})`
@@ -71,33 +48,14 @@ export function deliveryRetryOrDeadLetterSet(
         INTERVAL '100 milliseconds' * POWER(2, LEAST(attempt_count, 9))
       )`
     : sql`(${input.retryDelayMs}::double precision * INTERVAL '1 millisecond')`;
-  const tooOld = sql`created_at <= NOW() - (${maxAgeMs}::double precision * INTERVAL '1 millisecond')`;
-  const exhausted = spendsAttempt
-    ? sql`(attempt_count + 1 >= ${maxAttempts} OR ${tooOld})`
-    : sql`(${tooOld})`;
   return sql`
     attempt_count = attempt_count + ${spendsAttempt ? 1 : 0},
-    state = CASE WHEN ${exhausted} THEN 'uncertain' ELSE ${input.retryState} END,
-    aggregate_state = CASE WHEN ${exhausted} THEN 'dead_letter' ELSE 'pending' END,
+    state = ${input.retryState},
+    aggregate_state = 'pending',
     lease_owner = NULL,
     lease_expires_at = NULL,
-    next_attempt_at = CASE
-      WHEN ${exhausted} THEN next_attempt_at
-      ELSE NOW() + ${retryDelay}
-    END,
+    next_attempt_at = NOW() + ${retryDelay},
     last_error = ${reason},
-    dead_letter_reason = CASE
-      WHEN ${exhausted} THEN ${reason}
-      ELSE dead_letter_reason
-    END,
-    dead_lettered_at = CASE WHEN ${exhausted} THEN NOW() ELSE dead_lettered_at END,
     updated_at = NOW()
   `;
-}
-
-/** An exhausted delivery is a rejected attempt; anything else is retryable. */
-export function attemptOutcomeFor(
-  row: Pick<SessionDeliveryRow, "aggregate_state">,
-): SessionDeliveryAttemptOutcome {
-  return row.aggregate_state === "dead_letter" ? "rejected" : "retryable";
 }

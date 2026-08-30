@@ -12,7 +12,7 @@ import type {
 export interface QueuedDeliveryTranscriptRecoveryDeps {
   deliveryRepository: Pick<
     SessionDeliveryRepository,
-    "get" | "markConsumed" | "retryLeasedDelivery"
+    "retryLeasedDelivery"
   >;
   recoveryRepository: Pick<
     SessionDeliveryRecoveryRepository,
@@ -107,21 +107,15 @@ export class QueuedDeliveryTranscriptRecovery {
         );
         if (receipt.kind === "completed") {
           const receiptId = `transcript:${receipt.assistantMessageUuid}`;
-          await this.deps.recoveryRepository.markDeliveredFromTranscript(
+          const consumed = await this.deps.recoveryRepository.markDeliveredFromTranscript(
             row.delivery_id,
             this.workerId,
             receipt.assistantMessageUuid,
           );
-          const consumed = await this.deps.deliveryRepository.markConsumed(
-            row.delivery_id,
-            receiptId,
-          );
-          const settledRow = consumed
-            ?? await this.deps.deliveryRepository.get(row.delivery_id);
           if (
-            settledRow?.state !== "consumed"
-            || settledRow.aggregate_state !== "consumed"
-            || settledRow.target_receipt_id !== receiptId
+            consumed?.state !== "consumed"
+            || consumed.aggregate_state !== "consumed"
+            || consumed.target_receipt_id !== receiptId
           ) {
             throw new Error(
               `Transcript-proven delivery ${row.delivery_id} did not reach consumed`,

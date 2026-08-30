@@ -13,11 +13,6 @@ import {
   readCanonicalDeliveryPayload,
 } from "./delivery_payload.js";
 import type { CallerInfo } from "./task_models.js";
-import {
-  DELIVERY_NOTIFICATION_MAX_AGE_MS,
-  DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
-  deliveryRetryDelayMs,
-} from "./session_delivery_notification_policy.js";
 import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
 import type {
   RegisterSessionDeliveryParams,
@@ -37,11 +32,8 @@ type CompletionDeliveryRepository = Pick<
   SessionDeliveryRepository,
   | "register"
   | "get"
-  | "claimForTarget"
-  | "deferPending"
-  | "retryLeasedDelivery"
+  | "claimRecoverableCompletionDeliveries"
   | "releaseExpiredDeliveryLeases"
-  | "markUncertain"
 >;
 
 export interface CompletionDeliveryCoordinatorDeps {
@@ -75,8 +67,9 @@ export class CompletionDeliveryCoordinator {
    * the row to `pending` underneath its own owner and the next scan claimed it
    * again (260820 incident).
    *
-   * Periodic recovery only releases abandoned admission leases. It never
-   * dispatches accepted input; a new explicit intent must claim it again.
+   * Immediate and periodic recovery both enter the same claim-and-dispatch
+   * function. The lease only schedules an owner; timeout cannot terminate the
+   * accepted delivery.
    */
   constructor(
     private readonly deps: CompletionDeliveryCoordinatorDeps,
@@ -111,72 +104,53 @@ export class CompletionDeliveryCoordinator {
       );
       return;
     }
-    await this.attemptPending(registered.row.delivery_id);
+    try {
+      await this.claimAndDispatch(registered.row.delivery_id, 1);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, deliveryId: registered.row.delivery_id },
+        "Completion delivery remains pending after claim scheduling failed",
+      );
+    }
   }
 
-  async recoverPending(_limit = 100): Promise<void> {
+  async recoverPending(limit = 100): Promise<void> {
     try {
       await this.deps.repository.releaseExpiredDeliveryLeases();
+      await this.claimAndDispatch(undefined, limit);
     } catch (err) {
       this.deps.logger.warn({ err }, "Completion delivery recovery scan failed");
     }
   }
 
-  private async attemptPending(deliveryId: string): Promise<void> {
-    try {
-      const current = await this.deps.repository.get(deliveryId);
-      if (!current || !isRecoverable(current)) return;
-      const claimed = await this.deps.repository.claimForTarget(
-        deliveryId,
-        requiredTarget(current),
-        this.workerId,
-        this.leaseMs,
-      );
-      if (!claimed) {
-        await this.deps.repository.deferPending(
-          deliveryId,
-          "no_current_target",
-          deliveryRetryDelayMs(current.attempt_count),
-        );
-        return;
-      }
-      await this.dispatchClaimed(claimed);
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, deliveryId },
-        "Completion delivery attempt deferred for durable recovery",
-      );
-    }
+  private async claimAndDispatch(
+    deliveryId: string | undefined,
+    limit: number,
+  ): Promise<void> {
+    const claimed = await this.deps.repository.claimRecoverableCompletionDeliveries(
+      this.workerId,
+      limit,
+      this.leaseMs,
+      deliveryId,
+    );
+    for (const row of claimed) await this.dispatchClaimed(row);
   }
 
   private async dispatchClaimed(row: SessionDeliveryRow): Promise<void> {
     const leaseOwner = requiredLeaseOwner(row);
     const targetSessionId = requiredTarget(row);
-    // TaskCompletionNotifier.notify() is the explicit admission boundary. The
-    // dispatch below belongs only to that enqueue attempt; periodic maintenance
-    // cannot enter this method or create execution intent.
+    // TaskCompletionNotifier.notify() is the explicit admission boundary. Both
+    // immediate enqueue and recovery use this one dispatch path; recovery only
+    // reclaims the same durable delivery identity.
     if (isStaleSelfCompletionDelivery(row, targetSessionId)) {
-      try {
-        const terminal = await this.deps.repository.markUncertain(
-          row.delivery_id,
-          leaseOwner,
-          "stale_self_completion_delivery",
-        );
-        this.deps.logger.info(
-          {
-            deliveryId: row.delivery_id,
-            sourceSessionId: row.source_session_id,
-            targetSessionId,
-            terminalized: terminal !== null,
-          },
-          "Stale self completion delivery suppressed during durable recovery",
-        );
-      } catch (err) {
-        this.deps.logger.warn(
-          { err, deliveryId: row.delivery_id, sourceSessionId: row.source_session_id },
-          "Stale self completion delivery suppression could not be terminalized; recovery will retry",
-        );
-      }
+      this.deps.logger.warn(
+        {
+          deliveryId: row.delivery_id,
+          sourceSessionId: row.source_session_id,
+          targetSessionId,
+        },
+        "Self completion identity quarantined without consuming its delivery",
+      );
       return;
     }
     try {
@@ -198,39 +172,9 @@ export class CompletionDeliveryCoordinator {
         );
         return;
       }
-      if (isRetryExhausted(row)) {
-        const terminal = await this.deps.repository.markUncertain(
-          row.delivery_id,
-          leaseOwner,
-          failure,
-        );
-        this.deps.logger.warn(
-          {
-            err,
-            deliveryId: row.delivery_id,
-            attemptCount: row.attempt_count + 1,
-            terminalized: terminal !== null,
-          },
-          "Completion delivery retry budget exhausted; delivery terminalized as uncertain",
-        );
-        return;
-      }
-      const retried = await this.deps.repository.retryLeasedDelivery(
-        row.delivery_id,
-        leaseOwner,
-        failure,
-        deliveryRetryDelayMs(row.attempt_count),
-      );
-      if (!retried) {
-        this.deps.logger.warn(
-          { err, deliveryId: row.delivery_id },
-          "Completion delivery retry not scheduled because the dispatch lease was lost",
-        );
-        return;
-      }
       this.deps.logger.warn(
-        { err, deliveryId: row.delivery_id },
-        "Completion delivery dispatch failed; durable retry scheduled",
+        { err, deliveryId: row.delivery_id, failure },
+        "Completion dispatch did not prove acceptance; claim remains for lease recovery",
       );
     }
   }
@@ -243,11 +187,6 @@ function isStaleSelfCompletionDelivery(
   return row.intent === "completion_notification"
     && row.source_session_id !== null
     && row.source_session_id === targetSessionId;
-}
-
-function isRetryExhausted(row: SessionDeliveryRow, nowMs = Date.now()): boolean {
-  return row.attempt_count + 1 >= DELIVERY_NOTIFICATION_MAX_ATTEMPTS
-    || nowMs - row.created_at.getTime() >= DELIVERY_NOTIFICATION_MAX_AGE_MS;
 }
 
 function buildCompletionRegistration(
@@ -313,10 +252,6 @@ function toInterventionParams(
     storedDeliveryPayload: row.payload,
     storedDeliveryPayloadHash: row.payload_hash,
   };
-}
-
-function isRecoverable(row: SessionDeliveryRow): boolean {
-  return row.state === "pending" || row.state === "claimed";
 }
 
 function requiredTarget(row: SessionDeliveryRow): string {

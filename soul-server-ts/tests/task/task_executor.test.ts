@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import type { RecordSessionDeliveryRelationConsumptionParams } from
+  "../../src/db/session_db_types.js";
 import type {
   EngineExecuteParams,
   EnginePort,
@@ -535,9 +537,21 @@ describe("TaskExecutor.startExecution", () => {
       const gate = new TaskDeliveryLedgerGate(true, {
         get: vi.fn(async () => row),
         markDelivered,
-        markConsumed,
-        markConsumedByRelation: vi.fn().mockResolvedValue(null),
-        recordRelationConsumed: vi.fn().mockResolvedValue(undefined),
+        markConsumedByRelation: vi.fn(async (
+          params: RecordSessionDeliveryRelationConsumptionParams,
+        ) => ({
+          relation: {
+            relation_key: params.relationKey,
+            completion_id: params.completionId,
+            caller_session_id: params.callerSessionId,
+            consumed_turn_id: params.consumedTurnId,
+            consumed_at: new Date(),
+          },
+          relationInserted: true,
+          deliveryConsumed: Boolean(
+            await markConsumed(params.deliveryId, params.consumedTurnId),
+          ),
+        })),
       } as never);
       let attempt = 0;
       const executor = new TaskExecutor(
@@ -615,9 +629,21 @@ describe("TaskExecutor.startExecution", () => {
     });
     const gate = new TaskDeliveryLedgerGate(true, {
       get: vi.fn(async () => row),
-      markConsumed,
-      markConsumedByRelation: vi.fn().mockResolvedValue(null),
-      recordRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      markConsumedByRelation: vi.fn(async (
+        params: RecordSessionDeliveryRelationConsumptionParams,
+      ) => ({
+        relation: {
+          relation_key: params.relationKey,
+          completion_id: params.completionId,
+          caller_session_id: params.callerSessionId,
+          consumed_turn_id: params.consumedTurnId,
+          consumed_at: new Date(),
+        },
+        relationInserted: true,
+        deliveryConsumed: Boolean(
+          await markConsumed(params.deliveryId, params.consumedTurnId),
+        ),
+      })),
     } as never);
     vi.mocked(
       mocks.persistence.releaseExecutionOwnershipAndWaitForApplication,

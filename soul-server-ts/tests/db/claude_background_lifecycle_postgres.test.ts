@@ -252,8 +252,13 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
       status: "killed",
       close_reason: "worker_restart",
     });
+    await harness.sql`
+      UPDATE sessions SET node_id = 'node-test'
+      WHERE session_id = 'caller-session'
+    `;
     const repository = deliveries(harness.sql);
-    await expect(repository.claimRecoverableCompletionDeliveries(
+    await expect(repository.recovery.claimPendingImmediateIntentsForNode(
+      "node-test",
       "worker-dead",
       1,
       100,
@@ -270,7 +275,8 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
       SET next_attempt_at = NOW()
       WHERE delivery_id = ${task!.notification_delivery_id!}
     `;
-    await expect(repository.claimRecoverableCompletionDeliveries(
+    await expect(repository.recovery.claimPendingImmediateIntentsForNode(
+      "node-test",
       "worker-recovered",
       1,
     )).resolves.toMatchObject([
