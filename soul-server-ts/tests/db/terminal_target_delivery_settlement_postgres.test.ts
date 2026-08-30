@@ -40,7 +40,7 @@ describePostgres("terminal target delivery settlement", () => {
     await harness.cleanup();
   });
 
-  it("settles terminal-parent completion deliveries by exact evidence", async () => {
+  it("claims due pending ownership before settling terminal queued deliveries", async () => {
     for (const [deliveryId, relationKey] of [
       ["terminal-receipt", "relation-terminal-receipt"],
       ["terminal-pending", "relation-terminal-pending"],
@@ -81,7 +81,10 @@ describePostgres("terminal target delivery settlement", () => {
       )
     `;
 
-    await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(0);
+    const claimed = await repository.claimRecoverableCompletionDeliveries(
+      "post-terminal-settlement",
+      10,
+    );
 
     const rows = await harness.sql<Array<{
       delivery_id: string;
@@ -98,7 +101,7 @@ describePostgres("terminal target delivery settlement", () => {
     `;
     const expected = new Map([
       ["terminal-pending", {
-        state: "pending",
+        state: "claimed",
         aggregateState: "pending",
         targetReceiptId: null,
         terminalRevision: null,
@@ -129,10 +132,6 @@ describePostgres("terminal target delivery settlement", () => {
     });
 
     expect(violations).toEqual([]);
-    const claimed = await repository.claimRecoverableCompletionDeliveries(
-      "post-terminal-settlement",
-      10,
-    );
     expect(claimed).toHaveLength(1);
     expect(claimed[0]).toMatchObject({
       delivery_id: "terminal-pending",

@@ -85,7 +85,6 @@ export class SessionDeliveryRecoveryRepository {
     leaseMs = 15_000,
   ): Promise<SessionDeliveryRow[]> {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
-      await settleTerminalTargetCompletionDeliveries(transaction);
       await transaction`
         WITH ranked AS (
           SELECT delivery_id,
@@ -170,6 +169,10 @@ export class SessionDeliveryRecoveryRepository {
         `;
         if (updated[0]) claimed.push(updated[0]);
       }
+      // Claim is the admission ownership write. Terminal settlement runs only
+      // after every due pending row has had that transition, so a completed
+      // caller can consume new completion input by auto-resuming.
+      await settleTerminalTargetCompletionDeliveries(transaction);
       return claimed;
     });
   }
