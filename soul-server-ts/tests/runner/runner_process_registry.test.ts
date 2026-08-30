@@ -447,8 +447,14 @@ describe("runner process registry", () => {
   it("reads only the lifecycle row and never opens the event outbox", async () => {
     const stateDirectory = await temporaryDirectory("light");
     const paths = runnerProcessPaths(stateDirectory, "session-a");
+    const config = { ...registration().config, paths };
     await mkdir(paths.sessionDirectory, { recursive: true });
-    await writeFile(paths.configPath, JSON.stringify({ ...registration().config, paths }));
+    await writeFile(paths.configPath, JSON.stringify(config));
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      ...pendingRunnerRegistrationIdentity(config.sessionId, config.codeSha),
+      pid: 2_147_483_610,
+      startIdentity: "dead-2147483610",
+    });
     const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
     await outbox.initializeBootstrap({
       session_id: "session-a",
@@ -935,6 +941,11 @@ async function closedRunnerState(label: string) {
   current.config = { ...current.config, paths };
   await mkdir(paths.sessionDirectory, { recursive: true });
   await writeFile(paths.configPath, JSON.stringify(current.config));
+  await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+    ...pendingRunnerRegistrationIdentity(current.config.sessionId, current.config.codeSha),
+    pid: 2_147_483_611,
+    startIdentity: "dead-2147483611",
+  });
 
   const initial = await RunnerSqliteEventOutbox.create(paths.databasePath);
   const bootstrap = await initial.initializeBootstrap({

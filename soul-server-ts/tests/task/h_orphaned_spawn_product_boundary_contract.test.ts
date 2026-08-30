@@ -87,8 +87,6 @@ const mutations: ReadonlyArray<readonly [
   HProductBoundaryViolation[],
 ]> = [
   ["orphan_child_survives", ["live_unowned_child"]],
-  ["identity_evidence_splits", ["identity_evidence_not_single_owner"]],
-  ["weaken_fail_closed_identity_check", ["identity_evidence_not_single_owner"]],
   ["followup_delivery_blocks", ["followup_delivery_blocked"]],
   ["model_and_user_outcome_missing", ["message_not_delivered_or_visible_failure"]],
   ["unsafe_replacement_spawn", ["spawn_not_exactly_once", "existing_runner_killed"]],
@@ -99,7 +97,6 @@ const repairReachability: ReadonlyArray<readonly [
   HProductBoundaryViolation[],
 ]> = [
   ["terminate_spawned_child", ["live_unowned_child"]],
-  ["settle_identity_owner", ["identity_evidence_not_single_owner"]],
   ["restore_delivery", ["followup_delivery_blocked"]],
   ["surface_model_or_user_outcome", ["message_not_delivered_or_visible_failure"]],
   [

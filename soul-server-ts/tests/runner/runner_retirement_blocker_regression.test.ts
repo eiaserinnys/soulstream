@@ -122,8 +122,10 @@ describe("runner retirement blocker regressions", () => {
       expect(preservedIdentity?.retiredAt).toBeUndefined();
       await expect(readFile(harness.paths.pidPath, "utf8")).resolves
         .toBe(`${ORIGINAL_PID}\n`);
-      await expect(readFile(harness.paths.socketPath, "utf8")).resolves
-        .toBe(`socket-${ORIGINAL_PID}\n`);
+      if (process.platform !== "win32") {
+        await expect(readFile(harness.paths.socketPath, "utf8")).resolves
+          .toBe(`socket-${ORIGINAL_PID}\n`);
+      }
 
       harness.allowCleanup();
       await expect(harness.spawner.spawn(harness.input)).resolves.toMatchObject({
@@ -191,7 +193,9 @@ async function createSpawnFailureHarness(mode: SpawnFailureMode) {
     registerPid: async (pidPath, pid) => {
       registerCount += 1;
       await writeFile(pidPath, `${pid}\n`, { mode: 0o600 });
-      await writeFile(paths.socketPath, `socket-${pid}\n`, { mode: 0o600 });
+      if (process.platform !== "win32") {
+        await writeFile(paths.socketPath, `socket-${pid}\n`, { mode: 0o600 });
+      }
       if (registerCount !== 1) return;
       if (mode === "pid_reuse") {
         processes.set(pid, { alive: true, startIdentity: REUSED_START_IDENTITY });

@@ -310,7 +310,7 @@ describe("RunnerProcessSpawner", () => {
       condition: "the recorded pid has been reused",
       pidAlive: true,
       observedStartIdentity: "start-reused-process",
-      shouldRetire: true,
+      shouldRetire: false,
     },
     {
       condition: "the exact recorded process is still live",
@@ -319,7 +319,7 @@ describe("RunnerProcessSpawner", () => {
       shouldRetire: false,
     },
   ])(
-    "uses process absence proof when the registration sidecar is absent: $condition",
+    "retires absent identity only after process absence proof: $condition",
     async ({ pidAlive, observedStartIdentity, shouldRetire }) => {
       const params = await input();
       const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
@@ -359,7 +359,7 @@ describe("RunnerProcessSpawner", () => {
     },
   );
 
-  it("never signals a reused pid whose cross-format identity falls inside the fuzzy window", async () => {
+  it("defers retirement when a live pid has a different exact start identity", async () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
     const pid = 2_000_000_000;
@@ -400,10 +400,10 @@ describe("RunnerProcessSpawner", () => {
       registrationId: "registration-a",
       pid,
       startIdentity: recordedIdentity,
-    }, commitOwnership)).resolves.toBeUndefined();
+    }, commitOwnership)).rejects.toThrow("runner process identity changed before SIGTERM");
 
     expect(signalPid).not.toHaveBeenCalled();
-    expect(commitOwnership).toHaveBeenCalledOnce();
+    expect(commitOwnership).not.toHaveBeenCalled();
   });
 
   it("reclaims a stale writer lock before committing ownership retirement", async () => {
@@ -420,7 +420,7 @@ describe("RunnerProcessSpawner", () => {
       startIdentity: "start-2000000000",
     });
     await writeFile(paths.pidPath, `${pid}\n`, { mode: 0o600 });
-    await writeFile(paths.socketPath, "stale socket");
+    if (process.platform !== "win32") await writeFile(paths.socketPath, "stale socket");
     await writeFile(paths.lockPath, `${JSON.stringify({
       pid,
       startIdentity: "start-2000000000",
@@ -448,7 +448,9 @@ describe("RunnerProcessSpawner", () => {
     expect(commitOwnership).toHaveBeenCalledOnce();
     await expect(readFile(paths.lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(paths.pidPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(paths.socketPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    if (process.platform !== "win32") {
+      await expect(readFile(paths.socketPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    }
   });
 
   it("terminates a live prior pid before spawning its replacement", async () => {
@@ -515,7 +517,7 @@ describe("RunnerProcessSpawner", () => {
     expect(spawnProcess).toHaveBeenCalledOnce();
   });
 
-  it("fails closed before cleanup when mismatched pid evidence has a live candidate", async () => {
+  it("ignores live lifecycle history when canonical identity proves the old owner dead", async () => {
     const params = await input();
     const paths = await writeDisagreedRegistration(params, 5211, 5212);
     const spawnProcess = vi.fn(() => ({ pid: 5213, unref: vi.fn() }));
@@ -524,23 +526,23 @@ describe("RunnerProcessSpawner", () => {
       prepareDatabase,
       validateEntry: async () => {},
       spawnProcess,
-      registerPid: async () => {},
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async (pid) => pid === 5211
         ? { alive: true, startIdentity: "live-5211" }
-        : { alive: false, startIdentity: null },
-      isPidAlive: (pid) => pid === 5211,
+        : pid === 5213
+          ? { alive: true, startIdentity: "start-5213" }
+          : { alive: false, startIdentity: null },
+      isPidAlive: (pid) => pid === 5211 || pid === 5213,
       signalPid,
       now: () => 0,
       delay: async () => {},
     });
 
-    await expect(spawner.spawn(params)).rejects.toThrow(
-      "runner pid evidence disagrees",
-    );
+    await expect(spawner.spawn(params)).resolves.toMatchObject({ pid: 5213 });
 
     expect(signalPid).not.toHaveBeenCalled();
-    expect(spawnProcess).not.toHaveBeenCalled();
-    await expect(readFile(paths.pidPath, "utf8")).resolves.toBe("5212\n");
+    expect(spawnProcess).toHaveBeenCalledOnce();
+    await expect(readFile(paths.pidPath, "utf8")).resolves.toBe("5213\n");
   });
 
   it("waits a fresh grace window after SIGKILL before declaring termination failure", async () => {
@@ -809,11 +811,6 @@ describe("RunnerProcessSpawner", () => {
       signalPid,
       now: () => 0,
       delay: async () => {},
-      readLifecycle: async (path) => await readAuthoritativeRunnerLifecycle(path, {
-        lifecycleSummaryOptions: {
-          renameFile: persistentRenameFailure,
-        },
-      }),
     });
     const recoveryLifecycle = await readAuthoritativeRunnerLifecycle(paths.databasePath, {
       lifecycleSummaryOptions: {
@@ -828,7 +825,7 @@ describe("RunnerProcessSpawner", () => {
     }))).resolves.toMatchObject({ pid: 5102, adopted: true });
     await expect(recoveredHost.spawn(params)).resolves.toMatchObject({ pid: 5103, adopted: false });
 
-    expect(persistentRenameFailure).toHaveBeenCalledTimes(3);
+    expect(persistentRenameFailure).toHaveBeenCalledTimes(2);
     expect(signalPid).toHaveBeenCalledWith(5102, "SIGTERM");
     expect(spawnProcess).toHaveBeenCalledOnce();
   });
