@@ -13,7 +13,7 @@ test("verify:bundle keeps the build gate free of the main server startup contrac
     "node --test ../scripts/verify-workspace-bundle.test.mjs "
       + "scripts/verify_build_gate_contract.test.mjs "
       + "&& node ../scripts/verify-workspace-bundle.mjs dist "
-      + "&& node scripts/verify_runner_release_isolation.mjs",
+      + "&& tsx scripts/verify_runner_release_isolation.mjs",
   );
   assert.doesNotMatch(
     packageJson.scripts["verify:bundle"],
