@@ -22,7 +22,7 @@ import {
   applyRunnerClaudeRuntimeObservationResult,
 } from "./runner_claude_runtime_observation.js";
 
-const HOST_REQUEST_TIMEOUT_MS = 30_000;
+const HOST_REQUEST_TIMEOUT_MS = 1_800_000;
 
 export function createRunnerChildEngine(
   config: RunnerChildConfig,
