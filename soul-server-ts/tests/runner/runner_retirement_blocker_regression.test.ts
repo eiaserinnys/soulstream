@@ -85,7 +85,9 @@ describe("runner retirement blocker regressions", () => {
   it("does not signal a reused PID while cleaning up a failed child registration", async () => {
     const harness = await createSpawnFailureHarness("pid_reuse");
 
-    await expect(harness.spawner.spawn(harness.input)).rejects.toThrow("pid registration denied");
+    await expect(harness.spawner.spawn(harness.input)).rejects.toThrow(
+      "runner process identity changed before SIGTERM",
+    );
 
     expect(harness.signalPid).not.toHaveBeenCalled();
     expect(harness.spawnCount()).toBe(1);

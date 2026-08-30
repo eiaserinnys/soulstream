@@ -400,12 +400,9 @@ describe("RunnerProcessSpawner", () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
     const pid = 2_000_000_000;
-    const recordedStartMs = 1_700_000_000_123;
-    const recordedIdentity = `node-start-${recordedStartMs}`;
-    const reusedWindowsTicks = 621_355_968_000_000_000n
-      + BigInt(recordedStartMs + 1_000) * 10_000n;
-    const reusedIdentity = `windows-process-${reusedWindowsTicks}`;
-    expect(processStartIdentitiesMatch(recordedIdentity, reusedIdentity)).toBe(true);
+    const recordedIdentity = "windows-boot-100-process-200";
+    const reusedIdentity = "windows-boot-100-process-201";
+    expect(processStartIdentitiesMatch(recordedIdentity, reusedIdentity)).toBe(false);
 
     await mkdir(paths.sessionDirectory, { recursive: true });
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
@@ -601,7 +598,7 @@ describe("RunnerProcessSpawner", () => {
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async (pid) => ({
         alive: pid === 6102 ? true : alive,
-        startIdentity: `start-${pid}`,
+        startIdentity: `test-${pid}`,
       }),
       isPidAlive: (pid) => pid === 6101 && alive,
       signalPid: (_pid, signal) => { signals.push(signal); },
@@ -627,7 +624,7 @@ describe("RunnerProcessSpawner", () => {
       prepareDatabase, validateEntry: async () => {},
       spawnProcess: () => ({ pid: 6201, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
-      inspectProcess: async () => ({ alive: true, startIdentity: "start-6201" }),
+      inspectProcess: async () => ({ alive: true, startIdentity: "test-6201" }),
       isPidAlive: () => false, signalPid: vi.fn(), now: () => now, delay: async () => {},
     });
     await initial.spawn(params);
@@ -638,7 +635,7 @@ describe("RunnerProcessSpawner", () => {
       registerPid: async () => {},
       inspectProcess: async () => ({
         alive: true,
-        startIdentity: ++inspections === 1 ? "start-6201" : "reused-process",
+        startIdentity: ++inspections === 1 ? "test-6201" : "reused-process",
       }),
       isPidAlive: (pid) => pid === 6201,
       signalPid,
