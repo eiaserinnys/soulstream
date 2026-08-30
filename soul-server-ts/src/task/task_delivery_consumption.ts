@@ -6,7 +6,7 @@ import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 
 type ConsumptionRecorder = Pick<
   TaskDeliveryLedgerGate,
-  "recordConsumed" | "recordTurnStarted" | "discardIfConsumed"
+  "recordConsumed" | "nextAcceptedForTarget" | "acceptedDelivery"
 >;
 
 export class TaskDeliveryConsumption {
@@ -41,29 +41,20 @@ export class TaskDeliveryConsumption {
     }
   }
 
-  async recordTurnStarted(
-    task: Task,
-    intervention: InterventionMessage | undefined,
-  ): Promise<boolean> {
-    if (!intervention || !this.recorder) return false;
-    try {
-      await this.recorder.recordTurnStarted(intervention, task);
-      return true;
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId, deliveryId: intervention.deliveryId },
-        "delivery ledger turn-start update failed",
-      );
-      return false;
-    }
+  async nextAcceptedForTarget(
+    targetSessionId: string,
+  ): Promise<InterventionMessage | undefined> {
+    return await this.recorder?.nextAcceptedForTarget(targetSessionId);
   }
 
-  async discardIfConsumed(
-    task: Task,
-    intervention: InterventionMessage,
-  ): Promise<boolean> {
-    if (!this.recorder) return false;
-    return await this.recorder.discardIfConsumed(intervention, task);
+  async acceptedDelivery(
+    deliveryId: string,
+    targetSessionId: string,
+  ): Promise<InterventionMessage> {
+    if (!this.recorder) {
+      throw new Error("Delivery consumption recorder is unavailable");
+    }
+    return await this.recorder.acceptedDelivery(deliveryId, targetSessionId);
   }
 }
 

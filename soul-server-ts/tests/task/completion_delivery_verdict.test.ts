@@ -8,16 +8,6 @@ import {
 describe("completion delivery verdict", () => {
   it.each([
     [{ delivered: true }, { kind: "accepted", disposition: "delivered" }],
-    [
-      {
-        delivered: false,
-        queued: true,
-        queuePosition: 2,
-        consumeWhen: "next_turn",
-        reason: "queue_only_policy",
-      },
-      { kind: "accepted", disposition: "queued" },
-    ],
     [{ autoResumed: true }, { kind: "accepted", disposition: "auto_resume" }],
     [
       { suppressed: true, deliveryId: "d1", reason: "delivery_consumed" },
@@ -30,19 +20,6 @@ describe("completion delivery verdict", () => {
     [
       { suppressed: true, deliveryId: "d1", reason: "delivery_uncertain" },
       { kind: "unknown", reason: "legacy_delivery_uncertain" },
-    ],
-    [
-      { delivered: null, reason: "verdict_unknown", consumeWhen: null },
-      { kind: "unknown", reason: "verdict_unknown" },
-    ],
-    [
-      {
-        delivered: false,
-        deferred: true,
-        retryWhen: "engine_available",
-        reason: "not_accepting_input",
-      },
-      { kind: "failed", reason: "not_accepting_input" },
     ],
     [
       {

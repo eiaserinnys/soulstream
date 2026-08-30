@@ -95,7 +95,7 @@ async function observeCurrentLateIntervention(h: ContractHarness) {
     claimForTarget: vi.fn(async (_id, target, lease) => (row = { ...row, state: "claimed",
       target_session_id: target, lease_owner: lease })),
     beginDispatch: vi.fn(async () => (row = { ...row, state: "dispatching" })),
-    markQueued: vi.fn(), markDelivered: vi.fn(), markUncertain: vi.fn(), markConsumed,
+    markQueued: vi.fn(), markDelivered: vi.fn(), markConsumed,
     markConsumedByRelation: vi.fn(), recordRelationConsumed: vi.fn(),
     retryLeasedDelivery: vi.fn(), markPendingSuperseded: vi.fn(),
     notifications: { stageWithQueuedDelivery: vi.fn(async () => ({ state: "queued" })),
@@ -120,8 +120,7 @@ async function observeCurrentLateIntervention(h: ContractHarness) {
   });
   const route = new TaskInterventionRoute({ getTask: () => task,
     loadEvictedTask: vi.fn(), rememberTask: vi.fn(), runningInterventionTransition: {
-      queueOnly: vi.fn().mockResolvedValue({ delivered: false, queued: true,
-        queuePosition: 1, consumeWhen: "next_turn", reason: "queue_only_policy" }),
+      deliver: vi.fn().mockRejectedValue(new Error("terminal input must auto-resume")),
     } as never,
     autoResumeTransition: autoResume, deliveryLedgerGate: gate });
   const result = await route.addIntervention({ agentSessionId: task.agentSessionId,
@@ -146,8 +145,9 @@ async function observeCurrentEarlyConsume(h: ContractHarness) {
   const state = h.run(h.activeTurn("product-delivery")).at(-1)!;
   const markConsumed = vi.fn(async () => ({ state: "consumed" }));
   const gate = new TaskDeliveryLedgerGate(true, { register: vi.fn(), claimForTarget: vi.fn(),
-    beginDispatch: vi.fn(), get: vi.fn(), markQueued: vi.fn(),
-    markDelivered: vi.fn(async () => ({ state: "delivered" })), markUncertain: vi.fn(),
+    beginDispatch: vi.fn(), get: vi.fn(),
+    markQueued: vi.fn(async () => ({ state: "queued" })),
+    markDelivered: vi.fn(async () => ({ state: "delivered" })),
     markConsumed, markConsumedByRelation: vi.fn(), recordRelationConsumed: vi.fn(),
     retryLeasedDelivery: vi.fn(), markPendingSuperseded: vi.fn(),
     notifications: { stageWithQueuedDelivery: vi.fn(), get: vi.fn(),
@@ -226,7 +226,7 @@ function terminalApplication(task: Task): object {
 function productTask(overrides: Partial<Task> = {}): Task {
   return { agentSessionId: "product-session", prompt: "input", status: "running",
     createdAt: new Date("2026-08-27T00:00:00.000Z"), lastEventId: 1,
-    lastReadEventId: 0, interventionQueue: [], ...overrides };
+    lastReadEventId: 0, ...overrides };
 }
 
 function productOwner(ownershipGeneration = 1): NonNullable<Task["executionOwnership"]> {

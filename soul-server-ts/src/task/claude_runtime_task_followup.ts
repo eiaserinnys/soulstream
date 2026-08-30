@@ -34,7 +34,6 @@ import {
   runtimeString as asString,
   sleepWithoutHoldingProcess as sleep,
 } from "./claude_runtime_followup_utils.js";
-import { interventionPriorityLane } from "./task_intervention_queue.js";
 
 export { buildClaudeRuntimeTaskFollowupPrompt } from
   "./claude_runtime_task_followup_prompt.js";
@@ -60,6 +59,16 @@ export interface ClaudeRuntimeTaskFollowupPort {
     supersedingMessage: InterventionMessage,
   ): Promise<void>;
   takeScheduledFallbacks(): ClaudeRuntimeScheduledFallback[];
+}
+
+function interventionPriorityLane(
+  message: Pick<InterventionMessage, "deliveryIntent" | "source">,
+): "high" | "low" {
+  return message.deliveryIntent === "completion_notification"
+    || message.deliveryIntent === "runtime_followup"
+    || message.source === "claude_runtime_task_followup"
+    ? "low"
+    : "high";
 }
 
 export interface ClaudeRuntimeFallbackSchedule {

@@ -2509,6 +2509,5 @@ function task(sessionId: string): Task {
     createdAt: new Date("2026-08-11T00:00:00.000Z"),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
   };
 }

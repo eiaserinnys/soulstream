@@ -309,8 +309,8 @@ export class TaskManager {
 
   getDeliveryConsumptionRecorder(): Pick<
     TaskDeliveryLedgerGate,
-    "recordConsumed" | "recordTurnStarted"
-      | "recordInlineConsumed" | "recordPendingSuperseded" | "discardIfConsumed"
+    "recordConsumed" | "recordInlineConsumed" | "recordPendingSuperseded"
+      | "nextAcceptedForTarget" | "acceptedDelivery"
   > | undefined {
     return this.deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined;
   }
@@ -474,11 +474,10 @@ export class TaskManager {
  * Python `service/task_manager.py:563-642 add_intervention` 정본의 codex 적응판.
  *
  * 세션 상태 분기:
- *   - Running: `EnginePort.intervene()`가 백엔드별 전달 방식을 감춘다.
- *     현재 전달하면 `{delivered: true}`, 지금 전달할 수 없으면 사유와 다음 소비 시점을
- *     포함한 queue/defer 결과를 반환한다.
-   *   - Completed/Error/Interrupted: user_message를 박고 status를 "running"으로 돌린 뒤
-   *     queue push + session_updated + onResume 콜백 호출 → `{autoResumed}`. 콜백은 호출자가
+ *   - Running: durable delivery D가 소유하고 runner cancel은 advisory다.
+ *     accept 즉시 `{delivered: true}`를 반환하고 exact D가 다음 generation을 소유한다.
+ *   - Completed/Error/Interrupted: user_message를 박고 status를 "running"으로 돌린 뒤
+   *     D를 queued로 투영한 뒤 onResume 콜백 호출 → `{autoResumed}`. 콜백은 호출자가
    *     task_executor.startExecution을 호출하도록 제공. design-principles §1(지식 경계) —
    *     task_manager는 executor를 import하지 않는다.
    *   - 미존재 task: `Error` throw — 호출자(dispatcher)가 sendError로 변환.

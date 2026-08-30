@@ -28,6 +28,10 @@ export type EventSessionEffect =
       lease_expires_at: string;
       review_state: string;
       expected_terminal_event_id?: number | null;
+      delivery_id?: string;
+      delivery_lease_owner?: string;
+      previous_execution_generation?: number;
+      previous_execution_command_id?: string;
       updated_at: string;
     }
   | {

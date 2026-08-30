@@ -99,7 +99,7 @@ function V3DashboardContent() {
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
   const setActiveBoardDocument = useDashboardStore((state) => state.setActiveBoardDocument);
-  const { nodes, nodeConnectivity } = useSessionNodeConnectivity();
+  const { nodeConnectivity } = useSessionNodeConnectivity();
   const taskStarChanges = useTaskStarChanges();
   const {
     daily,
@@ -245,10 +245,7 @@ function V3DashboardContent() {
   const activeSession = catalogSessions.find((session) => session.agentSessionId === activeSessionKey)
     ?? sessions.find((session) => session.agentSessionId === activeSessionKey)
     ?? (activeSessionSummary?.agentSessionId === activeSessionKey ? activeSessionSummary : undefined);
-  const chatInputDisabled = activeSessionKey !== null && (
-    !activeSession?.nodeId || nodes.get(activeSession.nodeId)?.status !== "connected"
-  );
-  const fileUploadUrl = activeSession?.nodeId && !chatInputDisabled
+  const fileUploadUrl = activeSession?.nodeId
     ? `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSession.nodeId)}`
     : undefined;
   const applyMobileState = useCallback((next: MobilePlannerState) => {
@@ -463,7 +460,6 @@ function V3DashboardContent() {
           focusRequest={sessionPanel.focusRequest}
           onFocusRequestHandled={sessionPanel.acknowledgeFocusRequest}
           chatOpen={chatOpen}
-          chatInputDisabled={chatInputDisabled}
           fileUploadUrl={fileUploadUrl}
           sessionDefaults={sessionDefaults}
           mobileMode={mobileMode}

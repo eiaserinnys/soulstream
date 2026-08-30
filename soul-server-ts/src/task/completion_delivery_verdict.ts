@@ -12,22 +12,17 @@ export type CompletionDeliveryVerdict =
 export function classifyCompletionDeliveryResult(
   result: AddInterventionResult,
 ): CompletionDeliveryVerdict {
-  if ("queued" in result) {
-    return { kind: "accepted", disposition: "queued" };
-  }
-  if ("delivered" in result && result.delivered === true) {
+  if ("delivered" in result) {
     return { kind: "accepted", disposition: "delivered" };
   }
   if ("autoResumed" in result) {
     return { kind: "accepted", disposition: "auto_resume" };
   }
-  if ("delivered" in result && result.delivered === null) {
-    return { kind: "unknown", reason: result.reason };
-  }
   if ("suppressed" in result) {
     return classifySuppressedReason(result.reason);
   }
-  return { kind: "failed", reason: result.reason };
+  const exhaustive: never = result;
+  throw new Error(`Unknown completion delivery result: ${JSON.stringify(exhaustive)}`);
 }
 
 export function classifyCompletionDeliveryAck(body: unknown): CompletionDeliveryVerdict {

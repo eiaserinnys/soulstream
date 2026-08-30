@@ -2,9 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   EngineExecuteParams,
-  EngineInterventionResult,
   EnginePort,
-  EngineUserInput,
 } from "../engine/protocol.js";
 import {
   newExecutionOwnerToken,
@@ -45,7 +43,7 @@ export interface RunnerCommandDispatcher {
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame>;
   recoverFrames?(commandId?: string): AsyncIterable<RunnerEventFrame>;
   prepareSession(agentSessionId: string): Promise<void>;
-  interrupt(): Promise<boolean>;
+  interrupt(cancel?: RunnerAdvisoryCancel): Promise<boolean>;
   close(): Promise<void>;
   detachHost(): Promise<void>;
   releaseEventStreamRegistration?(): Promise<void>;
@@ -59,43 +57,21 @@ export interface RunnerCommandDispatcher {
     timeoutMs: number;
   } | undefined;
   waitForSessionAck(): Promise<number | null>;
-  stageIntervention?(input: RunnerInterventionStageInput): Promise<RunnerInterventionStageResult>;
-  applyIntervention?(
-    input: RunnerInterventionApplyInput,
-  ): Promise<EngineInterventionResult>;
-  discardIntervention?(interventionId: string): Promise<void>;
-  recoverPendingInterventions?(): Promise<RunnerPendingIntervention[]>;
   prepareExecutionIdentity?(ownerToken?: string): Promise<ExecutionIdentityProof>;
   rollbackExecutionIdentity?(proof: ExecutionIdentityProof): Promise<void>;
 }
 
-export interface RunnerInterventionStageInput {
-  interventionId: string;
-  message: Record<string, unknown>;
-  event?: Record<string, unknown>;
-  queued: boolean;
-}
-
-export interface RunnerInterventionStageResult {
-  eventSourceSeq: number | null;
-  queuePosition: number;
-  /** Undefined is legacy/in-process and is treated as child-runner durability. */
-  durability?: "runner" | "host_fallback";
-}
-
-export interface RunnerInterventionApplyInput {
-  interventionId: string;
-  input: EngineUserInput;
-}
-
-export interface RunnerPendingIntervention {
-  interventionId: string;
-  message: Record<string, unknown>;
+export interface RunnerAdvisoryCancel {
+  sessionId: string;
+  executionGeneration: number;
+  executionCommandId: string;
+  deliveryId: string;
+  deliveryClaimOwner: string;
 }
 
 export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher {
   private readonly eventStreams = new Map<string, InProcessRunnerFrameChannel>();
-  private activeExecuteCommandId: string | undefined;
+  private activeExecuteCommand: Extract<RunnerCommandFrame, { kind: "execute" }> | undefined;
   private readonly attachedRegistrationId = `in-process:${randomUUID()}`;
 
   constructor(
@@ -126,11 +102,15 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
         case "execution_status":
           return runnerCommandResultFrame(command.commandId, {
             status: "ok",
-            data: { executionCommandId: this.activeExecuteCommandId ?? null },
+            data: { executionCommandId: this.activeExecuteCommand?.commandId ?? null },
           });
-        case "stage_intervention":
-          throw new Error("durable intervention inbox requires a process runner");
         case "interrupt": {
+          if (command.cancel && !matchesAdvisoryCancel(command.cancel, this.activeExecuteCommand)) {
+            return runnerCommandResultFrame(command.commandId, {
+              status: "ok",
+              data: { interrupted: false },
+            });
+          }
           const interrupted = await this.target.interrupt();
           return runnerCommandResultFrame(command.commandId, {
             status: "ok",
@@ -199,8 +179,13 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     await this.close();
   }
 
-  async interrupt(): Promise<boolean> {
-    const result = await this.dispatch(interruptCommandFrame(`interrupt:${randomUUID()}`));
+  async interrupt(cancel?: RunnerAdvisoryCancel): Promise<boolean> {
+    const result = await this.dispatch(interruptCommandFrame(
+      cancel
+        ? `interrupt:${cancel.executionGeneration}:${cancel.deliveryId}`
+        : `interrupt:${randomUUID()}`,
+      cancel,
+    ));
     assertCommandAccepted(result);
     return result.result.status === "ok"
       && isRecord(result.result.data)
@@ -216,7 +201,7 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   }
 
   hasActiveExecution(): boolean {
-    return this.activeExecuteCommandId !== undefined;
+    return this.activeExecuteCommand !== undefined;
   }
 
   async sendControlFrame(frame: RunnerControlFrame): Promise<boolean> {
@@ -238,8 +223,9 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     signal: AbortSignal;
     timeoutMs: number;
   } | undefined {
-    if (!this.activeExecuteCommandId) return undefined;
-    return this.eventStreams.get(this.activeExecuteCommandId)?.requestContext(correlationId);
+    const activeCommandId = this.activeExecuteCommand?.commandId;
+    if (!activeCommandId) return undefined;
+    return this.eventStreams.get(activeCommandId)?.requestContext(correlationId);
   }
 
   async waitForSessionAck(): Promise<number | null> {
@@ -247,9 +233,9 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   }
 
   private startExecution(command: Extract<RunnerCommandFrame, { kind: "execute" }>): void {
-    if (this.activeExecuteCommandId !== undefined) {
+    if (this.activeExecuteCommand !== undefined) {
       throw new Error(
-        `Runner execute command already active: ${this.activeExecuteCommandId}`,
+        `Runner execute command already active: ${this.activeExecuteCommand.commandId}`,
       );
     }
     let channel: InProcessRunnerFrameChannel;
@@ -270,7 +256,7 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
       );
     }
     this.eventStreams.set(command.commandId, channel);
-    this.activeExecuteCommandId = command.commandId;
+    this.activeExecuteCommand = command;
   }
 
   private async *executeCommand(
@@ -290,19 +276,28 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
       for await (const frame of channel) {
         if (
           isLogicalTurnCompleteFrame(frame)
-          && this.activeExecuteCommandId === commandId
+          && this.activeExecuteCommand?.commandId === commandId
         ) {
-          this.activeExecuteCommandId = undefined;
+          this.activeExecuteCommand = undefined;
         }
         yield frame;
       }
     } finally {
       this.eventStreams.delete(commandId);
-      if (this.activeExecuteCommandId === commandId) {
-        this.activeExecuteCommandId = undefined;
+      if (this.activeExecuteCommand?.commandId === commandId) {
+        this.activeExecuteCommand = undefined;
       }
     }
   }
+}
+
+function matchesAdvisoryCancel(
+  cancel: RunnerAdvisoryCancel,
+  active: Extract<RunnerCommandFrame, { kind: "execute" }> | undefined,
+): boolean {
+  return active?.params.agentSessionId === cancel.sessionId
+    && active.params.executionGeneration === cancel.executionGeneration
+    && active.params.executionCommandId === cancel.executionCommandId;
 }
 
 export async function invokeEngineCapability(

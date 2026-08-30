@@ -423,7 +423,6 @@ function taskFromSessionRow(row: SessionRow): Task {
     createdAt: row.created_at ?? new Date(),
     lastEventId: row.last_event_id ?? 0,
     lastReadEventId: row.last_read_event_id ?? 0,
-    interventionQueue: [],
   };
 }
 

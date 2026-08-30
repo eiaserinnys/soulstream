@@ -44,7 +44,6 @@ function makeChild(overrides: Partial<Task> = {}): Task {
     terminalEventId: 5,
     lastReadEventId: 0,
     lastAssistantText: "hello world from child",
-    interventionQueue: [],
     ...overrides,
   };
 }

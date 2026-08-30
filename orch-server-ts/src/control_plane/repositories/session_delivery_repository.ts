@@ -53,6 +53,21 @@ export class SessionDeliveryRepository {
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
+  async getNextAcceptedForTarget(
+    targetSessionId: string,
+  ): Promise<SessionDeliveryRow | null> {
+    const rows = await this.sql<SessionDeliveryRow[]>`
+      SELECT *
+      FROM session_deliveries
+      WHERE target_session_id = ${targetSessionId}
+        AND aggregate_state = 'pending'
+        AND state IN ('claimed', 'dispatching', 'queued')
+      ORDER BY enqueue_sequence ASC
+      LIMIT 1
+    `;
+    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
+  }
+
   async getByRelation(relationKey: string): Promise<SessionDeliveryRow | null> {
     const rows = await this.sql<SessionDeliveryRow[]>`
       SELECT *
@@ -335,11 +350,13 @@ export class SessionDeliveryRepository {
   async markConsumed(
     deliveryId: string,
     consumedTurnId: string,
+    leaseOwner?: string,
   ): Promise<SessionDeliveryRow | null> {
     const consumed = await markSessionDeliveryConsumed(
       this.sql,
       deliveryId,
       consumedTurnId,
+      leaseOwner,
     );
     return consumed ? normalizeDeliveryRow(consumed) : null;
   }

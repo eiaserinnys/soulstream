@@ -168,7 +168,6 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
       createdAt,
       lastEventId: 0,
       lastReadEventId: 0,
-      interventionQueue: [],
     });
     expect(task?.profileId).toBeUndefined();
     expect(task?.codexThreadId).toBeUndefined();

@@ -61,7 +61,11 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
         ${effect.review_state},
         ${effect.expected_terminal_event_id ?? null},
         ${effect.expected_terminal_event_id !== undefined},
-        ${new Date(effect.updated_at)}
+        ${new Date(effect.updated_at)},
+        ${effect.delivery_id ?? null},
+        ${effect.delivery_lease_owner ?? null},
+        ${effect.previous_execution_generation ?? null},
+        ${effect.previous_execution_command_id ?? null}
       )
     `;
     const application = canonicalTransitionApplication(rows, "execution acquire");

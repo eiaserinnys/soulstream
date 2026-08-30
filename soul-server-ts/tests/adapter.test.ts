@@ -291,7 +291,6 @@ function recoveryTask(agentSessionId: string): Task {
     createdAt: new Date("2026-08-13T09:00:00.000Z"),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
   };
 }
 
@@ -403,7 +402,6 @@ describe("UpstreamAdapter", () => {
       createdAt: new Date("2026-08-19T09:00:00.000Z"),
       lastEventId: 0,
       lastReadEventId: 0,
-      interventionQueue: [],
     }));
     const startExecution = vi.fn();
     const taskManager = {

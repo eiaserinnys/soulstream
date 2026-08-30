@@ -1,6 +1,5 @@
 import { dirname } from "node:path";
 
-import { compareInterventionPriority } from "../task/task_intervention_queue.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 import type { EventOutboxPumpStore } from "../upstream/event_outbox_pump.js";
 import {
@@ -162,70 +161,7 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     return await this.runner.readPendingIpcFrames();
   }
 
-  async readPendingInterventions(): Promise<Array<{
-    interventionId: string;
-    message: Record<string, unknown>;
-  }>> {
-    return (await this.inspectPendingInterventions()).interventions;
-  }
-
-  async inspectPendingInterventions(): Promise<{
-    interventions: Array<{
-      interventionId: string;
-      message: Record<string, unknown>;
-    }>;
-    childInterventionIds: string[];
-    shadowedFallbackIds: string[];
-  }> {
-    const child = await this.runner.readPendingInterventions();
-    const merged = new Map(child.map((entry) => [entry.interventionId, entry]));
-    const shadowedFallbackIds: string[] = [];
-    for (const fallback of this.host.readPendingInterventionFallbacks(this.sessionId)) {
-      // runner.sqlite is the first durable owner. A later host fallback with the
-      // same deterministic identity is a recovery copy, not a second payload
-      // authority, even if regenerated prose differs.
-      if (merged.has(fallback.interventionId)) {
-        shadowedFallbackIds.push(fallback.interventionId);
-        continue;
-      }
-      merged.set(fallback.interventionId, {
-        interventionId: fallback.interventionId,
-        message: fallback.message,
-      });
-    }
-    return {
-      interventions: [...merged.values()].sort((left, right) =>
-        compareInterventionPriority(left.message, right.message)),
-      childInterventionIds: child.map((entry) => entry.interventionId),
-      shadowedFallbackIds,
-    };
-  }
-
-  stageInterventionFallback(input: {
-    interventionId: string;
-    message: Record<string, unknown>;
-    event?: Record<string, unknown>;
-    queued: boolean;
-  }): { queuePosition: number } {
-    return this.host.stageInterventionFallback({
-      sessionId: this.sessionId,
-      ...input,
-      stagedAt: new Date().toISOString(),
-    });
-  }
-
-  readInterventionFallback(interventionId: string) {
-    return this.host.readInterventionFallback(this.sessionId, interventionId);
-  }
-
-  removeInterventionFallback(interventionId: string): void {
-    this.host.removeInterventionFallback(this.sessionId, interventionId);
-  }
-
-  /**
-   * host_acked=0 is CHECK-limited to engine_event, whose non-null outbox_source_seq has an outbox FK.
-   * stageRunnerIntervention passes requireBootstrap(), so an empty ledger also proves an empty inbox.
-   */
+  /** host_acked=0 is limited to engine events with an outbox foreign key. */
   async hasPendingDurableWork(): Promise<boolean> {
     const acknowledgedThrough = await this.readAcknowledgedThrough();
     if (acknowledgedThrough === null) return false;

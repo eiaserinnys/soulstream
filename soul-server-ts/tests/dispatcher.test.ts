@@ -75,7 +75,6 @@ function createDispatcher(opts: {
       createdAt: new Date(),
       lastEventId: 0,
       lastReadEventId: 0,
-      interventionQueue: [],
     }));
 
   const defaultTaskManager: Partial<TaskManager> = {
@@ -100,7 +99,6 @@ function createDispatcher(opts: {
         createdAt: new Date(),
         lastEventId: 0,
         lastReadEventId: 0,
-        interventionQueue: [],
       };
       createdTasks.push(task);
       return task;
@@ -467,7 +465,6 @@ describe("CommandDispatcher.create_session", () => {
         createdAt: new Date(),
         lastEventId: 0,
         lastReadEventId: 0,
-        interventionQueue: [],
       })),
     };
     const { dispatcher, sent, te } = createDispatcher({ taskManager });
@@ -851,7 +848,6 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       createdAt: new Date(),
       lastEventId: 0,
       lastReadEventId: 0,
-      interventionQueue: [],
     };
     const activation = createExecutionActivation();
     const addIntervention = vi.fn(async (_params, onResume) => {
@@ -1028,12 +1024,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       terminationReason: undefined,
       terminationDetail: undefined,
     });
-    expect(resumedTask.interventionQueue).toEqual([
-      expect.objectContaining({
-        text: "이어가",
-        user: "browser",
-      }),
-    ]);
+    expect(resumedTask).toMatchObject({ prompt: "이어가", clientId: "browser" });
   });
 
   it("미존재 task에 intervene → addIntervention throw → error wire", async () => {

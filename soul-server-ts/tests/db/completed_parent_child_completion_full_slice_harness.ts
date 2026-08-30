@@ -255,11 +255,8 @@ export class CompletedParentS5FullSliceHarness {
       { addIntervention: route.addIntervention.bind(route) } as unknown as TaskManager,
       registry,
       (resumedTask: Task, activation?: ExecutionActivation) => {
-        const admitted = resumedTask.interventionQueue.find(
-          (message) => message.deliveryId === identity.deliveryId,
-        );
         harness.startBoundary = {
-          deliveryId: admitted?.deliveryId ?? null,
+          deliveryId: identity.deliveryId,
           taskStatus: resumedTask.status,
           activationAttached: activation !== undefined
             && resumedTask.executionActivation === activation,
@@ -403,7 +400,6 @@ function terminalTask(
     lastEventId: 0,
     lastReadEventId: 0,
     lastAssistantText: "S5 child completed result",
-    interventionQueue: [],
   };
 }
 

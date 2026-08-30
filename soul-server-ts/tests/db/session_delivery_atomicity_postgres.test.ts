@@ -184,6 +184,95 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
   });
 
+  it("atomically hands exact delivery D from generation G to G+1 and fences late G release", async () => {
+    const acquiredAt = new Date("2026-08-30T03:23:16.000Z");
+    await harness.sql`
+      INSERT INTO sessions (
+        session_id, session_type, status, agent_id, execution_generation,
+        execution_manifest_id, execution_runtime_env_identity,
+        execution_registration_id, execution_pid, execution_start_identity,
+        execution_command_id, execution_lease_expires_at
+      ) VALUES (
+        'handoff-session', 'claude', 'running', 'roselin', 4,
+        'manifest-g', 'runtime-g', 'registration-g', 4104, 'start-g',
+        'execution-g', ${new Date("2026-08-30T03:24:16.000Z")}
+      )
+    `;
+    await repository.register({
+      deliveryId: "delivery-exact-d",
+      targetSessionId: "handoff-session",
+      relationKey: "human:handoff-session:delivery-exact-d",
+      completionId: "message:delivery-exact-d",
+      intent: "human_live_steer",
+      source: "user_message",
+      payloadHash: "hash-exact-d",
+      payload: { text: "canonical D", user: "human" },
+    });
+    await repository.claimForTarget(
+      "delivery-exact-d",
+      "handoff-session",
+      "claim-g",
+    );
+    await repository.beginDispatch("delivery-exact-d", "claim-g");
+
+    const handoff = await harness.sql<Array<{
+      applied: boolean;
+      execution_generation: string | number;
+    }>>`
+      SELECT * FROM session_acquire_execution_ownership(
+        'handoff-session', 'manifest-g1', 'runtime-g1', 'registration-g1',
+        4105, 'start-g1', 'delivery:delivery-exact-d',
+        ${new Date("2026-08-30T03:25:16.000Z")}, 'not_required', NULL, FALSE,
+        ${acquiredAt}, 'delivery-exact-d', 'claim-g', 4, 'execution-g'
+      )
+    `;
+
+    expect(handoff).toMatchObject([{ applied: true, execution_generation: "5" }]);
+    await expect(repository.get("delivery-exact-d")).resolves.toMatchObject({
+      state: "queued",
+      aggregate_state: "pending",
+      lease_owner: "delivery:delivery-exact-d",
+      lease_expires_at: null,
+    });
+
+    const lateRelease = await harness.sql<Array<{ applied: boolean }>>`
+      SELECT * FROM session_release_execution_ownership(
+        'handoff-session', 4, 'execution-g', 'failed', 'late cancel result',
+        'not_required', NULL, 901, ${new Date("2026-08-30T03:23:18.000Z")}
+      )
+    `;
+    expect(lateRelease).toMatchObject([{ applied: false }]);
+    await expect(harness.sql<Array<{
+      status: string;
+      execution_generation: string | number;
+      execution_command_id: string;
+      termination_event_id: number | null;
+    }>>`
+      SELECT status, execution_generation, execution_command_id, termination_event_id
+      FROM sessions WHERE session_id = 'handoff-session'
+    `).resolves.toEqual([{
+      status: "running",
+      execution_generation: "5",
+      execution_command_id: "delivery:delivery-exact-d",
+      termination_event_id: null,
+    }]);
+
+    await expect(repository.markConsumed(
+      "delivery-exact-d",
+      "event:stale-g-model-event",
+      "execution-g",
+    )).resolves.toBeNull();
+    await expect(repository.markConsumed(
+      "delivery-exact-d",
+      "event:g1-first-model-event",
+      "delivery:delivery-exact-d",
+    )).resolves.toMatchObject({ state: "consumed" });
+    await expect(repository.markConsumed(
+      "delivery-exact-d",
+      "event:g1-duplicate",
+    )).resolves.toBeNull();
+  });
+
   it("discards an unpublished notification projection when its aggregate is consumed", async () => {
     await register("delivery-projection-discard", "relation-projection-discard");
     await repository.claimForTarget(
@@ -509,7 +598,6 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       status: "running" as const,
       lastEventId: 447,
       lastReadEventId: 390,
-      interventionQueue: [],
       createdAt: new Date(),
     };
 
@@ -760,7 +848,6 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       status: "completed",
       lastEventId: 9,
       lastReadEventId: 0,
-      interventionQueue: [],
       createdAt: new Date(),
     });
 
@@ -770,11 +857,9 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       status: "completed" as const,
       lastEventId: 9,
       lastReadEventId: 0,
-      interventionQueue: [],
       createdAt: new Date(),
     };
     const getTask = vi.fn().mockReturnValue(task);
-    const queueOnly = vi.fn();
     const deliver = vi.fn();
     const resume = vi.fn();
     const publish = vi.fn();
@@ -783,7 +868,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       getTask,
       loadEvictedTask: vi.fn(),
       rememberTask: vi.fn(),
-      runningInterventionTransition: { queueOnly, deliver },
+      runningInterventionTransition: { deliver },
       autoResumeTransition: { resume },
       deliveryLedgerGate: gate,
       sessionNotificationPublisher: { publish },
@@ -794,7 +879,6 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       reason: "delivery_consumed",
     });
     expect(getTask).toHaveBeenCalledOnce();
-    expect(queueOnly).not.toHaveBeenCalled();
     expect(deliver).not.toHaveBeenCalled();
     expect(resume).not.toHaveBeenCalled();
     expect(wake).not.toHaveBeenCalled();
@@ -817,7 +901,6 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       status: "running",
       lastEventId: 44,
       lastReadEventId: 0,
-      interventionQueue: [],
       createdAt: new Date(),
     });
 
@@ -827,11 +910,9 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       status: "running" as const,
       lastEventId: 44,
       lastReadEventId: 0,
-      interventionQueue: [],
       createdAt: new Date(),
     };
     const getTask = vi.fn().mockReturnValue(task);
-    const queueOnly = vi.fn();
     const deliver = vi.fn();
     const resume = vi.fn();
     const publish = vi.fn();
@@ -840,7 +921,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       getTask,
       loadEvictedTask: vi.fn(),
       rememberTask: vi.fn(),
-      runningInterventionTransition: { queueOnly, deliver },
+      runningInterventionTransition: { deliver },
       autoResumeTransition: { resume },
       deliveryLedgerGate: gate,
       sessionNotificationPublisher: { publish },
@@ -870,7 +951,6 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       consumed_at: expect.any(Date),
     });
     expect(getTask).toHaveBeenCalledOnce();
-    expect(queueOnly).not.toHaveBeenCalled();
     expect(deliver).not.toHaveBeenCalled();
     expect(resume).not.toHaveBeenCalled();
     expect(wake).not.toHaveBeenCalled();

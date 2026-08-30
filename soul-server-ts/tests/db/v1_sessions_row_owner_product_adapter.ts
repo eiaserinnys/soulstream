@@ -74,7 +74,11 @@ class CurrentProductBoundary implements V1OwnerBoundary {
         'not_required',
         NULL,
         FALSE,
-        ${input.acquiredAt}
+        ${input.acquiredAt},
+        NULL,
+        NULL,
+        NULL,
+        NULL
       )
     `;
     const row = requireRow(rows[0], input.sessionId);

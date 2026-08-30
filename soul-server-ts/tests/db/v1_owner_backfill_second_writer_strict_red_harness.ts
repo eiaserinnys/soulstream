@@ -387,7 +387,6 @@ export function makeOwnerNullTask(sessionId: string): Task {
     createdAt: new Date(BASE_TIME_MS),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
     hydratedFromDb: true,
   };
 }

@@ -215,7 +215,7 @@ export class ExecutionContextBuilder {
   /**
    * Python `build(task, claude_runner)` 정본.
    *
-   * 호출 시점은 task_executor의 *신규 첫 turn 진입 전* (interventionQueue 비어있을 때).
+   * 호출 시점은 task_executor의 canonical delivery 없는 신규 첫 turn 진입 전.
    * Auto-resume·intervention turn은 본 helper 호출 안 함 — Python `_resolve_folder` L100
    * (`task.resume_session_id is None`) 정합.
    */

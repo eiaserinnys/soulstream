@@ -13,7 +13,6 @@ import { formatContextItems } from "../context/prompt_assembler.js";
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { truncateClaudeTextToEstimatedTokens } from "./claude_context_recovery.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
-import { dequeueInterventions } from "./task_intervention_queue.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 import { effectiveTaskBackend } from "./task_model_preset.js";
@@ -34,8 +33,6 @@ export interface TaskTurnInput {
   imageAttachmentPaths: string[];
   systemPrompt?: string;
   inputUuid?: string;
-  runnerInterventionId?: string;
-  runnerInterventionIds?: string[];
   turnOrigin?: TurnOrigin;
   interventions?: InterventionMessage[];
   backendSessionRolloverFrom?: string;
@@ -55,10 +52,6 @@ export class TaskTurnInputBuilder {
   constructor(private readonly deps: TaskTurnInputBuilderDeps) {}
 
   async prepareInitialTurnInput(task: Task, agent: AgentProfile): Promise<TaskTurnInput> {
-    if (task.interventionQueue.length > 0) {
-      return this.prepareFollowupTurnInput(task, agent, dequeueInterventions(task));
-    }
-
     const ctx = await this.buildContext(task, agent);
     await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx);
     this.recordInitialContextInjection(task);
@@ -101,18 +94,11 @@ export class TaskTurnInputBuilder {
     const inputUuid = firstIntervention.deliveryId
       ? buildDeliveryInputUuid(firstIntervention.deliveryId)
       : undefined;
-    const runnerInterventionIds = interventions
-      .map((message) => message.runnerInterventionId)
-      .filter((id): id is string => id !== undefined);
     return {
       prompt,
       imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
       ...(inputUuid ? { inputUuid } : {}),
-      ...(firstIntervention.runnerInterventionId
-        ? { runnerInterventionId: firstIntervention.runnerInterventionId }
-        : {}),
-      ...(runnerInterventionIds.length > 0 ? { runnerInterventionIds } : {}),
       turnOrigin: interventionTurnOrigin(firstIntervention, inputUuid),
       interventions,
     };
@@ -155,12 +141,6 @@ export class TaskTurnInputBuilder {
           }
         : {}),
       ...(failedInput.inputUuid !== undefined ? { inputUuid: failedInput.inputUuid } : {}),
-      ...(failedInput.runnerInterventionId !== undefined
-        ? { runnerInterventionId: failedInput.runnerInterventionId }
-        : {}),
-      ...(failedInput.runnerInterventionIds !== undefined
-        ? { runnerInterventionIds: failedInput.runnerInterventionIds }
-        : {}),
       ...(failedInput.turnOrigin !== undefined
         ? { turnOrigin: failedInput.turnOrigin }
         : {}),

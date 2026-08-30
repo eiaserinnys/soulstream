@@ -26,11 +26,8 @@ import {
 } from "../../src/task/task_executor.js";
 import { TaskDeliveryTurnReceipt } from
   "../../src/task/task_delivery_turn_receipt.js";
-import { TaskDeliveryLedgerGate } from
-  "../../src/task/task_delivery_ledger_gate.js";
 import { ExecutionOwnershipBackoff } from
   "../../src/task/execution_ownership_backoff.js";
-import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -81,7 +78,61 @@ function makeTask(): Task {
     createdAt: new Date(),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
+  };
+}
+
+function makeCanonicalDeliveryRecorder(
+  targetSessionId: string,
+  initial?: Pick<InterventionMessage, "text" | "user">,
+) {
+  const accepted = new Map<string, InterventionMessage>();
+  let sequence = 0;
+  const accept = (message: Pick<InterventionMessage, "text" | "user">) => {
+    sequence += 1;
+    const deliveryId = `test-delivery-${sequence}`;
+    const canonical: InterventionMessage = {
+      ...message,
+      deliveryId,
+      deliveryLeaseOwner: `test-claim-${sequence}`,
+      deliveryIntent: "human_live_steer",
+    };
+    accepted.set(deliveryId, canonical);
+    return canonical;
+  };
+  if (initial) accept(initial);
+  return {
+    accept,
+    async nextAcceptedForTarget(sessionId: string) {
+      if (sessionId !== targetSessionId) return undefined;
+      return accepted.values().next().value as InterventionMessage | undefined;
+    },
+    async acceptedDelivery(deliveryId: string, sessionId: string) {
+      const message = sessionId === targetSessionId
+        ? accepted.get(deliveryId)
+        : undefined;
+      if (!message) throw new Error(`canonical test delivery missing: ${deliveryId}`);
+      return message;
+    },
+    async recordConsumed(message: InterventionMessage) {
+      if (message.deliveryId) accepted.delete(message.deliveryId);
+    },
+  };
+}
+
+function makeFakeContextBuilder(ctx: {
+  effectiveSystemPrompt?: string;
+  combinedContextItems: Array<{ key: string; label: string; content: unknown }>;
+  assembledPrompt: string;
+}) {
+  return {
+    build: vi.fn(async () => ctx),
+    buildFollowupContext: vi.fn(async () => ({
+      contextItems: [{
+        key: "running_sessions",
+        label: "Running Sessions",
+        content: { status: "ok", sessions: [] },
+      }],
+    })),
   };
 }
 
@@ -289,7 +340,6 @@ describe("TaskExecutor.startExecution", () => {
   it("gate OFF executor never enters the delivery receipt async boundary", async () => {
     const mocks = makeMocks();
     const observe = vi.spyOn(TaskDeliveryTurnReceipt.prototype, "observe");
-    const consume = vi.spyOn(TaskDeliveryTurnReceipt.prototype, "consume");
     const executor = new TaskExecutor(
       () => makeFakeEngine([
         { type: "assistant_message", content: "legacy", timestamp: 1 },
@@ -305,477 +355,7 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     expect(observe).not.toHaveBeenCalled();
-    expect(consume).not.toHaveBeenCalled();
     observe.mockRestore();
-    consume.mockRestore();
-  });
-
-  it("#784 turn-start T0 receipt를 늦은 ACK의 T1 뒤 consume까지 보존한다", async () => {
-    const mocks = makeMocks();
-    const message: InterventionMessage = {
-      text: "child result",
-      user: "agent",
-      deliveryId: "99999999-9999-4999-8999-999999999999",
-      deliveryIntent: "completion_notification",
-    };
-    const deliveryRecorder = {
-      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-    };
-    const executor = new TaskExecutor(
-      () => makeFakeEngine([
-        { type: "session", session_id: "claude-session" },
-        { type: "assistant_message", content: "consumed", timestamp: 1 },
-      ] as SSEEventPayload[]),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      deliveryRecorder,
-    );
-    const task = makeTask();
-    task.interventionQueue.push(message);
-
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
-    expect(task.lastEventId).not.toBe(0);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
-      message,
-      task,
-      "event:0",
-    );
-    expect(deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]).toBeLessThan(
-      deliveryRecorder.recordConsumed.mock.invocationCallOrder[0]!,
-    );
-    const sessionEventCall = mocks.persistEvent.mock.calls.findIndex(
-      (call) => (call[1] as { type: string }).type === "session",
-    );
-    expect(mocks.persistEvent.mock.invocationCallOrder[sessionEventCall]).toBeLessThan(
-      deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]!,
-    );
-  });
-
-  it("queued delivery execute 실패는 receipt 없이 consume하지 않는다", async () => {
-    const mocks = makeMocks();
-    const message: InterventionMessage = {
-      text: "runtime result",
-      user: "system",
-      deliveryId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      deliveryIntent: "runtime_followup",
-    };
-    const deliveryRecorder = {
-      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-    };
-    const executor = new TaskExecutor(
-      () => makeFakeEngine([], { throwAt: 0 }),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      deliveryRecorder,
-    );
-    const task = makeTask();
-    task.interventionQueue.push(message);
-
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
-  });
-
-  it("iterator 성공 뒤 ACK barrier 실패는 delivery를 consume하지 않는다", async () => {
-    const mocks = makeMocks();
-    mocks.waitForSessionAck.mockRejectedValueOnce(new Error("post-iterator ACK failed"));
-    const message: InterventionMessage = {
-      text: "completion result",
-      user: "agent",
-      deliveryId: "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1",
-      deliveryIntent: "completion_notification",
-      source: "completion_notifier",
-    };
-    const deliveryRecorder = {
-      recordTurnStarted: vi.fn().mockResolvedValue(true),
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-    };
-    const executor = new TaskExecutor(
-      () => makeFakeEngine([
-        { type: "assistant_message", content: "observed", timestamp: 1 },
-      ] as SSEEventPayload[]),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      deliveryRecorder,
-    );
-    const task = makeTask();
-    task.interventionQueue.push(message);
-
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
-  });
-
-  it("awaiting-runtime synthesized failure는 observed delivery를 consume하지 않는다", async () => {
-    const mocks = makeMocks();
-    const message: InterventionMessage = {
-      text: "runtime result",
-      user: "system",
-      deliveryId: "a2a2a2a2-a2a2-4a2a-8a2a-a2a2a2a2a2a2",
-      deliveryIntent: "runtime_followup",
-    };
-    const deliveryRecorder = {
-      recordTurnStarted: vi.fn().mockResolvedValue(true),
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-    };
-    const executor = new TaskExecutor(
-      () => ({
-        ...makeFakeEngine([
-          {
-            type: "claude_runtime_session_state",
-            state: "running",
-            session_id: "claude-awaiting-runtime",
-          },
-          {
-            type: "claude_runtime_task_started",
-            task_id: "runtime-pending",
-            task_type: "local_agent",
-          },
-          { type: "assistant_message", content: "foreground done", timestamp: 1 },
-          { type: "complete", result: "foreground done", timestamp: 2 },
-        ] as SSEEventPayload[]),
-        backendId: "claude" as const,
-      }),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      deliveryRecorder,
-    );
-    const task = makeTask();
-    task.profileId = claudeAgent.id;
-    task.interventionQueue.push(message);
-
-    executor.startExecution(task, claudeAgent);
-    await task.executionPromise;
-
-    expect(task.status).toBe("error");
-    expect(task.error).toContain("remained active");
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalled();
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    "completion_notification",
-    "human_live_steer",
-  ] as const)(
-    "replays failed %s with the same delivery id and consumes only the successful resume",
-    async (deliveryIntent) => {
-      const mocks = makeMocks();
-      const deliveryId = `failed-replay-${deliveryIntent}`;
-      const message: InterventionMessage = {
-        text: "same durable input",
-        user: "user",
-        deliveryId,
-        deliveryIntent,
-        completionId: `completion-${deliveryId}`,
-        relationKey: deliveryIntent === "completion_notification"
-          ? `child_session:${deliveryId}`
-          : `user_message:${deliveryId}`,
-      };
-      let row: {
-        delivery_id: string;
-        state: string;
-        aggregate_state: string;
-        target_receipt_id?: string;
-      } = {
-        delivery_id: deliveryId,
-        state: "queued",
-        aggregate_state: "pending",
-      };
-      const markDelivered = vi.fn(async (_id: string, receiptId: string) => {
-        row = {
-          ...row,
-          state: "delivered",
-          aggregate_state: "delivered",
-          target_receipt_id: receiptId,
-        };
-        return row;
-      });
-      const markConsumed = vi.fn(async (_id: string, receiptId: string) => {
-        if (row.aggregate_state === "consumed") return null;
-        row = {
-          ...row,
-          state: "consumed",
-          aggregate_state: "consumed",
-          target_receipt_id: receiptId,
-        };
-        return row;
-      });
-      const gate = new TaskDeliveryLedgerGate(true, {
-        get: vi.fn(async () => row),
-        markDelivered,
-        markConsumed,
-        markConsumedByRelation: vi.fn().mockResolvedValue(null),
-        recordRelationConsumed: vi.fn().mockResolvedValue(undefined),
-      } as never);
-      let attempt = 0;
-      const executor = new TaskExecutor(
-        () => attempt++ === 0
-          ? makeFakeEngine([
-              { type: "assistant_message", content: "partial", timestamp: 1 },
-            ] as SSEEventPayload[], { throwAt: 1 })
-          : makeFakeEngine([
-              { type: "assistant_message", content: "done", timestamp: 2 },
-            ] as SSEEventPayload[]),
-        mocks.db,
-        mocks.persistence,
-        mocks.broadcaster,
-        silentLogger,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        gate,
-      );
-      const failedTask = makeTask();
-      failedTask.interventionQueue.push(message);
-
-      executor.startExecution(failedTask, agent);
-      await failedTask.executionPromise;
-
-      expect(failedTask.status).toBe("error");
-      expect(row).toMatchObject({ state: "queued", aggregate_state: "pending" });
-      expect(markConsumed).not.toHaveBeenCalled();
-
-      const resumedTask = makeTask();
-      resumedTask.interventionQueue.push(message);
-      executor.startExecution(resumedTask, agent);
-      await resumedTask.executionPromise;
-
-      expect(resumedTask.status).toBe("completed");
-      expect(row).toMatchObject({ state: "consumed", aggregate_state: "consumed" });
-      expect(markConsumed).toHaveBeenCalledTimes(1);
-      expect(markConsumed).toHaveBeenCalledWith(
-        deliveryId,
-        expect.stringMatching(/^event:/),
-      );
-      const release = vi.mocked(
-        mocks.persistence.releaseExecutionOwnershipAndWaitForApplication,
-      );
-      expect(release.mock.invocationCallOrder.at(-1)).toBeLessThan(
-        markConsumed.mock.invocationCallOrder[0]!,
-      );
-    },
-  );
-
-  it("does not consume a late successful turn when its terminal generation CAS loses", async () => {
-    const mocks = makeMocks();
-    const deliveryId = "late-generation-success";
-    const message: InterventionMessage = {
-      text: "old generation input",
-      user: "user",
-      deliveryId,
-      deliveryIntent: "human_live_steer",
-      completionId: `completion-${deliveryId}`,
-      relationKey: `user_message:${deliveryId}`,
-    };
-    let row = {
-      delivery_id: deliveryId,
-      state: "queued",
-      aggregate_state: "pending",
-    };
-    const markConsumed = vi.fn(async () => {
-      row = {
-        ...row,
-        state: "consumed",
-        aggregate_state: "consumed",
-      };
-      return row;
-    });
-    const gate = new TaskDeliveryLedgerGate(true, {
-      get: vi.fn(async () => row),
-      markConsumed,
-      markConsumedByRelation: vi.fn().mockResolvedValue(null),
-      recordRelationConsumed: vi.fn().mockResolvedValue(undefined),
-    } as never);
-    vi.mocked(
-      mocks.persistence.releaseExecutionOwnershipAndWaitForApplication,
-    ).mockResolvedValue({
-      eventId: 91,
-      applied: false,
-      canonicalSession: {
-        status: "interrupted",
-        termination_reason: "killed",
-        termination_detail: "newer generation already terminal",
-        review_state: "not_required",
-        last_assistant_text: null,
-        termination_event_id: 90,
-        updated_at: new Date().toISOString(),
-        last_event_id: 90,
-      },
-      canonicalExecutionOwnership: null,
-    });
-    const executor = new TaskExecutor(
-      () => makeFakeEngine([
-        { type: "assistant_message", content: "late success", timestamp: 1 },
-      ] as SSEEventPayload[]),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      gate,
-    );
-    const task = makeTask();
-    task.interventionQueue.push(message);
-
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(
-      mocks.persistence.releaseExecutionOwnershipAndWaitForApplication,
-    ).toHaveBeenCalledOnce();
-    expect(markConsumed).not.toHaveBeenCalled();
-    expect(row).toEqual({
-      delivery_id: deliveryId,
-      state: "queued",
-      aggregate_state: "pending",
-    });
-  });
-
-  it("turn-start receipt 기록 실패는 transcript recovery에 맡긴다", async () => {
-    const mocks = makeMocks();
-    const message: InterventionMessage = {
-      text: "child result",
-      user: "agent",
-      deliveryId: "abababab-abab-4bab-8bab-abababababab",
-      deliveryIntent: "completion_notification",
-    };
-    const deliveryRecorder = {
-      recordTurnStarted: vi.fn()
-        .mockRejectedValueOnce(new Error("transient database error")),
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-    };
-    const executor = new TaskExecutor(
-      () => makeFakeEngine([
-        { type: "error", error: "recoverable diagnostic" },
-        { type: "assistant_message", content: "consumed", timestamp: 1 },
-      ] as SSEEventPayload[]),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      deliveryRecorder,
-    );
-    const task = makeTask();
-    task.interventionQueue.push(message);
-
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
-  });
-
-  it("turn-start receipt가 없으면 iterator 종료만으로 consume하지 않는다", async () => {
-    const mocks = makeMocks();
-    const message: InterventionMessage = {
-      text: "runtime result",
-      user: "system",
-      deliveryId: "acacacac-acac-4cac-8cac-acacacacacac",
-      deliveryIntent: "runtime_followup",
-      source: "claude_runtime_task_followup",
-    };
-    const deliveryRecorder = {
-      recordTurnStarted: vi.fn().mockRejectedValue(new Error("database unavailable")),
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-    };
-    const executor = new TaskExecutor(
-      () => makeFakeEngine([
-        { type: "assistant_message", content: "observed", timestamp: 1 },
-      ] as SSEEventPayload[]),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      deliveryRecorder,
-    );
-    const task = makeTask();
-    task.interventionQueue.push(message);
-
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
-  });
-
-  it("error 이벤트만 관측한 turn은 receipt 없이 consume하지 않는다", async () => {
-    const mocks = makeMocks();
-    const message: InterventionMessage = {
-      text: "runtime result",
-      user: "system",
-      deliveryId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
-      deliveryIntent: "runtime_followup",
-    };
-    const deliveryRecorder = {
-      recordTurnStarted: vi.fn().mockResolvedValue(true),
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-    };
-    const executor = new TaskExecutor(
-      () => makeFakeEngine([
-        { type: "error", error: "recoverable diagnostic" },
-      ] as SSEEventPayload[]),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      deliveryRecorder,
-    );
-    const task = makeTask();
-    task.interventionQueue.push(message);
-
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
   it("정상 흐름: persistent 이벤트는 ingress, transient 이벤트만 wire + 완료 후 session_updated", async () => {
@@ -1316,10 +896,6 @@ describe("TaskExecutor.startExecution", () => {
       async interrupt() { return true; },
       async close() {},
     };
-    const deliveryRecorder = {
-      recordTurnStarted: vi.fn().mockResolvedValue(true),
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-    };
     const executor = new TaskExecutor(
       () => engine,
       mocks.db,
@@ -1329,17 +905,9 @@ describe("TaskExecutor.startExecution", () => {
       undefined,
       undefined,
       undefined,
-      undefined,
-      deliveryRecorder,
     );
     const task = makeTask();
     task.profileId = claudeAgent.id;
-    task.interventionQueue.push({
-      text: "retry after quota reset",
-      user: "user",
-      deliveryId: "a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3",
-      deliveryIntent: "human_live_steer",
-    });
 
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
@@ -1382,8 +950,6 @@ describe("TaskExecutor.startExecution", () => {
         termination_detail: "credential_alert",
       }),
     );
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalled();
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
   it("Claude runtime timeout fatal event clears pending runtime and finalizes as error", async () => {
@@ -1757,130 +1323,6 @@ describe("TaskExecutor.startExecution", () => {
     expect(() => executor.startExecution(task, agent)).toThrow(/admission in flight/);
   });
 
-  it("정상 turn 종료가 진행 중인 interrupt ACK를 기다려 completed로 덮지 않는다", async () => {
-    const mocks = makeMocks();
-    const turnStarted = deferred<void>();
-    const finishTurn = deferred<void>();
-    const engine: EnginePort = {
-      backendId: "codex",
-      workspaceDir: "/tmp/codex-default",
-      async *execute() {
-        turnStarted.resolve();
-        yield { type: "session", session_id: "thr-1" } as SSEEventPayload;
-        await finishTurn.promise;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-    const task = makeTask();
-    executor.startExecution(task, agent);
-    await turnStarted.promise;
-    const interrupt = deferred<boolean>();
-    task.interruptRequest = interrupt.promise.then((accepted) => {
-      if (accepted) task.status = "interrupted";
-      return accepted;
-    });
-    finishTurn.resolve();
-
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(task.status).toBe("running");
-    expect(task.executionPromise).toBeDefined();
-
-    interrupt.resolve(true);
-    await task.executionPromise;
-
-    expect(task.status).toBe("interrupted");
-    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
-      "sess-1",
-      expect.objectContaining({ type: "session_ended", status: "interrupted" }),
-      expect.objectContaining({
-        kind: "terminal_transition",
-        status: "interrupted",
-        termination_reason: "unknown",
-      }),
-    );
-  });
-
-  it("live intervention stays inside the same execution until its result completes", async () => {
-    const mocks = makeMocks();
-    const turnStarted = deferred<void>();
-    const interventionAccepted = deferred<void>();
-    const finishIntervention = deferred<void>();
-    const execute = vi.fn(async function* (): AsyncIterable<SSEEventPayload> {
-      turnStarted.resolve();
-      yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
-      await interventionAccepted.promise;
-      await finishIntervention.promise;
-      yield { type: "assistant_message", content: "heard" } as SSEEventPayload;
-      yield { type: "complete", result: "heard", timestamp: 1 } as SSEEventPayload;
-    });
-    const intervene = vi.fn(async () => {
-      interventionAccepted.resolve();
-      return {
-        status: "delivered" as const,
-        mechanism: "interrupt_then_next_turn" as const,
-      };
-    });
-    const engine: EnginePort = {
-      backendId: "claude",
-      workspaceDir: "/tmp/claude-roselin",
-      execute,
-      intervene,
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const factory = vi.fn(() => engine);
-    const executor = new TaskExecutor(
-      factory,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-    const task = makeTask();
-    task.profileId = claudeAgent.id;
-
-    executor.startExecution(task, claudeAgent);
-    await turnStarted.promise;
-    const executionPromise = task.executionPromise;
-    const delivery = await task.runner!.engine.intervene({ prompt: "new input" });
-
-    expect(delivery.status).toBe("delivered");
-    expect(task.status).toBe("running");
-    expect(task.error).toBeUndefined();
-    expect(task.pendingTerminationHint).toBeUndefined();
-    expect(task.executionPromise).toBe(executionPromise);
-    expect(factory).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).not.toHaveBeenCalled();
-
-    finishIntervention.resolve();
-    await task.executionPromise;
-
-    expect(task.status).toBe("completed");
-    expect(task.error).toBeUndefined();
-    expect(task.pendingTerminationHint).toBeUndefined();
-    expect(factory).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledTimes(1);
-    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
-      "sess-1",
-      expect.objectContaining({ type: "session_ended", status: "completed" }),
-      expect.objectContaining({
-        kind: "terminal_transition",
-        status: "completed",
-        termination_reason: "completed_ok",
-      }),
-    );
-  });
-
   it("engineFactory throw → admission reject + status=error, finalize 호출", async () => {
     const mocks = makeMocks();
     const factory = vi.fn(() => {
@@ -1895,59 +1337,6 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.runner).toBeUndefined();
     expect(task.status).toBe("error");
   });
-
-  it("outer execution failure finalizes without deleting queued interventions", async () => {
-    const mocks = makeMocks();
-    const engine = makeFakeEngine([]);
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-    const task = makeTask();
-    task.interventionQueue.push(
-      { text: "pending 1", user: "u" },
-      { text: "pending 2", user: "u" },
-    );
-    const prepareSpy = vi
-      .spyOn(TaskTurnInputBuilder.prototype, "prepareInitialTurnInput")
-      .mockRejectedValueOnce(new Error("prepare boom"));
-
-    try {
-      executor.startExecution(task, agent);
-      await task.executionPromise;
-    } finally {
-      prepareSpy.mockRestore();
-    }
-
-    expect(task.status).toBe("error");
-    expect(task.error).toBe("prepare boom");
-    expect(task.completedAt).toBeInstanceOf(Date);
-    expect(task.interventionQueue).toEqual([
-      { text: "pending 1", user: "u" },
-      { text: "pending 2", user: "u" },
-    ]);
-    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
-      "sess-1",
-      expect.objectContaining({ type: "session_ended", status: "error" }),
-      expect.objectContaining({
-        kind: "terminal_transition",
-        status: "error",
-        termination_reason: "error_aborted",
-        termination_detail: "prepare boom",
-      }),
-    );
-    const skippedBroadcast = mocks.emitEventEnvelope.mock.calls.find(
-      (c) => /queued intervention\(s\) skipped/.test(
-        String((c[1] as { message?: string }).message),
-      ),
-    );
-    expect(skippedBroadcast).toBeUndefined();
-  });
-
-  // === B-7: 피위임 완료 회송 (CompletionNotifier 주입 회귀) ===
 
   it("B-7: callerSessionId 있고 notifier 주입 시 finalize 후 notify 1회 호출", async () => {
     const mocks = makeMocks();
@@ -2983,85 +2372,6 @@ describe("TaskExecutor runner process boundary", () => {
     },
   );
 
-  it.each([
-    { backend: "claude" as const, profile: claudeAgent },
-    { backend: "codex" as const, profile: agent },
-  ])(
-    "$backend restart → adopt → queued intervention → follow-up turn completes",
-    async ({ backend, profile }) => {
-      const mocks = makeMocks();
-      const recovered = deferred<void>();
-      const finishRecoveredTurn = deferred<void>();
-      const followupInputs: EngineExecuteParams[] = [];
-      const dispatcher = {
-        dispatch: vi.fn(),
-        executeFrames: vi.fn((params: EngineExecuteParams) => {
-          followupInputs.push(params);
-          return frameStream([
-            { type: "assistant_message", content: `${backend} follow-up complete` },
-            { type: "complete", result: "done", timestamp: 3 },
-          ]);
-        }),
-        recoverFrames: vi.fn(() => (async function* () {
-          recovered.resolve();
-          await finishRecoveredTurn.promise;
-          yield engineEventFrame({ type: "complete", result: "recovered", timestamp: 2 });
-        })()),
-        prepareSession: vi.fn(async () => {}),
-        interrupt: vi.fn(async () => true),
-        close: vi.fn(async () => {}),
-        detachHost: vi.fn(async () => {}),
-        sendControlFrame: vi.fn(async () => true),
-        requestContext: vi.fn(),
-        waitForSessionAck: vi.fn(async () => 12),
-        recoverPendingInterventions: vi.fn(async () => [{
-          interventionId: `intervention-${backend}`,
-          message: {
-            text: `post-recovery ${backend} intervention`,
-            user: "soak",
-          },
-        }]),
-        invoke: vi.fn(),
-      };
-      const runner: TaskRunnerRuntime = {
-        engine: new RunnerProcessEngineProxy(
-          backend,
-          profile.workspace_dir,
-          dispatcher as never,
-        ),
-        dispatcher: dispatcher as never,
-        eventPersistence: "runner",
-      };
-      const executor = new TaskExecutor(
-        () => makeFakeEngine([]),
-        mocks.db,
-        mocks.persistence,
-        mocks.broadcaster,
-        silentLogger,
-      );
-      const task = makeTask();
-      task.profileId = profile.id;
-
-      const recovery = executor.recoverRunnerExecution(
-        task,
-        profile,
-        runner,
-        `execute-${backend}`,
-      );
-      await recovered.promise;
-      finishRecoveredTurn.resolve();
-      await recovery;
-
-      expect(followupInputs).toHaveLength(1);
-      expect(followupInputs[0]).toMatchObject({
-        prompt: `post-recovery ${backend} intervention`,
-        runnerInterventionId: `intervention-${backend}`,
-      });
-      expect(dispatcher.recoverPendingInterventions).toHaveBeenCalledTimes(1);
-      expect(task.status).toBe("completed");
-      expect(task.lastAssistantText).toBe(`${backend} follow-up complete`);
-    },
-  );
 });
 
 function makeRunnerProcessRuntime(events: SSEEventPayload[]): {
@@ -3072,11 +2382,11 @@ function makeRunnerProcessRuntime(events: SSEEventPayload[]): {
     dispatch: vi.fn(),
     executeFrames: vi.fn(() => frameStream(events)),
     recoverFrames: vi.fn(() => frameStream(events)),
-    prepareExecutionIdentity: vi.fn(async () => ({
+    prepareExecutionIdentity: vi.fn(async (ownerToken?: string) => ({
       registrationId: "registration-1",
       pid: 321,
       startIdentity: "start-1",
-      executionCommandId: "execute-1",
+      executionCommandId: ownerToken ?? "execute-1",
     })),
     prepareSession: vi.fn(async () => {}),
     interrupt: vi.fn(async () => true),
@@ -3114,756 +2424,7 @@ describe("isTerminalStatus", () => {
 });
 
 describe("TaskExecutor multi-turn (B-4)", () => {
-  it("Claude queued fallback intervention은 다음 turn으로 처리한다", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    task.profileId = claudeAgent.id;
-
-    const started = deferred<void>();
-    const release = deferred<void>();
-    const captured: Array<{
-      prompt: string;
-      resumeSessionId: string | undefined;
-      hasOnIntervention: boolean;
-    }> = [];
-    let executeCalls = 0;
-    const engine: EnginePort = {
-      backendId: "claude",
-      workspaceDir: "/tmp/claude-roselin",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        executeCalls += 1;
-        captured.push({
-          prompt: params.prompt,
-          resumeSessionId: params.resumeSessionId,
-          hasOnIntervention: typeof params.onIntervention === "function",
-        });
-        if (executeCalls === 1) {
-          yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
-          started.resolve();
-          await release.promise;
-          yield { type: "text_delta", text: "first turn", timestamp: 2 } as SSEEventPayload;
-          yield { type: "complete", result: "done", timestamp: 3 } as SSEEventPayload;
-          return;
-        }
-        yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
-        yield { type: "complete", result: "done", timestamp: 4 } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-
-    executor.startExecution(task, claudeAgent);
-    await started.promise;
-    task.interventionQueue.push({
-      text: "지금 반영",
-      user: "alice",
-      attachmentPaths: ["/tmp/incoming/sess/readme.txt"],
-    });
-    release.resolve();
-    await task.executionPromise;
-
-    expect(executeCalls).toBe(2);
-    expect(captured[0]).toEqual({ prompt: "hi", resumeSessionId: undefined, hasOnIntervention: false });
-    expect(captured[1]).toMatchObject({
-      resumeSessionId: "claude-sess-1",
-      hasOnIntervention: false,
-    });
-    expect(captured[1].prompt).toContain("/tmp/incoming/sess/readme.txt");
-    expect(captured[1].prompt).toContain(
-      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
-    );
-    expect(captured[1].prompt.endsWith(
-      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
-    )).toBe(true);
-    expect(task.interventionQueue).toHaveLength(0);
-    expect(task.status).toBe("completed");
-  });
-
-  it("Claude running intervention 이미지 첨부도 다음 turn의 imageAttachmentPaths로 분리한다", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    task.profileId = claudeAgent.id;
-
-    const started = deferred<void>();
-    const release = deferred<void>();
-    const captured: Array<{
-      prompt: string;
-      imageAttachmentPaths: string[] | undefined;
-      hasOnIntervention: boolean;
-    }> = [];
-    const engine: EnginePort = {
-      backendId: "claude",
-      workspaceDir: "/tmp/claude-roselin",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        captured.push({
-          prompt: params.prompt,
-          imageAttachmentPaths: params.imageAttachmentPaths,
-          hasOnIntervention: typeof params.onIntervention === "function",
-        });
-        if (captured.length === 1) {
-          yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
-          started.resolve();
-          await release.promise;
-          yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
-          return;
-        }
-        yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
-        yield { type: "complete", result: "done", timestamp: 2 } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-
-    executor.startExecution(task, claudeAgent);
-    await started.promise;
-    task.interventionQueue.push({
-      text: "이 이미지 봐줘",
-      user: "alice",
-      attachmentPaths: ["/tmp/incoming/sess/a.png", "/tmp/incoming/sess/readme.txt"],
-    });
-    release.resolve();
-    await task.executionPromise;
-
-    expect(captured).toHaveLength(2);
-    expect(captured[0]).toMatchObject({
-      prompt: "hi",
-      imageAttachmentPaths: [],
-      hasOnIntervention: false,
-    });
-    expect(captured[1]).toMatchObject({
-      imageAttachmentPaths: ["/tmp/incoming/sess/a.png"],
-      hasOnIntervention: false,
-    });
-    expect(captured[1].prompt).toContain(
-      "[첨부 파일 로컬 경로: /tmp/incoming/sess/a.png]",
-    );
-    expect(captured[1].prompt).toContain(
-      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
-    );
-    expect(captured[1].prompt).toContain("/tmp/incoming/sess/readme.txt");
-    expect(captured[1].prompt.endsWith(
-      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
-    )).toBe(true);
-  });
-
-  it("Claude intervention 후속 턴에는 첫 turn systemPrompt를 SDK 옵션으로 다시 전달하지 않는다", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    task.profileId = claudeAgent.id;
-    const capturedSystemPrompts: Array<string | undefined> = [];
-    let turnCount = 0;
-    const engine: EnginePort = {
-      backendId: "claude",
-      workspaceDir: "/tmp/claude-roselin",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        capturedSystemPrompts.push(params.systemPrompt);
-        if (turnCount === 0) {
-          turnCount += 1;
-          yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
-          task.interventionQueue.push({ text: "follow up", user: "u" });
-          yield { type: "complete", result: "first done", timestamp: 1 } as SSEEventPayload;
-          return;
-        }
-        turnCount += 1;
-        yield { type: "complete", result: "second done", timestamp: 2 } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const fakeBuilder = {
-      build: vi.fn(async () => ({
-        effectiveSystemPrompt: "folder prompt\n\nagent prompt",
-        combinedContextItems: [],
-        assembledPrompt: "hi",
-      })),
-      buildFollowupContext: vi.fn(async () => ({
-        contextItems: [
-          {
-            key: "running_sessions",
-            label: "Running Sessions",
-            content: { status: "ok", sessions: [] },
-          },
-        ],
-      })),
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
-    );
-
-    executor.startExecution(task, claudeAgent);
-    await task.executionPromise;
-
-    expect(capturedSystemPrompts).toEqual([
-      "folder prompt\n\nagent prompt",
-      undefined,
-    ]);
-    expect(fakeBuilder.buildFollowupContext).toHaveBeenCalledWith(
-      task,
-      claudeAgent,
-      expect.objectContaining({ includeFullContext: false }),
-    );
-  });
-
-  it("Codex execute params에는 onIntervention을 넘기지 않아 turn 사이 큐잉 semantics를 보존한다", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    let turnCount = 0;
-    const onInterventionFlags: boolean[] = [];
-    const engine: EnginePort = {
-      backendId: "codex",
-      workspaceDir: "/tmp/codex-default",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        onInterventionFlags.push(typeof params.onIntervention === "function");
-        if (turnCount === 0) {
-          turnCount += 1;
-          yield { type: "session", session_id: "thr-1" } as SSEEventPayload;
-          task.interventionQueue.push({ text: "queued for next turn", user: "u" });
-          yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
-          return;
-        }
-        turnCount += 1;
-        yield { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(turnCount).toBe(2);
-    expect(onInterventionFlags).toEqual([false, false]);
-    expect(task.interventionQueue).toHaveLength(0);
-  });
-
-  it("turn 종료 시 interventionQueue 비어있지 않으면 다음 turn 자동 시작 (resume)", async () => {
-    // turn 1: session(thr-1) + text_delta("a") + text_end + complete
-    // turn 종료 후 task.interventionQueue.push({text:"continue"}) — 외부 큐잉 시뮬레이션
-    // turn 2: text_delta("b") + text_end + complete
-    // 결과 status="completed", 두 turn 모두 drain
-    const mocks = makeMocks();
-    const turn1: SSEEventPayload[] = [
-      { type: "session", session_id: "thr-1" } as SSEEventPayload,
-      { type: "text_delta", text: "a", timestamp: 1 } as SSEEventPayload,
-      { type: "text_end", timestamp: 1 } as SSEEventPayload,
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
-    ];
-    const turn2: SSEEventPayload[] = [
-      { type: "text_delta", text: "b", timestamp: 2 } as SSEEventPayload,
-      { type: "text_end", timestamp: 2 } as SSEEventPayload,
-      { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload,
-    ];
-    let turnCount = 0;
-    const captured: { turn: number; resumeSessionId: string | undefined }[] = [];
-
-    const task = makeTask();
-    const engine: EnginePort = {
-      backendId: "codex",
-      workspaceDir: "/tmp/codex-default",
-      // eslint-disable-next-line require-yield
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        captured.push({
-          turn: turnCount,
-          resumeSessionId: params?.resumeSessionId,
-        });
-        const events = turnCount === 0 ? turn1 : turn2;
-        turnCount += 1;
-        // turn 1 첫 이벤트(session) 처리 후 외부에서 큐 push를 시뮬레이션:
-        // turn 1 drain이 끝나기 전에 마지막 이벤트 직후 push (concurrent 시뮬레이션 어렵지만,
-        // 본 테스트는 *turn 종료 시 queue 확인* 흐름이 정합인지 보는 것이라 yield 이전 push로 등가).
-        if (turnCount === 1) {
-          // turn 1 끝나기 전에 queue에 push (외부 intervene이 들어왔다고 가정)
-          task.interventionQueue.push({ text: "continue", user: "u" });
-        }
-        for (const ev of events) {
-          yield ev;
-        }
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const factory = vi.fn(() => engine);
-    const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
-
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(turnCount).toBe(2);
-    expect(captured[0].resumeSessionId).toBeUndefined();
-    // 두 번째 turn은 첫 turn에서 박힌 codexThreadId로 resume
-    expect(captured[1].resumeSessionId).toBe("thr-1");
-    expect(task.status).toBe("completed");
-    expect(task.interventionQueue).toHaveLength(0);
-  });
-
-  it("intervention queued during turn still resumes when runtime task lingers without non-idle session state", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    const capturedPrompts: string[] = [];
-    let turnCount = 0;
-
-    const engine: EnginePort = {
-      backendId: "claude",
-      workspaceDir: "/tmp/claude-roselin",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        capturedPrompts.push(params.prompt);
-        turnCount += 1;
-        if (turnCount === 1) {
-          yield { type: "session", session_id: "claude-sess-intervention" } as SSEEventPayload;
-          task.interventionQueue.push({ text: "correct this while running", user: "u" });
-          yield {
-            type: "claude_runtime_task_started",
-            task_id: "lingering-runtime-task",
-            task_type: "local_agent",
-            description: "runtime task started before intervention",
-          } as SSEEventPayload;
-          yield { type: "complete", result: "first turn", timestamp: 1 } as SSEEventPayload;
-          return;
-        }
-        yield { type: "complete", result: "second turn", timestamp: 2 } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-    task.profileId = claudeAgent.id;
-
-    executor.startExecution(task, claudeAgent);
-    await task.executionPromise;
-
-    expect(turnCount).toBe(2);
-    expect(capturedPrompts[1]).toBe("correct this while running");
-    expect(task.status).toBe("completed");
-    expect(task.interventionQueue).toHaveLength(0);
-    expect(task.claudeRuntime).toMatchObject({
-      tasks: {
-        "lingering-runtime-task": {
-          status: "running",
-        },
-      },
-    });
-    const pendingAfterTurnError = mocks.persistEvent.mock.calls.find(
-      (call) =>
-        (call[1] as { error_code?: string }).error_code ===
-        "claude_runtime_pending_after_turn",
-    );
-    expect(pendingAfterTurnError).toBeUndefined();
-  });
-
-  it("intervention queued during turn resumes after runtime session returns to idle", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    let turnCount = 0;
-
-    const engine: EnginePort = {
-      backendId: "claude",
-      workspaceDir: "/tmp/claude-roselin",
-      async *execute(): AsyncIterable<SSEEventPayload> {
-        turnCount += 1;
-        if (turnCount === 1) {
-          task.interventionQueue.push({ text: "resume after idle", user: "u" });
-          yield {
-            type: "claude_runtime_session_state",
-            state: "running",
-            session_id: "claude-sess-idle-after-intervention",
-          } as SSEEventPayload;
-          yield {
-            type: "claude_runtime_session_state",
-            state: "idle",
-            session_id: "claude-sess-idle-after-intervention",
-          } as SSEEventPayload;
-          yield { type: "complete", result: "first turn", timestamp: 1 } as SSEEventPayload;
-          return;
-        }
-        yield { type: "complete", result: "second turn", timestamp: 2 } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-    task.profileId = claudeAgent.id;
-
-    executor.startExecution(task, claudeAgent);
-    await task.executionPromise;
-
-    expect(turnCount).toBe(2);
-    expect(task.status).toBe("completed");
-    expect(task.interventionQueue).toHaveLength(0);
-    expect(task.claudeRuntime?.sessionState).toBe("idle");
-    const pendingAfterTurnError = mocks.persistEvent.mock.calls.find(
-      (call) =>
-        (call[1] as { error_code?: string }).error_code ===
-        "claude_runtime_pending_after_turn",
-    );
-    expect(pendingAfterTurnError).toBeUndefined();
-  });
-
-  it("P1-3: owner 증거 없는 queued input과 진짜 crash는 error로 분류하고 보존", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-
-    const engine: EnginePort = {
-      backendId: "codex",
-      workspaceDir: "/tmp/codex-default",
-      async *execute(): AsyncIterable<SSEEventPayload> {
-        // 첫 yield 후 외부 intervention 도착 시뮬레이션
-        yield { type: "session", session_id: "thr-1" } as SSEEventPayload;
-        task.interventionQueue.push({ text: "pending", user: "u" });
-        throw new Error("engine boom");
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(task.status).toBe("error");
-    expect(task.pendingTerminationHint).toBe("error_aborted");
-    expect(task.interventionQueue).toEqual([{ text: "pending", user: "u" }]);
-    const skippedBroadcast = mocks.emitEventEnvelope.mock.calls.find(
-      (c) => /queued intervention\(s\) skipped/.test(
-        String((c[1] as { message?: string }).message),
-      ),
-    );
-    expect(skippedBroadcast).toBeUndefined();
-  });
-
-  it("accepted successor owner가 있으면 failed old turn 뒤 같은 execution에서 대화를 계속한다", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    let turnCount = 0;
-    const interruptedDelivery: InterventionMessage = {
-      text: "work that loses its stream",
-      user: "u",
-      deliveryId: "delivery-interrupted-1",
-      runnerInterventionId: "delivery-interrupted-1",
-    };
-    const successorDelivery: InterventionMessage = {
-      text: "correct the active work",
-      user: "u",
-      deliveryId: "delivery-successor-1",
-      runnerInterventionId: "delivery-successor-1",
-    };
-    const deliveryRecorder = {
-      recordTurnStarted: vi.fn().mockResolvedValue(true),
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-    };
-    task.interventionQueue.push(interruptedDelivery);
-
-    const engine: EnginePort = {
-      backendId: "codex",
-      workspaceDir: "/tmp/codex-default",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        turnCount += 1;
-        if (turnCount === 1) {
-          yield {
-            type: "assistant_message",
-            content: "partial",
-            timestamp: 1,
-          } as SSEEventPayload;
-          task.interventionQueue.push(successorDelivery);
-          throw new Error("aborted_streaming: read ECONNRESET");
-        }
-        expect(params.runnerInterventionId).toBe("delivery-successor-1");
-        yield {
-          type: "complete",
-          result: "continued in the same execution",
-          timestamp: 2,
-        } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const factory = vi.fn(() => engine);
-    const executor = new TaskExecutor(
-      factory,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      deliveryRecorder,
-    );
-
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(factory).toHaveBeenCalledTimes(1);
-    expect(turnCount).toBe(2);
-    expect(task.status).toBe("completed");
-    expect(task.error).toBeUndefined();
-    expect(task.pendingTerminationHint).toBeUndefined();
-    expect(task.interventionQueue).toHaveLength(0);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
-      successorDelivery,
-      task,
-      expect.stringMatching(/^event:/),
-    );
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalledWith(
-      interruptedDelivery,
-      task,
-      expect.any(String),
-    );
-  });
-
-  it("빈 큐의 active durable intervention을 같은 owner의 즉시 successor로 넘긴다", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    const acceptedIntervention: InterventionMessage = {
-      text: "timing robustness from milliseconds through timeout durability",
-      user: "u",
-      deliveryId: "delivery-active-successor-1",
-      runnerInterventionId: "delivery-active-successor-1",
-      deliveryIntent: "human_live_steer",
-    };
-    const executeInputs: EngineExecuteParams[] = [];
-    const deliveryRecorder = {
-      recordTurnStarted: vi.fn().mockResolvedValue(true),
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-    };
-    task.interventionQueue.push(acceptedIntervention);
-
-    const engine: EnginePort = {
-      backendId: "claude",
-      workspaceDir: "/tmp/claude-active-successor",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        executeInputs.push(params);
-        expect(task.interventionQueue).toEqual([]);
-        if (executeInputs.length === 1) {
-          yield {
-            type: "result",
-            success: false,
-            error: "[ede_diagnostic] result_type=user stop_reason=tool_use",
-            output: "[ede_diagnostic] result_type=user stop_reason=tool_use",
-            terminal_reason: "aborted_streaming",
-            stop_reason: "tool_use",
-            timestamp: 1,
-          } as SSEEventPayload;
-          yield {
-            type: "error",
-            fatal: false,
-            message: "[ede_diagnostic] result_type=user stop_reason=tool_use",
-            error_code: "error_during_execution",
-            timestamp: 2,
-          } as SSEEventPayload;
-          throw new Error("Runner IPC connection closed");
-        }
-        yield {
-          type: "complete",
-          result: "accepted intervention completed",
-          timestamp: 3,
-        } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      deliveryRecorder,
-    );
-
-    executor.startExecution(task, claudeAgent);
-    await task.executionPromise;
-
-    expect(executeInputs).toHaveLength(2);
-    expect(executeInputs.map((input) => input.runnerInterventionId)).toEqual([
-      acceptedIntervention.runnerInterventionId,
-      acceptedIntervention.runnerInterventionId,
-    ]);
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
-      acceptedIntervention,
-      task,
-      expect.stringMatching(/^event:/),
-    );
-    expect(task.status).toBe("completed");
-    expect(task.error).toBeUndefined();
-    expect(task.pendingTerminationHint).toBeUndefined();
-    expect(task.interventionQueue).toEqual([]);
-  });
-
-  it("같은 active durable owner가 successor에서도 실패하면 추가 generation을 만들지 않는다", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    const acceptedIntervention: InterventionMessage = {
-      text: "retry this accepted intervention once",
-      user: "u",
-      deliveryId: "delivery-active-successor-repeat",
-      runnerInterventionId: "delivery-active-successor-repeat",
-      deliveryIntent: "human_live_steer",
-    };
-    let executeCount = 0;
-    task.interventionQueue.push(acceptedIntervention);
-    const engine: EnginePort = {
-      backendId: "claude",
-      workspaceDir: "/tmp/claude-active-successor-repeat",
-      async *execute(): AsyncIterable<SSEEventPayload> {
-        executeCount += 1;
-        throw new Error("Runner IPC connection closed");
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-
-    executor.startExecution(task, claudeAgent);
-    await task.executionPromise;
-
-    expect(executeCount).toBe(2);
-    expect(task.status).toBe("error");
-    expect(task.error).toBe("Runner IPC connection closed");
-    expect(task.pendingTerminationHint).toBe("error_aborted");
-  });
-
-  it("큐의 세 delivery를 순서대로 한 model turn에 넣고 각각 한 번 consume한다", async () => {
-    const mocks = makeMocks();
-    const executeInputs: EngineExecuteParams[] = [];
-    const deliveryRecorder = {
-      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-    };
-    const engine: EnginePort = {
-      backendId: "codex",
-      workspaceDir: "/tmp/codex-default",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        executeInputs.push(params);
-        yield { type: "assistant_message", content: "all heard", timestamp: 1 } as unknown as SSEEventPayload;
-        yield { type: "complete", result: "done", timestamp: 2 } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      deliveryRecorder,
-    );
-    const task = makeTask();
-    const messages: InterventionMessage[] = [
-      {
-        text: "first correction",
-        user: "u",
-        deliveryId: "61000000-0000-4000-8000-000000000001",
-        runnerInterventionId: "runner-intervention-1",
-        deliveryIntent: "human_live_steer",
-      },
-      {
-        text: "second correction",
-        user: "u",
-        deliveryId: "61000000-0000-4000-8000-000000000002",
-        runnerInterventionId: "runner-intervention-2",
-        deliveryIntent: "human_live_steer",
-      },
-      {
-        text: "third correction",
-        user: "u",
-        deliveryId: "61000000-0000-4000-8000-000000000003",
-        runnerInterventionId: "runner-intervention-3",
-        deliveryIntent: "human_live_steer",
-      },
-    ];
-    task.interventionQueue.push(...messages);
-
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(executeInputs).toHaveLength(1);
-    expect(executeInputs[0]!.prompt.indexOf("first correction")).toBeLessThan(
-      executeInputs[0]!.prompt.indexOf("second correction"),
-    );
-    expect(executeInputs[0]!.prompt.indexOf("second correction")).toBeLessThan(
-      executeInputs[0]!.prompt.indexOf("third correction"),
-    );
-    for (const message of messages) {
-      expect(executeInputs[0]!.prompt.split(message.text)).toHaveLength(2);
-    }
-    expect((executeInputs[0] as EngineExecuteParams & {
-      runnerInterventionIds?: string[];
-    }).runnerInterventionIds).toEqual([
-      "runner-intervention-1",
-      "runner-intervention-2",
-      "runner-intervention-3",
-    ]);
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(3);
-    for (const message of messages) {
-      expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
-      expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
-        message,
-        task,
-        expect.stringMatching(/^event:/),
-      );
-    }
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(3);
-    expect(task.status).toBe("completed");
-    expect(task.interventionQueue).toEqual([]);
-  });
-
-  it("turn 종료 시 interventionQueue 비어있으면 status=completed로 종료 (단일 turn 회귀)", async () => {
+  it("accepted delivery가 없으면 단일 turn을 completed로 종료한다", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "session", session_id: "thr-x" } as SSEEventPayload,
@@ -3879,113 +2440,15 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(factory).toHaveBeenCalledTimes(1);
   });
 
-  it("terminal auto-resume은 기존 claude_session_id를 resumeSessionId로 쓰고 새 session 이벤트로 덮어쓰지 않는다", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    task.profileId = claudeAgent.id;
-    task.codexThreadId = "claude-existing";
-    task.interventionQueue.push({ text: "resume", user: "u" });
-    const capturedResumeIds: Array<string | undefined> = [];
-    const engine: EnginePort = {
-      backendId: "claude",
-      workspaceDir: "/tmp/claude-roselin",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        capturedResumeIds.push(params.resumeSessionId);
-        yield { type: "session", session_id: "claude-new-should-not-overwrite" } as SSEEventPayload;
-        yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-    );
-
-    executor.startExecution(task, claudeAgent);
-    await task.executionPromise;
-
-    expect(capturedResumeIds).toEqual(["claude-existing"]);
-    expect(task.codexThreadId).toBe("claude-existing");
-    expect(mocks.setClaudeSessionId).not.toHaveBeenCalledWith(
-      "sess-1",
-      "claude-new-should-not-overwrite",
-    );
-  });
-
-  it("terminal auto-resume Claude turn은 full context/systemPrompt를 다시 전달하지 않는다", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    task.profileId = claudeAgent.id;
-    task.codexThreadId = "claude-existing";
-    task.lastInjectedClaudeSessionId = "claude-existing";
-    task.interventionQueue.push({ text: "resume", user: "u" });
-    const capturedSystemPrompts: Array<string | undefined> = [];
-    const capturedPrompts: string[] = [];
-    const engine: EnginePort = {
-      backendId: "claude",
-      workspaceDir: "/tmp/claude-roselin",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        capturedSystemPrompts.push(params.systemPrompt);
-        capturedPrompts.push(params.prompt);
-        yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const fakeBuilder = {
-      build: vi.fn(async () => ({
-        effectiveSystemPrompt: "resume system prompt",
-        combinedContextItems: [],
-        assembledPrompt: "unused",
-      })),
-      buildSystemPrompt: vi.fn(async () => "resume system prompt"),
-      buildFollowupContext: vi.fn(async () => ({
-        contextItems: [
-          {
-            key: "running_sessions",
-            label: "Running Sessions",
-            content: { status: "ok", sessions: [] },
-          },
-        ],
-      })),
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
-    );
-
-    executor.startExecution(task, claudeAgent);
-    await task.executionPromise;
-
-    expect(fakeBuilder.build).not.toHaveBeenCalled();
-    expect(fakeBuilder.buildSystemPrompt).not.toHaveBeenCalled();
-    expect(fakeBuilder.buildFollowupContext).toHaveBeenCalledWith(
-      task,
-      claudeAgent,
-      expect.objectContaining({
-        includeFullContext: false,
-        includeClaudeSessionIdUpdate: false,
-      }),
-    );
-    expect(capturedSystemPrompts).toEqual([undefined]);
-    expect(capturedPrompts[0]).toContain("resume");
-    expect(capturedPrompts[0]).toContain("<running_sessions>");
-  });
-
   it("prompt_too_long은 backend session을 한 번 rollover하고 같은 입력을 full context로 한 번 replay한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     task.profileId = claudeAgent.id;
     task.codexThreadId = "claude-over-limit";
-    task.interventionQueue.push({ text: "resume this work", user: "u" });
+    const deliveryRecorder = makeCanonicalDeliveryRecorder(task.agentSessionId, {
+      text: "resume this work",
+      user: "u",
+    });
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
@@ -4031,6 +2494,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.broadcaster,
       silentLogger,
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
     );
 
     executor.startExecution(task, claudeAgent);
@@ -4078,6 +2545,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const task = makeTask();
     task.profileId = claudeAgent.id;
     task.codexThreadId = "claude-large-jump";
+    const deliveryRecorder = makeCanonicalDeliveryRecorder(task.agentSessionId);
     const compact = vi.fn().mockResolvedValue(undefined);
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
@@ -4086,7 +2554,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured.push(params);
         if (captured.length === 1) {
-          task.interventionQueue.push({ text: "x".repeat(60_000), user: "u" });
+          deliveryRecorder.accept({ text: "x".repeat(60_000), user: "u" });
           yield {
             type: "context_usage",
             used_tokens: 840_000,
@@ -4115,6 +2583,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.broadcaster,
       silentLogger,
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
     );
 
     executor.startExecution(task, claudeAgent);
@@ -4133,12 +2605,13 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       const task = makeTask();
       task.profileId = claudeAgent.id;
       task.codexThreadId = "claude-over-limit";
+      const deliveryRecorder = makeCanonicalDeliveryRecorder(task.agentSessionId);
       const compact = vi.fn().mockRejectedValue(new Error("compact boundary not observed"));
       const captured: EngineExecuteParams[] = [];
       const eventsForTurn = (params: EngineExecuteParams): SSEEventPayload[] => {
         captured.push(params);
         if (captured.length === 1) {
-          task.interventionQueue.push({ text: "x".repeat(24_000), user: "u" });
+          deliveryRecorder.accept({ text: "x".repeat(24_000), user: "u" });
           return [
             {
               type: "context_usage",
@@ -4221,7 +2694,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
         undefined,
         undefined,
         undefined,
-        undefined,
+        deliveryRecorder,
         undefined,
         processFactory,
       );
@@ -4248,7 +2721,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const task = makeTask();
     task.profileId = claudeAgent.id;
     task.codexThreadId = "claude-over-limit";
-    task.interventionQueue.push({ text: "resume once", user: "u" });
+    const deliveryRecorder = makeCanonicalDeliveryRecorder(task.agentSessionId, {
+      text: "resume once",
+      user: "u",
+    });
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
@@ -4282,6 +2758,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.broadcaster,
       silentLogger,
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
     );
 
     executor.startExecution(task, claudeAgent);
@@ -4303,7 +2783,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     task.claudeBackendRolloverAttempts = 1;
     task.claudeBackendRolloverCycleFrom = "claude-over-limit";
     task.pendingClaudeBackendRolloverFrom = "claude-over-limit";
-    task.interventionQueue.push({ text: "durable failed input", user: "u" });
+    const deliveryRecorder = makeCanonicalDeliveryRecorder(task.agentSessionId, {
+      text: "durable failed input",
+      user: "u",
+    });
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
@@ -4327,6 +2810,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.broadcaster,
       silentLogger,
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
     );
 
     executor.startExecution(task, claudeAgent);
@@ -4363,7 +2850,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     task.codexThreadId = "claude-fresh";
     task.claudeBackendRolloverAttempts = 1;
     task.claudeBackendRolloverCycleFrom = "claude-over-limit";
-    task.interventionQueue.push({ text: "resume rotated backend", user: "u" });
+    const deliveryRecorder = makeCanonicalDeliveryRecorder(task.agentSessionId, {
+      text: "resume rotated backend",
+      user: "u",
+    });
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
@@ -4381,6 +2871,11 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
     );
 
     executor.startExecution(task, claudeAgent);
@@ -4399,7 +2894,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const task = makeTask();
     task.profileId = claudeAgent.id;
     task.codexThreadId = "claude-old";
-    task.interventionQueue.push({ text: "first exhaustion", user: "u" });
+    const deliveryRecorder = makeCanonicalDeliveryRecorder(task.agentSessionId, {
+      text: "first exhaustion",
+      user: "u",
+    });
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
@@ -4418,7 +2916,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
         const freshSessionId = captured.length === 2 ? "claude-fresh-1" : "claude-fresh-2";
         yield { type: "session", session_id: freshSessionId } as SSEEventPayload;
         if (captured.length === 2) {
-          task.interventionQueue.push({ text: "second independent exhaustion", user: "u" });
+          deliveryRecorder.accept({ text: "second independent exhaustion", user: "u" });
         }
         yield { type: "complete", result: "recovered" } as SSEEventPayload;
       },
@@ -4436,6 +2934,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.broadcaster,
       silentLogger,
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
     );
 
     executor.startExecution(task, claudeAgent);
@@ -4457,7 +2959,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const task = makeTask();
     task.profileId = claudeAgent.id;
     task.codexThreadId = "claude-over-limit";
-    task.interventionQueue.push({ text: "unsafe replay", user: "u" });
+    const deliveryRecorder = makeCanonicalDeliveryRecorder(task.agentSessionId, {
+      text: "unsafe replay",
+      user: "u",
+    });
     const execute = vi.fn();
     const engine: EnginePort = {
       backendId: "claude",
@@ -4486,6 +2991,11 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
     );
 
     executor.startExecution(task, claudeAgent);
@@ -4583,90 +3093,6 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(compactBroadcast).toBeUndefined();
   });
 
-  it("compact 후 첫 queued intervention만 full context/systemPrompt를 재주입한다", async () => {
-    const mocks = makeMocks();
-    const task = makeTask();
-    task.profileId = claudeAgent.id;
-    const capturedSystemPrompts: Array<string | undefined> = [];
-    const capturedPrompts: string[] = [];
-    let turnCount = 0;
-    const engine: EnginePort = {
-      backendId: "claude",
-      workspaceDir: "/tmp/claude-roselin",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        capturedSystemPrompts.push(params.systemPrompt);
-        capturedPrompts.push(params.prompt);
-        turnCount += 1;
-        if (turnCount === 1) {
-          yield {
-            type: "compact",
-            trigger: "auto",
-            message: "context compacted",
-            timestamp: 1,
-          } as SSEEventPayload;
-          task.interventionQueue.push({ text: "after compact", user: "u" });
-          yield { type: "complete", result: "first", timestamp: 2 } as SSEEventPayload;
-          return;
-        }
-        yield { type: "complete", result: "second", timestamp: 3 } as SSEEventPayload;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const fakeBuilder = {
-      build: vi.fn(async () => ({
-        effectiveSystemPrompt: "initial system",
-        combinedContextItems: [],
-        assembledPrompt: "hi",
-      })),
-      buildSystemPrompt: vi.fn(async () => "unused"),
-      buildFollowupContext: vi.fn(async () => ({
-        effectiveSystemPrompt: "full system after compact",
-        contextItems: [
-          { key: "soulstream_session", label: "Soulstream", content: "full" },
-          { key: "running_sessions", label: "Running Sessions", content: [] },
-        ],
-      })),
-    };
-    const executor = new TaskExecutor(
-      () => engine,
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
-    );
-
-    executor.startExecution(task, claudeAgent);
-    await task.executionPromise;
-
-    expect(turnCount).toBe(2);
-    expect(fakeBuilder.buildFollowupContext).toHaveBeenCalledWith(
-      task,
-      claudeAgent,
-      expect.objectContaining({ includeFullContext: true }),
-    );
-    expect(capturedSystemPrompts).toEqual([
-      "initial system",
-      "full system after compact",
-    ]);
-    expect(capturedPrompts[1]).toContain("after compact");
-    expect(capturedPrompts[1]).toContain("<soulstream_session>");
-    expect(task.needsFullContextReinjection).toBe(false);
-  });
-});
-
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
-describe("TaskExecutor engine event publishing — durable ingress / transient wire split", () => {
   it("persistent 이벤트는 ingress에만, text lifecycle은 ID 없는 wire에만 둔다", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
@@ -4809,157 +3235,6 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     await task.executionPromise;
     expect(task.status).toBe("error");
   });
-
-  it("auto-resume task (queue에 메시지 push된 상태로 startExecution) → 접수 시 기록된 user_message를 중복 발행하지 않는다", async () => {
-    // 완료 세션의 재개 메시지는 AutoResumeTransition이 접수 시점에 이미 기록한다.
-    // executor는 queue를 엔진에 전달하되 timeline 이벤트를 다시 만들지 않는다.
-    const mocks = makeMocks();
-    const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
-    ];
-    const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
-    const task = makeTask();
-    task.prompt = "second turn";
-    task.interventionQueue.push({ text: "second turn", user: "u" });
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    const userMessages = mocks.persistEvent.mock.calls.filter(
-      (c) => (c[1] as { type: string }).type === "user_message",
-    );
-    expect(userMessages).toHaveLength(0);
-  });
-
-  it("auto-resume task: 첫 turn prompt = queue dequeue.text (task.prompt 재실행 안 함)", async () => {
-    // P0 fix 핵심 회귀: queue 있는 task는 첫 turn engine.execute에 *queue 메시지*를 prompt로 전달.
-    // task.prompt는 prior turn에서 이미 codex thread에 처리된 원래 발화 — 재실행하면 중복 응답.
-    const mocks = makeMocks();
-    const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
-    ];
-    let capturedPrompt: string | undefined;
-    const engine: EnginePort = {
-      backendId: "codex",
-      workspaceDir: "/tmp/codex-default",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        capturedPrompt = params.prompt;
-        for (const e of events) yield e;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
-    const task = makeTask();  // task.prompt = "hi" (원래 prompt)
-    task.interventionQueue.push({ text: "new message", user: "u" });
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-    expect(capturedPrompt).toBe("new message");  // task.prompt="hi"가 아니라 queue dequeue
-  });
-
-  it("auto-resume attachmentPaths → 이미지 attachment는 EngineExecuteParams.imageAttachmentPaths로 전달", async () => {
-    const mocks = makeMocks();
-    const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
-    ];
-    let capturedPrompt = "";
-    let capturedImageAttachmentPaths: string[] | undefined;
-    const engine: EnginePort = {
-      backendId: "codex",
-      workspaceDir: "/tmp/codex-default",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        capturedPrompt = params.prompt;
-        capturedImageAttachmentPaths = params.imageAttachmentPaths;
-        for (const e of events) yield e;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
-    const task = makeTask();
-    task.interventionQueue.push({
-      text: "이 파일 보여?",
-      user: "u",
-      attachmentPaths: ["/tmp/incoming/sess/a.png"],
-    });
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(capturedPrompt).toBe(
-      "이 파일 보여?\n\n[첨부 파일 로컬 경로: /tmp/incoming/sess/a.png]",
-    );
-    expect(capturedImageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
-  });
-
-  it("auto-resume attachmentPaths → 본문 note에 남고 이미지는 imageAttachmentPaths로도 분리된다", async () => {
-    const mocks = makeMocks();
-    const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
-    ];
-    let capturedPrompt = "";
-    let capturedImageAttachmentPaths: string[] | undefined;
-    const engine: EnginePort = {
-      backendId: "codex",
-      workspaceDir: "/tmp/codex-default",
-      async *execute(params): AsyncIterable<SSEEventPayload> {
-        capturedPrompt = params.prompt;
-        capturedImageAttachmentPaths = params.imageAttachmentPaths;
-        for (const e of events) yield e;
-      },
-      async interrupt() { return true; },
-      async close() {},
-    };
-    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
-    const task = makeTask();
-    task.interventionQueue.push({
-      text: "첨부 확인",
-      user: "u",
-      attachmentPaths: ["/tmp/incoming/sess/a.png", "/tmp/incoming/sess/readme.txt"],
-    });
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(capturedImageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
-    expect(capturedPrompt).toContain(
-      "[첨부 파일 로컬 경로: /tmp/incoming/sess/a.png]",
-    );
-    expect(capturedPrompt).toContain(
-      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
-    );
-    expect(capturedPrompt).toContain("/tmp/incoming/sess/readme.txt");
-    expect(capturedPrompt.endsWith(
-      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
-    )).toBe(true);
-  });
-});
-
-// B-6 정정: contextBuilder 주입 흐름에서 system_message 영속화 + user_message.context 박힘
-// (Python `_persist_initial_messages` 복수형 정합). 분석 캐시
-// `20260518-0945-codex-context-mcp-cancel.md` Part A-3a wire emit 누락 root cause 해소.
-describe("TaskExecutor initial message publishing — contextBuilder 주입 (Python 복수형 정합)", () => {
-  // contextBuilder mock 헬퍼 — build() 반환을 직접 제어
-  function makeFakeContextBuilder(
-    ctx: {
-      effectiveSystemPrompt?: string;
-      combinedContextItems: Array<{ key: string; label: string; content: unknown }>;
-      assembledPrompt: string;
-    },
-  ): {
-    build: ReturnType<typeof vi.fn>;
-    buildFollowupContext: ReturnType<typeof vi.fn>;
-  } {
-    return {
-      build: vi.fn(async () => ctx),
-      buildFollowupContext: vi.fn(async () => ({
-        contextItems: [
-          {
-            key: "running_sessions",
-            label: "Running Sessions",
-            content: { status: "ok", sessions: [] },
-          },
-        ],
-      })),
-    };
-  }
 
   it("effectiveSystemPrompt 있음 → system_message 이벤트 영속화 + broadcast (Python L133-146)", async () => {
     const mocks = makeMocks();
@@ -5199,59 +3474,6 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     expect((userCall![1] as Record<string, unknown>).context).toBeUndefined();
     expect(task.status).toBe("completed");  // 본 task 진행에 영향 0
   });
-
-  it("auto-resume (queue 비어있지 않음) → contextBuilder.build 없이 follow-up context만 붙인다", async () => {
-    const mocks = makeMocks();
-    const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
-    ];
-    const fakeBuilder = makeFakeContextBuilder({
-      effectiveSystemPrompt: "sys",
-      combinedContextItems: [{ key: "k", label: "L", content: "c" }],
-      assembledPrompt: "queued",
-    });
-    const executor = new TaskExecutor(
-      () => makeFakeEngine(events),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
-    );
-    const task = makeTask();
-    task.prompt = "queued";
-    task.interventionQueue.push({ text: "queued", user: "u" });
-    executor.startExecution(task, agent);
-    await task.executionPromise;
-
-    expect(fakeBuilder.build).not.toHaveBeenCalled();
-    expect(fakeBuilder.buildFollowupContext).toHaveBeenCalledWith(
-      task,
-      agent,
-      expect.objectContaining({ includeFullContext: false }),
-    );
-    const sysCalls = mocks.persistEvent.mock.calls.filter(
-      (c) => (c[1] as { type: string }).type === "system_message",
-    );
-    expect(sysCalls.length).toBe(0);
-    const userCall = mocks.persistEvent.mock.calls.find(
-      (c) => (c[1] as { type: string }).type === "user_message",
-    );
-    expect(userCall).toBeUndefined();
-  });
-});
-
-// Phase B parity — system_prompt SDK 옵션 분기 + agents.yaml 도구 권한 옵션 forward
-describe("TaskExecutor backend-specific first-turn composition (Phase B parity)", () => {
-  function makeFakeContextBuilder(
-    ctx: {
-      effectiveSystemPrompt?: string;
-      combinedContextItems: Array<{ key: string; label: string; content: unknown }>;
-      assembledPrompt: string;
-    },
-  ): { build: ReturnType<typeof vi.fn> } {
-    return { build: vi.fn(async () => ctx) };
-  }
 
   it("claude backend: effectiveSystemPrompt를 SDK systemPrompt 옵션으로 분리하고 turnPrompt에 prepend 안 함", async () => {
     const mocks = makeMocks();

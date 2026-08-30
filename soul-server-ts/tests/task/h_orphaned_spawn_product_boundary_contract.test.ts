@@ -328,7 +328,6 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
     createdAt: new Date(OBSERVED_AT),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
   };
 
   await executor.startExecution(task, agent);

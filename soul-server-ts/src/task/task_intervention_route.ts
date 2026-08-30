@@ -2,10 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { AutoResumeCallback, AutoResumeTransition } from "./task_auto_resume_transition.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import {
-  isActiveTaskStatus,
-  isTerminalTaskStatus,
   type CallerInfo,
   type InterventionMessage,
   type Task,
@@ -19,9 +16,8 @@ import type {
   DeliveryLedgerAdmission,
   TaskDeliveryLedgerGate,
 } from "./task_delivery_ledger_gate.js";
-import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
+import { interventionFromCanonicalDelivery } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
-import { isExecutionOwnershipConflictError } from "./execution_ownership.js";
 import {
   isNotificationDeliveryIntent,
 } from "./session_delivery_notification_payload.js";
@@ -33,12 +29,10 @@ type NotificationPublication = Awaited<
 /**
  * `addIntervention` 결과. Python `task_manager.add_intervention` L590-595 정본 형상.
  *
- * - running 세션 → `engine.intervene()`가 현재 전달하면 `{delivered: true}`,
- *   전달하지 못하면 소비 시점과 사유가 명시된 queue/defer 결과.
+ * - running 세션 → D accept 뒤 advisory cancel을 보내고 `{delivered: true}`.
  * - active + logical turn complete → 새 generation으로 `{autoResumed: true}`.
  * - completed → 모든 새 입력이 `{autoResumed: true}`.
- * - error/interrupted → completion notification만 다음 명시적 turn까지 queued;
- *   사용자 입력과 runtime follow-up은 `{autoResumed: true}`.
+ * - active execution이 없으면 상태 문자열과 무관하게 `{autoResumed: true}`.
  */
 export type AddInterventionResult =
   | RunningInterventionResult
@@ -69,12 +63,6 @@ export interface AddInterventionParams {
   /** Exact JSONB/hash read back from a durable delivery row. Internal; never wire-forwarded. */
   storedDeliveryPayload?: Record<string, unknown>;
   storedDeliveryPayloadHash?: string;
-  /**
-   * Scheduler dispatch must not rely on the in-memory fallback queue. When false,
-   * a running task that cannot be intervened returns an explicit deferred result so
-   * the caller can keep its durable store active and retry later.
-   */
-  queueIfRunning?: boolean;
 }
 
 /**
@@ -92,14 +80,13 @@ export interface TaskInterventionRouteDeps {
   rememberTask(task: Task): void;
   runningInterventionTransition: Pick<
     RunningInterventionTransition,
-    "deliver" | "queueOnly"
+    "deliver"
   >;
   autoResumeTransition: Pick<AutoResumeTransition, "resume">;
   deliveryLedgerGate?: Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    "admit" | "beginDispatch" | "recordResult"
       | "recordNotificationPublished" | "recordNotificationFailure"
-      | "recordReservationRetry"
   > & Partial<Pick<TaskDeliveryLedgerGate, "reserveRetry">>;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
 }
@@ -159,7 +146,7 @@ export class TaskInterventionRoute {
       };
     }
     const message = admission.kind === "admitted"
-      ? hydrateStoredDeliveryMessage(initialMessage, admission.row)
+      ? interventionFromCanonicalDelivery(admission.row)
       : initialMessage;
 
     let ledgerResultRecorded = false;
@@ -200,43 +187,9 @@ export class TaskInterventionRoute {
           `execution activation did not reach running state for ${task.agentSessionId}`,
         );
       }
-      const isRunning = taskRoute === "running";
-      const heldHumanRetry = admission.kind === "admitted"
-        && admission.row.intent === "human_live_steer"
-        && hasPriorDispatchAttempt(admission.row);
       let result: AddInterventionResult;
-      if (isRunning) {
-        result = heldHumanRetry
-          ? await this.deps.runningInterventionTransition.queueOnly(task, message)
-          : await this.deps.runningInterventionTransition.deliver(task, message, {
-              queueIfUndelivered: request.queueIfRunning ?? true,
-            });
-        if (
-          admission.kind === "admitted"
-          && isNotificationDeliveryIntent(admission.row.intent)
-          && "queued" in result
-          && result.queued
-        ) {
-          notificationDisposition = "queued";
-        }
-      } else if (heldHumanRetry && task.status !== "completed") {
-        result = await this.deps.runningInterventionTransition.queueOnly(task, message);
-      } else if (
-        isTerminalTaskStatus(task.status)
-        && admission.kind === "admitted"
-        && admission.row.intent === "completion_notification"
-        && (
-          task.status !== "completed"
-          || task.terminalEventId === undefined
-          || request.deliveryLeaseOwner === undefined
-        )
-      ) {
-        result = await this.deps.runningInterventionTransition.queueOnly(
-          task,
-          message,
-          { publishEvent: false },
-        );
-        notificationDisposition = "queued";
+      if (taskRoute === "running") {
+        result = await this.deps.runningInterventionTransition.deliver(task, message);
       } else if (admission.kind === "admitted") {
         const deferResumeUntilQueued: StartExecutionCallback = (resumedTask, activation) => {
           deferredResume = { task: resumedTask, activation };
@@ -319,31 +272,6 @@ export class TaskInterventionRoute {
           recoveryError ??= notificationRecoveryError;
         }
       }
-      if (
-        this.deps.deliveryLedgerGate
-        && isExecutionOwnershipConflictError(err)
-      ) {
-        const disposition = await this.deps.deliveryLedgerGate.recordReservationRetry(
-          admission,
-          err.retryAt,
-        );
-        if (disposition === "scheduled" || disposition === "parked") {
-          return {
-            delivered: false,
-            queued: true,
-            queuePosition: 1,
-            consumeWhen: "next_turn",
-            reason: "queue_only_policy",
-          };
-        }
-      }
-      if (this.deps.deliveryLedgerGate && !ledgerResultRecorded) {
-        try {
-          await this.deps.deliveryLedgerGate.recordFailure(admission);
-        } catch (recordFailureError) {
-          recoveryError ??= recordFailureError;
-        }
-      }
       if (recoveryError && err instanceof Error && err.cause === undefined) {
         err.cause = recoveryError;
       }
@@ -412,18 +340,11 @@ export class TaskInterventionRoute {
   }
 }
 
-function hasPriorDispatchAttempt(row: SessionDeliveryRow): boolean {
-  return row.attempt_count > 0
-    || Boolean(row.dispatching_at)
-    || Boolean(row.queued_at);
-}
-
 function interventionTaskRoute(
   task: Task,
 ): "running" | "activating" | "auto-resume" {
   if (task.status === "initializing") return "activating";
-  if (!isActiveTaskStatus(task.status)) return "auto-resume";
-  return task.runner === undefined || task.runner.dispatcher.hasActiveExecution()
+  return task.runner?.dispatcher.hasActiveExecution() === true
     ? "running"
     : "auto-resume";
 }
@@ -446,34 +367,4 @@ export function ensureHumanDeliveryIdentity(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function hydrateStoredDeliveryMessage(
-  message: InterventionMessage,
-  row: SessionDeliveryRow,
-): InterventionMessage {
-  const canonical = readCanonicalDeliveryPayload(row.payload);
-  return {
-    ...message,
-    text: canonical.text,
-    user: canonical.user,
-    callerInfo: canonical.callerInfo,
-    attachmentPaths: canonical.attachmentPaths,
-    context: canonical.context,
-    followupKey: canonical.followupKey,
-    followupAttempt: canonical.followupAttempt,
-    followupTaskIds: canonical.followupTaskIds,
-    source: row.source,
-    deliveryId: row.delivery_id,
-    deliveryIntent: row.intent,
-    completionId: row.completion_id ?? undefined,
-    relationKey: row.relation_key,
-    producerTerminalRevision: row.producer_terminal_revision ?? undefined,
-    parentDeliveryId: row.parent_delivery_id ?? undefined,
-    callerTurnId: row.caller_turn_id ?? undefined,
-    deliveryCreatedAt: row.created_at.toISOString(),
-    deliveryLeaseOwner: row.lease_owner ?? undefined,
-    storedDeliveryPayload: row.payload,
-    storedDeliveryPayloadHash: row.payload_hash,
-  };
 }

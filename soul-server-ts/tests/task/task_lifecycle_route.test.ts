@@ -23,7 +23,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     createdAt: new Date("2026-05-23T01:00:00.000Z"),
     lastEventId: 7,
     lastReadEventId: 0,
-    interventionQueue: [],
     ...overrides,
   };
 }
@@ -279,7 +278,6 @@ describe("TaskLifecycleRoute.cancelTask", () => {
     expect(interrupt).toHaveBeenCalledOnce();
     expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
     expect(closeSessionRuntime).toHaveBeenCalledOnce();
-    expect(task.interventionQueue).toEqual([]);
   });
 
   it("does not report stop success while a V2 runtime remains present", async () => {

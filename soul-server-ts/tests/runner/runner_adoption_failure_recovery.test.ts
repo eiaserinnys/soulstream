@@ -338,6 +338,5 @@ function task(sessionId = "session-a"): Task {
     createdAt: new Date(NOW_MS - 10_000),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
   };
 }

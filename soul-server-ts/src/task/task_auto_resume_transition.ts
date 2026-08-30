@@ -11,7 +11,6 @@ import {
   type InterventionMessage,
   type Task,
 } from "./task_models.js";
-import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
 import { reviewStateAfterFollowup } from "./session_review.js";
@@ -260,5 +259,4 @@ function prepareTaskForAutoResume(
   task.pendingTerminationDetail = undefined;
   task.terminationEventRecorded = false;
   task.terminalEventId = undefined;
-  enqueueInterventionOnce(task, message);
 }

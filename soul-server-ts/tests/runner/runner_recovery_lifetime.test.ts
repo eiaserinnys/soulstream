@@ -424,7 +424,6 @@ function runnerTask(): Task {
     createdAt: new Date("2026-08-24T02:29:30.000Z"),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
   };
 }
 

@@ -61,7 +61,6 @@ describe("terminal transition application chain", () => {
       completedAt: new Date("2026-08-12T00:00:00.000Z"),
       lastEventId: 7,
       lastReadEventId: 0,
-      interventionQueue: [],
     };
 
     const finalization = finalizer.finalize(task);

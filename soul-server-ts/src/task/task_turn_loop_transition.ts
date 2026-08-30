@@ -5,7 +5,6 @@ import type { SupportsDetachedClaudeRuntime } from "../engine/protocol.js";
 import { appendAttachmentPathNotes } from "./attachment_path_note.js";
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { hasPendingClaudeRuntimeWork } from "./claude_runtime_state.js";
-import { dequeueInterventions } from "./task_intervention_queue.js";
 import type { Task, InterventionMessage } from "./task_models.js";
 import { effectiveTaskBackend } from "./task_model_preset.js";
 
@@ -37,19 +36,8 @@ export function resolveTurnLoopTransition(
     return { kind: "awaiting_runtime" };
   }
 
-  const next = dequeueInterventions(task);
-  if (next.length === 0) {
-    task.status = "completed";
-    return { kind: "stop" };
-  }
-
-  const composed = composeInterventionTurnPrompt(next);
-  return {
-    kind: "continue",
-    prompt: composed.prompt,
-    imageAttachmentPaths: composed.imageAttachmentPaths,
-    interventions: next,
-  };
+  task.status = "completed";
+  return { kind: "stop" };
 }
 
 function hasDetachedClaudeRuntime(task: Task): boolean {

@@ -374,7 +374,7 @@ function makeCoordinator(
   const task: Task = {
     agentSessionId: registration.config.sessionId, prompt: "continue", status: "running",
     createdAt: new Date("2026-08-28T00:00:00.000Z"), lastEventId: 0,
-    lastReadEventId: 0, interventionQueue: [],
+    lastReadEventId: 0,
   };
   const options = {
     nodeId: "node-v9", stateDirectory: registration.config.paths.sessionDirectory,

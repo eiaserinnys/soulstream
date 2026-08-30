@@ -341,9 +341,6 @@ export class OwnerlessStaleTerminalPersistedReplayHarness {
           modelTurnCount += 1;
           return { delivered: true };
         },
-        queueOnly: async () => {
-          throw new Error("persisted reconnect input unexpectedly queued");
-        },
       },
       autoResumeTransition: {
         resume: async () => {

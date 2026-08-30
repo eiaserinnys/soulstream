@@ -11,14 +11,12 @@ export function interventionTurnOrigin(
     kind: interventionTurnOriginKind(message),
     ...(firstNonEmpty(
       message.deliveryId,
-      message.runnerInterventionId,
       message.callerTurnId,
       inputUuid,
     ) !== undefined
       ? {
           id: firstNonEmpty(
             message.deliveryId,
-            message.runnerInterventionId,
             message.callerTurnId,
             inputUuid,
           ),

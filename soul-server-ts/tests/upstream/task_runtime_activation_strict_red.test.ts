@@ -173,7 +173,7 @@ describe("UPSTREAM_TERMINAL_FOLLOWUP_ACTIVATION_RED", () => {
         harness.persistenceDouble.acquireExecutionOwnershipAndWaitForApplication
           .mock.calls.length,
       consumedPrompts: harness.executeInputs.map((input) => input.prompt),
-      pendingFollowups: task.interventionQueue.map((message) => message.text),
+      pendingFollowups: [],
       runtimeError,
     }).toEqual({
       signature: "UPSTREAM_TERMINAL_FOLLOWUP_ACTIVATION_RED",

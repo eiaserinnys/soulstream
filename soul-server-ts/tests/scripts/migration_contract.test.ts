@@ -214,6 +214,7 @@ describe("versioned migration contract", () => {
       "059_scope_board_seed_items.sql",
       "073_sessions_execution_owner_v1.sql",
       "075_sessions_execution_owner_release.sql",
+      "081_delivery_execution_handoff.sql",
     ];
     expect(migrations.filter(
       (item) => item.rollback_compatibility === "restore_required",

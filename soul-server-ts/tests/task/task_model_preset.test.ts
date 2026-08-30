@@ -30,7 +30,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     createdAt: new Date(),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
     ...overrides,
   };
 }

@@ -12,7 +12,6 @@ function makeTask(): Task {
     createdAt: new Date("2026-07-26T00:00:00Z"),
     lastEventId: 91,
     lastReadEventId: 0,
-    interventionQueue: [],
   };
 }
 
@@ -29,7 +28,8 @@ describe("TaskDeliveryConsumption", () => {
   it("records a delivery as consumed only after its foreground turn succeeds", async () => {
     const recorder = {
       recordConsumed: vi.fn().mockResolvedValue(undefined),
-      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
+      nextAcceptedForTarget: vi.fn().mockResolvedValue(undefined),
+      acceptedDelivery: vi.fn(),
     };
     const subject = new TaskDeliveryConsumption(
       recorder,
@@ -41,25 +41,6 @@ describe("TaskDeliveryConsumption", () => {
     await subject.recordConsumed(task, message);
 
     expect(recorder.recordConsumed).toHaveBeenCalledWith(message, task);
-    expect(recorder.recordTurnStarted).not.toHaveBeenCalled();
-  });
-
-  it("records delivered when the queued message becomes foreground input", async () => {
-    const recorder = {
-      recordConsumed: vi.fn().mockResolvedValue(undefined),
-      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
-    };
-    const subject = new TaskDeliveryConsumption(
-      recorder,
-      { warn: vi.fn() } as unknown as Logger,
-    );
-    const task = makeTask();
-    const message = makeMessage();
-
-    await expect(subject.recordTurnStarted(task, message)).resolves.toBe(true);
-
-    expect(recorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
-    expect(recorder.recordConsumed).not.toHaveBeenCalled();
   });
 
   it("isolates advisory receipt failures but fails closed for controlled consumption", async () => {
@@ -67,12 +48,16 @@ describe("TaskDeliveryConsumption", () => {
     const subject = new TaskDeliveryConsumption(
       {
         recordConsumed: vi.fn().mockRejectedValue(new Error("db unavailable")),
-        recordTurnStarted: vi.fn().mockRejectedValue(new Error("db unavailable")),
+        nextAcceptedForTarget: vi.fn().mockResolvedValue(undefined),
+        acceptedDelivery: vi.fn(),
       },
       { warn } as unknown as Logger,
     );
 
-    await expect(subject.recordTurnStarted(makeTask(), makeMessage())).resolves.toBe(false);
+    await expect(subject.recordConsumed(makeTask(), {
+      text: "advisory",
+      user: "system",
+    })).resolves.toBeUndefined();
     await expect(subject.recordConsumed(makeTask(), makeMessage()))
       .rejects.toThrow("db unavailable");
     await expect(subject.recordConsumed(makeTask(), {
@@ -85,14 +70,10 @@ describe("TaskDeliveryConsumption", () => {
       deliveryIntent: "runtime_followup" as const,
       source: "claude_runtime_task_followup",
     };
-    await expect(subject.recordTurnStarted(
-      makeTask(),
-      runtimeFollowup,
-    )).resolves.toBe(false);
     await expect(subject.recordConsumed(
       makeTask(),
       runtimeFollowup,
     )).rejects.toThrow("db unavailable");
-    expect(warn).toHaveBeenCalledTimes(5);
+    expect(warn).toHaveBeenCalledTimes(4);
   });
 });

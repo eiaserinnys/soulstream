@@ -7,10 +7,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
 
-import type {
-  EngineExecuteParams,
-  EngineInterventionResult,
-} from "../engine/protocol.js";
+import type { EngineExecuteParams } from "../engine/protocol.js";
 import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 import {
@@ -21,9 +18,7 @@ import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
 import {
-  applyInterventionCommandFrame,
   closeCommandFrame,
-  discardInterventionCommandFrame,
   executeCommandFrame,
   executionStatusCommandFrame,
   hostFrameAppliedControlFrame,
@@ -31,7 +26,6 @@ import {
   invokeCommandFrame,
   prepareSessionCommandFrame,
   runnerControlResponseFrame,
-  stageInterventionCommandFrame,
   type RunnerCommandFrame,
   type RunnerCommandResultFrame,
   type RunnerControlFrame,
@@ -39,17 +33,7 @@ import {
   type RunnerFrame,
 } from "./frame_protocol.js";
 import type { RunnerCommandDispatcher } from "./runner_command_dispatcher.js";
-import type {
-  RunnerInterventionStageInput,
-  RunnerInterventionStageResult,
-  RunnerInterventionApplyInput,
-  RunnerPendingIntervention,
-} from "./runner_command_dispatcher.js";
-import { normalizeRunnerInterventionResult } from "./runner_intervention_result.js";
-import {
-  runnerInterventionApplyCommandId,
-  runnerInterventionDiscardCommandId,
-} from "./runner_intervention_identity.js";
+import type { RunnerAdvisoryCancel } from "./runner_command_dispatcher.js";
 import { RunnerHostCallIdempotency } from "./runner_host_call_idempotency.js";
 import { releaseRunnerHostResources } from "./runner_host_resource_cleanup.js";
 import { RunnerParentOutbox } from "./runner_parent_outbox.js";
@@ -314,9 +298,14 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
   }
 
-  async interrupt(): Promise<boolean> {
-    this.abortRequestLifetimes(new Error("Runner interrupted"));
-    const result = await this.dispatch(interruptCommandFrame(`interrupt:${randomUUID()}`));
+  async interrupt(cancel?: RunnerAdvisoryCancel): Promise<boolean> {
+    if (!cancel) this.abortRequestLifetimes(new Error("Runner interrupted"));
+    const result = await this.dispatch(interruptCommandFrame(
+      cancel
+        ? `interrupt:${cancel.executionGeneration}:${cancel.deliveryId}`
+        : `interrupt:${randomUUID()}`,
+      cancel,
+    ));
     assertCommandAccepted(result);
     return result.result.status === "ok"
       && isRecord(result.result.data)
@@ -474,153 +463,6 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.latestPendingRecord = undefined;
     }
     return eventId;
-  }
-
-  async stageIntervention(
-    input: RunnerInterventionStageInput,
-  ): Promise<RunnerInterventionStageResult> {
-    try {
-      const staged = await this.stageInterventionInChild(input);
-      // queued=true is independently replayable from runner.sqlite. A receipt
-      // fence (queued=false) must remain host-durable until apply is accepted.
-      if (input.queued) this.outbox.removeInterventionFallback(input.interventionId);
-      return { ...staged, durability: "runner" };
-    } catch (error) {
-      await this.ready;
-      if (input.queued) {
-        const reconciliation = await this.reconcilePendingInterventions();
-        const childQueueIndex = reconciliation.childInterventionIds
-          .indexOf(input.interventionId);
-        if (childQueueIndex >= 0) {
-          this.logRegeneratedInterventionSuppressed(
-            input.interventionId,
-            "runner_sqlite",
-            error,
-          );
-          return {
-            eventSourceSeq: null,
-            queuePosition: mergedQueuePosition(
-              reconciliation.interventions,
-              input.interventionId,
-            ),
-            durability: "runner",
-          };
-        }
-        const existingFallback = this.outbox.readInterventionFallback(input.interventionId);
-        if (existingFallback) {
-          this.outbox.stageInterventionFallback({
-            ...existingFallback,
-            queued: true,
-          });
-          const merged = await this.reconcilePendingInterventions();
-          this.logRegeneratedInterventionSuppressed(
-            input.interventionId,
-            "host_sqlite",
-            error,
-          );
-          return {
-            eventSourceSeq: null,
-            queuePosition: mergedQueuePosition(
-              merged.interventions,
-              input.interventionId,
-            ),
-            durability: "host_fallback",
-          };
-        }
-      }
-      const fallback = this.outbox.stageInterventionFallback(input);
-      const queuePosition = input.queued
-        ? mergedQueuePosition(
-            (await this.reconcilePendingInterventions()).interventions,
-            input.interventionId,
-          )
-        : fallback.queuePosition;
-      this.options.logger.info(
-        {
-          err: error,
-          sessionId: this.spawnInput.sessionId,
-          interventionId: input.interventionId,
-          queued: input.queued,
-          durability: "host_sqlite",
-        },
-        "Runner intervention staged in durable host fallback after child IPC failure",
-      );
-      return {
-        eventSourceSeq: null,
-        queuePosition,
-        durability: "host_fallback",
-      };
-    }
-  }
-
-  private async stageInterventionInChild(
-    input: RunnerInterventionStageInput,
-  ): Promise<RunnerInterventionStageResult> {
-    const response = await this.dispatch(stageInterventionCommandFrame({
-      commandId: `stage-intervention:${input.interventionId}`,
-      ...input,
-    }));
-    assertCommandAccepted(response);
-    const data = response.result.status === "ok" && isRecord(response.result.data)
-      ? response.result.data
-      : undefined;
-    const eventSourceSeq = typeof data?.eventSourceSeq === "number"
-      ? data.eventSourceSeq
-      : null;
-    const queuePosition = typeof data?.queuePosition === "number"
-      ? data.queuePosition
-      : 0;
-    if (eventSourceSeq !== null) {
-      const record = await this.outbox.readRecord(eventSourceSeq);
-      if (!record) throw new Error("staged runner intervention event is missing");
-      this.latestPendingRecord = record;
-      await this.ensurePump();
-      this.pump?.notifyAvailable();
-    }
-    return { eventSourceSeq, queuePosition };
-  }
-
-  async applyIntervention(
-    input: RunnerInterventionApplyInput,
-  ): Promise<EngineInterventionResult> {
-    const flushedFallback = await this.flushInterventionFallback(
-      input.interventionId,
-    );
-    const response = await this.dispatch(applyInterventionCommandFrame({
-      commandId: runnerInterventionApplyCommandId(input.interventionId),
-      interventionId: input.interventionId,
-      interventionInput: input.input,
-    }));
-    assertCommandAccepted(response);
-    const normalized = normalizeRunnerInterventionResult(
-      response.result.status === "ok" ? response.result.data : undefined,
-    );
-    if (flushedFallback && normalized.status === "delivered") {
-      this.outbox.removeInterventionFallback(input.interventionId);
-    }
-    return normalized;
-  }
-
-  async discardIntervention(interventionId: string): Promise<void> {
-    const response = await this.dispatch(discardInterventionCommandFrame({
-      commandId: runnerInterventionDiscardCommandId(interventionId),
-      interventionId,
-    }));
-    assertCommandAccepted(response);
-    const data = response.result.status === "ok" ? response.result.data : undefined;
-    if (isRecord(data) && data.status === "not_supported") {
-      this.outbox.removeInterventionFallback(interventionId);
-      return;
-    }
-    if (!isRecord(data) || data.status !== "discarded") {
-      throw new Error("Runner child returned an invalid intervention discard result");
-    }
-    this.outbox.removeInterventionFallback(interventionId);
-  }
-
-  async recoverPendingInterventions(): Promise<RunnerPendingIntervention[]> {
-    await this.ready;
-    return (await this.reconcilePendingInterventions()).interventions;
   }
 
   async invoke(
@@ -798,102 +640,13 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   ): Promise<void> {
     try {
       await this.ready;
-      const interventionIds = params.runnerInterventionIds
-        ?? (params.runnerInterventionId ? [params.runnerInterventionId] : []);
-      const flushedFallbackIds: string[] = [];
-      for (const interventionId of interventionIds) {
-        if (await this.flushInterventionFallback(interventionId, true)) {
-          flushedFallbackIds.push(interventionId);
-        }
-      }
       this.observeActiveExecution(commandId, "execute");
       assertCommandAccepted(await this.dispatch(executeCommandFrame(commandId, params)));
-      for (const interventionId of flushedFallbackIds) {
-        this.outbox.removeInterventionFallback(interventionId);
-      }
       await this.replayPendingFrames();
     } catch (error) {
       stream.fail(asError(error));
       this.clearActiveExecution(commandId);
     }
-  }
-
-  private async flushInterventionFallback(
-    interventionId: string,
-    queuedOverride?: boolean,
-  ): Promise<boolean> {
-    await this.ready;
-    const reconciliation = await this.reconcilePendingInterventions();
-    if (reconciliation.shadowedFallbackIds.includes(interventionId)) return false;
-    const fallback = this.outbox.readInterventionFallback(interventionId);
-    if (!fallback) return false;
-    const staged = await this.stageInterventionInChild({
-      interventionId: fallback.interventionId,
-      message: fallback.message,
-      ...(fallback.event ? { event: fallback.event } : {}),
-      queued: queuedOverride ?? fallback.queued,
-    });
-    if (fallback.event) {
-      const eventId = await this.waitForSessionAck();
-      if (staged.eventSourceSeq === null || eventId === null) {
-        throw new Error("host fallback intervention event did not reach durable ACK boundary");
-      }
-    }
-    this.options.logger.info(
-      {
-        sessionId: this.spawnInput.sessionId,
-        interventionId,
-        durability: "runner_sqlite",
-      },
-      "Runner intervention host fallback flushed to child inbox",
-    );
-    return true;
-  }
-
-  private async reconcilePendingInterventions(): Promise<{
-    interventions: RunnerPendingIntervention[];
-    childInterventionIds: string[];
-    shadowedFallbackIds: string[];
-  }> {
-    const inspection = await this.outbox.inspectPendingInterventions();
-    for (const interventionId of inspection.shadowedFallbackIds) {
-      let fallbackRemoved = false;
-      try {
-        this.outbox.removeInterventionFallback(interventionId);
-        fallbackRemoved = true;
-      } catch (error) {
-        this.options.logger.warn(
-          { err: error, sessionId: this.spawnInput.sessionId, interventionId },
-          "Duplicate host intervention fallback cleanup deferred",
-        );
-      }
-      this.options.logger.info(
-        {
-          sessionId: this.spawnInput.sessionId,
-          interventionId,
-          fallbackRemoved,
-          durableOwner: "runner_sqlite",
-        },
-        "Duplicate host intervention fallback suppressed in favor of runner inbox",
-      );
-    }
-    return inspection;
-  }
-
-  private logRegeneratedInterventionSuppressed(
-    interventionId: string,
-    durableOwner: "runner_sqlite" | "host_sqlite",
-    error: unknown,
-  ): void {
-    this.options.logger.info(
-      {
-        err: error,
-        sessionId: this.spawnInput.sessionId,
-        interventionId,
-        durableOwner,
-      },
-      "Regenerated runner intervention suppressed in favor of first durable payload",
-    );
   }
 
   private async connect(
@@ -1378,19 +1131,6 @@ function assertCommandAccepted(frame: RunnerCommandResultFrame): RunnerCommandRe
   throw new Error(
     `Runner command ${frame.commandId} failed (${frame.result.error.code}): ${frame.result.error.message}`,
   );
-}
-
-function mergedQueuePosition(
-  interventions: RunnerPendingIntervention[],
-  interventionId: string,
-): number {
-  const index = interventions.findIndex(
-    (intervention) => intervention.interventionId === interventionId,
-  );
-  if (index < 0) {
-    throw new Error(`staged runner intervention is absent from merged queue: ${interventionId}`);
-  }
-  return index + 1;
 }
 
 function readActiveExecutionCommandId(frame: RunnerCommandResultFrame): string {

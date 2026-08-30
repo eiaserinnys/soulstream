@@ -19,12 +19,10 @@ import {
   reorderFoldersOptimistic,
 } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
-import { computeIsOtherNode } from "./lib/node-guard";
 import { NewSessionModal } from "./components/NewSessionModal";
 import { ConfigButton } from "./components/ConfigButton";
 import { ConfigModal } from "./components/ConfigModal";
 import { SearchModal } from "./components/SearchModal";
-import { useAppConfig } from "./config/AppConfigContext";
 import {
   AskQuestionBanner,
   MobileChatHeader,
@@ -104,30 +102,7 @@ export function DashboardLayout() {
   // Soul Server 드레이닝 상태 폴링 (3초 간격)
   const { isDraining } = useServerStatus();
 
-  // features.nodeGuard = true인 single-node 모드에서 /api/node-info로 현재 노드 판별
-  // features.nodeGuard = false(orchestrator 모드)에서는 항상 false
-  const { features } = useAppConfig();
-  const activeSession = useDashboardStore((s) => s.activeSession);
-  const [currentNodeId, setCurrentNodeId] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    if (!features.nodeGuard) return;
-    fetch("/api/node-info")
-      .then((r) => {
-        if (!r.ok) throw new Error(`node-info: ${r.status}`);
-        return r.json();
-      })
-      .then((data: { nodeId?: string }) => {
-        if (data.nodeId) setCurrentNodeId(data.nodeId);
-      })
-      .catch(() => {
-        // fetch 실패 → undefined 유지 → 판단 유보
-      });
-  }, [features.nodeGuard]);
-
-  const isOtherNode = features.nodeGuard
-    ? computeIsOtherNode(currentNodeId, activeSession?.nodeId)
-    : false;
-  const chatFileUploadUrl = isOtherNode ? undefined : "/attachments/sessions";
+  const chatFileUploadUrl = "/attachments/sessions";
 
   // 세션 이동 후 빈 자리 보충 — 이동으로 폴더 표시 세션 수가 줄면 더 있으면 loadMore
   const handleMoveSessions = useCallback(
@@ -195,7 +170,6 @@ export function DashboardLayout() {
       }
       rightPanel={
         <RightPanel
-          chatInputDisabled={isOtherNode}
           fileUploadUrl={chatFileUploadUrl}
         />
       }
@@ -235,7 +209,6 @@ export function DashboardLayout() {
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={
         <ChatView
-          chatInputDisabled={isOtherNode}
           fileUploadUrl={chatFileUploadUrl}
           showHeader={false}
         />

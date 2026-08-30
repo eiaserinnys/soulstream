@@ -361,9 +361,6 @@ export class OwnerlessStaleTerminalFanoutHarness {
           modelTurnCount += 1;
           return { delivered: true };
         },
-        queueOnly: async () => {
-          throw new Error("current generation input unexpectedly queued");
-        },
       },
       autoResumeTransition: {
         resume: async () => {

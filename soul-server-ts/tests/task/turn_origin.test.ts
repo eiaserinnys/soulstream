@@ -10,22 +10,15 @@ describe("interventionTurnOrigin", () => {
       source: "claude_runtime_task_followup",
       deliveryIntent: "runtime_followup" as const,
       deliveryId: "delivery-1",
-      runnerInterventionId: "runner-1",
       callerTurnId: "caller-1",
     };
 
     expect(interventionTurnOrigin(base, "input-1").id).toBe("delivery-1");
     expect(interventionTurnOrigin({ ...base, deliveryId: undefined }, "input-1").id)
-      .toBe("runner-1");
+      .toBe("caller-1");
     expect(interventionTurnOrigin({
       ...base,
       deliveryId: undefined,
-      runnerInterventionId: undefined,
-    }, "input-1").id).toBe("caller-1");
-    expect(interventionTurnOrigin({
-      ...base,
-      deliveryId: undefined,
-      runnerInterventionId: undefined,
       callerTurnId: undefined,
     }, "input-1").id).toBe("input-1");
   });

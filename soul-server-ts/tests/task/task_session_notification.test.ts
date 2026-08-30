@@ -12,7 +12,6 @@ function makeTask(): Task {
     createdAt: new Date("2026-07-26T00:00:00Z"),
     lastEventId: 40,
     lastReadEventId: 10,
-    interventionQueue: [],
   };
 }
 

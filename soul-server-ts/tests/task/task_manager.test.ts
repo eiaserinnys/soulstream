@@ -1330,163 +1330,6 @@ describe("TaskManager.shutdown", () => {
 });
 
 describe("TaskManager.addIntervention (B-4)", () => {
-  it("running task delivers through the engine intervention operation", async () => {
-    const mocks = makeMocks();
-    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
-    const task = await tm.createTask({
-      agentSessionId: "s-live",
-      prompt: "p",
-      profileId: "codex-default",
-    });
-    task.status = "running";
-    const intervene = vi.fn().mockResolvedValue({
-      status: "delivered",
-      mechanism: "active_turn",
-    });
-    task.runner = createInProcessTaskRunnerRuntime({
-      backendId: "codex",
-      workspaceDir: "/tmp/codex",
-      async *execute(): AsyncIterable<never> {},
-      async interrupt() { return true; },
-      async close() {},
-      intervene,
-    } as unknown as EnginePort);
-    vi.spyOn(task.runner.dispatcher, "hasActiveExecution").mockReturnValue(true);
-
-    const result = await tm.addIntervention(
-      {
-        agentSessionId: "s-live",
-        text: "focus on the failing test",
-        user: "alice",
-        attachmentPaths: ["/tmp/a.png"],
-      },
-      vi.fn(),
-    );
-
-    expect(result).toEqual({ delivered: true });
-    expect(task.interventionQueue).toHaveLength(0);
-    expect(intervene).toHaveBeenCalledWith({
-      prompt: "focus on the failing test\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
-      imageAttachmentPaths: ["/tmp/a.png"],
-      turnOrigin: { kind: "user_message" },
-    });
-    expect(mocks.enqueueEvent).toHaveBeenCalledWith(
-      "s-live",
-      expect.objectContaining({ type: "intervention_sent" }),
-    );
-    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-  });
-
-  it("running Claude task records intervention_sent before queueing for its next turn", async () => {
-    const mocks = makeMocks();
-    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
-    const task = await tm.createTask({
-      agentSessionId: "s-claude-steer",
-      prompt: "p",
-      profileId: "claude-default",
-    });
-    task.status = "running";
-    const intervene = vi.fn().mockResolvedValue({
-      status: "not_delivered",
-      mechanism: "interrupt_then_next_turn",
-      reason: "next_turn_required",
-    });
-    task.runner = createInProcessTaskRunnerRuntime({
-      backendId: "claude",
-      workspaceDir: "/tmp/claude",
-      async *execute(): AsyncIterable<never> {},
-      async interrupt() { return true; },
-      async close() {},
-      intervene,
-    } as unknown as EnginePort);
-    vi.spyOn(task.runner.dispatcher, "hasActiveExecution").mockReturnValue(true);
-
-    const result = await tm.addIntervention(
-      {
-        agentSessionId: "s-claude-steer",
-        text: "stop and change direction",
-        user: "alice",
-      },
-      vi.fn(),
-    );
-
-    expect(result).toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "next_turn_required",
-    });
-    expect(intervene).toHaveBeenCalledTimes(1);
-    expect(task.interventionQueue).toEqual([
-      { text: "stop and change direction", user: "alice" },
-    ]);
-    expect(mocks.enqueueEvent).toHaveBeenCalledWith(
-      "s-claude-steer",
-      expect.objectContaining({ type: "intervention_sent" }),
-    );
-    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-  });
-
-  it("running task records intervention_sent when it accepts the message into the queue", async () => {
-    const mocks = makeMocks();
-    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
-    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
-    task.status = "running";
-    expect(task.status).toBe("running");
-    expect(task.interventionQueue).toEqual([]);
-
-    const onResume = vi.fn();
-    const result = await tm.addIntervention(
-      { agentSessionId: "s1", text: "hello", user: "alice" },
-      onResume,
-    );
-
-    expect(result).toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "not_supported",
-    });
-    expect(task.interventionQueue).toHaveLength(1);
-    expect(task.interventionQueue[0]).toMatchObject({ text: "hello", user: "alice" });
-    expect(mocks.enqueueEvent).toHaveBeenCalledWith(
-      "s1",
-      expect.objectContaining({ type: "intervention_sent" }),
-    );
-    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(onResume).not.toHaveBeenCalled();
-  });
-
-  it("연속 큐잉 시 queuePosition이 1, 2로 증가", async () => {
-    const mocks = makeMocks();
-    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
-    const task = await tm.createTask({
-      agentSessionId: "s1",
-      prompt: "p",
-      profileId: "codex-default",
-    });
-    task.status = "running";
-    const onResume = vi.fn();
-    const r1 = await tm.addIntervention({ agentSessionId: "s1", text: "a", user: "u" }, onResume);
-    const r2 = await tm.addIntervention({ agentSessionId: "s1", text: "b", user: "u" }, onResume);
-    expect(r1).toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "not_supported",
-    });
-    expect(r2).toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 2,
-      consumeWhen: "next_turn",
-      reason: "not_supported",
-    });
-  });
-
   it("completed task → user_message + durable running effect + onResume + autoResumed", async () => {
     // 결함 A 정정 (PR #55): completed/error/interrupted → intervention_sent가 아닌
     // user_message로 wire 박힘 (Python `create_task(prompt=text)` 모델 정합).
@@ -1514,8 +1357,6 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(result).toEqual({ autoResumed: true });
     expect(task.status).toBe("running");
     expect(task.completedAt).toBeUndefined();
-    expect(task.interventionQueue).toHaveLength(1);
-    expect(task.interventionQueue[0]).toMatchObject({ text: "resume", user: "u" });
     expect(task.codexThreadId).toBe("thr-1");
     expect(onResume).toHaveBeenCalledWith(task);
     // intervention_sent는 *발행 안 함* (auto-resume은 user_message 경로)
@@ -1602,7 +1443,6 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(broadcasterMocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(broadcasterMocks.emitSessionUpdated).not.toHaveBeenCalled();
     expect(task.prompt).toBe("resume");
-    expect(task.interventionQueue).toHaveLength(1);
   });
 
   it("T-1b (Phase A 실패 격리): buildResumeContextItems throw 경로를 addIntervention에서 밟지 않음", async () => {
@@ -1802,20 +1642,6 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(onResume).toHaveBeenCalledWith(task);
   });
 
-  it("running intervention is not queued when durable ingress enqueue fails", async () => {
-    const mocks = makeMocks();
-    mocks.enqueueEvent.mockRejectedValueOnce(new Error("outbox down"));
-    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
-    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
-    task.status = "running";
-    const onResume = vi.fn();
-    await expect(tm.addIntervention(
-      { agentSessionId: "s1", text: "x", user: "u" },
-      onResume,
-    )).rejects.toThrow("outbox down");
-    expect(task.interventionQueue).toHaveLength(0);
-    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-  });
 });
 
 // B-5: 세션-폴더 배정 정본 (Board Y.Doc 원자 배치)
@@ -1924,103 +1750,8 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
 // B-5: session_broadcaster.emitCatalogUpdated wire 형상 회귀는 session_broadcaster.test.ts에서 보호.
 
 // B-5: live surface가 없는 running task는 다음 turn queue fallback이 정본.
-describe("TaskManager.addIntervention — running fallback without live surface (B-5)", () => {
-  it("persistence 주입 시 live surface가 없어도 접수 이벤트를 기록한 뒤 queue에 보존", async () => {
-    const mocks = makeMocks();
-    const enqueueEvent = vi.fn().mockResolvedValue(123);
-    const handleSideEffects = vi.fn().mockResolvedValue(undefined);
-    const persistence = { enqueueEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
-
-    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
-    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
-    task.status = "running";
-    expect(task.status).toBe("running");
-
-    await tm.addIntervention(
-      { agentSessionId: "s1", text: "추가 메시지", user: "alice", callerInfo: { source: "slack" } },
-      vi.fn(),
-    );
-
-    expect(task.interventionQueue).toEqual([
-      {
-        text: "추가 메시지",
-        user: "alice",
-        callerInfo: { source: "slack" },
-      },
-    ]);
-    expect(enqueueEvent).toHaveBeenCalledWith(
-      "s1",
-      expect.objectContaining({ type: "intervention_sent", text: "추가 메시지" }),
-    );
-    expect(handleSideEffects).toHaveBeenCalledTimes(1);
-    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(task.lastEventId).toBe(0);
-  });
-
-  it("공통 persistence + live surface 없음 → durable 접수 후 queue에 보존", async () => {
-    const mocks = makeMocks();
-    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
-    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
-    task.status = "running";
-    await tm.addIntervention(
-      { agentSessionId: "s1", text: "x", user: "u" },
-      vi.fn(),
-    );
-    expect(task.interventionQueue).toEqual([{ text: "x", user: "u" }]);
-    expect(mocks.enqueueEvent).toHaveBeenCalledWith(
-      "s1",
-      expect.objectContaining({ type: "intervention_sent", text: "x" }),
-    );
-    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-  });
-
-  it("enqueueEvent 실패 시 running intervention을 queue에 넣지 않고 실패를 반환", async () => {
-    const mocks = makeMocks();
-    const enqueueEvent = vi.fn().mockRejectedValueOnce(new Error("events db down"));
-    const handleSideEffects = vi.fn().mockResolvedValue(undefined);
-    const persistence = { enqueueEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
-    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
-    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
-    task.status = "running";
-    await expect(
-      tm.addIntervention(
-        { agentSessionId: "s1", text: "x", user: "u" },
-        vi.fn(),
-      ),
-    ).rejects.toThrow("events db down");
-    expect(task.interventionQueue).toEqual([]);
-    expect(enqueueEvent).toHaveBeenCalledTimes(1);
-    expect(
-      mocks.emitEventEnvelope.mock.calls.filter(
-        (c) => (c[1] as { type: string }).type === "intervention_sent",
-      ),
-    ).toHaveLength(0);
-  });
-});
-
 // PR #55: 결함 A·B 정합 (resume vs intervention 분기 + typing indicator)
 describe("TaskManager.addIntervention — running vs completed wire 분기 (결함 A·B)", () => {
-  it("running task without live surface → intervention_sent 접수 후 queue fallback", async () => {
-    const mocks = makeMocks();
-    const enqueueEvent = vi.fn().mockResolvedValue(1);
-    const handleSideEffects = vi.fn().mockResolvedValue(undefined);
-    const persistence = { enqueueEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
-    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
-    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
-    task.status = "running";
-    expect(task.status).toBe("running");
-
-    await tm.addIntervention(
-      { agentSessionId: "s1", text: "추가", user: "u" },
-      vi.fn(),
-    );
-
-    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
-    expect(enqueueEvent).toHaveBeenCalledTimes(1);
-    expect(task.interventionQueue).toEqual([{ text: "추가", user: "u" }]);
-  });
-
   it("completed task → durable running effect + user_message 접수 후 onResume", async () => {
     const mocks = makeMocks();
     const enqueueEvent = vi.fn().mockResolvedValue(2);
@@ -2311,61 +2042,6 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
 
-  it("queues input for a hydrated running session without spawning a competing execution", async () => {
-    const mocks = makeMocks();
-    mocks.getSession.mockResolvedValueOnce({
-      session_id: "sess-stale-running",
-      session_type: "claude",
-      status: "running",
-      prompt: "p",
-      claude_session_id: "thr-stale",
-      last_event_id: 5,
-      last_read_event_id: 0,
-      created_at: new Date(),
-      updated_at: new Date(),
-      agent_id: "codex-default",
-      caller_session_id: null,
-      folder_id: null,
-      display_name: null,
-      node_id: "n",
-      client_id: null,
-      last_message: null,
-      metadata: null,
-      was_running_at_shutdown: false,
-      away_summary: null,
-    });
-    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
-    const onResume = vi.fn();
-
-    const result = await tm.addIntervention(
-      { agentSessionId: "sess-stale-running", text: "resume", user: "u" },
-      onResume,
-    );
-
-    expect(result).toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "not_supported",
-    });
-    const memTask = tm.getTask("sess-stale-running");
-    expect(memTask).toBeDefined();
-    expect(memTask!.status).toBe("running");
-    expect(memTask!.codexThreadId).toBe("thr-stale");
-    expect(memTask!.interventionQueue).toEqual([
-      expect.objectContaining({ text: "resume", user: "u" }),
-    ]);
-    expect(mocks.enqueueEvent).toHaveBeenCalledWith(
-      "sess-stale-running",
-      expect.objectContaining({ type: "intervention_sent", text: "resume" }),
-    );
-    expect(mocks.enqueueRunningTransition).not.toHaveBeenCalled();
-    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(mocks.updateSession).not.toHaveBeenCalled();
-    expect(onResume).not.toHaveBeenCalled();
-  });
-
   it.each(["error", "interrupted"] as const)("DB에 %s 세션도 hydrate 가능 (terminal 모두)", async (status) => {
     const mocks = makeMocks();
     mocks.getSession.mockResolvedValueOnce({
@@ -2589,9 +2265,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       vi.fn(),
     );
     const task = tm.getTask("sess-h")!;
-    // Python parity: auto-resume 메시지가 새 task prompt로 승격되고 queue 첫 turn으로 실행됨.
-    expect(task.interventionQueue).toHaveLength(1);
-    expect(task.interventionQueue[0].text).toBe("새 메시지");
+    // Auto-resume 메시지는 새 task prompt로 승격된다.
     expect(task.prompt).toBe("새 메시지");
   });
 });
