@@ -425,11 +425,18 @@ export class RunnerRecoveryCoordinator {
     const startIdentity = ownership?.startIdentity ?? registration.pidStartIdentity;
     if (
       !ownership
-      && registration.registrationId === null
+      && registration.pid === null
       && registration.pidStartIdentity === null
       && !registration.pidAlive
     ) {
-      await this.registrationControl.retireReleasedTerminal(registration);
+      const reconcile = this.options.taskManager.reconcileRecordedTerminalExecution;
+      if (!reconcile) {
+        throw new Error("terminal execution ownership reconciliation is not configured");
+      }
+      await this.registrationControl.retireReleasedTerminal(
+        registration,
+        async () => await reconcile.call(this.options.taskManager, task),
+      );
       this.options.logger.info(
         { sessionId: registration.config.sessionId },
         "released terminal runner evidence retired without replay",

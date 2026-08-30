@@ -26,6 +26,7 @@ export interface TerminalExecutionOwnershipRetirement
 
 export interface ReleasedTerminalExecutionEvidence {
   paths: RunnerProcessPaths;
+  registrationId: string | null;
   pid: number | null;
 }
 
@@ -78,14 +79,23 @@ export async function retireTerminalExecutionIdentity(
 
 export async function retireReleasedTerminalExecutionEvidence(
   input: ReleasedTerminalExecutionEvidence,
+  confirmCentralRelease: () => Promise<boolean>,
   deps: RunnerProcessTerminationDependencies,
 ): Promise<void> {
   const { paths } = input;
   await withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
     const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
-    if (identity) {
+    if (
+      (identity === null) !== (input.registrationId === null)
+      || (identity && identity.registrationId !== input.registrationId)
+    ) {
       throw identityProofFailure(
-        `runner registration appeared before released terminal retirement: ${paths.sessionDirectory}`,
+        `runner registration changed before released terminal retirement: ${paths.sessionDirectory}`,
+      );
+    }
+    if (identity && (identity.pid !== null || identity.startIdentity !== null)) {
+      throw identityProofFailure(
+        `runner process identity appeared before released terminal retirement: ${paths.sessionDirectory}`,
       );
     }
     const pidEvidence = await readRunnerPid(paths.pidPath);
@@ -100,8 +110,17 @@ export async function retireReleasedTerminalExecutionEvidence(
         `live runner has no registration before released terminal retirement: ${paths.sessionDirectory}`,
       );
     }
+    await requireCentralCommit(paths, confirmCentralRelease);
     await prepareRunnerWriterLockForSpawn(paths.lockPath);
-    await removeRunnerRegistrationEvidenceForReplacementLocked(paths);
+    if (input.registrationId === null) {
+      await removeRunnerRegistrationEvidenceForReplacementLocked(paths);
+      return;
+    }
+    await retireTerminalRunnerRegistrationFilesLocked(
+      paths,
+      input.registrationId,
+      new Date(deps.now()),
+    );
   });
 }
 

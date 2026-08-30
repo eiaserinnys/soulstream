@@ -41,10 +41,13 @@ export class RunnerRegistrationControl {
     );
   }
 
-  async retireReleasedTerminal(registration: RunnerRegistration): Promise<void> {
+  async retireReleasedTerminal(
+    registration: RunnerRegistration,
+    confirmCentralRelease: () => Promise<boolean>,
+  ): Promise<void> {
     if (
       registration.pidAlive
-      || registration.registrationId !== null
+      || registration.pid !== null
       || registration.pidStartIdentity !== null
     ) {
       throw new RunnerMutationFailure(
@@ -56,6 +59,7 @@ export class RunnerRegistrationControl {
       registration.config.paths,
       undefined,
       registration,
+      confirmCentralRelease,
     );
   }
 
