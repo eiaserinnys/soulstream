@@ -3649,6 +3649,130 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     );
   });
 
+  it("빈 큐의 active durable intervention을 같은 owner의 즉시 successor로 넘긴다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    const acceptedIntervention: InterventionMessage = {
+      text: "timing robustness from milliseconds through timeout durability",
+      user: "u",
+      deliveryId: "delivery-active-successor-1",
+      runnerInterventionId: "delivery-active-successor-1",
+      deliveryIntent: "human_live_steer",
+    };
+    const executeInputs: EngineExecuteParams[] = [];
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(true),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
+    task.interventionQueue.push(acceptedIntervention);
+
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-active-successor",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        executeInputs.push(params);
+        expect(task.interventionQueue).toEqual([]);
+        if (executeInputs.length === 1) {
+          yield {
+            type: "result",
+            success: false,
+            error: "[ede_diagnostic] result_type=user stop_reason=tool_use",
+            output: "[ede_diagnostic] result_type=user stop_reason=tool_use",
+            terminal_reason: "aborted_streaming",
+            stop_reason: "tool_use",
+            timestamp: 1,
+          } as SSEEventPayload;
+          yield {
+            type: "error",
+            fatal: false,
+            message: "[ede_diagnostic] result_type=user stop_reason=tool_use",
+            error_code: "error_during_execution",
+            timestamp: 2,
+          } as SSEEventPayload;
+          throw new Error("Runner IPC connection closed");
+        }
+        yield {
+          type: "complete",
+          result: "accepted intervention completed",
+          timestamp: 3,
+        } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(executeInputs).toHaveLength(2);
+    expect(executeInputs.map((input) => input.runnerInterventionId)).toEqual([
+      acceptedIntervention.runnerInterventionId,
+      acceptedIntervention.runnerInterventionId,
+    ]);
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
+      acceptedIntervention,
+      task,
+      expect.stringMatching(/^event:/),
+    );
+    expect(task.status).toBe("completed");
+    expect(task.error).toBeUndefined();
+    expect(task.pendingTerminationHint).toBeUndefined();
+    expect(task.interventionQueue).toEqual([]);
+  });
+
+  it("같은 active durable owner가 successor에서도 실패하면 추가 generation을 만들지 않는다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    const acceptedIntervention: InterventionMessage = {
+      text: "retry this accepted intervention once",
+      user: "u",
+      deliveryId: "delivery-active-successor-repeat",
+      runnerInterventionId: "delivery-active-successor-repeat",
+      deliveryIntent: "human_live_steer",
+    };
+    let executeCount = 0;
+    task.interventionQueue.push(acceptedIntervention);
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-active-successor-repeat",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        executeCount += 1;
+        throw new Error("Runner IPC connection closed");
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(executeCount).toBe(2);
+    expect(task.status).toBe("error");
+    expect(task.error).toBe("Runner IPC connection closed");
+    expect(task.pendingTerminationHint).toBe("error_aborted");
+  });
+
   it("큐의 세 delivery를 순서대로 한 model turn에 넣고 각각 한 번 consume한다", async () => {
     const mocks = makeMocks();
     const executeInputs: EngineExecuteParams[] = [];
