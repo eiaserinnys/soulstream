@@ -48,18 +48,20 @@ describe("runner process registry", () => {
     current.config = { ...current.config, paths, registrationId: registrationB };
     await mkdir(paths.sessionDirectory, { recursive: true });
     await writeFile(paths.configPath, JSON.stringify(current.config));
-    const pending = pendingRunnerRegistrationIdentity(
+    const pendingA = pendingRunnerRegistrationIdentity(
       current.config.sessionId,
       current.config.codeSha,
+      undefined,
+      registrationA,
     );
-    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-      ...pending,
-      registrationId: registrationA,
-    });
-    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-      ...pending,
-      registrationId: registrationB,
-    });
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, pendingA);
+    const pendingB = pendingRunnerRegistrationIdentity(
+      current.config.sessionId,
+      current.config.codeSha,
+      undefined,
+      registrationB,
+    );
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, pendingB);
     const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
     await outbox.initializeBootstrap({
       session_id: current.config.sessionId,
