@@ -98,10 +98,10 @@ describePostgres("terminal target delivery settlement", () => {
     `;
     const expected = new Map([
       ["terminal-pending", {
-        state: "superseded",
-        aggregateState: "consumed",
+        state: "pending",
+        aggregateState: "pending",
         targetReceiptId: null,
-        terminalRevision: "77",
+        terminalRevision: null,
       }],
       ["terminal-queued", {
         state: "superseded",
@@ -129,10 +129,17 @@ describePostgres("terminal target delivery settlement", () => {
     });
 
     expect(violations).toEqual([]);
-    await expect(repository.claimRecoverableCompletionDeliveries(
+    const claimed = await repository.claimRecoverableCompletionDeliveries(
       "post-terminal-settlement",
       10,
-    )).resolves.toEqual([]);
+    );
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0]).toMatchObject({
+      delivery_id: "terminal-pending",
+      state: "claimed",
+      aggregate_state: "pending",
+      lease_owner: "post-terminal-settlement",
+    });
   });
 });
 

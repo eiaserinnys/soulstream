@@ -83,6 +83,21 @@ export interface S5FinalObservation {
   catchupFrames: SseFrame[];
 }
 
+export interface S5PendingSettlementObservation {
+  beforeSettlementState: string;
+  afterSettlementState: string;
+  releasedLeaseCount: number;
+  activation: S5ActivationObservation;
+}
+
+export interface S5ExactOnceCounts {
+  childTerminal: number;
+  completionDelivery: number;
+  parentAutoResumeGeneration: number;
+  completionConsume: number;
+  retryHorizonClaims: number;
+}
+
 interface OwnershipRow {
   status: string;
   execution_generation: number;
@@ -144,6 +159,43 @@ class BlockingParentEngine implements EnginePort {
   async close(): Promise<void> {}
 }
 
+class CompletionRegistrationGate {
+  private registeredResolve!: () => void;
+  private releaseResolve!: () => void;
+  readonly registered = new Promise<void>((resolve) => {
+    this.registeredResolve = resolve;
+  });
+  private readonly released = new Promise<void>((resolve) => {
+    this.releaseResolve = resolve;
+  });
+
+  wrap(repository: SessionDeliveryRepository): SessionDeliveryRepository {
+    return new Proxy(repository, {
+      get: (target, property) => {
+        if (property === "register") {
+          return async (...args: Parameters<SessionDeliveryRepository["register"]>) => {
+            const result = await target.register(...args);
+            this.registeredResolve();
+            return result;
+          };
+        }
+        if (property === "get") {
+          return async (...args: Parameters<SessionDeliveryRepository["get"]>) => {
+            await this.released;
+            return await target.get(...args);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  }
+
+  release(): void {
+    this.releaseResolve();
+  }
+}
+
 export class CompletedParentS5FullSliceHarness {
   private execution: Promise<void> | undefined;
   private startBoundary: S5ActivationObservation["startBoundary"] = null;
@@ -160,10 +212,12 @@ export class CompletedParentS5FullSliceHarness {
     readonly relationKey: string,
     readonly expectedInputUuid: string,
     readonly parentTerminalEventId: number,
+    private readonly registrationGate?: CompletionRegistrationGate,
   ) {}
 
   static async create(
     postgres: FullSchemaPostgresHarness,
+    options: { pauseAfterCompletionRegistration?: boolean } = {},
   ): Promise<CompletedParentS5FullSliceHarness> {
     await resetTables(postgres);
     const eventHarness = await BSecondWriterProductHarness.create(postgres);
@@ -195,6 +249,10 @@ export class CompletedParentS5FullSliceHarness {
     const registry = new AgentRegistry([parentAgent, childAgent]);
     const broadcaster = new SessionBroadcaster(async () => undefined, registry, NODE_ID);
     const gate = new TaskDeliveryLedgerGate(true, deliveries as never);
+    const registrationGate = options.pauseAfterCompletionRegistration
+      ? new CompletionRegistrationGate()
+      : undefined;
+    const notifierDeliveries = registrationGate?.wrap(deliveries) ?? deliveries;
     const engine = new BlockingParentEngine();
     const executor = new TaskExecutor(
       () => engine,
@@ -249,6 +307,7 @@ export class CompletedParentS5FullSliceHarness {
       relationKey,
       buildDeliveryInputUuid(identity.deliveryId),
       parent.terminalEventId,
+      registrationGate,
     );
     harness.notifier = new TaskCompletionNotifier(
       NODE_ID,
@@ -271,9 +330,34 @@ export class CompletedParentS5FullSliceHarness {
       undefined,
       db,
       true,
-      deliveries as never,
+      notifierDeliveries as never,
     );
     return harness;
+  }
+
+  async notifyThroughPendingTerminalSettlement(): Promise<S5PendingSettlementObservation> {
+    if (!this.registrationGate) {
+      throw new Error("S5 completion registration gate was not configured");
+    }
+    const activationPromise = this.notifyToActivation();
+    await this.registrationGate.registered;
+    const beforeSettlement = await this.deliveries.get(this.correlationId);
+    if (!beforeSettlement) throw new Error("S5 pending completion delivery missing");
+    let releasedLeaseCount: number;
+    let afterSettlement;
+    try {
+      releasedLeaseCount = await this.deliveries.releaseExpiredDeliveryLeases();
+      afterSettlement = await this.deliveries.get(this.correlationId);
+    } finally {
+      this.registrationGate.release();
+    }
+    if (!afterSettlement) throw new Error("S5 completion delivery vanished during settlement");
+    return {
+      beforeSettlementState: beforeSettlement.state,
+      afterSettlementState: afterSettlement.state,
+      releasedLeaseCount,
+      activation: await activationPromise,
+    };
   }
 
   async notifyToActivation(): Promise<S5ActivationObservation> {
@@ -340,7 +424,41 @@ export class CompletedParentS5FullSliceHarness {
     };
   }
 
+  async readExactOnceCountsAfterRetryHorizon(): Promise<S5ExactOnceCounts> {
+    await this.deliveries.releaseExpiredDeliveryLeases();
+    const retryClaims = await this.deliveries.claimRecoverableCompletionDeliveries(
+      "p0cn-retry-horizon",
+      10,
+    );
+    const childTerminal = await count(this.postgres.sql`
+      SELECT COUNT(*)::int AS count FROM events
+      WHERE session_id = ${CHILD_ID} AND event_type = 'session_ended'
+    `);
+    const completionDelivery = await count(this.postgres.sql`
+      SELECT COUNT(*)::int AS count FROM session_deliveries
+      WHERE delivery_id = ${this.correlationId}
+    `);
+    const parentAutoResumeGeneration = await count(this.postgres.sql`
+      SELECT COUNT(*)::int AS count FROM events
+      WHERE session_id = ${PARENT_ID} AND event_type = 'metadata'
+        AND payload->>'metadata_type' = 'execution_ownership_transition'
+        AND payload->'value'->>'phase' = 'execution_acquire'
+    `);
+    const completionConsume = await count(this.postgres.sql`
+      SELECT COUNT(*)::int AS count FROM session_delivery_relation_consumptions
+      WHERE relation_key = ${this.relationKey}
+    `);
+    return {
+      childTerminal,
+      completionDelivery,
+      parentAutoResumeGeneration,
+      completionConsume,
+      retryHorizonClaims: retryClaims.length,
+    };
+  }
+
   async cleanup(): Promise<void> {
+    this.registrationGate?.release();
     this.engine.release();
     await this.execution?.catch(() => undefined);
     await this.historyApp.close();
@@ -356,6 +474,11 @@ export class CompletedParentS5FullSliceHarness {
       FROM sessions WHERE session_id = ${PARENT_ID}
     `, "parent session");
   }
+}
+
+async function count(query: Promise<unknown>): Promise<number> {
+  const rows = await query as Array<{ count: number }>;
+  return Number(rows[0]?.count ?? 0);
 }
 
 async function registerSession(
