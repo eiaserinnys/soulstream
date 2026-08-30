@@ -28,6 +28,7 @@ import {
   pendingRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
+import { RunnerWriterLock } from "../../src/runner/runner_writer_lock.js";
 
 const temporaryDirectories: string[] = [];
 const NOW = Date.parse("2026-08-11T00:00:30.000Z");
@@ -55,6 +56,47 @@ describe("runner process registry", () => {
       (pid) => pid === 4123,
     ))
       .toThrow("runner pid evidence disagrees: session-a");
+  });
+
+  it("W1 hides a registration interrupted after pending identity and writer publication", async () => {
+    const visibilityViolations = (registrationCount: number): string[] => (
+      registrationCount === 0 ? [] : ["partial_registration_discoverable"]
+    );
+    expect(visibilityViolations(0)).toEqual([]);
+
+    const stateDirectory = await temporaryDirectory("pending-identity-writer-window");
+    const paths = runnerProcessPaths(stateDirectory, "session-pending-writer");
+    const current = registration({ sessionId: "session-pending-writer" });
+    current.config = { ...current.config, paths };
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, JSON.stringify(current.config));
+    await writeRunnerRegistrationIdentity(
+      paths.sessionDirectory,
+      pendingRunnerRegistrationIdentity(current.config.sessionId, current.config.codeSha),
+    );
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await outbox.initializeBootstrap({
+      session_id: current.config.sessionId,
+      created_at: "2026-08-11T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-pending-writer",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: current.config.codeSha,
+        snapshot_path: current.config.snapshotPath,
+      },
+    });
+    outbox.close();
+
+    const writerLock = await RunnerWriterLock.acquire(paths.lockPath);
+    try {
+      const scan = await scanRunnerRegistrations(stateDirectory);
+      expect(visibilityViolations(scan.registrations.length)).toEqual([]);
+    } finally {
+      await writerLock.release();
+    }
   });
 
   it("classifies mismatched all-dead pid evidence as a dead registration", async () => {
