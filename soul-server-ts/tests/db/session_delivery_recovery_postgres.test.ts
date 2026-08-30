@@ -5,7 +5,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type { SqlClient } from "../../src/db/session_db.js";
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
 import { CompletionDeliveryCoordinator } from
   "../../src/task/completion_delivery_coordinator.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
@@ -112,7 +111,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await blockingTransaction;
   });
 
-  it("backs off a due targetless poison row before claiming the healthy row behind it", async () => {
+  it("skips a targetless row and claims the healthy completion behind it", async () => {
     await register("delivery-poison", "relation-poison");
     await register("delivery-healthy", "relation-healthy", {
       targetSessionId: "caller-session",
@@ -136,20 +135,15 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await expect(repository.claimRecoverableCompletionDeliveries(
       "worker-poison",
       1,
-    )).resolves.toEqual([]);
+    )).resolves.toMatchObject([
+      { delivery_id: "delivery-healthy", lease_owner: "worker-poison" },
+    ]);
     await expect(repository.get("delivery-poison")).resolves.toMatchObject({
       state: "pending",
       target_session_id: null,
-      attempt_count: 10,
-      last_error: "no_current_target",
+      attempt_count: 9,
+      last_error: null,
     });
-
-    await expect(repository.claimRecoverableCompletionDeliveries(
-      "worker-healthy",
-      1,
-    )).resolves.toMatchObject([
-      { delivery_id: "delivery-healthy", lease_owner: "worker-healthy" },
-    ]);
   });
 
   it("claims a pending human intervention for the existing recovery worker", async () => {
@@ -164,7 +158,8 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       payload: { text: "continue", user: "alice" },
     });
 
-    await expect(repository.claimRecoverableCompletionDeliveries(
+    await expect(repository.recovery.claimPendingImmediateIntentsForNode(
+      "node-test",
       "worker-human-live",
       1,
     )).resolves.toMatchObject([{
@@ -191,6 +186,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         lastEventId: 42,
         lastReadEventId: 0,
         interventionQueue: [],
+        executionPromise: Promise.resolve(),
       };
       const params = {
         agentSessionId: task.agentSessionId,
@@ -335,7 +331,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     },
   );
 
-  it("keeps a terminal-parent completion notification out of periodic model recovery", async () => {
+  it("auto-resumes a terminal parent once and keeps its queued completion out of replay", async () => {
     const deliveryId = "completion-held-terminal-parent";
     const task: Task = {
       agentSessionId: "caller-session",
@@ -348,7 +344,16 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       interventionQueue: [],
     };
     const gate = new TaskDeliveryLedgerGate(true, repository);
-    const autoResume = vi.fn();
+    const autoResume = vi.fn(async (
+      resumedTask: Task,
+      message: InterventionMessage,
+      callback: (task: Task) => void,
+    ) => {
+      enqueueInterventionOnce(resumedTask, message);
+      resumedTask.status = "running";
+      callback(resumedTask);
+      return { autoResumed: true } as const;
+    });
     const modelStart = vi.fn();
     const queueOnly = vi.fn(async (
       queuedTask: Task,
@@ -412,9 +417,8 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       payload: canonical.payload,
     });
 
-    await expect(route.addIntervention(params, modelStart)).resolves.toMatchObject({
-      queued: true,
-      consumeWhen: "next_turn",
+    await expect(route.addIntervention(params, modelStart)).resolves.toEqual({
+      autoResumed: true,
     });
     await expect(repository.get(deliveryId)).resolves.toMatchObject({
       state: "queued",
@@ -451,8 +455,8 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     }).toEqual({
       transcriptProbe: 0,
       recoveryDispatch: 0,
-      autoResume: 0,
-      modelStart: 0,
+      autoResume: 1,
+      modelStart: 1,
     });
     await expect(repository.get(deliveryId)).resolves.toMatchObject({
       state: "queued",
@@ -461,7 +465,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
   });
 
-  it("coalesces pending runtime siblings before recovery claim and preserves claimed work", async () => {
+  it("keeps runtime sibling identities independent in their immediate-intent lane", async () => {
     const createdAt = new Date("2026-08-18T00:00:00.000Z");
     for (const [deliveryId, relationKey, state] of [
       ["runtime-claimed", "runtime-claimed-relation", "claimed"],
@@ -491,17 +495,25 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       `;
     }
 
-    await expect(repository.claimRecoverableCompletionDeliveries(
+    await expect(repository.recovery.claimPendingImmediateIntentsForNode(
+      "node-test",
       "recovery-worker",
       10,
-    )).resolves.toMatchObject([{
-      delivery_id: "runtime-pending-latest",
-      state: "claimed",
-      lease_owner: "recovery-worker",
-    }]);
+    )).resolves.toMatchObject([
+      {
+        delivery_id: "runtime-pending-old",
+        state: "claimed",
+        lease_owner: "recovery-worker",
+      },
+      {
+        delivery_id: "runtime-pending-latest",
+        state: "claimed",
+        lease_owner: "recovery-worker",
+      },
+    ]);
     await expect(repository.get("runtime-pending-old")).resolves.toMatchObject({
-      state: "superseded",
-      superseded_at: expect.any(Date),
+      state: "claimed",
+      aggregate_state: "pending",
     });
     await expect(repository.get("runtime-claimed")).resolves.toMatchObject({
       state: "claimed",
@@ -768,7 +780,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     )).resolves.toMatchObject({ state: "dispatching" });
   });
 
-  it("reconciles only transcript-proven startup success and never periodically replays held input", async () => {
+  it("reconciles transcript proof and reclaims each remaining completion identity", async () => {
     await harness.sql`
       INSERT INTO sessions (session_id, node_id, session_type, status, agent_id)
       VALUES ('other-node-target', 'node-other', 'claude', 'running', 'other')
@@ -854,7 +866,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await coordinator.recoverPending(10);
     await coordinator.recoverPending(10);
 
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledTimes(1);
     await expect(repository.get("delivery-after-dispatching")).resolves.toMatchObject({
       state: "pending",
       aggregate_state: "pending",
@@ -864,7 +876,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       aggregate_state: "pending",
     });
     await expect(repository.get("delivery-after-queued")).resolves.toMatchObject({
-      state: "pending",
+      state: "claimed",
       aggregate_state: "pending",
       last_error: "queued_transcript_input_absent",
     });
@@ -878,6 +890,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
 
     // A stale remote heartbeat does not authorize periodic model execution.
+    dispatch.mockClear();
     await harness.sql`
       INSERT INTO soulstream_node_heartbeats (node_id, last_seen_at)
       VALUES ('node-other', NOW() - INTERVAL '10 minutes')
@@ -942,7 +955,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
   });
 
-  it("keeps the legacy transcript response delivered while new orch stores it consumed", async () => {
+  it("returns the exact transcript receipt only after the delivery is consumed", async () => {
     await register("delivery-old-soul-new-orch", "relation-old-soul-new-orch", {
       targetSessionId: "caller-session",
     });
@@ -967,30 +980,15 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     );
     expect(claimed?.delivery_id).toBe("delivery-old-soul-new-orch");
 
-    const recovery = repository.recovery as typeof repository.recovery & {
-      markDeliveredFromTranscript?: (
-        deliveryId: string,
-        leaseOwner: string,
-        assistantMessageUuid: string,
-      ) => Promise<SessionDeliveryRow | null>;
-      markConsumedFromTranscript?: (
-        deliveryId: string,
-        leaseOwner: string,
-        assistantMessageUuid: string,
-      ) => Promise<SessionDeliveryRow | null>;
-    };
-    const legacyAction = recovery.markDeliveredFromTranscript
-      ?? recovery.markConsumedFromTranscript;
-    if (!legacyAction) throw new Error("legacy transcript action is unavailable");
-    const legacyResponse = await legacyAction.call(
-      recovery,
+    const consumedResponse = await repository.recovery.markDeliveredFromTranscript(
       "delivery-old-soul-new-orch",
       "old-soul-worker",
       "assistant-old-soul",
     );
 
-    expect(legacyResponse).toMatchObject({
-      state: "delivered",
+    expect(consumedResponse).toMatchObject({
+      state: "consumed",
+      aggregate_state: "consumed",
       target_receipt_id: "transcript:assistant-old-soul",
     });
     const stored = await repository.get("delivery-old-soul-new-orch");
@@ -1237,70 +1235,39 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     `).resolves.toEqual([{ outcome: "accepted" }]);
   });
 
-  it("dead-letters retryable rows and only requeues them through the explicit operator path", async () => {
-    for (const [deliveryId, relationKey, worker] of [
-      ["delivery-attempt-cap", "relation-attempt-cap", "worker-attempt-cap"],
-      ["delivery-age-cap", "relation-age-cap", "worker-age-cap"],
-    ] as const) {
-      await register(deliveryId, relationKey, { targetSessionId: "caller-session" });
-      await repository.claimForTarget(deliveryId, "caller-session", worker);
-      await repository.beginDispatch(deliveryId, worker);
-      await repository.notifications.stageWithQueuedDelivery({
-        deliveryId,
-        leaseOwner: worker,
-        targetSessionId: "caller-session",
-        disposition: "queued",
-        payload: notificationPayload(deliveryId, relationKey),
-      });
-    }
+  it("keeps retryable rows pending regardless of age or attempt count", async () => {
+    await register("delivery-attempt-cap", "relation-attempt-cap", {
+      targetSessionId: "caller-session",
+    });
+    await repository.claimForTarget(
+      "delivery-attempt-cap",
+      "caller-session",
+      "worker-attempt-cap",
+    );
+    await repository.beginDispatch("delivery-attempt-cap", "worker-attempt-cap");
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId: "delivery-attempt-cap",
+      leaseOwner: "worker-attempt-cap",
+      targetSessionId: "caller-session",
+      disposition: "queued",
+      payload: notificationPayload("delivery-attempt-cap", "relation-attempt-cap"),
+    });
     await harness.sql`
       UPDATE session_delivery_notification_outbox
-      SET attempt_count = 15
+      SET attempt_count = 15, created_at = NOW() - INTERVAL '25 hours'
       WHERE delivery_id = 'delivery-attempt-cap'
     `;
-    await harness.sql`
-      UPDATE session_delivery_notification_outbox
-      SET created_at = NOW() - INTERVAL '25 hours'
-      WHERE delivery_id = 'delivery-age-cap'
-    `;
-    const oldestAllowed = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     await expect(repository.notifications.retry(
       "delivery-attempt-cap",
       "worker-attempt-cap",
       "transient failure",
       new Date(),
-      16,
-      oldestAllowed,
-    )).resolves.toMatchObject({ state: "dead_letter", attempt_count: 16 });
-    await expect(repository.notifications.retry(
-      "delivery-age-cap",
-      "worker-age-cap",
-      "transient failure",
-      new Date(),
-      16,
-      oldestAllowed,
-    )).resolves.toMatchObject({ state: "dead_letter", attempt_count: 1 });
-
-    await expect(repository.notifications.listDeadLetters(10)).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ delivery_id: "delivery-attempt-cap" }),
-        expect.objectContaining({ delivery_id: "delivery-age-cap" }),
-      ]),
-    );
-    await expect(
-      repository.notifications.requeueDeadLetter("delivery-attempt-cap"),
-    ).resolves.toMatchObject({
-      state: "pending",
-      attempt_count: 0,
-      last_error: null,
-      dead_lettered_at: null,
+    )).resolves.toMatchObject({ state: "pending", attempt_count: 16 });
+    await expect(repository.get("delivery-attempt-cap")).resolves.toMatchObject({
+      aggregate_state: "pending",
     });
-    await expect(
-      repository.notifications.requeueDeadLetter("delivery-attempt-cap"),
-    ).resolves.toBeNull();
   });
-
   it("quarantines residual camelCase deliveryIntent rows in migration 062", async () => {
     await register("delivery-legacy-camel", "relation-legacy-camel", {
       targetSessionId: "caller-session",

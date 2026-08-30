@@ -43,7 +43,7 @@ describe("queued transcript finite restart recovery", () => {
     expect(harness.state()).toBe("consumed");
     expect(harness.claimQueuedAfterNodeRestart).toHaveBeenCalledTimes(2);
     expect(harness.inspect).toHaveBeenCalledOnce();
-    expect(harness.markConsumed).toHaveBeenCalledOnce();
+    expect(harness.markDeliveredFromTranscript).toHaveBeenCalledOnce();
     expect(harness.retryLeasedDelivery).not.toHaveBeenCalled();
     await harness.startup.stop();
   });
@@ -79,11 +79,6 @@ function makeHarness(receiptKind: "input_pending" | "completed") {
   ) => {
     if (state !== "claimed") return null;
     receiptId = `transcript:${assistantMessageUuid}`;
-    state = "delivered";
-    return row();
-  });
-  const markConsumed = vi.fn(async () => {
-    if (state !== "delivered") return null;
     state = "consumed";
     return row();
   });
@@ -96,8 +91,6 @@ function makeHarness(receiptKind: "input_pending" | "completed") {
     : { kind: "input_pending" as const, inputUuid });
   const queuedRecovery = new QueuedDeliveryTranscriptRecovery({
     deliveryRepository: {
-      get: vi.fn(async () => row()),
-      markConsumed,
       retryLeasedDelivery,
     },
     recoveryRepository: {
@@ -128,7 +121,7 @@ function makeHarness(receiptKind: "input_pending" | "completed") {
     state: () => state,
     claimQueuedAfterNodeRestart,
     inspect,
-    markConsumed,
+    markDeliveredFromTranscript,
     retryLeasedDelivery,
   };
 }

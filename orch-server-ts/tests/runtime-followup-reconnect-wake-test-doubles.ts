@@ -127,6 +127,31 @@ export class RuntimeFollowupLedger {
     return structuredClone(row) as SessionDeliveryRow;
   }
 
+  async markConsumedByRelation(params: {
+    deliveryId: string;
+    relationKey: string;
+    completionId: string;
+    callerSessionId: string;
+    consumedTurnId: string;
+  }) {
+    const consumed = await this.markConsumed(
+      params.deliveryId,
+      params.consumedTurnId,
+    );
+    const consumedAt = consumed?.consumed_at ?? new Date();
+    return {
+      relation: {
+        relation_key: params.relationKey,
+        completion_id: params.completionId,
+        caller_session_id: params.callerSessionId,
+        consumed_turn_id: params.consumedTurnId,
+        consumed_at: consumedAt,
+      },
+      relationInserted: consumed !== null,
+      deliveryConsumed: consumed !== null,
+    };
+  }
+
   pendingIds(): string[] {
     return [...this.rows.values()]
       .filter((row) => row.state === "pending")

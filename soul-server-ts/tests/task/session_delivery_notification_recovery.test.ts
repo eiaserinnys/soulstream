@@ -50,7 +50,7 @@ function task(sessionId: string): Task {
 }
 
 describe("SessionDeliveryNotificationRecovery", () => {
-  it("dead-letters a non-retryable notification without starving the next delivery", async () => {
+  it("keeps a missing target retryable without starving the next delivery", async () => {
     const poison = row("delivery-poison", "missing-target");
     const healthy = row("delivery-healthy", "healthy-target");
     const repository = {
@@ -59,7 +59,6 @@ describe("SessionDeliveryNotificationRecovery", () => {
       get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(healthy),
       retry: vi.fn().mockResolvedValue(poison),
-      deadLetter: vi.fn().mockResolvedValue({ ...poison, state: "dead_letter" }),
     };
     const publish = vi.fn().mockResolvedValue({
       published: true,
@@ -78,12 +77,12 @@ describe("SessionDeliveryNotificationRecovery", () => {
 
     await expect(recovery.recover("notification-worker", 100)).resolves.toBe(2);
 
-    expect(repository.deadLetter).toHaveBeenCalledWith(
+    expect(repository.retry).toHaveBeenCalledWith(
       "delivery-poison",
       "notification-worker",
       "Notification target session not found: missing-target",
+      expect.any(Date),
     );
-    expect(repository.retry).not.toHaveBeenCalled();
     expect(publish).toHaveBeenCalledTimes(1);
     expect(repository.markPublished).toHaveBeenCalledWith(
       "delivery-healthy",
@@ -100,7 +99,6 @@ describe("SessionDeliveryNotificationRecovery", () => {
       get: vi.fn(),
       markPublished: vi.fn(),
       retry: vi.fn().mockResolvedValue(pending),
-      deadLetter: vi.fn(),
     };
     const recovery = new SessionDeliveryNotificationRecovery({
       repository,
@@ -118,10 +116,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
       "notification-worker",
       "session_notification persistence failed",
       expect.any(Date),
-      16,
-      expect.any(Date),
     );
-    expect(repository.deadLetter).not.toHaveBeenCalled();
   });
 
   it("decodes a legacy camelCase deliveryIntent during rolling migration", async () => {
@@ -137,7 +132,6 @@ describe("SessionDeliveryNotificationRecovery", () => {
       get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(legacy),
       retry: vi.fn(),
-      deadLetter: vi.fn(),
     };
     const publish = vi.fn().mockResolvedValue({
       published: true,
@@ -175,7 +169,6 @@ describe("SessionDeliveryNotificationRecovery", () => {
       get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(runtimeFollowup),
       retry: vi.fn(),
-      deadLetter: vi.fn(),
     };
     const publish = vi.fn().mockResolvedValue({
       published: true,
@@ -201,7 +194,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     );
   });
 
-  it("dead-letters an invalid decoded payload immediately without retry", async () => {
+  it("keeps an invalid decoded payload quarantined and retryable", async () => {
     const invalid = row("delivery-invalid", "target");
     invalid.payload = { ...invalid.payload, delivery_intent: "unknown" };
     const repository = {
@@ -210,7 +203,6 @@ describe("SessionDeliveryNotificationRecovery", () => {
       get: vi.fn(),
       markPublished: vi.fn(),
       retry: vi.fn(),
-      deadLetter: vi.fn().mockResolvedValue({ ...invalid, state: "dead_letter" }),
     };
     const recovery = new SessionDeliveryNotificationRecovery({
       repository,
@@ -222,22 +214,21 @@ describe("SessionDeliveryNotificationRecovery", () => {
 
     await recovery.recover("notification-worker");
 
-    expect(repository.deadLetter).toHaveBeenCalledWith(
+    expect(repository.retry).toHaveBeenCalledWith(
       "delivery-invalid",
       "notification-worker",
       "Unsupported outbox delivery intent: unknown",
+      expect.any(Date),
     );
-    expect(repository.retry).not.toHaveBeenCalled();
   });
 
-  it("passes node ownership and retry ceilings to the repository", async () => {
+  it("passes node ownership and the batch limit to the repository", async () => {
     const repository = {
       releaseExpiredLeases: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([]),
       get: vi.fn(),
       markPublished: vi.fn(),
       retry: vi.fn(),
-      deadLetter: vi.fn(),
     };
     const recovery = new SessionDeliveryNotificationRecovery({
       repository,
@@ -249,7 +240,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
 
     await recovery.recover("notification-worker", 25);
 
-    expect(repository.releaseExpiredLeases).toHaveBeenCalledWith(16, expect.any(Date));
+    expect(repository.releaseExpiredLeases).toHaveBeenCalledWith();
     expect(repository.claimDue).toHaveBeenCalledWith(
       "node-test",
       "notification-worker",

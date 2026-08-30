@@ -284,7 +284,15 @@ async function observeStaleTerminalCompletion(
     persistence: makeEventPersistenceTestDouble().persistence,
   });
   const queueOnly = vi.spyOn(transition, "queueOnly");
-  const resume = vi.fn();
+  const resume = vi.fn(async (
+    resumedTask: Task,
+    _message: InterventionMessage,
+    callback: (task: Task) => void,
+  ) => {
+    resumedTask.status = "running";
+    callback(resumedTask);
+    return { autoResumed: true as const };
+  });
   const executorCallback = vi.fn();
   const route = new TaskInterventionRoute({
     getTask: () => task,
@@ -305,7 +313,11 @@ async function observeStaleTerminalCompletion(
     executorCallbackCalls: executorCallback.mock.calls.length,
     queueOnlyCalls: queueOnly.mock.calls.length,
     queueDepthAfterRoute: countQueued(task, deliveryId),
-    result: "queued" in result && result.queued ? "queued" : "other",
+    result: "autoResumed" in result
+      ? "resumed"
+      : "queued" in result && result.queued
+      ? "queued"
+      : "other",
   };
 }
 
@@ -401,6 +413,7 @@ function makeRunningSubject(
   };
   const task = makeTask(`unified-running-${backend}`, "running");
   task.modelPresetBackend = backend;
+  task.executionPromise = foregroundNaturalRelease.promise;
   task.runner = createTaskRunnerRuntime(
     new RunnerProcessEngineProxy(backend, "/workspace/unified", dispatcher as never),
     dispatcher as never,

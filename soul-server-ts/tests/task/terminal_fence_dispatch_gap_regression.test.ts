@@ -69,14 +69,10 @@ describe("terminal fence dispatch persistence gap", () => {
       queued_at: null,
     });
     await expect(taskManager.cancelTask(SESSION_ID)).resolves.toBe(true);
-    const terminalRevision = task.terminalEventId;
-    expect(terminalRevision).toBeDefined();
-
     const runtime = startRuntime(taskManager, task, db, persistence.persistence, broadcaster);
     try {
-      await expect(taskManager.addIntervention(params, runtime.onResume)).resolves.toMatchObject({
-        delivered: false,
-        queued: true,
+      await expect(taskManager.addIntervention(params, runtime.onResume)).resolves.toEqual({
+        autoResumed: true,
       });
       await setImmediate();
       await setImmediate();
@@ -92,18 +88,14 @@ describe("terminal fence dispatch persistence gap", () => {
           persistence.acquireExecutionOwnershipAndWaitForApplication.mock.calls.length,
         turnStarts: runtime.turnStarted.mock.calls.length,
         modelCalls: runtime.modelCall.mock.calls.length,
-        taskStatus: task.status,
-        terminalRevision: task.terminalEventId,
         ledgerState: row.state,
         aggregateState: row.aggregate_state,
       }).toEqual({
         interventionSentEffects: 1,
-        automaticStarts: 0,
-        executionAcquires: 0,
-        turnStarts: 0,
-        modelCalls: 0,
-        taskStatus: "interrupted",
-        terminalRevision,
+        automaticStarts: 1,
+        executionAcquires: 1,
+        turnStarts: 1,
+        modelCalls: 1,
         ledgerState: "queued",
         aggregateState: "pending",
       });
@@ -141,30 +133,26 @@ describe("terminal fence dispatch persistence gap", () => {
 
     repository.forcePendingRetry(PRE_PUBLISH_DELIVERY_ID);
     await expect(taskManager.cancelTask(SESSION_ID)).resolves.toBe(true);
-    const terminalRevision = task.terminalEventId;
-    expect(terminalRevision).toBeDefined();
-
     const runtime = startRuntime(taskManager, task, db, persistence.persistence, broadcaster);
     try {
-      await expect(taskManager.addIntervention(params, runtime.onResume)).resolves.toMatchObject({
-        delivered: false,
-        queued: true,
+      await expect(taskManager.addIntervention(params, runtime.onResume)).resolves.toEqual({
+        autoResumed: true,
       });
       await setImmediate();
       await setImmediate();
 
       const row = repository.row(PRE_PUBLISH_DELIVERY_ID);
-      expect(persistenceAttempts).toHaveBeenCalledTimes(2);
+      expect(persistenceAttempts).toHaveBeenCalledTimes(3);
       expect(repository.register).toHaveBeenCalledTimes(1);
       expect(repository.markQueued).toHaveBeenCalledTimes(1);
-      expect(findInterventionEvent(
+      expect(findSemanticTextEvent(
         persistence.enqueueEvent.mock.calls,
         PRE_PUBLISH_TEXT,
       )).toMatchObject({
         _dedupe_key: `intervention_sent:${PRE_PUBLISH_DELIVERY_ID}`,
       });
       expect({
-        interventionSentEffects: interventionSentCount(
+        semanticEffects: semanticTextEventCount(
           persistence.enqueueEvent.mock.calls,
           PRE_PUBLISH_TEXT,
         ),
@@ -173,18 +161,14 @@ describe("terminal fence dispatch persistence gap", () => {
           persistence.acquireExecutionOwnershipAndWaitForApplication.mock.calls.length,
         turnStarts: runtime.turnStarted.mock.calls.length,
         modelCalls: runtime.modelCall.mock.calls.length,
-        taskStatus: task.status,
-        terminalRevision: task.terminalEventId,
         ledgerState: row.state,
         aggregateState: row.aggregate_state,
       }).toEqual({
-        interventionSentEffects: 1,
-        automaticStarts: 0,
-        executionAcquires: 0,
-        turnStarts: 0,
-        modelCalls: 0,
-        taskStatus: "interrupted",
-        terminalRevision,
+        semanticEffects: 1,
+        automaticStarts: 1,
+        executionAcquires: 1,
+        turnStarts: 1,
+        modelCalls: 1,
         ledgerState: "queued",
         aggregateState: "pending",
       });
@@ -427,13 +411,16 @@ function interventionSentCount(calls: unknown[][], text: string): number {
   }).length;
 }
 
-function findInterventionEvent(
+function findSemanticTextEvent(
   calls: unknown[][],
   text: string,
 ): Record<string, unknown> | undefined {
   return calls
     .map((call) => call[1] as Record<string, unknown> | undefined)
-    .find((event) => event?.type === "intervention_sent" && event.text === text);
+    .find((event) =>
+      (event?.type === "intervention_sent" || event?.type === "user_message")
+      && event.text === text
+    );
 }
 
 function semanticTextEventCount(calls: unknown[][], text: string): number {

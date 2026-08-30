@@ -81,10 +81,11 @@ export function completedResumeViolations(
   if (observation.deliveryBegins !== expectedClicks) {
     violations.push(`${observation.label}:node_delivery_begin_not_exactly_once`);
   }
-  if (observation.autoResumes !== 1) {
+  const expectedNewExecutions = observation.executionDrainBarrierUsed ? 0 : 1;
+  if (observation.autoResumes !== expectedNewExecutions) {
     violations.push(`${observation.label}:auto_resume_not_exactly_once`);
   }
-  if (observation.executionStarts !== 1) {
+  if (observation.executionStarts !== expectedNewExecutions) {
     violations.push(`${observation.label}:execution_start_not_exactly_once`);
   }
   if (observation.semanticInputs !== expectedClicks) {

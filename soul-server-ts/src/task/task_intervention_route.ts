@@ -4,8 +4,6 @@ import type { AutoResumeCallback, AutoResumeTransition } from "./task_auto_resum
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import {
-  isActiveTaskStatus,
-  isTerminalTaskStatus,
   type CallerInfo,
   type InterventionMessage,
   type Task,
@@ -21,7 +19,6 @@ import type {
 } from "./task_delivery_ledger_gate.js";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
-import { isExecutionOwnershipConflictError } from "./execution_ownership.js";
 import {
   isNotificationDeliveryIntent,
 } from "./session_delivery_notification_payload.js";
@@ -33,12 +30,10 @@ type NotificationPublication = Awaited<
 /**
  * `addIntervention` 결과. Python `task_manager.add_intervention` L590-595 정본 형상.
  *
- * - running 세션 → `engine.intervene()`가 현재 전달하면 `{delivered: true}`,
+ * - canonical execution slot이 있으면 `engine.intervene()`가 현재 전달하면 `{delivered: true}`,
  *   전달하지 못하면 소비 시점과 사유가 명시된 queue/defer 결과.
- * - active + logical turn complete → 새 generation으로 `{autoResumed: true}`.
- * - completed → 모든 새 입력이 `{autoResumed: true}`.
- * - error/interrupted → completion notification만 다음 명시적 turn까지 queued;
- *   사용자 입력과 runtime follow-up은 `{autoResumed: true}`.
+ * - canonical execution slot이 없으면 이전 status와 무관하게 기존
+ *   AutoResumeTransition으로 새 generation을 연다.
  */
 export type AddInterventionResult =
   | RunningInterventionResult
@@ -80,8 +75,8 @@ export interface AddInterventionParams {
 /**
  * `addIntervention`의 auto-resume 경로 콜백.
  *
- * Task가 completed/error/interrupted일 때 route는 status를 "running"으로 돌리는
- * transition에 본 콜백을 넘긴다. 콜백은 *task_executor.startExecution*을 호출할 책임.
+ * canonical execution slot이 없을 때 route는 AutoResumeTransition에 본 콜백을
+ * 넘긴다. 콜백은 *task_executor.startExecution*을 호출할 책임.
  * design-principles §1(지식 경계) — task route는 executor를 알지 않는다.
  */
 export type StartExecutionCallback = AutoResumeCallback;
@@ -99,7 +94,6 @@ export interface TaskInterventionRouteDeps {
     TaskDeliveryLedgerGate,
     "admit" | "beginDispatch" | "recordResult" | "recordFailure"
       | "recordNotificationPublished" | "recordNotificationFailure"
-      | "recordReservationRetry"
   > & Partial<Pick<TaskDeliveryLedgerGate, "reserveRetry">>;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
 }
@@ -107,10 +101,9 @@ export interface TaskInterventionRouteDeps {
 /**
  * Owns public intervention route policy.
  *
- * Active status is the single authority for routing an intervention to the
- * attached runner. RunningInterventionTransition and AutoResumeTransition own
- * side-effect order. This route owns task resolution, transition selection,
- * public result forwarding, and onResume callback wiring.
+ * The canonical execution slot is the only routing authority. An attached
+ * execution receives the intervention; its absence enters AutoResumeTransition.
+ * Session status is a projection and does not admit or invalidate delivery.
  */
 export class TaskInterventionRoute {
   constructor(private readonly deps: TaskInterventionRouteDeps) {}
@@ -194,13 +187,7 @@ export class TaskInterventionRoute {
           };
         }
       }
-      const taskRoute = interventionTaskRoute(task);
-      if (taskRoute === "activating") {
-        throw new Error(
-          `execution activation did not reach running state for ${task.agentSessionId}`,
-        );
-      }
-      const isRunning = taskRoute === "running";
+      const isRunning = task.executionPromise !== undefined;
       const heldHumanRetry = admission.kind === "admitted"
         && admission.row.intent === "human_live_steer"
         && hasPriorDispatchAttempt(admission.row);
@@ -219,24 +206,6 @@ export class TaskInterventionRoute {
         ) {
           notificationDisposition = "queued";
         }
-      } else if (heldHumanRetry && task.status !== "completed") {
-        result = await this.deps.runningInterventionTransition.queueOnly(task, message);
-      } else if (
-        isTerminalTaskStatus(task.status)
-        && admission.kind === "admitted"
-        && admission.row.intent === "completion_notification"
-        && (
-          task.status !== "completed"
-          || task.terminalEventId === undefined
-          || request.deliveryLeaseOwner === undefined
-        )
-      ) {
-        result = await this.deps.runningInterventionTransition.queueOnly(
-          task,
-          message,
-          { publishEvent: false },
-        );
-        notificationDisposition = "queued";
       } else if (admission.kind === "admitted") {
         const deferResumeUntilQueued: StartExecutionCallback = (resumedTask, activation) => {
           deferredResume = { task: resumedTask, activation };
@@ -245,9 +214,6 @@ export class TaskInterventionRoute {
           task,
           message,
           deferResumeUntilQueued,
-          ...(admission.row.attempt_count > 0
-            ? [{ publishUserMessage: false }]
-            : []),
         );
       } else {
         result = await this.deps.autoResumeTransition.resume(task, message, onResume);
@@ -283,14 +249,9 @@ export class TaskInterventionRoute {
       // can dequeue it. A worker crash before this callback is recoverable from
       // the ledger; starting first would leave a running task with no receipt.
       startDeferredResumeOnce();
-      if ("autoResumed" in result && task.status === "initializing") {
+      if ("autoResumed" in result) {
         const activation = task.executionActivation?.promise;
-        if (!activation) {
-          throw new Error(
-            `auto-resume executor did not expose activation barrier for ${task.agentSessionId}`,
-          );
-        }
-        await activation;
+        if (activation) await activation;
       }
       activationCompleted = true;
       if (notificationDisposition === "auto_resume" && notificationPublication) {
@@ -317,24 +278,6 @@ export class TaskInterventionRoute {
           );
         } catch (notificationRecoveryError) {
           recoveryError ??= notificationRecoveryError;
-        }
-      }
-      if (
-        this.deps.deliveryLedgerGate
-        && isExecutionOwnershipConflictError(err)
-      ) {
-        const disposition = await this.deps.deliveryLedgerGate.recordReservationRetry(
-          admission,
-          err.retryAt,
-        );
-        if (disposition === "scheduled" || disposition === "parked") {
-          return {
-            delivered: false,
-            queued: true,
-            queuePosition: 1,
-            consumeWhen: "next_turn",
-            reason: "queue_only_policy",
-          };
         }
       }
       if (this.deps.deliveryLedgerGate && !ledgerResultRecorded) {
@@ -371,13 +314,8 @@ export class TaskInterventionRoute {
   }
 
   private async awaitInitializingTask(task: Task): Promise<void> {
-    if (task.status !== "initializing") return;
     const activation = task.executionActivation?.promise;
-    if (!activation) {
-      throw new Error(
-        `initializing task has no activation barrier: ${task.agentSessionId}`,
-      );
-    }
+    if (!activation) return;
     await activation;
   }
 
@@ -416,16 +354,6 @@ function hasPriorDispatchAttempt(row: SessionDeliveryRow): boolean {
   return row.attempt_count > 0
     || Boolean(row.dispatching_at)
     || Boolean(row.queued_at);
-}
-
-function interventionTaskRoute(
-  task: Task,
-): "running" | "activating" | "auto-resume" {
-  if (task.status === "initializing") return "activating";
-  if (!isActiveTaskStatus(task.status)) return "auto-resume";
-  return task.runner === undefined || task.runner.dispatcher.hasActiveExecution()
-    ? "running"
-    : "auto-resume";
 }
 
 export function ensureHumanDeliveryIdentity(

@@ -44,15 +44,36 @@ class DeliveryRepositoryDouble {
   }));
 
   readonly markConsumedByRelation = vi.fn(async (
-    relationKey: string,
-    completionId: string,
-    callerTurnId: string,
+    params: {
+      deliveryId: string;
+      relationKey: string;
+      completionId: string;
+      callerSessionId: string;
+      consumedTurnId: string;
+    },
   ) => {
-    if (relationKey !== RELATION_KEY || completionId !== COMPLETION_ID) return null;
+    if (
+      params.deliveryId !== DELIVERY_ID
+      || params.relationKey !== RELATION_KEY
+      || params.completionId !== COMPLETION_ID
+      || params.callerSessionId !== SESSION_ID
+    ) {
+      return { relation: {} as never, relationInserted: false, deliveryConsumed: false };
+    }
     this.row.state = "consumed";
     this.row.aggregate_state = "consumed";
-    this.row.caller_turn_id = callerTurnId;
-    return this.row;
+    this.row.caller_turn_id = params.consumedTurnId;
+    return {
+      relation: {
+        relation_key: params.relationKey,
+        completion_id: params.completionId,
+        caller_session_id: params.callerSessionId,
+        consumed_turn_id: params.consumedTurnId,
+        consumed_at: new Date(),
+      },
+      relationInserted: true,
+      deliveryConsumed: true,
+    };
   });
 }
 

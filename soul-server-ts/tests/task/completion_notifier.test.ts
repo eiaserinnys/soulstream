@@ -217,21 +217,13 @@ describe("TaskCompletionNotifier.notify", () => {
         return { row: stored, inserted: true, conflict: false };
       }),
       get: vi.fn(async () => stored),
-      claimForTarget: vi.fn(async (
-        _deliveryId: string,
-        targetSessionId: string,
+      claimRecoverableCompletionDeliveries: vi.fn(async (
         leaseOwner: string,
       ) => {
-        calls.push("claim-target");
-        stored = {
-          ...stored,
-          target_session_id: targetSessionId,
-          state: "claimed",
-          lease_owner: leaseOwner,
-        };
-        return stored;
+        calls.push("claim-recoverable");
+        stored = { ...stored, state: "claimed", lease_owner: leaseOwner };
+        return [stored];
       }),
-      claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([]),
       deferPending: vi.fn(),
       retryLeasedDelivery: vi.fn(),
       releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
@@ -273,7 +265,7 @@ describe("TaskCompletionNotifier.notify", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     expect(params.completionId).toMatch(/^completion:/);
-    expect(calls).toEqual(["register", "claim-target"]);
+    expect(calls).toEqual(["register", "claim-recoverable"]);
   });
 
   it("v2 일반 agent caller는 실제 caller에 1회 전달한다", async () => {
@@ -308,20 +300,12 @@ describe("TaskCompletionNotifier.notify", () => {
         return { row: stored, inserted: true, conflict: false };
       }),
       get: vi.fn(async () => stored),
-      claimForTarget: vi.fn(async (
-        _deliveryId: string,
-        targetSessionId: string,
+      claimRecoverableCompletionDeliveries: vi.fn(async (
         leaseOwner: string,
       ) => {
-        stored = {
-          ...stored,
-          target_session_id: targetSessionId,
-          state: "claimed",
-          lease_owner: leaseOwner,
-        };
-        return stored;
+        stored = { ...stored, state: "claimed", lease_owner: leaseOwner };
+        return [stored];
       }),
-      claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([]),
       deferPending: vi.fn(),
       retryLeasedDelivery: vi.fn(),
       releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
@@ -351,11 +335,11 @@ describe("TaskCompletionNotifier.notify", () => {
       },
     }));
 
-    expect(repository.claimForTarget).toHaveBeenCalledWith(
+    expect(repository.claimRecoverableCompletionDeliveries).toHaveBeenCalledWith(
       expect.any(String),
-      "ordinary-agent-caller",
+      1,
+      60_000,
       expect.any(String),
-      expect.any(Number),
     );
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
     expect(tm.addIntervention.mock.calls[0]![0]).toMatchObject({
@@ -364,7 +348,7 @@ describe("TaskCompletionNotifier.notify", () => {
     });
   });
 
-  it("v2 일반 agent caller의 cross-node relay가 metadata를 보존하고 중복 retry를 1회만 수용한다", async () => {
+  it("v2 cross-node relay는 metadata를 보존하고 중복 notify를 같은 claim으로 막는다", async () => {
     let stored: Record<string, unknown> | undefined;
     const repository = {
       register: vi.fn(async (params: Record<string, unknown>) => {
@@ -398,20 +382,13 @@ describe("TaskCompletionNotifier.notify", () => {
         return { row: stored, inserted: true, conflict: false };
       }),
       get: vi.fn(async () => stored),
-      claimForTarget: vi.fn(async (
-        _deliveryId: string,
-        targetSessionId: string,
+      claimRecoverableCompletionDeliveries: vi.fn(async (
         leaseOwner: string,
       ) => {
-        stored = {
-          ...stored,
-          target_session_id: targetSessionId,
-          state: "claimed",
-          lease_owner: leaseOwner,
-        };
-        return stored;
+        if (stored?.state !== "pending") return [];
+        stored = { ...stored, state: "claimed", lease_owner: leaseOwner };
+        return [stored];
       }),
-      claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([]),
       deferPending: vi.fn(),
       retryLeasedDelivery: vi.fn(),
       releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
@@ -485,10 +462,9 @@ describe("TaskCompletionNotifier.notify", () => {
     await notifier.notify(child);
 
     expect(sourceTaskManager.addIntervention).not.toHaveBeenCalled();
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(receiverAddIntervention).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(receiverAddIntervention).toHaveBeenCalledTimes(1);
     expect(accepted).toHaveLength(1);
-    expect(relayedBodies[0]).toEqual(relayedBodies[1]);
     expect(accepted[0]).toMatchObject({
       agentSessionId: "ordinary-agent-caller-remote",
       user: "agent",
@@ -505,101 +481,6 @@ describe("TaskCompletionNotifier.notify", () => {
         agent_id: "codex-default",
       },
     });
-  });
-
-  it("v2 cross-node unknown 판정은 pending으로 보존하고 periodic 재시도하지 않는다", async () => {
-    let stored: Record<string, unknown> | undefined;
-    const markUncertain = vi.fn();
-    const retryLeasedDelivery = vi.fn(async (deliveryId: string) => {
-      stored = {
-        ...stored,
-        delivery_id: deliveryId,
-        state: "pending",
-        lease_owner: null,
-      };
-      return stored;
-    });
-    const claimRecoverableCompletionDeliveries = vi.fn().mockResolvedValue([]);
-    const repository = {
-      register: vi.fn(async (params: Record<string, unknown>) => {
-        stored = {
-          delivery_id: params.deliveryId,
-          target_session_id: params.targetSessionId,
-          source_session_id: params.sourceSessionId,
-          relation_key: params.relationKey,
-          completion_id: params.completionId,
-          intent: params.intent,
-          source: params.source,
-          producer_kind: params.producerKind,
-          producer_id: params.producerId,
-          producer_terminal_revision: params.producerTerminalRevision,
-          parent_delivery_id: null,
-          caller_turn_id: null,
-          payload_hash: params.payloadHash,
-          payload: params.payload,
-          state: "pending",
-          created_at: params.createdAt,
-          updated_at: params.createdAt,
-          claimed_at: null,
-          dispatching_at: null,
-          queued_at: null,
-          delivered_at: null,
-          consumed_at: null,
-        };
-        return { row: stored, inserted: true, conflict: false };
-      }),
-      get: vi.fn(async () => stored),
-      claimForTarget: vi.fn(async (
-        _deliveryId: string,
-        targetSessionId: string,
-        leaseOwner: string,
-      ) => {
-        stored = {
-          ...stored,
-          target_session_id: targetSessionId,
-          state: "claimed",
-          lease_owner: leaseOwner,
-        };
-        return stored;
-      }),
-      claimRecoverableCompletionDeliveries,
-      deferPending: vi.fn(),
-      retryLeasedDelivery,
-      releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
-      markUncertain,
-    };
-    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      delivered: null,
-      outcome: "unknown",
-      reason: "verdict_unknown",
-      consumeWhen: null,
-    }), { status: 200 }));
-    const notifier = new TaskCompletionNotifier(
-      NODE_ID,
-      makeTaskManagerStub().taskManager,
-      makeAgentRegistry(),
-      vi.fn(),
-      silentLogger,
-      makeOrch(),
-      fetchImpl,
-      { getSession: vi.fn().mockResolvedValue({ node_id: "node-remote" }) } as never,
-      true,
-      repository as never,
-    );
-
-    await notifier.notify(makeChild({ terminalEventId: 45 }));
-    await notifier.recoverPending();
-
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(retryLeasedDelivery).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.any(String),
-      "Completion delivery verdict is unknown and must retry: verdict_unknown",
-      expect.any(Number),
-    );
-    expect(markUncertain).not.toHaveBeenCalled();
-    expect(stored).toMatchObject({ state: "pending" });
-    expect(claimRecoverableCompletionDeliveries).not.toHaveBeenCalled();
   });
 
   it("1c. notifyCompletion=false면 callerSessionId가 있어도 완료통지를 보내지 않는다", async () => {
@@ -653,23 +534,18 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("v2 target claim 실패는 pending을 남기고 같은 explicit identity만 재시도한다", async () => {
+  it("v2 claim scheduling 실패는 pending을 남기고 recovery가 같은 identity를 dispatch한다", async () => {
     const tm = makeTaskManagerStub();
     let stored: Record<string, unknown> | undefined;
-    const claimForTarget = vi.fn()
-      .mockRejectedValueOnce(new Error("temporary target claim failure"))
-      .mockImplementation(async (
-        _deliveryId: string,
-        targetSessionId: string,
-        leaseOwner: string,
-      ) => {
+    const claimRecoverableCompletionDeliveries = vi.fn()
+      .mockRejectedValueOnce(new Error("temporary claim scheduling failure"))
+      .mockImplementation(async (leaseOwner: string) => {
         stored = {
           ...stored,
-          target_session_id: targetSessionId,
           state: "claimed",
           lease_owner: leaseOwner,
         };
-        return stored;
+        return [stored];
       });
     const repository = {
       register: vi.fn(async (params: Record<string, unknown>) => {
@@ -700,16 +576,7 @@ describe("TaskCompletionNotifier.notify", () => {
         return { row: stored, inserted: true, conflict: false };
       }),
       get: vi.fn(async () => stored),
-      claimForTarget,
-      claimRecoverableCompletionDeliveries: vi.fn(async (leaseOwner: string) => {
-        stored = {
-          ...stored,
-          target_session_id: "caller-old",
-          state: "claimed",
-          lease_owner: leaseOwner,
-        };
-        return [stored];
-      }),
+      claimRecoverableCompletionDeliveries,
       deferPending: vi.fn(),
       retryLeasedDelivery: vi.fn(),
       releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
@@ -740,16 +607,22 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(tm.addIntervention).not.toHaveBeenCalled();
     const deliveryId = stored?.delivery_id;
     await notifier.recoverPending();
-    expect(tm.addIntervention).not.toHaveBeenCalled();
-    await notifier.notify(makeChild({
-      callerSessionId: "caller-old",
-      callerInfo: {
-        source: "agent",
-        agent_id: "seosoyoung-opus",
-      },
-    }));
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
     expect(tm.addIntervention.mock.calls[0]![0].deliveryId).toBe(deliveryId);
+    expect(claimRecoverableCompletionDeliveries).toHaveBeenNthCalledWith(
+      1,
+      expect.any(String),
+      1,
+      60_000,
+      deliveryId,
+    );
+    expect(claimRecoverableCompletionDeliveries).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      100,
+      60_000,
+      undefined,
+    );
   });
 
   it("2. orch fallback — local throw 시 /api/sessions/{caller}/intervene POST", async () => {

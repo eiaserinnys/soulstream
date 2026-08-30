@@ -7,18 +7,8 @@ import { QueuedDeliveryTranscriptRecovery } from
 type LedgerState = "claimed" | "delivered" | "consumed" | "queued";
 
 describe("queued transcript recovery rolling contract", () => {
-  it("new soul converges with an old orch through the legacy delivered action", async () => {
-    const harness = makeHarness("old_orch");
-
-    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
-      claimed: 1,
-      settled: 1,
-    });
-    await harness.assertExactlyOnce();
-  });
-
-  it("new soul converges with a new orch whose legacy response remains delivered", async () => {
-    const harness = makeHarness("new_orch");
+  it("accepts only the exact relation receipt and consumed projection", async () => {
+    const harness = makeHarness();
 
     await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
       claimed: 1,
@@ -103,7 +93,7 @@ function makeDeferredHarness(receiptKind: "absent" | "input_pending") {
   };
 }
 
-function makeHarness(orchVersion: "old_orch" | "new_orch") {
+function makeHarness() {
   let state: LedgerState = "claimed";
   let receiptId: string | null = null;
   let deliveredTransitions = 0;
@@ -167,15 +157,9 @@ function makeHarness(orchVersion: "old_orch" | "new_orch") {
       receiptId = `transcript:${assistantMessageUuid}`;
       state = "delivered";
       deliveredTransitions += 1;
-      const legacyResponse = row();
-      if (orchVersion === "new_orch") {
-        state = "consumed";
-        consumedTransitions += 1;
-      }
-      return legacyResponse;
-    }),
-    markConsumedFromTranscript: vi.fn(async () => {
-      throw new Error("unsupported operation: mark_consumed_from_transcript");
+      state = "consumed";
+      consumedTransitions += 1;
+      return row();
     }),
     deferQueuedTranscriptCheck: vi.fn(async () => {
       state = "queued";
@@ -184,13 +168,6 @@ function makeHarness(orchVersion: "old_orch" | "new_orch") {
   };
   const deliveryRepository = {
     retryLeasedDelivery: vi.fn(async () => null),
-    markConsumed: vi.fn(async (_deliveryId: string, consumedTurnId: string) => {
-      if (state !== "delivered" || consumedTurnId !== receiptId) return null;
-      state = "consumed";
-      consumedTransitions += 1;
-      return row();
-    }),
-    get: vi.fn(async () => row()),
   };
   const recovery = new QueuedDeliveryTranscriptRecovery({
     deliveryRepository,
@@ -212,7 +189,6 @@ function makeHarness(orchVersion: "old_orch" | "new_orch") {
       expect(deliveredTransitions).toBe(1);
       expect(consumedTransitions).toBe(1);
       expect(recoveryRepository.markDeliveredFromTranscript).toHaveBeenCalledOnce();
-      expect(recoveryRepository.markConsumedFromTranscript).not.toHaveBeenCalled();
       expect(deliveryRepository.retryLeasedDelivery).not.toHaveBeenCalled();
       await expect(recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
         claimed: 0,

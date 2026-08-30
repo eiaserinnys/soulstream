@@ -91,6 +91,9 @@ export class AutoResumeTransition {
             attachmentPaths: message.attachmentPaths,
             contextItems: message.context,
           });
+      if (userMessageEvent && message.deliveryId) {
+        userMessageEvent._dedupe_key = `intervention_sent:${message.deliveryId}`;
+      }
       const resumedReviewState = reviewStateAfterFollowup(
         task.reviewState ?? "not_required",
       );

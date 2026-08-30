@@ -1686,8 +1686,8 @@ BEGIN
                review_state = p_review_state,
                updated_at = p_updated_at
          WHERE session.session_id = p_session_id
-           AND session.status IN ('completed', 'error', 'interrupted')
-           AND session.termination_event_id IS NOT DISTINCT FROM p_expected_terminal_event_id;
+           AND p_expected_terminal_event_id IS NOT NULL
+           AND session.termination_event_id = p_expected_terminal_event_id;
     ELSE
         UPDATE sessions AS session
            SET status = 'running',
@@ -1696,28 +1696,9 @@ BEGIN
                review_state = p_review_state,
                updated_at = p_updated_at
          WHERE session.session_id = p_session_id
-           AND session.status NOT IN ('completed', 'error', 'interrupted');
+           AND session.termination_event_id IS NULL;
     END IF;
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
-
-    IF p_terminal_resume AND v_row_count = 1 THEN
-        UPDATE session_deliveries
-           SET state = 'superseded',
-               aggregate_state = 'consumed',
-               consumed_at = p_updated_at,
-               consumed_reason = 'superseded by terminal resume',
-               superseded_at = p_updated_at,
-               superseded_terminal_revision = p_expected_terminal_event_id::text,
-               lease_owner = NULL,
-               lease_expires_at = NULL,
-               updated_at = p_updated_at
-         WHERE source_session_id = p_session_id
-           AND intent = 'completion_notification'
-           AND source = 'completion_notifier'
-           AND producer_kind = 'child_session'
-           AND producer_terminal_revision = p_expected_terminal_event_id::text
-           AND state IN ('pending', 'claimed', 'dispatching', 'queued');
-    END IF;
 
     RETURN QUERY
     SELECT v_row_count = 1,
@@ -3077,15 +3058,15 @@ BEGIN
                    last_assistant_text = NULL, review_state = p_review_state,
                    updated_at = p_updated_at
              WHERE session.session_id = p_session_id
-               AND session.status IN ('completed', 'error', 'interrupted')
-               AND session.termination_event_id IS NOT DISTINCT FROM p_expected_terminal_event_id;
+               AND p_expected_terminal_event_id IS NOT NULL
+               AND session.termination_event_id = p_expected_terminal_event_id;
         ELSE
             UPDATE sessions AS session
                SET status = 'running', termination_reason = NULL,
                    termination_detail = NULL, review_state = p_review_state,
                    updated_at = p_updated_at
              WHERE session.session_id = p_session_id
-               AND session.status NOT IN ('completed', 'error', 'interrupted');
+               AND session.termination_event_id IS NULL;
         END IF;
         GET DIAGNOSTICS v_row_count = ROW_COUNT;
         IF v_row_count = 1 THEN
@@ -3115,24 +3096,6 @@ BEGIN
              WHERE session_id = p_session_id
                AND ownership_generation = p_ownership_generation
                AND phase = 'identity_proven';
-            IF p_terminal_resume THEN
-                UPDATE session_deliveries
-                   SET state = 'superseded',
-                       aggregate_state = 'consumed',
-                       consumed_at = p_updated_at,
-                       consumed_reason = 'superseded by terminal resume',
-                       superseded_at = p_updated_at,
-                       superseded_terminal_revision = p_expected_terminal_event_id::text,
-                       lease_owner = NULL,
-                       lease_expires_at = NULL,
-                       updated_at = p_updated_at
-                 WHERE source_session_id = p_session_id
-                   AND intent = 'completion_notification'
-                   AND source = 'completion_notifier'
-                   AND producer_kind = 'child_session'
-                   AND producer_terminal_revision = p_expected_terminal_event_id::text
-                   AND state IN ('pending', 'claimed', 'dispatching', 'queued');
-            END IF;
         END IF;
     END IF;
 
@@ -3569,113 +3532,6 @@ ALTER TABLE session_delivery_notification_outbox
 ALTER TABLE session_delivery_notification_outbox
     ADD CONSTRAINT session_delivery_notification_projection_state_check
     CHECK (projection_state IN ('staged', 'publishing', 'published', 'discarded'));
-
-UPDATE session_deliveries
-SET aggregate_state = 'consumed',
-    consumed_reason = CASE
-        WHEN state = 'superseded'
-        THEN COALESCE(superseded_terminal_revision, 'superseded')
-        ELSE consumed_reason
-    END
-WHERE state IN ('consumed', 'superseded');
-
-WITH legacy AS MATERIALIZED (
-    SELECT delivery.delivery_id,
-           delivery.state,
-           delivery.attempt_count,
-           delivery.lease_owner,
-           delivery.payload_hash,
-           delivery.last_error,
-           delivery.created_at,
-           delivery.updated_at,
-           delivery.next_attempt_at,
-           delivery.target_receipt_id,
-           delivery.target_receipt_at,
-           receipt.target_receipt_id AS outbox_receipt_id,
-           receipt.target_receipt_at AS outbox_receipt_at
-    FROM session_deliveries AS delivery
-    LEFT JOIN LATERAL (
-        SELECT outbox.target_receipt_id, outbox.target_receipt_at
-        FROM session_delivery_notification_outbox AS outbox
-        WHERE outbox.delivery_id = delivery.delivery_id
-          AND outbox.state = 'published'
-          AND outbox.target_receipt_id IS NOT NULL
-        LIMIT 1
-    ) AS receipt ON TRUE
-    WHERE delivery.state IN ('delivered', 'uncertain')
-), updated AS (
-    UPDATE session_deliveries AS delivery
-    SET aggregate_state = CASE
-            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NOT NULL
-            THEN 'delivered'
-            WHEN legacy.attempt_count + 1 < 16
-              AND legacy.created_at > NOW() - INTERVAL '24 hours'
-            THEN 'pending'
-            ELSE 'dead_letter'
-        END,
-        state = CASE
-            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NOT NULL
-            THEN 'delivered'
-            WHEN legacy.attempt_count + 1 < 16
-              AND legacy.created_at > NOW() - INTERVAL '24 hours'
-            THEN 'pending'
-            ELSE 'uncertain'
-        END,
-        target_receipt_id = COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id),
-        target_receipt_at = COALESCE(legacy.target_receipt_at, legacy.outbox_receipt_at),
-        lease_owner = NULL,
-        lease_expires_at = NULL,
-        attempt_count = legacy.attempt_count + 1,
-        next_attempt_at = CASE
-            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NULL
-              AND legacy.attempt_count + 1 < 16
-              AND legacy.created_at > NOW() - INTERVAL '24 hours'
-            THEN LEAST(legacy.next_attempt_at, NOW())
-            ELSE legacy.next_attempt_at
-        END,
-        last_error = CASE
-            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NULL
-            THEN COALESCE(legacy.last_error, 'legacy delivery missing target receipt')
-            ELSE legacy.last_error
-        END,
-        dead_letter_reason = CASE
-            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NULL
-              AND NOT (
-                legacy.attempt_count + 1 < 16
-                AND legacy.created_at > NOW() - INTERVAL '24 hours'
-              )
-            THEN COALESCE(legacy.last_error, 'legacy delivery retry budget exhausted')
-            ELSE NULL
-        END,
-        dead_lettered_at = CASE
-            WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NULL
-              AND NOT (
-                legacy.attempt_count + 1 < 16
-                AND legacy.created_at > NOW() - INTERVAL '24 hours'
-              )
-            THEN NOW()
-            ELSE NULL
-        END,
-        updated_at = NOW()
-    FROM legacy
-    WHERE delivery.delivery_id = legacy.delivery_id
-    RETURNING delivery.*
-)
-INSERT INTO session_delivery_attempts (
-    delivery_id, attempt_number, lease_owner, payload_hash, outcome, reason,
-    target_receipt_id, created_at
-)
-SELECT delivery_id, attempt_count, lease_owner, payload_hash,
-       CASE aggregate_state
-           WHEN 'delivered' THEN 'accepted'
-           WHEN 'dead_letter' THEN 'rejected'
-           ELSE 'retryable'
-       END,
-       COALESCE(last_error, 'legacy delivery receipt backfill'),
-       target_receipt_id,
-       updated_at
-FROM updated
-ON CONFLICT (delivery_id, attempt_number) DO NOTHING;
 
 UPDATE session_delivery_notification_outbox AS outbox
 SET projection_state = CASE
@@ -5317,8 +5173,8 @@ BEGIN
             execution_lease_expires_at = p_lease_expires_at,
             updated_at = p_acquired_at
          WHERE session.session_id = p_session_id
-           AND session.status IN ('completed', 'error', 'interrupted')
-           AND session.termination_event_id IS NOT DISTINCT FROM p_expected_terminal_event_id;
+           AND p_expected_terminal_event_id IS NOT NULL
+           AND session.termination_event_id = p_expected_terminal_event_id;
     ELSE
         UPDATE sessions AS session SET
             status = 'running', termination_reason = NULL,
@@ -5332,26 +5188,9 @@ BEGIN
             execution_lease_expires_at = p_lease_expires_at,
             updated_at = p_acquired_at
          WHERE session.session_id = p_session_id
-           AND session.status NOT IN ('completed', 'error', 'interrupted');
+           AND session.termination_event_id IS NULL;
     END IF;
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
-
-    IF v_row_count = 1 AND p_terminal_resume THEN
-        UPDATE session_deliveries SET
-            state = 'superseded', aggregate_state = 'consumed',
-            consumed_at = p_acquired_at,
-            consumed_reason = 'superseded by terminal resume',
-            superseded_at = p_acquired_at,
-            superseded_terminal_revision = p_expected_terminal_event_id::text,
-            lease_owner = NULL, lease_expires_at = NULL,
-            updated_at = p_acquired_at
-         WHERE source_session_id = p_session_id
-           AND intent = 'completion_notification'
-           AND source = 'completion_notifier'
-           AND producer_kind = 'child_session'
-           AND producer_terminal_revision = p_expected_terminal_event_id::text
-           AND state IN ('pending', 'claimed', 'dispatching', 'queued');
-    END IF;
 
     RETURN QUERY SELECT v_row_count = 1, session.execution_generation,
         session.execution_lease_expires_at, session.status,

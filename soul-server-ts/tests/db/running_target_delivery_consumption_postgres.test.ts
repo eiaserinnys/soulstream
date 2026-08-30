@@ -226,7 +226,7 @@ describePostgres("running target delivery consumption PostgreSQL integration", (
       expect(rows.every((row) => row.state === "consumed")).toBe(true);
       expect(rows.every((row) => row.target_session_id === SESSION_ID)).toBe(true);
       expect(rows.every((row) => row.attempt_count === 0)).toBe(true);
-      expect(rows.every((row) => row.lease_owner?.startsWith("route:") === true)).toBe(true);
+      expect(rows.every((row) => row.lease_owner === null)).toBe(true);
       expect(rows.every((row) => row.last_error === null)).toBe(true);
       expect(rows.every((row) => row.consumed_at !== null)).toBe(true);
       expect(modelInputs).toEqual(DELIVERY_IDS.map((deliveryId) => ({

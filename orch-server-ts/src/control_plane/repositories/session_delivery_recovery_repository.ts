@@ -2,16 +2,9 @@ import type {
   SessionDeliveryRow,
   SqlClient,
 } from "../control_plane_types.js";
-import { appendSessionDeliveryAttempt } from
-  "./session_delivery_attempt_repository.js";
-import { markSessionDeliveryConsumed } from
-  "./session_delivery_consumption_transition.js";
-import {
-  attemptOutcomeFor,
-  deliveryRetryOrDeadLetterSet,
-} from "./session_delivery_retry_policy.js";
-import { settleTerminalTargetCompletionDeliveries } from
-  "./session_delivery_terminal_target_transition.js";
+import { deliveryRetrySet } from "./session_delivery_retry_policy.js";
+import { recordSessionDeliveryRelationConsumed } from
+  "./session_delivery_relation_repository.js";
 
 export interface QueuedDeliveryRecoveryScan {
   recoveryNodeId: string;
@@ -83,96 +76,36 @@ export class SessionDeliveryRecoveryRepository {
     leaseOwner: string,
     limit = 100,
     leaseMs = 15_000,
+    deliveryId?: string,
   ): Promise<SessionDeliveryRow[]> {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
-      await transaction`
-        WITH ranked AS (
-          SELECT delivery_id,
-            ROW_NUMBER() OVER (
-              PARTITION BY target_session_id, payload->>'followup_key'
-              ORDER BY
-                CASE WHEN jsonb_typeof(payload->'followup_attempt') = 'number'
-                  THEN (payload->>'followup_attempt')::integer ELSE 1 END DESC,
-                created_at DESC,
-                enqueue_sequence DESC
-            ) AS followup_rank
-          FROM session_deliveries
-          WHERE intent = 'runtime_followup'
-            AND source = 'claude_runtime_task_followup'
-            AND state = 'pending'
-            AND payload->>'followup_key' IS NOT NULL
+      const claimed = await transaction<SessionDeliveryRow[]>`
+        WITH due AS MATERIALIZED (
+          SELECT delivery.delivery_id
+          FROM session_deliveries AS delivery
+          JOIN sessions AS target
+            ON target.session_id = delivery.target_session_id
+          WHERE (${deliveryId ?? null}::text IS NULL
+              OR delivery.delivery_id = ${deliveryId ?? null}::text)
+            AND delivery.intent = 'completion_notification'
+            AND delivery.source = 'completion_notifier'
+            AND delivery.state = 'pending'
+            AND delivery.next_attempt_at <= NOW()
+          ORDER BY delivery.next_attempt_at, delivery.created_at,
+            delivery.enqueue_sequence
+          FOR UPDATE OF delivery SKIP LOCKED
+          LIMIT ${limit}
         )
         UPDATE session_deliveries AS delivery
-        SET state = 'superseded', aggregate_state = 'consumed',
-            consumed_at = NOW(),
-            consumed_reason = 'superseded by newer runtime follow-up',
-            superseded_at = NOW(), updated_at = NOW()
-        FROM ranked
-        WHERE delivery.delivery_id = ranked.delivery_id
-          AND ranked.followup_rank > 1
+        SET state = 'claimed', claimed_at = NOW(), lease_owner = ${leaseOwner},
+            lease_expires_at = NOW()
+              + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
+            updated_at = NOW()
+        FROM due
+        WHERE delivery.delivery_id = due.delivery_id
           AND delivery.state = 'pending'
+        RETURNING delivery.*
       `;
-      const due = await transaction<SessionDeliveryRow[]>`
-        SELECT delivery.*
-        FROM session_deliveries AS delivery
-        WHERE (
-          (delivery.intent = 'completion_notification'
-            AND delivery.source = 'completion_notifier')
-          OR (delivery.intent = 'runtime_followup'
-            AND delivery.source = 'claude_runtime_task_followup')
-          OR delivery.intent IN ('durable_next_turn', 'human_live_steer')
-        )
-          AND delivery.state = 'pending'
-          AND delivery.next_attempt_at <= NOW()
-        ORDER BY delivery.next_attempt_at, delivery.created_at, delivery.enqueue_sequence
-        FOR UPDATE OF delivery SKIP LOCKED
-        LIMIT ${limit}
-      `;
-      const claimed: SessionDeliveryRow[] = [];
-      for (const row of due) {
-        let targetSessionId = row.target_session_id;
-        if (targetSessionId) {
-          const targets = await transaction<Array<{ session_id: string }>>`
-            SELECT session_id FROM sessions WHERE session_id = ${targetSessionId}
-          `;
-          targetSessionId = targets[0]?.session_id ?? null;
-        }
-        if (!targetSessionId) {
-          const deferred = await transaction<Array<
-            Pick<SessionDeliveryRow, "aggregate_state">
-          >>`
-            UPDATE session_deliveries
-            SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
-              reason: "no_current_target",
-              retryState: "pending",
-            })}
-            WHERE delivery_id = ${row.delivery_id} AND state = 'pending'
-            RETURNING aggregate_state
-          `;
-          await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
-            deliveryId: row.delivery_id,
-            outcome: deferred[0]
-              ? attemptOutcomeFor(deferred[0])
-              : "retryable",
-            reason: "no_current_target",
-          });
-          continue;
-        }
-        const updated = await transaction<SessionDeliveryRow[]>`
-          UPDATE session_deliveries
-          SET target_session_id = ${targetSessionId}, state = 'claimed',
-              claimed_at = NOW(), lease_owner = ${leaseOwner},
-              lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
-              updated_at = NOW()
-          WHERE delivery_id = ${row.delivery_id} AND state = 'pending'
-          RETURNING *
-        `;
-        if (updated[0]) claimed.push(updated[0]);
-      }
-      // Claim is the admission ownership write. Terminal settlement runs only
-      // after every due pending row has had that transition, so a completed
-      // caller can consume new completion input by auto-resuming.
-      await settleTerminalTargetCompletionDeliveries(transaction);
       return claimed;
     });
   }
@@ -230,20 +163,28 @@ export class SessionDeliveryRecoveryRepository {
       `;
       const delivered = rows[0] ?? null;
       if (!delivered) return null;
-      const consumed = await markSessionDeliveryConsumed(
-        transaction as unknown as SqlClient,
-        deliveryId,
-        receiptId,
-      );
-      if (!consumed) {
+      if (!delivered.completion_id || !delivered.target_session_id) {
         throw new Error(
-          `Transcript-proven delivery ${deliveryId} did not reach consumed`,
+          `Transcript-proven delivery ${deliveryId} lacks relation identity`,
         );
       }
-      // Preserve the legacy wire contract for old soul-server callers. The
-      // transaction is durably consumed, but the legacy action still reports
-      // the delivered proof that old callers understand.
-      return delivered;
+      const result = await recordSessionDeliveryRelationConsumed(
+        transaction as unknown as SqlClient,
+        {
+          deliveryId,
+          relationKey: delivered.relation_key,
+          completionId: delivered.completion_id,
+          callerSessionId: delivered.target_session_id,
+          consumedTurnId: receiptId,
+        },
+      );
+      if (!result.deliveryConsumed) {
+        throw new Error(`Transcript-proven delivery ${deliveryId} did not reach consumed`);
+      }
+      const consumedRows = await transaction<SessionDeliveryRow[]>`
+        SELECT * FROM session_deliveries WHERE delivery_id = ${deliveryId}
+      `;
+      return consumedRows[0] ?? null;
     });
   }
 
@@ -256,7 +197,7 @@ export class SessionDeliveryRecoveryRepository {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
       const rows = await transaction<SessionDeliveryRow[]>`
         UPDATE session_deliveries
-        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+        SET ${deliveryRetrySet(transaction as unknown as SqlClient, {
           reason: error,
           retryState: "queued",
           retryDelayMs,
@@ -271,16 +212,6 @@ export class SessionDeliveryRecoveryRepository {
       `;
       const row = rows[0];
       if (!row) return null;
-      // Probes stay out of the attempt ledger unless one of them ends the
-      // delivery; a one-second poll would otherwise bury the real attempts.
-      if (row.aggregate_state === "dead_letter") {
-        await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
-          deliveryId,
-          outcome: attemptOutcomeFor(row),
-          reason: error,
-          leaseOwner,
-        });
-      }
       return row;
     });
   }

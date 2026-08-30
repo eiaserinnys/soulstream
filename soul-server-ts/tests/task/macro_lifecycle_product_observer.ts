@@ -14,6 +14,8 @@ import { TaskLifecycleTransition } from
 import type { ExecutionActivation, Task } from "../../src/task/task_models.js";
 import { TaskRunnerRecovery } from
   "../../src/task/task_runner_recovery.js";
+import { makeEventPersistenceTestDouble } from
+  "./event_persistence_test_double.js";
 import type { LifecycleEvent, MacroTuple, Outcome } from
   "./macro_lifecycle_strict_red.test.js";
 
@@ -101,8 +103,9 @@ async function observeCurrentLateIntervention(h: ContractHarness) {
     notifications: { stageWithQueuedDelivery: vi.fn(async () => ({ state: "queued" })),
       get: vi.fn(), markPublished: vi.fn(), retry: vi.fn() } };
   const gate = new TaskDeliveryLedgerGate(true, repository as never);
+  const persistence = makeEventPersistenceTestDouble();
   const autoResume = new AutoResumeTransition({ logger: pino({ level: "silent" }),
-    persistence: { acquireExecutionOwnershipAndWaitForApplication: vi.fn() } as never });
+    persistence: persistence.persistence });
   const terminalFencePresent = task.terminalEventId !== undefined;
   let acceptedInputStart = false;
   const start = vi.fn((resumed: Task, activation?: ExecutionActivation) => {

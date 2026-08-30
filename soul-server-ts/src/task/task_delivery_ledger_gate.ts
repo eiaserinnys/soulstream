@@ -13,9 +13,6 @@ import type { InterventionMessage, Task } from "./task_models.js";
 import { isDeliveryIntent, type DeliveryIntent } from "./delivery_contract.js";
 import { loadOrRegisterDelivery } from "./task_delivery_registration.js";
 import {
-  DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
-  deliveryRetryDelayMs,
-  notificationOldestAllowedCreatedAt,
   notificationRetryAt,
 } from "./session_delivery_notification_policy.js";
 import { buildNotificationOutboxPayload, isNotificationDeliveryIntent } from
@@ -31,15 +28,10 @@ export type DeliveryLedgerAdmission =
   | { kind: "suppressed"; deliveryId: string; reason: string }
   | { kind: "admitted"; deliveryId: string; row: SessionDeliveryRow };
 
-const OWNERSHIP_CONFLICT_RETRY_MAX_DELAY_MS = 10_000;
-
 type LedgerRepository = Pick<
   SessionDeliveryRepository,
-  "register" | "claimForTarget" | "beginDispatch" | "get"
-  | "markQueued" | "markDelivered"
-  | "markUncertain" | "markConsumed" | "markConsumedByRelation"
-  | "recordRelationConsumed"
-  | "retryLeasedDelivery" | "markPendingSuperseded"
+  "register" | "claimForTarget" | "beginDispatch" | "get" | "markQueued"
+  | "markConsumedByRelation" | "retryLeasedDelivery"
 > & {
   notifications: Pick<
     SessionDeliveryRepository["notifications"],
@@ -89,13 +81,6 @@ export class TaskDeliveryLedgerGate {
         kind: "suppressed",
         deliveryId: registered.row.delivery_id,
         reason: "delivery_consumed",
-      };
-    }
-    if (registered.row.aggregate_state === "dead_letter") {
-      return {
-        kind: "suppressed",
-        deliveryId: registered.row.delivery_id,
-        reason: "delivery_dead_letter",
       };
     }
     if (registered.row.state === "claimed") {
@@ -179,13 +164,15 @@ export class TaskDeliveryLedgerGate {
     const registered = await loadOrRegisterDelivery(repository, registrationParams);
     if (registered.kind === "identity_mismatch") return false;
     if (registered.conflict) return false;
-    const consumed = await repository.markConsumedByRelation(
-      params.relationKey,
-      params.completionId,
-      `event:${task.lastEventId ?? "unknown"}`,
-    );
-    if (consumed?.state !== "consumed") return false;
-    await discardConsumedRunnerIntervention(task, consumed.delivery_id);
+    const consumed = await repository.markConsumedByRelation({
+      deliveryId: params.deliveryId,
+      relationKey: params.relationKey,
+      completionId: params.completionId,
+      callerSessionId: task.agentSessionId,
+      consumedTurnId: `event:${task.lastEventId ?? "unknown"}`,
+    });
+    if (!consumed.deliveryConsumed) return false;
+    await discardConsumedRunnerIntervention(task, params.deliveryId);
     return true;
   }
 
@@ -253,37 +240,8 @@ export class TaskDeliveryLedgerGate {
       );
       return;
     }
-    const leaseOwner = admission.row.lease_owner;
-    if (!leaseOwner) {
-      throw new Error(`Delivery ${admission.deliveryId} lost its dispatch lease`);
-    }
-    if ("delivered" in result && result.delivered === null) {
-      const retryExhausted =
-        admission.row.attempt_count + 1 >= DELIVERY_NOTIFICATION_MAX_ATTEMPTS
-        || admission.row.created_at <= notificationOldestAllowedCreatedAt();
-      if (!retryExhausted) {
-        const retried = await repository.retryLeasedDelivery(
-          admission.deliveryId,
-          leaseOwner,
-          result.reason,
-          deliveryRetryDelayMs(admission.row.attempt_count),
-        );
-        if (!retried) {
-          throw new Error(`Delivery ${admission.deliveryId} lost retryable-state CAS`);
-        }
-        return;
-      }
-    }
-    const uncertain = await repository.markUncertain(
-      admission.deliveryId,
-      leaseOwner,
-      "delivered" in result && result.delivered === null
-        ? `delivery retry budget exhausted: ${result.reason}`
-        : "delivery_result_not_accepted",
-    );
-    if (!uncertain) {
-      throw new Error(`Delivery ${admission.deliveryId} lost uncertain-state CAS`);
-    }
+    // A rejected or ambiguous runtime result is not a delivery receipt. Keep
+    // the exact claim intact; lease recovery may schedule the same delivery.
   }
 
   /** Reserve a future retry without dispatching a session message. */
@@ -316,48 +274,7 @@ export class TaskDeliveryLedgerGate {
   async recordFailure(admission: DeliveryLedgerAdmission): Promise<void> {
     if (admission.kind !== "admitted") return;
     // The end-to-end coordinator owns retry scheduling. Keeping the lease
-    // intact lets a cross-node fallback reuse the same fenced attempt token.
-  }
-
-  async recordReservationRetry(
-    admission: DeliveryLedgerAdmission,
-    retryAt: string,
-  ): Promise<"scheduled" | "parked" | "lost"> {
-    if (admission.kind !== "admitted") return "lost";
-    const leaseOwner = admission.row.lease_owner;
-    if (!leaseOwner) return "lost";
-    const requestedDueAt = new Date(retryAt);
-    if (!Number.isFinite(requestedDueAt.getTime())) {
-      throw new Error(`Delivery ${admission.deliveryId} has an invalid reservation retry time`);
-    }
-    const exhausted =
-      admission.row.attempt_count + 1 >= DELIVERY_NOTIFICATION_MAX_ATTEMPTS
-      || admission.row.created_at <= notificationOldestAllowedCreatedAt();
-    const repository = this.requireRepository();
-    if (exhausted) {
-      const parked = await repository.retryLeasedDelivery(
-        admission.deliveryId,
-        leaseOwner,
-        "automatic ownership retry budget exhausted; explicit intent required",
-        0,
-      );
-      return parked ? "parked" : "lost";
-    }
-    // All three candidates become durations before the minimum is taken: the
-    // requested instant is the only one that came from another clock, and
-    // mixing it with locally derived instants let skew pick the wrong bound.
-    const retryDelayMs = Math.max(0, Math.min(
-      requestedDueAt.getTime() - Date.now(),
-      deliveryRetryDelayMs(admission.row.attempt_count),
-      OWNERSHIP_CONFLICT_RETRY_MAX_DELAY_MS,
-    ));
-    const retried = await repository.retryLeasedDelivery(
-      admission.deliveryId,
-      leaseOwner,
-      "reservation_in_flight",
-      retryDelayMs,
-    );
-    return retried ? "scheduled" : "lost";
+    // intact lets the next scheduled transport attempt reuse the same token.
   }
 
   async recordNotificationPublished(
@@ -389,8 +306,6 @@ export class TaskDeliveryLedgerGate {
       leaseOwner,
       error,
       notificationRetryAt(admission.row.attempt_count),
-      DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
-      notificationOldestAllowedCreatedAt(),
     );
   }
 
@@ -403,42 +318,24 @@ export class TaskDeliveryLedgerGate {
     const resolvedConsumedTurnId = consumedTurnId
       ?? `event:${task.lastEventId ?? "unknown"}`;
     const repository = this.requireRepository();
-    if (isInlineChildCompletion(message)) {
-      await repository.recordRelationConsumed({
-        relationKey: message.relationKey,
-        completionId: message.completionId,
-        callerSessionId: task.agentSessionId,
-        consumedTurnId: resolvedConsumedTurnId,
-      });
+    if (!message.deliveryId || !message.relationKey || !message.completionId) {
+      throw new Error("Exact delivery relation identity is required for consumption");
     }
-    if (message.deliveryId) {
-      const consumed = await repository.markConsumed(
-        message.deliveryId,
-        resolvedConsumedTurnId,
-      );
-      if (!consumed && requiresExactDeliveryConsumption(message)) {
-        const existing = await repository.get(message.deliveryId);
-        if (existing?.state !== "consumed") {
-          throw new Error(
-            `Exact delivery consumption did not reach consumed state: ${message.deliveryId}`,
-          );
-        }
+    const consumed = await repository.markConsumedByRelation({
+      deliveryId: message.deliveryId,
+      relationKey: message.relationKey,
+      completionId: message.completionId,
+      callerSessionId: task.agentSessionId,
+      consumedTurnId: resolvedConsumedTurnId,
+    });
+    if (!consumed.deliveryConsumed) {
+      const existing = await repository.get(message.deliveryId);
+      if (existing?.state !== "consumed") {
+        throw new Error(
+          `Exact delivery consumption did not reach consumed state: ${message.deliveryId}`,
+        );
       }
     }
-  }
-
-  async recordPendingSuperseded(
-    message: InterventionMessage,
-    reason: string,
-  ): Promise<boolean> {
-    if (!this.enabled || !isControlledMessage(message) || !message.deliveryId) {
-      return false;
-    }
-    const superseded = await this.requireRepository().markPendingSuperseded(
-      message.deliveryId,
-      reason,
-    );
-    return superseded?.state === "superseded";
   }
 
   async recordTurnStarted(
@@ -458,11 +355,6 @@ export class TaskDeliveryLedgerGate {
   }
 }
 
-function requiresExactDeliveryConsumption(message: InterventionMessage): boolean {
-  return isControlledMessage(message)
-    || message.source === "claude_runtime_task_followup";
-}
-
 export function isLedgerControlled(
   params: Pick<AddInterventionParams, "deliveryIntent">,
 ): params is Pick<AddInterventionParams, "deliveryIntent"> & {
@@ -475,19 +367,4 @@ function isControlledMessage(
   message: Pick<InterventionMessage, "deliveryIntent">,
 ): boolean {
   return isDeliveryIntent(message.deliveryIntent);
-}
-
-export function isInlineChildCompletion(
-  message: InterventionMessage,
-): message is InterventionMessage & {
-  completionId: string;
-  relationKey: string;
-} {
-  return (
-    message.deliveryIntent === "completion_notification" &&
-    typeof message.completionId === "string" &&
-    message.completionId.length > 0 &&
-    typeof message.relationKey === "string" &&
-    message.relationKey.startsWith("child_session:")
-  );
 }

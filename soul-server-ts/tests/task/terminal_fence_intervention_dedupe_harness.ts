@@ -6,6 +6,7 @@ import type { SessionMutationHost } from
   "../../src/control_plane/persistence_host_clients.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type {
+  RecordSessionDeliveryRelationConsumptionParams,
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
 } from "../../src/db/session_db_types.js";
@@ -323,7 +324,25 @@ export class MemoryDeliveryRepository {
 
   readonly markDelivered = vi.fn();
   readonly markUncertain = vi.fn();
-  readonly markConsumedByRelation = vi.fn();
+  readonly markConsumedByRelation = vi.fn(async (
+    params: RecordSessionDeliveryRelationConsumptionParams,
+  ) => {
+    const consumed = await this.markConsumed(
+      params.deliveryId,
+      params.consumedTurnId,
+    );
+    return {
+      relation: {
+        relation_key: params.relationKey,
+        completion_id: params.completionId,
+        caller_session_id: params.callerSessionId,
+        consumed_turn_id: params.consumedTurnId,
+        consumed_at: new Date(),
+      },
+      relationInserted: Boolean(consumed),
+      deliveryConsumed: Boolean(consumed),
+    };
+  });
   readonly recordRelationConsumed = vi.fn();
   readonly markPendingSuperseded = vi.fn();
 

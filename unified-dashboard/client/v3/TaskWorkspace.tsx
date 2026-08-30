@@ -47,7 +47,6 @@ export function TaskWorkspace({
   focusRequest,
   onFocusRequestHandled,
   chatOpen,
-  chatInputDisabled,
   fileUploadUrl,
   sessionDefaults,
   mobileMode,
@@ -83,7 +82,6 @@ export function TaskWorkspace({
   focusRequest: TaskSectionFocusRequest | null;
   onFocusRequestHandled(requestId: number): void;
   chatOpen: boolean;
-  chatInputDisabled: boolean;
   fileUploadUrl: string | undefined;
   sessionDefaults: PageSessionDefaults | null;
   mobileMode: boolean;
@@ -220,7 +218,7 @@ export function TaskWorkspace({
             </header>
             {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
             <div className="v3-chat-content">
-              {activeSession ? <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} /> : <div className="v3-chat-empty"><strong>세션을 찾을 수 없습니다.</strong></div>}
+              {activeSession ? <ChatView fileUploadUrl={fileUploadUrl} showHeader={false} /> : <div className="v3-chat-empty"><strong>세션을 찾을 수 없습니다.</strong></div>}
             </div>
           </section>
         </div>
@@ -240,7 +238,6 @@ export function TaskWorkspace({
         runHistoryHasMore={runHistoryHasMore}
         runHistoryLoading={runHistoryLoading}
         activeSession={activeSession}
-        chatInputDisabled={chatInputDisabled}
         fileUploadUrl={fileUploadUrl}
         mobileMode={mobileMode}
         mobileTab={mobileTab}
@@ -329,7 +326,7 @@ export function TaskWorkspace({
                 <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>
               ) : <div className="v3-chat-content">
                 {inspectorKind === "chat" && activeSession ? (
-                  <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} />
+                  <ChatView fileUploadUrl={fileUploadUrl} showHeader={false} />
                 ) : (
                   <div className="v3-chat-empty" data-testid="v3-chat-empty">
                     <span className="v3-emoji" aria-hidden="true">💬</span>

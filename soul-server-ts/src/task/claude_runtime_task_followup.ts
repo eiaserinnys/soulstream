@@ -81,10 +81,6 @@ export interface ClaudeRuntimeTaskFollowupDeps {
   sleep?: (ms: number) => Promise<void>;
   deliveryV2Enabled?: boolean;
   inlineConsumptionRecorder?: Pick<TaskDeliveryLedgerGate, "recordInlineConsumed">;
-  pendingSupersessionRecorder?: Pick<
-    TaskDeliveryLedgerGate,
-    "recordPendingSuperseded"
-  >;
 }
 
 interface ScheduledRuntimeTaskFallback {
@@ -354,22 +350,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     if (cancelled.length === 0) return;
 
     task.pendingClaudeRuntimeFollowupRetry = false;
-    const supersessionResults = await Promise.allSettled(cancelled.map(async (scheduled) => {
-      await scheduled.reservation;
-      await this.deps.pendingSupersessionRecorder?.recordPendingSuperseded(
-        scheduled.fallbackMessage,
-        supersedingMessage.source?.trim()
-          || supersedingMessage.callerInfo?.source?.trim()
-          || "unknown",
-      );
-    }));
-    const failures = supersessionResults.filter((result) => result.status === "rejected");
-    if (failures.length > 0) {
-      this.deps.logger.warn(
-        { sessionId: task.agentSessionId, failures: failures.length },
-        "Claude runtime task follow-up durable fallback supersession failed",
-      );
-    }
+    await Promise.allSettled(cancelled.map(async (scheduled) => scheduled.reservation));
     this.deps.logger.info(
       { sessionId: task.agentSessionId, cancelled: cancelled.length },
       "Claude runtime task follow-up fallback cancelled by a newer message",

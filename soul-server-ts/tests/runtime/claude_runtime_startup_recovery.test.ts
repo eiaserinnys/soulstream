@@ -100,7 +100,7 @@ describe("ClaudeRuntimeStartupRecovery", () => {
         inputUuid: "delivery:delivery-restart-ack-gap",
         assistantMessageUuid: "assistant-after-restart",
       });
-    const markConsumed = vi.fn(async () => ({
+    const markDeliveredFromTranscript = vi.fn(async () => ({
       ...claimedRow,
       state: "consumed",
       aggregate_state: "consumed",
@@ -108,14 +108,11 @@ describe("ClaudeRuntimeStartupRecovery", () => {
     }) as SessionDeliveryRow);
     const queuedRecovery = new QueuedDeliveryTranscriptRecovery({
       deliveryRepository: {
-        get: vi.fn(async () => claimedRow),
-        markConsumed,
         retryLeasedDelivery: vi.fn(async () => null),
       },
       recoveryRepository: {
         claimQueuedAfterNodeRestart: vi.fn(async () => [claimedRow]),
-        markDeliveredFromTranscript: vi.fn(async () => claimedRow),
-        deferQueuedTranscriptCheck: vi.fn(async () => claimedRow),
+        markDeliveredFromTranscript,
       },
       transcriptReceipt: { inspect },
       logger: { warn: vi.fn() },
@@ -133,12 +130,12 @@ describe("ClaudeRuntimeStartupRecovery", () => {
 
     await recovery.start();
     expect(inspect).toHaveBeenCalledTimes(1);
-    expect(markConsumed).not.toHaveBeenCalled();
+    expect(markDeliveredFromTranscript).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(50);
 
     expect(inspect).toHaveBeenCalledTimes(2);
-    expect(markConsumed).toHaveBeenCalledOnce();
+    expect(markDeliveredFromTranscript).toHaveBeenCalledOnce();
     await recovery.stop();
   });
 

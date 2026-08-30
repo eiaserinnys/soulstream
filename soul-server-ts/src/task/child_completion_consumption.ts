@@ -18,7 +18,6 @@ export type ChildCompletionObservationResult =
   | "recorded"
   | "not_found"
   | "not_child_caller"
-  | "not_terminal"
   | "missing_terminal_revision"
   | "revision_mismatch";
 
@@ -66,6 +65,7 @@ function buildObservationParams(
     intent: "completion_notification",
   });
   return {
+    deliveryId: identity.deliveryId,
     childSessionId: observation.childSessionId,
     observedRevision: observation.terminalRevision,
     relationKey,

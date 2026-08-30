@@ -2,6 +2,8 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionRow } from "../../src/db/session_db.js";
+import type { RecordSessionDeliveryRelationConsumptionParams } from
+  "../../src/db/session_db_types.js";
 import { RunnerProcessEngineProxy } from
   "../../src/runner/runner_process_engine_proxy.js";
 import { createTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
@@ -267,6 +269,7 @@ function attachRecoveredRunner(
     dispatcher as never,
     "runner",
   );
+  task.executionPromise = Promise.resolve();
 }
 
 function ledgerGate(admittedDeliveryIds: string[]) {
@@ -348,7 +351,29 @@ function ledgerGate(admittedDeliveryIds: string[]) {
       return consumed;
     }),
     markUncertain: vi.fn(),
-    markConsumedByRelation: vi.fn(),
+    markConsumedByRelation: vi.fn(async (
+      params: RecordSessionDeliveryRelationConsumptionParams,
+    ) => {
+      const row = requireValue(rows.get(params.deliveryId), "delivered delivery");
+      const consumedAt = new Date();
+      rows.set(params.deliveryId, {
+        ...row,
+        state: "consumed",
+        aggregate_state: "consumed",
+        target_receipt_id: params.consumedTurnId,
+      });
+      return {
+        relation: {
+          relation_key: params.relationKey,
+          completion_id: params.completionId,
+          caller_session_id: params.callerSessionId,
+          consumed_turn_id: params.consumedTurnId,
+          consumed_at: consumedAt,
+        },
+        relationInserted: true,
+        deliveryConsumed: true,
+      };
+    }),
     recordRelationConsumed: vi.fn(),
     retryLeasedDelivery: vi.fn(),
     markPendingSuperseded: vi.fn(),

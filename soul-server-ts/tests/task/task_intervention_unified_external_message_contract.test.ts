@@ -24,14 +24,14 @@ const MUTATION_SENTINELS: Record<UnifiedRouteMutation, string> = {
     "claude_next_turn_not_immediate:human_live_steer",
   duplicate_delivery_identity:
     "delivery_identity_not_exactly_once:81000000-0000-4000-8000-000000000001",
-  terminal_completion_auto_resume: "terminal_completion_not_queue_only",
+  terminal_completion_status_suppression: "terminal_completion_not_auto_resumed",
   terminal_completion_duplicate_consumption:
     "terminal_completion_not_consumed_exactly_once",
-  stale_terminal_completion_revival:
-    "stale_terminal_completion_revived:interrupted",
+  stale_terminal_completion_suppression:
+    "stale_terminal_completion_suppressed:interrupted",
 };
 
-describe("external-message routing contract with terminal completion deferral", () => {
+describe("external-message routing contract with terminal completion ownership", () => {
   it("is reachable with immediate delivery plus explicit terminal completion consumption", () => {
     expect(unifiedExternalMessageViolations(
       idealUnifiedExternalMessageObservation(),
@@ -57,7 +57,7 @@ describe("external-message routing contract with terminal completion deferral", 
     },
   );
 
-  it("observes immediate delivery and terminal completion queue-only routing", async () => {
+  it("observes immediate delivery and terminal completion auto-resume routing", async () => {
     const baseline = await observeUniversalExternalMessageContract();
     const observed = applyUnifiedRouteMutation(baseline, MUTATION);
     const violations = unifiedExternalMessageViolations(observed);

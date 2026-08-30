@@ -11,29 +11,11 @@ import type {
   SqlClient,
 } from "../control_plane_types.js";
 import { asPostgresJsonValue } from "../repository_helpers.js";
-import { appendSessionDeliveryAttempt } from
-  "./session_delivery_attempt_repository.js";
-import {
-  readRuntimeFollowupCandidate,
-  registerRuntimeFollowupDelivery,
-} from "./session_delivery_runtime_followup_repository.js";
-
-export { compareRuntimeFollowupCandidates } from
-  "./session_delivery_runtime_followup_repository.js";
-
 export async function registerSessionDelivery(
   sql: SqlClient,
   params: RegisterSessionDeliveryParams,
 ): Promise<RegisterSessionDeliveryResult> {
   return await withTransaction(sql, async (transaction) => {
-    const runtimeFollowup = readRuntimeFollowupCandidate(params);
-    if (runtimeFollowup) {
-      return await registerRuntimeFollowupDelivery(
-        transaction,
-        params,
-        runtimeFollowup,
-      );
-    }
     let consumption: SessionDeliveryRelationConsumptionRow | undefined;
     if (isChildCompletionRelation(params)) {
       await lockRelation(transaction, params.relationKey);
@@ -46,7 +28,10 @@ export async function registerSessionDelivery(
     }
     if (
       consumption &&
-      consumption.completion_id !== (params.completionId ?? null)
+      (
+        consumption.completion_id !== (params.completionId ?? null)
+        || consumption.caller_session_id !== (params.targetSessionId ?? null)
+      )
     ) {
       throw new Error(
         `Completion relation identity conflict: ${params.relationKey}`,
@@ -109,24 +94,8 @@ export async function registerSessionDelivery(
       return { row: existing, inserted: false, conflict: false };
     }
 
-    const uncertainRows = await transaction<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
-      SET state = 'uncertain', aggregate_state = 'dead_letter',
-          dead_letter_reason = 'delivery identity conflict',
-          dead_lettered_at = NOW(), updated_at = NOW()
-      WHERE delivery_id = ${existing.delivery_id}
-        AND state NOT IN ('consumed', 'superseded')
-      RETURNING *
-    `;
-    if (uncertainRows[0]) {
-      await appendSessionDeliveryAttempt(transaction, {
-        deliveryId: existing.delivery_id,
-        outcome: "rejected",
-        reason: "delivery identity conflict",
-      });
-    }
     return {
-      row: uncertainRows[0] ?? existing,
+      row: existing,
       inserted: false,
       conflict: true,
     };
@@ -184,10 +153,9 @@ export async function recordObservedChildCompletions(
     for (const observation of validationOrder) {
       const childRows = await transaction<Array<{
         caller_session_id: string | null;
-        status: string | null;
         last_event_id: number | null;
       }>>`
-        SELECT caller_session_id, status, last_event_id
+        SELECT caller_session_id, last_event_id
         FROM sessions
         WHERE session_id = ${observation.childSessionId}
         FOR SHARE
@@ -202,12 +170,6 @@ export async function recordObservedChildCompletions(
       if (child.caller_session_id !== observation.callerSessionId) {
         return {
           status: "not_child_caller",
-          childSessionId: observation.childSessionId,
-        };
-      }
-      if (!isTerminalStatus(child.status)) {
-        return {
-          status: "not_terminal",
           childSessionId: observation.childSessionId,
         };
       }
@@ -282,7 +244,9 @@ async function recordRelationConsumedInTransaction(
       updated_at = NOW()
     WHERE relation_key = ${params.relationKey}
       AND completion_id = ${params.completionId}
-      AND state IN ('pending', 'claimed', 'delivered')
+      AND delivery_id = ${params.deliveryId}
+      AND target_session_id = ${params.callerSessionId}
+      AND state IN ('pending', 'claimed', 'dispatching', 'queued', 'delivered')
     RETURNING *
   `;
   return {
@@ -290,10 +254,6 @@ async function recordRelationConsumedInTransaction(
     relationInserted: Boolean(insertedRows[0]),
     deliveryConsumed: Boolean(consumedRows[0]),
   };
-}
-
-function isTerminalStatus(status: string | null): boolean {
-  return status === "completed" || status === "error" || status === "interrupted";
 }
 
 async function lockRelation(sql: SqlClient, relationKey: string): Promise<void> {

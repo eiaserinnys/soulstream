@@ -83,9 +83,9 @@ export interface S5FinalObservation {
   catchupFrames: SseFrame[];
 }
 
-export interface S5PendingSettlementObservation {
-  beforeSettlementState: string;
-  afterSettlementState: string;
+export interface S5PendingMaintenanceObservation {
+  beforeMaintenanceState: string;
+  afterMaintenanceState: string;
   releasedLeaseCount: number;
   activation: S5ActivationObservation;
 }
@@ -179,10 +179,12 @@ class CompletionRegistrationGate {
             return result;
           };
         }
-        if (property === "get") {
-          return async (...args: Parameters<SessionDeliveryRepository["get"]>) => {
+        if (property === "claimRecoverableCompletionDeliveries") {
+          return async (...args: Parameters<
+            SessionDeliveryRepository["claimRecoverableCompletionDeliveries"]
+          >) => {
             await this.released;
-            return await target.get(...args);
+            return await target.claimRecoverableCompletionDeliveries(...args);
           };
         }
         const value = Reflect.get(target, property, target) as unknown;
@@ -335,26 +337,26 @@ export class CompletedParentS5FullSliceHarness {
     return harness;
   }
 
-  async notifyThroughPendingTerminalSettlement(): Promise<S5PendingSettlementObservation> {
+  async notifyThroughPendingMaintenance(): Promise<S5PendingMaintenanceObservation> {
     if (!this.registrationGate) {
       throw new Error("S5 completion registration gate was not configured");
     }
     const activationPromise = this.notifyToActivation();
     await this.registrationGate.registered;
-    const beforeSettlement = await this.deliveries.get(this.correlationId);
-    if (!beforeSettlement) throw new Error("S5 pending completion delivery missing");
+    const beforeMaintenance = await this.deliveries.get(this.correlationId);
+    if (!beforeMaintenance) throw new Error("S5 pending completion delivery missing");
     let releasedLeaseCount: number;
-    let afterSettlement;
+    let afterMaintenance;
     try {
       releasedLeaseCount = await this.deliveries.releaseExpiredDeliveryLeases();
-      afterSettlement = await this.deliveries.get(this.correlationId);
+      afterMaintenance = await this.deliveries.get(this.correlationId);
     } finally {
       this.registrationGate.release();
     }
-    if (!afterSettlement) throw new Error("S5 completion delivery vanished during settlement");
+    if (!afterMaintenance) throw new Error("S5 completion delivery vanished during maintenance");
     return {
-      beforeSettlementState: beforeSettlement.state,
-      afterSettlementState: afterSettlement.state,
+      beforeMaintenanceState: beforeMaintenance.state,
+      afterMaintenanceState: afterMaintenance.state,
       releasedLeaseCount,
       activation: await activationPromise,
     };

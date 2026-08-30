@@ -17,7 +17,7 @@ const ACTUAL_FOUR_LINE_SCENARIO = [
   "notify=true child persists one terminal revision",
   "completion notifier persists one pending delivery",
   "parent remains completed after its ordinary turn",
-  "terminal settlement runs before completion claim",
+  "maintenance cannot invalidate the unclaimed delivery",
 ] as const;
 
 describePostgres("completed-parent pending completion ownership", () => {
@@ -31,16 +31,16 @@ describePostgres("completed-parent pending completion ownership", () => {
     await postgres?.cleanup();
   });
 
-  it("preserves pending ownership through settlement and wakes the parent exactly once", async () => {
+  it("preserves pending ownership through maintenance and wakes the parent exactly once", async () => {
     expect(ACTUAL_FOUR_LINE_SCENARIO).toHaveLength(4);
     const harness = await CompletedParentS5FullSliceHarness.create(postgres, {
       pauseAfterCompletionRegistration: true,
     });
     try {
-      const admitted = await harness.notifyThroughPendingTerminalSettlement();
+      const admitted = await harness.notifyThroughPendingMaintenance();
       expect(admitted).toMatchObject({
-        beforeSettlementState: "pending",
-        afterSettlementState: "pending",
+        beforeMaintenanceState: "pending",
+        afterMaintenanceState: "pending",
         releasedLeaseCount: 0,
         activation: {
           startBoundary: {

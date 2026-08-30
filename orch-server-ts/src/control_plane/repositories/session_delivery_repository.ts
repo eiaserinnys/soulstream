@@ -13,14 +13,9 @@ import type {
 import { SessionDeliveryNotificationRepository } from "./session_delivery_notification_repository.js";
 import { SessionDeliveryRecoveryRepository } from
   "./session_delivery_recovery_repository.js";
-import { markSessionDeliveryConsumed } from
-  "./session_delivery_consumption_transition.js";
 import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
-import {
-  attemptOutcomeFor,
-  deliveryRetryOrDeadLetterSet,
-} from "./session_delivery_retry_policy.js";
+import { deliveryRetrySet } from "./session_delivery_retry_policy.js";
 import {
   getSessionDeliveryRelationConsumption,
   recordObservedChildCompletion,
@@ -64,12 +59,6 @@ export class SessionDeliveryRepository {
     relationKey: string,
   ): Promise<SessionDeliveryRelationConsumptionRow | null> {
     return await getSessionDeliveryRelationConsumption(this.sql, relationKey);
-  }
-
-  async recordRelationConsumed(
-    params: RecordSessionDeliveryRelationConsumptionParams,
-  ): Promise<RecordSessionDeliveryRelationConsumptionResult> {
-    return await recordSessionDeliveryRelationConsumed(this.sql, params);
   }
 
   async recordObservedChildCompletion(
@@ -149,7 +138,6 @@ export class SessionDeliveryRepository {
             SELECT 1
             FROM sessions AS source_session
             WHERE source_session.session_id = delivery.source_session_id
-              AND source_session.status IN ('completed', 'error', 'interrupted')
               AND source_session.termination_event_id IS NOT NULL
               AND source_session.termination_event_id::text
                 = delivery.producer_terminal_revision
@@ -164,11 +152,13 @@ export class SessionDeliveryRepository {
     leaseOwner: string,
     limit = 100,
     leaseMs = 15_000,
+    deliveryId?: string,
   ): Promise<SessionDeliveryRow[]> {
     return await this.recovery.claimRecoverableCompletionDeliveries(
       leaseOwner,
       limit,
       leaseMs,
+      deliveryId,
     );
   }
 
@@ -180,7 +170,7 @@ export class SessionDeliveryRepository {
     return await withDeliveryTransaction(this.sql, async (transaction) => {
       const rows = await transaction<SessionDeliveryRow[]>`
         UPDATE session_deliveries
-        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+        SET ${deliveryRetrySet(transaction as unknown as SqlClient, {
           reason: error,
           retryState: "pending",
           retryDelayMs,
@@ -193,7 +183,7 @@ export class SessionDeliveryRepository {
       if (!row) return null;
       await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
         deliveryId,
-        outcome: attemptOutcomeFor(row),
+        outcome: "retryable",
         reason: error,
       });
       return normalizeDeliveryRow(row);
@@ -209,7 +199,7 @@ export class SessionDeliveryRepository {
     return await withDeliveryTransaction(this.sql, async (transaction) => {
       const rows = await transaction<SessionDeliveryRow[]>`
         UPDATE session_deliveries
-        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+        SET ${deliveryRetrySet(transaction as unknown as SqlClient, {
           reason: error,
           retryState: "pending",
           retryDelayMs,
@@ -223,33 +213,12 @@ export class SessionDeliveryRepository {
       if (!row) return null;
       await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
         deliveryId,
-        outcome: attemptOutcomeFor(row),
+        outcome: "retryable",
         reason: error,
         leaseOwner,
       });
       return normalizeDeliveryRow(row);
     });
-  }
-
-  async markPendingSuperseded(
-    deliveryId: string,
-    supersededTerminalRevision: string,
-  ): Promise<SessionDeliveryRow | null> {
-    const rows = await this.sql<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
-      SET
-        state = 'superseded',
-        aggregate_state = 'consumed',
-        consumed_reason = ${supersededTerminalRevision},
-        consumed_at = NOW(),
-        superseded_at = NOW(),
-        superseded_terminal_revision = ${supersededTerminalRevision},
-        updated_at = NOW()
-      WHERE delivery_id = ${deliveryId}
-        AND state = 'pending'
-      RETURNING *
-    `;
-    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
   async releaseExpiredDeliveryLeases(): Promise<number> {
@@ -260,7 +229,7 @@ export class SessionDeliveryRepository {
         aggregate_state: SessionDeliveryRow["aggregate_state"];
       }>>`
         UPDATE session_deliveries
-        SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
+        SET ${deliveryRetrySet(transaction as unknown as SqlClient, {
           reason: "delivery lease expired",
           retryState: "pending",
           preserveExistingError: true,
@@ -272,7 +241,7 @@ export class SessionDeliveryRepository {
       for (const row of rows) {
         await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
           deliveryId: row.delivery_id,
-          outcome: attemptOutcomeFor(row),
+          outcome: "retryable",
           reason: "delivery lease expired",
           leaseOwner: row.lease_owner,
         });
@@ -329,90 +298,10 @@ export class SessionDeliveryRepository {
     return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
   }
 
-  async markConsumed(
-    deliveryId: string,
-    consumedTurnId: string,
-  ): Promise<SessionDeliveryRow | null> {
-    const consumed = await markSessionDeliveryConsumed(
-      this.sql,
-      deliveryId,
-      consumedTurnId,
-    );
-    return consumed ? normalizeDeliveryRow(consumed) : null;
-  }
-
   async markConsumedByRelation(
-    relationKey: string,
-    completionId: string,
-    callerTurnId: string,
-  ): Promise<SessionDeliveryRow | null> {
-    const rows = await this.sql<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
-      SET
-        state = 'consumed',
-        aggregate_state = 'consumed',
-        caller_turn_id = ${callerTurnId},
-        target_receipt_id = COALESCE(target_receipt_id, ${callerTurnId}),
-        target_receipt_at = COALESCE(target_receipt_at, NOW()),
-        consumed_at = NOW(),
-        updated_at = NOW()
-      WHERE relation_key = ${relationKey}
-        AND completion_id = ${completionId}
-        AND aggregate_state IN ('pending', 'delivered')
-        AND state IN ('pending', 'claimed', 'delivered')
-      RETURNING *
-    `;
-    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
-  }
-
-  async markUncertain(
-    deliveryId: string,
-    leaseOwner?: string,
-    error?: string,
-  ): Promise<SessionDeliveryRow | null> {
-    return await withDeliveryTransaction(this.sql, async (transaction) => {
-      const reason = error ?? "delivery result rejected";
-      const rows = await transaction<Array<SessionDeliveryRow & {
-        attempt_lease_owner: string | null;
-      }>>`
-        WITH candidate AS MATERIALIZED (
-          SELECT delivery_id, lease_owner AS attempt_lease_owner
-          FROM session_deliveries
-          WHERE delivery_id = ${deliveryId}
-            AND aggregate_state NOT IN ('consumed', 'dead_letter')
-            AND state NOT IN ('consumed', 'superseded')
-            AND (
-              ${leaseOwner ?? null}::text IS NULL
-              OR (lease_owner = ${leaseOwner ?? null}
-                AND state IN ('claimed', 'dispatching', 'queued'))
-            )
-          FOR UPDATE
-        )
-        UPDATE session_deliveries AS delivery
-        SET
-          state = 'uncertain',
-          aggregate_state = 'dead_letter',
-          lease_owner = NULL,
-          lease_expires_at = NULL,
-          attempt_count = delivery.attempt_count + 1,
-          last_error = ${reason},
-          dead_letter_reason = ${reason},
-          dead_lettered_at = NOW(),
-          updated_at = NOW()
-        FROM candidate
-        WHERE delivery.delivery_id = candidate.delivery_id
-        RETURNING delivery.*, candidate.attempt_lease_owner
-      `;
-      const row = rows[0];
-      if (!row) return null;
-      await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
-        deliveryId,
-        outcome: "rejected",
-        reason,
-        leaseOwner: row.attempt_lease_owner,
-      });
-      return normalizeDeliveryRow(row);
-    });
+    params: RecordSessionDeliveryRelationConsumptionParams,
+  ): Promise<RecordSessionDeliveryRelationConsumptionResult> {
+    return await recordSessionDeliveryRelationConsumed(this.sql, params);
   }
 
 }

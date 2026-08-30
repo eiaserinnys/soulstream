@@ -94,6 +94,7 @@ export interface SessionDeliveryRelationConsumptionRow {
 }
 
 export interface RecordSessionDeliveryRelationConsumptionParams {
+  deliveryId: string;
   relationKey: string;
   completionId: string;
   callerSessionId: string;
@@ -116,7 +117,6 @@ export type RecordObservedChildCompletionResult =
   | "recorded"
   | "not_found"
   | "not_child_caller"
-  | "not_terminal"
   | "missing_terminal_revision"
   | "revision_mismatch";
 
