@@ -185,7 +185,7 @@ export async function readProcessStartIdentity(pid: number): Promise<string | nu
           + "$b = (Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime; "
           + "Write-Output ($b.ToUniversalTime().Ticks.ToString() + ':' + $p.StartTime.ToUniversalTime().Ticks.ToString())",
         ],
-        { timeout: 5_000, windowsHide: true },
+        { timeout: 15_000, windowsHide: true },
       );
       const [bootTicks, processTicks] = stdout.trim().split(":");
       return /^\d+$/.test(bootTicks ?? "") && /^\d+$/.test(processTicks ?? "")

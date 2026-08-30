@@ -23,8 +23,8 @@ import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js
 const directories: string[] = [];
 const ORIGINAL_PID = 73_101;
 const RETRY_PID = 73_102;
-const ORIGINAL_START_IDENTITY = "windows-process-638920800001230000";
-const REUSED_START_IDENTITY = "windows-process-638920900001230000";
+const ORIGINAL_START_IDENTITY = "windows-boot-638920800000000000-process-638920800001230000";
+const REUSED_START_IDENTITY = "windows-boot-638920800000000000-process-638920900001230000";
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map(
@@ -92,11 +92,12 @@ describe("runner retirement blocker regressions", () => {
     expect(harness.signalPid).not.toHaveBeenCalled();
     expect(harness.spawnCount()).toBe(1);
     const identity = await readRunnerRegistrationIdentity(harness.paths.sessionDirectory);
-    expect(identity).toMatchObject({ pid: null, startIdentity: null });
+    expect(identity).toMatchObject({
+      pid: ORIGINAL_PID,
+      startIdentity: ORIGINAL_START_IDENTITY,
+    });
     expect(identity?.retiredAt).toBeUndefined();
-    await expect(readFile(harness.paths.pidPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(harness.paths.socketPath, "utf8"))
-      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(harness.paths.pidPath, "utf8")).resolves.toBe(`${ORIGINAL_PID}\n`);
   });
 
   it.each([
