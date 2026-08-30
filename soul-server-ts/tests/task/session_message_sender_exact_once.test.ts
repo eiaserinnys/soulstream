@@ -66,9 +66,8 @@ class SharedDeliveryLedger {
 
   gate(nodeId: string): Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    "admit" | "beginDispatch" | "recordResult"
       | "recordNotificationPublished" | "recordNotificationFailure"
-      | "recordReservationRetry"
   > {
     return {
       admit: async (request) => {
@@ -115,13 +114,8 @@ class SharedDeliveryLedger {
           stored.row.queued_at = new Date(this.clock.now);
         }
       },
-      recordFailure: async (admission) => {
-        if (admission.kind !== "admitted") return;
-        admission.row.last_error = "NOT_OWNER";
-      },
       recordNotificationPublished: async () => {},
       recordNotificationFailure: async () => {},
-      recordReservationRetry: async () => "scheduled",
     };
   }
 
@@ -142,9 +136,8 @@ class SharedDeliveryLedger {
       if ((stored.row.lease_expires_at?.getTime() ?? Infinity) > this.clock.now) {
         continue;
       }
-      // resolveTask currently throws before the route's try/catch, so the
-      // NOT_OWNER row receives no recordFailure call. It remains claimed until
-      // the ordinary expired-lease recovery horizon makes it eligible again.
+      // A non-owner leaves the durable row claimed until the ordinary
+      // expired-lease recovery horizon makes it eligible again.
       stored.row.attempt_count += 1;
       stored.row.next_attempt_at = new Date(this.clock.now);
       await deliver({
@@ -235,22 +228,18 @@ function terminalTask(): Task {
     createdAt: new Date("2026-08-24T13:00:00.000Z"),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
   };
 }
 
 function forbiddenRunningTransition(): Pick<
   RunningInterventionTransition,
-  "deliver" | "queueOnly"
+  "deliver"
 > {
   return {
     deliver: vi.fn(async () => {
       throw new Error("terminal test target must not use live delivery");
     }),
-    queueOnly: vi.fn(async () => {
-      throw new Error("terminal test target must not use queue-only delivery");
-    }),
-  } as unknown as Pick<RunningInterventionTransition, "deliver" | "queueOnly">;
+  };
 }
 
 function makeOwnerNode(ledger: SharedDeliveryLedger) {

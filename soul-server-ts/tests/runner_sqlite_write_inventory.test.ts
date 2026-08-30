@@ -14,10 +14,6 @@ const OUTBOX_PATH = fileURLToPath(new URL(
   "../src/runner/sqlite_event_outbox.ts",
   import.meta.url,
 ));
-const INTERVENTION_PATH = fileURLToPath(new URL(
-  "../src/runner/sqlite_intervention_inbox.ts",
-  import.meta.url,
-));
 const CUTOVER_E2E_PATH = fileURLToPath(new URL(
   "./runner/runner_cutover_integration.e2e.test.ts",
   import.meta.url,
@@ -55,7 +51,6 @@ describe("runner SQLite write inventory", () => {
   it("freezes every synchronous transaction owner", () => {
     expect(syncTransactionCallers(SRC_ROOT)).toEqual({
       "runner/runner_host_state_store.ts": ["transaction"],
-      "runner/sqlite_intervention_inbox.ts": ["migrateRunnerInterventionInboxV9"],
       "runner/sqlite_ipc_journal.ts": ["ensureRunnerIpcJournalV4"],
       "runner/sqlite_runner_lifecycle.ts": ["transaction"],
     });
@@ -66,7 +61,6 @@ describe("runner SQLite write inventory", () => {
       OUTBOX_PATH,
     ])).toEqual({
       "runner/runner_child_runtime.ts": ["start"],
-      "runner/runner_intervention_resolution.ts": ["resolveAmbiguousRunnerIntervention"],
       "runner/runner_process_dispatcher.ts": ["initialize"],
       "runner/runner_process_spawn.ts": ["defaultDependencies"],
       "runner/runner_release_prewarm.ts": ["module"],
@@ -93,11 +87,11 @@ describe("runner SQLite write inventory", () => {
     );
   });
 
-  it("keeps active parent reads free of hidden runner.sqlite writes", () => {
-    expect(sqliteWriteOwnersForFunction(
-      INTERVENTION_PATH,
-      "readPendingRunnerInterventions",
-    )).toEqual({});
+  it("keeps the runner inbox absent from product schema, readers, and writers", () => {
+    const inboxReferences = collectTypeScriptFiles(SRC_ROOT)
+      .filter((path) => readFileSync(path, "utf8").includes("runner_intervention_inbox"))
+      .map((path) => relative(SRC_ROOT, path));
+    expect(inboxReferences).toEqual([]);
     for (const relativePath of [
       "runner/runner_parent_outbox.ts",
       "runner/runner_process_registry.ts",

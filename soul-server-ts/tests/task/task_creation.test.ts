@@ -113,7 +113,6 @@ describe("TaskCreation", () => {
       ],
       lastEventId: 0,
       lastReadEventId: 0,
-      interventionQueue: [],
     });
     expect(h.tasks.get("sess-1")).toBe(task);
 

@@ -94,6 +94,8 @@ export interface EngineExecuteParams {
   agentSessionId?: string;
   /** Sessions-row owner generation fencing every persistent engine output. */
   executionGeneration?: number;
+  /** Exact sessions-row execution command paired with executionGeneration. */
+  executionCommandId?: string;
   prompt: string;
   /**
    * Stable logical input identity. Persistent Claude runtimes bind durable
@@ -101,10 +103,6 @@ export interface EngineExecuteParams {
    * input with a fresh random identity. Other engines ignore it.
    */
   inputUuid?: string;
-  /** Durable runner inbox entry consumed by this turn. Runner boundary only. */
-  runnerInterventionId?: string;
-  /** Durable runner inbox entries consumed atomically by one model turn. Runner boundary only. */
-  runnerInterventionIds?: string[];
   /** Durable producer of this turn, propagated unchanged across the runner boundary. */
   turnOrigin?: TurnOrigin;
   /** Codex SDK `UserInput[]`로 전달할 로컬 이미지 첨부 경로. */
@@ -175,7 +173,7 @@ export interface EnginePort {
    * - resumeSessionId 있으면 해당 세션 이어 실행. 없으면 새 thread/session 생성.
    * - 새 세션 시작 시 첫 runner `engine_event`는 보통 `session` 타입
    *   (session_id 운반, 호출자가 기존 SSE 경로로 영속).
-   * - Task queue resume remains the intervention path.
+   * - Accepted session delivery D is the only next-turn input authority.
    */
   execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload>;
 

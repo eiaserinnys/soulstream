@@ -38,7 +38,6 @@ function makeTask(params: Partial<Task> = {}): Task {
     createdAt: new Date("2026-05-23T00:00:00.000Z"),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
     ...params,
   };
 }

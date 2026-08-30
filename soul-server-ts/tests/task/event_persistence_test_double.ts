@@ -248,6 +248,10 @@ export function makeEventPersistenceTestDouble(
         startIdentity: string;
         executionCommandId: string;
         reviewState: string;
+        deliveryId?: string;
+        deliveryLeaseOwner?: string;
+        previousExecutionGeneration?: number;
+        previousExecutionCommandId?: string;
         updatedAt?: Date;
       },
     ) => ({
@@ -264,7 +268,7 @@ export function makeEventPersistenceTestDouble(
         last_event_id: null,
       },
       canonicalExecutionOwnership: {
-        ownershipGeneration: 1,
+        ownershipGeneration: (input.previousExecutionGeneration ?? 0) + 1,
         ownerKind: input.ownerKind,
         manifestId: input.manifestId,
         runtimeEnvIdentity: input.runtimeEnvIdentity,

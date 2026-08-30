@@ -23,6 +23,7 @@ const RETRY_DELAY_ARG_INDEX = new Map<string, number>([
 const deliveryOperations = {
   register: ["deliveries", null, "register"],
   get: ["deliveries", null, "get"],
+  get_next_accepted_for_target: ["deliveries", null, "getNextAcceptedForTarget"],
   get_by_relation: ["deliveries", null, "getByRelation"],
   get_relation_consumption: ["deliveries", null, "getRelationConsumption"],
   record_relation_consumed: ["deliveries", null, "recordRelationConsumed"],

@@ -275,6 +275,13 @@ export class SessionDeliveryHostClient {
   get(deliveryId: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "get", [deliveryId]);
   }
+  getNextAcceptedForTarget(targetSessionId: string): Promise<SessionDeliveryRow | null> {
+    return this.transport.request(
+      "session-deliveries",
+      "get_next_accepted_for_target",
+      [targetSessionId],
+    );
+  }
   getByRelation(relationKey: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "get_by_relation", [relationKey]);
   }
@@ -320,8 +327,16 @@ export class SessionDeliveryHostClient {
   markDelivered(deliveryId: string, callerTurnId: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "mark_delivered", [deliveryId, callerTurnId]);
   }
-  markConsumed(deliveryId: string, consumedTurnId: string): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "mark_consumed", [deliveryId, consumedTurnId]);
+  markConsumed(
+    deliveryId: string,
+    consumedTurnId: string,
+    leaseOwner?: string,
+  ): Promise<SessionDeliveryRow | null> {
+    return this.transport.request(
+      "session-deliveries",
+      "mark_consumed",
+      [deliveryId, consumedTurnId, leaseOwner],
+    );
   }
   markConsumedByRelation(relationKey: string, completionId: string, callerTurnId: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "mark_consumed_by_relation", [relationKey, completionId, callerTurnId]);

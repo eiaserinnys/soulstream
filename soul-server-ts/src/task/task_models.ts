@@ -9,7 +9,6 @@
  *   - pending_folder_id (folder 배정은 B-4 후속 PR-B 범위)
  *
  * B-4 추가 필드 (분석 캐시 `20260517-1410-codex-ts-folder-resume-intervene.md` §D):
- *   - interventionQueue: 세션 대화 창구가 받아들인 메시지를 전달 완료까지 보존하는 큐.
  */
 
 import type { ContextItem } from "../context/prompt_assembler.js";
@@ -109,8 +108,6 @@ export interface InterventionMessage {
    */
   storedDeliveryPayload?: Record<string, unknown>;
   storedDeliveryPayloadHash?: string;
-  /** Runner SQLite inbox identity. Internal only; never copied into public wire events. */
-  runnerInterventionId?: string;
   /**
    * Phase A context 정본 (Y-10, atom d7a1ad86 정본 둘 안티패턴 차단):
    * intervention_sent 통합 후 wire에 박는 context_items 정본과 정합.
@@ -414,8 +411,7 @@ export interface Task {
    * Retention exists to keep Claude background work running inside a live
    * child. Retaining a handle whose process is gone keeps `task.runner` set
    * forever, and `startExecution` refuses to run while a runner is attached —
-   * so the session could never execute again, and every intervention queued
-   * itself behind a turn that would never come (260820 incident).
+   * so the session could never execute a newly accepted delivery (260820 incident).
    */
   runnerIsOfflineReplay?: boolean;
 
@@ -430,13 +426,5 @@ export interface Task {
 
   /** DB에서 복원된 task인지 여부. 실행 중 메모리 task와 구분할 때 사용. */
   hydratedFromDb?: boolean;
-
-  /**
-   * 수용된 개입 메시지의 전달 보존 큐 (B-4, claude `task_manager.py:603-609`의
-   * asyncio.Queue 정본과 의미 동등). 큐는 개입을 예외나 실패로 바꾸지 않는다.
-   *
-   * 단일 process·단일 task_manager Map이라 별도 mutex 불요 — async await 경계만 정합.
-   */
-  interventionQueue: InterventionMessage[];
 
 }

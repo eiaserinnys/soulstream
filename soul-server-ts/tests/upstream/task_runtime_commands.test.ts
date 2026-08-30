@@ -49,7 +49,6 @@ function makeTask(params: Partial<Task> = {}): Task {
     createdAt: new Date("2026-05-23T00:00:00.000Z"),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
     ...params,
   };
 }
@@ -546,54 +545,6 @@ describe("TaskRuntimeCommands ACK builders", () => {
   it("maps intervention route results to stable intervene_ack outcomes", () => {
     expect(
       buildInterveneAck({
-        requestId: "req-queued",
-        agentSessionId: "sess-1",
-        result: {
-          delivered: false,
-          queued: true,
-          queuePosition: 3,
-          consumeWhen: "next_turn",
-          reason: "next_turn_required",
-        },
-      }),
-    ).toEqual({
-      type: "intervene_ack",
-      requestId: "req-queued",
-      status: "ok",
-      outcome: "queued",
-      agentSessionId: "sess-1",
-      delivered: false,
-      queuePosition: 3,
-      consumeWhen: "next_turn",
-      reason: "next_turn_required",
-    });
-
-    expect(
-      buildInterveneAck({
-        requestId: "req-queued-unknown",
-        agentSessionId: "sess-1",
-        result: {
-          delivered: false,
-          queued: true,
-          queuePosition: 1,
-          consumeWhen: "next_turn",
-          reason: "verdict_unknown",
-        },
-      }),
-    ).toEqual({
-      type: "intervene_ack",
-      requestId: "req-queued-unknown",
-      status: "ok",
-      outcome: "queued",
-      agentSessionId: "sess-1",
-      delivered: false,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "verdict_unknown",
-    });
-
-    expect(
-      buildInterveneAck({
         requestId: "req-resumed",
         agentSessionId: "sess-1",
         result: { autoResumed: true },
@@ -609,28 +560,6 @@ describe("TaskRuntimeCommands ACK builders", () => {
 
     expect(
       buildInterveneAck({
-        requestId: "req-deferred",
-        agentSessionId: "sess-1",
-        result: {
-          delivered: false,
-          deferred: true,
-          retryWhen: "engine_available",
-          reason: "no_active_turn",
-        },
-      }),
-    ).toEqual({
-      type: "intervene_ack",
-      requestId: "req-deferred",
-      status: "ok",
-      outcome: "deferred",
-      agentSessionId: "sess-1",
-      delivered: false,
-      retryWhen: "engine_available",
-      reason: "no_active_turn",
-    });
-
-    expect(
-      buildInterveneAck({
         requestId: "req-delivered",
         agentSessionId: "sess-1",
         result: { delivered: true },
@@ -642,27 +571,6 @@ describe("TaskRuntimeCommands ACK builders", () => {
       outcome: "delivered",
       agentSessionId: "sess-1",
       delivered: true,
-    });
-
-    expect(
-      buildInterveneAck({
-        requestId: "req-unknown",
-        agentSessionId: "sess-1",
-        result: {
-          delivered: null,
-          consumeWhen: null,
-          reason: "verdict_unknown",
-        },
-      }),
-    ).toEqual({
-      type: "intervene_ack",
-      requestId: "req-unknown",
-      status: "ok",
-      outcome: "unknown",
-      agentSessionId: "sess-1",
-      delivered: null,
-      consumeWhen: null,
-      reason: "verdict_unknown",
     });
 
     expect(

@@ -45,7 +45,6 @@ function task(sessionId: string): Task {
     createdAt: new Date(),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
   };
 }
 

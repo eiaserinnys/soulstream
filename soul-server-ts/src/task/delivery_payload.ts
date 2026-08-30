@@ -4,7 +4,8 @@ export {
   type CanonicalDeliveryPayloadInput,
 } from "@soulstream/wire-schema/delivery";
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { CallerInfo } from "./task_models.js";
+import type { SessionDeliveryRow } from "../db/session_db_types.js";
+import type { CallerInfo, InterventionMessage } from "./task_models.js";
 
 export interface CanonicalDeliveryMessage {
   text: string;
@@ -30,6 +31,34 @@ export function readCanonicalDeliveryPayload(
     followupKey: optionalString(payload.followup_key),
     followupAttempt: optionalPositiveInteger(payload.followup_attempt),
     followupTaskIds: stringArray(payload.followup_task_ids),
+  };
+}
+
+export function interventionFromCanonicalDelivery(
+  row: SessionDeliveryRow,
+): InterventionMessage {
+  const canonical = readCanonicalDeliveryPayload(row.payload);
+  return {
+    text: canonical.text,
+    user: canonical.user,
+    callerInfo: canonical.callerInfo,
+    attachmentPaths: canonical.attachmentPaths,
+    context: canonical.context,
+    followupKey: canonical.followupKey,
+    followupAttempt: canonical.followupAttempt,
+    followupTaskIds: canonical.followupTaskIds,
+    source: row.source,
+    deliveryId: row.delivery_id,
+    deliveryIntent: row.intent,
+    completionId: row.completion_id ?? undefined,
+    relationKey: row.relation_key,
+    producerTerminalRevision: row.producer_terminal_revision ?? undefined,
+    parentDeliveryId: row.parent_delivery_id ?? undefined,
+    callerTurnId: row.caller_turn_id ?? undefined,
+    deliveryCreatedAt: row.created_at.toISOString(),
+    deliveryLeaseOwner: row.lease_owner ?? undefined,
+    storedDeliveryPayload: row.payload,
+    storedDeliveryPayloadHash: row.payload_hash,
   };
 }
 

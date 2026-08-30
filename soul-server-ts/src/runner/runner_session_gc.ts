@@ -152,7 +152,6 @@ export class RunnerSessionGarbageCollector {
                 ...(prebootstrap ? {
                   durableRecordCount: inspection.durableRecordCount,
                   unacknowledgedIpcFrameCount: inspection.unacknowledgedIpcFrameCount,
-                  pendingInterventionCount: inspection.pendingInterventionCount,
                 } : {}),
               },
               "removed expired terminal runner session state",
@@ -190,8 +189,7 @@ function hasProvenEmptyPrebootstrapEvidence(
   inspection: Awaited<ReturnType<typeof inspectRunnerDurableState>>,
 ): boolean {
   return inspection.durableRecordCount === 0
-    && inspection.unacknowledgedIpcFrameCount === 0
-    && inspection.pendingInterventionCount === 0;
+    && inspection.unacknowledgedIpcFrameCount === 0;
 }
 
 function terminalCandidateReason(

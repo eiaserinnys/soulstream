@@ -19,7 +19,6 @@ function makeTerminalTask(): Task {
     lastEventId: 7,
     terminalEventId: 6,
     lastReadEventId: 3,
-    interventionQueue: [],
     metadata: [],
   };
 }

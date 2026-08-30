@@ -58,29 +58,43 @@ export class RunnerCutoverOwnershipLedger {
           row.sessionId === sessionId && row.phase === "active"
         );
         if (active) {
+          const exactHandoff = input.previousExecutionGeneration === active.ownershipGeneration
+            && input.previousExecutionCommandId === active.executionCommandId;
+          if (exactHandoff) {
+            active.phase = "terminal";
+            active.terminalAt = updatedAt;
+            active.runnerFact = "closed";
+          }
           const exactIdentity = active.manifestId === input.manifestId
             && active.runtimeEnvIdentity === input.runtimeEnvIdentity
             && active.registrationId === input.registrationId
             && active.pid === input.pid
             && active.startIdentity === input.startIdentity
             && active.executionCommandId === input.executionCommandId;
+          if (!exactHandoff) {
+            this.trace.push(
+              `${sessionId}:${exactIdentity ? "exact-adopt" : "conflict"}`
+                + `:${active.ownershipGeneration}:${active.phase}`,
+            );
+            return {
+              eventId: ++this.eventId,
+              applied: exactIdentity,
+              canonicalSession: runningProjection(input.reviewState, updatedAt),
+              canonicalExecutionOwnership: canonicalOwnership(active, input.ownerKind),
+            };
+          }
           this.trace.push(
-            `${sessionId}:${exactIdentity ? "exact-adopt" : "conflict"}`
-              + `:${active.ownershipGeneration}:${active.phase}`,
+            `${sessionId}:handoff:${active.ownershipGeneration}:terminal`,
           );
-          return {
-            eventId: ++this.eventId,
-            applied: exactIdentity,
-            canonicalSession: runningProjection(input.reviewState, updatedAt),
-            canonicalExecutionOwnership: canonicalOwnership(active, input.ownerKind),
-          };
         }
-        const ownershipGeneration = this.rows.reduce(
-          (highest, row) => row.sessionId === sessionId
-            ? Math.max(highest, row.ownershipGeneration)
-            : highest,
-          0,
-        ) + 1;
+        const ownershipGeneration = input.previousExecutionGeneration !== undefined
+          ? input.previousExecutionGeneration + 1
+          : this.rows.reduce(
+            (highest, row) => row.sessionId === sessionId
+              ? Math.max(highest, row.ownershipGeneration)
+              : highest,
+            0,
+          ) + 1;
         const row: CutoverOwnershipRow = {
           sessionId,
           ownershipGeneration,

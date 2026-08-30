@@ -4,15 +4,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   RUNNER_FRAME_PROTOCOL_VERSION,
-  applyInterventionCommandFrame,
-  discardInterventionCommandFrame,
   engineEventFrame,
   hostFrameAppliedControlFrame,
   interruptCommandFrame,
   prepareSessionCommandFrame,
   runnerControlResponseFrame,
   runnerCommandResultFrame,
-  stageInterventionCommandFrame,
 } from "../../src/runner/frame_protocol.js";
 import {
   RunnerIpcConnection,
@@ -44,110 +41,6 @@ describe("RunnerIpcConnection", () => {
       { timeoutMs: 1_000 },
     )).resolves.toMatchObject({ commandId: "prepare-1", result: { status: "ok" } });
     expect(hostConnection.pendingRequestCount).toBe(0);
-  });
-
-  it.each([
-    {
-      label: "receipt",
-      frame: stageInterventionCommandFrame({
-        commandId: "stage-intervention:priority",
-        interventionId: "priority",
-        message: { text: "redirect now" },
-        queued: false,
-      }),
-    },
-    {
-      label: "apply",
-      frame: applyInterventionCommandFrame({
-        commandId: "apply-intervention:priority",
-        interventionId: "priority",
-        interventionInput: { prompt: "redirect now" },
-      }),
-    },
-    {
-      label: "discard",
-      frame: discardInterventionCommandFrame({
-        commandId: "discard-intervention:priority",
-        interventionId: "priority",
-      }),
-    },
-  ])("does not queue an intervention $label command behind an unrelated control handler", async ({
-    frame: interventionFrame,
-  }) => {
-    const [host, runner] = await socketPair();
-    const hostConnection = new RunnerIpcConnection(host);
-    const runnerConnection = new RunnerIpcConnection(runner);
-    let releaseControl!: () => void;
-    let markControlStarted!: () => void;
-    const controlStarted = new Promise<void>((resolve) => {
-      markControlStarted = resolve;
-    });
-    const controlBlocked = new Promise<void>((resolve) => {
-      releaseControl = resolve;
-    });
-    runnerConnection.onFrame(async (frame) => {
-      if (frame.channel === "control" && frame.kind === "host_frame_applied") {
-        markControlStarted();
-        await controlBlocked;
-        return;
-      }
-      if (frame.channel === "command") {
-        await runnerConnection.send(runnerCommandResultFrame(frame.commandId, {
-          status: "ok",
-        }));
-      }
-    });
-
-    await hostConnection.send(hostFrameAppliedControlFrame(1));
-    await controlStarted;
-    const intervention = hostConnection.request(interventionFrame, { timeoutMs: 50 });
-
-    await expect(intervention).resolves.toMatchObject({
-      commandId: interventionFrame.commandId,
-      result: { status: "ok" },
-    });
-    releaseControl();
-  });
-
-  it("does not queue a stage receipt behind a blocked intervention apply", async () => {
-    const [host, runner] = await socketPair();
-    const hostConnection = new RunnerIpcConnection(host);
-    const runnerConnection = new RunnerIpcConnection(runner);
-    let releaseApply!: () => void;
-    let markApplyStarted!: () => void;
-    const applyStarted = new Promise<void>((resolve) => { markApplyStarted = resolve; });
-    const applyBlocked = new Promise<void>((resolve) => { releaseApply = resolve; });
-    runnerConnection.onFrame(async (frame) => {
-      if (frame.channel !== "command") return;
-      if (frame.kind === "invoke" && frame.capability === "runner.apply_intervention") {
-        markApplyStarted();
-        await applyBlocked;
-      }
-      await runnerConnection.send(runnerCommandResultFrame(frame.commandId, { status: "ok" }));
-    });
-
-    const apply = hostConnection.request(applyInterventionCommandFrame({
-      commandId: "apply-blocked",
-      interventionId: "intervention-a",
-      interventionInput: { prompt: "first" },
-    }), { timeoutMs: 1_000 });
-    await applyStarted;
-    const stage = hostConnection.request(stageInterventionCommandFrame({
-      commandId: "stage-independent",
-      interventionId: "intervention-b",
-      message: { text: "second" },
-      queued: true,
-    }), { timeoutMs: 100 });
-
-    try {
-      await expect(stage).resolves.toMatchObject({
-        commandId: "stage-independent",
-        result: { status: "ok" },
-      });
-    } finally {
-      releaseApply();
-    }
-    await expect(apply).resolves.toMatchObject({ commandId: "apply-blocked" });
   });
 
   it("does not queue interrupt behind a blocked ordered handler", async () => {

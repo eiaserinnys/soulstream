@@ -3,7 +3,6 @@
  *
  * single-node 모드(features.nodeGuard = true)에서만 사용.
  * 활성 세션이 현재 접속한 soul-server와 다른 노드 소속임을 표시한다.
- * 이 배지가 표시될 때 ChatInput도 비활성화된다(chatInputDisabled).
  */
 
 import { cn } from "@seosoyoung/soul-ui";

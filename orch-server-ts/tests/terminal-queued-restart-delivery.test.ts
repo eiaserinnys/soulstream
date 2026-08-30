@@ -84,6 +84,20 @@ describe("terminal queued delivery across node restart", () => {
     const persistence = makeEventPersistenceTestDouble(async (_sessionId, event) => {
       persistedEventTypes.push(event.type);
     });
+    const acquire = persistence.acquireExecutionOwnershipAndWaitForApplication;
+    const acquireImplementation = acquire.getMockImplementation();
+    if (!acquireImplementation) throw new Error("ownership test double has no implementation");
+    acquire.mockImplementation(async (sessionId, input) => {
+      const application = await acquireImplementation(sessionId, input);
+      if (application.applied && input.deliveryId && input.deliveryLeaseOwner) {
+        ledger.handoffClaim(
+          input.deliveryId,
+          input.deliveryLeaseOwner,
+          input.executionCommandId,
+        );
+      }
+      return application;
+    });
     const broadcaster = {
       emitEventEnvelope: vi.fn(async () => undefined),
       emitSessionUpdated: vi.fn(async () => undefined),
@@ -145,10 +159,7 @@ describe("terminal queued delivery across node restart", () => {
       broadcaster,
       logger,
       persistence: persistence.persistence,
-      liveRetryDelayMs: 0,
-      sleep: async () => undefined,
     });
-    const queueOnly = vi.spyOn(running, "queueOnly");
     const autoResumeCall = vi.spyOn(autoResume, "resume");
     const route = new TaskInterventionRoute({
       getTask: (sessionId) => tasks.get(sessionId),
@@ -303,7 +314,6 @@ describe("terminal queued delivery across node restart", () => {
       "queued_after_route",
       "consumed",
     ]);
-    expect(queueOnly).not.toHaveBeenCalled();
     expect(autoResumeCall).toHaveBeenCalledOnce();
     expect(persistence.acquireExecutionOwnershipAndWaitForApplication).toHaveBeenCalledOnce();
     expect(modelInputs).toHaveLength(1);
@@ -319,7 +329,8 @@ describe("terminal queued delivery across node restart", () => {
       state: "consumed",
       aggregate_state: "consumed",
       attempt_count: 1,
-      target_receipt_id: expect.stringMatching(/^event:\d+$/),
+      target_receipt_id:
+        `execution:1:delivery:${DELIVERY_ID}:first-model-event`,
       dead_lettered_at: null,
     });
     expect(task).toMatchObject({
@@ -374,6 +385,28 @@ class RestartDeliveryLedger {
 
   readonly get = vi.fn(async (deliveryId: string) =>
     deliveryId === DELIVERY_ID ? structuredClone(this.row) : null);
+
+  readonly getNextAcceptedForTarget = vi.fn(async (targetSessionId: string) =>
+    this.row.target_session_id === targetSessionId
+      && this.row.aggregate_state === "pending"
+      && ["claimed", "dispatching", "queued"].includes(this.row.state)
+      ? structuredClone(this.row)
+      : null
+  );
+
+  handoffClaim(deliveryId: string, previousOwner: string, nextOwner: string): void {
+    if (
+      deliveryId !== DELIVERY_ID
+      || this.row.aggregate_state !== "pending"
+      || !["claimed", "dispatching", "queued"].includes(this.row.state)
+      || this.row.lease_owner !== previousOwner
+    ) {
+      throw new Error("restart delivery handoff lost exact D claim");
+    }
+    this.row.state = "queued";
+    this.row.lease_owner = nextOwner;
+    this.row.lease_expires_at = null;
+  }
 
   readonly register = vi.fn(async (_params: RegisterSessionDeliveryParams) => ({
     row: structuredClone(this.row),
@@ -450,17 +483,21 @@ class RestartDeliveryLedger {
     this.row.state = "queued";
     this.row.aggregate_state = "pending";
     this.row.queued_at = new Date();
-    this.row.lease_owner = null;
     this.row.lease_expires_at = null;
     this.trace.push("queued_after_route");
     return structuredClone(this.row);
   });
 
-  readonly markConsumed = vi.fn(async (deliveryId: string, receiptId: string) => {
+  readonly markConsumed = vi.fn(async (
+    deliveryId: string,
+    receiptId: string,
+    leaseOwner?: string,
+  ) => {
     if (deliveryId !== DELIVERY_ID || this.row.state === "consumed") {
       return this.row.state === "consumed" ? structuredClone(this.row) : null;
     }
     if (this.row.state !== "queued" && this.row.state !== "delivered") return null;
+    if (leaseOwner && this.row.lease_owner !== leaseOwner) return null;
     this.consumeCount += 1;
     this.row.state = "consumed";
     this.row.aggregate_state = "consumed";

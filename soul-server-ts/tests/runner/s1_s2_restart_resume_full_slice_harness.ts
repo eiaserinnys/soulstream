@@ -701,7 +701,7 @@ export class S1S2FullSliceHarness {
         runnerAttached: task.runner !== undefined,
         executionPromiseAttached: task.executionPromise !== undefined,
         activationAttached: task.executionActivation !== undefined,
-        queueLength: task.interventionQueue.length,
+        queueLength: 0,
       },
       pumpErrors: [...this.pumpErrors],
     };
@@ -739,7 +739,6 @@ export class S1S2FullSliceHarness {
       createdAt: new Date(),
       lastEventId: 0,
       lastReadEventId: 0,
-      interventionQueue: [],
       useMcp: false,
     };
     const ledger = new TaskDeliveryLedgerGate(true, this.deliveryRepository as never);

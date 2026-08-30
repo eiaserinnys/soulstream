@@ -28,7 +28,6 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
     lastReadEventId: 3,
     result: "old result",
     error: "old error",
-    interventionQueue: [],
     metadata: [],
     ...overrides,
   };
@@ -171,7 +170,7 @@ describe("AutoResumeTransition", () => {
       order.push("onResume");
       expect(resumedTask).toBe(task);
       expect(resumedTask.status).toBe("running");
-      expect(resumedTask.interventionQueue).toHaveLength(1);
+      expect(resumedTask.prompt).toBe("resume text");
     });
 
     await expect(
@@ -270,7 +269,6 @@ describe("AutoResumeTransition", () => {
     ).rejects.toThrow("events DB unavailable");
 
     expect(task.status).toBe("interrupted");
-    expect(task.interventionQueue).toEqual([]);
     expect(onResume).not.toHaveBeenCalled();
   });
 
@@ -287,7 +285,6 @@ describe("AutoResumeTransition", () => {
     ).rejects.toThrow("unknown agent profile missing-profile");
 
     expect(task.status).toBe("interrupted");
-    expect(task.interventionQueue).toEqual([]);
     expect(onResume).not.toHaveBeenCalled();
   });
 

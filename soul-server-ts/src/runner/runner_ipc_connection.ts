@@ -45,10 +45,7 @@ export class RunnerIpcConnection {
   private readonly pending = new Map<string, PendingRequest>();
   private frameHandler: (frame: RunnerFrame) => Promise<void> = async () => {};
   private failureHandler: (error: Error) => void = () => {};
-  // Lifecycle and durable intervention operations use independent FIFOs. A
-  // slow engine apply must not starve a receipt stage or an explicit interrupt.
-  private stageHandling = Promise.resolve();
-  private interventionHandling = Promise.resolve();
+  // Advisory lifecycle commands do not wait behind the ordered event stream.
   private lifecycleHandling = Promise.resolve();
   private orderedHandling = Promise.resolve();
   private closed = false;
@@ -188,12 +185,6 @@ export class RunnerIpcConnection {
       }
       if (frame.channel === "control" && this.resolvePending(frame)) continue;
       switch (priorityLane(frame)) {
-        case "stage":
-          this.stageHandling = this.enqueueFrame(this.stageHandling, frame);
-          break;
-        case "intervention":
-          this.interventionHandling = this.enqueueFrame(this.interventionHandling, frame);
-          break;
         case "lifecycle":
           this.lifecycleHandling = this.enqueueFrame(this.lifecycleHandling, frame);
           break;
@@ -239,17 +230,9 @@ export class RunnerIpcConnection {
 
 function priorityLane(
   frame: RunnerFrame,
-): "stage" | "intervention" | "lifecycle" | undefined {
+): "lifecycle" | undefined {
   if (frame.channel !== "command") return undefined;
-  if (frame.kind === "stage_intervention") return "stage";
-  if (frame.kind === "interrupt") return "lifecycle";
-  return frame.kind === "invoke"
-    && (
-      frame.capability === "runner.apply_intervention"
-      || frame.capability === "runner.discard_intervention"
-    )
-    ? "intervention"
-    : undefined;
+  return frame.kind === "interrupt" ? "lifecycle" : undefined;
 }
 
 function requestKey(frame: RunnerCommandFrame | Extract<RunnerEventFrame, { kind: "request" }>): string {

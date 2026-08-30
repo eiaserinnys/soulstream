@@ -27,8 +27,6 @@ import type { Task } from "./task_models.js";
 export interface TaskEngineTurnInput {
   prompt: string;
   inputUuid?: string;
-  runnerInterventionId?: string;
-  runnerInterventionIds?: string[];
   turnOrigin?: TurnOrigin;
   imageAttachmentPaths?: string[];
   systemPrompt?: string;
@@ -106,16 +104,13 @@ export class TaskEngineTurnRunner {
     const executeParams: EngineExecuteParams = {
       agentSessionId: task.agentSessionId,
       ...(task.executionOwnership
-        ? { executionGeneration: task.executionOwnership.ownershipGeneration }
+        ? {
+            executionGeneration: task.executionOwnership.ownershipGeneration,
+            executionCommandId: task.executionOwnership.executionCommandId,
+          }
         : {}),
       prompt: input.prompt,
       ...(input.inputUuid ? { inputUuid: input.inputUuid } : {}),
-      ...(input.runnerInterventionId
-        ? { runnerInterventionId: input.runnerInterventionId }
-        : {}),
-      ...(input.runnerInterventionIds
-        ? { runnerInterventionIds: input.runnerInterventionIds }
-        : {}),
       ...(input.turnOrigin ? { turnOrigin: input.turnOrigin } : {}),
       ...(input.imageAttachmentPaths !== undefined
         ? { imageAttachmentPaths: input.imageAttachmentPaths }

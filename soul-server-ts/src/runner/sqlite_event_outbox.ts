@@ -62,18 +62,6 @@ import {
   recordRunnerHostCallApplied,
 } from "./sqlite_ipc_journal.js";
 import {
-  claimRunnerIntervention,
-  claimRunnerInterventions,
-  finishRunnerExecutionAndIntervention,
-  markRunnerInterventionAmbiguous,
-  markRunnerInterventionsAmbiguous,
-  migrateRunnerInterventionInboxV9,
-  readPendingRunnerInterventions,
-  resolveRunnerInterventionAmbiguity,
-  stageRunnerIntervention,
-  type RunnerInterventionResolution,
-} from "./sqlite_intervention_inbox.js";
-import {
   ensureRunnerSqliteWal,
   openRunnerSqliteDatabase,
   openRunnerSqliteReadOnlyDatabase,
@@ -97,7 +85,6 @@ export interface RunnerSqliteEventOutboxOptions {
 export interface RunnerPendingDurableEvidence {
   durableRecordCount: number;
   unacknowledgedIpcFrameCount: number;
-  pendingInterventionCount: number;
 }
 
 export class RunnerSqliteEventOutbox {
@@ -230,7 +217,6 @@ export class RunnerSqliteEventOutbox {
         const next = recover(database, {
           migrateLegacyAckCheckpoint: version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
         });
-        migrateRunnerInterventionInboxV9(database, version);
         if (version < 10) database.exec("PRAGMA user_version = 10");
         return next;
       });
@@ -355,102 +341,46 @@ export class RunnerSqliteEventOutbox {
     return record;
   }
 
-  async stageIntervention(input: {
-    interventionId: string;
-    message: Record<string, unknown>;
-    event?: EventOutboxAppendInput;
-    queued: boolean;
-    queuedAt: string;
-  }): Promise<{ eventSourceSeq: number | null; queuePosition: number }> {
-    const bootstrap = this.requireBootstrap();
-    const staged = await stageRunnerIntervention(
-      this.database,
-      (operation) => this.transaction("stage_intervention", operation),
-      bootstrap,
-      input,
-    );
-    for (const listener of this.appendListeners) listener();
-    return staged;
-  }
-
-  async readPendingInterventions(): Promise<Array<{
-    interventionId: string;
-    message: Record<string, unknown>;
-  }>> {
-    this.requireOpen();
-    return await readPendingRunnerInterventions(this.database);
-  }
-
-  async claimIntervention(interventionId: string, commandId: string): Promise<boolean> {
-    this.requireOpen();
-    return await claimRunnerIntervention(
-      this.database,
-      (operation) => this.transaction("claim_intervention", operation),
-      interventionId,
-      commandId,
-    );
-  }
-
-  async claimInterventions(interventionIds: readonly string[], commandId: string): Promise<boolean> {
-    this.requireOpen();
-    return await claimRunnerInterventions(
-      this.database,
-      (operation) => this.transaction("claim_interventions", operation),
-      interventionIds,
-      commandId,
-    );
-  }
-
-  async markInterventionAmbiguous(interventionId: string, commandId: string): Promise<void> {
-    this.requireOpen();
-    await markRunnerInterventionAmbiguous(
-      this.database,
-      (operation) => this.transaction("mark_intervention_ambiguous", operation),
-      interventionId,
-      commandId,
-    );
-  }
-
-  async markInterventionsAmbiguous(
-    interventionIds: readonly string[],
-    commandId: string,
-  ): Promise<void> {
-    this.requireOpen();
-    await markRunnerInterventionsAmbiguous(
-      this.database,
-      (operation) => this.transaction("mark_interventions_ambiguous", operation),
-      interventionIds,
-      commandId,
-    );
-  }
-
-  async resolveAmbiguousIntervention(
-    interventionId: string,
-    resolution: RunnerInterventionResolution,
-  ): Promise<void> {
-    this.requireOpen();
-    await resolveRunnerInterventionAmbiguity(
-      this.database,
-      (operation) => this.transaction("resolve_intervention_ambiguity", operation),
-      interventionId,
-      resolution,
-    );
-  }
-
   async finishExecution(input: {
     commandId: string;
-    interventionId?: string;
-    interventionIds?: string[];
     state: "completed" | "failed";
     progressedAt: string;
     terminalError: { code: string; message: string } | null;
   }): Promise<void> {
     this.requireOpen();
-    await finishRunnerExecutionAndIntervention(
-      this.database,
-      (operation) => this.transaction("finish_execution", operation),
-      input,
-    );
+    if (!input.commandId) throw new Error("runner execution command id required");
+    if (!Number.isFinite(Date.parse(input.progressedAt))) {
+      throw new Error("runner progress timestamp invalid");
+    }
+    const terminalError = input.terminalError === null
+      ? null
+      : JSON.stringify(input.terminalError);
+    await this.transaction("finish_execution", () => {
+      const assignments = `
+        execution_state = ?, progress_seq = progress_seq + 1,
+        progress_at = ?, liveness_at = ?, in_flight_tools_json = '[]',
+        terminal_error_json = ?
+      `;
+      let result = this.database.prepare(`
+        UPDATE runner_event_outbox SET ${assignments}
+        WHERE record_kind = 'bootstrap' AND execution_command_id = ?
+      `).run(
+        input.state, input.progressedAt, input.progressedAt,
+        terminalError, input.commandId,
+      );
+      if (Number(result.changes) === 0) {
+        result = this.database.prepare(`
+          UPDATE runner_prebootstrap_lifecycle SET ${assignments}
+          WHERE singleton = 1 AND execution_command_id = ?
+        `).run(
+          input.state, input.progressedAt, input.progressedAt,
+          terminalError, input.commandId,
+        );
+      }
+      if (Number(result.changes) !== 1) {
+        throw new Error(`runner lifecycle command mismatch: ${input.commandId}`);
+      }
+    });
   }
 
   /**
@@ -756,21 +686,6 @@ export class RunnerSqliteEventOutbox {
       unacknowledgedIpcFrameCount: Number((this.database.prepare(`
         SELECT COUNT(*) AS count FROM runner_ipc_journal WHERE host_acked = 0
       `).get() as { count: number }).count),
-      pendingInterventionCount: Number((this.database.prepare(`
-        SELECT COUNT(*) AS count FROM runner_intervention_inbox AS inbox
-        WHERE inbox.application_state <> 'claimed'
-           OR NOT EXISTS (
-             SELECT 1 FROM runner_event_outbox AS lifecycle
-             WHERE lifecycle.record_kind = 'bootstrap'
-               AND lifecycle.execution_state = 'completed'
-               AND lifecycle.execution_command_id = inbox.claimed_execution_command_id
-             UNION ALL
-             SELECT 1 FROM runner_prebootstrap_lifecycle AS lifecycle
-             WHERE lifecycle.singleton = 1
-               AND lifecycle.execution_state = 'completed'
-               AND lifecycle.execution_command_id = inbox.claimed_execution_command_id
-           )
-      `).get() as { count: number }).count),
     };
   }
 
@@ -866,8 +781,7 @@ export class RunnerSqliteEventOutbox {
     `).get(acknowledgedThrough);
     if (pendingEvent) return true;
     const evidence = this.inspectPendingDurableEvidence();
-    return evidence.unacknowledgedIpcFrameCount > 0
-      || evidence.pendingInterventionCount > 0;
+    return evidence.unacknowledgedIpcFrameCount > 0;
   }
 
   async compactAppliedHostCallsForTerminalRecovery(): Promise<void> {
@@ -910,10 +824,6 @@ export class RunnerSqliteEventOutbox {
           AND NOT EXISTS (
             SELECT 1 FROM runner_ipc_journal
             WHERE outbox_source_seq = runner_event_outbox.source_seq
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM runner_intervention_inbox
-            WHERE event_source_seq = runner_event_outbox.source_seq
           )
       `).run(this.acknowledgedThrough);
     });

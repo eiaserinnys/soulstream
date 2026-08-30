@@ -73,9 +73,22 @@ export abstract class EventTransitionPublisher {
       leaseExpiresAt: Date;
       reviewState: string;
       expectedTerminalEventId?: number | null;
+      deliveryId?: string;
+      deliveryLeaseOwner?: string;
+      previousExecutionGeneration?: number;
+      previousExecutionCommandId?: string;
       updatedAt?: Date;
     },
   ): Promise<EventSessionTransitionApplication> {
+    if ((input.deliveryId === undefined) !== (input.deliveryLeaseOwner === undefined)) {
+      throw new Error("delivery id and lease owner must be supplied together");
+    }
+    if (
+      (input.previousExecutionGeneration === undefined)
+      !== (input.previousExecutionCommandId === undefined)
+    ) {
+      throw new Error("previous execution generation and command must be supplied together");
+    }
     const updatedAt = input.updatedAt ?? new Date();
     return await this.enqueueExecutionEffectAndWait(
       sessionId,
@@ -94,6 +107,18 @@ export abstract class EventTransitionPublisher {
         ...(input.expectedTerminalEventId === undefined
           ? {}
           : { expected_terminal_event_id: input.expectedTerminalEventId }),
+        ...(input.deliveryId === undefined
+          ? {}
+          : {
+              delivery_id: input.deliveryId,
+              delivery_lease_owner: input.deliveryLeaseOwner!,
+            }),
+        ...(input.previousExecutionGeneration === undefined
+          ? {}
+          : {
+              previous_execution_generation: input.previousExecutionGeneration,
+              previous_execution_command_id: input.previousExecutionCommandId!,
+            }),
         updated_at: updatedAt.toISOString(),
       },
     );

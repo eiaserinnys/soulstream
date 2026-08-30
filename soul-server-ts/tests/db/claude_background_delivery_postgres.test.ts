@@ -274,7 +274,6 @@ function makeDeliveryPath(sql: SqlClient): {
     createdAt: new Date("2026-07-26T09:00:00.000Z"),
     lastEventId: 41,
     lastReadEventId: 0,
-    interventionQueue: [],
     claudeRuntime: {
       sessionState: "idle",
       updatedAt: Date.now(),
@@ -298,9 +297,6 @@ function makeDeliveryPath(sql: SqlClient): {
     runningInterventionTransition: {
       deliver: async () => {
         throw new Error("unexpected running delivery");
-      },
-      queueOnly: async () => {
-        throw new Error("unexpected running queue");
       },
     },
     autoResumeTransition: {

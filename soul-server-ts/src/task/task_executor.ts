@@ -60,7 +60,6 @@ import {
   type Task,
   type TaskStatus,
 } from "./task_models.js";
-import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import {
   isOpenAiAgentsApprovalPending,
   resolveTurnLoopTransition,
@@ -179,7 +178,7 @@ export class TaskExecutor {
     private readonly claudeRuntimeTaskFollowup?: ClaudeRuntimeTaskFollowupPort,
     deliveryConsumptionRecorder?: Pick<
       TaskDeliveryLedgerGate,
-      "recordConsumed" | "recordTurnStarted" | "discardIfConsumed"
+      "recordConsumed" | "nextAcceptedForTarget" | "acceptedDelivery"
     >,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
@@ -457,7 +456,17 @@ export class TaskExecutor {
         );
       }
       this.attachRunner(task, runner);
-      proof = await runner.dispatcher.prepareExecutionIdentity?.();
+      const acceptedDelivery = await this.deliveryConsumption
+        ?.nextAcceptedForTarget(task.agentSessionId);
+      if (acceptedDelivery?.deliveryId && !acceptedDelivery.deliveryLeaseOwner) {
+        throw new Error(
+          `Accepted delivery has no canonical claim owner: ${acceptedDelivery.deliveryId}`,
+        );
+      }
+      const deliveryCommandId = acceptedDelivery?.deliveryId
+        ? `delivery:${acceptedDelivery.deliveryId}`
+        : undefined;
+      proof = await runner.dispatcher.prepareExecutionIdentity?.(deliveryCommandId);
       if (!proof || !isCompleteExecutionIdentity(proof)) {
         throw new Error(`Runner identity proof unavailable: ${task.agentSessionId}`);
       }
@@ -474,6 +483,12 @@ export class TaskExecutor {
                 expectedTerminalEventId:
                   task.pendingExecutionExpectedTerminalEventId,
               }),
+          ...(acceptedDelivery?.deliveryId && acceptedDelivery.deliveryLeaseOwner
+            ? {
+                deliveryId: acceptedDelivery.deliveryId,
+                deliveryLeaseOwner: acceptedDelivery.deliveryLeaseOwner,
+              }
+            : {}),
         },
       );
       applyCanonicalSessionProjection(task, acquisition.canonicalSession);
@@ -498,8 +513,13 @@ export class TaskExecutor {
       task.pendingExecutionExpectedTerminalEventId = undefined;
       resolveActivation();
       await runner.dispatcher.prepareSession(task.agentSessionId);
-      await this.restoreDurableRunnerInterventions(task, runner);
-      await this._consumeEventStream(task, runner, agent);
+      const canonicalDelivery = acceptedDelivery?.deliveryId
+        ? await this.deliveryConsumption?.acceptedDelivery(
+            acceptedDelivery.deliveryId,
+            task.agentSessionId,
+          )
+        : undefined;
+      await this._consumeEventStream(task, runner, agent, canonicalDelivery);
     } catch (error) {
       if (runner && task.executionOwnership === undefined) {
         try {
@@ -570,7 +590,6 @@ export class TaskExecutor {
 
     const promise = (async () => {
       await runner.dispatcher.prepareSession(task.agentSessionId);
-      await this.restoreDurableRunnerInterventions(task, runner);
       await this._consumeEventStream(task, runner, agent);
     })().catch(
       async (err: unknown) => {
@@ -875,15 +894,14 @@ export class TaskExecutor {
    * `20260517-1410-codex-ts-folder-resume-intervene.md` §D-3 상태도.
    *
    * codex SDK는 turn-level steer를 지원하지 않으므로 *각 turn = 새 thread.runStreamed()*.
-   * 첫 turn은 task.prompt + startThread, 후속 turn은 dequeue된 intervention.text +
+   * 첫 turn은 task.prompt + startThread, 후속 turn은 canonical delivery D의 text +
    * resumeThread(task.codexThreadId).
    *
    * 게이트:
    *   - generator 정상 종료 + foreground runtime pending → status="error" → loop 종료.
-   *   - generator 정상 종료 + status="running" + queue empty → status="completed" → loop 종료.
-   *   - generator 정상 종료 + status="running" + queue 비어있지 않음 → dequeue → 다음 turn.
-   *   - generator throw + distinct accepted successor owner → 같은 execution에서 다음 대화 진입.
-   *   - generator throw + successor owner 증거 없음 → status="error" → loop 종료.
+   *   - generator 정상 종료 + accepted D 없음 → 기존 lifecycle transition으로 종료.
+   *   - generator 정상 종료/throw + accepted D 있음 → 원자적 G→G+1 acquire 후 다음 turn.
+   *   - generator throw + accepted D 없음 → engine failure telemetry 후 종료.
    *   - 외부에서 status="interrupted" 박힘 (cancelTask) → loop 종료.
    *
    * codex_adapter는 같은 인스턴스에서 연속 turn 호출 안전 (concurrent 가드는 turn 종료 시
@@ -893,25 +911,27 @@ export class TaskExecutor {
     task: Task,
     runner: TaskRunnerRuntime,
     agent: AgentProfile,
+    acceptedDelivery?: InterventionMessage,
   ): Promise<void> {
-    const initialTurnInput = await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
-    const terminalTurnReceipts: TaskDeliveryTurnReceipt[] = [];
+    const initialTurnInput = acceptedDelivery
+      ? await this.turnInputBuilder.prepareFollowupTurnInput(
+          task,
+          agent,
+          [acceptedDelivery],
+        )
+      : await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
     try {
       await this.consumeTurnLoop(
         task,
         agent,
         runner,
         initialTurnInput,
-        terminalTurnReceipts,
       );
     } finally {
       if (!isOpenAiAgentsApprovalPending(task)) {
         task.completedAt = new Date();
       }
-      await this._finalize(
-        task,
-        () => this.consumeTerminalTurnReceipts(task, terminalTurnReceipts),
-      );
+      await this._finalize(task);
     }
   }
 
@@ -920,7 +940,6 @@ export class TaskExecutor {
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
     initialTurnInput: TaskTurnInput,
-    terminalTurnReceipts: TaskDeliveryTurnReceipt[],
   ): Promise<void> {
     let turnInput = initialTurnInput;
     while (true) {
@@ -975,12 +994,6 @@ export class TaskExecutor {
             ...(turnInput.inputUuid !== undefined
               ? { inputUuid: turnInput.inputUuid }
               : {}),
-            ...(turnInput.runnerInterventionId !== undefined
-              ? { runnerInterventionId: turnInput.runnerInterventionId }
-              : {}),
-            ...(turnInput.runnerInterventionIds !== undefined
-              ? { runnerInterventionIds: turnInput.runnerInterventionIds }
-              : {}),
             ...(turnInput.turnOrigin !== undefined
               ? { turnOrigin: turnInput.turnOrigin }
               : {}),
@@ -994,30 +1007,31 @@ export class TaskExecutor {
           },
         })) {
           observeClaudeContextRecoveryEvent(contextRecovery, event);
-          if (turnReceipt) await turnReceipt.observe(task, event);
           await this.engineEventPublisher.publishEngineEvent(task, event, {
             alreadyPersisted: runner.eventPersistence === "runner",
           });
+          if (turnReceipt) await turnReceipt.observe(task, event);
           this.collectClaudeRuntimeTaskFollowup(task, event);
         }
       } catch (err) {
-        await task.interruptRequest;
-        const disposition = await this.engineFailureRecovery.recoverFromExecuteFailure(
+        const accepted = await this.nextSuccessorDelivery(
           task,
-          err,
           currentTurnInterventions,
         );
-        if (disposition === "continue_with_accepted_successor") {
-          const transition = resolveTurnLoopTransition(task, agent);
-          if (transition.kind === "continue") {
-            turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
-              task,
-              agent,
-              transition.interventions,
-            );
-            continue;
-          }
+        if (accepted) {
+          const canonical = await this.handoffAcceptedDelivery(
+            task,
+            runner,
+            accepted,
+          );
+          turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+            task,
+            agent,
+            [canonical],
+          );
+          continue;
         }
+        await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
         break;
       }
       const lastAcknowledgedEventId = runner.eventPersistence === "runner"
@@ -1113,15 +1127,26 @@ export class TaskExecutor {
           previousAssistantText,
         );
       }
-      await task.interruptRequest;
+      const accepted = await this.nextSuccessorDelivery(
+        task,
+        currentTurnInterventions,
+      );
+      if (accepted) {
+        const canonical = await this.handoffAcceptedDelivery(
+          task,
+          runner,
+          accepted,
+        );
+        turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+          task,
+          agent,
+          [canonical],
+        );
+        continue;
+      }
       const transition = resolveTurnLoopTransition(task, agent);
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);
-      }
-      if (turnReceipt && transition.kind === "continue") {
-        await turnReceipt.consume(task);
-      } else if (turnReceipt && task.status === "completed") {
-        terminalTurnReceipts.push(turnReceipt);
       }
       if (transition.kind !== "continue") break;
       turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
@@ -1163,6 +1188,84 @@ export class TaskExecutor {
     task.claudeBackendRolloverAttempts = 0;
     task.claudeBackendRolloverCycleFrom = undefined;
     task.pendingClaudeBackendRolloverFrom = undefined;
+  }
+
+  private async handoffAcceptedDelivery(
+    task: Task,
+    runner: TaskRunnerRuntime,
+    accepted: InterventionMessage,
+  ): Promise<InterventionMessage> {
+    const deliveryId = accepted.deliveryId;
+    const deliveryLeaseOwner = accepted.deliveryLeaseOwner;
+    const previous = task.executionOwnership;
+    if (!deliveryId || !deliveryLeaseOwner || !previous) {
+      throw new Error(
+        `Exact delivery handoff lacks canonical ownership: ${deliveryId ?? "unknown"}`,
+      );
+    }
+    const executionCommandId = `delivery:${deliveryId}`;
+    const proof = await runner.dispatcher.prepareExecutionIdentity?.(executionCommandId);
+    if (!proof || !isCompleteExecutionIdentity(proof)) {
+      throw new Error(`Runner identity proof unavailable for delivery ${deliveryId}`);
+    }
+    const acquisition = await this.executionOwnershipCoordinator.acquire(
+      task.agentSessionId,
+      {
+        ownerKind: previous.ownerKind,
+        manifestId: previous.manifestId,
+        runtimeEnvIdentity: previous.runtimeEnvIdentity,
+        ...proof,
+        leaseExpiresAt: new Date(Date.now() + this.executionOwnershipLeaseMs),
+        reviewState: task.reviewState ?? "not_required",
+        deliveryId,
+        deliveryLeaseOwner,
+        previousExecutionGeneration: previous.ownershipGeneration,
+        previousExecutionCommandId: previous.executionCommandId,
+      },
+    );
+    applyCanonicalSessionProjection(task, acquisition.canonicalSession);
+    const canonical = acquisition.canonicalExecutionOwnership;
+    if (
+      !acquisition.applied
+      || !canonical
+      || canonical.ownershipGeneration !== previous.ownershipGeneration + 1
+      || canonical.executionCommandId !== executionCommandId
+      || canonical.registrationId !== proof.registrationId
+      || canonical.pid !== proof.pid
+      || canonical.startIdentity !== proof.startIdentity
+    ) {
+      throw this.executionOwnershipConflict(task.agentSessionId, acquisition);
+    }
+    task.executionOwnership = {
+      ownerKind: previous.ownerKind,
+      manifestId: previous.manifestId,
+      runtimeEnvIdentity: previous.runtimeEnvIdentity,
+      ...proof,
+      ownershipGeneration: canonical.ownershipGeneration,
+    };
+    return await this.deliveryConsumption!.acceptedDelivery(
+      deliveryId,
+      task.agentSessionId,
+    );
+  }
+
+  private async nextSuccessorDelivery(
+    task: Task,
+    currentTurnInterventions: readonly InterventionMessage[] = [],
+  ): Promise<InterventionMessage | undefined> {
+    const accepted = await this.deliveryConsumption
+      ?.nextAcceptedForTarget(task.agentSessionId);
+    const deliveryId = accepted?.deliveryId;
+    if (!accepted || !deliveryId) return accepted;
+    if (
+      currentTurnInterventions.some(
+        (intervention) => intervention.deliveryId === deliveryId,
+      )
+      || task.executionOwnership?.executionCommandId === `delivery:${deliveryId}`
+    ) {
+      return undefined;
+    }
+    return accepted;
   }
 
   private async compactClaudeContextIfNeeded(
@@ -1209,7 +1312,6 @@ export class TaskExecutor {
     propagateFailure: boolean,
   ): Promise<void> {
     const contextRecovery = createClaudeContextRecoveryObservation();
-    const terminalTurnReceipts: TaskDeliveryTurnReceipt[] = [];
     let recoveryFailed = false;
     let recoveryFailure: unknown;
     try {
@@ -1255,24 +1357,20 @@ export class TaskExecutor {
         );
       }
       await this.flushClaudeRuntimeTaskFollowups(task);
-      await this.restoreDurableRunnerInterventions(task, runner);
-      await task.interruptRequest;
-      const transition = resolveTurnLoopTransition(task, agent);
-      if (transition.kind === "awaiting_runtime") {
-        await this.publishPendingClaudeRuntimeAfterTurnError(task);
-      } else if (transition.kind === "continue") {
+      const accepted = await this.nextSuccessorDelivery(task);
+      if (accepted) {
+        const canonical = await this.handoffAcceptedDelivery(task, runner, accepted);
         const followupTurnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,
-          transition.interventions,
+          [canonical],
         );
-        await this.consumeTurnLoop(
-          task,
-          agent,
-          runner,
-          followupTurnInput,
-          terminalTurnReceipts,
-        );
+        await this.consumeTurnLoop(task, agent, runner, followupTurnInput);
+      } else {
+        const transition = resolveTurnLoopTransition(task, agent);
+        if (transition.kind === "awaiting_runtime") {
+          await this.publishPendingClaudeRuntimeAfterTurnError(task);
+        }
       }
     } catch (error) {
       await this.engineFailureRecovery.recoverFromExecuteFailure(task, error);
@@ -1289,53 +1387,13 @@ export class TaskExecutor {
         );
       }
       task.completedAt = new Date();
-      await this._finalize(
-        task,
-        () => this.consumeTerminalTurnReceipts(task, terminalTurnReceipts),
-      );
+      await this._finalize(task);
     }
     // Startup adoption owns a live child. Its caller must be able to re-check
     // that ownership and replace a dead/unreachable registration. Offline
     // terminal replay intentionally keeps the historical swallow-and-finalize
     // contract because the durable terminal error is the replay result.
     if (recoveryFailed && propagateFailure) throw recoveryFailure;
-  }
-
-  private async restoreDurableRunnerInterventions(
-    task: Task,
-    runner: TaskRunnerRuntime,
-  ): Promise<void> {
-    const recover = runner.dispatcher.recoverPendingInterventions;
-    if (!recover) return;
-    for (const pending of await recover.call(runner.dispatcher)) {
-      const text = pending.message.text;
-      const user = pending.message.user;
-      if (typeof text !== "string" || typeof user !== "string") {
-        throw new Error(`runner intervention payload is invalid: ${pending.interventionId}`);
-      }
-      const message = {
-        ...(pending.message as unknown as InterventionMessage),
-        text,
-        user,
-        runnerInterventionId: pending.interventionId,
-      };
-      if (message.deliveryId) {
-        const admitted = task.interventionQueue.find(
-          (queued) => queued.deliveryId === message.deliveryId,
-        );
-        if (admitted) {
-          admitted.runnerInterventionId = pending.interventionId;
-        } else {
-          enqueueInterventionOnce(task, message);
-        }
-        await this.deliveryConsumption?.discardIfConsumed(
-          task,
-          admitted ?? message,
-        );
-        continue;
-      }
-      enqueueInterventionOnce(task, message);
-    }
   }
 
   private async publishPendingClaudeRuntimeAfterTurnError(task: Task): Promise<void> {
@@ -1536,16 +1594,8 @@ export class TaskExecutor {
 
   private async _finalize(
     task: Task,
-    consumeTerminalDeliveries?: () => Promise<void>,
   ): Promise<void> {
-    await this.executorFinalizer.finalize(task, consumeTerminalDeliveries);
-  }
-
-  private async consumeTerminalTurnReceipts(
-    task: Task,
-    receipts: readonly TaskDeliveryTurnReceipt[],
-  ): Promise<void> {
-    for (const receipt of receipts) await receipt.consume(task);
+    await this.executorFinalizer.finalize(task);
   }
 }
 

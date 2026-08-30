@@ -14,7 +14,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     createdAt: new Date("2026-08-11T00:00:00.000Z"),
     lastEventId: 3,
     lastReadEventId: 0,
-    interventionQueue: [],
     metadata: [],
     ...overrides,
   };

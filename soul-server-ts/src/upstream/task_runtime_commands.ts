@@ -6,7 +6,6 @@ import type { ContextItem } from "../context/prompt_assembler.js";
 import type { BoardYjsContainerRef } from "../db/session_db.js";
 import type {
   ClaudePermissionMode,
-  EngineInterventionFailureReason,
   ReasoningEffort,
 } from "../engine/protocol.js";
 import { appendAttachmentPathNotes } from "../task/attachment_path_note.js";
@@ -85,16 +84,6 @@ export type InterveneAck =
       type: "intervene_ack";
       requestId: string;
       status: "ok";
-      outcome: "unknown";
-      agentSessionId: string;
-      delivered: null;
-      consumeWhen: null;
-      reason: "verdict_unknown";
-    }
-  | {
-      type: "intervene_ack";
-      requestId: string;
-      status: "ok";
       outcome: "delivered";
       agentSessionId: string;
       delivered: true;
@@ -103,30 +92,9 @@ export type InterveneAck =
       type: "intervene_ack";
       requestId: string;
       status: "ok";
-      outcome: "queued";
-      agentSessionId: string;
-      delivered: false;
-      queuePosition: number;
-      consumeWhen: "next_turn";
-      reason: EngineInterventionFailureReason | "queue_only_policy" | "verdict_unknown";
-    }
-  | {
-      type: "intervene_ack";
-      requestId: string;
-      status: "ok";
       outcome: "auto_resumed";
       agentSessionId: string;
       delivered: true;
-    }
-  | {
-      type: "intervene_ack";
-      requestId: string;
-      status: "ok";
-      outcome: "deferred";
-      agentSessionId: string;
-      delivered: false;
-      retryWhen: "engine_available" | "terminal_state";
-      reason: EngineInterventionFailureReason | "terminal_only_policy" | "verdict_unknown";
     }
   | {
       type: "intervene_ack";
@@ -294,44 +262,7 @@ export function buildInterveneAck(params: {
   result: AddInterventionResult;
 }): InterveneAck {
   const { requestId, agentSessionId, result } = params;
-  if ("queued" in result) {
-    return {
-      type: "intervene_ack",
-      requestId,
-      status: "ok",
-      outcome: "queued",
-      agentSessionId,
-      delivered: false,
-      queuePosition: result.queuePosition,
-      consumeWhen: result.consumeWhen,
-      reason: result.reason,
-    };
-  }
-  if ("delivered" in result && result.delivered === null) {
-    return {
-      type: "intervene_ack",
-      requestId,
-      status: "ok",
-      outcome: "unknown",
-      agentSessionId,
-      delivered: null,
-      consumeWhen: null,
-      reason: result.reason,
-    };
-  }
-  if ("deferred" in result) {
-    return {
-      type: "intervene_ack",
-      requestId,
-      status: "ok",
-      outcome: "deferred",
-      agentSessionId,
-      delivered: false,
-      retryWhen: result.retryWhen,
-      reason: result.reason,
-    };
-  }
-  if ("delivered" in result && result.delivered === true) {
+  if ("delivered" in result) {
     return {
       type: "intervene_ack",
       requestId,

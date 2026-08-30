@@ -22,7 +22,6 @@ function makeTask(): Task {
     createdAt: new Date(),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
     claudeRuntime: {
       sessionState: "idle",
       updatedAt: Date.now(),

@@ -75,7 +75,9 @@ describePostgres("S5 completed-parent child-completion full slice", () => {
       expect(settled.relationConsumption).toMatchObject({
         relation_key: active.relationKey,
         caller_session_id: "p0cn-s5-parent",
-        consumed_turn_id: expect.stringMatching(/^event:\d+$/),
+        consumed_turn_id: expect.stringMatching(
+          new RegExp(`^execution:1:delivery:${active.correlationId}:first-model-event$`),
+        ),
       });
       expect(settled.notificationEvent.id).toBeLessThan(settled.acquireEventId);
       expect(settled.acquireEventId).toBeLessThan(settled.assistantEvent.id);

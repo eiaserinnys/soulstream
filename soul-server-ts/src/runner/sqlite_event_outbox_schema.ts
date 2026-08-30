@@ -156,24 +156,6 @@ CREATE TABLE IF NOT EXISTS runner_prebootstrap_lifecycle (
   )
 ) STRICT;
 
--- Host-to-runner next-turn input inbox. A queued intervention and its optional
--- timeline receipt are committed in one SQLite transaction before the current
--- turn can be interrupted. claimed_execution_command_id fences exactly one
--- follow-up execute command across host restarts. The ambiguous value remains
--- accepted for rolling compatibility; writer open heals legacy rows to pending.
-CREATE TABLE IF NOT EXISTS runner_intervention_inbox (
-  intervention_id TEXT PRIMARY KEY,
-  payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
-  event_source_seq INTEGER UNIQUE,
-  queued_at TEXT NOT NULL,
-  claimed_execution_command_id TEXT,
-  claimed_at TEXT,
-  application_state TEXT NOT NULL DEFAULT 'pending' CHECK (
-    application_state IN ('pending', 'claimed', 'ambiguous')
-  ),
-  FOREIGN KEY (event_source_seq) REFERENCES runner_event_outbox(source_seq)
-) STRICT;
-
 ${RUNNER_IPC_JOURNAL_DDL}
 `;
 

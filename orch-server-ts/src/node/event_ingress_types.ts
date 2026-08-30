@@ -207,13 +207,31 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       [
         "kind", "owner_kind", "manifest_id", "runtime_env_identity",
         "registration_id", "pid", "start_identity", "execution_command_id",
-        "lease_expires_at", "review_state", "expected_terminal_event_id", "updated_at",
+        "lease_expires_at", "review_state", "expected_terminal_event_id",
+        "delivery_id", "delivery_lease_owner", "previous_execution_generation",
+        "previous_execution_command_id", "updated_at",
       ],
       field,
     );
     const ownerKind = nonEmptyString(value.owner_kind, `${field}.owner_kind`);
     if (!["runner_process", "adopted_runner", "in_process"].includes(ownerKind)) {
       throw new EventIngressValidationError(`${field}.owner_kind is invalid`);
+    }
+    if (
+      (value.delivery_id === undefined)
+      !== (value.delivery_lease_owner === undefined)
+    ) {
+      throw new EventIngressValidationError(
+        `${field}.delivery_id and delivery_lease_owner must be supplied together`,
+      );
+    }
+    if (
+      (value.previous_execution_generation === undefined)
+      !== (value.previous_execution_command_id === undefined)
+    ) {
+      throw new EventIngressValidationError(
+        `${field}.previous execution generation and command must be supplied together`,
+      );
     }
     return {
       kind: value.kind,
@@ -241,6 +259,27 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
                   value.expected_terminal_event_id,
                   `${field}.expected_terminal_event_id`,
                 ),
+          }),
+      ...(value.delivery_id === undefined
+        ? {}
+        : {
+            delivery_id: nonEmptyString(value.delivery_id, `${field}.delivery_id`),
+            delivery_lease_owner: nonEmptyString(
+              value.delivery_lease_owner,
+              `${field}.delivery_lease_owner`,
+            ),
+          }),
+      ...(value.previous_execution_generation === undefined
+        ? {}
+        : {
+            previous_execution_generation: positiveInteger(
+              value.previous_execution_generation,
+              `${field}.previous_execution_generation`,
+            ),
+            previous_execution_command_id: nonEmptyString(
+              value.previous_execution_command_id,
+              `${field}.previous_execution_command_id`,
+            ),
           }),
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };

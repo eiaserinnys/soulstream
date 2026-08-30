@@ -213,7 +213,6 @@ export function hydrateEvictedTaskFromSessionRow(
     terminalEventId,
     lastEventId: row.last_event_id ?? 0,
     lastReadEventId: row.last_read_event_id ?? 0,
-    interventionQueue: [],
     ...(executionOwnership === undefined ? {} : { executionOwnership }),
   };
 }

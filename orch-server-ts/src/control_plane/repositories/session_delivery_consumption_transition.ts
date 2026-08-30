@@ -14,6 +14,7 @@ export async function markSessionDeliveryConsumed(
   sql: SqlClient,
   deliveryId: string,
   consumedTurnId: string,
+  leaseOwner?: string,
 ): Promise<SessionDeliveryRow | null> {
   // A successful turn is the first durable receipt for live input. Transcript
   // recovery may already have projected a target receipt, which stays immutable.
@@ -31,6 +32,7 @@ export async function markSessionDeliveryConsumed(
     WHERE delivery_id = ${deliveryId}
       AND aggregate_state IN ('pending', 'delivered')
       AND state IN ('queued', 'delivered')
+      AND (${leaseOwner ?? null}::TEXT IS NULL OR lease_owner = ${leaseOwner ?? null})
     RETURNING *
   `;
   return rows[0] ?? null;

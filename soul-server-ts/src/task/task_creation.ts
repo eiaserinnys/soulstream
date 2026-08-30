@@ -163,7 +163,6 @@ export class TaskCreation {
       createdAt: now,
       lastEventId: 0,
       lastReadEventId: 0,
-      interventionQueue: [],
     };
 
     // host 등록은 실행 시작 전에 반드시 성공해야 한다. 같은 session_id로 같은

@@ -85,6 +85,8 @@ export interface S5FinalObservation {
 
 interface OwnershipRow {
   status: string;
+  termination_reason: string | null;
+  termination_detail: string | null;
   execution_generation: number;
   execution_manifest_id: string | null;
   execution_runtime_env_identity: string | null;
@@ -255,11 +257,8 @@ export class CompletedParentS5FullSliceHarness {
       { addIntervention: route.addIntervention.bind(route) } as unknown as TaskManager,
       registry,
       (resumedTask: Task, activation?: ExecutionActivation) => {
-        const admitted = resumedTask.interventionQueue.find(
-          (message) => message.deliveryId === identity.deliveryId,
-        );
         harness.startBoundary = {
-          deliveryId: admitted?.deliveryId ?? null,
+          deliveryId: identity.deliveryId,
           taskStatus: resumedTask.status,
           activationAttached: activation !== undefined
             && resumedTask.executionActivation === activation,
@@ -282,6 +281,11 @@ export class CompletedParentS5FullSliceHarness {
     if (this.startBoundary && this.execution) {
       await Promise.race([this.engine.entered, this.execution]);
       ownership = await this.readSession();
+      if (ownership.status === "error") {
+        throw new Error(
+          `S5 activation failed: ${ownership.termination_reason ?? "unknown"}: ${ownership.termination_detail ?? "unknown"}`,
+        );
+      }
     }
     return {
       correlationId: this.correlationId,
@@ -349,7 +353,8 @@ export class CompletedParentS5FullSliceHarness {
 
   private async readSession(): Promise<OwnershipRow> {
     return await one<OwnershipRow>(this.postgres, this.postgres.sql`
-      SELECT status, execution_generation::int, execution_manifest_id,
+      SELECT status, termination_reason, termination_detail,
+             execution_generation::int, execution_manifest_id,
              execution_runtime_env_identity, execution_registration_id,
              execution_pid, execution_start_identity, execution_command_id,
              termination_event_id
@@ -403,7 +408,6 @@ function terminalTask(
     lastEventId: 0,
     lastReadEventId: 0,
     lastAssistantText: "S5 child completed result",
-    interventionQueue: [],
   };
 }
 

@@ -39,7 +39,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     createdAt: new Date("2026-05-23T01:00:00.000Z"),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [],
     ...overrides,
   };
 }
@@ -168,23 +167,23 @@ describe("TaskTurnInputBuilder", () => {
   });
 
   it("prepares an auto-resume Claude turn without rebuilding first-turn context", async () => {
+    const interventions = [
+      {
+        text: "첨부 확인",
+        user: "u",
+        context: [{ key: "prior", label: "Prior context", content: "remember this" }],
+        attachmentPaths: ["/tmp/incoming/sess/a.png", "/tmp/incoming/sess/readme.txt"],
+      },
+      { text: "later", user: "u" },
+    ];
     const task = makeTask({
       codexThreadId: "claude-session-1",
       lastInjectedClaudeSessionId: "claude-session-1",
       lastInjectedCallerInfo: { source: "browser", display_name: "Alice" },
-      interventionQueue: [
-        {
-          text: "첨부 확인",
-          user: "u",
-          context: [{ key: "prior", label: "Prior context", content: "remember this" }],
-          attachmentPaths: ["/tmp/incoming/sess/a.png", "/tmp/incoming/sess/readme.txt"],
-        },
-        { text: "later", user: "u" },
-      ],
     });
     const { builder, contextBuilder, initialMessagePublisher } = makeSubject();
 
-    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
+    const input = await builder.prepareFollowupTurnInput(task, claudeAgent, interventions);
 
     expect(contextBuilder.build).not.toHaveBeenCalled();
     expect(contextBuilder.buildSystemPrompt).not.toHaveBeenCalled();
@@ -212,7 +211,6 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).toContain("later");
     expect(input.prompt).toContain("<running_sessions>");
     expect(input.prompt.endsWith("</context>")).toBe(true);
-    expect(task.interventionQueue).toEqual([]);
   });
 
   it("does not duplicate the user_message already persisted when auto-resume was accepted", async () => {
@@ -237,7 +235,6 @@ describe("TaskTurnInputBuilder", () => {
       contextItems: context,
       codexThreadId: "claude-session-1",
       lastInjectedClaudeSessionId: "claude-session-1",
-      interventionQueue: [intervention],
     });
     const persistEvent = vi.fn().mockResolvedValue(88);
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
@@ -261,7 +258,7 @@ describe("TaskTurnInputBuilder", () => {
       logger,
     });
 
-    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
+    const input = await builder.prepareFollowupTurnInput(task, claudeAgent, [intervention]);
 
     expect(contextBuilder.build).not.toHaveBeenCalled();
     expect(contextBuilder.buildSystemPrompt).not.toHaveBeenCalled();
@@ -280,16 +277,17 @@ describe("TaskTurnInputBuilder", () => {
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(handleSideEffects).not.toHaveBeenCalled();
     expect(task.lastEventId).toBe(0);
-    expect(task.interventionQueue).toEqual([]);
   });
 
   it("prepares an auto-resume Codex turn without systemPrompt option", async () => {
-    const task = makeTask({
-      interventionQueue: [{ text: "codex follow-up", user: "u" }],
-    });
+    const task = makeTask();
     const { builder, contextBuilder } = makeSubject();
 
-    const input = await builder.prepareInitialTurnInput(task, codexAgent);
+    const input = await builder.prepareFollowupTurnInput(
+      task,
+      codexAgent,
+      [{ text: "codex follow-up", user: "u" }],
+    );
 
     expect(contextBuilder.build).not.toHaveBeenCalled();
     expect(contextBuilder.buildFollowupContext).toHaveBeenCalledWith(
@@ -306,7 +304,6 @@ describe("TaskTurnInputBuilder", () => {
   it("injects claude_session_id delta only once after it becomes available", async () => {
     const task = makeTask({
       codexThreadId: "claude-session-1",
-      interventionQueue: [{ text: "first follow-up", user: "u" }],
     });
     const { builder, contextBuilder } = makeSubject({
       contextBuilder: {
@@ -314,7 +311,11 @@ describe("TaskTurnInputBuilder", () => {
       },
     });
 
-    await builder.prepareInitialTurnInput(task, claudeAgent);
+    await builder.prepareFollowupTurnInput(
+      task,
+      claudeAgent,
+      [{ text: "first follow-up", user: "u" }],
+    );
     expect(contextBuilder.buildFollowupContext).toHaveBeenLastCalledWith(
       task,
       claudeAgent,
@@ -322,11 +323,10 @@ describe("TaskTurnInputBuilder", () => {
     );
     expect(task.lastInjectedClaudeSessionId).toBe("claude-session-1");
 
-    task.interventionQueue.push({ text: "second follow-up", user: "u" });
     await builder.prepareFollowupTurnInput(
       task,
       claudeAgent,
-      [task.interventionQueue.shift()!],
+      [{ text: "second follow-up", user: "u" }],
     );
     expect(contextBuilder.buildFollowupContext).toHaveBeenLastCalledWith(
       task,
@@ -399,7 +399,6 @@ describe("TaskTurnInputBuilder", () => {
     };
     const task = makeTask({
       lastInjectedCallerInfo: { source: "browser", display_name: "Alice" },
-      interventionQueue: [{ text: "caller changed", user: "u", callerInfo: nextCaller }],
     });
     const { builder, contextBuilder } = makeSubject({
       contextBuilder: {
@@ -407,7 +406,11 @@ describe("TaskTurnInputBuilder", () => {
       },
     });
 
-    await builder.prepareInitialTurnInput(task, codexAgent);
+    await builder.prepareFollowupTurnInput(
+      task,
+      codexAgent,
+      [{ text: "caller changed", user: "u", callerInfo: nextCaller }],
+    );
 
     expect(contextBuilder.buildFollowupContext).toHaveBeenCalledWith(
       task,
@@ -495,7 +498,6 @@ describe("TaskTurnInputBuilder", () => {
   it("compact 후 첫 후속 턴은 full context를 한 번만 재주입한다", async () => {
     const task = makeTask({
       needsFullContextReinjection: true,
-      interventionQueue: [{ text: "after compact", user: "u" }],
     });
     const { builder, contextBuilder } = makeSubject({
       contextBuilder: {
@@ -509,7 +511,11 @@ describe("TaskTurnInputBuilder", () => {
       },
     });
 
-    const first = await builder.prepareInitialTurnInput(task, claudeAgent);
+    const first = await builder.prepareFollowupTurnInput(
+      task,
+      claudeAgent,
+      [{ text: "after compact", user: "u" }],
+    );
 
     expect(contextBuilder.buildFollowupContext).toHaveBeenLastCalledWith(
       task,
@@ -520,11 +526,10 @@ describe("TaskTurnInputBuilder", () => {
     expect(first.prompt).toContain("<soulstream_session>");
     expect(task.needsFullContextReinjection).toBe(false);
 
-    task.interventionQueue.push({ text: "regular", user: "u" });
     await builder.prepareFollowupTurnInput(
       task,
       claudeAgent,
-      [task.interventionQueue.shift()!],
+      [{ text: "regular", user: "u" }],
     );
 
     expect(contextBuilder.buildFollowupContext).toHaveBeenLastCalledWith(

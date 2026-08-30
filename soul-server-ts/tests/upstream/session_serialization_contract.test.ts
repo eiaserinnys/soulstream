@@ -35,7 +35,6 @@ function taskFromFixture(raw: Record<string, any>): Task {
     callerSessionId: raw.callerSessionId,
     metadata: raw.metadata,
     callerInfo: raw.callerInfo,
-    interventionQueue: [],
   };
 }
 

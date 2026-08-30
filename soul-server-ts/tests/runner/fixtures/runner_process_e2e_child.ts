@@ -305,6 +305,10 @@ class ControlledEngine implements EnginePort {
     this.executionCount += 1;
     if (this.executionCount > 1) {
       await writeFile(`${this.controlDirectory}/followup-executed`, "ready\n");
+      await writeFile(
+        `${this.controlDirectory}/followup-execution-input.json`,
+        JSON.stringify(params),
+      );
     }
     // Match the real Claude/Codex ordering contract: an ID-bearing backend
     // publishes its backend session ID before the first durable turn event.

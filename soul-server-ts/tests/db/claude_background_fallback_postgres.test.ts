@@ -80,8 +80,6 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
     expect(parent.deliveryId).toBe(original.params.deliveryId);
     expect(parent.storedDeliveryPayload).toEqual(original.payload);
     expect(parent.storedDeliveryPayloadHash).toBe(original.payloadHash);
-    await ledger.recordTurnStarted(parent, task);
-
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: {
         addIntervention: (params, onResume) =>
@@ -106,8 +104,6 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
     expect(attempt2.deliveryId).not.toBe(parent.deliveryId);
     expect(attempt2.parentDeliveryId).toBe(parent.deliveryId);
     expect(attempt2.followupAttempt).toBe(2);
-    await ledger.recordTurnStarted(attempt2, task);
-
     const attempt3Schedule = controller.queueFallback(task, attempt2, "repeated_response");
     await attempt3Schedule.reserved;
     await attempt3Schedule.completed;
@@ -299,7 +295,6 @@ function makeTask(): Task {
     createdAt: new Date("2026-07-26T09:00:00.000Z"),
     lastEventId: 41,
     lastReadEventId: 0,
-    interventionQueue: [],
     claudeRuntime: {
       sessionState: "idle",
       updatedAt: Date.now(),
@@ -329,9 +324,6 @@ function makeRoute(
     runningInterventionTransition: {
       deliver: async () => {
         throw new Error("unexpected running delivery");
-      },
-      queueOnly: async () => {
-        throw new Error("unexpected running queue");
       },
     },
     autoResumeTransition: {

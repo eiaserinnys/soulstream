@@ -55,7 +55,6 @@ describe("ScheduleDispatcher", () => {
         agentSessionId: "sess-1",
         text: "[Scheduled wakeup]\n\nwake me",
         callerInfo: expect.objectContaining({ source: "system" }),
-        queueIfRunning: false,
       }),
       onResume,
     );
@@ -112,14 +111,14 @@ describe("ScheduleDispatcher", () => {
     expect(service.finishDispatch).not.toHaveBeenCalled();
   });
 
-  it("defers instead of using the in-memory intervention queue for running sessions", async () => {
+  it("finishes after the canonical delivery boundary accepts a running-session prompt", async () => {
     const schedule = makeSchedule({ status: "firing" });
     const service = makeService({
       claimDueSchedules: [{ schedule, claimToken: "claim-1" }],
       consumeClaimedSchedule: schedule,
       confirmScheduleStillFiring: schedule,
     });
-    const taskManager = { addIntervention: vi.fn(async () => ({ deferred: true })) };
+    const taskManager = { addIntervention: vi.fn(async () => ({ delivered: true })) };
     const dispatcher = new ScheduleDispatcher(
       { nodeId: "owner-node", retryDelayMs: 5_000 },
       service as never,
@@ -130,13 +129,12 @@ describe("ScheduleDispatcher", () => {
 
     await dispatcher.runOnce(new Date("2026-01-01T00:00:00Z"));
 
-    expect(service.deferDispatch).toHaveBeenCalledWith(
+    expect(service.finishDispatch).toHaveBeenCalledWith(
       schedule,
       "claim-1",
-      new Date("2026-01-01T00:00:05Z"),
-      "session is running and cannot accept durable scheduled intervention yet",
+      new Date("2026-01-01T00:00:00Z"),
     );
-    expect(service.finishDispatch).not.toHaveBeenCalled();
+    expect(service.deferDispatch).not.toHaveBeenCalled();
   });
 
   it("records a dispatch failure instead of leaving a schedule stuck in firing", async () => {

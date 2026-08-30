@@ -56,7 +56,6 @@ export interface RunnerDurableInspection {
   incompleteDurableWork: boolean;
   durableRecordCount: number;
   unacknowledgedIpcFrameCount: number;
-  pendingInterventionCount: number;
 }
 
 export type RunnerRecoveryDisposition =

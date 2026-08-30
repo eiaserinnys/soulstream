@@ -20,7 +20,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     createdAt: new Date("2026-05-23T01:00:00.000Z"),
     lastEventId: 7,
     lastReadEventId: 0,
-    interventionQueue: [],
     ...overrides,
   };
 }
@@ -95,12 +94,6 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
   ])("fences stop_failed after $label", async ({ interrupt }) => {
     const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask();
-    const pendingDelivery = {
-      text: "held input",
-      user: "user",
-      deliveryId: "held-stop-delivery",
-    };
-    task.interventionQueue.push(pendingDelivery);
     const engine = { interrupt: vi.fn(interrupt) } as unknown as EnginePort;
     task.runner = {
       engine,
@@ -116,7 +109,6 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     expect(task.runner).toBeUndefined();
     expect(engine.interrupt).toHaveBeenCalledOnce();
     expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
-    expect(task.interventionQueue).toEqual([pendingDelivery]);
   });
 
   it("accepts only a fully converged terminal task as an idempotent no-op", async () => {
@@ -172,12 +164,6 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
       persistence: { enqueueTerminalTransitionAndWaitForApplication } as never,
     });
     const task = makeTask({ executionPromise: Promise.resolve() });
-    const pendingDelivery = {
-      text: "held input",
-      user: "user",
-      deliveryId: "held-transport-failure",
-    };
-    task.interventionQueue.push(pendingDelivery);
     const interrupt = vi.fn().mockResolvedValue(true);
     const engine = { interrupt } as unknown as EnginePort;
     task.runner = {
@@ -201,7 +187,6 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     expect(terminalEvents[1]?.timestamp).toBe(terminalEvents[0]?.timestamp);
     expect(task.runner).toBeUndefined();
     expect(task.executionPromise).toBeUndefined();
-    expect(task.interventionQueue).toEqual([pendingDelivery]);
   });
 
   it("retries the same stop fence after executor finalization releases the runner", async () => {
@@ -235,11 +220,6 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
       logger: silentLogger,
       persistence: { releaseExecutionOwnershipAndWaitForApplication } as never,
     });
-    const pendingDelivery = {
-      text: "held input",
-      user: "user",
-      deliveryId: "held-finalizer-race",
-    };
     const interrupt = vi.fn().mockResolvedValue(true);
     const close = vi.fn().mockResolvedValue(undefined);
     const engine = { interrupt, close } as unknown as EnginePort;
@@ -255,7 +235,6 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
         startIdentity: "start-1",
         executionCommandId: "execute-1",
       },
-      interventionQueue: [pendingDelivery],
       runner: {
         engine,
         dispatcher: new InProcessRunnerCommandDispatcher(engine),
@@ -290,7 +269,6 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     expect(task.executionOwnership).toBeUndefined();
     expect(task.runner).toBeUndefined();
     expect(task.executionPromise).toBeUndefined();
-    expect(task.interventionQueue).toEqual([pendingDelivery]);
     expect(consumeSuccessfulDeliveries).not.toHaveBeenCalled();
   });
 

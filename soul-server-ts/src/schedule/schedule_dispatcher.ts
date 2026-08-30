@@ -154,7 +154,7 @@ export class ScheduleDispatcher {
         );
         return;
       }
-      const result = await this.taskManager.addIntervention(
+      await this.taskManager.addIntervention(
         {
           agentSessionId: ready.sessionId,
           text: buildScheduledPrompt(ready),
@@ -164,19 +164,9 @@ export class ScheduleDispatcher {
             display_name: "Soulstream Scheduler",
             user_id: "soulstream-scheduler",
           },
-          queueIfRunning: false,
         },
         this.onResume,
       );
-      if ("deferred" in result) {
-        await this.service.deferDispatch(
-          ready,
-          claimToken,
-          new Date(now.getTime() + (this.config.retryDelayMs ?? 30_000)),
-          "session is running and cannot accept durable scheduled intervention yet",
-        );
-        return;
-      }
       await this.service.finishDispatch(ready, claimToken, now);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
