@@ -6,6 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  pendingRunnerRegistrationIdentity,
+  writeRunnerRegistrationIdentity,
+} from "../src/runner/runner_registration_identity.ts";
+import { withRunnerWriterBootstrap } from "../src/runner/runner_writer_lock.ts";
+
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const temporaryRoot = await mkdtemp(join(tmpdir(), "soulstream-runner-release-isolation-"));
 let runner;
@@ -44,13 +50,6 @@ try {
     lockPath: join(sessionDirectory, "runner.lock"),
     configPath: join(sessionDirectory, "runner-config.json"),
   };
-  const {
-    pendingRunnerRegistrationIdentity,
-    writeRunnerRegistrationIdentity,
-  } = await import(new URL("../dist/runner/runner_registration_identity.js", import.meta.url).href);
-  const { withRunnerWriterBootstrap } = await import(
-    new URL("../dist/runner/runner_writer_lock.js", import.meta.url).href
-  );
   const pendingIdentity = pendingRunnerRegistrationIdentity(sessionId, release.release_id);
   const config = {
     schemaVersion: 1,
