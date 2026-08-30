@@ -923,6 +923,8 @@ export class TaskExecutor {
     terminalTurnReceipts: TaskDeliveryTurnReceipt[],
   ): Promise<void> {
     let turnInput = initialTurnInput;
+    let attemptedSuccessorOwner: string | undefined;
+    let carriedTurnReceipt: TaskDeliveryTurnReceipt | undefined;
     while (true) {
       if (
         task.pendingClaudeBackendRolloverFrom !== undefined
@@ -959,12 +961,14 @@ export class TaskExecutor {
         currentTurnInterventions = turnInput.interventions ?? [];
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
-      const turnReceipt = this.deliveryConsumption
-        ? new TaskDeliveryTurnReceipt(
-            this.deliveryConsumption,
-            currentTurnInterventions,
-          )
-        : undefined;
+      const turnReceipt = carriedTurnReceipt
+        ?? (this.deliveryConsumption
+          ? new TaskDeliveryTurnReceipt(
+              this.deliveryConsumption,
+              currentTurnInterventions,
+            )
+          : undefined);
+      carriedTurnReceipt = undefined;
       try {
         for await (const event of this.engineTurnRunner.executeTurn({
           task,
@@ -1006,8 +1010,16 @@ export class TaskExecutor {
           task,
           err,
           currentTurnInterventions,
+          attemptedSuccessorOwner,
         );
-        if (disposition === "continue_with_accepted_successor") {
+        if (disposition.kind === "continue_with_accepted_successor") {
+          attemptedSuccessorOwner = disposition.successorOwner;
+          if (disposition.source === "active") {
+            // Retry the already accepted input with the same durable receipt;
+            // rebuilding from the empty queue would lose both its owner and ACK.
+            carriedTurnReceipt = turnReceipt;
+            continue;
+          }
           const transition = resolveTurnLoopTransition(task, agent);
           if (transition.kind === "continue") {
             turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(

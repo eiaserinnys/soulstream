@@ -85,7 +85,7 @@ describe("TaskEngineFailureRecovery", () => {
 
     await expect(
       recovery.recoverFromExecuteFailure(task, new Error("engine boom")),
-    ).resolves.toBe("stop_on_error");
+    ).resolves.toEqual({ kind: "stop_on_error" });
 
     expect(task.interventionQueue).toEqual([{ text: "pending", user: "u" }]);
   });

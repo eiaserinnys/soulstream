@@ -8,8 +8,12 @@ export interface TaskEngineFailureRecoveryDeps {
 }
 
 export type ExecuteFailureDisposition =
-  | "continue_with_accepted_successor"
-  | "stop_on_error";
+  | {
+      kind: "continue_with_accepted_successor";
+      successorOwner: string;
+      source: "queued" | "active";
+    }
+  | { kind: "stop_on_error" };
 
 /**
  * Owns recovery after engine execution genuinely fails before or while draining a turn.
@@ -26,20 +30,30 @@ export class TaskEngineFailureRecovery {
     task: Task,
     err: unknown,
     activeInterventions: readonly InterventionMessage[] = [],
+    attemptedSuccessorOwner?: string,
   ): Promise<ExecuteFailureDisposition> {
     const message = this.errorMessage(err);
-    const successorOwner = distinctAcceptedSuccessorOwner(task, activeInterventions);
-    if (task.status === "running" && successorOwner !== undefined) {
+    const successor = acceptedSuccessor(
+      task,
+      activeInterventions,
+      attemptedSuccessorOwner,
+    );
+    if (task.status === "running" && successor !== undefined) {
       this.deps.logger.info(
         {
           sessionId: task.agentSessionId,
           activeOwners: activeInterventions.map(interventionOwner).filter(Boolean),
-          successorOwner,
+          successorOwner: successor.owner,
+          successorSource: successor.source,
           interruptedTurnDetail: message,
         },
         "active turn yielded to an accepted conversation entry",
       );
-      return "continue_with_accepted_successor";
+      return {
+        kind: "continue_with_accepted_successor",
+        successorOwner: successor.owner,
+        source: successor.source,
+      };
     }
     this.deps.logger.warn(
       { err, sessionId: task.agentSessionId },
@@ -47,7 +61,7 @@ export class TaskEngineFailureRecovery {
     );
 
     this.recordError(task, message, { overwriteNonRunning: false });
-    return "stop_on_error";
+    return { kind: "stop_on_error" };
   }
 
   async recoverFromOuterExecutionFailure(task: Task, err: unknown): Promise<void> {
@@ -82,14 +96,29 @@ export class TaskEngineFailureRecovery {
   }
 }
 
-function distinctAcceptedSuccessorOwner(
+function acceptedSuccessor(
   task: Task,
   activeInterventions: readonly InterventionMessage[],
-): string | undefined {
-  const successorOwner = interventionOwner(task.interventionQueue[0]);
-  if (successorOwner === undefined) return undefined;
+  attemptedSuccessorOwner: string | undefined,
+): { owner: string; source: "queued" | "active" } | undefined {
   const activeOwners = new Set(activeInterventions.map(interventionOwner));
-  return !activeOwners.has(successorOwner) ? successorOwner : undefined;
+  const queuedOwner = interventionOwner(task.interventionQueue[0]);
+  if (
+    queuedOwner !== undefined
+    && queuedOwner !== attemptedSuccessorOwner
+    && !activeOwners.has(queuedOwner)
+  ) {
+    return { owner: queuedOwner, source: "queued" };
+  }
+
+  if (task.interventionQueue.length > 0) return undefined;
+  // A durable delivery is removed from the queue before its turn starts. If
+  // that turn is the one the delivery interrupted, the active owner is the
+  // accepted successor even though no queued entry remains.
+  const activeOwner = activeInterventions.map(interventionOwner).find(Boolean);
+  return activeOwner !== undefined && activeOwner !== attemptedSuccessorOwner
+    ? { owner: activeOwner, source: "active" }
+    : undefined;
 }
 
 function interventionOwner(message: InterventionMessage | undefined): string | undefined {
