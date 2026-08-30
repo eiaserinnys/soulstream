@@ -13,7 +13,6 @@ import {
   scanRunnerRegistrations,
   type RunnerRegistration,
 } from "../../src/runner/runner_process_registry.js";
-import { resolveRegisteredRunnerPid } from "../../src/runner/runner_process_spawn.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import {
   RunnerHostStateStore,
@@ -39,25 +38,6 @@ afterEach(async () => {
 });
 
 describe("runner process registry", () => {
-  it("uses lifecycle pid evidence when the pid sidecar is missing", () => {
-    expect(resolveRegisteredRunnerPid(null, 4123, 4123, "session-a")).toBe(4123);
-    expect(resolveRegisteredRunnerPid(
-      null,
-      4123,
-      4999,
-      "session-a",
-      () => false,
-    )).toBe(4999);
-    expect(() => resolveRegisteredRunnerPid(
-      null,
-      4123,
-      4999,
-      "session-a",
-      (pid) => pid === 4123,
-    ))
-      .toThrow("runner pid evidence disagrees: session-a");
-  });
-
   it("W1 hides a registration interrupted after pending identity and writer publication", async () => {
     const visibilityViolations = (registrationCount: number): string[] => (
       registrationCount === 0 ? [] : ["partial_registration_discoverable"]

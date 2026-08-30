@@ -65,7 +65,7 @@ export async function retireTerminalExecutionIdentity(
 
     // Destructive termination only accepts the exact canonical identity token.
     // Cross-format timestamp tolerance is observation-only and never authorizes a signal.
-    await terminateExactRunner(expected, deps);
+    await terminateExactRunner(expected, deps, false);
     await prepareRunnerWriterLockForSpawn(paths.lockPath);
     await requireCentralCommit(paths, commitOwnership);
     await retireTerminalRunnerRegistrationFilesLocked(
@@ -131,10 +131,7 @@ async function retireAbsentIdentity(
         error,
       );
     });
-    expectedProcessAbsent = !observed.alive
-      ? !deps.isPidAlive(expected.pid)
-      : observed.startIdentity !== null
-        && !exactRunnerStartIdentitiesMatch(observed.startIdentity, expected.startIdentity);
+    expectedProcessAbsent = !observed.alive && !deps.isPidAlive(expected.pid);
   }
   if (!expectedProcessAbsent) {
     throw identityProofFailure(

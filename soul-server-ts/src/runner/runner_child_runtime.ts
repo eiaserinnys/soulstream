@@ -89,16 +89,21 @@ export class RunnerChildRuntime {
   }
 
   async start(): Promise<void> {
-    this.lock = await RunnerWriterLock.acquire(this.config.paths.lockPath);
-    await completeRunnerRegistrationIdentityFromChild(
-      this.config.paths.sessionDirectory,
-      {
-        sessionId: this.config.sessionId,
-        codeSha: this.config.codeSha,
-        releaseManifestId: this.config.releaseManifestId,
-        runtimeEnvIdentity: this.config.runtimeEnvIdentity,
-        pid: this.lock.owner.pid,
-        startIdentity: this.lock.owner.startIdentity,
+    this.lock = await RunnerWriterLock.acquire(
+      this.config.paths.lockPath,
+      undefined,
+      async (owner) => {
+        await completeRunnerRegistrationIdentityFromChild(
+          this.config.paths.sessionDirectory,
+          {
+            sessionId: this.config.sessionId,
+            codeSha: this.config.codeSha,
+            releaseManifestId: this.config.releaseManifestId,
+            runtimeEnvIdentity: this.config.runtimeEnvIdentity,
+            pid: owner.pid,
+            startIdentity: owner.startIdentity,
+          },
+        );
       },
     );
     this.outbox = await RunnerSqliteEventOutbox.open(this.config.paths.databasePath);

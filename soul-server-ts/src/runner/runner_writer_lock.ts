@@ -40,6 +40,7 @@ export class RunnerWriterLock {
   static async acquire(
     path: string,
     deps: ProcessOwnershipLockDependencies = defaultProcessOwnershipLockDependencies(),
+    beforeOwnerPublish?: (owner: ProcessLockOwner) => Promise<void>,
   ): Promise<RunnerWriterLock> {
     while (true) {
       if (await pathExists(path)) {
@@ -57,6 +58,7 @@ export class RunnerWriterLock {
           throw new Error(`runner writer lock already held: ${path}`);
         }
         const owner = await deps.currentOwner();
+        await beforeOwnerPublish?.(owner);
         await publishCompleteRecord(path, `${JSON.stringify(owner)}\n`);
         activeWriterOwners.set(resolve(path), owner);
         return new RunnerWriterLock(path, owner);

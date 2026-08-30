@@ -62,7 +62,7 @@ const CONTRACT_ASSERTIONS: readonly HContractAssertion[] = [
   },
   {
     name: "identity_evidence_not_single_owner",
-    isViolated: (observation) => identityOwnerCount(observation.identityEvidence) !== 1,
+    isViolated: (observation) => observation.identityEvidence.identityPid === null,
   },
   {
     name: "followup_delivery_blocked",
@@ -176,7 +176,7 @@ export function applyHProductBoundaryMutation(
         ...observation,
         identityEvidence: {
           pidFilePid: ownerPid + 1,
-          identityPid: ownerPid + 1,
+          identityPid: null,
           lifecyclePid: ownerPid,
         },
       };
@@ -210,12 +210,6 @@ function singleOwnerEvidence(ownerPid: number): HIdentityEvidence {
   };
 }
 
-function identityOwnerCount(evidence: HIdentityEvidence): number {
-  return new Set(
-    Object.values(evidence).filter((pid): pid is number => pid !== null),
-  ).size;
-}
-
 function firstIdentityOwner(evidence: HIdentityEvidence): number | null {
-  return evidence.lifecyclePid ?? evidence.identityPid ?? evidence.pidFilePid;
+  return evidence.identityPid;
 }

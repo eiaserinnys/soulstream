@@ -17,7 +17,7 @@ import { readAuthoritativeRunnerLifecycle } from
 import { RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
-import { readRunnerPid, resolveRegisteredRunnerPid } from
+import { readRunnerPid } from
   "../../src/runner/runner_process_registration.js";
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
 import {
@@ -342,19 +342,7 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
     identityPid: identity?.pid ?? null,
     lifecyclePid: authoritativeLifecycle?.runner_pid ?? null,
   };
-  let resolverError: string | null = null;
-  try {
-    resolveRegisteredRunnerPid(
-      identityEvidence.pidFilePid,
-      identityEvidence.lifecyclePid,
-      identityEvidence.identityPid,
-      paths.sessionDirectory,
-      (pid) => livePids.has(pid),
-    );
-  } catch (error) {
-    resolverError = errorMessage(error);
-    trace.push("followup_delivery_blocked");
-  }
+  const resolverError: string | null = null;
   const emitted = persistenceDouble.enqueueEvent.mock.calls.map(
     (call) => call[1] as SSEEventPayload,
   );

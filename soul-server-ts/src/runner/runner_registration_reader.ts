@@ -11,8 +11,6 @@ import {
 import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 import {
   readRunnerChildConfig,
-  readRunnerPid,
-  resolveRegisteredRunnerPid,
   type RunnerChildConfig,
 } from "./runner_process_spawn.js";
 import {
@@ -27,6 +25,7 @@ import {
 import {
   readRunnerRegistrationIdentity,
   recoverRunnerDirectoryIdentity,
+  type RunnerRegistrationIdentity,
 } from "./runner_registration_identity.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 
@@ -61,15 +60,26 @@ export async function readRunnerRegistrationSummary(
       "summary",
     );
   }
-  let identity: Awaited<ReturnType<typeof readRunnerRegistrationIdentity>>;
+  let identity: RunnerRegistrationIdentity;
   try {
-    identity = await readRunnerRegistrationIdentity(directory);
+    const currentIdentity = await readRunnerRegistrationIdentity(directory);
     if (
-      identity
-      && (identity.sessionId !== config.sessionId || identity.codeSha !== config.codeSha)
+      currentIdentity
+      && (
+        currentIdentity.sessionId !== config.sessionId
+        || currentIdentity.codeSha !== config.codeSha
+      )
     ) {
       throw new Error(`runner identity does not match config: ${directory}`);
     }
+    if (
+      !currentIdentity
+      || currentIdentity.pid === null
+      || currentIdentity.startIdentity === null
+    ) {
+      throw new Error(`runner canonical identity is incomplete: ${directory}`);
+    }
+    identity = currentIdentity;
   } catch (error) {
     throw await annotateRegistrationError(
       directory,
@@ -104,23 +114,17 @@ export async function readRunnerRegistrationSummary(
     );
   }
   try {
-    const pid = resolveRegisteredRunnerPid(
-      await readRunnerPid(config.paths.pidPath),
-      lifecycle?.runner_pid ?? null,
-      identity?.pid ?? null,
-      directory,
-      isPidAlive,
-    );
-    if (identity && identity.pid !== null && identity.pid !== pid) {
-      throw new Error(`runner pid identity does not match registration: ${directory}`);
+    const pid = identity.pid;
+    const startIdentity = identity.startIdentity;
+    if (pid === null || startIdentity === null) {
+      throw new Error(`runner canonical identity became incomplete: ${directory}`);
     }
-    let pidAlive = pid !== null && isPidAlive(pid);
-    if (options.verifyProcessIdentity && pid !== null && pidAlive) {
+    let pidAlive = isPidAlive(pid);
+    if (options.verifyProcessIdentity && pidAlive) {
       const observed = await (options.inspectProcess ?? inspectProcessIdentity)(pid);
       pidAlive = observed.alive && (
-        !identity?.startIdentity
-        || observed.startIdentity === null
-        || processStartIdentitiesMatch(observed.startIdentity, identity.startIdentity)
+        observed.startIdentity === null
+        || processStartIdentitiesMatch(observed.startIdentity, startIdentity)
       );
     }
     return {
@@ -130,9 +134,9 @@ export async function readRunnerRegistrationSummary(
       registeredAtMs: configStat.mtimeMs,
       bootstrap: null,
       lifecycle,
-      registrationId: identity?.registrationId ?? null,
-      pidStartIdentity: identity?.startIdentity ?? null,
-      retiredAt: identity?.retiredAt ?? null,
+      registrationId: identity.registrationId,
+      pidStartIdentity: startIdentity,
+      retiredAt: identity.retiredAt ?? null,
       databaseMtimeMs: databaseStat.mtimeMs,
       databaseSize: databaseStat.size,
       hostDatabaseMtimeMs: hostDatabaseStat?.mtimeMs,

@@ -118,8 +118,12 @@ describe("RunnerProcessSpawner", () => {
       spawnProcess: () => ({ pid: 4124, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess,
-      waitForChildRegistrationIdentity: async (paths, pending, pid) => {
-        const completed = { ...pending, pid, startIdentity: "child-start-4124" };
+      waitForChildRegistrationIdentity: async (paths, expected, pid) => {
+        const completed = {
+          ...pendingRunnerRegistrationIdentity(expected.sessionId, expected.codeSha, expected),
+          pid,
+          startIdentity: "child-start-4124",
+        };
         await writeRunnerRegistrationIdentity(paths.sessionDirectory, completed);
         return completed;
       },
@@ -137,7 +141,7 @@ describe("RunnerProcessSpawner", () => {
       .resolves.toMatchObject({ pid: 4124, startIdentity: "child-start-4124" });
   });
 
-  it("accepts the same Windows child when host registration wins the startup race", async () => {
+  it("accepts an equivalent Windows start identity for a complete registration", async () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
     await mkdir(paths.sessionDirectory, { recursive: true });
@@ -163,16 +167,20 @@ describe("RunnerProcessSpawner", () => {
     });
   });
 
-  it("rejects child self-publication when immutable release identity is omitted", async () => {
+  it("rejects child self-publication against a complete immutable release identity", async () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
     await mkdir(paths.sessionDirectory, { recursive: true });
     await writeRunnerRegistrationIdentity(
       paths.sessionDirectory,
-      pendingRunnerRegistrationIdentity(params.sessionId, params.codeSha, {
-        releaseManifestId: "manifest-a",
-        runtimeEnvIdentity: "runtime-env-a",
-      }),
+      {
+        ...pendingRunnerRegistrationIdentity(params.sessionId, params.codeSha, {
+          releaseManifestId: "manifest-a",
+          runtimeEnvIdentity: "runtime-env-a",
+        }),
+        pid: 4124,
+        startIdentity: "node-start-1",
+      },
     );
 
     await expect(completeRunnerRegistrationIdentityFromChild(paths.sessionDirectory, {

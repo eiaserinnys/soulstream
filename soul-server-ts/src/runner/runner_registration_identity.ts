@@ -88,7 +88,7 @@ export async function completeRunnerRegistrationIdentityFromChild(
   },
 ): Promise<RunnerRegistrationIdentity> {
   const current = await readRunnerRegistrationIdentity(sessionDirectory);
-  if (!current) {
+  if (!current || current.pid === null || current.startIdentity === null) {
     const completed = {
       ...pendingRunnerRegistrationIdentity(input.sessionId, input.codeSha, input),
       pid: input.pid,
@@ -104,19 +104,13 @@ export async function completeRunnerRegistrationIdentityFromChild(
     || input.runtimeEnvIdentity !== current.runtimeEnvIdentity) {
     throw new Error(`runner release identity changed before child startup: ${input.sessionId}`);
   }
-  if (current.pid !== null) {
-    if (
-      current.pid !== input.pid
-      || current.startIdentity === null
-      || !processStartIdentitiesMatch(current.startIdentity, input.startIdentity)
-    ) {
-      throw new Error(`runner registration already belongs to another process: ${input.sessionId}`);
-    }
-    return current;
+  if (
+    current.pid !== input.pid
+    || !processStartIdentitiesMatch(current.startIdentity, input.startIdentity)
+  ) {
+    throw new Error(`runner registration already belongs to another process: ${input.sessionId}`);
   }
-  const completed = { ...current, pid: input.pid, startIdentity: input.startIdentity };
-  await writeRunnerRegistrationIdentity(sessionDirectory, completed);
-  return completed;
+  return current;
 }
 
 export async function invalidateRunnerRegistrationIdentity(
@@ -155,7 +149,10 @@ export async function retireTerminalRunnerRegistrationIdentity(
 
 export async function waitForChildRunnerRegistrationIdentity(
   sessionDirectory: string,
-  pending: RunnerRegistrationIdentity,
+  expected: Pick<
+    RunnerRegistrationIdentity,
+    "sessionId" | "codeSha" | "releaseManifestId" | "runtimeEnvIdentity"
+  >,
   pid: number,
   deps: {
     isPidAlive(pid: number): boolean;
@@ -167,16 +164,19 @@ export async function waitForChildRunnerRegistrationIdentity(
   while (deps.isPidAlive(pid) && deps.now() < deadline) {
     const current = await readRunnerRegistrationIdentity(sessionDirectory);
     if (
-      !current
-      || current.registrationId !== pending.registrationId
-      || current.sessionId !== pending.sessionId
-      || current.codeSha !== pending.codeSha
+      current
+      && (
+        current.sessionId !== expected.sessionId
+        || current.codeSha !== expected.codeSha
+        || current.releaseManifestId !== expected.releaseManifestId
+        || current.runtimeEnvIdentity !== expected.runtimeEnvIdentity
+      )
     ) {
-      throw new Error(`runner registration changed during child startup: ${pending.sessionId}`);
+      throw new Error(`runner registration changed during child startup: ${expected.sessionId}`);
     }
-    if (current.pid !== null) {
+    if (current && current.pid !== null) {
       if (current.pid !== pid || current.startIdentity === null) {
-        throw new Error(`runner child published an invalid process identity: ${pending.sessionId}`);
+        throw new Error(`runner child published an invalid process identity: ${expected.sessionId}`);
       }
       return current;
     }

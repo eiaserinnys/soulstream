@@ -177,10 +177,14 @@ async function createSpawnFailureHarness(mode: SpawnFailureMode) {
       });
       return { pid, unref: vi.fn() };
     },
-    waitForChildRegistrationIdentity: async (registrationPaths, pending, pid) => {
+    waitForChildRegistrationIdentity: async (registrationPaths, expected, pid) => {
       const process = processes.get(pid);
       if (!process) throw new Error(`virtual process missing: ${pid}`);
-      const completed = { ...pending, pid, startIdentity: process.startIdentity };
+      const completed = {
+        ...pendingRunnerRegistrationIdentity(expected.sessionId, expected.codeSha, expected),
+        pid,
+        startIdentity: process.startIdentity,
+      };
       await writeRunnerRegistrationIdentity(registrationPaths.sessionDirectory, completed);
       return completed;
     },
