@@ -367,7 +367,6 @@ export class RunnerProcessSpawner {
         {
           paths,
           registrationId: releasedRegistration.registrationId ?? null,
-          pid: releasedRegistration.pid,
         },
         confirmCentralRelease,
         this.deps,

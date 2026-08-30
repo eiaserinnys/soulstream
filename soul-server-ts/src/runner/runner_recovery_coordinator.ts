@@ -425,7 +425,6 @@ export class RunnerRecoveryCoordinator {
     const startIdentity = ownership?.startIdentity ?? registration.pidStartIdentity;
     if (
       !ownership
-      && registration.pid === null
       && registration.pidStartIdentity === null
       && !registration.pidAlive
     ) {

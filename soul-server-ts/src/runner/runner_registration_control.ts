@@ -47,7 +47,6 @@ export class RunnerRegistrationControl {
   ): Promise<void> {
     if (
       registration.pidAlive
-      || registration.pid !== null
       || registration.pidStartIdentity !== null
     ) {
       throw new RunnerMutationFailure(

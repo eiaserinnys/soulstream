@@ -27,7 +27,6 @@ export interface TerminalExecutionOwnershipRetirement
 export interface ReleasedTerminalExecutionEvidence {
   paths: RunnerProcessPaths;
   registrationId: string | null;
-  pid: number | null;
 }
 
 export async function retireTerminalExecutionIdentity(
@@ -99,13 +98,7 @@ export async function retireReleasedTerminalExecutionEvidence(
       );
     }
     const pidEvidence = await readRunnerPid(paths.pidPath);
-    if (input.pid !== null && pidEvidence !== null && pidEvidence !== input.pid) {
-      throw identityProofFailure(
-        `runner pid evidence changed before released terminal retirement: ${paths.sessionDirectory}`,
-      );
-    }
-    const observedPid = pidEvidence ?? input.pid;
-    if (observedPid !== null && deps.isPidAlive(observedPid)) {
+    if (pidEvidence !== null && deps.isPidAlive(pidEvidence)) {
       throw identityProofFailure(
         `live runner has no registration before released terminal retirement: ${paths.sessionDirectory}`,
       );
