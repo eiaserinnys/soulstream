@@ -21,6 +21,7 @@ import {
   runnerLifecycleSummaryPath,
   RunnerSqliteLifecycle,
 } from "../../src/runner/sqlite_runner_lifecycle.js";
+import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
 import { ExecutionOwnershipBackoff } from "../../src/task/execution_ownership_backoff.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -2325,6 +2326,8 @@ async function releasedTerminalSidecarFixture(options: {
     pid: options.identityPid ?? null,
     startIdentity: options.identityStartIdentity ?? null,
   });
+  const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+  outbox.close();
   const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath, config.sessionId);
   lifecycle.begin({
     pid: staleLifecyclePid,
