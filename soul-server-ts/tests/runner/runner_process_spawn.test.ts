@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import {
-  RunnerProcessSpawner,
+  RunnerProcessSpawner as ProductRunnerProcessSpawner,
   type SpawnedRunnerProcess,
 } from "../../src/runner/runner_process_spawn.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
@@ -28,6 +28,29 @@ import {
 
 const directories: string[] = [];
 const SNAPSHOT_PATH = join(tmpdir(), "runner-releases", "sha-a");
+type ProductSpawnerArguments = ConstructorParameters<typeof ProductRunnerProcessSpawner>;
+type WaitForChildIdentity = NonNullable<
+  ProductSpawnerArguments[0]["waitForChildRegistrationIdentity"]
+>;
+const publishExpectedChildIdentity: WaitForChildIdentity = async (paths, expected, pid) => {
+  const completed = {
+    ...pendingRunnerRegistrationIdentity(
+      expected.sessionId,
+      expected.codeSha,
+      expected,
+      expected.registrationId,
+    ),
+    pid,
+    startIdentity: `test-${pid}`,
+  };
+  await writeRunnerRegistrationIdentity(paths.sessionDirectory, completed);
+  return completed;
+};
+class RunnerProcessSpawner extends ProductRunnerProcessSpawner {
+  constructor(deps: ProductSpawnerArguments[0], logger?: ProductSpawnerArguments[1]) {
+    super({ waitForChildRegistrationIdentity: publishExpectedChildIdentity, ...deps }, logger);
+  }
+}
 // Immutable runner snapshots deployed before the host update embed this
 // discriminator. Unknown fields are intentionally irrelevant to this contract.
 const LegacyRunnerSnapshotConfigSchema = z.object({
@@ -195,7 +218,7 @@ describe("RunnerProcessSpawner", () => {
     })).rejects.toThrow("runner release identity changed before child startup");
   });
 
-  it("does not kill a live child when the legacy host identity lookup is unavailable", async () => {
+  it("does not kill a live child when expected registration publication is unavailable", async () => {
     let alive = true;
     let now = 0;
     const signalPid = vi.fn(() => { alive = false; });
@@ -205,6 +228,7 @@ describe("RunnerProcessSpawner", () => {
       spawnProcess: () => ({ pid: 4125, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async () => ({ alive: true, startIdentity: null }),
+      waitForChildRegistrationIdentity: async () => null,
       isPidAlive: () => alive,
       signalPid,
       now: () => now,
@@ -212,7 +236,7 @@ describe("RunnerProcessSpawner", () => {
     });
 
     await expect(spawner.spawn(await input()))
-      .rejects.toThrow("detached runner process identity unavailable: 4125");
+      .rejects.toThrow("detached runner did not complete registration");
 
     expect(signalPid).not.toHaveBeenCalled();
     expect(alive).toBe(true);

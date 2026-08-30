@@ -183,7 +183,12 @@ async function createSpawnFailureHarness(mode: SpawnFailureMode) {
       const process = processes.get(pid);
       if (!process) throw new Error(`virtual process missing: ${pid}`);
       const completed = {
-        ...pendingRunnerRegistrationIdentity(expected.sessionId, expected.codeSha, expected),
+        ...pendingRunnerRegistrationIdentity(
+          expected.sessionId,
+          expected.codeSha,
+          expected,
+          expected.registrationId,
+        ),
         pid,
         startIdentity: process.startIdentity,
       };
