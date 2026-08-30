@@ -591,6 +591,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       source: "completion_notifier",
       completionId: "completion-relation-advanced-target-receipt",
       relationKey: "relation-advanced-target-receipt",
+      deliveryLeaseOwner: leaseOwner,
     };
     const task = {
       agentSessionId: "caller-old",
@@ -599,6 +600,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       lastEventId: 447,
       lastReadEventId: 390,
       createdAt: new Date(),
+      executionOwnership: { executionCommandId: leaseOwner } as never,
     };
 
     await expect(gate.recordConsumed(message, task, consumedTurnId))
@@ -970,7 +972,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       intent: "completion_notification" as const,
       source: "completion_notifier",
       payloadHash: "hash-concurrent-inline",
-      payload: { text: "done" },
+      payload: { text: "done", user: "agent", caller_info: null },
     };
 
     await Promise.all([
@@ -1670,7 +1672,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       producerId: "child-session",
       producerTerminalRevision: "42",
       payloadHash: `hash-${relationKey}`,
-      payload: { text: "done" },
+      payload: { text: "done", user: "agent", caller_info: null },
     });
   }
 

@@ -740,8 +740,8 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     );
   });
 
-  it("running task에 intervene → addIntervention queued → intervene_ack(queued)", async () => {
-    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+  it("running task에 intervene → exact delivery accepted → intervene_ack(delivered)", async () => {
+    const addIntervention = vi.fn(async () => ({ delivered: true } as const));
     const { dispatcher, sent } = createDispatcher({
       taskManager: { addIntervention } as Partial<TaskManager>,
     });
@@ -772,13 +772,13 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       type: "intervene_ack",
       requestId: "i-live",
       status: "ok",
-      outcome: "queued",
-      queuePosition: 1,
+      outcome: "delivered",
+      delivered: true,
     });
   });
 
-  it("running task에 intervene → addIntervention queued → intervene_ack(queued, queuePosition)", async () => {
-    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 2 }));
+  it("running task의 ACK는 queue position 없이 exact delivery accept만 투영한다", async () => {
+    const addIntervention = vi.fn(async () => ({ delivered: true } as const));
     const { dispatcher, sent } = createDispatcher({
       taskManager: { addIntervention } as Partial<TaskManager>,
     });
@@ -802,8 +802,8 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       type: "intervene_ack",
       requestId: "i1",
       status: "ok",
-      outcome: "queued",
-      queuePosition: 2,
+      outcome: "delivered",
+      delivered: true,
     });
   });
 

@@ -60,8 +60,8 @@ export class SessionDeliveryRepository {
       SELECT *
       FROM session_deliveries
       WHERE target_session_id = ${targetSessionId}
-        AND aggregate_state = 'pending'
-        AND state IN ('claimed', 'dispatching', 'queued')
+        AND aggregate_state IN ('pending', 'delivered')
+        AND state IN ('claimed', 'dispatching', 'queued', 'delivered')
       ORDER BY enqueue_sequence ASC
       LIMIT 1
     `;

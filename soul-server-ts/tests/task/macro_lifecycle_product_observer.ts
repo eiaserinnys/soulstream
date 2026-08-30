@@ -153,7 +153,8 @@ async function observeCurrentEarlyConsume(h: ContractHarness) {
     notifications: { stageWithQueuedDelivery: vi.fn(), get: vi.fn(),
       markPublished: vi.fn(), retry: vi.fn() } } as never);
   await gate.recordResult({ kind: "admitted", deliveryId: "product-delivery", row: {
-    delivery_id: "product-delivery", intent: "human_live_steer", lease_owner: "lease",
+    delivery_id: "product-delivery", intent: "human_live_steer",
+    lease_owner: "delivery:product-delivery", target_session_id: h.parentSessionId,
   } as SessionDeliveryRow }, { delivered: true });
   if (markConsumed.mock.calls.length > 0) {
     state.delivery.state = "consumed";

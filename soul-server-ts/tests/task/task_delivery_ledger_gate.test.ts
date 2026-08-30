@@ -164,6 +164,11 @@ describe("TaskDeliveryLedgerGate exact delivery authority", () => {
       text: "stored canonical text",
       deliveryId: "delivery-exact-d",
     });
+    get.mockResolvedValueOnce({ ...canonical, lease_owner: "old-generation" });
+    await expect(gate.acceptedDelivery(
+      "delivery-exact-d",
+      "caller-1",
+    )).rejects.toThrow("Canonical delivery is not accepted");
   });
 
   it("projects acceptance to queued without treating it as consumption", async () => {

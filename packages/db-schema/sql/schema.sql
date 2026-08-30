@@ -5289,8 +5289,8 @@ BEGIN
           FROM session_deliveries AS delivery
          WHERE delivery.delivery_id = p_delivery_id
            AND delivery.target_session_id = p_session_id
-           AND delivery.aggregate_state = 'pending'
-           AND delivery.state IN ('claimed', 'dispatching', 'queued')
+           AND delivery.aggregate_state IN ('pending', 'delivered')
+           AND delivery.state IN ('claimed', 'dispatching', 'queued', 'delivered')
            AND delivery.lease_owner IN (p_delivery_lease_owner, p_execution_command_id)
          FOR UPDATE;
         IF NOT FOUND THEN
@@ -5392,15 +5392,19 @@ BEGIN
 
     IF v_row_count = 1 AND p_delivery_id IS NOT NULL THEN
         UPDATE session_deliveries AS delivery SET
-            state = 'queued', aggregate_state = 'pending',
+            state = CASE WHEN delivery.state = 'delivered' THEN 'delivered' ELSE 'queued' END,
+            aggregate_state = CASE
+                WHEN delivery.aggregate_state = 'delivered' THEN 'delivered'
+                ELSE 'pending'
+            END,
             queued_at = COALESCE(delivery.queued_at, p_acquired_at),
             lease_owner = p_execution_command_id,
             lease_expires_at = NULL,
             updated_at = p_acquired_at
          WHERE delivery.delivery_id = p_delivery_id
            AND delivery.target_session_id = p_session_id
-           AND delivery.aggregate_state = 'pending'
-           AND delivery.state IN ('claimed', 'dispatching', 'queued')
+           AND delivery.aggregate_state IN ('pending', 'delivered')
+           AND delivery.state IN ('claimed', 'dispatching', 'queued', 'delivered')
            AND delivery.lease_owner IN (p_delivery_lease_owner, p_execution_command_id);
         GET DIAGNOSTICS v_row_count = ROW_COUNT;
         IF v_row_count <> 1 THEN

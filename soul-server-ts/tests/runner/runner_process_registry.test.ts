@@ -807,7 +807,6 @@ describe("runner process registry", () => {
       incompleteDurableWork: true,
       durableRecordCount: 1,
       unacknowledgedIpcFrameCount: 0,
-      pendingInterventionCount: 0,
       registration: { lifecycle: { execution_state: "completed" } },
     });
     const recovered = await RunnerSqliteEventOutbox.open(paths.databasePath);
@@ -840,7 +839,6 @@ describe("runner process registry", () => {
       incompleteDurableWork: true,
       durableRecordCount: 0,
       unacknowledgedIpcFrameCount: 0,
-      pendingInterventionCount: 0,
       registration: { bootstrap: null, lifecycle: { execution_state: "closed" } },
     });
   });

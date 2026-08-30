@@ -129,16 +129,16 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
     expect(new Set(rows.map((row) => row.delivery_id)).size).toBe(3);
     expect(rows.find((row) => row.delivery_id === parent.deliveryId)).toMatchObject({
       payload_hash: original.payloadHash,
-      state: "queued",
+      state: "delivered",
     });
     expect(rows.find((row) => row.delivery_id === attempt2.deliveryId)).toMatchObject({
       parent_delivery_id: parent.deliveryId,
-      state: "queued",
+      state: "delivered",
       payload_hash: attempt2.storedDeliveryPayloadHash,
     });
     expect(rows.find((row) => row.delivery_id === attempt3.deliveryId)).toMatchObject({
       parent_delivery_id: attempt2.deliveryId,
-      state: "queued",
+      state: "delivered",
       payload_hash: attempt3.storedDeliveryPayloadHash,
     });
     await expect(harness.sql`

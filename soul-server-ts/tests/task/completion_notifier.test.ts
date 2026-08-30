@@ -4,7 +4,7 @@
  * 분석 캐시 `roselin/.local/artifacts/analysis/20260518-2125-ts-delegation-return.md` §5.
  *
  * 6개 unit:
- *   1. local 우선 — caller가 같은 노드에 있으면 taskManager.addIntervention만 호출
+ *   1. local 우선 — caller가 같은 노드에 있으면 exact delivery accept만 호출
  *   2. orch fallback — local throw 시 orch /intervene HTTP POST (caller_info snake_case)
  *   3. callerSessionId 없음 — no-op
  *   4. 오류 완료 — `❌ 에이전트 세션 오류` 메시지 형식
@@ -70,7 +70,7 @@ interface TaskManagerStub {
 }
 
 function makeTaskManagerStub(
-  result: AddInterventionResult | Error = { queued: true, queuePosition: 1 },
+  result: AddInterventionResult | Error = { delivered: true },
 ): TaskManagerStub {
   const addIntervention = vi.fn(
     async (_p: AddInterventionParams, _r: StartExecutionCallback) => {

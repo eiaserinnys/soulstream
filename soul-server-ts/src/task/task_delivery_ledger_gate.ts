@@ -199,8 +199,9 @@ export class TaskDeliveryLedgerGate {
     if (
       !row
       || row.target_session_id !== targetSessionId
-      || row.aggregate_state !== "pending"
-      || !["claimed", "dispatching", "queued"].includes(row.state)
+      || !["pending", "delivered"].includes(row.aggregate_state)
+      || !["claimed", "dispatching", "queued", "delivered"].includes(row.state)
+      || row.lease_owner !== `delivery:${deliveryId}`
     ) {
       throw new Error(`Canonical delivery is not accepted: ${deliveryId}`);
     }

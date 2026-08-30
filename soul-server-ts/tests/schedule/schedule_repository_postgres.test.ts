@@ -136,9 +136,8 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
     ).resolves.toEqual(expect.objectContaining({ status: "completed" }));
   });
 
-  it("keeps deferred running-session schedules durable across dispatcher instances", async () => {
+  it("settles a running-session schedule after canonical delivery acceptance", async () => {
     const now = new Date("2026-01-01T00:00:00Z");
-    const retryAt = new Date("2026-01-01T00:00:05Z");
     const service = makeService(repo);
     await insertSession(sql, "sess-defer", "node-a");
     await repo.touchNodeHeartbeat("node-a");
@@ -149,7 +148,7 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
     });
 
     const firstTaskManager = {
-      addIntervention: vi.fn(async () => ({ deferred: true })),
+      addIntervention: vi.fn(async () => ({ delivered: true })),
     };
     const firstDispatcher = new ScheduleDispatcher(
       { nodeId: "node-a", retryDelayMs: 5_000, claimTimeoutMs: 60_000 },
@@ -160,34 +159,14 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
     );
     await firstDispatcher.runOnce(now);
 
-    let row = await scheduleRow(sql, "sched-defer");
-    expect(row).toMatchObject({
-      status: "active",
-      next_run_at: retryAt,
-      fired_count: 0,
-    });
-
-    const secondTaskManager = {
-      addIntervention: vi.fn(async () => ({ autoResumed: true })),
-    };
-    const secondDispatcher = new ScheduleDispatcher(
-      { nodeId: "node-a", retryDelayMs: 5_000, claimTimeoutMs: 60_000 },
-      service as never,
-      secondTaskManager as never,
-      vi.fn(),
-      logger,
-    );
-    await secondDispatcher.runOnce(retryAt);
-
-    row = await scheduleRow(sql, "sched-defer");
+    const row = await scheduleRow(sql, "sched-defer");
     expect(row).toMatchObject({
       status: "completed",
       fired_count: 1,
     });
-    expect(secondTaskManager.addIntervention).toHaveBeenCalledWith(
+    expect(firstTaskManager.addIntervention).toHaveBeenCalledWith(
       expect.objectContaining({
         agentSessionId: "sess-defer",
-        queueIfRunning: false,
       }),
       expect.any(Function),
     );
