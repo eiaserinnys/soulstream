@@ -12,11 +12,15 @@ import { SessionDataHostError } from "../../src/control_plane/session_data_host_
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
+import { readRunnerRegistrationSummary } from "../../src/runner/runner_registration_reader.js";
 import {
   readRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
-import { runnerLifecycleSummaryPath } from "../../src/runner/sqlite_runner_lifecycle.js";
+import {
+  runnerLifecycleSummaryPath,
+  RunnerSqliteLifecycle,
+} from "../../src/runner/sqlite_runner_lifecycle.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
 import { ExecutionOwnershipBackoff } from "../../src/task/execution_ownership_backoff.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -916,6 +920,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         ([, message]) => message === "released terminal runner evidence retired without replay",
       );
       const violations = [
+        ...(fixture.registration.pid === fixture.staleLifecyclePid
+          ? [] : ["reader_did_not_derive_stale_lifecycle_pid"]),
+        ...(!fixture.registration.pidAlive ? [] : ["reader_marked_stale_pid_live"]),
+        ...(fixture.registration.pidStartIdentity === null
+          ? [] : ["reader_restored_start_identity"]),
         ...(!retiredIdentity?.retiredAt ? ["released_sidecar_not_retired"] : []),
         ...(retiredIdentity?.registrationId === fixture.registration.registrationId
           ? [] : ["registration_target_changed"]),
@@ -938,29 +947,39 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   });
 
   it("keeps live pid and residual start identity outside released cleanup", async () => {
-    const livePid = registration({ pidAlive: true, lifecycleState: "completed" });
-    livePid.pidStartIdentity = null;
-    const residualStartIdentity = registration({
-      pidAlive: false,
-      lifecycleState: "completed",
+    const livePid = await releasedTerminalSidecarFixture({
+      lifecyclePid: process.pid,
+      identityPid: process.pid,
+      identityStartIdentity: "live-process-start",
     });
-    residualStartIdentity.pid = null;
+    const residualStartIdentity = await releasedTerminalSidecarFixture({
+      lifecyclePid: 880_010,
+      identityPid: 880_010,
+      identityStartIdentity: "dead-process-start",
+    });
     const controls = [
       ["live_pid", livePid],
       ["residual_start_identity", residualStartIdentity],
     ] as const;
     const violations: string[] = [];
 
-    for (const [label, candidate] of controls) {
-      const subject = makeSubject([candidate]);
-      recordTerminalCompletion(subject.task);
-      await subject.coordinator.scanOnce();
-      await subject.coordinator.waitForSettled();
-      const failures = subject.logger.error.mock.calls.filter(
-        ([, message]) => message === "runner recovery action failed",
-      );
-      if (failures.length !== 1) violations.push(`${label}_not_fail_closed`);
-      if (subject.terminate.mock.calls.length !== 0) violations.push(`${label}_terminated`);
+    try {
+      for (const [label, fixture] of controls) {
+        const subject = makeSubject([fixture.registration]);
+        recordTerminalCompletion(subject.task);
+        await subject.coordinator.scanOnce();
+        await subject.coordinator.waitForSettled();
+        const failures = subject.logger.error.mock.calls.filter(
+          ([, message]) => message === "runner recovery action failed",
+        );
+        const identity = await readRunnerRegistrationIdentity(fixture.paths.sessionDirectory);
+        if (failures.length !== 1) violations.push(`${label}_not_fail_closed`);
+        if (subject.terminate.mock.calls.length !== 0) violations.push(`${label}_terminated`);
+        if (identity?.retiredAt) violations.push(`${label}_registration_retired`);
+      }
+    } finally {
+      await Promise.all(controls.map(async ([, fixture]) =>
+        await rm(fixture.root, { recursive: true, force: true })));
     }
 
     expect(violations).toEqual([]);
@@ -999,9 +1018,16 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   });
 
   it("fails closed when process identity reappears before released retirement", async () => {
-    const fixture = await releasedTerminalSidecarFixture({
-      sidecarPid: 880_001,
-      sidecarStartIdentity: "start-880001",
+    const fixture = await releasedTerminalSidecarFixture();
+    await writeRunnerRegistrationIdentity(fixture.paths.sessionDirectory, {
+      schemaVersion: 1,
+      registrationId: fixture.registration.registrationId!,
+      sessionId: fixture.registration.config.sessionId,
+      codeSha: fixture.registration.config.codeSha,
+      releaseManifestId: "sha256-d8dc3e37",
+      runtimeEnvIdentity: "sha256-51ae3e79",
+      pid: 880_001,
+      startIdentity: "start-880001",
     });
     try {
       const subject = makeSubject([fixture.registration], RECOVERY_NOW_MS, [], {
@@ -2265,8 +2291,9 @@ function registration(options: {
 }
 
 async function releasedTerminalSidecarFixture(options: {
-  sidecarPid?: number;
-  sidecarStartIdentity?: string;
+  lifecyclePid?: number;
+  identityPid?: number;
+  identityStartIdentity?: string;
 } = {}): Promise<{
   root: string;
   paths: ReturnType<typeof runnerProcessPaths>;
@@ -2277,37 +2304,45 @@ async function releasedTerminalSidecarFixture(options: {
   const root = await mkdtemp(join(tmpdir(), "runner-released-live-shape-"));
   const paths = runnerProcessPaths(join(root, "runner-state"), "session-a");
   await mkdir(paths.sessionDirectory, { recursive: true });
-  const staleLifecyclePid = 2_450_746;
+  const staleLifecyclePid = options.lifecyclePid ?? 2_450_746;
   const registrationId = "registration-live-sidecar";
-  const current = registration({ pidAlive: false, lifecycleState: "completed" });
-  current.config = { ...current.config, paths };
-  current.registrationId = registrationId;
-  current.pid = null;
-  current.pidStartIdentity = null;
-  current.lifecycle = {
-    ...current.lifecycle!,
-    runner_pid: staleLifecyclePid,
-    execution_state: "completed",
-    progress_seq: 142,
-    in_flight_tools: [],
-    terminal_error: null,
-  };
-  await writeFile(paths.configPath, `${JSON.stringify(current.config)}\n`, { mode: 0o600 });
-  await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-    schemaVersion: 1,
-    registrationId,
-    sessionId: current.config.sessionId,
+  const template = registration();
+  const config = {
+    ...template.config,
+    paths,
     codeSha: "sha256-b271cc86",
     releaseManifestId: "sha256-d8dc3e37",
     runtimeEnvIdentity: "sha256-51ae3e79",
-    pid: options.sidecarPid ?? null,
-    startIdentity: options.sidecarStartIdentity ?? null,
+  };
+  await writeFile(paths.configPath, `${JSON.stringify(config)}\n`, { mode: 0o600 });
+  await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+    schemaVersion: 1,
+    registrationId,
+    sessionId: config.sessionId,
+    codeSha: config.codeSha,
+    releaseManifestId: config.releaseManifestId,
+    runtimeEnvIdentity: config.runtimeEnvIdentity,
+    pid: options.identityPid ?? null,
+    startIdentity: options.identityStartIdentity ?? null,
   });
+  const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath, config.sessionId);
+  lifecycle.begin({
+    pid: staleLifecyclePid,
+    commandId: "execute-a",
+    progressedAt: "2026-08-11T00:00:20.000Z",
+  });
+  const completedLifecycle = lifecycle.finish(
+    "execute-a",
+    "completed",
+    "2026-08-11T00:00:30.000Z",
+  );
+  lifecycle.close();
   await writeFile(
     runnerLifecycleSummaryPath(paths.databasePath),
-    `${JSON.stringify(current.lifecycle)}\n`,
+    `${JSON.stringify(completedLifecycle)}\n`,
     { mode: 0o600 },
   );
+  const current = await readRunnerRegistrationSummary(paths.sessionDirectory);
   const spawner = new RunnerProcessSpawner({
     prepareDatabase: async () => {},
     validateEntry: async () => {},
