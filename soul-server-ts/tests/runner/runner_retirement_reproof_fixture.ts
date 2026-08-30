@@ -15,6 +15,7 @@ import {
   type RunnerRegistrationScan,
 } from "../../src/runner/runner_process_registry.js";
 import {
+  completeRunnerRegistrationIdentityFromChild,
   readRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
@@ -23,7 +24,7 @@ import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.
 
 const OLD_PID = 2_147_000_001;
 const NEW_PID = 2_147_000_002;
-const OLD_START_IDENTITY = "windows-process-638920800001230000";
+const OLD_START_IDENTITY = `linux-boot-test-proc-${OLD_PID}`;
 
 interface VirtualProcess {
   alive: boolean;
@@ -104,7 +105,7 @@ export class VirtualRunnerProcessTable {
     process.alive = false;
   };
 
-  spawn = (pid = NEW_PID, startIdentity = `node-start-${NEW_PID}`): void => {
+  spawn = (pid = NEW_PID, startIdentity = `linux-boot-test-proc-${NEW_PID}`): void => {
     this.processes.set(pid, { alive: true, startIdentity });
     this.events.push("spawn");
   };
@@ -209,6 +210,20 @@ export async function createTerminalRetirementFixture(): Promise<RetirementFixtu
     spawnProcess: () => {
       processTable.spawn();
       return { pid: NEW_PID, unref: () => {} };
+    },
+    waitForChildRegistrationIdentity: async (registrationPaths, expected, pid) => {
+      const process = await processTable.inspect(pid);
+      if (!process.alive || !process.startIdentity) {
+        throw new Error(`virtual child identity unavailable: ${pid}`);
+      }
+      return await completeRunnerRegistrationIdentityFromChild(
+        registrationPaths.sessionDirectory,
+        {
+          ...expected,
+          pid,
+          startIdentity: process.startIdentity,
+        },
+      );
     },
     registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
     inspectProcess: processTable.inspect,
