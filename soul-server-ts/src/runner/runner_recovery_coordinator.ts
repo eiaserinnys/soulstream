@@ -424,8 +424,7 @@ export class RunnerRecoveryCoordinator {
     const pid = ownership?.pid ?? registration.pid;
     const startIdentity = ownership?.startIdentity ?? registration.pidStartIdentity;
     if (
-      !ownership
-      && registration.pidStartIdentity === null
+      registration.pidStartIdentity === null
       && !registration.pidAlive
     ) {
       const reconcile = this.options.taskManager.reconcileRecordedTerminalExecution;
