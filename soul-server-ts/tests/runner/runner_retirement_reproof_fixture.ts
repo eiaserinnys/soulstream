@@ -197,7 +197,9 @@ export async function createTerminalRetirementFixture(): Promise<RetirementFixtu
     startIdentity: OLD_START_IDENTITY,
   });
   await writeFile(paths.pidPath, `${OLD_PID}\n`, { mode: 0o600 });
-  await writeFile(paths.socketPath, "socket-evidence\n", { mode: 0o600 });
+  if (process.platform !== "win32") {
+    await writeFile(paths.socketPath, "socket-evidence\n", { mode: 0o600 });
+  }
 
   const processTable = new VirtualRunnerProcessTable();
   let clock = 0;
