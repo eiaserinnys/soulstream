@@ -167,6 +167,11 @@ async function writeHealthyRegistration(stateDirectory: string, sessionId: strin
   await writeFile(paths.configPath, JSON.stringify(config));
   const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
   outbox.close();
+  await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+    ...pendingRunnerRegistrationIdentity(sessionId, "release-a"),
+    pid: process.pid,
+    startIdentity: `start-${process.pid}`,
+  });
   return { paths, config };
 }
 
