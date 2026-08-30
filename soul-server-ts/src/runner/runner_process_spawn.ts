@@ -301,7 +301,7 @@ export class RunnerProcessSpawner {
     } catch (registrationError) {
       try {
         if (childProcessProof) {
-          await terminateExactRunner(childProcessProof, this.deps);
+          await terminateExactRunner(childProcessProof, this.deps, true);
         } else if (!childAbsenceProven) {
           if (registrationError instanceof RunnerMutationFailure) throw registrationError;
           throw new RunnerMutationFailure(

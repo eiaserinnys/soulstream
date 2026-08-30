@@ -56,7 +56,7 @@ export async function stopExistingRunnerLocked(
     && (expected.registrationId === undefined
       || identity.registrationId === expected.registrationId);
   if (expected && !expectedOwnsIdentity) {
-    await terminateExactRunner(expected, deps);
+    await terminateExactRunner(expected, deps, true);
     return "registration_absent";
   }
   if (!identity || identity.pid === null || identity.startIdentity === null) {
@@ -81,7 +81,7 @@ export async function stopExistingRunnerLocked(
 export async function terminateExactRunner(
   expected: ExactRunnerProcess,
   deps: RunnerProcessTerminationDependencies,
-  mismatchIsAbsence = true,
+  mismatchIsAbsence: boolean,
 ): Promise<void> {
   if (await exactProcessIsAbsent(expected, deps, mismatchIsAbsence)) return;
   signalExactProcess(expected, "SIGTERM", deps);
