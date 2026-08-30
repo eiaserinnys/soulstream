@@ -1,3 +1,7 @@
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -5,7 +9,14 @@ import {
   type RunnerRecoveryCoordinatorOptions,
 } from "../../src/runner/runner_recovery_coordinator.js";
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
+import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
+import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
+import {
+  readRunnerRegistrationIdentity,
+  writeRunnerRegistrationIdentity,
+} from "../../src/runner/runner_registration_identity.js";
+import { runnerLifecycleSummaryPath } from "../../src/runner/sqlite_runner_lifecycle.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
 import { ExecutionOwnershipBackoff } from "../../src/task/execution_ownership_backoff.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -881,55 +892,139 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     ]);
   });
 
-  it("drops an already released terminal row without weakening live incomplete fail-closed", async () => {
-    const releasedRegistration = registration({
+  it("retires the measured released sidecar shape without trusting stale lifecycle pid", async () => {
+    const fixture = await releasedTerminalSidecarFixture();
+    try {
+      const proveCentralOwnerAbsent = vi.fn(async (candidate: Task) =>
+        candidate.executionOwnership === undefined);
+      const subject = makeSubject([fixture.registration], RECOVERY_NOW_MS, [], {
+        spawner: fixture.spawner,
+        taskManager: { reconcileRecordedTerminalExecution: proveCentralOwnerAbsent } as never,
+      });
+      recordTerminalCompletion(subject.task);
+
+      await subject.coordinator.scanOnce();
+      await subject.coordinator.waitForSettled();
+
+      const retiredIdentity = await readRunnerRegistrationIdentity(
+        fixture.paths.sessionDirectory,
+      );
+      const recoveryFailures = subject.logger.error.mock.calls.filter(
+        ([, message]) => message === "runner recovery action failed",
+      );
+      const retirementMarkers = subject.logger.info.mock.calls.filter(
+        ([, message]) => message === "released terminal runner evidence retired without replay",
+      );
+      const violations = [
+        ...(!retiredIdentity?.retiredAt ? ["released_sidecar_not_retired"] : []),
+        ...(retiredIdentity?.registrationId === fixture.registration.registrationId
+          ? [] : ["registration_target_changed"]),
+        ...(retiredIdentity?.pid === null && retiredIdentity.startIdentity === null
+          ? [] : ["released_process_identity_restored"]),
+        ...(await pathExists(fixture.paths.pidPath) ? ["runner_pid_evidence_remains"] : []),
+        ...(await pathExists(fixture.paths.lockPath) ? ["writer_lock_remains"] : []),
+        ...recoveryFailures.map(() => "released_terminal_retried"),
+        ...(retirementMarkers.length === 1 ? [] : ["released_retirement_marker_missing"]),
+        ...(proveCentralOwnerAbsent.mock.calls.length === 1
+          ? [] : ["central_owner_absence_not_reproved"]),
+        ...(fixture.registration.lifecycle?.runner_pid === fixture.staleLifecyclePid
+          ? [] : ["stale_lifecycle_pid_fixture_lost"]),
+      ];
+      expect(violations).toEqual([]);
+      expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps live pid and residual start identity outside released cleanup", async () => {
+    const livePid = registration({ pidAlive: true, lifecycleState: "completed" });
+    livePid.pidStartIdentity = null;
+    const residualStartIdentity = registration({
       pidAlive: false,
       lifecycleState: "completed",
     });
-    releasedRegistration.registrationId = null;
-    releasedRegistration.pidStartIdentity = null;
-    const released = makeSubject([releasedRegistration]);
-    released.task.status = "completed";
-    released.task.terminationReason = "completed_ok";
-    released.task.terminationEventRecorded = true;
-    released.task.terminalEventId = 3;
+    residualStartIdentity.pid = null;
+    const controls = [
+      ["live_pid", livePid],
+      ["residual_start_identity", residualStartIdentity],
+    ] as const;
+    const violations: string[] = [];
 
-    await released.coordinator.scanOnce();
-    await released.coordinator.waitForSettled();
-    await released.coordinator.scanOnce();
-    await released.coordinator.waitForSettled();
+    for (const [label, candidate] of controls) {
+      const subject = makeSubject([candidate]);
+      recordTerminalCompletion(subject.task);
+      await subject.coordinator.scanOnce();
+      await subject.coordinator.waitForSettled();
+      const failures = subject.logger.error.mock.calls.filter(
+        ([, message]) => message === "runner recovery action failed",
+      );
+      if (failures.length !== 1) violations.push(`${label}_not_fail_closed`);
+      if (subject.terminate.mock.calls.length !== 0) violations.push(`${label}_terminated`);
+    }
 
-    const liveIncompleteRegistration = registration({
-      pidAlive: true,
-      lifecycleState: "completed",
-    });
-    liveIncompleteRegistration.registrationId = null;
-    liveIncompleteRegistration.pidStartIdentity = null;
-    const liveIncomplete = makeSubject([liveIncompleteRegistration]);
-    liveIncomplete.task.status = "completed";
-    liveIncomplete.task.terminationReason = "completed_ok";
-    liveIncomplete.task.terminationEventRecorded = true;
-    liveIncomplete.task.terminalEventId = 3;
-
-    await liveIncomplete.coordinator.scanOnce();
-    await liveIncomplete.coordinator.waitForSettled();
-
-    const releasedRetries = released.logger.error.mock.calls.filter(
-      ([, message]) => message === "runner recovery action failed",
-    );
-    const liveIncompleteFailures = liveIncomplete.logger.error.mock.calls.filter(
-      ([context, message]) => message === "runner recovery action failed"
-        && context.err instanceof Error
-        && context.err.message
-          === "recorded terminal execution identity is incomplete: session-a",
-    );
-    const violations = [
-      ...releasedRetries.map(() => "released_terminal_retried"),
-      ...(liveIncompleteFailures.length === 1 ? [] : ["live_incomplete_not_fail_closed"]),
-    ];
     expect(violations).toEqual([]);
-    expect(released.recoverRegisteredRunner).not.toHaveBeenCalled();
-    expect(liveIncomplete.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when central ownership reappears during released retirement", async () => {
+    const fixture = await releasedTerminalSidecarFixture();
+    try {
+      const subject = makeSubject([fixture.registration], RECOVERY_NOW_MS, [], {
+        spawner: fixture.spawner,
+        taskManager: {
+          reconcileRecordedTerminalExecution: vi.fn(async (candidate: Task) => {
+            candidate.executionOwnership = executionOwnership("registration-successor");
+            return false;
+          }),
+        } as never,
+      });
+      recordTerminalCompletion(subject.task);
+
+      await subject.coordinator.scanOnce();
+      await subject.coordinator.waitForSettled();
+
+      const identity = await readRunnerRegistrationIdentity(fixture.paths.sessionDirectory);
+      expect(identity?.retiredAt).toBeUndefined();
+      expect(subject.logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(Error) }),
+        "runner recovery action failed",
+      );
+      expect(subject.logger.info).not.toHaveBeenCalledWith(
+        expect.anything(),
+        "released terminal runner evidence retired without replay",
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when process identity reappears before released retirement", async () => {
+    const fixture = await releasedTerminalSidecarFixture({
+      sidecarPid: 880_001,
+      sidecarStartIdentity: "start-880001",
+    });
+    try {
+      const subject = makeSubject([fixture.registration], RECOVERY_NOW_MS, [], {
+        spawner: fixture.spawner,
+        taskManager: {
+          reconcileRecordedTerminalExecution: vi.fn(async () => true),
+        } as never,
+      });
+      recordTerminalCompletion(subject.task);
+
+      await subject.coordinator.scanOnce();
+      await subject.coordinator.waitForSettled();
+
+      const identity = await readRunnerRegistrationIdentity(fixture.paths.sessionDirectory);
+      expect(identity?.retiredAt).toBeUndefined();
+      expect(identity).toMatchObject({ pid: 880_001, startIdentity: "start-880001" });
+      expect(subject.logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(Error) }),
+        "runner recovery action failed",
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
   });
 
   it("does not block server startup on a dead terminal runner waiting for upstream ACK", async () => {
@@ -2167,6 +2262,99 @@ function registration(options: {
       terminal_error: options.terminalError ?? null,
     },
   };
+}
+
+async function releasedTerminalSidecarFixture(options: {
+  sidecarPid?: number;
+  sidecarStartIdentity?: string;
+} = {}): Promise<{
+  root: string;
+  paths: ReturnType<typeof runnerProcessPaths>;
+  registration: RunnerRegistration;
+  spawner: RunnerProcessSpawner;
+  staleLifecyclePid: number;
+}> {
+  const root = await mkdtemp(join(tmpdir(), "runner-released-live-shape-"));
+  const paths = runnerProcessPaths(join(root, "runner-state"), "session-a");
+  await mkdir(paths.sessionDirectory, { recursive: true });
+  const staleLifecyclePid = 2_450_746;
+  const registrationId = "registration-live-sidecar";
+  const current = registration({ pidAlive: false, lifecycleState: "completed" });
+  current.config = { ...current.config, paths };
+  current.registrationId = registrationId;
+  current.pid = null;
+  current.pidStartIdentity = null;
+  current.lifecycle = {
+    ...current.lifecycle!,
+    runner_pid: staleLifecyclePid,
+    execution_state: "completed",
+    progress_seq: 142,
+    in_flight_tools: [],
+    terminal_error: null,
+  };
+  await writeFile(paths.configPath, `${JSON.stringify(current.config)}\n`, { mode: 0o600 });
+  await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+    schemaVersion: 1,
+    registrationId,
+    sessionId: current.config.sessionId,
+    codeSha: "sha256-b271cc86",
+    releaseManifestId: "sha256-d8dc3e37",
+    runtimeEnvIdentity: "sha256-51ae3e79",
+    pid: options.sidecarPid ?? null,
+    startIdentity: options.sidecarStartIdentity ?? null,
+  });
+  await writeFile(
+    runnerLifecycleSummaryPath(paths.databasePath),
+    `${JSON.stringify(current.lifecycle)}\n`,
+    { mode: 0o600 },
+  );
+  const spawner = new RunnerProcessSpawner({
+    prepareDatabase: async () => {},
+    validateEntry: async () => {},
+    spawnProcess: () => ({ pid: 880_002, unref: vi.fn() }),
+    registerPid: async () => {},
+    inspectProcess: async () => ({ alive: false, startIdentity: null }),
+    isPidAlive: () => false,
+    signalPid: vi.fn(),
+    now: () => RECOVERY_NOW_MS,
+    delay: async () => {},
+  });
+  return { root, paths, registration: current, spawner, staleLifecyclePid };
+}
+
+function recordTerminalCompletion(task: Task): void {
+  task.status = "completed";
+  task.terminationReason = "completed_ok";
+  task.terminationEventRecorded = true;
+  task.terminalEventId = 3;
+  task.runner = undefined;
+  task.executionPromise = undefined;
+  task.executionOwnership = undefined;
+}
+
+function executionOwnership(
+  registrationId: string,
+): NonNullable<Task["executionOwnership"]> {
+  return {
+    ownerKind: "runner_process",
+    ownershipGeneration: 2,
+    manifestId: "sha-successor",
+    runtimeEnvIdentity: "env-successor",
+    registrationId,
+    pid: 880_003,
+    startIdentity: "start-880003",
+    executionCommandId: "execute-successor",
+  };
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 function task(sessionId: string): Task {
