@@ -122,7 +122,9 @@ describe("runner process registry", () => {
     await writeFile(paths.configPath, JSON.stringify(current.config));
     await writeFile(paths.pidPath, `${identityPid}\n`);
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-      ...pendingRunnerRegistrationIdentity(current.config.sessionId, current.config.codeSha),
+      ...pendingRunnerRegistrationIdentity(
+        current.config.sessionId, current.config.codeSha, undefined, current.config.registrationId,
+      ),
       pid: identityPid,
       startIdentity: `dead-${identityPid}`,
     });
@@ -483,7 +485,9 @@ describe("runner process registry", () => {
     await mkdir(paths.sessionDirectory, { recursive: true });
     await writeFile(paths.configPath, JSON.stringify(config));
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-      ...pendingRunnerRegistrationIdentity(config.sessionId, config.codeSha),
+      ...pendingRunnerRegistrationIdentity(
+        config.sessionId, config.codeSha, undefined, config.registrationId,
+      ),
       pid: 2_147_483_610,
       startIdentity: "dead-2147483610",
     });
@@ -624,6 +628,8 @@ describe("runner process registry", () => {
       const identity = pendingRunnerRegistrationIdentity(
         current.config.sessionId,
         current.config.codeSha,
+        undefined,
+        current.config.registrationId,
       );
       await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
         ...identity,
@@ -698,7 +704,9 @@ describe("runner process registry", () => {
     await writeFile(paths.configPath, JSON.stringify(current.config));
     await writeFile(paths.pidPath, String(process.pid));
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-      ...pendingRunnerRegistrationIdentity(current.config.sessionId, current.config.codeSha),
+      ...pendingRunnerRegistrationIdentity(
+        current.config.sessionId, current.config.codeSha, undefined, current.config.registrationId,
+      ),
       pid: process.pid,
       startIdentity: "current-process",
     });
@@ -974,7 +982,9 @@ async function closedRunnerState(label: string) {
   await mkdir(paths.sessionDirectory, { recursive: true });
   await writeFile(paths.configPath, JSON.stringify(current.config));
   await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-    ...pendingRunnerRegistrationIdentity(current.config.sessionId, current.config.codeSha),
+    ...pendingRunnerRegistrationIdentity(
+      current.config.sessionId, current.config.codeSha, undefined, current.config.registrationId,
+    ),
     pid: 2_147_483_611,
     startIdentity: "dead-2147483611",
   });
@@ -1030,6 +1040,7 @@ function registration(options: {
   return {
     config: {
       schemaVersion: 1,
+      registrationId: `registration-${sessionId}`,
       sessionId,
       backend: "codex",
       agent: { id: "agent-a", name: "Agent A", backend: "codex", workspace_dir: "/workspace" },
@@ -1053,6 +1064,7 @@ function registration(options: {
       rolloutRoot: "/home/test/.codex/sessions",
     },
     pid: 4123,
+    registrationId: `registration-${sessionId}`,
     pidAlive: options.pidAlive ?? true,
     registeredAtMs: Date.parse("2026-08-11T00:00:00.000Z"),
     bootstrap: { payload: { code_sha: "release-a" } } as never,

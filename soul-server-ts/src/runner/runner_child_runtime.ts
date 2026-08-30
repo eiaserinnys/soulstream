@@ -96,6 +96,7 @@ export class RunnerChildRuntime {
         await completeRunnerRegistrationIdentityFromChild(
           this.config.paths.sessionDirectory,
           {
+            registrationId: this.config.registrationId,
             sessionId: this.config.sessionId,
             codeSha: this.config.codeSha,
             releaseManifestId: this.config.releaseManifestId,

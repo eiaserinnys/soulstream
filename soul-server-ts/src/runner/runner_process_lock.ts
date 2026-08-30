@@ -5,12 +5,7 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 const LOCK_RETRY_MS = 50;
-const WINDOWS_EPOCH_OFFSET_TICKS = 621_355_968_000_000_000n;
-const PROCESS_START_IDENTITY_TOLERANCE_MS = 2_000;
 const execFileAsync = promisify(execFile);
-const currentProcessFallbackIdentity = `node-start-${Math.round(
-  Date.now() - process.uptime() * 1_000,
-)}`;
 let currentProcessStartIdentity: Promise<string> | undefined;
 
 export interface ProcessLockOwner {
@@ -140,9 +135,11 @@ export function defaultProcessOwnershipLockDependencies(): ProcessOwnershipLockD
 }
 
 async function getCurrentProcessStartIdentity(): Promise<string> {
-  if (process.platform === "win32") return currentProcessFallbackIdentity;
   currentProcessStartIdentity ??= readProcessStartIdentity(process.pid)
-    .then((identity) => identity ?? currentProcessFallbackIdentity);
+    .then((identity) => {
+      if (!identity) throw new Error(`current process identity unavailable: ${process.pid}`);
+      return identity;
+    });
   return await currentProcessStartIdentity;
 }
 
@@ -163,31 +160,7 @@ function sameOwner(left: ProcessLockOwner | null, right: ProcessLockOwner): bool
 }
 
 export function processStartIdentitiesMatch(left: string, right: string): boolean {
-  if (left === right) return true;
-  const leftEpochMs = processStartEpochMs(left);
-  const rightEpochMs = processStartEpochMs(right);
-  return leftEpochMs !== null
-    && rightEpochMs !== null
-    && leftEpochMs.kind !== rightEpochMs.kind
-    && Math.abs(leftEpochMs.value - rightEpochMs.value) <= PROCESS_START_IDENTITY_TOLERANCE_MS;
-}
-
-function processStartEpochMs(
-  identity: string,
-): { kind: "node" | "windows"; value: number } | null {
-  const nodeMatch = /^node-start-(\d+)$/.exec(identity);
-  if (nodeMatch) {
-    const epochMs = Number(nodeMatch[1]);
-    return Number.isSafeInteger(epochMs) ? { kind: "node", value: epochMs } : null;
-  }
-  const windowsMatch = /^windows-process-(\d+)$/.exec(identity);
-  if (!windowsMatch) return null;
-  try {
-    const epochMs = Number((BigInt(windowsMatch[1]!) - WINDOWS_EPOCH_OFFSET_TICKS) / 10_000n);
-    return Number.isSafeInteger(epochMs) ? { kind: "windows", value: epochMs } : null;
-  } catch {
-    return null;
-  }
+  return left === right;
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -208,24 +181,34 @@ export async function readProcessStartIdentity(pid: number): Promise<string | nu
           "-NoProfile",
           "-NonInteractive",
           "-Command",
-          `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().Ticks`,
+          `$p = Get-Process -Id ${pid} -ErrorAction Stop; `
+          + "$b = (Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime; "
+          + "Write-Output ($b.ToUniversalTime().Ticks.ToString() + ':' + $p.StartTime.ToUniversalTime().Ticks.ToString())",
         ],
         { timeout: 5_000, windowsHide: true },
       );
-      const ticks = stdout.trim();
-      return ticks ? `windows-process-${ticks}` : null;
+      const [bootTicks, processTicks] = stdout.trim().split(":");
+      return /^\d+$/.test(bootTicks ?? "") && /^\d+$/.test(processTicks ?? "")
+        ? `windows-boot-${bootTicks}-process-${processTicks}`
+        : null;
     } catch {
       return null;
     }
   }
   if (process.platform !== "linux") return null;
   try {
-    const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+    const [stat, bootId] = await Promise.all([
+      readFile(`/proc/${pid}/stat`, "utf8"),
+      readFile("/proc/sys/kernel/random/boot_id", "utf8"),
+    ]);
     const closeParen = stat.lastIndexOf(")");
     if (closeParen < 0) return null;
     const fields = stat.slice(closeParen + 1).trim().split(/\s+/);
     const startTime = fields[19];
-    return startTime ? `linux-proc-${startTime}` : null;
+    const normalizedBootId = bootId.trim();
+    return startTime && normalizedBootId
+      ? `linux-boot-${normalizedBootId}-proc-${startTime}`
+      : null;
   } catch {
     return null;
   }

@@ -67,6 +67,7 @@ export async function readRunnerRegistrationSummary(
       currentIdentity
       && (
         currentIdentity.sessionId !== config.sessionId
+        || currentIdentity.registrationId !== config.registrationId
         || currentIdentity.codeSha !== config.codeSha
       )
     ) {

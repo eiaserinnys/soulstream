@@ -56,7 +56,7 @@ export async function stopExistingRunnerLocked(
     && (expected.registrationId === undefined
       || identity.registrationId === expected.registrationId);
   if (expected && !expectedOwnsIdentity) {
-    await terminateExactRunner(expected, deps, true);
+    await terminateExactRunner(expected, deps);
     return "registration_absent";
   }
   if (!identity || identity.pid === null || identity.startIdentity === null) {
@@ -65,7 +65,6 @@ export async function stopExistingRunnerLocked(
   await terminateExactRunner(
     expected ?? { pid: identity.pid, startIdentity: identity.startIdentity },
     deps,
-    cleanupMode === "replacement",
   );
   await invalidateRunnerRegistrationFilesLocked(
     paths,
@@ -81,9 +80,8 @@ export async function stopExistingRunnerLocked(
 export async function terminateExactRunner(
   expected: ExactRunnerProcess,
   deps: RunnerProcessTerminationDependencies,
-  mismatchIsAbsence: boolean,
 ): Promise<void> {
-  if (await exactProcessIsAbsent(expected, deps, mismatchIsAbsence)) return;
+  if (await exactProcessIsAbsent(expected, deps)) return;
   signalExactProcess(expected, "SIGTERM", deps);
   if (await waitForExactProcessExit(expected, deps, "SIGKILL")) return;
   signalExactProcess(expected, "SIGKILL", deps);
@@ -101,16 +99,15 @@ async function waitForExactProcessExit(
 ): Promise<boolean> {
   const deadline = deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
   while (deps.now() < deadline) {
-    if (await exactProcessIsAbsent(expected, deps, false, boundary)) return true;
+    if (await exactProcessIsAbsent(expected, deps, boundary)) return true;
     await deps.delay(25);
   }
-  return await exactProcessIsAbsent(expected, deps, false, boundary);
+  return await exactProcessIsAbsent(expected, deps, boundary);
 }
 
 async function exactProcessIsAbsent(
   expected: ExactRunnerProcess,
   deps: RunnerProcessTerminationDependencies,
-  mismatchIsAbsence: boolean,
   boundary: "SIGTERM" | "SIGKILL" | "retirement" = "SIGTERM",
 ): Promise<boolean> {
   if (!deps.isPidAlive(expected.pid)) return true;
@@ -129,7 +126,6 @@ async function exactProcessIsAbsent(
   if (exactRunnerStartIdentitiesMatch(observed.startIdentity, expected.startIdentity)) {
     return false;
   }
-  if (mismatchIsAbsence) return true;
   throw identityProofFailure(
     `runner process identity changed before ${boundary}: ${expected.pid}`,
   );

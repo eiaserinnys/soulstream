@@ -65,7 +65,7 @@ export async function retireTerminalExecutionIdentity(
 
     // Destructive termination only accepts the exact canonical identity token.
     // Cross-format timestamp tolerance is observation-only and never authorizes a signal.
-    await terminateExactRunner(expected, deps, false);
+    await terminateExactRunner(expected, deps);
     await prepareRunnerWriterLockForSpawn(paths.lockPath);
     await requireCentralCommit(paths, commitOwnership);
     await retireTerminalRunnerRegistrationFilesLocked(

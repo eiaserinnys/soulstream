@@ -23,21 +23,19 @@ afterEach(async () => {
 });
 
 describe("RunnerStateHostLock", () => {
-  it("matches a child self timestamp to the equivalent Windows process start token", () => {
-    const unixStartMs = 1_700_000_000_123;
-    const windowsTicks = 621_355_968_000_000_000n + BigInt(unixStartMs) * 10_000n;
-
+  it("matches only the same boot-safe process identity", () => {
+    const identity = "windows-boot-638920800000000000-process-638920800001230000";
     expect(processStartIdentitiesMatch(
-      `node-start-${unixStartMs}`,
-      `windows-process-${windowsTicks}`,
+      identity,
+      identity,
     )).toBe(true);
     expect(processStartIdentitiesMatch(
-      `node-start-${unixStartMs}`,
-      `windows-process-${windowsTicks + 30_000_000n}`,
+      identity,
+      "windows-boot-638920800000000001-process-638920800001230000",
     )).toBe(false);
     expect(processStartIdentitiesMatch(
-      `node-start-${unixStartMs}`,
-      `node-start-${unixStartMs + 1}`,
+      identity,
+      "windows-boot-638920800000000000-process-638920800001230001",
     )).toBe(false);
   });
 

@@ -35,11 +35,12 @@ export function pendingRunnerRegistrationIdentity(
   sessionId: string,
   codeSha: string,
   release?: { releaseManifestId?: string; runtimeEnvIdentity?: string },
+  registrationId = randomUUID(),
 ): RunnerRegistrationIdentity {
   if (!sessionId || !codeSha) throw new Error("runner registration identity requires session and release");
   return {
     schemaVersion: 1,
-    registrationId: randomUUID(),
+    registrationId,
     sessionId,
     codeSha,
     ...(release?.releaseManifestId ? { releaseManifestId: release.releaseManifestId } : {}),
@@ -79,6 +80,7 @@ export async function readRunnerRegistrationIdentity(
 export async function completeRunnerRegistrationIdentityFromChild(
   sessionDirectory: string,
   input: {
+    registrationId: string;
     sessionId: string;
     codeSha: string;
     releaseManifestId?: string;
@@ -88,29 +90,29 @@ export async function completeRunnerRegistrationIdentityFromChild(
   },
 ): Promise<RunnerRegistrationIdentity> {
   const current = await readRunnerRegistrationIdentity(sessionDirectory);
-  if (!current || current.pid === null || current.startIdentity === null) {
-    const completed = {
-      ...pendingRunnerRegistrationIdentity(input.sessionId, input.codeSha, input),
-      pid: input.pid,
-      startIdentity: input.startIdentity,
-    };
-    await writeRunnerRegistrationIdentity(sessionDirectory, completed);
-    return completed;
-  }
-  if (current.sessionId !== input.sessionId || current.codeSha !== input.codeSha) {
+  if (
+    !current
+    || current.registrationId !== input.registrationId
+    || current.sessionId !== input.sessionId
+    || current.codeSha !== input.codeSha
+  ) {
     throw new Error(`runner registration changed before child startup: ${input.sessionId}`);
   }
   if (input.releaseManifestId !== current.releaseManifestId
     || input.runtimeEnvIdentity !== current.runtimeEnvIdentity) {
     throw new Error(`runner release identity changed before child startup: ${input.sessionId}`);
   }
-  if (
-    current.pid !== input.pid
-    || !processStartIdentitiesMatch(current.startIdentity, input.startIdentity)
-  ) {
+  if (current.pid !== null || current.startIdentity !== null) {
+    if (
+      current.pid === input.pid
+      && current.startIdentity !== null
+      && processStartIdentitiesMatch(current.startIdentity, input.startIdentity)
+    ) return current;
     throw new Error(`runner registration already belongs to another process: ${input.sessionId}`);
   }
-  return current;
+  const completed = { ...current, pid: input.pid, startIdentity: input.startIdentity };
+  await writeRunnerRegistrationIdentity(sessionDirectory, completed);
+  return completed;
 }
 
 export async function invalidateRunnerRegistrationIdentity(
@@ -151,7 +153,7 @@ export async function waitForChildRunnerRegistrationIdentity(
   sessionDirectory: string,
   expected: Pick<
     RunnerRegistrationIdentity,
-    "sessionId" | "codeSha" | "releaseManifestId" | "runtimeEnvIdentity"
+    "registrationId" | "sessionId" | "codeSha" | "releaseManifestId" | "runtimeEnvIdentity"
   >,
   pid: number,
   deps: {
@@ -166,7 +168,8 @@ export async function waitForChildRunnerRegistrationIdentity(
     if (
       current
       && (
-        current.sessionId !== expected.sessionId
+        current.registrationId !== expected.registrationId
+        || current.sessionId !== expected.sessionId
         || current.codeSha !== expected.codeSha
         || current.releaseManifestId !== expected.releaseManifestId
         || current.runtimeEnvIdentity !== expected.runtimeEnvIdentity

@@ -120,7 +120,12 @@ describe("RunnerProcessSpawner", () => {
       inspectProcess,
       waitForChildRegistrationIdentity: async (paths, expected, pid) => {
         const completed = {
-          ...pendingRunnerRegistrationIdentity(expected.sessionId, expected.codeSha, expected),
+          ...pendingRunnerRegistrationIdentity(
+            expected.sessionId,
+            expected.codeSha,
+            expected,
+            expected.registrationId,
+          ),
           pid,
           startIdentity: "child-start-4124",
         };
@@ -141,7 +146,7 @@ describe("RunnerProcessSpawner", () => {
       .resolves.toMatchObject({ pid: 4124, startIdentity: "child-start-4124" });
   });
 
-  it("accepts an equivalent Windows start identity for a complete registration", async () => {
+  it("rejects differently encoded process start identities", async () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
     await mkdir(paths.sessionDirectory, { recursive: true });
@@ -157,14 +162,12 @@ describe("RunnerProcessSpawner", () => {
     });
 
     await expect(completeRunnerRegistrationIdentityFromChild(paths.sessionDirectory, {
+      registrationId: "registration-a",
       sessionId: params.sessionId,
       codeSha: params.codeSha,
       pid: 4124,
       startIdentity: `node-start-${unixStartMs}`,
-    })).resolves.toMatchObject({
-      registrationId: "registration-a",
-      pid: 4124,
-    });
+    })).rejects.toThrow("runner registration already belongs to another process");
   });
 
   it("rejects child self-publication against a complete immutable release identity", async () => {
@@ -177,13 +180,14 @@ describe("RunnerProcessSpawner", () => {
         ...pendingRunnerRegistrationIdentity(params.sessionId, params.codeSha, {
           releaseManifestId: "manifest-a",
           runtimeEnvIdentity: "runtime-env-a",
-        }),
+        }, "registration-release"),
         pid: 4124,
         startIdentity: "node-start-1",
       },
     );
 
     await expect(completeRunnerRegistrationIdentityFromChild(paths.sessionDirectory, {
+      registrationId: "registration-release",
       sessionId: params.sessionId,
       codeSha: params.codeSha,
       pid: 4124,

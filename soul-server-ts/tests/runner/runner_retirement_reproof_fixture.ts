@@ -152,7 +152,12 @@ export async function createTerminalRetirementFixture(): Promise<RetirementFixtu
   const sessionId = "session-retirement-reproof";
   const paths = runnerProcessPaths(stateDirectory, sessionId);
   const input = spawnInput(stateDirectory, sessionId);
-  const config: RunnerChildConfig = { schemaVersion: 1, ...input, paths };
+  const config: RunnerChildConfig = {
+    schemaVersion: 1,
+    registrationId: "registration-terminal-old",
+    ...input,
+    paths,
+  };
   await mkdir(paths.sessionDirectory, { recursive: true });
   await writeFile(paths.configPath, `${JSON.stringify(config)}\n`, { mode: 0o600 });
   const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);

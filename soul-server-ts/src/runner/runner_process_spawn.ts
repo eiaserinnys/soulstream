@@ -39,7 +39,10 @@ import {
   invalidateRunnerRegistrationFiles,
   retireTerminalRunnerRegistrationFilesLocked,
 } from "./runner_registration_mutation.js";
-import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
+import {
+  prepareRunnerWriterLockForSpawn,
+  withRunnerWriterBootstrap,
+} from "./runner_writer_lock.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 import {
   retireReleasedTerminalExecutionEvidence,
@@ -61,6 +64,7 @@ const RunnerProcessPathsSchema = z.object({
 }));
 
 const RunnerChildConfigFields = {
+  registrationId: z.string().min(1),
   sessionId: z.string().min(1),
   backend: AgentBackendSchema,
   agent: AgentProfileSchema,
@@ -99,7 +103,10 @@ export function parseRunnerChildConfig(value: unknown): RunnerChildConfig {
   return RunnerChildConfigSchema.parse(value);
 }
 
-export interface SpawnRunnerProcessInput extends Omit<RunnerChildConfig, "schemaVersion" | "paths"> {
+export interface SpawnRunnerProcessInput extends Omit<
+  RunnerChildConfig,
+  "schemaVersion" | "paths" | "registrationId"
+> {
   stateDirectory: string;
   childProcessEnv?: NodeJS.ProcessEnv;
   /** Host-only preparation; never serialized into the child config. */
@@ -130,7 +137,7 @@ interface SpawnDependencies {
     paths: RunnerProcessPaths,
     expected: Pick<
       RunnerRegistrationIdentity,
-      "sessionId" | "codeSha" | "releaseManifestId" | "runtimeEnvIdentity"
+      "registrationId" | "sessionId" | "codeSha" | "releaseManifestId" | "runtimeEnvIdentity"
     >,
     pid: number,
   ): Promise<RunnerRegistrationIdentity | null>;
@@ -178,8 +185,14 @@ export class RunnerProcessSpawner {
         "Orphaned runner writer lock reclaimed before replacement spawn",
       );
     }
+    const pendingIdentity = pendingRunnerRegistrationIdentity(
+      input.sessionId,
+      input.codeSha,
+      input,
+    );
     const config: RunnerChildConfig = {
       schemaVersion: 1,
+      registrationId: pendingIdentity.registrationId,
       sessionId: input.sessionId,
       backend: input.backend,
       agent: input.agent,
@@ -205,8 +218,11 @@ export class RunnerProcessSpawner {
       rolloutRoot: input.rolloutRoot,
     };
     const validatedConfig = parseRunnerChildConfig(config);
-    await writeFile(paths.configPath, JSON.stringify(validatedConfig), { mode: 0o600 });
-    await chmod(paths.configPath, 0o600);
+    await withRunnerWriterBootstrap(paths.lockPath, undefined, async () => {
+      await writeRunnerRegistrationIdentity(paths.sessionDirectory, pendingIdentity);
+      await writeFile(paths.configPath, JSON.stringify(validatedConfig), { mode: 0o600 });
+      await chmod(paths.configPath, 0o600);
+    });
 
     // Config + SQLite substrate must exist before materialization. GC only
     // treats it as a registration after canonical identity publication.
@@ -250,6 +266,7 @@ export class RunnerProcessSpawner {
       const childIdentity = await this.deps.waitForChildRegistrationIdentity?.(
         paths,
         {
+          registrationId: config.registrationId,
           sessionId: input.sessionId,
           codeSha: input.codeSha,
           ...(input.releaseManifestId
@@ -263,7 +280,8 @@ export class RunnerProcessSpawner {
       ) ?? null;
       if (childIdentity) {
         if (
-          childIdentity.pid !== child.pid
+          childIdentity.registrationId !== config.registrationId
+          || childIdentity.pid !== child.pid
           || !childIdentity.startIdentity
         ) {
           throw new Error(`detached runner published invalid identity: ${child.pid}`);
@@ -279,29 +297,16 @@ export class RunnerProcessSpawner {
           childAbsenceProven = true;
           throw new Error(`detached runner process exited before registration: ${child.pid}`);
         }
-        if (!observed.startIdentity) {
-          this.logger?.info(
-            { sessionId: input.sessionId, pid: child.pid },
-            "Live runner identity lookup was unavailable; child was left intact",
-          );
-          throw new RunnerMutationFailure(
-            "runner_registration_identity_proof_failed",
-            `detached runner process identity unavailable: ${child.pid}`,
-          );
-        }
-        childProcessProof = { pid: child.pid, startIdentity: observed.startIdentity };
-        registrationIdentity = {
-          ...pendingRunnerRegistrationIdentity(input.sessionId, input.codeSha, input),
-          pid: child.pid,
-          startIdentity: observed.startIdentity,
-        };
-        await writeRunnerRegistrationIdentity(paths.sessionDirectory, registrationIdentity);
+        throw new RunnerMutationFailure(
+          "runner_registration_identity_proof_failed",
+          `detached runner did not complete registration ${config.registrationId}: ${child.pid}`,
+        );
       }
       await this.deps.registerPid(paths.pidPath, child.pid);
     } catch (registrationError) {
       try {
         if (childProcessProof) {
-          await terminateExactRunner(childProcessProof, this.deps, true);
+          await terminateExactRunner(childProcessProof, this.deps);
         } else if (!childAbsenceProven) {
           if (registrationError instanceof RunnerMutationFailure) throw registrationError;
           throw new RunnerMutationFailure(
@@ -417,7 +422,6 @@ export class RunnerProcessSpawner {
         await terminateExactRunner(
           { pid: identity.pid, startIdentity: identity.startIdentity },
           this.deps,
-          false,
         );
       }
       await retireTerminalRunnerRegistrationFilesLocked(
