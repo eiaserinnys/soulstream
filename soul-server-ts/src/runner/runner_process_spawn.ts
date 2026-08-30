@@ -354,16 +354,21 @@ export class RunnerProcessSpawner {
     paths: RunnerProcessPaths,
     expected?: ExactRunnerProcess,
     releasedRegistration?: RunnerRegistration,
+    confirmCentralRelease?: () => Promise<boolean>,
   ): Promise<RunnerTerminationOutcome> {
     if (!expected) {
-      if (!releasedRegistration) {
+      if (!releasedRegistration || !confirmCentralRelease) {
         throw new RunnerMutationFailure(
           "runner_registration_identity_proof_failed",
           `released terminal evidence required before termination: ${paths.sessionDirectory}`,
         );
       }
       await retireReleasedTerminalExecutionEvidence(
-        { paths, pid: releasedRegistration.pid },
+        {
+          paths,
+          registrationId: releasedRegistration.registrationId ?? null,
+        },
+        confirmCentralRelease,
         this.deps,
       );
       return "registration_absent";

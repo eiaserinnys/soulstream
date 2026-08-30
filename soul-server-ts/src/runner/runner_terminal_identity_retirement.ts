@@ -26,7 +26,7 @@ export interface TerminalExecutionOwnershipRetirement
 
 export interface ReleasedTerminalExecutionEvidence {
   paths: RunnerProcessPaths;
-  pid: number | null;
+  registrationId: string | null;
 }
 
 export async function retireTerminalExecutionIdentity(
@@ -78,30 +78,42 @@ export async function retireTerminalExecutionIdentity(
 
 export async function retireReleasedTerminalExecutionEvidence(
   input: ReleasedTerminalExecutionEvidence,
+  confirmCentralRelease: () => Promise<boolean>,
   deps: RunnerProcessTerminationDependencies,
 ): Promise<void> {
   const { paths } = input;
   await withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
     const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
-    if (identity) {
+    if (
+      (identity === null) !== (input.registrationId === null)
+      || (identity && identity.registrationId !== input.registrationId)
+    ) {
       throw identityProofFailure(
-        `runner registration appeared before released terminal retirement: ${paths.sessionDirectory}`,
+        `runner registration changed before released terminal retirement: ${paths.sessionDirectory}`,
+      );
+    }
+    if (identity && (identity.pid !== null || identity.startIdentity !== null)) {
+      throw identityProofFailure(
+        `runner process identity appeared before released terminal retirement: ${paths.sessionDirectory}`,
       );
     }
     const pidEvidence = await readRunnerPid(paths.pidPath);
-    if (input.pid !== null && pidEvidence !== null && pidEvidence !== input.pid) {
-      throw identityProofFailure(
-        `runner pid evidence changed before released terminal retirement: ${paths.sessionDirectory}`,
-      );
-    }
-    const observedPid = pidEvidence ?? input.pid;
-    if (observedPid !== null && deps.isPidAlive(observedPid)) {
+    if (pidEvidence !== null && deps.isPidAlive(pidEvidence)) {
       throw identityProofFailure(
         `live runner has no registration before released terminal retirement: ${paths.sessionDirectory}`,
       );
     }
+    await requireCentralCommit(paths, confirmCentralRelease);
     await prepareRunnerWriterLockForSpawn(paths.lockPath);
-    await removeRunnerRegistrationEvidenceForReplacementLocked(paths);
+    if (input.registrationId === null) {
+      await removeRunnerRegistrationEvidenceForReplacementLocked(paths);
+      return;
+    }
+    await retireTerminalRunnerRegistrationFilesLocked(
+      paths,
+      input.registrationId,
+      new Date(deps.now()),
+    );
   });
 }
 
