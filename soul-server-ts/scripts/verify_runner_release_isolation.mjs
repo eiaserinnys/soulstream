@@ -44,8 +44,17 @@ try {
     lockPath: join(sessionDirectory, "runner.lock"),
     configPath: join(sessionDirectory, "runner-config.json"),
   };
-  await writeFile(paths.configPath, JSON.stringify({
+  const {
+    pendingRunnerRegistrationIdentity,
+    writeRunnerRegistrationIdentity,
+  } = await import(new URL("../dist/runner/runner_registration_identity.js", import.meta.url).href);
+  const { withRunnerWriterBootstrap } = await import(
+    new URL("../dist/runner/runner_writer_lock.js", import.meta.url).href
+  );
+  const pendingIdentity = pendingRunnerRegistrationIdentity(sessionId, release.release_id);
+  const config = {
     schemaVersion: 1,
+    registrationId: pendingIdentity.registrationId,
     sessionId,
     backend: "codex",
     agent: {
@@ -68,7 +77,11 @@ try {
     internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
     codexHome: null,
     rolloutRoot: null,
-  }));
+  };
+  await withRunnerWriterBootstrap(paths.lockPath, undefined, async () => {
+    await writeRunnerRegistrationIdentity(sessionDirectory, pendingIdentity);
+    await writeFile(paths.configPath, JSON.stringify(config));
+  });
   const initializeDatabase = await runProcess(process.execPath, [
     join(packageRoot, "dist/runner/runner_release_prewarm.js"),
     "--database",
