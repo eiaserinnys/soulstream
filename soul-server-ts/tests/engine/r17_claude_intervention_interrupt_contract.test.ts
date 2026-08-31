@@ -135,6 +135,63 @@ describe("R17 Claude intervention interrupt contract", () => {
     },
   );
 
+  it("accepts the next execute immediately when intervention resolves", async () => {
+    const harness = makeHarness();
+    const registry = new ClaudeSessionClientRegistry(
+      () => new ClaudeSdkClient(
+        { query: harness.queryFn, detachedEventSink: harness.detached },
+        silentLogger,
+      ),
+      { idleTtlMs: 300_000, maxEntries: 4 },
+    );
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/r17-claude-intervention",
+        persistentSessionRegistry: registry,
+        processEnv: {},
+      },
+      silentLogger,
+    );
+    let oldTurn: Promise<unknown> | undefined;
+    let nextTurn: Promise<unknown> | undefined;
+
+    try {
+      oldTurn = collectSse(engine.execute({
+        agentSessionId: "agent-session",
+        prompt: "perform a multi-tool task",
+      }));
+      const oldInput = await harness.nextInput();
+      harness.push(oldInput as SDKMessage);
+      harness.push(sdkInit("sdk-session"));
+
+      const intervention = engine.intervene({ prompt: "stop now" });
+      await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
+      harness.push(sdkInterruptedResult("sdk-session", oldInput.uuid));
+      await expect(intervention).resolves.toEqual(expect.objectContaining({
+        reason: "next_turn_required",
+      }));
+
+      nextTurn = collectSse(engine.execute({
+        agentSessionId: "agent-session",
+        prompt: "answer immediately",
+      }));
+      const nextInput = await harness.nextInput();
+      harness.push(nextInput as SDKMessage);
+      harness.push(sdkResult("sdk-session", nextInput.uuid, "accepted immediately"));
+
+      await expect(nextTurn).resolves.toContainEqual(expect.objectContaining({
+        type: "complete",
+        result: "accepted immediately",
+      }));
+      await expect(oldTurn).resolves.toEqual(expect.any(Array));
+      expect(harness.captured).toHaveLength(1);
+    } finally {
+      await nextTurn?.catch(() => undefined);
+      await oldTurn?.catch(() => undefined);
+      await registry.shutdown();
+    }
+  });
+
   it("terminalizes the Query when the native interrupt request fails", async () => {
     const harness = makeHarness();
     harness.interrupt.mockRejectedValueOnce(new Error("interrupt control failed"));
