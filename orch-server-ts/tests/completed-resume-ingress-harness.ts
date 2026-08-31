@@ -270,7 +270,7 @@ export async function observeCompletedResumeIngress(
     listTasks: () => [...tasks.values()],
   };
   const taskExecutor = {
-    startExecution: vi.fn((task: RuntimeTask, _agent: unknown, activation?: {
+    startNewExecution: vi.fn((task: RuntimeTask, _agent: unknown, activation?: {
       resolve(): void;
     }) => {
       executionStarts += 1;

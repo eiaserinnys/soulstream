@@ -364,6 +364,41 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(runningInterventionTransition.deliver).toHaveBeenCalledOnce();
   });
 
+  it("redelivers proven-unseen human content instead of holding its prior attempt", async () => {
+    const task = makeTask({ status: "running" });
+    const deliveryId = "61616161-6161-4161-8161-616161616161";
+    const recovered = admitted(deliveryId, "human_live_steer");
+    if (recovered.kind !== "admitted") throw new Error("admission fixture mismatch");
+    recovered.row.attempt_count = 1;
+    const gate = {
+      admit: vi.fn().mockResolvedValue(recovered),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+      recordReservationRetry: vi.fn(),
+    } satisfies Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+        | "recordReservationRetry"
+    >;
+    const { route, runningInterventionTransition } = makeSubject([task], gate);
+
+    await route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "the ledger remains canonical",
+      user: "alice",
+      deliveryId,
+      deliveryIntent: "human_live_steer",
+      completionId: `message:${deliveryId}`,
+      relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
+      deliveryLeaseOwner: "test-route",
+      targetContentReceiptAbsent: true,
+    }, vi.fn());
+
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledOnce();
+    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
+  });
+
   it("auto-resumes a recovered user delivery without publishing its user event twice", async () => {
     const task = makeTask({ status: "completed" });
     const deliveryId = "65656565-6565-4565-8565-656565656565";

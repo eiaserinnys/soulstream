@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 
 import type { SessionDeliveryRepository } from
   "../db/repositories/session_delivery_repository.js";
+import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import type { SessionDeliveryRecoveryRepository } from
   "../db/repositories/session_delivery_recovery_repository.js";
 import type {
@@ -22,6 +23,8 @@ export interface QueuedDeliveryTranscriptRecoveryDeps {
     ClaudeDeliveryTranscriptReceiptReader,
     "inspect"
   >;
+  /** Re-enters the ordinary durable intervention route with the same row. */
+  redeliverContent?(row: SessionDeliveryRow): Promise<void>;
   logger: Pick<Logger, "warn">;
 }
 
@@ -37,8 +40,9 @@ export interface QueuedDeliveryTranscriptRecoveryPass {
  * emit another Result when that UUID is re-sent after resume. A completed
  * transcript therefore settles the ledger directly. An accepted input that is
  * still pending returns to reconnect admission. An absent stable identity is
- * terminally uncertain: replaying the same UUID cannot produce a new Result,
- * so leaving it pending only revives the target on every node restart.
+ * conclusive proof that the target has not seen the content, so a current node
+ * re-enters the ordinary durable intervention route with the original row.
+ * Older nodes without that capability retain the R18 dead-letter fallback.
  */
 /**
  * One claim covers the whole batch, so the batch — not just one row — has to
@@ -73,6 +77,7 @@ export class QueuedDeliveryTranscriptRecovery {
         this.workerId,
         limit,
         this.leaseMs,
+        this.deps.redeliverContent !== undefined,
       );
     return {
       claimed: rows.length,
@@ -131,6 +136,11 @@ export class QueuedDeliveryTranscriptRecovery {
           continue;
         }
         if (receipt.kind === "absent") {
+          if (this.deps.redeliverContent) {
+            await this.deps.redeliverContent(row);
+            settled += 1;
+            continue;
+          }
           const reason = "queued_transcript_input_absent";
           const uncertain = await this.deps.deliveryRepository.markUncertain(
             row.delivery_id,

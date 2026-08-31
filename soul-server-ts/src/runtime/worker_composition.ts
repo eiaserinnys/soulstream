@@ -40,6 +40,7 @@ import { ScheduleHostClient } from "../schedule/schedule_host_client.js";
 import { buildServer } from "../server.js";
 import { sendMessageToSession } from "../task/session_message_sender.js";
 import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js";
+import { redeliverStoredDeliveryContent } from "../task/delivery_row_intervention.js";
 import { TransientEventLogAggregator } from
   "../task/transient_event_log_aggregator.js";
 import { TaskManager } from "../task/task_manager.js";
@@ -220,6 +221,9 @@ export async function composeWorkerRuntime(
         maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
         turnInactivityTimeoutMs: env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
         logger,
+        redeliverContent: (row) => redeliverStoredDeliveryContent(
+          row, taskManager, taskRuntime.onResume,
+        ),
         detachedEventSink: async (sessionId, event) => {
           const collectDetached = await publishDetachedClaudeEvent(sessionId, event);
           await collectDetached();
@@ -303,6 +307,7 @@ export async function composeWorkerRuntime(
     transientEventLogAggregator,
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
   });
+  await claudeRuntime.startupRecovery?.start();
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({
     env,
     ownershipBackoff: taskRuntime.executionOwnershipBackoff,

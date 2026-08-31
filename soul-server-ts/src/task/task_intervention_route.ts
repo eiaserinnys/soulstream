@@ -67,6 +67,8 @@ export interface AddInterventionParams {
   /** Exact JSONB/hash read back from a durable delivery row. Internal; never wire-forwarded. */
   storedDeliveryPayload?: Record<string, unknown>;
   storedDeliveryPayloadHash?: string;
+  /** Durable observer proved the prior attempt never exposed content to the target. */
+  targetContentReceiptAbsent?: boolean;
   /**
    * Scheduler dispatch must not rely on the in-memory fallback queue. When false,
    * a running task that cannot be intervened returns an explicit deferred result so
@@ -205,7 +207,8 @@ export class TaskInterventionRoute {
       const isRunning = taskRoute === "running";
       const heldHumanRetry = admission.kind === "admitted"
         && admission.row.intent === "human_live_steer"
-        && hasPriorDispatchAttempt(admission.row);
+        && hasPriorDispatchAttempt(admission.row)
+        && !request.targetContentReceiptAbsent;
       let result: AddInterventionResult;
       if (isRunning) {
         result = heldHumanRetry

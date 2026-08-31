@@ -223,6 +223,22 @@ describe("worker composition boundary", () => {
     expect(recoveryIndex).toBeGreaterThan(executorIndex);
   });
 
+  it("starts queued content recovery only after the intervention route is bound", () => {
+    const workerComposition = source("runtime/worker_composition.ts");
+    const claudeComposition = source("runtime/claude_runtime_composition.ts");
+    const taskRuntimeIndex = workerComposition.indexOf(
+      "taskRuntime = composeTaskRuntime({",
+    );
+    const recoveryIndex = workerComposition.indexOf(
+      "await claudeRuntime.startupRecovery?.start();",
+    );
+
+    expect(taskRuntimeIndex).toBeGreaterThan(-1);
+    expect(recoveryIndex).toBeGreaterThan(taskRuntimeIndex);
+    expect(workerComposition).toContain("redeliverStoredDeliveryContent");
+    expect(claudeComposition).not.toContain("await startupRecovery.start();");
+  });
+
   it("composes the worker without PostgreSQL bootstrap or maintenance", () => {
     const workerComposition = source("runtime/worker_composition.ts");
     expect(workerComposition).toContain("const db = new SessionDB();");
