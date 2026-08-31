@@ -603,6 +603,48 @@ describe("ClaudeSdkClient persistent runtime", () => {
     }
   });
 
+  it("starts a successor on a fresh Query when the interrupted Query fails", async () => {
+    let releaseFatalDiagnostic!: () => void;
+    const fatalDiagnostic = new Promise<void>((resolve) => {
+      releaseFatalDiagnostic = resolve;
+    });
+    const harness = makeHarness();
+    const detached = vi.fn(async (event: { type: string; errorCode?: string }) => {
+      if (event.type === "error" && event.errorCode === "claude_persistent_query_failed") {
+        await fatalDiagnostic;
+      }
+    });
+    const client = new ClaudeSdkClient(
+      { query: harness.queryFn, detachedEventSink: detached as never },
+      silentLogger,
+    );
+
+    const interrupted = collect(client.runPersistent(
+      runOptions("interrupted owner"),
+      abortSignal(),
+    ));
+    await harness.nextInput();
+    const interruption = client.interruptActiveTurnForSteer();
+    await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledOnce());
+    harness.fail(new Error("query process exited during interrupt"));
+    await expect(interrupted).rejects.toThrow("query process exited during interrupt");
+
+    const successor = collect(client.runPersistent(
+      runOptions("accepted successor"),
+      abortSignal(),
+    ));
+    await vi.waitFor(() => expect(harness.captured).toHaveLength(2));
+    const successorInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", successorInput.uuid, "successor completed"));
+
+    await expect(successor).resolves.toContainEqual(
+      expect.objectContaining({ type: "complete", result: "successor completed" }),
+    );
+    releaseFatalDiagnostic();
+    await expect(interruption).resolves.toBe(false);
+    await client.close();
+  });
+
   it("clears the foreground timeout when a mapped SDK Result is fatal", async () => {
     vi.useFakeTimers();
     try {
