@@ -37,12 +37,35 @@ export type ActiveForeground = {
   uuid: string;
   /** Owner captured immediately before a native intervention interrupts it. */
   interruptedOwnerUuid?: string;
+  interventionInterrupt?: {
+    promise: Promise<boolean>;
+    resolve(observed: boolean): void;
+  };
   output: EventQueue<ClaudeClientEvent>;
   interruptResultTimer: ReturnType<typeof setTimeout> | null;
   timedOut: boolean;
   origin: { kind: string; id: string };
   rateLimitTerminationState: RateLimitTerminationState;
 };
+
+export function isPostInterruptContinuation(event: ClaudeClientEvent): boolean {
+  return event.type === "progress"
+    || event.type === "text"
+    || event.type === "thinking"
+    || event.type === "tool_start"
+    || event.type === "input_request"
+    || event.type === "subagent_start";
+}
+
+export function settleInterventionInterrupt(
+  active: ActiveForeground | null,
+  observed: boolean,
+): void {
+  const observation = active?.interventionInterrupt;
+  if (!active || !observation) return;
+  active.interventionInterrupt = undefined;
+  observation.resolve(observed);
+}
 
 export function describeResultProvenance(
   message: Record<string, unknown>,

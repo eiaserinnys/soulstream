@@ -390,9 +390,9 @@ export class ClaudeSdkClient implements ClaudeClient {
 
   async interruptActiveTurnForSteer(): Promise<boolean> {
     if (this.persistentSession) {
-      const interrupted = await this.persistentSession.interruptForeground();
-      if (interrupted) this.toolPermissionController.abortPendingInputRequests();
-      return interrupted;
+      const observation = this.persistentSession.interruptForeground();
+      this.toolPermissionController.abortPendingInputRequests();
+      return await observation;
     }
     const query = this.activeQuery;
     if (!query) return false;

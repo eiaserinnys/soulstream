@@ -321,10 +321,12 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
       client.runPersistent(runOptions("count to sixty"), abortSignal()),
     );
     await harness.nextInput();
-    expect(await client.interruptActiveTurnForSteer()).toBe(true);
+    const interruption = client.interruptActiveTurnForSteer();
+    await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
     // SDK 0.3.218 returns the interrupted turn's terminal Result with the
     // correlation stripped.
     harness.push(sdkInterruptedResult("sdk-session", undefined));
+    await expect(interruption).resolves.toBe(true);
 
     const interruptedEvents = await interrupted;
     expect(interruptedEvents).toContainEqual(

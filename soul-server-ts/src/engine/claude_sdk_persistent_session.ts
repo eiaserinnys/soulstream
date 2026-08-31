@@ -26,8 +26,10 @@ import {
   type ClaudeSdkPersistentSessionConfig,
   describeResultProvenance,
   isExpectedInterruptDiagnostic,
+  isPostInterruptContinuation,
   isTurnStartingUserInput,
   provableTurnResultOwner,
+  settleInterventionInterrupt,
   turnInactivityError,
 } from "./claude_sdk_persistent_session_support.js";
 import { startPersistentForegroundTurn } from "./claude_sdk_persistent_turn_handoff.js";
@@ -102,9 +104,26 @@ export class ClaudeSdkPersistentSession {
   }
 
   async interruptForeground(): Promise<boolean> {
-    if (this.runtime.snapshot().foregroundPhase !== "generating") return false;
-    await this.runtime.interruptForeground();
-    return true;
+    const active = this.activeForeground;
+    if (!active || this.runtime.snapshot().foregroundPhase !== "generating") return false;
+    if (active.interventionInterrupt) return await active.interventionInterrupt.promise;
+
+    let resolveObservation!: (observed: boolean) => void;
+    const promise = new Promise<boolean>((resolve) => {
+      resolveObservation = resolve;
+    });
+    active.interventionInterrupt = {
+      promise,
+      resolve: resolveObservation,
+    };
+    this.clearForegroundTimers(active);
+    try {
+      await this.runtime.interruptForeground();
+    } catch (error) {
+      await this.close("fatal");
+      throw error;
+    }
+    return await promise;
   }
 
   phase(): ClaudeForegroundPhase {
@@ -131,9 +150,11 @@ export class ClaudeSdkPersistentSession {
       logger: this.logger,
     });
     this.runtime.close(reason);
-    this.clearForegroundTimers(this.activeForeground);
-    this.activeForeground?.output.close();
+    const active = this.activeForeground;
+    this.clearForegroundTimers(active);
+    active?.output.close();
     this.activeForeground = null;
+    settleInterventionInterrupt(active, reason === "explicit_cancel");
     this.hookOutput.close();
   }
 
@@ -159,6 +180,7 @@ export class ClaudeSdkPersistentSession {
       const active = this.activeForeground;
       active?.output.fail(err);
       this.clearForegroundTimers(active);
+      settleInterventionInterrupt(active, false);
       this.activeForeground = null;
       await this.emitDetached({
         type: "error",
@@ -200,6 +222,7 @@ export class ClaudeSdkPersistentSession {
         const active = this.activeForeground;
         active?.output.close();
         this.clearForegroundTimers(active);
+        settleInterventionInterrupt(active, false);
         this.activeForeground = null;
         await this.close("fatal");
       }
@@ -321,9 +344,24 @@ export class ClaudeSdkPersistentSession {
     }
     active?.output.close();
     if (this.activeForeground === active) this.activeForeground = null;
+    settleInterventionInterrupt(active, true);
   }
 
   private async routeEvent(event: ClaudeClientEvent): Promise<void> {
+    if (this.runtime.snapshot().queryLifecycle !== "open") return;
+    const interruptingActive = this.activeForeground;
+    if (
+      interruptingActive?.interventionInterrupt
+      && this.runtime.snapshot().foregroundPhase === "interrupting"
+      && isPostInterruptContinuation(event)
+    ) {
+      this.logger.warn(
+        { uuid: interruptingActive.uuid, eventType: event.type },
+        "Claude continued foreground work after interrupt receipt; closing the Query",
+      );
+      await this.close("explicit_cancel");
+      return;
+    }
     const runtimeEventAccepted =
       !this.runtimeEventSink || await this.runtimeEventSink(event) !== false;
     if (runtimeEventAccepted || isTerminalPersistentBackgroundEvent(event)) {
@@ -352,6 +390,7 @@ export class ClaudeSdkPersistentSession {
       active.output.push(rateLimit.makeStopFailureError());
       active.output.close();
       if (this.activeForeground === active) this.activeForeground = null;
+      settleInterventionInterrupt(active, true);
       return;
     }
     const phase = this.runtime.snapshot().foregroundPhase;
@@ -417,6 +456,7 @@ export class ClaudeSdkPersistentSession {
       active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
       active.output.close();
       this.clearForegroundTimers(active);
+      settleInterventionInterrupt(active, false);
       this.activeForeground = null;
       await this.close("fatal");
     }
@@ -428,6 +468,7 @@ export class ClaudeSdkPersistentSession {
     active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
     active.output.close();
     this.clearForegroundTimers(active);
+    settleInterventionInterrupt(active, false);
     this.activeForeground = null;
     await this.close("fatal");
   }

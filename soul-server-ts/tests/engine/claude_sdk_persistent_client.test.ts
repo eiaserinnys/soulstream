@@ -810,9 +810,10 @@ describe("ClaudeSdkClient persistent runtime", () => {
     const input = await harness.nextInput();
     harness.push(sdkInit("sdk-session"));
 
-    await expect(client.interruptActiveTurnForSteer()).resolves.toBe(true);
-    expect(harness.interrupt).toHaveBeenCalledTimes(1);
+    const interruption = client.interruptActiveTurnForSteer();
+    await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
     harness.push(sdkInterruptedResult("sdk-session", input.uuid));
+    await expect(interruption).resolves.toBe(true);
 
     const events = await turn;
     expect(events).toContainEqual(
