@@ -390,6 +390,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     return this.activeExecuteCommandId !== undefined;
   }
 
+  activeExecutionCommandId(): string | undefined {
+    return this.activeExecuteCommandId;
+  }
+
   dispatcherId(): string {
     return this.instanceId;
   }

@@ -537,21 +537,32 @@ export class RunnerRecoveryCoordinator {
     // thirteen skips at fifteen seconds each before the runner process happens
     // to exit -- and when it never exits, forever (260822).
     //
-    // Detaching here cannot starve a turn only when the attached dispatcher has
-    // no admitted execution. Its live ownership outranks the older terminal
-    // lifecycle on disk; the existing runner/execution guard below joins that
-    // successor instead of releasing the outbox underneath it.
+    // A host-side execute can outlive its own durable terminal fact when the
+    // resumed Claude Query waits for input after restart. Exact command
+    // identity distinguishes that stranded execute from a successor admitted
+    // by the same runner: the terminal command is safe to detach, while a
+    // different active command remains protected by the guard below.
+    const attachedExecutionCommandId =
+      task.runner?.dispatcher.activeExecutionCommandId?.();
+    const terminalExecutionOwnsAttachedCommand =
+      typeof registration.lifecycle?.execution_command_id === "string"
+      && attachedExecutionCommandId === registration.lifecycle.execution_command_id;
     if (
       mode === "offline"
       && task.runner
       && registrationOwnsAttachedRunner(task, registration)
-      && task.runner.dispatcher.hasActiveExecution() !== true
+      && (
+        task.runner.dispatcher.hasActiveExecution() !== true
+        || terminalExecutionOwnsAttachedCommand
+      )
     ) {
       this.options.logger.warn(
         {
           sessionId: registration.config.sessionId,
           runnerDispatcher: task.runner.dispatcher.dispatcherId?.(),
           runnerDispatcherClosed: task.runner.dispatcher.isClosed?.(),
+          attachedExecutionCommandId,
+          terminalExecutionCommandId: registration.lifecycle?.execution_command_id,
         },
         "detaching a finished runner so its own replay can run",
       );
