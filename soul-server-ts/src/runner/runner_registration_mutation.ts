@@ -138,10 +138,17 @@ async function mutateEvidenceFiles(
   cleanupMode: "strict" | "replacement",
   commit: () => Promise<void>,
 ): Promise<void> {
-  const snapshots = await Promise.all([
-    snapshotEvidence(paths.pidPath, cleanupMode),
-    snapshotEvidence(paths.socketPath, cleanupMode),
-  ]);
+  // A Windows named pipe is not a filesystem entry: lstat can succeed while
+  // the pipe is held open by an (orphaned) runner, yet rename into quarantine
+  // always fails in the pipe namespace. There is nothing to isolate — the OS
+  // reclaims the pipe when its owning process exits — so pipe transports are
+  // excluded from the filesystem evidence set entirely.
+  const evidencePaths = paths.socketKind === "named_pipe"
+    ? [paths.pidPath]
+    : [paths.pidPath, paths.socketPath];
+  const snapshots = await Promise.all(
+    evidencePaths.map((path) => snapshotEvidence(path, cleanupMode)),
+  );
   const quarantined: QuarantinedEvidence[] = [];
   try {
     for (const snapshot of snapshots) {
