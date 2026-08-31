@@ -1213,51 +1213,105 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     },
   );
 
-  it("consumes only queued or transcript-proven delivered input", async () => {
-    for (const state of ["pending", "claimed", "dispatching"] as const) {
-      const deliveryId = `delivery-consume-rejected-${state}`;
-      await register(deliveryId, `relation-consume-rejected-${state}`);
+  it("consumes every active delivery once a turn supplies exact observation", async () => {
+    for (const state of [
+      "pending",
+      "claimed",
+      "dispatching",
+      "queued",
+      "delivered",
+    ] as const) {
+      const deliveryId = `delivery-consume-observed-${state}`;
+      const leaseOwner = `worker-${state}`;
+      await register(deliveryId, `relation-consume-observed-${state}`);
       if (state !== "pending") {
-        await repository.claimForTarget(deliveryId, "caller-old", `worker-${state}`);
+        await repository.claimForTarget(
+          deliveryId,
+          "caller-old",
+          leaseOwner,
+        );
       }
-      if (state === "dispatching") {
-        await repository.beginDispatch(deliveryId, `worker-${state}`);
+      if (state === "dispatching" || state === "queued" || state === "delivered") {
+        await repository.beginDispatch(deliveryId, leaseOwner);
       }
+      if (state === "queued") {
+        await repository.markQueued(deliveryId, leaseOwner);
+      }
+      if (state === "delivered") {
+        await repository.markDelivered(deliveryId, "event:transcript-proof");
+      }
+
       await expect(repository.markConsumed(
         deliveryId,
-        `event:${state}`,
-      )).resolves.toBeNull();
-      await expect(repository.get(deliveryId)).resolves.toMatchObject({
-        state,
-        aggregate_state: "pending",
-        consumed_at: null,
+        `event:observed-${state}`,
+      )).resolves.toMatchObject({
+        state: "consumed",
+        aggregate_state: "consumed",
+        caller_turn_id: `event:observed-${state}`,
       });
     }
+  });
 
-    const queuedId = "delivery-consume-queued-success";
-    await register(queuedId, "relation-consume-queued-success");
-    await repository.claimForTarget(queuedId, "caller-old", "worker-queued");
-    await repository.beginDispatch(queuedId, "worker-queued");
-    await repository.markQueued(queuedId, "worker-queued");
-    await expect(repository.markConsumed(queuedId, "event:queued-success"))
-      .resolves.toMatchObject({
-        state: "consumed",
-        aggregate_state: "consumed",
-        target_receipt_id: "event:queued-success",
-      });
+  it("terminalizes turn-observed input after its dispatch lease expires", async () => {
+    const deliveryId = "delivery-consume-after-lease-expiry";
+    await register(
+      deliveryId,
+      "relation-consume-after-lease-expiry",
+      "runtime_followup",
+    );
+    await repository.claimForTarget(
+      deliveryId,
+      "caller-old",
+      "expired-owner",
+      60_000,
+    );
+    await repository.beginDispatch(deliveryId, "expired-owner");
+    await harness.sql`
+      UPDATE session_deliveries
+      SET lease_expires_at = NOW() - INTERVAL '1 second'
+      WHERE delivery_id = ${deliveryId}
+    `;
 
-    const deliveredId = "delivery-consume-transcript-success";
-    await register(deliveredId, "relation-consume-transcript-success");
-    await repository.claimForTarget(deliveredId, "caller-old", "worker-transcript");
-    await repository.beginDispatch(deliveredId, "worker-transcript");
-    await repository.markDelivered(deliveredId, "event:transcript-proof");
-    await expect(repository.markConsumed(deliveredId, "event:resume-success"))
-      .resolves.toMatchObject({
-        state: "consumed",
-        aggregate_state: "consumed",
-        target_receipt_id: "event:transcript-proof",
-        caller_turn_id: "event:resume-success",
-      });
+    await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(1);
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "pending",
+      aggregate_state: "pending",
+      last_error: "delivery lease expired",
+    });
+    await harness.sql`
+      UPDATE session_deliveries
+      SET next_attempt_at = NOW() - INTERVAL '1 second'
+      WHERE delivery_id = ${deliveryId}
+    `;
+
+    const gate = new TaskDeliveryLedgerGate(true, repository);
+    await expect(gate.recordConsumed({
+      text: "turn already observed this follow-up",
+      user: "system",
+      source: "claude_runtime_task_followup",
+      deliveryId,
+      deliveryIntent: "runtime_followup",
+    }, {
+      agentSessionId: "caller-old",
+      prompt: "run",
+      status: "running",
+      createdAt: new Date(),
+      lastEventId: 502,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    }, "event:observed-after-expiry")).resolves.toBeUndefined();
+
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "consumed",
+      aggregate_state: "consumed",
+      caller_turn_id: "event:observed-after-expiry",
+    });
+    const replay = await repository.recovery.claimRecoverableCompletionDeliveries(
+      "recovery-after-observation",
+      10,
+      15_000,
+    );
+    expect(replay.map((row) => row.delivery_id)).not.toContain(deliveryId);
   });
 
   it("covers every intent × attempt outcome × aggregate state × receipt decision", async () => {
