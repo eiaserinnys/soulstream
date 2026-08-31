@@ -227,13 +227,16 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     return stream;
   }
 
-  recoverFrames(commandId?: string): AsyncIterable<RunnerEventFrame> {
+  recoverFrames(
+    commandId?: string,
+    onPendingFramesReplayed?: () => void,
+  ): AsyncIterable<RunnerEventFrame> {
     const stream = new ProcessFrameStream(async (frameSeq) => {
       await this.acknowledgeConsumedFrame(frameSeq);
     });
     this.activeExecuteCommandId = commandId;
     this.activeStream = stream;
-    void this.startRecovery(commandId, stream);
+    void this.startRecovery(commandId, stream, onPendingFramesReplayed);
     return stream;
   }
 
@@ -724,6 +727,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private async startRecovery(
     requestedCommandId: string | undefined,
     stream: ProcessFrameStream,
+    onPendingFramesReplayed?: () => void,
   ): Promise<void> {
     let commandId = requestedCommandId;
     try {
@@ -740,6 +744,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         throw new Error(`runner recovery command unavailable: ${commandId}`);
       }
       await this.replayPendingFrames();
+      onPendingFramesReplayed?.();
       if (!lifecycle) return;
       if (lifecycle.execution_state === "running") return;
       if (lifecycle.execution_state === "completed" || lifecycle.execution_state === "closed") {

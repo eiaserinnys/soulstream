@@ -634,22 +634,15 @@ export class TaskExecutor {
     mode: "adopt" | "replay" | "offline" = "adopt",
     manifestId?: string,
     runtimeEnvIdentity?: string,
+    onPendingFramesReplayed?: () => void,
   ): Promise<void> {
-    if (mode === "adopt" && manifestId && this.supportsExecutionOwnership()) {
-      const runnerRuntimeEnvIdentity = runtimeEnvIdentity ?? `legacy:${manifestId}`;
-      return this.recoverOwnedRunnerExecutionLocked(
-        task,
-        agent,
-        runner,
-        manifestId,
-        runnerRuntimeEnvIdentity,
-        commandId,
-      );
-    }
     if (task.runner) {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
     }
-    const frames = runner.dispatcher.recoverFrames?.(commandId);
+    const frames = runner.dispatcher.recoverFrames?.(
+      commandId,
+      onPendingFramesReplayed,
+    );
     if (!frames) throw new Error("runner dispatcher does not support execution recovery");
     this.attachRunner(task, runner, mode === "offline");
     if (mode === "offline") task.status = "running";
@@ -685,111 +678,12 @@ export class TaskExecutor {
     return promise;
   }
 
-  private recoverOwnedRunnerExecutionLocked(
-    task: Task,
-    agent: AgentProfile,
-    runner: TaskRunnerRuntime,
-    manifestId: string,
-    runtimeEnvIdentity: string,
-    commandId?: string,
-  ): Promise<void> {
-    const deferredUntil = this.executionOwnershipBackoff?.deferUntil(
-      task.agentSessionId,
-    );
-    if (deferredUntil) {
-      throw new ExecutionOwnershipConflictError(
-        task.agentSessionId,
-        deferredUntil,
-        "active",
-      );
-    }
-    if (task.runner) {
-      throw new Error(`Task ${task.agentSessionId} already has a runner`);
-    }
-    task.executionOwnership = undefined;
-    this.attachRunner(task, runner);
-    let proof: import("./execution_ownership.js").ExecutionIdentityProof | undefined;
-    const promise = (async () => {
-      try {
-        const session = await this.db.getSession(task.agentSessionId);
-        const ownershipGeneration = Number(session?.execution_generation ?? 0);
-        const ownerToken = session?.execution_command_id;
-        if (!session
-          || !Number.isSafeInteger(ownershipGeneration)
-          || ownershipGeneration <= 0
-          || session.execution_manifest_id !== manifestId
-          || session.execution_runtime_env_identity !== runtimeEnvIdentity
-          || !session.execution_registration_id
-          || !session.execution_pid
-          || !session.execution_start_identity
-          || !ownerToken) {
-          throw new Error(
-            `Sessions-row execution owner unavailable for recovery: ${task.agentSessionId}`,
-          );
-        }
-        proof = await runner.dispatcher.prepareExecutionIdentity?.(ownerToken);
-        if (!proof || !isCompleteExecutionIdentity(proof)) {
-          throw new Error(`Adopted runner identity proof unavailable: ${task.agentSessionId}`);
-        }
-        if (proof.registrationId !== session.execution_registration_id
-          || proof.pid !== session.execution_pid
-          || proof.startIdentity !== session.execution_start_identity
-          || proof.executionCommandId !== ownerToken) {
-          throw new Error(`Recovered runner identity mismatch: ${task.agentSessionId}`);
-        }
-        const acquisition = await this.executionOwnershipCoordinator.acquire(
-          task.agentSessionId,
-          {
-            ownerKind: "adopted_runner",
-            manifestId,
-            runtimeEnvIdentity,
-            ...proof,
-            leaseExpiresAt: new Date(Date.now() + this.executionOwnershipLeaseMs),
-            reviewState: task.reviewState ?? "not_required",
-          },
-        );
-        applyCanonicalSessionProjection(task, acquisition.canonicalSession);
-        if (!acquisition.applied
-          || acquisition.canonicalExecutionOwnership?.ownershipGeneration
-            !== ownershipGeneration) {
-          throw this.executionOwnershipConflict(task.agentSessionId, acquisition);
-        }
-        this.executionOwnershipBackoff?.clear(task.agentSessionId);
-        task.executionOwnership = {
-          ownerKind: "adopted_runner",
-          manifestId,
-          runtimeEnvIdentity,
-          ownershipGeneration,
-          ...proof,
-        };
-        const frames = runner.dispatcher.recoverFrames?.(commandId);
-        if (!frames) throw new Error("runner dispatcher does not support execution recovery");
-        await this.consumeRecoveredRunnerFrames(task, agent, runner, frames, true);
-      } catch (error) {
-        if (task.executionOwnership === undefined) {
-          try {
-            if (proof && runner.dispatcher.rollbackExecutionIdentity) {
-              await runner.dispatcher.rollbackExecutionIdentity(proof);
-            } else {
-              await runner.dispatcher.close();
-            }
-          } finally {
-            releaseTaskRunner(task, runner);
-          }
-        }
-        throw error;
-      }
-    })();
-    this.holdExecutionSlot(task, promise);
-    return promise;
-  }
-
   recoverRegisteredRunner(
     task: Task,
     registration: RunnerRegistration,
     commandId: string | undefined,
     mode: "adopt" | "replay" | "offline",
-    onAttemptCreated?: (runner: TaskRunnerRuntime) => void,
+    onAttemptCreated?: (runner: TaskRunnerRuntime) => (() => void) | undefined,
   ): Promise<void> {
     const config = registration.config;
     const runner = this.runnerProcessFactory?.recover?.(
@@ -799,7 +693,7 @@ export class TaskExecutor {
       mode,
     );
     if (!runner) throw new Error("runner process recovery factory unavailable");
-    onAttemptCreated?.(runner);
+    const onPendingFramesReplayed = onAttemptCreated?.(runner);
     return this.recoverRunnerExecutionLocked(
       task,
       config.agent,
@@ -808,6 +702,7 @@ export class TaskExecutor {
       mode,
       config.releaseManifestId ?? config.codeSha,
       config.runtimeEnvIdentity ?? `legacy:${config.codeSha}`,
+      onPendingFramesReplayed,
     ).catch(async (error: unknown) => {
       await this.releaseUnadoptedRunner(task, runner, config.sessionId);
       throw error;

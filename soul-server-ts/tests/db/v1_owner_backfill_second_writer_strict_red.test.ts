@@ -8,7 +8,6 @@ import {
 import {
   BSecondWriterProductHarness,
   LIVE_IDENTITY,
-  makeLiveRegistration,
   makeOwnerNullTask,
   secondWriterViolations,
 } from "./v1_owner_backfill_second_writer_strict_red_harness.js";
@@ -43,55 +42,6 @@ describePostgres("V1 owner-null legacy second-writer strict RED", () => {
       executionCommandId: LIVE_IDENTITY.executionCommandId,
       legacyActive: 0,
     })).toEqual([]);
-  });
-
-  it("keeps the first live scan ownership-durable-free and undecided", async () => {
-    const sessionId = "b-red-first-scan";
-    await product.resetRunningSession(sessionId);
-    const task = makeOwnerNullTask(sessionId);
-    const reconciler = product.createLiveReconciler(
-      task,
-      makeLiveRegistration(sessionId),
-      product.createRecovery(),
-    );
-
-    await expect(reconciler.reconcile()).resolves.toBe("wait");
-    expect(await product.snapshot(sessionId)).toMatchObject({
-      status: "running",
-      sessionGeneration: 0,
-      manifestId: null,
-      legacyActive: 0,
-    });
-  });
-
-  it("B_SECOND_WRITER_RED rejects the legacy active owner created by the live path", async () => {
-    const sessionId = "b-red-live";
-    await product.resetRunningSession(sessionId);
-    const task = makeOwnerNullTask(sessionId);
-    const reconciler = product.createLiveReconciler(
-      task,
-      makeLiveRegistration(sessionId),
-      product.createRecovery(),
-    );
-
-    await reconciler.reconcile();
-    reconciler.advance();
-    await expect(reconciler.reconcile()).resolves.toBe("proceed");
-
-    const snapshot = await product.snapshot(sessionId);
-    const violations = secondWriterViolations(snapshot);
-    if (violations.length > 0) throw new Error(violations.join("\n"));
-    expect(snapshot).toMatchObject({
-      status: "running",
-      sessionGeneration: 1,
-      manifestId: LIVE_IDENTITY.manifestId,
-      runtimeEnvIdentity: LIVE_IDENTITY.runtimeEnvIdentity,
-      registrationId: LIVE_IDENTITY.registrationId,
-      pid: LIVE_IDENTITY.pid,
-      startIdentity: LIVE_IDENTITY.startIdentity,
-      executionCommandId: LIVE_IDENTITY.executionCommandId,
-      legacyActive: 0,
-    });
   });
 
   it("converges an absent owner-null session without creating a legacy owner", async () => {
