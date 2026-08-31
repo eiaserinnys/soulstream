@@ -13,7 +13,10 @@ import { asRecord, asString } from "./claude_sdk_helpers.js";
 import type { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import type { RateLimitTerminationState } from
   "./claude_sdk_rate_limit_stop_failure.js";
-import type { ClaudeForegroundPhase } from "./claude_session_runtime.js";
+import type {
+  ClaudeForegroundPhase,
+  ClaudeStaleInterruptReceiptObservation,
+} from "./claude_session_runtime.js";
 
 export type ClaudeDetachedEventSink = (event: ClaudeClientEvent) => Promise<void>;
 export type ClaudeRuntimeEventSink = (
@@ -37,12 +40,116 @@ export type ActiveForeground = {
   uuid: string;
   /** Owner captured immediately before a native intervention interrupts it. */
   interruptedOwnerUuid?: string;
+  interventionInterrupt?: InterventionInterruptObservation;
   output: EventQueue<ClaudeClientEvent>;
   interruptResultTimer: ReturnType<typeof setTimeout> | null;
   timedOut: boolean;
   origin: { kind: string; id: string };
   rateLimitTerminationState: RateLimitTerminationState;
 };
+
+export type InterventionInterruptObservation = {
+  promise: Promise<boolean>;
+  resolve(observed: boolean): void;
+  observed: boolean;
+  settled: boolean;
+};
+
+export function createInterventionInterruptObservation(): InterventionInterruptObservation {
+  let resolvePromise!: (observed: boolean) => void;
+  const observation: InterventionInterruptObservation = {
+    promise: new Promise<boolean>((resolve) => {
+      resolvePromise = resolve;
+    }),
+    resolve: (observed) => {
+      resolvePromise(observed);
+    },
+    observed: false,
+    settled: false,
+  };
+  return observation;
+}
+
+export async function waitForInterventionEffect(
+  observation: InterventionInterruptObservation,
+  interrupt: () => Promise<unknown>,
+  logger: Pick<Logger, "info" | "warn">,
+  uuid: string,
+): Promise<boolean> {
+  let rejectControlFailure!: (error: unknown) => void;
+  const controlFailure = new Promise<never>((_resolve, reject) => {
+    rejectControlFailure = reject;
+  });
+  void interrupt().then(
+    () => {
+      if (observation.observed) {
+        logger.info(
+          { uuid },
+          "Claude interrupt receipt arrived after its effect was observed",
+        );
+      }
+    },
+    (error: unknown) => {
+      if (observation.settled) {
+        logger.warn(
+          { err: error, uuid },
+          observation.observed
+            ? "Claude interrupt failed after its effect was observed"
+            : "Claude interrupt failed after the intervention had already settled",
+        );
+        return;
+      }
+      rejectControlFailure(error);
+    },
+  );
+  return await Promise.race([observation.promise, controlFailure]);
+}
+
+export function makeStaleInterruptReceiptLogger(
+  logger: Pick<Logger, "warn">,
+): (observation: ClaudeStaleInterruptReceiptObservation) => void {
+  return (observation) => {
+    logger.warn(
+      observation,
+      "Ignoring Claude interrupt receipt from a finished foreground turn",
+    );
+  };
+}
+
+export function isPostInterruptContinuation(event: ClaudeClientEvent): boolean {
+  return event.type === "progress"
+    || event.type === "text"
+    || event.type === "thinking"
+    || event.type === "tool_start"
+    || event.type === "input_request"
+    || event.type === "subagent_start";
+}
+
+export function shouldFencePostInterruptContinuation(
+  active: ActiveForeground | null,
+  event: ClaudeClientEvent,
+): active is ActiveForeground {
+  return Boolean(active?.interventionInterrupt) && isPostInterruptContinuation(event);
+}
+
+export function isExpectedInterruptTerminalEvent(
+  event: ClaudeClientEvent,
+  expectedDiagnostic: boolean,
+): boolean {
+  return isExpectedInterruptDiagnostic(event)
+    || (expectedDiagnostic && event.type === "result" && !event.success);
+}
+
+export function settleInterventionInterrupt(
+  active: ActiveForeground | null,
+  observed: boolean,
+): void {
+  const observation = active?.interventionInterrupt;
+  if (!observation || observation.settled) return;
+  observation.observed = observed;
+  observation.settled = true;
+  observation.resolve(observed);
+}
 
 export function describeResultProvenance(
   message: Record<string, unknown>,

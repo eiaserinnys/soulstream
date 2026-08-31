@@ -77,6 +77,44 @@ describe("ClaudeSessionRuntime", () => {
     });
   });
 
+  it("이전 턴의 늦은 interrupt receipt는 다음 턴 ledger를 바꾸지 않는다", async () => {
+    let releaseReceipt!: (receipt: ClaudeInterruptReceipt) => void;
+    const query: ClaudePersistentQuery = {
+      interrupt: vi.fn(async () => await new Promise<ClaudeInterruptReceipt>((resolve) => {
+        releaseReceipt = resolve;
+      })),
+      close: vi.fn(),
+    };
+    const runtime = new ClaudeSessionRuntime<string>(() => query);
+    runtime.enqueueInput({ uuid: "turn-1", payloadHash: "hash-1", message: "first" });
+    runtime.beginForegroundTurn("turn-1");
+
+    const staleReceipt = vi.fn();
+    const interruption = runtime.interruptForeground(staleReceipt);
+    await vi.waitFor(() => expect(query.interrupt).toHaveBeenCalledTimes(1));
+    runtime.observeResult({ userMessageUuid: "turn-1", interrupted: true });
+    runtime.finishForegroundResult();
+    runtime.enqueueInput({ uuid: "turn-2", payloadHash: "hash-2", message: "second" });
+    runtime.beginForegroundTurn("turn-2");
+    const beforeLateReceipt = runtime.snapshot();
+
+    releaseReceipt({ still_queued: ["turn-2"] });
+    await interruption;
+
+    expect(runtime.snapshot()).toEqual(beforeLateReceipt);
+    expect(staleReceipt).toHaveBeenCalledWith({
+      interruptedTurnUuid: "turn-1",
+      currentTurnUuid: "turn-2",
+    });
+    expect(runtime.snapshot()).toMatchObject({
+      foregroundPhase: "generating",
+      interruptReceiptObserved: false,
+      pendingInputs: expect.arrayContaining([
+        expect.objectContaining({ uuid: "turn-2", state: "submitted" }),
+      ]),
+    });
+  });
+
   it("background replace-set은 foreground Result와 직교한다", () => {
     const { runtime } = makeSubject();
     runtime.enqueueInput({ uuid: "turn-1", payloadHash: "hash-1", message: "first" });

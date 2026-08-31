@@ -24,20 +24,24 @@ import {
   type ClaudeDetachedEventSink,
   type ClaudeRuntimeEventSink,
   type ClaudeSdkPersistentSessionConfig,
+  createInterventionInterruptObservation,
   describeResultProvenance,
   isExpectedInterruptDiagnostic,
+  isExpectedInterruptTerminalEvent,
   isTurnStartingUserInput,
+  makeStaleInterruptReceiptLogger,
   provableTurnResultOwner,
+  settleInterventionInterrupt,
+  shouldFencePostInterruptContinuation,
   turnInactivityError,
+  waitForInterventionEffect,
 } from "./claude_sdk_persistent_session_support.js";
 import { startPersistentForegroundTurn } from "./claude_sdk_persistent_turn_handoff.js";
 import {
   ClaudeSessionRuntime,
-  type ClaudeForegroundPhase,
   type ClaudeRuntimeCloseReason,
   type ClaudeSessionRuntimeSnapshot,
 } from "./claude_session_runtime.js";
-
 export type {
   ClaudeDetachedEventSink,
   ClaudeRuntimeEventSink,
@@ -64,6 +68,7 @@ export class ClaudeSdkPersistentSession {
   private readonly followupWatchdog: ClaudeRuntimeFollowupWatchdog;
   private readonly turnInactivityWatchdog: ClaudeTurnInactivityWatchdog;
   private activeForeground: ActiveForeground | null = null;
+  private interventionFence: ActiveForeground | null = null;
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
   constructor(config: ClaudeSdkPersistentSessionConfig) {
     this.eventMapper = config.eventMapper;
@@ -87,6 +92,7 @@ export class ClaudeSdkPersistentSession {
   }
 
   runTurn(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
+    this.interventionFence = null;
     return startPersistentForegroundTurn({
       options,
       signal,
@@ -102,13 +108,26 @@ export class ClaudeSdkPersistentSession {
   }
 
   async interruptForeground(): Promise<boolean> {
-    if (this.runtime.snapshot().foregroundPhase !== "generating") return false;
-    await this.runtime.interruptForeground();
-    return true;
-  }
+    const active = this.activeForeground;
+    if (!active || this.runtime.snapshot().foregroundPhase !== "generating") return false;
+    if (active.interventionInterrupt) return await active.interventionInterrupt.promise;
 
-  phase(): ClaudeForegroundPhase {
-    return this.runtime.snapshot().foregroundPhase;
+    const observation = createInterventionInterruptObservation();
+    active.interventionInterrupt = observation;
+    this.interventionFence = active;
+    this.clearForegroundTimers(active);
+    try {
+      return await waitForInterventionEffect(
+        observation,
+        () => this.runtime.interruptForeground(makeStaleInterruptReceiptLogger(this.logger)),
+        this.logger,
+        active.uuid,
+      );
+    } catch (error) {
+      if (observation.observed) return true;
+      await this.close("fatal");
+      throw error;
+    }
   }
 
   snapshot(): ClaudeSessionRuntimeSnapshot {
@@ -124,17 +143,20 @@ export class ClaudeSdkPersistentSession {
       clearTimeout(this.drainTimer);
       this.drainTimer = null;
     }
+    this.runtime.close(reason);
+    const active = this.activeForeground;
+    this.clearForegroundTimers(active);
+    active?.output.close();
+    this.activeForeground = null;
+    settleInterventionInterrupt(this.interventionFence ?? active, false);
+    this.interventionFence = null;
+    this.hookOutput.close();
     await terminalizePersistentBackgroundTasks({
       runtime: this.runtime,
       reason,
       routeEvent: (event) => this.routeEvent(event),
       logger: this.logger,
     });
-    this.runtime.close(reason);
-    this.clearForegroundTimers(this.activeForeground);
-    this.activeForeground?.output.close();
-    this.activeForeground = null;
-    this.hookOutput.close();
   }
 
   async settled(): Promise<void> {
@@ -159,6 +181,7 @@ export class ClaudeSdkPersistentSession {
       const active = this.activeForeground;
       active?.output.fail(err);
       this.clearForegroundTimers(active);
+      settleInterventionInterrupt(active, false);
       this.activeForeground = null;
       await this.emitDetached({
         type: "error",
@@ -200,6 +223,7 @@ export class ClaudeSdkPersistentSession {
         const active = this.activeForeground;
         active?.output.close();
         this.clearForegroundTimers(active);
+        settleInterventionInterrupt(active, false);
         this.activeForeground = null;
         await this.close("fatal");
       }
@@ -267,7 +291,7 @@ export class ClaudeSdkPersistentSession {
         "Fenced the first interrupted-owner Result before accepting the intervention Result",
       );
       for (const event of terminalEvents) {
-        if (isExpectedInterruptDiagnostic(event)) continue;
+        if (isExpectedInterruptTerminalEvent(event, expectedInterruptDiagnostic)) continue;
         markPostResultDrainEvent(event);
         await this.emitDetached(event);
       }
@@ -311,7 +335,11 @@ export class ClaudeSdkPersistentSession {
       active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
     } else {
       const terminalEvents = this.eventMapper.mapResultMessage(message);
+      const expectedInterruptDiagnostic =
+        this.interventionFence === active
+        && terminalEvents.some(isExpectedInterruptDiagnostic);
       for (const event of terminalEvents) {
+        if (isExpectedInterruptTerminalEvent(event, expectedInterruptDiagnostic)) continue;
         if (active) {
           active.output.push(event);
         } else {
@@ -321,12 +349,24 @@ export class ClaudeSdkPersistentSession {
     }
     active?.output.close();
     if (this.activeForeground === active) this.activeForeground = null;
+    settleInterventionInterrupt(active, true);
   }
 
   private async routeEvent(event: ClaudeClientEvent): Promise<void> {
+    const queryOpen = this.runtime.snapshot().queryLifecycle === "open";
+    const terminalBackground = isTerminalPersistentBackgroundEvent(event);
+    if (!queryOpen && !terminalBackground) return;
+    const interruptingActive = this.interventionFence;
+    if (shouldFencePostInterruptContinuation(interruptingActive, event)) {
+      this.logger.warn(
+        { uuid: interruptingActive.uuid, eventType: event.type },
+        "Suppressing Claude foreground continuation while awaiting its interrupted Result",
+      );
+      return;
+    }
     const runtimeEventAccepted =
       !this.runtimeEventSink || await this.runtimeEventSink(event) !== false;
-    if (runtimeEventAccepted || isTerminalPersistentBackgroundEvent(event)) {
+    if (runtimeEventAccepted || terminalBackground) {
       observePersistentBackgroundEvent(this.runtime, event);
     }
     if (!runtimeEventAccepted) {
@@ -352,6 +392,7 @@ export class ClaudeSdkPersistentSession {
       active.output.push(rateLimit.makeStopFailureError());
       active.output.close();
       if (this.activeForeground === active) this.activeForeground = null;
+      settleInterventionInterrupt(active, false);
       return;
     }
     const phase = this.runtime.snapshot().foregroundPhase;
@@ -406,7 +447,7 @@ export class ClaudeSdkPersistentSession {
     );
     try {
       if (this.runtime.snapshot().foregroundPhase === "generating") {
-        await this.runtime.interruptForeground();
+        await this.runtime.interruptForeground(makeStaleInterruptReceiptLogger(this.logger));
       }
       active.interruptResultTimer = setTimeout(() => {
         void this.handleTimedOutTurnWithoutResult(uuid);
@@ -417,6 +458,7 @@ export class ClaudeSdkPersistentSession {
       active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
       active.output.close();
       this.clearForegroundTimers(active);
+      settleInterventionInterrupt(active, false);
       this.activeForeground = null;
       await this.close("fatal");
     }
@@ -428,6 +470,7 @@ export class ClaudeSdkPersistentSession {
     active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
     active.output.close();
     this.clearForegroundTimers(active);
+    settleInterventionInterrupt(active, false);
     this.activeForeground = null;
     await this.close("fatal");
   }

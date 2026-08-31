@@ -144,6 +144,20 @@ export function sdkInterruptedResult(
   } as unknown as SDKMessage;
 }
 
+export function sdkToolStart(uuid: string, toolUseId: string): SDKMessage {
+  return {
+    type: "assistant",
+    uuid,
+    session_id: "sdk-session",
+    message: {
+      id: uuid,
+      model: "claude",
+      role: "assistant",
+      content: [{ type: "tool_use", id: toolUseId, name: "Bash", input: {} }],
+    },
+  } as unknown as SDKMessage;
+}
+
 /**
  * Terminal Result of a turn the session never enqueued.
  *

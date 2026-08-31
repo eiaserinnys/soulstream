@@ -45,6 +45,11 @@ export interface ClaudeInterruptReceipt {
   still_queued?: string[];
 }
 
+export interface ClaudeStaleInterruptReceiptObservation {
+  interruptedTurnUuid: string;
+  currentTurnUuid: string | null;
+}
+
 export interface ClaudePersistentQuery {
   interrupt(): Promise<ClaudeInterruptReceipt | undefined>;
   close(): void;
@@ -201,20 +206,32 @@ export class ClaudeSessionRuntime<TMessage> {
     return await this.interruptForeground();
   }
 
-  async interruptForeground(): Promise<ClaudeInterruptReceipt> {
+  async interruptForeground(
+    onStaleReceipt?: (observation: ClaudeStaleInterruptReceiptObservation) => void,
+  ): Promise<ClaudeInterruptReceipt> {
     this.assertOpen();
     if (this.foregroundPhase !== "generating") {
       throw new Error(`Cannot interrupt Claude turn while ${this.foregroundPhase}`);
     }
+    const interruptedTurnUuid = this.currentForegroundTurnUuid();
+    if (!interruptedTurnUuid) {
+      throw new Error("Cannot interrupt Claude turn without a submitted input");
+    }
     this.foregroundPhase = "interrupting";
     const receipt = await this.query.interrupt() ?? {};
-    this.observeInterruptReceipt(receipt);
+    this.observeInterruptReceipt(receipt, interruptedTurnUuid, onStaleReceipt);
     return receipt;
   }
 
-  observeInterruptReceipt(receipt: ClaudeInterruptReceipt): void {
-    if (this.foregroundPhase !== "interrupting") {
-      throw new Error(`Unexpected Claude interrupt receipt while ${this.foregroundPhase}`);
+  observeInterruptReceipt(
+    receipt: ClaudeInterruptReceipt,
+    interruptedTurnUuid: string,
+    onStaleReceipt?: (observation: ClaudeStaleInterruptReceiptObservation) => void,
+  ): void {
+    const currentTurnUuid = this.currentForegroundTurnUuid();
+    if (currentTurnUuid !== interruptedTurnUuid) {
+      onStaleReceipt?.({ interruptedTurnUuid, currentTurnUuid });
+      return;
     }
     this.interruptReceiptObserved = true;
     for (const uuid of receipt.still_queued ?? []) {
@@ -299,6 +316,14 @@ export class ClaudeSessionRuntime<TMessage> {
     const input = this.inputs.get(uuid);
     if (!input) throw new Error(`Unknown Claude input UUID: ${uuid}`);
     return input;
+  }
+
+  private currentForegroundTurnUuid(): string | null {
+    const inputs = Array.from(this.inputs.values());
+    for (let index = inputs.length - 1; index >= 0; index -= 1) {
+      if (inputs[index]?.state === "submitted") return inputs[index]?.uuid ?? null;
+    }
+    return null;
   }
 
   private assertOpen(): void {
