@@ -71,7 +71,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(msg.user).toBeUndefined();
   });
 
-  it("advertises runner mode and lease TTL as additive node capabilities", () => {
+  it("advertises runner mode without a registration lease TTL", () => {
     const msg = buildRegistrationMsg({
       nodeId: "runner-node",
       host: "127.0.0.1",
@@ -79,12 +79,14 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       userName: "",
       agentRegistry: new AgentRegistry([codexAgent]),
       runnerProcessEnabled: true,
-      runnerLeaseTimeoutMs: 90_000,
     });
 
-    expect(msg.capabilities).toMatchObject({
+    expect(msg.capabilities).toEqual({
+      max_concurrent: 1,
+      reflect_brief: true,
+      app_heartbeat_v1: true,
+      runner_inventory_v1: true,
       runner_process_v1: true,
-      runner_lease_timeout_ms: 90_000,
     });
   });
 

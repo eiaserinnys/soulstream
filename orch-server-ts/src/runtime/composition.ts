@@ -86,7 +86,6 @@ export type OrchestratorRuntimeCompositionOptions = {
   nodeHttpRequestTimeoutMs?: number;
   additionalNodeEventSinks?: readonly NodeRegistryEventSink[];
   eventIngress?: NodeWsRouteOptions["eventIngress"];
-  runnerRegistrationPolicy?: NodeWsRouteOptions["runnerPolicy"];
   releaseActivationReceipts?: NodeWsRouteOptions["releaseActivationReceipts"];
   sessionForegroundObservers?: SessionHistoryRouteOptions["foregroundObservers"];
 };
@@ -183,9 +182,6 @@ export function createOrchestratorRuntimeServices(
       ...(options.eventIngress === undefined
         ? {}
         : { eventIngress: options.eventIngress }),
-      ...(options.runnerRegistrationPolicy === undefined
-        ? {}
-        : { runnerPolicy: options.runnerRegistrationPolicy }),
       ...(options.releaseActivationReceipts === undefined
         ? {}
         : { releaseActivationReceipts: options.releaseActivationReceipts }),

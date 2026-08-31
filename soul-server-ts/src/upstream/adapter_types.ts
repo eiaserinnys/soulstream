@@ -23,7 +23,6 @@ export interface UpstreamConfig {
   userPortraitPath: string;
   isProduction: boolean;
   runnerProcessEnabled?: boolean;
-  runnerLeaseTimeoutMs?: number;
   runnerStateDir?: string;
   heartbeatIntervalMs?: number;
   heartbeatMaxMissed?: number;
