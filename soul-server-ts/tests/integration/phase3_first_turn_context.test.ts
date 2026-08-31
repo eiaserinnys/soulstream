@@ -148,7 +148,7 @@ describe("Phase 3 first-turn page context integration", () => {
         addIntervention: vi.fn(),
       },
       taskExecutor: {
-        startExecution: (task, agent) => {
+        startNewExecution: (task, agent) => {
           order.push("start");
           contextPromise = resolver.resolve(task, agent).then((result) => {
             contextResult = result;

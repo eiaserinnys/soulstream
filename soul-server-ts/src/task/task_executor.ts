@@ -246,45 +246,19 @@ export class TaskExecutor {
     return this.startExecutionWithOwnership(task, agent, transferredActivation);
   }
 
+  startNewExecution(task: Task, agent: AgentProfile): Promise<void> {
+    const { backend, retainedRunner } = this.prepareExecution(task, agent);
+    return this.startExecutionWithoutOwnership(task, agent, backend, retainedRunner);
+  }
+
   private startExecutionWithOwnership(
     task: Task,
     agent: AgentProfile,
     transferredActivation?: ExecutionActivation,
   ): Promise<void> {
-    const retainedRunner = task.runnerRetainedForClaudeBackground === true
-      ? task.runner
-      : undefined;
-    if (task.runner && !retainedRunner) {
-      throw new Error(
-        `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
-      );
-    }
-    const presetRuntime = applyModelPresetRuntime(task, agent, this.modelCatalog);
-    if (presetRuntime === "preset_unavailable") {
-      this.logger.warn(
-        {
-          sessionId: task.agentSessionId,
-          modelPreset: task.modelPreset,
-          fallbackBackend: agent.backend,
-          profileEnvFallback: agent.env !== undefined,
-        },
-        "Persisted model preset is unavailable; using the profile backend",
-      );
-    }
-    const backend = effectiveTaskBackend(task, agent);
+    const { backend, retainedRunner } = this.prepareExecution(task, agent);
     if (!this.supportsExecutionOwnership()) {
-      const runner = retainedRunner ?? (this.runnerProcessFactory
-        ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
-        : createInProcessTaskRunnerRuntime(
-            task.modelPresetBackend
-              ? this.engineFactory(agent, backend)
-              : this.engineFactory(agent),
-          ));
-      if (retainedRunner) {
-        releaseTaskRunner(task, retainedRunner);
-      }
-      this.startExecutionWithRunner(task, agent, runner);
-      return task.executionPromise!;
+      return this.startExecutionWithoutOwnership(task, agent, backend, retainedRunner);
     }
 
     const activation = transferredActivation ?? createExecutionActivation();
@@ -354,6 +328,54 @@ export class TaskExecutor {
       },
     );
     return this.holdExecutionSlot(task, promise);
+  }
+
+  private prepareExecution(
+    task: Task,
+    agent: AgentProfile,
+  ): { backend: BackendId; retainedRunner: TaskRunnerRuntime | undefined } {
+    const retainedRunner = task.runnerRetainedForClaudeBackground === true
+      ? task.runner
+      : undefined;
+    if (task.runner && !retainedRunner) {
+      throw new Error(
+        `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
+      );
+    }
+    const presetRuntime = applyModelPresetRuntime(task, agent, this.modelCatalog);
+    if (presetRuntime === "preset_unavailable") {
+      this.logger.warn(
+        {
+          sessionId: task.agentSessionId,
+          modelPreset: task.modelPreset,
+          fallbackBackend: agent.backend,
+          profileEnvFallback: agent.env !== undefined,
+        },
+        "Persisted model preset is unavailable; using the profile backend",
+      );
+    }
+    const backend = effectiveTaskBackend(task, agent);
+    return { backend, retainedRunner };
+  }
+
+  private startExecutionWithoutOwnership(
+    task: Task,
+    agent: AgentProfile,
+    backend: BackendId,
+    retainedRunner: TaskRunnerRuntime | undefined,
+  ): Promise<void> {
+    const runner = retainedRunner ?? (this.runnerProcessFactory
+      ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
+      : createInProcessTaskRunnerRuntime(
+          task.modelPresetBackend
+            ? this.engineFactory(agent, backend)
+            : this.engineFactory(agent),
+        ));
+    if (retainedRunner) {
+      releaseTaskRunner(task, retainedRunner);
+    }
+    this.startExecutionWithRunner(task, agent, runner);
+    return task.executionPromise!;
   }
 
   /**

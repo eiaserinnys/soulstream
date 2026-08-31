@@ -59,7 +59,7 @@ function createRuntime(opts: {
   agentRegistry?: Pick<AgentRegistry, "get">;
   createTask?: TaskManager["createTask"];
   addIntervention?: TaskManager["addIntervention"];
-  startExecution?: TaskExecutor["startExecution"];
+  startNewExecution?: TaskExecutor["startNewExecution"];
   presets?: ModelPreset[];
   agentProfileSource?: NewSessionAgentProfileSource;
 } = {}) {
@@ -71,8 +71,8 @@ function createRuntime(opts: {
     addIntervention: opts.addIntervention ?? vi.fn(),
   } as Pick<TaskManager, "createTask" | "addIntervention">;
   const taskExecutor = {
-    startExecution: opts.startExecution ?? vi.fn(),
-  } as Pick<TaskExecutor, "startExecution">;
+    startNewExecution: opts.startNewExecution ?? vi.fn(),
+  } as Pick<TaskExecutor, "startNewExecution">;
 
   const runtime = new TaskRuntimeCommands({
     agentRegistry: opts.agentRegistry ?? {
@@ -126,7 +126,7 @@ describe("TaskRuntimeCommands.createSession", () => {
     });
 
     expect(source.resolve).toHaveBeenCalledWith(codexAgent.id);
-    expect(taskExecutor.startExecution).toHaveBeenCalledWith(task, dbAgent);
+    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(task, dbAgent);
   });
   it("creates a task from upstream command params and starts execution with the resolved agent", async () => {
     const contextItems = [
@@ -180,7 +180,7 @@ describe("TaskRuntimeCommands.createSession", () => {
       contextItems,
       attachmentPaths: ["/tmp/a.png", "/tmp/b.txt"],
     });
-    expect(taskExecutor.startExecution).toHaveBeenCalledWith(task, codexAgent);
+    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(task, codexAgent);
   });
 
   it("preserves the explicitly selected writer profile through task creation and engine start", async () => {
@@ -197,7 +197,7 @@ describe("TaskRuntimeCommands.createSession", () => {
     expect(taskManager.createTask).toHaveBeenCalledWith(
       expect.objectContaining({ profileId: "writer-seosoyoung-opus" }),
     );
-    expect(taskExecutor.startExecution).toHaveBeenCalledWith(task, writerOpusAgent);
+    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(task, writerOpusAgent);
   });
 
   it("resolves an alias to canonical storage while preserving its historical preset", async () => {
@@ -231,7 +231,7 @@ describe("TaskRuntimeCommands.createSession", () => {
       modelPreset: "claude-opus",
       model: "claude-opus-4-1",
     }));
-    expect(taskExecutor.startExecution).toHaveBeenCalledWith(
+    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(
       task,
       expect.objectContaining({
         id: "seosoyoung",
@@ -414,7 +414,7 @@ describe("TaskRuntimeCommands.createSession", () => {
       }),
     ).rejects.toBeInstanceOf(UnknownAgentProfileError);
     expect(taskManager.createTask).not.toHaveBeenCalled();
-    expect(taskExecutor.startExecution).not.toHaveBeenCalled();
+    expect(taskExecutor.startNewExecution).not.toHaveBeenCalled();
   });
 });
 
@@ -437,7 +437,7 @@ describe("TaskRuntimeCommands.intervene", () => {
     await runtime.intervene({ agentSessionId: resumedTask.agentSessionId, text: "continue" });
 
     expect(source.resolve).not.toHaveBeenCalled();
-    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, snapshot, activation);
+    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(resumedTask, snapshot);
   });
 
   it("forwards intervention params and auto-resume callback starts execution with the task profile", async () => {
@@ -471,7 +471,7 @@ describe("TaskRuntimeCommands.intervene", () => {
       },
       expect.any(Function),
     );
-    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, codexAgent, activation);
+    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(resumedTask, codexAgent);
     expect(result).toEqual({ autoResumed: true });
   });
 
@@ -508,7 +508,7 @@ describe("TaskRuntimeCommands.intervene", () => {
       }),
       expect.any(Function),
     );
-    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, claudeAgent, activation);
+    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(resumedTask, claudeAgent);
     expect(result).toEqual({ autoResumed: true });
   });
 
@@ -530,7 +530,7 @@ describe("TaskRuntimeCommands.intervene", () => {
       }),
     ).rejects.toBeInstanceOf(UnknownAgentProfileError);
 
-    expect(taskExecutor.startExecution).not.toHaveBeenCalled();
+    expect(taskExecutor.startNewExecution).not.toHaveBeenCalled();
   });
 });
 

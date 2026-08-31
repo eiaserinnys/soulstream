@@ -71,7 +71,7 @@ async function observeCurrentRecovery(h: ContractHarness) {
   });
   const recovery = new TaskRunnerRecovery({ getTask: vi.fn(), loadTask: vi.fn(),
     rememberTask: vi.fn(), lifecycleTransition: { persistExecutorFinalState: persist } as never,
-    autoResumeTransition: autoResume });
+  });
   await recovery.markFailureAndResume(task, "runner unavailable", start);
   if (start.mock.calls.length === 0) {
     state.generation.fenced = persist.mock.calls.length === 1;

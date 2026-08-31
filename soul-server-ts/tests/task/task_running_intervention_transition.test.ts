@@ -34,7 +34,7 @@ function makeBroadcaster(
 }
 
 describe("RunningInterventionTransition", () => {
-  it("mirrors an idle runner notification durably before exposing it in memory", async () => {
+  it("queues an idle runner notification in the normal next-turn queue without runner inbox staging", async () => {
     let task!: Task;
     const stageIntervention = vi.fn(async () => {
       expect(task.interventionQueue).toEqual([]);
@@ -44,9 +44,10 @@ describe("RunningInterventionTransition", () => {
         queuePosition: 1,
       };
     });
+    const waitForSessionAck = vi.fn();
     const dispatcher = {
       stageIntervention,
-      waitForSessionAck: vi.fn(),
+      waitForSessionAck,
       dispatch: vi.fn(),
       executeFrames: vi.fn(),
       prepareSession: vi.fn(),
@@ -63,13 +64,14 @@ describe("RunningInterventionTransition", () => {
         "runner",
       ),
     });
+    const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new RunningInterventionTransition({
       broadcaster: makeBroadcaster(),
       logger: silentLogger,
-      persistence: makeEventPersistenceTestDouble().persistence,
+      persistence: persistenceDouble.persistence,
     });
 
-    await expect(transition.queueOnly(task, {
+    const message = {
       text: "child completed",
       user: "agent",
       deliveryId: "idle-runner-completion",
@@ -77,7 +79,8 @@ describe("RunningInterventionTransition", () => {
       completionId: "completion-idle-runner",
       relationKey: "child_session:idle-runner:1",
       source: "completion_notifier",
-    }, { publishEvent: false })).resolves.toEqual({
+    };
+    await expect(transition.queueOnly(task, message, { publishEvent: false })).resolves.toEqual({
       delivered: false,
       queued: true,
       queuePosition: 1,
@@ -85,20 +88,12 @@ describe("RunningInterventionTransition", () => {
       reason: "queue_only_policy",
     });
 
-    expect(stageIntervention).toHaveBeenCalledWith(expect.objectContaining({
-      queued: true,
-      message: expect.objectContaining({
-        deliveryId: "idle-runner-completion",
-        deliveryIntent: "completion_notification",
-      }),
-    }));
-    expect(stageIntervention.mock.calls[0]?.[0]).not.toHaveProperty("event");
-    expect(task.interventionQueue).toEqual([
-      expect.objectContaining({
-        deliveryId: "idle-runner-completion",
-        runnerInterventionId: expect.any(String),
-      }),
-    ]);
+    expect(stageIntervention).not.toHaveBeenCalled();
+    expect(waitForSessionAck).not.toHaveBeenCalled();
+    expect(persistenceDouble.enqueueEvent).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toHaveLength(1);
+    expect(task.interventionQueue[0]).toEqual(message);
+    expect(task.interventionQueue[0]).not.toHaveProperty("runnerInterventionId");
   });
 
   it.each([
@@ -290,21 +285,15 @@ describe("RunningInterventionTransition", () => {
     expect(discardIntervention).toHaveBeenCalledOnce();
   });
 
-  it("attempts runner delivery before durably queueing an undelivered intervention", async () => {
-    const stageIntervention = vi.fn(async (input: { queued: boolean; event?: unknown }) => ({
-      eventSourceSeq: input.event ? 42 : null,
-      queuePosition: input.queued ? 1 : 0,
-    }));
-    const waitForSessionAck = vi.fn().mockResolvedValue(142);
-    const applyIntervention = vi.fn().mockResolvedValue({
-      status: "not_delivered",
-      mechanism: "interrupt_then_next_turn",
-      reason: "next_turn_required",
-    });
+  it("routes runner-backed no_active_turn through the public engine and next-turn queue", async () => {
+    const stageIntervention = vi.fn();
+    const applyIntervention = vi.fn();
+    const discardIntervention = vi.fn();
     const dispatcher = {
       stageIntervention,
       applyIntervention,
-      waitForSessionAck,
+      discardIntervention,
+      waitForSessionAck: vi.fn(),
       dispatch: vi.fn(),
       executeFrames: vi.fn(),
       prepareSession: vi.fn(),
@@ -314,9 +303,15 @@ describe("RunningInterventionTransition", () => {
       sendControlFrame: vi.fn(),
       requestContext: vi.fn(),
     };
+    const engine = new RunnerProcessEngineProxy("codex", "/tmp/codex", dispatcher as never);
+    const intervene = vi.spyOn(engine, "intervene").mockResolvedValue({
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "no_active_turn",
+    });
     const task = makeRunningTask({
       runner: createTaskRunnerRuntime(
-        new RunnerProcessEngineProxy("codex", "/tmp/codex", dispatcher as never),
+        engine,
         dispatcher as never,
         "runner",
       ),
@@ -329,53 +324,30 @@ describe("RunningInterventionTransition", () => {
     });
 
     await expect(
-      transition.deliver(task, { text: "durable after adopt", user: "soak" }),
+      transition.deliver(task, { text: "queue after no active turn", user: "soak" }),
     ).resolves.toEqual({
       delivered: false,
       queued: true,
       queuePosition: 1,
       consumeWhen: "next_turn",
-      reason: "next_turn_required",
+      reason: "no_active_turn",
     });
 
-    expect(stageIntervention).toHaveBeenNthCalledWith(1, {
-      interventionId: expect.any(String),
-      message: expect.objectContaining({
-        text: "durable after adopt",
-        user: "soak",
-        runnerInterventionId: expect.any(String),
-      }),
-      event: expect.objectContaining({
-        type: "intervention_sent",
-        text: "durable after adopt",
-      }),
-      queued: false,
-    });
-    expect(stageIntervention).toHaveBeenNthCalledWith(2, {
-      interventionId: expect.any(String),
-      message: expect.objectContaining({
-        text: "durable after adopt",
-        runnerInterventionId: expect.any(String),
-      }),
-      queued: true,
-    });
-    expect(stageIntervention.mock.invocationCallOrder[0]).toBeLessThan(
-      waitForSessionAck.mock.invocationCallOrder[0],
-    );
-    expect(waitForSessionAck.mock.invocationCallOrder[0]).toBeLessThan(
-      applyIntervention.mock.invocationCallOrder[0],
-    );
-    expect(applyIntervention.mock.invocationCallOrder[0]).toBeLessThan(
-      stageIntervention.mock.invocationCallOrder[1],
-    );
-    expect(task.lastEventId).toBe(142);
-    expect(task.interventionQueue).toEqual([
+    expect(intervene).toHaveBeenCalledOnce();
+    expect(stageIntervention).not.toHaveBeenCalled();
+    expect(applyIntervention).not.toHaveBeenCalled();
+    expect(discardIntervention).not.toHaveBeenCalled();
+    expect(persistenceDouble.enqueueEvent).toHaveBeenCalledOnce();
+    expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
+      "s1",
       expect.objectContaining({
-        text: "durable after adopt",
-        runnerInterventionId: expect.any(String),
+        type: "intervention_sent",
+        text: "queue after no active turn",
       }),
+    );
+    expect(task.interventionQueue).toEqual([
+      { text: "queue after no active turn", user: "soak" },
     ]);
-    expect(persistenceDouble.enqueueEvent).not.toHaveBeenCalled();
   });
 
   it("publishes acceptance before asking a Claude adapter to intervene", async () => {
@@ -530,19 +502,12 @@ describe("RunningInterventionTransition", () => {
     ]);
   });
 
-  it("cancels the owned turn once when its engine reports no active turn", async () => {
-    const intervene = vi
-      .fn()
-      .mockResolvedValueOnce({
-        status: "not_delivered",
-        mechanism: "active_turn",
-        reason: "no_active_turn",
-      })
-      .mockResolvedValueOnce({
-        status: "not_delivered",
-        mechanism: "active_turn",
-        reason: "not_accepting_input",
-      });
+  it("queues the next turn without cancelling when its engine reports no active turn", async () => {
+    const intervene = vi.fn().mockResolvedValueOnce({
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "no_active_turn",
+    });
     const interrupt = vi.fn().mockResolvedValue(true);
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
@@ -569,11 +534,11 @@ describe("RunningInterventionTransition", () => {
       queued: true,
       queuePosition: 1,
       consumeWhen: "next_turn",
-      reason: "next_turn_required",
+      reason: "no_active_turn",
     });
 
     expect(intervene).toHaveBeenCalledOnce();
-    expect(interrupt).toHaveBeenCalledOnce();
+    expect(interrupt).not.toHaveBeenCalled();
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({

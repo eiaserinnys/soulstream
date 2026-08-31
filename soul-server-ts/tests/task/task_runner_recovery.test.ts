@@ -30,12 +30,62 @@ describe("TaskRunnerRecovery", () => {
       loadTask,
       rememberTask,
       lifecycleTransition: {} as never,
-      autoResumeTransition: {} as never,
     });
 
     await expect(recovery.hydrate(task.agentSessionId)).resolves.toBe(task);
     expect(loadTask).toHaveBeenCalledWith(task.agentSessionId);
     expect(rememberTask).toHaveBeenCalledWith(task);
+  });
+
+  it("leaves task state unchanged when runner identity observations are unstable", async () => {
+    const completedAt = new Date("2026-08-11T00:00:10.000Z");
+    const task = makeTask({
+      completedAt,
+      terminationReason: "killed",
+      terminationDetail: "preserve terminal detail",
+      pendingTerminationHint: "limit_hit",
+      pendingTerminationDetail: "preserve pending detail",
+      terminationEventRecorded: true,
+      terminalEventId: 73,
+    });
+    const persistExecutorFinalState = vi.fn();
+    const recovery = new TaskRunnerRecovery({
+      getTask: vi.fn(),
+      loadTask: vi.fn(),
+      rememberTask: vi.fn(),
+      lifecycleTransition: { persistExecutorFinalState } as never,
+    });
+    const first = {
+      manifestId: "sha-a",
+      runtimeEnvIdentity: "env-a",
+      registrationId: "registration-a",
+      pid: 4123,
+      startIdentity: "start-4123",
+      executionCommandId: "execute-a",
+      observedAt: new Date("2026-08-11T00:00:30.000Z"),
+    };
+
+    await expect(recovery.reconcileExecutionOwnershipObservations(task, {
+      first,
+      second: {
+        ...first,
+        registrationId: "registration-b",
+        observedAt: new Date("2026-08-11T00:00:45.000Z"),
+      },
+      leaseExpiresAt: new Date("2026-08-11T00:02:45.000Z"),
+    })).resolves.toBe(false);
+
+    expect(persistExecutorFinalState).not.toHaveBeenCalled();
+    expect(task).toMatchObject({
+      status: "running",
+      completedAt,
+      terminationReason: "killed",
+      terminationDetail: "preserve terminal detail",
+      pendingTerminationHint: "limit_hit",
+      pendingTerminationDetail: "preserve pending detail",
+      terminationEventRecorded: true,
+      terminalEventId: 73,
+    });
   });
 
   it("persists an explicit runner error without an automatic replacement", async () => {
@@ -62,7 +112,6 @@ describe("TaskRunnerRecovery", () => {
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: { persistExecutorFinalState } as never,
-      autoResumeTransition: { resume } as never,
     });
 
     await recovery.markFailureAndResume(task, "runner lease expired", onResume);
@@ -88,7 +137,6 @@ describe("TaskRunnerRecovery", () => {
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: { persistExecutorFinalState } as never,
-      autoResumeTransition: { resume } as never,
     });
 
     await expect(recovery.markFailureAndResume(
@@ -120,7 +168,6 @@ describe("TaskRunnerRecovery", () => {
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: { persistExecutorFinalState } as never,
-      autoResumeTransition: { resume } as never,
     });
 
     await expect(recovery.markFailureAndResume(task, "runner exited", vi.fn()))
@@ -159,7 +206,6 @@ describe("TaskRunnerRecovery", () => {
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: { projectRecoveredRunnerTerminalFact } as never,
-      autoResumeTransition: {} as never,
     });
 
     await expect(recovery.projectClosed(task, "stale closed scan")).resolves.toBe(false);
@@ -182,7 +228,6 @@ describe("TaskRunnerRecovery", () => {
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: { projectRecoveredRunnerTerminalFact } as never,
-      autoResumeTransition: {} as never,
     });
 
     await expect(recovery.projectClosed(task, "repeated closed scan")).resolves.toBe(false);
@@ -227,7 +272,6 @@ describe("TaskRunnerRecovery", () => {
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: {} as never,
-      autoResumeTransition: {} as never,
       persistence: { retireTerminalExecutionOwnershipAndWaitForApplication } as never,
     });
 
@@ -282,7 +326,6 @@ describe("TaskRunnerRecovery", () => {
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: { projectRecoveredRunnerTerminalFact } as never,
-      autoResumeTransition: {} as never,
     });
 
     await expect(recovery.projectClosed(task, "retry terminal fact")).resolves.toBe(true);
@@ -313,7 +356,6 @@ describe("TaskRunnerRecovery", () => {
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: { projectRecoveredRunnerTerminalFact } as never,
-      autoResumeTransition: {} as never,
     });
 
     await expect(recovery.projectClosed(task, "matching closed owner")).resolves.toBe(true);

@@ -131,7 +131,7 @@ export function registerSessionMgmtTools(
           sourceTaskItemId: source_task_item_id ?? null,
         });
         // fire-and-forget — 도구는 await 하지 않는다.
-        runtime.taskExecutor.startExecution(task, agent);
+        runtime.taskExecutor.startNewExecution(task, agent);
         return jsonResult({
           agent_session_id: task.agentSessionId,
           status: task.status,
@@ -169,13 +169,13 @@ export function registerSessionMgmtTools(
           logger: runtime.logger,
           orch: runtime.orch,
           // TaskManager.addIntervention의 두 번째 인자 onResume이 auto-resume 분기에서 호출됨.
-          // 콜백 안에서 TaskExecutor.startExecution을 trigger — Python `mcp_session_mgmt.py`
+          // 콜백 안에서 TaskExecutor.startNewExecution을 trigger — Python `mcp_session_mgmt.py`
           // L153-161 (auto_resumed 분기 후 start_execution 호출) 정합.
-          onResume: (task, activation) => {
+          onResume: (task) => {
             if (!task.profileId) return;
             const agent = task.agentProfileSnapshot ?? runtime.agentRegistry.get(task.profileId);
             if (!agent) return;
-            runtime.taskExecutor.startExecution(task, agent, activation);
+            runtime.taskExecutor.startNewExecution(task, agent);
           },
         },
         {

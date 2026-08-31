@@ -330,7 +330,7 @@ function makeDeliveryPath(sql: SqlClient): {
         route.addIntervention(params, callback),
     } as never,
     taskExecutor: {
-      startExecution: (resumedTask: Task) => onResume(resumedTask),
+      startNewExecution: (resumedTask: Task) => onResume(resumedTask),
     } as never,
     logger: pino({ level: "silent" }),
   });

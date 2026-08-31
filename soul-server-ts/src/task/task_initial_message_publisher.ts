@@ -6,6 +6,8 @@ import type { SSEEventPayload } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { Task } from "./task_models.js";
+import { applyCanonicalSessionProjection } from
+  "./task_canonical_session_projection.js";
 import {
   buildUserMessageEvent,
   finishUserMessageEvent,
@@ -43,10 +45,12 @@ export class TaskInitialMessagePublisher {
     });
     await persistUserMessageEvent(task, event, this.deps);
     if (!task.executionOwnership) {
-      await this.deps.persistence.enqueueRunningTransition(task.agentSessionId, {
-        reviewState: task.reviewState ?? "not_required",
-        transitionId: "initial",
-      });
+      const application = await this.deps.persistence
+        .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
+          reviewState: task.reviewState ?? "not_required",
+          transitionId: "initial",
+        });
+      applyCanonicalSessionProjection(task, application.canonicalSession);
     }
     await finishUserMessageEvent(task, event, this.deps);
   }

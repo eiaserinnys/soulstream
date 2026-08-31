@@ -5,7 +5,6 @@ import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import {
   isActiveTaskStatus,
-  isTerminalTaskStatus,
   type CallerInfo,
   type InterventionMessage,
   type Task,
@@ -21,7 +20,6 @@ import type {
 } from "./task_delivery_ledger_gate.js";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
-import { isExecutionOwnershipConflictError } from "./execution_ownership.js";
 import {
   isNotificationDeliveryIntent,
 } from "./session_delivery_notification_payload.js";
@@ -99,7 +97,6 @@ export interface TaskInterventionRouteDeps {
     TaskDeliveryLedgerGate,
     "admit" | "beginDispatch" | "recordResult" | "recordFailure"
       | "recordNotificationPublished" | "recordNotificationFailure"
-      | "recordReservationRetry"
   > & Partial<Pick<TaskDeliveryLedgerGate, "reserveRetry">>;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
 }
@@ -163,9 +160,8 @@ export class TaskInterventionRoute {
       : initialMessage;
 
     let ledgerResultRecorded = false;
-    let deferredResume: { task: Task; activation?: Task["executionActivation"] } | undefined;
+    let deferredResume: Task | undefined;
     let deferredResumeStarted = false;
-    let activationCompleted = false;
     let notificationDisposition: "queued" | "auto_resume" | undefined;
     let notificationPublication: NotificationPublication | undefined;
     const startDeferredResumeOnce = (): void => {
@@ -173,12 +169,7 @@ export class TaskInterventionRoute {
       deferredResumeStarted = true;
       const resume = deferredResume;
       deferredResume = undefined;
-      try {
-        onResume(resume.task, resume.activation);
-      } catch (error) {
-        resume.activation?.reject(error);
-        throw error;
-      }
+      onResume(resume);
     };
     try {
       await this.awaitInitializingTask(task);
@@ -221,25 +212,9 @@ export class TaskInterventionRoute {
         }
       } else if (heldHumanRetry && task.status !== "completed") {
         result = await this.deps.runningInterventionTransition.queueOnly(task, message);
-      } else if (
-        isTerminalTaskStatus(task.status)
-        && admission.kind === "admitted"
-        && admission.row.intent === "completion_notification"
-        && (
-          task.status !== "completed"
-          || task.terminalEventId === undefined
-          || request.deliveryLeaseOwner === undefined
-        )
-      ) {
-        result = await this.deps.runningInterventionTransition.queueOnly(
-          task,
-          message,
-          { publishEvent: false },
-        );
-        notificationDisposition = "queued";
       } else if (admission.kind === "admitted") {
-        const deferResumeUntilQueued: StartExecutionCallback = (resumedTask, activation) => {
-          deferredResume = { task: resumedTask, activation };
+        const deferResumeUntilQueued: StartExecutionCallback = (resumedTask) => {
+          deferredResume = resumedTask;
         };
         result = await this.deps.autoResumeTransition.resume(
           task,
@@ -283,16 +258,6 @@ export class TaskInterventionRoute {
       // can dequeue it. A worker crash before this callback is recoverable from
       // the ledger; starting first would leave a running task with no receipt.
       startDeferredResumeOnce();
-      if ("autoResumed" in result && task.status === "initializing") {
-        const activation = task.executionActivation?.promise;
-        if (!activation) {
-          throw new Error(
-            `auto-resume executor did not expose activation barrier for ${task.agentSessionId}`,
-          );
-        }
-        await activation;
-      }
-      activationCompleted = true;
       if (notificationDisposition === "auto_resume" && notificationPublication) {
         await this.projectNotificationPublication(admission, notificationPublication);
       }
@@ -300,42 +265,7 @@ export class TaskInterventionRoute {
     } catch (err) {
       let recoveryError: unknown;
       if (!deferredResumeStarted && deferredResume) {
-        const abandonedResume = deferredResume;
         deferredResume = undefined;
-        abandonedResume.activation?.reject(err);
-      }
-      if (
-        this.deps.deliveryLedgerGate
-        && ledgerResultRecorded
-        && notificationDisposition === "auto_resume"
-        && !activationCompleted
-      ) {
-        try {
-          await this.deps.deliveryLedgerGate.recordNotificationFailure?.(
-            admission,
-            `auto-resume activation failed: ${errorMessage(err)}`,
-          );
-        } catch (notificationRecoveryError) {
-          recoveryError ??= notificationRecoveryError;
-        }
-      }
-      if (
-        this.deps.deliveryLedgerGate
-        && isExecutionOwnershipConflictError(err)
-      ) {
-        const disposition = await this.deps.deliveryLedgerGate.recordReservationRetry(
-          admission,
-          err.retryAt,
-        );
-        if (disposition === "scheduled" || disposition === "parked") {
-          return {
-            delivered: false,
-            queued: true,
-            queuePosition: 1,
-            consumeWhen: "next_turn",
-            reason: "queue_only_policy",
-          };
-        }
       }
       if (this.deps.deliveryLedgerGate && !ledgerResultRecorded) {
         try {
@@ -442,10 +372,6 @@ export function ensureHumanDeliveryIdentity(
     relationKey: `user_message:${params.agentSessionId}:${deliveryId}`,
     deliveryCreatedAt: new Date().toISOString(),
   };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function hydrateStoredDeliveryMessage(
