@@ -340,6 +340,40 @@ describe("TaskDeliveryLedgerGate", () => {
     expect(get).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    { state: "consumed", aggregateState: "consumed" },
+    { state: "superseded", aggregateState: "consumed" },
+    { state: "uncertain", aggregateState: "dead_letter" },
+  ] as const)(
+    "accepts an already terminal $state/$aggregateState delivery as a late consumption observation",
+    async ({ state, aggregateState }) => {
+      const deliveryId = `terminal-${state}-${aggregateState}`;
+      const existing = {
+        ...row(deliveryId, state),
+        aggregate_state: aggregateState,
+      };
+      const gate = new TaskDeliveryLedgerGate(true, {
+        get: vi.fn().mockResolvedValue(existing),
+        markConsumed: vi.fn().mockResolvedValue(null),
+      } as never);
+
+      await expect(gate.recordConsumed({
+        text: "already observed turn",
+        user: "system",
+        deliveryId,
+        deliveryIntent: "runtime_followup",
+      }, {
+        agentSessionId: "caller-1",
+        prompt: "run",
+        status: "running",
+        createdAt: new Date(),
+        lastEventId: 95,
+        lastReadEventId: 0,
+        interventionQueue: [],
+      })).resolves.toBeUndefined();
+    },
+  );
+
   it("propagates a completion-notification consumption repository error", async () => {
     const deliveryId = "bdbdbdbd-bdbd-4bdb-8bdb-bdbdbdbdbdbd";
     const repositoryError = new Error("delivery consume write failed");

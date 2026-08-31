@@ -671,6 +671,99 @@ describe("TaskExecutor.startExecution", () => {
     });
   });
 
+  it("continues to terminal after the active delivery was dead-lettered during its turn", async () => {
+    const mocks = makeMocks();
+    const activeDeliveryId = "dead-lettered-active-turn";
+    const successorDeliveryId = "successor-after-dead-letter";
+    const activeMessage: InterventionMessage = {
+      text: "active delivery",
+      user: "system",
+      deliveryId: activeDeliveryId,
+      deliveryIntent: "runtime_followup",
+    };
+    const successorMessage: InterventionMessage = {
+      text: "accepted successor",
+      user: "user",
+      deliveryId: successorDeliveryId,
+      deliveryIntent: "human_live_steer",
+    };
+    const rows = new Map([
+      [activeDeliveryId, {
+        delivery_id: activeDeliveryId,
+        state: "uncertain",
+        aggregate_state: "dead_letter",
+      }],
+      [successorDeliveryId, {
+        delivery_id: successorDeliveryId,
+        state: "queued",
+        aggregate_state: "pending",
+      }],
+    ]);
+    const gate = new TaskDeliveryLedgerGate(true, {
+      get: vi.fn(async (deliveryId: string) => rows.get(deliveryId)),
+      markConsumed: vi.fn(async (deliveryId: string) => {
+        const current = rows.get(deliveryId);
+        if (!current || current.aggregate_state === "dead_letter") return null;
+        const consumed = {
+          ...current,
+          state: "consumed",
+          aggregate_state: "consumed",
+        };
+        rows.set(deliveryId, consumed);
+        return consumed;
+      }),
+    } as never);
+    const task = makeTask();
+    let turn = 0;
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        turn += 1;
+        if (turn === 1) {
+          yield { type: "session", session_id: "dead-letter-race" } as SSEEventPayload;
+          task.interventionQueue.push(activeMessage);
+        } else if (turn === 2) {
+          task.interventionQueue.push(successorMessage);
+        }
+        yield { type: "complete", result: `turn-${turn}`, timestamp: turn } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      gate,
+    );
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(turn).toBe(3);
+    expect(task.status).toBe("completed");
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ type: "session_ended", status: "completed" }),
+      expect.objectContaining({ kind: "terminal_transition", status: "completed" }),
+    );
+    expect(rows.get(activeDeliveryId)).toMatchObject({
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+    });
+    expect(rows.get(successorDeliveryId)).toMatchObject({
+      state: "consumed",
+      aggregate_state: "consumed",
+    });
+  });
+
   it("turn-start receipt 기록 실패는 transcript recovery에 맡긴다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
