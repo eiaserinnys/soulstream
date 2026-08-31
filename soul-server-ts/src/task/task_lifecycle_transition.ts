@@ -319,7 +319,21 @@ export class TaskLifecycleTransition {
     }
     let terminalTransitionApplied = false;
     if (
-      (termination.newlyFinalized || retryUnrecordedTerminal)
+      retryUnrecordedTerminal
+      && isTerminalTaskStatus(task.status)
+      && task.terminationEventRecorded
+      && task.terminalEventId !== undefined
+      && task.executionOwnership
+      && task.recoveredExecutionOwnership
+    ) {
+      terminalTransitionApplied = await this.reconcileRecordedRecoveredTerminal(
+        task,
+        termination.detail,
+      );
+    }
+    if (
+      !terminalTransitionApplied
+      && (termination.newlyFinalized || retryUnrecordedTerminal)
       && isTerminalTaskStatus(task.status)
       && !task.terminationEventRecorded
     ) {
@@ -333,6 +347,51 @@ export class TaskLifecycleTransition {
       newlyFinalized: termination.newlyFinalized,
       terminalTransitionApplied,
     };
+  }
+
+  private async reconcileRecordedRecoveredTerminal(
+    task: Task,
+    terminationDetail: string | null,
+  ): Promise<boolean> {
+    const ownership = task.executionOwnership!;
+    const recovered = task.recoveredExecutionOwnership!;
+    const terminalEventId = task.terminalEventId!;
+    if (!recordedTerminalIdentityMatches(ownership, recovered)) {
+      throw new Error(
+        `recorded terminal receipt ownership changed before recovery: ${task.agentSessionId}`,
+      );
+    }
+    if (!this.deps.persistence) {
+      throw new Error("recorded terminal receipt reconciliation persistence is required");
+    }
+    const application = await this.deps.persistence
+      .reconcileRecordedTerminalExecutionAndWaitForApplication(
+        task.agentSessionId,
+        {
+          ownershipGeneration: ownership.ownershipGeneration,
+          manifestId: recovered.manifestId,
+          runtimeEnvIdentity: recovered.runtimeEnvIdentity,
+          registrationId: recovered.registrationId,
+          pid: recovered.pid,
+          startIdentity: recovered.startIdentity,
+          executionCommandId: recovered.executionCommandId,
+          terminalEventId,
+          runnerFact: task.runnerTerminalFact ?? runnerFactForTask(task),
+          terminationDetail,
+          reviewState: task.reviewState ?? "not_required",
+          lastAssistantText: task.lastAssistantText ?? null,
+          updatedAt: task.completedAt ?? new Date(),
+        },
+      );
+    applyCanonicalSessionProjection(task, application.canonicalSession);
+    if (!application.applied) {
+      throw new Error(
+        `recorded terminal receipt reconciliation rejected: ${task.agentSessionId}`,
+      );
+    }
+    task.executionOwnership = undefined;
+    task.recoveredExecutionOwnership = undefined;
+    return true;
   }
 
   private async enqueueAndAwaitSessionEnded(
@@ -408,4 +467,16 @@ function runnerFactForTask(task: Task): RunnerTerminalFact {
   if (task.status === "completed") return "completed";
   if (task.status === "interrupted") return "closed";
   return "failed";
+}
+
+function recordedTerminalIdentityMatches(
+  ownership: NonNullable<Task["executionOwnership"]>,
+  recovered: NonNullable<Task["recoveredExecutionOwnership"]>,
+): boolean {
+  return ownership.manifestId === recovered.manifestId
+    && ownership.runtimeEnvIdentity === recovered.runtimeEnvIdentity
+    && ownership.registrationId === recovered.registrationId
+    && ownership.pid === recovered.pid
+    && ownership.startIdentity === recovered.startIdentity
+    && ownership.executionCommandId === recovered.executionCommandId;
 }

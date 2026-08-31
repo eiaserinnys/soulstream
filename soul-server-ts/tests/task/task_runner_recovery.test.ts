@@ -252,7 +252,7 @@ describe("TaskRunnerRecovery", () => {
         executionCommandId: "owner-a",
       },
     });
-    const retireTerminalExecutionOwnershipAndWaitForApplication = vi.fn(async () => ({
+    const reconcileRecordedTerminalExecutionAndWaitForApplication = vi.fn(async () => ({
       applied: true,
       eventId: 4,
       canonicalSession: {
@@ -272,18 +272,13 @@ describe("TaskRunnerRecovery", () => {
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: {} as never,
-      persistence: { retireTerminalExecutionOwnershipAndWaitForApplication } as never,
+      persistence: { reconcileRecordedTerminalExecutionAndWaitForApplication } as never,
     });
 
     await expect(recovery.reconcileRecordedTerminalExecution(task)).resolves.toBe(true);
 
-    expect(retireTerminalExecutionOwnershipAndWaitForApplication).toHaveBeenCalledWith(
+    expect(reconcileRecordedTerminalExecutionAndWaitForApplication).toHaveBeenCalledWith(
       task.agentSessionId,
-      expect.objectContaining({
-        type: "metadata",
-        metadata_type: "execution_ownership_transition",
-        value: expect.objectContaining({ phase: "terminal_identity_retired" }),
-      }),
       {
         ownershipGeneration: 1,
         manifestId: "sha-a",
@@ -293,6 +288,10 @@ describe("TaskRunnerRecovery", () => {
         startIdentity: "node-start-1787806755465",
         executionCommandId: "owner-a",
         terminalEventId: 3,
+        runnerFact: "failed",
+        terminationDetail: "event outbox acknowledgement timed out",
+        reviewState: "not_required",
+        lastAssistantText: null,
         updatedAt: expect.any(Date),
       },
     );

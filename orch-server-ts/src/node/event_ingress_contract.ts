@@ -113,6 +113,10 @@ export type EventSessionEffect =
       start_identity: string;
       execution_command_id: string;
       terminal_event_id: number;
+      runner_fact: "completed" | "failed" | "reaped" | "closed";
+      termination_detail: string | null;
+      review_state: string;
+      last_assistant_text?: string | null;
       updated_at: string;
     }
   | {

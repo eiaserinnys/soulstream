@@ -236,6 +236,37 @@ export function makeEventPersistenceTestDouble(
       };
     },
   );
+  const reconcileRecordedTerminalExecutionAndWaitForApplication = vi.fn(
+    async (
+      _sessionId: string,
+      input: {
+        terminalEventId: number;
+        runnerFact: "completed" | "failed" | "reaped" | "closed";
+        terminationDetail: string | null;
+        reviewState: string;
+        lastAssistantText?: string | null;
+        updatedAt?: Date;
+      },
+    ) => ({
+      eventId: ++sourceSeq,
+      applied: true,
+      canonicalSession: {
+        status: input.runnerFact === "completed"
+          ? "completed"
+          : input.runnerFact === "closed" ? "interrupted" : "error",
+        termination_reason: input.runnerFact === "completed"
+          ? "completed_ok"
+          : input.runnerFact === "closed" ? "killed" : "error_aborted",
+        termination_detail: input.terminationDetail,
+        review_state: input.reviewState,
+        last_assistant_text: input.lastAssistantText ?? null,
+        termination_event_id: input.terminalEventId,
+        updated_at: input.updatedAt?.toISOString() ?? new Date().toISOString(),
+        last_event_id: sourceSeq,
+      },
+      canonicalExecutionOwnership: null,
+    }),
+  );
   const acquireExecutionOwnershipAndWaitForApplication = vi.fn(
     async (
       _sessionId: string,
@@ -315,6 +346,7 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
     enqueueRecoveredRunnerTerminalFactAndWaitForApplication,
+    reconcileRecordedTerminalExecutionAndWaitForApplication,
     ...(options.capabilityProfile === "execution_ownership"
       ? {
           acquireExecutionOwnershipAndWaitForApplication,
@@ -335,6 +367,7 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
     enqueueRecoveredRunnerTerminalFactAndWaitForApplication,
+    reconcileRecordedTerminalExecutionAndWaitForApplication,
     acquireExecutionOwnershipAndWaitForApplication,
     releaseExecutionOwnershipAndWaitForApplication,
     waitForSessionAck,

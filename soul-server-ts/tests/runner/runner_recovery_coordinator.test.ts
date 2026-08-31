@@ -90,7 +90,10 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       executionCommandId: "owner:successor-a",
       ownershipGeneration: 53,
     };
-    const { runner, detachHost } = finishedRunner("registration-a", true);
+    const { runner, detachHost } = finishedRunner(
+      "registration-a",
+      "owner:successor-a",
+    );
     const execution = new Promise<void>(() => {});
     continuingTask.runner = runner;
     continuingTask.executionPromise = execution;
@@ -106,6 +109,35 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(continuingTask.runner).toBe(runner);
     expect(continuingTask.executionPromise).toBe(execution);
     expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
+  it("detaches a terminal registration when the stuck host execution is the same command", async () => {
+    const finishedRegistration = registration({
+      lifecycleState: "completed",
+      pidAlive: false,
+    });
+    const strandedTask = task("session-a");
+    const { runner, detachHost } = finishedRunner("registration-a", "execute-a");
+    strandedTask.runner = runner;
+    strandedTask.executionPromise = new Promise<void>(() => {});
+    const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(detachHost).toHaveBeenCalledOnce();
+    expect(strandedTask.runner).toBeUndefined();
+    expect(strandedTask.executionPromise).toBeUndefined();
+    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
+      strandedTask,
+      expect.anything(),
+      "execute-a",
+      "offline",
+      expect.any(Function),
+    );
   });
 
   it("does not detach a live successor while replaying an older terminal registration", async () => {
@@ -2198,7 +2230,10 @@ function recoveryMockWithReadiness(
   });
 }
 
-function finishedRunner(registrationId = "registration-a", activeExecution = false): {
+function finishedRunner(
+  registrationId = "registration-a",
+  activeExecutionCommandId?: string,
+): {
   runner: NonNullable<Task["runner"]>;
   detachHost: ReturnType<typeof vi.fn>;
 } {
@@ -2208,7 +2243,8 @@ function finishedRunner(registrationId = "registration-a", activeExecution = fal
       dispatcher: {
         detachHost,
         isClosed: () => false,
-        hasActiveExecution: () => activeExecution,
+        hasActiveExecution: () => activeExecutionCommandId !== undefined,
+        activeExecutionCommandId: () => activeExecutionCommandId,
         dispatcherId: () => "live-one",
         registrationId: () => registrationId,
       } as unknown as NonNullable<Task["runner"]>["dispatcher"],

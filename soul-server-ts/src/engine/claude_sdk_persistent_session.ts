@@ -158,7 +158,6 @@ export class ClaudeSdkPersistentSession {
       logger: this.logger,
     });
   }
-
   async settled(): Promise<void> {
     await Promise.allSettled([this.pump, this.hookPump]);
   }
@@ -179,6 +178,7 @@ export class ClaudeSdkPersistentSession {
       }
     } catch (err) {
       const active = this.activeForeground;
+      this.runtime.close("fatal");
       active?.output.fail(err);
       this.clearForegroundTimers(active);
       settleInterventionInterrupt(active, false);

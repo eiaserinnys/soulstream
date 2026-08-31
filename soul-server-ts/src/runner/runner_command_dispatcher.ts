@@ -54,6 +54,7 @@ export interface RunnerCommandDispatcher {
   releaseEventStreamRegistration?(): Promise<void>;
   isClosed?(): boolean;
   hasActiveExecution(): boolean;
+  activeExecutionCommandId?(): string | undefined;
   dispatcherId?(): string;
   registrationId(): string | undefined;
   sendControlFrame(frame: RunnerControlFrame): Promise<boolean>;
@@ -219,6 +220,10 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
 
   hasActiveExecution(): boolean {
     return this.activeExecuteCommandId !== undefined;
+  }
+
+  activeExecutionCommandId(): string | undefined {
+    return this.activeExecuteCommandId;
   }
 
   async sendControlFrame(frame: RunnerControlFrame): Promise<boolean> {

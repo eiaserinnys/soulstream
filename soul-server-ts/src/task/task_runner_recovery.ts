@@ -1,5 +1,4 @@
 import type { EventPersistence } from "../db/event_persistence.js";
-import type { SSEEventPayload } from "../engine/protocol.js";
 import type { ExecutionOwnershipObservation } from "./execution_ownership.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
@@ -94,27 +93,9 @@ export class TaskRunnerRecovery {
     if (!this.deps.persistence) {
       throw new Error("terminal execution ownership recovery persistence is required");
     }
-    const updatedAt = new Date();
-    const transitionId = [
-      "terminal-retire",
-      terminalEventId,
-      ownership.ownershipGeneration,
-      ownership.registrationId,
-      ownership.pid,
-      ownership.startIdentity,
-      ownership.executionCommandId,
-    ].join(":");
-    const event = {
-      type: "metadata",
-      metadata_type: "execution_ownership_transition",
-      value: { transition_id: transitionId, phase: "terminal_identity_retired" },
-      timestamp: updatedAt.toISOString(),
-      _dedupe_key: `execution_ownership:${task.agentSessionId}:${transitionId}`,
-    } as unknown as SSEEventPayload;
     const application = await this.deps.persistence
-      .retireTerminalExecutionOwnershipAndWaitForApplication(
+      .reconcileRecordedTerminalExecutionAndWaitForApplication(
         task.agentSessionId,
-        event,
         {
           ownershipGeneration: ownership.ownershipGeneration,
           manifestId: ownership.manifestId,
@@ -124,7 +105,11 @@ export class TaskRunnerRecovery {
           startIdentity: ownership.startIdentity,
           executionCommandId: ownership.executionCommandId,
           terminalEventId,
-          updatedAt,
+          runnerFact: task.runnerTerminalFact ?? runnerFactForTerminalTask(task),
+          terminationDetail: task.terminationDetail ?? null,
+          reviewState: task.reviewState ?? "not_required",
+          lastAssistantText: task.lastAssistantText ?? null,
+          updatedAt: new Date(),
         },
       );
     applyCanonicalSessionProjection(task, application.canonicalSession);
@@ -175,4 +160,10 @@ export class TaskRunnerRecovery {
     return true;
   }
 
+}
+
+function runnerFactForTerminalTask(task: Task): "completed" | "failed" | "closed" {
+  if (task.status === "completed") return "completed";
+  if (task.status === "interrupted") return "closed";
+  return "failed";
 }

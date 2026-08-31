@@ -167,9 +167,8 @@ export abstract class EventTransitionPublisher {
     return await this.waitForTransitionApplication(sessionId, record, "execution release");
   }
 
-  async retireTerminalExecutionOwnershipAndWaitForApplication(
+  async reconcileRecordedTerminalExecutionAndWaitForApplication(
     sessionId: string,
-    event: SSEEventPayload,
     input: {
       ownershipGeneration: number;
       manifestId: string;
@@ -179,10 +178,27 @@ export abstract class EventTransitionPublisher {
       startIdentity: string;
       executionCommandId: string;
       terminalEventId: number;
+      runnerFact: "completed" | "failed" | "reaped" | "closed";
+      terminationDetail: string | null;
+      reviewState: string;
+      lastAssistantText?: string | null;
       updatedAt?: Date;
     },
   ): Promise<EventSessionTransitionApplication> {
     const updatedAt = input.updatedAt ?? new Date();
+    const transitionId = [
+      "recorded-terminal",
+      input.terminalEventId,
+      input.ownershipGeneration,
+      input.executionCommandId,
+    ].join(":");
+    const event = {
+      type: "metadata",
+      metadata_type: "execution_ownership_transition",
+      value: { transition_id: transitionId, phase: "recorded_terminal_reconciled" },
+      timestamp: updatedAt.toISOString(),
+      [INTERNAL_DEDUPE_KEY]: `execution_ownership:${sessionId}:${transitionId}`,
+    } as unknown as SSEEventPayload;
     const effect: Extract<
       EventOutboxSessionEffect,
       { kind: "execution_retire_recorded_terminal_identity" }
@@ -196,6 +212,10 @@ export abstract class EventTransitionPublisher {
       start_identity: input.startIdentity,
       execution_command_id: input.executionCommandId,
       terminal_event_id: input.terminalEventId,
+      runner_fact: input.runnerFact,
+      termination_detail: input.terminationDetail,
+      review_state: input.reviewState,
+      last_assistant_text: input.lastAssistantText ?? null,
       updated_at: updatedAt.toISOString(),
     };
     const record = await this.enqueueEvent(
@@ -207,7 +227,7 @@ export abstract class EventTransitionPublisher {
     return await this.waitForTransitionApplication(
       sessionId,
       record,
-      "terminal execution ownership retirement",
+      "recorded terminal execution reconciliation",
     );
   }
 

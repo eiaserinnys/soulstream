@@ -21,7 +21,7 @@ describe("applyEventSessionEffect", () => {
     ["execution_retire_terminal_ownership", "session_retire_terminal_execution_ownership"],
     [
       "execution_retire_recorded_terminal_identity",
-      "session_retire_recorded_terminal_execution_identity",
+      "session_reconcile_recorded_runner_terminal_fact",
     ],
     ["execution_orphaned_spawn", "session_mark_execution_orphaned_spawn"],
     ["execution_backfill", "session_backfill_execution_ownership"],
@@ -395,6 +395,10 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     start_identity: "start-1",
     execution_command_id: "execute-1",
     terminal_event_id: 3,
+    runner_fact: "completed",
+    termination_detail: null,
+    review_state: "not_required",
+    last_assistant_text: "done",
     updated_at: "2026-08-06T00:00:00.000Z",
   };
   if (kind === "execution_orphaned_spawn") return {

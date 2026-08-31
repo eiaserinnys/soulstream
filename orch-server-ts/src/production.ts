@@ -500,6 +500,30 @@ export async function createLiveProductionApplication(
     sessionCache: registry.sessionCache,
     pushNotifier,
     memoryStats,
+    recoverPendingImmediateDeliveries: async () => {
+      const deliveries = (await persistenceRepositoryProvider()).deliveries;
+      for (const node of registry.listConnectedNodes()) {
+        try {
+          await replayPendingImmediateDeliveriesForNode({
+            nodeId: node.nodeId,
+            connectionId: node.connectionId,
+            deliveries,
+            sessionRouter: runtimeServices.sessionRouter,
+            sessionBridge: runtimeServices.sessionBridge,
+            warn: context.warn,
+            leaseOwnerPrefix: "maintenance",
+          });
+        } catch (error) {
+          context.warn(warningMessage(
+            `pending immediate delivery recovery failed for ${node.nodeId}`,
+            error,
+          ));
+        }
+      }
+    },
+    onDeliveryRecoveryError: (error) => {
+      context.warn(warningMessage("pending immediate delivery recovery failed", error));
+    },
     onInfo: (event) => {
       app.log.info({ runtimeMemory: event }, "Orchestrator runtime memory");
     },
@@ -529,7 +553,7 @@ export async function createLiveProductionApplication(
     async closeResources() {
       if (resourcesClosed) return;
       resourcesClosed = true;
-      maintenanceService.stop();
+      await maintenanceService.stop();
       await sessionReconciliation.close();
       await usageSummaryService.stop();
       await turnSummaryPipeline?.drain();
@@ -546,8 +570,10 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
   sessionRouter: OrchestratorRuntimeServices["sessionRouter"];
   sessionBridge: OrchestratorRuntimeServices["sessionBridge"];
   warn(message: string): void;
+  leaseOwnerPrefix?: "node-ready" | "maintenance";
 }): Promise<void> {
-  const leaseOwner = `node-ready:${input.nodeId}:${input.connectionId}`;
+  const leaseOwnerPrefix = input.leaseOwnerPrefix ?? "node-ready";
+  const leaseOwner = `${leaseOwnerPrefix}:${input.nodeId}:${input.connectionId}`;
   const claimed = await input.deliveries.recovery.claimPendingImmediateIntentsForNode(
     input.nodeId,
     leaseOwner,
@@ -587,7 +613,7 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
       }
     } catch (error) {
       const failure = warningMessage(
-        `node-ready delivery ${row.delivery_id} dispatch failed`,
+        `${leaseOwnerPrefix} delivery ${row.delivery_id} dispatch failed`,
         error,
       );
       const current = await input.deliveries.get(row.delivery_id);

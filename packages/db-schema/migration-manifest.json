@@ -81,6 +81,7 @@
     { "id": "077_ownerless_terminal_stale_event_cas.sql", "sha256": "bef51b7e74f299b5598ca593a77257de3f49ab8e2352bf371d54091d4d79941b", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "078_terminal_execution_ownership_retirement.sql", "sha256": "e025eff3dac10bf4b2ab9a945bc368699decd54796bdf3ad081704fd166a554b", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "079_terminal_status_single_canon.sql", "sha256": "c825d3a816974f75629a448cd856233f211312ce48e84258af1f53917e805d27", "destructive": false, "rollback_compatibility": "previous_release_safe" },
-    { "id": "080_terminal_execution_identity_retirement.sql", "sha256": "bf2dc2e7f276e47e4c357a28a0b85dd1dddaa59db515003d6f44b4c4da6cbe46", "destructive": false, "rollback_compatibility": "previous_release_safe" }
+    { "id": "080_terminal_execution_identity_retirement.sql", "sha256": "bf2dc2e7f276e47e4c357a28a0b85dd1dddaa59db515003d6f44b4c4da6cbe46", "destructive": false, "rollback_compatibility": "previous_release_safe" },
+    { "id": "081_recorded_terminal_receipt_reconciliation.sql", "sha256": "94f329e3fa934b79452c5196d6f3a31eafbfa8ffe27333aa19aeba01711f63a8", "destructive": false, "rollback_compatibility": "previous_release_safe" }
   ]
 }
