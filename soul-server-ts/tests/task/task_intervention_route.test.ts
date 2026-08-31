@@ -10,6 +10,14 @@ import type {
 } from "../../src/task/task_delivery_ledger_gate.js";
 import type { SessionNotificationPublisher } from "../../src/task/task_session_notification.js";
 
+function activeRunner(): NonNullable<Task["runner"]> {
+  return {
+    dispatcher: {
+      hasActiveExecution: () => true,
+    },
+  } as NonNullable<Task["runner"]>;
+}
+
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
     agentSessionId: "sess-intervention",
@@ -19,6 +27,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     lastEventId: 7,
     lastReadEventId: 3,
     interventionQueue: [],
+    runner: activeRunner(),
     ...overrides,
   };
 }
@@ -679,12 +688,13 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }), expect.any(Function));
   });
 
-  it("routes hydrated running tasks to the existing runner queue", async () => {
+  it("auto-resumes a reconciled ownerless running task", async () => {
     const hydrated = makeTask({
       agentSessionId: "sess-stale-running",
       status: "running",
       hydratedFromDb: true,
       codexThreadId: "thr-stale",
+      runner: undefined,
     });
     const { route, tasks, loadEvictedTask, runningInterventionTransition, autoResumeTransition } =
       makeSubject();
@@ -694,23 +704,65 @@ describe("TaskInterventionRoute.addIntervention", () => {
       agentSessionId: "sess-stale-running",
       text: "resume stale running",
       user: "alice",
-    }, vi.fn())).resolves.toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "queue_only_policy",
-    });
+    }, vi.fn())).resolves.toEqual({ autoResumed: true });
 
     expect(tasks.get("sess-stale-running")).toBe(hydrated);
     expect(hydrated.status).toBe("running");
-    expect(runningInterventionTransition.deliver).toHaveBeenCalledWith(
+    expect(autoResumeTransition.resume).toHaveBeenCalledWith(
       hydrated,
       expect.objectContaining({
-      text: "resume stale running",
+        text: "resume stale running",
       }),
-      { queueIfUndelivered: true },
+      expect.any(Function),
     );
+    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      state: "attached live runner",
+      task: makeTask({ agentSessionId: "sess-live-runner" }),
+    },
+    {
+      state: "durable adoption owner before runner attachment",
+      task: makeTask({
+        agentSessionId: "sess-adopting-runner",
+        runner: undefined,
+        executionOwnership: {
+          ownerKind: "adopted_runner",
+          manifestId: "manifest-adopting",
+          runtimeEnvIdentity: "runtime-adopting",
+          registrationId: "registration-adopting",
+          pid: 42_001,
+          startIdentity: "start-adopting",
+          executionCommandId: "command-adopting",
+          ownershipGeneration: 7,
+        },
+      }),
+    },
+    {
+      state: "execution slot before runner attachment",
+      task: makeTask({
+        agentSessionId: "sess-reconnecting-runner",
+        runner: undefined,
+        executionPromise: new Promise<void>(() => undefined),
+      }),
+    },
+  ])("keeps $state on one running intervention owner", async ({ task }) => {
+    const { route, runningInterventionTransition, autoResumeTransition } =
+      makeSubject([task]);
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "delivery during restart convergence",
+      user: "agent",
+      source: "claude_runtime_task_followup",
+    }, vi.fn())).resolves.toMatchObject({ queued: true });
+
+    const routeOwners = vi.mocked(runningInterventionTransition.deliver).mock.calls.length
+      + vi.mocked(autoResumeTransition.resume).mock.calls.length;
+    expect(routeOwners).toBe(1);
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledOnce();
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 

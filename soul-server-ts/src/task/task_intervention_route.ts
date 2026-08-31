@@ -379,7 +379,13 @@ function interventionTaskRoute(
 ): "running" | "activating" | "auto-resume" {
   if (task.status === "initializing") return "activating";
   if (!isActiveTaskStatus(task.status)) return "auto-resume";
-  return task.runner === undefined || task.runner.dispatcher.hasActiveExecution()
+  // Upstream commands wait for RunnerRecoveryCoordinator.scanOnce() before
+  // entering this route. During adoption the durable ownership and execution
+  // slot exist before the runner finishes attaching; after attachment the
+  // dispatcher owns the live command. Only absence of all three facts means
+  // recovery settled this persisted `running` row without an execution.
+  if (task.executionOwnership || task.executionPromise) return "running";
+  return task.runner?.dispatcher.hasActiveExecution() === true
     ? "running"
     : "auto-resume";
 }

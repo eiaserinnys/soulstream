@@ -224,6 +224,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         agentSessionId: "caller-session",
         prompt: "previous turn",
         status: "running",
+        executionPromise: new Promise<void>(() => undefined),
         createdAt: new Date("2026-08-28T00:00:00.000Z"),
         lastEventId: 42,
         lastReadEventId: 0,
