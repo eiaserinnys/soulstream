@@ -18,6 +18,14 @@ import {
 } from "./claude_sdk_persistent_test_harness.js";
 
 const silentLogger = pino({ level: "silent" });
+const interruptArrivalOrders = [
+  ["receipt", "result", "continuation"],
+  ["receipt", "continuation", "result"],
+  ["result", "receipt", "continuation"],
+  ["result", "continuation", "receipt"],
+  ["continuation", "receipt", "result"],
+  ["continuation", "result", "receipt"],
+] as const;
 
 describe("R17 Claude intervention interrupt contract", () => {
   it.each([
@@ -172,6 +180,265 @@ describe("R17 Claude intervention interrupt contract", () => {
       await expect(oldTurn).resolves.toEqual(expect.any(Array));
       expect(oldTurnSettled).toBe(true);
     } finally {
+      await registry.shutdown();
+    }
+  });
+
+  it("accepts an interrupted Result that arrives before the control receipt", async () => {
+    const harness = makeHarness();
+    let releaseReceipt!: () => void;
+    const receipt = new Promise<void>((resolve) => {
+      releaseReceipt = resolve;
+    });
+    harness.interrupt.mockImplementationOnce(async () => await receipt);
+    const registry = new ClaudeSessionClientRegistry(
+      () => new ClaudeSdkClient(
+        { query: harness.queryFn, detachedEventSink: harness.detached },
+        silentLogger,
+      ),
+      { idleTtlMs: 300_000, maxEntries: 4 },
+    );
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/r17-claude-intervention",
+        persistentSessionRegistry: registry,
+        processEnv: {},
+      },
+      silentLogger,
+    );
+
+    try {
+      const oldTurn = collectSse(engine.execute({
+        agentSessionId: "agent-session",
+        prompt: "perform a multi-tool task",
+      }));
+      const oldInput = await harness.nextInput();
+      harness.push(oldInput as SDKMessage);
+      harness.push(sdkInit("sdk-session"));
+
+      const intervention = engine.intervene({ prompt: "stop now" });
+      await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
+      harness.push(sdkInterruptedResult("sdk-session", oldInput.uuid));
+      await expect(oldTurn).resolves.toEqual(expect.any(Array));
+      releaseReceipt();
+
+      await expect(intervention).resolves.toEqual({
+        status: "not_delivered",
+        mechanism: "interrupt_then_next_turn",
+        reason: "next_turn_required",
+      });
+      expect(harness.close).not.toHaveBeenCalled();
+
+      const nextTurn = collectSse(engine.execute({
+        agentSessionId: "agent-session",
+        prompt: "answer the intervention",
+      }));
+      const nextInput = await harness.nextInput();
+      harness.push(nextInput as SDKMessage);
+      harness.push(sdkResult("sdk-session", nextInput.uuid, "intervention handled"));
+      await expect(nextTurn).resolves.toContainEqual(
+        expect.objectContaining({ type: "complete", result: "intervention handled" }),
+      );
+      expect(harness.captured).toHaveLength(1);
+    } finally {
+      releaseReceipt();
+      await registry.shutdown();
+    }
+  });
+
+  it.each(interruptArrivalOrders)(
+    "is timing-independent for %s -> %s -> %s",
+    async (...arrivalOrder) => {
+      const harness = makeHarness();
+      let releaseReceipt!: () => void;
+      let markReceiptReturned!: () => void;
+      const receiptGate = new Promise<void>((resolve) => {
+        releaseReceipt = resolve;
+      });
+      const receiptReturned = new Promise<void>((resolve) => {
+        markReceiptReturned = resolve;
+      });
+      harness.interrupt.mockImplementationOnce(async () => {
+        await receiptGate;
+        markReceiptReturned();
+      });
+      const registry = new ClaudeSessionClientRegistry(
+        () => new ClaudeSdkClient(
+          { query: harness.queryFn, detachedEventSink: harness.detached },
+          silentLogger,
+        ),
+        { idleTtlMs: 300_000, maxEntries: 4 },
+      );
+      const engine = new ClaudeEngineAdapter(
+        {
+          workspaceDir: "/tmp/r17-claude-intervention",
+          persistentSessionRegistry: registry,
+          processEnv: {},
+        },
+        silentLogger,
+      );
+      let oldTurnSettled = false;
+
+      try {
+        const oldTurn = collectSse(engine.execute({
+          agentSessionId: "agent-session",
+          prompt: "perform a multi-tool task",
+        })).then((events) => {
+          oldTurnSettled = true;
+          return events;
+        });
+        const oldInput = await harness.nextInput();
+        harness.push(oldInput as SDKMessage);
+        harness.push(sdkInit("sdk-session"));
+        const intervention = engine.intervene({ prompt: "stop now" });
+        await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
+
+        for (const arrival of arrivalOrder) {
+          if (arrival === "receipt") {
+            releaseReceipt();
+            await receiptReturned;
+          } else if (arrival === "result") {
+            harness.push(sdkInterruptedResult("sdk-session", oldInput.uuid));
+            await vi.waitFor(() => expect(oldTurnSettled).toBe(true));
+          } else {
+            harness.push(sdkToolStart(
+              "tool-after-intervention",
+              "tool-must-not-start",
+            ));
+            await vi.waitFor(() => expect(harness.close).toHaveBeenCalledTimes(1));
+          }
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+
+        await expect(intervention).resolves.toEqual(expect.objectContaining({
+          reason: "next_turn_required",
+        }));
+        const oldEvents = await oldTurn;
+        expect(oldEvents.filter((event) => event.type === "error")).toEqual([]);
+        expect(oldEvents).not.toContainEqual(expect.objectContaining({
+          type: "tool_start",
+          tool_use_id: "tool-must-not-start",
+        }));
+
+        const nextTurn = collectSse(engine.execute({
+          agentSessionId: "agent-session",
+          prompt: "answer the intervention",
+        }));
+        const nextInput = await harness.nextInput();
+        harness.push(nextInput as SDKMessage);
+        harness.push(sdkInit("next-sdk-session"));
+        harness.push(sdkResult("next-sdk-session", nextInput.uuid, "intervention handled"));
+        const nextEvents = await nextTurn;
+        expect(nextEvents).toContainEqual(expect.objectContaining({
+          type: "complete",
+          result: "intervention handled",
+        }));
+        expect(nextEvents.filter((event) => event.type === "error")).toEqual([]);
+        expect(harness.captured).toHaveLength(2);
+      } finally {
+        releaseReceipt();
+        await registry.shutdown();
+      }
+    },
+  );
+
+  it("closes the Query before persisting background terminal events", async () => {
+    const harness = makeHarness();
+    const runtimeEvents: ClaudeClientEvent[] = [];
+    let releaseTerminalSink!: () => void;
+    let terminalSinkEntered!: () => void;
+    const terminalSinkGate = new Promise<void>((resolve) => {
+      releaseTerminalSink = resolve;
+    });
+    const terminalSinkEntry = new Promise<void>((resolve) => {
+      terminalSinkEntered = resolve;
+    });
+    let client!: ClaudeSdkClient;
+    const registry = new ClaudeSessionClientRegistry(
+      () => {
+        client = new ClaudeSdkClient(
+          {
+            query: harness.queryFn,
+            detachedEventSink: harness.detached,
+            runtimeEventSink: async (event) => {
+              runtimeEvents.push(event);
+              if (
+                event.type === "claude_runtime_task_updated"
+                && event.patch.close_reason === "explicit_cancel"
+              ) {
+                terminalSinkEntered();
+                await terminalSinkGate;
+              }
+              return true;
+            },
+          },
+          silentLogger,
+        );
+        return client;
+      },
+      { idleTtlMs: 300_000, maxEntries: 4 },
+    );
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/r17-claude-intervention",
+        persistentSessionRegistry: registry,
+        processEnv: {},
+      },
+      silentLogger,
+    );
+    let intervention: Promise<unknown> | undefined;
+    let oldTurn: Promise<unknown> | undefined;
+
+    try {
+      oldTurn = collectSse(engine.execute({
+        agentSessionId: "agent-session",
+        prompt: "perform a multi-tool task",
+      }));
+      const oldInput = await harness.nextInput();
+      harness.push(oldInput as SDKMessage);
+      harness.push(sdkInit("sdk-session"));
+      harness.push({
+        type: "system",
+        subtype: "background_tasks_changed",
+        uuid: "background-membership-before-intervention",
+        session_id: "sdk-session",
+        tasks: [{ task_id: "background-task", description: "long background task" }],
+      } as unknown as SDKMessage);
+      harness.push({
+        type: "system",
+        subtype: "task_started",
+        uuid: "task-started-before-intervention",
+        session_id: "sdk-session",
+        task_id: "background-task",
+        description: "long background task",
+      } as unknown as SDKMessage);
+      await vi.waitFor(() => expect(
+        client.persistentRuntimeActivity()?.backgroundTaskCount,
+      ).toBe(1));
+
+      intervention = engine.intervene({ prompt: "stop now" });
+      await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
+      harness.push(sdkToolStart("tool-after-intervention", "tool-must-not-start"));
+      await terminalSinkEntry;
+
+      expect(harness.close).toHaveBeenCalledTimes(1);
+      releaseTerminalSink();
+      await expect(intervention).resolves.toEqual(expect.objectContaining({
+        reason: "next_turn_required",
+      }));
+      await expect(oldTurn).resolves.toEqual(expect.any(Array));
+      expect(runtimeEvents).toContainEqual(expect.objectContaining({
+        type: "claude_runtime_task_updated",
+        taskId: "background-task",
+        patch: expect.objectContaining({
+          status: "stopped",
+          close_reason: "explicit_cancel",
+        }),
+      }));
+    } finally {
+      releaseTerminalSink();
+      await intervention?.catch(() => undefined);
+      await oldTurn?.catch(() => undefined);
       await registry.shutdown();
     }
   });

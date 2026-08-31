@@ -213,9 +213,8 @@ export class ClaudeSessionRuntime<TMessage> {
   }
 
   observeInterruptReceipt(receipt: ClaudeInterruptReceipt): void {
-    if (this.foregroundPhase !== "interrupting") {
-      throw new Error(`Unexpected Claude interrupt receipt while ${this.foregroundPhase}`);
-    }
+    // Result or Query close may prove the interrupt effect before the control
+    // receipt returns. Receipt order is not a foreground phase invariant.
     this.interruptReceiptObserved = true;
     for (const uuid of receipt.still_queued ?? []) {
       const input = this.inputs.get(uuid);

@@ -37,16 +37,35 @@ export type ActiveForeground = {
   uuid: string;
   /** Owner captured immediately before a native intervention interrupts it. */
   interruptedOwnerUuid?: string;
-  interventionInterrupt?: {
-    promise: Promise<boolean>;
-    resolve(observed: boolean): void;
-  };
+  interventionInterrupt?: InterventionInterruptObservation;
   output: EventQueue<ClaudeClientEvent>;
   interruptResultTimer: ReturnType<typeof setTimeout> | null;
   timedOut: boolean;
   origin: { kind: string; id: string };
   rateLimitTerminationState: RateLimitTerminationState;
 };
+
+export type InterventionInterruptObservation = {
+  promise: Promise<boolean>;
+  resolve(observed: boolean): void;
+  observed: boolean;
+  settled: boolean;
+};
+
+export function createInterventionInterruptObservation(): InterventionInterruptObservation {
+  let resolvePromise!: (observed: boolean) => void;
+  const observation: InterventionInterruptObservation = {
+    promise: new Promise<boolean>((resolve) => {
+      resolvePromise = resolve;
+    }),
+    resolve: (observed) => {
+      resolvePromise(observed);
+    },
+    observed: false,
+    settled: false,
+  };
+  return observation;
+}
 
 export function isPostInterruptContinuation(event: ClaudeClientEvent): boolean {
   return event.type === "progress"
@@ -57,13 +76,29 @@ export function isPostInterruptContinuation(event: ClaudeClientEvent): boolean {
     || event.type === "subagent_start";
 }
 
+export function shouldFencePostInterruptContinuation(
+  active: ActiveForeground | null,
+  event: ClaudeClientEvent,
+): active is ActiveForeground {
+  return Boolean(active?.interventionInterrupt) && isPostInterruptContinuation(event);
+}
+
+export function isExpectedInterruptTerminalEvent(
+  event: ClaudeClientEvent,
+  expectedDiagnostic: boolean,
+): boolean {
+  return isExpectedInterruptDiagnostic(event)
+    || (expectedDiagnostic && event.type === "result" && !event.success);
+}
+
 export function settleInterventionInterrupt(
   active: ActiveForeground | null,
   observed: boolean,
 ): void {
   const observation = active?.interventionInterrupt;
-  if (!active || !observation) return;
-  active.interventionInterrupt = undefined;
+  if (!observation || observation.settled) return;
+  observation.observed = observed;
+  observation.settled = true;
   observation.resolve(observed);
 }
 

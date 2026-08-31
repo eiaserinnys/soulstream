@@ -24,18 +24,19 @@ import {
   type ClaudeDetachedEventSink,
   type ClaudeRuntimeEventSink,
   type ClaudeSdkPersistentSessionConfig,
+  createInterventionInterruptObservation,
   describeResultProvenance,
   isExpectedInterruptDiagnostic,
-  isPostInterruptContinuation,
+  isExpectedInterruptTerminalEvent,
   isTurnStartingUserInput,
   provableTurnResultOwner,
   settleInterventionInterrupt,
+  shouldFencePostInterruptContinuation,
   turnInactivityError,
 } from "./claude_sdk_persistent_session_support.js";
 import { startPersistentForegroundTurn } from "./claude_sdk_persistent_turn_handoff.js";
 import {
   ClaudeSessionRuntime,
-  type ClaudeForegroundPhase,
   type ClaudeRuntimeCloseReason,
   type ClaudeSessionRuntimeSnapshot,
 } from "./claude_session_runtime.js";
@@ -66,6 +67,7 @@ export class ClaudeSdkPersistentSession {
   private readonly followupWatchdog: ClaudeRuntimeFollowupWatchdog;
   private readonly turnInactivityWatchdog: ClaudeTurnInactivityWatchdog;
   private activeForeground: ActiveForeground | null = null;
+  private interventionFence: ActiveForeground | null = null;
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
   constructor(config: ClaudeSdkPersistentSessionConfig) {
     this.eventMapper = config.eventMapper;
@@ -89,6 +91,7 @@ export class ClaudeSdkPersistentSession {
   }
 
   runTurn(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
+    this.interventionFence = null;
     return startPersistentForegroundTurn({
       options,
       signal,
@@ -108,26 +111,18 @@ export class ClaudeSdkPersistentSession {
     if (!active || this.runtime.snapshot().foregroundPhase !== "generating") return false;
     if (active.interventionInterrupt) return await active.interventionInterrupt.promise;
 
-    let resolveObservation!: (observed: boolean) => void;
-    const promise = new Promise<boolean>((resolve) => {
-      resolveObservation = resolve;
-    });
-    active.interventionInterrupt = {
-      promise,
-      resolve: resolveObservation,
-    };
+    const observation = createInterventionInterruptObservation();
+    active.interventionInterrupt = observation;
+    this.interventionFence = active;
     this.clearForegroundTimers(active);
     try {
       await this.runtime.interruptForeground();
     } catch (error) {
+      if (observation.observed) return true;
       await this.close("fatal");
       throw error;
     }
-    return await promise;
-  }
-
-  phase(): ClaudeForegroundPhase {
-    return this.runtime.snapshot().foregroundPhase;
+    return await observation.promise;
   }
 
   snapshot(): ClaudeSessionRuntimeSnapshot {
@@ -143,19 +138,22 @@ export class ClaudeSdkPersistentSession {
       clearTimeout(this.drainTimer);
       this.drainTimer = null;
     }
+    // Active background rows are persisted before entering runtime membership.
+    // Stop execution first; failed terminal persistence is restart-recoverable.
+    this.runtime.close(reason);
+    const active = this.activeForeground;
+    this.clearForegroundTimers(active);
+    active?.output.close();
+    this.activeForeground = null;
+    settleInterventionInterrupt(this.interventionFence ?? active, reason === "explicit_cancel");
+    this.interventionFence = null;
+    this.hookOutput.close();
     await terminalizePersistentBackgroundTasks({
       runtime: this.runtime,
       reason,
       routeEvent: (event) => this.routeEvent(event),
       logger: this.logger,
     });
-    this.runtime.close(reason);
-    const active = this.activeForeground;
-    this.clearForegroundTimers(active);
-    active?.output.close();
-    this.activeForeground = null;
-    settleInterventionInterrupt(active, reason === "explicit_cancel");
-    this.hookOutput.close();
   }
 
   async settled(): Promise<void> {
@@ -290,7 +288,7 @@ export class ClaudeSdkPersistentSession {
         "Fenced the first interrupted-owner Result before accepting the intervention Result",
       );
       for (const event of terminalEvents) {
-        if (isExpectedInterruptDiagnostic(event)) continue;
+        if (isExpectedInterruptTerminalEvent(event, expectedInterruptDiagnostic)) continue;
         markPostResultDrainEvent(event);
         await this.emitDetached(event);
       }
@@ -334,7 +332,11 @@ export class ClaudeSdkPersistentSession {
       active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
     } else {
       const terminalEvents = this.eventMapper.mapResultMessage(message);
+      const expectedInterruptDiagnostic =
+        this.interventionFence === active
+        && terminalEvents.some(isExpectedInterruptDiagnostic);
       for (const event of terminalEvents) {
+        if (isExpectedInterruptTerminalEvent(event, expectedInterruptDiagnostic)) continue;
         if (active) {
           active.output.push(event);
         } else {
@@ -348,13 +350,11 @@ export class ClaudeSdkPersistentSession {
   }
 
   private async routeEvent(event: ClaudeClientEvent): Promise<void> {
-    if (this.runtime.snapshot().queryLifecycle !== "open") return;
-    const interruptingActive = this.activeForeground;
-    if (
-      interruptingActive?.interventionInterrupt
-      && this.runtime.snapshot().foregroundPhase === "interrupting"
-      && isPostInterruptContinuation(event)
-    ) {
+    const queryOpen = this.runtime.snapshot().queryLifecycle === "open";
+    const terminalBackground = isTerminalPersistentBackgroundEvent(event);
+    if (!queryOpen && !terminalBackground) return;
+    const interruptingActive = this.interventionFence;
+    if (shouldFencePostInterruptContinuation(interruptingActive, event)) {
       this.logger.warn(
         { uuid: interruptingActive.uuid, eventType: event.type },
         "Claude continued foreground work after interrupt receipt; closing the Query",
@@ -364,7 +364,7 @@ export class ClaudeSdkPersistentSession {
     }
     const runtimeEventAccepted =
       !this.runtimeEventSink || await this.runtimeEventSink(event) !== false;
-    if (runtimeEventAccepted || isTerminalPersistentBackgroundEvent(event)) {
+    if (runtimeEventAccepted || terminalBackground) {
       observePersistentBackgroundEvent(this.runtime, event);
     }
     if (!runtimeEventAccepted) {
