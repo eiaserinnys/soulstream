@@ -20,7 +20,7 @@ export class TaskExecutorFinalizer {
     task: Task,
     consumeSuccessfulDeliveries?: () => Promise<void>,
   ): Promise<void> {
-    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task);
+    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true);
     // The sessions-row release ACK is the durable terminal/owner boundary. Keep
     // the runner handle until it commits so the same owner can retry on failure.
     await this.closeEngine(task);

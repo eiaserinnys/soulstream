@@ -246,23 +246,18 @@ export class TaskLifecycleTransition {
     return task;
   }
 
-  async persistExecutorFinalState(task: Task): Promise<TaskFinalStatePersistenceResult> {
-    return await this.persistFinalState(task);
+  async persistExecutorFinalState(
+    task: Task,
+    retryUnrecordedTerminal = false,
+  ): Promise<TaskFinalStatePersistenceResult> {
+    return await this.persistFinalState(task, retryUnrecordedTerminal);
   }
 
-  async projectRecoveredRunnerTerminalFact(
+  applyRecoveredRunnerTerminalFact(
     task: Task,
     runnerFact: RunnerTerminalFact,
-    terminationDetail: string,
-  ): Promise<boolean> {
-    const ownership = task.recoveredExecutionOwnership;
-    if (!ownership) {
-      throw new Error("recovered execution ownership identity required");
-    }
-    if (!this.deps.persistence) {
-      throw new Error("recovered runner terminal persistence is required");
-    }
-
+    terminationDetail: string | null,
+  ): void {
     if (!isTerminalTaskStatus(task.status)) {
       const projection = runnerFactProjection(runnerFact);
       task.status = projection.status;
@@ -274,6 +269,22 @@ export class TaskLifecycleTransition {
       task.pendingTerminationDetail = undefined;
     }
     task.runnerTerminalFact = runnerFact;
+  }
+
+  async projectRecoveredRunnerTerminalFact(
+    task: Task,
+    runnerFact: RunnerTerminalFact,
+    terminationDetail: string | null,
+  ): Promise<boolean> {
+    const ownership = task.recoveredExecutionOwnership;
+    if (!ownership) {
+      throw new Error("recovered execution ownership identity required");
+    }
+    if (!this.deps.persistence) {
+      throw new Error("recovered runner terminal persistence is required");
+    }
+
+    this.applyRecoveredRunnerTerminalFact(task, runnerFact, terminationDetail);
 
     const completedAt = task.completedAt ?? new Date();
     const application =

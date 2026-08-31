@@ -18,6 +18,8 @@ import {
 import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
 import { RunnerOrphanedSpawnError } from
   "../../src/runner/runner_process_dispatcher.js";
+import type { RunnerRegistration } from
+  "../../src/runner/runner_process_registry.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import {
   TaskExecutor,
@@ -2551,6 +2553,76 @@ describe("TaskExecutor runner process boundary", () => {
     expect(task.executionActivation).toBeUndefined();
     expect(acquire).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    { executionState: "completed", expectedStatus: "completed", expectedFact: "completed" },
+    { executionState: "failed", expectedStatus: "error", expectedFact: "failed" },
+    { executionState: "reaped", expectedStatus: "error", expectedFact: "reaped" },
+    { executionState: "closed", expectedStatus: "interrupted", expectedFact: "closed" },
+  ] as const)(
+    "projects an empty offline $executionState replay from the durable runner fact",
+    async ({ executionState, expectedStatus, expectedFact }) => {
+      const mocks = makeMocks();
+      const recoveredTerminal = vi.mocked(
+        mocks.persistence.enqueueRecoveredRunnerTerminalFactAndWaitForApplication,
+      );
+      const { runner } = makeRunnerProcessRuntime([]);
+      const processFactory = (() => runner) as RunnerProcessRuntimeFactory;
+      processFactory.recover = vi.fn(() => runner);
+      const executor = new TaskExecutor(
+        () => makeFakeEngine([]),
+        mocks.db,
+        mocks.persistence,
+        mocks.broadcaster,
+        silentLogger,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        processFactory,
+      );
+      const task = makeTask();
+      task.status = "initializing";
+      task.recoveredExecutionOwnership = {
+        manifestId: "release-old",
+        runtimeEnvIdentity: "env-old",
+        registrationId: "registration-old",
+        pid: 4321,
+        startIdentity: "start-old",
+        executionCommandId: "execute-old",
+      };
+      const registration = {
+        config: { agent },
+        lifecycle: {
+          execution_command_id: "execute-old",
+          execution_state: executionState,
+          terminal_error: executionState === "failed"
+            ? { code: "runner_failed", message: "runner failed" }
+            : null,
+        },
+      } as unknown as RunnerRegistration;
+
+      await executor.recoverRegisteredRunner(
+        task,
+        registration,
+        "execute-old",
+        "offline",
+      );
+
+      expect(task.status).toBe(expectedStatus);
+      expect(recoveredTerminal).toHaveBeenCalledOnce();
+      expect(recoveredTerminal).toHaveBeenCalledWith(
+        task.agentSessionId,
+        expect.objectContaining({ type: "session_ended", status: expectedStatus }),
+        expect.objectContaining({
+          kind: "recovered_runner_terminal_fact",
+          runner_fact: expectedFact,
+        }),
+      );
+    },
+  );
 
   it("does not acquire again while the shared ownership retry deadline is active", async () => {
     const mocks = makeMocks();
