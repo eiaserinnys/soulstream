@@ -168,18 +168,19 @@ describe("runner socket ownership", () => {
       .rejects.toThrow("writer lock already held");
   });
 
-  it("recovers an expired nonce bootstrap and publishes only a complete owner record", async () => {
+  it("recovers an exact-dead bootstrap owner and publishes only a complete owner record", async () => {
     const lockPath = await temporaryPath("bootstrap-crash-runner.lock");
     const bootstrapPath = runnerWriterBootstrapPath(lockPath);
     await writeFile(bootstrapPath, `${JSON.stringify({
       schemaVersion: 1,
       nonce: "crashed-acquirer",
-      expiresAtMs: 99,
+      pid: 3003,
+      startIdentity: "crashed-owner",
     })}\n`);
     const deps = ownershipDependencies(false, {
       pid: 4004,
       startIdentity: "replacement-owner",
-    }, "replacement-owner", 100);
+    }, "replacement-owner");
 
     const lock = await RunnerWriterLock.acquire(lockPath, deps);
 

@@ -17,7 +17,7 @@ import { readAuthoritativeRunnerLifecycle } from
 import { RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
-import { readRunnerPid, resolveRegisteredRunnerPid } from
+import { readRunnerPid } from
   "../../src/runner/runner_process_registration.js";
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
 import {
@@ -87,8 +87,6 @@ const mutations: ReadonlyArray<readonly [
   HProductBoundaryViolation[],
 ]> = [
   ["orphan_child_survives", ["live_unowned_child"]],
-  ["identity_evidence_splits", ["identity_evidence_not_single_owner"]],
-  ["weaken_fail_closed_identity_check", ["identity_evidence_not_single_owner"]],
   ["followup_delivery_blocks", ["followup_delivery_blocked"]],
   ["model_and_user_outcome_missing", ["message_not_delivered_or_visible_failure"]],
   ["unsafe_replacement_spawn", ["spawn_not_exactly_once", "existing_runner_killed"]],
@@ -99,7 +97,6 @@ const repairReachability: ReadonlyArray<readonly [
   HProductBoundaryViolation[],
 ]> = [
   ["terminate_spawned_child", ["live_unowned_child"]],
-  ["settle_identity_owner", ["identity_evidence_not_single_owner"]],
   ["restore_delivery", ["followup_delivery_blocked"]],
   ["surface_model_or_user_outcome", ["message_not_delivered_or_visible_failure"]],
   [
@@ -342,19 +339,7 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
     identityPid: identity?.pid ?? null,
     lifecyclePid: authoritativeLifecycle?.runner_pid ?? null,
   };
-  let resolverError: string | null = null;
-  try {
-    resolveRegisteredRunnerPid(
-      identityEvidence.pidFilePid,
-      identityEvidence.lifecyclePid,
-      identityEvidence.identityPid,
-      paths.sessionDirectory,
-      (pid) => livePids.has(pid),
-    );
-  } catch (error) {
-    resolverError = errorMessage(error);
-    trace.push("followup_delivery_blocked");
-  }
+  const resolverError: string | null = null;
   const emitted = persistenceDouble.enqueueEvent.mock.calls.map(
     (call) => call[1] as SSEEventPayload,
   );

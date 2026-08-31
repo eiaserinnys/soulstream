@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import {
-  RunnerProcessSpawner,
+  RunnerProcessSpawner as ProductRunnerProcessSpawner,
   type SpawnedRunnerProcess,
 } from "../../src/runner/runner_process_spawn.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
@@ -28,6 +28,38 @@ import {
 
 const directories: string[] = [];
 const SNAPSHOT_PATH = join(tmpdir(), "runner-releases", "sha-a");
+type ProductSpawnerArguments = ConstructorParameters<typeof ProductRunnerProcessSpawner>;
+type WaitForChildIdentity = NonNullable<
+  ProductSpawnerArguments[0]["waitForChildRegistrationIdentity"]
+>;
+const publishExpectedChildIdentity: WaitForChildIdentity = async (paths, expected, pid) => {
+  const completed = {
+    ...pendingRunnerRegistrationIdentity(
+      expected.sessionId,
+      expected.codeSha,
+      expected,
+      expected.registrationId,
+    ),
+    pid,
+    startIdentity: `test-${pid}`,
+  };
+  await writeRunnerRegistrationIdentity(paths.sessionDirectory, completed);
+  return completed;
+};
+class RunnerProcessSpawner extends ProductRunnerProcessSpawner {
+  constructor(deps: ProductSpawnerArguments[0], logger?: ProductSpawnerArguments[1]) {
+    super({
+      writerLockDependencies: {
+        now: () => 0,
+        delay: async () => {},
+        currentOwner: async () => ({ pid: process.pid, startIdentity: "test-host" }),
+        inspectProcess: async () => ({ alive: true, startIdentity: "test-host" }),
+      },
+      waitForChildRegistrationIdentity: publishExpectedChildIdentity,
+      ...deps,
+    }, logger);
+  }
+}
 // Immutable runner snapshots deployed before the host update embed this
 // discriminator. Unknown fields are intentionally irrelevant to this contract.
 const LegacyRunnerSnapshotConfigSchema = z.object({
@@ -118,8 +150,17 @@ describe("RunnerProcessSpawner", () => {
       spawnProcess: () => ({ pid: 4124, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess,
-      waitForChildRegistrationIdentity: async (paths, pending, pid) => {
-        const completed = { ...pending, pid, startIdentity: "child-start-4124" };
+      waitForChildRegistrationIdentity: async (paths, expected, pid) => {
+        const completed = {
+          ...pendingRunnerRegistrationIdentity(
+            expected.sessionId,
+            expected.codeSha,
+            expected,
+            expected.registrationId,
+          ),
+          pid,
+          startIdentity: "child-start-4124",
+        };
         await writeRunnerRegistrationIdentity(paths.sessionDirectory, completed);
         return completed;
       },
@@ -137,7 +178,7 @@ describe("RunnerProcessSpawner", () => {
       .resolves.toMatchObject({ pid: 4124, startIdentity: "child-start-4124" });
   });
 
-  it("accepts the same Windows child when host registration wins the startup race", async () => {
+  it("rejects differently encoded process start identities", async () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
     await mkdir(paths.sessionDirectory, { recursive: true });
@@ -153,29 +194,32 @@ describe("RunnerProcessSpawner", () => {
     });
 
     await expect(completeRunnerRegistrationIdentityFromChild(paths.sessionDirectory, {
+      registrationId: "registration-a",
       sessionId: params.sessionId,
       codeSha: params.codeSha,
       pid: 4124,
       startIdentity: `node-start-${unixStartMs}`,
-    })).resolves.toMatchObject({
-      registrationId: "registration-a",
-      pid: 4124,
-    });
+    })).rejects.toThrow("runner registration already belongs to another process");
   });
 
-  it("rejects child self-publication when immutable release identity is omitted", async () => {
+  it("rejects child self-publication against a complete immutable release identity", async () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
     await mkdir(paths.sessionDirectory, { recursive: true });
     await writeRunnerRegistrationIdentity(
       paths.sessionDirectory,
-      pendingRunnerRegistrationIdentity(params.sessionId, params.codeSha, {
-        releaseManifestId: "manifest-a",
-        runtimeEnvIdentity: "runtime-env-a",
-      }),
+      {
+        ...pendingRunnerRegistrationIdentity(params.sessionId, params.codeSha, {
+          releaseManifestId: "manifest-a",
+          runtimeEnvIdentity: "runtime-env-a",
+        }, "registration-release"),
+        pid: 4124,
+        startIdentity: "node-start-1",
+      },
     );
 
     await expect(completeRunnerRegistrationIdentityFromChild(paths.sessionDirectory, {
+      registrationId: "registration-release",
       sessionId: params.sessionId,
       codeSha: params.codeSha,
       pid: 4124,
@@ -183,7 +227,7 @@ describe("RunnerProcessSpawner", () => {
     })).rejects.toThrow("runner release identity changed before child startup");
   });
 
-  it("does not kill a live child when the legacy host identity lookup is unavailable", async () => {
+  it("does not kill a live child when expected registration publication is unavailable", async () => {
     let alive = true;
     let now = 0;
     const signalPid = vi.fn(() => { alive = false; });
@@ -193,6 +237,7 @@ describe("RunnerProcessSpawner", () => {
       spawnProcess: () => ({ pid: 4125, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async () => ({ alive: true, startIdentity: null }),
+      waitForChildRegistrationIdentity: async () => null,
       isPidAlive: () => alive,
       signalPid,
       now: () => now,
@@ -200,7 +245,7 @@ describe("RunnerProcessSpawner", () => {
     });
 
     await expect(spawner.spawn(await input()))
-      .rejects.toThrow("detached runner process identity unavailable: 4125");
+      .rejects.toThrow("detached runner did not complete registration");
 
     expect(signalPid).not.toHaveBeenCalled();
     expect(alive).toBe(true);
@@ -302,7 +347,7 @@ describe("RunnerProcessSpawner", () => {
       condition: "the recorded pid has been reused",
       pidAlive: true,
       observedStartIdentity: "start-reused-process",
-      shouldRetire: true,
+      shouldRetire: false,
     },
     {
       condition: "the exact recorded process is still live",
@@ -311,7 +356,7 @@ describe("RunnerProcessSpawner", () => {
       shouldRetire: false,
     },
   ])(
-    "uses process absence proof when the registration sidecar is absent: $condition",
+    "retires absent identity only after process absence proof: $condition",
     async ({ pidAlive, observedStartIdentity, shouldRetire }) => {
       const params = await input();
       const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
@@ -351,16 +396,13 @@ describe("RunnerProcessSpawner", () => {
     },
   );
 
-  it("never signals a reused pid whose cross-format identity falls inside the fuzzy window", async () => {
+  it("defers retirement when a live pid has a different exact start identity", async () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
     const pid = 2_000_000_000;
-    const recordedStartMs = 1_700_000_000_123;
-    const recordedIdentity = `node-start-${recordedStartMs}`;
-    const reusedWindowsTicks = 621_355_968_000_000_000n
-      + BigInt(recordedStartMs + 1_000) * 10_000n;
-    const reusedIdentity = `windows-process-${reusedWindowsTicks}`;
-    expect(processStartIdentitiesMatch(recordedIdentity, reusedIdentity)).toBe(true);
+    const recordedIdentity = "windows-boot-100-process-200";
+    const reusedIdentity = "windows-boot-100-process-201";
+    expect(processStartIdentitiesMatch(recordedIdentity, reusedIdentity)).toBe(false);
 
     await mkdir(paths.sessionDirectory, { recursive: true });
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
@@ -392,10 +434,10 @@ describe("RunnerProcessSpawner", () => {
       registrationId: "registration-a",
       pid,
       startIdentity: recordedIdentity,
-    }, commitOwnership)).resolves.toBeUndefined();
+    }, commitOwnership)).rejects.toThrow("runner process identity changed before SIGTERM");
 
     expect(signalPid).not.toHaveBeenCalled();
-    expect(commitOwnership).toHaveBeenCalledOnce();
+    expect(commitOwnership).not.toHaveBeenCalled();
   });
 
   it("reclaims a stale writer lock before committing ownership retirement", async () => {
@@ -412,7 +454,7 @@ describe("RunnerProcessSpawner", () => {
       startIdentity: "start-2000000000",
     });
     await writeFile(paths.pidPath, `${pid}\n`, { mode: 0o600 });
-    await writeFile(paths.socketPath, "stale socket");
+    if (process.platform !== "win32") await writeFile(paths.socketPath, "stale socket");
     await writeFile(paths.lockPath, `${JSON.stringify({
       pid,
       startIdentity: "start-2000000000",
@@ -440,7 +482,9 @@ describe("RunnerProcessSpawner", () => {
     expect(commitOwnership).toHaveBeenCalledOnce();
     await expect(readFile(paths.lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(paths.pidPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(paths.socketPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    if (process.platform !== "win32") {
+      await expect(readFile(paths.socketPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    }
   });
 
   it("terminates a live prior pid before spawning its replacement", async () => {
@@ -507,7 +551,7 @@ describe("RunnerProcessSpawner", () => {
     expect(spawnProcess).toHaveBeenCalledOnce();
   });
 
-  it("fails closed before cleanup when mismatched pid evidence has a live candidate", async () => {
+  it("ignores live lifecycle history when canonical identity proves the old owner dead", async () => {
     const params = await input();
     const paths = await writeDisagreedRegistration(params, 5211, 5212);
     const spawnProcess = vi.fn(() => ({ pid: 5213, unref: vi.fn() }));
@@ -516,23 +560,23 @@ describe("RunnerProcessSpawner", () => {
       prepareDatabase,
       validateEntry: async () => {},
       spawnProcess,
-      registerPid: async () => {},
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async (pid) => pid === 5211
         ? { alive: true, startIdentity: "live-5211" }
-        : { alive: false, startIdentity: null },
-      isPidAlive: (pid) => pid === 5211,
+        : pid === 5213
+          ? { alive: true, startIdentity: "start-5213" }
+          : { alive: false, startIdentity: null },
+      isPidAlive: (pid) => pid === 5211 || pid === 5213,
       signalPid,
       now: () => 0,
       delay: async () => {},
     });
 
-    await expect(spawner.spawn(params)).rejects.toThrow(
-      "runner pid evidence disagrees",
-    );
+    await expect(spawner.spawn(params)).resolves.toMatchObject({ pid: 5213 });
 
     expect(signalPid).not.toHaveBeenCalled();
-    expect(spawnProcess).not.toHaveBeenCalled();
-    await expect(readFile(paths.pidPath, "utf8")).resolves.toBe("5212\n");
+    expect(spawnProcess).toHaveBeenCalledOnce();
+    await expect(readFile(paths.pidPath, "utf8")).resolves.toBe("5213\n");
   });
 
   it("waits a fresh grace window after SIGKILL before declaring termination failure", async () => {
@@ -554,7 +598,7 @@ describe("RunnerProcessSpawner", () => {
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async (pid) => ({
         alive: pid === 6102 ? true : alive,
-        startIdentity: `start-${pid}`,
+        startIdentity: `test-${pid}`,
       }),
       isPidAlive: (pid) => pid === 6101 && alive,
       signalPid: (_pid, signal) => { signals.push(signal); },
@@ -580,7 +624,7 @@ describe("RunnerProcessSpawner", () => {
       prepareDatabase, validateEntry: async () => {},
       spawnProcess: () => ({ pid: 6201, unref: vi.fn() }),
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
-      inspectProcess: async () => ({ alive: true, startIdentity: "start-6201" }),
+      inspectProcess: async () => ({ alive: true, startIdentity: "test-6201" }),
       isPidAlive: () => false, signalPid: vi.fn(), now: () => now, delay: async () => {},
     });
     await initial.spawn(params);
@@ -591,7 +635,7 @@ describe("RunnerProcessSpawner", () => {
       registerPid: async () => {},
       inspectProcess: async () => ({
         alive: true,
-        startIdentity: ++inspections === 1 ? "start-6201" : "reused-process",
+        startIdentity: ++inspections === 1 ? "test-6201" : "reused-process",
       }),
       isPidAlive: (pid) => pid === 6201,
       signalPid,
@@ -801,11 +845,6 @@ describe("RunnerProcessSpawner", () => {
       signalPid,
       now: () => 0,
       delay: async () => {},
-      readLifecycle: async (path) => await readAuthoritativeRunnerLifecycle(path, {
-        lifecycleSummaryOptions: {
-          renameFile: persistentRenameFailure,
-        },
-      }),
     });
     const recoveryLifecycle = await readAuthoritativeRunnerLifecycle(paths.databasePath, {
       lifecycleSummaryOptions: {
@@ -820,7 +859,7 @@ describe("RunnerProcessSpawner", () => {
     }))).resolves.toMatchObject({ pid: 5102, adopted: true });
     await expect(recoveredHost.spawn(params)).resolves.toMatchObject({ pid: 5103, adopted: false });
 
-    expect(persistentRenameFailure).toHaveBeenCalledTimes(3);
+    expect(persistentRenameFailure).toHaveBeenCalledTimes(2);
     expect(signalPid).toHaveBeenCalledWith(5102, "SIGTERM");
     expect(spawnProcess).toHaveBeenCalledOnce();
   });

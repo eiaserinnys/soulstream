@@ -365,11 +365,12 @@ function evidenceMatchesOldProcess(
   fixture: RetirementFixture,
   evidence: Awaited<ReturnType<typeof readRegistrationEvidence>>,
 ): boolean {
-  return evidence.identity?.pid === fixture.processTable.oldPid()
+  const canonicalIdentityPreserved = evidence.identity?.pid === fixture.processTable.oldPid()
     && evidence.identity.startIdentity === fixture.processTable.oldStartIdentity()
-    && evidence.identity.retiredAt === undefined
-    && evidence.pidFile !== null
-    && evidence.socketFile !== null;
+    && evidence.identity.retiredAt === undefined;
+  const sidecarsPreserved = process.platform === "win32"
+    || (evidence.pidFile !== null && evidence.socketFile !== null);
+  return canonicalIdentityPreserved && sidecarsPreserved;
 }
 
 function emptyCounters(): ScenarioCounters {

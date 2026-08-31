@@ -17,8 +17,11 @@ import {
 } from "../../src/runner/runner_child_runtime_helpers.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import type { RunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
-import { readRunnerRegistrationIdentity } from
-  "../../src/runner/runner_registration_identity.js";
+import {
+  pendingRunnerRegistrationIdentity,
+  readRunnerRegistrationIdentity,
+  writeRunnerRegistrationIdentity,
+} from "../../src/runner/runner_registration_identity.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 
 const directories: string[] = [];
@@ -109,6 +112,7 @@ describe("RunnerChildRuntime startup", () => {
     outbox.close();
     const config: RunnerChildConfig = {
       schemaVersion: 1,
+      registrationId: "registration-standalone-child",
       sessionId,
       backend: "codex",
       agent: {
@@ -134,7 +138,15 @@ describe("RunnerChildRuntime startup", () => {
       createEngine: () => standaloneEngine(stateDirectory),
     });
 
-    await expect(readRunnerRegistrationIdentity(paths.sessionDirectory)).resolves.toBeNull();
+    await writeRunnerRegistrationIdentity(
+      paths.sessionDirectory,
+      pendingRunnerRegistrationIdentity(
+        sessionId,
+        config.codeSha,
+        undefined,
+        config.registrationId,
+      ),
+    );
     try {
       await runtime.start();
       await expect(readRunnerRegistrationIdentity(paths.sessionDirectory)).resolves.toMatchObject({

@@ -13,7 +13,6 @@ import {
   scanRunnerRegistrations,
   type RunnerRegistration,
 } from "../../src/runner/runner_process_registry.js";
-import { resolveRegisteredRunnerPid } from "../../src/runner/runner_process_spawn.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import {
   RunnerHostStateStore,
@@ -25,9 +24,11 @@ import {
   RunnerSqliteLifecycle,
 } from "../../src/runner/sqlite_runner_lifecycle.js";
 import {
+  completeRunnerRegistrationIdentityFromChild,
   pendingRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
+import { RunnerWriterLock } from "../../src/runner/runner_writer_lock.js";
 
 const temporaryDirectories: string[] = [];
 const NOW = Date.parse("2026-08-11T00:00:30.000Z");
@@ -38,23 +39,78 @@ afterEach(async () => {
 });
 
 describe("runner process registry", () => {
-  it("uses lifecycle pid evidence when the pid sidecar is missing", () => {
-    expect(resolveRegisteredRunnerPid(null, 4123, 4123, "session-a")).toBe(4123);
-    expect(resolveRegisteredRunnerPid(
-      null,
-      4123,
-      4999,
-      "session-a",
-      () => false,
-    )).toBe(4999);
-    expect(() => resolveRegisteredRunnerPid(
-      null,
-      4123,
-      4999,
-      "session-a",
-      (pid) => pid === 4123,
-    ))
-      .toThrow("runner pid evidence disagrees: session-a");
+  it("W1 fences a delayed A after B supersedes it and adopts only B", async () => {
+    const stateDirectory = await temporaryDirectory("registration-aba-window");
+    const paths = runnerProcessPaths(stateDirectory, "session-registration-aba");
+    const current = registration({ sessionId: "session-registration-aba" });
+    const registrationA = "registration-a";
+    const registrationB = "registration-b";
+    current.config = { ...current.config, paths, registrationId: registrationB };
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, JSON.stringify(current.config));
+    const pendingA = pendingRunnerRegistrationIdentity(
+      current.config.sessionId,
+      current.config.codeSha,
+      undefined,
+      registrationA,
+    );
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, pendingA);
+    const pendingB = pendingRunnerRegistrationIdentity(
+      current.config.sessionId,
+      current.config.codeSha,
+      undefined,
+      registrationB,
+    );
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, pendingB);
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await outbox.initializeBootstrap({
+      session_id: current.config.sessionId,
+      created_at: "2026-08-11T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-registration-aba",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: current.config.codeSha,
+        snapshot_path: current.config.snapshotPath,
+      },
+    });
+    outbox.close();
+
+    const owner = { pid: process.pid, startIdentity: "boot-a-process-b" };
+    const lockDeps = {
+      now: () => 0,
+      delay: async () => {},
+      currentOwner: async () => owner,
+      inspectProcess: async () => ({ alive: true, startIdentity: owner.startIdentity }),
+    };
+    await expect(RunnerWriterLock.acquire(paths.lockPath, lockDeps, async () => {
+      await completeRunnerRegistrationIdentityFromChild(paths.sessionDirectory, {
+        registrationId: registrationA,
+        sessionId: current.config.sessionId,
+        codeSha: current.config.codeSha,
+        pid: owner.pid,
+        startIdentity: owner.startIdentity,
+      });
+    })).rejects.toThrow("runner registration changed before child startup");
+
+    const writerLock = await RunnerWriterLock.acquire(paths.lockPath, lockDeps, async () => {
+      await completeRunnerRegistrationIdentityFromChild(paths.sessionDirectory, {
+        registrationId: registrationB,
+        sessionId: current.config.sessionId,
+        codeSha: current.config.codeSha,
+        pid: owner.pid,
+        startIdentity: owner.startIdentity,
+      });
+    });
+    try {
+      const scan = await scanRunnerRegistrations(stateDirectory);
+      expect(scan.errors).toEqual([]);
+      expect(scan.registrations.map((item) => item.registrationId)).toEqual([registrationB]);
+    } finally {
+      await writerLock.release();
+    }
   });
 
   it("classifies mismatched all-dead pid evidence as a dead registration", async () => {
@@ -68,7 +124,9 @@ describe("runner process registry", () => {
     await writeFile(paths.configPath, JSON.stringify(current.config));
     await writeFile(paths.pidPath, `${identityPid}\n`);
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-      ...pendingRunnerRegistrationIdentity(current.config.sessionId, current.config.codeSha),
+      ...pendingRunnerRegistrationIdentity(
+        current.config.sessionId, current.config.codeSha, undefined, current.config.registrationId,
+      ),
       pid: identityPid,
       startIdentity: `dead-${identityPid}`,
     });
@@ -356,8 +414,16 @@ describe("runner process registry", () => {
   it("reads only the lifecycle row and never opens the event outbox", async () => {
     const stateDirectory = await temporaryDirectory("light");
     const paths = runnerProcessPaths(stateDirectory, "session-a");
+    const config = { ...registration().config, paths };
     await mkdir(paths.sessionDirectory, { recursive: true });
-    await writeFile(paths.configPath, JSON.stringify({ ...registration().config, paths }));
+    await writeFile(paths.configPath, JSON.stringify(config));
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+      ...pendingRunnerRegistrationIdentity(
+        config.sessionId, config.codeSha, undefined, config.registrationId,
+      ),
+      pid: 2_147_483_610,
+      startIdentity: "dead-2147483610",
+    });
     const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
     await outbox.initializeBootstrap({
       session_id: "session-a",
@@ -495,6 +561,8 @@ describe("runner process registry", () => {
       const identity = pendingRunnerRegistrationIdentity(
         current.config.sessionId,
         current.config.codeSha,
+        undefined,
+        current.config.registrationId,
       );
       await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
         ...identity,
@@ -569,7 +637,9 @@ describe("runner process registry", () => {
     await writeFile(paths.configPath, JSON.stringify(current.config));
     await writeFile(paths.pidPath, String(process.pid));
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-      ...pendingRunnerRegistrationIdentity(current.config.sessionId, current.config.codeSha),
+      ...pendingRunnerRegistrationIdentity(
+        current.config.sessionId, current.config.codeSha, undefined, current.config.registrationId,
+      ),
       pid: process.pid,
       startIdentity: "current-process",
     });
@@ -844,6 +914,13 @@ async function closedRunnerState(label: string) {
   current.config = { ...current.config, paths };
   await mkdir(paths.sessionDirectory, { recursive: true });
   await writeFile(paths.configPath, JSON.stringify(current.config));
+  await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+    ...pendingRunnerRegistrationIdentity(
+      current.config.sessionId, current.config.codeSha, undefined, current.config.registrationId,
+    ),
+    pid: 2_147_483_611,
+    startIdentity: "dead-2147483611",
+  });
 
   const initial = await RunnerSqliteEventOutbox.create(paths.databasePath);
   const bootstrap = await initial.initializeBootstrap({
@@ -896,6 +973,7 @@ function registration(options: {
   return {
     config: {
       schemaVersion: 1,
+      registrationId: `registration-${sessionId}`,
       sessionId,
       backend: "codex",
       agent: { id: "agent-a", name: "Agent A", backend: "codex", workspace_dir: "/workspace" },
@@ -919,6 +997,7 @@ function registration(options: {
       rolloutRoot: "/home/test/.codex/sessions",
     },
     pid: 4123,
+    registrationId: `registration-${sessionId}`,
     pidAlive: options.pidAlive ?? true,
     registeredAtMs: Date.parse("2026-08-11T00:00:00.000Z"),
     bootstrap: { payload: { code_sha: "release-a" } } as never,

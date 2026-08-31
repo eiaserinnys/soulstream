@@ -6,7 +6,6 @@ import {
   readFile,
   rename,
   rm,
-  stat,
   unlink,
 } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -21,12 +20,9 @@ import {
 } from "./runner_process_lock.js";
 
 const activeWriterOwners = new Map<string, ProcessLockOwner>();
-const WRITER_BOOTSTRAP_LEASE_MS = 30_000;
-
-interface RunnerWriterBootstrap {
+interface RunnerWriterBootstrap extends ProcessLockOwner {
   schemaVersion: 1;
   nonce: string;
-  expiresAtMs: number;
 }
 
 export class RunnerWriterLock {
@@ -40,6 +36,7 @@ export class RunnerWriterLock {
   static async acquire(
     path: string,
     deps: ProcessOwnershipLockDependencies = defaultProcessOwnershipLockDependencies(),
+    beforeOwnerPublish?: (owner: ProcessLockOwner) => Promise<void>,
   ): Promise<RunnerWriterLock> {
     while (true) {
       if (await pathExists(path)) {
@@ -48,7 +45,7 @@ export class RunnerWriterLock {
       }
       const bootstrap = await claimWriterBootstrap(path, deps);
       if (!bootstrap) {
-        if (await reclaimExpiredWriterBootstrap(path, deps)) continue;
+        if (await reclaimStaleWriterBootstrap(path, deps)) continue;
         throw new Error(`runner writer lock already held: ${path}`);
       }
       try {
@@ -57,6 +54,7 @@ export class RunnerWriterLock {
           throw new Error(`runner writer lock already held: ${path}`);
         }
         const owner = await deps.currentOwner();
+        await beforeOwnerPublish?.(owner);
         await publishCompleteRecord(path, `${JSON.stringify(owner)}\n`);
         activeWriterOwners.set(resolve(path), owner);
         return new RunnerWriterLock(path, owner);
@@ -98,10 +96,30 @@ export async function prepareRunnerWriterLockForSpawn(
   path: string,
   deps: ProcessOwnershipLockDependencies = defaultProcessOwnershipLockDependencies(),
 ): Promise<boolean> {
-  const bootstrapReclaimed = await reclaimExpiredWriterBootstrap(path, deps);
+  const bootstrapReclaimed = await reclaimStaleWriterBootstrap(path, deps);
   if (!await pathExists(path)) return bootstrapReclaimed;
   if (await reclaimStaleWriterLock(path, deps)) return true;
   throw new Error(`runner writer lock already held: ${path}`);
+}
+
+export async function withRunnerWriterBootstrap<T>(
+  path: string,
+  deps: ProcessOwnershipLockDependencies = defaultProcessOwnershipLockDependencies(),
+  operation: () => Promise<T>,
+): Promise<T> {
+  let bootstrap = await claimWriterBootstrap(path, deps);
+  if (!bootstrap && await reclaimStaleWriterBootstrap(path, deps)) {
+    bootstrap = await claimWriterBootstrap(path, deps);
+  }
+  if (!bootstrap) throw new Error(`runner writer lock already held: ${path}`);
+  try {
+    if (await pathExists(path)) {
+      throw new Error(`runner writer lock already held: ${path}`);
+    }
+    return await operation();
+  } finally {
+    await releaseWriterBootstrap(path, bootstrap.nonce).catch(() => undefined);
+  }
 }
 
 export function runnerWriterBootstrapPath(path: string): string {
@@ -112,10 +130,11 @@ async function claimWriterBootstrap(
   path: string,
   deps: ProcessOwnershipLockDependencies,
 ): Promise<RunnerWriterBootstrap | null> {
+  const owner = await deps.currentOwner();
   const bootstrap = {
     schemaVersion: 1 as const,
     nonce: randomUUID(),
-    expiresAtMs: deps.now() + WRITER_BOOTSTRAP_LEASE_MS,
+    ...owner,
   };
   try {
     await publishCompleteRecord(
@@ -129,7 +148,7 @@ async function claimWriterBootstrap(
   }
 }
 
-async function reclaimExpiredWriterBootstrap(
+async function reclaimStaleWriterBootstrap(
   path: string,
   deps: ProcessOwnershipLockDependencies,
 ): Promise<boolean> {
@@ -142,16 +161,17 @@ async function reclaimExpiredWriterBootstrap(
       && parsed !== null
       && (parsed as Partial<RunnerWriterBootstrap>).schemaVersion === 1
       && typeof (parsed as Partial<RunnerWriterBootstrap>).nonce === "string"
-      && Number.isFinite((parsed as Partial<RunnerWriterBootstrap>).expiresAtMs)
+      && Number.isSafeInteger((parsed as Partial<RunnerWriterBootstrap>).pid)
+      && (parsed as Partial<RunnerWriterBootstrap>).pid! > 0
+      && typeof (parsed as Partial<RunnerWriterBootstrap>).startIdentity === "string"
+      && Boolean((parsed as Partial<RunnerWriterBootstrap>).startIdentity)
     ) {
       bootstrap = parsed as RunnerWriterBootstrap;
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
   }
-  const expiresAtMs = bootstrap?.expiresAtMs
-    ?? (await stat(bootstrapPath)).mtimeMs + WRITER_BOOTSTRAP_LEASE_MS;
-  if (expiresAtMs > deps.now()) return false;
+  if (!bootstrap || !await isProvenStale(bootstrap, deps)) return false;
   const quarantinePath = `${bootstrapPath}.stale-${process.pid}-${randomUUID()}`;
   try {
     await rename(bootstrapPath, quarantinePath);

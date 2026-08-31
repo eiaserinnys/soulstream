@@ -131,10 +131,7 @@ async function retireAbsentIdentity(
         error,
       );
     });
-    expectedProcessAbsent = !observed.alive
-      ? !deps.isPidAlive(expected.pid)
-      : observed.startIdentity !== null
-        && !exactRunnerStartIdentitiesMatch(observed.startIdentity, expected.startIdentity);
+    expectedProcessAbsent = !observed.alive && !deps.isPidAlive(expected.pid);
   }
   if (!expectedProcessAbsent) {
     throw identityProofFailure(

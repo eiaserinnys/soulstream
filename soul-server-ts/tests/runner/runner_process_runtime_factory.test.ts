@@ -85,6 +85,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
   it("passes the existing registration to recovery adoption without spawning", async () => {
     const config: RunnerChildConfig = {
       schemaVersion: 1,
+      registrationId: "registration-adopt",
       sessionId: "session-adopt",
       backend: "codex",
       agent: {
@@ -223,6 +224,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
     });
     const storedConfig: RunnerChildConfig = {
       schemaVersion: 1,
+      registrationId: "registration-a",
       sessionId: "session-a",
       backend: "codex",
       agent,

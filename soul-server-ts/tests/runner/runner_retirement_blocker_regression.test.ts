@@ -23,8 +23,8 @@ import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js
 const directories: string[] = [];
 const ORIGINAL_PID = 73_101;
 const RETRY_PID = 73_102;
-const ORIGINAL_START_IDENTITY = "windows-process-638920800001230000";
-const REUSED_START_IDENTITY = "windows-process-638920900001230000";
+const ORIGINAL_START_IDENTITY = "windows-boot-638920800000000000-process-638920800001230000";
+const REUSED_START_IDENTITY = "windows-boot-638920800000000000-process-638920900001230000";
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map(
@@ -85,16 +85,19 @@ describe("runner retirement blocker regressions", () => {
   it("does not signal a reused PID while cleaning up a failed child registration", async () => {
     const harness = await createSpawnFailureHarness("pid_reuse");
 
-    await expect(harness.spawner.spawn(harness.input)).rejects.toThrow("pid registration denied");
+    await expect(harness.spawner.spawn(harness.input)).rejects.toThrow(
+      "runner process identity changed before SIGTERM",
+    );
 
     expect(harness.signalPid).not.toHaveBeenCalled();
     expect(harness.spawnCount()).toBe(1);
     const identity = await readRunnerRegistrationIdentity(harness.paths.sessionDirectory);
-    expect(identity).toMatchObject({ pid: null, startIdentity: null });
+    expect(identity).toMatchObject({
+      pid: ORIGINAL_PID,
+      startIdentity: ORIGINAL_START_IDENTITY,
+    });
     expect(identity?.retiredAt).toBeUndefined();
-    await expect(readFile(harness.paths.pidPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(harness.paths.socketPath, "utf8"))
-      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(harness.paths.pidPath, "utf8")).resolves.toBe(`${ORIGINAL_PID}\n`);
   });
 
   it.each([
@@ -122,8 +125,10 @@ describe("runner retirement blocker regressions", () => {
       expect(preservedIdentity?.retiredAt).toBeUndefined();
       await expect(readFile(harness.paths.pidPath, "utf8")).resolves
         .toBe(`${ORIGINAL_PID}\n`);
-      await expect(readFile(harness.paths.socketPath, "utf8")).resolves
-        .toBe(`socket-${ORIGINAL_PID}\n`);
+      if (process.platform !== "win32") {
+        await expect(readFile(harness.paths.socketPath, "utf8")).resolves
+          .toBe(`socket-${ORIGINAL_PID}\n`);
+      }
 
       harness.allowCleanup();
       await expect(harness.spawner.spawn(harness.input)).resolves.toMatchObject({
@@ -161,6 +166,12 @@ async function createSpawnFailureHarness(mode: SpawnFailureMode) {
     process.alive = false;
   });
   const spawner = new RunnerProcessSpawner({
+    writerLockDependencies: {
+      now: () => 0,
+      delay: async () => {},
+      currentOwner: async () => ({ pid: process.pid, startIdentity: "test-host" }),
+      inspectProcess: async () => ({ alive: true, startIdentity: "test-host" }),
+    },
     prepareDatabase: async (databasePath) => {
       const outbox = await RunnerSqliteEventOutbox.create(databasePath);
       outbox.close();
@@ -177,17 +188,28 @@ async function createSpawnFailureHarness(mode: SpawnFailureMode) {
       });
       return { pid, unref: vi.fn() };
     },
-    waitForChildRegistrationIdentity: async (registrationPaths, pending, pid) => {
+    waitForChildRegistrationIdentity: async (registrationPaths, expected, pid) => {
       const process = processes.get(pid);
       if (!process) throw new Error(`virtual process missing: ${pid}`);
-      const completed = { ...pending, pid, startIdentity: process.startIdentity };
+      const completed = {
+        ...pendingRunnerRegistrationIdentity(
+          expected.sessionId,
+          expected.codeSha,
+          expected,
+          expected.registrationId,
+        ),
+        pid,
+        startIdentity: process.startIdentity,
+      };
       await writeRunnerRegistrationIdentity(registrationPaths.sessionDirectory, completed);
       return completed;
     },
     registerPid: async (pidPath, pid) => {
       registerCount += 1;
       await writeFile(pidPath, `${pid}\n`, { mode: 0o600 });
-      await writeFile(paths.socketPath, `socket-${pid}\n`, { mode: 0o600 });
+      if (process.platform !== "win32") {
+        await writeFile(paths.socketPath, `socket-${pid}\n`, { mode: 0o600 });
+      }
       if (registerCount !== 1) return;
       if (mode === "pid_reuse") {
         processes.set(pid, { alive: true, startIdentity: REUSED_START_IDENTITY });

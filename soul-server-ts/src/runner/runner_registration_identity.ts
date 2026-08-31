@@ -35,11 +35,12 @@ export function pendingRunnerRegistrationIdentity(
   sessionId: string,
   codeSha: string,
   release?: { releaseManifestId?: string; runtimeEnvIdentity?: string },
+  registrationId = randomUUID(),
 ): RunnerRegistrationIdentity {
   if (!sessionId || !codeSha) throw new Error("runner registration identity requires session and release");
   return {
     schemaVersion: 1,
-    registrationId: randomUUID(),
+    registrationId,
     sessionId,
     codeSha,
     ...(release?.releaseManifestId ? { releaseManifestId: release.releaseManifestId } : {}),
@@ -79,6 +80,7 @@ export async function readRunnerRegistrationIdentity(
 export async function completeRunnerRegistrationIdentityFromChild(
   sessionDirectory: string,
   input: {
+    registrationId: string;
     sessionId: string;
     codeSha: string;
     releaseManifestId?: string;
@@ -88,31 +90,25 @@ export async function completeRunnerRegistrationIdentityFromChild(
   },
 ): Promise<RunnerRegistrationIdentity> {
   const current = await readRunnerRegistrationIdentity(sessionDirectory);
-  if (!current) {
-    const completed = {
-      ...pendingRunnerRegistrationIdentity(input.sessionId, input.codeSha, input),
-      pid: input.pid,
-      startIdentity: input.startIdentity,
-    };
-    await writeRunnerRegistrationIdentity(sessionDirectory, completed);
-    return completed;
-  }
-  if (current.sessionId !== input.sessionId || current.codeSha !== input.codeSha) {
+  if (
+    !current
+    || current.registrationId !== input.registrationId
+    || current.sessionId !== input.sessionId
+    || current.codeSha !== input.codeSha
+  ) {
     throw new Error(`runner registration changed before child startup: ${input.sessionId}`);
   }
   if (input.releaseManifestId !== current.releaseManifestId
     || input.runtimeEnvIdentity !== current.runtimeEnvIdentity) {
     throw new Error(`runner release identity changed before child startup: ${input.sessionId}`);
   }
-  if (current.pid !== null) {
+  if (current.pid !== null || current.startIdentity !== null) {
     if (
-      current.pid !== input.pid
-      || current.startIdentity === null
-      || !processStartIdentitiesMatch(current.startIdentity, input.startIdentity)
-    ) {
-      throw new Error(`runner registration already belongs to another process: ${input.sessionId}`);
-    }
-    return current;
+      current.pid === input.pid
+      && current.startIdentity !== null
+      && processStartIdentitiesMatch(current.startIdentity, input.startIdentity)
+    ) return current;
+    throw new Error(`runner registration already belongs to another process: ${input.sessionId}`);
   }
   const completed = { ...current, pid: input.pid, startIdentity: input.startIdentity };
   await writeRunnerRegistrationIdentity(sessionDirectory, completed);
@@ -155,7 +151,10 @@ export async function retireTerminalRunnerRegistrationIdentity(
 
 export async function waitForChildRunnerRegistrationIdentity(
   sessionDirectory: string,
-  pending: RunnerRegistrationIdentity,
+  expected: Pick<
+    RunnerRegistrationIdentity,
+    "registrationId" | "sessionId" | "codeSha" | "releaseManifestId" | "runtimeEnvIdentity"
+  >,
   pid: number,
   deps: {
     isPidAlive(pid: number): boolean;
@@ -167,16 +166,20 @@ export async function waitForChildRunnerRegistrationIdentity(
   while (deps.isPidAlive(pid) && deps.now() < deadline) {
     const current = await readRunnerRegistrationIdentity(sessionDirectory);
     if (
-      !current
-      || current.registrationId !== pending.registrationId
-      || current.sessionId !== pending.sessionId
-      || current.codeSha !== pending.codeSha
+      current
+      && (
+        current.registrationId !== expected.registrationId
+        || current.sessionId !== expected.sessionId
+        || current.codeSha !== expected.codeSha
+        || current.releaseManifestId !== expected.releaseManifestId
+        || current.runtimeEnvIdentity !== expected.runtimeEnvIdentity
+      )
     ) {
-      throw new Error(`runner registration changed during child startup: ${pending.sessionId}`);
+      throw new Error(`runner registration changed during child startup: ${expected.sessionId}`);
     }
-    if (current.pid !== null) {
+    if (current && current.pid !== null) {
       if (current.pid !== pid || current.startIdentity === null) {
-        throw new Error(`runner child published an invalid process identity: ${pending.sessionId}`);
+        throw new Error(`runner child published an invalid process identity: ${expected.sessionId}`);
       }
       return current;
     }

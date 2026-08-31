@@ -1,18 +1,10 @@
-import { readAuthoritativeRunnerLifecycle } from "./runner_lifecycle_reader.js";
 import { RunnerMutationFailure } from "./runner_mutation_failure.js";
 import type { RunnerProcessPaths } from "./runner_process_paths.js";
-import {
-  readRunnerPid,
-  resolveRegisteredRunnerPid,
-} from "./runner_process_registration.js";
+import { readRunnerPid } from "./runner_process_registration.js";
 import type { ProcessIdentity } from "./runner_process_lock.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
-import {
-  invalidateRunnerRegistrationFilesLocked,
-  removeRunnerRegistrationEvidenceForReplacementLocked,
-} from "./runner_registration_mutation.js";
+import { invalidateRunnerRegistrationFilesLocked } from "./runner_registration_mutation.js";
 import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
-import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 
 const EXISTING_RUNNER_STOP_TIMEOUT_MS = 2_000;
 
@@ -32,7 +24,6 @@ export interface RunnerProcessTerminationDependencies {
   signalPid(pid: number, signal: NodeJS.Signals): void;
   now(): number;
   delay(ms: number): Promise<void>;
-  readLifecycle?(path: string): Promise<RunnerLifecycleRecord | null>;
 }
 
 export type RunnerTerminationOutcome =
@@ -47,16 +38,17 @@ export async function stopExistingRunnerLocked(
 ): Promise<RunnerTerminationOutcome> {
   const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
   const pidFilePid = await readPidEvidence(paths.pidPath, identity, cleanupMode);
-  const lifecycle = await (deps.readLifecycle ?? readAuthoritativeRunnerLifecycle)(
-    paths.databasePath,
-  );
-  const pid = expected?.pid ?? resolveRegisteredRunnerPid(
-    pidFilePid,
-    lifecycle?.runner_pid ?? null,
-    identity?.pid ?? null,
-    paths.sessionDirectory,
-    deps.isPidAlive,
-  );
+  if (
+    cleanupMode === "strict"
+    && identity?.pid !== null
+    && identity?.pid !== undefined
+    && pidFilePid !== null
+    && pidFilePid !== identity.pid
+  ) {
+    throw identityProofFailure(
+      `runner pid evidence changed before cleanup: ${paths.sessionDirectory}`,
+    );
+  }
   const expectedOwnsIdentity = expected !== undefined
     && identity?.pid === expected.pid
     && identity.startIdentity !== null
@@ -67,34 +59,29 @@ export async function stopExistingRunnerLocked(
     await terminateExactRunner(expected, deps);
     return "registration_absent";
   }
-  const owner = expected ?? exactOwner(identity, pid);
-  if (pid !== null) {
-    if (owner) {
-      await terminateExactRunner(owner, deps);
-    } else if (deps.isPidAlive(pid)) {
-      throw identityProofFailure(`live runner has no exact identity: ${pid}`);
-    }
+  if (!identity || identity.pid === null || identity.startIdentity === null) {
+    return "registration_absent";
   }
-  if (identity) {
-    await invalidateRunnerRegistrationFilesLocked(
-      paths,
-      identity.registrationId,
-      cleanupMode,
-    );
-    if (expected !== undefined) {
-      await prepareRunnerWriterLockForSpawn(paths.lockPath);
-    }
-    return "registration_invalidated";
+  await terminateExactRunner(
+    expected ?? { pid: identity.pid, startIdentity: identity.startIdentity },
+    deps,
+  );
+  await invalidateRunnerRegistrationFilesLocked(
+    paths,
+    identity.registrationId,
+    cleanupMode,
+  );
+  if (expected !== undefined) {
+    await prepareRunnerWriterLockForSpawn(paths.lockPath);
   }
-  await removeRunnerRegistrationEvidenceForReplacementLocked(paths);
-  return "registration_absent";
+  return "registration_invalidated";
 }
 
 export async function terminateExactRunner(
   expected: ExactRunnerProcess,
   deps: RunnerProcessTerminationDependencies,
 ): Promise<void> {
-  if (await exactProcessIsAbsent(expected, deps, true)) return;
+  if (await exactProcessIsAbsent(expected, deps)) return;
   signalExactProcess(expected, "SIGTERM", deps);
   if (await waitForExactProcessExit(expected, deps, "SIGKILL")) return;
   signalExactProcess(expected, "SIGKILL", deps);
@@ -112,16 +99,15 @@ async function waitForExactProcessExit(
 ): Promise<boolean> {
   const deadline = deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
   while (deps.now() < deadline) {
-    if (await exactProcessIsAbsent(expected, deps, false, boundary)) return true;
+    if (await exactProcessIsAbsent(expected, deps, boundary)) return true;
     await deps.delay(25);
   }
-  return await exactProcessIsAbsent(expected, deps, false, boundary);
+  return await exactProcessIsAbsent(expected, deps, boundary);
 }
 
 async function exactProcessIsAbsent(
   expected: ExactRunnerProcess,
   deps: RunnerProcessTerminationDependencies,
-  mismatchIsAbsence: boolean,
   boundary: "SIGTERM" | "SIGKILL" | "retirement" = "SIGTERM",
 ): Promise<boolean> {
   if (!deps.isPidAlive(expected.pid)) return true;
@@ -141,7 +127,6 @@ async function exactProcessIsAbsent(
   if (exactRunnerStartIdentitiesMatch(observed.startIdentity, expected.startIdentity)) {
     return false;
   }
-  if (mismatchIsAbsence) return true;
   throw identityProofFailure(
     `runner process identity changed before ${boundary}: ${expected.pid}`,
   );
@@ -180,16 +165,6 @@ async function readPidEvidence(
       { cause: error },
     );
   }
-}
-
-function exactOwner(
-  identity: Awaited<ReturnType<typeof readRunnerRegistrationIdentity>>,
-  pid: number | null,
-): ExactRunnerProcess | undefined {
-  if (pid === null || identity?.pid !== pid || identity.startIdentity === null) {
-    return undefined;
-  }
-  return { pid, startIdentity: identity.startIdentity };
 }
 
 function identityProofFailure(message: string, cause?: unknown): RunnerMutationFailure {

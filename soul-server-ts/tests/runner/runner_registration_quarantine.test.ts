@@ -94,7 +94,9 @@ describe("runner registration quarantine", () => {
     await writeFile(paths.configPath, JSON.stringify(childConfig("session-missing-db", paths)));
     await writeFile(paths.pidPath, "9001\n");
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-      ...pendingRunnerRegistrationIdentity("session-missing-db", "release-a"),
+      ...pendingRunnerRegistrationIdentity(
+        "session-missing-db", "release-a", undefined, "registration-session-missing-db",
+      ),
       pid: 9_001,
       startIdentity: "start-9001",
     });
@@ -124,7 +126,9 @@ describe("runner registration quarantine", () => {
     }));
     await writeFile(summaryPaths.pidPath, "9101\n");
     await writeRunnerRegistrationIdentity(summaryPaths.sessionDirectory, {
-      ...pendingRunnerRegistrationIdentity("session-summary-damaged", "release-a"),
+      ...pendingRunnerRegistrationIdentity(
+        "session-summary-damaged", "release-a", undefined, "registration-session-summary-damaged",
+      ),
       pid: 9_101,
       startIdentity: "start-9101",
     });
@@ -167,6 +171,11 @@ async function writeHealthyRegistration(stateDirectory: string, sessionId: strin
   await writeFile(paths.configPath, JSON.stringify(config));
   const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
   outbox.close();
+  await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+    ...pendingRunnerRegistrationIdentity(sessionId, "release-a", undefined, config.registrationId),
+    pid: process.pid,
+    startIdentity: `start-${process.pid}`,
+  });
   return { paths, config };
 }
 
@@ -182,7 +191,7 @@ async function writeDeadLegacyRegistration(
   await writeFile(paths.configPath, JSON.stringify({ ...legacyConfig, schemaVersion: 1 }));
   await writeFile(paths.pidPath, `${pid}\n`);
   await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-    ...pendingRunnerRegistrationIdentity(sessionId, "release-a"),
+    ...pendingRunnerRegistrationIdentity(sessionId, "release-a", undefined, config.registrationId),
     pid,
     startIdentity: `start-${pid}`,
   });
@@ -195,6 +204,7 @@ function childConfig(
 ): RunnerChildConfig {
   return {
     schemaVersion: 1,
+    registrationId: `registration-${sessionId}`,
     sessionId,
     backend: "codex",
     agent: {

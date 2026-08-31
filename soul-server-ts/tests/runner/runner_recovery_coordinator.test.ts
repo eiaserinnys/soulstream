@@ -886,7 +886,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     ]);
   });
 
-  it("retires the measured released sidecar shape without trusting stale lifecycle pid", async () => {
+  it("retires a legacy released registration without trusting lifecycle history", async () => {
     const fixture = await releasedTerminalSidecarFixture();
     try {
       const proveCentralOwnerAbsent = vi.fn(async (candidate: Task) =>
@@ -911,7 +911,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       );
       const violations = [
         ...(fixture.registration.pid === fixture.staleLifecyclePid
-          ? [] : ["reader_did_not_derive_stale_lifecycle_pid"]),
+          ? [] : ["legacy_registration_lost_lifecycle_history"]),
         ...(!fixture.registration.pidAlive ? [] : ["reader_marked_stale_pid_live"]),
         ...(fixture.registration.pidStartIdentity === null
           ? [] : ["reader_restored_start_identity"]),
@@ -2432,7 +2432,17 @@ async function releasedTerminalSidecarFixture(options: {
     `${JSON.stringify(completedLifecycle)}\n`,
     { mode: 0o600 },
   );
-  const current = await readRunnerRegistrationSummary(paths.sessionDirectory);
+  // The canonical reader no longer emits incomplete identities. Keep the
+  // coordinator's defensive legacy-input coverage without weakening that boundary.
+  const current: RunnerRegistration = {
+    ...template,
+    config,
+    pid: options.identityPid ?? staleLifecyclePid,
+    registrationId,
+    pidStartIdentity: options.identityStartIdentity ?? null,
+    pidAlive: options.identityPid === process.pid,
+    lifecycle: completedLifecycle,
+  };
   const spawner = new RunnerProcessSpawner({
     prepareDatabase: async () => {},
     validateEntry: async () => {},
