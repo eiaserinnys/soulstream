@@ -201,19 +201,6 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     };
   }
 
-  stageInterventionFallback(input: {
-    interventionId: string;
-    message: Record<string, unknown>;
-    event?: Record<string, unknown>;
-    queued: boolean;
-  }): { queuePosition: number } {
-    return this.host.stageInterventionFallback({
-      sessionId: this.sessionId,
-      ...input,
-      stagedAt: new Date().toISOString(),
-    });
-  }
-
   readInterventionFallback(interventionId: string) {
     return this.host.readInterventionFallback(this.sessionId, interventionId);
   }

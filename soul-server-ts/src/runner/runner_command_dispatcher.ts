@@ -62,7 +62,6 @@ export interface RunnerCommandDispatcher {
     timeoutMs: number;
   } | undefined;
   waitForSessionAck(): Promise<number | null>;
-  stageIntervention?(input: RunnerInterventionStageInput): Promise<RunnerInterventionStageResult>;
   applyIntervention?(
     input: RunnerInterventionApplyInput,
   ): Promise<EngineInterventionResult>;
