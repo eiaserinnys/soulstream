@@ -30,7 +30,7 @@ export async function markSessionDeliveryConsumed(
       updated_at = NOW()
     WHERE delivery_id = ${deliveryId}
       AND aggregate_state IN ('pending', 'delivered')
-      AND state IN ('queued', 'delivered')
+      AND state IN ('pending', 'claimed', 'dispatching', 'queued', 'delivered')
     RETURNING *
   `;
   return rows[0] ?? null;

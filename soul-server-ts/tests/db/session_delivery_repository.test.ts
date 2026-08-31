@@ -265,7 +265,9 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[4].query).toContain("aggregate_state = 'delivered'");
     expect(calls[5].query).toContain("'consumed'");
     expect(calls[5].query).toContain("aggregate_state IN ('pending', 'delivered')");
-    expect(calls[5].query).toContain("'queued', 'delivered'");
+    expect(calls[5].query).toContain(
+      "'pending', 'claimed', 'dispatching', 'queued', 'delivered'",
+    );
     expect(calls[5].query).toContain("target_receipt_id = COALESCE");
   });
 
