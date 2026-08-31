@@ -52,7 +52,6 @@ export class SessionDeliveryRecoveryRepository {
           JOIN sessions AS target
             ON target.session_id = delivery.target_session_id
           WHERE target.node_id = ${nodeId}
-            AND delivery.intent IN ('human_live_steer', 'runtime_followup')
             AND delivery.state = 'pending'
             AND delivery.next_attempt_at <= NOW()
           ORDER BY delivery.enqueue_sequence
@@ -179,12 +178,13 @@ export class SessionDeliveryRecoveryRepository {
     leaseOwner: string,
     limit = 100,
     leaseMs = 15_000,
+    includeDelivered = false,
   ): Promise<SessionDeliveryRow[]> {
     return await this.claimQueued(
       leaseOwner,
       limit,
       leaseMs,
-      { startupNodeId: nodeId },
+      { startupNodeId: nodeId, includeDelivered },
     );
   }
 
@@ -289,6 +289,7 @@ export class SessionDeliveryRecoveryRepository {
     mode: {
       startupNodeId?: string;
       scan?: QueuedDeliveryRecoveryScan;
+      includeDelivered?: boolean;
     },
   ): Promise<SessionDeliveryRow[]> {
     const startupNodeId = mode.startupNodeId ?? null;
@@ -297,11 +298,10 @@ export class SessionDeliveryRecoveryRepository {
       WITH recoverable AS MATERIALIZED (
         SELECT delivery.delivery_id
         FROM session_deliveries AS delivery
-        WHERE delivery.state = 'queued'
-          AND delivery.intent IN (
-            'human_live_steer', 'durable_next_turn',
-            'completion_notification', 'runtime_followup'
-          )
+        WHERE (
+          delivery.state = 'queued'
+          OR (${mode.includeDelivered ?? false} AND delivery.state = 'delivered')
+        )
           AND delivery.next_attempt_at <= NOW()
           AND (
             (
@@ -346,12 +346,35 @@ export class SessionDeliveryRecoveryRepository {
       UPDATE session_deliveries AS delivery
       SET
         state = 'claimed',
+        aggregate_state = CASE
+          WHEN delivery.state = 'delivered' THEN 'pending'
+          ELSE delivery.aggregate_state
+        END,
+        caller_turn_id = CASE
+          WHEN delivery.state = 'delivered' THEN NULL
+          ELSE delivery.caller_turn_id
+        END,
+        target_receipt_id = CASE
+          WHEN delivery.state = 'delivered' THEN NULL
+          ELSE delivery.target_receipt_id
+        END,
+        target_receipt_at = CASE
+          WHEN delivery.state = 'delivered' THEN NULL
+          ELSE delivery.target_receipt_at
+        END,
+        delivered_at = CASE
+          WHEN delivery.state = 'delivered' THEN NULL
+          ELSE delivery.delivered_at
+        END,
         lease_owner = ${leaseOwner},
         lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
         updated_at = NOW()
       FROM recoverable
       WHERE delivery.delivery_id = recoverable.delivery_id
-        AND delivery.state = 'queued'
+        AND (
+          delivery.state = 'queued'
+          OR (${mode.includeDelivered ?? false} AND delivery.state = 'delivered')
+        )
       RETURNING delivery.*
     `;
     return rows;

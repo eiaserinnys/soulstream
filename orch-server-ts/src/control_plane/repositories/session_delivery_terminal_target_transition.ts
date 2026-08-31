@@ -5,8 +5,8 @@ import type { SqlClient } from "../control_plane_types.js";
  *
  * An exact relation receipt wins over target lifecycle: it proves the caller
  * already observed this child revision even if the delivery-row ACK was lost.
- * Without that proof, a terminal caller makes the notification obsolete, not
- * rejected, so the existing superseded transition owns the final state.
+ * Target lifecycle alone is not content-observation evidence: unreceived rows
+ * remain recoverable by the ordinary delivery owner.
  */
 export async function settleTerminalTargetCompletionDeliveries(
   sql: SqlClient,
@@ -44,27 +44,5 @@ export async function settleTerminalTargetCompletionDeliveries(
       AND delivery.state IN (
         'pending', 'claimed', 'dispatching', 'queued', 'delivered'
       )
-  `;
-  await sql`
-    UPDATE session_deliveries AS delivery
-    SET
-      state = 'superseded',
-      aggregate_state = 'consumed',
-      consumed_at = NOW(),
-      consumed_reason = 'target session terminated before completion delivery',
-      superseded_at = NOW(),
-      superseded_terminal_revision = target.termination_event_id::text,
-      lease_owner = NULL,
-      lease_expires_at = NULL,
-      updated_at = NOW()
-    FROM sessions AS target
-    WHERE target.session_id = delivery.target_session_id
-      AND target.status IN ('completed', 'error', 'interrupted')
-      AND target.termination_event_id IS NOT NULL
-      AND delivery.intent = 'completion_notification'
-      AND delivery.source = 'completion_notifier'
-      AND delivery.producer_kind = 'child_session'
-      AND delivery.aggregate_state IN ('pending', 'delivered')
-      AND delivery.state IN ('pending', 'queued', 'delivered')
   `;
 }

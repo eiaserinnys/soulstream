@@ -399,7 +399,8 @@ function makeRecoverySql(
     if (!statement.includes("WITH due AS MATERIALIZED")) {
       throw new Error(`Unexpected recovery SQL in fixture: ${statement}`);
     }
-    const productQueryIncludesRuntime = statement.includes("'runtime_followup'");
+    const productQueryIncludesRuntime = statement.includes("'runtime_followup'")
+      || !statement.includes("delivery.intent IN");
     if (mode === "product" && !productQueryIncludesRuntime) return [];
     return ledger.claimRuntimeRows(String(values[2]));
   }) as unknown as SqlClient;

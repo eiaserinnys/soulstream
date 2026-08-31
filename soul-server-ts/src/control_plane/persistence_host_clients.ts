@@ -241,8 +241,8 @@ export interface QueuedDeliveryRecoveryScan {
 export class SessionDeliveryRecoveryHostClient {
   constructor(private readonly transport: PersistenceHostTransport) {}
 
-  claimQueuedAfterNodeRestart(nodeId: string, leaseOwner: string, limit = 100, leaseMs = 15_000): Promise<SessionDeliveryRow[]> {
-    return this.transport.request("session-deliveries", "claim_queued_after_node_restart", [nodeId, leaseOwner, limit, leaseMs]);
+  claimQueuedAfterNodeRestart(nodeId: string, leaseOwner: string, limit = 100, leaseMs = 15_000, includeDelivered = false): Promise<SessionDeliveryRow[]> {
+    return this.transport.request("session-deliveries", "claim_queued_after_node_restart", [nodeId, leaseOwner, limit, leaseMs, includeDelivered]);
   }
 
   claimRecoverableQueued(scan: QueuedDeliveryRecoveryScan, leaseOwner: string, limit = 100, leaseMs = 15_000): Promise<SessionDeliveryRow[]> {

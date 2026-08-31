@@ -9,6 +9,7 @@ import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
 import { CompletionDeliveryCoordinator } from
   "../../src/task/completion_delivery_coordinator.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { DELIVERY_INTENTS } from "../../src/task/delivery_contract.js";
 import { buildCanonicalDeliveryPayload } from
   "../../src/task/delivery_payload.js";
 import { QueuedDeliveryTranscriptRecovery } from
@@ -172,6 +173,42 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       state: "claimed",
       lease_owner: "worker-human-live",
     }]);
+  });
+
+  it("claims every pending content intent on node-ready without exceptions", async () => {
+    for (const intent of DELIVERY_INTENTS) {
+      const deliveryId = `node-ready-${intent}`;
+      await repository.register({
+        deliveryId,
+        targetSessionId: "caller-session",
+        relationKey: `node-ready:${intent}`,
+        completionId: `completion:${intent}`,
+        intent,
+        source: intent === "completion_notification"
+          ? "completion_notifier"
+          : intent === "runtime_followup"
+            ? "claude_runtime_task_followup"
+            : "user_message",
+        payloadHash: `hash:${intent}`,
+        payload: { text: `content:${intent}`, user: "agent" },
+      });
+    }
+
+    const claimed = await repository.recovery.claimPendingImmediateIntentsForNode(
+      "node-test",
+      "node-ready-all-content",
+      DELIVERY_INTENTS.length,
+    );
+    expect(claimed.map((row) => row.intent).sort()).toEqual(
+      [...DELIVERY_INTENTS].sort(),
+    );
+    expect(claimed).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        intent: "completion_notification",
+        target_session_id: "caller-session",
+        state: "claimed",
+      }),
+    ]));
   });
 
   it.each([
@@ -949,6 +986,55 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
   });
 
+  it("claims both queued and delivered orphan content for transcript recovery", async () => {
+    for (const deliveryId of ["orphan-queued", "orphan-delivered"] as const) {
+      await registerUserDelivery(deliveryId, `content for ${deliveryId}`);
+      const worker = `crashed:${deliveryId}`;
+      await repository.claimForTarget(deliveryId, "caller-session", worker);
+      await repository.beginDispatch(deliveryId, worker);
+      await repository.markQueued(deliveryId, worker);
+    }
+    await repository.markDelivered("orphan-delivered", "event:orphan-delivered");
+
+    const redelivered: string[] = [];
+    const queuedRecovery = makeQueuedRecovery(
+      "orphan-content-worker",
+      async (row) => ({
+        kind: "absent",
+        inputUuid: buildDeliveryInputUuid(row.delivery_id),
+      }),
+      async (row) => {
+        redelivered.push(row.delivery_id);
+        const dispatching = await repository.beginDispatch(
+          row.delivery_id,
+          row.lease_owner ?? undefined,
+        );
+        if (!dispatching) throw new Error(`cannot dispatch ${row.delivery_id}`);
+        const queued = await repository.markQueued(
+          row.delivery_id,
+          row.lease_owner ?? undefined,
+        );
+        if (!queued) throw new Error(`cannot queue ${row.delivery_id}`);
+      },
+    );
+
+    await expect(queuedRecovery.recoverAfterNodeRestart("node-test")).resolves
+      .toEqual({ claimed: 2, settled: 2 });
+    expect(redelivered.sort()).toEqual(["orphan-delivered", "orphan-queued"]);
+    await expect(repository.get("orphan-queued")).resolves.toMatchObject({
+      state: "queued",
+      aggregate_state: "pending",
+    });
+    await expect(repository.get("orphan-delivered")).resolves.toMatchObject({
+      state: "queued",
+      aggregate_state: "pending",
+      caller_turn_id: null,
+      target_receipt_id: null,
+      target_receipt_at: null,
+      delivered_at: null,
+    });
+  });
+
   it("keeps the legacy transcript response delivered while new orch stores it consumed", async () => {
     await register("delivery-old-soul-new-orch", "relation-old-soul-new-orch", {
       targetSessionId: "caller-session",
@@ -1412,11 +1498,13 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     inspect: ConstructorParameters<
       typeof QueuedDeliveryTranscriptRecovery
     >[0]["transcriptReceipt"]["inspect"],
+    redeliverContent?: (row: SessionDeliveryRow) => Promise<void>,
   ): QueuedDeliveryTranscriptRecovery {
     return new QueuedDeliveryTranscriptRecovery({
       deliveryRepository: repository,
       recoveryRepository: repository.recovery,
       transcriptReceipt: { inspect },
+      ...(redeliverContent ? { redeliverContent } : {}),
       logger: { warn() {} },
     }, workerId);
   }

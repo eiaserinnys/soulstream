@@ -45,6 +45,7 @@ describePostgres("terminal target delivery settlement", () => {
       ["terminal-receipt", "relation-terminal-receipt"],
       ["terminal-pending", "relation-terminal-pending"],
       ["terminal-queued", "relation-terminal-queued"],
+      ["terminal-delivered", "relation-terminal-delivered"],
     ] as const) {
       await repository.register({
         deliveryId,
@@ -61,7 +62,11 @@ describePostgres("terminal target delivery settlement", () => {
         payload: { text: "done", user: "agent" },
       });
     }
-    for (const deliveryId of ["terminal-receipt", "terminal-queued"] as const) {
+    for (const deliveryId of [
+      "terminal-receipt",
+      "terminal-queued",
+      "terminal-delivered",
+    ] as const) {
       await repository.claimForTarget(
         deliveryId,
         "terminal-parent",
@@ -70,6 +75,10 @@ describePostgres("terminal target delivery settlement", () => {
       await repository.beginDispatch(deliveryId, `worker-${deliveryId}`);
       await repository.markQueued(deliveryId, `worker-${deliveryId}`);
     }
+    await repository.markDelivered(
+      "terminal-delivered",
+      "event:terminal-delivered",
+    );
     await harness.sql`
       INSERT INTO session_delivery_relation_consumptions (
         relation_key, completion_id, caller_session_id, consumed_turn_id
@@ -98,16 +107,22 @@ describePostgres("terminal target delivery settlement", () => {
     `;
     const expected = new Map([
       ["terminal-pending", {
-        state: "superseded",
-        aggregateState: "consumed",
+        state: "pending",
+        aggregateState: "pending",
         targetReceiptId: null,
-        terminalRevision: "77",
+        terminalRevision: null,
       }],
       ["terminal-queued", {
-        state: "superseded",
-        aggregateState: "consumed",
+        state: "queued",
+        aggregateState: "pending",
         targetReceiptId: null,
-        terminalRevision: "77",
+        terminalRevision: null,
+      }],
+      ["terminal-delivered", {
+        state: "delivered",
+        aggregateState: "delivered",
+        targetReceiptId: "event:terminal-delivered",
+        terminalRevision: null,
       }],
       ["terminal-receipt", {
         state: "consumed",
@@ -129,10 +144,6 @@ describePostgres("terminal target delivery settlement", () => {
     });
 
     expect(violations).toEqual([]);
-    await expect(repository.claimRecoverableCompletionDeliveries(
-      "post-terminal-settlement",
-      10,
-    )).resolves.toEqual([]);
   });
 });
 

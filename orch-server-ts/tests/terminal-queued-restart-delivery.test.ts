@@ -19,6 +19,8 @@ import { TaskDeliveryLedgerGate } from
   "../../soul-server-ts/src/task/task_delivery_ledger_gate.js";
 import { buildCanonicalDeliveryPayload } from
   "../../soul-server-ts/src/task/delivery_payload.js";
+import { redeliverStoredDeliveryContent } from
+  "../../soul-server-ts/src/task/delivery_row_intervention.js";
 import { buildDeliveryInputUuid } from
   "../../soul-server-ts/src/task/delivery_identity.js";
 import { hydrateEvictedTaskFromSessionRow } from
@@ -78,7 +80,7 @@ const createSessionCacheSeedSinkWithNodeReady = createSessionCacheSeedSink as (
 ) => ReturnType<typeof createSessionCacheSeedSink>;
 
 describe("terminal queued delivery across node restart", () => {
-  it("terminalizes seq5046 absent input without reviving its completed session", async () => {
+  it("redelivers seq5046 content when its transcript identity is absent", async () => {
     const ledger = new RestartDeliveryLedger();
     const persistedEventTypes: string[] = [];
     const persistence = makeEventPersistenceTestDouble(async (_sessionId, event) => {
@@ -205,6 +207,13 @@ describe("terminal queued delivery across node restart", () => {
       deliveryRepository: ledger as never,
       recoveryRepository: ledger as never,
       transcriptReceipt: { inspect: transcriptInspect },
+      redeliverContent: (row: SessionDeliveryRow) =>
+        redeliverStoredDeliveryContent(
+          row,
+          taskManager,
+          (resumedTask, activation) =>
+            executor.startNewExecution(resumedTask, agent, activation),
+        ),
       logger,
     }, WORKER_ID);
     let nodeReadyWork: Promise<void> | undefined;
@@ -284,6 +293,7 @@ describe("terminal queued delivery across node restart", () => {
     sessionCacheSeed(newNode.events);
     await Promise.resolve();
     await nodeReadyWork;
+    await tasks.get(SESSION_ID)?.executionPromise;
 
     const task = tasks.get(SESSION_ID);
     const row = await ledger.get(DELIVERY_ID);
@@ -295,24 +305,27 @@ describe("terminal queued delivery across node restart", () => {
     expect(ledger.trace).toEqual([
       "queued",
       "transcript_claimed",
-      "uncertain",
+      "dispatching",
+      "queued_after_route",
+      "consumed",
     ]);
     expect(queueOnly).not.toHaveBeenCalled();
-    expect(autoResumeCall).not.toHaveBeenCalled();
-    expect(persistence.acquireExecutionOwnershipAndWaitForApplication).not.toHaveBeenCalled();
-    expect(modelInputs).toHaveLength(0);
+    expect(autoResumeCall).toHaveBeenCalledOnce();
+    expect(persistence.acquireExecutionOwnershipAndWaitForApplication)
+      .not.toHaveBeenCalled();
+    expect(modelInputs).toHaveLength(1);
+    expect(modelInputs[0]?.prompt).toContain(interventionBody(DELIVERY_ID).text);
     expect(persistedEventTypes.filter((type) => type === "assistant_message"))
-      .toHaveLength(0);
-    expect(persistedEventTypes.filter((type) => type === "complete")).toHaveLength(0);
-    expect(ledger.consumeCount).toBe(0);
+      .toHaveLength(1);
+    expect(persistedEventTypes.filter((type) => type === "complete")).toHaveLength(1);
+    expect(ledger.consumeCount).toBe(1);
     expect(row).toMatchObject({
-      state: "uncertain",
-      aggregate_state: "dead_letter",
+      state: "consumed",
+      aggregate_state: "consumed",
       attempt_count: 0,
-      last_error: "queued_transcript_input_absent",
-      dead_lettered_at: expect.any(Date),
+      target_receipt_id: expect.stringMatching(/^event:/),
     });
-    expect(task).toBeUndefined();
+    expect(task).toMatchObject({ status: "completed" });
   });
 });
 
@@ -373,6 +386,7 @@ class RestartDeliveryLedger {
     workerId: string,
   ) => {
     if (this.row.state !== "queued") return [];
+    this.row.state = "claimed";
     this.row.lease_owner = workerId;
     this.row.lease_expires_at = new Date(Date.now() + 60_000);
     this.trace.push("transcript_claimed");

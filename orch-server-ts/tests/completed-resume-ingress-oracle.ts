@@ -72,7 +72,9 @@ export function completedResumeViolations(
   ) {
     violations.push(`${observation.label}:restart_recovery_not_composed`);
   }
-  if (observation.deliveryGets !== expectedClicks) {
+  const expectedDeliveryGets = expectedClicks
+    + (observation.expectedSessionLoads > 0 ? expectedClicks : 0);
+  if (observation.deliveryGets !== expectedDeliveryGets) {
     violations.push(`${observation.label}:node_delivery_get_not_exactly_once`);
   }
   if (observation.deliveryClaims !== expectedClicks) {

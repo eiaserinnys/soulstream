@@ -10,8 +10,8 @@ import {
 } from "./delivery_identity.js";
 import {
   buildCanonicalDeliveryPayload,
-  readCanonicalDeliveryPayload,
 } from "./delivery_payload.js";
+import { deliveryRowToInterventionParams } from "./delivery_row_intervention.js";
 import type { CallerInfo } from "./task_models.js";
 import {
   DELIVERY_NOTIFICATION_MAX_AGE_MS,
@@ -181,7 +181,7 @@ export class CompletionDeliveryCoordinator {
     }
     try {
       await withDeadline(
-        this.deps.dispatch(toInterventionParams(row, leaseOwner)),
+        this.deps.dispatch(deliveryRowToInterventionParams(row, leaseOwner)),
         this.dispatchTimeoutMs,
         () => new DeliveryDispatchTimeoutError(
           row.delivery_id,
@@ -282,36 +282,6 @@ function buildCompletionRegistration(
     payloadHash: canonical.payloadHash,
     payload: canonical.payload,
     createdAt: input.createdAt,
-  };
-}
-
-function toInterventionParams(
-  row: SessionDeliveryRow,
-  leaseOwner: string,
-): AddInterventionParams {
-  const message = readCanonicalDeliveryPayload(row.payload);
-  return {
-    agentSessionId: requiredTarget(row),
-    text: message.text,
-    user: message.user,
-    callerInfo: message.callerInfo,
-    attachmentPaths: message.attachmentPaths,
-    context: message.context,
-    source: row.source,
-    deliveryId: row.delivery_id,
-    deliveryIntent: row.intent,
-    completionId: row.completion_id ?? undefined,
-    relationKey: row.relation_key,
-    producerTerminalRevision: row.producer_terminal_revision ?? undefined,
-    parentDeliveryId: row.parent_delivery_id ?? undefined,
-    callerTurnId: row.caller_turn_id ?? undefined,
-    followupKey: message.followupKey,
-    followupAttempt: message.followupAttempt,
-    followupTaskIds: message.followupTaskIds,
-    deliveryCreatedAt: row.created_at.toISOString(),
-    deliveryLeaseOwner: leaseOwner,
-    storedDeliveryPayload: row.payload,
-    storedDeliveryPayloadHash: row.payload_hash,
   };
 }
 

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
+import { DELIVERY_INTENTS, type DeliveryIntent } from
+  "../../src/task/delivery_contract.js";
 import { QueuedDeliveryTranscriptRecovery } from
   "../../src/task/queued_delivery_transcript_recovery.js";
 
@@ -43,6 +45,27 @@ describe("queued transcript recovery rolling contract", () => {
     expect(harness.deferQueuedTranscriptCheck).not.toHaveBeenCalled();
   });
 
+  it.each(DELIVERY_INTENTS)(
+    "redelivers transcript-absent %s content without an intent exception",
+    async (intent) => {
+      const redeliverContent = vi.fn(async () => undefined);
+      const harness = makeDeferredHarness("absent", {
+        intent,
+        redeliverContent,
+      });
+
+      await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves
+        .toEqual({ claimed: 1, settled: 1 });
+      expect(redeliverContent).toHaveBeenCalledOnce();
+      expect(redeliverContent).toHaveBeenCalledWith(expect.objectContaining({
+        delivery_id: "delivery-deferred",
+        intent,
+      }));
+      expect(harness.markUncertain).not.toHaveBeenCalled();
+      expect(harness.retryLeasedDelivery).not.toHaveBeenCalled();
+    },
+  );
+
   it("returns transcript-pending input to pending for reconnect reclaim", async () => {
     const harness = makeDeferredHarness("input_pending");
 
@@ -60,9 +83,16 @@ describe("queued transcript recovery rolling contract", () => {
   });
 });
 
-function makeDeferredHarness(receiptKind: "absent" | "input_pending") {
+function makeDeferredHarness(
+  receiptKind: "absent" | "input_pending",
+  options: {
+    intent?: DeliveryIntent;
+    redeliverContent?: (row: SessionDeliveryRow) => Promise<void>;
+  } = {},
+) {
   const claimedRow = {
     delivery_id: "delivery-deferred",
+    intent: options.intent ?? "human_live_steer",
     state: "claimed",
     lease_owner: "rolling-worker",
   } as SessionDeliveryRow;
@@ -100,6 +130,9 @@ function makeDeferredHarness(receiptKind: "absent" | "input_pending") {
         inputUuid: "delivery:delivery-deferred",
       })),
     },
+    ...(options.redeliverContent
+      ? { redeliverContent: options.redeliverContent }
+      : {}),
     logger: { warn: vi.fn() },
   } as never, "rolling-worker");
 
