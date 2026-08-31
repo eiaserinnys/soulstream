@@ -135,6 +135,7 @@ async function exactProcessIsAbsent(
     return !deps.isPidAlive(expected.pid);
   }
   if (observed.startIdentity === null) {
+    if (!deps.isPidAlive(expected.pid)) return true;
     throw identityProofFailure(`live runner start identity unavailable: ${expected.pid}`);
   }
   if (exactRunnerStartIdentitiesMatch(observed.startIdentity, expected.startIdentity)) {
