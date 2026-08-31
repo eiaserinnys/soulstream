@@ -158,7 +158,6 @@ export class ClaudeSdkPersistentSession {
       logger: this.logger,
     });
   }
-
   async settled(): Promise<void> {
     await Promise.allSettled([this.pump, this.hookPump]);
   }
@@ -179,11 +178,6 @@ export class ClaudeSdkPersistentSession {
       }
     } catch (err) {
       const active = this.activeForeground;
-      // Close the runtime state before waking the foreground consumer. The
-      // consumer may immediately submit an accepted successor through the
-      // same ClaudeSdkClient; leaving this Query "open/interrupting" until the
-      // detached diagnostic sink finishes makes that successor reuse a dead
-      // Query and fail at beginForegroundTurn.
       this.runtime.close("fatal");
       active?.output.fail(err);
       this.clearForegroundTimers(active);
