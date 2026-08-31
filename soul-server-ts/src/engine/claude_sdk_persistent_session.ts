@@ -30,17 +30,13 @@ import {
   provableTurnResultOwner,
   turnInactivityError,
 } from "./claude_sdk_persistent_session_support.js";
-import {
-  startPersistentForegroundTurn,
-  steerPersistentActiveTurn,
-} from "./claude_sdk_persistent_turn_handoff.js";
+import { startPersistentForegroundTurn } from "./claude_sdk_persistent_turn_handoff.js";
 import {
   ClaudeSessionRuntime,
   type ClaudeForegroundPhase,
   type ClaudeRuntimeCloseReason,
   type ClaudeSessionRuntimeSnapshot,
 } from "./claude_session_runtime.js";
-import type { EngineUserInput, LiveTurnSteerResult } from "./protocol.js";
 
 export type {
   ClaudeDetachedEventSink,
@@ -84,24 +80,7 @@ export class ClaudeSdkPersistentSession {
     });
     this.followupWatchdog = new ClaudeRuntimeFollowupWatchdog({
       timeoutMs: this.runtimeFollowupNoOutputTimeoutMs,
-      resultWaitMs: this.postResultDrainMs,
       logger: this.logger,
-      interrupt: async (uuid) => {
-        const active = this.activeForeground;
-        if (!active || active.uuid !== uuid) return {};
-        return this.runtime.snapshot().foregroundPhase === "generating"
-          ? await this.runtime.interruptForeground()
-          : {};
-      },
-      close: async (uuid) => {
-        const active = this.activeForeground;
-        if (!active || active.uuid !== uuid) return;
-        // Close the runtime lifecycle before releasing the foreground caller.
-        // The caller can start its next turn as soon as this output closes, so
-        // publishing the no-op first would let it reuse a Query that is only
-        // beginning to close.
-        await this.close("followup_no_output");
-      },
     });
     this.pump = this.pumpQuery(config.onClosed);
     this.hookPump = this.pumpHookEvents();
@@ -126,16 +105,6 @@ export class ClaudeSdkPersistentSession {
     if (this.runtime.snapshot().foregroundPhase !== "generating") return false;
     await this.runtime.interruptForeground();
     return true;
-  }
-
-  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
-    return await steerPersistentActiveTurn({
-      input,
-      activeForeground: this.activeForeground,
-      runtime: this.runtime,
-      clearForegroundTimers: (active) => this.clearForegroundTimers(active),
-      logger: this.logger,
-    });
   }
 
   phase(): ClaudeForegroundPhase {
@@ -333,23 +302,12 @@ export class ClaudeSdkPersistentSession {
       userMessageUuid: explicitUserMessageUuid,
       interrupted: phase === "interrupting",
     });
-    const followupNoOutput = active
-      ? this.followupWatchdog.resultArrived(active.uuid)
-      : false;
+    if (active) this.followupWatchdog.resultArrived(active.uuid);
     this.clearForegroundTimers(active);
     this.runtime.finishForegroundResult();
     this.armDrainTimer();
 
-    if (active && followupNoOutput) {
-      this.logger.info(
-        {
-          uuid: active.uuid,
-          turnOriginKind: active.origin.kind,
-          turnOriginId: active.origin.id,
-        },
-        "Runtime follow-up ended as a non-fatal no-op after watchdog interrupt",
-      );
-    } else if (active?.timedOut) {
+    if (active?.timedOut) {
       active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
     } else {
       const terminalEvents = this.eventMapper.mapResultMessage(message);

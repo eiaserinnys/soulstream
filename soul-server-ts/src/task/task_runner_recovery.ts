@@ -5,7 +5,6 @@ import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
 import { isTerminalTaskStatus, type Task } from "./task_models.js";
 import type { StartExecutionCallback } from "./task_intervention_route.js";
-import type { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import type { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
 
@@ -14,7 +13,6 @@ export interface TaskRunnerRecoveryDeps {
   loadTask(sessionId: string): Promise<Task | null>;
   rememberTask(task: Task): void;
   lifecycleTransition: TaskLifecycleTransition;
-  autoResumeTransition: AutoResumeTransition;
   persistence?: EventPersistence;
 }
 
@@ -138,12 +136,9 @@ export class TaskRunnerRecovery {
   }
 
   async reconcileExecutionOwnershipObservations(
-    task: Task,
+    _task: Task,
     input: ExecutionOwnershipReconciliationInput,
   ): Promise<boolean> {
-    if (!this.deps.persistence) {
-      throw new Error("execution ownership recovery persistence is required");
-    }
     const { first, second } = input;
     const stableCompleteIdentity = (
       typeof first.manifestId === "string"
@@ -175,43 +170,9 @@ export class TaskRunnerRecovery {
       }
       : undefined;
     if (!stableCompleteIdentity) {
-      const previous = {
-        status: task.status,
-        completedAt: task.completedAt,
-        reviewState: task.reviewState,
-        terminationReason: task.terminationReason,
-        terminationDetail: task.terminationDetail,
-        pendingTerminationHint: task.pendingTerminationHint,
-        pendingTerminationDetail: task.pendingTerminationDetail,
-        terminationEventRecorded: task.terminationEventRecorded,
-        terminalEventId: task.terminalEventId,
-      };
-      task.status = "interrupted";
-      task.completedAt = second.observedAt;
-      task.pendingTerminationDetail =
-        "owner-null running migration could not prove a stable runner identity";
-      task.terminationEventRecorded = false;
-      task.terminalEventId = undefined;
-      try {
-        const result = await this.deps.lifecycleTransition.persistExecutorFinalState(task);
-        return result.terminalTransitionApplied;
-      } catch (error) {
-        Object.assign(task, previous);
-        throw error;
-      }
+      return false;
     }
-    const application =
-      await this.deps.persistence.acquireExecutionOwnershipAndWaitForApplication(
-        task.agentSessionId,
-        {
-          ownerKind: "adopted_runner",
-          ...stableCompleteIdentity,
-          leaseExpiresAt: input.leaseExpiresAt,
-          reviewState: task.reviewState ?? "not_required",
-        },
-      );
-    applyCanonicalSessionProjection(task, application.canonicalSession);
-    return application.applied;
+    return true;
   }
 
 }

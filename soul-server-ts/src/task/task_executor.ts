@@ -64,6 +64,7 @@ import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import {
   isOpenAiAgentsApprovalPending,
   resolveTurnLoopTransition,
+  type TurnLoopTransitionDecision,
 } from "./task_turn_loop_transition.js";
 import {
   TaskTurnInputBuilder,
@@ -246,45 +247,19 @@ export class TaskExecutor {
     return this.startExecutionWithOwnership(task, agent, transferredActivation);
   }
 
+  startNewExecution(task: Task, agent: AgentProfile): Promise<void> {
+    const { backend, retainedRunner } = this.prepareExecution(task, agent);
+    return this.startExecutionWithoutOwnership(task, agent, backend, retainedRunner);
+  }
+
   private startExecutionWithOwnership(
     task: Task,
     agent: AgentProfile,
     transferredActivation?: ExecutionActivation,
   ): Promise<void> {
-    const retainedRunner = task.runnerRetainedForClaudeBackground === true
-      ? task.runner
-      : undefined;
-    if (task.runner && !retainedRunner) {
-      throw new Error(
-        `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
-      );
-    }
-    const presetRuntime = applyModelPresetRuntime(task, agent, this.modelCatalog);
-    if (presetRuntime === "preset_unavailable") {
-      this.logger.warn(
-        {
-          sessionId: task.agentSessionId,
-          modelPreset: task.modelPreset,
-          fallbackBackend: agent.backend,
-          profileEnvFallback: agent.env !== undefined,
-        },
-        "Persisted model preset is unavailable; using the profile backend",
-      );
-    }
-    const backend = effectiveTaskBackend(task, agent);
+    const { backend, retainedRunner } = this.prepareExecution(task, agent);
     if (!this.supportsExecutionOwnership()) {
-      const runner = retainedRunner ?? (this.runnerProcessFactory
-        ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
-        : createInProcessTaskRunnerRuntime(
-            task.modelPresetBackend
-              ? this.engineFactory(agent, backend)
-              : this.engineFactory(agent),
-          ));
-      if (retainedRunner) {
-        releaseTaskRunner(task, retainedRunner);
-      }
-      this.startExecutionWithRunner(task, agent, runner);
-      return task.executionPromise!;
+      return this.startExecutionWithoutOwnership(task, agent, backend, retainedRunner);
     }
 
     const activation = transferredActivation ?? createExecutionActivation();
@@ -354,6 +329,54 @@ export class TaskExecutor {
       },
     );
     return this.holdExecutionSlot(task, promise);
+  }
+
+  private prepareExecution(
+    task: Task,
+    agent: AgentProfile,
+  ): { backend: BackendId; retainedRunner: TaskRunnerRuntime | undefined } {
+    const retainedRunner = task.runnerRetainedForClaudeBackground === true
+      ? task.runner
+      : undefined;
+    if (task.runner && !retainedRunner) {
+      throw new Error(
+        `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
+      );
+    }
+    const presetRuntime = applyModelPresetRuntime(task, agent, this.modelCatalog);
+    if (presetRuntime === "preset_unavailable") {
+      this.logger.warn(
+        {
+          sessionId: task.agentSessionId,
+          modelPreset: task.modelPreset,
+          fallbackBackend: agent.backend,
+          profileEnvFallback: agent.env !== undefined,
+        },
+        "Persisted model preset is unavailable; using the profile backend",
+      );
+    }
+    const backend = effectiveTaskBackend(task, agent);
+    return { backend, retainedRunner };
+  }
+
+  private startExecutionWithoutOwnership(
+    task: Task,
+    agent: AgentProfile,
+    backend: BackendId,
+    retainedRunner: TaskRunnerRuntime | undefined,
+  ): Promise<void> {
+    const runner = retainedRunner ?? (this.runnerProcessFactory
+      ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
+      : createInProcessTaskRunnerRuntime(
+          task.modelPresetBackend
+            ? this.engineFactory(agent, backend)
+            : this.engineFactory(agent),
+        ));
+    if (retainedRunner) {
+      releaseTaskRunner(task, retainedRunner);
+    }
+    this.startExecutionWithRunner(task, agent, runner);
+    return task.executionPromise!;
   }
 
   /**
@@ -612,22 +635,15 @@ export class TaskExecutor {
     mode: "adopt" | "replay" | "offline" = "adopt",
     manifestId?: string,
     runtimeEnvIdentity?: string,
+    onPendingFramesReplayed?: () => void,
   ): Promise<void> {
-    if (mode === "adopt" && manifestId && this.supportsExecutionOwnership()) {
-      const runnerRuntimeEnvIdentity = runtimeEnvIdentity ?? `legacy:${manifestId}`;
-      return this.recoverOwnedRunnerExecutionLocked(
-        task,
-        agent,
-        runner,
-        manifestId,
-        runnerRuntimeEnvIdentity,
-        commandId,
-      );
-    }
     if (task.runner) {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
     }
-    const frames = runner.dispatcher.recoverFrames?.(commandId);
+    const frames = runner.dispatcher.recoverFrames?.(
+      commandId,
+      onPendingFramesReplayed,
+    );
     if (!frames) throw new Error("runner dispatcher does not support execution recovery");
     this.attachRunner(task, runner, mode === "offline");
     if (mode === "offline") task.status = "running";
@@ -663,111 +679,12 @@ export class TaskExecutor {
     return promise;
   }
 
-  private recoverOwnedRunnerExecutionLocked(
-    task: Task,
-    agent: AgentProfile,
-    runner: TaskRunnerRuntime,
-    manifestId: string,
-    runtimeEnvIdentity: string,
-    commandId?: string,
-  ): Promise<void> {
-    const deferredUntil = this.executionOwnershipBackoff?.deferUntil(
-      task.agentSessionId,
-    );
-    if (deferredUntil) {
-      throw new ExecutionOwnershipConflictError(
-        task.agentSessionId,
-        deferredUntil,
-        "active",
-      );
-    }
-    if (task.runner) {
-      throw new Error(`Task ${task.agentSessionId} already has a runner`);
-    }
-    task.executionOwnership = undefined;
-    this.attachRunner(task, runner);
-    let proof: import("./execution_ownership.js").ExecutionIdentityProof | undefined;
-    const promise = (async () => {
-      try {
-        const session = await this.db.getSession(task.agentSessionId);
-        const ownershipGeneration = Number(session?.execution_generation ?? 0);
-        const ownerToken = session?.execution_command_id;
-        if (!session
-          || !Number.isSafeInteger(ownershipGeneration)
-          || ownershipGeneration <= 0
-          || session.execution_manifest_id !== manifestId
-          || session.execution_runtime_env_identity !== runtimeEnvIdentity
-          || !session.execution_registration_id
-          || !session.execution_pid
-          || !session.execution_start_identity
-          || !ownerToken) {
-          throw new Error(
-            `Sessions-row execution owner unavailable for recovery: ${task.agentSessionId}`,
-          );
-        }
-        proof = await runner.dispatcher.prepareExecutionIdentity?.(ownerToken);
-        if (!proof || !isCompleteExecutionIdentity(proof)) {
-          throw new Error(`Adopted runner identity proof unavailable: ${task.agentSessionId}`);
-        }
-        if (proof.registrationId !== session.execution_registration_id
-          || proof.pid !== session.execution_pid
-          || proof.startIdentity !== session.execution_start_identity
-          || proof.executionCommandId !== ownerToken) {
-          throw new Error(`Recovered runner identity mismatch: ${task.agentSessionId}`);
-        }
-        const acquisition = await this.executionOwnershipCoordinator.acquire(
-          task.agentSessionId,
-          {
-            ownerKind: "adopted_runner",
-            manifestId,
-            runtimeEnvIdentity,
-            ...proof,
-            leaseExpiresAt: new Date(Date.now() + this.executionOwnershipLeaseMs),
-            reviewState: task.reviewState ?? "not_required",
-          },
-        );
-        applyCanonicalSessionProjection(task, acquisition.canonicalSession);
-        if (!acquisition.applied
-          || acquisition.canonicalExecutionOwnership?.ownershipGeneration
-            !== ownershipGeneration) {
-          throw this.executionOwnershipConflict(task.agentSessionId, acquisition);
-        }
-        this.executionOwnershipBackoff?.clear(task.agentSessionId);
-        task.executionOwnership = {
-          ownerKind: "adopted_runner",
-          manifestId,
-          runtimeEnvIdentity,
-          ownershipGeneration,
-          ...proof,
-        };
-        const frames = runner.dispatcher.recoverFrames?.(commandId);
-        if (!frames) throw new Error("runner dispatcher does not support execution recovery");
-        await this.consumeRecoveredRunnerFrames(task, agent, runner, frames, true);
-      } catch (error) {
-        if (task.executionOwnership === undefined) {
-          try {
-            if (proof && runner.dispatcher.rollbackExecutionIdentity) {
-              await runner.dispatcher.rollbackExecutionIdentity(proof);
-            } else {
-              await runner.dispatcher.close();
-            }
-          } finally {
-            releaseTaskRunner(task, runner);
-          }
-        }
-        throw error;
-      }
-    })();
-    this.holdExecutionSlot(task, promise);
-    return promise;
-  }
-
   recoverRegisteredRunner(
     task: Task,
     registration: RunnerRegistration,
     commandId: string | undefined,
     mode: "adopt" | "replay" | "offline",
-    onAttemptCreated?: (runner: TaskRunnerRuntime) => void,
+    onAttemptCreated?: (runner: TaskRunnerRuntime) => (() => void) | undefined,
   ): Promise<void> {
     const config = registration.config;
     const runner = this.runnerProcessFactory?.recover?.(
@@ -777,7 +694,7 @@ export class TaskExecutor {
       mode,
     );
     if (!runner) throw new Error("runner process recovery factory unavailable");
-    onAttemptCreated?.(runner);
+    const onPendingFramesReplayed = onAttemptCreated?.(runner);
     return this.recoverRunnerExecutionLocked(
       task,
       config.agent,
@@ -786,6 +703,7 @@ export class TaskExecutor {
       mode,
       config.releaseManifestId ?? config.codeSha,
       config.runtimeEnvIdentity ?? `legacy:${config.codeSha}`,
+      onPendingFramesReplayed,
     ).catch(async (error: unknown) => {
       await this.releaseUnadoptedRunner(task, runner, config.sessionId);
       throw error;
@@ -959,14 +877,10 @@ export class TaskExecutor {
         currentTurnInterventions = turnInput.interventions ?? [];
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
-      const turnReceipt = this.deliveryConsumption
-        ? new TaskDeliveryTurnReceipt(
-            this.deliveryConsumption,
-            currentTurnInterventions,
-          )
-        : undefined;
+      const turnReceipt = this.beginDeliveryTurn(task, currentTurnInterventions);
       try {
-        for await (const event of this.engineTurnRunner.executeTurn({
+        try {
+          for await (const event of this.engineTurnRunner.executeTurn({
           task,
           agent,
           runner,
@@ -992,35 +906,35 @@ export class TaskExecutor {
               ? { backendSessionRolloverFrom: turnInput.backendSessionRolloverFrom }
               : {}),
           },
-        })) {
-          observeClaudeContextRecoveryEvent(contextRecovery, event);
-          if (turnReceipt) await turnReceipt.observe(task, event);
-          await this.engineEventPublisher.publishEngineEvent(task, event, {
-            alreadyPersisted: runner.eventPersistence === "runner",
-          });
-          this.collectClaudeRuntimeTaskFollowup(task, event);
-        }
-      } catch (err) {
-        await task.interruptRequest;
-        const disposition = await this.engineFailureRecovery.recoverFromExecuteFailure(
-          task,
-          err,
-          currentTurnInterventions,
-        );
-        if (disposition === "continue_with_accepted_successor") {
-          const transition = resolveTurnLoopTransition(task, agent);
-          if (transition.kind === "continue") {
-            turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
-              task,
-              agent,
-              transition.interventions,
-            );
-            continue;
+          })) {
+            observeClaudeContextRecoveryEvent(contextRecovery, event);
+            await this.observeDeliveryTurn(task, turnReceipt, event);
+            await this.engineEventPublisher.publishEngineEvent(task, event, {
+              alreadyPersisted: runner.eventPersistence === "runner",
+            });
+            this.collectClaudeRuntimeTaskFollowup(task, event);
           }
+        } catch (err) {
+          await task.interruptRequest;
+          const disposition = await this.engineFailureRecovery.recoverFromExecuteFailure(
+            task,
+            err,
+            currentTurnInterventions,
+          );
+          if (disposition === "continue_with_accepted_successor") {
+            const transition = resolveTurnLoopTransition(task, agent);
+            if (transition.kind === "continue") {
+              turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+                task,
+                agent,
+                transition.interventions,
+              );
+              continue;
+            }
+          }
+          break;
         }
-        break;
-      }
-      const lastAcknowledgedEventId = runner.eventPersistence === "runner"
+        const lastAcknowledgedEventId = runner.eventPersistence === "runner"
         ? await runner.dispatcher.waitForSessionAck()
         : await this.persistence.waitForSessionAck(task.agentSessionId);
       if (lastAcknowledgedEventId !== null) {
@@ -1118,17 +1032,65 @@ export class TaskExecutor {
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);
       }
-      if (turnReceipt && transition.kind === "continue") {
-        await turnReceipt.consume(task);
-      } else if (turnReceipt && task.status === "completed") {
-        terminalTurnReceipts.push(turnReceipt);
-      }
-      if (transition.kind !== "continue") break;
-      turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+      await this.settleDeliveryTurn(
         task,
-        agent,
-        transition.interventions,
+        turnReceipt,
+        transition,
+        terminalTurnReceipts,
       );
+      if (transition.kind !== "continue") break;
+        turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+          task,
+          agent,
+          transition.interventions,
+        );
+      } finally {
+        this.releaseDeliveryTurn(task, turnReceipt);
+      }
+    }
+  }
+
+  private beginDeliveryTurn(
+    task: Task,
+    interventions: readonly InterventionMessage[],
+  ): TaskDeliveryTurnReceipt | undefined {
+    if (!this.deliveryConsumption) return undefined;
+    const receipt = new TaskDeliveryTurnReceipt(
+      this.deliveryConsumption,
+      interventions,
+    );
+    task.activeDeliveryTurnReceipt = receipt;
+    return receipt;
+  }
+
+  private async observeDeliveryTurn(
+    task: Task,
+    receipt: TaskDeliveryTurnReceipt | undefined,
+    event: SSEEventPayload,
+  ): Promise<void> {
+    await receipt?.observe(task, event);
+  }
+
+  private async settleDeliveryTurn(
+    task: Task,
+    receipt: TaskDeliveryTurnReceipt | undefined,
+    transition: TurnLoopTransitionDecision,
+    terminalTurnReceipts: TaskDeliveryTurnReceipt[],
+  ): Promise<void> {
+    if (!receipt) return;
+    if (transition.kind === "continue") {
+      await receipt.consume(task);
+    } else if (task.status === "completed") {
+      terminalTurnReceipts.push(receipt);
+    }
+  }
+
+  private releaseDeliveryTurn(
+    task: Task,
+    receipt: TaskDeliveryTurnReceipt | undefined,
+  ): void {
+    if (task.activeDeliveryTurnReceipt === receipt) {
+      delete task.activeDeliveryTurnReceipt;
     }
   }
 
@@ -1210,18 +1172,18 @@ export class TaskExecutor {
   ): Promise<void> {
     const contextRecovery = createClaudeContextRecoveryObservation();
     const terminalTurnReceipts: TaskDeliveryTurnReceipt[] = [];
+    const turnReceipt = this.beginDeliveryTurn(task, []);
     let recoveryFailed = false;
     let recoveryFailure: unknown;
     try {
       for await (const event of this.engineTurnRunner.recoverTurn(task, runner, frames)) {
         observeClaudeContextRecoveryEvent(contextRecovery, event);
+        await this.observeDeliveryTurn(task, turnReceipt, event);
         await this.engineEventPublisher.publishEngineEvent(task, event, {
           alreadyPersisted: true,
         });
         this.collectClaudeRuntimeTaskFollowup(task, event);
       }
-      const lastAcknowledgedEventId = await runner.dispatcher.waitForSessionAck();
-      if (lastAcknowledgedEventId !== null) task.lastEventId = lastAcknowledgedEventId;
       task.claudeContextUsage = contextRecovery.compactCompleted
         ? undefined
         : contextRecovery.latestContextUsage ?? task.claudeContextUsage;
@@ -1261,6 +1223,13 @@ export class TaskExecutor {
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);
       } else if (transition.kind === "continue") {
+        await this.settleDeliveryTurn(
+          task,
+          turnReceipt,
+          transition,
+          terminalTurnReceipts,
+        );
+        this.releaseDeliveryTurn(task, turnReceipt);
         const followupTurnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,
@@ -1273,12 +1242,20 @@ export class TaskExecutor {
           followupTurnInput,
           terminalTurnReceipts,
         );
+      } else {
+        await this.settleDeliveryTurn(
+          task,
+          turnReceipt,
+          transition,
+          terminalTurnReceipts,
+        );
       }
     } catch (error) {
       await this.engineFailureRecovery.recoverFromExecuteFailure(task, error);
       recoveryFailed = true;
       recoveryFailure = error;
     } finally {
+      this.releaseDeliveryTurn(task, turnReceipt);
       try {
         const lastAcknowledgedEventId = await runner.dispatcher.waitForSessionAck();
         if (lastAcknowledgedEventId !== null) task.lastEventId = lastAcknowledgedEventId;

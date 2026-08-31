@@ -22,7 +22,7 @@ import {
   applyRunnerClaudeRuntimeObservationResult,
 } from "./runner_claude_runtime_observation.js";
 
-const HOST_REQUEST_TIMEOUT_MS = 1_800_000;
+const HOST_REQUEST_ATTEMPT_TIMEOUT_MS = 1_800_000;
 
 export function createRunnerChildEngine(
   config: RunnerChildConfig,
@@ -150,8 +150,7 @@ class HostSessionStore implements SessionStore {
 
 function hostOptions() {
   return {
-    timeoutMs: HOST_REQUEST_TIMEOUT_MS,
-    attempts: 61,
+    timeoutMs: HOST_REQUEST_ATTEMPT_TIMEOUT_MS,
     retryDelayMs: 500,
   };
 }

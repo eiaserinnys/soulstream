@@ -43,7 +43,10 @@ import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
 export interface RunnerCommandDispatcher {
   dispatch(frame: unknown): Promise<RunnerCommandResultFrame>;
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame>;
-  recoverFrames?(commandId?: string): AsyncIterable<RunnerEventFrame>;
+  recoverFrames?(
+    commandId?: string,
+    onPendingFramesReplayed?: () => void,
+  ): AsyncIterable<RunnerEventFrame>;
   prepareSession(agentSessionId: string): Promise<void>;
   interrupt(): Promise<boolean>;
   close(): Promise<void>;
@@ -59,7 +62,6 @@ export interface RunnerCommandDispatcher {
     timeoutMs: number;
   } | undefined;
   waitForSessionAck(): Promise<number | null>;
-  stageIntervention?(input: RunnerInterventionStageInput): Promise<RunnerInterventionStageResult>;
   applyIntervention?(
     input: RunnerInterventionApplyInput,
   ): Promise<EngineInterventionResult>;

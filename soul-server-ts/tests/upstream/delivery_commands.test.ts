@@ -47,7 +47,7 @@ function createDeliveryCommands(opts: {
   agents?: AgentProfile[];
   deliverInputResponse?: TaskManager["deliverInputResponse"];
   deliverToolApproval?: TaskManager["deliverToolApproval"];
-  startExecution?: TaskExecutor["startExecution"];
+  startNewExecution?: TaskExecutor["startNewExecution"];
 } = {}) {
   const agents = new Map(
     (opts.agents ?? [openaiAgent]).map((agent) => [agent.id, agent]),
@@ -65,8 +65,8 @@ function createDeliveryCommands(opts: {
       })),
   } as Pick<TaskManager, "deliverInputResponse" | "deliverToolApproval">;
   const taskExecutor = {
-    startExecution: opts.startExecution ?? vi.fn(),
-  } as Pick<TaskExecutor, "startExecution">;
+    startNewExecution: opts.startNewExecution ?? vi.fn(),
+  } as Pick<TaskExecutor, "startNewExecution">;
 
   const commands = new DeliveryCommands({
     agentRegistry: {
@@ -192,7 +192,7 @@ describe("DeliveryCommands.toolApproval", () => {
       },
       expect.any(Function),
     );
-    expect(taskExecutor.startExecution).toHaveBeenCalledWith(
+    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(
       resumedTask,
       sessionAgent,
     );

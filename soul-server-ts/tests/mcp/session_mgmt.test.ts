@@ -58,7 +58,7 @@ function makeRuntime(
 ): McpRuntime & {
   addIntervention: ReturnType<typeof vi.fn>;
   createTask: ReturnType<typeof vi.fn>;
-  startExecution: ReturnType<typeof vi.fn>;
+  startNewExecution: ReturnType<typeof vi.fn>;
 } {
   const addIntervention = vi.fn(
     async (_p: AddInterventionParams, _r: StartExecutionCallback) => {
@@ -70,7 +70,7 @@ function makeRuntime(
     agentSessionId: params.agentSessionId,
     status: "running" as const,
   }));
-  const startExecution = vi.fn();
+  const startNewExecution = vi.fn();
   const taskManager = {
     createTask,
     addIntervention,
@@ -126,14 +126,14 @@ function makeRuntime(
       ),
     } as unknown as SessionDB,
     taskManager,
-    taskExecutor: { startExecution } as unknown as TaskExecutor,
+    taskExecutor: { startNewExecution } as unknown as TaskExecutor,
     agentRegistry,
     catalogService: {} as CatalogService,
     logger: createSilentLogger(),
     orch,
     addIntervention,
     createTask,
-    startExecution,
+    startNewExecution,
   };
 }
 
@@ -369,7 +369,7 @@ describe("agent profile backend boundary", () => {
     expect(runtime.createTask).toHaveBeenCalledWith(
       expect.objectContaining({ modelPreset: "claude-fable" }),
     );
-    expect(runtime.startExecution).toHaveBeenCalledWith(
+    expect(runtime.startNewExecution).toHaveBeenCalledWith(
       expect.objectContaining({ agentSessionId: expect.any(String) }),
       claudeAgent,
     );

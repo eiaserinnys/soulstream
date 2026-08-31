@@ -2057,8 +2057,14 @@ describe("TaskExecutor.startExecution", () => {
 });
 
 describe("TaskExecutor runner process boundary", () => {
-  it("selects the process runtime without touching the in-process engine factory", async () => {
+  it("startNewExecution starts the process runner once without acquiring ownership", async () => {
     const mocks = makeMocks();
+    const acquireOwnership = vi.fn();
+    const releaseOwnership = vi.fn();
+    Object.assign(mocks.persistence, {
+      acquireExecutionOwnershipAndWaitForApplication: acquireOwnership,
+      releaseExecutionOwnershipAndWaitForApplication: releaseOwnership,
+    });
     const engineFactory = vi.fn(() => makeFakeEngine([]));
     const { runner, dispatcher } = makeRunnerProcessRuntime([
       { type: "complete", result: "done", timestamp: 1 },
@@ -2085,9 +2091,10 @@ describe("TaskExecutor runner process boundary", () => {
     );
     const task = makeTask();
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
+    expect(processFactory).toHaveBeenCalledOnce();
     expect(processFactory).toHaveBeenCalledWith(
       task,
       agent,
@@ -2100,6 +2107,10 @@ describe("TaskExecutor runner process boundary", () => {
     expect(engineFactory).not.toHaveBeenCalled();
     expect(dispatcher.prepareSession).toHaveBeenCalledWith(task.agentSessionId);
     expect(dispatcher.executeFrames).toHaveBeenCalledOnce();
+    expect(processFactory.describe).not.toHaveBeenCalled();
+    expect(dispatcher.prepareExecutionIdentity).not.toHaveBeenCalled();
+    expect(acquireOwnership).not.toHaveBeenCalled();
+    expect(releaseOwnership).not.toHaveBeenCalled();
     expect(task.status).toBe("completed");
   });
 
@@ -2575,50 +2586,6 @@ describe("TaskExecutor runner process boundary", () => {
     expect(task.runner).toBeUndefined();
   });
 
-  it("does not adopt again while the shared ownership retry deadline is active", async () => {
-    const mocks = makeMocks();
-    const acquire = vi.fn();
-    Object.assign(mocks.persistence, {
-      acquireExecutionOwnershipAndWaitForApplication: acquire,
-    });
-    const backoff = new ExecutionOwnershipBackoff({
-      logger: { warn: vi.fn(), error: vi.fn() },
-      now: () => 0,
-    });
-    backoff.observeConflict("sess-1", new Date(60_000).toISOString());
-    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
-    dispatcher.prepareExecutionIdentity = vi.fn();
-    const executor = new TaskExecutor(
-      () => makeFakeEngine([]),
-      mocks.db,
-      mocks.persistence,
-      mocks.broadcaster,
-      silentLogger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      backoff,
-    );
-
-    await expect(executor.recoverRunnerExecution(
-      makeTask(),
-      agent,
-      runner,
-      "execute-old",
-      "adopt",
-      "release-old",
-      "env-old",
-    )).rejects.toThrow("Execution ownership conflict");
-
-    expect(dispatcher.prepareExecutionIdentity).not.toHaveBeenCalled();
-    expect(acquire).not.toHaveBeenCalled();
-  });
-
   it("실행이 끝나면 성공이든 소유권 거부든 execution slot을 비운다", async () => {
     // Recovery, intervention routing and auto-resume all read a present
     // `executionPromise` as "an execution is in flight". A settled one left
@@ -2672,7 +2639,7 @@ describe("TaskExecutor runner process boundary", () => {
     expect(rejectedTask.executionPromise).toBeUndefined();
   });
 
-  it("adopt recovery는 sessions owner token으로 exact reconnect acquire한다", async () => {
+  it("adopt recovery replays the same runner without acquiring execution ownership", async () => {
     const mocks = makeMocks();
     const transition = (status: "running" | "completed") => ({
       eventId: status === "running" ? 21 : 22,
@@ -2740,8 +2707,9 @@ describe("TaskExecutor runner process boundary", () => {
       undefined,
     );
     const task = makeTask();
+    const startExecution = vi.spyOn(executor, "startExecution");
 
-    await executor.recoverRunnerExecution(
+    const recovery = executor.recoverRunnerExecution(
       task,
       agent,
       runner,
@@ -2750,93 +2718,77 @@ describe("TaskExecutor runner process boundary", () => {
       "release-old",
       "env-old",
     );
+    expect(task.runner).toBe(runner);
+    await recovery;
 
-    expect(dispatcher.prepareExecutionIdentity).toHaveBeenCalledWith(
+    expect(acquire).not.toHaveBeenCalled();
+    expect(terminal).not.toHaveBeenCalled();
+    expect(dispatcher.prepareExecutionIdentity).not.toHaveBeenCalled();
+    expect(dispatcher.recoverFrames).toHaveBeenCalledOnce();
+    expect(dispatcher.recoverFrames).toHaveBeenCalledWith(
       proof.executionCommandId,
+      undefined,
     );
-    expect(acquire).toHaveBeenCalledWith(task.agentSessionId, expect.objectContaining({
-      ownerKind: "adopted_runner",
-      manifestId: "release-old",
-      runtimeEnvIdentity: "env-old",
-      ...proof,
-    }));
-    expect(acquire.mock.invocationCallOrder[0]).toBeLessThan(
-      dispatcher.recoverFrames.mock.invocationCallOrder[0]!,
-    );
-    expect(terminal).toHaveBeenCalledWith(
-      task.agentSessionId,
-      expect.objectContaining({ type: "session_ended" }),
-      expect.objectContaining({
-        ownershipGeneration: 7,
-        executionCommandId: proof.executionCommandId,
-      }),
-    );
+    expect(startExecution).not.toHaveBeenCalled();
     expect(task.executionOwnership).toBeUndefined();
   });
 
-  it("adopt reconnect rejection detaches the dormant identity before input", async () => {
+  it("adopt recovered turn registers and consumes a late delivery receipt", async () => {
     const mocks = makeMocks();
-    const transition = {
-      eventId: 20,
-      applied: true,
-      canonicalSession: {
-        status: "initializing",
-        termination_reason: null,
-        termination_detail: null,
-        review_state: "not_required",
-        last_assistant_text: null,
-        termination_event_id: null,
-        updated_at: "2026-08-19T00:00:00.000Z",
-        last_event_id: 20,
-      },
+    const recovered = deferred<void>();
+    const finishRecoveredTurn = deferred<void>();
+    const message: InterventionMessage = {
+      text: "steer during recovered turn",
+      user: "director",
+      deliveryId: "adadadad-adad-4dad-8dad-adadadadadad",
+      deliveryIntent: "human_live_steer",
     };
-    Object.assign(mocks.persistence, {
-      acquireExecutionOwnershipAndWaitForApplication: vi.fn(async () => ({
-        ...transition,
-        applied: false,
-        canonicalExecutionOwnership: null,
-      })),
-    });
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(true),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+    };
     const { runner, dispatcher } = makeRunnerProcessRuntime([]);
-    const proof = {
-      registrationId: "old-registration",
-      pid: 654,
-      startIdentity: "old-start",
-      executionCommandId: "execute-old",
-    };
-    dispatcher.prepareExecutionIdentity = vi.fn(async () => proof);
-    dispatcher.rollbackExecutionIdentity = vi.fn(async () => {});
-    mocks.getSession.mockResolvedValue({
-      execution_generation: 7,
-      execution_manifest_id: "release-old",
-      execution_runtime_env_identity: "env-old",
-      execution_registration_id: proof.registrationId,
-      execution_pid: proof.pid,
-      execution_start_identity: proof.startIdentity,
-      execution_command_id: proof.executionCommandId,
-    });
+    dispatcher.recoverFrames.mockReturnValue((async function* () {
+      recovered.resolve();
+      await finishRecoveredTurn.promise;
+      yield engineEventFrame({ type: "complete", result: "recovered", timestamp: 1 });
+    })());
     const executor = new TaskExecutor(
       () => makeFakeEngine([]),
       mocks.db,
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
     );
     const task = makeTask();
 
-    await expect(executor.recoverRunnerExecution(
+    const recovery = executor.recoverRunnerExecution(
       task,
       agent,
       runner,
-      proof.executionCommandId,
+      "execute-old",
       "adopt",
-      "release-old",
-      "env-old",
-    )).rejects.toThrow("Execution ownership conflict");
+    );
+    await recovered.promise;
+    expect(task.activeDeliveryTurnReceipt).toBeInstanceOf(TaskDeliveryTurnReceipt);
+    await task.activeDeliveryTurnReceipt!.register(message);
+    finishRecoveredTurn.resolve();
+    await recovery;
 
-    expect(dispatcher.rollbackExecutionIdentity).toHaveBeenCalledWith(proof);
-    expect(dispatcher.recoverFrames).not.toHaveBeenCalled();
-    expect(task.runner).toBeUndefined();
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledOnce();
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledOnce();
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
+      message,
+      task,
+      "event:0",
+    );
+    expect(task.activeDeliveryTurnReceipt).toBeUndefined();
   });
 
   it("replays an adopted execution through the same event publisher and ACK boundary", async () => {
@@ -2884,7 +2836,10 @@ describe("TaskExecutor runner process boundary", () => {
         transitionId: "adopt:execute-old",
       },
     ));
-    expect(dispatcher.recoverFrames).toHaveBeenCalledWith("execute-old");
+    expect(dispatcher.recoverFrames).toHaveBeenCalledWith(
+      "execute-old",
+      undefined,
+    );
     expect(dispatcher.waitForSessionAck).not.toHaveBeenCalled();
     expect(task.lastAssistantText).toBeUndefined();
 

@@ -327,8 +327,8 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       ([input]) => (input as Record<string, unknown>).event_type,
     );
     expect(durableTypes).toEqual([
-      "metadata",
       "user_message",
+      "metadata",
       "session",
       "assistant_message",
       "complete",
@@ -347,14 +347,15 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     expect(procNames.some((p) => p.includes("session_set_claude_id"))).toBe(false);
     expect(outbox.append.mock.calls.map(([input]) =>
       (input as Record<string, unknown>).session_effect)).toEqual([
-      expect.objectContaining({ kind: "execution_acquire" }),
       expect.objectContaining({ kind: "last_message" }),
+      expect.objectContaining({ kind: "running_transition" }),
       { kind: "set_backend_session_id", backend_session_id: "thr-codex-1" },
       expect.objectContaining({ kind: "last_message" }),
       null,
       expect.objectContaining({
-        kind: "execution_release",
-        runner_fact: "completed",
+        kind: "terminal_transition",
+        status: "completed",
+        termination_reason: "completed_ok",
       }),
     ]);
 

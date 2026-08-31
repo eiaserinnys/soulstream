@@ -17,7 +17,6 @@ export interface RegistrationParams {
   agentRegistry: AgentRegistry;
   modelCatalog?: Pick<ModelCatalog, "advertise">;
   runnerProcessEnabled?: boolean;
-  runnerLeaseTimeoutMs?: number;
   controlChannelEnabled?: boolean;
   releaseActivationState?: ReleaseActivationState;
   /**
@@ -113,10 +112,7 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
       ...(params.controlChannelEnabled ? { control_channel_v1: true } : {}),
       ...(params.runnerProcessEnabled === undefined
         ? {}
-        : {
-            runner_process_v1: params.runnerProcessEnabled,
-            runner_lease_timeout_ms: params.runnerLeaseTimeoutMs,
-          }),
+        : { runner_process_v1: params.runnerProcessEnabled }),
     },
     supported_backends: supportedBackends,
     ...(modelPresets ? { model_presets: modelPresets } : {}),

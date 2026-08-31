@@ -13,6 +13,7 @@ const TEST_USER = "container_browse_test";
 const TEST_PASSWORD = "container_browse_test";
 
 export interface FullSchemaPostgresHarness {
+  readonly databaseUrl: string;
   sql: SqlClient;
   createPeer(): SqlClient;
   cleanup(): Promise<void>;
@@ -51,17 +52,23 @@ async function connect(
   stopContainer: (() => void) | undefined,
 ): Promise<FullSchemaPostgresHarness> {
   const schema = `container_browse_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const sql = postgres(url, { max: 1, idle_timeout: 1 }) as SqlClient;
+  const sql = postgres(url, {
+    max: 1,
+    idle_timeout: 1,
+    connection: { search_path: schema },
+  }) as SqlClient;
   const peers: SqlClient[] = [];
   await waitForPostgres(sql);
   await sql.unsafe(`CREATE SCHEMA ${schema}`);
-  await sql.unsafe(`SET search_path TO ${schema}`);
   const schemaSql = readFileSync(
     fileURLToPath(new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url)),
     "utf8",
   );
   await sql.unsafe(schemaSql);
+  const scopedUrl = new URL(url);
+  scopedUrl.searchParams.set("options", `-csearch_path=${schema}`);
   return {
+    databaseUrl: scopedUrl.toString(),
     sql,
     createPeer() {
       const peer = postgres(url, {

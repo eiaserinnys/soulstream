@@ -3,7 +3,6 @@ import { vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
-import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
 import { createTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import type {
@@ -25,7 +24,6 @@ import {
   type IdentityConvergenceEvidence,
   type IdleRouteEvidence,
   type RunningRouteEvidence,
-  type StaleTerminalCompletionEvidence,
   type UnifiedBackend,
   type UnifiedExternalMessageObservation,
 } from "./task_intervention_unified_external_message_oracle.js";
@@ -34,8 +32,7 @@ const silentLogger = pino({ level: "silent" });
 
 interface RuntimeObservation {
   events: Array<{ deliveryId: string; event: string }>;
-  receiptIds: string[];
-  applyIds: string[];
+  interveneIds: string[];
   interruptIds: string[];
   reserveIds: string[];
   proveIds: string[];
@@ -88,7 +85,7 @@ async function observeRunning(
       throw new Error("running route must not auto-resume");
     },
   );
-  if (backend === "claude" && count(subject.state.applyIds, deliveryId) === 1) {
+  if (backend === "claude" && count(subject.state.interveneIds, deliveryId) === 1) {
     observeClaudeNextTurn(subject, deliveryId);
   }
   return {
@@ -101,8 +98,7 @@ async function observeRunning(
     deliveryId,
     deliverCalls: subject.deliver.mock.calls.length,
     queueOnlyCalls: subject.queueOnly.mock.calls.length,
-    receiptCalls: count(subject.state.receiptIds, deliveryId),
-    applyInterventionCalls: count(subject.state.applyIds, deliveryId),
+    interveneCalls: count(subject.state.interveneIds, deliveryId),
     admissionDeliveryIds: subject.admissionIds.filter((id) => id === deliveryId),
     consumedDeliveryIds: subject.state.consumedIds.filter((id) => id === deliveryId),
     modelInputDeliveryIds: subject.state.modelInputIds.filter((id) => id === deliveryId),
@@ -217,21 +213,11 @@ async function observeIdle(
       execution = executor.startExecution(resumedTask, agent, activation);
     },
   );
-  const taskStatusAfterRoute = task.status;
   const routeResult = "autoResumed" in result
     ? "resumed" as const
     : "queued" in result && result.queued
     ? "queued" as const
     : "other" as const;
-  const automaticExecutionStarts = execution ? 1 : 0;
-  const queuedBeforeExplicitTurn = countQueued(task, deliveryId);
-  let explicitTurnStarts = 0;
-  if (axis.key === "completion_notification" && !execution) {
-    task.status = "running";
-    explicitTurnStarts += 1;
-    eventOrder.push("explicit_turn");
-    execution = executor.startExecution(task, agent);
-  }
   if (!execution) throw new Error(`idle execution was not started: ${axis.key}`);
   await execution;
   if (count(consumedDeliveryIds, deliveryId) !== 1) {
@@ -250,62 +236,6 @@ async function observeIdle(
     modelInputDeliveryIds,
     result: routeResult,
     eventOrder,
-    ...(axis.key === "completion_notification"
-      ? {
-          terminalCompletion: {
-            taskStatusAfterRoute,
-            automaticExecutionStarts,
-            explicitTurnStarts,
-            queuedBeforeExplicitTurn,
-            queuedAfterExplicitTurn: countQueued(task, deliveryId),
-            consumedDeliveryIds,
-            staleTerminal: await Promise.all(
-              (["interrupted", "error"] as const).map(
-                (status) => observeStaleTerminalCompletion(axis, status),
-              ),
-            ),
-          },
-        }
-      : {}),
-  };
-}
-
-async function observeStaleTerminalCompletion(
-  axis: ExternalMessageAxis,
-  status: "error" | "interrupted",
-): Promise<StaleTerminalCompletionEvidence> {
-  const deliveryId = status === "interrupted"
-    ? "82000000-0000-4200-8200-000000000001"
-    : "82000000-0000-4200-8200-000000000002";
-  const task = makeTask(`unified-stale-${status}`, status);
-  const transition = new RunningInterventionTransition({
-    broadcaster: broadcaster(),
-    logger: silentLogger,
-    persistence: makeEventPersistenceTestDouble().persistence,
-  });
-  const queueOnly = vi.spyOn(transition, "queueOnly");
-  const resume = vi.fn();
-  const executorCallback = vi.fn();
-  const route = new TaskInterventionRoute({
-    getTask: () => task,
-    loadEvictedTask: vi.fn().mockResolvedValue(null),
-    rememberTask: vi.fn(),
-    runningInterventionTransition: transition,
-    autoResumeTransition: { resume } as never,
-    deliveryLedgerGate: makeLedgerGate().gate,
-  });
-  const result = await route.addIntervention(
-    requestFor(axis, task.agentSessionId, deliveryId),
-    executorCallback,
-  );
-  return {
-    initialStatus: status,
-    statusAfterRoute: task.status,
-    resumeCalls: resume.mock.calls.length,
-    executorCallbackCalls: executorCallback.mock.calls.length,
-    queueOnlyCalls: queueOnly.mock.calls.length,
-    queueDepthAfterRoute: countQueued(task, deliveryId),
-    result: "queued" in result && result.queued ? "queued" : "other",
   };
 }
 
@@ -336,7 +266,7 @@ async function observeIdentityConvergence(): Promise<IdentityConvergenceEvidence
     expectedDeliveryIds,
     duplicateDeliveryId,
     admittedDeliveryIds: subject.admissionIds,
-    deliveredDeliveryIds: subject.state.applyIds,
+    deliveredDeliveryIds: subject.state.interveneIds,
     consumedDeliveryIds: subject.state.consumedIds,
     modelInputDeliveryIds: subject.state.modelInputIds,
     queueOnlyCalls: subject.queueOnly.mock.calls.length,
@@ -353,56 +283,37 @@ function makeRunningSubject(
     state.naturalReleaseCount += 1;
     state.events.push({ deliveryId: "foreground", event: "natural_release" });
   });
-  const stageIntervention = vi.fn(async (input: {
-    interventionId: string;
-    queued: boolean;
-    event?: unknown;
-  }) => {
-    if (!input.queued) {
-      state.receiptIds.push(input.interventionId);
-      state.events.push({ deliveryId: input.interventionId, event: "receipt" });
-    }
-    return {
-      durability: "runner" as const,
-      eventSourceSeq: input.event ? 1 : null,
-      queuePosition: input.queued ? 1 : 0,
-    };
-  });
-  const applyIntervention = vi.fn(async (input: { interventionId: string }) => {
-    const deliveryId = input.interventionId;
-    state.applyIds.push(deliveryId);
-    if (backend === "claude") {
-      state.interruptIds.push(deliveryId);
-      state.events.push({ deliveryId, event: "interrupt" });
-      return {
-        status: "not_delivered" as const,
-        mechanism: "interrupt_then_next_turn" as const,
-        reason: "next_turn_required" as const,
-      };
-    }
-    state.modelInputIds.push(deliveryId);
-    state.consumedIds.push(deliveryId);
-    state.events.push({ deliveryId, event: "active_turn_model_input" });
-    return { status: "delivered" as const, mechanism: "active_turn" as const };
-  });
+  const engine: EnginePort = {
+    backendId: backend,
+    workspaceDir: "/workspace/unified",
+    async *execute() {},
+    async intervene(input) {
+      const deliveryId = requireParam(input.turnOrigin?.id, "turnOrigin.id");
+      state.interveneIds.push(deliveryId);
+      if (backend === "claude") {
+        state.interruptIds.push(deliveryId);
+        state.events.push({ deliveryId, event: "interrupt" });
+        return {
+          status: "not_delivered",
+          mechanism: "interrupt_then_next_turn",
+          reason: "next_turn_required",
+        };
+      }
+      state.modelInputIds.push(deliveryId);
+      state.consumedIds.push(deliveryId);
+      state.events.push({ deliveryId, event: "active_turn_model_input" });
+      return { status: "delivered", mechanism: "active_turn" };
+    },
+    async interrupt() { return true; },
+    async close() {},
+  };
   const dispatcher = {
     hasActiveExecution: vi.fn().mockReturnValue(true),
-    stageIntervention,
-    applyIntervention,
-    waitForSessionAck: vi.fn().mockResolvedValue(101),
-    dispatch: vi.fn(),
-    executeFrames: vi.fn(),
-    prepareSession: vi.fn(),
-    interrupt: vi.fn(),
-    close: vi.fn(),
-    detachHost: vi.fn(),
-    sendControlFrame: vi.fn(),
-    requestContext: vi.fn(),
   };
   const task = makeTask(`unified-running-${backend}`, "running");
   task.modelPresetBackend = backend;
   task.runner = createTaskRunnerRuntime(
-    new RunnerProcessEngineProxy(backend, "/workspace/unified", dispatcher as never),
+    engine,
     dispatcher as never,
     "runner",
   );
@@ -444,8 +355,7 @@ function makeRunningSubject(
 
 function observeClaudeNextTurn(subject: RunningSubject, deliveryId: string): void {
   const queued = subject.task.interventionQueue.find(
-    (message) => message.deliveryId === deliveryId
-      && message.runnerInterventionId === deliveryId,
+    (message) => message.deliveryId === deliveryId,
   );
   if (!queued) return;
   subject.state.reserveIds.push(deliveryId);
@@ -574,8 +484,7 @@ function makeTask(
 function emptyRuntimeObservation(): RuntimeObservation {
   return {
     events: [],
-    receiptIds: [],
-    applyIds: [],
+    interveneIds: [],
     interruptIds: [],
     reserveIds: [],
     proveIds: [],
@@ -611,10 +520,4 @@ function requireParam<T>(value: T | undefined, name: string): T {
 
 function count(values: string[], expected: string): number {
   return values.filter((value) => value === expected).length;
-}
-
-function countQueued(task: Task, deliveryId: string): number {
-  return task.interventionQueue.filter(
-    (message) => message.deliveryId === deliveryId,
-  ).length;
 }

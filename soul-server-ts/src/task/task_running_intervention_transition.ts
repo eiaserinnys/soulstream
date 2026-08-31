@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { Logger } from "pino";
 
 import type { EventPersistence } from "../db/event_persistence.js";
@@ -12,10 +10,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
-import {
-  buildInterventionSentEvent,
-  publishInterventionSent,
-} from "./task_intervention_events.js";
+import { publishInterventionSent } from "./task_intervention_events.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 import { interventionTurnOrigin } from "./turn_origin.js";
 
@@ -84,78 +79,28 @@ export class RunningInterventionTransition {
     options: { queueIfUndelivered?: boolean },
   ): Promise<RunningInterventionResult> {
     const publishBeforeDelivery = options.queueIfUndelivered !== false;
-    const durableRunnerInbox = usesDurableRunnerInterventionInbox(task);
-    const deliveryMessage = durableRunnerInbox
-      ? withRunnerInterventionId(message)
-      : message;
-    if (publishBeforeDelivery || durableRunnerInbox) {
-      if (!durableRunnerInbox) {
-        await this.publishAcceptance(task, deliveryMessage);
-      } else {
-        try {
-          await this.publishAcceptance(task, deliveryMessage);
-        } catch (error) {
-          const unknown = {
-            status: "unknown",
-            reason: "verdict_unknown",
-            message: error instanceof Error ? error.message : String(error),
-          } as const;
-          if (options.queueIfUndelivered === false) {
-            try {
-              await this.discardDurableIntervention(task, deliveryMessage);
-              return this.deferredUnknown(task, unknown);
-            } catch (discardError) {
-              return await this.queueUnknownReceipt(task, deliveryMessage, {
-                ...unknown,
-                message: formatRecoveryFailure(unknown.message, discardError),
-              });
-            }
-          }
-          return await this.queueUnknownReceipt(task, deliveryMessage, unknown);
-        }
-      }
+    const deliveryMessage = message;
+    if (publishBeforeDelivery) {
+      await this.publishAcceptance(task, deliveryMessage);
     }
 
     const initialResult = await this.tryIntervene(task, deliveryMessage);
     if (initialResult.status === "delivered") {
-      if (!publishBeforeDelivery && !durableRunnerInbox) {
+      await task.activeDeliveryTurnReceipt?.register(deliveryMessage);
+      if (!publishBeforeDelivery) {
         await this.publishAcceptance(task, deliveryMessage);
       }
       return { delivered: true };
     }
-    const finalResult = options.queueIfUndelivered === false
-      ? initialResult
-      : await this.cancelOwnedTurnAfterFalseIdle(task, initialResult);
-
     if (options.queueIfUndelivered === false) {
-      if (durableRunnerInbox) {
-        try {
-          await this.discardDurableIntervention(task, deliveryMessage);
-        } catch (error) {
-          const unknown = {
-            status: "unknown",
-            reason: "verdict_unknown",
-            message: error instanceof Error ? error.message : String(error),
-          } as const;
-          const queuePosition = await this.queueUndelivered(task, deliveryMessage);
-          this.logQueued(task, unknown, queuePosition);
-          return {
-            delivered: false,
-            queued: true,
-            queuePosition,
-            consumeWhen: "next_turn",
-            reason: "verdict_unknown",
-          };
-        }
-      }
       this.deps.logger.info(
         {
           sessionId: task.agentSessionId,
           delivered: false,
-          ...(finalResult.status === "not_delivered"
-            ? { mechanism: finalResult.mechanism }
+          ...(initialResult.status === "not_delivered"
+            ? { mechanism: initialResult.mechanism }
             : {}),
-          reason: finalResult.reason,
+          reason: initialResult.reason,
           retryWhen: "engine_available",
         },
         "running intervention deferred by durable caller policy",
@@ -164,18 +109,18 @@ export class RunningInterventionTransition {
         delivered: false,
         deferred: true,
         retryWhen: "engine_available",
-        reason: finalResult.reason,
+        reason: initialResult.reason,
       };
     }
 
     const queuePosition = await this.queueUndelivered(task, deliveryMessage);
-    this.logQueued(task, finalResult, queuePosition);
+    this.logQueued(task, initialResult, queuePosition);
     return {
       delivered: false,
       queued: true,
       queuePosition,
       consumeWhen: "next_turn",
-      reason: finalResult.reason,
+      reason: initialResult.reason,
     };
   }
 
@@ -184,23 +129,10 @@ export class RunningInterventionTransition {
     message: InterventionMessage,
     options: { publishEvent?: boolean } = {},
   ): Promise<RunningInterventionResult> {
-    const deliveryMessage = usesDurableRunnerInterventionInbox(task)
-      ? withRunnerInterventionId(message)
-      : message;
-    let queuePosition: number;
-    if (usesDurableRunnerInterventionInbox(task)) {
-      queuePosition = await this.stageRunnerQueue(
-        task,
-        deliveryMessage,
-        options.publishEvent !== false,
-      );
-      enqueueInterventionOnce(task, deliveryMessage);
-    } else {
-      if (options.publishEvent !== false) {
-        await publishInterventionSent(task, deliveryMessage, this.deps);
-      }
-      queuePosition = enqueueInterventionOnce(task, deliveryMessage);
+    if (options.publishEvent !== false) {
+      await publishInterventionSent(task, message, this.deps);
     }
+    const queuePosition = enqueueInterventionOnce(task, message);
     this.deps.logger.info(
       {
         sessionId: task.agentSessionId,
@@ -224,19 +156,14 @@ export class RunningInterventionTransition {
     task: Task,
     message: InterventionMessage,
   ): Promise<void> {
-    if (!usesDurableRunnerInterventionInbox(task)) {
-      await publishInterventionSent(task, message, this.deps);
-      return;
-    }
-    await this.stageRunnerReceipt(task, message);
+    await publishInterventionSent(task, message, this.deps);
   }
 
   private async tryIntervene(
     task: Task,
     message: InterventionMessage,
   ): Promise<EngineInterventionResult> {
-    const runner = task.runner;
-    const engine = runner?.engine;
+    const engine = task.runner?.engine;
     if (!engine) {
       return {
         status: "not_delivered",
@@ -255,20 +182,6 @@ export class RunningInterventionTransition {
       turnOrigin: interventionTurnOrigin(message, inputUuid),
     };
     try {
-      if (usesDurableRunnerInterventionInbox(task)) {
-        if (!runner?.dispatcher.applyIntervention) {
-          return {
-            status: "not_delivered",
-            mechanism: "unsupported",
-            reason: "not_supported",
-            message: "Runner intervention apply operation is unavailable",
-          };
-        }
-        return await runner.dispatcher.applyIntervention({
-          interventionId: requireRunnerInterventionId(message),
-          input,
-        });
-      }
       return await engine.intervene(input);
     } catch (err) {
       this.deps.logger.warn(
@@ -283,132 +196,11 @@ export class RunningInterventionTransition {
     }
   }
 
-  private deferredUnknown(
-    task: Task,
-    result: Extract<EngineInterventionResult, { status: "unknown" }>,
-  ): RunningInterventionResult {
-    this.deps.logger.info(
-      {
-        sessionId: task.agentSessionId,
-        delivered: false,
-        reason: result.reason,
-        detail: result.message,
-        retryWhen: "engine_available",
-      },
-      "running intervention deferred by durable caller policy",
-    );
-    return {
-      delivered: false,
-      deferred: true,
-      retryWhen: "engine_available",
-      reason: "verdict_unknown",
-    };
-  }
-
-  private async queueUnknownReceipt(
-    task: Task,
-    message: InterventionMessage,
-    result: Extract<EngineInterventionResult, { status: "unknown" }>,
-  ): Promise<RunningInterventionResult> {
-    try {
-      const queuePosition = await this.stageRunnerQueue(task, message, true);
-      enqueueInterventionOnce(task, message);
-      this.logQueued(task, result, queuePosition);
-      return {
-        delivered: false,
-        queued: true,
-        queuePosition,
-        consumeWhen: "next_turn",
-        reason: "verdict_unknown",
-      };
-    } catch (error) {
-      this.deps.logger.warn(
-        {
-          err: error,
-          sessionId: task.agentSessionId,
-          interventionId: message.runnerInterventionId,
-          reason: result.reason,
-          detail: result.message,
-        },
-        "runner intervention durable queue recovery failed; verdict remains unknown",
-      );
-      return {
-        delivered: null,
-        reason: "verdict_unknown",
-        consumeWhen: null,
-      };
-    }
-  }
-
-  private async discardDurableIntervention(
-    task: Task,
-    message: InterventionMessage,
-  ): Promise<void> {
-    const dispatcher = task.runner?.dispatcher;
-    if (!dispatcher?.discardIntervention) {
-      throw new Error("runner intervention discard operation is unavailable");
-    }
-    await dispatcher.discardIntervention(requireRunnerInterventionId(message));
-  }
-
-  private async stageRunnerReceipt(
-    task: Task,
-    message: InterventionMessage,
-  ): Promise<void> {
-    const dispatcher = task.runner?.dispatcher;
-    if (!dispatcher?.stageIntervention) {
-      throw new Error("runner intervention inbox is unavailable");
-    }
-    const interventionId = requireRunnerInterventionId(message);
-    const staged = await dispatcher.stageIntervention({
-      interventionId,
-      message: toRunnerJsonRecord(message),
-      event: buildInterventionSentEvent(message),
-      queued: false,
-    });
-    if (staged.durability === "host_fallback") return;
-    const eventId = await dispatcher.waitForSessionAck();
-    if (eventId === null || staged.eventSourceSeq === null) {
-      throw new Error("runner intervention receipt did not reach its durable ACK boundary");
-    }
-    task.lastEventId = eventId;
-  }
-
-  private async stageRunnerQueue(
-    task: Task,
-    message: InterventionMessage,
-    publishEvent: boolean,
-  ): Promise<number> {
-    const dispatcher = task.runner?.dispatcher;
-    if (!dispatcher?.stageIntervention) {
-      throw new Error("runner intervention inbox is unavailable");
-    }
-    const staged = await dispatcher.stageIntervention({
-      interventionId: requireRunnerInterventionId(message),
-      message: toRunnerJsonRecord(message),
-      ...(publishEvent ? { event: buildInterventionSentEvent(message) } : {}),
-      queued: true,
-    });
-    if (publishEvent && staged.durability !== "host_fallback") {
-      const eventId = await dispatcher.waitForSessionAck();
-      if (eventId === null || staged.eventSourceSeq === null) {
-        throw new Error("runner intervention receipt did not reach its durable ACK boundary");
-      }
-      task.lastEventId = eventId;
-    }
-    return staged.queuePosition;
-  }
-
   private async queueUndelivered(
     task: Task,
     message: InterventionMessage,
   ): Promise<number> {
-    if (!usesDurableRunnerInterventionInbox(task)) {
-      return enqueueInterventionOnce(task, message);
-    }
-    const queuePosition = await this.stageRunnerQueue(task, message, false);
-    enqueueInterventionOnce(task, message);
-    return queuePosition;
+    return enqueueInterventionOnce(task, message);
   }
 
   private logQueued(
@@ -429,70 +221,4 @@ export class RunningInterventionTransition {
       "running intervention not delivered; queued for next turn",
     );
   }
-
-  private async cancelOwnedTurnAfterFalseIdle(
-    task: Task,
-    interventionResult: Exclude<EngineInterventionResult, { status: "delivered" }>,
-  ): Promise<Exclude<EngineInterventionResult, { status: "delivered" }>> {
-    if (
-      interventionResult.status !== "not_delivered"
-      || interventionResult.reason !== "no_active_turn"
-    ) {
-      return interventionResult;
-    }
-    const runner = task.runner;
-    if (!runner) return interventionResult;
-    try {
-      const interrupted = await runner.dispatcher.interrupt();
-      if (!interrupted) return interventionResult;
-      return {
-        status: "not_delivered",
-        mechanism: "interrupt_then_next_turn",
-        reason: "next_turn_required",
-      };
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "running task owner cancellation failed",
-      );
-      return {
-        status: "unknown",
-        reason: "verdict_unknown",
-        message: err instanceof Error ? err.message : String(err),
-      };
-    }
-  }
-}
-
-function usesDurableRunnerInterventionInbox(task: Task): boolean {
-  return task.runner?.eventPersistence === "runner";
-}
-
-function withRunnerInterventionId(message: InterventionMessage): InterventionMessage {
-  return {
-    ...message,
-    runnerInterventionId:
-      message.runnerInterventionId ?? message.deliveryId ?? randomUUID(),
-  };
-}
-
-function requireRunnerInterventionId(message: InterventionMessage): string {
-  if (!message.runnerInterventionId) {
-    throw new Error("runner intervention id is unavailable");
-  }
-  return message.runnerInterventionId;
-}
-
-function toRunnerJsonRecord(message: InterventionMessage): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(message)) as Record<string, unknown>;
-}
-
-function formatRecoveryFailure(
-  primary: string | undefined,
-  recoveryError: unknown,
-): string {
-  const recovery = recoveryError instanceof Error
-    ? recoveryError.message
-    : String(recoveryError);
-  return primary ? `${primary}; recovery failed: ${recovery}` : recovery;
 }

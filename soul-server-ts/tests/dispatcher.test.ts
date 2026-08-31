@@ -16,11 +16,7 @@ import type { SessionDB } from "../src/db/session_db.js";
 import type { RealtimeBroker } from "../src/realtime/realtime_broker.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import { TaskManager } from "../src/task/task_manager.js";
-import {
-  createExecutionActivation,
-  type ExecutionActivation,
-  type Task,
-} from "../src/task/task_models.js";
+import type { Task } from "../src/task/task_models.js";
 import type { SessionBroadcaster } from "../src/upstream/session_broadcaster.js";
 
 import { makeEventPersistenceTestDouble } from "./task/event_persistence_test_double.js";
@@ -114,7 +110,7 @@ function createDispatcher(opts: {
   };
 
   const defaultExecutor: Partial<TaskExecutor> = {
-    startExecution: vi.fn(),
+    startNewExecution: vi.fn(),
   };
 
   const tm = { ...defaultTaskManager, ...opts.taskManager } as TaskManager;
@@ -433,7 +429,7 @@ describe("CommandDispatcher realtime commands", () => {
 });
 
 describe("CommandDispatcher.create_session", () => {
-  it("정상 흐름: task_manager.createTask + task_executor.startExecution + session_created ACK", async () => {
+  it("정상 흐름: task_manager.createTask + task_executor.startNewExecution + session_created ACK", async () => {
     const { dispatcher, sent, tm, te, createdTasks } = createDispatcher();
     await dispatcher.dispatch({
       type: "create_session",
@@ -444,7 +440,7 @@ describe("CommandDispatcher.create_session", () => {
     });
 
     expect(tm.createTask).toHaveBeenCalledTimes(1);
-    expect(te.startExecution).toHaveBeenCalledTimes(1);
+    expect(te.startNewExecution).toHaveBeenCalledTimes(1);
     expect(createdTasks).toHaveLength(1);
     expect(createdTasks[0].agentSessionId).toBe("sess-1");
 
@@ -484,7 +480,7 @@ describe("CommandDispatcher.create_session", () => {
     expect(taskManager.createTask).toHaveBeenCalledWith(expect.objectContaining({
       pageAnchor: { pageId: "page-a", blockId: "block-a", expectedVersion: 7 },
     }));
-    expect(te.startExecution).toHaveBeenCalledTimes(1);
+    expect(te.startNewExecution).toHaveBeenCalledTimes(1);
     expect(sent).toEqual([expect.objectContaining({
       type: "session_created",
       requestId: "cs-page",
@@ -678,7 +674,7 @@ describe("CommandDispatcher.create_session", () => {
     });
 
     expect(tm.createTask).toHaveBeenCalledTimes(1);
-    expect(te.startExecution).toHaveBeenCalledWith(createdTasks[0], claudeAgent);
+    expect(te.startNewExecution).toHaveBeenCalledWith(createdTasks[0], claudeAgent);
     expect(sent[0]).toEqual({
       type: "session_created",
       agentSessionId: "sess-claude",
@@ -834,9 +830,9 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     ]);
   });
 
-  it("completed task에 intervene → auto-resume → intervene_ack(auto_resumed) + startExecution 호출", async () => {
-    // addIntervention이 onResume 콜백 호출을 흉내내어 dispatcher의 startExecution 분기 검증.
-    const startExecution = vi.fn();
+  it("completed task에 intervene → auto-resume → intervene_ack(auto_resumed) + startNewExecution 호출", async () => {
+    // addIntervention이 onResume 콜백 호출을 흉내내어 dispatcher의 startNewExecution 분기 검증.
+    const startNewExecution = vi.fn();
     const fakeAgent: AgentProfile = {
       id: "codex-default",
       name: "Codex Default",
@@ -853,15 +849,14 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       lastReadEventId: 0,
       interventionQueue: [],
     };
-    const activation = createExecutionActivation();
     const addIntervention = vi.fn(async (_params, onResume) => {
-      onResume(fakeTask, activation);
+      onResume(fakeTask);
       return { autoResumed: true };
     });
     const { dispatcher, sent } = createDispatcher({
       agents: [fakeAgent],
       taskManager: { addIntervention } as Partial<TaskManager>,
-      taskExecutor: { startExecution } as Partial<TaskExecutor>,
+      taskExecutor: { startNewExecution } as Partial<TaskExecutor>,
     });
     await dispatcher.dispatch({
       type: "intervene",
@@ -869,7 +864,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       text: "resume me",
       requestId: "i2",
     });
-    expect(startExecution).toHaveBeenCalledWith(fakeTask, fakeAgent, activation);
+    expect(startNewExecution).toHaveBeenCalledWith(fakeTask, fakeAgent);
     expect(sent[0]).toMatchObject({
       type: "intervene_ack",
       requestId: "i2",
@@ -954,20 +949,11 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       undefined,
       sessionMutations as never,
     );
-    let forwardedActivation!: ExecutionActivation;
-    const startExecution = vi.fn((
+    const startNewExecution = vi.fn((
       resumedTask: Task,
       _agent: AgentProfile,
-      activation?: ExecutionActivation,
     ) => {
-      expect(activation).toBe(resumedTask.executionActivation);
-      expect(activation).toBeDefined();
-      forwardedActivation = activation!;
       resumedTask.status = "running";
-      activation!.resolve();
-      if (resumedTask.executionActivation === activation) {
-        resumedTask.executionActivation = undefined;
-      }
       return Promise.resolve();
     });
     const dispatcher = new CommandDispatcher(
@@ -976,7 +962,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       "eiaserinnys",
       registry,
       taskManager,
-      { startExecution } as unknown as TaskExecutor,
+      { startNewExecution } as unknown as TaskExecutor,
       undefined,
       undefined,
       db,
@@ -1006,16 +992,13 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       sessionId,
       expect.objectContaining({ type: "user_message", text: "이어가" }),
     );
-    expect(persistenceDouble.enqueueRunningTransition).not.toHaveBeenCalled();
-    expect(startExecution).toHaveBeenCalledTimes(1);
-    const [resumedTask, agent, activation] = startExecution.mock.calls[0] as [
+    expect(persistenceDouble.enqueueRunningTransition).toHaveBeenCalledOnce();
+    expect(startNewExecution).toHaveBeenCalledTimes(1);
+    const [resumedTask, agent] = startNewExecution.mock.calls[0] as [
       Task,
       AgentProfile,
-      ExecutionActivation,
     ];
     expect(agent).toBe(prodClaudeAgent);
-    expect(activation).toBe(forwardedActivation);
-    await expect(forwardedActivation.promise).resolves.toBeUndefined();
     expect(resumedTask).toMatchObject({
       agentSessionId: sessionId,
       status: "running",

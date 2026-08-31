@@ -23,7 +23,7 @@ import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 interface TaskRuntimeCommandsDeps {
   agentRegistry: Pick<AgentRegistry, "get">;
   taskManager: Pick<TaskManager, "createTask" | "addIntervention">;
-  taskExecutor: Pick<TaskExecutor, "startExecution">;
+  taskExecutor: Pick<TaskExecutor, "startNewExecution">;
   logger: Logger;
   modelCatalog?: Pick<ModelCatalog, "resolve">;
   agentProfileSource?: NewSessionAgentProfileSource;
@@ -153,7 +153,7 @@ export class UnknownAgentProfileError extends Error {
  * TaskInterventionRoute owns intervention route selection. This boundary owns
  * the upstream-specific adaptation between those public task APIs and execution:
  * agent profile resolution, attachment context assembly, per-backend OAuth
- * forwarding, and startExecution callback wiring.
+ * forwarding, and startNewExecution callback wiring.
  */
 export class TaskRuntimeCommands {
   constructor(private readonly deps: TaskRuntimeCommandsDeps) {}
@@ -207,7 +207,7 @@ export class TaskRuntimeCommands {
       pageAnchor: params.pageAnchor,
     });
 
-    this.deps.taskExecutor.startExecution(task, agent);
+    this.deps.taskExecutor.startNewExecution(task, agent);
     return task;
   }
 
@@ -231,7 +231,7 @@ export class TaskRuntimeCommands {
         deliveryCreatedAt: params.deliveryCreatedAt,
         deliveryLeaseOwner: params.deliveryLeaseOwner,
       },
-      (task, activation) => this.startResumedTask(task, activation),
+      (task) => this.startResumedTask(task),
     );
   }
 
@@ -261,17 +261,14 @@ export class TaskRuntimeCommands {
     };
   }
 
-  private startResumedTask(
-    task: Task,
-    activation?: Task["executionActivation"],
-  ): void {
+  private startResumedTask(task: Task): void {
     if (!task.profileId) {
       throw new Error(
         `Cannot auto-resume ${task.agentSessionId}: task is missing profileId`,
       );
     }
     const agent = task.agentProfileSnapshot ?? this.requireAgent(task.profileId);
-    this.deps.taskExecutor.startExecution(task, agent, activation);
+    this.deps.taskExecutor.startNewExecution(task, agent);
   }
 }
 

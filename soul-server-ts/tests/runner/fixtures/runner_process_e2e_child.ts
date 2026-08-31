@@ -38,9 +38,17 @@ class ControlledEngine implements EnginePort {
   private executionCount = 0;
   private backgroundTaskCount = 0;
   private liveInterventionCount = 0;
-  private s4CloseCount = 0;
   private p0r2InterruptCount = 0;
   private p0r2CloseCount = 0;
+  private fullSliceExecuteCount = 0;
+  private fullSliceInterveneCount = 0;
+  private fullSliceInterruptCount = 0;
+  private fullSliceIntervention:
+    | ((input: EngineUserInput) => void)
+    | undefined;
+  private fullSliceTurnInterrupted:
+    | (() => void)
+    | undefined;
 
   constructor(
     private readonly controlDirectory: string,
@@ -51,65 +59,71 @@ class ControlledEngine implements EnginePort {
   async *execute(_params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {}
 
   async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
-    if (process.env.RUNNER_E2E_S1_S2_SCENARIO === "1") {
-      const firstExecutionPath = `${this.controlDirectory}/s1s2-first-execution.json`;
-      const firstExecutionExists = await access(firstExecutionPath)
-        .then(() => true)
-        .catch((error) => {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-          throw error;
-        });
-      const generation = firstExecutionExists ? 2 : 1;
-      await writeJsonAtomically(
-        generation === 1
-          ? firstExecutionPath
-          : `${this.controlDirectory}/s1s2-successor-execution.json`,
-        { pid: process.pid, params },
+    const fullSliceScenario = process.env.RUNNER_E2E_FULL_SLICE_SCENARIO;
+    if (fullSliceScenario) {
+      const expectedBackend = required(
+        process.env.RUNNER_E2E_FULL_SLICE_BACKEND,
+        "RUNNER_E2E_FULL_SLICE_BACKEND",
       );
+      if (config.backend !== expectedBackend) {
+        throw new Error(
+          `${fullSliceScenario} requires ${expectedBackend}, received ${config.backend}`,
+        );
+      }
+      this.fullSliceExecuteCount += 1;
+      await this.writeFullSliceProbe({
+        call: "executeFrames",
+        scenario: fullSliceScenario,
+        backend: config.backend,
+        pid: process.pid,
+        prompt: params.prompt ?? "",
+        resumeSessionId: params.resumeSessionId ?? null,
+      }, this.fullSliceExecuteCount);
       yield engineEventFrame({
         type: "session",
-        session_id: "backend-session-s1s2-1",
+        session_id: `${fullSliceScenario}-${config.backend}-session`,
       });
-      if (generation === 1) {
-        yield engineEventFrame({
-          type: "assistant_message",
-          content: "work at t+0s",
-          timestamp: 0,
-        });
-        await writeFile(`${this.controlDirectory}/s1s2-before-restart-emitted`, "ready\n");
-        await waitForFile(`${this.controlDirectory}/s1s2-host-detached`);
-        yield engineEventFrame({
-          type: "assistant_message",
-          content: "work at t+120s",
-          timestamp: 120,
-        });
-        await writeFile(`${this.controlDirectory}/s1s2-after-restart-emitted`, "ready\n");
-        await waitForFile(`${this.controlDirectory}/s1s2-finish-first`);
-        yield engineEventFrame({ type: "complete", result: "work at t+120s" });
-      } else {
-        await waitForFile(`${this.controlDirectory}/s1s2-release-successor`);
-        yield engineEventFrame({
-          type: "assistant_message",
-          content: "resume successor reply",
-          timestamp: 121,
-        });
-        yield engineEventFrame({ type: "complete", result: "resume successor reply" });
+      if (
+        (fullSliceScenario === "S3" || fullSliceScenario === "S6")
+        && config.backend === "claude"
+        && this.fullSliceExecuteCount === 2
+      ) {
+        const reply = `${fullSliceScenario} ${config.backend} intervention reply`;
+        yield engineEventFrame({ type: "assistant_message", content: reply, timestamp: 2 });
+        yield engineEventFrame({ type: "complete", result: reply });
+        return;
       }
-      return;
-    }
-    if (process.env.RUNNER_E2E_S4_SCENARIO === "1") {
-      await writeFile(
-        `${this.controlDirectory}/s4-execution.json`,
-        JSON.stringify({ pid: process.pid, params }),
-        { flag: "wx" },
+      if (params.resumeSessionId) {
+        await waitForFile(
+          `${this.controlDirectory}/${fullSliceScenario}-${config.backend}-release-resume`,
+        );
+        const reply = `${fullSliceScenario} ${config.backend} resume reply`;
+        yield engineEventFrame({ type: "assistant_message", content: reply, timestamp: 2 });
+        yield engineEventFrame({ type: "complete", result: reply });
+        return;
+      }
+      if (fullSliceScenario === "S3" || fullSliceScenario === "S6") {
+        if (config.backend === "claude") {
+          await new Promise<void>((resolve) => {
+            this.fullSliceTurnInterrupted = resolve;
+          });
+          this.fullSliceTurnInterrupted = undefined;
+          return;
+        }
+        await new Promise<EngineUserInput>((resolve) => {
+          this.fullSliceIntervention = resolve;
+        });
+        const reply = `${fullSliceScenario} ${config.backend} intervention reply`;
+        yield engineEventFrame({ type: "assistant_message", content: reply, timestamp: 2 });
+        yield engineEventFrame({ type: "complete", result: reply });
+        return;
+      }
+      await waitForFile(
+        `${this.controlDirectory}/${fullSliceScenario}-${config.backend}-release-initial`,
       );
-      yield engineEventFrame({ type: "session", session_id: "backend-session-s4" });
-      yield engineEventFrame({
-        type: "assistant_message",
-        content: "S4 initial reply",
-        timestamp: 1,
-      });
-      yield engineEventFrame({ type: "complete", result: "S4 initial reply" });
+      const reply = `${fullSliceScenario} ${config.backend} initial reply`;
+      yield engineEventFrame({ type: "assistant_message", content: reply, timestamp: 1 });
+      yield engineEventFrame({ type: "complete", result: reply });
       return;
     }
     if (process.env.RUNNER_E2E_P0R2_SCENARIO === "1") {
@@ -326,6 +340,16 @@ class ControlledEngine implements EnginePort {
   }
 
   async interrupt(): Promise<boolean> {
+    const fullSliceScenario = process.env.RUNNER_E2E_FULL_SLICE_SCENARIO;
+    if (fullSliceScenario && config.backend === "claude") {
+      this.fullSliceInterruptCount += 1;
+      await this.writeFullSliceProbe({
+        call: "interrupt",
+        scenario: fullSliceScenario,
+        backend: config.backend,
+        pid: process.pid,
+      }, this.fullSliceInterruptCount);
+    }
     if (process.env.RUNNER_E2E_P0R2_SCENARIO === "1") {
       this.p0r2InterruptCount += 1;
       await writeFile(
@@ -337,6 +361,58 @@ class ControlledEngine implements EnginePort {
   }
 
   async intervene(input: EngineUserInput): Promise<EngineInterventionResult> {
+    const fullSliceScenario = process.env.RUNNER_E2E_FULL_SLICE_SCENARIO;
+    if (fullSliceScenario) {
+      const interruptTurn = this.fullSliceTurnInterrupted;
+      const deliverIntervention = this.fullSliceIntervention;
+      const hasActiveTurn = config.backend === "claude"
+        ? interruptTurn !== undefined
+        : deliverIntervention !== undefined;
+      this.fullSliceInterveneCount += 1;
+      if (!hasActiveTurn) {
+        const result: EngineInterventionResult = {
+          status: "not_delivered",
+          mechanism: config.backend === "claude"
+            ? "interrupt_then_next_turn"
+            : "active_turn",
+          reason: "no_active_turn",
+          message: "Full-slice fixture has no active turn",
+        };
+        await this.writeFullSliceProbe({
+          call: "intervene",
+          scenario: fullSliceScenario,
+          backend: config.backend,
+          pid: process.pid,
+          prompt: input.prompt,
+          result,
+        }, this.fullSliceInterveneCount);
+        return result;
+      }
+      if (config.backend === "claude") {
+        this.fullSliceTurnInterrupted = undefined;
+      } else {
+        this.fullSliceIntervention = undefined;
+      }
+      const result: EngineInterventionResult = config.backend === "claude"
+        ? {
+            status: "not_delivered",
+            mechanism: "interrupt_then_next_turn",
+            reason: "next_turn_required",
+          }
+        : { status: "delivered", mechanism: "active_turn" };
+      if (config.backend === "claude") await this.interrupt();
+      await this.writeFullSliceProbe({
+        call: "intervene",
+        scenario: fullSliceScenario,
+        backend: config.backend,
+        pid: process.pid,
+        prompt: input.prompt,
+        result,
+      }, this.fullSliceInterveneCount);
+      if (config.backend === "claude") interruptTurn!();
+      else deliverIntervention!(input);
+      return result;
+    }
     this.liveInterventionCount += 1;
     await writeFile(
       `${this.controlDirectory}/live-intervention-received.json`,
@@ -353,12 +429,6 @@ class ControlledEngine implements EnginePort {
   }
 
   async close(): Promise<void> {
-    if (process.env.RUNNER_E2E_S4_SCENARIO === "1") {
-      this.s4CloseCount += 1;
-      if (this.s4CloseCount === 2) {
-        await new Promise((resolve) => setTimeout(resolve, 750));
-      }
-    }
     if (process.env.RUNNER_E2E_P0R2_SCENARIO === "1") {
       this.p0r2CloseCount += 1;
       await writeFile(
@@ -379,6 +449,16 @@ class ControlledEngine implements EnginePort {
       pendingInputRequestCount: 0,
       pendingRuntimeSignalCount: 0,
     };
+  }
+
+  private async writeFullSliceProbe(
+    input: Record<string, unknown>,
+    callCount: number,
+  ): Promise<void> {
+    await writeJsonAtomically(
+      `${this.controlDirectory}/engine-boundary-${String(input.scenario)}-${String(input.backend)}-${String(input.call)}-${process.pid}-${callCount}.json`,
+      input,
+    );
   }
 
   private async emitBackgroundTerminals(): Promise<void> {
@@ -476,7 +556,7 @@ await runtime.start();
 await runtime.waitUntilClosed();
 
 async function waitForFile(path: string): Promise<void> {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 60_000;
   for (;;) {
     try {
       await access(path);

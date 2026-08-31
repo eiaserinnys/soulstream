@@ -160,7 +160,7 @@ describe("orch-server-ts config scaffold", () => {
     })).toThrow(/USAGE_SUMMARY_POLL_INTERVAL_SECONDS/);
   });
 
-  it("shares the runner process flag and lease timeout contract with soul-server", () => {
+  it("configures runner process mode and disconnect grace", () => {
     expect(loadOrchServerEnvironment({
       ...minimalEnvironment(),
       SOUL_RUNNER_PROCESS_ENABLED: "true",

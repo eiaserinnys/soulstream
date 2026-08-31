@@ -436,7 +436,7 @@ describe("TaskCompletionNotifier.notify", () => {
         createTask: vi.fn(),
         addIntervention: receiverAddIntervention,
       } as unknown as TaskManager,
-      taskExecutor: { startExecution: vi.fn() } as never,
+      taskExecutor: { startNewExecution: vi.fn() } as never,
       logger: silentLogger,
     });
     const receiverCommands = createInterventionCommandFamily({

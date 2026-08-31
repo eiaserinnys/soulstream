@@ -171,31 +171,6 @@ describe("RunnerProcessDispatcher", () => {
       handleHostCall: async () => null,
     } as never);
 
-    vi.spyOn(
-      dispatcher as unknown as {
-        stageInterventionInChild(input: unknown): Promise<unknown>;
-      },
-      "stageInterventionInChild",
-    ).mockRejectedValue(new Error("runner intervention id conflicts with durable payload"));
-
-    await expect(dispatcher.stageIntervention({
-      interventionId: "delivery-a",
-      message: { text: "third regenerated prompt", user: "system" },
-      queued: true,
-    })).resolves.toEqual({
-      eventSourceSeq: null,
-      queuePosition: 1,
-      durability: "runner",
-    });
-    expect(logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: "session-a",
-        interventionId: "delivery-a",
-        durableOwner: "runner_sqlite",
-      }),
-      "Regenerated runner intervention suppressed in favor of first durable payload",
-    );
-
     await expect(dispatcher.recoverPendingInterventions()).resolves.toEqual([{
       interventionId: "delivery-a",
       message: { text: "first durable prompt", user: "system" },
@@ -213,77 +188,6 @@ describe("RunnerProcessDispatcher", () => {
       }),
       "Duplicate host intervention fallback suppressed in favor of runner inbox",
     );
-    await dispatcher.close();
-  });
-
-  it("reports ACK-loss fallback positions from the merged priority queue", async () => {
-    const stateDirectory = await temporaryDirectory();
-    const paths = runnerProcessPaths(stateDirectory, "session-a");
-    await mkdir(paths.sessionDirectory, { recursive: true });
-    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
-    await writer.initializeBootstrap({
-      session_id: "session-a",
-      created_at: "2026-08-17T00:00:00.000Z",
-      resume: {
-        schema_version: 1,
-        backend_session_id: "backend-a",
-        cwd: "/workspace/a",
-        codex_home: "/home/test/.codex",
-        rollout_root: "/home/test/.codex/sessions",
-        code_sha: "sha-a",
-        snapshot_path: "/release/sha-a/soul-server-ts",
-      },
-    });
-    await writer.stageIntervention({
-      interventionId: "followup-low",
-      message: {
-        text: "background followup",
-        user: "system",
-        source: "claude_runtime_task_followup",
-      },
-      queued: true,
-      queuedAt: "2026-08-17T00:00:01.000Z",
-    });
-    writer.close();
-    const dispatcher = new RunnerProcessDispatcher({
-      spawn: spawnInput(stateDirectory),
-      runnerProcess: null,
-      offlineExisting: true,
-      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
-      logger: pino({ level: "silent" }),
-      handleHostCall: async () => null,
-    } as never);
-    vi.spyOn(
-      dispatcher as unknown as {
-        stageInterventionInChild(input: unknown): Promise<unknown>;
-      },
-      "stageInterventionInChild",
-    ).mockRejectedValue(new Error("runner ACK lost"));
-
-    await expect(dispatcher.stageIntervention({
-      interventionId: "user-high",
-      message: { text: "real user message", user: "alice", source: "user_message" },
-      queued: true,
-    })).resolves.toMatchObject({
-      queuePosition: 1,
-      durability: "host_fallback",
-    });
-    await expect(dispatcher.stageIntervention({
-      interventionId: "followup-low",
-      message: {
-        text: "regenerated background followup",
-        user: "system",
-        source: "claude_runtime_task_followup",
-      },
-      queued: true,
-    })).resolves.toMatchObject({
-      queuePosition: 2,
-      durability: "runner",
-    });
-    await expect(dispatcher.recoverPendingInterventions()).resolves.toEqual([
-      expect.objectContaining({ interventionId: "user-high" }),
-      expect.objectContaining({ interventionId: "followup-low" }),
-    ]);
     await dispatcher.close();
   });
 
@@ -427,12 +331,12 @@ describe("RunnerProcessDispatcher", () => {
     });
   });
 
-  it("persists a failed child stage in runner-host.sqlite and flushes it before apply", async () => {
+  it("leaves a legacy host fallback inert through apply and the next execute", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
     const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
-    const bootstrap = await writer.initializeBootstrap({
+    await writer.initializeBootstrap({
       session_id: "session-a",
       created_at: "2026-08-17T00:00:00.000Z",
       resume: {
@@ -445,21 +349,12 @@ describe("RunnerProcessDispatcher", () => {
         snapshot_path: "/release/sha-a/soul-server-ts",
       },
     });
-    let rejectFirstStage = true;
     const commandKinds: string[] = [];
     let endpoint!: RunnerSocketEndpoint;
     endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
       if (frame.channel !== "command") return;
       commandKinds.push(frame.kind === "invoke" ? String(frame.capability) : frame.kind);
       if (frame.kind === "stage_intervention") {
-        if (rejectFirstStage) {
-          rejectFirstStage = false;
-          await endpoint.currentConnection!.send(runnerCommandResultFrame(frame.commandId, {
-            status: "error",
-            error: { code: "stage_intervention_failed", message: "sqlite busy" },
-          }));
-          return;
-        }
         const staged = await writer.stageIntervention({
           interventionId: frame.interventionId,
           message: frame.message,
@@ -485,12 +380,13 @@ describe("RunnerProcessDispatcher", () => {
       await endpoint.currentConnection!.send(
         runnerCommandResultFrame(frame.commandId, { status: "ok" }),
       );
+      if (frame.kind === "execute") {
+        await endpoint.currentConnection!.send(executionEndedControlFrame(frame.commandId));
+      }
     }, vi.fn());
     await endpoint.listen();
     const primary = new EventOutboxPump(emptyStore("node-stream"), vi.fn());
     const mux = new EventOutboxPumpMux(primary);
-    const batches: EventOutboxBatch[] = [];
-    mux.connect(async (batch) => { batches.push(batch); });
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
       runnerProcess: spawnedProcessForTest(paths),
@@ -499,47 +395,40 @@ describe("RunnerProcessDispatcher", () => {
       handleHostCall: async () => null,
     });
 
-    await expect(dispatcher.stageIntervention({
+    const fallback = RunnerHostStateStore.open(runnerHostStatePath(paths.databasePath));
+    expect(fallback.stageInterventionFallback({
+      sessionId: "session-a",
       interventionId: "intervention-a",
       message: { text: "stop now", user: "alice" },
-      event: { type: "user_message", content: "stop now", timestamp: 1 },
       queued: false,
-    })).resolves.toEqual({
-      eventSourceSeq: null,
-      queuePosition: 0,
-      durability: "host_fallback",
-    });
+      stagedAt: "2026-08-17T00:00:00.500Z",
+    })).toEqual({ queuePosition: 0 });
+    fallback.close();
     expect(await dispatcher.recoverPendingInterventions()).toEqual([{
       interventionId: "intervention-a",
       message: { text: "stop now", user: "alice" },
     }]);
 
-    const applying = dispatcher.applyIntervention({
+    await expect(dispatcher.applyIntervention({
       interventionId: "intervention-a",
       input: { prompt: "stop now" },
-    });
-    await vi.waitFor(() => expect(batches.some(
-      (batch) => batch.stream_id === bootstrap.stream_id,
-    )).toBe(true));
-    const batch = batches.find((candidate) => candidate.stream_id === bootstrap.stream_id)!;
-    await mux.handleAck({
-      type: "event_append_ack",
-      stream_id: batch.stream_id,
-      acked_through: batch.events.at(-1)!.source_seq,
-      events: batch.events.map((event, index) => ({
-        source_seq: event.source_seq,
-        event_id: 9100 + index,
-      })),
-    });
-    await expect(applying).resolves.toMatchObject({ status: "delivered" });
+    })).resolves.toMatchObject({ status: "delivered" });
+    await expect(collect(dispatcher.executeFrames({
+      agentSessionId: "session-a",
+      prompt: "next turn",
+      runnerInterventionIds: ["intervention-a"],
+    }))).resolves.toEqual([]);
 
     expect(commandKinds).toEqual([
-      "stage_intervention",
-      "stage_intervention",
       "runner.apply_intervention",
+      "execute",
     ]);
     const host = RunnerHostStateStore.open(runnerHostStatePath(paths.databasePath));
-    expect(host.readInterventionFallback("session-a", "intervention-a")).toBeNull();
+    expect(host.readInterventionFallback("session-a", "intervention-a")).toMatchObject({
+      interventionId: "intervention-a",
+      message: { text: "stop now", user: "alice" },
+      queued: false,
+    });
     host.close();
     await dispatcher.close();
     writer.close();
@@ -653,7 +542,7 @@ describe("RunnerProcessDispatcher", () => {
     });
     expect(finishRunnerOperation).toHaveBeenCalledTimes(2);
     expect(sqliteTransactionObserver).not.toHaveBeenCalled();
-    await expect(dispatcher.waitForSessionAck()).resolves.toBe(9000);
+    await expect(dispatcher.waitForSessionAck()).resolves.toBeNull();
     await vi.waitFor(async () => {
       const observer = await RunnerSqliteEventOutbox.create(paths.databasePath);
       try {
@@ -664,6 +553,66 @@ describe("RunnerProcessDispatcher", () => {
     });
     await dispatcher.close();
     writer.close();
+    await endpoint.close();
+  });
+
+  it("keeps the original stream when an accepted execute ACK is lost", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    outbox.close();
+    const executeCommandIds: string[] = [];
+    const statusExecutionCommandIds: Array<string | null> = [];
+    let acceptedCommandId: string | undefined;
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel !== "command") return;
+      if (frame.kind === "execute") {
+        executeCommandIds.push(frame.commandId);
+        acceptedCommandId = frame.commandId;
+        endpoint.currentConnection!.close();
+        return;
+      }
+      if (frame.kind === "execution_status") {
+        statusExecutionCommandIds.push(acceptedCommandId ?? null);
+        await endpoint.currentConnection!.send(runnerCommandResultFrame(frame.commandId, {
+          status: "ok",
+          data: { executionCommandId: acceptedCommandId ?? null },
+        }));
+        await endpoint.currentConnection!.send(executionEndedControlFrame(acceptedCommandId!));
+        return;
+      }
+      await endpoint.currentConnection!.send(
+        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+      );
+    }, vi.fn());
+    await endpoint.listen();
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      runnerProcess: spawnedProcessForTest(paths),
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+      reconnectPolicy: {
+        initialDelayMs: 1,
+        maxDelayMs: 1,
+        maxAttempts: 3,
+        stableConnectionMs: 1_000,
+      },
+      reconnectSleep: async () => undefined,
+    });
+
+    const stream = dispatcher.executeFrames({
+      agentSessionId: "session-a",
+      prompt: "hello",
+    });
+
+    await expect(collect(stream)).resolves.toEqual([]);
+    expect(executeCommandIds).toHaveLength(1);
+    expect(statusExecutionCommandIds).toEqual([executeCommandIds[0]]);
+
+    await dispatcher.close();
     await endpoint.close();
   });
 
@@ -715,7 +664,7 @@ describe("RunnerProcessDispatcher", () => {
     await endpoint.close();
   });
 
-  it("bounds rapid disconnect reconnects and terminalizes the active recovery with identity logs", async () => {
+  it("keeps active recovery alive past reconnect backoff saturation and completes", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
@@ -743,13 +692,15 @@ describe("RunnerProcessDispatcher", () => {
     lifecycle.close();
 
     let connectionCount = 0;
-    let serverClosed = false;
+    let resolveFailureServerStopped!: () => void;
+    const failureServerStopped = new Promise<void>((resolve) => {
+      resolveFailureServerStopped = resolve;
+    });
     const server = createServer((socket) => {
       connectionCount += 1;
       socket.destroy();
-      if (connectionCount === 20) {
-        serverClosed = true;
-        server.close();
+      if (connectionCount === 5) {
+        server.close(resolveFailureServerStopped);
       }
     });
     await new Promise<void>((resolve, reject) => {
@@ -787,54 +738,50 @@ describe("RunnerProcessDispatcher", () => {
       },
     } as never);
 
-    const recovery = collect(dispatcher.recoverFrames("execute-old")).then(
-      () => ({ status: "resolved" as const }),
-      (error: unknown) => ({
-        status: "rejected" as const,
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
-    const outcome = await Promise.race([
-      recovery,
-      new Promise<{ status: "timeout" }>((resolve) => {
-        setTimeout(() => resolve({ status: "timeout" }), 500);
-      }),
-    ]);
-
-    expect(outcome).toEqual({
-      status: "rejected",
-      message: "Runner IPC reconnect budget exhausted after 3 attempts",
+    let recoverySettled = false;
+    const recovery = collect(dispatcher.recoverFrames("execute-old")).finally(() => {
+      recoverySettled = true;
     });
-    expect(connectionCount).toBe(4);
+    await failureServerStopped;
+
+    expect(connectionCount).toBe(5);
+    expect(recoverySettled).toBe(false);
+    expect(dispatcher.isClosed()).toBe(false);
+    expect(dispatcher.hasActiveExecution()).toBe(true);
+    expect(unregisterPump).not.toHaveBeenCalled();
+    expect(finishRecoveryObservation).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "session-a",
         runnerDirectory: paths.sessionDirectory,
         socketPath: paths.socketPath,
-        reconnectAttempt: 1,
-        reconnectDelayMs: 1,
+        reconnectAttempt: 4,
+        reconnectBackoffStep: 3,
+        reconnectDelayMs: 2,
       }),
       "Runner IPC disconnected; reconnecting",
     );
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: "session-a",
-        runnerDirectory: paths.sessionDirectory,
-        socketPath: paths.socketPath,
-        reconnectAttempts: 3,
-      }),
-      "Runner IPC reconnect budget exhausted; runner execution will be terminalized",
+
+    const endpoint = new RunnerSocketEndpoint(
+      paths.socketPath,
+      async () => undefined,
+      vi.fn(),
     );
+    await endpoint.listen();
+    await vi.waitFor(() => expect(endpoint.currentConnection).toBeDefined());
+    await endpoint.currentConnection!.send(executionEndedControlFrame("execute-old"));
+
+    await expect(recovery).resolves.toEqual([]);
     await vi.waitFor(() => {
       expect(registerPump).toHaveBeenCalledOnce();
-      expect(unregisterPump).toHaveBeenCalledOnce();
+      expect(unregisterPump).not.toHaveBeenCalled();
       expect(finishRecoveryObservation).toHaveBeenCalledOnce();
     });
+    expect(dispatcher.isClosed()).toBe(false);
+    expect(dispatcher.hasActiveExecution()).toBe(false);
 
     await dispatcher.detachHost();
-    if (!serverClosed) {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
+    await endpoint.close();
   });
 
   it("does not reuse an adopted command identity for the next execute turn", async () => {

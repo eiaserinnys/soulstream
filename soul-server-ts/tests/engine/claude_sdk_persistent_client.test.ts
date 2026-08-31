@@ -173,84 +173,44 @@ describe("ClaudeSdkClient persistent runtime", () => {
     }
   });
 
-  it("ends a silent runtime follow-up as a non-fatal no-op and keeps the Query on its Result", async () => {
-    const harness = makeHarness({ receipt: { still_queued: [] } });
-    const client = new ClaudeSdkClient(
-      {
-        query: harness.queryFn,
-        detachedEventSink: harness.detached,
-        persistentTurnInactivityTimeoutMs: 30 * 60_000,
-        runtimeFollowupNoOutputTimeoutMs: 10,
-        postResultDrainMs: 1_000,
-      },
-      silentLogger,
-    );
+  it("keeps a silent runtime follow-up active past no-output timeout and routes its Result", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = makeHarness({ receipt: { still_queued: [] } });
+      const client = new ClaudeSdkClient(
+        {
+          query: harness.queryFn,
+          detachedEventSink: harness.detached,
+          persistentTurnInactivityTimeoutMs: 30 * 60_000,
+          runtimeFollowupNoOutputTimeoutMs: 10,
+          postResultDrainMs: 1_000,
+        },
+        silentLogger,
+      );
 
-    const noOp = collect(client.runPersistent(
-      {
-        ...runOptions("runtime follow-up"),
-        turnOrigin: { kind: "runtime_followup", id: "delivery-runtime-1" },
-      },
-      abortSignal(),
-    ));
-    const firstInput = await harness.nextInput();
-    await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
-    harness.push(sdkInterruptedResult("sdk-session", firstInput.uuid));
+      const turn = collect(client.runPersistent(
+        {
+          ...runOptions("runtime follow-up"),
+          turnOrigin: { kind: "runtime_followup", id: "delivery-runtime-1" },
+        },
+        abortSignal(),
+      ));
+      const input = await harness.nextInput();
+      await vi.advanceTimersByTimeAsync(11);
 
-    await expect(noOp).resolves.toEqual([]);
-    expect(harness.close).not.toHaveBeenCalled();
+      expect(harness.interrupt).not.toHaveBeenCalled();
+      expect(harness.close).not.toHaveBeenCalled();
 
-    const resumed = collect(client.runPersistent(
-      { ...runOptions("user turn"), turnOrigin: { kind: "user_message" } },
-      abortSignal(),
-    ));
-    const secondInput = await harness.nextInput();
-    harness.push(sdkResult("sdk-session", secondInput.uuid, "user response"));
-    await expect(resumed).resolves.toContainEqual(
-      expect.objectContaining({ type: "complete", result: "user response" }),
-    );
-    expect(harness.captured).toHaveLength(1);
-    await client.close();
-  });
-
-  it("closes and recreates when a task-notification Result is not the interrupt Result", async () => {
-    const harness = makeHarness({ receipt: { still_queued: [] } });
-    const client = new ClaudeSdkClient(
-      {
-        query: harness.queryFn,
-        detachedEventSink: harness.detached,
-        persistentTurnInactivityTimeoutMs: 30 * 60_000,
-        runtimeFollowupNoOutputTimeoutMs: 10,
-        postResultDrainMs: 10,
-      },
-      silentLogger,
-    );
-
-    const noOp = collect(client.runPersistent(
-      {
-        ...runOptions("runtime follow-up during task notification"),
-        turnOrigin: { kind: "runtime_followup", id: "delivery-runtime-notification" },
-      },
-      abortSignal(),
-    ));
-    await harness.nextInput();
-    await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
-
-    harness.push(sdkTaskNotificationResult("sdk-session"));
-    await expect(noOp).resolves.toEqual([]);
-    expect(harness.close).toHaveBeenCalledTimes(1);
-
-    const resumed = collect(client.runPersistent(
-      { ...runOptions("user after task notification"), turnOrigin: { kind: "user_message" } },
-      abortSignal(),
-    ));
-    const resumedInput = await harness.nextInput();
-    harness.push(sdkResult("sdk-session", resumedInput.uuid, "fresh after task notification"));
-    await expect(resumed).resolves.toContainEqual(
-      expect.objectContaining({ type: "complete", result: "fresh after task notification" }),
-    );
-    expect(harness.captured).toHaveLength(2);
-    await client.close();
+      harness.push(sdkResult("sdk-session", input.uuid, "runtime follow-up response"));
+      await expect(turn).resolves.toContainEqual(
+        expect.objectContaining({ type: "complete", result: "runtime follow-up response" }),
+      );
+      expect(harness.close).not.toHaveBeenCalled();
+      expect(harness.captured).toHaveLength(1);
+      await client.close();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("settles a progressed runtime follow-up promptly when intervention follows a task-notification Result", async () => {
@@ -337,67 +297,6 @@ describe("ClaudeSdkClient persistent runtime", () => {
       await registry.shutdown();
       vi.useRealTimers();
     }
-  });
-
-  it("keeps the runtime-follow-up watchdog armed for task-notification assistant progress", async () => {
-    const inputUuid = "21212121-2121-5212-8212-212121212121";
-    const harness = makeHarness({ receipt: { still_queued: [inputUuid] } });
-    const client = new ClaudeSdkClient(
-      {
-        query: harness.queryFn,
-        detachedEventSink: harness.detached,
-        persistentTurnInactivityTimeoutMs: 30 * 60_000,
-        runtimeFollowupNoOutputTimeoutMs: 10,
-      },
-      silentLogger,
-    );
-
-    const warmup = collect(client.runPersistent(runOptions("warm query"), abortSignal()));
-    const warmupInput = await harness.nextInput();
-    harness.push(warmupInput as SDKMessage);
-    harness.push(sdkResult("sdk-session", warmupInput.uuid, "warm"));
-    await warmup;
-    harness.push(sdkTaskNotificationInput("sdk-session"));
-    await vi.waitFor(() => {
-      expect(harness.detached).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "claude_runtime_remote_trigger",
-          originKind: "task-notification",
-        }),
-      );
-    });
-
-    const turn = collect(client.runPersistent(
-      {
-        ...runOptions("runtime follow-up behind a task notification"),
-        inputUuid,
-        turnOrigin: { kind: "runtime_followup", id: "delivery-runtime-foreign-progress" },
-      },
-      abortSignal(),
-    ));
-    await harness.nextInput();
-    harness.push({
-      type: "assistant",
-      uuid: "assistant-task-notification-progress",
-      session_id: "sdk-session",
-      message: {
-        id: "assistant-task-notification-progress",
-        model: "claude",
-        role: "assistant",
-        content: [{ type: "text", text: "handling the completed background task" }],
-      },
-    } as unknown as SDKMessage);
-
-    await expect(turn).resolves.toEqual([]);
-    expect(harness.interrupt).toHaveBeenCalledTimes(1);
-    expect(harness.close).toHaveBeenCalledTimes(1);
-    expect(harness.detached).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "text",
-        text: "handling the completed background task",
-      }),
-    );
-    await client.close();
   });
 
   it("keeps a healthy follow-up alive when a second background task finishes", async () => {
@@ -509,136 +408,6 @@ describe("ClaudeSdkClient persistent runtime", () => {
     },
   );
 
-  it("closes a Query when the silent runtime follow-up remains queued", async () => {
-    const inputUuid = "22222222-2222-5222-8222-222222222222";
-    const harness = makeHarness({ receipt: { still_queued: [inputUuid] } });
-    const client = new ClaudeSdkClient(
-      {
-        query: harness.queryFn,
-        detachedEventSink: harness.detached,
-        runtimeFollowupNoOutputTimeoutMs: 10,
-      },
-      silentLogger,
-    );
-
-    const noOp = collect(client.runPersistent(
-      {
-        ...runOptions("queued runtime follow-up"),
-        inputUuid,
-        turnOrigin: { kind: "runtime_followup", id: "delivery-runtime-2" },
-      },
-      abortSignal(),
-    ));
-    await harness.nextInput();
-
-    await expect(noOp).resolves.toEqual([]);
-    expect(harness.close).toHaveBeenCalledTimes(1);
-
-    const resumed = collect(client.runPersistent(
-      { ...runOptions("user after queued follow-up"), turnOrigin: { kind: "user_message" } },
-      abortSignal(),
-    ));
-    const resumedInput = await harness.nextInput();
-    harness.push(sdkResult("sdk-session", resumedInput.uuid, "fresh query response"));
-    await expect(resumed).resolves.toContainEqual(
-      expect.objectContaining({ type: "complete", result: "fresh query response" }),
-    );
-    expect(harness.captured).toHaveLength(2);
-    await client.close();
-  });
-
-  it("creates the next Query before a closing Query iterator finishes", async () => {
-    const inputUuid = "23232323-2323-5232-8232-232323232323";
-    const harness = makeHarness({
-      receipt: { still_queued: [inputUuid] },
-      deferQueryClose: true,
-    });
-    const client = new ClaudeSdkClient(
-      {
-        query: harness.queryFn,
-        detachedEventSink: harness.detached,
-        runtimeFollowupNoOutputTimeoutMs: 10,
-      },
-      silentLogger,
-    );
-
-    const noOp = collect(client.runPersistent(
-      {
-        ...runOptions("queued runtime follow-up with delayed Query close"),
-        inputUuid,
-        turnOrigin: { kind: "runtime_followup", id: "delivery-runtime-close-race" },
-      },
-      abortSignal(),
-    ));
-    await harness.nextInput();
-    await expect(noOp).resolves.toEqual([]);
-
-    const resumed = collect(client.runPersistent(
-      { ...runOptions("user after delayed close"), turnOrigin: { kind: "user_message" } },
-      abortSignal(),
-    ));
-    const resumedInput = await harness.nextInput();
-    harness.push(sdkResult("sdk-session", resumedInput.uuid, "new Query before old iterator end"));
-    await expect(resumed).resolves.toContainEqual(
-      expect.objectContaining({ type: "complete", result: "new Query before old iterator end" }),
-    );
-    expect(harness.captured).toHaveLength(2);
-
-    harness.releaseClosedQueries();
-    const reused = collect(client.runPersistent(
-      { ...runOptions("reuse replacement Query"), turnOrigin: { kind: "user_message" } },
-      abortSignal(),
-    ));
-    const reusedInput = await harness.nextInput();
-    harness.push(sdkResult("sdk-session", reusedInput.uuid, "replacement remained current"));
-    await expect(reused).resolves.toContainEqual(
-      expect.objectContaining({ type: "complete", result: "replacement remained current" }),
-    );
-    expect(harness.captured).toHaveLength(2);
-
-    const closePromise = client.close();
-    await vi.waitFor(() => expect(harness.close).toHaveBeenCalledTimes(2));
-    harness.releaseClosedQueries();
-    await closePromise;
-  });
-
-  it("closes a Query when the runtime follow-up interrupt Result never arrives", async () => {
-    const harness = makeHarness({ receipt: { still_queued: [] } });
-    const client = new ClaudeSdkClient(
-      {
-        query: harness.queryFn,
-        detachedEventSink: harness.detached,
-        runtimeFollowupNoOutputTimeoutMs: 10,
-        postResultDrainMs: 10,
-      },
-      silentLogger,
-    );
-
-    const noOp = collect(client.runPersistent(
-      {
-        ...runOptions("runtime follow-up without Result"),
-        turnOrigin: { kind: "runtime_followup", id: "delivery-runtime-3" },
-      },
-      abortSignal(),
-    ));
-    await harness.nextInput();
-
-    await expect(noOp).resolves.toEqual([]);
-    expect(harness.close).toHaveBeenCalledTimes(1);
-
-    const resumed = collect(client.runPersistent(
-      { ...runOptions("user after missing Result"), turnOrigin: { kind: "user_message" } },
-      abortSignal(),
-    ));
-    const resumedInput = await harness.nextInput();
-    harness.push(sdkResult("sdk-session", resumedInput.uuid, "recreated query response"));
-    await expect(resumed).resolves.toContainEqual(
-      expect.objectContaining({ type: "complete", result: "recreated query response" }),
-    );
-    expect(harness.captured).toHaveLength(2);
-    await client.close();
-  });
-
   it("lets assistant progress disarm only the runtime-follow-up watchdog", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(
@@ -721,52 +490,6 @@ describe("ClaudeSdkClient persistent runtime", () => {
     await expect(turn).resolves.toContainEqual(
       expect.objectContaining({ type: "text", text: "owned progress" }),
     );
-    await client.close();
-  });
-
-  it("does not let background task or hook progress disarm the runtime-follow-up watchdog", async () => {
-    const harness = makeHarness({ receipt: { still_queued: [] } });
-    const client = new ClaudeSdkClient(
-      {
-        query: harness.queryFn,
-        detachedEventSink: harness.detached,
-        persistentTurnInactivityTimeoutMs: 30 * 60_000,
-        runtimeFollowupNoOutputTimeoutMs: 10,
-        postResultDrainMs: 1_000,
-      },
-      silentLogger,
-    );
-
-    const turn = collect(client.runPersistent(
-      {
-        ...runOptions("runtime follow-up with background progress"),
-        turnOrigin: { kind: "runtime_followup", id: "delivery-runtime-progress" },
-      },
-      abortSignal(),
-    ));
-    const input = await harness.nextInput();
-    harness.push({
-      type: "system",
-      subtype: "task_progress",
-      uuid: "background-task-progress",
-      session_id: "sdk-session",
-      task_id: "task-1",
-      summary: "background task is still running",
-    } as unknown as SDKMessage);
-    harness.push({
-      type: "system",
-      subtype: "hook_progress",
-      uuid: "background-hook-progress",
-      session_id: "sdk-session",
-      output: "background hook is still running",
-    } as unknown as SDKMessage);
-    await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
-    harness.push(sdkInterruptedResult("sdk-session", input.uuid));
-
-    await expect(turn).resolves.toContainEqual(
-      expect.objectContaining({ type: "progress", text: "background hook is still running" }),
-    );
-    expect(harness.close).not.toHaveBeenCalled();
     await client.close();
   });
 
@@ -1103,94 +826,6 @@ describe("ClaudeSdkClient persistent runtime", () => {
     expect(harness.detached).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "error" }),
     );
-    await client.close();
-  });
-
-  it("enqueues native input, fences one bare old Result, and completes the new UUID once", async () => {
-    const harness = makeHarness({ receipt: { still_queued: [] } });
-    const client = new ClaudeSdkClient(
-      { query: harness.queryFn, detachedEventSink: harness.detached },
-      silentLogger,
-    );
-    const ownerUuid = "11111111-1111-5111-8111-111111111111";
-    const deliveryUuid = "22222222-2222-5222-8222-222222222222";
-    const turn = collect(client.runPersistent(
-      { ...runOptions("long work"), inputUuid: ownerUuid },
-      abortSignal(),
-    ));
-    const ownerInput = await harness.nextInput();
-    expect(ownerInput.uuid).toBe(ownerUuid);
-
-    await expect(client.steerActiveTurn({
-      prompt: "native intervention",
-      inputUuid: deliveryUuid,
-      turnOrigin: { kind: "completion_notification", id: "delivery-1" },
-    })).resolves.toEqual({ status: "delivered" });
-    const deliveryInput = await harness.nextInput();
-    expect(deliveryInput).toMatchObject({ uuid: deliveryUuid, priority: "next" });
-    expect(harness.interrupt).toHaveBeenCalledTimes(1);
-
-    harness.push(sdkInterruptedResult("sdk-session", undefined));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    harness.push(sdkResult("sdk-session", deliveryUuid, "native complete"));
-
-    const events = await turn;
-    expect(events.filter((event) => event.type === "error")).toEqual([]);
-    expect(events.filter((event) => event.type === "complete")).toEqual([
-      expect.objectContaining({ result: "native complete" }),
-    ]);
-    expect(harness.captured).toHaveLength(1);
-    await client.close();
-  });
-
-  it("accepts two consecutive interventions on one live Query without recovery work", async () => {
-    const harness = makeHarness({ receipt: { still_queued: [] } });
-    const client = new ClaudeSdkClient(
-      { query: harness.queryFn, detachedEventSink: harness.detached },
-      silentLogger,
-    );
-    const ownerUuid = "33333333-3333-5333-8333-333333333333";
-    const firstDeliveryUuid = "44444444-4444-5444-8444-444444444444";
-    const secondDeliveryUuid = "55555555-5555-5555-8555-555555555555";
-    const turn = collect(client.runPersistent(
-      { ...runOptions("long work"), inputUuid: ownerUuid },
-      abortSignal(),
-    ));
-    expect((await harness.nextInput()).uuid).toBe(ownerUuid);
-
-    await expect(client.steerActiveTurn({
-      prompt: "first correction",
-      inputUuid: firstDeliveryUuid,
-      turnOrigin: { kind: "user_message", id: "correction-1" },
-    })).resolves.toEqual({ status: "delivered" });
-    expect(await harness.nextInput()).toMatchObject({
-      uuid: firstDeliveryUuid,
-      priority: "next",
-    });
-    harness.push(sdkInterruptedResult("sdk-session", undefined));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    await expect(client.steerActiveTurn({
-      prompt: "second correction",
-      inputUuid: secondDeliveryUuid,
-      turnOrigin: { kind: "user_message", id: "correction-2" },
-    })).resolves.toEqual({ status: "delivered" });
-    expect(await harness.nextInput()).toMatchObject({
-      uuid: secondDeliveryUuid,
-      priority: "next",
-    });
-    expect(harness.interrupt).toHaveBeenCalledTimes(2);
-    harness.push(sdkInterruptedResult("sdk-session", undefined));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    harness.push(sdkResult("sdk-session", secondDeliveryUuid, "second correction applied"));
-
-    const events = await turn;
-    expect(events.filter((event) => event.type === "error")).toEqual([]);
-    expect(events.filter((event) => event.type === "complete")).toEqual([
-      expect.objectContaining({ result: "second correction applied" }),
-    ]);
-    expect(harness.captured).toHaveLength(1);
-    expect(harness.close).not.toHaveBeenCalled();
     await client.close();
   });
 

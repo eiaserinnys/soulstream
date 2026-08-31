@@ -167,7 +167,6 @@ export class TaskManager {
       loadTask: (sessionId) => this.loadEvictedTask(sessionId),
       rememberTask: (task) => this.tasks.set(task.agentSessionId, task),
       lifecycleTransition,
-      autoResumeTransition,
       ...(persistence ? { persistence } : {}),
     });
     const deliveryRepository = deliveryRuntimeV2Enabled

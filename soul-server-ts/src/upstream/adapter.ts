@@ -156,7 +156,6 @@ export class UpstreamAdapter {
       modelCatalog: this.deps.modelCatalog,
       controlChannelEnabled: this.controlChannelService !== undefined,
       runnerProcessEnabled: this.config.runnerProcessEnabled,
-      runnerLeaseTimeoutMs: this.config.runnerLeaseTimeoutMs,
       releaseActivationState: this.config.releaseActivationState,
       logger: this.logger,
     });
@@ -221,6 +220,7 @@ export class UpstreamAdapter {
     // 명령 수신 루프 — node_register 직후 orch heartbeat가 와도 놓치지 않도록
     // registration 발행 전에 listener를 먼저 설치한다.
     let registrationAccepted = false;
+    let runnerReconciliation = Promise.resolve();
     let resolveRegistration!: (ack: NodeRegisterAck) => void;
     const registrationPromise = new Promise<NodeRegisterAck>((resolve) => {
       resolveRegistration = resolve;
@@ -247,6 +247,8 @@ export class UpstreamAdapter {
           if (isNodeRegisterAck(cmd, this.config.nodeId)) {
             if (!registrationAccepted) {
               registrationAccepted = true;
+              runnerReconciliation = this.deps.waitForRunnerReconciliation?.()
+                ?? Promise.resolve();
               resolveRegistration(cmd);
             }
             return;
@@ -262,6 +264,7 @@ export class UpstreamAdapter {
             await this.deps.eventOutboxPump.handleRejection(cmd);
             return;
           }
+          await runnerReconciliation;
           if (this.config.releaseActivationState?.isReady() === false)
             throw new Error("upstream command before release activation receipt ACK");
           await this.commandTransportObserver.observe(
@@ -324,7 +327,6 @@ export class UpstreamAdapter {
           modelCatalog: this.deps.modelCatalog,
           controlChannelEnabled: this.controlChannelService !== undefined,
           runnerProcessEnabled: this.config.runnerProcessEnabled,
-          runnerLeaseTimeoutMs: this.config.runnerLeaseTimeoutMs,
           logger: this.logger,
           releaseActivationState: this.config.releaseActivationState,
         }),
@@ -357,7 +359,7 @@ export class UpstreamAdapter {
       ) {
         this.controlChannelService.activate(registrationAck.connection_id);
       }
-      await this.deps.waitForRunnerReconciliation?.();
+      await runnerReconciliation;
       await sendInitialRunnerState({
         ws,
         nodeId: this.config.nodeId,

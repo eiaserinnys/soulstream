@@ -2,20 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer, type WebSocket as WSServerWebSocket } from "ws";
 import pino from "pino";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
 import { UpstreamAdapter, isConnectionError } from "../src/upstream/adapter.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
-import type { Task } from "../src/task/task_models.js";
 import type { SessionDB } from "../src/db/session_db.js";
 import type { EventOutboxPump } from "../src/upstream/event_outbox_pump.js";
 import type { ReconnectPolicyBoundary } from "../src/upstream/adapter.js";
-import { RunnerRecoveryCoordinator } from "../src/runner/runner_recovery_coordinator.js";
-import type { RunnerRegistration } from "../src/runner/runner_process_registry.js";
 import { ReleaseActivationState } from "../src/release/release_activation_state.js";
 import type { ReleaseManifestV1 } from "../src/release/release_manifest.js";
 
@@ -207,94 +201,6 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function recoveryRegistration(
-  sessionId: string,
-  lifecycleState: "reaped" | "completed",
-  stateDirectory: string,
-): RunnerRegistration {
-  const sessionDirectory = join(stateDirectory, sessionId);
-  return {
-    config: {
-      schemaVersion: 1,
-      sessionId,
-      backend: "codex",
-      agent: {
-        id: "agent-a",
-        name: "Agent A",
-        backend: "codex",
-        workspace_dir: "/workspace/a",
-      },
-      paths: {
-        sessionDirectory,
-        databasePath: join(sessionDirectory, "runner.sqlite"),
-        socketPath: join(sessionDirectory, "runner.sock"),
-        pidPath: join(sessionDirectory, "runner.pid"),
-        lockPath: join(sessionDirectory, "runner.lock"),
-        configPath: join(sessionDirectory, "runner-config.json"),
-      },
-      codeSha: "sha-a",
-      snapshotPath: "/release/sha-a/soul-server-ts",
-      codexAdapterMode: "sdk",
-      claudeRuntimeV2Enabled: true,
-      claudeRuntimeIdleTtlMs: 300_000,
-      claudeRuntimeMaxEntries: 16,
-      claudeRuntimeTurnTimeoutMs: 1_800_000,
-      internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
-      codexHome: "/home/test/.codex",
-      rolloutRoot: "/home/test/.codex/sessions",
-    },
-    pid: 4123,
-    pidStartIdentity: "start-4123",
-    pidAlive: false,
-    registeredAtMs: Date.parse("2026-08-13T09:01:47.000Z"),
-    bootstrap: {
-      stream_id: `stream-${sessionId}`,
-      source_seq: 1,
-      session_id: sessionId,
-      event_type: "runner_bootstrap",
-      payload: {
-        schema_version: 1,
-        backend_session_id: `backend-${sessionId}`,
-        cwd: "/workspace/a",
-        codex_home: "/home/test/.codex",
-        rollout_root: "/home/test/.codex/sessions",
-        code_sha: "sha-a",
-        snapshot_path: "/release/sha-a/soul-server-ts",
-      },
-      searchable_text: null,
-      created_at: "2026-08-13T09:01:47.000Z",
-      semantic_dedupe_key: null,
-      session_effect: null,
-      payload_hash: "0".repeat(64),
-    },
-    lifecycle: {
-      session_id: sessionId,
-      runner_pid: 4123,
-      execution_command_id: `execute-${sessionId}`,
-      execution_state: lifecycleState,
-      progress_seq: 3,
-      progress_at: "2026-08-13T09:01:47.735Z",
-      liveness_at: "2026-08-13T09:01:47.735Z",
-      in_flight_tools: [],
-      terminal_error: lifecycleState === "reaped"
-        ? { code: "runner_exited", message: "runner process exited" }
-        : null,
-    },
-  };
-}
-
-function recoveryTask(agentSessionId: string): Task {
-  return {
-    agentSessionId,
-    prompt: "continue",
-    status: "running",
-    createdAt: new Date("2026-08-13T09:00:00.000Z"),
-    lastEventId: 0,
-    lastReadEventId: 0,
-    interventionQueue: [],
-  };
-}
-
 describe("UpstreamAdapter", () => {
   let orch: MockOrch;
 
@@ -385,6 +291,75 @@ describe("UpstreamAdapter", () => {
     await adapter.shutdown();
   });
 
+  it("reconciliation 중 ACK·heartbeat·outbox ACK는 통과시키고 일반 명령만 보류한다", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({ acknowledgeRegistration: true });
+    const reconciliation = deferred<void>();
+    let reconciliationStarted = false;
+    const handleAck = vi.fn(async () => undefined);
+    const pump = {
+      connect: vi.fn(async () => true),
+      disconnect: vi.fn(),
+      isAck: (value: unknown) =>
+        Boolean(value && typeof value === "object"
+          && (value as Record<string, unknown>).type === "event_append_ack"),
+      handleAck,
+      isRejection: () => false,
+      handleRejection: vi.fn(),
+    } as unknown as EventOutboxPump;
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      makeDeps({
+        eventOutboxPump: pump,
+        waitForRunnerReconciliation: async () => {
+          reconciliationStarted = true;
+          await reconciliation.promise;
+        },
+      }),
+    );
+
+    void adapter.run();
+    await waitFor(() => reconciliationStarted);
+    orch.sockets[0]!.send(JSON.stringify({
+      type: "app_heartbeat_ping",
+      sentAt: "2026-08-31T00:00:00.000Z",
+    }));
+    orch.sockets[0]!.send(JSON.stringify({
+      type: "event_append_ack",
+      stream_id: "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10",
+      acked_through: 1,
+      events: [{ source_seq: 1, event_id: 9 }],
+    }));
+    orch.sockets[0]!.send(JSON.stringify({ type: "health_check", requestId: "held" }));
+
+    await waitFor(() => handleAck.mock.calls.length === 1);
+    await waitFor(() => orch.receivedMessages.some(
+      (message) => (message as Record<string, unknown>).type === "app_heartbeat_pong",
+    ));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(orch.receivedMessages.some(
+      (message) => (message as Record<string, unknown>).type === "health_status"
+        && (message as Record<string, unknown>).requestId === "held",
+    )).toBe(false);
+
+    reconciliation.resolve();
+    await waitFor(() => orch.receivedMessages.some(
+      (message) => (message as Record<string, unknown>).type === "health_status"
+        && (message as Record<string, unknown>).requestId === "held",
+    ));
+    await adapter.shutdown();
+  });
+
   it("release receipt ACK 전에는 명령을 차단하고 heartbeat만 허용한다", async () => {
     const releaseActivationState = new ReleaseActivationState(releaseManifest, {
       now: () => new Date("2026-08-19T09:00:00.000Z"),
@@ -405,7 +380,7 @@ describe("UpstreamAdapter", () => {
       lastReadEventId: 0,
       interventionQueue: [],
     }));
-    const startExecution = vi.fn();
+    const startNewExecution = vi.fn();
     const taskManager = {
       listTasks: () => [],
       createTask,
@@ -415,7 +390,7 @@ describe("UpstreamAdapter", () => {
       getTask: () => undefined,
       setTaskStatus: () => undefined,
     } as unknown as TaskManager;
-    const taskExecutor = { startExecution } as unknown as TaskExecutor;
+    const taskExecutor = { startNewExecution } as unknown as TaskExecutor;
     const adapter = new UpstreamAdapter(
       {
         url: orch.url,
@@ -482,116 +457,8 @@ describe("UpstreamAdapter", () => {
     expect(createTask.mock.calls[0]?.[0]).toMatchObject({
       agentSessionId: "activated-session",
     });
-    expect(startExecution).toHaveBeenCalledOnce();
+    expect(startNewExecution).toHaveBeenCalledOnce();
     await adapter.shutdown();
-  });
-
-  it("dead reaped/completed runner 복구가 outbox ACK에 의존해도 부팅을 완료한다", async () => {
-    await stopMockOrch(orch);
-    orch = await startMockOrch({ acknowledgeRegistration: true, autoPong: true });
-    const logger = pino({ level: "silent" });
-    const logInfo = vi.spyOn(logger, "info");
-    const recoveryApplicationReady = deferred<void>();
-    const stateDirectory = await mkdtemp(join(tmpdir(), "soulstream-adapter-recovery-"));
-    const registrations = [
-      recoveryRegistration("reaped-a", "reaped", stateDirectory),
-      recoveryRegistration("reaped-b", "reaped", stateDirectory),
-      recoveryRegistration("completed-a", "completed", stateDirectory),
-    ];
-    const tasks = new Map(
-      registrations.map((registration) => [
-        registration.config.sessionId,
-        recoveryTask(registration.config.sessionId),
-      ]),
-    );
-    const markRunnerFailureAndResume = vi.fn(async (
-      task: Task,
-      _message: string,
-      resume: (task: Task) => void,
-    ) => {
-      await recoveryApplicationReady.promise;
-      resume(task);
-    });
-    const recoverRegisteredRunner = vi.fn(async () => {
-      await recoveryApplicationReady.promise;
-    });
-    const coordinator = new RunnerRecoveryCoordinator({
-      stateDirectory,
-      leaseTimeoutMs: 120_000,
-      scanIntervalMs: 15_000,
-      taskManager: {
-        hydrateRunnerRecoveryTask: async (sessionId) => tasks.get(sessionId) ?? null,
-        listOwnerNullRunningInventory: async () => [],
-        reconcileExecutionOwnershipObservations: async () => false,
-        markRunnerFailureAndResume,
-      },
-      taskExecutor: {
-        recoverRegisteredRunner,
-        restartRegisteredRunner: vi.fn(async () => undefined),
-      },
-      spawner: {
-        terminate: vi.fn(async () => undefined),
-        invalidateRegistration: vi.fn(async () => undefined),
-        retireTerminalRegistration: vi.fn(async () => undefined),
-      },
-      closedTailDrainer: { drain: vi.fn(async () => undefined) },
-      logger: silentLogger,
-      scan: async () => ({ registrations, errors: [] }),
-      hydrate: async (registration) => registration,
-    });
-    await coordinator.start();
-
-    const connect = vi.fn(async () => {
-      recoveryApplicationReady.resolve();
-      return true;
-    });
-    const pump = {
-      connect,
-      disconnect: vi.fn(),
-      isAck: () => false,
-      handleAck: vi.fn(),
-      isRejection: () => false,
-      handleRejection: vi.fn(),
-    } as unknown as EventOutboxPump;
-    const adapter = new UpstreamAdapter(
-      {
-        url: orch.url,
-        nodeId: "eias-shopping-ts",
-        host: "127.0.0.1",
-        port: 4205,
-        authBearerToken: "",
-        userName: "",
-        userPortraitPath: "",
-        isProduction: false,
-      },
-      logger,
-      makeDeps({
-        eventOutboxPump: pump,
-        waitForRunnerReconciliation: async () => await coordinator.waitForSettled(),
-      }),
-    );
-
-    try {
-      void adapter.run();
-      await waitFor(() => connect.mock.calls.length === 1);
-      await waitFor(() => orch.receivedMessages.some(
-        (message) => (message as Record<string, unknown>).type === "app_heartbeat_ping",
-      ));
-      await waitFor(() => recoverRegisteredRunner.mock.calls.length === 3);
-
-      expect((orch.receivedMessages[0] as Record<string, unknown>).type).toBe("node_register");
-      expect(markRunnerFailureAndResume).toHaveBeenCalledTimes(2);
-      expect(recoverRegisteredRunner).toHaveBeenCalledTimes(3);
-      expect(logInfo).toHaveBeenCalledWith(
-        expect.objectContaining({ nodeId: "eias-shopping-ts" }),
-        "Registered with upstream",
-      );
-    } finally {
-      recoveryApplicationReady.resolve();
-      await adapter.shutdown();
-      await coordinator.stop();
-      await rm(stateDirectory, { recursive: true, force: true });
-    }
   });
 
   it("resets reconnect backoff only after registration ACK and initial outbox catch-up", async () => {

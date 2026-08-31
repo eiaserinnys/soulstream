@@ -3,40 +3,86 @@ import type { SSEEventPayload } from "../engine/protocol.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 
+interface DeliveryReceipt {
+  intervention: InterventionMessage;
+  recorded: boolean;
+  consumed: boolean;
+  consumedTurnId?: string;
+  recording?: Promise<void>;
+}
+
 /**
  * Owns the durable boundary between SDK input enqueue and observed foreground
  * execution. A fresh Query's session envelope is not proof that it consumed
  * the input, so the delivery remains replayable until a later turn event.
  */
 export class TaskDeliveryTurnReceipt {
-  private readonly receipts: Array<{
-    intervention: InterventionMessage;
-    recorded: boolean;
-    consumed: boolean;
-    consumedTurnId?: string;
-  }>;
+  private readonly receipts: DeliveryReceipt[] = [];
+  private observedTask: Task | undefined;
+  private observedTurnId: string | undefined;
 
   constructor(
     private readonly consumption: TaskDeliveryConsumption,
     interventions: readonly InterventionMessage[],
   ) {
-    this.receipts = interventions.map((intervention) => ({
+    for (const intervention of interventions) this.add(intervention);
+  }
+
+  async register(intervention: InterventionMessage): Promise<void> {
+    const receipt = this.add(intervention);
+    if (receipt && this.observedTask && this.observedTurnId) {
+      await this.record(this.observedTask, receipt, this.observedTurnId);
+    }
+  }
+
+  private add(intervention: InterventionMessage): DeliveryReceipt | undefined {
+    const duplicate = this.receipts.some((receipt) =>
+      intervention.deliveryId !== undefined
+        ? receipt.intervention.deliveryId === intervention.deliveryId
+        : receipt.intervention === intervention
+    );
+    if (duplicate) return undefined;
+    const receipt: DeliveryReceipt = {
       intervention,
       recorded: false,
       consumed: false,
-    }));
+    };
+    this.receipts.push(receipt);
+    return receipt;
   }
 
   async observe(task: Task, event: SSEEventPayload): Promise<void> {
     if (event.type === "session" || event.type === "error") return;
     const consumedTurnId = turnReceiptId(task);
+    this.observedTask = task;
+    this.observedTurnId = consumedTurnId;
     for (const receipt of this.receipts) {
-      if (receipt.recorded) continue;
+      await this.record(task, receipt, consumedTurnId);
+    }
+  }
+
+  private async record(
+    task: Task,
+    receipt: DeliveryReceipt,
+    consumedTurnId: string,
+  ): Promise<void> {
+    if (receipt.recorded) return;
+    if (receipt.recording) {
+      await receipt.recording;
+      return;
+    }
+    const recording = (async () => {
       receipt.recorded = await this.consumption.recordTurnStarted(
         task,
         receipt.intervention,
       );
       if (receipt.recorded) receipt.consumedTurnId = consumedTurnId;
+    })();
+    receipt.recording = recording;
+    try {
+      await recording;
+    } finally {
+      if (receipt.recording === recording) delete receipt.recording;
     }
   }
 

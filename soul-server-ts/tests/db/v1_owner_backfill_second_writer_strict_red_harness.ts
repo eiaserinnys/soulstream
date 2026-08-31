@@ -17,13 +17,8 @@ import {
   EventPersistence,
 } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
-import { OwnerNullExecutionReconciler } from
-  "../../src/runner/owner_null_execution_reconciler.js";
 import { OwnerNullInventoryReconciler } from
   "../../src/runner/owner_null_inventory_reconciler.js";
-import type { RunnerRecoveryCoordinatorOptions } from
-  "../../src/runner/runner_recovery_coordinator_options.js";
-import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import type { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -274,30 +269,6 @@ export class BSecondWriterProductHarness {
     });
   }
 
-  createLiveReconciler(
-    task: Task,
-    registration: RunnerRegistration,
-    recovery: TaskRunnerRecovery,
-  ): { reconcile(): Promise<"proceed" | "wait" | "terminal">; advance(): void } {
-    let now = this.clockAnchorMs;
-    const taskManager = {
-      reconcileExecutionOwnershipObservations:
-        recovery.reconcileExecutionOwnershipObservations.bind(recovery),
-    } as RunnerRecoveryCoordinatorOptions["taskManager"];
-    const reconciler = new OwnerNullExecutionReconciler({
-      taskManager,
-      scanIntervalMs: 1_000,
-      leaseTimeoutMs: 60_000,
-      now: () => now,
-    });
-    return {
-      reconcile: async () => await reconciler.reconcile(task, registration),
-      advance: () => {
-        now += 1_000;
-      },
-    };
-  }
-
   createAbsentReconciler(
     task: Task,
     recovery: TaskRunnerRecovery,
@@ -389,41 +360,5 @@ export function makeOwnerNullTask(sessionId: string): Task {
     lastReadEventId: 0,
     interventionQueue: [],
     hydratedFromDb: true,
-  };
-}
-
-export function makeLiveRegistration(sessionId: string): RunnerRegistration {
-  return {
-    config: {
-      sessionId,
-      codeSha: LIVE_IDENTITY.manifestId,
-      releaseManifestId: LIVE_IDENTITY.manifestId,
-      runtimeEnvIdentity: LIVE_IDENTITY.runtimeEnvIdentity,
-    } as RunnerRegistration["config"],
-    pid: LIVE_IDENTITY.pid,
-    pidAlive: true,
-    registeredAtMs: BASE_TIME_MS,
-    registrationId: LIVE_IDENTITY.registrationId,
-    pidStartIdentity: LIVE_IDENTITY.startIdentity,
-    bootstrap: null,
-    lifecycle: {
-      execution_command_id: LIVE_IDENTITY.executionCommandId,
-      execution_state: "running",
-    } as RunnerRegistration["lifecycle"],
-  };
-}
-
-export function stableObservation(
-  observedAt: Date,
-  runtimeEnvIdentity: string | null = LIVE_IDENTITY.runtimeEnvIdentity,
-) {
-  return {
-    manifestId: LIVE_IDENTITY.manifestId,
-    runtimeEnvIdentity,
-    registrationId: LIVE_IDENTITY.registrationId,
-    pid: LIVE_IDENTITY.pid,
-    startIdentity: LIVE_IDENTITY.startIdentity,
-    executionCommandId: LIVE_IDENTITY.executionCommandId,
-    observedAt,
   };
 }

@@ -335,7 +335,7 @@ describe("MCP stateless restart recovery", () => {
       getTask: () => undefined,
       createTask,
     } as unknown as TaskManager;
-    runtime.taskExecutor = { startExecution: vi.fn() } as unknown as TaskExecutor;
+    runtime.taskExecutor = { startNewExecution: vi.fn() } as unknown as TaskExecutor;
     runtime.agentRegistry = new AgentRegistry([{
       id: "codex-default",
       name: "Codex",

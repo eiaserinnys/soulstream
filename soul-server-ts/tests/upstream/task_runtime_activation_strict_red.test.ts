@@ -30,9 +30,8 @@ const agent: AgentProfile = {
   workspace_dir: "/tmp/strict-red-agent",
 };
 
-interface ActivationObservation {
+interface NewExecutionObservation {
   installed: ExecutionActivation | undefined;
-  received: ExecutionActivation | undefined;
 }
 
 function makeHarness() {
@@ -108,15 +107,13 @@ function makeHarness() {
     broadcaster,
     logger,
   );
-  const activationObservations: ActivationObservation[] = [];
-  const originalStartExecution = taskExecutor.startExecution.bind(taskExecutor);
-  vi.spyOn(taskExecutor, "startExecution").mockImplementation(
-    (task, resolvedAgent, activation) => {
-      activationObservations.push({
-        installed: task.executionActivation,
-        received: activation,
-      });
-      return originalStartExecution(task, resolvedAgent, activation);
+  const newExecutionObservations: NewExecutionObservation[] = [];
+  const originalStartNewExecution =
+    taskExecutor.startNewExecution.bind(taskExecutor);
+  vi.spyOn(taskExecutor, "startNewExecution").mockImplementation(
+    (task, resolvedAgent) => {
+      newExecutionObservations.push({ installed: task.executionActivation });
+      return originalStartNewExecution(task, resolvedAgent);
     },
   );
   const runtime = new TaskRuntimeCommands({
@@ -132,13 +129,13 @@ function makeHarness() {
     taskExecutor,
     persistenceDouble,
     autoResumeActivations,
-    activationObservations,
+    newExecutionObservations,
     executeInputs,
   };
 }
 
-describe("UPSTREAM_TERMINAL_FOLLOWUP_ACTIVATION_RED", () => {
-  it("forwards AutoResume's exact activation through upstream before acquiring and consuming", async () => {
+describe("UPSTREAM_TERMINAL_FOLLOWUP_NEW_EXECUTION", () => {
+  it("starts the terminal follow-up without execution ownership acquisition", async () => {
     const harness = makeHarness();
     const task = await harness.taskManager.createTask({
       agentSessionId: "strict-red-session",
@@ -162,13 +159,14 @@ describe("UPSTREAM_TERMINAL_FOLLOWUP_ACTIVATION_RED", () => {
     }
     if (task.executionPromise) await task.executionPromise;
 
-    const observation = harness.activationObservations.at(-1);
+    const observation = harness.newExecutionObservations.at(-1);
     const autoResumeActivation = harness.autoResumeActivations.at(-1);
     expect({
-      signature: "UPSTREAM_TERMINAL_FOLLOWUP_ACTIVATION_RED",
+      signature: "UPSTREAM_TERMINAL_FOLLOWUP_NEW_EXECUTION",
       tokenCreated: autoResumeActivation !== undefined,
-      installedTokenPreserved: observation?.installed === autoResumeActivation,
-      tokenForwarded: observation?.received === autoResumeActivation,
+      callbackActivation: autoResumeActivation,
+      installedActivation: observation?.installed,
+      newExecutionCount: harness.newExecutionObservations.length,
       acquireCount:
         harness.persistenceDouble.acquireExecutionOwnershipAndWaitForApplication
           .mock.calls.length,
@@ -176,11 +174,12 @@ describe("UPSTREAM_TERMINAL_FOLLOWUP_ACTIVATION_RED", () => {
       pendingFollowups: task.interventionQueue.map((message) => message.text),
       runtimeError,
     }).toEqual({
-      signature: "UPSTREAM_TERMINAL_FOLLOWUP_ACTIVATION_RED",
-      tokenCreated: true,
-      installedTokenPreserved: true,
-      tokenForwarded: true,
-      acquireCount: 1,
+      signature: "UPSTREAM_TERMINAL_FOLLOWUP_NEW_EXECUTION",
+      tokenCreated: false,
+      callbackActivation: undefined,
+      installedActivation: undefined,
+      newExecutionCount: 1,
+      acquireCount: 0,
       consumedPrompts: ["consume this terminal follow-up"],
       pendingFollowups: [],
       runtimeError: null,

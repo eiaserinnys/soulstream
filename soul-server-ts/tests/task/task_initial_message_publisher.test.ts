@@ -19,26 +19,44 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 
 function makeSubject(options: {
   enqueueEvent?: ReturnType<typeof vi.fn>;
-  enqueueRunningTransition?: ReturnType<typeof vi.fn>;
+  enqueueRunningTransitionAndWaitForApplication?: ReturnType<typeof vi.fn>;
   handleSideEffects?: ReturnType<typeof vi.fn>;
   emitEventEnvelope?: ReturnType<typeof vi.fn>;
 } = {}) {
   const enqueueEvent = options.enqueueEvent ?? vi.fn().mockResolvedValue({ source_seq: 77 });
-  const enqueueRunningTransition = options.enqueueRunningTransition
-    ?? vi.fn().mockResolvedValue({ source_seq: 78 });
+  const enqueueRunningTransitionAndWaitForApplication =
+    options.enqueueRunningTransitionAndWaitForApplication
+    ?? vi.fn().mockResolvedValue({
+      eventId: 78,
+      applied: true,
+      canonicalSession: {
+        status: "running",
+        termination_reason: null,
+        termination_detail: null,
+        review_state: "not_required",
+        last_assistant_text: null,
+        termination_event_id: null,
+        updated_at: "2026-05-23T03:00:00.000Z",
+        last_event_id: null,
+      },
+    });
   const handleSideEffects = options.handleSideEffects ?? vi.fn().mockResolvedValue(undefined);
   const emitEventEnvelope = options.emitEventEnvelope ?? vi.fn().mockResolvedValue(undefined);
   const logger = { warn: vi.fn() } as unknown as Logger;
   const publisher = new TaskInitialMessagePublisher({
     broadcaster: { emitEventEnvelope } as never,
     logger,
-    persistence: { enqueueEvent, enqueueRunningTransition, handleSideEffects } as never,
+    persistence: {
+      enqueueEvent,
+      enqueueRunningTransitionAndWaitForApplication,
+      handleSideEffects,
+    } as never,
   });
 
   return {
     publisher,
     enqueueEvent,
-    enqueueRunningTransition,
+    enqueueRunningTransitionAndWaitForApplication,
     handleSideEffects,
     emitEventEnvelope,
     logger,
@@ -67,7 +85,7 @@ describe("TaskInitialMessagePublisher", () => {
     const {
       publisher,
       enqueueEvent,
-      enqueueRunningTransition,
+      enqueueRunningTransitionAndWaitForApplication,
       handleSideEffects,
       emitEventEnvelope,
     } = makeSubject({
@@ -98,12 +116,12 @@ describe("TaskInitialMessagePublisher", () => {
       context: [{ key: "atom_context", label: "atom", content: "# tree" }],
     });
     expect(enqueueEvent.mock.calls[1][2]).toBeUndefined();
-    expect(enqueueRunningTransition).toHaveBeenCalledWith("sess-initial", {
+    expect(enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledWith("sess-initial", {
       reviewState: "not_required",
       transitionId: "initial",
     });
     expect(enqueueEvent.mock.invocationCallOrder[1]).toBeLessThan(
-      enqueueRunningTransition.mock.invocationCallOrder[0]!,
+      enqueueRunningTransitionAndWaitForApplication.mock.invocationCallOrder[0]!,
     );
     expect(task.lastEventId).toBe(3);
     expect(emitEventEnvelope).not.toHaveBeenCalled();
@@ -220,7 +238,7 @@ describe("TaskInitialMessagePublisher", () => {
     const assembledPrompt =
       "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.\n결과를 표로 정리해줘.";
     const task = makeTask({ prompt: assembledPrompt });
-    const { publisher, enqueueEvent, enqueueRunningTransition } = makeSubject();
+    const { publisher, enqueueEvent, enqueueRunningTransitionAndWaitForApplication } = makeSubject();
 
     await publisher.publishInitialMessages(task);
 
@@ -231,7 +249,7 @@ describe("TaskInitialMessagePublisher", () => {
         text: assembledPrompt,
       }),
     );
-    expect(enqueueRunningTransition).toHaveBeenCalledTimes(1);
+    expect(enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledTimes(1);
   });
 
   it("uses user contextItems but hides resolver markers when prepared context is absent", async () => {
@@ -242,7 +260,12 @@ describe("TaskInitialMessagePublisher", () => {
         { key: "handover", label: "Handover", content: "done" },
       ],
     });
-    const { publisher, enqueueEvent, enqueueRunningTransition, emitEventEnvelope } = makeSubject();
+    const {
+      publisher,
+      enqueueEvent,
+      enqueueRunningTransitionAndWaitForApplication,
+      emitEventEnvelope,
+    } = makeSubject();
 
     await publisher.publishInitialMessages(task);
 
@@ -253,7 +276,7 @@ describe("TaskInitialMessagePublisher", () => {
         context: [{ key: "handover", label: "Handover", content: "done" }],
       }),
     );
-    expect(enqueueRunningTransition).toHaveBeenCalledTimes(1);
+    expect(enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledTimes(1);
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 

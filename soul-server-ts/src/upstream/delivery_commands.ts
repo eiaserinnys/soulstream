@@ -39,7 +39,7 @@ export interface ToolApprovalCommand extends CommandLike {
 interface DeliveryCommandsDeps {
   agentRegistry: Pick<AgentRegistry, "get">;
   taskManager: Pick<TaskManager, "deliverInputResponse" | "deliverToolApproval">;
-  taskExecutor: Pick<TaskExecutor, "startExecution">;
+  taskExecutor: Pick<TaskExecutor, "startNewExecution">;
   logger: Logger;
 }
 
@@ -137,7 +137,7 @@ export class DeliveryCommands {
       );
       return;
     }
-    this.deps.taskExecutor.startExecution(task, agent);
+    this.deps.taskExecutor.startNewExecution(task, agent);
   }
 }
 
