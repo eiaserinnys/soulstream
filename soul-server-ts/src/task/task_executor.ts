@@ -89,6 +89,7 @@ import {
   isCompleteExecutionIdentity,
   isExecutionOwnershipConflictError,
   type ExecutionOwnerKind,
+  type RunnerTerminalFact,
 } from "./execution_ownership.js";
 import { ExecutionOwnershipCoordinator } from
   "./execution_ownership_coordinator.js";
@@ -133,6 +134,22 @@ export interface RunnerProcessRuntimeFactory {
     manifestId: string;
     runtimeEnvIdentity: string;
   }>;
+}
+
+interface RecoveredRunnerTerminalObservation {
+  fact: RunnerTerminalFact;
+  detail: string | null;
+}
+
+function recoveredRunnerTerminalObservation(
+  registration: RunnerRegistration,
+): RecoveredRunnerTerminalObservation | undefined {
+  const lifecycle = registration.lifecycle;
+  if (!lifecycle || lifecycle.execution_state === "running") return undefined;
+  return {
+    fact: lifecycle.execution_state,
+    detail: lifecycle.terminal_error?.message ?? null,
+  };
 }
 
 export interface RunnerSnapshotPersistence {
@@ -687,6 +704,7 @@ export class TaskExecutor {
     manifestId?: string,
     runtimeEnvIdentity?: string,
     onPendingFramesReplayed?: () => void,
+    terminalObservation?: RecoveredRunnerTerminalObservation,
   ): Promise<void> {
     if (task.runner) {
       throw new Error(`Task ${task.agentSessionId} already has a runner`);
@@ -724,6 +742,7 @@ export class TaskExecutor {
         runner,
         frames,
         mode === "adopt",
+        terminalObservation,
       );
     })();
     this.holdExecutionSlot(task, promise);
@@ -746,6 +765,9 @@ export class TaskExecutor {
     );
     if (!runner) throw new Error("runner process recovery factory unavailable");
     const onPendingFramesReplayed = onAttemptCreated?.(runner);
+    const terminalObservation = mode === "offline"
+      ? recoveredRunnerTerminalObservation(registration)
+      : undefined;
     return this.recoverRunnerExecutionLocked(
       task,
       config.agent,
@@ -755,6 +777,7 @@ export class TaskExecutor {
       config.releaseManifestId ?? config.codeSha,
       config.runtimeEnvIdentity ?? `legacy:${config.codeSha}`,
       onPendingFramesReplayed,
+      terminalObservation,
     ).catch(async (error: unknown) => {
       await this.releaseUnadoptedRunner(task, runner, config.sessionId);
       throw error;
@@ -1220,6 +1243,7 @@ export class TaskExecutor {
     runner: TaskRunnerRuntime,
     frames: AsyncIterable<import("../runner/frame_protocol.js").RunnerEventFrame>,
     propagateFailure: boolean,
+    terminalObservation?: RecoveredRunnerTerminalObservation,
   ): Promise<void> {
     const contextRecovery = createClaudeContextRecoveryObservation();
     const terminalTurnReceipts: TaskDeliveryTurnReceipt[] = [];
@@ -1270,6 +1294,13 @@ export class TaskExecutor {
       await this.flushClaudeRuntimeTaskFollowups(task);
       await this.restoreDurableRunnerInterventions(task, runner);
       await task.interruptRequest;
+      if (terminalObservation) {
+        this.lifecycleTransition.applyRecoveredRunnerTerminalFact(
+          task,
+          terminalObservation.fact,
+          terminalObservation.detail,
+        );
+      }
       const transition = resolveTurnLoopTransition(task, agent);
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);

@@ -555,6 +555,27 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
 });
 
 describe("TaskLifecycleTransition.persistExecutorFinalState", () => {
+  it("retries a terminal transition that failed before its durable receipt", async () => {
+    const projectionFailure = new Error("terminal projection RPC reset");
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
+    enqueueTerminalTransitionAndWaitForApplication.mockRejectedValueOnce(projectionFailure);
+    const task = makeTask({
+      status: "completed",
+      completedAt: new Date("2026-08-31T11:32:49.000Z"),
+    });
+
+    await expect(transition.persistExecutorFinalState(task, true)).rejects.toBe(projectionFailure);
+    expect(task.terminationReason).toBe("completed_ok");
+    expect(task.terminationEventRecorded).not.toBe(true);
+
+    await expect(transition.persistExecutorFinalState(task, true)).resolves.toEqual({
+      newlyFinalized: false,
+      terminalTransitionApplied: true,
+    });
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledTimes(2);
+    expect(task.terminationEventRecorded).toBe(true);
+  });
+
   it("projects a reaped recovery through the restored runner identity", async () => {
     const enqueueRecoveredRunnerTerminalFactAndWaitForApplication = vi.fn(async (
       _sessionId: string,

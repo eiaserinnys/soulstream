@@ -337,6 +337,26 @@ describe("recoverRunnerByDisposition", () => {
     );
   });
 
+  it("keeps terminal evidence after one replay failure and retires it after the existing replay succeeds", async () => {
+    const projectionFailure = new Error("terminal projection RPC reset");
+    const recoverOffline = vi.fn()
+      .mockRejectedValueOnce(projectionFailure)
+      .mockImplementationOnce(async (_registration, recoveredTask) => ({
+        task: recoveredTask,
+        replayed: true,
+      }));
+    const input = recoveryByDispositionInput("replay_terminal_dead", {
+      recoverOffline,
+    });
+
+    await expect(recoverRunnerByDisposition(input)).rejects.toBe(projectionFailure);
+    expect(input.retireTerminal).not.toHaveBeenCalled();
+
+    await expect(recoverRunnerByDisposition(input)).resolves.toBe(input.task);
+    expect(recoverOffline).toHaveBeenCalledTimes(2);
+    expect(input.retireTerminal).toHaveBeenCalledOnce();
+  });
+
   it("retires a dead terminal registration only after successful replay", async () => {
     const input = recoveryByDispositionInput("replay_terminal_dead");
 

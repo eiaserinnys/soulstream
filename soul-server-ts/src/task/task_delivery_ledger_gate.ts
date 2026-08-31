@@ -418,7 +418,7 @@ export class TaskDeliveryLedgerGate {
       );
       if (!consumed && requiresExactDeliveryConsumption(message)) {
         const existing = await repository.get(message.deliveryId);
-        if (existing?.state !== "consumed") {
+        if (!existing || !isTerminalDeliveryDisposition(existing)) {
           throw new Error(
             `Exact delivery consumption did not reach consumed state: ${message.deliveryId}`,
           );
@@ -461,6 +461,12 @@ export class TaskDeliveryLedgerGate {
 function requiresExactDeliveryConsumption(message: InterventionMessage): boolean {
   return isControlledMessage(message)
     || message.source === "claude_runtime_task_followup";
+}
+
+function isTerminalDeliveryDisposition(row: SessionDeliveryRow): boolean {
+  return row.state === "consumed"
+    || row.state === "superseded"
+    || row.aggregate_state === "dead_letter";
 }
 
 export function isLedgerControlled(

@@ -13,6 +13,8 @@ import { hydrateEvictedTaskFromSessionRow } from
   "../../src/task/task_evicted_hydration.js";
 import { TaskInterventionRoute } from
   "../../src/task/task_intervention_route.js";
+import { TaskExecutorFinalizer } from
+  "../../src/task/task_executor_finalizer.js";
 import { TaskLifecycleTransition } from
   "../../src/task/task_lifecycle_transition.js";
 import type { ExecutionActivation, Task } from
@@ -31,6 +33,7 @@ import {
 
 const logger = pino({ level: "silent" });
 const OFFLINE_SESSION_ID = "r16-offline-terminal-status";
+const RETRY_SESSION_ID = "r21-offline-terminal-status-retry";
 const ACTIVATION_SESSION_ID = "r16-activation-failure-status";
 
 describe("R16 terminal status full slice", () => {
@@ -48,27 +51,7 @@ describe("R16 terminal status full slice", () => {
   });
 
   it("projects an old runner terminal fact before replay_terminal_dead retirement", async () => {
-    await insertSession(OFFLINE_SESSION_ID, "running");
-    const acquired = await ingress.persistence
-      .acquireExecutionOwnershipAndWaitForApplication(OFFLINE_SESSION_ID, {
-        ...LIVE_OWNER_IDENTITY,
-        ownerKind: "runner_process",
-        leaseExpiresAt: new Date(Date.now() + 60_000),
-        reviewState: "not_required",
-      });
-    expect(acquired.applied).toBe(true);
-    await postgres.sql`
-      INSERT INTO session_execution_ownerships (
-        session_id, ownership_generation, owner_kind, manifest_id,
-        registration_id, pid, start_identity, execution_command_id,
-        phase, identity_proven_at, activated_at
-      ) VALUES (
-        ${OFFLINE_SESSION_ID}, 1, 'runner_process',
-        ${LIVE_OWNER_IDENTITY.manifestId}, ${LIVE_OWNER_IDENTITY.registrationId},
-        ${LIVE_OWNER_IDENTITY.pid}, ${LIVE_OWNER_IDENTITY.startIdentity},
-        ${LIVE_OWNER_IDENTITY.executionCommandId}, 'active', NOW(), NOW()
-      )
-    `;
+    await insertOwnedRunningSession(OFFLINE_SESSION_ID);
 
     const task = await loadTask(OFFLINE_SESSION_ID);
     // v18 recovery decouples the hydrated task from the pre-restart execution
@@ -122,6 +105,68 @@ describe("R16 terminal status full slice", () => {
       terminationReason: "completed_ok",
     });
     expect(retired).toBe(true);
+  });
+
+  it("converges after one terminal write failure before retiring replay_terminal_dead", async () => {
+    await insertOwnedRunningSession(RETRY_SESSION_ID);
+    const task = await loadTask(RETRY_SESSION_ID);
+    task.executionOwnership = undefined;
+    const terminalWrite = vi.fn()
+      .mockRejectedValueOnce(new Error("terminal projection RPC reset"))
+      .mockImplementation((...args) => ingress.persistence
+        .enqueueRecoveredRunnerTerminalFactAndWaitForApplication(...args));
+    const lifecycle = new TaskLifecycleTransition({
+      logger,
+      persistence: {
+        enqueueRecoveredRunnerTerminalFactAndWaitForApplication: terminalWrite,
+      } as never,
+    });
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: lifecycle,
+      logger,
+    });
+    const registration = {
+      ...makeOwnerlessRegistration(RETRY_SESSION_ID, Date.now(), { pidAlive: false }),
+      lifecycle: {
+        ...makeOwnerlessRegistration(RETRY_SESSION_ID, Date.now()).lifecycle!,
+        execution_state: "completed" as const,
+      },
+    };
+    const retireTerminal = vi.fn();
+    const recover = () => recoverRunnerByDisposition({
+      registration,
+      disposition: "replay_terminal_dead" as const,
+      task,
+      recoverAdopt: async () => {
+        throw new Error("offline terminal replay must not adopt");
+      },
+      recoverOffline: async (owned, recoveredTask, prepare) => {
+        const guarded = await prepare(owned);
+        prepareRecoveredTask(recoveredTask, guarded);
+        prepareRecoveredTerminalExecutionIdentity(recoveredTask, guarded);
+        lifecycle.applyRecoveredRunnerTerminalFact(recoveredTask, "completed", null);
+        await finalizer.finalize(recoveredTask);
+        return { task: recoveredTask, replayed: true };
+      },
+      terminate: async () => undefined,
+      retireTerminal,
+      logger,
+    });
+
+    await expect(recover()).rejects.toThrow("terminal projection RPC reset");
+    expect(await readStatus(RETRY_SESSION_ID)).toEqual({
+      status: "running",
+      terminationReason: null,
+    });
+    expect(retireTerminal).not.toHaveBeenCalled();
+
+    await expect(recover()).resolves.toBe(task);
+    expect(await readStatus(RETRY_SESSION_ID)).toEqual({
+      status: "completed",
+      terminationReason: "completed_ok",
+    });
+    expect(terminalWrite).toHaveBeenCalledTimes(2);
+    expect(retireTerminal).toHaveBeenCalledOnce();
   });
 
   it("restores a terminal durable status when auto-resume activation fails", async () => {
@@ -201,6 +246,30 @@ describe("R16 terminal status full slice", () => {
         )
       `;
     }
+  }
+
+  async function insertOwnedRunningSession(sessionId: string): Promise<void> {
+    await insertSession(sessionId, "running");
+    const acquired = await ingress.persistence
+      .acquireExecutionOwnershipAndWaitForApplication(sessionId, {
+        ...LIVE_OWNER_IDENTITY,
+        ownerKind: "runner_process",
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+        reviewState: "not_required",
+      });
+    expect(acquired.applied).toBe(true);
+    await postgres.sql`
+      INSERT INTO session_execution_ownerships (
+        session_id, ownership_generation, owner_kind, manifest_id,
+        registration_id, pid, start_identity, execution_command_id,
+        phase, identity_proven_at, activated_at
+      ) VALUES (
+        ${sessionId}, 1, 'runner_process',
+        ${LIVE_OWNER_IDENTITY.manifestId}, ${LIVE_OWNER_IDENTITY.registrationId},
+        ${LIVE_OWNER_IDENTITY.pid}, ${LIVE_OWNER_IDENTITY.startIdentity},
+        ${LIVE_OWNER_IDENTITY.executionCommandId}, 'active', NOW(), NOW()
+      )
+    `;
   }
 
   async function loadTask(sessionId: string): Promise<Task> {
