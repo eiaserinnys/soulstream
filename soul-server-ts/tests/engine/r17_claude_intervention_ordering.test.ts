@@ -31,13 +31,7 @@ const interruptArrivalOrders = [
 ] as const;
 
 describe("R17 Claude intervention arrival ordering", () => {
-  it.each([
-    { effect: "result", closesQuery: false },
-    { effect: "continuation", closesQuery: true },
-  ])("acknowledges an observed $effect while the receipt remains pending", async ({
-    effect,
-    closesQuery,
-  }) => {
+  it("acknowledges an observed Result while the receipt remains pending", async () => {
     const harness = makeHarness();
     let releaseReceipt!: () => void;
     const receipt = new Promise<void>((resolve) => {
@@ -75,11 +69,7 @@ describe("R17 Claude intervention arrival ordering", () => {
         return result;
       });
       await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
-      if (effect === "result") {
-        harness.push(sdkInterruptedResult("sdk-session", oldInput.uuid));
-      } else {
-        harness.push(sdkToolStart("tool-after-intervention", "tool-must-not-start"));
-      }
+      harness.push(sdkInterruptedResult("sdk-session", oldInput.uuid));
       await expect(oldTurn).resolves.toEqual(expect.any(Array));
       await vi.waitFor(
         () => expect(interventionSettled).toBe(true),
@@ -90,7 +80,7 @@ describe("R17 Claude intervention arrival ordering", () => {
         mechanism: "interrupt_then_next_turn",
         reason: "next_turn_required",
       });
-      expect(harness.close).toHaveBeenCalledTimes(closesQuery ? 1 : 0);
+      expect(harness.close).not.toHaveBeenCalled();
 
       const nextTurn = collectSse(engine.execute({
         agentSessionId: "agent-session",
@@ -98,16 +88,15 @@ describe("R17 Claude intervention arrival ordering", () => {
       }));
       const nextInput = await harness.nextInput();
       harness.push(nextInput as SDKMessage);
-      if (closesQuery) harness.push(sdkInit("next-sdk-session"));
       harness.push(sdkResult(
-        closesQuery ? "next-sdk-session" : "sdk-session",
+        "sdk-session",
         nextInput.uuid,
         "intervention handled",
       ));
       await expect(nextTurn).resolves.toContainEqual(
         expect.objectContaining({ type: "complete", result: "intervention handled" }),
       );
-      expect(harness.captured).toHaveLength(closesQuery ? 2 : 1);
+      expect(harness.captured).toHaveLength(1);
     } finally {
       releaseReceipt();
       await registry.shutdown();
@@ -172,7 +161,7 @@ describe("R17 Claude intervention arrival ordering", () => {
         );
         await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
 
-        let effectObserved = false;
+        let resultObserved = false;
         for (const arrival of arrivalOrder) {
           if (arrival === "receipt") {
             releaseReceipt();
@@ -180,21 +169,22 @@ describe("R17 Claude intervention arrival ordering", () => {
           } else if (arrival === "result") {
             harness.push(sdkInterruptedResult("sdk-session", oldInput.uuid));
             await vi.waitFor(() => expect(oldTurnSettled).toBe(true));
+            resultObserved = true;
           } else {
             harness.push(sdkToolStart(
               "tool-after-intervention",
               "tool-must-not-start",
             ));
-            await vi.waitFor(() => expect(harness.close).toHaveBeenCalledTimes(1));
           }
           await new Promise<void>((resolve) => setImmediate(resolve));
-          if (arrival !== "receipt" && !effectObserved) {
+          if (arrival === "result") {
             await vi.waitFor(
               () => expect(interventionSettled).toBe(true),
               { timeout: 200 },
             );
             expect(interventionFailure).toBeUndefined();
-            effectObserved = true;
+          } else if (!resultObserved) {
+            expect(interventionSettled).toBe(false);
           }
         }
 
@@ -214,15 +204,14 @@ describe("R17 Claude intervention arrival ordering", () => {
         }));
         const nextInput = await harness.nextInput();
         harness.push(nextInput as SDKMessage);
-        harness.push(sdkInit("next-sdk-session"));
-        harness.push(sdkResult("next-sdk-session", nextInput.uuid, "intervention handled"));
+        harness.push(sdkResult("sdk-session", nextInput.uuid, "intervention handled"));
         const nextEvents = await nextTurn;
         expect(nextEvents).toContainEqual(expect.objectContaining({
           type: "complete",
           result: "intervention handled",
         }));
         expect(nextEvents.filter((event) => event.type === "error")).toEqual([]);
-        expect(harness.captured).toHaveLength(2);
+        expect(harness.captured).toHaveLength(1);
       } finally {
         releaseReceipt();
         await registry.shutdown();

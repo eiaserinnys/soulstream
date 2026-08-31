@@ -29,6 +29,7 @@ import {
   isExpectedInterruptDiagnostic,
   isExpectedInterruptTerminalEvent,
   isTurnStartingUserInput,
+  makeStaleInterruptReceiptLogger,
   provableTurnResultOwner,
   settleInterventionInterrupt,
   shouldFencePostInterruptContinuation,
@@ -119,7 +120,7 @@ export class ClaudeSdkPersistentSession {
     try {
       return await waitForInterventionEffect(
         observation,
-        () => this.runtime.interruptForeground(),
+        () => this.runtime.interruptForeground(makeStaleInterruptReceiptLogger(this.logger)),
         this.logger,
         active.uuid,
       );
@@ -148,7 +149,7 @@ export class ClaudeSdkPersistentSession {
     this.clearForegroundTimers(active);
     active?.output.close();
     this.activeForeground = null;
-    settleInterventionInterrupt(this.interventionFence ?? active, reason === "explicit_cancel");
+    settleInterventionInterrupt(this.interventionFence ?? active, false);
     this.interventionFence = null;
     this.hookOutput.close();
     await terminalizePersistentBackgroundTasks({
@@ -360,9 +361,8 @@ export class ClaudeSdkPersistentSession {
     if (shouldFencePostInterruptContinuation(interruptingActive, event)) {
       this.logger.warn(
         { uuid: interruptingActive.uuid, eventType: event.type },
-        "Claude continued foreground work after interrupt receipt; closing the Query",
+        "Suppressing Claude foreground continuation while awaiting its interrupted Result",
       );
-      await this.close("explicit_cancel");
       return;
     }
     const runtimeEventAccepted =
@@ -393,7 +393,7 @@ export class ClaudeSdkPersistentSession {
       active.output.push(rateLimit.makeStopFailureError());
       active.output.close();
       if (this.activeForeground === active) this.activeForeground = null;
-      settleInterventionInterrupt(active, true);
+      settleInterventionInterrupt(active, false);
       return;
     }
     const phase = this.runtime.snapshot().foregroundPhase;
@@ -448,7 +448,7 @@ export class ClaudeSdkPersistentSession {
     );
     try {
       if (this.runtime.snapshot().foregroundPhase === "generating") {
-        await this.runtime.interruptForeground();
+        await this.runtime.interruptForeground(makeStaleInterruptReceiptLogger(this.logger));
       }
       active.interruptResultTimer = setTimeout(() => {
         void this.handleTimedOutTurnWithoutResult(uuid);

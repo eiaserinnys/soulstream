@@ -79,17 +79,22 @@ describe("R17 Claude intervention interrupt contract", () => {
           await new Promise<void>((resolve) => setImmediate(resolve));
         }
 
-        const intervention = engine.intervene({ prompt: "stop and answer this now" });
+        let interventionSettled = false;
+        const intervention = engine.intervene({
+          prompt: "stop and answer this now",
+        }).then((result) => {
+          interventionSettled = true;
+          return result;
+        });
         await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
-        if (inFlightTool) {
-          harness.push(sdkInterruptedResult("sdk-session", oldInput.uuid));
-        } else {
+        if (!inFlightTool) {
           harness.push(sdkToolStart("tool-after-intervention", "tool-must-not-start"));
-          await vi.waitFor(
-            () => expect(harness.close).toHaveBeenCalledTimes(1),
-            { timeout: 200 },
-          );
         }
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(interventionSettled).toBe(false);
+        expect(harness.close).not.toHaveBeenCalled();
+
+        harness.push(sdkInterruptedResult("sdk-session", oldInput.uuid));
         await expect(intervention).resolves.toEqual({
           status: "not_delivered",
           mechanism: "interrupt_then_next_turn",
@@ -97,9 +102,6 @@ describe("R17 Claude intervention interrupt contract", () => {
         });
         await new Promise<void>((resolve) => setImmediate(resolve));
         const settledWhenAcknowledged = oldTurnSettled;
-        if (!inFlightTool) {
-          harness.push(sdkResult("sdk-session", oldInput.uuid, "old turn ended naturally"));
-        }
         const oldEvents = await oldTurn;
 
         const nextTurn = collectSse(engine.execute({
@@ -108,7 +110,6 @@ describe("R17 Claude intervention interrupt contract", () => {
         }));
         const nextInput = await harness.nextInput();
         harness.push(nextInput as SDKMessage);
-        if (!inFlightTool) harness.push(sdkInit("sdk-session"));
         harness.push(sdkResult("sdk-session", nextInput.uuid, "intervention handled"));
         await expect(nextTurn).resolves.toContainEqual(
           expect.objectContaining({ type: "complete", result: "intervention handled" }),
@@ -126,7 +127,7 @@ describe("R17 Claude intervention interrupt contract", () => {
             expect.objectContaining({ type: "tool_start", tool_use_id: "tool-in-flight" }),
           );
         }
-        expect(harness.captured).toHaveLength(inFlightTool ? 1 : 2);
+        expect(harness.captured).toHaveLength(1);
       } finally {
         releaseDelayedSink();
         await registry.shutdown();
@@ -253,15 +254,18 @@ describe("R17 Claude intervention interrupt contract", () => {
 
       intervention = engine.intervene({ prompt: "stop now" });
       await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
-      harness.push(sdkToolStart("tool-after-intervention", "tool-must-not-start"));
-      await terminalSinkEntry;
-
-      expect(harness.close).toHaveBeenCalledTimes(1);
-      releaseTerminalSink();
+      harness.push(sdkInterruptedResult("sdk-session", oldInput.uuid));
       await expect(intervention).resolves.toEqual(expect.objectContaining({
         reason: "next_turn_required",
       }));
       await expect(oldTurn).resolves.toEqual(expect.any(Array));
+
+      const closing = client.close("explicit_cancel");
+      await terminalSinkEntry;
+
+      expect(harness.close).toHaveBeenCalledTimes(1);
+      releaseTerminalSink();
+      await closing;
       expect(runtimeEvents).toContainEqual(expect.objectContaining({
         type: "claude_runtime_task_updated",
         taskId: "background-task",

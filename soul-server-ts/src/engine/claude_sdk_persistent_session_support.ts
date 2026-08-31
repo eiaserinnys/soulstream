@@ -13,7 +13,10 @@ import { asRecord, asString } from "./claude_sdk_helpers.js";
 import type { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import type { RateLimitTerminationState } from
   "./claude_sdk_rate_limit_stop_failure.js";
-import type { ClaudeForegroundPhase } from "./claude_session_runtime.js";
+import type {
+  ClaudeForegroundPhase,
+  ClaudeStaleInterruptReceiptObservation,
+} from "./claude_session_runtime.js";
 
 export type ClaudeDetachedEventSink = (event: ClaudeClientEvent) => Promise<void>;
 export type ClaudeRuntimeEventSink = (
@@ -100,6 +103,17 @@ export async function waitForInterventionEffect(
     },
   );
   return await Promise.race([observation.promise, controlFailure]);
+}
+
+export function makeStaleInterruptReceiptLogger(
+  logger: Pick<Logger, "warn">,
+): (observation: ClaudeStaleInterruptReceiptObservation) => void {
+  return (observation) => {
+    logger.warn(
+      observation,
+      "Ignoring Claude interrupt receipt from a finished foreground turn",
+    );
+  };
 }
 
 export function isPostInterruptContinuation(event: ClaudeClientEvent): boolean {
