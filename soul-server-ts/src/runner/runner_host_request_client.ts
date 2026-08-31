@@ -23,9 +23,10 @@ export interface RunnerHostRequestOptions {
 }
 
 /**
- * Runner-side bounded proxy for host-owned state. Retries retain the same
- * correlation id so a replacement host can retry the same durable-owner
- * mutation without committing its side effect twice.
+ * Runner-side proxy for host-owned state. Retries retain the same correlation
+ * id so a replacement host can retry the same durable-owner mutation without
+ * committing its side effect twice. Omitting attempts keeps retrying until an
+ * explicit abort while preserving timeoutMs as the per-attempt wait bound.
  */
 export class RunnerHostRequestClient {
   constructor(
@@ -40,9 +41,12 @@ export class RunnerHostRequestClient {
     options: RunnerHostRequestOptions,
   ): Promise<unknown> {
     const correlationId = `host:${randomUUID()}`;
-    const attempts = options.attempts ?? 3;
+    const maxAttempts = options.attempts;
     const retryDelayMs = options.retryDelayMs ?? 100;
-    if (!Number.isInteger(attempts) || attempts <= 0) {
+    if (
+      maxAttempts !== undefined
+      && (!Number.isInteger(maxAttempts) || maxAttempts <= 0)
+    ) {
       throw new Error("Runner host request attempts must be positive");
     }
     const frame = runnerRequestFrame(correlationId, {
@@ -51,36 +55,49 @@ export class RunnerHostRequestClient {
       operation,
       args,
     }, { timeoutMs: options.timeoutMs });
-    const lifetime = createRequestLifetime(options.signal, options.timeoutMs);
-    const deadline = Date.now() + options.timeoutMs;
+    const overallTimeoutMs = maxAttempts === undefined ? undefined : options.timeoutMs;
+    const lifetime = createRequestLifetime(options.signal, overallTimeoutMs);
+    const deadline = overallTimeoutMs === undefined ? undefined : Date.now() + overallTimeoutMs;
     let lastError: Error | undefined;
     try {
-      for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      for (let attempt = 1; ; attempt += 1) {
         if (lifetime.signal.aborted) throw abortReason(lifetime.signal);
         const connection = this.getConnection();
         if (!connection) {
           lastError = new Error("Runner host connection unavailable");
         } else {
+          let response: RunnerControlFrame | undefined;
           try {
-            const response = await connection.request(frame, {
+            response = await connection.request(frame, {
               signal: lifetime.signal,
-              timeoutMs: Math.max(1, deadline - Date.now()),
+              timeoutMs: deadline === undefined
+                ? options.timeoutMs
+                : Math.max(1, deadline - Date.now()),
             });
-            const data = readResponse(response);
-            await connection.send(hostCallAppliedControlFrame(correlationId));
-            return data;
           } catch (error) {
             if (error instanceof RunnerObservationDroppedError) return true;
             if (lifetime.signal.aborted) throw abortReason(lifetime.signal);
             lastError = asError(error);
           }
+          if (response !== undefined) {
+            const data = readResponse(response);
+            try {
+              await connection.send(hostCallAppliedControlFrame(correlationId));
+              return data;
+            } catch (error) {
+              if (lifetime.signal.aborted) throw abortReason(lifetime.signal);
+              lastError = asError(error);
+            }
+          }
         }
-        if (attempt < attempts) await this.delay(retryDelayMs, lifetime.signal);
+        if (maxAttempts !== undefined && attempt >= maxAttempts) {
+          throw new Error(
+            `Runner host request ${service}.${operation} failed after ${maxAttempts} attempts`,
+            { cause: lastError },
+          );
+        }
+        await this.delay(retryDelayMs, lifetime.signal);
       }
-      throw new Error(
-        `Runner host request ${service}.${operation} failed after ${attempts} attempts`,
-        { cause: lastError },
-      );
     } finally {
       lifetime.cleanup();
     }
@@ -119,7 +136,7 @@ function abortReason(signal: AbortSignal): Error {
     : new Error(signal.reason ? String(signal.reason) : "Runner host request aborted");
 }
 
-function createRequestLifetime(parent: AbortSignal | undefined, timeoutMs: number): {
+function createRequestLifetime(parent: AbortSignal | undefined, timeoutMs?: number): {
   signal: AbortSignal;
   cleanup(): void;
 } {
@@ -127,14 +144,14 @@ function createRequestLifetime(parent: AbortSignal | undefined, timeoutMs: numbe
   const relayParentAbort = () => controller.abort(parent?.reason);
   if (parent?.aborted) relayParentAbort();
   else parent?.addEventListener("abort", relayParentAbort, { once: true });
-  const timer = setTimeout(() => {
+  const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
     controller.abort(new Error(`Runner host request timed out after ${timeoutMs}ms`));
   }, timeoutMs);
-  timer.unref?.();
+  timer?.unref?.();
   return {
     signal: controller.signal,
     cleanup: () => {
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
       parent?.removeEventListener("abort", relayParentAbort);
     },
   };

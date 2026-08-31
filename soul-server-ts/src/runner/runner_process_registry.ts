@@ -141,10 +141,10 @@ export function classifyRunnerRegistration(
   if (lifecycle?.execution_state === "reaped") return "already_reaped";
   if (lifecycle?.execution_state === "closed") return "closed";
   if (!lifecycle) {
-    if (nowMs - registration.registeredAtMs < leaseTimeoutMs) {
-      return registration.pidAlive ? "adopt_prebootstrap" : "wait_for_bootstrap";
-    }
-    return registration.pidAlive ? "reap_stalled" : "reap_dead";
+    if (registration.pidAlive) return "adopt_prebootstrap";
+    return nowMs - registration.registeredAtMs < leaseTimeoutMs
+      ? "wait_for_bootstrap"
+      : "reap_dead";
   }
   if (isTerminalRunnerExecutionState(lifecycle.execution_state)) {
     // A terminal lifecycle says the runner finished, not that its process is
@@ -159,11 +159,9 @@ export function classifyRunnerRegistration(
   if (!Number.isFinite(progressedAt)) {
     throw new Error(`runner lifecycle progress timestamp invalid: ${lifecycle.progress_at}`);
   }
-  const inactivityTimeoutMs = runnerProgressInactivityTimeoutMs(
-    leaseTimeoutMs,
-    registration.config.claudeRuntimeTurnTimeoutMs,
-  );
-  return nowMs - progressedAt < inactivityTimeoutMs ? "adopt_running" : "reap_stalled";
+  // progress_at remains durable observation data. Elapsed wall-clock time is
+  // not process-death evidence; adopt() verifies the full runner identity.
+  return "adopt_running";
 }
 
 /**

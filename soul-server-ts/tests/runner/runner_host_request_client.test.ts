@@ -32,6 +32,54 @@ describe("RunnerHostRequestClient", () => {
     }));
   });
 
+  it("keeps post-accept host calls alive across overall and per-attempt timeout boundaries", async () => {
+    vi.useFakeTimers();
+    try {
+      let attempt = 0;
+      const send = vi.fn(async () => {});
+      const request = vi.fn(async (
+        frame,
+        options: { timeoutMs: number },
+      ) => {
+        attempt += 1;
+        if (attempt <= 2) {
+          await new Promise((_, reject) => {
+            setTimeout(
+              () => reject(new Error(`attempt ${attempt} timed out`)),
+              options.timeoutMs,
+            );
+          });
+        }
+        return runnerControlResponseFrame(
+          frame.correlationId,
+          { status: "ok", data: ["late-entry"] },
+        );
+      });
+      const client = new RunnerHostRequestClient(
+        () => ({ request, send } as never),
+      );
+
+      const result = client.call("session_store", "load", [{ sessionId: "s" }], {
+        timeoutMs: 10,
+        retryDelayMs: 5,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      await vi.advanceTimersByTimeAsync(5);
+      await vi.advanceTimersByTimeAsync(10);
+      await vi.advanceTimersByTimeAsync(5);
+
+      await expect(result).resolves.toEqual(["late-entry"]);
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(request.mock.calls.map(([frame]) => frame.correlationId)).toEqual([
+        request.mock.calls[0]?.[0].correlationId,
+        request.mock.calls[0]?.[0].correlationId,
+        request.mock.calls[0]?.[0].correlationId,
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("bounds server-absent retries instead of blocking forever", async () => {
     const delay = vi.fn(async () => {});
     const client = new RunnerHostRequestClient(() => undefined, delay);
