@@ -118,6 +118,10 @@ export interface InterventionMessage {
   context?: ContextItem[];
 }
 
+export interface ActiveDeliveryTurnReceipt {
+  register(intervention: InterventionMessage): Promise<void>;
+}
+
 /**
  * 발신자 정보. atom card `ed3a216d-2811-4792-bfbe-f15043c7faba` (caller_info 통합 스키마 v1) 정본.
  *
@@ -369,6 +373,9 @@ export interface Task {
   claudeRuntime?: ClaudeRuntimeState;
 
   // === 런타임 전용 (DB·wire에 직접 박지 않음) ===
+
+  /** 현재 엔진 turn에 native-delivered 개입을 합류시키는 기존 receipt 경계. */
+  activeDeliveryTurnReceipt?: ActiveDeliveryTurnReceipt;
 
   /** 후속 턴에 claude_session_id delta를 한 번만 주입하기 위한 런타임 마커. */
   lastInjectedClaudeSessionId?: string;

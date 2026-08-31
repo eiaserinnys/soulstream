@@ -86,6 +86,7 @@ export class RunningInterventionTransition {
 
     const initialResult = await this.tryIntervene(task, deliveryMessage);
     if (initialResult.status === "delivered") {
+      await task.activeDeliveryTurnReceipt?.register(deliveryMessage);
       if (!publishBeforeDelivery) {
         await this.publishAcceptance(task, deliveryMessage);
       }

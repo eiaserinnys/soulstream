@@ -64,6 +64,7 @@ import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import {
   isOpenAiAgentsApprovalPending,
   resolveTurnLoopTransition,
+  type TurnLoopTransitionDecision,
 } from "./task_turn_loop_transition.js";
 import {
   TaskTurnInputBuilder,
@@ -876,14 +877,10 @@ export class TaskExecutor {
         currentTurnInterventions = turnInput.interventions ?? [];
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
-      const turnReceipt = this.deliveryConsumption
-        ? new TaskDeliveryTurnReceipt(
-            this.deliveryConsumption,
-            currentTurnInterventions,
-          )
-        : undefined;
+      const turnReceipt = this.beginDeliveryTurn(task, currentTurnInterventions);
       try {
-        for await (const event of this.engineTurnRunner.executeTurn({
+        try {
+          for await (const event of this.engineTurnRunner.executeTurn({
           task,
           agent,
           runner,
@@ -909,35 +906,35 @@ export class TaskExecutor {
               ? { backendSessionRolloverFrom: turnInput.backendSessionRolloverFrom }
               : {}),
           },
-        })) {
-          observeClaudeContextRecoveryEvent(contextRecovery, event);
-          if (turnReceipt) await turnReceipt.observe(task, event);
-          await this.engineEventPublisher.publishEngineEvent(task, event, {
-            alreadyPersisted: runner.eventPersistence === "runner",
-          });
-          this.collectClaudeRuntimeTaskFollowup(task, event);
-        }
-      } catch (err) {
-        await task.interruptRequest;
-        const disposition = await this.engineFailureRecovery.recoverFromExecuteFailure(
-          task,
-          err,
-          currentTurnInterventions,
-        );
-        if (disposition === "continue_with_accepted_successor") {
-          const transition = resolveTurnLoopTransition(task, agent);
-          if (transition.kind === "continue") {
-            turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
-              task,
-              agent,
-              transition.interventions,
-            );
-            continue;
+          })) {
+            observeClaudeContextRecoveryEvent(contextRecovery, event);
+            await this.observeDeliveryTurn(task, turnReceipt, event);
+            await this.engineEventPublisher.publishEngineEvent(task, event, {
+              alreadyPersisted: runner.eventPersistence === "runner",
+            });
+            this.collectClaudeRuntimeTaskFollowup(task, event);
           }
+        } catch (err) {
+          await task.interruptRequest;
+          const disposition = await this.engineFailureRecovery.recoverFromExecuteFailure(
+            task,
+            err,
+            currentTurnInterventions,
+          );
+          if (disposition === "continue_with_accepted_successor") {
+            const transition = resolveTurnLoopTransition(task, agent);
+            if (transition.kind === "continue") {
+              turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+                task,
+                agent,
+                transition.interventions,
+              );
+              continue;
+            }
+          }
+          break;
         }
-        break;
-      }
-      const lastAcknowledgedEventId = runner.eventPersistence === "runner"
+        const lastAcknowledgedEventId = runner.eventPersistence === "runner"
         ? await runner.dispatcher.waitForSessionAck()
         : await this.persistence.waitForSessionAck(task.agentSessionId);
       if (lastAcknowledgedEventId !== null) {
@@ -1035,17 +1032,65 @@ export class TaskExecutor {
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);
       }
-      if (turnReceipt && transition.kind === "continue") {
-        await turnReceipt.consume(task);
-      } else if (turnReceipt && task.status === "completed") {
-        terminalTurnReceipts.push(turnReceipt);
-      }
-      if (transition.kind !== "continue") break;
-      turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+      await this.settleDeliveryTurn(
         task,
-        agent,
-        transition.interventions,
+        turnReceipt,
+        transition,
+        terminalTurnReceipts,
       );
+      if (transition.kind !== "continue") break;
+        turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+          task,
+          agent,
+          transition.interventions,
+        );
+      } finally {
+        this.releaseDeliveryTurn(task, turnReceipt);
+      }
+    }
+  }
+
+  private beginDeliveryTurn(
+    task: Task,
+    interventions: readonly InterventionMessage[],
+  ): TaskDeliveryTurnReceipt | undefined {
+    if (!this.deliveryConsumption) return undefined;
+    const receipt = new TaskDeliveryTurnReceipt(
+      this.deliveryConsumption,
+      interventions,
+    );
+    task.activeDeliveryTurnReceipt = receipt;
+    return receipt;
+  }
+
+  private async observeDeliveryTurn(
+    task: Task,
+    receipt: TaskDeliveryTurnReceipt | undefined,
+    event: SSEEventPayload,
+  ): Promise<void> {
+    await receipt?.observe(task, event);
+  }
+
+  private async settleDeliveryTurn(
+    task: Task,
+    receipt: TaskDeliveryTurnReceipt | undefined,
+    transition: TurnLoopTransitionDecision,
+    terminalTurnReceipts: TaskDeliveryTurnReceipt[],
+  ): Promise<void> {
+    if (!receipt) return;
+    if (transition.kind === "continue") {
+      await receipt.consume(task);
+    } else if (task.status === "completed") {
+      terminalTurnReceipts.push(receipt);
+    }
+  }
+
+  private releaseDeliveryTurn(
+    task: Task,
+    receipt: TaskDeliveryTurnReceipt | undefined,
+  ): void {
+    if (task.activeDeliveryTurnReceipt === receipt) {
+      delete task.activeDeliveryTurnReceipt;
     }
   }
 
@@ -1127,18 +1172,18 @@ export class TaskExecutor {
   ): Promise<void> {
     const contextRecovery = createClaudeContextRecoveryObservation();
     const terminalTurnReceipts: TaskDeliveryTurnReceipt[] = [];
+    const turnReceipt = this.beginDeliveryTurn(task, []);
     let recoveryFailed = false;
     let recoveryFailure: unknown;
     try {
       for await (const event of this.engineTurnRunner.recoverTurn(task, runner, frames)) {
         observeClaudeContextRecoveryEvent(contextRecovery, event);
+        await this.observeDeliveryTurn(task, turnReceipt, event);
         await this.engineEventPublisher.publishEngineEvent(task, event, {
           alreadyPersisted: true,
         });
         this.collectClaudeRuntimeTaskFollowup(task, event);
       }
-      const lastAcknowledgedEventId = await runner.dispatcher.waitForSessionAck();
-      if (lastAcknowledgedEventId !== null) task.lastEventId = lastAcknowledgedEventId;
       task.claudeContextUsage = contextRecovery.compactCompleted
         ? undefined
         : contextRecovery.latestContextUsage ?? task.claudeContextUsage;
@@ -1178,6 +1223,13 @@ export class TaskExecutor {
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);
       } else if (transition.kind === "continue") {
+        await this.settleDeliveryTurn(
+          task,
+          turnReceipt,
+          transition,
+          terminalTurnReceipts,
+        );
+        this.releaseDeliveryTurn(task, turnReceipt);
         const followupTurnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,
@@ -1190,12 +1242,20 @@ export class TaskExecutor {
           followupTurnInput,
           terminalTurnReceipts,
         );
+      } else {
+        await this.settleDeliveryTurn(
+          task,
+          turnReceipt,
+          transition,
+          terminalTurnReceipts,
+        );
       }
     } catch (error) {
       await this.engineFailureRecovery.recoverFromExecuteFailure(task, error);
       recoveryFailed = true;
       recoveryFailure = error;
     } finally {
+      this.releaseDeliveryTurn(task, turnReceipt);
       try {
         const lastAcknowledgedEventId = await runner.dispatcher.waitForSessionAck();
         if (lastAcknowledgedEventId !== null) task.lastEventId = lastAcknowledgedEventId;
