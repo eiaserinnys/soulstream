@@ -31,7 +31,6 @@ import type {
   ClaudePermissionMode,
   ClaudeBackgroundTaskControlResult,
   TurnOrigin,
-  LiveTurnSteerResult,
   SSEEventPayload,
   SupportsClaudeBackgroundTasks,
   SupportsCompact,
@@ -108,9 +107,6 @@ export interface ClaudeClient {
   stopClaudeRuntimeTask?(
     taskId: string,
   ): Promise<ClaudeBackgroundTaskControlResult> | ClaudeBackgroundTaskControlResult;
-  steerActiveTurn?(
-    input: EngineUserInput,
-  ): Promise<LiveTurnSteerResult> | LiveTurnSteerResult;
   interruptActiveTurnForSteer?(): Promise<boolean>;
   interrupt?(): Promise<boolean>;
   persistentRuntimeActivity?(): ClaudePersistentRuntimeActivity | null;

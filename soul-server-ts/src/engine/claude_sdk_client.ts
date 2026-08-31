@@ -28,11 +28,7 @@ import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 import { ClaudeSdkToolPermissionController } from "./claude_sdk_tool_permissions.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
 import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
-import type {
-  ClaudeBackgroundTaskControlResult,
-  EngineUserInput,
-  LiveTurnSteerResult,
-} from "./protocol.js";
+import type { ClaudeBackgroundTaskControlResult } from "./protocol.js";
 
 export { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
 const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
@@ -408,21 +404,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     }
     this.toolPermissionController.abortPendingInputRequests();
     return true;
-  }
-
-  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
-    const persistent = this.persistentSession;
-    if (!persistent) {
-      return {
-        status: "not_supported",
-        message: "Claude native intervention requires a persistent session",
-      };
-    }
-    const result = await persistent.steerActiveTurn(input);
-    if (result.status === "delivered") {
-      this.toolPermissionController.abortPendingInputRequests();
-    }
-    return result;
   }
 
   async close(

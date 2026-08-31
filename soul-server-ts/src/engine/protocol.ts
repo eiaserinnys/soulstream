@@ -266,34 +266,17 @@ export interface SupportsThreadFork {
   threadFork(sourceSessionId: string): Promise<string>;
 }
 
-/**
- * 어댑터 내부의 실행 중 대화 입력 결과 분류.
- *
- * Claude Agent SDK는 열린 `AsyncIterable<SDKUserMessage>` input stream에 user message를
- * yield하여 현재 query stdin에 전달한다. Codex app-server는 `turn/steer`로 현재 active
- * turn에 UserInput[]을 전달한다. 상위 호출자는 이 저수준 차이를 보지 않고
- * `EnginePort.intervene()`만 사용한다.
- */
-export type LiveTurnSteerStatus =
-  | "delivered"
-  | "not_supported"
-  | "no_active_turn"
-  | "not_accepting_input"
-  | "turn_mismatch"
-  | "failed";
-
-export interface LiveTurnSteerResult {
-  status: LiveTurnSteerStatus;
-  message?: string;
-}
-
 export type EngineInterventionMechanism =
   | "active_turn"
   | "interrupt_then_next_turn"
   | "unsupported";
 
 export type EngineInterventionFailureReason =
-  | Exclude<LiveTurnSteerStatus, "delivered">
+  | "not_supported"
+  | "no_active_turn"
+  | "not_accepting_input"
+  | "turn_mismatch"
+  | "failed"
   | "next_turn_required";
 
 export type EngineInterventionResult =

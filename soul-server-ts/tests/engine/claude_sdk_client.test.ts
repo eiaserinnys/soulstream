@@ -2416,9 +2416,6 @@ describe("ClaudeSdkClient", () => {
         expect.objectContaining({ type: "complete", result: "partial before interrupt" }),
       ]),
     );
-    await expect(client.steerActiveTurn({ prompt: "late" })).resolves.toMatchObject({
-      status: "not_supported",
-    });
   });
 
   it("maps ede diagnostic user-terminal errors as recoverable so queued steer can drain", async () => {

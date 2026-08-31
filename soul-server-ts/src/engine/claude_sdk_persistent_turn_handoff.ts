@@ -14,7 +14,6 @@ import {
   hashSdkUserMessage,
 } from "./claude_sdk_persistent_session_support.js";
 import { ClaudeTurnInactivityWatchdog } from "./claude_turn_inactivity_watchdog.js";
-import type { EngineUserInput, LiveTurnSteerResult } from "./protocol.js";
 
 type StartPersistentForegroundTurnOptions = {
   options: ClaudeRunOptions;
@@ -87,66 +86,4 @@ export function startPersistentForegroundTurn({
     "Persistent Claude foreground turn started",
   );
   return output;
-}
-
-type SteerPersistentActiveTurnOptions = {
-  input: EngineUserInput;
-  activeForeground: ActiveForeground | null;
-  runtime: ClaudeSessionRuntime<SDKUserMessage>;
-  clearForegroundTimers(active: ActiveForeground): void;
-  logger: Logger;
-};
-
-export async function steerPersistentActiveTurn({
-  input,
-  activeForeground,
-  runtime,
-  clearForegroundTimers,
-  logger,
-}: SteerPersistentActiveTurnOptions): Promise<LiveTurnSteerResult> {
-  const active = activeForeground;
-  if (!active) return { status: "no_active_turn" };
-  if (runtime.snapshot().foregroundPhase !== "generating") {
-    return { status: "not_accepting_input" };
-  }
-
-  const uuid = input.inputUuid ?? randomUUID();
-  const message = makeUserMessage(
-    input.prompt,
-    input.imageAttachmentPaths,
-    { uuid, priority: "next" },
-  );
-  const registered = runtime.enqueueInput({
-    uuid,
-    payloadHash: hashSdkUserMessage(message),
-    message,
-  });
-  if (!registered) {
-    return {
-      status: "not_accepting_input",
-      message: `Claude intervention input is already registered: ${uuid}`,
-    };
-  }
-
-  const interruptedOwnerUuid = active.uuid;
-  clearForegroundTimers(active);
-  active.interruptedOwnerUuid = interruptedOwnerUuid;
-  active.uuid = uuid;
-  active.origin = {
-    kind: input.turnOrigin?.kind ?? "user_message",
-    id: input.turnOrigin?.id ?? uuid,
-  };
-  active.timedOut = false;
-  active.rateLimitTerminationState = "none";
-  await runtime.interruptForeground();
-  logger.info(
-    {
-      interruptedOwnerUuid,
-      interventionUuid: uuid,
-      turnOriginKind: active.origin.kind,
-      turnOriginId: active.origin.id,
-    },
-    "Persistent Claude intervention enqueued and interrupted active owner",
-  );
-  return { status: "delivered" };
 }

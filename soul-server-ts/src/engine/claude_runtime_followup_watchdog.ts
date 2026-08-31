@@ -9,10 +9,7 @@ interface FollowupOrigin {
 
 interface WatchdogConfig {
   timeoutMs: number;
-  resultWaitMs: number;
   logger: Logger;
-  interrupt(uuid: string): Promise<{ still_queued?: string[] }>;
-  close(uuid: string, reason: string): Promise<void>;
 }
 
 interface ArmedWatchdog {
@@ -21,8 +18,6 @@ interface ArmedWatchdog {
   ownInputObserved: boolean;
   foreignInputBeforeOwn: TurnInputObservation | null;
   noOutputTimer: ReturnType<typeof setTimeout> | null;
-  resultTimer: ReturnType<typeof setTimeout> | null;
-  fired: boolean;
 }
 
 interface TurnInputObservation {
@@ -53,8 +48,6 @@ export class ClaudeRuntimeFollowupWatchdog {
       ownInputObserved,
       foreignInputBeforeOwn: ownInputObserved ? null : this.latestTurnInput,
       noOutputTimer,
-      resultTimer: null,
-      fired: false,
     };
   }
 
@@ -120,24 +113,20 @@ export class ClaudeRuntimeFollowupWatchdog {
     armed.noOutputTimer = null;
   }
 
-  resultArrived(uuid: string): boolean {
-    const fired = this.armed?.uuid === uuid && this.armed.fired;
+  resultArrived(uuid: string): void {
     this.clear(uuid);
-    return fired;
   }
 
   clear(uuid?: string): void {
     const armed = this.armed;
     if (!armed || (uuid !== undefined && armed.uuid !== uuid)) return;
     if (armed.noOutputTimer) clearTimeout(armed.noOutputTimer);
-    if (armed.resultTimer) clearTimeout(armed.resultTimer);
     this.armed = null;
   }
 
-  private async handleNoOutput(uuid: string): Promise<void> {
+  private handleNoOutput(uuid: string): void {
     const armed = this.armed;
-    if (!armed || armed.uuid !== uuid || armed.fired) return;
-    armed.fired = true;
+    if (!armed || armed.uuid !== uuid) return;
     armed.noOutputTimer = null;
     this.config.logger.warn(
       {
@@ -148,45 +137,6 @@ export class ClaudeRuntimeFollowupWatchdog {
       },
       "Persistent Claude runtime follow-up produced no foreground progress",
     );
-    try {
-      const receipt = await this.config.interrupt(uuid);
-      if (!this.isCurrent(uuid)) return;
-      if (receipt.still_queued?.includes(uuid)) {
-        await this.close(uuid, "active_uuid_still_queued");
-        return;
-      }
-      armed.resultTimer = setTimeout(() => {
-        void this.close(uuid, "interrupt_result_absent");
-      }, this.config.resultWaitMs);
-      armed.resultTimer.unref?.();
-    } catch (err) {
-      if (!this.isCurrent(uuid)) return;
-      this.config.logger.warn(
-        { err, uuid, turnOriginKind: armed.origin.kind, turnOriginId: armed.origin.id },
-        "Persistent Claude runtime follow-up watchdog interrupt failed",
-      );
-      await this.close(uuid, "interrupt_failed");
-    }
-  }
-
-  private async close(uuid: string, reason: string): Promise<void> {
-    const armed = this.armed;
-    if (!armed || armed.uuid !== uuid) return;
-    this.config.logger.warn(
-      {
-        uuid,
-        turnOriginKind: armed.origin.kind,
-        turnOriginId: armed.origin.id,
-        reason,
-      },
-      "Recreating persistent Claude Query after a runtime follow-up no-op",
-    );
-    this.clear(uuid);
-    await this.config.close(uuid, reason);
-  }
-
-  private isCurrent(uuid: string): boolean {
-    return this.armed?.uuid === uuid;
   }
 }
 
