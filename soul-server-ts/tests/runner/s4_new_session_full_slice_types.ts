@@ -1,48 +1,91 @@
-export interface S4Observation {
-  entry: {
-    callCount: number;
+export type FullSliceScenario = "S1" | "S2" | "S3" | "S4" | "S5" | "S6";
+export type FullSliceBackend = "claude" | "codex";
+
+export interface PublicHttpAck {
+  operation: "create" | "intervene";
+  status: number;
+  body: Record<string, unknown>;
+  deliveryId: string | null;
+}
+
+export interface RunnerIdentityObservation {
+  registrationId: string;
+  pid: number;
+  startIdentity: string;
+  alive: boolean;
+}
+
+export interface ExecuteFramesProbeObservation {
+  call: "executeFrames";
+  scenario: FullSliceScenario;
+  backend: FullSliceBackend;
+  pid: number;
+  prompt: string;
+  resumeSessionId: string | null;
+}
+
+export interface InterveneProbeObservation {
+  call: "intervene";
+  scenario: FullSliceScenario;
+  backend: FullSliceBackend;
+  pid: number;
+  prompt: string;
+  result: {
     status: string;
-    prompt: string;
-    runnerAttached: boolean;
-    ownershipAttached: boolean;
-    executionPromiseAttached: boolean;
-    pidPresent: boolean;
-    socketPresent: boolean;
-    lockPresent: boolean;
+    mechanism: string;
+    reason?: string;
   };
-  child: {
-    pid: number;
-    prompt: string | null;
-    executionGeneration: number | null;
+}
+
+export interface InterruptProbeObservation {
+  call: "interrupt";
+  scenario: FullSliceScenario;
+  backend: FullSliceBackend;
+  pid: number;
+}
+
+export type EngineBoundaryProbeObservation =
+  | ExecuteFramesProbeObservation
+  | InterveneProbeObservation
+  | InterruptProbeObservation;
+
+export interface DeliveryObservation {
+  rowCount: number;
+  deliveryId: string;
+  targetSessionId: string;
+  state: string;
+  aggregateState: string;
+  consumedAt: string | null;
+}
+
+export interface FullSliceObservation {
+  scenario: FullSliceScenario;
+  backend: FullSliceBackend;
+  sessionId: string;
+  publicAcks: PublicHttpAck[];
+  restart: {
+    beforeConnectionId: string;
+    afterConnectionId: string;
+  } | null;
+  runner: {
+    first: RunnerIdentityObservation;
+    reattached: RunnerIdentityObservation | null;
+    successor: RunnerIdentityObservation | null;
+    firstAliveAfterInitialTerminal: boolean | null;
   };
-  receipt: {
-    receiptCount: number;
-    durableEventCount: number;
-    deliveryCount: number;
-    pumpErrors: string[];
-  };
-  terminal: {
+  silentWindow: {
+    runnerAlive: boolean;
+    sessionEndedCount: number;
+    errorEventCount: number;
+  } | null;
+  engineBoundaryProbes: EngineBoundaryProbeObservation[];
+  delivery: DeliveryObservation | null;
+  durable: {
     status: string;
-    terminationReason: string | null;
-    executionGeneration: number;
-    executionIdentityCleared: boolean;
-    acquireCount: number;
-    releaseCount: number;
-  };
-  userVisible: {
-    statusCode: number;
-    assistantReplyCount: number;
-    completionCount: number;
-  };
-  nextTurn: { startExecutionCallCount: number };
-  cleanup: {
-    taskStatus: string;
-    runnerAttached: boolean;
-    executionPromiseAttached: boolean;
-    registrationPid: number | null;
-    pidPresent: boolean;
-    socketPresent: boolean;
-    lockPresent: boolean;
-    pidAlive: boolean;
+    assistantContents: string[];
+    userMessageTexts: string[];
+    interventionSentTexts: string[];
+    sessionEndedCount: number;
+    errorEventCount: number;
   };
 }

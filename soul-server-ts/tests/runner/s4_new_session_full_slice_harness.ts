@@ -1,14 +1,9 @@
-import { existsSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from
+  "node:fs/promises";
 import { createRequire } from "node:module";
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -16,471 +11,670 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import pino from "pino";
 
 import {
-  createApp,
-  createLiveDbCatalogRepository,
-  type LivePostgresSql,
+  createProductionOrchestrator,
+  loadOrchServerEnvironment,
+  type ProductionOrchestrator,
 } from "../../../orch-server-ts/src/index.js";
-import { NodeEventIngressController } from
-  "../../../orch-server-ts/src/node/event_ingress_controller.js";
-import {
-  EventIngressRepository,
-  type EventIngressSql,
-} from "../../../orch-server-ts/src/node/event_ingress_repository.js";
-import { applyEventSessionEffect } from
-  "../../../orch-server-ts/src/node/event_session_effect_applier.js";
-import {
-  InMemoryNodeRegistry,
-  type NodeRegistryEvent,
-} from "../../../orch-server-ts/src/node/registry.js";
-import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import { loadAgentRegistry } from "../../src/agent_registry.js";
 import { parseEnv } from "../../src/config.js";
-import { EventPersistence } from "../../src/db/event_persistence.js";
-import { SessionDB } from "../../src/db/session_db.js";
-import { DbClaudeSessionStore } from "../../src/engine/claude_session_store.js";
 import { McpConfigService } from "../../src/mcp_config_service.js";
+import { ReleaseActivationState } from "../../src/release/release_activation_state.js";
+import { buildReleaseManifest } from "../../src/release/release_manifest.js";
+import { hashArtifactSet } from "../../src/runner/runner_release_materializer.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { readRunnerRegistrationIdentity } from
   "../../src/runner/runner_registration_identity.js";
-import { composeRunnerProcessRuntime } from
-  "../../src/runtime/runner_process_composition.js";
-import { TaskExecutor } from "../../src/task/task_executor.js";
-import { TaskManager } from "../../src/task/task_manager.js";
-import type { Task } from "../../src/task/task_models.js";
-import { CommandDispatcher } from "../../src/upstream/dispatcher.js";
-import { EventOutbox, type EventOutboxBatch } from "../../src/upstream/event_outbox.js";
-import { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
-import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js";
-import { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+import { composeWorkerRuntime } from "../../src/runtime/worker_composition.js";
+import { startWorkerRuntime } from "../../src/runtime/worker_startup.js";
+import { startServer } from "../../src/server.js";
 import type { FullSchemaPostgresHarness } from
   "../db/full_schema_postgres_harness.js";
-import { configureTestSessionDataHost } from "../helpers/session_data_test_host.js";
-import { createS4SessionMutationHost } from "./s4_session_mutation_host.js";
-import type { S4Observation } from "./s4_new_session_full_slice_types.js";
+import type {
+  DeliveryObservation,
+  EngineBoundaryProbeObservation,
+  ExecuteFramesProbeObservation,
+  FullSliceBackend,
+  FullSliceObservation,
+  FullSliceScenario,
+  InterveneProbeObservation,
+  PublicHttpAck,
+  RunnerIdentityObservation,
+} from "./s4_new_session_full_slice_types.js";
 
+const AUTH_TOKEN = "full-slice-service-token";
+const NODE_ID = "full-slice-production-node";
+const AGENT_ID = "full-slice-agent";
+const WORKER_ROLE = "--full-slice-worker-child";
+const POLL_BUDGET_MS = 60_000;
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const childFixturePath = join(testDirectory, "fixtures/runner_process_e2e_child.ts");
 const requireFromTest = createRequire(import.meta.url);
-const logger = pino({ level: "silent" });
+const tsxImportUrl = pathToFileURL(requireFromTest.resolve("tsx")).href;
+const silentLogger = pino({ level: "silent" });
 
-export const S4_SESSION_ID = "s4-new-session-full-slice";
-const S4_NODE_ID = "s4-new-server";
-const S4_PROMPT = "S4 fresh-session prompt";
+type NodeSnapshot = {
+  nodeId: string;
+  connectionId: string;
+};
 
-type Composition = NonNullable<Awaited<ReturnType<typeof composeRunnerProcessRuntime>>>;
-
-export class S4NewSessionFullSliceHarness {
-  private childPid: number | undefined;
+export class ProductionFullSliceHarness {
+  private worker: ChildProcess | null = null;
+  private unexpectedWorkerFailure: Error | null = null;
+  private orch: ProductionOrchestrator | null = null;
+  private orchAddress = "";
+  private sessionId = "";
+  private workerRecoveryReadyPath: string | null = null;
+  private readonly runnerIdentities = new Map<string, RunnerIdentityObservation>();
 
   private constructor(
-    private readonly sql: FullSchemaPostgresHarness["sql"],
+    private readonly postgres: FullSchemaPostgresHarness,
+    private readonly scenario: FullSliceScenario,
+    private readonly backend: FullSliceBackend,
     private readonly root: string,
     private readonly controlDirectory: string,
     private readonly stateDirectory: string,
-    private readonly releaseDirectory: string,
-    private readonly composition: Composition,
-    private readonly mux: EventOutboxPumpMux,
-    private readonly controller: NodeEventIngressController,
-    private readonly taskManager: TaskManager,
-    private readonly dispatcher: CommandDispatcher,
-    private readonly entry: S4Observation["entry"],
-    private readonly executionPromise: { current?: Promise<void> },
-    private readonly pumpErrors: string[],
+    private readonly artifactDirectory: string,
+    private readonly releasesDirectory: string,
+    private readonly outboxDirectory: string,
+    private readonly agentsConfigPath: string,
+    private readonly modelCatalogPath: string,
   ) {}
 
   static async create(
     postgres: FullSchemaPostgresHarness,
-  ): Promise<S4NewSessionFullSliceHarness> {
-    const root = await mkdtemp(join(tmpdir(), "s4-full-slice-"));
-    const stateDirectory = join(root, "state");
-    const artifactDirectory = join(root, "artifacts");
-    const releasesDirectory = join(root, "runner-releases");
+    scenario: FullSliceScenario,
+    backend: FullSliceBackend,
+  ): Promise<ProductionFullSliceHarness> {
+    const root = await mkdtemp(
+      join(tmpdir(), `full-slice-${scenario.toLowerCase()}-${backend}-`),
+    );
     const controlDirectory = join(root, "control");
+    const stateDirectory = join(root, "runner-state");
+    const artifactDirectory = join(root, "runner-artifact");
+    const releasesDirectory = join(root, "runner-releases");
     const outboxDirectory = join(root, "event-outbox");
+    const agentsConfigPath = join(root, "agents.yaml");
+    const modelCatalogPath = join(root, "model-catalog.yaml");
     await Promise.all([
-      mkdir(artifactDirectory, { recursive: true }),
       mkdir(controlDirectory, { recursive: true }),
+      mkdir(artifactDirectory, { recursive: true }),
     ]);
     await writeFile(join(artifactDirectory, "package.json"), "{\"type\":\"module\"}\n");
     await writeFile(
       join(artifactDirectory, "runner_entry.js"),
       `await import(${JSON.stringify(pathToFileURL(childFixturePath).href)});\n`,
     );
-    const agentsConfigPath = join(root, "agents.yaml");
-    const registryPath = join(root, "mcp-registry.yaml");
-    const profilesPath = join(root, "mcp-profiles.yaml");
-    await writeFile(agentsConfigPath, "agents: []\n");
-    await writeFile(registryPath, "servers: []\n");
-    await writeFile(profilesPath, "profiles: []\n");
-
-    const env = parseEnv({
-      SOULSTREAM_NODE_ID: S4_NODE_ID,
-      SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:1/ws/node",
-      EVENT_OUTBOX_DIR: outboxDirectory,
-      SOUL_RUNNER_PROCESS_ENABLED: "true",
-      SOUL_RUNNER_STATE_DIR: stateDirectory,
-      SOUL_RUNNER_ARTIFACT_DIR: artifactDirectory,
-      SOUL_RUNNER_RELEASES_DIR: releasesDirectory,
-      SOUL_RUNNER_LEASE_TIMEOUT_MS: "90000",
-      MCP_ENABLED: "false",
-    });
-    const agent: AgentProfile = {
-      id: "s4-codex-agent",
-      name: "S4 Codex Agent",
-      backend: "codex",
-      workspace_dir: controlDirectory,
-    };
-    const registry = new AgentRegistry([agent]);
-    const sql = postgres.createPeer();
-    const db = new SessionDB();
-    configureTestSessionDataHost(db, sql);
-    const sessionMutations = createS4SessionMutationHost(sql);
-
-    const publishedEvents: NodeRegistryEvent[] = [];
-    const nodeRegistry = new InMemoryNodeRegistry();
-    const registration = nodeRegistry.registerNode({
-      type: "node_register",
-      node_id: S4_NODE_ID,
-      user: { email: "s4@example.com" },
-      sessions: [],
-    });
-    const connection = {
-      nodeId: S4_NODE_ID,
-      connectionId: registration.node.connectionId,
-    };
-    const receiveWorkerMessage = async (message: unknown): Promise<void> => {
-      publishedEvents.push(...nodeRegistry.receiveNodeMessage(connection, message as never));
-    };
-    const broadcaster = new SessionBroadcaster(receiveWorkerMessage, registry, S4_NODE_ID);
-    const outbox = await EventOutbox.open(outboxDirectory);
-    const pumpErrors: string[] = [];
-    const pump = new EventOutboxPump(outbox, (error) => {
-      pumpErrors.push(error instanceof Error ? error.message : String(error));
-    });
-    const mux = new EventOutboxPumpMux(pump);
-    const ingressSql = postgres.createPeer();
-    const ingress = new EventIngressRepository(
-      { resolveSql: async () => ingressSql as unknown as EventIngressSql },
-      applyEventSessionEffect,
-    );
-    let ackTail = Promise.resolve();
-    const controller = new NodeEventIngressController({
-      nodeId: S4_NODE_ID,
-      connectionId: registration.node.connectionId,
-      committer: { commitBatch: (nodeId, batch) => ingress.commitBatch(nodeId, batch) },
-      isCurrentConnection: () => true,
-      receiveCommittedEvent: (message) => nodeRegistry.receiveNodeMessage(connection, message),
-      publish: (events) => { publishedEvents.push(...events); },
-      send: (frame) => {
-        if (mux.isAck(frame)) {
-          ackTail = ackTail.then(async () => await mux.handleAck(frame));
-        } else if (mux.isRejection(frame)) {
-          ackTail = ackTail.then(async () => { await mux.handleRejection(frame); });
-        } else {
-          pumpErrors.push(`unexpected ingress frame: ${JSON.stringify(frame)}`);
-        }
-      },
-      close: (_code, reason) => { pumpErrors.push(`ingress closed: ${reason}`); },
-      logError: (error) => {
-        pumpErrors.push(error instanceof Error ? error.message : String(error));
-      },
-      logWarn: () => undefined,
-    });
-    await mux.connect(async (batch: EventOutboxBatch) => {
-      controller.enqueue(batch as unknown as Record<string, unknown>);
-      await controller.drain();
-      await ackTail;
-    });
-    const persistence = new EventPersistence(db, broadcaster, logger, outbox, pump);
-    const mcpConfigService = new McpConfigService({
+    await writeFile(
       agentsConfigPath,
-      registryPath,
-      profilesPath,
-    });
-    const composition = await composeRunnerProcessRuntime(true, {
-      env,
-      logger,
-      pumpMux: mux,
-      sessionStore: new DbClaudeSessionStore(db),
-      mcpConfigService,
-      buildChildProcessEnv: () => ({
-        ...process.env,
-        NODE_OPTIONS: [
-          process.env.NODE_OPTIONS,
-          `--import ${pathToFileURL(requireFromTest.resolve("tsx")).href}`,
-        ].filter(Boolean).join(" "),
-        RUNNER_E2E_CONTROL_DIR: controlDirectory,
-        RUNNER_E2E_S4_SCENARIO: "1",
-      }),
-      renewExecutionOwnership: async (task, renewedAt) => {
-        const ownership = task.executionOwnership;
-        if (!ownership) throw new Error("S4 ownership unavailable for renewal");
-        const application = await persistence.renewExecutionOwnershipAndWaitForApplication(
-          task.agentSessionId,
-          {
-            ...ownership,
-            leaseExpiresAt: new Date(renewedAt.getTime() + env.SOUL_RUNNER_LEASE_TIMEOUT_MS),
-            updatedAt: renewedAt,
-          },
-        );
-        return application.applied;
-      },
-    });
-    if (!composition) throw new Error("S4 runner composition unexpectedly disabled");
-    const release = (await readdir(releasesDirectory))
-      .find((entry) => entry.startsWith("sha256-"));
-    if (!release) throw new Error("S4 runner release was not materialized");
-
-    const taskManager = new TaskManager(
-      S4_NODE_ID,
-      db,
-      broadcaster,
-      logger,
-      persistence,
-      undefined,
-      registry,
-      undefined,
-      undefined,
-      false,
-      undefined,
-      undefined,
-      sessionMutations,
+      [
+        "agents:",
+        `  - id: ${AGENT_ID}`,
+        "    name: Full Slice Agent",
+        `    backend: ${backend}`,
+        `    workspace_dir: ${controlDirectory}`,
+        "",
+      ].join("\n"),
     );
-    const taskExecutor = new TaskExecutor(
-      () => { throw new Error("S4 must use the detached process runner"); },
-      db,
-      persistence,
-      broadcaster,
-      logger,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      composition.runtimeFactory,
-    );
-    const paths = runnerProcessPaths(stateDirectory, S4_SESSION_ID);
-    const entry: S4Observation["entry"] = {
-      callCount: 0,
-      status: "missing",
-      prompt: "missing",
-      runnerAttached: true,
-      ownershipAttached: true,
-      executionPromiseAttached: true,
-      pidPresent: true,
-      socketPresent: true,
-      lockPresent: true,
-    };
-    const executionPromise: { current?: Promise<void> } = {};
-    const startExecution = taskExecutor.startExecution.bind(taskExecutor);
-    taskExecutor.startExecution = (task, profile, activation) => {
-      entry.callCount += 1;
-      entry.status = task.status;
-      entry.prompt = task.prompt;
-      entry.runnerAttached = task.runner !== undefined;
-      entry.ownershipAttached = task.executionOwnership !== undefined;
-      entry.executionPromiseAttached = task.executionPromise !== undefined;
-      entry.pidPresent = existsSync(paths.pidPath);
-      entry.socketPresent = existsSync(paths.socketPath);
-      entry.lockPresent = existsSync(paths.lockPath);
-      const promise = startExecution(task, profile, activation);
-      executionPromise.current = promise;
-      return promise;
-    };
-    const dispatcher = new CommandDispatcher(
-      receiveWorkerMessage,
-      logger,
-      S4_NODE_ID,
-      registry,
-      taskManager,
-      taskExecutor,
-    );
-    return new S4NewSessionFullSliceHarness(
-      sql,
+    await writeFile(modelCatalogPath, "presets: []\n");
+    return new ProductionFullSliceHarness(
+      postgres,
+      scenario,
+      backend,
       root,
       controlDirectory,
       stateDirectory,
-      join(releasesDirectory, release),
-      composition,
-      mux,
-      controller,
-      taskManager,
-      dispatcher,
-      entry,
-      executionPromise,
-      pumpErrors,
+      artifactDirectory,
+      releasesDirectory,
+      outboxDirectory,
+      agentsConfigPath,
+      modelCatalogPath,
     );
   }
 
-  async run(): Promise<S4Observation> {
-    await this.dispatcher.dispatch({
-      type: "create_session",
-      agentSessionId: S4_SESSION_ID,
-      prompt: S4_PROMPT,
-      profile: "s4-codex-agent",
-      requestId: "s4-create-request",
+  async run(): Promise<FullSliceObservation> {
+    this.orch = await createProductionOrchestrator({
+      config: loadOrchServerEnvironment({
+        HOST: "127.0.0.1",
+        PORT: "0",
+        DATABASE_URL: this.postgres.databaseUrl,
+        ENVIRONMENT: "production",
+        CORS_ALLOWED_ORIGINS: "http://127.0.0.1",
+        AUTH_BEARER_TOKEN: AUTH_TOKEN,
+        GOOGLE_CLIENT_ID: "full-slice-google-client",
+        JWT_SECRET: "full-slice-jwt-secret",
+        CLAUDE_OAUTH_CLIENT_ID: "full-slice-claude-client",
+        CLAUDE_OAUTH_CALLBACK_URL: "http://127.0.0.1/claude/callback",
+      }),
+      warn: () => undefined,
     });
-    const task = this.taskManager.getTask(S4_SESSION_ID);
-    if (!task || !this.executionPromise.current) {
-      throw new Error("S4 create_session did not enter TaskExecutor");
-    }
-    await this.executionPromise.current;
+    this.orchAddress = await this.orch.listen();
 
-    const child = JSON.parse(
-      await readFile(join(this.controlDirectory, "s4-execution.json"), "utf8"),
-    ) as { pid: number; params: { prompt?: string; executionGeneration?: number } };
-    this.childPid = child.pid;
-    const [session] = await this.sql<Array<{
-      status: string;
-      termination_reason: string | null;
-      execution_generation: number;
-      execution_manifest_id: string | null;
-      execution_runtime_env_identity: string | null;
-      execution_registration_id: string | null;
-      execution_pid: number | null;
-      execution_start_identity: string | null;
-      execution_command_id: string | null;
-    }>>`
-      SELECT status, termination_reason, execution_generation::int,
-             execution_manifest_id, execution_runtime_env_identity,
-             execution_registration_id, execution_pid,
-             execution_start_identity, execution_command_id
-      FROM sessions WHERE session_id = ${S4_SESSION_ID}
-    `;
-    if (!session) throw new Error("S4 canonical session missing");
-    const [counts] = await this.sql<Array<{
-      durable_event_count: number;
-      receipt_count: number;
-      acquire_count: number;
-      release_count: number;
-      delivery_count: number;
-    }>>`
-      SELECT
-        (SELECT COUNT(*)::int FROM events WHERE session_id = ${S4_SESSION_ID})
-          AS durable_event_count,
-        (SELECT COUNT(*)::int FROM event_ingress_receipts
-          WHERE session_id = ${S4_SESSION_ID}) AS receipt_count,
-        (SELECT COUNT(*)::int FROM events
-          WHERE session_id = ${S4_SESSION_ID}
-            AND event_type = 'metadata'
-            AND payload->>'metadata_type' = 'execution_ownership_transition'
-            AND payload->'value'->>'phase' = 'execution_acquire') AS acquire_count,
-        (SELECT COUNT(*)::int FROM events
-          WHERE session_id = ${S4_SESSION_ID}
-            AND event_type = 'session_ended') AS release_count,
-        (SELECT COUNT(*)::int FROM session_deliveries
-          WHERE target_session_id = ${S4_SESSION_ID}) AS delivery_count
-    `;
-    const userVisible = await this.replayUserVisibleEvents();
-    const paths = runnerProcessPaths(this.stateDirectory, S4_SESSION_ID);
-    const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
+    await this.spawnWorker();
+    const firstNode = await this.waitForNode();
+    const publicAcks: PublicHttpAck[] = [];
+    const createAck = await this.publicCommand("create", "/api/sessions", {
+      prompt: this.initialPrompt,
+      profile: AGENT_ID,
+      nodeId: NODE_ID,
+    });
+    publicAcks.push(createAck);
+    this.sessionId = requireString(createAck.body.agentSessionId, "create agentSessionId");
+
+    await this.waitForExecuteProbe(false);
+    const first = await this.waitForRunnerIdentity();
+    let restart: FullSliceObservation["restart"] = null;
+    let reattached: RunnerIdentityObservation | null = null;
+    let successor: RunnerIdentityObservation | null = null;
+    let firstAliveAfterInitialTerminal: boolean | null = null;
+    let silentWindow: FullSliceObservation["silentWindow"] = null;
+    let deliveryId: string | null = null;
+
+    if (this.requiresRestart) {
+      await this.killWorker();
+      await this.spawnWorker();
+      const restartedNode = await this.waitForNode(
+        (node) => node.connectionId !== firstNode.connectionId,
+      );
+      restart = {
+        beforeConnectionId: firstNode.connectionId,
+        afterConnectionId: restartedNode.connectionId,
+      };
+      await this.waitForWorkerRecoveryReady();
+      reattached = await this.waitForRunnerIdentity(first.registrationId);
+    }
+
+    if (this.scenario === "S1") {
+      await delay(35_000);
+      this.throwIfWorkerFailed();
+      const identityAfterSilence = await this.waitForRunnerIdentity(first.registrationId);
+      const durableAfterSilence = await this.readDurableObservation();
+      silentWindow = {
+        runnerAlive: identityAfterSilence.alive,
+        sessionEndedCount: durableAfterSilence.sessionEndedCount,
+        errorEventCount: durableAfterSilence.errorEventCount,
+      };
+    }
+
+    if (this.isActiveIntervention) {
+      const interveneAck = await this.publicCommand(
+        "intervene",
+        `/api/sessions/${this.sessionId}/intervene`,
+        { text: this.interventionPrompt, user: "full-slice-user" },
+      );
+      publicAcks.push(interveneAck);
+      deliveryId = requireString(interveneAck.deliveryId, "intervene deliveryId");
+      await this.waitForInterveneProbe();
+    } else {
+      await this.release("initial");
+    }
+
+    await this.waitForTerminalCount(1);
+
+    if (this.isCompletedResume) {
+      await this.waitForPidDeath(first.pid);
+      firstAliveAfterInitialTerminal = isPidAlive(first.pid);
+      const interveneAck = await this.publicCommand(
+        "intervene",
+        `/api/sessions/${this.sessionId}/intervene`,
+        { text: this.interventionPrompt, user: "full-slice-user" },
+      );
+      publicAcks.push(interveneAck);
+      deliveryId = requireString(interveneAck.deliveryId, "intervene deliveryId");
+      await this.waitForExecuteProbe(true);
+      successor = await this.waitForDifferentRunnerIdentity(first.registrationId);
+      await this.release("resume");
+      await this.waitForTerminalCount(2);
+    }
+
+    const delivery = deliveryId
+      ? await this.waitForConsumedDelivery(deliveryId)
+      : null;
     return {
-      entry: { ...this.entry },
-      child: {
-        pid: child.pid,
-        prompt: child.params.prompt ?? null,
-        executionGeneration: child.params.executionGeneration ?? null,
-      },
-      receipt: {
-        receiptCount: Number(counts?.receipt_count ?? 0),
-        durableEventCount: Number(counts?.durable_event_count ?? 0),
-        deliveryCount: Number(counts?.delivery_count ?? 0),
-        pumpErrors: [...this.pumpErrors],
-      },
-      terminal: {
-        status: session.status,
-        terminationReason: session.termination_reason,
-        executionGeneration: Number(session.execution_generation),
-        executionIdentityCleared: [
-          session.execution_manifest_id,
-          session.execution_runtime_env_identity,
-          session.execution_registration_id,
-          session.execution_pid,
-          session.execution_start_identity,
-          session.execution_command_id,
-        ].every((value) => value === null),
-        acquireCount: Number(counts?.acquire_count ?? 0),
-        releaseCount: Number(counts?.release_count ?? 0),
-      },
-      userVisible,
-      nextTurn: { startExecutionCallCount: this.entry.callCount },
-      cleanup: {
-        taskStatus: task.status,
-        runnerAttached: task.runner !== undefined,
-        executionPromiseAttached: task.executionPromise !== undefined,
-        registrationPid: identity?.pid ?? null,
-        pidPresent: existsSync(paths.pidPath),
-        socketPresent: existsSync(paths.socketPath),
-        lockPresent: existsSync(paths.lockPath),
-        pidAlive: isPidAlive(child.pid),
-      },
+      scenario: this.scenario,
+      backend: this.backend,
+      sessionId: this.sessionId,
+      publicAcks,
+      restart,
+      runner: { first, reattached, successor, firstAliveAfterInitialTerminal },
+      silentWindow,
+      engineBoundaryProbes: await this.readEngineBoundaryProbes(),
+      delivery,
+      durable: await this.readDurableObservation(),
     };
   }
 
-  private async replayUserVisibleEvents(): Promise<S4Observation["userVisible"]> {
-    const [cursor] = await this.sql<Array<{ first_event_id: number }>>`
-      SELECT MIN(id)::int AS first_event_id
-      FROM events
-      WHERE session_id = ${S4_SESSION_ID}
-    `;
-    if (!cursor?.first_event_id) {
-      throw new Error("S4 durable event cursor missing");
-    }
-    const repository = createLiveDbCatalogRepository({
-      sql: this.sql as unknown as LivePostgresSql,
-    });
-    const app = createApp({
-      config: {
-        environment: "test",
-        databaseUrl: "postgresql://test/test",
-        authBearerToken: "test-token",
-      },
-      sessionHistoryRoutes: {
-        provider: repository.sessionHistoryProvider,
-        closeAfterHistorySync: true,
-      },
-    });
-    try {
-      const response = await app.inject({
-        method: "GET",
-        url: `/api/sessions/${S4_SESSION_ID}/events`,
-        headers: { "last-event-id": String(cursor.first_event_id) },
-      });
-      const frames = response.body
-        .split("\n\n")
-        .map((chunk) => chunk.trim())
-        .filter(Boolean)
-        .map((chunk) => {
-          const event = chunk.split("\n")
-            .find((line) => line.startsWith("event: "))?.slice(7) ?? "";
-          const data = chunk.split("\n")
-            .find((line) => line.startsWith("data: "))?.slice(6) ?? "null";
-          return { event, data: JSON.parse(data) as unknown };
-        });
-      return {
-        statusCode: response.statusCode,
-        assistantReplyCount: frames.filter((frame) =>
-          frame.event === "assistant_message"
-          && isRecord(frame.data)
-          && frame.data.content === "S4 initial reply").length,
-        completionCount: frames.filter((frame) => frame.event === "session_ended").length,
-      };
-    } finally {
-      await app.close();
-      await repository.close();
-    }
-  }
-
   async cleanup(): Promise<void> {
-    this.controller.stop();
-    this.mux.disconnect();
-    if (this.childPid && isPidAlive(this.childPid)) {
-      process.kill(this.childPid, "SIGKILL");
+    await this.captureCurrentRunnerIdentity();
+    await this.killWorker();
+    this.unexpectedWorkerFailure = null;
+    for (const identity of this.runnerIdentities.values()) {
+      if (isPidAlive(identity.pid)) process.kill(identity.pid, "SIGKILL");
     }
-    await this.composition.hostOwnership.release();
-    await chmod(this.releaseDirectory, 0o755).catch(() => undefined);
+    await this.poll("all observed runner processes to exit", async () =>
+      [...this.runnerIdentities.values()].every((identity) => !isPidAlive(identity.pid))
+        ? true
+        : null
+    );
+    await this.orch?.close();
+    try {
+      const releases = await readdir(this.releasesDirectory, { withFileTypes: true });
+      for (const release of releases) {
+        if (release.isDirectory()) {
+          await chmod(join(this.releasesDirectory, release.name), 0o755);
+        }
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
     await rm(this.root, { recursive: true, force: true });
   }
+
+  private get initialPrompt(): string {
+    return `${this.scenario} ${this.backend} initial prompt`;
+  }
+
+  private get interventionPrompt(): string {
+    return this.isCompletedResume
+      ? `${this.scenario} ${this.backend} completed resume`
+      : `${this.scenario} ${this.backend} active intervention`;
+  }
+
+  private get requiresRestart(): boolean {
+    return this.scenario === "S1" || this.scenario === "S2" || this.scenario === "S3";
+  }
+
+  private get isCompletedResume(): boolean {
+    return this.scenario === "S2" || this.scenario === "S5";
+  }
+
+  private get isActiveIntervention(): boolean {
+    return this.scenario === "S3" || this.scenario === "S6";
+  }
+
+  private async spawnWorker(): Promise<void> {
+    const workerPort = await reservePort();
+    const upstream = new URL(this.orchAddress);
+    upstream.protocol = upstream.protocol === "https:" ? "wss:" : "ws:";
+    upstream.pathname = "/ws/node";
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxImportUrl, fileURLToPath(import.meta.url), WORKER_ROLE],
+      {
+        env: withoutAnthropicApiKey({
+          ...process.env,
+          NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import ${tsxImportUrl}`]
+            .filter(Boolean).join(" "),
+          SOULSTREAM_NODE_ID: NODE_ID,
+          SOULSTREAM_UPSTREAM_URL: upstream.toString(),
+          AUTH_BEARER_TOKEN: AUTH_TOKEN,
+          HOST: "127.0.0.1",
+          PORT: String(workerPort),
+          ENVIRONMENT: "production",
+          LOG_LEVEL: "error",
+          EVENT_OUTBOX_DIR: this.outboxDirectory,
+          SOUL_RUNNER_PROCESS_ENABLED: "true",
+          SOUL_RUNNER_STATE_DIR: this.stateDirectory,
+          SOUL_RUNNER_ARTIFACT_DIR: this.artifactDirectory,
+          SOUL_RUNNER_RELEASES_DIR: this.releasesDirectory,
+          AGENTS_CONFIG_PATH: this.agentsConfigPath,
+          AGENT_PROFILE_CACHE_PATH: join(this.root, "agent-profile-cache.json"),
+          MODEL_CATALOG_PATH: this.modelCatalogPath,
+          INCOMING_FILE_DIR: join(this.root, "incoming"),
+          MCP_ENABLED: "false",
+          MCP_STATELESS_TRANSPORT_ENABLED: "false",
+          RUNNER_E2E_CONTROL_DIR: this.controlDirectory,
+          RUNNER_E2E_FULL_SLICE_SCENARIO: this.scenario,
+          RUNNER_E2E_FULL_SLICE_BACKEND: this.backend,
+        }),
+        stdio: ["ignore", "ignore", "pipe"],
+      },
+    );
+    this.worker = child;
+    this.workerRecoveryReadyPath = join(
+      this.controlDirectory,
+      `worker-recovery-ready-${child.pid}`,
+    );
+    let stderr = "";
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => { stderr += chunk; });
+    child.once("exit", (code, signal) => {
+      if (this.worker !== child) return;
+      this.unexpectedWorkerFailure = new Error(
+        `worker exited code=${code ?? "none"} signal=${signal ?? "none"}: ${stderr.trim()}`,
+      );
+    });
+  }
+
+  private async killWorker(): Promise<void> {
+    const child = this.worker;
+    this.worker = null;
+    if (!child || child.exitCode !== null || child.signalCode !== null) return;
+    child.kill("SIGKILL");
+    await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  }
+
+  private async publicCommand(
+    operation: PublicHttpAck["operation"],
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<PublicHttpAck> {
+    this.throwIfWorkerFailed();
+    const response = await fetch(`${this.orchAddress}${path}`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    const responseBody = await response.json() as Record<string, unknown>;
+    this.throwIfWorkerFailed();
+    return {
+      operation,
+      status: response.status,
+      body: responseBody,
+      deliveryId: optionalString(responseBody.deliveryId),
+    };
+  }
+
+  private async waitForNode(
+    predicate: (node: NodeSnapshot) => boolean = () => true,
+  ): Promise<NodeSnapshot> {
+    return await this.poll("production node registration", async () => {
+      const response = await fetch(`${this.orchAddress}/api/nodes`, {
+        headers: { authorization: `Bearer ${AUTH_TOKEN}` },
+      });
+      if (!response.ok) return null;
+      const body = await response.json() as { nodes?: NodeSnapshot[] };
+      const node = body.nodes?.find((candidate) => candidate.nodeId === NODE_ID);
+      return node && predicate(node) ? node : null;
+    });
+  }
+
+  private async waitForWorkerRecoveryReady(): Promise<void> {
+    const markerPath = this.workerRecoveryReadyPath;
+    if (!markerPath) throw new Error("worker recovery readiness marker path missing");
+    await this.poll("worker runner recovery readiness", async () =>
+      await readFile(markerPath, "utf8").then(() => true).catch(() => null)
+    );
+  }
+
+  private async waitForExecuteProbe(resumed: boolean): Promise<ExecuteFramesProbeObservation> {
+    return await this.poll(
+      resumed ? "resume executeFrames probe" : "initial executeFrames probe",
+      async () => {
+        const probe = (await this.readEngineBoundaryProbes()).find((candidate) =>
+          candidate.call === "executeFrames"
+          && (candidate.resumeSessionId !== null) === resumed
+        );
+        return probe?.call === "executeFrames" ? probe : null;
+      },
+    );
+  }
+
+  private async waitForInterveneProbe(): Promise<InterveneProbeObservation> {
+    return await this.poll("intervene probe", async () => {
+      const probe = (await this.readEngineBoundaryProbes()).find(
+        (candidate) => candidate.call === "intervene",
+      );
+      return probe?.call === "intervene" ? probe : null;
+    });
+  }
+
+  private async waitForRunnerIdentity(
+    expectedRegistrationId?: string,
+  ): Promise<RunnerIdentityObservation> {
+    return await this.poll("runner registration identity", async () => {
+      const identity = await readRunnerRegistrationIdentity(
+        runnerProcessPaths(this.stateDirectory, this.sessionId).sessionDirectory,
+      );
+      if (!identity || (expectedRegistrationId && identity.registrationId !== expectedRegistrationId)) {
+        return null;
+      }
+      const observed = { ...identity, alive: isPidAlive(identity.pid) };
+      if (!observed.alive) return null;
+      this.rememberRunner(observed);
+      return observed;
+    });
+  }
+
+  private async waitForDifferentRunnerIdentity(
+    previousRegistrationId: string,
+  ): Promise<RunnerIdentityObservation> {
+    return await this.poll("successor runner identity", async () => {
+      const identity = await readRunnerRegistrationIdentity(
+        runnerProcessPaths(this.stateDirectory, this.sessionId).sessionDirectory,
+      );
+      if (!identity || identity.registrationId === previousRegistrationId || !isPidAlive(identity.pid)) {
+        return null;
+      }
+      const observed = { ...identity, alive: true };
+      this.rememberRunner(observed);
+      return observed;
+    });
+  }
+
+  private async waitForPidDeath(pid: number): Promise<void> {
+    await this.poll(`runner pid ${pid} to exit`, async () => !isPidAlive(pid) ? true : null);
+  }
+
+  private async waitForTerminalCount(expected: number): Promise<void> {
+    await this.poll(`session terminal count ${expected}`, async () => {
+      const [row] = await this.postgres.sql<Array<{ status: string; count: number }>>`
+        SELECT s.status,
+          (SELECT COUNT(*)::int FROM events e
+            WHERE e.session_id = s.session_id AND e.event_type = 'session_ended') AS count
+        FROM sessions s WHERE s.session_id = ${this.sessionId}
+      `;
+      return row?.status === "completed" && Number(row.count) >= expected ? true : null;
+    });
+  }
+
+  private async waitForConsumedDelivery(deliveryId: string): Promise<DeliveryObservation> {
+    return await this.poll(`delivery ${deliveryId} consumed`, async () => {
+      const rows = await this.postgres.sql<Array<{
+        delivery_id: string;
+        target_session_id: string;
+        state: string;
+        aggregate_state: string;
+        consumed_at: string | null;
+      }>>`
+        SELECT delivery_id, target_session_id, state, aggregate_state,
+          consumed_at::text AS consumed_at
+        FROM session_deliveries
+        WHERE delivery_id = ${deliveryId}
+      `;
+      const row = rows[0];
+      if (
+        rows.length !== 1
+        || !row
+        || row.state !== "consumed"
+        || row.aggregate_state !== "consumed"
+        || row.consumed_at === null
+      ) return null;
+      return {
+        rowCount: rows.length,
+        deliveryId: row.delivery_id,
+        targetSessionId: row.target_session_id,
+        state: row.state,
+        aggregateState: row.aggregate_state,
+        consumedAt: row.consumed_at,
+      };
+    });
+  }
+
+  private async readEngineBoundaryProbes(): Promise<EngineBoundaryProbeObservation[]> {
+    const entries = await readdir(this.controlDirectory).catch(() => []);
+    const probeEntries = entries
+      .filter((entry) => entry.startsWith("engine-boundary-") && entry.endsWith(".json"))
+      .sort();
+    return await Promise.all(probeEntries.map(async (entry) => JSON.parse(
+      await readFile(join(this.controlDirectory, entry), "utf8"),
+    ) as EngineBoundaryProbeObservation));
+  }
+
+  private async readDurableObservation(): Promise<FullSliceObservation["durable"]> {
+    const [session] = await this.postgres.sql<Array<{ status: string }>>`
+      SELECT status FROM sessions WHERE session_id = ${this.sessionId}
+    `;
+    const events = await this.postgres.sql<Array<{
+      event_type: string;
+      payload: Record<string, unknown> | null;
+    }>>`
+      SELECT event_type, payload FROM events
+      WHERE session_id = ${this.sessionId} ORDER BY id
+    `;
+    return {
+      status: session?.status ?? "missing",
+      assistantContents: events
+        .filter((event) => event.event_type === "assistant_message")
+        .map((event) => stringField(event.payload, "content"))
+        .filter((value): value is string => value !== null),
+      userMessageTexts: events
+        .filter((event) => event.event_type === "user_message")
+        .map((event) => stringField(event.payload, "content") ?? stringField(event.payload, "text"))
+        .filter((value): value is string => value !== null),
+      interventionSentTexts: events
+        .filter((event) => event.event_type === "intervention_sent")
+        .map((event) => stringField(event.payload, "text"))
+        .filter((value): value is string => value !== null),
+      sessionEndedCount: events.filter((event) => event.event_type === "session_ended").length,
+      errorEventCount: events.filter((event) => event.event_type === "error").length,
+    };
+  }
+
+  private async release(phase: "initial" | "resume"): Promise<void> {
+    await writeFile(
+      join(this.controlDirectory, `${this.scenario}-${this.backend}-release-${phase}`),
+      "release\n",
+    );
+  }
+
+  private async captureCurrentRunnerIdentity(): Promise<void> {
+    if (!this.sessionId) return;
+    const identity = await readRunnerRegistrationIdentity(
+      runnerProcessPaths(this.stateDirectory, this.sessionId).sessionDirectory,
+    );
+    if (identity) this.rememberRunner({ ...identity, alive: isPidAlive(identity.pid) });
+  }
+
+  private rememberRunner(identity: RunnerIdentityObservation): void {
+    this.runnerIdentities.set(
+      `${identity.registrationId}:${identity.pid}:${identity.startIdentity}`,
+      identity,
+    );
+  }
+
+  private throwIfWorkerFailed(): void {
+    if (this.unexpectedWorkerFailure) throw this.unexpectedWorkerFailure;
+  }
+
+  private async poll<T>(label: string, read: () => Promise<T | null>): Promise<T> {
+    const deadline = Date.now() + POLL_BUDGET_MS;
+    while (Date.now() < deadline) {
+      this.throwIfWorkerFailed();
+      const value = await read();
+      if (value !== null) return value;
+      await delay(25);
+    }
+    this.throwIfWorkerFailed();
+    throw new Error(`Timed out waiting for ${label}`);
+  }
+}
+
+async function runWorkerChild(): Promise<void> {
+  const env = parseEnv(process.env);
+  const mcpConfigService = new McpConfigService({
+    agentsConfigPath: env.AGENTS_CONFIG_PATH,
+    processEnv: process.env,
+  });
+  const agentRegistry = loadAgentRegistry(env.AGENTS_CONFIG_PATH, {
+    profileResolver: (profiles) => mcpConfigService.resolveProfiles(profiles),
+  });
+  const runnerArtifactHash = await hashArtifactSet(env.SOUL_RUNNER_ARTIFACT_DIR!);
+  const sourceCommit = createHash("sha1").update(runnerArtifactHash).digest("hex");
+  const releaseActivationState = new ReleaseActivationState(buildReleaseManifest({
+    sourceCommit,
+    hostBundleHash: "full-slice-test-host-bundle",
+    runnerReleaseId: runnerArtifactHash,
+    runnerArtifactHash,
+    schemaGeneration: "full-schema-test",
+    wireGeneration: "full-slice-test",
+    nodeVersion: process.versions.node,
+    platform: process.platform,
+    arch: process.arch,
+    deploymentEnvIdentity: "full-slice-test-env",
+    claudeExecutable: { kind: "claude", path: null, identity: null },
+    codexExecutable: { kind: "codex", path: null, identity: null },
+  }));
+  const recoveryReadyPath = join(
+    requireString(process.env.RUNNER_E2E_CONTROL_DIR, "RUNNER_E2E_CONTROL_DIR"),
+    `worker-recovery-ready-${process.pid}`,
+  );
+  await startWorkerRuntime({
+    compose: async () => await composeWorkerRuntime({
+      env,
+      logger: silentLogger,
+      agentRegistry,
+      mcpConfigService,
+      releaseActivationState,
+    }),
+    listen: async (runtime) => {
+      await startServer(runtime.server, env.HOST, env.PORT);
+    },
+    logger: {
+      info: ((message: unknown) => {
+        if (message === "Runner recovery initial scan completed") {
+          void writeFile(recoveryReadyPath, "ready\n");
+        }
+      }) as typeof silentLogger.info,
+    },
+    onUpstreamFailure: (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+    onRunnerRecoveryFailure: (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  });
+  await new Promise<never>(() => undefined);
+}
+
+async function reservePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("ephemeral port unavailable");
+  await new Promise<void>((resolve, reject) => server.close((error) =>
+    error ? reject(error) : resolve()
+  ));
+  return address.port;
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.length === 0) throw new Error(`${label} missing`);
+  return value;
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function stringField(value: Record<string, unknown> | null, key: string): string | null {
+  return value && typeof value[key] === "string" ? value[key] : null;
+}
+
+function withoutAnthropicApiKey(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const { ANTHROPIC_API_KEY: _forbidden, ...rest } = env;
+  return rest;
 }
 
 function isPidAlive(pid: number): boolean {
@@ -492,6 +686,6 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+if (process.argv.includes(WORKER_ROLE)) {
+  await runWorkerChild();
 }
