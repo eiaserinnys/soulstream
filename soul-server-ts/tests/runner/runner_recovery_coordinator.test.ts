@@ -1273,7 +1273,10 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.any(Function),
     );
     expect(subject.task.runnerTerminalFact).toBe("reaped");
-    expect(subject.task.recoveredExecutionOwnership).toBeUndefined();
+    expect(subject.task.recoveredExecutionOwnership).toMatchObject({
+      registrationId: "registration-a",
+      executionCommandId: "execute-a",
+    });
     expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce();
   });
 

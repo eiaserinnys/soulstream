@@ -952,8 +952,13 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     const startNewExecution = vi.fn((
       resumedTask: Task,
       _agent: AgentProfile,
+      activation?: Task["executionActivation"],
     ) => {
       resumedTask.status = "running";
+      if (resumedTask.executionActivation === activation) {
+        resumedTask.executionActivation = undefined;
+      }
+      activation?.resolve();
       return Promise.resolve();
     });
     const dispatcher = new CommandDispatcher(

@@ -111,9 +111,9 @@ function makeHarness() {
   const originalStartNewExecution =
     taskExecutor.startNewExecution.bind(taskExecutor);
   vi.spyOn(taskExecutor, "startNewExecution").mockImplementation(
-    (task, resolvedAgent) => {
+    (task, resolvedAgent, activation) => {
       newExecutionObservations.push({ installed: task.executionActivation });
-      return originalStartNewExecution(task, resolvedAgent);
+      return originalStartNewExecution(task, resolvedAgent, activation);
     },
   );
   const runtime = new TaskRuntimeCommands({
@@ -164,8 +164,10 @@ describe("UPSTREAM_TERMINAL_FOLLOWUP_NEW_EXECUTION", () => {
     expect({
       signature: "UPSTREAM_TERMINAL_FOLLOWUP_NEW_EXECUTION",
       tokenCreated: autoResumeActivation !== undefined,
-      callbackActivation: autoResumeActivation,
-      installedActivation: observation?.installed,
+      callbackActivationForwarded:
+        autoResumeActivation !== undefined
+        && autoResumeActivation === observation?.installed,
+      installedActivation: observation?.installed !== undefined,
       newExecutionCount: harness.newExecutionObservations.length,
       acquireCount:
         harness.persistenceDouble.acquireExecutionOwnershipAndWaitForApplication
@@ -175,9 +177,9 @@ describe("UPSTREAM_TERMINAL_FOLLOWUP_NEW_EXECUTION", () => {
       runtimeError,
     }).toEqual({
       signature: "UPSTREAM_TERMINAL_FOLLOWUP_NEW_EXECUTION",
-      tokenCreated: false,
-      callbackActivation: undefined,
-      installedActivation: undefined,
+      tokenCreated: true,
+      callbackActivationForwarded: true,
+      installedActivation: true,
       newExecutionCount: 1,
       acquireCount: 0,
       consumedPrompts: ["consume this terminal follow-up"],

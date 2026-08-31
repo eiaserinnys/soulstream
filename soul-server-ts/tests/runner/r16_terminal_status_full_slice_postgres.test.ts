@@ -3,7 +3,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { recoverRunnerByDisposition } from
   "../../src/runner/runner_recovery_disposition.js";
-import { prepareRecoveredTask } from "../../src/runner/runner_recovery_task.js";
+import {
+  prepareRecoveredTask,
+  prepareRecoveredTerminalExecutionIdentity,
+} from "../../src/runner/runner_recovery_task.js";
 import { AutoResumeTransition } from
   "../../src/task/task_auto_resume_transition.js";
 import { hydrateEvictedTaskFromSessionRow } from
@@ -95,6 +98,7 @@ describe("R16 terminal status full slice", () => {
       recoverOffline: async (owned, recoveredTask, prepare) => {
         const guarded = await prepare(owned);
         prepareRecoveredTask(recoveredTask, guarded);
+        prepareRecoveredTerminalExecutionIdentity(recoveredTask, guarded);
         recoveredTask.status = "completed";
         recoveredTask.completedAt = new Date();
         recoveredTask.runnerTerminalFact = "completed";

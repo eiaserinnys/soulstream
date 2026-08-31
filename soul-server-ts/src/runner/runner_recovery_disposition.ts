@@ -13,7 +13,10 @@ import {
   hydrateRunnerRegistration,
 } from "./runner_process_registry.js";
 import type { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
-import { prepareRecoveredTask } from "./runner_recovery_task.js";
+import {
+  prepareRecoveredTask,
+  prepareRecoveredTerminalExecutionIdentity,
+} from "./runner_recovery_task.js";
 
 export type RecoverableRunnerDisposition = Extract<
   RunnerRecoveryDisposition,
@@ -80,6 +83,7 @@ export async function resumeReapedRunner(input: {
   await input.invalidate(hydrated);
   await input.recoverOffline({ ...hydrated, pidAlive: false }, input.task);
   prepareRecoveredTask(input.task, hydrated);
+  prepareRecoveredTerminalExecutionIdentity(input.task, hydrated);
   input.task.runnerTerminalFact = "reaped";
   const message = hydrated.lifecycle?.terminal_error?.message
     ?? "runner was reaped before recovery completed";

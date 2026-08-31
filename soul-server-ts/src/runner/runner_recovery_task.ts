@@ -62,6 +62,13 @@ export function prepareRecoveredTask(
   task.agentProfileSnapshot = registration.config.agent;
   const backendSessionId = registration.bootstrap?.payload.backend_session_id;
   if (backendSessionId) task.codexThreadId = backendSessionId;
+}
+
+/** Restores historical identity only for a terminal fact replayed by recovery. */
+export function prepareRecoveredTerminalExecutionIdentity(
+  task: Task,
+  registration: RunnerRegistration,
+): void {
   if (
     registration.registrationId
     && registration.pid
