@@ -1272,15 +1272,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "lease expired before restart",
       expect.any(Function),
     );
-    expect(subject.task).toMatchObject({
-      runnerTerminalFact: "reaped",
-      recoveredExecutionOwnership: {
-        manifestId: "sha-a",
-        registrationId: "registration-a",
-        pid: 4123,
-        startIdentity: "start-4123",
-      },
-    });
+    expect(subject.task.runnerTerminalFact).toBe("reaped");
+    expect(subject.task.recoveredExecutionOwnership).toBeUndefined();
     expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce();
   });
 

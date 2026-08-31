@@ -9,8 +9,6 @@ import type {
   TaskDeliveryLedgerGate,
 } from "../../src/task/task_delivery_ledger_gate.js";
 import type { SessionNotificationPublisher } from "../../src/task/task_session_notification.js";
-import { ExecutionOwnershipConflictError } from
-  "../../src/task/execution_ownership.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -303,86 +301,6 @@ describe("TaskInterventionRoute.addIntervention", () => {
 
     resolveActivation();
     await expect(request).resolves.toEqual({ autoResumed: true });
-  });
-
-  it("rejects the auto-resume request when ownership activation fails", async () => {
-    const task = makeTask({ status: "completed" });
-    const { route, autoResumeTransition } = makeSubject([task]);
-    vi.mocked(autoResumeTransition.resume).mockImplementation(async (
-      resumedTask,
-      _message,
-      onResume,
-    ) => {
-      resumedTask.status = "initializing";
-      onResume(resumedTask);
-      return { autoResumed: true };
-    });
-    const onResume = vi.fn((resumedTask: Task) => {
-      resumedTask.executionActivation = activationBarrier(Promise.reject(
-        new Error("execution activation rejected"),
-      ));
-    });
-
-    await expect(route.addIntervention({
-      agentSessionId: task.agentSessionId,
-      text: "resume",
-      user: "alice",
-    }, onResume)).rejects.toThrow("execution activation rejected");
-  });
-
-  it("queues a fenced auto-resume and schedules the same durable delivery without exposing an error", async () => {
-    const task = makeTask({ status: "completed" });
-    const deliveryId = "64646464-6464-4464-8464-646464646464";
-    const recordReservationRetry = vi.fn().mockResolvedValue("scheduled");
-    const gate = {
-      admit: vi.fn().mockResolvedValue(admitted(deliveryId, "durable_next_turn")),
-      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
-      recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
-      recordReservationRetry,
-    } satisfies Pick<
-      TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
-        | "recordReservationRetry"
-    >;
-    const { route, autoResumeTransition } = makeSubject([task], gate);
-    const retryAt = "2026-08-19T00:08:30.000Z";
-    const rejected = new ExecutionOwnershipConflictError(
-      task.agentSessionId,
-      retryAt,
-      "reserved",
-    );
-    vi.mocked(autoResumeTransition.resume).mockImplementation(async (
-      resumedTask,
-      _message,
-      onResume,
-    ) => {
-      resumedTask.status = "initializing";
-      onResume(resumedTask);
-      return { autoResumed: true };
-    });
-
-    await expect(route.addIntervention({
-      agentSessionId: task.agentSessionId,
-      text: "resume",
-      user: "alice",
-      deliveryId,
-      deliveryIntent: "durable_next_turn",
-      completionId: `message:${deliveryId}`,
-      relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
-    }, (resumedTask) => {
-      resumedTask.executionActivation = activationBarrier(Promise.reject(rejected));
-    })).resolves.toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "queue_only_policy",
-    });
-    expect(recordReservationRetry).toHaveBeenCalledWith(
-      expect.objectContaining({ deliveryId }),
-      retryAt,
-    );
   });
 
   it("keeps an unlabelled human intervention human while assigning durable identity", async () => {

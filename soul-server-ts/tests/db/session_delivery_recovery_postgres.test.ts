@@ -348,7 +348,16 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       interventionQueue: [],
     };
     const gate = new TaskDeliveryLedgerGate(true, repository);
-    const autoResume = vi.fn();
+    const autoResume = vi.fn(async (
+      resumedTask: Task,
+      message: InterventionMessage,
+      onResume: (task: Task) => void,
+    ) => {
+      resumedTask.status = "running";
+      enqueueInterventionOnce(resumedTask, message);
+      onResume(resumedTask);
+      return { autoResumed: true } as const;
+    });
     const modelStart = vi.fn();
     const queueOnly = vi.fn(async (
       queuedTask: Task,
@@ -412,9 +421,8 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       payload: canonical.payload,
     });
 
-    await expect(route.addIntervention(params, modelStart)).resolves.toMatchObject({
-      queued: true,
-      consumeWhen: "next_turn",
+    await expect(route.addIntervention(params, modelStart)).resolves.toEqual({
+      autoResumed: true,
     });
     await expect(repository.get(deliveryId)).resolves.toMatchObject({
       state: "queued",
@@ -451,8 +459,8 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     }).toEqual({
       transcriptProbe: 0,
       recoveryDispatch: 0,
-      autoResume: 0,
-      modelStart: 0,
+      autoResume: 1,
+      modelStart: 1,
     });
     await expect(repository.get(deliveryId)).resolves.toMatchObject({
       state: "queued",

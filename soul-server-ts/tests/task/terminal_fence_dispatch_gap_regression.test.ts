@@ -193,7 +193,7 @@ describe("terminal fence dispatch persistence gap", () => {
     }
   });
 
-  it("allows one execution for a genuinely fresh upstream pre-registration", async () => {
+  it("auto-resumes a genuinely fresh upstream pre-registration through one running transition", async () => {
     const {
       broadcaster,
       db,
@@ -221,6 +221,8 @@ describe("terminal fence dispatch persistence gap", () => {
           PRE_REGISTERED_TEXT,
         ),
         automaticStarts: runtime.automaticStart.mock.calls.length,
+        runningTransitions:
+          persistence.enqueueRunningTransitionAndWaitForApplication.mock.calls.length,
         executionAcquires:
           persistence.acquireExecutionOwnershipAndWaitForApplication.mock.calls.length,
         turnStarts: runtime.turnStarted.mock.calls.length,
@@ -228,9 +230,10 @@ describe("terminal fence dispatch persistence gap", () => {
       }).toEqual({
         semanticEffects: 1,
         automaticStarts: 1,
-        executionAcquires: 1,
-        turnStarts: 1,
-        modelCalls: 1,
+        runningTransitions: 1,
+        executionAcquires: 0,
+        turnStarts: 0,
+        modelCalls: 0,
       });
     } finally {
       runtime.release();

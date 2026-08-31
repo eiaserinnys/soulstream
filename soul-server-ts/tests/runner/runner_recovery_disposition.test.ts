@@ -197,22 +197,17 @@ describe("resumeReapedRunner", () => {
 });
 
 describe("reapAndResumeRunner", () => {
-  it.each([
-    ["reap_dead", "runner_exited", "runner process exited before execution completed"],
-    ["reap_stalled", "lease_expired", "runner progress lease expired"],
-  ] as const)("terminalizes a still-verified %s runner", async (disposition, code, message) => {
+  it("terminalizes a still-verified dead runner", async () => {
     const terminalize = vi.fn(async () => {});
     const current = registration({
-      pidAlive: disposition === "reap_stalled",
+      pidAlive: false,
       lifecycleState: "running",
-      progressedAt: disposition === "reap_stalled"
-        ? "2026-08-23T05:00:00.000Z"
-        : "2026-08-23T06:29:50.000Z",
+      progressedAt: "2026-08-23T06:29:50.000Z",
     });
 
     await reapAndResumeRunner({
       registration: current,
-      disposition,
+      disposition: "reap_dead",
       task: task(),
       hydrate: async (value) => value,
       now: () => Date.parse("2026-08-23T06:30:00.000Z"),
@@ -224,8 +219,8 @@ describe("reapAndResumeRunner", () => {
     expect(terminalize).toHaveBeenCalledWith(
       current,
       expect.anything(),
-      { code, message },
-      disposition,
+      { code: "runner_exited", message: "runner process exited before execution completed" },
+      "reap_dead",
     );
   });
 

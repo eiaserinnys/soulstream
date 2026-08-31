@@ -187,24 +187,24 @@ describe("worker composition boundary", () => {
     expect(workerComposition).toMatch(
       /:\s+\{\};\s+const claudeSessionClientRegistry = claudeRuntime\.registry/,
     );
-    expect(taskExecutor).toMatch(
-      /const turnReceipt = this\.deliveryConsumption\s+\?\s+new TaskDeliveryTurnReceipt\(/,
+    expect(taskExecutor).toContain(
+      "const turnReceipt = this.beginDeliveryTurn(task, currentTurnInterventions);",
     );
     expect(taskExecutor).toContain(
-      "if (turnReceipt) await turnReceipt.observe(task, event);",
+      "await this.observeDeliveryTurn(task, turnReceipt, event);",
     );
-    expect(taskExecutor).toMatch(
-      /turnReceipt\s+&&\s+transition\.kind === "continue"\) \{\s+await turnReceipt\.consume\(task\);/,
+    expect(taskExecutor).toContain(
+      "await this.settleDeliveryTurn(",
     );
-    expect(taskExecutor).toMatch(
-      /turnReceipt\s+&&\s+task\.status === "completed"\) \{\s+terminalTurnReceipts\.push\(turnReceipt\);/,
+    expect(taskExecutor).toContain(
+      "this.releaseDeliveryTurn(task, turnReceipt);",
     );
     expect(taskExecutor).not.toMatch(
-      /(?<!if \(turnReceipt\) )await turnReceipt\.observe\(/,
+      /await turnReceipt\.observe\(/,
     );
     expect(taskExecutor).not.toContain("successfulTurnReceipts");
     expect(taskExecutor).not.toContain("consumeSuccessfulTurnReceipts");
-    expect(taskExecutor.match(/await receipt\.consume\(task\)/g)).toHaveLength(1);
+    expect(taskExecutor.match(/await receipt\.consume\(task\)/g)).toHaveLength(2);
     expect(taskExecutorFinalizer).toMatch(
       /persistence\.terminalTransitionApplied\s+&&\s+task\.status === "completed"\s+&&\s+consumeSuccessfulDeliveries/,
     );

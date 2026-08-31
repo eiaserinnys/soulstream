@@ -542,7 +542,7 @@ describe("RunnerProcessDispatcher", () => {
     });
     expect(finishRunnerOperation).toHaveBeenCalledTimes(2);
     expect(sqliteTransactionObserver).not.toHaveBeenCalled();
-    await expect(dispatcher.waitForSessionAck()).resolves.toBe(9000);
+    await expect(dispatcher.waitForSessionAck()).resolves.toBeNull();
     await vi.waitFor(async () => {
       const observer = await RunnerSqliteEventOutbox.create(paths.databasePath);
       try {

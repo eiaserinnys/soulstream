@@ -170,7 +170,14 @@ describe("D post-complete V2 finalizer regression", () => {
       loadEvictedTask: vi.fn().mockResolvedValue(null),
       rememberTask: vi.fn(),
       runningInterventionTransition: transition,
-      autoResumeTransition: { resume: vi.fn() } as never,
+      autoResumeTransition: {
+        resume: vi.fn(async (resumedTask: Task, message, onResume) => {
+          resumedTask.status = "running";
+          resumedTask.interventionQueue.push(message);
+          onResume(resumedTask);
+          return { autoResumed: true } as const;
+        }),
+      } as never,
       deliveryLedgerGate: {
         admit: vi.fn().mockResolvedValue(admission),
         beginDispatch: vi.fn().mockResolvedValue(admission),
@@ -193,7 +200,7 @@ describe("D post-complete V2 finalizer regression", () => {
       relationKey: "child_session:row5215",
       producerTerminalRevision: "5215",
       deliveryLeaseOwner: "d-live-red",
-    }, vi.fn())).resolves.toMatchObject({ queued: true, consumeWhen: "next_turn" });
+    }, vi.fn())).resolves.toEqual({ autoResumed: true });
 
     expect(deliveryState).toBe("queued");
     expect(recordResult).toHaveBeenCalledOnce();

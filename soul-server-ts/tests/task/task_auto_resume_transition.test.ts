@@ -70,7 +70,7 @@ describe("AutoResumeTransition", () => {
     expect(acquireExecutionOwnershipAndWaitForApplication).not.toHaveBeenCalled();
   });
 
-  it("fences an owned resume to the terminal revision captured before async metadata work", async () => {
+  it("fences a resume running transition to the terminal revision captured before async metadata work", async () => {
     const task = makeTerminalTask();
     let releaseMetadata!: () => void;
     const metadataBlocked = new Promise<void>((resolve) => { releaseMetadata = resolve; });
@@ -95,7 +95,11 @@ describe("AutoResumeTransition", () => {
     releaseMetadata();
     await resuming;
 
-    expect(task.pendingExecutionExpectedTerminalEventId).toBe(6);
+    expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
+      .toHaveBeenCalledWith("s1", expect.objectContaining({
+        expectedTerminalEventId: 6,
+      }));
+    expect(task.pendingExecutionExpectedTerminalEventId).toBeUndefined();
     expect(onResume).toHaveBeenCalledOnce();
   });
 
@@ -301,13 +305,8 @@ describe("AutoResumeTransition", () => {
         workspace_dir: "/tmp/db-profile",
       },
     });
-    let forwardedActivation: Task["executionActivation"];
-    const onResume = vi.fn((
-      resumedTask: Task,
-      activation: Task["executionActivation"],
-    ) => {
-      expect(activation).toBe(resumedTask.executionActivation);
-      forwardedActivation = activation;
+    const onResume = vi.fn((resumedTask: Task) => {
+      expect(resumedTask.executionActivation).toBeUndefined();
     });
     const transition = new AutoResumeTransition({
       persistence: makeEventPersistenceTestDouble(undefined, [], {
@@ -320,8 +319,7 @@ describe("AutoResumeTransition", () => {
     await expect(
       transition.resume(task, { text: "resume", user: "u" }, onResume),
     ).resolves.toEqual({ autoResumed: true });
-    expect(onResume).toHaveBeenCalledWith(task, forwardedActivation);
-    expect(forwardedActivation).toBe(task.executionActivation);
+    expect(onResume).toHaveBeenCalledWith(task);
   });
 
   it("clears termination state so a resumed turn can finalize with a fresh session_ended event", async () => {
@@ -444,23 +442,17 @@ describe("AutoResumeTransition", () => {
         capabilityProfile: "execution_ownership",
       }).persistence,
     });
-    let forwardedActivation: Task["executionActivation"];
-    const onResume = vi.fn((
-      resumedTask: Task,
-      activation: Task["executionActivation"],
-    ) => {
+    const onResume = vi.fn((resumedTask: Task) => {
       expect(resumedTask.runner).toBe(runner);
       expect(resumedTask.runnerRetainedForClaudeBackground).toBe(true);
       expect(resumedTask.executionPromise).toBeUndefined();
-      expect(activation).toBe(resumedTask.executionActivation);
-      forwardedActivation = activation;
+      expect(resumedTask.executionActivation).toBeUndefined();
     });
 
     await transition.resume(task, { text: "runtime result", user: "system" }, onResume);
 
     expect(close).not.toHaveBeenCalled();
-    expect(onResume).toHaveBeenCalledWith(task, forwardedActivation);
-    expect(forwardedActivation).toBe(task.executionActivation);
+    expect(onResume).toHaveBeenCalledWith(task);
   });
 
   it("auto-acknowledges a needs_review result before terminal follow-up resumes", async () => {
