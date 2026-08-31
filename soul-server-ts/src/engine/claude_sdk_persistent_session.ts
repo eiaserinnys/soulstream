@@ -42,7 +42,6 @@ import {
   type ClaudeRuntimeCloseReason,
   type ClaudeSessionRuntimeSnapshot,
 } from "./claude_session_runtime.js";
-
 export type {
   ClaudeDetachedEventSink,
   ClaudeRuntimeEventSink,
