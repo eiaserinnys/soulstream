@@ -20,6 +20,7 @@ import type {
 } from "./task_delivery_ledger_gate.js";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
+import { hasLiveExecutionEvidence } from "./task_execution_evidence.js";
 import {
   isNotificationDeliveryIntent,
 } from "./session_delivery_notification_payload.js";
@@ -385,10 +386,7 @@ function interventionTaskRoute(
   // owns the live command. `executionPromise` is not sufficient: it remains
   // pending briefly after a logical terminal event while that old host command
   // drains, and treating it as a live turn would steal the successor message.
-  if (task.executionOwnership) return "running";
-  return task.runner?.dispatcher.hasActiveExecution() === true
-    ? "running"
-    : "auto-resume";
+  return hasLiveExecutionEvidence(task) ? "running" : "auto-resume";
 }
 
 export function ensureHumanDeliveryIdentity(

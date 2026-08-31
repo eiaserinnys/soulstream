@@ -35,6 +35,96 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
 }
 
 describe("AutoResumeTransition", () => {
+  it("accepts an already-running ownerless session through the non-terminal transition", async () => {
+    const task = makeTerminalTask({
+      status: "running",
+      completedAt: undefined,
+      terminalEventId: undefined,
+      result: undefined,
+      error: undefined,
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "execution_ownership",
+    });
+    persistenceDouble.enqueueRunningTransitionAndWaitForApplication
+      .mockImplementationOnce(async (_sessionId, input) => ({
+        eventId: 8,
+        applied: input.expectedTerminalEventId === undefined,
+        canonicalSession: {
+          status: "running",
+          termination_reason: null,
+          termination_detail: null,
+          review_state: input.reviewState,
+          last_assistant_text: null,
+          termination_event_id: null,
+          updated_at: "2026-09-01T00:00:00.000Z",
+          last_event_id: 8,
+        },
+      }));
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
+    });
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+
+    await expect(transition.resume(
+      task,
+      { text: "resume ownerless running", user: "u" },
+      onResume,
+    )).resolves.toEqual({ autoResumed: true });
+
+    expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
+      .toHaveBeenCalledWith("s1", expect.not.objectContaining({
+        expectedTerminalEventId: expect.anything(),
+      }));
+    expect(onResume).toHaveBeenCalledWith(task, expect.any(Object));
+  });
+
+  it("rejects direct auto-resume while a running session has live execution evidence", async () => {
+    const close = vi.fn(async () => undefined);
+    const runner = createInProcessTaskRunnerRuntime({
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-work",
+      async *execute(): AsyncIterable<never> {},
+      interrupt: vi.fn(async () => true),
+      close,
+    } as unknown as EnginePort);
+    vi.spyOn(runner.dispatcher, "hasActiveExecution").mockReturnValue(true);
+    const task = makeTerminalTask({
+      status: "running",
+      completedAt: undefined,
+      terminalEventId: undefined,
+      runner,
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "execution_ownership",
+    });
+    const onResume = vi.fn();
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+
+    await expect(transition.resume(
+      task,
+      { text: "must stay on the live turn", user: "u" },
+      onResume,
+    )).rejects.toThrow("auto-resume running transition rejected");
+
+    expect(close).not.toHaveBeenCalled();
+    expect(persistenceDouble.enqueueEvent).not.toHaveBeenCalled();
+    expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
+      .not.toHaveBeenCalled();
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
   it("[A1] resumes through the durable running transition without ownership activation", async () => {
     const task = makeTerminalTask({ status: "error" });
     const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {

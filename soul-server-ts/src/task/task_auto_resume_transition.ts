@@ -6,12 +6,14 @@ import type { EventPersistence } from "../db/event_persistence.js";
 
 import {
   createExecutionActivation,
+  isTerminalTaskStatus,
   type CallerInfo,
   type ExecutionActivation,
   type InterventionMessage,
   type Task,
 } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
+import { hasLiveExecutionEvidence } from "./task_execution_evidence.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
 import { reviewStateAfterFollowup } from "./session_review.js";
@@ -36,7 +38,7 @@ export interface AutoResumeTransitionDeps {
 }
 
 /**
- * Terminal task auto-resume transition.
+ * Auto-resume transition for terminal and ownerless-running tasks.
  *
  * Owns the ordered side effects that turn a completed/error/interrupted task
  * back into a running task for the next user turn:
@@ -55,10 +57,17 @@ export class AutoResumeTransition {
     onResume: AutoResumeCallback,
     options: { publishUserMessage?: boolean } = {},
   ): Promise<{ autoResumed: true }> {
+    const originalStatus = task.status;
+    if (originalStatus === "running" && hasLiveExecutionEvidence(task)) {
+      throw new Error(
+        `auto-resume running transition rejected for ${task.agentSessionId}`,
+      );
+    }
     this.requireResumableProfile(task);
     const transitionRevision = task.lastEventId;
-    const expectedTerminalEventId = task.terminalEventId ?? null;
-    const originalStatus = task.status;
+    const expectedTerminalEventId = isTerminalTaskStatus(originalStatus)
+      ? task.terminalEventId ?? null
+      : undefined;
     const originalTerminalEventId = task.terminalEventId;
     const activation = createExecutionActivation();
     task.status = "initializing";
@@ -92,7 +101,9 @@ export class AutoResumeTransition {
         .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
         reviewState: resumedReviewState,
         transitionId: `resume:${transitionRevision}`,
-        expectedTerminalEventId,
+        ...(expectedTerminalEventId === undefined
+          ? {}
+          : { expectedTerminalEventId }),
       });
       applyCanonicalSessionProjection(task, application.canonicalSession);
       if (!application.applied) {
