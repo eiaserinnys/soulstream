@@ -247,9 +247,38 @@ export class TaskExecutor {
     return this.startExecutionWithOwnership(task, agent, transferredActivation);
   }
 
-  startNewExecution(task: Task, agent: AgentProfile): Promise<void> {
-    const { backend, retainedRunner } = this.prepareExecution(task, agent);
-    return this.startExecutionWithoutOwnership(task, agent, backend, retainedRunner);
+  startNewExecution(
+    task: Task,
+    agent: AgentProfile,
+    activation?: ExecutionActivation,
+  ): Promise<void> {
+    try {
+      const { backend, retainedRunner } = this.prepareExecution(task, agent);
+      return this.startExecutionWithoutOwnership(
+        task,
+        agent,
+        backend,
+        retainedRunner,
+        activation,
+      );
+    } catch (error) {
+      if (!activation) throw error;
+      task.executionActivation = activation;
+      void activation.promise.catch(() => undefined);
+      const promise = (async () => {
+        try {
+          await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, error);
+          task.completedAt = new Date();
+          await this._finalize(task);
+        } finally {
+          if (task.executionActivation === activation) {
+            task.executionActivation = undefined;
+          }
+          activation.reject(error);
+        }
+      })();
+      return this.holdExecutionSlot(task, promise);
+    }
   }
 
   private startExecutionWithOwnership(
@@ -364,6 +393,7 @@ export class TaskExecutor {
     agent: AgentProfile,
     backend: BackendId,
     retainedRunner: TaskRunnerRuntime | undefined,
+    activation?: ExecutionActivation,
   ): Promise<void> {
     const runner = retainedRunner ?? (this.runnerProcessFactory
       ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
@@ -375,7 +405,7 @@ export class TaskExecutor {
     if (retainedRunner) {
       releaseTaskRunner(task, retainedRunner);
     }
-    this.startExecutionWithRunner(task, agent, runner);
+    this.startExecutionWithRunner(task, agent, runner, activation);
     return task.executionPromise!;
   }
 
@@ -583,6 +613,7 @@ export class TaskExecutor {
     task: Task,
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
+    activation?: ExecutionActivation,
   ): void {
     if (task.runner) {
       throw new Error(
@@ -590,17 +621,37 @@ export class TaskExecutor {
       );
     }
     this.attachRunner(task, runner);
+    if (activation) {
+      task.executionActivation = activation;
+      void activation.promise.catch(() => undefined);
+    }
 
     const promise = (async () => {
       await runner.dispatcher.prepareSession(task.agentSessionId);
       await this.restoreDurableRunnerInterventions(task, runner);
+      if (activation) {
+        task.status = "running";
+        if (task.executionActivation === activation) {
+          task.executionActivation = undefined;
+        }
+        activation.resolve();
+      }
       await this._consumeEventStream(task, runner, agent);
     })().catch(
       async (err: unknown) => {
-        // _consumeEventStream 내부 try/catch가 못 잡는 외부 throw용 안전망.
-        await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
-        task.completedAt = new Date();
-        await this._finalize(task);
+        try {
+          // _consumeEventStream 내부 try/catch가 못 잡는 외부 throw용 안전망.
+          await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
+          task.completedAt = new Date();
+          await this._finalize(task);
+        } finally {
+          if (activation) {
+            if (task.executionActivation === activation) {
+              task.executionActivation = undefined;
+            }
+            activation.reject(err);
+          }
+        }
       },
     );
     this.holdExecutionSlot(task, promise);
