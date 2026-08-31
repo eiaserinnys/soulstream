@@ -23,6 +23,8 @@ import { ClaudeRuntimeTaskFollowupController } from
   "../../src/task/claude_runtime_task_followup.js";
 import { TaskDeliveryLedgerGate } from
   "../../src/task/task_delivery_ledger_gate.js";
+import { hydrateEvictedTaskFromSessionRow } from
+  "../../src/task/task_evicted_hydration.js";
 import { TaskInterventionRoute } from
   "../../src/task/task_intervention_route.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -156,6 +158,107 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
     },
   );
 
+  it("converges expired claimed and attempted pending deliveries after restart", async () => {
+    const deliveryIds = [
+      "r25-expired-claimed",
+      "r25-attempted-pending",
+    ] as const;
+    const repository = new SessionDeliveryRepository(harness.sql);
+    await harness.sql`
+      UPDATE sessions
+      SET status = 'running', termination_reason = NULL,
+          termination_detail = NULL, termination_event_id = NULL
+      WHERE session_id = 'caller-session'
+    `;
+    for (const deliveryId of deliveryIds) {
+      await registerRestartRuntimeDelivery(repository, deliveryId);
+    }
+    await repository.claimForTarget(
+      deliveryIds[0],
+      "caller-session",
+      "r25-crashed-worker",
+    );
+    await harness.sql`
+      UPDATE session_deliveries
+      SET attempt_count = 8,
+          lease_expires_at = NOW() - INTERVAL '1 second'
+      WHERE delivery_id = ${deliveryIds[0]}
+    `;
+    await harness.sql`
+      UPDATE session_deliveries
+      SET attempt_count = 3, next_attempt_at = NOW()
+      WHERE delivery_id = ${deliveryIds[1]}
+    `;
+
+    const sessionRows = await harness.sql<Array<Record<string, unknown>>>`
+      SELECT * FROM sessions WHERE session_id = 'caller-session'
+    `;
+    const hydratedTask = hydrateEvictedTaskFromSessionRow(
+      sessionRows[0] as never,
+      pino({ level: "silent" }),
+    );
+    if (!hydratedTask) throw new Error("R25 fixture session could not be hydrated");
+    const path = makeDeliveryPath(harness.sql, { task: hydratedTask });
+    const ideal = deliveryIds.map((deliveryId) => ({
+      deliveryId,
+      state: "consumed",
+      aggregateState: "consumed",
+      resumeCount: 1,
+      deliveryImpossible: false,
+    }));
+    expect(deliveryConvergenceViolations(ideal)).toEqual([]);
+
+    await repository.releaseExpiredDeliveryLeases();
+    await harness.sql`
+      UPDATE session_deliveries
+      SET next_attempt_at = NOW()
+      WHERE delivery_id IN (${deliveryIds[0]}, ${deliveryIds[1]})
+    `;
+    const consumed = new Set<string>();
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      await replayPendingImmediateDeliveriesForNode({
+        nodeId: "node-test",
+        connectionId: `r25-restart-${cycle}`,
+        deliveries: repository,
+        sessionRouter: path.sessionRouter,
+        sessionBridge: path.sessionBridge,
+        warn: () => undefined,
+      });
+      for (const deliveryId of path.resumedDeliveryIds) {
+        if (consumed.has(deliveryId)) continue;
+        await repository.markConsumed(deliveryId, `turn:${deliveryId}`);
+        consumed.add(deliveryId);
+      }
+    }
+
+    const rows = await harness.sql<Array<{
+      delivery_id: string;
+      state: string;
+      aggregate_state: string;
+      attempt_count: number;
+    }>>`
+      SELECT delivery_id, state, aggregate_state, attempt_count
+      FROM session_deliveries
+      WHERE delivery_id IN (${deliveryIds[0]}, ${deliveryIds[1]})
+      ORDER BY delivery_id
+    `;
+    const observations = rows.map((row) => ({
+      deliveryId: row.delivery_id,
+      state: row.state,
+      aggregateState: row.aggregate_state,
+      resumeCount: path.resumedDeliveryIds.filter(
+        (deliveryId) => deliveryId === row.delivery_id,
+      ).length,
+      deliveryImpossible: false,
+    }));
+    console.info("R25 restart delivery convergence diagnostic", {
+      rows,
+      resumedDeliveryIds: path.resumedDeliveryIds,
+      violations: deliveryConvergenceViolations(observations),
+    });
+    expect(deliveryConvergenceViolations(observations)).toEqual([]);
+  });
+
   it("keeps schema-only fresh install equal to the 045 then 046 then 047 upgrade", async () => {
     const suffix = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const freshSchema = `background_fresh_${suffix}`;
@@ -254,7 +357,10 @@ async function storedPayloadHash(
  * A second registration with a divergent hash therefore transitions the row to
  * uncertain instead of being hidden by a test double.
  */
-function makeDeliveryPath(sql: SqlClient): {
+function makeDeliveryPath(
+  sql: SqlClient,
+  options: { task?: Task } = {},
+): {
   task: Task;
   followup: ClaudeRuntimeTaskFollowupController;
   deliveryRepository: SessionDeliveryRepository;
@@ -265,8 +371,9 @@ function makeDeliveryPath(sql: SqlClient): {
     typeof replayPendingImmediateDeliveriesForNode
   >[0]["sessionBridge"];
   counts: DeliveryPathCounts;
+  resumedDeliveryIds: string[];
 } {
-  const task: Task = {
+  const task: Task = options.task ?? {
     agentSessionId: "caller-session",
     prompt: "finished foreground",
     profileId: "worker",
@@ -286,6 +393,7 @@ function makeDeliveryPath(sql: SqlClient): {
     wake: 0,
     notification: 0,
   };
+  const resumedDeliveryIds: string[] = [];
   const repository = new SessionDeliveryRepository(sql);
   const ledger = new TaskDeliveryLedgerGate(true, repository);
   const onResume = (): void => {
@@ -304,8 +412,9 @@ function makeDeliveryPath(sql: SqlClient): {
       },
     },
     autoResumeTransition: {
-      resume: async (resumedTask, _message, callback) => {
+      resume: async (resumedTask, message, callback) => {
         counts.resume += 1;
+        if (message.deliveryId) resumedDeliveryIds.push(message.deliveryId);
         callback(resumedTask);
         return { autoResumed: true };
       },
@@ -355,6 +464,7 @@ function makeDeliveryPath(sql: SqlClient): {
   return {
     task,
     counts,
+    resumedDeliveryIds,
     deliveryRepository: repository,
     sessionRouter,
     sessionBridge,
@@ -369,6 +479,53 @@ function makeDeliveryPath(sql: SqlClient): {
       deliveryV2Enabled: true,
     }),
   };
+}
+
+async function registerRestartRuntimeDelivery(
+  repository: SessionDeliveryRepository,
+  deliveryId: string,
+): Promise<void> {
+  await repository.register({
+    deliveryId,
+    targetSessionId: "caller-session",
+    relationKey: `r25-restart:${deliveryId}`,
+    completionId: `completion:${deliveryId}`,
+    intent: "runtime_followup",
+    source: "claude_runtime_task_followup",
+    payloadHash: `hash:${deliveryId}`,
+    payload: {
+      text: `restart content:${deliveryId}`,
+      user: "system",
+      source: "claude_runtime_task_followup",
+    },
+  });
+}
+
+interface DeliveryConvergenceObservation {
+  deliveryId: string;
+  state: string;
+  aggregateState: string;
+  resumeCount: number;
+  deliveryImpossible: boolean;
+}
+
+function deliveryConvergenceViolations(
+  observations: readonly DeliveryConvergenceObservation[],
+): string[] {
+  return observations.flatMap((observation) => {
+    const deliveredOnce = observation.state === "consumed"
+      && observation.aggregateState === "consumed"
+      && observation.resumeCount === 1;
+    const impossibleAndTerminal = observation.deliveryImpossible
+      && observation.aggregateState === "dead_letter";
+    return deliveredOnce || impossibleAndTerminal
+      ? []
+      : [
+          `${observation.deliveryId}:state=${observation.state}`
+          + `/aggregate=${observation.aggregateState}`
+          + `/resume_count=${observation.resumeCount}`,
+        ];
+  });
 }
 
 interface DeliveryPathCounts {

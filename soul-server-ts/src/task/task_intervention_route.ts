@@ -379,7 +379,14 @@ function interventionTaskRoute(
 ): "running" | "activating" | "auto-resume" {
   if (task.status === "initializing") return "activating";
   if (!isActiveTaskStatus(task.status)) return "auto-resume";
-  return task.runner === undefined || task.runner.dispatcher.hasActiveExecution()
+  // Upstream commands wait for RunnerRecoveryCoordinator.scanOnce() before
+  // entering this route. During adoption durable ownership protects the gap
+  // before the runner finishes attaching; after attachment the dispatcher
+  // owns the live command. `executionPromise` is not sufficient: it remains
+  // pending briefly after a logical terminal event while that old host command
+  // drains, and treating it as a live turn would steal the successor message.
+  if (task.executionOwnership) return "running";
+  return task.runner?.dispatcher.hasActiveExecution() === true
     ? "running"
     : "auto-resume";
 }
