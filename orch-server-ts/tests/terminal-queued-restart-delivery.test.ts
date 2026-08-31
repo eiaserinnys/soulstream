@@ -78,7 +78,7 @@ const createSessionCacheSeedSinkWithNodeReady = createSessionCacheSeedSink as (
 ) => ReturnType<typeof createSessionCacheSeedSink>;
 
 describe("terminal queued delivery across node restart", () => {
-  it("reconciles seq5046 absent input and consumes one resumed completed-session turn", async () => {
+  it("terminalizes seq5046 absent input without reviving its completed session", async () => {
     const ledger = new RestartDeliveryLedger();
     const persistedEventTypes: string[] = [];
     const persistence = makeEventPersistenceTestDouble(async (_sessionId, event) => {
@@ -286,46 +286,33 @@ describe("terminal queued delivery across node restart", () => {
     await nodeReadyWork;
 
     const task = tasks.get(SESSION_ID);
-    if (task?.executionPromise) await task.executionPromise;
     const row = await ledger.get(DELIVERY_ID);
-    const input = modelInputs[0];
 
     expect(oldNode.node.connectionId).not.toBe(activeConnectionId);
     expect(oldDispatches).toHaveLength(0);
-    expect(newDispatches).toHaveLength(1);
+    expect(newDispatches).toHaveLength(0);
     expect(transcriptInspect).toHaveBeenCalledOnce();
     expect(ledger.trace).toEqual([
       "queued",
       "transcript_claimed",
-      "pending",
-      "node_ready_claimed",
-      "dispatching",
-      "queued_after_route",
-      "consumed",
+      "uncertain",
     ]);
     expect(queueOnly).not.toHaveBeenCalled();
-    expect(autoResumeCall).toHaveBeenCalledOnce();
-    expect(persistence.acquireExecutionOwnershipAndWaitForApplication).toHaveBeenCalledOnce();
-    expect(modelInputs).toHaveLength(1);
-    expect(input).toMatchObject({
-      inputUuid: buildDeliveryInputUuid(DELIVERY_ID),
-      prompt: expect.stringContaining(interventionBody(DELIVERY_ID).text as string),
-    });
+    expect(autoResumeCall).not.toHaveBeenCalled();
+    expect(persistence.acquireExecutionOwnershipAndWaitForApplication).not.toHaveBeenCalled();
+    expect(modelInputs).toHaveLength(0);
     expect(persistedEventTypes.filter((type) => type === "assistant_message"))
-      .toHaveLength(1);
-    expect(persistedEventTypes.filter((type) => type === "complete")).toHaveLength(1);
-    expect(ledger.consumeCount).toBe(1);
+      .toHaveLength(0);
+    expect(persistedEventTypes.filter((type) => type === "complete")).toHaveLength(0);
+    expect(ledger.consumeCount).toBe(0);
     expect(row).toMatchObject({
-      state: "consumed",
-      aggregate_state: "consumed",
-      attempt_count: 1,
-      target_receipt_id: expect.stringMatching(/^event:\d+$/),
-      dead_lettered_at: null,
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+      attempt_count: 0,
+      last_error: "queued_transcript_input_absent",
+      dead_lettered_at: expect.any(Date),
     });
-    expect(task).toMatchObject({
-      agentSessionId: SESSION_ID,
-      status: "completed",
-    });
+    expect(task).toBeUndefined();
   });
 });
 
@@ -475,7 +462,26 @@ class RestartDeliveryLedger {
   readonly markDeliveredFromTranscript = vi.fn(async () => null);
   readonly deferQueuedTranscriptCheck = vi.fn(async () => null);
   readonly markDelivered = vi.fn(async () => null);
-  readonly markUncertain = vi.fn(async () => null);
+  readonly markUncertain = vi.fn(async (
+    deliveryId: string,
+    leaseOwner?: string,
+    error?: string,
+  ) => {
+    if (
+      deliveryId !== DELIVERY_ID
+      || this.row.state !== "queued"
+      || this.row.lease_owner !== leaseOwner
+    ) return null;
+    this.row.state = "uncertain";
+    this.row.aggregate_state = "dead_letter";
+    this.row.lease_owner = null;
+    this.row.lease_expires_at = null;
+    this.row.last_error = error ?? "delivery result rejected";
+    this.row.dead_letter_reason = this.row.last_error;
+    this.row.dead_lettered_at = new Date();
+    this.trace.push("uncertain");
+    return structuredClone(this.row);
+  });
   readonly markConsumedByRelation = vi.fn(async () => null);
   readonly recordRelationConsumed = vi.fn(async () => null);
   readonly markPendingSuperseded = vi.fn(async () => null);

@@ -12,7 +12,7 @@ import type {
 export interface QueuedDeliveryTranscriptRecoveryDeps {
   deliveryRepository: Pick<
     SessionDeliveryRepository,
-    "get" | "markConsumed" | "retryLeasedDelivery"
+    "get" | "markConsumed" | "markUncertain" | "retryLeasedDelivery"
   >;
   recoveryRepository: Pick<
     SessionDeliveryRecoveryRepository,
@@ -35,10 +35,10 @@ export interface QueuedDeliveryTranscriptRecoveryPass {
  *
  * A stable input UUID prevents duplicate execution, but SDK 0.3.218 does not
  * emit another Result when that UUID is re-sent after resume. A completed
- * transcript therefore settles the ledger directly. Any receipt that does not
- * prove completion returns the same delivery identity to pending for reconnect
- * admission. The stable UUID lets the SDK reject duplicate execution while an
- * empty follow-up pass lets the startup-only lane retire.
+ * transcript therefore settles the ledger directly. An accepted input that is
+ * still pending returns to reconnect admission. An absent stable identity is
+ * terminally uncertain: replaying the same UUID cannot produce a new Result,
+ * so leaving it pending only revives the target on every node restart.
  */
 /**
  * One claim covers the whole batch, so the batch — not just one row — has to
@@ -130,11 +130,29 @@ export class QueuedDeliveryTranscriptRecovery {
           settled += 1;
           continue;
         }
-        const reason = receipt.kind === "absent"
-          ? "queued_transcript_input_absent"
-          : receipt.kind === "input_pending"
-            ? "queued_transcript_input_pending"
-            : receipt.reason;
+        if (receipt.kind === "absent") {
+          const reason = "queued_transcript_input_absent";
+          const uncertain = await this.deps.deliveryRepository.markUncertain(
+            row.delivery_id,
+            this.workerId,
+            reason,
+          );
+          const settledRow = uncertain
+            ?? await this.deps.deliveryRepository.get(row.delivery_id);
+          if (
+            settledRow?.state !== "uncertain"
+            || settledRow.aggregate_state !== "dead_letter"
+          ) {
+            throw new Error(
+              `Transcript-absent delivery ${row.delivery_id} did not reach dead letter`,
+            );
+          }
+          settled += 1;
+          continue;
+        }
+        const reason = receipt.kind === "input_pending"
+          ? "queued_transcript_input_pending"
+          : receipt.reason;
         await this.returnToPending(row.delivery_id, reason);
       } catch (err) {
         await this.returnToPending(

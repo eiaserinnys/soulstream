@@ -160,8 +160,12 @@ export class TaskInterventionRoute {
       : initialMessage;
 
     let ledgerResultRecorded = false;
-    let deferredResume: Task | undefined;
+    let deferredResume: {
+      task: Task;
+      activation?: Task["executionActivation"];
+    } | undefined;
     let deferredResumeStarted = false;
+    let startedActivation: Task["executionActivation"];
     let notificationDisposition: "queued" | "auto_resume" | undefined;
     let notificationPublication: NotificationPublication | undefined;
     const startDeferredResumeOnce = (): void => {
@@ -169,7 +173,14 @@ export class TaskInterventionRoute {
       deferredResumeStarted = true;
       const resume = deferredResume;
       deferredResume = undefined;
-      onResume(resume);
+      startedActivation = resume.activation;
+      try {
+        if (resume.activation) onResume(resume.task, resume.activation);
+        else onResume(resume.task);
+      } catch (error) {
+        resume.activation?.reject(error);
+        throw error;
+      }
     };
     try {
       await this.awaitInitializingTask(task);
@@ -213,8 +224,8 @@ export class TaskInterventionRoute {
       } else if (heldHumanRetry && task.status !== "completed") {
         result = await this.deps.runningInterventionTransition.queueOnly(task, message);
       } else if (admission.kind === "admitted") {
-        const deferResumeUntilQueued: StartExecutionCallback = (resumedTask) => {
-          deferredResume = resumedTask;
+        const deferResumeUntilQueued: StartExecutionCallback = (resumedTask, activation) => {
+          deferredResume = { task: resumedTask, activation };
         };
         result = await this.deps.autoResumeTransition.resume(
           task,
@@ -225,7 +236,16 @@ export class TaskInterventionRoute {
             : []),
         );
       } else {
-        result = await this.deps.autoResumeTransition.resume(task, message, onResume);
+        result = await this.deps.autoResumeTransition.resume(
+          task,
+          message,
+          (resumedTask, activation) => {
+            startedActivation = activation;
+            return activation
+              ? onResume(resumedTask, activation)
+              : onResume(resumedTask);
+          },
+        );
       }
       if (
         admission.kind === "admitted"
@@ -258,6 +278,9 @@ export class TaskInterventionRoute {
       // can dequeue it. A worker crash before this callback is recoverable from
       // the ledger; starting first would leave a running task with no receipt.
       startDeferredResumeOnce();
+      if ("autoResumed" in result && startedActivation) {
+        await startedActivation.promise;
+      }
       if (notificationDisposition === "auto_resume" && notificationPublication) {
         await this.projectNotificationPublication(admission, notificationPublication);
       }

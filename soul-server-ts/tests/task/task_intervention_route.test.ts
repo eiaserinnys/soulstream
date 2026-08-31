@@ -254,17 +254,14 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }, onResume)).resolves.toEqual({ autoResumed: true });
 
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
-    expect(autoResumeTransition.resume).toHaveBeenCalledWith(task, {
+    expect(autoResumeTransition.resume).toHaveBeenCalledWith(task, expect.objectContaining({
       text: "resume",
       user: "alice",
-      callerInfo: undefined,
-      attachmentPaths: undefined,
-      context: undefined,
       source: "claude_runtime_task_followup",
       followupAttempt: 2,
       followupKey: "sess-intervention:agent-task",
       followupTaskIds: ["agent-task"],
-    }, onResume);
+    }), expect.any(Function));
   });
 
   it("does not return auto-resume success before execution ownership activation", async () => {
@@ -644,7 +641,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(tasks.get("sess-evicted")).toBe(hydrated);
     expect(autoResumeTransition.resume).toHaveBeenCalledWith(hydrated, expect.objectContaining({
       text: "resume from DB",
-    }), onResume);
+    }), expect.any(Function));
   });
 
   it("routes hydrated running tasks to the existing runner queue", async () => {

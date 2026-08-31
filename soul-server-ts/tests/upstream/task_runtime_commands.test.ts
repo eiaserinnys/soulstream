@@ -437,7 +437,8 @@ describe("TaskRuntimeCommands.intervene", () => {
     await runtime.intervene({ agentSessionId: resumedTask.agentSessionId, text: "continue" });
 
     expect(source.resolve).not.toHaveBeenCalled();
-    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(resumedTask, snapshot);
+    expect(taskExecutor.startNewExecution)
+      .toHaveBeenCalledWith(resumedTask, snapshot, activation);
   });
 
   it("forwards intervention params and auto-resume callback starts execution with the task profile", async () => {
@@ -471,7 +472,8 @@ describe("TaskRuntimeCommands.intervene", () => {
       },
       expect.any(Function),
     );
-    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(resumedTask, codexAgent);
+    expect(taskExecutor.startNewExecution)
+      .toHaveBeenCalledWith(resumedTask, codexAgent, activation);
     expect(result).toEqual({ autoResumed: true });
   });
 
@@ -508,7 +510,8 @@ describe("TaskRuntimeCommands.intervene", () => {
       }),
       expect.any(Function),
     );
-    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(resumedTask, claudeAgent);
+    expect(taskExecutor.startNewExecution)
+      .toHaveBeenCalledWith(resumedTask, claudeAgent, activation);
     expect(result).toEqual({ autoResumed: true });
   });
 

@@ -31,7 +31,11 @@ import { TaskDeliveryLedgerGate } from
 import { ExecutionOwnershipBackoff } from
   "../../src/task/execution_ownership_backoff.js";
 import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
-import type { InterventionMessage, Task } from "../../src/task/task_models.js";
+import {
+  createExecutionActivation,
+  type InterventionMessage,
+  type Task,
+} from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
@@ -2057,6 +2061,43 @@ describe("TaskExecutor.startExecution", () => {
 });
 
 describe("TaskExecutor runner process boundary", () => {
+  it("startNewExecution activation은 동기 startup 실패도 terminal writer 뒤 거절한다", async () => {
+    const mocks = makeMocks();
+    const startupError = new Error("runner factory boom");
+    const processFactory = vi.fn(() => {
+      throw startupError;
+    }) as unknown as RunnerProcessRuntimeFactory;
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+    const task = makeTask();
+    task.status = "initializing";
+    const activation = createExecutionActivation();
+
+    const execution = executor.startNewExecution(task, agent, activation);
+
+    await expect(activation.promise).rejects.toThrow("runner factory boom");
+    await expect(execution).resolves.toBeUndefined();
+    expect(task.status).toBe("error");
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ type: "session_ended", status: "error" }),
+      expect.objectContaining({ kind: "terminal_transition", status: "error" }),
+    );
+    expect(task.executionActivation).toBeUndefined();
+  });
+
   it("startNewExecution starts the process runner once without acquiring ownership", async () => {
     const mocks = makeMocks();
     const acquireOwnership = vi.fn();

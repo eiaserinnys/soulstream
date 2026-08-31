@@ -53,7 +53,17 @@ class TaskManager extends ProductionTaskManager {
     params: AddInterventionParams,
     observeResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
-    return super.addIntervention(params, observeResume);
+    return super.addIntervention(params, (task, activation) => {
+      const result = observeResume(task);
+      if (activation) {
+        task.status = "running";
+        if (task.executionActivation === activation) {
+          task.executionActivation = undefined;
+        }
+        activation.resolve();
+      }
+      return result;
+    });
   }
 }
 

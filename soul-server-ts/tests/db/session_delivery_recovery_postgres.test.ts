@@ -839,15 +839,14 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       kind: "absent",
       inputUuid: "not-persisted",
     }));
-    // Startup recovery may settle transcript-proven success. An absent receipt
-    // returns the exact row to pending so reconnect admission can reclaim it.
+    // Startup recovery settles transcript-proven success and terminalizes an
+    // absent stable identity: replaying that UUID cannot produce a new Result.
     await expect(
       queuedRecovery.recoverAfterNodeRestart("node-test"),
-    ).resolves.toEqual({ claimed: 1, settled: 0 });
+    ).resolves.toEqual({ claimed: 1, settled: 1 });
     await expect(repository.get("delivery-after-queued")).resolves.toMatchObject({
-      state: "pending",
-      aggregate_state: "pending",
-      attempt_count: 1,
+      state: "uncertain",
+      aggregate_state: "dead_letter",
       last_error: "queued_transcript_input_absent",
     });
     await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(2);
@@ -872,8 +871,8 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       aggregate_state: "pending",
     });
     await expect(repository.get("delivery-after-queued")).resolves.toMatchObject({
-      state: "pending",
-      aggregate_state: "pending",
+      state: "uncertain",
+      aggregate_state: "dead_letter",
       last_error: "queued_transcript_input_absent",
     });
     await expect(repository.get("delivery-after-turn-started")).resolves.toMatchObject({
@@ -1057,7 +1056,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
   });
 
-  it("returns transcript-absent identity to pending for reconnect reclaim", async () => {
+  it("terminalizes transcript-absent identity before reconnect replay", async () => {
     await register("delivery-stale-identity", "relation-stale-identity", {
       targetSessionId: "caller-session",
     });
@@ -1083,23 +1082,20 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     );
     await expect(
       queuedRecovery.recoverAfterNodeRestart("node-test"),
-    ).resolves.toEqual({ claimed: 1, settled: 0 });
+    ).resolves.toEqual({ claimed: 1, settled: 1 });
     await expect(repository.get("delivery-stale-identity")).resolves
       .toMatchObject({
-        state: "pending",
-        aggregate_state: "pending",
-        attempt_count: 1,
+        state: "uncertain",
+        aggregate_state: "dead_letter",
         last_error: "queued_transcript_input_absent",
       });
     await expect(
       queuedRecovery.recoverAfterNodeRestart("node-test"),
     ).resolves.toEqual({ claimed: 0, settled: 0 });
-    await expect(repository.get("delivery-stale-identity")).resolves
-      .toMatchObject({
-        state: "pending",
-        aggregate_state: "pending",
-        attempt_count: 1,
-      });
+    await expect(repository.recovery.claimPendingImmediateIntentsForNode(
+      "node-test",
+      "node-ready-worker",
+    )).resolves.toEqual([]);
   });
 
   it("rolls ledger and notification outbox forward atomically", async () => {

@@ -44,13 +44,22 @@ describe("AutoResumeTransition", () => {
     const persistence = Object.assign(persistenceDouble.persistence, {
       acquireExecutionOwnershipAndWaitForApplication,
     });
-    const startNewExecution = vi.fn((resumedTask: Task) => {
-      expect(resumedTask.status).toBe("running");
-      expect(resumedTask.executionActivation).toBeUndefined();
+    const startNewExecution = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      expect(resumedTask.status).toBe("initializing");
+      expect(resumedTask.executionActivation).toBe(activation);
       expect(resumedTask.pendingExecutionExpectedTerminalEventId).toBeUndefined();
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
     });
-    const onResume = vi.fn((resumedTask: Task) => {
-      startNewExecution(resumedTask);
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      startNewExecution(resumedTask, activation);
     });
     const transition = new AutoResumeTransition({
       logger: silentLogger,
@@ -62,9 +71,9 @@ describe("AutoResumeTransition", () => {
     ).resolves.toEqual({ autoResumed: true });
 
     expect(onResume).toHaveBeenCalledTimes(1);
-    expect(onResume).toHaveBeenCalledWith(task);
+    expect(onResume).toHaveBeenCalledWith(task, expect.any(Object));
     expect(startNewExecution).toHaveBeenCalledTimes(1);
-    expect(startNewExecution).toHaveBeenCalledWith(task);
+    expect(startNewExecution).toHaveBeenCalledWith(task, expect.any(Object));
     expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
       .toHaveBeenCalledTimes(1);
     expect(acquireExecutionOwnershipAndWaitForApplication).not.toHaveBeenCalled();
@@ -171,11 +180,17 @@ describe("AutoResumeTransition", () => {
       logger: silentLogger,
       persistence,
     });
-    const onResume = vi.fn((resumedTask: Task) => {
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
       order.push("onResume");
       expect(resumedTask).toBe(task);
-      expect(resumedTask.status).toBe("running");
+      expect(resumedTask.status).toBe("initializing");
       expect(resumedTask.interventionQueue).toHaveLength(1);
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
     });
 
     await expect(
@@ -305,8 +320,14 @@ describe("AutoResumeTransition", () => {
         workspace_dir: "/tmp/db-profile",
       },
     });
-    const onResume = vi.fn((resumedTask: Task) => {
-      expect(resumedTask.executionActivation).toBeUndefined();
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      expect(resumedTask.executionActivation).toBe(activation);
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
     });
     const transition = new AutoResumeTransition({
       persistence: makeEventPersistenceTestDouble(undefined, [], {
@@ -319,7 +340,7 @@ describe("AutoResumeTransition", () => {
     await expect(
       transition.resume(task, { text: "resume", user: "u" }, onResume),
     ).resolves.toEqual({ autoResumed: true });
-    expect(onResume).toHaveBeenCalledWith(task);
+    expect(onResume).toHaveBeenCalledWith(task, expect.any(Object));
   });
 
   it("clears termination state so a resumed turn can finalize with a fresh session_ended event", async () => {
@@ -442,17 +463,23 @@ describe("AutoResumeTransition", () => {
         capabilityProfile: "execution_ownership",
       }).persistence,
     });
-    const onResume = vi.fn((resumedTask: Task) => {
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
       expect(resumedTask.runner).toBe(runner);
       expect(resumedTask.runnerRetainedForClaudeBackground).toBe(true);
       expect(resumedTask.executionPromise).toBeUndefined();
-      expect(resumedTask.executionActivation).toBeUndefined();
+      expect(resumedTask.executionActivation).toBe(activation);
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
     });
 
     await transition.resume(task, { text: "runtime result", user: "system" }, onResume);
 
     expect(close).not.toHaveBeenCalled();
-    expect(onResume).toHaveBeenCalledWith(task);
+    expect(onResume).toHaveBeenCalledWith(task, expect.any(Object));
   });
 
   it("auto-acknowledges a needs_review result before terminal follow-up resumes", async () => {

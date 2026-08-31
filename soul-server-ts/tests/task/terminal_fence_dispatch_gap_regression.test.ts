@@ -231,9 +231,9 @@ describe("terminal fence dispatch persistence gap", () => {
         semanticEffects: 1,
         automaticStarts: 1,
         runningTransitions: 1,
-        executionAcquires: 0,
-        turnStarts: 0,
-        modelCalls: 0,
+        executionAcquires: 1,
+        turnStarts: 1,
+        modelCalls: 1,
       });
     } finally {
       runtime.release();

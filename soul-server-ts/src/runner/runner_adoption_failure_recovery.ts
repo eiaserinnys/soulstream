@@ -9,7 +9,10 @@ import {
   type RunnerRegistration,
 } from "./runner_process_registry.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
-import { prepareRecoveredTask } from "./runner_recovery_task.js";
+import {
+  prepareRecoveredTask,
+  prepareRecoveredTerminalExecutionIdentity,
+} from "./runner_recovery_task.js";
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
 
 export type RunnerAdoptionDisposition = "adopt_prebootstrap" | "adopt_running";
@@ -121,6 +124,7 @@ export class RunnerAdoptionFailureRecovery {
         }, task)
       : task;
     prepareRecoveredTask(recoveredTask, registration);
+    prepareRecoveredTerminalExecutionIdentity(recoveredTask, registration);
     recoveredTask.runnerTerminalFact = "reaped";
     await this.deps.resumeReplacement(recoveredTask, error.message, registration.config);
     this.deps.logger.info(
