@@ -1,10 +1,20 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
+/**
+ * Transport backing `socketPath`. A unix socket is a filesystem entry the
+ * host can quarantine and unlink; a Windows named pipe lives in the pipe
+ * namespace, has no filesystem entity, and is reclaimed by the OS when its
+ * owning process exits. Callers that mutate filesystem evidence must branch
+ * on this kind instead of sniffing the path string.
+ */
+export type RunnerSocketKind = "unix_socket" | "named_pipe";
+
 export interface RunnerProcessPaths {
   sessionDirectory: string;
   databasePath: string;
   socketPath: string;
+  socketKind: RunnerSocketKind;
   pidPath: string;
   lockPath: string;
   configPath: string;
@@ -68,6 +78,7 @@ export function runnerProcessPaths(
     socketPath: platform === "win32"
       ? `\\\\.\\pipe\\soulstream-runner-${slug}`
       : join(sessionDirectory, RUNNER_SOCKET_FILE_NAME),
+    socketKind: platform === "win32" ? "named_pipe" : "unix_socket",
     pidPath: join(sessionDirectory, "runner.pid"),
     lockPath: join(sessionDirectory, "runner.lock"),
     configPath: join(sessionDirectory, "runner-config.json"),

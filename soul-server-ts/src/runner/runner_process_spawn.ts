@@ -51,12 +51,18 @@ const RunnerProcessPathsSchema = z.object({
   sessionDirectory: z.string().min(1),
   databasePath: z.string().min(1),
   socketPath: z.string().min(1),
+  // Older persisted configs predate socketKind. runner-state is host-local,
+  // so the platform reading the config is the platform that wrote it — the
+  // same rule the paths factory uses.
+  socketKind: z.enum(["unix_socket", "named_pipe"]).optional(),
   pidPath: z.string().min(1),
   lockPath: z.string().min(1),
   configPath: z.string().min(1),
   logPath: z.string().min(1).optional(),
 }).transform((paths) => ({
   ...paths,
+  socketKind: paths.socketKind
+    ?? (process.platform === "win32" ? "named_pipe" as const : "unix_socket" as const),
   logPath: paths.logPath ?? join(paths.sessionDirectory, "runner.log"),
 }));
 
