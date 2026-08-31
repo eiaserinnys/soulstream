@@ -33,6 +33,7 @@ import {
   settleInterventionInterrupt,
   shouldFencePostInterruptContinuation,
   turnInactivityError,
+  waitForInterventionEffect,
 } from "./claude_sdk_persistent_session_support.js";
 import { startPersistentForegroundTurn } from "./claude_sdk_persistent_turn_handoff.js";
 import {
@@ -116,13 +117,17 @@ export class ClaudeSdkPersistentSession {
     this.interventionFence = active;
     this.clearForegroundTimers(active);
     try {
-      await this.runtime.interruptForeground();
+      return await waitForInterventionEffect(
+        observation,
+        () => this.runtime.interruptForeground(),
+        this.logger,
+        active.uuid,
+      );
     } catch (error) {
       if (observation.observed) return true;
       await this.close("fatal");
       throw error;
     }
-    return await observation.promise;
   }
 
   snapshot(): ClaudeSessionRuntimeSnapshot {
@@ -138,8 +143,6 @@ export class ClaudeSdkPersistentSession {
       clearTimeout(this.drainTimer);
       this.drainTimer = null;
     }
-    // Active background rows are persisted before entering runtime membership.
-    // Stop execution first; failed terminal persistence is restart-recoverable.
     this.runtime.close(reason);
     const active = this.activeForeground;
     this.clearForegroundTimers(active);

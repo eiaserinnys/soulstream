@@ -67,6 +67,41 @@ export function createInterventionInterruptObservation(): InterventionInterruptO
   return observation;
 }
 
+export async function waitForInterventionEffect(
+  observation: InterventionInterruptObservation,
+  interrupt: () => Promise<unknown>,
+  logger: Pick<Logger, "info" | "warn">,
+  uuid: string,
+): Promise<boolean> {
+  let rejectControlFailure!: (error: unknown) => void;
+  const controlFailure = new Promise<never>((_resolve, reject) => {
+    rejectControlFailure = reject;
+  });
+  void interrupt().then(
+    () => {
+      if (observation.observed) {
+        logger.info(
+          { uuid },
+          "Claude interrupt receipt arrived after its effect was observed",
+        );
+      }
+    },
+    (error: unknown) => {
+      if (observation.settled) {
+        logger.warn(
+          { err: error, uuid },
+          observation.observed
+            ? "Claude interrupt failed after its effect was observed"
+            : "Claude interrupt failed after the intervention had already settled",
+        );
+        return;
+      }
+      rejectControlFailure(error);
+    },
+  );
+  return await Promise.race([observation.promise, controlFailure]);
+}
+
 export function isPostInterruptContinuation(event: ClaudeClientEvent): boolean {
   return event.type === "progress"
     || event.type === "text"
