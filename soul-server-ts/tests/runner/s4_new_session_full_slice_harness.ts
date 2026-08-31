@@ -168,6 +168,7 @@ export class ProductionFullSliceHarness {
     let firstAliveAfterInitialTerminal: boolean | null = null;
     let silentWindow: FullSliceObservation["silentWindow"] = null;
     let deliveryId: string | null = null;
+    let ghostResumeFailed = false;
 
     if (this.requiresRestart) {
       await this.killWorker();
@@ -210,7 +211,47 @@ export class ProductionFullSliceHarness {
 
     await this.waitForTerminalCount(1);
 
-    if (this.isCompletedResume) {
+    if (this.isGhostRunningResume) {
+      await this.waitForPidDeath(first.pid);
+      firstAliveAfterInitialTerminal = isPidAlive(first.pid);
+      await this.killWorker();
+      await this.stageGhostRunning();
+      await rm(
+        runnerProcessPaths(this.stateDirectory, this.sessionId).sessionDirectory,
+        { recursive: true, force: true },
+      );
+
+      await this.spawnWorker();
+      const restartedNode = await this.waitForNode(
+        (node) => node.connectionId !== firstNode.connectionId,
+      );
+      restart = {
+        beforeConnectionId: firstNode.connectionId,
+        afterConnectionId: restartedNode.connectionId,
+      };
+      await this.waitForWorkerRecoveryReady();
+      const interveneAck = await this.publicCommand(
+        "intervene",
+        `/api/sessions/${this.sessionId}/intervene`,
+        { text: this.interventionPrompt, user: "full-slice-user" },
+      );
+      publicAcks.push(interveneAck);
+      deliveryId = interveneAck.deliveryId ?? await this.readLatestDeliveryId();
+      if (
+        interveneAck.status === 200
+        && interveneAck.body.outcome === "auto_resumed"
+      ) {
+        await this.waitForExecuteProbe(true);
+        successor = await this.waitForDifferentRunnerIdentity(first.registrationId);
+        await this.release("resume");
+        await this.waitForTerminalCount(2);
+        await this.waitForConsumedDelivery(deliveryId);
+      } else {
+        ghostResumeFailed = true;
+      }
+    }
+
+    if (this.isCompletedResume && !this.isGhostRunningResume) {
       await this.waitForPidDeath(first.pid);
       firstAliveAfterInitialTerminal = isPidAlive(first.pid);
       const interveneAck = await this.publicCommand(
@@ -227,7 +268,9 @@ export class ProductionFullSliceHarness {
     }
 
     const delivery = deliveryId
-      ? await this.waitForConsumedDelivery(deliveryId)
+      ? ghostResumeFailed
+        ? await this.readDeliveryObservation(deliveryId)
+        : await this.waitForConsumedDelivery(deliveryId)
       : null;
     return {
       scenario: this.scenario,
@@ -284,7 +327,11 @@ export class ProductionFullSliceHarness {
   }
 
   private get isCompletedResume(): boolean {
-    return this.scenario === "S2" || this.scenario === "S5";
+    return this.scenario === "S2" || this.scenario === "S5" || this.scenario === "S7";
+  }
+
+  private get isGhostRunningResume(): boolean {
+    return this.scenario === "S7";
   }
 
   private get isActiveIntervention(): boolean {
@@ -503,6 +550,67 @@ export class ProductionFullSliceHarness {
     });
   }
 
+  private async readDeliveryObservation(deliveryId: string): Promise<DeliveryObservation> {
+    const rows = await this.postgres.sql<Array<{
+      delivery_id: string;
+      target_session_id: string;
+      state: string;
+      aggregate_state: string;
+      consumed_at: string | null;
+    }>>`
+      SELECT delivery_id, target_session_id, state, aggregate_state,
+        consumed_at::text AS consumed_at
+      FROM session_deliveries
+      WHERE delivery_id = ${deliveryId}
+    `;
+    const row = rows[0];
+    if (rows.length !== 1 || !row) {
+      throw new Error(`Delivery ${deliveryId} disappeared from the full-slice database`);
+    }
+    return {
+      rowCount: rows.length,
+      deliveryId: row.delivery_id,
+      targetSessionId: row.target_session_id,
+      state: row.state,
+      aggregateState: row.aggregate_state,
+      consumedAt: row.consumed_at,
+    };
+  }
+
+  private async stageGhostRunning(): Promise<void> {
+    await this.postgres.sql`
+      UPDATE sessions
+      SET status = 'running', termination_reason = NULL, termination_detail = NULL,
+        termination_event_id = NULL, updated_at = NOW()
+      WHERE session_id = ${this.sessionId}
+    `;
+    const [shape] = await this.postgres.sql<Array<{
+      status: string;
+      active_owner_count: number;
+    }>>`
+      SELECT session.status,
+        (SELECT COUNT(*)::int FROM session_execution_ownerships AS ownership
+          WHERE ownership.session_id = session.session_id
+            AND ownership.phase = 'active') AS active_owner_count
+      FROM sessions AS session
+      WHERE session.session_id = ${this.sessionId}
+    `;
+    if (shape?.status !== "running" || Number(shape.active_owner_count) !== 0) {
+      throw new Error("S7 failed to stage a running session without durable execution evidence");
+    }
+  }
+
+  private async readLatestDeliveryId(): Promise<string> {
+    const [delivery] = await this.postgres.sql<Array<{ delivery_id: string }>>`
+      SELECT delivery_id
+      FROM session_deliveries
+      WHERE target_session_id = ${this.sessionId}
+      ORDER BY enqueue_sequence DESC
+      LIMIT 1
+    `;
+    return requireString(delivery?.delivery_id, "latest intervention deliveryId");
+  }
+
   private async readEngineBoundaryProbes(): Promise<EngineBoundaryProbeObservation[]> {
     const entries = await readdir(this.controlDirectory).catch(() => []);
     const probeEntries = entries
@@ -524,6 +632,23 @@ export class ProductionFullSliceHarness {
       SELECT event_type, payload FROM events
       WHERE session_id = ${this.sessionId} ORDER BY id
     `;
+    const [counts] = await this.postgres.sql<Array<{
+      unfinished_delivery_count: number;
+      ghost_running_count: number;
+    }>>`
+      SELECT
+        (SELECT COUNT(*)::int FROM session_deliveries AS delivery
+          WHERE delivery.target_session_id = ${this.sessionId}
+            AND delivery.state NOT IN ('consumed', 'superseded')) AS unfinished_delivery_count,
+        (SELECT COUNT(*)::int FROM sessions AS candidate
+          WHERE candidate.session_id = ${this.sessionId}
+            AND candidate.status = 'running'
+            AND NOT EXISTS (
+              SELECT 1 FROM session_execution_ownerships AS ownership
+              WHERE ownership.session_id = candidate.session_id
+                AND ownership.phase = 'active'
+            )) AS ghost_running_count
+    `;
     return {
       status: session?.status ?? "missing",
       assistantContents: events
@@ -540,6 +665,8 @@ export class ProductionFullSliceHarness {
         .filter((value): value is string => value !== null),
       sessionEndedCount: events.filter((event) => event.event_type === "session_ended").length,
       errorEventCount: events.filter((event) => event.event_type === "error").length,
+      unfinishedDeliveryCount: Number(counts?.unfinished_delivery_count ?? 0),
+      ghostRunningCount: Number(counts?.ghost_running_count ?? 0),
     };
   }
 

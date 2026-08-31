@@ -40,7 +40,7 @@ interface LocalInboxRow {
   message: InterventionMessage;
 }
 
-function makeTerminalTask(): Task {
+function makeTerminalTask(overrides: Partial<Task> = {}): Task {
   return {
     agentSessionId: "session-d-reconciliation",
     prompt: "previous prompt",
@@ -52,6 +52,7 @@ function makeTerminalTask(): Task {
     terminalEventId: 10,
     lastReadEventId: 10,
     interventionQueue: [],
+    ...overrides,
   };
 }
 
@@ -202,9 +203,28 @@ function deliveryMessage(deliveryId: string, text: string): InterventionMessage 
 function makeHarness(input: {
   terminalStates?: ReadonlyMap<string, TerminalDeliveryState>;
   localRows?: readonly LocalInboxRow[];
+  task?: Task;
+  enforceRunningTransitionFence?: boolean;
 }) {
-  const task = makeTerminalTask();
+  const task = input.task ?? makeTerminalTask();
   const persistenceDouble = makeEventPersistenceTestDouble();
+  if (input.enforceRunningTransitionFence) {
+    persistenceDouble.enqueueRunningTransitionAndWaitForApplication
+      .mockImplementation(async (_sessionId, transition) => ({
+        eventId: 11,
+        applied: transition.expectedTerminalEventId === undefined,
+        canonicalSession: {
+          status: "running",
+          termination_reason: null,
+          termination_detail: null,
+          review_state: transition.reviewState,
+          last_assistant_text: null,
+          termination_event_id: null,
+          updated_at: "2026-09-01T00:00:00.000Z",
+          last_event_id: 11,
+        },
+      }));
+  }
   const ledgerGate = makeLedgerGate(input.terminalStates ?? new Map());
   const { runner, openRows, executed, dispatcher } = makeRunner(input.localRows ?? []);
   const runnerProcessFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
@@ -310,6 +330,36 @@ describe("central delivery ↔ runner inbox reconciliation contract", () => {
     expect(harness.executed.map((input) => input.prompt)).toEqual(["central only"]);
     expect([...harness.openRows.keys()]).toEqual([]);
     expect(harness.task.status).toBe("completed");
+  });
+
+  it("consumes and terminates an ownerless running delivery through a fresh execution", async () => {
+    const task = makeTerminalTask({
+      status: "running",
+      completedAt: undefined,
+      terminalEventId: undefined,
+      result: undefined,
+      error: undefined,
+    });
+    const harness = makeHarness({
+      task,
+      enforceRunningTransitionFence: true,
+    });
+    const message = deliveryMessage(
+      "delivery-ownerless-running",
+      "resume ownerless running",
+    );
+
+    await expect(harness.resume(message)).resolves.toEqual({ autoResumed: true });
+
+    expect(harness.executed.map((input) => input.prompt)).toEqual([
+      "resume ownerless running",
+    ]);
+    expect(harness.ledgerGate.recordConsumed).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId: "delivery-ownerless-running" }),
+      task,
+      expect.any(String),
+    );
+    expect(task.status).toBe("completed");
   });
 
   it("settles a matching local inbox row when central auto-resume completes", async () => {
