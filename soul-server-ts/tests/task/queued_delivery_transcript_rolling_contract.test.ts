@@ -27,19 +27,19 @@ describe("queued transcript recovery rolling contract", () => {
     await harness.assertExactlyOnce();
   });
 
-  it("returns transcript-absent input to pending for reconnect reclaim", async () => {
+  it("terminalizes transcript-absent input so reconnect cannot replay it", async () => {
     const harness = makeDeferredHarness("absent");
 
     await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
       claimed: 1,
-      settled: 0,
+      settled: 1,
     });
-    expect(harness.retryLeasedDelivery).toHaveBeenCalledWith(
+    expect(harness.markUncertain).toHaveBeenCalledWith(
       "delivery-deferred",
       "rolling-worker",
       "queued_transcript_input_absent",
-      0,
     );
+    expect(harness.retryLeasedDelivery).not.toHaveBeenCalled();
     expect(harness.deferQueuedTranscriptCheck).not.toHaveBeenCalled();
   });
 
@@ -71,6 +71,12 @@ function makeDeferredHarness(receiptKind: "absent" | "input_pending") {
     state: "pending",
     lease_owner: null,
   }) as SessionDeliveryRow);
+  const markUncertain = vi.fn(async () => ({
+    ...claimedRow,
+    state: "uncertain",
+    aggregate_state: "dead_letter",
+    lease_owner: null,
+  }) as SessionDeliveryRow);
   const deferQueuedTranscriptCheck = vi.fn(async () => ({
     ...claimedRow,
     state: "queued",
@@ -80,6 +86,7 @@ function makeDeferredHarness(receiptKind: "absent" | "input_pending") {
     deliveryRepository: {
       get: vi.fn(async () => claimedRow),
       markConsumed: vi.fn(async () => null),
+      markUncertain,
       retryLeasedDelivery,
     },
     recoveryRepository: {
@@ -98,6 +105,7 @@ function makeDeferredHarness(receiptKind: "absent" | "input_pending") {
 
   return {
     recovery,
+    markUncertain,
     retryLeasedDelivery,
     deferQueuedTranscriptCheck,
   };
