@@ -166,6 +166,10 @@ describe("parseEventAppendBatch sanitization", () => {
       start_identity: "start-1",
       execution_command_id: "execute-1",
       terminal_event_id: 3,
+      runner_fact: "completed",
+      termination_detail: null,
+      review_state: "not_required",
+      last_assistant_text: "done",
       updated_at: "2026-08-29T00:00:00.000Z",
     };
 
