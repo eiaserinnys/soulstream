@@ -740,14 +740,6 @@ describe("TaskInterventionRoute.addIntervention", () => {
         },
       }),
     },
-    {
-      state: "execution slot before runner attachment",
-      task: makeTask({
-        agentSessionId: "sess-reconnecting-runner",
-        runner: undefined,
-        executionPromise: new Promise<void>(() => undefined),
-      }),
-    },
   ])("keeps $state on one running intervention owner", async ({ task }) => {
     const { route, runningInterventionTransition, autoResumeTransition } =
       makeSubject([task]);

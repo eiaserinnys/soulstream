@@ -24,6 +24,19 @@ import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.
 
 const silentLogger = pino({ level: "silent" });
 
+function markDurablyRunning(task: Task): void {
+  task.executionOwnership = {
+    ownerKind: "adopted_runner",
+    manifestId: `manifest:${task.agentSessionId}`,
+    runtimeEnvIdentity: `runtime:${task.agentSessionId}`,
+    registrationId: `registration:${task.agentSessionId}`,
+    pid: 42_201,
+    startIdentity: `start:${task.agentSessionId}`,
+    executionCommandId: `command:${task.agentSessionId}`,
+    ownershipGeneration: 1,
+  };
+}
+
 type BoardYjsService = Pick<BoardYjsHostClient, "upsertSessionBoardItem">;
 
 const boardYjsServices = new WeakMap<SessionDB, BoardYjsService>();
@@ -1394,6 +1407,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     task.status = "running";
+    markDurablyRunning(task);
     expect(task.status).toBe("running");
     expect(task.interventionQueue).toEqual([]);
 
@@ -1429,6 +1443,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       profileId: "codex-default",
     });
     task.status = "running";
+    markDurablyRunning(task);
     const onResume = vi.fn();
     const r1 = await tm.addIntervention({ agentSessionId: "s1", text: "a", user: "u" }, onResume);
     const r2 = await tm.addIntervention({ agentSessionId: "s1", text: "b", user: "u" }, onResume);
@@ -1876,58 +1891,71 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
 
 // B-5: session_broadcaster.emitCatalogUpdated wire 형상 회귀는 session_broadcaster.test.ts에서 보호.
 
-// B-5: live surface가 없는 running task는 다음 turn queue fallback이 정본.
+// B-5: recovery 뒤 live surface와 durable owner가 모두 없는 running row는 auto-resume한다.
 describe("TaskManager.addIntervention — running fallback without live surface (B-5)", () => {
-  it("persistence 주입 시 live surface가 없어도 접수 이벤트를 기록한 뒤 queue에 보존", async () => {
+  it("persistence 주입 시 ownerless running row를 user_message로 접수하고 auto-resume", async () => {
     const mocks = makeMocks();
     const enqueueEvent = vi.fn().mockResolvedValue(123);
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
-    const persistence = { enqueueEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
+    const persistence = {
+      ...mocks.persistence,
+      enqueueEvent,
+      handleSideEffects,
+    } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
 
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     task.status = "running";
     expect(task.status).toBe("running");
+    const onResume = vi.fn();
 
-    await tm.addIntervention(
+    const result = await tm.addIntervention(
       { agentSessionId: "s1", text: "추가 메시지", user: "alice", callerInfo: { source: "slack" } },
-      vi.fn(),
+      onResume,
     );
 
+    expect(result).toEqual({ autoResumed: true });
     expect(task.interventionQueue).toEqual([
-      {
+      expect.objectContaining({
         text: "추가 메시지",
         user: "alice",
         callerInfo: { source: "slack" },
-      },
+      }),
     ]);
     expect(enqueueEvent).toHaveBeenCalledWith(
       "s1",
-      expect.objectContaining({ type: "intervention_sent", text: "추가 메시지" }),
+      expect.objectContaining({ type: "user_message", text: "추가 메시지" }),
     );
     expect(handleSideEffects).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledTimes(1);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
-    expect(task.lastEventId).toBe(0);
+    expect(onResume).toHaveBeenCalledWith(task);
   });
 
-  it("공통 persistence + live surface 없음 → durable 접수 후 queue에 보존", async () => {
+  it("공통 persistence + live surface 없음 → durable running 전이 후 auto-resume", async () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, mocks.persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     task.status = "running";
-    await tm.addIntervention(
+    const onResume = vi.fn();
+    const result = await tm.addIntervention(
       { agentSessionId: "s1", text: "x", user: "u" },
-      vi.fn(),
+      onResume,
     );
-    expect(task.interventionQueue).toEqual([{ text: "x", user: "u" }]);
+    expect(result).toEqual({ autoResumed: true });
+    expect(task.interventionQueue).toEqual([
+      expect.objectContaining({ text: "x", user: "u" }),
+    ]);
     expect(mocks.enqueueEvent).toHaveBeenCalledWith(
       "s1",
-      expect.objectContaining({ type: "intervention_sent", text: "x" }),
+      expect.objectContaining({ type: "user_message", text: "x" }),
     );
+    expect(mocks.enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledTimes(1);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
+    expect(onResume).toHaveBeenCalledWith(task);
   });
 
-  it("enqueueEvent 실패 시 running intervention을 queue에 넣지 않고 실패를 반환", async () => {
+  it("user_message 영속화 실패 시 ownerless auto-resume을 시작하지 않는다", async () => {
     const mocks = makeMocks();
     const enqueueEvent = vi.fn().mockRejectedValueOnce(new Error("events db down"));
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
@@ -1953,25 +1981,39 @@ describe("TaskManager.addIntervention — running fallback without live surface 
 
 // PR #55: 결함 A·B 정합 (resume vs intervention 분기 + typing indicator)
 describe("TaskManager.addIntervention — running vs completed wire 분기 (결함 A·B)", () => {
-  it("running task without live surface → intervention_sent 접수 후 queue fallback", async () => {
+  it("ownerless running task → user_message 접수 후 auto-resume", async () => {
     const mocks = makeMocks();
     const enqueueEvent = vi.fn().mockResolvedValue(1);
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
-    const persistence = { enqueueEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
+    const persistence = {
+      ...mocks.persistence,
+      enqueueEvent,
+      handleSideEffects,
+    } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     task.status = "running";
     expect(task.status).toBe("running");
+    const onResume = vi.fn();
 
-    await tm.addIntervention(
+    const result = await tm.addIntervention(
       { agentSessionId: "s1", text: "추가", user: "u" },
-      vi.fn(),
+      onResume,
     );
 
+    expect(result).toEqual({ autoResumed: true });
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
     expect(enqueueEvent).toHaveBeenCalledTimes(1);
-    expect(task.interventionQueue).toEqual([{ text: "추가", user: "u" }]);
+    expect(enqueueEvent).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ type: "user_message", text: "추가" }),
+    );
+    expect(task.interventionQueue).toEqual([
+      expect.objectContaining({ text: "추가", user: "u" }),
+    ]);
+    expect(mocks.enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledTimes(1);
+    expect(onResume).toHaveBeenCalledWith(task);
   });
 
   it("completed task → durable running effect + user_message 접수 후 onResume", async () => {
@@ -2264,7 +2306,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
 
-  it("queues input for a hydrated running session without spawning a competing execution", async () => {
+  it("auto-resumes a hydrated ownerless running session into one fresh execution", async () => {
     const mocks = makeMocks();
     mocks.getSession.mockResolvedValueOnce({
       session_id: "sess-stale-running",
@@ -2295,13 +2337,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       onResume,
     );
 
-    expect(result).toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "not_supported",
-    });
+    expect(result).toEqual({ autoResumed: true });
     const memTask = tm.getTask("sess-stale-running");
     expect(memTask).toBeDefined();
     expect(memTask!.status).toBe("running");
@@ -2311,12 +2347,13 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     ]);
     expect(mocks.enqueueEvent).toHaveBeenCalledWith(
       "sess-stale-running",
-      expect.objectContaining({ type: "intervention_sent", text: "resume" }),
+      expect.objectContaining({ type: "user_message", text: "resume" }),
     );
-    expect(mocks.enqueueRunningTransition).not.toHaveBeenCalled();
+    expect(mocks.enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueRunningTransition).toHaveBeenCalledTimes(1);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(mocks.updateSession).not.toHaveBeenCalled();
-    expect(onResume).not.toHaveBeenCalled();
+    expect(onResume).toHaveBeenCalledWith(memTask);
   });
 
   it.each(["error", "interrupted"] as const)("DB에 %s 세션도 hydrate 가능 (terminal 모두)", async (status) => {
