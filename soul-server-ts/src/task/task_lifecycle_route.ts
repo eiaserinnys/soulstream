@@ -53,38 +53,57 @@ export class TaskLifecycleRoute {
     const task = this.deps.getTask(sessionId);
     const wasActive = Boolean(task && isActiveTaskStatus(task.status));
     if (isUserStopConverged(task)) {
-      return await this.closeSessionRuntimeIfPresent(sessionId);
+      return await this.closeSessionRuntimeIfPresent(sessionId, "explicit_cancel");
     }
     const cancelled = await this.deps.lifecycleTransition.cancelRunningTask(task);
     if (!task || isActiveTaskStatus(task.status)) return cancelled;
-    const runtimeClosed = await this.closeSessionRuntimeIfPresent(sessionId);
+    const runtimeClosed = await this.closeSessionRuntimeIfPresent(
+      sessionId,
+      "explicit_cancel",
+    );
     if (!runtimeClosed) return false;
     if (wasActive && !cancelled) return false;
     return isUserStopConverged(task);
   }
 
-  private async closeSessionRuntimeIfPresent(sessionId: string): Promise<boolean> {
+  private async closeSessionRuntimeIfPresent(
+    sessionId: string,
+    reason: ClaudeRuntimeRegistryCloseReason,
+  ): Promise<boolean> {
     const runtimePresent = this.deps.hasSessionRuntime?.(sessionId)
       ?? Boolean(this.deps.closeSessionRuntime);
     if (!runtimePresent) return true;
     const closeSessionRuntime = this.deps.closeSessionRuntime;
     const closed = await closeSessionRuntime?.(
       sessionId,
-      "explicit_cancel",
+      reason,
     ) ?? false;
     return closed && !(this.deps.hasSessionRuntime?.(sessionId) ?? false);
   }
 
-  async deleteTask(sessionId: string): Promise<void> {
+  async deleteTask(sessionId: string): Promise<boolean> {
     const task = this.deps.getTask(sessionId);
-    if (!task) return;
+    if (!task) return false;
 
+    const runner = task.runner;
     await this.deps.lifecycleTransition.interruptAndDrain(task);
-    if (this.deps.closeSessionRuntime) {
-      try {
-        await this.deps.closeSessionRuntime(sessionId, "session_delete");
-      } catch (err) {
-        this.deps.logger.warn({ err, sessionId }, "session runtime close failed");
+    const runtimeClosed = await this.closeSessionRuntimeIfPresent(
+      sessionId,
+      "session_delete",
+    );
+    if (!runtimeClosed) {
+      throw new Error(`session runtime close did not converge: ${sessionId}`);
+    }
+    if (runner) {
+      await runner.dispatcher.close();
+      if (runner.eventPersistence === "runner") {
+        const retire = runner.dispatcher.retireTerminalRegistration;
+        if (!retire) {
+          throw new Error(
+            `runner terminal registration retirement is unavailable: ${sessionId}`,
+          );
+        }
+        await retire.call(runner.dispatcher);
       }
     }
     await this.deps.sessionMutations.deleteSession(
@@ -101,6 +120,7 @@ export class TaskLifecycleRoute {
         "session_deleted broadcast failed",
       );
     }
+    return true;
   }
 
   async shutdown(): Promise<void> {

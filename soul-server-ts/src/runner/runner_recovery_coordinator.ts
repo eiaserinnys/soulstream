@@ -81,7 +81,17 @@ export class RunnerRecoveryCoordinator {
     });
     this.sessionGarbageCollectionScheduler = new RunnerSessionGarbageCollectionScheduler({
       ...(options.sessionGarbageCollector
-        ? { collector: options.sessionGarbageCollector }
+        ? {
+          collector: {
+            collect: async (scan) => await options.sessionGarbageCollector!.collect(
+              scan,
+              {
+                centralSessionExists: async (sessionId) =>
+                  await options.taskManager.hydrateRunnerRecoveryTask(sessionId) !== null,
+              },
+            ),
+          },
+        }
         : {}),
       logger: options.logger,
       now: options.now ?? Date.now,
@@ -229,6 +239,31 @@ export class RunnerRecoveryCoordinator {
       const sessionId = registration.config.sessionId;
       const outcome = hydrationBySession.get(sessionId);
       if (outcome && outcome.status !== "ready") {
+        if (
+          outcome.status === "missing"
+          && !registration.pidAlive
+          && registration.pid === null
+          && registration.pidStartIdentity === null
+        ) {
+          try {
+            await this.registrationControl.retireReleasedTerminal(
+              registration,
+              async () =>
+                await this.options.taskManager.hydrateRunnerRecoveryTask(sessionId) === null,
+            );
+            registration.retiredAt = new Date(
+              (this.options.now ?? Date.now)(),
+            ).toISOString();
+            this.recoveryLogger.clear(sessionId);
+            this.options.logger.info(
+              { sessionId },
+              "deleted session runner evidence retired after kernel-lock release",
+            );
+          } catch (error) {
+            this.recoveryLogger.failure(registration, disposition, error);
+          }
+          continue;
+        }
         this.recoveryLogger.hydration(outcome);
         continue;
       }

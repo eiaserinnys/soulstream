@@ -23,6 +23,10 @@ export interface RunnerSessionGcResult {
   retained: Array<{ sessionId: string; reason: string }>;
 }
 
+export interface RunnerSessionGarbageCollectionPolicy {
+  centralSessionExists(sessionId: string): Promise<boolean>;
+}
+
 export class RunnerSessionGarbageCollector {
   constructor(
     private readonly stateDirectory: string,
@@ -36,7 +40,10 @@ export class RunnerSessionGarbageCollector {
     }
   }
 
-  async collect(scan: RunnerRegistrationScan): Promise<RunnerSessionGcResult> {
+  async collect(
+    scan: RunnerRegistrationScan,
+    policy?: RunnerSessionGarbageCollectionPolicy,
+  ): Promise<RunnerSessionGcResult> {
     const result: RunnerSessionGcResult = { removed: [], retained: [] };
     for (const registration of scan.registrations) {
       const candidateReason = terminalCandidateReason(
@@ -87,39 +94,45 @@ export class RunnerSessionGarbageCollector {
               });
               return;
             }
-            if (!hydrated.lifecycle) {
-              result.retained.push({
-                sessionId: registration.config.sessionId,
-                reason: "incomplete_bootstrap",
-              });
-              return;
-            }
-            if (!hydrated.bootstrap) {
-              if (!hasProvenEmptyPrebootstrapEvidence(inspection)) {
+            const deletedSessionEvidence = await isDeletedCentralSessionEvidence(
+              hydrated,
+              policy,
+            );
+            if (!deletedSessionEvidence) {
+              if (!hydrated.lifecycle) {
                 result.retained.push({
                   sessionId: registration.config.sessionId,
                   reason: "incomplete_bootstrap",
                 });
                 return;
               }
-            } else {
-              if (
-                inspection.acknowledgedThrough === null
-                || inspection.latestDurableSourceSeq === null
-                || inspection.acknowledgedThrough !== inspection.latestDurableSourceSeq
-              ) {
-                result.retained.push({
-                  sessionId: registration.config.sessionId,
-                  reason: "final_ack_pending",
-                });
-                return;
-              }
-              if (inspection.incompleteDurableWork) {
-                result.retained.push({
-                  sessionId: registration.config.sessionId,
-                  reason: "durable_replay_pending",
-                });
-                return;
+              if (!hydrated.bootstrap) {
+                if (!hasProvenEmptyPrebootstrapEvidence(inspection)) {
+                  result.retained.push({
+                    sessionId: registration.config.sessionId,
+                    reason: "incomplete_bootstrap",
+                  });
+                  return;
+                }
+              } else {
+                if (
+                  inspection.acknowledgedThrough === null
+                  || inspection.latestDurableSourceSeq === null
+                  || inspection.acknowledgedThrough !== inspection.latestDurableSourceSeq
+                ) {
+                  result.retained.push({
+                    sessionId: registration.config.sessionId,
+                    reason: "final_ack_pending",
+                  });
+                  return;
+                }
+                if (inspection.incompleteDurableWork) {
+                  result.retained.push({
+                    sessionId: registration.config.sessionId,
+                    reason: "durable_replay_pending",
+                  });
+                  return;
+                }
               }
             }
             const latest = await this.deps.refresh(hydrated);
@@ -139,16 +152,28 @@ export class RunnerSessionGarbageCollector {
               result.retained.push({ sessionId: registration.config.sessionId, reason: latestReason });
               return;
             }
+            if (
+              deletedSessionEvidence
+              && !await isDeletedCentralSessionEvidence(latest, policy)
+            ) {
+              result.retained.push({
+                sessionId: registration.config.sessionId,
+                reason: "central_session_present",
+              });
+              return;
+            }
             await this.deps.removeDirectory(latest.config.paths.sessionDirectory);
             result.removed.push(latest.config.sessionId);
             const prebootstrap = hydrated.bootstrap === null;
             this.logger.info(
               {
                 sessionId: latest.config.sessionId,
-                reason: prebootstrap
+                reason: deletedSessionEvidence
+                  ? "expired_deleted_session_evidence"
+                  : prebootstrap
                   ? "expired_terminal_prebootstrap_without_durable_work"
                   : "expired_terminal_final_ack_complete",
-                executionState: hydrated.lifecycle.execution_state,
+                executionState: hydrated.lifecycle?.execution_state ?? "deleted",
                 ...(prebootstrap ? {
                   durableRecordCount: inspection.durableRecordCount,
                   unacknowledgedIpcFrameCount: inspection.unacknowledgedIpcFrameCount,
@@ -184,6 +209,14 @@ export class RunnerSessionGarbageCollector {
     );
     return result;
   }
+}
+
+async function isDeletedCentralSessionEvidence(
+  registration: RunnerRegistration,
+  policy: RunnerSessionGarbageCollectionPolicy | undefined,
+): Promise<boolean> {
+  if (!policy || !registration.retiredAt || registration.pidAlive) return false;
+  return !await policy.centralSessionExists(registration.config.sessionId);
 }
 
 function hasProvenEmptyPrebootstrapEvidence(

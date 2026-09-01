@@ -412,8 +412,13 @@ export class TaskManager {
    * Task 제거. 메모리 + DB + broadcast.
    * 진행 중이면 cancel 후 promise drain 대기.
    */
-  async deleteTask(sessionId: string): Promise<void> {
-    await this.lifecycleRoute.deleteTask(sessionId);
+  async deleteTask(sessionId: string): Promise<boolean> {
+    if (!this.tasks.has(sessionId)) {
+      const task = await this.loadEvictedTask(sessionId);
+      if (!task) return false;
+      this.tasks.set(sessionId, task);
+    }
+    return await this.lifecycleRoute.deleteTask(sessionId);
   }
 
   /**

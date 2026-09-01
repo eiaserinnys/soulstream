@@ -1,6 +1,4 @@
-/**
- * catalog 도구 — Python `mcp_catalog.py` 정합 (키 호환). 모두 CatalogService 경유.
- */
+/** Catalog browse/mutation tools. Session deletion is TaskLifecycleRoute-owned. */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -389,7 +387,12 @@ export function registerCatalogTools(
     },
     async ({ session_id }) => {
       try {
-        await runtime.catalogService.deleteSession(session_id);
+        const deletedBoardItemIds = await runtime.db.getBoardItemIdsForSession(session_id);
+        await runtime.taskManager.deleteTask(session_id);
+        await runtime.catalogService.broadcastSessionDeletion(
+          session_id,
+          deletedBoardItemIds,
+        );
         return jsonResult({ ok: true, session_id });
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : String(err));

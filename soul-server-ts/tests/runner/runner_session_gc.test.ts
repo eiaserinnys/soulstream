@@ -124,6 +124,41 @@ describe("RunnerSessionGarbageCollector", () => {
     expect(subject.removeDirectory).not.toHaveBeenCalled();
   });
 
+  it("collects retired kernel-free evidence when the central session is deleted", async () => {
+    const subject = makeSubject({ pendingSessions: new Set(["deleted"]) });
+
+    await expect(subject.collector.collect(
+      scan([registration({
+        sessionId: "deleted",
+        pid: null,
+        pidAlive: false,
+        pidStartIdentity: null,
+        retiredAt: "2026-08-10T00:00:00.000Z",
+      })]),
+      { centralSessionExists: vi.fn(async () => false) },
+    )).resolves.toEqual({ removed: ["deleted"], retained: [] });
+    expect(subject.removeDirectory).toHaveBeenCalledWith("/state/deleted");
+  });
+
+  it("does not bypass durable replay evidence while the central session exists", async () => {
+    const subject = makeSubject({ pendingSessions: new Set(["retained"]) });
+
+    await expect(subject.collector.collect(
+      scan([registration({
+        sessionId: "retained",
+        pid: null,
+        pidAlive: false,
+        pidStartIdentity: null,
+        retiredAt: "2026-08-10T00:00:00.000Z",
+      })]),
+      { centralSessionExists: vi.fn(async () => true) },
+    )).resolves.toEqual({
+      removed: [],
+      retained: [{ sessionId: "retained", reason: "final_ack_pending" }],
+    });
+    expect(subject.removeDirectory).not.toHaveBeenCalled();
+  });
+
   it("retains live, recent, and missing-pid evidence fail-closed", async () => {
     const subject = makeSubject({ pendingSessions: new Set(["pending"]) });
 

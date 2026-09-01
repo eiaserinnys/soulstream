@@ -1047,30 +1047,25 @@ describe("CatalogService.renameSession", () => {
   });
 });
 
-describe("CatalogService.deleteSession", () => {
-  it("host deleteSession + broadcastCatalog + emitSessionDeleted", async () => {
+describe("CatalogService.broadcastSessionDeletion", () => {
+  it("broadcasts only the catalog projection after lifecycle-owned deletion", async () => {
     const { sql } = setupSqlWithCatalog();
     const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated, emitSessionDeleted } =
       createBroadcasterMock();
-    const deleteSession = vi.fn().mockResolvedValue({});
     const svc = new CatalogService(
       db,
       broadcaster,
-      undefined,
-      undefined,
-      { deleteSession } as never,
     );
 
-    await svc.deleteSession("s1");
+    await svc.broadcastSessionDeletion("s1", ["session:s1"]);
 
-    expect(deleteSession).toHaveBeenCalledWith("s1", "delete_session:s1");
     expect(emitCatalogUpdated).toHaveBeenCalledWith(
       expect.any(Array),
       { s1: null },
       { "session:s1": null },
     );
-    expect(emitSessionDeleted).toHaveBeenCalledWith("s1");
+    expect(emitSessionDeleted).not.toHaveBeenCalled();
   });
 });
 

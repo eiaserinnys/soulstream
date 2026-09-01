@@ -112,7 +112,10 @@ export interface RunnerHostCall {
 export interface RunnerProcessDispatcherOptions {
   spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>;
   runnerProcess: SpawnedRunnerProcess | Promise<SpawnedRunnerProcess> | null;
-  spawner?: Partial<Pick<RunnerProcessSpawner, "terminate">>;
+  spawner?: Partial<Pick<
+    RunnerProcessSpawner,
+    "terminate" | "retireTerminalRegistration"
+  >>;
   offlineExisting?: boolean;
   openParentOutbox?: typeof RunnerParentOutbox.open;
   connectSocket?: typeof connectRunnerSocket;
@@ -370,6 +373,24 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         }
       }
     }
+  }
+
+  async retireTerminalRegistration(): Promise<void> {
+    await this.ready;
+    const spawned = this.spawnedProcess;
+    if (!spawned) {
+      throw new Error(
+        `runner registration unavailable for terminal retirement: ${this.spawnInput.sessionId}`,
+      );
+    }
+    const spawner = this.options.spawner ?? new RunnerProcessSpawner();
+    if (!spawner.retireTerminalRegistration) {
+      throw new Error("runner terminal registration retirement is unavailable");
+    }
+    await spawner.retireTerminalRegistration(
+      spawned.paths,
+      spawned.registrationId,
+    );
   }
 
   /**
