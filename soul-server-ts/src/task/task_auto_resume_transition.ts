@@ -51,6 +51,17 @@ export interface AutoResumeTransitionDeps {
 export class AutoResumeTransition {
   constructor(private readonly deps: AutoResumeTransitionDeps) {}
 
+  async resumeQueuedAfterTerminal(
+    task: Task,
+    onResume: AutoResumeCallback,
+  ): Promise<boolean> {
+    if (!isTerminalTaskStatus(task.status)) return false;
+    const message = task.interventionQueue[0];
+    if (!message) return false;
+    await this.resume(task, message, onResume, { publishUserMessage: false });
+    return true;
+  }
+
   async resume(
     task: Task,
     message: InterventionMessage,
