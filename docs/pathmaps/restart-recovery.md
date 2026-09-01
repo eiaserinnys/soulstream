@@ -1,8 +1,6 @@
 # 재시작 복구
 
-최종 대조 커밋 SHA: `200b40c51de1e3079dcc88dcbdccc9b3832ad1c0`
-
-> 상태 배지: **R26 반영 완료 · R31b 진행 중 — 머지 시 갱신 필요**
+최종 대조 커밋 SHA: `8446f445b5b8cab1636d71a353b1cadfb72ffc48`
 
 > 범위 주석: accepted input producer는 boot 1회·node-ready·orch maintenance이며, 5초 maintenance lane은 lease와 notification 투영만 회수한다.
 
@@ -22,9 +20,9 @@
 | 12. orch maintenance replay | `orch-server-ts/src/production.ts:createProductionRuntime` (L499–536) | 연결 목록을 순회하며 `maintenance:{node}:{connection}` 소유자로 같은 replay 정본을 재사용한다. | node별 실패는 다른 node replay를 중단하지 않는다. |
 | 13. lease maintenance | `soul-server-ts/src/task/completion_delivery_recovery_worker.ts:CompletionDeliveryRecoveryWorker` (L30–66), `completion_delivery_coordinator.ts:recoverPending` (L117–123) | 기동 즉시와 5초마다 expired admission lease와 notification outbox 투영을 회수한다. | accepted input을 claim·dispatch·auto-resume하지 않는다; step별 90초 deadline으로 격리한다. |
 | 14. runner registration scan | `soul-server-ts/src/runner/runner_recovery_coordinator.ts:RunnerRecoveryCoordinator.performScan` (L158–281) | registration·owner-null inventory·손상 registration을 대조하고 session별 recovery disposition을 직렬화한다. | active/adoption-pending·ownership backoff·retired terminal은 재진입하지 않는다. |
-| 15. runner 상태 분류 | `soul-server-ts/src/runner/runner_process_registry.ts:classifyRunnerRegistration` (L130–165) | registration·lifecycle·PID proof를 `wait/adopt/replay/reap/closed/retired` 중 하나로 분류한다. | progress 시각만으로 process death를 추론하지 않으며 live identity 검증은 adopt 경계가 소유한다. |
+| 15. runner 상태 분류 | `soul-server-ts/src/runner/runner_process_registry.ts:scanRunnerRegistrations` (L92–130), `classifyRunnerRegistration` (L133–168), `runner_registration_reader.ts:readRunnerRegistrationSummary` (L111–138) | registration·lifecycle과 kernel-lock 기반 생사 값을 `wait/adopt/replay/reap/closed/retired` 중 하나로 분류한다. | progress 시각만으로 process death를 추론하지 않고 lock unavailable은 보수적으로 live 취급하며, exact owner 검증은 adopt 경계가 소유한다. |
 | 16. runner 복구 실행 | `soul-server-ts/src/runner/runner_recovery_coordinator.ts:RunnerRecoveryCoordinator.handle` (L324–449), `recoverRegistered` (L523–665) | adopt·terminal replay·dead reap·closed tail drain을 disposition별 단일 경로로 실행하고 task execution에 재부착한다. | 기존 task runner/execution이 살아 있으면 겹치지 않으며 offline terminal replay 차단은 warning으로 드러낸다. |
-| 17. runner 반복 scan | `soul-server-ts/src/runtime/runner_process_composition.ts:composeRunnerRecoveryCoordinator` (L81–129), `runner_recovery_coordinator.ts:start` (L139–149) | 초기 scan 후 env의 `SOUL_RUNNER_REAPER_INTERVAL_MS` cadence로 registration 상태 변화를 계속 회수한다. | runner factory/state dir가 없으면 coordinator를 만들지 않는다; R31b 머지 후 lock 기반 liveness와 재대조한다. |
+| 17. runner 반복 scan | `soul-server-ts/src/runtime/runner_process_composition.ts:composeRunnerRecoveryCoordinator` (L81–129), `runner_recovery_coordinator.ts:start` (L139–149) | 초기 scan 후 env의 `SOUL_RUNNER_REAPER_INTERVAL_MS` cadence로 registration과 kernel lock 상태 변화를 계속 회수한다. | runner factory/state dir가 없으면 coordinator를 만들지 않으며 scan in-flight는 합류한다. |
 | 18. upstream inventory 재보고 | `soul-server-ts/src/upstream/initial_runner_state_sync.ts:sendInitialRunnerState` (L11–58) | 현재 connection에 runner inventory를 최대 5회 보고하여 orch가 node-ready session ownership을 다시 구성하게 한다. | connection 교체·WebSocket close면 즉시 중단; 5회 실패 뒤 현재 connection에서 종료한다. |
 
 이 장을 갱신해야 하는 변경 부류: worker startup 순서·queued transcript recovery·node-ready/maintenance replay·delivery lease maintenance·runner scan/classification/adoption·initial inventory 변경.
