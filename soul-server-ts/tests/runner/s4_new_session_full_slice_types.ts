@@ -1,4 +1,12 @@
-export type FullSliceScenario = "S1" | "S2" | "S3" | "S4" | "S5" | "S6" | "S7";
+export type FullSliceScenario =
+  | "S1"
+  | "S2"
+  | "S3"
+  | "S4"
+  | "S5"
+  | "S6"
+  | "S7"
+  | "S8";
 export type FullSliceBackend = "claude" | "codex";
 
 export interface PublicHttpAck {
@@ -87,6 +95,7 @@ export interface FullSliceObservation {
     interventionSentTexts: string[];
     sessionEndedCount: number;
     errorEventCount: number;
+    completionNotificationCount: number;
     unfinishedDeliveryCount: number;
     ghostRunningCount: number;
   };

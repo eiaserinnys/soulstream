@@ -1590,6 +1590,10 @@ CREATE OR REPLACE FUNCTION session_get(
     SELECT * FROM sessions WHERE session_id = p_session_id;
 $$;
 
+-- New and resumed turns no longer acquire execution ownership. A session may
+-- therefore have a historical generation while its current turn is ownerless.
+-- The current owner columns, not the monotonic history counter, decide whether
+-- the canonical ownerless terminal transition may apply.
 CREATE OR REPLACE FUNCTION session_apply_terminal_transition(
     p_session_id           TEXT,
     p_status               TEXT,
@@ -1626,7 +1630,6 @@ BEGIN
            termination_event_id = p_terminal_event_id,
            updated_at = p_updated_at
      WHERE session.session_id = p_session_id
-       AND session.execution_generation = 0
        AND session.execution_manifest_id IS NULL
        AND session.execution_runtime_env_identity IS NULL
        AND session.execution_registration_id IS NULL
