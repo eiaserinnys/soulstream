@@ -31,6 +31,7 @@ describe("worker startup ordering", () => {
     };
     const runtime = {
       createUpstreamAdapter: () => upstreamAdapter,
+      upstreamRegistrationReady: Promise.resolve(),
       runnerRecoveryCoordinator,
     };
 
@@ -73,6 +74,7 @@ describe("worker startup ordering", () => {
     };
     const runtime = {
       createUpstreamAdapter: () => upstreamAdapter,
+      upstreamRegistrationReady: Promise.resolve(),
       runnerRecoveryCoordinator: {
         start: vi.fn(async () => {
           throw recoveryError;
@@ -94,11 +96,16 @@ describe("worker startup ordering", () => {
 
   it("runs the one-shot transcript drain only after runner recovery converges", async () => {
     const order: string[] = [];
+    let markUpstreamRegistered!: () => void;
+    const upstreamRegistrationReady = new Promise<void>((resolve) => {
+      markUpstreamRegistered = resolve;
+    });
     const upstreamAdapter = {
       run: vi.fn(async () => await new Promise<void>(() => {})),
     };
     const runtime = {
       createUpstreamAdapter: () => upstreamAdapter,
+      upstreamRegistrationReady,
       runnerRecoveryCoordinator: {
         start: vi.fn(async () => {
           order.push("runner_recovered");
@@ -118,6 +125,13 @@ describe("worker startup ordering", () => {
       onUpstreamFailure: vi.fn(),
       onRunnerRecoveryFailure: vi.fn(),
     });
+    await vi.waitFor(() => {
+      expect(order).toEqual(["runner_recovered"]);
+    });
+    expect(runtime.claudeRuntimeStartupRecovery.afterRunnerRecovery)
+      .not.toHaveBeenCalled();
+
+    markUpstreamRegistered();
     await vi.waitFor(() => {
       expect(order).toEqual(["runner_recovered", "transcript_drained"]);
     });
