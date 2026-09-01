@@ -42,6 +42,29 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessDispatcher", () => {
+  it("forwards terminal registration retirement with the spawned generation", async () => {
+    const retireTerminalRegistration = vi.fn(async () => {});
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher;
+    const spawned = {
+      registrationId: "registration-a",
+      paths: { sessionDirectory: "/state/session-a" },
+    };
+    Object.assign(dispatcher, {
+      ready: Promise.resolve(),
+      spawnedProcess: spawned,
+      spawnInput: { sessionId: "session-a" },
+      options: { spawner: { retireTerminalRegistration } },
+    });
+
+    await dispatcher.retireTerminalRegistration();
+
+    expect(retireTerminalRegistration).toHaveBeenCalledWith(
+      spawned.paths,
+      "registration-a",
+    );
+  });
+
   it("released event stream registration은 뒤늦은 pump 등록도 남기지 않는다", async () => {
     // An adoption can be rejected before the pump has started registering, so
     // releasing the registration finds nothing to release and the registration

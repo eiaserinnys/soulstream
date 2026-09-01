@@ -86,7 +86,10 @@ export interface RunnerProcessRuntimeFactoryOptions {
   ): Promise<() => Promise<void>>;
   renewExecutionOwnership?(task: Task, renewedAt: Date): Promise<boolean>;
   spawner?: Pick<RunnerProcessSpawner, "adopt" | "spawn">
-    & Partial<Pick<RunnerProcessSpawner, "terminate">>;
+    & Partial<Pick<
+      RunnerProcessSpawner,
+      "terminate" | "retireTerminalRegistration"
+    >>;
 }
 
 export function createRunnerProcessRuntimeFactory(

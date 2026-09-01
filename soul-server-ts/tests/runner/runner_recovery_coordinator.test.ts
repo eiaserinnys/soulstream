@@ -828,6 +828,41 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     )).toHaveLength(1);
   });
 
+  it("retires kernel-free runner evidence whose central session was deleted", async () => {
+    const current = registration({
+      pidAlive: false,
+      lifecycleState: "running",
+    });
+    current.pid = null;
+    current.pidStartIdentity = null;
+    const retireReleased = vi.fn(async (
+      _paths: unknown,
+      _expected: unknown,
+      _registration: RunnerRegistration,
+      confirmCentralRelease: () => Promise<boolean>,
+    ) => {
+      expect(await confirmCentralRelease()).toBe(true);
+      current.retiredAt = new Date(RECOVERY_NOW_MS).toISOString();
+      return "registration_absent" as const;
+    });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => null),
+      } as never,
+      spawner: {
+        terminate: retireReleased,
+        invalidateRegistration: vi.fn(async () => {}),
+        retireTerminalRegistration: vi.fn(async () => {}),
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(retireReleased).toHaveBeenCalledOnce();
+    expect(current.retiredAt).toBeTruthy();
+    expect(subject.logger.warn).not.toHaveBeenCalled();
+  });
+
   it("retires a recorded terminal identity before offline replay can duplicate session_ended", async () => {
     const current = registration({ pidAlive: false, lifecycleState: "completed" });
     const trace: string[] = [];

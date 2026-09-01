@@ -337,6 +337,16 @@ describe("TaskLifecycleRoute.deleteTask", () => {
         return true;
       },
     );
+    task.runner = {
+      engine: {} as EnginePort,
+      eventPersistence: "runner",
+      dispatcher: {
+        close: vi.fn(async () => { events.push("runner-close"); }),
+        retireTerminalRegistration: vi.fn(async () => {
+          events.push("retire-registration");
+        }),
+      } as never,
+    };
     vi.mocked(lifecycleTransition.interruptAndDrain).mockImplementationOnce(async () => {
       events.push("interrupt");
     });
@@ -347,7 +357,7 @@ describe("TaskLifecycleRoute.deleteTask", () => {
       events.push("broadcast");
     });
 
-    await route.deleteTask("s1");
+    await expect(route.deleteTask("s1")).resolves.toBe(true);
 
     expect(tasks.has("s1")).toBe(false);
     expect(lifecycleTransition.interruptAndDrain).toHaveBeenCalledWith(task);
@@ -356,6 +366,8 @@ describe("TaskLifecycleRoute.deleteTask", () => {
     expect(events).toEqual([
       "interrupt",
       "close-runtime",
+      "runner-close",
+      "retire-registration",
       "delete",
       "forget",
       "broadcast",
@@ -366,13 +378,34 @@ describe("TaskLifecycleRoute.deleteTask", () => {
     const task = makeTask({ agentSessionId: "s1" });
     const { route, tasks, deleteSession, emitSessionDeleted } = makeRoute([task]);
     deleteSession.mockRejectedValueOnce(new Error("db down"));
-    await expect(route.deleteTask("missing")).resolves.toBeUndefined();
+    await expect(route.deleteTask("missing")).resolves.toBe(false);
     expect(deleteSession).not.toHaveBeenCalled();
     expect(emitSessionDeleted).not.toHaveBeenCalled();
 
     await expect(route.deleteTask("s1")).rejects.toThrow("db down");
     expect(tasks.has("s1")).toBe(true);
     expect(deleteSession).toHaveBeenCalledWith("s1", "delete_session:s1");
+    expect(emitSessionDeleted).not.toHaveBeenCalled();
+  });
+
+  it("retains the central session when durable runner retirement fails", async () => {
+    const task = makeTask({ agentSessionId: "s1" });
+    task.runner = {
+      engine: {} as EnginePort,
+      eventPersistence: "runner",
+      dispatcher: {
+        close: vi.fn(async () => {}),
+        retireTerminalRegistration: vi.fn(async () => {
+          throw new Error("registration remained live");
+        }),
+      } as never,
+    };
+    const { route, tasks, deleteSession, emitSessionDeleted } = makeRoute([task]);
+
+    await expect(route.deleteTask("s1")).rejects.toThrow("registration remained live");
+
+    expect(tasks.has("s1")).toBe(true);
+    expect(deleteSession).not.toHaveBeenCalled();
     expect(emitSessionDeleted).not.toHaveBeenCalled();
   });
 });

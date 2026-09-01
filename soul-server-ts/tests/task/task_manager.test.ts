@@ -1216,7 +1216,7 @@ describe("TaskManager.deleteTask", () => {
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
 
-    await tm.deleteTask("s1");
+    await expect(tm.deleteTask("s1")).resolves.toBe(true);
     expect(tm.getTask("s1")).toBeUndefined();
     expect(deleteSession).toHaveBeenCalledWith("s1");
     expect(emitSessionDeleted).toHaveBeenCalledWith("s1");
@@ -1228,11 +1228,11 @@ describe("TaskManager.deleteTask", () => {
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
     const interrupt = vi.fn().mockResolvedValue(true);
     task.runner = createInProcessTaskRunnerRuntime(
-      { interrupt } as unknown as EnginePort,
+      { interrupt, close: vi.fn(async () => {}) } as unknown as EnginePort,
     );
     task.executionPromise = Promise.resolve();
 
-    await tm.deleteTask("s1");
+    await expect(tm.deleteTask("s1")).resolves.toBe(true);
     expect(interrupt).toHaveBeenCalledTimes(1);
     expect(deleteSession).toHaveBeenCalledWith("s1");
     expect(emitSessionDeleted).toHaveBeenCalledWith("s1");
@@ -1241,9 +1241,42 @@ describe("TaskManager.deleteTask", () => {
   it("없는 sessionId → silent (no-op)", async () => {
     const { db, broadcaster, deleteSession, emitSessionDeleted } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
-    await tm.deleteTask("nonexistent");
+    await expect(tm.deleteTask("nonexistent")).resolves.toBe(false);
     expect(deleteSession).not.toHaveBeenCalled();
     expect(emitSessionDeleted).not.toHaveBeenCalled();
+  });
+
+  it("메모리에서 evict된 local session을 hydrate한 뒤 같은 삭제 경로로 수렴", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "evicted-delete",
+      folder_id: null,
+      display_name: null,
+      node_id: "n",
+      session_type: "claude",
+      status: "completed",
+      prompt: "done",
+      client_id: null,
+      claude_session_id: null,
+      last_message: null,
+      metadata: [],
+      was_running_at_shutdown: false,
+      last_event_id: 4,
+      last_read_event_id: 4,
+      created_at: new Date("2026-09-01T00:00:00.000Z"),
+      updated_at: new Date("2026-09-01T00:01:00.000Z"),
+      agent_id: "codex-default",
+      caller_session_id: null,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+
+    await expect(tm.deleteTask("evicted-delete")).resolves.toBe(true);
+
+    expect(mocks.getSession).toHaveBeenCalledWith("evicted-delete");
+    expect(mocks.deleteSession).toHaveBeenCalledWith("evicted-delete");
+    expect(mocks.emitSessionDeleted).toHaveBeenCalledWith("evicted-delete");
+    expect(tm.getTask("evicted-delete")).toBeUndefined();
   });
 });
 

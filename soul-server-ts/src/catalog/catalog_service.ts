@@ -1,5 +1,5 @@
 /**
- * CatalogService — 폴더·세션 카탈로그 mutation 정본 (본 카드 신규).
+ * CatalogService — 폴더·세션 카탈로그 mutation과 broadcast 정본.
  *
  * Python `packages/soul-common/src/soul_common/catalog/catalog_service.py` 키 호환 포팅.
  * MCP cogito 도구(`mcp_catalog.py`)와 dashboard 양쪽이 *같은 service*를 경유하여
@@ -7,8 +7,8 @@
  *
  * 의존:
  *   - SessionDB — folders·문서·board item mutation과 catalog read
- *   - SessionMutationHost — session rename/delete mutation
- *   - SessionBroadcaster — catalog_updated / session_deleted wire emit
+ *   - SessionMutationHost — session rename mutation
+ *   - SessionBroadcaster — catalog_updated wire emit
  *
  * schema DDL 정본은 `packages/db-schema/sql/schema.sql`.
  */
@@ -288,24 +288,15 @@ export class CatalogService {
     await this.broadcastCatalog({ sessionIds: [sessionId] });
   }
 
-  /**
-   * 세션 삭제 — host operation이 이벤트까지 함께 삭제한다.
-   *
-   * host delete_session + broadcast_catalog() + emit_session_deleted.
-   *
-   * 두 wire를 모두 발사하는 이유:
-   *   - catalog_updated → 폴더 트리 갱신
-   *   - session_deleted → 세션 목록 행 즉시 제거
-   */
-  async deleteSession(sessionId: string): Promise<void> {
-    const deletedBoardItemIds = await this.db.getBoardItemIdsForSession(sessionId);
-    if (!this.sessionMutations) throw new Error("session mutation host is required");
-    await this.sessionMutations.deleteSession(sessionId, `delete_session:${sessionId}`);
+  /** Emits the catalog projection only after TaskLifecycleRoute owns deletion. */
+  async broadcastSessionDeletion(
+    sessionId: string,
+    deletedBoardItemIds: string[],
+  ): Promise<void> {
     await this.broadcastCatalog({
       sessionsDelta: { [sessionId]: null },
       deletedBoardItemIds,
     });
-    await this.broadcaster.emitSessionDeleted(sessionId);
   }
 
   /**

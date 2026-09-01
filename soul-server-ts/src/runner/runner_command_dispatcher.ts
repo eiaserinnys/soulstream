@@ -50,6 +50,8 @@ export interface RunnerCommandDispatcher {
   prepareSession(agentSessionId: string): Promise<void>;
   interrupt(): Promise<boolean>;
   close(): Promise<void>;
+  /** Retires durable process registration evidence after the runtime is closed. */
+  retireTerminalRegistration?(): Promise<void>;
   detachHost(): Promise<void>;
   releaseEventStreamRegistration?(): Promise<void>;
   isClosed?(): boolean;
