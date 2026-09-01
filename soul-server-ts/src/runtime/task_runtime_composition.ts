@@ -156,6 +156,9 @@ export function composeTaskRuntime(
     transientEventLogAggregator,
     executionOwnershipBackoff,
     env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+    async (task) => {
+      await taskManager.resumeQueuedAfterTerminal(task, onResume);
+    },
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(

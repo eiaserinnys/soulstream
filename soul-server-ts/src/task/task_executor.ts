@@ -205,6 +205,7 @@ export class TaskExecutor {
     transientEventLogAggregator?: TransientEventLogAggregator,
     private readonly executionOwnershipBackoff?: ExecutionOwnershipBackoff,
     private readonly executionOwnershipLeaseMs = 60_000,
+    private readonly queuedTerminalResume?: (task: Task) => void | Promise<void>,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -445,10 +446,39 @@ export class TaskExecutor {
   private holdExecutionSlot(task: Task, promise: Promise<void>): Promise<void> {
     task.executionPromise = promise;
     const release = (): void => {
-      if (task.executionPromise === promise) task.executionPromise = undefined;
+      if (task.executionPromise !== promise) return;
+      task.executionPromise = undefined;
+      void this.driveQueuedAfterTerminal(task);
     };
     void promise.then(release, release);
     return promise;
+  }
+
+  private async driveQueuedAfterTerminal(task: Task): Promise<void> {
+    const interventionBarrier = task.interruptRequest;
+    if (interventionBarrier) {
+      try {
+        await interventionBarrier;
+      } catch (error) {
+        this.logger.warn(
+          { err: error, sessionId: task.agentSessionId },
+          "running intervention barrier failed after execution terminal",
+        );
+      }
+    }
+    if (
+      task.executionPromise
+      || !isTerminalTaskStatus(task.status)
+      || task.interventionQueue.length === 0
+    ) return;
+    try {
+      await this.queuedTerminalResume?.(task);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, sessionId: task.agentSessionId },
+        "queued terminal delivery auto-resume failed",
+      );
+    }
   }
 
   private async startOwnedExecution(

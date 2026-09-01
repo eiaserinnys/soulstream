@@ -89,6 +89,7 @@ export class TaskManager {
   private readonly loadEvictedTask: (sessionId: string) => Promise<Task | null>;
   private readonly sessionMutations: SessionMutationHost;
   private readonly runnerRecovery: TaskRunnerRecovery;
+  private readonly autoResumeTransition: AutoResumeTransition;
 
   constructor(
     private readonly nodeId: string,
@@ -156,7 +157,7 @@ export class TaskManager {
       logger,
       persistence,
     });
-    const autoResumeTransition = new AutoResumeTransition({
+    this.autoResumeTransition = new AutoResumeTransition({
       logger,
       persistence,
       contextBuilder,
@@ -227,7 +228,7 @@ export class TaskManager {
         this.tasks.set(task.agentSessionId, task);
       },
       runningInterventionTransition,
-      autoResumeTransition,
+      autoResumeTransition: this.autoResumeTransition,
       deliveryLedgerGate: deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined,
       sessionNotificationPublisher: deliveryRuntimeV2Enabled
         ? this.sessionNotificationPublisher
@@ -289,6 +290,13 @@ export class TaskManager {
     onResume: StartExecutionCallback,
   ): Promise<void> {
     await this.runnerRecovery.markFailureAndResume(task, message, onResume);
+  }
+
+  async resumeQueuedAfterTerminal(
+    task: Task,
+    onResume: StartExecutionCallback,
+  ): Promise<boolean> {
+    return await this.autoResumeTransition.resumeQueuedAfterTerminal(task, onResume);
   }
 
   async projectClosedRunner(task: Task, detail: string): Promise<boolean> {
