@@ -354,6 +354,7 @@ export interface SessionDeliveryRow {
   dispatching_at: Date | null;
   lease_owner: string | null;
   lease_expires_at: Date | null;
+  /** Retry budget spent; accepted admissions are recorded in session_delivery_attempts. */
   attempt_count: number;
   next_attempt_at: Date;
   last_error: string | null;

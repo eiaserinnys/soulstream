@@ -12,6 +12,8 @@ import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { DELIVERY_INTENTS } from "../../src/task/delivery_contract.js";
 import { buildCanonicalDeliveryPayload } from
   "../../src/task/delivery_payload.js";
+import { ClaudeRuntimeStartupRecovery } from
+  "../../src/runtime/claude_runtime_startup_recovery.js";
 import { QueuedDeliveryTranscriptRecovery } from
   "../../src/task/queued_delivery_transcript_recovery.js";
 import { TaskDeliveryLedgerGate } from
@@ -996,7 +998,94 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
   });
 
-  it("claims both queued and delivered orphan content for transcript recovery", async () => {
+  it("converges a post-SIGINT boot snapshot once through the production startup entrypoint", async () => {
+    for (const [deliveryId, aggregateState] of [
+      ["already-seen-consumed", "consumed"],
+      ["already-seen-dead-letter", "dead_letter"],
+    ] as const) {
+      await registerUserDelivery(deliveryId, `content for ${deliveryId}`);
+      const worker = `crashed:${deliveryId}`;
+      await repository.claimForTarget(deliveryId, "caller-session", worker);
+      await repository.beginDispatch(deliveryId, worker);
+      await repository.markQueued(deliveryId, worker);
+      await harness.sql`
+        UPDATE session_deliveries
+        SET aggregate_state = ${aggregateState}
+        WHERE delivery_id = ${deliveryId}
+      `;
+    }
+    await registerUserDelivery("unseen-after-sigint", "deliver me once");
+    await repository.claimForTarget(
+      "unseen-after-sigint",
+      "caller-session",
+      "crashed:unseen-after-sigint",
+    );
+    await repository.beginDispatch(
+      "unseen-after-sigint",
+      "crashed:unseen-after-sigint",
+    );
+    await repository.markQueued(
+      "unseen-after-sigint",
+      "crashed:unseen-after-sigint",
+    );
+
+    const redelivered: string[] = [];
+    const queuedRecovery = makeQueuedRecovery(
+      "r27-boot-pass",
+      async (row) => ({
+        kind: "absent",
+        inputUuid: buildDeliveryInputUuid(row.delivery_id),
+      }),
+      async (row) => {
+        redelivered.push(row.delivery_id);
+        const dispatching = await repository.beginDispatch(
+          row.delivery_id,
+          row.lease_owner ?? undefined,
+        );
+        if (!dispatching) throw new Error(`cannot dispatch ${row.delivery_id}`);
+        const queued = await repository.markQueued(
+          row.delivery_id,
+          row.lease_owner ?? undefined,
+        );
+        if (!queued) throw new Error(`cannot queue ${row.delivery_id}`);
+        const consumed = await repository.markConsumed(
+          row.delivery_id,
+          `turn:${row.delivery_id}`,
+        );
+        if (!consumed) throw new Error(`cannot consume ${row.delivery_id}`);
+      },
+    );
+    const recoverBootSnapshot = vi.fn(() =>
+      queuedRecovery.recoverAfterNodeRestart("node-test")
+    );
+    const startup = new ClaudeRuntimeStartupRecovery({
+      recoverQueuedDeliveries: recoverBootSnapshot,
+      recoverBackgroundTasks: vi.fn(async () => 0),
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      nodeId: "node-test",
+    });
+
+    await startup.start();
+    await startup.afterRunnerRecovery();
+    await startup.afterRunnerRecovery();
+
+    expect(recoverBootSnapshot).toHaveBeenCalledOnce();
+    expect(redelivered).toEqual(["unseen-after-sigint"]);
+    await expect(repository.get("unseen-after-sigint")).resolves.toMatchObject({
+      state: "consumed",
+      aggregate_state: "consumed",
+      consumed_at: expect.any(Date),
+    });
+    const [unfinished] = await harness.sql<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM session_deliveries
+      WHERE aggregate_state NOT IN ('consumed', 'dead_letter')
+    `;
+    expect(unfinished?.count).toBe(0);
+    await expect(startup.stop()).resolves.toBe("drained");
+  });
+
+  it("claims only nonterminal boot rows and preserves an existing target receipt", async () => {
     for (const deliveryId of ["orphan-queued", "orphan-delivered"] as const) {
       await registerUserDelivery(deliveryId, `content for ${deliveryId}`);
       const worker = `crashed:${deliveryId}`;
@@ -1005,6 +1094,24 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       await repository.markQueued(deliveryId, worker);
     }
     await repository.markDelivered("orphan-delivered", "event:orphan-delivered");
+    for (const [deliveryId, aggregateState] of [
+      ["terminal-consumed", "consumed"],
+      ["terminal-dead-letter", "dead_letter"],
+    ] as const) {
+      await registerUserDelivery(deliveryId, `content for ${deliveryId}`);
+      const worker = `crashed:${deliveryId}`;
+      await repository.claimForTarget(deliveryId, "caller-session", worker);
+      await repository.beginDispatch(deliveryId, worker);
+      await repository.markQueued(deliveryId, worker);
+      await harness.sql`
+        UPDATE session_deliveries
+        SET aggregate_state = ${aggregateState},
+            caller_turn_id = ${`receipt:${deliveryId}`},
+            target_receipt_id = ${`receipt:${deliveryId}`},
+            target_receipt_at = NOW(), delivered_at = NOW()
+        WHERE delivery_id = ${deliveryId}
+      `;
+    }
 
     const redelivered: string[] = [];
     const queuedRecovery = makeQueuedRecovery(
@@ -1038,10 +1145,20 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await expect(repository.get("orphan-delivered")).resolves.toMatchObject({
       state: "queued",
       aggregate_state: "pending",
-      caller_turn_id: null,
-      target_receipt_id: null,
-      target_receipt_at: null,
-      delivered_at: null,
+      caller_turn_id: "event:orphan-delivered",
+      target_receipt_id: "event:orphan-delivered",
+      target_receipt_at: expect.any(Date),
+      delivered_at: expect.any(Date),
+    });
+    await expect(repository.get("terminal-consumed")).resolves.toMatchObject({
+      state: "queued",
+      aggregate_state: "consumed",
+      target_receipt_id: "receipt:terminal-consumed",
+    });
+    await expect(repository.get("terminal-dead-letter")).resolves.toMatchObject({
+      state: "queued",
+      aggregate_state: "dead_letter",
+      target_receipt_id: "receipt:terminal-dead-letter",
     });
   });
 

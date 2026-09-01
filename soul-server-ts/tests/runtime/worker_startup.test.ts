@@ -91,4 +91,37 @@ describe("worker startup ordering", () => {
       expect(onRunnerRecoveryFailure).toHaveBeenCalledWith(recoveryError);
     });
   });
+
+  it("runs the one-shot transcript drain only after runner recovery converges", async () => {
+    const order: string[] = [];
+    const upstreamAdapter = {
+      run: vi.fn(async () => await new Promise<void>(() => {})),
+    };
+    const runtime = {
+      createUpstreamAdapter: () => upstreamAdapter,
+      runnerRecoveryCoordinator: {
+        start: vi.fn(async () => {
+          order.push("runner_recovered");
+        }),
+      },
+      claudeRuntimeStartupRecovery: {
+        afterRunnerRecovery: vi.fn(async () => {
+          order.push("transcript_drained");
+        }),
+      },
+    };
+
+    await startWorkerRuntime({
+      compose: async () => runtime,
+      listen: async () => {},
+      logger: { info: vi.fn() },
+      onUpstreamFailure: vi.fn(),
+      onRunnerRecoveryFailure: vi.fn(),
+    });
+    await vi.waitFor(() => {
+      expect(order).toEqual(["runner_recovered", "transcript_drained"]);
+    });
+    expect(runtime.claudeRuntimeStartupRecovery.afterRunnerRecovery)
+      .toHaveBeenCalledOnce();
+  });
 });

@@ -8,9 +8,14 @@ export interface WorkerStartupCoordinator {
   start(): Promise<void>;
 }
 
+export interface WorkerStartupRecovery {
+  afterRunnerRecovery(): Promise<void>;
+}
+
 export interface WorkerStartupRuntime {
   createUpstreamAdapter(): WorkerStartupAdapter;
   runnerRecoveryCoordinator?: WorkerStartupCoordinator;
+  claudeRuntimeStartupRecovery?: WorkerStartupRecovery;
 }
 
 export async function startWorkerRuntime<
@@ -39,15 +44,25 @@ export async function startWorkerRuntime<
   options.logger.info("Upstream adapter startup initiated");
   void upstreamRun.catch(options.onUpstreamFailure);
 
-  if (runtime.runnerRecoveryCoordinator) {
+  const runnerRecovery = runtime.runnerRecoveryCoordinator;
+  if (runnerRecovery) {
     options.logger.info(
       "Runner recovery initial scan starting after listeners and upstream adapter startup",
     );
-    void runtime.runnerRecoveryCoordinator.start().then(
-      () => options.logger.info("Runner recovery initial scan completed"),
-      options.onRunnerRecoveryFailure,
-    );
   }
+  const initialScan = runnerRecovery?.start() ?? Promise.resolve();
+  void initialScan.then(async () => {
+    if (runnerRecovery) {
+      options.logger.info("Runner recovery initial scan completed");
+    }
+    if (runtime.claudeRuntimeStartupRecovery) {
+      options.logger.info(
+        "Queued delivery startup recovery starting after runner convergence",
+      );
+      await runtime.claudeRuntimeStartupRecovery.afterRunnerRecovery();
+      options.logger.info("Queued delivery startup recovery completed");
+    }
+  }, options.onRunnerRecoveryFailure);
 
   return { runtime, upstreamAdapter };
 }

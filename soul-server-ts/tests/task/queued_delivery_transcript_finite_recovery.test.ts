@@ -12,15 +12,16 @@ afterEach(() => {
 });
 
 describe("queued transcript finite restart recovery", () => {
-  it("returns input-pending identity to replayable pending and retires after an empty pass", async () => {
+  it("returns input-pending identity once and does not reselect it in the same boot", async () => {
     const harness = makeHarness("input_pending");
 
     await harness.startup.start();
+    await afterRunnerRecovery(harness.startup);
     await vi.advanceTimersByTimeAsync(50);
     await vi.advanceTimersByTimeAsync(150);
 
     expect(harness.state()).toBe("pending");
-    expect(harness.claimQueuedAfterNodeRestart).toHaveBeenCalledTimes(2);
+    expect(harness.claimQueuedAfterNodeRestart).toHaveBeenCalledOnce();
     expect(harness.inspect).toHaveBeenCalledOnce();
     expect(harness.retryLeasedDelivery).toHaveBeenCalledOnce();
     expect(harness.retryLeasedDelivery).toHaveBeenCalledWith(
@@ -37,11 +38,12 @@ describe("queued transcript finite restart recovery", () => {
     const harness = makeHarness("completed");
 
     await harness.startup.start();
+    await afterRunnerRecovery(harness.startup);
     await vi.advanceTimersByTimeAsync(50);
     await vi.advanceTimersByTimeAsync(150);
 
     expect(harness.state()).toBe("consumed");
-    expect(harness.claimQueuedAfterNodeRestart).toHaveBeenCalledTimes(2);
+    expect(harness.claimQueuedAfterNodeRestart).toHaveBeenCalledOnce();
     expect(harness.inspect).toHaveBeenCalledOnce();
     expect(harness.markConsumed).toHaveBeenCalledOnce();
     expect(harness.retryLeasedDelivery).not.toHaveBeenCalled();
@@ -131,4 +133,10 @@ function makeHarness(receiptKind: "input_pending" | "completed") {
     markConsumed,
     retryLeasedDelivery,
   };
+}
+
+async function afterRunnerRecovery(
+  startup: ClaudeRuntimeStartupRecovery,
+): Promise<void> {
+  await startup.afterRunnerRecovery();
 }

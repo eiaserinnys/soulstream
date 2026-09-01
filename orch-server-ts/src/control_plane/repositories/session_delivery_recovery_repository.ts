@@ -302,6 +302,7 @@ export class SessionDeliveryRecoveryRepository {
           delivery.state = 'queued'
           OR (${mode.includeDelivered ?? false} AND delivery.state = 'delivered')
         )
+          AND delivery.aggregate_state NOT IN ('consumed', 'dead_letter')
           AND delivery.next_attempt_at <= NOW()
           AND (
             (
@@ -346,26 +347,6 @@ export class SessionDeliveryRecoveryRepository {
       UPDATE session_deliveries AS delivery
       SET
         state = 'claimed',
-        aggregate_state = CASE
-          WHEN delivery.state = 'delivered' THEN 'pending'
-          ELSE delivery.aggregate_state
-        END,
-        caller_turn_id = CASE
-          WHEN delivery.state = 'delivered' THEN NULL
-          ELSE delivery.caller_turn_id
-        END,
-        target_receipt_id = CASE
-          WHEN delivery.state = 'delivered' THEN NULL
-          ELSE delivery.target_receipt_id
-        END,
-        target_receipt_at = CASE
-          WHEN delivery.state = 'delivered' THEN NULL
-          ELSE delivery.target_receipt_at
-        END,
-        delivered_at = CASE
-          WHEN delivery.state = 'delivered' THEN NULL
-          ELSE delivery.delivered_at
-        END,
         lease_owner = ${leaseOwner},
         lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
         updated_at = NOW()
@@ -375,6 +356,7 @@ export class SessionDeliveryRecoveryRepository {
           delivery.state = 'queued'
           OR (${mode.includeDelivered ?? false} AND delivery.state = 'delivered')
         )
+        AND delivery.aggregate_state NOT IN ('consumed', 'dead_letter')
       RETURNING delivery.*
     `;
     return rows;
