@@ -178,6 +178,27 @@ async def test_terminal_receipt_migration_contract_is_mirrored_in_schema_sql():
         assert required in schema_sql
 
 
+async def test_ownerless_terminal_historical_generation_contract_is_mirrored():
+    migration_sql = _migration_sql(
+        "082_ownerless_terminal_historical_generation.sql"
+    ).strip()
+    schema_sql = _schema_sql()
+
+    assert migration_sql in schema_sql
+    terminal_update = migration_sql.split("UPDATE sessions AS session", 1)[1]
+    for owner_column in [
+        "execution_manifest_id",
+        "execution_runtime_env_identity",
+        "execution_registration_id",
+        "execution_pid",
+        "execution_start_identity",
+        "execution_command_id",
+        "execution_lease_expires_at",
+    ]:
+        assert f"session.{owner_column} IS NULL" in terminal_update
+    assert "session.execution_generation = 0" not in terminal_update
+
+
 async def test_terminal_execution_ownership_retirement_is_exact_and_mirrored():
     migration_sql = _migration_sql(
         "078_terminal_execution_ownership_retirement.sql"
@@ -664,6 +685,62 @@ async def test_terminal_receipt_is_stable_until_a_new_running_turn(test_db):
         "termination_event_id": 73,
         "last_assistant_text": "second answer",
     }
+
+
+async def test_ownerless_terminal_uses_current_owner_shape_not_history(test_db):
+    await _create_session(test_db, "sess-historical-ownerless")
+    await test_db.execute(
+        """
+        UPDATE sessions
+        SET status = 'running', execution_generation = 7
+        WHERE session_id = $1
+        """,
+        "sess-historical-ownerless",
+    )
+    ownerless = await test_db.fetchrow(
+        "SELECT * FROM session_apply_terminal_transition($1, $2, $3, $4, $5, $6, $7, $8)",
+        "sess-historical-ownerless",
+        "completed",
+        "completed_ok",
+        None,
+        "not_required",
+        "historical ownerless answer",
+        74,
+        _utc_now(),
+    )
+    assert ownerless["applied"] is True
+    assert ownerless["status"] == "completed"
+
+    await _create_session(test_db, "sess-current-owner")
+    await test_db.execute(
+        """
+        UPDATE sessions
+        SET status = 'running',
+            execution_generation = 7,
+            execution_manifest_id = 'manifest-7',
+            execution_runtime_env_identity = 'runtime-7',
+            execution_registration_id = 'registration-7',
+            execution_pid = 7007,
+            execution_start_identity = 'start-7',
+            execution_command_id = 'command-7',
+            execution_lease_expires_at = NOW() + INTERVAL '1 minute'
+        WHERE session_id = $1
+        """,
+        "sess-current-owner",
+    )
+    owned = await test_db.fetchrow(
+        "SELECT * FROM session_apply_terminal_transition($1, $2, $3, $4, $5, $6, $7, $8)",
+        "sess-current-owner",
+        "completed",
+        "completed_ok",
+        None,
+        "not_required",
+        "must not apply",
+        75,
+        _utc_now(),
+    )
+    assert owned["applied"] is False
+    assert owned["status"] == "running"
 
 
 async def test_sessions_notify_completion_schema_contract(test_db):

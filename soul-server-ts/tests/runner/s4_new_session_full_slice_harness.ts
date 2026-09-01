@@ -44,6 +44,7 @@ import type {
 const AUTH_TOKEN = "full-slice-service-token";
 const NODE_ID = "full-slice-production-node";
 const AGENT_ID = "full-slice-agent";
+const CALLER_SESSION_ID = "full-slice-offline-caller";
 const WORKER_ROLE = "--full-slice-worker-child";
 const POLL_BUDGET_MS = 60_000;
 const testDirectory = dirname(fileURLToPath(import.meta.url));
@@ -151,11 +152,24 @@ export class ProductionFullSliceHarness {
 
     await this.spawnWorker();
     const firstNode = await this.waitForNode();
+    if (this.scenario === "S8") {
+      await this.postgres.sql`
+        INSERT INTO sessions (
+          session_id, node_id, session_type, status, agent_id
+        ) VALUES (
+          ${CALLER_SESSION_ID}, 'full-slice-offline-node', 'codex',
+          'completed', 'full-slice-caller'
+        )
+      `;
+    }
     const publicAcks: PublicHttpAck[] = [];
     const createAck = await this.publicCommand("create", "/api/sessions", {
       prompt: this.initialPrompt,
       profile: AGENT_ID,
       nodeId: NODE_ID,
+      ...(this.scenario === "S8"
+        ? { caller_session_id: CALLER_SESSION_ID, notify_completion: true }
+        : {}),
     });
     publicAcks.push(createAck);
     this.sessionId = requireString(createAck.body.agentSessionId, "create agentSessionId");
@@ -210,6 +224,10 @@ export class ProductionFullSliceHarness {
     }
 
     await this.waitForTerminalCount(1);
+    if (this.scenario === "S8") {
+      await this.waitForCompletionNotificationCount(1);
+      await this.stageHistoricalOwnerlessGeneration();
+    }
 
     if (this.isGhostRunningResume) {
       await this.waitForPidDeath(first.pid);
@@ -264,13 +282,22 @@ export class ProductionFullSliceHarness {
       await this.waitForExecuteProbe(true);
       successor = await this.waitForDifferentRunnerIdentity(first.registrationId);
       await this.release("resume");
-      await this.waitForTerminalCount(2);
+      if (this.scenario === "S8") {
+        // The R26 oracle must return the durable failure on all three axes instead
+        // of timing out on the first missing terminal projection.
+        await this.waitForAssistantMessageCount(2);
+        await delay(250);
+      } else {
+        await this.waitForTerminalCount(2);
+      }
     }
 
     const delivery = deliveryId
       ? ghostResumeFailed
         ? await this.readDeliveryObservation(deliveryId)
-        : await this.waitForConsumedDelivery(deliveryId)
+        : this.scenario === "S8"
+          ? await this.readDeliveryObservation(deliveryId)
+          : await this.waitForConsumedDelivery(deliveryId)
       : null;
     return {
       scenario: this.scenario,
@@ -327,7 +354,10 @@ export class ProductionFullSliceHarness {
   }
 
   private get isCompletedResume(): boolean {
-    return this.scenario === "S2" || this.scenario === "S5" || this.scenario === "S7";
+    return this.scenario === "S2"
+      || this.scenario === "S5"
+      || this.scenario === "S7"
+      || this.scenario === "S8";
   }
 
   private get isGhostRunningResume(): boolean {
@@ -517,6 +547,30 @@ export class ProductionFullSliceHarness {
     });
   }
 
+  private async waitForCompletionNotificationCount(expected: number): Promise<void> {
+    await this.poll(`completion notification count ${expected}`, async () => {
+      const [row] = await this.postgres.sql<Array<{ count: number }>>`
+        SELECT COUNT(*)::int AS count
+        FROM session_deliveries
+        WHERE source_session_id = ${this.sessionId}
+          AND intent = 'completion_notification'
+      `;
+      return Number(row?.count ?? 0) >= expected ? true : null;
+    });
+  }
+
+  private async waitForAssistantMessageCount(expected: number): Promise<void> {
+    await this.poll(`assistant message count ${expected}`, async () => {
+      const [row] = await this.postgres.sql<Array<{ count: number }>>`
+        SELECT COUNT(*)::int AS count
+        FROM events
+        WHERE session_id = ${this.sessionId}
+          AND event_type = 'assistant_message'
+      `;
+      return Number(row?.count ?? 0) >= expected ? true : null;
+    });
+  }
+
   private async waitForConsumedDelivery(deliveryId: string): Promise<DeliveryObservation> {
     return await this.poll(`delivery ${deliveryId} consumed`, async () => {
       const rows = await this.postgres.sql<Array<{
@@ -600,6 +654,36 @@ export class ProductionFullSliceHarness {
     }
   }
 
+  private async stageHistoricalOwnerlessGeneration(): Promise<void> {
+    await this.postgres.sql`
+      UPDATE sessions
+      SET execution_generation = 7
+      WHERE session_id = ${this.sessionId}
+    `;
+    const [shape] = await this.postgres.sql<Array<{
+      execution_generation: number;
+      owner_column_count: number;
+    }>>`
+      SELECT execution_generation,
+        (CASE WHEN execution_manifest_id IS NULL THEN 0 ELSE 1 END
+          + CASE WHEN execution_runtime_env_identity IS NULL THEN 0 ELSE 1 END
+          + CASE WHEN execution_registration_id IS NULL THEN 0 ELSE 1 END
+          + CASE WHEN execution_pid IS NULL THEN 0 ELSE 1 END
+          + CASE WHEN execution_start_identity IS NULL THEN 0 ELSE 1 END
+          + CASE WHEN execution_command_id IS NULL THEN 0 ELSE 1 END
+          + CASE WHEN execution_lease_expires_at IS NULL THEN 0 ELSE 1 END
+        )::int AS owner_column_count
+      FROM sessions
+      WHERE session_id = ${this.sessionId}
+    `;
+    if (
+      Number(shape?.execution_generation) !== 7
+      || Number(shape?.owner_column_count) !== 0
+    ) {
+      throw new Error("S8 failed to stage a historical ownerless terminal session");
+    }
+  }
+
   private async readLatestDeliveryId(): Promise<string> {
     const [delivery] = await this.postgres.sql<Array<{ delivery_id: string }>>`
       SELECT delivery_id
@@ -633,10 +717,14 @@ export class ProductionFullSliceHarness {
       WHERE session_id = ${this.sessionId} ORDER BY id
     `;
     const [counts] = await this.postgres.sql<Array<{
+      completion_notification_count: number;
       unfinished_delivery_count: number;
       ghost_running_count: number;
     }>>`
       SELECT
+        (SELECT COUNT(*)::int FROM session_deliveries AS delivery
+          WHERE delivery.source_session_id = ${this.sessionId}
+            AND delivery.intent = 'completion_notification') AS completion_notification_count,
         (SELECT COUNT(*)::int FROM session_deliveries AS delivery
           WHERE delivery.target_session_id = ${this.sessionId}
             AND delivery.state NOT IN ('consumed', 'superseded')) AS unfinished_delivery_count,
@@ -665,6 +753,7 @@ export class ProductionFullSliceHarness {
         .filter((value): value is string => value !== null),
       sessionEndedCount: events.filter((event) => event.event_type === "session_ended").length,
       errorEventCount: events.filter((event) => event.event_type === "error").length,
+      completionNotificationCount: Number(counts?.completion_notification_count ?? 0),
       unfinishedDeliveryCount: Number(counts?.unfinished_delivery_count ?? 0),
       ghostRunningCount: Number(counts?.ghost_running_count ?? 0),
     };
