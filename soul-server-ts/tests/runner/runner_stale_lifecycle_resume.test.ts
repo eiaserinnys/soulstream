@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import type { ProcessCommandLineProbe } from "../../src/runner/runner_process_lock.js";
 import type { RunnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import {
   stopExistingRunnerLocked,
@@ -37,12 +38,14 @@ import type { RunnerLifecycleRecord } from "../../src/runner/sqlite_runner_lifec
  * occupancy is 2.76%.
  *
  * Contract under test: a lifecycle pid that no registration identity vouches
- * for is stale residue. Resume must isolate it, not fail closed on it -- the
- * throw happens before the invalidation branch, so the state is a fixed point
- * and every later resume dies the same way.
+ * for is residue, and its disposition is decided by the process itself -- its
+ * command line -- never by the number. Proven ours, terminate; absent or a
+ * stranger, isolate and never signal; unknown, keep failing closed.
  */
 
 const STALE_LIFECYCLE_PID = 15_228;
+const NODE_EXE = "C:\\Program Files\\nodejs\\node.exe";
+const SNAPSHOT_DIR = "D:\\haniel-root\\services\\soulstream\\.local\\runner-releases\\a1b2c3";
 
 describe("stopExistingRunnerLocked with stale lifecycle evidence", () => {
   it("isolates an identity-less lifecycle pid instead of blocking resume", async () => {
@@ -53,6 +56,8 @@ describe("stopExistingRunnerLocked with stale lifecycle evidence", () => {
     const outcome = await stopExistingRunnerLocked(paths, dependencies({
       isPidAlive,
       signalPid,
+      // The live shape: alive by number, absent from the process table.
+      readCommandLine: async () => ({ kind: "absent" }),
       readLifecycle: async () => staleLifecycle(),
     }));
 
@@ -89,7 +94,95 @@ describe("stopExistingRunnerLocked with stale lifecycle evidence", () => {
 
     expect(outcome).toBe("registration_invalidated");
   });
+
+  it("terminates a live orphan whose command line proves it is this session's runner", async () => {
+    const { paths } = await sessionFixture({ pid: null, startIdentity: null });
+    let alive = true;
+    const signalPid = vi.fn(() => {
+      alive = false;
+    });
+
+    const outcome = await stopExistingRunnerLocked(paths, dependencies({
+      isPidAlive: () => alive,
+      signalPid,
+      readCommandLine: async () => ownRunnerCommandLine(paths),
+      readLifecycle: async () => staleLifecycle(),
+    }));
+
+    // Our own orphan is disposed of, so no writer lock or named pipe of ours
+    // survives to contend with the replacement runner.
+    expect(signalPid).toHaveBeenCalledWith(STALE_LIFECYCLE_PID, "SIGTERM");
+    expect(outcome).toBe("registration_invalidated");
+  });
+
+  it("never signals a recycled pid that belongs to an unrelated process", async () => {
+    const { paths } = await sessionFixture({ pid: null, startIdentity: null });
+    const signalPid = vi.fn();
+
+    const outcome = await stopExistingRunnerLocked(paths, dependencies({
+      isPidAlive: () => true,
+      signalPid,
+      readCommandLine: async () => ({
+        kind: "command_line",
+        value: "C:\\Windows\\System32\\svchost.exe -k NetworkService -p",
+      }),
+      readLifecycle: async () => staleLifecycle(),
+    }));
+
+    expect(signalPid).not.toHaveBeenCalled();
+    expect(outcome).toBe("registration_invalidated");
+  });
+
+  it("never signals another session's runner that inherited the pid", async () => {
+    const { paths } = await sessionFixture({ pid: null, startIdentity: null });
+    const signalPid = vi.fn();
+    const siblingConfigPath = join(
+      paths.sessionDirectory,
+      "..",
+      "0f9e8d7c6b5a4938271605f4",
+      "runner-config.json",
+    );
+
+    const outcome = await stopExistingRunnerLocked(paths, dependencies({
+      isPidAlive: () => true,
+      signalPid,
+      // A Soulstream runner, but not ours: the entry module alone is not proof.
+      readCommandLine: async () => ({
+        kind: "command_line",
+        value: `"${NODE_EXE}" "${SNAPSHOT_DIR}\\runner_entry.js" --config "${siblingConfigPath}"`,
+      }),
+      readLifecycle: async () => staleLifecycle(),
+    }));
+
+    expect(signalPid).not.toHaveBeenCalled();
+    expect(outcome).toBe("registration_invalidated");
+  });
+
+  it("fails closed when the command line of a live pid cannot be read", async () => {
+    const { paths } = await sessionFixture({ pid: null, startIdentity: null });
+    const signalPid = vi.fn();
+
+    await expect(stopExistingRunnerLocked(paths, dependencies({
+      isPidAlive: () => true,
+      signalPid,
+      // Protected process, denied access, unsupported platform: unknown is not
+      // a verdict. Neither kill nor proceed.
+      readCommandLine: async () => ({ kind: "unavailable" }),
+      readLifecycle: async () => staleLifecycle(),
+    }))).rejects.toMatchObject({
+      code: "runner_registration_identity_proof_failed",
+    });
+    expect(signalPid).not.toHaveBeenCalled();
+  });
 });
+
+function ownRunnerCommandLine(paths: RunnerProcessPaths): ProcessCommandLineProbe {
+  // Quoted exactly as the OS reports it, not as `join` produced it.
+  return {
+    kind: "command_line",
+    value: `"${NODE_EXE}" "${SNAPSHOT_DIR}\\runner_entry.js" --config "${paths.configPath}"`,
+  };
+}
 
 function staleLifecycle(): RunnerLifecycleRecord {
   return {
@@ -144,6 +237,7 @@ function dependencies(
     now: () => 0,
     delay: async () => {},
     readLifecycle: async () => null,
+    readCommandLine: async () => ({ kind: "absent" }),
     ...overrides,
   };
 }
