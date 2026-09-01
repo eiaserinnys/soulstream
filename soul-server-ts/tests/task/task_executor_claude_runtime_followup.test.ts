@@ -492,11 +492,11 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     expect(turnCount).toBe(3);
     expect(prompts).toEqual([
       "runtime follow-up prompt",
-      "runtime follow-up prompt",
       "?",
+      "runtime follow-up prompt",
     ]);
-    expect(deliveredInputUuids[1]).toBe(deliveredInputUuids[0]);
-    expect(deliveredInputUuids[2]).not.toBe(deliveredInputUuids[1]);
+    expect(deliveredInputUuids[2]).toBe(deliveredInputUuids[0]);
+    expect(deliveredInputUuids[1]).not.toBe(deliveredInputUuids[0]);
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(2);
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(2);
     expect(task.status).toBe("completed");

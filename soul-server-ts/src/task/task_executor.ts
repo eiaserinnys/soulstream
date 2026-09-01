@@ -60,7 +60,10 @@ import {
   type Task,
   type TaskStatus,
 } from "./task_models.js";
-import { enqueueInterventionOnce } from "./task_intervention_queue.js";
+import {
+  dequeueInterventionsInLane,
+  enqueueInterventionOnce,
+} from "./task_intervention_queue.js";
 import {
   isOpenAiAgentsApprovalPending,
   resolveTurnLoopTransition,
@@ -1096,8 +1099,21 @@ export class TaskExecutor {
         }
       }
       await task.interruptRequest;
+      if (task.status === "running") {
+        const highPriorityInterventions = dequeueInterventionsInLane(task, "high");
+        if (highPriorityInterventions.length > 0) {
+          await turnReceipt?.consume(task);
+          turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+            task,
+            agent,
+            highPriorityInterventions,
+          );
+          continue;
+        }
+      }
       const exactRuntimeFollowupReplay = pendingExactRuntimeFollowupReplays.shift();
       if (exactRuntimeFollowupReplay && task.status === "running") {
+        await turnReceipt?.consume(task);
         turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,
