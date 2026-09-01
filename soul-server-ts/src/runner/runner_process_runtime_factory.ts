@@ -84,7 +84,6 @@ export interface RunnerProcessRuntimeFactoryOptions {
     event: ClaudeClientEvent,
     idempotencyKey: string,
   ): Promise<() => Promise<void>>;
-  renewExecutionOwnership?(task: Task, renewedAt: Date): Promise<boolean>;
   spawner?: Pick<RunnerProcessSpawner, "adopt" | "spawn">
     & Partial<Pick<
       RunnerProcessSpawner,
@@ -351,16 +350,6 @@ export async function applyRunnerHostCall(
       return null;
     }
     throw new Error(`unsupported snapshot host operation: ${call.operation}`);
-  }
-  if (call.service === "execution_ownership" && call.operation === "renew") {
-    if (!options.renewExecutionOwnership) {
-      throw new Error("execution ownership renewal unavailable");
-    }
-    const renewedAt = new Date(asString(call.args[1], "execution ownership renewed at"));
-    if (!Number.isFinite(renewedAt.getTime())) {
-      throw new Error("execution ownership renewed at must be ISO-8601");
-    }
-    return await options.renewExecutionOwnership(task, renewedAt);
   }
   const event = call.args[1] as ClaudeClientEvent;
   restoreRunnerEngineEventMetadata(event, call.args[2]);

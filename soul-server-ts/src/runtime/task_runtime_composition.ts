@@ -13,7 +13,6 @@ import type {
   RunnerProcessRuntimeFactory,
 } from "../task/task_executor.js";
 import { TaskExecutor } from "../task/task_executor.js";
-import { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import {
   TaskCompletionNotifier,
   type CompletionNotifier,
@@ -51,7 +50,6 @@ export interface TaskRuntimeComposition {
   taskExecutor: TaskExecutor;
   completionNotifier: CompletionNotifier;
   completionDeliveryRecoveryWorker?: CompletionDeliveryRecoveryWorker;
-  executionOwnershipBackoff: ExecutionOwnershipBackoff;
   onResume: StartExecutionCallback;
   scheduleDispatcher: ScheduleDispatcher;
   claudeRuntimeTaskFollowup: Pick<
@@ -80,9 +78,6 @@ export function composeTaskRuntime(
     orchProxyConfig,
     transientEventLogAggregator,
   } = params;
-  // Owned here because the executor is where conflicts are observed; the
-  // runner recovery scan borrows the same instance to honour the backoff.
-  const executionOwnershipBackoff = new ExecutionOwnershipBackoff({ logger });
   let taskExecutor: TaskExecutor;
   const onResume: StartExecutionCallback = (task, activation) => {
     if (!task.profileId) {
@@ -154,8 +149,8 @@ export function composeTaskRuntime(
     modelCatalog,
     runnerProcessFactory,
     transientEventLogAggregator,
-    executionOwnershipBackoff,
-    env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+    undefined,
+    undefined,
     async (task) => {
       await taskManager.resumeQueuedAfterTerminal(task, onResume);
     },
@@ -174,7 +169,6 @@ export function composeTaskRuntime(
     taskExecutor,
     completionNotifier,
     completionDeliveryRecoveryWorker,
-    executionOwnershipBackoff,
     onResume,
     scheduleDispatcher,
     claudeRuntimeTaskFollowup,

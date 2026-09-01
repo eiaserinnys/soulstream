@@ -5420,8 +5420,10 @@ BEGIN
 END;
 $$;
 
--- V1 sessions-row execution owner. The migration cut and fresh-install schema
--- intentionally converge on these definitions.
+-- Wave 1 compatibility projection. The runtime no longer elects an execution
+-- owner or evaluates a lease. This legacy function name and the all-or-none
+-- columns remain until Wave 3, while each explicit execution start records one
+-- fresh generation and its exact runner identity in a single row update.
 CREATE OR REPLACE FUNCTION session_acquire_execution_ownership(
     p_session_id TEXT, p_manifest_id TEXT, p_runtime_env_identity TEXT,
     p_registration_id TEXT, p_pid INTEGER, p_start_identity TEXT,
@@ -5437,7 +5439,6 @@ CREATE OR REPLACE FUNCTION session_acquire_execution_ownership(
 ) LANGUAGE plpgsql AS $$
 DECLARE
     v_session sessions%ROWTYPE;
-    v_exact_identity BOOLEAN;
     v_row_count INTEGER := 0;
 BEGIN
     IF p_manifest_id IS NULL OR p_manifest_id = ''
@@ -5448,53 +5449,12 @@ BEGIN
        OR p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
         RAISE EXCEPTION 'complete execution identity required';
     END IF;
-    IF p_lease_expires_at IS NULL OR p_lease_expires_at <= p_acquired_at THEN
-        RAISE EXCEPTION 'future execution lease required';
-    END IF;
     IF p_review_state NOT IN ('not_required', 'needs_review', 'acknowledged') THEN
         RAISE EXCEPTION 'unsupported review state: %', p_review_state;
     END IF;
 
-    SELECT * INTO v_session FROM sessions
-     WHERE session_id = p_session_id FOR UPDATE;
+    SELECT * INTO v_session FROM sessions WHERE session_id = p_session_id FOR UPDATE;
     IF NOT FOUND THEN RAISE EXCEPTION 'session not found: %', p_session_id; END IF;
-
-    v_exact_identity := v_session.execution_manifest_id = p_manifest_id
-        AND v_session.execution_runtime_env_identity = p_runtime_env_identity
-        AND v_session.execution_registration_id = p_registration_id
-        AND v_session.execution_pid = p_pid
-        AND v_session.execution_start_identity = p_start_identity
-        AND v_session.execution_command_id = p_execution_command_id;
-
-    IF v_session.execution_manifest_id IS NOT NULL
-       AND v_session.execution_lease_expires_at > p_acquired_at THEN
-        IF v_exact_identity THEN
-            UPDATE sessions SET execution_lease_expires_at = p_lease_expires_at,
-                   updated_at = p_acquired_at WHERE session_id = p_session_id;
-            GET DIAGNOSTICS v_row_count = ROW_COUNT;
-        END IF;
-        RETURN QUERY SELECT v_exact_identity AND v_row_count = 1,
-            session.execution_generation, session.execution_lease_expires_at,
-            session.status, session.termination_reason, session.termination_detail,
-            session.review_state, session.last_assistant_text,
-            session.termination_event_id, session.updated_at, session.last_event_id
-          FROM sessions AS session WHERE session.session_id = p_session_id;
-        RETURN;
-    END IF;
-
-    IF EXISTS (
-        SELECT 1 FROM session_execution_ownerships
-         WHERE session_id = p_session_id
-           AND phase IN ('reserved', 'identity_proven', 'active')
-    ) THEN
-        RETURN QUERY SELECT FALSE, session.execution_generation,
-            session.execution_lease_expires_at, session.status,
-            session.termination_reason, session.termination_detail,
-            session.review_state, session.last_assistant_text,
-            session.termination_event_id, session.updated_at, session.last_event_id
-          FROM sessions AS session WHERE session.session_id = p_session_id;
-        RETURN;
-    END IF;
 
     IF p_terminal_resume THEN
         UPDATE sessions AS session SET
@@ -5507,7 +5467,7 @@ BEGIN
             execution_registration_id = p_registration_id,
             execution_pid = p_pid, execution_start_identity = p_start_identity,
             execution_command_id = p_execution_command_id,
-            execution_lease_expires_at = p_lease_expires_at,
+            execution_lease_expires_at = p_acquired_at,
             updated_at = p_acquired_at
          WHERE session.session_id = p_session_id
            AND session.status IN ('completed', 'error', 'interrupted')
@@ -5522,7 +5482,7 @@ BEGIN
             execution_registration_id = p_registration_id,
             execution_pid = p_pid, execution_start_identity = p_start_identity,
             execution_command_id = p_execution_command_id,
-            execution_lease_expires_at = p_lease_expires_at,
+            execution_lease_expires_at = p_acquired_at,
             updated_at = p_acquired_at
          WHERE session.session_id = p_session_id
            AND session.status NOT IN ('completed', 'error', 'interrupted');

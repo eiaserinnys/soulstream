@@ -13,36 +13,6 @@ export class ExecutionOwnershipCoordinator {
     private readonly logger?: Pick<Logger, "info">,
   ) {}
 
-  async acquire(
-    sessionId: string,
-    input: Parameters<EventPersistence["acquireExecutionOwnershipAndWaitForApplication"]>[1],
-  ): Promise<EventSessionTransitionApplication> {
-    const application = await this.persistence
-      .acquireExecutionOwnershipAndWaitForApplication(sessionId, input);
-    this.logTransition(
-      "acquire",
-      sessionId,
-      application.canonicalExecutionOwnership?.ownershipGeneration ?? 0,
-      application,
-    );
-    return application;
-  }
-
-  async renew(
-    sessionId: string,
-    input: Parameters<EventPersistence["renewExecutionOwnershipAndWaitForApplication"]>[1],
-  ): Promise<EventSessionTransitionApplication> {
-    const application = await this.persistence
-      .renewExecutionOwnershipAndWaitForApplication(sessionId, input);
-    this.logTransition(
-      "renew",
-      sessionId,
-      input.ownershipGeneration,
-      application,
-    );
-    return application;
-  }
-
   async release(
     sessionId: string,
     event: Parameters<EventPersistence["releaseExecutionOwnershipAndWaitForApplication"]>[1],
@@ -60,10 +30,7 @@ export class ExecutionOwnershipCoordinator {
   }
 
   private logTransition(
-    operation:
-      | "acquire"
-      | "renew"
-      | "release",
+    operation: "release",
     sessionId: string,
     ownershipGeneration: number,
     application: EventSessionTransitionApplication,

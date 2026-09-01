@@ -295,7 +295,7 @@ function runnerEnv() {
 }
 
 describe("applyRunnerHostCall", () => {
-  it("threads correlation to all seven mutating owner operations", async () => {
+  it("threads correlation to all six mutating host operations", async () => {
     const sessionStore = {
       appendIdempotent: vi.fn(async () => undefined),
       deleteIdempotent: vi.fn(async () => undefined),
@@ -306,12 +306,10 @@ describe("applyRunnerHostCall", () => {
     };
     const observeClaudeRuntime = vi.fn(async () => true);
     const publishDetachedClaudeEvent = vi.fn(async () => async () => undefined);
-    const renewExecutionOwnership = vi.fn(async () => true);
     const options = {
       sessionStore,
       observeClaudeRuntime,
       publishDetachedClaudeEvent,
-      renewExecutionOwnership,
     } as never;
     const task = {
       agentSessionId: "session-a",
@@ -344,11 +342,6 @@ describe("applyRunnerHostCall", () => {
       },
       { service: "claude_runtime" as const, operation: "observe", args: ["session-a", event] },
       { service: "detached_event" as const, operation: "publish", args: ["session-a", event] },
-      {
-        service: "execution_ownership" as const,
-        operation: "renew",
-        args: ["session-a", "2026-08-27T00:00:00.000Z"],
-      },
     ];
 
     for (const [index, call] of calls.entries()) {
@@ -381,10 +374,6 @@ describe("applyRunnerHostCall", () => {
     );
     expect(observeClaudeRuntime).toHaveBeenCalledWith("session-a", event, "host:4");
     expect(publishDetachedClaudeEvent).toHaveBeenCalledWith("session-a", event, "host:5");
-    expect(renewExecutionOwnership).toHaveBeenCalledWith(
-      task,
-      new Date("2026-08-27T00:00:00.000Z"),
-    );
   });
 
   it("restores process-local Claude metadata before an observational host call", async () => {

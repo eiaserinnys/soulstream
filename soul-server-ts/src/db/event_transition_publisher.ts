@@ -60,7 +60,7 @@ export abstract class EventTransitionPublisher {
     return await this.waitForTransitionApplication(sessionId, record, "running");
   }
 
-  async acquireExecutionOwnershipAndWaitForApplication(
+  async recordExecutionGenerationAndWaitForApplication(
     sessionId: string,
     input: {
       ownerKind: ExecutionOwnerKind;
@@ -70,7 +70,6 @@ export abstract class EventTransitionPublisher {
       pid: number;
       startIdentity: string;
       executionCommandId: string;
-      leaseExpiresAt: Date;
       reviewState: string;
       expectedTerminalEventId?: number | null;
       updatedAt?: Date;
@@ -79,7 +78,7 @@ export abstract class EventTransitionPublisher {
     const updatedAt = input.updatedAt ?? new Date();
     return await this.enqueueExecutionEffectAndWait(
       sessionId,
-      `acquire:${input.executionCommandId}`,
+      `generation:${input.executionCommandId}`,
       {
         kind: "execution_acquire",
         owner_kind: input.ownerKind,
@@ -89,46 +88,13 @@ export abstract class EventTransitionPublisher {
         pid: input.pid,
         start_identity: input.startIdentity,
         execution_command_id: input.executionCommandId,
-        lease_expires_at: input.leaseExpiresAt.toISOString(),
+        // Legacy all-or-none session projection. This timestamp is not a lease;
+        // no runtime renews it or uses it for admission after Wave 1.
+        lease_expires_at: updatedAt.toISOString(),
         review_state: input.reviewState,
         ...(input.expectedTerminalEventId === undefined
           ? {}
           : { expected_terminal_event_id: input.expectedTerminalEventId }),
-        updated_at: updatedAt.toISOString(),
-      },
-    );
-  }
-
-  async renewExecutionOwnershipAndWaitForApplication(
-    sessionId: string,
-    input: {
-      ownershipGeneration: number;
-      ownerKind: ExecutionOwnerKind;
-      manifestId: string;
-      runtimeEnvIdentity: string;
-      registrationId: string;
-      pid: number;
-      startIdentity: string;
-      executionCommandId: string;
-      leaseExpiresAt: Date;
-      updatedAt?: Date;
-    },
-  ): Promise<EventSessionTransitionApplication> {
-    const updatedAt = input.updatedAt ?? new Date();
-    return await this.enqueueExecutionEffectAndWait(
-      sessionId,
-      `renew:${input.ownershipGeneration}:${updatedAt.toISOString()}`,
-      {
-        kind: "execution_renew",
-        ownership_generation: input.ownershipGeneration,
-        owner_kind: input.ownerKind,
-        manifest_id: input.manifestId,
-        runtime_env_identity: input.runtimeEnvIdentity,
-        registration_id: input.registrationId,
-        pid: input.pid,
-        start_identity: input.startIdentity,
-        execution_command_id: input.executionCommandId,
-        lease_expires_at: input.leaseExpiresAt.toISOString(),
         updated_at: updatedAt.toISOString(),
       },
     );
@@ -256,9 +222,7 @@ export abstract class EventTransitionPublisher {
   private async enqueueExecutionEffectAndWait(
     sessionId: string,
     transitionId: string,
-    effect: Extract<EventOutboxSessionEffect, { kind:
-      | "execution_acquire"
-      | "execution_renew" }>,
+    effect: Extract<EventOutboxSessionEffect, { kind: "execution_acquire" }>,
   ): Promise<EventSessionTransitionApplication> {
     const event = {
       type: "metadata",

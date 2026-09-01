@@ -1,7 +1,5 @@
 import type { Logger } from "pino";
 
-import { isExecutionOwnershipConflictError } from "../task/execution_ownership.js";
-import type { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import type { Task } from "../task/task_models.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import type {
@@ -29,15 +27,6 @@ export function dispositionRequiresTask(
   return disposition !== "wait_for_bootstrap" && disposition !== "retired_terminal";
 }
 
-/** Only these dispositions go on to reserve execution ownership. */
-export function contendsForExecutionOwnership(
-  disposition: RunnerRecoveryDisposition,
-): boolean {
-  return disposition === "adopt_prebootstrap"
-    || disposition === "adopt_running"
-    || disposition === "already_reaped";
-}
-
 export async function handleRecoveryWithFailureTracking(input: {
   registration: RunnerRegistration;
   disposition: RunnerRecoveryDisposition;
@@ -48,22 +37,11 @@ export async function handleRecoveryWithFailureTracking(input: {
     task?: Task,
   ): Promise<void>;
   recoveryLogger: RunnerRecoveryLogger;
-  ownershipBackoff: ExecutionOwnershipBackoff;
 }): Promise<void> {
   try {
     await input.handle(input.registration, input.disposition, input.task);
     input.recoveryLogger.clear(input.registration.config.sessionId);
-    if (contendsForExecutionOwnership(input.disposition)) {
-      input.ownershipBackoff.clear(input.registration.config.sessionId);
-    }
   } catch (error) {
-    if (isExecutionOwnershipConflictError(error)) {
-      input.ownershipBackoff.observeConflict(
-        input.registration.config.sessionId,
-        error.retryAt,
-      );
-      return;
-    }
     input.recoveryLogger.failure(input.registration, input.disposition, error);
   }
 }

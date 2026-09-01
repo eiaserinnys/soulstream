@@ -1,5 +1,4 @@
 import { performance } from "node:perf_hooks";
-import { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import { isTerminalTaskStatus, type Task } from "../task/task_models.js";
 import { releaseTaskRunner } from "../task/task_runner_release.js";
 import {
@@ -14,7 +13,6 @@ import {
 import { RunnerRecoveryHydrationPhase } from "./runner_recovery_hydration_phase.js";
 import { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import {
-  contendsForExecutionOwnership,
   dispositionRequiresTask,
   handleRecoveryWithFailureTracking,
   reapAndResumeRunner,
@@ -58,16 +56,10 @@ export class RunnerRecoveryCoordinator {
   private readonly sessionGarbageCollectionScheduler: RunnerSessionGarbageCollectionScheduler;
   private readonly unreadableRegistrationHandler: UnreadableRunnerRegistrationHandler;
   private readonly registrationControl: RunnerRegistrationControl;
-  private readonly ownershipBackoff: ExecutionOwnershipBackoff;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
   constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
     this.registrationControl = new RunnerRegistrationControl(options.spawner);
-    this.ownershipBackoff = options.ownershipBackoff
-      ?? new ExecutionOwnershipBackoff({
-        logger: options.logger,
-        ...(options.now ? { now: options.now } : {}),
-      });
     this.ownerNullInventoryReconciler = new OwnerNullInventoryReconciler({
       nodeId: options.nodeId,
       scanIntervalMs: options.scanIntervalMs,
@@ -178,9 +170,6 @@ export class RunnerRecoveryCoordinator {
     await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
     await this.unreadableRegistrationHandler.handle(scan.errors);
     this.recoveryLogger.prune(scan.registrations);
-    this.ownershipBackoff.prune(
-      scan.registrations.map((registration) => registration.config.sessionId),
-    );
     this.adoptionFailureRecovery.prune(
       scan.registrations.map((registration) => registration.config.sessionId),
     );
@@ -215,15 +204,6 @@ export class RunnerRecoveryCoordinator {
         this.recoveryLogger.clear(sessionId);
         continue;
       }
-      // The ownership backoff only governs work that goes on to claim
-      // ownership. Reaping a dead runner, draining a closed one, or
-      // reconciling an owner-null row neither contends for ownership nor
-      // benefits from waiting — and holding those back for five minutes would
-      // leave a session with a dead runner stranded exactly as long.
-      if (
-        contendsForExecutionOwnership(disposition)
-        && this.ownershipBackoff.shouldSkip(sessionId)
-      ) continue;
       admitted.push({ registration, disposition });
     }
     const hydrationOutcomes = await this.hydrationPhase.run(
@@ -559,7 +539,6 @@ export class RunnerRecoveryCoordinator {
           onRunnerAttached,
         ),
       recoveryLogger: this.recoveryLogger,
-      ownershipBackoff: this.ownershipBackoff,
     });
   }
   private async recoverRegistered(

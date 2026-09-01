@@ -615,12 +615,6 @@ export class RunnerChildRuntime {
     if (!this.activeCommandId || !this.lifecycle.read()) return;
     const observedAt = new Date().toISOString();
     this.lifecycle.liveness(this.activeCommandId, observedAt);
-    await this.host.call(
-      "execution_ownership",
-      "renew",
-      [this.config.sessionId, observedAt],
-      { timeoutMs: Math.min(this.config.runnerLeaseTimeoutMs ?? 30_000, 30_000) },
-    );
   }
 
   private startLiveness(): void {

@@ -103,7 +103,6 @@ export interface RunnerHostCall {
     | "session_store"
     | "claude_runtime"
     | "detached_event"
-    | "execution_ownership"
     | "snapshot";
   operation: string;
   args: unknown[];
