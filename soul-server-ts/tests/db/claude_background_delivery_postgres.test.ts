@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import pino from "pino";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ClaudeBackgroundTaskRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/claude_background_task_repository.js";
@@ -10,6 +10,8 @@ import { SessionDeliveryRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import { replayPendingImmediateDeliveriesForNode } from
   "../../../orch-server-ts/src/production.js";
+import { OrchestratorMaintenanceService } from
+  "../../../orch-server-ts/src/runtime/orchestrator_maintenance_service.js";
 import type { SqlClient } from "../../src/db/session_db.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
@@ -157,6 +159,98 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
       );
     },
   );
+
+  it("retries a due human steer while its node connection stays open", async () => {
+    const deliveryId = "r29-connected-human-live-steer";
+    const connectionId = "r29-stable-connection";
+    const repository = new SessionDeliveryRepository(harness.sql);
+    const path = makeDeliveryPath(harness.sql);
+    const warnings: string[] = [];
+    await repository.register({
+      deliveryId,
+      targetSessionId: "caller-session",
+      relationKey: `user_message:caller-session:${deliveryId}`,
+      completionId: `message:${deliveryId}`,
+      intent: "human_live_steer",
+      source: "user_message",
+      payloadHash: `hash:${deliveryId}`,
+      payload: { text: "do not wait for reconnect", user: "alice" },
+    });
+
+    await replayPendingImmediateDeliveriesForNode({
+      nodeId: "node-test",
+      connectionId,
+      deliveries: repository,
+      sessionRouter: path.sessionRouter,
+      sessionBridge: {
+        sendPendingCommand: vi.fn(async () => ({
+          status: "error" as const,
+          message: "injected transient dispatch failure",
+        })),
+      } as never,
+      warn: (message) => warnings.push(message),
+      leaseOwnerPrefix: "maintenance",
+    });
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "pending",
+      aggregate_state: "pending",
+      attempt_count: 1,
+      next_attempt_at: expect.any(Date),
+    });
+
+    const maintenance = new OrchestratorMaintenanceService({
+      sessionCache: {
+        sweepExpired: () => ({
+          terminalSessions: 0,
+          disconnectedSessions: 0,
+          total: 0,
+        }),
+      },
+      pushNotifier: {
+        sweepExpired: () => ({
+          toolInputs: 0,
+          notificationEvents: 0,
+          total: 0,
+        }),
+      },
+      recoverPendingImmediateDeliveries: async () => {
+        await replayPendingImmediateDeliveriesForNode({
+          nodeId: "node-test",
+          connectionId,
+          deliveries: repository,
+          sessionRouter: path.sessionRouter,
+          sessionBridge: path.sessionBridge,
+          warn: (message) => warnings.push(message),
+          leaseOwnerPrefix: "maintenance",
+        });
+      },
+    });
+
+    maintenance.start();
+    await maintenance.waitForSettled();
+    await maintenance.stop();
+    expect(path.resumedDeliveryIds).toEqual([deliveryId]);
+    await repository.markConsumed(deliveryId, `turn:${deliveryId}`);
+
+    await replayPendingImmediateDeliveriesForNode({
+      nodeId: "node-test",
+      connectionId,
+      deliveries: repository,
+      sessionRouter: path.sessionRouter,
+      sessionBridge: path.sessionBridge,
+      warn: (message) => warnings.push(message),
+      leaseOwnerPrefix: "maintenance",
+    });
+    expect(path.resumedDeliveryIds).toEqual([deliveryId]);
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "consumed",
+      aggregate_state: "consumed",
+      attempt_count: 1,
+    });
+    expect(warnings).toEqual([
+      expect.stringContaining("injected transient dispatch failure"),
+    ]);
+  });
 
   it("converges expired claimed and attempted pending deliveries after restart", async () => {
     const deliveryIds = [
