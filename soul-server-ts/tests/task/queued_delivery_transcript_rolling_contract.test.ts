@@ -3,12 +3,52 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
 import { DELIVERY_INTENTS, type DeliveryIntent } from
   "../../src/task/delivery_contract.js";
+import { redeliverStoredDeliveryContent } from
+  "../../src/task/delivery_row_intervention.js";
 import { QueuedDeliveryTranscriptRecovery } from
   "../../src/task/queued_delivery_transcript_recovery.js";
 
 type LedgerState = "claimed" | "delivered" | "consumed" | "queued";
 
 describe("queued transcript recovery rolling contract", () => {
+  it.each([
+    ["caller_turn_id", { caller_turn_id: "turn-existing" }],
+    ["target_receipt_id", { target_receipt_id: "receipt-existing" }],
+    ["delivered_at", { delivered_at: new Date("2026-09-01T00:00:00Z") }],
+    ["no receipt", {}],
+  ] as const)("derives transcript absence from preserved %s proof", async (
+    _label,
+    proof,
+  ) => {
+    const addIntervention = vi.fn(async () => ({ queued: true }));
+    const row = {
+      delivery_id: "delivery-proof",
+      target_session_id: "session-proof",
+      lease_owner: "startup-proof",
+      source: "user_message",
+      intent: "human_live_steer",
+      payload: { text: "keep this steer", user: "alice" },
+      created_at: new Date("2026-09-01T00:00:00Z"),
+      caller_turn_id: null,
+      target_receipt_id: null,
+      delivered_at: null,
+      ...proof,
+    } as SessionDeliveryRow;
+
+    await redeliverStoredDeliveryContent(
+      row,
+      { addIntervention } as never,
+      vi.fn(),
+    );
+
+    expect(addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetContentReceiptAbsent: _label === "no receipt",
+      }),
+      expect.any(Function),
+    );
+  });
+
   it("new soul converges with an old orch through the legacy delivered action", async () => {
     const harness = makeHarness("old_orch");
 

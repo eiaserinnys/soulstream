@@ -53,7 +53,10 @@ export async function redeliverStoredDeliveryContent(
   const result = await target.addIntervention(
     {
       ...deliveryRowToInterventionParams(row, requiredLeaseOwner(row)),
-      targetContentReceiptAbsent: true,
+      targetContentReceiptAbsent:
+        row.caller_turn_id === null
+        && row.target_receipt_id === null
+        && row.delivered_at === null,
     },
     onResume,
   );

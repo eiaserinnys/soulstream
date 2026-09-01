@@ -223,18 +223,25 @@ describe("worker composition boundary", () => {
     expect(recoveryIndex).toBeGreaterThan(executorIndex);
   });
 
-  it("starts queued content recovery only after the intervention route is bound", () => {
+  it("arms startup recovery after route binding and drains queued content after runner scan", () => {
     const workerComposition = source("runtime/worker_composition.ts");
     const claudeComposition = source("runtime/claude_runtime_composition.ts");
+    const workerStartup = source("runtime/worker_startup.ts");
     const taskRuntimeIndex = workerComposition.indexOf(
       "taskRuntime = composeTaskRuntime({",
     );
-    const recoveryIndex = workerComposition.indexOf(
+    const backgroundRecoveryIndex = workerComposition.indexOf(
       "await claudeRuntime.startupRecovery?.start();",
+    );
+    const runnerScanIndex = workerStartup.indexOf("runnerRecovery?.start()");
+    const queuedRecoveryIndex = workerStartup.indexOf(
+      "claudeRuntimeStartupRecovery.afterRunnerRecovery()",
     );
 
     expect(taskRuntimeIndex).toBeGreaterThan(-1);
-    expect(recoveryIndex).toBeGreaterThan(taskRuntimeIndex);
+    expect(backgroundRecoveryIndex).toBeGreaterThan(taskRuntimeIndex);
+    expect(runnerScanIndex).toBeGreaterThan(-1);
+    expect(queuedRecoveryIndex).toBeGreaterThan(runnerScanIndex);
     expect(workerComposition).toContain("redeliverStoredDeliveryContent");
     expect(claudeComposition).not.toContain("await startupRecovery.start();");
   });
