@@ -1,0 +1,34 @@
+# 러너 생애주기
+
+최종 대조 커밋 SHA: `200b40c51de1e3079dcc88dcbdccc9b3832ad1c0`
+
+> 상태 배지: **R26 반영 완료 · R31b 진행 중 — 머지 시 갱신 필요**
+
+> 범위 주석: process identity는 PID 단독이 아니라 registration id·PID·start identity·session-owned command line·writer lock의 증거 조합이다.
+
+| 단계 | 파일:심볼(라인) | 이 단계가 소유한 사실 | 거부/분기 조건 |
+| --- | --- | --- | --- |
+| 1. runtime factory 선택 | `soul-server-ts/src/runner/runner_process_runtime_factory.ts:createRunnerProcessRuntimeFactory` (L92–175) | task·agent·backend·불변 release에서 spawn input과 runner dispatcher를 만든다. | state dir가 없거나 release/MCP/env identity를 구성할 수 없으면 시작을 거부한다. |
+| 2. session mutation 직렬화 | `soul-server-ts/src/runner/runner_process_spawn.ts:RunnerProcessSpawner.spawn` (L155–161) | session directory 단위 mutation lock 안에서만 spawn·replacement를 수행한다. | 같은 session mutation lock을 얻지 못하면 spawn 경로에 진입하지 않는다. |
+| 3. 기존 증거 정리 | `soul-server-ts/src/runner/runner_process_spawn.ts:spawnLocked` (L162–186), `runner_process_termination.ts:stopExistingRunnerLocked` (L50–99) | 새 등록 전에 기존 exact runner를 종료하거나 정체성 없는 residue를 R30 판정으로 dispose하고 writer lock을 회수한다. | 살아 있는 owner를 안전하게 배제하지 못하면 fail-closed다. |
+| 4. pending 등록 | `soul-server-ts/src/runner/runner_process_spawn.ts:spawnLocked` (L187–225), `runner_registration_identity.ts:pendingRunnerRegistrationIdentity` (L34–49) | spawn 전에 UUID registration id와 null PID/start identity를 내구 기록하고 config·SQLite·entry를 준비한다. | session/release identity가 비어 있거나 entry 검증이 실패하면 child를 만들지 않는다. |
+| 5. detached spawn | `soul-server-ts/src/runner/runner_process_spawn.ts:spawnLocked` (L226–253) | 불변 snapshot의 `runner_entry.js --config` child를 detached로 만들고 로그 fd를 넘긴다. | child PID가 없거나 spawn/log close가 실패하면 오류다. |
+| 6. child identity handshake | `soul-server-ts/src/runner/runner_process_spawn.ts:spawnLocked` (L255–336), `runner_registration_identity.ts:completeRunnerRegistrationIdentityFromChild` (L79–119) | child가 공개한 PID/start identity를 pending registration과 대조하고 host pid sidecar까지 완성한다. | PID·registration id·start identity가 다르거나 process inspection이 불가능하면 exact child만 정리하고 fail-closed다. |
+| 7. writer lock 획득 | `soul-server-ts/src/runner/runner_child_runtime.ts:RunnerChildRuntime.start` (L91–103) | child가 writer lock owner identity를 확보한 뒤 그 identity로 registration을 완성한다. | registration이 다른 session/release/process에 속하면 child startup을 거부한다. |
+| 8. child runtime 가동 | `soul-server-ts/src/runner/runner_child_runtime.ts:RunnerChildRuntime.start` (L104–143) | SQLite outbox·lifecycle·host socket·engine dispatcher를 한 child runtime에 연다. | 각 저장/소켓 경계 실패는 child 시작 실패로 귀결된다. |
+| 9. liveness 기록 | `soul-server-ts/src/runner/runner_child_runtime.ts:recordLiveness` (L614–624), `startLiveness` (L626–637) | active command의 lifecycle observation과 central execution ownership lease를 같은 cadence로 갱신한다. | active command/lifecycle/lease timeout이 없으면 기록하지 않는다; R31b 머지 후 lock 정본과 재대조한다. |
+| 10. recovery inventory | `soul-server-ts/src/runner/runner_recovery_coordinator.ts:performScan` (L158–281), `runner_process_registry.ts:scanRunnerRegistrations` (L92–128) | node-local registration 전량과 손상 항목을 읽어 session별 처리 후보를 만든다. | 이미 active인 session·adoption failure 대기·ownership backoff는 중복 처리하지 않는다. |
+| 11. disposition 결정 | `soul-server-ts/src/runner/runner_process_registry.ts:classifyRunnerRegistration` (L130–165) | lifecycle·retired flag·PID 생사로 wait/adopt/replay/reap/closed를 완전 분류한다. | `progress_at` 경과만으로 죽음을 선언하지 않는다; live identity는 adopt에서 다시 증명한다. |
+| 12. exact adopt | `soul-server-ts/src/runner/runner_process_spawn.ts:RunnerProcessSpawner.adopt` (L338–360), `runner_process_runtime_factory.ts:adoptRegisteredRunner` (L229–238) | registration id·PID·start identity·현재 process identity가 모두 같은 child만 adopted handle로 만든다. | 필드 누락·retired·PID 사망·identity mismatch면 null/오류다. |
+| 13. task 재부착 | `soul-server-ts/src/runner/runner_recovery_coordinator.ts:recoverRegistered` (L523–665), `task/task_executor.ts:recoverRegisteredRunner` (L752–805) | hydrated lifecycle을 task에 복원하고 adopt/live replay/offline replay mode로 event stream을 다시 소비한다. | 기존 runner/execution이 새 주체를 막으면 겹치지 않으며 terminal offline replay 차단은 경고한다. |
+| 14. exact terminate | `soul-server-ts/src/runner/runner_registration_control.ts:RunnerRegistrationControl.terminate` (L31–46), `runner_process_spawn.ts:RunnerProcessSpawner.terminate` (L362–387) | PID+start identity가 있는 registration은 exact process 종료와 registration invalidation을 한 mutation lock에서 수행한다. | terminal release 증거 없이 `expected`가 없으면 거부한다. |
+| 15. exact process 종료 증명 | `soul-server-ts/src/runner/runner_process_termination.ts:terminateExactRunner` (L174–229) | SIGTERM→SIGKILL 뒤 start identity 재검사로 원래 process가 사라졌음을 증명한다. | inspection 불가·동일 identity가 계속 생존·kill 뒤 PID가 다른 process로 바뀌면 fail-closed다. |
+| 16. incomplete identity 위임 | `soul-server-ts/src/runner/runner_registration_control.ts:RunnerRegistrationControl.terminate` (L20–45), `runner_process_spawn.ts:disposeUnprovenRegistration` (L390–405) | PID/start identity가 불완전한 residue를 exact 경로에서 추측하지 않고 R30 substance 비교 경로로 보낸다. | spawner가 dispose capability를 제공하지 않으면 거부한다. |
+| 17A. R30 동일 session child | `soul-server-ts/src/runner/runner_process_termination.ts:disposeUnprovenRunnerPid` (L125–139), `terminateSessionOwnedOrphan` (L141–153) | command line이 현재 session의 `runner_entry.js --config`를 가리키면 우리 orphan으로 증명해 종료하고 residue invalidation을 계속한다. | 2초 내 SIGTERM/SIGKILL 종료 또는 session ownership 소멸을 증명하지 못하면 오류다. |
+| 17B. R30 absent·unrelated | `soul-server-ts/src/runner/runner_process_termination.ts:disposeUnprovenRunnerPid` (L125–139) | process가 없거나 다른 command/session이면 signal을 보내지 않고 residue만 격리하도록 반환한다. | command line이 현재 session 소유로 판명되면 17A로 간다. |
+| 17C. R30 unavailable | `soul-server-ts/src/runner/runner_process_termination.ts:disposeUnprovenRunnerPid` (L125–139) | command line을 읽을 수 없으면 kill도 spawn 진행도 허용하지 않는 fail-closed 상태를 유지한다. | 후속 관측이 absent/owned/unrelated 중 하나를 증명하기 전까지 반복 실패한다. |
+| 18. registration invalidate | `soul-server-ts/src/runner/runner_process_spawn.ts:invalidateRegistration` (L408–412), `runner_registration_control.ts:invalidate` (L48–53) | 기대 registration id에 맞는 sidecar·socket·pid 증거를 폐기한다. | registration id가 바뀌었으면 다른 generation의 증거를 지우지 않는다. |
+| 19. terminal retire | `soul-server-ts/src/runner/runner_process_spawn.ts:retireTerminalRegistration` (L415–439), `runner_registration_control.ts:retireTerminal` (L55–60) | terminal ACK 뒤 registration을 retired evidence로 바꿔 recovery 재실행과 GC 경계를 구분한다. | exact registration id가 아니면 retirement를 거부한다. |
+| 20. shutdown dispose | `soul-server-ts/src/runner/runner_child_runtime.ts:RunnerChildRuntime.shutdown` (L157–170) | engine→socket→liveness timer→lifecycle/outbox→writer lock 순서로 child 자원을 닫는다. | 중복 shutdown은 no-op; close 오류는 상위 shutdown 경계가 관찰한다. |
+
+이 장을 갱신해야 하는 변경 부류: runner release/spawn·registration identity·writer lock·liveness·recovery classification/adoption·termination·R30 dispose·terminal retirement/GC 변경.
