@@ -493,6 +493,7 @@ export async function composeWorkerRuntime(
     eventOutboxPumpMux,
     ...(runnerRecoveryCoordinator ? { runnerRecoveryCoordinator } : {}),
     ...(runnerProcess ? { runnerStateHostOwnership: runnerProcess.hostOwnership } : {}),
+    upstreamRegistrationReady: params.releaseActivationState.waitUntilReady(),
     createUpstreamAdapter,
   };
 }

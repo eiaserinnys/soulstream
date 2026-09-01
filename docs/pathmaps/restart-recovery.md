@@ -1,6 +1,6 @@
 # 재시작 복구
 
-최종 대조 커밋 SHA: `c812e9ade7e324f602253ef12faf6c4ce880832b`
+최종 대조 커밋 SHA: `d8f650bc6d437c93b2498e135bcae41877239ceb`
 
 > 범위 주석: accepted input producer는 boot 1회·node-ready·orch maintenance이며, 5초 maintenance lane은 lease와 notification 투영만 회수한다.
 
@@ -8,9 +8,9 @@
 | --- | --- | --- | --- |
 | 1. Claude 복구 객체 조립 | `soul-server-ts/src/runtime/claude_runtime_composition.ts:composeClaudeRuntime` (L51–115) | transcript reader·queued recovery·background lifecycle을 한 `ClaudeRuntimeStartupRecovery`에 묶고 boot worker id를 만든다. | runtime v2가 꺼져 있으면 복구 객체 자체를 만들지 않는다. |
 | 2. background task boot pass | `soul-server-ts/src/runtime/worker_composition.ts:composeWorkerRuntime` (L294–311), `claude_runtime_startup_recovery.ts:start` (L32–36) | worker composition 중 Claude background task 복구를 boot당 한 번 실행한다. | cached promise가 있으면 다시 실행하지 않으며 15초 deadline 실패도 같은 boot에서 재시도하지 않는다. |
-| 3. listener·upstream 선행 | `soul-server-ts/src/runtime/worker_startup.ts:startWorkerRuntime` (L33–45) | listener를 먼저 열고 upstream adapter를 시작하여 복구가 새 명령 경로를 막지 않게 한다. | upstream 실패는 별도 handler로 격리한다. |
-| 4. runner 초기 수렴 | `soul-server-ts/src/runtime/worker_startup.ts:startWorkerRuntime` (L47–57), `runner/runner_recovery_coordinator.ts:RunnerRecoveryCoordinator.start` (L139–149) | runner registration 초기 scan을 먼저 끝낸 뒤 queued transcript pass의 진입 순서를 연다. | runner process mode가 아니면 coordinator 없이 즉시 다음 경계로 간다. |
-| 5. queued delivery boot cursor | `soul-server-ts/src/runtime/worker_startup.ts:startWorkerRuntime` (L53–65), `claude_runtime_startup_recovery.ts:afterRunnerRecovery` (L38–47) | runner 수렴 뒤 queued delivery snapshot을 boot당 정확히 한 번 실행한다. | stopped면 생략; cached promise가 같은 process의 두 번째 snapshot을 차단한다. |
+| 3. listener·upstream 선행 | `soul-server-ts/src/runtime/worker_startup.ts:startWorkerRuntime` (L34–46), `upstream/adapter.ts:UpstreamAdapter.connectAndServe` (L342–354), `release/release_activation_state.ts:ReleaseActivationState.acceptReceipt` (L64–95) | listener를 먼저 열고 upstream adapter를 시작한다. 중앙 `node_register_ack`의 activation receipt가 검증되면 등록 readiness를 단 한 번 연다. | adapter 연결과 runner scan은 기존 순서대로 즉시 시작하며, startup 반환은 ACK를 기다리지 않는다. upstream 실패는 별도 handler로 격리한다. |
+| 4. runner 초기 수렴 | `soul-server-ts/src/runtime/worker_startup.ts:startWorkerRuntime` (L48–59), `runner/runner_recovery_coordinator.ts:RunnerRecoveryCoordinator.start` (L139–149) | runner registration 초기 scan을 먼저 끝내고, queued transcript pass 직전 중앙 등록 readiness와 합류한다. | runner process mode가 아니면 scan은 즉시 수렴하지만 등록 ACK 경계는 유지한다. |
+| 5. queued delivery boot cursor | `soul-server-ts/src/runtime/worker_composition.ts:composeWorkerRuntime` (L488–497), `worker_startup.ts:startWorkerRuntime` (L55–65), `claude_runtime_startup_recovery.ts:afterRunnerRecovery` (L38–47) | runner 수렴과 upstream 등록 ACK가 모두 끝난 뒤 queued delivery snapshot을 boot당 정확히 한 번 실행한다. 따라서 연결 대기 시간은 15초 recovery step deadline을 소비하지 않는다. | stopped면 생략; ACK 전에는 pass를 시작하지 않으며 cached promise가 같은 process의 두 번째 snapshot을 차단한다. |
 | 6. boot queued claim | `soul-server-ts/src/task/queued_delivery_transcript_recovery.ts:recoverAfterNodeRestart` (L70–85), `orch-server-ts/src/control_plane/repositories/session_delivery_recovery_repository.ts:claimQueuedAfterNodeRestart` (L176–188) | 이 node의 `queued`와 허용된 `delivered` 표본을 60초 lease로 한 번 claim한다. | `aggregate_state`가 consumed/dead-letter이거나 due가 아니면 claim하지 않는다. |
 | 7. transcript 대조 | `soul-server-ts/src/task/queued_delivery_transcript_recovery.ts:reconcile` (L88–184), `hasConsumptionReceipt` (L203–207), `engine/claude_session_runtime.ts:enqueueInput` (L161–177) | Claude transcript의 exact receipt로 delivered/consumed를 확정한다. `absent` 재발행 직전 ledger를 다시 읽어 live turn이 그 사이 consumed+receipt를 남겼으면 재발행 없이 종결하고, 이미 본 input UUID가 다시 도착해도 runtime에서 skip한다. | consumed receipt가 없고 transcript가 `absent`일 때만 원 content를 재전달한다. 10초 read deadline·남은 lease 부족·불명확한 receipt면 row를 retryable 상태로 돌린다. |
 | 8. transcript receipt 투영 | `orch-server-ts/src/control_plane/repositories/session_delivery_recovery_repository.ts:markDeliveredFromTranscript` (L205–244) | assistant message UUID를 `transcript:*` receipt로 기록해 `delivered/delivered`를 확정한다. | 정확한 lease owner가 가진 `claimed` row만 전이한다. |

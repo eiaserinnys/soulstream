@@ -19,13 +19,17 @@ const manifest = buildReleaseManifest({
 });
 
 describe("ReleaseActivationState", () => {
-  it("is not ready before exact runner prewarm and central receipt ACK", () => {
+  it("is not ready before exact runner prewarm and central receipt ACK", async () => {
     const state = new ReleaseActivationState(manifest, {
       now: () => new Date("2026-08-19T09:00:00.000Z"),
       registrationIdempotencyKey: "registration-key",
     });
 
     expect(state.health()).toMatchObject({ status: "starting", ready: false });
+    let readinessSettled = false;
+    void state.waitUntilReady().then(() => { readinessSettled = true; });
+    await Promise.resolve();
+    expect(readinessSettled).toBe(false);
     state.markPrewarmed({ host: "verified", runner: "verified", env: "verified", executable: "verified" });
     expect(state.registration()).toMatchObject({
       registration_idempotency_key: "registration-key",
@@ -46,6 +50,7 @@ describe("ReleaseActivationState", () => {
       manifest_id: manifest.manifest_id,
       activation_generation: 41,
     });
+    await expect(state.waitUntilReady()).resolves.toBeUndefined();
   });
 
   it("rejects a receipt from another manifest or registration attempt", () => {

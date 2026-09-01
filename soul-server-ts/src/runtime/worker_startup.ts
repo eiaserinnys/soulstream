@@ -14,6 +14,7 @@ export interface WorkerStartupRecovery {
 
 export interface WorkerStartupRuntime {
   createUpstreamAdapter(): WorkerStartupAdapter;
+  upstreamRegistrationReady: Promise<void>;
   runnerRecoveryCoordinator?: WorkerStartupCoordinator;
   claudeRuntimeStartupRecovery?: WorkerStartupRecovery;
 }
@@ -56,8 +57,9 @@ export async function startWorkerRuntime<
       options.logger.info("Runner recovery initial scan completed");
     }
     if (runtime.claudeRuntimeStartupRecovery) {
+      await runtime.upstreamRegistrationReady;
       options.logger.info(
-        "Queued delivery startup recovery starting after runner convergence",
+        "Queued delivery startup recovery starting after runner convergence and upstream registration",
       );
       await runtime.claudeRuntimeStartupRecovery.afterRunnerRecovery();
       options.logger.info("Queued delivery startup recovery completed");
