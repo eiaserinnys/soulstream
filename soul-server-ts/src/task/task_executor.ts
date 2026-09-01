@@ -1099,7 +1099,10 @@ export class TaskExecutor {
         }
       }
       await task.interruptRequest;
-      if (task.status === "running") {
+      if (
+        task.status === "running"
+        && pendingExactRuntimeFollowupReplays.length > 0
+      ) {
         const highPriorityInterventions = dequeueInterventionsInLane(task, "high");
         if (highPriorityInterventions.length > 0) {
           await turnReceipt?.consume(task);

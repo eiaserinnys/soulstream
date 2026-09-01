@@ -502,6 +502,70 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     expect(task.status).toBe("completed");
   });
 
+  it("exact replay가 없으면 high와 low intervention을 기존 한 turn에 합친다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    const followup: ClaudeRuntimeTaskFollowupPort = {
+      collect: vi.fn(),
+      collectDetached: vi.fn(),
+      flush: vi.fn(),
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn(async () => undefined),
+      recordConsumed: vi.fn(async () => undefined),
+    };
+    const prompts: string[] = [];
+    let turnCount = 0;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        prompts.push(params.prompt);
+        turnCount += 1;
+        if (turnCount === 1) {
+          task.interventionQueue.push(
+            {
+              text: "runtime follow-up prompt",
+              user: "system",
+              source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+              deliveryId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+              deliveryIntent: "runtime_followup",
+            },
+            {
+              text: "?",
+              user: "alice",
+              deliveryId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+            },
+          );
+        }
+        yield { type: "complete", result: "", timestamp: turnCount } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      followup,
+      deliveryRecorder,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(turnCount).toBe(2);
+    expect(prompts).toEqual(["hi", "?\n\nruntime follow-up prompt"]);
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(2);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(2);
+    expect(task.status).toBe("completed");
+  });
+
   it("interrupt로 종료된 turn은 runtime follow-up보다 finalizer를 먼저 완료한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
