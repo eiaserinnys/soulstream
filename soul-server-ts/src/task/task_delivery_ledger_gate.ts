@@ -286,33 +286,6 @@ export class TaskDeliveryLedgerGate {
     }
   }
 
-  /** Reserve a future retry without dispatching a session message. */
-  async reserveRetry(
-    admission: DeliveryLedgerAdmission,
-    deliveryNextAttemptAt: string,
-  ): Promise<void> {
-    if (admission.kind !== "admitted") return;
-    const leaseOwner = admission.row.lease_owner;
-    if (!leaseOwner) {
-      throw new Error(`Delivery ${admission.deliveryId} lost its retry reservation lease`);
-    }
-    const nextAttemptAt = new Date(deliveryNextAttemptAt);
-    if (Number.isNaN(nextAttemptAt.getTime())) {
-      throw new Error(`Delivery ${admission.deliveryId} has an invalid retry due time`);
-    }
-    const reserved = await this.requireRepository().retryLeasedDelivery(
-      admission.deliveryId,
-      leaseOwner,
-      "scheduled_runtime_followup_retry",
-      // The caller schedules against its own clock; only the remaining
-      // interval survives the trip to the database's clock.
-      Math.max(0, nextAttemptAt.getTime() - Date.now()),
-    );
-    if (!reserved) {
-      throw new Error(`Delivery ${admission.deliveryId} lost retry reservation CAS`);
-    }
-  }
-
   async recordFailure(admission: DeliveryLedgerAdmission): Promise<void> {
     if (admission.kind !== "admitted") return;
     // The end-to-end coordinator owns retry scheduling. Keeping the lease

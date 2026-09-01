@@ -491,17 +491,6 @@ export class TaskManager {
     return await this.interventionRoute.addIntervention(params, onResume);
   }
 
-  /** Persist retry timing without pretending that a message entered the conversation. */
-  async reserveInterventionRetry(
-    params: AddInterventionParams,
-    deliveryNextAttemptAt: string,
-  ): Promise<void> {
-    await this.interventionRoute.reserveDeliveryRetry(
-      params,
-      deliveryNextAttemptAt,
-    );
-  }
-
   private async resolveNotificationTask(sessionId: string): Promise<Task | null> {
     const active = this.tasks.get(sessionId);
     if (active) return active;
