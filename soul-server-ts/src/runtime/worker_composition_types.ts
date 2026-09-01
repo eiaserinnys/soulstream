@@ -65,5 +65,6 @@ export interface WorkerComposition extends TaskRuntimeComposition {
   eventOutboxPumpMux: EventOutboxPumpMux;
   runnerRecoveryCoordinator?: RunnerRecoveryCoordinator;
   runnerStateHostOwnership?: RunnerStateHostLock;
+  upstreamRegistrationReady: Promise<void>;
   createUpstreamAdapter(): UpstreamAdapter;
 }

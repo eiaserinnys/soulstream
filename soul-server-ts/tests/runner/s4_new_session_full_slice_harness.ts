@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from
   "node:fs/promises";
 import { createRequire } from "node:module";
-import { createServer } from "node:net";
+import { connect, createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -27,6 +27,7 @@ import { readRunnerRegistrationIdentity } from
 import { composeWorkerRuntime } from "../../src/runtime/worker_composition.js";
 import { startWorkerRuntime } from "../../src/runtime/worker_startup.js";
 import { startServer } from "../../src/server.js";
+import { buildCanonicalDeliveryPayload } from "../../src/task/delivery_payload.js";
 import type { FullSchemaPostgresHarness } from
   "../db/full_schema_postgres_harness.js";
 import type {
@@ -47,6 +48,8 @@ const AGENT_ID = "full-slice-agent";
 const CALLER_SESSION_ID = "full-slice-offline-caller";
 const WORKER_ROLE = "--full-slice-worker-child";
 const POLL_BUDGET_MS = 60_000;
+const R25C_DELIVERY_ID = "r25c-restart-window-queued";
+const R25C_OFFLINE_WINDOW_MS = 16_000;
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const childFixturePath = join(testDirectory, "fixtures/runner_process_e2e_child.ts");
 const requireFromTest = createRequire(import.meta.url);
@@ -65,6 +68,8 @@ export class ProductionFullSliceHarness {
   private orchAddress = "";
   private sessionId = "";
   private workerRecoveryReadyPath: string | null = null;
+  private gateNextWorkerUpstream = false;
+  private upstreamGate: TcpGate | null = null;
   private readonly runnerIdentities = new Map<string, RunnerIdentityObservation>();
 
   private constructor(
@@ -184,9 +189,25 @@ export class ProductionFullSliceHarness {
     let deliveryId: string | null = null;
     let ghostResumeFailed = false;
 
+    if (this.isStartupQueuedRecovery) {
+      await this.release("initial");
+      await this.waitForTerminalCount(1);
+      await this.waitForPidDeath(first.pid);
+      firstAliveAfterInitialTerminal = isPidAlive(first.pid);
+    }
+
     if (this.requiresRestart) {
       await this.killWorker();
+      if (this.isStartupQueuedRecovery) {
+        deliveryId = await this.stageRestartWindowQueuedDelivery();
+        this.gateNextWorkerUpstream = true;
+      }
       await this.spawnWorker();
+      if (this.isStartupQueuedRecovery) {
+        await this.waitForWorkerRecoveryReady();
+        await delay(R25C_OFFLINE_WINDOW_MS);
+        this.upstreamGate?.release();
+      }
       const restartedNode = await this.waitForNode(
         (node) => node.connectionId !== firstNode.connectionId,
       );
@@ -194,8 +215,12 @@ export class ProductionFullSliceHarness {
         beforeConnectionId: firstNode.connectionId,
         afterConnectionId: restartedNode.connectionId,
       };
-      await this.waitForWorkerRecoveryReady();
-      reattached = await this.waitForRunnerIdentity(first.registrationId);
+      if (!this.isStartupQueuedRecovery) {
+        await this.waitForWorkerRecoveryReady();
+      }
+      if (!this.isStartupQueuedRecovery) {
+        reattached = await this.waitForRunnerIdentity(first.registrationId);
+      }
     }
 
     if (this.scenario === "S1") {
@@ -210,7 +235,11 @@ export class ProductionFullSliceHarness {
       };
     }
 
-    if (this.isActiveIntervention) {
+    if (this.isStartupQueuedRecovery) {
+      await this.waitForExecuteProbe(true);
+      successor = await this.waitForDifferentRunnerIdentity(first.registrationId);
+      await this.release("resume");
+    } else if (this.isActiveIntervention) {
       const interveneAck = await this.publicCommand(
         "intervene",
         `/api/sessions/${this.sessionId}/intervene`,
@@ -223,7 +252,7 @@ export class ProductionFullSliceHarness {
       await this.release("initial");
     }
 
-    await this.waitForTerminalCount(1);
+    await this.waitForTerminalCount(this.isStartupQueuedRecovery ? 2 : 1);
     if (this.scenario === "S8") {
       await this.waitForCompletionNotificationCount(1);
       await this.stageHistoricalOwnerlessGeneration();
@@ -316,6 +345,8 @@ export class ProductionFullSliceHarness {
   async cleanup(): Promise<void> {
     await this.captureCurrentRunnerIdentity();
     await this.killWorker();
+    await this.upstreamGate?.close();
+    this.upstreamGate = null;
     this.unexpectedWorkerFailure = null;
     for (const identity of this.runnerIdentities.values()) {
       if (isPidAlive(identity.pid)) process.kill(identity.pid, "SIGKILL");
@@ -350,7 +381,14 @@ export class ProductionFullSliceHarness {
   }
 
   private get requiresRestart(): boolean {
-    return this.scenario === "S1" || this.scenario === "S2" || this.scenario === "S3";
+    return this.scenario === "S1"
+      || this.scenario === "S2"
+      || this.scenario === "S3"
+      || this.scenario === "R25C";
+  }
+
+  private get isStartupQueuedRecovery(): boolean {
+    return this.scenario === "R25C";
   }
 
   private get isCompletedResume(): boolean {
@@ -373,6 +411,12 @@ export class ProductionFullSliceHarness {
     const upstream = new URL(this.orchAddress);
     upstream.protocol = upstream.protocol === "https:" ? "wss:" : "ws:";
     upstream.pathname = "/ws/node";
+    if (this.gateNextWorkerUpstream) {
+      this.gateNextWorkerUpstream = false;
+      this.upstreamGate = await TcpGate.create(upstream);
+      upstream.hostname = "127.0.0.1";
+      upstream.port = String(this.upstreamGate.port);
+    }
     const child = spawn(
       process.execPath,
       ["--import", tsxImportUrl, fileURLToPath(import.meta.url), WORKER_ROLE],
@@ -684,6 +728,54 @@ export class ProductionFullSliceHarness {
     }
   }
 
+  private async stageRestartWindowQueuedDelivery(): Promise<string> {
+    const relationKey = `user_message:${this.sessionId}:${R25C_DELIVERY_ID}`;
+    const completionId = `message:${R25C_DELIVERY_ID}`;
+    const canonical = buildCanonicalDeliveryPayload({
+      text: this.interventionPrompt,
+      user: "full-slice-user",
+      source: "user_message",
+      completionId,
+      relationKey,
+    });
+    await this.postgres.sql`
+      INSERT INTO session_deliveries (
+        delivery_id, target_session_id, relation_key, completion_id,
+        intent, source, payload_hash, payload, state, queued_at,
+        next_attempt_at, created_at, updated_at
+      ) VALUES (
+        ${R25C_DELIVERY_ID}, ${this.sessionId}, ${relationKey}, ${completionId},
+        'human_live_steer', 'user_message', ${canonical.payloadHash},
+        ${this.postgres.sql.json(canonical.payload)}, 'queued', NOW(),
+        NOW(), NOW(), NOW()
+      )
+    `;
+    const [shape] = await this.postgres.sql<Array<{
+      session_status: string;
+      session_node_id: string;
+      delivery_state: string;
+      aggregate_state: string;
+    }>>`
+      SELECT session.status AS session_status,
+        session.node_id AS session_node_id,
+        delivery.state AS delivery_state,
+        delivery.aggregate_state
+      FROM sessions AS session
+      JOIN session_deliveries AS delivery
+        ON delivery.target_session_id = session.session_id
+      WHERE delivery.delivery_id = ${R25C_DELIVERY_ID}
+    `;
+    if (
+      shape?.session_status !== "completed"
+      || shape.session_node_id !== NODE_ID
+      || shape.delivery_state !== "queued"
+      || shape.aggregate_state !== "pending"
+    ) {
+      throw new Error("R25C failed to seed a restart-window queued delivery");
+    }
+    return R25C_DELIVERY_ID;
+  }
+
   private async readLatestDeliveryId(): Promise<string> {
     const [delivery] = await this.postgres.sql<Array<{ delivery_id: string }>>`
       SELECT delivery_id
@@ -899,6 +991,68 @@ function isPidAlive(pid: number): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+class TcpGate {
+  private released = false;
+  private readonly inbound = new Set<Socket>();
+  private readonly outbound = new Set<Socket>();
+
+  private constructor(
+    readonly port: number,
+    private readonly target: URL,
+    private readonly server: Server,
+  ) {}
+
+  static async create(target: URL): Promise<TcpGate> {
+    let gate!: TcpGate;
+    const server = createServer((socket) => gate.accept(socket));
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("R25C upstream gate port unavailable");
+    }
+    gate = new TcpGate(address.port, new URL(target), server);
+    return gate;
+  }
+
+  release(): void {
+    if (this.released) return;
+    this.released = true;
+    for (const socket of this.inbound) this.forward(socket);
+  }
+
+  async close(): Promise<void> {
+    for (const socket of [...this.inbound, ...this.outbound]) socket.destroy();
+    await new Promise<void>((resolve, reject) => this.server.close((error) =>
+      error ? reject(error) : resolve()
+    ));
+  }
+
+  private accept(socket: Socket): void {
+    this.inbound.add(socket);
+    socket.once("close", () => this.inbound.delete(socket));
+    if (this.released) this.forward(socket);
+  }
+
+  private forward(inbound: Socket): void {
+    if (!this.inbound.has(inbound)) return;
+    const outbound = connect(
+      Number(this.target.port),
+      this.target.hostname,
+      () => {
+        inbound.pipe(outbound);
+        outbound.pipe(inbound);
+      },
+    );
+    this.outbound.add(outbound);
+    outbound.once("close", () => this.outbound.delete(outbound));
+    outbound.once("error", () => inbound.destroy());
+    inbound.once("error", () => outbound.destroy());
   }
 }
 

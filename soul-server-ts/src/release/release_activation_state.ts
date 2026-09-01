@@ -28,6 +28,8 @@ export interface ReleaseActivationReceipt {
 export class ReleaseActivationState {
   private readonly now: () => Date;
   private readonly registrationIdempotencyKey: string;
+  private readonly ready: Promise<void>;
+  private resolveReady: (() => void) | undefined;
   private prewarmed: ReleaseActivationRegistration | undefined;
   private receipt: ReleaseActivationReceipt | undefined;
 
@@ -40,6 +42,7 @@ export class ReleaseActivationState {
   ) {
     this.now = options.now ?? (() => new Date());
     this.registrationIdempotencyKey = options.registrationIdempotencyKey ?? randomUUID();
+    this.ready = new Promise((resolve) => { this.resolveReady = resolve; });
   }
 
   markPrewarmed(verification: ReleaseVerificationResult): void {
@@ -79,10 +82,16 @@ export class ReleaseActivationState {
       throw new Error("activation receipt changed for one registration key");
     }
     this.receipt = receipt;
+    this.resolveReady?.();
+    this.resolveReady = undefined;
   }
 
   isReady(): boolean {
     return this.receipt !== undefined;
+  }
+
+  waitUntilReady(): Promise<void> {
+    return this.ready;
   }
 
   health(): Record<string, unknown> {

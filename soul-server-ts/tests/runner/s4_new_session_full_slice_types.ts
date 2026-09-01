@@ -6,7 +6,8 @@ export type FullSliceScenario =
   | "S5"
   | "S6"
   | "S7"
-  | "S8";
+  | "S8"
+  | "R25C";
 export type FullSliceBackend = "claude" | "codex";
 
 export interface PublicHttpAck {

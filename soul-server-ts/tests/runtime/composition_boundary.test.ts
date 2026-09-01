@@ -237,11 +237,15 @@ describe("worker composition boundary", () => {
     const queuedRecoveryIndex = workerStartup.indexOf(
       "claudeRuntimeStartupRecovery.afterRunnerRecovery()",
     );
+    const upstreamRegistrationIndex = workerStartup.indexOf(
+      "await runtime.upstreamRegistrationReady",
+    );
 
     expect(taskRuntimeIndex).toBeGreaterThan(-1);
     expect(backgroundRecoveryIndex).toBeGreaterThan(taskRuntimeIndex);
     expect(runnerScanIndex).toBeGreaterThan(-1);
-    expect(queuedRecoveryIndex).toBeGreaterThan(runnerScanIndex);
+    expect(upstreamRegistrationIndex).toBeGreaterThan(runnerScanIndex);
+    expect(queuedRecoveryIndex).toBeGreaterThan(upstreamRegistrationIndex);
     expect(workerComposition).toContain("redeliverStoredDeliveryContent");
     expect(claudeComposition).not.toContain("await startupRecovery.start();");
   });
