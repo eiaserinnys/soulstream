@@ -17,6 +17,8 @@ import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 import {
   inspectProcessIdentity,
   processStartIdentitiesMatch,
+  readProcessCommandLine,
+  type ProcessCommandLineProbe,
   type ProcessIdentity,
 } from "./runner_process_lock.js";
 import { RunnerMutationFailure } from "./runner_mutation_failure.js";
@@ -142,6 +144,7 @@ interface SpawnDependencies {
   now(): number;
   delay(ms: number): Promise<void>;
   readLifecycle?(path: string): Promise<RunnerLifecycleRecord | null>;
+  readCommandLine?(pid: number): Promise<ProcessCommandLineProbe>;
 }
 
 export class RunnerProcessSpawner {
@@ -447,6 +450,7 @@ function defaultDependencies(): SpawnDependencies {
         delay,
       }),
     isPidAlive: isProcessAlive,
+    readCommandLine: readProcessCommandLine,
     signalPid: (pid, signal) => process.kill(pid, signal),
     now: Date.now,
     delay,

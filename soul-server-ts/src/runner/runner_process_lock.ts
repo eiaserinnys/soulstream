@@ -23,6 +23,30 @@ export interface ProcessIdentity {
   startIdentity: string | null;
 }
 
+/**
+ * What the OS can say about the process behind a pid number.
+ *
+ * `absent` and `command_line` are answers about the process itself, so a caller
+ * may act on them. `unavailable` means the OS refused or could not tell -- a
+ * protected Windows process whose `CommandLine` is null, a probe that failed,
+ * an unsupported platform -- and must never be read as either proof or denial.
+ */
+export type ProcessCommandLineProbe =
+  | { kind: "absent" }
+  | { kind: "command_line"; value: string }
+  | { kind: "unavailable" };
+
+/**
+ * Measured on eias-linegames (Windows 11, 10.0.26200): a bare
+ * `powershell.exe -NoProfile` start costs ~2.5s and the CIM query brings the
+ * round trip to 5.4-5.7s. A 5s budget sits below that floor, and a timeout here
+ * reports `unavailable`, which fails resume closed -- the very death this probe
+ * exists to end. The budget is sized for a loaded host, not for the best case.
+ */
+const COMMAND_LINE_PROBE_TIMEOUT_MS = 20_000;
+const WINDOWS_PROBE_ABSENT_MARKER = "process-absent";
+const WINDOWS_PROBE_COMMAND_LINE_MARKER = "process-command-line:";
+
 export interface ProcessOwnershipLockDependencies {
   now(): number;
   delay(ms: number): Promise<void>;
@@ -197,6 +221,60 @@ function isProcessAlive(pid: number): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
+}
+
+/**
+ * Reads the command line of a pid. Unlike `isProcessAlive`, which only reports
+ * whether the *number* is claimable, this asks the OS what the process behind
+ * the number actually is, which is the only evidence that survives pid reuse.
+ */
+export async function readProcessCommandLine(pid: number): Promise<ProcessCommandLineProbe> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) {
+    throw new Error(`process command line pid must be positive: ${pid}`);
+  }
+  if (process.platform === "win32") return await readWindowsProcessCommandLine(pid);
+  if (process.platform === "linux") return await readLinuxProcessCommandLine(pid);
+  return { kind: "unavailable" };
+}
+
+async function readWindowsProcessCommandLine(pid: number): Promise<ProcessCommandLineProbe> {
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `$found = @(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}' -ErrorAction Stop); `
+        + `if ($found.Count -eq 0) { '${WINDOWS_PROBE_ABSENT_MARKER}' } `
+        + `else { '${WINDOWS_PROBE_COMMAND_LINE_MARKER}' + $found[0].CommandLine }`,
+      ],
+      { timeout: COMMAND_LINE_PROBE_TIMEOUT_MS, windowsHide: true },
+    ));
+  } catch {
+    return { kind: "unavailable" };
+  }
+  const reported = stdout.trim();
+  if (reported === WINDOWS_PROBE_ABSENT_MARKER) return { kind: "absent" };
+  if (!reported.startsWith(WINDOWS_PROBE_COMMAND_LINE_MARKER)) return { kind: "unavailable" };
+  const commandLine = reported.slice(WINDOWS_PROBE_COMMAND_LINE_MARKER.length).trim();
+  // The process exists but hides its command line (protected process, or a
+  // CommandLine this account may not read). Existence alone proves nothing.
+  return commandLine ? { kind: "command_line", value: commandLine } : { kind: "unavailable" };
+}
+
+async function readLinuxProcessCommandLine(pid: number): Promise<ProcessCommandLineProbe> {
+  let raw: string;
+  try {
+    raw = await readFile(`/proc/${pid}/cmdline`, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "absent" };
+    return { kind: "unavailable" };
+  }
+  // argv arrives NUL-separated; kernel threads report nothing at all.
+  const commandLine = raw.split("\0").filter((argument) => argument !== "").join(" ").trim();
+  return commandLine ? { kind: "command_line", value: commandLine } : { kind: "unavailable" };
 }
 
 export async function readProcessStartIdentity(pid: number): Promise<string | null> {

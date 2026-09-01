@@ -1,11 +1,18 @@
 import { readAuthoritativeRunnerLifecycle } from "./runner_lifecycle_reader.js";
 import { RunnerMutationFailure } from "./runner_mutation_failure.js";
-import type { RunnerProcessPaths } from "./runner_process_paths.js";
+import {
+  commandLineOwnedBySession,
+  type RunnerProcessPaths,
+} from "./runner_process_paths.js";
 import {
   readRunnerPid,
   resolveRegisteredRunnerPid,
 } from "./runner_process_registration.js";
-import type { ProcessIdentity } from "./runner_process_lock.js";
+import {
+  readProcessCommandLine,
+  type ProcessCommandLineProbe,
+  type ProcessIdentity,
+} from "./runner_process_lock.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
 import {
   invalidateRunnerRegistrationFilesLocked,
@@ -33,6 +40,7 @@ export interface RunnerProcessTerminationDependencies {
   now(): number;
   delay(ms: number): Promise<void>;
   readLifecycle?(path: string): Promise<RunnerLifecycleRecord | null>;
+  readCommandLine?(pid: number): Promise<ProcessCommandLineProbe>;
 }
 
 export type RunnerTerminationOutcome =
@@ -72,7 +80,7 @@ export async function stopExistingRunnerLocked(
     if (owner) {
       await terminateExactRunner(owner, deps);
     } else if (deps.isPidAlive(pid)) {
-      throw identityProofFailure(`live runner has no exact identity: ${pid}`);
+      await disposeUnprovenRunnerPid(pid, paths, deps);
     }
   }
   if (identity) {
@@ -90,14 +98,87 @@ export async function stopExistingRunnerLocked(
   return "registration_absent";
 }
 
+/**
+ * Disposition of a live-looking pid that no registration identity vouches for.
+ *
+ * A liveness probe is not an identity. `process.kill(pid, 0)` answers "somebody
+ * may hold this number" -- on Windows that is also true for a recycled pid and
+ * for any process that denies access (measured on eias-linegames: 8 pids report
+ * alive while absent from the process table, 2.76% pid occupancy). Promoting
+ * that answer to a permanent failure is what made resume a fixed point: the
+ * throw preceded the only branch that clears the residue, so every later resume
+ * died identically.
+ *
+ * So the pid is disposed of by what the process *is*, never by its number:
+ *
+ *   proven ours  -> our orphan. Terminate it, then let the caller invalidate
+ *                   the residue and spawn; no writer lock or named pipe of ours
+ *                   survives to contend with the replacement.
+ *   absent/other -> the number was recycled or never ours. Signal nothing and
+ *                   let the caller isolate the residue: no runner holds this
+ *                   session directory, so there is nothing to contend with.
+ *   unavailable  -> unknown. Neither kill nor proceed -- keep failing closed.
+ *
+ * An identity-backed live runner never reaches here; its fail-closed proof in
+ * `exactProcessIsAbsent` is unchanged.
+ */
+async function disposeUnprovenRunnerPid(
+  pid: number,
+  paths: RunnerProcessPaths,
+  deps: RunnerProcessTerminationDependencies,
+): Promise<void> {
+  const probe = await (deps.readCommandLine ?? readProcessCommandLine)(pid);
+  if (probe.kind === "unavailable") {
+    throw identityProofFailure(
+      `live runner has no exact identity and no readable command line: ${pid}`,
+    );
+  }
+  if (probe.kind === "absent") return;
+  if (!commandLineOwnedBySession(probe.value, paths)) return;
+  await terminateSessionOwnedOrphan(pid, paths, deps);
+}
+
+async function terminateSessionOwnedOrphan(
+  pid: number,
+  paths: RunnerProcessPaths,
+  deps: RunnerProcessTerminationDependencies,
+): Promise<void> {
+  signalRunnerProcess(pid, "SIGTERM", deps);
+  if (await waitForSessionOwnedOrphanExit(pid, paths, deps)) return;
+  signalRunnerProcess(pid, "SIGKILL", deps);
+  if (await waitForSessionOwnedOrphanExit(pid, paths, deps)) return;
+  throw new RunnerMutationFailure(
+    "runner_termination_exit_proof_failed",
+    `session-owned orphan runner remained live after SIGKILL: ${pid}`,
+  );
+}
+
+async function waitForSessionOwnedOrphanExit(
+  pid: number,
+  paths: RunnerProcessPaths,
+  deps: RunnerProcessTerminationDependencies,
+): Promise<boolean> {
+  const deadline = deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
+  while (deps.now() < deadline) {
+    if (!deps.isPidAlive(pid)) return true;
+    await deps.delay(25);
+  }
+  if (!deps.isPidAlive(pid)) return true;
+  // The number can outlive our runner. Before calling this a failed kill, ask
+  // the process itself once more -- an alive answer may already be a stranger.
+  const probe = await (deps.readCommandLine ?? readProcessCommandLine)(pid);
+  return probe.kind === "absent"
+    || (probe.kind === "command_line" && !commandLineOwnedBySession(probe.value, paths));
+}
+
 export async function terminateExactRunner(
   expected: ExactRunnerProcess,
   deps: RunnerProcessTerminationDependencies,
 ): Promise<void> {
   if (await exactProcessIsAbsent(expected, deps, true)) return;
-  signalExactProcess(expected, "SIGTERM", deps);
+  signalRunnerProcess(expected.pid, "SIGTERM", deps);
   if (await waitForExactProcessExit(expected, deps, "SIGKILL")) return;
-  signalExactProcess(expected, "SIGKILL", deps);
+  signalRunnerProcess(expected.pid, "SIGKILL", deps);
   if (await waitForExactProcessExit(expected, deps, "retirement")) return;
   throw new RunnerMutationFailure(
     "runner_termination_exit_proof_failed",
@@ -147,17 +228,17 @@ async function exactProcessIsAbsent(
   );
 }
 
-function signalExactProcess(
-  expected: ExactRunnerProcess,
+function signalRunnerProcess(
+  pid: number,
   signal: NodeJS.Signals,
   deps: RunnerProcessTerminationDependencies,
 ): void {
   try {
-    deps.signalPid(expected.pid, signal);
+    deps.signalPid(pid, signal);
   } catch (error) {
     throw new RunnerMutationFailure(
       "runner_termination_signal_failed",
-      `${signal} failed for exact runner ${expected.pid}`,
+      `${signal} failed for exact runner ${pid}`,
       { cause: error },
     );
   }
