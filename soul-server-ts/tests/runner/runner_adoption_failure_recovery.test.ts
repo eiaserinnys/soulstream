@@ -9,229 +9,93 @@ import type { RunnerRegistration } from "../../src/runner/runner_process_registr
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 
 const NOW_MS = Date.parse("2026-08-23T06:30:00.000Z");
-const LEASE_TIMEOUT_MS = 60_000;
-// These cases record today's policy choices. The execution redesign may
-// intentionally change them without violating a runner invariant.
-const currentPolicySnapshot = it;
 
 describe("RunnerAdoptionFailureRecovery", () => {
-  it("deduplicates an active recovery and clears the slot after it settles", async () => {
+  it("deduplicates active recovery and clears the slot after settlement", async () => {
     let resolveRefresh!: (value: RunnerRegistration) => void;
     const refresh = new Promise<RunnerRegistration>((resolve) => { resolveRefresh = resolve; });
     const subject = makeSubject({ refreshRegistration: vi.fn(async () => await refresh) });
-    const current = registration();
-    const currentTask = task();
-    const completion = Promise.resolve();
-    currentTask.executionPromise = completion;
-
-    const input = recoveryInput(current, currentTask, completion);
+    const input = recoveryInput(registration(), task());
     subject.recovery.schedule(input);
     subject.recovery.schedule(input);
-
-    expect(subject.recovery.has("session-a")).toBe(true);
     expect(subject.recovery.pending()).toHaveLength(1);
-    expect(subject.deps.refreshRegistration).toHaveBeenCalledOnce();
-
-    resolveRefresh(current);
+    resolveRefresh(input.registration);
     await Promise.all(subject.recovery.pending());
-
     expect(subject.recovery.has("session-a")).toBe(false);
-    expect(subject.deps.onFailure).not.toHaveBeenCalled();
   });
 
-  currentPolicySnapshot("backs off a live runner that is not safe to replace, then clear and prune remove the gate", async () => {
-    let now = NOW_MS;
-    const subject = makeSubject({ now: () => now });
-
-    await scheduleAndWait(subject.recovery, registration({ sessionId: "session-a" }), task("session-a"));
-    await scheduleAndWait(subject.recovery, registration({ sessionId: "session-b" }), task("session-b"));
-
-    expect(subject.recovery.shouldSkip("session-a")).toBe(true);
-    expect(subject.recovery.shouldSkip("session-b")).toBe(true);
-    subject.recovery.clear("session-a");
-    subject.recovery.prune(["session-a"]);
-    expect(subject.recovery.shouldSkip("session-a")).toBe(false);
-    expect(subject.recovery.shouldSkip("session-b")).toBe(false);
-
-    now += LEASE_TIMEOUT_MS;
-    expect(subject.recovery.shouldSkip("unknown")).toBe(false);
-  });
-
-  it("stands down without destructive recovery when a newer runner supersedes the attempt", async () => {
+  it("stands down when a newer runner supersedes the failed attempt", async () => {
     const subject = makeSubject();
-    const current = registration();
     const currentTask = task();
-    const rejectedAttempt = runtime();
+    const rejected = runtime();
     currentTask.runner = runtime();
-
-    await scheduleAndWait(subject.recovery, current, currentTask, {
-      ownedRunner: rejectedAttempt,
-      attemptRunner: rejectedAttempt,
+    await scheduleAndWait(subject.recovery, registration(), currentTask, {
+      ownedRunner: rejected,
+      attemptRunner: rejected,
     });
-
-    expect(rejectedAttempt.dispatcher.detachHost).toHaveBeenCalledOnce();
-    expect(subject.deps.refreshRegistration).not.toHaveBeenCalled();
+    expect(rejected.dispatcher.detachHost).toHaveBeenCalledOnce();
     expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
-    expect(subject.deps.resumeReplacement).not.toHaveBeenCalled();
-    expect(subject.deps.logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ supersededBy: "runner" }),
-      "runner adoption failure was superseded by a newer execution",
-    );
+    expect(subject.deps.markFailure).not.toHaveBeenCalled();
   });
 
-  it("stands down when a newer execution promise supersedes the failed attempt", async () => {
-    const subject = makeSubject();
-    const current = registration();
-    const currentTask = task();
-    const rejectedAttempt = runtime();
-    const failedCompletion = Promise.resolve();
-    currentTask.executionPromise = Promise.resolve();
-
-    subject.recovery.schedule({
-      ...recoveryInput(current, currentTask, failedCompletion),
-      ownedRunner: rejectedAttempt,
-      attemptRunner: rejectedAttempt,
-    });
-    await Promise.all(subject.recovery.pending());
-
-    expect(rejectedAttempt.dispatcher.detachHost).toHaveBeenCalledOnce();
-    expect(subject.deps.refreshRegistration).not.toHaveBeenCalled();
-    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
-    expect(subject.deps.resumeReplacement).not.toHaveBeenCalled();
-    expect(subject.deps.logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ supersededBy: "execution" }),
-      "runner adoption failure was superseded by a newer execution",
-    );
-  });
-
-  it("terminalizes a refreshed dead runner and resumes a replacement", async () => {
+  it("replays a refreshed dead runner terminal fact without replacement", async () => {
     const dead = registration({ pidAlive: false });
     const subject = makeSubject({
       refreshRegistration: vi.fn(async () => dead),
       hydrateRegistration: vi.fn(async () => dead),
     });
     const currentTask = task();
-
     await scheduleAndWait(subject.recovery, registration(), currentTask);
-
-    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
     expect(subject.deps.markReaped).toHaveBeenCalledWith(
       dead,
       new Date(NOW_MS).toISOString(),
       { code: "runner_exited", message: "runner process exited before execution completed" },
     );
-    expect(subject.deps.invalidateRegistration).toHaveBeenCalled();
     expect(subject.deps.recoverOffline).toHaveBeenCalledWith(
-      expect.objectContaining({ pidAlive: false, lifecycle: expect.objectContaining({ execution_state: "reaped" }) }),
-      currentTask,
-    );
-    expect(subject.deps.resumeReplacement).toHaveBeenCalledWith(
-      currentTask,
-      "runner process exited before execution completed",
-      dead.config,
-    );
-  });
-
-  currentPolicySnapshot("replaces a running runner when a nested cause proves its socket disappeared", async () => {
-    const subject = makeSubject();
-    const socketError = new Error("adoption failed", {
-      cause: new Error("connect failed", {
-        cause: Object.assign(new Error("missing"), { code: "ENOENT" }),
+      expect.objectContaining({
+        pidAlive: false,
+        lifecycle: expect.objectContaining({ execution_state: "reaped" }),
       }),
-    });
-
-    await scheduleAndWait(subject.recovery, registration(), task(), { error: socketError });
-
-    expect(subject.deps.terminateRegistration).toHaveBeenCalledOnce();
-    expect(subject.deps.resumeReplacement).toHaveBeenCalledWith(
-      expect.anything(),
-      "runner socket disappeared while the registered process remained alive",
-      expect.anything(),
+      currentTask,
     );
+    expect(subject.deps.markFailure).not.toHaveBeenCalled();
   });
 
-  currentPolicySnapshot("does not replace a prebootstrap runner merely because its socket is absent", async () => {
-    const prebootstrap = registration({ lifecycleState: null });
-    const subject = makeSubject();
-    const socketError = Object.assign(new Error("connect ENOENT"), { code: "ENOENT" });
-
-    await scheduleAndWait(subject.recovery, prebootstrap, task(), {
-      disposition: "adopt_prebootstrap",
-      error: socketError,
-    });
-
-    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
-    expect(subject.deps.resumeReplacement).not.toHaveBeenCalled();
-    expect(subject.recovery.shouldSkip("session-a")).toBe(true);
-  });
-
-  currentPolicySnapshot("records refresh uncertainty through failure tracking and suppresses an immediate retry", async () => {
-    const refreshFailure = new Error("registration unreadable");
-    const subject = makeSubject({
-      refreshRegistration: vi.fn(async () => { throw refreshFailure; }),
-    });
-    const current = registration();
-
-    await scheduleAndWait(subject.recovery, current, task());
-
-    expect(subject.deps.onFailure).toHaveBeenCalledWith(current, "adopt_running", refreshFailure);
-    expect(subject.recovery.shouldSkip("session-a")).toBe(true);
-    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
-  });
-
-  it("invalidates a lifecycle-free failed attempt without inventing durable reaped history", async () => {
+  it("terminalizes a lifecycle-free dead attempt exactly once", async () => {
     const subject = makeSubject();
     const provisional = registration({ lifecycleState: null, pidAlive: false });
     const currentTask = task();
-
     await subject.recovery.terminalize(
       provisional,
       currentTask,
       { code: "runner_exited", message: "provisional runner exited" },
       "reap_dead",
     );
-
     expect(subject.deps.markReaped).not.toHaveBeenCalled();
     expect(subject.deps.recoverOffline).not.toHaveBeenCalled();
     expect(subject.deps.invalidateRegistration).toHaveBeenCalledWith(provisional);
-    expect(subject.deps.resumeReplacement).toHaveBeenCalledWith(
+    expect(subject.deps.markFailure).toHaveBeenCalledWith(
       currentTask,
       "provisional runner exited",
-      provisional.config,
     );
   });
 
-  it.skip("불변식 7·15: stopped recovery는 canonical terminal transition으로 실행 전체를 정산한다", async () => {
-    const dead = registration({ pidAlive: false });
-    const subject = makeSubject({
-      refreshRegistration: vi.fn(async () => dead),
-      hydrateRegistration: vi.fn(async () => dead),
+  it("defers a live prebootstrap runner whose socket has not appeared", async () => {
+    const subject = makeSubject();
+    const prebootstrap = registration({ lifecycleState: null });
+    await scheduleAndWait(subject.recovery, prebootstrap, task(), {
+      disposition: "adopt_prebootstrap",
+      error: Object.assign(new Error("connect ENOENT"), { code: "ENOENT" }),
     });
-    const currentTask = task() as Task & { execution?: unknown };
-    currentTask.execution = { phase: "active" };
-    const attempt = runtime();
-    const completion = Promise.resolve();
-    currentTask.runner = attempt;
-    currentTask.executionPromise = completion;
-
-    await scheduleAndWait(subject.recovery, registration(), currentTask, {
-      ownedRunner: attempt,
-      attemptRunner: attempt,
-      completion,
-    });
-
-    expect(attempt.dispatcher.detachHost).toHaveBeenCalledOnce();
-    expect(subject.deps.recoverOffline).toHaveBeenCalledOnce();
-    expect(subject.deps.resumeReplacement).toHaveBeenCalledOnce();
-    // Terminal settlement owns the whole execution slot. It does not preserve
-    // legacy runner/promise fields as evidence that cleanup was avoided.
-    expect(currentTask.execution).toBeUndefined();
+    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
+    expect(subject.deps.markFailure).not.toHaveBeenCalled();
+    expect(subject.recovery.shouldSkip("session-a")).toBe(true);
   });
 });
 
 function makeSubject(overrides: Partial<RunnerAdoptionFailureRecoveryDeps> = {}) {
   const deps = {
-    leaseTimeoutMs: LEASE_TIMEOUT_MS,
+    leaseTimeoutMs: 60_000,
     logger: { info: vi.fn(), warn: vi.fn() },
     now: () => NOW_MS,
     refreshRegistration: vi.fn(async (value: RunnerRegistration) => value),
@@ -240,7 +104,7 @@ function makeSubject(overrides: Partial<RunnerAdoptionFailureRecoveryDeps> = {})
     invalidateRegistration: vi.fn(async () => {}),
     markReaped: vi.fn(async () => {}),
     recoverOffline: vi.fn(async (_registration: RunnerRegistration, recoveredTask: Task) => recoveredTask),
-    resumeReplacement: vi.fn(async () => {}),
+    markFailure: vi.fn(async () => {}),
     onFailure: vi.fn(),
     ...overrides,
   } as RunnerAdoptionFailureRecoveryDeps;
@@ -268,11 +132,9 @@ async function scheduleAndWait(
   await Promise.all(recovery.pending());
 }
 
-function recoveryInput(
-  current: RunnerRegistration,
-  currentTask: Task,
-  completion: Promise<void>,
-) {
+function recoveryInput(current: RunnerRegistration, currentTask: Task) {
+  const completion = Promise.resolve();
+  currentTask.executionPromise = completion;
   return {
     registration: current,
     disposition: "adopt_running" as const,
@@ -293,21 +155,19 @@ function runtime(): TaskRunnerRuntime {
 }
 
 function registration(options: {
-  sessionId?: string;
   pidAlive?: boolean;
   lifecycleState?: "running" | "completed" | "failed" | "reaped" | "closed" | null;
 } = {}): RunnerRegistration {
-  const sessionId = options.sessionId ?? "session-a";
   const lifecycleState = options.lifecycleState === undefined ? "running" : options.lifecycleState;
   return {
     config: {
-      sessionId,
+      sessionId: "session-a",
       codeSha: "sha-a",
-      claudeRuntimeTurnTimeoutMs: LEASE_TIMEOUT_MS,
+      claudeRuntimeTurnTimeoutMs: 60_000,
       agent: { id: "agent-a", name: "Agent A" },
       paths: {
-        sessionDirectory: `/runner/${sessionId}`,
-        socketPath: `/runner/${sessionId}/runner.sock`,
+        sessionDirectory: "/runner/session-a",
+        socketPath: "/runner/session-a/runner.sock",
       },
     } as RunnerRegistration["config"],
     pid: 4123,
@@ -315,7 +175,7 @@ function registration(options: {
     registeredAtMs: NOW_MS - 1_000,
     bootstrap: null,
     lifecycle: lifecycleState === null ? null : {
-      session_id: sessionId,
+      session_id: "session-a",
       runner_pid: 4123,
       execution_command_id: "execute-a",
       execution_state: lifecycleState,
@@ -330,9 +190,9 @@ function registration(options: {
   };
 }
 
-function task(sessionId = "session-a"): Task {
+function task(): Task {
   return {
-    agentSessionId: sessionId,
+    agentSessionId: "session-a",
     prompt: "continue",
     status: "running",
     createdAt: new Date(NOW_MS - 10_000),

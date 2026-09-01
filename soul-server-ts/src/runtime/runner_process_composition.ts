@@ -86,7 +86,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
   taskManager: Pick<
     TaskManager,
     | "hydrateRunnerRecoveryTask"
-    | "markRunnerFailureAndResume"
+    | "markRunnerFailure"
     | "projectClosedRunner"
     | "reconcileExecutionOwnershipObservations"
     | "listOwnerNullRunningInventory"
@@ -94,7 +94,6 @@ export async function composeRunnerRecoveryCoordinator(options: {
   taskExecutor: Pick<
     TaskExecutor,
     | "recoverRegisteredRunner"
-    | "restartRegisteredRunner"
   >;
   logger: Logger;
 }): Promise<RunnerRecoveryCoordinator | undefined> {

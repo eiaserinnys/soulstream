@@ -344,13 +344,17 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransition,
     enqueueRunningTransitionAndWaitForAck,
     enqueueRunningTransitionAndWaitForApplication,
-    enqueueTerminalTransitionAndWaitForApplication,
+    enqueueTerminalTransitionAndWaitForApplication: async (
+      sessionId: string,
+      event: SSEEventPayload,
+      effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
+    ) => await enqueueTerminalTransitionAndWaitForApplication(sessionId, event, effect),
     enqueueRecoveredRunnerTerminalFactAndWaitForApplication,
     reconcileRecordedTerminalExecutionAndWaitForApplication,
     ...(options.capabilityProfile === "execution_ownership"
       ? {
-          acquireExecutionOwnershipAndWaitForApplication,
-          releaseExecutionOwnershipAndWaitForApplication,
+          recordExecutionGenerationAndWaitForApplication:
+            acquireExecutionOwnershipAndWaitForApplication,
         }
       : {}),
     waitForSessionAck,

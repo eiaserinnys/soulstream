@@ -15,9 +15,9 @@ import { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import {
   dispositionRequiresTask,
   handleRecoveryWithFailureTracking,
-  reapAndResumeRunner,
+  terminalizeFailedRunner,
   recoverRunnerByDisposition,
-  resumeReapedRunner,
+  terminalizeReapedRunner,
   type RecoverableRunnerDisposition,
 } from "./runner_recovery_disposition.js";
 import { classifyRunnerRegistrationSafely } from "./runner_recovery_classification.js";
@@ -131,8 +131,8 @@ export class RunnerRecoveryCoordinator {
       },
       recoverOffline: async (registration, task) =>
         (await this.recoverRegistered(registration, task, "offline")).task,
-      resumeReplacement: async (task, message, config) =>
-        await this.resumeReplacement(task, message, config),
+      markFailure: async (task, message) =>
+        await this.options.taskManager.markRunnerFailure(task, message),
       onFailure: (registration, disposition, error) =>
         this.recoveryLogger.failure(registration, disposition, error),
     });
@@ -322,26 +322,6 @@ export class RunnerRecoveryCoordinator {
       ]);
     }
   }
-  private async resumeReplacement(
-    task: Task,
-    message: string,
-    config: RunnerRegistration["config"],
-    onRunnerAttached?: () => void,
-  ): Promise<void> {
-    await this.options.taskManager.markRunnerFailureAndResume(
-      task,
-      message,
-      (resumedTask) => {
-        if (this.stopped) return;
-        const completion = this.options.taskExecutor.restartRegisteredRunner(
-          resumedTask,
-          config,
-        );
-        onRunnerAttached?.();
-        return completion;
-      },
-    );
-  }
   private async handle(
     registration: RunnerRegistration,
     disposition: RunnerRecoveryDisposition,
@@ -385,7 +365,7 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     if (disposition === "reap_dead") {
-      await this.reapAndResume(
+      await this.terminalizeFailed(
         registration,
         disposition,
         requireRecoveryTask(task, registration),
@@ -435,7 +415,7 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     if (disposition === "already_reaped") {
-      await resumeReapedRunner({
+      await terminalizeReapedRunner({
         registration,
         task: requireRecoveryTask(task, registration),
         ...(this.options.hydrate ? { hydrate: this.options.hydrate } : {}),
@@ -452,13 +432,6 @@ export class RunnerRecoveryCoordinator {
             undefined,
             onRunnerAttached,
           )).task,
-        resumeReplacement: async (recoveredTask, message, config) =>
-          await this.resumeReplacement(
-            recoveredTask,
-            message,
-            config,
-            onRunnerAttached,
-          ),
         logger: this.options.logger,
       });
       return;
@@ -678,13 +651,13 @@ export class RunnerRecoveryCoordinator {
     return { task, replayed: true };
   }
 
-  private async reapAndResume(
+  private async terminalizeFailed(
     registration: RunnerRegistration,
     disposition: "reap_dead" | "reap_stalled",
     task: Task,
     onRunnerAttached?: () => void,
   ): Promise<void> {
-    await reapAndResumeRunner({
+    await terminalizeFailedRunner({
       registration,
       disposition,
       task,

@@ -20,7 +20,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   scanIntervalMs: number;
   taskManager: Pick<
     TaskManager,
-    "hydrateRunnerRecoveryTask" | "markRunnerFailureAndResume"
+    "hydrateRunnerRecoveryTask" | "markRunnerFailure"
       | "listOwnerNullRunningInventory"
   > & Partial<Pick<
     TaskManager,
@@ -30,7 +30,6 @@ export interface RunnerRecoveryCoordinatorOptions {
   taskExecutor: Pick<
     TaskExecutor,
     | "recoverRegisteredRunner"
-    | "restartRegisteredRunner"
   >;
   closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain">;
   logger: Pick<Logger, "error" | "info" | "warn">;

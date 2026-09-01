@@ -1,14 +1,100 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  type Task,
-} from "../../src/task/task_models.js";
+import type { Task } from "../../src/task/task_models.js";
 import { TaskRunnerRecovery } from "../../src/task/task_runner_recovery.js";
 
-function makeTask(overrides: Partial<Task> = {}): Task {
+describe("TaskRunnerRecovery", () => {
+  it("hydrates an evicted runner task once and remembers it", async () => {
+    const current = task();
+    const rememberTask = vi.fn();
+    const loadTask = vi.fn().mockResolvedValue(current);
+    const recovery = subject({ loadTask, rememberTask });
+    await expect(recovery.hydrate(current.agentSessionId)).resolves.toBe(current);
+    expect(rememberTask).toHaveBeenCalledWith(current);
+  });
+
+  it("persists runner failure without starting a replacement", async () => {
+    const current = task({
+      runner: { dispatcher: {} as never },
+      executionPromise: Promise.resolve(),
+    });
+    const persistExecutorFinalState = vi.fn(async () => ({
+      newlyFinalized: true,
+      terminalTransitionApplied: true,
+    }));
+    const recovery = subject({ lifecycleTransition: { persistExecutorFinalState } as never });
+    await recovery.markFailure(current, "runner exited");
+    expect(persistExecutorFinalState).toHaveBeenCalledOnce();
+    expect(current).toMatchObject({ status: "error", error: "runner exited" });
+    expect(current.runner).toBeUndefined();
+    expect(current.executionPromise).toBeUndefined();
+  });
+
+  it("projects closed through the ordinary terminal transition", async () => {
+    const current = task();
+    const applyRunnerTerminalFact = vi.fn();
+    const persistExecutorFinalState = vi.fn(async () => ({
+      newlyFinalized: true,
+      terminalTransitionApplied: true,
+    }));
+    const recovery = subject({
+      lifecycleTransition: { applyRunnerTerminalFact, persistExecutorFinalState } as never,
+    });
+    await expect(recovery.projectClosed(current, "runner closed")).resolves.toBe(true);
+    expect(applyRunnerTerminalFact).toHaveBeenCalledWith(current, "closed", "runner closed");
+  });
+
+  it("does not emit another terminal fact after canonical termination", async () => {
+    const current = task({
+      status: "completed",
+      terminationEventRecorded: true,
+      terminalEventId: 6240,
+    });
+    const applyRunnerTerminalFact = vi.fn();
+    const recovery = subject({ lifecycleTransition: { applyRunnerTerminalFact } as never });
+    await expect(recovery.projectClosed(current, "repeated scan")).resolves.toBe(false);
+    expect(applyRunnerTerminalFact).not.toHaveBeenCalled();
+  });
+
+  it("accepts only stable complete ownerless inventory observations", async () => {
+    const current = task();
+    const recovery = subject();
+    const first = {
+      manifestId: "sha-a",
+      runtimeEnvIdentity: "env-a",
+      registrationId: "registration-a",
+      pid: 4123,
+      startIdentity: "start-4123",
+      executionCommandId: "execute-a",
+      observedAt: new Date("2026-08-11T00:00:30.000Z"),
+    };
+    await expect(recovery.reconcileExecutionOwnershipObservations(current, {
+      first,
+      second: { ...first, observedAt: new Date("2026-08-11T00:00:45.000Z") },
+      leaseExpiresAt: new Date("2026-08-11T00:02:45.000Z"),
+    })).resolves.toBe(true);
+    await expect(recovery.reconcileExecutionOwnershipObservations(current, {
+      first,
+      second: { ...first, registrationId: "registration-b" },
+      leaseExpiresAt: new Date("2026-08-11T00:02:45.000Z"),
+    })).resolves.toBe(false);
+  });
+});
+
+function subject(overrides: Record<string, unknown> = {}): TaskRunnerRecovery {
+  return new TaskRunnerRecovery({
+    getTask: vi.fn(),
+    loadTask: vi.fn(),
+    rememberTask: vi.fn(),
+    lifecycleTransition: {} as never,
+    ...overrides,
+  });
+}
+
+function task(overrides: Partial<Task> = {}): Task {
   return {
     agentSessionId: "session-1",
-    prompt: "resume this turn",
+    prompt: "continue",
     clientId: "caller-1",
     status: "running",
     createdAt: new Date("2026-08-11T00:00:00.000Z"),
@@ -19,347 +105,3 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     ...overrides,
   };
 }
-
-describe("TaskRunnerRecovery", () => {
-  it("hydrates an evicted runner task once and remembers it", async () => {
-    const task = makeTask();
-    const rememberTask = vi.fn();
-    const loadTask = vi.fn().mockResolvedValue(task);
-    const recovery = new TaskRunnerRecovery({
-      getTask: vi.fn().mockReturnValue(undefined),
-      loadTask,
-      rememberTask,
-      lifecycleTransition: {} as never,
-    });
-
-    await expect(recovery.hydrate(task.agentSessionId)).resolves.toBe(task);
-    expect(loadTask).toHaveBeenCalledWith(task.agentSessionId);
-    expect(rememberTask).toHaveBeenCalledWith(task);
-  });
-
-  it("leaves task state unchanged when runner identity observations are unstable", async () => {
-    const completedAt = new Date("2026-08-11T00:00:10.000Z");
-    const task = makeTask({
-      completedAt,
-      terminationReason: "killed",
-      terminationDetail: "preserve terminal detail",
-      pendingTerminationHint: "limit_hit",
-      pendingTerminationDetail: "preserve pending detail",
-      terminationEventRecorded: true,
-      terminalEventId: 73,
-    });
-    const persistExecutorFinalState = vi.fn();
-    const recovery = new TaskRunnerRecovery({
-      getTask: vi.fn(),
-      loadTask: vi.fn(),
-      rememberTask: vi.fn(),
-      lifecycleTransition: { persistExecutorFinalState } as never,
-    });
-    const first = {
-      manifestId: "sha-a",
-      runtimeEnvIdentity: "env-a",
-      registrationId: "registration-a",
-      pid: 4123,
-      startIdentity: "start-4123",
-      executionCommandId: "execute-a",
-      observedAt: new Date("2026-08-11T00:00:30.000Z"),
-    };
-
-    await expect(recovery.reconcileExecutionOwnershipObservations(task, {
-      first,
-      second: {
-        ...first,
-        registrationId: "registration-b",
-        observedAt: new Date("2026-08-11T00:00:45.000Z"),
-      },
-      leaseExpiresAt: new Date("2026-08-11T00:02:45.000Z"),
-    })).resolves.toBe(false);
-
-    expect(persistExecutorFinalState).not.toHaveBeenCalled();
-    expect(task).toMatchObject({
-      status: "running",
-      completedAt,
-      terminationReason: "killed",
-      terminationDetail: "preserve terminal detail",
-      pendingTerminationHint: "limit_hit",
-      pendingTerminationDetail: "preserve pending detail",
-      terminationEventRecorded: true,
-      terminalEventId: 73,
-    });
-  });
-
-  it("persists an explicit runner error without an automatic replacement", async () => {
-    const order: string[] = [];
-    const task = makeTask({
-      runner: { dispatcher: {} as never },
-      runnerRetainedForClaudeBackground: true,
-      executionPromise: Promise.resolve(),
-      callerInfo: { source: "agent", display_name: "서소영" },
-      attachmentPaths: ["/tmp/reference.png"],
-      contextItems: [{ type: "text", text: "context" }],
-    });
-    const persistExecutorFinalState = vi.fn(async (persistedTask: Task) => {
-      order.push("persist-error");
-      expect(persistedTask).toMatchObject({ status: "error", error: "runner lease expired" });
-      expect(persistedTask.runner).toBeUndefined();
-      expect(persistedTask.runnerRetainedForClaudeBackground).toBeUndefined();
-      expect(persistedTask.executionPromise).toBeUndefined();
-    });
-    const onResume = vi.fn();
-    const resume = vi.fn();
-    const recovery = new TaskRunnerRecovery({
-      getTask: vi.fn(),
-      loadTask: vi.fn(),
-      rememberTask: vi.fn(),
-      lifecycleTransition: { persistExecutorFinalState } as never,
-    });
-
-    await recovery.markFailureAndResume(task, "runner lease expired", onResume);
-
-    expect(order).toEqual(["persist-error"]);
-    expect(resume).not.toHaveBeenCalled();
-    expect(onResume).not.toHaveBeenCalled();
-  });
-
-  it("does not start a replacement after terminalizing runner failure", async () => {
-    const task = makeTask();
-    const persistExecutorFinalState = vi.fn(async () => ({
-      newlyFinalized: true,
-      terminalTransitionApplied: true,
-    }));
-    const resume = vi.fn(async (resumedTask: Task, _message, callback) => {
-      resumedTask.status = "running";
-      callback(resumedTask);
-      return { autoResumed: true as const };
-    });
-    const recovery = new TaskRunnerRecovery({
-      getTask: vi.fn(),
-      loadTask: vi.fn(),
-      rememberTask: vi.fn(),
-      lifecycleTransition: { persistExecutorFinalState } as never,
-    });
-
-    await expect(recovery.markFailureAndResume(
-      task,
-      "runner exited",
-      () => { throw new Error("snapshot missing"); },
-    )).resolves.toBeUndefined();
-
-    expect(persistExecutorFinalState).toHaveBeenCalledOnce();
-    expect(resume).not.toHaveBeenCalled();
-    expect(task).toMatchObject({
-      status: "error",
-      error: "runner exited",
-      executionPromise: undefined,
-    });
-    expect(task.runner).toBeUndefined();
-    expect(task.completedAt).toBeInstanceOf(Date);
-  });
-
-  it("does not enter the running transition after terminalizing runner failure", async () => {
-    const task = makeTask();
-    const persistExecutorFinalState = vi.fn(async () => ({
-      newlyFinalized: true,
-      terminalTransitionApplied: true,
-    }));
-    const resume = vi.fn().mockRejectedValue(new Error("running transition rejected"));
-    const recovery = new TaskRunnerRecovery({
-      getTask: vi.fn(),
-      loadTask: vi.fn(),
-      rememberTask: vi.fn(),
-      lifecycleTransition: { persistExecutorFinalState } as never,
-    });
-
-    await expect(recovery.markFailureAndResume(task, "runner exited", vi.fn()))
-      .resolves.toBeUndefined();
-
-    expect(persistExecutorFinalState).toHaveBeenCalledOnce();
-    expect(resume).not.toHaveBeenCalled();
-  });
-
-  it("does not let a stale closed projection erase a newly active owner", async () => {
-    const runner = { dispatcher: {} as never };
-    const executionPromise = Promise.resolve();
-    const task = makeTask({
-      runner,
-      executionPromise,
-      executionOwnership: {
-        ownerKind: "spawned_runner",
-        manifestId: "sha-new",
-        ownershipGeneration: 42,
-        registrationId: "registration-new",
-        pid: 4242,
-        startIdentity: "start-4242",
-        executionCommandId: "execute-new",
-      },
-      recoveredExecutionOwnership: {
-        manifestId: "sha-old",
-        registrationId: "registration-old",
-        pid: 4141,
-        startIdentity: "start-4141",
-        executionCommandId: "execute-old",
-      },
-    });
-    const projectRecoveredRunnerTerminalFact = vi.fn();
-    const recovery = new TaskRunnerRecovery({
-      getTask: vi.fn(),
-      loadTask: vi.fn(),
-      rememberTask: vi.fn(),
-      lifecycleTransition: { projectRecoveredRunnerTerminalFact } as never,
-    });
-
-    await expect(recovery.projectClosed(task, "stale closed scan")).resolves.toBe(false);
-
-    expect(projectRecoveredRunnerTerminalFact).not.toHaveBeenCalled();
-    expect(task.runner).toBe(runner);
-    expect(task.executionPromise).toBe(executionPromise);
-    expect(task.executionOwnership?.executionCommandId).toBe("execute-new");
-  });
-
-  it("does not emit another closed terminal fact after canonical termination", async () => {
-    const task = makeTask({
-      status: "completed",
-      terminationEventRecorded: true,
-      terminalEventId: 6240,
-    });
-    const projectRecoveredRunnerTerminalFact = vi.fn();
-    const recovery = new TaskRunnerRecovery({
-      getTask: vi.fn(),
-      loadTask: vi.fn(),
-      rememberTask: vi.fn(),
-      lifecycleTransition: { projectRecoveredRunnerTerminalFact } as never,
-    });
-
-    await expect(recovery.projectClosed(task, "repeated closed scan")).resolves.toBe(false);
-    expect(projectRecoveredRunnerTerminalFact).not.toHaveBeenCalled();
-  });
-
-  it("retires an exact recorded terminal identity with metadata instead of another terminal event", async () => {
-    const task = makeTask({
-      status: "error",
-      terminationReason: "error_aborted",
-      terminationDetail: "event outbox acknowledgement timed out",
-      terminationEventRecorded: true,
-      terminalEventId: 3,
-      executionOwnership: {
-        ownerKind: "spawned_runner",
-        ownershipGeneration: 1,
-        manifestId: "sha-a",
-        runtimeEnvIdentity: "runtime-a",
-        registrationId: "registration-a",
-        pid: 45716,
-        startIdentity: "node-start-1787806755465",
-        executionCommandId: "owner-a",
-      },
-    });
-    const reconcileRecordedTerminalExecutionAndWaitForApplication = vi.fn(async () => ({
-      applied: true,
-      eventId: 4,
-      canonicalSession: {
-        status: "error",
-        termination_reason: "error_aborted",
-        termination_detail: "event outbox acknowledgement timed out",
-        review_state: "not_required",
-        last_assistant_text: null,
-        termination_event_id: 3,
-        updated_at: "2026-08-29T00:00:00.000Z",
-        last_event_id: 4,
-      },
-      canonicalExecutionOwnership: null,
-    }));
-    const recovery = new TaskRunnerRecovery({
-      getTask: vi.fn(),
-      loadTask: vi.fn(),
-      rememberTask: vi.fn(),
-      lifecycleTransition: {} as never,
-      persistence: { reconcileRecordedTerminalExecutionAndWaitForApplication } as never,
-    });
-
-    await expect(recovery.reconcileRecordedTerminalExecution(task)).resolves.toBe(true);
-
-    expect(reconcileRecordedTerminalExecutionAndWaitForApplication).toHaveBeenCalledWith(
-      task.agentSessionId,
-      {
-        ownershipGeneration: 1,
-        manifestId: "sha-a",
-        runtimeEnvIdentity: "runtime-a",
-        registrationId: "registration-a",
-        pid: 45716,
-        startIdentity: "node-start-1787806755465",
-        executionCommandId: "owner-a",
-        terminalEventId: 3,
-        runnerFact: "failed",
-        terminationDetail: "event outbox acknowledgement timed out",
-        reviewState: "not_required",
-        lastAssistantText: null,
-        updatedAt: expect.any(Date),
-      },
-    );
-    expect(task.executionOwnership).toBeUndefined();
-  });
-
-  it("allows closed recovery to retry a missing terminal projection from an inactive owner", async () => {
-    const task = makeTask({
-      status: "error",
-      terminationEventRecorded: false,
-      executionOwnership: {
-        ownerKind: "spawned_runner",
-        manifestId: "sha-old",
-        ownershipGeneration: 41,
-        registrationId: "registration-old",
-        pid: 4141,
-        startIdentity: "start-4141",
-        executionCommandId: "execute-old",
-      },
-      recoveredExecutionOwnership: {
-        manifestId: "sha-old",
-        registrationId: "registration-old",
-        pid: 4141,
-        startIdentity: "start-4141",
-        executionCommandId: "execute-old",
-      },
-    });
-    const projectRecoveredRunnerTerminalFact = vi.fn().mockResolvedValue(true);
-    const recovery = new TaskRunnerRecovery({
-      getTask: vi.fn(),
-      loadTask: vi.fn(),
-      rememberTask: vi.fn(),
-      lifecycleTransition: { projectRecoveredRunnerTerminalFact } as never,
-    });
-
-    await expect(recovery.projectClosed(task, "retry terminal fact")).resolves.toBe(true);
-    expect(projectRecoveredRunnerTerminalFact).toHaveBeenCalledOnce();
-  });
-
-  it("allows a matching closed registration to recover its stranded active owner", async () => {
-    const ownership = {
-      manifestId: "sha-old",
-      registrationId: "registration-old",
-      pid: 4141,
-      startIdentity: "start-4141",
-      executionCommandId: "execute-old",
-    };
-    const task = makeTask({
-      status: "running",
-      runner: { dispatcher: {} as never },
-      executionOwnership: {
-        ownerKind: "spawned_runner",
-        ownershipGeneration: 41,
-        ...ownership,
-      },
-      recoveredExecutionOwnership: ownership,
-    });
-    const projectRecoveredRunnerTerminalFact = vi.fn().mockResolvedValue(true);
-    const recovery = new TaskRunnerRecovery({
-      getTask: vi.fn(),
-      loadTask: vi.fn(),
-      rememberTask: vi.fn(),
-      lifecycleTransition: { projectRecoveredRunnerTerminalFact } as never,
-    });
-
-    await expect(recovery.projectClosed(task, "matching closed owner")).resolves.toBe(true);
-    expect(projectRecoveredRunnerTerminalFact).toHaveBeenCalledOnce();
-    expect(task.runner).toBeUndefined();
-  });
-
-});

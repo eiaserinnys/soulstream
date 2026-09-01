@@ -206,25 +206,6 @@ export function createRunnerProcessRuntimeFactory(
       mode,
     );
   };
-  // A replacement child keeps the original release snapshot but binds to the
-  // host's current runtime MCP endpoints and resolved profile.
-  factory.restart = (task, config, snapshots) => {
-    const spawnInput = spawnInputFromConfig(
-      stateDirectory,
-      config,
-      options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
-      options.releasePool,
-      resolveRuntimeMcpConfig(options, config.agent),
-    );
-    return createRuntime(
-      task,
-      config.agent,
-      config.backend,
-      snapshots,
-      spawnInput,
-      spawner.spawn(spawnInput),
-    );
-  };
   return factory;
 }
 

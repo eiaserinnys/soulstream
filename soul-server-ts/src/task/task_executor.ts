@@ -35,7 +35,6 @@ import {
   createInProcessTaskRunnerRuntime,
   type TaskRunnerRuntime,
 } from "../runner/task_runner_runtime.js";
-import type { RunnerChildConfig } from "../runner/runner_process_spawn.js";
 import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 
@@ -119,11 +118,6 @@ export interface RunnerProcessRuntimeFactory {
     registration: RunnerRegistration,
     snapshots: RunnerSnapshotPersistence,
     mode?: "adopt" | "replay" | "offline",
-  ): TaskRunnerRuntime;
-  restart?(
-    task: Task,
-    config: RunnerChildConfig,
-    snapshots: RunnerSnapshotPersistence,
   ): TaskRunnerRuntime;
   describe?(agent: AgentProfile): Promise<{
     ownerKind: "runner_process";
@@ -746,17 +740,6 @@ export class TaskExecutor {
         "unadopted runner event stream release failed; the stream may stay registered",
       );
     }
-  }
-
-  restartRegisteredRunner(task: Task, config: RunnerChildConfig): Promise<void> {
-    const runner = this.runnerProcessFactory?.restart?.(
-      task,
-      config,
-      this.snapshotPersistenceFor(task),
-    );
-    if (!runner) throw new Error("runner process restart factory unavailable");
-    this.startExecutionWithRunner(task, config.agent, runner);
-    return task.executionPromise!;
   }
 
   private snapshotPersistenceFor(task: Task): RunnerSnapshotPersistence {

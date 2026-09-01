@@ -3,7 +3,6 @@ import type { ExecutionOwnershipObservation } from "./execution_ownership.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
 import { isTerminalTaskStatus, type Task } from "./task_models.js";
-import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
 
@@ -37,10 +36,9 @@ export class TaskRunnerRecovery {
     return task;
   }
 
-  async markFailureAndResume(
+  async markFailure(
     task: Task,
     message: string,
-    _onResume: StartExecutionCallback,
   ): Promise<void> {
     const runner = task.runner;
     if (runner) releaseTaskRunner(task, runner);

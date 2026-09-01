@@ -305,17 +305,25 @@ export class TaskLifecycleTransition {
       last_assistant_text: task.lastAssistantText ?? null,
       updated_at: (task.completedAt ?? new Date()).toISOString(),
     };
-    const application = await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
-      task.agentSessionId,
-      event,
-      {
-        kind: "terminal_transition",
-        status: task.status,
-        termination_reason: terminationReason,
-        ...common,
-      },
-      task.executionOwnership?.ownershipGeneration,
-    );
+    const effect = {
+      kind: "terminal_transition" as const,
+      status: task.status,
+      termination_reason: terminationReason,
+      ...common,
+    };
+    const generation = task.executionOwnership?.ownershipGeneration;
+    const application = generation === undefined
+      ? await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
+          task.agentSessionId,
+          event,
+          effect,
+        )
+      : await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
+          task.agentSessionId,
+          event,
+          effect,
+          generation,
+        );
     applyCanonicalSessionProjection(task, application.canonicalSession);
     if (
       isTerminalTaskStatus(task.status)

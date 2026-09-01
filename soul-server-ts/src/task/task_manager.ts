@@ -284,12 +284,11 @@ export class TaskManager {
     return await this.db.listOwnerNullRunningInventory({ nodeId, limit });
   }
 
-  async markRunnerFailureAndResume(
+  async markRunnerFailure(
     task: Task,
     message: string,
-    onResume: StartExecutionCallback,
   ): Promise<void> {
-    await this.runnerRecovery.markFailureAndResume(task, message, onResume);
+    await this.runnerRecovery.markFailure(task, message);
   }
 
   async resumeQueuedAfterTerminal(
