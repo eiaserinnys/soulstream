@@ -234,6 +234,7 @@ export class TaskInterventionRoute {
         const deferResumeUntilQueued: StartExecutionCallback = (resumedTask, activation) => {
           deferredResume = { task: resumedTask, activation };
         };
+        const admittedLedgerGate = this.deps.deliveryLedgerGate;
         result = await this.deps.autoResumeTransition.resume(
           task,
           message,
@@ -242,10 +243,10 @@ export class TaskInterventionRoute {
             ...(admission.row.attempt_count > 0
               ? { publishUserMessage: false }
               : {}),
-            ...(this.deps.deliveryLedgerGate
+            ...(admittedLedgerGate
               ? {
                   afterRunningTransition: async () => {
-                    await this.deps.deliveryLedgerGate?.recordResult(admission, {
+                    await admittedLedgerGate.recordResult(admission, {
                       autoResumed: true,
                     });
                     ledgerResultRecorded = true;
