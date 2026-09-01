@@ -1,0 +1,30 @@
+# 재시작 복구
+
+최종 대조 커밋 SHA: `200b40c51de1e3079dcc88dcbdccc9b3832ad1c0`
+
+> 상태 배지: **R26 반영 완료 · R31b 진행 중 — 머지 시 갱신 필요**
+
+> 범위 주석: accepted input producer는 boot 1회·node-ready·orch maintenance이며, 5초 maintenance lane은 lease와 notification 투영만 회수한다.
+
+| 단계 | 파일:심볼(라인) | 이 단계가 소유한 사실 | 거부/분기 조건 |
+| --- | --- | --- | --- |
+| 1. Claude 복구 객체 조립 | `soul-server-ts/src/runtime/claude_runtime_composition.ts:composeClaudeRuntime` (L51–115) | transcript reader·queued recovery·background lifecycle을 한 `ClaudeRuntimeStartupRecovery`에 묶고 boot worker id를 만든다. | runtime v2가 꺼져 있으면 복구 객체 자체를 만들지 않는다. |
+| 2. background task boot pass | `soul-server-ts/src/runtime/worker_composition.ts:composeWorkerRuntime` (L294–311), `claude_runtime_startup_recovery.ts:start` (L32–36) | worker composition 중 Claude background task 복구를 boot당 한 번 실행한다. | cached promise가 있으면 다시 실행하지 않으며 15초 deadline 실패도 같은 boot에서 재시도하지 않는다. |
+| 3. listener·upstream 선행 | `soul-server-ts/src/runtime/worker_startup.ts:startWorkerRuntime` (L33–45) | listener를 먼저 열고 upstream adapter를 시작하여 복구가 새 명령 경로를 막지 않게 한다. | upstream 실패는 별도 handler로 격리한다. |
+| 4. runner 초기 수렴 | `soul-server-ts/src/runtime/worker_startup.ts:startWorkerRuntime` (L47–57), `runner/runner_recovery_coordinator.ts:RunnerRecoveryCoordinator.start` (L139–149) | runner registration 초기 scan을 먼저 끝낸 뒤 queued transcript pass의 진입 순서를 연다. | runner process mode가 아니면 coordinator 없이 즉시 다음 경계로 간다. |
+| 5. queued delivery boot cursor | `soul-server-ts/src/runtime/worker_startup.ts:startWorkerRuntime` (L53–65), `claude_runtime_startup_recovery.ts:afterRunnerRecovery` (L38–47) | runner 수렴 뒤 queued delivery snapshot을 boot당 정확히 한 번 실행한다. | stopped면 생략; cached promise가 같은 process의 두 번째 snapshot을 차단한다. |
+| 6. boot queued claim | `soul-server-ts/src/task/queued_delivery_transcript_recovery.ts:recoverAfterNodeRestart` (L70–85), `orch-server-ts/src/control_plane/repositories/session_delivery_recovery_repository.ts:claimQueuedAfterNodeRestart` (L176–188) | 이 node의 `queued`와 허용된 `delivered` 표본을 60초 lease로 한 번 claim한다. | `aggregate_state`가 consumed/dead-letter이거나 due가 아니면 claim하지 않는다. |
+| 7. transcript 대조 | `soul-server-ts/src/task/queued_delivery_transcript_recovery.ts:reconcile` (L88–194) | Claude transcript의 exact receipt로 delivered/consumed를 확정하거나 content를 재전달한다. | 10초 read deadline·남은 lease 부족·불명확한 receipt면 row를 retryable 상태로 돌린다. |
+| 8. transcript receipt 투영 | `orch-server-ts/src/control_plane/repositories/session_delivery_recovery_repository.ts:markDeliveredFromTranscript` (L205–244) | assistant message UUID를 `transcript:*` receipt로 기록해 `delivered/delivered`를 확정한다. | 정확한 lease owner가 가진 `claimed` row만 전이한다. |
+| 9. node-ready 트리거 | `orch-server-ts/src/production.ts:createProductionRuntime` (L225–238) | 새 node connection의 session cache seed 완료가 즉시 pending immediate replay를 한 번 호출한다. | node-ready 이벤트가 없으면 실행되지 않으며 timer가 아니다. |
+| 10. node-ready claim·전송 | `orch-server-ts/src/production.ts:replayPendingImmediateDeliveriesForNode` (L566–633) | `node-ready:{node}:{connection}` lease로 해당 node의 pending immediate delivery를 enqueue 순서대로 claim·route·전송한다. | identity 불완전·route/command 실패면 자기 lease가 남은 row만 즉시 pending retry로 되돌린다. |
+| 11. orch maintenance 트리거 | `orch-server-ts/src/runtime/orchestrator_maintenance_service.ts:OrchestratorMaintenanceService.start` (L56–62), `runMaintenanceOnce` (L96–105) | 기동 즉시와 60초마다 연결된 node의 pending replay를 보조 트리거로 호출한다. | 이전 delivery recovery가 진행 중이면 중첩 실행하지 않는다. |
+| 12. orch maintenance replay | `orch-server-ts/src/production.ts:createProductionRuntime` (L499–536) | 연결 목록을 순회하며 `maintenance:{node}:{connection}` 소유자로 같은 replay 정본을 재사용한다. | node별 실패는 다른 node replay를 중단하지 않는다. |
+| 13. lease maintenance | `soul-server-ts/src/task/completion_delivery_recovery_worker.ts:CompletionDeliveryRecoveryWorker` (L30–66), `completion_delivery_coordinator.ts:recoverPending` (L117–123) | 기동 즉시와 5초마다 expired admission lease와 notification outbox 투영을 회수한다. | accepted input을 claim·dispatch·auto-resume하지 않는다; step별 90초 deadline으로 격리한다. |
+| 14. runner registration scan | `soul-server-ts/src/runner/runner_recovery_coordinator.ts:RunnerRecoveryCoordinator.performScan` (L158–281) | registration·owner-null inventory·손상 registration을 대조하고 session별 recovery disposition을 직렬화한다. | active/adoption-pending·ownership backoff·retired terminal은 재진입하지 않는다. |
+| 15. runner 상태 분류 | `soul-server-ts/src/runner/runner_process_registry.ts:classifyRunnerRegistration` (L130–165) | registration·lifecycle·PID proof를 `wait/adopt/replay/reap/closed/retired` 중 하나로 분류한다. | progress 시각만으로 process death를 추론하지 않으며 live identity 검증은 adopt 경계가 소유한다. |
+| 16. runner 복구 실행 | `soul-server-ts/src/runner/runner_recovery_coordinator.ts:RunnerRecoveryCoordinator.handle` (L324–449), `recoverRegistered` (L523–665) | adopt·terminal replay·dead reap·closed tail drain을 disposition별 단일 경로로 실행하고 task execution에 재부착한다. | 기존 task runner/execution이 살아 있으면 겹치지 않으며 offline terminal replay 차단은 warning으로 드러낸다. |
+| 17. runner 반복 scan | `soul-server-ts/src/runtime/runner_process_composition.ts:composeRunnerRecoveryCoordinator` (L81–129), `runner_recovery_coordinator.ts:start` (L139–149) | 초기 scan 후 env의 `SOUL_RUNNER_REAPER_INTERVAL_MS` cadence로 registration 상태 변화를 계속 회수한다. | runner factory/state dir가 없으면 coordinator를 만들지 않는다; R31b 머지 후 lock 기반 liveness와 재대조한다. |
+| 18. upstream inventory 재보고 | `soul-server-ts/src/upstream/initial_runner_state_sync.ts:sendInitialRunnerState` (L11–58) | 현재 connection에 runner inventory를 최대 5회 보고하여 orch가 node-ready session ownership을 다시 구성하게 한다. | connection 교체·WebSocket close면 즉시 중단; 5회 실패 뒤 현재 connection에서 종료한다. |
+
+이 장을 갱신해야 하는 변경 부류: worker startup 순서·queued transcript recovery·node-ready/maintenance replay·delivery lease maintenance·runner scan/classification/adoption·initial inventory 변경.
