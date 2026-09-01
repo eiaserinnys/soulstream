@@ -3209,7 +3209,19 @@ CREATE OR REPLACE FUNCTION session_project_recovered_runner_terminal_fact(
 ) LANGUAGE plpgsql AS $$
 DECLARE
     v_ownership_generation BIGINT;
+    v_status TEXT;
+    v_termination_reason TEXT;
 BEGIN
+    -- Serialize recovered terminal projection with every ownership reservation
+    -- path, all of which lock the canonical session row before opening an owner.
+    PERFORM 1
+      FROM sessions
+     WHERE session_id = p_session_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+
     SELECT ownership.ownership_generation
       INTO v_ownership_generation
       FROM session_execution_ownerships AS ownership
@@ -3239,13 +3251,60 @@ BEGIN
         RETURN;
     END IF;
 
+    -- A recovered registration also exists for ownerless turns. Protect a real
+    -- successor owner, but do not let expired reservation history become a
+    -- permanent terminal gate.
+    IF EXISTS (
+        SELECT 1
+          FROM session_execution_ownerships AS ownership
+         WHERE ownership.session_id = p_session_id
+           AND (
+               ownership.phase = 'active'
+               OR (
+                   ownership.phase IN ('reserved', 'identity_proven')
+                   AND ownership.reservation_expires_at > CURRENT_TIMESTAMP
+               )
+           )
+    ) THEN
+        RETURN QUERY
+        SELECT FALSE, session.status, session.termination_reason,
+               session.termination_detail, session.review_state,
+               session.last_assistant_text, session.termination_event_id,
+               session.updated_at, session.last_event_id
+          FROM sessions AS session
+         WHERE session.session_id = p_session_id;
+        RETURN;
+    END IF;
+
+    CASE p_runner_fact
+        WHEN 'completed' THEN
+            v_status := 'completed';
+            v_termination_reason := 'completed_ok';
+        WHEN 'closed' THEN
+            v_status := 'interrupted';
+            v_termination_reason := 'killed';
+        WHEN 'failed' THEN
+            v_status := 'error';
+            v_termination_reason := 'error_aborted';
+        WHEN 'reaped' THEN
+            v_status := 'error';
+            v_termination_reason := 'error_aborted';
+        ELSE
+            RAISE EXCEPTION 'unsupported runner terminal fact: %', p_runner_fact;
+    END CASE;
+
     RETURN QUERY
-    SELECT FALSE, session.status, session.termination_reason,
-           session.termination_detail, session.review_state,
-           session.last_assistant_text, session.termination_event_id,
-           session.updated_at, session.last_event_id
-      FROM sessions AS session
-     WHERE session.session_id = p_session_id;
+    SELECT *
+      FROM session_apply_terminal_transition(
+          p_session_id,
+          v_status,
+          v_termination_reason,
+          p_termination_detail,
+          p_review_state,
+          p_last_assistant_text,
+          p_terminal_event_id,
+          p_updated_at
+      );
 END;
 $$;
 

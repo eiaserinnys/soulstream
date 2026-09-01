@@ -36,6 +36,9 @@ const OFFLINE_SESSION_ID = "r16-offline-terminal-status";
 const RETRY_SESSION_ID = "r21-offline-terminal-status-retry";
 const RECORDED_RECEIPT_SESSION_ID = "r23-recorded-terminal-receipt";
 const ACTIVATION_SESSION_ID = "r16-activation-failure-status";
+const OWNERLESS_RECOVERED_SESSION_ID = "r26b-ownerless-recovered-terminal";
+const EXPIRED_IDENTITY_SESSION_ID = "r26b-expired-identity-terminal";
+const LIVE_SUCCESSOR_SESSION_ID = "r26b-live-successor-protected";
 
 describe("R16 terminal status full slice", () => {
   let postgres: FullSchemaPostgresHarness;
@@ -230,6 +233,68 @@ describe("R16 terminal status full slice", () => {
     expect(terminalEvents[0]?.count).toBe(1);
   });
 
+  it("projects a recovered terminal fact when the durable session has no owner history", async () => {
+    await insertSession(OWNERLESS_RECOVERED_SESSION_ID, "running");
+
+    const persisted = await persistRecoveredTerminal(OWNERLESS_RECOVERED_SESSION_ID);
+
+    expect(persisted.terminalTransitionApplied).toBe(true);
+    expect(await readStatus(OWNERLESS_RECOVERED_SESSION_ID)).toEqual({
+      status: "completed",
+      terminationReason: "completed_ok",
+    });
+  });
+
+  it("ignores an expired identity proof when projecting a recovered terminal fact", async () => {
+    await insertSession(EXPIRED_IDENTITY_SESSION_ID, "running");
+    await postgres.sql`
+      INSERT INTO session_execution_ownerships (
+        session_id, ownership_generation, owner_kind, manifest_id,
+        registration_id, pid, start_identity, execution_command_id,
+        phase, reserved_at, identity_proven_at, reservation_expires_at
+      ) VALUES (
+        ${EXPIRED_IDENTITY_SESSION_ID}, 9, 'runner_process', 'stale-manifest',
+        'stale-registration', 9009, 'stale-start', 'stale-command',
+        'identity_proven', NOW() - INTERVAL '2 minutes',
+        NOW() - INTERVAL '2 minutes', NOW() - INTERVAL '1 minute'
+      )
+    `;
+
+    const persisted = await persistRecoveredTerminal(
+      EXPIRED_IDENTITY_SESSION_ID,
+      new Date(Date.now() - 2 * 60_000),
+    );
+
+    expect(persisted.terminalTransitionApplied).toBe(true);
+    expect(await readStatus(EXPIRED_IDENTITY_SESSION_ID)).toEqual({
+      status: "completed",
+      terminationReason: "completed_ok",
+    });
+  });
+
+  it("does not let a recovered terminal fact supersede a live successor owner", async () => {
+    await insertSession(LIVE_SUCCESSOR_SESSION_ID, "running");
+    await postgres.sql`
+      INSERT INTO session_execution_ownerships (
+        session_id, ownership_generation, owner_kind, manifest_id,
+        registration_id, pid, start_identity, execution_command_id,
+        phase, reserved_at, identity_proven_at, activated_at
+      ) VALUES (
+        ${LIVE_SUCCESSOR_SESSION_ID}, 10, 'runner_process', 'successor-manifest',
+        'successor-registration', 9010, 'successor-start', 'successor-command',
+        'active', NOW(), NOW(), NOW()
+      )
+    `;
+
+    const persisted = await persistRecoveredTerminal(LIVE_SUCCESSOR_SESSION_ID);
+
+    expect(persisted.terminalTransitionApplied).toBe(false);
+    expect(await readStatus(LIVE_SUCCESSOR_SESSION_ID)).toEqual({
+      status: "running",
+      terminationReason: null,
+    });
+  });
+
   it("restores a terminal durable status when auto-resume activation fails", async () => {
     await insertSession(ACTIVATION_SESSION_ID, "completed", 7);
     const task = await loadTask(ACTIVATION_SESSION_ID);
@@ -340,6 +405,30 @@ describe("R16 terminal status full slice", () => {
     const row = rows[0];
     if (!row) throw new Error(`missing fixture session ${sessionId}`);
     return hydrateEvictedTaskFromSessionRow(row as never, logger);
+  }
+
+  async function persistRecoveredTerminal(
+    sessionId: string,
+    completedAt = new Date(),
+  ) {
+    const task = await loadTask(sessionId);
+    const registration = {
+      ...makeOwnerlessRegistration(sessionId, Date.now(), { pidAlive: false }),
+      lifecycle: {
+        ...makeOwnerlessRegistration(sessionId, Date.now()).lifecycle!,
+        execution_state: "completed" as const,
+      },
+    };
+    prepareRecoveredTask(task, registration);
+    prepareRecoveredTerminalExecutionIdentity(task, registration);
+    const lifecycle = new TaskLifecycleTransition({
+      logger,
+      persistence: ingress.persistence,
+    });
+    task.status = "completed";
+    task.completedAt = completedAt;
+    task.runnerTerminalFact = "completed";
+    return await lifecycle.persistExecutorFinalState(task);
   }
 
   async function readStatus(sessionId: string): Promise<{
