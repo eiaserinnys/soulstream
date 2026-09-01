@@ -387,6 +387,24 @@ export class RunnerProcessSpawner {
     });
   }
 
+  /**
+   * Disposition for a registration that no longer proves an identity.
+   *
+   * The host clears `pid`/`startIdentity` while the child keeps running, so the
+   * registration is residue rather than evidence of a live runner. Without an
+   * expected process there is nothing to compare against by identity, and
+   * `stopExistingRunnerLocked` already decides such a pid by what the process
+   * *is* -- the R30 substance comparison -- so this reuses that owner instead of
+   * adding a second disposition path.
+   */
+  async disposeUnprovenRegistration(
+    paths: RunnerProcessPaths,
+  ): Promise<RunnerTerminationOutcome> {
+    return await withRunnerSessionMutationLock(paths.sessionDirectory, async () => {
+      return await stopExistingRunnerLocked(paths, this.deps, undefined, "strict");
+    });
+  }
+
   invalidateRegistration(
     paths: RunnerProcessPaths,
     expectedRegistrationId: string | null,

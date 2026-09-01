@@ -37,13 +37,22 @@ export type ProcessCommandLineProbe =
   | { kind: "unavailable" };
 
 /**
+ * Every Windows process probe below shells out to powershell.exe, so they all
+ * pay the same floor and share one budget.
+ *
  * Measured on eias-linegames (Windows 11, 10.0.26200): a bare
- * `powershell.exe -NoProfile` start costs ~2.5s and the CIM query brings the
- * round trip to 5.4-5.7s. A 5s budget sits below that floor, and a timeout here
- * reports `unavailable`, which fails resume closed -- the very death this probe
- * exists to end. The budget is sized for a loaded host, not for the best case.
+ * `powershell.exe -NoProfile` start costs ~2.5s, `Get-Process` brings the round
+ * trip to ~2.7-3.0s idle, and the CIM query to 4.7-5.7s. A 5s budget sits below
+ * that floor once the host is loaded: six concurrent `Get-Process` probes -- the
+ * contention spawn, dispatch and termination already create -- had 2 of 6 killed
+ * by a 5s timeout on an otherwise idle box.
+ *
+ * A timeout is indistinguishable from absence at the call site: the identity
+ * probe catches it and answers `null`, the command line probe answers
+ * `unavailable`, and both fail closed. That is the death these probes exist to
+ * end, so the budget is sized for a loaded host, not for the best case.
  */
-const COMMAND_LINE_PROBE_TIMEOUT_MS = 20_000;
+const WINDOWS_PROCESS_PROBE_TIMEOUT_MS = 20_000;
 const WINDOWS_PROBE_ABSENT_MARKER = "process-absent";
 const WINDOWS_PROBE_COMMAND_LINE_MARKER = "process-command-line:";
 
@@ -250,7 +259,7 @@ async function readWindowsProcessCommandLine(pid: number): Promise<ProcessComman
         + `if ($found.Count -eq 0) { '${WINDOWS_PROBE_ABSENT_MARKER}' } `
         + `else { '${WINDOWS_PROBE_COMMAND_LINE_MARKER}' + $found[0].CommandLine }`,
       ],
-      { timeout: COMMAND_LINE_PROBE_TIMEOUT_MS, windowsHide: true },
+      { timeout: WINDOWS_PROCESS_PROBE_TIMEOUT_MS, windowsHide: true },
     ));
   } catch {
     return { kind: "unavailable" };
@@ -277,6 +286,18 @@ async function readLinuxProcessCommandLine(pid: number): Promise<ProcessCommandL
   return commandLine ? { kind: "command_line", value: commandLine } : { kind: "unavailable" };
 }
 
+/**
+ * A process start time, used as the identity that survives pid reuse.
+ *
+ * On Windows this stays on `Get-Process` rather than moving to the
+ * `Win32_Process` CIM instance the command line probe uses, for two measured
+ * reasons. CIM is the slower of the two (4.7s against 2.7s idle), and -- the
+ * blocking one -- `CreationDate` is truncated to microseconds while `StartTime`
+ * is not: the same live pid reports ticks that differ by 6-7 (measured on pids
+ * 44892 and 9264). Same-kind identities are compared for exact equality, so
+ * swapping the source would invalidate every `windows-process-<ticks>` identity
+ * already persisted and fail closed against the runners it was meant to save.
+ */
 export async function readProcessStartIdentity(pid: number): Promise<string | null> {
   if (process.platform === "win32") {
     try {
@@ -288,7 +309,7 @@ export async function readProcessStartIdentity(pid: number): Promise<string | nu
           "-Command",
           `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().Ticks`,
         ],
-        { timeout: 5_000, windowsHide: true },
+        { timeout: WINDOWS_PROCESS_PROBE_TIMEOUT_MS, windowsHide: true },
       );
       const ticks = stdout.trim();
       return ticks ? `windows-process-${ticks}` : null;
