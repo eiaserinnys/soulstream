@@ -603,6 +603,35 @@ describe("AutoResumeTransition", () => {
     );
   });
 
+  it("restores the terminal task when post-transition durable admission fails", async () => {
+    const task = makeTerminalTask();
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "legacy_transition_only",
+    });
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+    const admissionError = new Error("notification outbox already exists");
+    const onResume = vi.fn();
+
+    await expect(transition.resume(
+      task,
+      { text: "redelivered completion", user: "agent" },
+      onResume,
+      {
+        afterRunningTransition: vi.fn().mockRejectedValue(admissionError),
+      },
+    )).rejects.toBe(admissionError);
+
+    expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
+      .toHaveBeenCalledOnce();
+    expect(task.status).toBe("completed");
+    expect(task.terminalEventId).toBe(6);
+    expect(task.executionActivation).toBeUndefined();
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
   it("stores resume message context for the executor initial-message path", async () => {
     const task = makeTerminalTask();
     const contextItem = {

@@ -45,7 +45,7 @@ export class SessionDeliveryNotificationRepository {
       `;
       const row = advanced[0];
       if (!row) return null;
-      const insertedOutbox = await transaction<Array<{ delivery_id: string }>>`
+      const stagedOutbox = await transaction<Array<{ delivery_id: string }>>`
         INSERT INTO session_delivery_notification_outbox (
           delivery_id,
           target_session_id,
@@ -71,10 +71,46 @@ export class SessionDeliveryNotificationRepository {
           NOW(),
           NOW()
         )
-        ON CONFLICT (delivery_id) DO NOTHING
+        ON CONFLICT (delivery_id) DO UPDATE
+        SET
+          target_session_id = EXCLUDED.target_session_id,
+          payload = EXCLUDED.payload,
+          disposition = EXCLUDED.disposition,
+          state = 'claimed',
+          projection_state = 'publishing',
+          lease_owner = EXCLUDED.lease_owner,
+          lease_expires_at = EXCLUDED.lease_expires_at,
+          next_attempt_at = NOW(),
+          last_error = NULL,
+          updated_at = NOW()
+        WHERE
+          session_delivery_notification_outbox.payload->>'delivery_id'
+            = EXCLUDED.payload->>'delivery_id'
+          AND session_delivery_notification_outbox.payload->>'completion_id'
+            = EXCLUDED.payload->>'completion_id'
+          AND session_delivery_notification_outbox.payload->>'relation_key'
+            = EXCLUDED.payload->>'relation_key'
+          AND session_delivery_notification_outbox.payload->>'delivery_intent'
+            = EXCLUDED.payload->>'delivery_intent'
+          AND (
+            (
+              session_delivery_notification_outbox.state = 'pending'
+              AND session_delivery_notification_outbox.lease_owner IS NULL
+              AND session_delivery_notification_outbox.projection_state
+                IN ('staged', 'publishing')
+            )
+            OR (
+              session_delivery_notification_outbox.state = 'claimed'
+              AND session_delivery_notification_outbox.projection_state = 'publishing'
+              AND (
+                session_delivery_notification_outbox.lease_owner = EXCLUDED.lease_owner
+                OR session_delivery_notification_outbox.lease_expires_at <= NOW()
+              )
+            )
+          )
         RETURNING delivery_id
       `;
-      if (!insertedOutbox[0]) {
+      if (!stagedOutbox[0]) {
         throw new Error(`notification outbox already exists: ${params.deliveryId}`);
       }
       await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {

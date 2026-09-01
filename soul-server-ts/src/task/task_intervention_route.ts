@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import type { AutoResumeCallback, AutoResumeTransition } from "./task_auto_resume_transition.js";
+import type {
+  AutoResumeCallback,
+  AutoResumeTransition,
+} from "./task_auto_resume_transition.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import {
@@ -235,9 +238,21 @@ export class TaskInterventionRoute {
           task,
           message,
           deferResumeUntilQueued,
-          ...(admission.row.attempt_count > 0
-            ? [{ publishUserMessage: false }]
-            : []),
+          {
+            ...(admission.row.attempt_count > 0
+              ? { publishUserMessage: false }
+              : {}),
+            ...(this.deps.deliveryLedgerGate
+              ? {
+                  afterRunningTransition: async () => {
+                    await this.deps.deliveryLedgerGate?.recordResult(admission, {
+                      autoResumed: true,
+                    });
+                    ledgerResultRecorded = true;
+                  },
+                }
+              : {}),
+          },
         );
       } else {
         result = await this.deps.autoResumeTransition.resume(
@@ -258,7 +273,7 @@ export class TaskInterventionRoute {
       ) {
         notificationDisposition = "auto_resume";
       }
-      if (this.deps.deliveryLedgerGate) {
+      if (this.deps.deliveryLedgerGate && !ledgerResultRecorded) {
         await this.deps.deliveryLedgerGate.recordResult(
           admission,
           result,

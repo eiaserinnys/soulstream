@@ -12,6 +12,8 @@ import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { DELIVERY_INTENTS } from "../../src/task/delivery_contract.js";
 import { buildCanonicalDeliveryPayload } from
   "../../src/task/delivery_payload.js";
+import { redeliverStoredDeliveryContent } from
+  "../../src/task/delivery_row_intervention.js";
 import { ClaudeRuntimeStartupRecovery } from
   "../../src/runtime/claude_runtime_startup_recovery.js";
 import { QueuedDeliveryTranscriptRecovery } from
@@ -995,6 +997,104 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       target_receipt_id: "transcript:assistant-result-uuid",
       consumed_at: expect.any(Date),
       last_error: "worker_restart_transcript_reconciled",
+    });
+  });
+
+  it("boot recovery converges a terminal queued delivery with its exact stale outbox", async () => {
+    const deliveryId = "delivery-r37-stale-outbox";
+    const relationKey = "relation-r37-stale-outbox";
+    await register(deliveryId, relationKey, {
+      targetSessionId: "caller-session",
+    });
+    await repository.claimForTarget(
+      deliveryId,
+      "caller-session",
+      "worker-before-restart",
+    );
+    await repository.beginDispatch(deliveryId, "worker-before-restart");
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      leaseOwner: "worker-before-restart",
+      targetSessionId: "caller-session",
+      disposition: "queued",
+      payload: notificationPayload(deliveryId, relationKey),
+    }, 0);
+
+    const task: Task = {
+      agentSessionId: "caller-session",
+      prompt: "previous turn",
+      status: "completed",
+      createdAt: new Date("2026-09-01T00:00:00.000Z"),
+      lastEventId: 77,
+      terminalEventId: 77,
+      lastReadEventId: 70,
+      interventionQueue: [],
+    };
+    const runningTransitions = vi.fn();
+    const executionStarts = vi.fn();
+    const autoResumeTransition = {
+      resume: vi.fn(async (
+        resumedTask: Task,
+        _message: InterventionMessage,
+        callback: (task: Task) => void,
+        options?: { afterRunningTransition?: () => Promise<void> },
+      ) => {
+        runningTransitions();
+        resumedTask.status = "initializing";
+        await options?.afterRunningTransition?.();
+        resumedTask.status = "running";
+        callback(resumedTask);
+        return { autoResumed: true } as const;
+      }),
+    };
+    const route = new TaskInterventionRoute({
+      getTask: () => task,
+      loadEvictedTask: async () => null,
+      rememberTask: () => {},
+      runningInterventionTransition: {
+        deliver: vi.fn(),
+        queueOnly: vi.fn(),
+      },
+      autoResumeTransition: autoResumeTransition as never,
+      deliveryLedgerGate: new TaskDeliveryLedgerGate(true, repository),
+      sessionNotificationPublisher: {
+        publish: vi.fn(async () => ({
+          published: true,
+          targetReceiptId: "event:r37-redelivery",
+        })),
+      },
+    });
+    const queuedRecovery = makeQueuedRecovery(
+      "r37-boot-recovery",
+      async (row) => ({
+        kind: "absent",
+        inputUuid: buildDeliveryInputUuid(row.delivery_id),
+      }),
+      async (row) => {
+        await redeliverStoredDeliveryContent(row, route, executionStarts);
+      },
+    );
+
+    await expect(queuedRecovery.recoverAfterNodeRestart("node-test"))
+      .resolves.toEqual({ claimed: 1, settled: 1 });
+    expect(runningTransitions).toHaveBeenCalledOnce();
+    expect(executionStarts).toHaveBeenCalledOnce();
+    expect(task.status).toBe("running");
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "delivered",
+      aggregate_state: "delivered",
+      target_receipt_id: "event:r37-redelivery",
+    });
+    await expect(repository.notifications.get(deliveryId)).resolves.toMatchObject({
+      state: "published",
+      projection_state: "published",
+      target_receipt_id: "event:r37-redelivery",
+    });
+
+    await repository.markConsumed(deliveryId, "turn:r37-redelivery");
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "consumed",
+      aggregate_state: "consumed",
     });
   });
 

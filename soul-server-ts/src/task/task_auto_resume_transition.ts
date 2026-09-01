@@ -43,10 +43,10 @@ export interface AutoResumeTransitionDeps {
  * Owns the ordered side effects that turn a completed/error/interrupted task
  * back into a running task for the next user turn:
  * resume capability validation -> caller metadata promotion -> user_message
- * persistence + separate durable running effect -> task state transition ->
- * user_message broadcast -> executor resume callback. Orch projects the
- * running status from the durable effect, so a closed host WebSocket cannot
- * lose the transition.
+ * persistence + separate durable running effect -> post-transition durable
+ * admission -> task state transition -> user_message broadcast -> executor
+ * resume callback. Orch projects the running status from the durable effect,
+ * so a closed host WebSocket cannot lose the transition.
  */
 export class AutoResumeTransition {
   constructor(private readonly deps: AutoResumeTransitionDeps) {}
@@ -66,7 +66,10 @@ export class AutoResumeTransition {
     task: Task,
     message: InterventionMessage,
     onResume: AutoResumeCallback,
-    options: { publishUserMessage?: boolean } = {},
+    options: {
+      publishUserMessage?: boolean;
+      afterRunningTransition?: () => Promise<void>;
+    } = {},
   ): Promise<{ autoResumed: true }> {
     const originalStatus = task.status;
     if (originalStatus === "running" && hasLiveExecutionEvidence(task)) {
@@ -110,18 +113,20 @@ export class AutoResumeTransition {
       }
       const application = await this.deps.persistence
         .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
-        reviewState: resumedReviewState,
-        transitionId: `resume:${transitionRevision}`,
-        ...(expectedTerminalEventId === undefined
-          ? {}
-          : { expectedTerminalEventId }),
-      });
-      applyCanonicalSessionProjection(task, application.canonicalSession);
+          reviewState: resumedReviewState,
+          transitionId: `resume:${transitionRevision}`,
+          ...(expectedTerminalEventId === undefined
+            ? {}
+            : { expectedTerminalEventId }),
+        });
       if (!application.applied) {
+        applyCanonicalSessionProjection(task, application.canonicalSession);
         throw new Error(
           `auto-resume running transition rejected for ${task.agentSessionId}`,
         );
       }
+      await options.afterRunningTransition?.();
+      applyCanonicalSessionProjection(task, application.canonicalSession);
       if (userMessageEvent) {
         await finishUserMessageEvent(task, userMessageEvent, this.deps);
       }

@@ -201,6 +201,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       task,
       expect.objectContaining({ deliveryId, deliveryIntent: "human_live_steer" }),
       expect.any(Function),
+      expect.objectContaining({ afterRunningTransition: expect.any(Function) }),
     );
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
@@ -442,7 +443,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       task,
       expect.objectContaining({ deliveryId, deliveryIntent: "durable_next_turn" }),
       expect.any(Function),
-      { publishUserMessage: false },
+      expect.objectContaining({
+        publishUserMessage: false,
+        afterRunningTransition: expect.any(Function),
+      }),
     );
   });
 
@@ -493,7 +497,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
 
       expect(result).toEqual({ autoResumed: true });
       expect(autoResumeTransition.resume).toHaveBeenCalledOnce();
-      expect(vi.mocked(autoResumeTransition.resume).mock.calls[0]).toHaveLength(3);
+      expect(vi.mocked(autoResumeTransition.resume).mock.calls[0]).toHaveLength(4);
       if (intent === "runtime_followup" || intent === "completion_notification") {
         expect(sessionNotificationPublisher.publish).toHaveBeenCalledWith(
           task,
@@ -1007,7 +1011,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(gate.recordFailure).toHaveBeenCalledOnce();
   });
 
-  it("does not start a resumed terminal task when ledger staging fails", async () => {
+  it("does not start a resumed terminal task when post-transition ledger staging fails", async () => {
     const deliveryId = "89898989-8989-4898-8989-898989898989";
     const stageError = new Error("notification staging lease expired");
     const gate = {
@@ -1024,8 +1028,8 @@ describe("TaskInterventionRoute.addIntervention", () => {
       makeSubject([task], gate);
     const activation = activationBarrier(Promise.resolve());
     vi.mocked(autoResumeTransition.resume).mockImplementation(
-      async (resumedTask, _message, callback) => {
-        callback(resumedTask, activation);
+      async (_resumedTask, _message, _callback, options) => {
+        await options?.afterRunningTransition?.();
         return { autoResumed: true };
       },
     );

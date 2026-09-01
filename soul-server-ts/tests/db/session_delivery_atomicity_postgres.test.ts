@@ -668,6 +668,136 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     })).resolves.toBeNull();
   });
 
+  it("reclaims a stale notification outbox for the exact same delivery identity", async () => {
+    const deliveryId = "delivery-stale-outbox-retry";
+    const relationKey = "relation-stale-outbox-retry";
+    const payload = notificationPayload(deliveryId, relationKey);
+    await register(deliveryId, relationKey);
+    await repository.claimForTarget(deliveryId, "caller-old", "worker-old");
+    await repository.beginDispatch(deliveryId, "worker-old");
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      leaseOwner: "worker-old",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload,
+    }, 0);
+    await repository.retryLeasedDelivery(
+      deliveryId,
+      "worker-old",
+      "worker stopped before publish",
+      0,
+    );
+    await repository.claimForTarget(deliveryId, "caller-old", "worker-retry");
+    await repository.beginDispatch(deliveryId, "worker-retry");
+
+    await expect(repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      leaseOwner: "worker-retry",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload,
+    })).resolves.toMatchObject({
+      delivery_id: deliveryId,
+      state: "queued",
+    });
+    await expect(repository.notifications.get(deliveryId)).resolves.toMatchObject({
+      delivery_id: deliveryId,
+      state: "claimed",
+      projection_state: "publishing",
+      lease_owner: "worker-retry",
+      payload: expect.objectContaining({
+        delivery_id: deliveryId,
+        completion_id: "completion-" + relationKey,
+        relation_key: relationKey,
+      }),
+    });
+  });
+
+  it("rejects an exact outbox retry while another writer still owns the live lease", async () => {
+    const deliveryId = "delivery-live-outbox-writer";
+    const relationKey = "relation-live-outbox-writer";
+    const payload = notificationPayload(deliveryId, relationKey);
+    await register(deliveryId, relationKey);
+    await repository.claimForTarget(deliveryId, "caller-old", "worker-live");
+    await repository.beginDispatch(deliveryId, "worker-live");
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      leaseOwner: "worker-live",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload,
+    });
+    await repository.retryLeasedDelivery(
+      deliveryId,
+      "worker-live",
+      "delivery retry raced live notification writer",
+      0,
+    );
+    await repository.claimForTarget(deliveryId, "caller-old", "worker-racing");
+    await repository.beginDispatch(deliveryId, "worker-racing");
+
+    await expect(repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      leaseOwner: "worker-racing",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload,
+    })).rejects.toThrow("notification outbox already exists: " + deliveryId);
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "dispatching",
+      lease_owner: "worker-racing",
+    });
+    await expect(repository.notifications.get(deliveryId)).resolves.toMatchObject({
+      state: "claimed",
+      lease_owner: "worker-live",
+    });
+  });
+
+  it("rejects a stale outbox retry with a competing delivery identity", async () => {
+    const deliveryId = "delivery-stale-outbox-identity";
+    const relationKey = "relation-stale-outbox-identity";
+    await register(deliveryId, relationKey);
+    await repository.claimForTarget(deliveryId, "caller-old", "worker-old");
+    await repository.beginDispatch(deliveryId, "worker-old");
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      leaseOwner: "worker-old",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload: notificationPayload(deliveryId, relationKey),
+    }, 0);
+    await repository.retryLeasedDelivery(
+      deliveryId,
+      "worker-old",
+      "worker stopped before publish",
+      0,
+    );
+    await repository.claimForTarget(deliveryId, "caller-old", "worker-retry");
+    await repository.beginDispatch(deliveryId, "worker-retry");
+
+    await expect(repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      leaseOwner: "worker-retry",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload: notificationPayload(
+        deliveryId,
+        relationKey,
+        "completion-competing-writer",
+      ),
+    })).rejects.toThrow("notification outbox already exists: " + deliveryId);
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      state: "dispatching",
+      lease_owner: "worker-retry",
+    });
+    await expect(repository.notifications.get(deliveryId)).resolves.toMatchObject({
+      payload: expect.objectContaining({
+        completion_id: "completion-" + relationKey,
+      }),
+    });
+  });
+
   it("recovers only the latest terminal revision and rechecks it at dispatch", async () => {
     await register("delivery-revision-42", "relation-revision-42");
     await harness.sql`
@@ -1646,6 +1776,24 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       payloadHash: `hash-${relationKey}`,
       payload: { text: "done" },
     });
+  }
+
+  function notificationPayload(
+    deliveryId: string,
+    relationKey: string,
+    completionId = "completion-" + relationKey,
+  ): Record<string, unknown> {
+    return {
+      text: "done",
+      user: "agent",
+      source: "completion_notifier",
+      delivery_id: deliveryId,
+      delivery_intent: "completion_notification",
+      completion_id: completionId,
+      relation_key: relationKey,
+      disposition: "auto_resume",
+      caller_info: null,
+    };
   }
 
 });
