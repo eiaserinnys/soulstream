@@ -24,7 +24,6 @@ import { classifyRunnerRegistrationSafely } from "./runner_recovery_classificati
 import {
   markRegistrationReaped,
   prepareRecoveredTask,
-  prepareRecoveredTerminalExecutionIdentity,
   requireRecoveryTask,
 } from "./runner_recovery_task.js";
 import { RunnerRegistrationControl } from "./runner_registration_control.js";
@@ -423,10 +422,7 @@ export class RunnerRecoveryCoordinator {
       if (closedRunnerTailRequiresDrain(closedRegistration)) {
         await this.options.closedTailDrainer.drain(closedRegistration);
       }
-      if (recoveredTask.executionOwnership) {
-        prepareRecoveredTask(recoveredTask, closedRegistration);
-        prepareRecoveredTerminalExecutionIdentity(recoveredTask, closedRegistration);
-      }
+      prepareRecoveredTask(recoveredTask, closedRegistration);
       const projectClosedRunner = this.options.taskManager.projectClosedRunner;
       if (!projectClosedRunner) {
         throw new Error("closed runner central projection is not configured");
@@ -642,9 +638,6 @@ export class RunnerRecoveryCoordinator {
     const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
     const lifecycle = hydrated.lifecycle;
     prepareRecoveredTask(task, hydrated);
-    if (mode !== "adopt") {
-      prepareRecoveredTerminalExecutionIdentity(task, hydrated);
-    }
     let attemptRunner: TaskRunnerRuntime | undefined;
     const completion = this.options.taskExecutor.recoverRegisteredRunner(
       task,

@@ -121,15 +121,6 @@ export function isExecutionOwnershipConflictError(
     );
 }
 
-export interface RecoveredExecutionOwnershipIdentity {
-  manifestId: string;
-  runtimeEnvIdentity: string;
-  registrationId: string;
-  pid: number;
-  startIdentity: string;
-  executionCommandId: string;
-}
-
 export interface ExecutionOwnershipObservation {
   manifestId: string | null;
   runtimeEnvIdentity: string | null;

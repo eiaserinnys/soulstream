@@ -137,39 +137,6 @@ export type EventSessionEffect =
       updated_at: string;
     }
   | {
-      kind: "runner_terminal_fact";
-      ownership_generation: number;
-      execution_command_id: string;
-      runner_fact: "completed" | "failed" | "reaped" | "closed";
-      termination_detail: string | null;
-      review_state: string;
-      last_assistant_text?: string | null;
-      updated_at: string;
-    }
-  | {
-      kind: "execution_release";
-      ownership_generation: number;
-      execution_command_id: string;
-      runner_fact: "completed" | "failed" | "reaped" | "closed";
-      termination_detail: string | null;
-      review_state: string;
-      last_assistant_text?: string | null;
-      updated_at: string;
-    }
-  | {
-      kind: "recovered_runner_terminal_fact";
-      manifest_id: string;
-      registration_id: string;
-      pid: number;
-      start_identity: string;
-      execution_command_id: string;
-      runner_fact: "completed" | "failed" | "reaped" | "closed";
-      termination_detail: string | null;
-      review_state: string;
-      last_assistant_text?: string | null;
-      updated_at: string;
-    }
-  | {
       kind: "terminal_transition";
       status: string;
       termination_reason: string;

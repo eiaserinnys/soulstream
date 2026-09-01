@@ -507,7 +507,6 @@ export class TaskExecutor {
         ...proof,
         ownershipGeneration: canonical.ownershipGeneration,
       };
-      task.recoveredExecutionOwnership = undefined;
       task.runnerTerminalFact = undefined;
       task.pendingExecutionExpectedTerminalEventId = undefined;
       resolveActivation();
@@ -1243,7 +1242,7 @@ export class TaskExecutor {
       await this.restoreDurableRunnerInterventions(task, runner);
       await task.interruptRequest;
       if (terminalObservation) {
-        this.lifecycleTransition.applyRecoveredRunnerTerminalFact(
+        this.lifecycleTransition.applyRunnerTerminalFact(
           task,
           terminalObservation.fact,
           terminalObservation.detail,

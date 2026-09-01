@@ -37,16 +37,6 @@ export type EventOutboxSessionEffect =
       updated_at: string;
     }
   | {
-      kind: "execution_release";
-      ownership_generation: number;
-      execution_command_id: string;
-      runner_fact: "completed" | "failed" | "reaped" | "closed";
-      termination_detail: string | null;
-      review_state: string;
-      last_assistant_text?: string | null;
-      updated_at: string;
-    }
-  | {
       kind: "execution_reserve";
       ownership_generation: number;
       owner_kind: "runner_process" | "adopted_runner" | "in_process";
@@ -150,29 +140,6 @@ export type EventOutboxSessionEffect =
       evidence_hash: string;
       minimum_lease_interval_ms: number;
       probe_only: boolean;
-      updated_at: string;
-    }
-  | {
-      kind: "runner_terminal_fact";
-      ownership_generation: number;
-      execution_command_id: string;
-      runner_fact: "completed" | "failed" | "reaped" | "closed";
-      termination_detail: string | null;
-      review_state: string;
-      last_assistant_text?: string | null;
-      updated_at: string;
-    }
-  | {
-      kind: "recovered_runner_terminal_fact";
-      manifest_id: string;
-      registration_id: string;
-      pid: number;
-      start_identity: string;
-      execution_command_id: string;
-      runner_fact: "completed" | "failed" | "reaped" | "closed";
-      termination_detail: string | null;
-      review_state: string;
-      last_assistant_text?: string | null;
       updated_at: string;
     }
   | {

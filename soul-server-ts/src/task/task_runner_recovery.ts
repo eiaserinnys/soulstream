@@ -52,31 +52,14 @@ export class TaskRunnerRecovery {
   }
 
   async projectClosed(task: Task, detail: string): Promise<boolean> {
-    // A closed registration admitted by an earlier scan cannot supersede a
-    // replacement that reserved or activated ownership while hydration ran.
-    const recoveredOwnership = task.recoveredExecutionOwnership;
-    const activeOwnership = task.executionOwnership;
-    const ownershipChanged = activeOwnership !== undefined && (
-      recoveredOwnership === undefined
-      || activeOwnership.manifestId !== recoveredOwnership.manifestId
-      || activeOwnership.registrationId !== recoveredOwnership.registrationId
-      || activeOwnership.pid !== recoveredOwnership.pid
-      || activeOwnership.startIdentity !== recoveredOwnership.startIdentity
-      || activeOwnership.executionCommandId !== recoveredOwnership.executionCommandId
-    );
-    if (
-      task.terminationEventRecorded
-      || ownershipChanged
-      || !activeOwnership
-    ) return false;
+    if (task.terminationEventRecorded) return false;
     const runner = task.runner;
     if (runner) releaseTaskRunner(task, runner);
     task.executionPromise = undefined;
-    return await this.deps.lifecycleTransition.projectRecoveredRunnerTerminalFact(
-      task,
-      "closed",
-      detail,
-    );
+    this.deps.lifecycleTransition.applyRunnerTerminalFact(task, "closed", detail);
+    return (
+      await this.deps.lifecycleTransition.persistExecutorFinalState(task)
+    ).terminalTransitionApplied;
   }
 
   async reconcileRecordedTerminalExecution(task: Task): Promise<boolean> {
@@ -113,10 +96,7 @@ export class TaskRunnerRecovery {
         },
       );
     applyCanonicalSessionProjection(task, application.canonicalSession);
-    if (application.applied) {
-      task.executionOwnership = undefined;
-      task.recoveredExecutionOwnership = undefined;
-    }
+    if (application.applied) task.executionOwnership = undefined;
     return application.applied;
   }
 

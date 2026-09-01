@@ -397,60 +397,6 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
         `;
     return canonicalTransitionApplication(rows, "execution backfill");
   }
-  if (effect.kind === "runner_terminal_fact") {
-    const rows = await sql<CanonicalTransitionRow[]>`
-      SELECT * FROM session_project_runner_terminal_fact(
-        ${envelope.session_id},
-        ${effect.ownership_generation},
-        ${effect.execution_command_id},
-        ${effect.runner_fact},
-        ${effect.termination_detail},
-        ${effect.review_state},
-        ${effect.last_assistant_text ?? null},
-        ${input.eventId},
-        ${new Date(effect.updated_at)}
-      )
-    `;
-    return canonicalTransitionApplication(rows, "runner terminal fact");
-  }
-  if (effect.kind === "execution_release") {
-    const rows = await sql<CanonicalTransitionRow[]>`
-      SELECT * FROM session_release_execution_ownership(
-        ${envelope.session_id},
-        ${effect.ownership_generation},
-        ${effect.execution_command_id},
-        ${effect.runner_fact},
-        ${effect.termination_detail},
-        ${effect.review_state},
-        ${effect.last_assistant_text ?? null},
-        ${input.eventId},
-        ${new Date(effect.updated_at)}
-      )
-    `;
-    return {
-      ...canonicalTransitionApplication(rows, "execution release"),
-      canonicalExecutionOwnership: null,
-    };
-  }
-  if (effect.kind === "recovered_runner_terminal_fact") {
-    const rows = await sql<CanonicalTransitionRow[]>`
-      SELECT * FROM session_project_recovered_runner_terminal_fact(
-        ${envelope.session_id},
-        ${effect.manifest_id},
-        ${effect.registration_id},
-        ${effect.pid},
-        ${effect.start_identity},
-        ${effect.execution_command_id},
-        ${effect.runner_fact},
-        ${effect.termination_detail},
-        ${effect.review_state},
-        ${effect.last_assistant_text ?? null},
-        ${input.eventId},
-        ${new Date(effect.updated_at)}
-      )
-    `;
-    return canonicalTransitionApplication(rows, "recovered runner terminal fact");
-  }
   if (effect.kind === "terminal_transition") {
     return await applyTerminalTransition(sql, envelope.session_id, input.eventId, effect);
   }

@@ -364,9 +364,7 @@ function isCanonicalTransitionEffect(
       | "execution_retire_terminal_ownership"
       | "execution_retire_recorded_terminal_identity"
       | "execution_orphaned_spawn"
-      | "execution_release"
-      | "runner_terminal_fact"
-      | "recovered_runner_terminal_fact";
+      ;
   }
 > {
   return effect?.kind === "running_transition"
@@ -381,9 +379,7 @@ function isCanonicalTransitionEffect(
     || effect?.kind === "execution_retire_terminal_ownership"
     || effect?.kind === "execution_retire_recorded_terminal_identity"
     || effect?.kind === "execution_orphaned_spawn"
-    || effect?.kind === "execution_release"
-    || effect?.kind === "runner_terminal_fact"
-    || effect?.kind === "recovered_runner_terminal_fact";
+    ;
 }
 
 function toReceiptEffectApplication(

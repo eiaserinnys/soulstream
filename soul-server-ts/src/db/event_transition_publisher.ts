@@ -100,37 +100,14 @@ export abstract class EventTransitionPublisher {
     );
   }
 
-  async releaseExecutionOwnershipAndWaitForApplication(
+  async enqueueTerminalTransitionAndWaitForApplication(
     sessionId: string,
     event: SSEEventPayload,
-    input: {
-      ownershipGeneration: number;
-      executionCommandId: string;
-      runnerFact: "completed" | "failed" | "reaped" | "closed";
-      terminationDetail: string | null;
-      reviewState: string;
-      lastAssistantText?: string | null;
-      updatedAt?: Date;
-    },
+    effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
+    executionGeneration?: number,
   ): Promise<EventSessionTransitionApplication> {
-    const updatedAt = input.updatedAt ?? new Date();
-    const effect: Extract<EventOutboxSessionEffect, { kind: "execution_release" }> = {
-      kind: "execution_release",
-      ownership_generation: input.ownershipGeneration,
-      execution_command_id: input.executionCommandId,
-      runner_fact: input.runnerFact,
-      termination_detail: input.terminationDetail,
-      review_state: input.reviewState,
-      last_assistant_text: input.lastAssistantText ?? null,
-      updated_at: updatedAt.toISOString(),
-    };
-    const record = await this.enqueueEvent(
-      sessionId,
-      event,
-      effect,
-      input.ownershipGeneration,
-    );
-    return await this.waitForTransitionApplication(sessionId, record, "execution release");
+    const record = await this.enqueueEvent(sessionId, event, effect, executionGeneration);
+    return await this.waitForTransitionApplication(sessionId, record, "terminal");
   }
 
   async reconcileRecordedTerminalExecutionAndWaitForApplication(
@@ -194,28 +171,6 @@ export abstract class EventTransitionPublisher {
       sessionId,
       record,
       "recorded terminal execution reconciliation",
-    );
-  }
-
-  async enqueueTerminalTransitionAndWaitForApplication(
-    sessionId: string,
-    event: SSEEventPayload,
-    effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
-  ): Promise<EventSessionTransitionApplication> {
-    const record = await this.enqueueEvent(sessionId, event, effect);
-    return await this.waitForTransitionApplication(sessionId, record, "terminal");
-  }
-
-  async enqueueRecoveredRunnerTerminalFactAndWaitForApplication(
-    sessionId: string,
-    event: SSEEventPayload,
-    effect: Extract<EventOutboxSessionEffect, { kind: "recovered_runner_terminal_fact" }>,
-  ): Promise<EventSessionTransitionApplication> {
-    const record = await this.enqueueEvent(sessionId, event, effect);
-    return await this.waitForTransitionApplication(
-      sessionId,
-      record,
-      "recovered runner terminal fact",
     );
   }
 

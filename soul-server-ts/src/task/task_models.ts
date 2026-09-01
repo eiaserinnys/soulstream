@@ -25,7 +25,6 @@ import type { AgentProfile } from "../agent_registry.js";
 import type { TaskRunnerRuntime } from "../runner/task_runner_runtime.js";
 import type {
   ExecutionOwnershipToken,
-  RecoveredExecutionOwnershipIdentity,
   RunnerTerminalFact,
 } from "./execution_ownership.js";
 
@@ -404,8 +403,6 @@ export interface Task {
   /** Durable generation fence for the materialized runner that may project terminal state. */
   executionOwnership?: ExecutionOwnershipToken;
   runnerTerminalFact?: RunnerTerminalFact;
-  /** Identity proof restored from runner storage before its generation token is known. */
-  recoveredExecutionOwnership?: RecoveredExecutionOwnershipIdentity;
   pendingExecutionExpectedTerminalEventId?: number | null;
 
   /** foreground Result 뒤 Claude background runtime을 소유하여 다음 turn까지 보존된 runner. */

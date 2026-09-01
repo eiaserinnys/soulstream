@@ -1,7 +1,6 @@
 import type { Logger } from "pino";
 
 import type { EventPersistence } from "../db/event_persistence.js";
-import { ExecutionOwnershipCoordinator } from "./execution_ownership_coordinator.js";
 
 import {
   isActiveTaskStatus,
@@ -59,20 +58,13 @@ export function isUserStopConverged(task: Task | undefined): boolean {
     task
     && isTerminalTaskStatus(task.status)
     && !task.executionOwnership
-    && !task.recoveredExecutionOwnership
     && !task.runner
     && !task.executionPromise,
   );
 }
 
 export class TaskLifecycleTransition {
-  private readonly executionOwnership?: ExecutionOwnershipCoordinator;
-
-  constructor(private readonly deps: TaskLifecycleTransitionDeps) {
-    this.executionOwnership = deps.persistence
-      ? new ExecutionOwnershipCoordinator(deps.persistence, deps.logger)
-      : undefined;
-  }
+  constructor(private readonly deps: TaskLifecycleTransitionDeps) {}
 
   async cancelRunningTask(task: Task | undefined): Promise<boolean> {
     if (!task) return false;
@@ -253,7 +245,7 @@ export class TaskLifecycleTransition {
     return await this.persistFinalState(task, retryUnrecordedTerminal);
   }
 
-  applyRecoveredRunnerTerminalFact(
+  applyRunnerTerminalFact(
     task: Task,
     runnerFact: RunnerTerminalFact,
     terminationDetail: string | null,
@@ -271,44 +263,6 @@ export class TaskLifecycleTransition {
     task.runnerTerminalFact = runnerFact;
   }
 
-  async projectRecoveredRunnerTerminalFact(
-    task: Task,
-    runnerFact: RunnerTerminalFact,
-    terminationDetail: string | null,
-  ): Promise<boolean> {
-    const ownership = task.recoveredExecutionOwnership;
-    if (!ownership) {
-      throw new Error("recovered execution ownership identity required");
-    }
-    if (!this.deps.persistence) {
-      throw new Error("recovered runner terminal persistence is required");
-    }
-
-    this.applyRecoveredRunnerTerminalFact(task, runnerFact, terminationDetail);
-
-    const completedAt = task.completedAt ?? new Date();
-    const application =
-      await this.deps.persistence.enqueueRecoveredRunnerTerminalFactAndWaitForApplication(
-        task.agentSessionId,
-        buildSessionEndedEvent(task),
-        {
-          kind: "recovered_runner_terminal_fact",
-          manifest_id: ownership.manifestId,
-          registration_id: ownership.registrationId,
-          pid: ownership.pid,
-          start_identity: ownership.startIdentity,
-          execution_command_id: ownership.executionCommandId,
-          runner_fact: runnerFact,
-          termination_detail: terminationDetail,
-          review_state: task.reviewState ?? "not_required",
-          last_assistant_text: task.lastAssistantText ?? null,
-          updated_at: completedAt.toISOString(),
-        },
-      );
-    applyCanonicalSessionProjection(task, application.canonicalSession);
-    return application.applied;
-  }
-
   private async persistFinalState(
     task: Task,
     retryUnrecordedTerminal = false,
@@ -318,19 +272,6 @@ export class TaskLifecycleTransition {
       task.reviewState = reviewStateAfterTerminal(task.reviewRequired === true);
     }
     let terminalTransitionApplied = false;
-    if (
-      retryUnrecordedTerminal
-      && isTerminalTaskStatus(task.status)
-      && task.terminationEventRecorded
-      && task.terminalEventId !== undefined
-      && task.executionOwnership
-      && task.recoveredExecutionOwnership
-    ) {
-      terminalTransitionApplied = await this.reconcileRecordedRecoveredTerminal(
-        task,
-        termination.detail,
-      );
-    }
     if (
       !terminalTransitionApplied
       && (termination.newlyFinalized || retryUnrecordedTerminal)
@@ -349,51 +290,6 @@ export class TaskLifecycleTransition {
     };
   }
 
-  private async reconcileRecordedRecoveredTerminal(
-    task: Task,
-    terminationDetail: string | null,
-  ): Promise<boolean> {
-    const ownership = task.executionOwnership!;
-    const recovered = task.recoveredExecutionOwnership!;
-    const terminalEventId = task.terminalEventId!;
-    if (!recordedTerminalIdentityMatches(ownership, recovered)) {
-      throw new Error(
-        `recorded terminal receipt ownership changed before recovery: ${task.agentSessionId}`,
-      );
-    }
-    if (!this.deps.persistence) {
-      throw new Error("recorded terminal receipt reconciliation persistence is required");
-    }
-    const application = await this.deps.persistence
-      .reconcileRecordedTerminalExecutionAndWaitForApplication(
-        task.agentSessionId,
-        {
-          ownershipGeneration: ownership.ownershipGeneration,
-          manifestId: recovered.manifestId,
-          runtimeEnvIdentity: recovered.runtimeEnvIdentity,
-          registrationId: recovered.registrationId,
-          pid: recovered.pid,
-          startIdentity: recovered.startIdentity,
-          executionCommandId: recovered.executionCommandId,
-          terminalEventId,
-          runnerFact: task.runnerTerminalFact ?? runnerFactForTask(task),
-          terminationDetail,
-          reviewState: task.reviewState ?? "not_required",
-          lastAssistantText: task.lastAssistantText ?? null,
-          updatedAt: task.completedAt ?? new Date(),
-        },
-      );
-    applyCanonicalSessionProjection(task, application.canonicalSession);
-    if (!application.applied) {
-      throw new Error(
-        `recorded terminal receipt reconciliation rejected: ${task.agentSessionId}`,
-      );
-    }
-    task.executionOwnership = undefined;
-    task.recoveredExecutionOwnership = undefined;
-    return true;
-  }
-
   private async enqueueAndAwaitSessionEnded(
     task: Task,
     terminationReason: string,
@@ -409,74 +305,25 @@ export class TaskLifecycleTransition {
       last_assistant_text: task.lastAssistantText ?? null,
       updated_at: (task.completedAt ?? new Date()).toISOString(),
     };
-    const ownership = task.executionOwnership;
-    const application = ownership
-      ? await this.executionOwnership!.release(
-          task.agentSessionId,
-          event,
-          {
-            ownershipGeneration: ownership.ownershipGeneration,
-            executionCommandId: ownership.executionCommandId,
-            runnerFact: task.runnerTerminalFact ?? runnerFactForTask(task),
-            terminationDetail,
-            reviewState: task.reviewState ?? "not_required",
-            lastAssistantText: task.lastAssistantText ?? null,
-            updatedAt: task.completedAt ?? new Date(),
-          },
-        )
-      : task.recoveredExecutionOwnership
-        ? await this.deps.persistence.enqueueRecoveredRunnerTerminalFactAndWaitForApplication(
-            task.agentSessionId,
-            event,
-            {
-              kind: "recovered_runner_terminal_fact",
-              manifest_id: task.recoveredExecutionOwnership.manifestId,
-              registration_id: task.recoveredExecutionOwnership.registrationId,
-              pid: task.recoveredExecutionOwnership.pid,
-              start_identity: task.recoveredExecutionOwnership.startIdentity,
-              execution_command_id:
-                task.recoveredExecutionOwnership.executionCommandId,
-              runner_fact: task.runnerTerminalFact ?? runnerFactForTask(task),
-              ...common,
-            },
-          )
-        : await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
-          task.agentSessionId,
-          event,
-          {
-            kind: "terminal_transition",
-            status: task.status,
-            termination_reason: terminationReason,
-            ...common,
-          },
-        );
+    const application = await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
+      task.agentSessionId,
+      event,
+      {
+        kind: "terminal_transition",
+        status: task.status,
+        termination_reason: terminationReason,
+        ...common,
+      },
+      task.executionOwnership?.ownershipGeneration,
+    );
     applyCanonicalSessionProjection(task, application.canonicalSession);
     if (
       isTerminalTaskStatus(task.status)
       && application.canonicalExecutionOwnership == null
     ) {
       task.executionOwnership = undefined;
-      task.recoveredExecutionOwnership = undefined;
     }
     return application.applied;
   }
 
-}
-
-function runnerFactForTask(task: Task): RunnerTerminalFact {
-  if (task.status === "completed") return "completed";
-  if (task.status === "interrupted") return "closed";
-  return "failed";
-}
-
-function recordedTerminalIdentityMatches(
-  ownership: NonNullable<Task["executionOwnership"]>,
-  recovered: NonNullable<Task["recoveredExecutionOwnership"]>,
-): boolean {
-  return ownership.manifestId === recovered.manifestId
-    && ownership.runtimeEnvIdentity === recovered.runtimeEnvIdentity
-    && ownership.registrationId === recovered.registrationId
-    && ownership.pid === recovered.pid
-    && ownership.startIdentity === recovered.startIdentity
-    && ownership.executionCommandId === recovered.executionCommandId;
 }
