@@ -901,6 +901,7 @@ export class TaskExecutor {
     terminalTurnReceipts: TaskDeliveryTurnReceipt[],
   ): Promise<void> {
     let turnInput = initialTurnInput;
+    const replayedUnconsumedRuntimeFollowups = new Set<string | InterventionMessage>();
     while (true) {
       if (
         task.pendingClaudeBackendRolloverFrom !== undefined
@@ -1076,11 +1077,12 @@ export class TaskExecutor {
       }
       await this.flushClaudeRuntimeTaskFollowups(task);
       for (const intervention of currentTurnInterventions) {
-        this.observeClaudeRuntimeFollowupNoResponse(
+        this.handleClaudeRuntimeFollowupReceipt(
           task,
           intervention,
           previousAssistantText,
           turnReceipt,
+          replayedUnconsumedRuntimeFollowups,
         );
       }
       await task.interruptRequest;
@@ -1423,36 +1425,56 @@ export class TaskExecutor {
     }
   }
 
-  private observeClaudeRuntimeFollowupNoResponse(
+  private handleClaudeRuntimeFollowupReceipt(
     task: Task,
     intervention: InterventionMessage | undefined,
     previousAssistantText: string,
     receipt: TaskDeliveryTurnReceipt | undefined,
+    replayedInExecution: Set<string | InterventionMessage>,
   ): void {
     if (intervention?.source !== CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) return;
+    if (!receipt) return;
     const nextAssistantText = normalizeAssistantText(task.lastAssistantText);
     const reason = resolveFollowupStallReason(previousAssistantText, nextAssistantText);
-    if (!reason) return;
-
     const consumptionReceiptObserved =
-      receipt?.hasConsumptionReceipt(intervention) ?? false;
+      receipt.hasConsumptionReceipt(intervention);
+    if (consumptionReceiptObserved) {
+      if (!reason) return;
+      this.logger.info(
+        {
+          sessionId: task.agentSessionId,
+          deliveryId: intervention.deliveryId,
+          followupKey: intervention.followupKey,
+          reason,
+          consumptionReceiptObserved,
+        },
+        "Claude runtime task follow-up ended without a new response after consumption",
+      );
+      return;
+    }
+
+    const replayKey = intervention.deliveryId ?? intervention;
+    const alreadyReplayed = replayedInExecution.has(replayKey);
     const details = {
       sessionId: task.agentSessionId,
       deliveryId: intervention.deliveryId,
       followupKey: intervention.followupKey,
-      reason,
+      reason: reason ?? "missing_consumption_receipt",
       consumptionReceiptObserved,
+      alreadyReplayed,
     };
-    if (consumptionReceiptObserved) {
-      this.logger.info(
+    if (!alreadyReplayed) {
+      replayedInExecution.add(replayKey);
+      enqueueInterventionOnce(task, intervention);
+      this.logger.warn(
         details,
-        "Claude runtime task follow-up ended without a new response after consumption",
+        "Claude runtime task follow-up had no consumption receipt; replaying the same delivery once",
       );
       return;
     }
     this.logger.warn(
       details,
-      "Claude runtime task follow-up had no consumption receipt; original delivery remains replayable",
+      "Claude runtime task follow-up still had no consumption receipt after exact replay; original delivery remains replayable",
     );
   }
 

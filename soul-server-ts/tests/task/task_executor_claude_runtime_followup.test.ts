@@ -315,7 +315,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     )).toBeUndefined();
   });
 
-  it("receipt 없는 runtime follow-up은 원 delivery를 미소비로 남기고 retry wrapper를 만들지 않는다", async () => {
+  it("receipt 없는 runtime follow-up은 같은 exact delivery를 1회 재전달해 소비한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     const parent = {
@@ -337,10 +337,71 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       recordTurnStarted: vi.fn(async () => undefined),
       recordConsumed: vi.fn(async () => undefined),
     };
+    const deliveredInputUuids: Array<string | undefined> = [];
+    let turnCount = 0;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        deliveredInputUuids.push(params.inputUuid);
+        turnCount += 1;
+        if (turnCount === 1) return;
+        yield { type: "complete", result: "", timestamp: 2 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      followup,
+      deliveryRecorder,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(turnCount).toBe(2);
+    expect(deliveredInputUuids[0]).toBeDefined();
+    expect(deliveredInputUuids[1]).toBe(deliveredInputUuids[0]);
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
+    expect(task.interventionQueue).toEqual([]);
+    expect(task.status).toBe("completed");
+  });
+
+  it("receipt가 계속 없으면 같은 exact delivery 재전달을 1회로 제한한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.interventionQueue.push({
+      text: "runtime follow-up prompt",
+      user: "system",
+      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      deliveryId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      deliveryIntent: "runtime_followup",
+      followupKey: "sess-1:task-still-lost",
+    });
+    const followup: ClaudeRuntimeTaskFollowupPort = {
+      collect: vi.fn(),
+      collectDetached: vi.fn(),
+      flush: vi.fn(),
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn(async () => undefined),
+      recordConsumed: vi.fn(async () => undefined),
+    };
+    let turnCount = 0;
     const engine: EnginePort = {
       backendId: "claude",
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
+        turnCount += 1;
         return;
       },
       async interrupt() { return true; },
@@ -362,6 +423,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
+    expect(turnCount).toBe(2);
     expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([]);
