@@ -461,7 +461,7 @@ export class TaskExecutor {
         await interventionBarrier;
       } catch (error) {
         this.logger.warn(
-          { error, sessionId: task.agentSessionId },
+          { err: error, sessionId: task.agentSessionId },
           "running intervention barrier failed after execution terminal",
         );
       }
@@ -475,7 +475,7 @@ export class TaskExecutor {
       await this.queuedTerminalResume?.(task);
     } catch (error) {
       this.logger.warn(
-        { error, sessionId: task.agentSessionId },
+        { err: error, sessionId: task.agentSessionId },
         "queued terminal delivery auto-resume failed",
       );
     }
