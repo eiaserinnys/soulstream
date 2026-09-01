@@ -23,8 +23,6 @@ export type OrchestratorMaintenanceServiceOptions = {
   readonly memoryStats?: Pick<MemoryStatsCollector, "summary" | "collect">;
   readonly onInfo?: (event: OrchestratorMemoryLogEvent) => void;
   readonly onWarning?: (event: OrchestratorMemoryLogEvent) => void;
-  readonly recoverPendingImmediateDeliveries?: () => Promise<void>;
-  readonly onDeliveryRecoveryError?: (error: unknown) => void;
   readonly intervalMs?: number;
   readonly nowMs?: () => number;
 };
@@ -43,7 +41,6 @@ export class OrchestratorMaintenanceService {
   private timer: ReturnType<typeof setInterval> | undefined;
   private lastSweepStats: OrchestratorMaintenanceSweepStats | null = null;
   private lastMemoryLogAtMs: number | undefined;
-  private deliveryRecovery: Promise<void> | undefined;
 
   constructor(private readonly options: OrchestratorMaintenanceServiceOptions) {
     this.intervalMs = options.intervalMs ?? ORCHESTRATOR_MAINTENANCE_INTERVAL_MS;
@@ -55,22 +52,16 @@ export class OrchestratorMaintenanceService {
 
   start(): void {
     if (this.timer !== undefined) return;
-    this.runMaintenanceOnce();
+    this.sweepOnce();
     this.timer = setInterval(() => {
-      this.runMaintenanceOnce();
+      this.sweepOnce();
     }, this.intervalMs);
   }
 
-  async stop(): Promise<void> {
-    if (this.timer !== undefined) {
-      clearInterval(this.timer);
-      this.timer = undefined;
-    }
-    await this.waitForSettled();
-  }
-
-  async waitForSettled(): Promise<void> {
-    await this.deliveryRecovery;
+  stop(): void {
+    if (this.timer === undefined) return;
+    clearInterval(this.timer);
+    this.timer = undefined;
   }
 
   sweepOnce(): OrchestratorMaintenanceSweepStats {
@@ -91,18 +82,6 @@ export class OrchestratorMaintenanceService {
 
   getLastSweepStats(): OrchestratorMaintenanceSweepStats | null {
     return this.lastSweepStats;
-  }
-
-  private runMaintenanceOnce(): void {
-    this.sweepOnce();
-    const recover = this.options.recoverPendingImmediateDeliveries;
-    if (!recover || this.deliveryRecovery) return;
-    const recovery = recover()
-      .catch((error: unknown) => this.options.onDeliveryRecoveryError?.(error))
-      .finally(() => {
-        if (this.deliveryRecovery === recovery) this.deliveryRecovery = undefined;
-      });
-    this.deliveryRecovery = recovery;
   }
 
   private logMemoryIfDue(stats: OrchestratorMaintenanceSweepStats): void {

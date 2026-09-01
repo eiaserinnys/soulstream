@@ -116,42 +116,4 @@ describe("OrchestratorMaintenanceService", () => {
     service.stop();
   });
 
-  it("retries due immediate deliveries on the existing maintenance cadence", async () => {
-    vi.useFakeTimers();
-    let deliveryState: "pending" | "consumed" = "pending";
-    const attempts: string[] = [];
-    const recoverPendingImmediateDeliveries = vi.fn(async () => {
-      if (deliveryState !== "pending") return;
-      attempts.push(`attempt-${attempts.length + 1}`);
-      if (attempts.length === 2) deliveryState = "consumed";
-    });
-    const service = new OrchestratorMaintenanceService({
-      sessionCache: {
-        sweepExpired: () => ({
-          terminalSessions: 0,
-          disconnectedSessions: 0,
-          total: 0,
-        }),
-      },
-      pushNotifier: {
-        sweepExpired: () => ({
-          toolInputs: 0,
-          notificationEvents: 0,
-          total: 0,
-        }),
-      },
-      recoverPendingImmediateDeliveries,
-    });
-
-    service.start();
-    await service.waitForSettled();
-    expect(deliveryState).toBe("pending");
-
-    await vi.advanceTimersByTimeAsync(ORCHESTRATOR_MAINTENANCE_INTERVAL_MS);
-    await service.waitForSettled();
-
-    expect(attempts).toEqual(["attempt-1", "attempt-2"]);
-    expect(deliveryState).toBe("consumed");
-    await service.stop();
-  });
 });
