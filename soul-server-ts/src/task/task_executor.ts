@@ -902,6 +902,7 @@ export class TaskExecutor {
   ): Promise<void> {
     let turnInput = initialTurnInput;
     const replayedUnconsumedRuntimeFollowups = new Set<string | InterventionMessage>();
+    const pendingExactRuntimeFollowupReplays: InterventionMessage[] = [];
     while (true) {
       if (
         task.pendingClaudeBackendRolloverFrom !== undefined
@@ -1076,16 +1077,34 @@ export class TaskExecutor {
         await this.compactClaudeContextIfNeeded(task, agent, runner);
       }
       await this.flushClaudeRuntimeTaskFollowups(task);
+      let runtimeFollowupReceiptMissing = false;
       for (const intervention of currentTurnInterventions) {
-        this.handleClaudeRuntimeFollowupReceipt(
+        runtimeFollowupReceiptMissing = this.handleClaudeRuntimeFollowupReceipt(
           task,
           intervention,
           previousAssistantText,
           turnReceipt,
           replayedUnconsumedRuntimeFollowups,
-        );
+          pendingExactRuntimeFollowupReplays,
+        ) || runtimeFollowupReceiptMissing;
+      }
+      if (runtimeFollowupReceiptMissing) {
+        for (const intervention of currentTurnInterventions) {
+          if (intervention.source !== CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) {
+            enqueueInterventionOnce(task, intervention);
+          }
+        }
       }
       await task.interruptRequest;
+      const exactRuntimeFollowupReplay = pendingExactRuntimeFollowupReplays.shift();
+      if (exactRuntimeFollowupReplay && task.status === "running") {
+        turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+          task,
+          agent,
+          [exactRuntimeFollowupReplay],
+        );
+        continue;
+      }
       const transition = resolveTurnLoopTransition(task, agent);
       if (transition.kind === "awaiting_runtime") {
         await this.publishPendingClaudeRuntimeAfterTurnError(task);
@@ -1431,15 +1450,16 @@ export class TaskExecutor {
     previousAssistantText: string,
     receipt: TaskDeliveryTurnReceipt | undefined,
     replayedInExecution: Set<string | InterventionMessage>,
-  ): void {
-    if (intervention?.source !== CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) return;
-    if (!receipt) return;
+    pendingExactReplays: InterventionMessage[],
+  ): boolean {
+    if (intervention?.source !== CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) return false;
+    if (!receipt) return false;
     const nextAssistantText = normalizeAssistantText(task.lastAssistantText);
     const reason = resolveFollowupStallReason(previousAssistantText, nextAssistantText);
     const consumptionReceiptObserved =
       receipt.hasConsumptionReceipt(intervention);
     if (consumptionReceiptObserved) {
-      if (!reason) return;
+      if (!reason) return false;
       this.logger.info(
         {
           sessionId: task.agentSessionId,
@@ -1450,7 +1470,7 @@ export class TaskExecutor {
         },
         "Claude runtime task follow-up ended without a new response after consumption",
       );
-      return;
+      return false;
     }
 
     const replayKey = intervention.deliveryId ?? intervention;
@@ -1465,17 +1485,18 @@ export class TaskExecutor {
     };
     if (!alreadyReplayed) {
       replayedInExecution.add(replayKey);
-      enqueueInterventionOnce(task, intervention);
+      pendingExactReplays.push(intervention);
       this.logger.warn(
         details,
         "Claude runtime task follow-up had no consumption receipt; replaying the same delivery once",
       );
-      return;
+      return true;
     }
     this.logger.warn(
       details,
       "Claude runtime task follow-up still had no consumption receipt after exact replay; original delivery remains replayable",
     );
+    return true;
   }
 
   private async publishClaudeRuntimeFollowupEnqueueFailed(

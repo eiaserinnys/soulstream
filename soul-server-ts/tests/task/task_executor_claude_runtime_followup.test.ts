@@ -430,6 +430,78 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     expect(task.status).toBe("completed");
   });
 
+  it("exact delivery 재전달은 동시에 들어온 사용자 turn과 분리한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.interventionQueue.push({
+      text: "runtime follow-up prompt",
+      user: "system",
+      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      deliveryId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      deliveryIntent: "runtime_followup",
+      followupKey: "sess-1:task-lost-with-user",
+    });
+    const followup: ClaudeRuntimeTaskFollowupPort = {
+      collect: vi.fn(),
+      collectDetached: vi.fn(),
+      flush: vi.fn(),
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn(async () => undefined),
+      recordConsumed: vi.fn(async () => undefined),
+    };
+    const prompts: string[] = [];
+    const deliveredInputUuids: Array<string | undefined> = [];
+    let turnCount = 0;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        prompts.push(params.prompt);
+        deliveredInputUuids.push(params.inputUuid);
+        turnCount += 1;
+        if (turnCount === 1) {
+          task.interventionQueue.push({
+            text: "?",
+            user: "alice",
+            deliveryId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          });
+          return;
+        }
+        yield { type: "complete", result: "", timestamp: turnCount } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      followup,
+      deliveryRecorder,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(turnCount).toBe(3);
+    expect(prompts).toEqual([
+      "runtime follow-up prompt",
+      "runtime follow-up prompt",
+      "?",
+    ]);
+    expect(deliveredInputUuids[1]).toBe(deliveredInputUuids[0]);
+    expect(deliveredInputUuids[2]).not.toBe(deliveredInputUuids[1]);
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(2);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(2);
+    expect(task.status).toBe("completed");
+  });
+
   it("interrupt로 종료된 turn은 runtime follow-up보다 finalizer를 먼저 완료한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
