@@ -80,7 +80,13 @@ describe("runner registration quarantine", () => {
     await expect(quarantineUnreadableRunnerRegistration(
       stateDirectory,
       failure!,
-      { inspectProcess: async () => ({ alive: true, startIdentity: "start-8001" }) },
+      {
+        inspectProcess: async () => ({ alive: true, startIdentity: "start-8001" }),
+        inspectWriterLock: async () => ({
+          kind: "held",
+          owner: { pid: 8_001, startIdentity: "start-8001" },
+        }),
+      },
     )).resolves.toEqual({ status: "retained", reason: "runner_alive" });
     await expect(access(stale.paths.sessionDirectory)).resolves.toBeUndefined();
   });
@@ -106,6 +112,23 @@ describe("runner registration quarantine", () => {
       failure!,
       { inspectProcess: async () => ({ alive: false, startIdentity: null }) },
     )).resolves.toMatchObject({ status: "quarantined", pid: 9_001 });
+    await expect(access(paths.sessionDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("quarantines a free-lock directory without requiring pid evidence", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runner-registration-no-pid-"));
+    temporaryDirectories.push(root);
+    const stateDirectory = join(root, "runner-state");
+    const paths = runnerProcessPaths(stateDirectory, "session-no-pid");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, JSON.stringify(childConfig("session-no-pid", paths)));
+    const [failure] = (await scanRunnerRegistrations(stateDirectory)).errors;
+
+    await expect(quarantineUnreadableRunnerRegistration(
+      stateDirectory,
+      failure!,
+      { inspectWriterLock: async () => ({ kind: "free" }) },
+    )).resolves.toMatchObject({ status: "quarantined", pid: null });
     await expect(access(paths.sessionDirectory)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

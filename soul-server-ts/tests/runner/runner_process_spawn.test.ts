@@ -14,8 +14,8 @@ import { readAuthoritativeRunnerLifecycle } from "../../src/runner/runner_lifecy
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import {
   defaultProcessOwnershipLockDependencies,
-  processStartIdentitiesMatch,
 } from "../../src/runner/runner_process_lock.js";
+import type { RunnerWriterLockState } from "../../src/runner/runner_writer_lock.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import {
@@ -230,7 +230,6 @@ describe("RunnerProcessSpawner", () => {
       signalPid: vi.fn(),
       now: () => 0,
       delay: async () => {},
-      readLifecycle: async () => null,
     });
 
     await spawner.invalidateRegistration(paths, "registration-a");
@@ -277,7 +276,6 @@ describe("RunnerProcessSpawner", () => {
       signalPid: vi.fn(),
       now: () => Date.parse("2026-08-21T00:00:00.000Z"),
       delay: async () => {},
-      readLifecycle: async () => null,
     });
 
     await spawner.retireTerminalRegistration(paths, "registration-a");
@@ -294,25 +292,22 @@ describe("RunnerProcessSpawner", () => {
   it.each([
     {
       condition: "the recorded pid is dead",
-      pidAlive: false,
-      observedStartIdentity: null,
+      lockState: freeWriterLock(),
       shouldRetire: true,
     },
     {
       condition: "the recorded pid has been reused",
-      pidAlive: true,
-      observedStartIdentity: "start-reused-process",
+      lockState: freeWriterLock(),
       shouldRetire: true,
     },
     {
       condition: "the exact recorded process is still live",
-      pidAlive: true,
-      observedStartIdentity: "start-2000000000",
+      lockState: heldWriterLock(2_000_000_000, "start-2000000000"),
       shouldRetire: false,
     },
   ])(
-    "uses process absence proof when the registration sidecar is absent: $condition",
-    async ({ pidAlive, observedStartIdentity, shouldRetire }) => {
+    "uses the writer lock when the registration sidecar is absent: $condition",
+    async ({ lockState, shouldRetire }) => {
       const params = await input();
       const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
       const commitOwnership = vi.fn(async () => true);
@@ -322,11 +317,9 @@ describe("RunnerProcessSpawner", () => {
         validateEntry: async () => {},
         spawnProcess: () => ({ pid: 4127, unref: vi.fn() }),
         registerPid: async () => {},
-        inspectProcess: async () => ({
-          alive: pidAlive,
-          startIdentity: observedStartIdentity,
-        }),
-        isPidAlive: () => pidAlive,
+        inspectProcess: async () => ({ alive: true, startIdentity: "unreachable-probe" }),
+        inspectWriterLock: async () => lockState,
+        isPidAlive: () => true,
         signalPid,
         now: () => Date.parse("2026-08-29T00:00:00.000Z"),
         delay: async () => {},
@@ -351,16 +344,11 @@ describe("RunnerProcessSpawner", () => {
     },
   );
 
-  it("never signals a reused pid whose cross-format identity falls inside the fuzzy window", async () => {
+  it("never probes or signals a reused pid when the writer lock is free", async () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
     const pid = 2_000_000_000;
-    const recordedStartMs = 1_700_000_000_123;
-    const recordedIdentity = `node-start-${recordedStartMs}`;
-    const reusedWindowsTicks = 621_355_968_000_000_000n
-      + BigInt(recordedStartMs + 1_000) * 10_000n;
-    const reusedIdentity = `windows-process-${reusedWindowsTicks}`;
-    expect(processStartIdentitiesMatch(recordedIdentity, reusedIdentity)).toBe(true);
+    const recordedIdentity = "node-start-1700000000123";
 
     await mkdir(paths.sessionDirectory, { recursive: true });
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
@@ -373,15 +361,19 @@ describe("RunnerProcessSpawner", () => {
     });
     await writeFile(paths.pidPath, `${pid}\n`, { mode: 0o600 });
     const commitOwnership = vi.fn(async () => true);
-    let alive = true;
-    const signalPid = vi.fn(() => { alive = false; });
+    const inspectProcess = vi.fn(async () => ({
+      alive: true,
+      startIdentity: "windows-process-638355968011230000",
+    }));
+    const signalPid = vi.fn();
     const spawner = new RunnerProcessSpawner({
       prepareDatabase,
       validateEntry: async () => {},
       spawnProcess: () => ({ pid: 4127, unref: vi.fn() }),
       registerPid: async () => {},
-      inspectProcess: async () => ({ alive: true, startIdentity: reusedIdentity }),
-      isPidAlive: () => alive,
+      inspectProcess,
+      inspectWriterLock: async () => freeWriterLock(),
+      isPidAlive: () => true,
       signalPid,
       now: () => Date.parse("2026-08-29T00:00:00.000Z"),
       delay: async () => {},
@@ -395,6 +387,7 @@ describe("RunnerProcessSpawner", () => {
     }, commitOwnership)).resolves.toBeUndefined();
 
     expect(signalPid).not.toHaveBeenCalled();
+    expect(inspectProcess).not.toHaveBeenCalled();
     expect(commitOwnership).toHaveBeenCalledOnce();
   });
 
@@ -445,6 +438,7 @@ describe("RunnerProcessSpawner", () => {
 
   it("terminates a live prior pid before spawning its replacement", async () => {
     let alive = true;
+    let replacementSpawned = false;
     const signals: NodeJS.Signals[] = [];
     const params = await input();
     const first = new RunnerProcessSpawner({
@@ -462,9 +456,15 @@ describe("RunnerProcessSpawner", () => {
     const replacement = new RunnerProcessSpawner({
       prepareDatabase,
       validateEntry: async () => {},
-      spawnProcess: () => ({ pid: 5002, unref: vi.fn() }),
+      spawnProcess: () => {
+        replacementSpawned = true;
+        return { pid: 5002, unref: vi.fn() };
+      },
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
+      inspectWriterLock: async () => replacementSpawned
+        ? heldWriterLock(5002)
+        : alive ? heldWriterLock(5001) : freeWriterLock(),
       isPidAlive: (pid) => pid === 5001 && alive,
       signalPid: (_pid, signal) => {
         signals.push(signal);
@@ -507,7 +507,7 @@ describe("RunnerProcessSpawner", () => {
     expect(spawnProcess).toHaveBeenCalledOnce();
   });
 
-  it("fails closed before cleanup when mismatched pid evidence has a live candidate", async () => {
+  it("ignores mismatched pid residue when the session lock is free", async () => {
     const params = await input();
     const paths = await writeDisagreedRegistration(params, 5211, 5212);
     const spawnProcess = vi.fn(() => ({ pid: 5213, unref: vi.fn() }));
@@ -516,28 +516,28 @@ describe("RunnerProcessSpawner", () => {
       prepareDatabase,
       validateEntry: async () => {},
       spawnProcess,
-      registerPid: async () => {},
-      inspectProcess: async (pid) => pid === 5211
-        ? { alive: true, startIdentity: "live-5211" }
-        : { alive: false, startIdentity: null },
-      isPidAlive: (pid) => pid === 5211,
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `start-${pid}` }),
+      isPidAlive: (pid) => pid === 5211 || pid === 5213,
       signalPid,
       now: () => 0,
       delay: async () => {},
     });
 
-    await expect(spawner.spawn(params)).rejects.toThrow(
-      "runner pid evidence disagrees",
-    );
+    await expect(spawner.spawn(params)).resolves.toMatchObject({
+      pid: 5213,
+      adopted: false,
+    });
 
     expect(signalPid).not.toHaveBeenCalled();
-    expect(spawnProcess).not.toHaveBeenCalled();
-    await expect(readFile(paths.pidPath, "utf8")).resolves.toBe("5212\n");
+    expect(spawnProcess).toHaveBeenCalledOnce();
+    await expect(readFile(paths.pidPath, "utf8")).resolves.toBe("5213\n");
   });
 
   it("waits a fresh grace window after SIGKILL before declaring termination failure", async () => {
     let now = 0;
     let alive = true;
+    let replacementSpawned = false;
     const signals: NodeJS.Signals[] = [];
     const params = await input();
     const initial = new RunnerProcessSpawner({
@@ -550,12 +550,18 @@ describe("RunnerProcessSpawner", () => {
     const registered = await initial.spawn(params);
     const replacement = new RunnerProcessSpawner({
       prepareDatabase, validateEntry: async () => {},
-      spawnProcess: () => ({ pid: 6102, unref: vi.fn() }),
+      spawnProcess: () => {
+        replacementSpawned = true;
+        return { pid: 6102, unref: vi.fn() };
+      },
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async (pid) => ({
         alive: pid === 6102 ? true : alive,
         startIdentity: `start-${pid}`,
       }),
+      inspectWriterLock: async () => replacementSpawned
+        ? heldWriterLock(6102, "start-6102")
+        : alive ? heldWriterLock(6101, "start-6101") : freeWriterLock(),
       isPidAlive: (pid) => pid === 6101 && alive,
       signalPid: (_pid, signal) => { signals.push(signal); },
       now: () => now,
@@ -572,7 +578,7 @@ describe("RunnerProcessSpawner", () => {
     expect(now).toBeGreaterThan(2_000);
   });
 
-  it("refuses SIGKILL when the pid start identity changes during grace", async () => {
+  it("refuses SIGKILL when the writer lock owner changes during grace", async () => {
     let now = 0;
     let inspections = 0;
     const params = await input();
@@ -589,10 +595,10 @@ describe("RunnerProcessSpawner", () => {
       prepareDatabase, validateEntry: async () => {},
       spawnProcess: () => ({ pid: 6202, unref: vi.fn() }),
       registerPid: async () => {},
-      inspectProcess: async () => ({
-        alive: true,
-        startIdentity: ++inspections === 1 ? "start-6201" : "reused-process",
-      }),
+      inspectProcess: async () => ({ alive: true, startIdentity: "unreachable-probe" }),
+      inspectWriterLock: async () => ++inspections === 1
+        ? heldWriterLock(6201, "start-6201")
+        : heldWriterLock(9_999, "unrelated-owner"),
       isPidAlive: (pid) => pid === 6201,
       signalPid,
       now: () => now,
@@ -600,7 +606,7 @@ describe("RunnerProcessSpawner", () => {
     });
 
     await expect(replacement.spawn(params)).rejects.toThrow(
-      "runner process identity changed before SIGKILL",
+      "runner writer lock owner changed before SIGKILL",
     );
     expect(signalPid).toHaveBeenCalledOnce();
     expect(signalPid).toHaveBeenCalledWith(6201, "SIGTERM");
@@ -623,7 +629,9 @@ describe("RunnerProcessSpawner", () => {
       delay: async () => {},
     });
 
-    await expect(spawner.spawn(params)).rejects.toThrow("runner writer lock already held");
+    await expect(spawner.spawn(params)).rejects.toThrow(
+      "runner writer lock ownership unavailable",
+    );
 
     await expect(readFile(paths.lockPath, "utf8"))
       .resolves.toBe("prior-runner-ownership\n");
@@ -789,23 +797,25 @@ describe("RunnerProcessSpawner", () => {
     });
 
     let runnerAlive = true;
+    let replacementSpawned = false;
     const signalPid = vi.fn((_pid: number) => { runnerAlive = false; });
-    const spawnProcess = vi.fn(() => ({ pid: 5103, unref: vi.fn() }));
+    const spawnProcess = vi.fn(() => {
+      replacementSpawned = true;
+      return { pid: 5103, unref: vi.fn() };
+    });
     const recoveredHost = new RunnerProcessSpawner({
       prepareDatabase,
       validateEntry: async () => {},
       spawnProcess,
       registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
       inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
+      inspectWriterLock: async () => replacementSpawned
+        ? heldWriterLock(5103)
+        : runnerAlive ? heldWriterLock(5102) : freeWriterLock(),
       isPidAlive: (pid) => pid === 5102 && runnerAlive,
       signalPid,
       now: () => 0,
       delay: async () => {},
-      readLifecycle: async (path) => await readAuthoritativeRunnerLifecycle(path, {
-        lifecycleSummaryOptions: {
-          renameFile: persistentRenameFailure,
-        },
-      }),
     });
     const recoveryLifecycle = await readAuthoritativeRunnerLifecycle(paths.databasePath, {
       lifecycleSummaryOptions: {
@@ -820,7 +830,7 @@ describe("RunnerProcessSpawner", () => {
     }))).resolves.toMatchObject({ pid: 5102, adopted: true });
     await expect(recoveredHost.spawn(params)).resolves.toMatchObject({ pid: 5103, adopted: false });
 
-    expect(persistentRenameFailure).toHaveBeenCalledTimes(3);
+    expect(persistentRenameFailure).toHaveBeenCalledTimes(2);
     expect(signalPid).toHaveBeenCalledWith(5102, "SIGTERM");
     expect(spawnProcess).toHaveBeenCalledOnce();
   });
@@ -872,6 +882,7 @@ describe("RunnerProcessSpawner", () => {
 
   it("terminates the detached child by exact identity when pid registration fails", async () => {
     let alive = true;
+    let spawned = false;
     const unref = vi.fn();
     const signalPid = vi.fn((_pid: number, signal: NodeJS.Signals) => {
       expect(signal).toBe("SIGTERM");
@@ -880,9 +891,15 @@ describe("RunnerProcessSpawner", () => {
     const spawner = new RunnerProcessSpawner({
       prepareDatabase,
       validateEntry: async () => {},
-      spawnProcess: () => ({ pid: 5004, unref }),
+      spawnProcess: () => {
+        spawned = true;
+        return { pid: 5004, unref };
+      },
       registerPid: async () => { throw new Error("pid registration denied"); },
       inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
+      inspectWriterLock: async () => spawned && alive
+        ? heldWriterLock(5004)
+        : freeWriterLock(),
       isPidAlive: (pid) => pid === 5004 && alive,
       signalPid,
       now: () => 0,
@@ -912,6 +929,17 @@ function registrationFor(
     pidStartIdentity: `test-${spawned.pid}`,
     ...overrides,
   };
+}
+
+function freeWriterLock(): RunnerWriterLockState {
+  return { kind: "free" };
+}
+
+function heldWriterLock(
+  pid: number,
+  startIdentity = `test-${pid}`,
+): RunnerWriterLockState {
+  return { kind: "held", owner: { pid, startIdentity } };
 }
 
 async function input() {

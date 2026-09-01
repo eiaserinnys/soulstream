@@ -19,6 +19,7 @@ import {
 import { retireTerminalRunnerRegistrationFiles } from
   "../../src/runner/runner_registration_mutation.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import type { RunnerWriterLockState } from "../../src/runner/runner_writer_lock.js";
 
 const directories: string[] = [];
 const ORIGINAL_PID = 73_101;
@@ -151,6 +152,7 @@ async function createSpawnFailureHarness(mode: SpawnFailureMode) {
   let registerCount = 0;
   let now = 0;
   let cleanupAllowed = false;
+  let writerOwner: { pid: number; startIdentity: string } | null = null;
   const signalPid = vi.fn((pid: number, _signal: NodeJS.Signals) => {
     const process = processes.get(pid);
     if (!process) throw new Error(`virtual process missing: ${pid}`);
@@ -175,6 +177,10 @@ async function createSpawnFailureHarness(mode: SpawnFailureMode) {
           ? ORIGINAL_START_IDENTITY
           : `start-${pid}`,
       });
+      writerOwner = {
+        pid,
+        startIdentity: pid === ORIGINAL_PID ? ORIGINAL_START_IDENTITY : `start-${pid}`,
+      };
       return { pid, unref: vi.fn() };
     },
     waitForChildRegistrationIdentity: async (registrationPaths, pending, pid) => {
@@ -191,6 +197,7 @@ async function createSpawnFailureHarness(mode: SpawnFailureMode) {
       if (registerCount !== 1) return;
       if (mode === "pid_reuse") {
         processes.set(pid, { alive: true, startIdentity: REUSED_START_IDENTITY });
+        writerOwner = null;
       }
       throw new Error("pid registration denied");
     },
@@ -199,6 +206,13 @@ async function createSpawnFailureHarness(mode: SpawnFailureMode) {
       return process?.alive
         ? { alive: true, startIdentity: process.startIdentity }
         : { alive: false, startIdentity: null };
+    },
+    inspectWriterLock: async (): Promise<RunnerWriterLockState> => {
+      if (!writerOwner) return { kind: "free" };
+      const process = processes.get(writerOwner.pid);
+      return process?.alive && process.startIdentity === writerOwner.startIdentity
+        ? { kind: "held", owner: writerOwner }
+        : { kind: "free" };
     },
     isPidAlive: (pid) => processes.get(pid)?.alive ?? false,
     signalPid,

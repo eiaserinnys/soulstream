@@ -1,8 +1,6 @@
 # 메시지 도착에서 종단까지
 
-최종 대조 커밋 SHA: `200b40c51de1e3079dcc88dcbdccc9b3832ad1c0`
-
-> 상태 배지: **R26 반영 완료 · R31b 진행 중 — 머지 시 갱신 필요**
+최종 대조 커밋 SHA: `8446f445b5b8cab1636d71a353b1cadfb72ffc48`
 
 > 범위 주석: REST·내부 세션 송신·노드 명령은 `TaskManager.addIntervention` 이후 하나의 경로로 수렴한다.
 
@@ -23,8 +21,8 @@
 | 13. running 전이와 메시지 기록 | `soul-server-ts/src/task/task_auto_resume_transition.ts:AutoResumeTransition.resume` (L82–129) | user message와 terminal revision fence를 가진 canonical running transition을 기록하고 메모리 투영을 적용한다. | transition CAS가 거부되면 원래 status·terminal id로 되돌리고 activation을 reject한다. |
 | 14. durable queue 선행 | `soul-server-ts/src/task/task_intervention_route.ts:TaskInterventionRoute.addIntervention` (L254–290), `task_delivery_ledger_gate.ts:recordResult` (L203–287) | auto-resume 결과를 `queued/pending`에 먼저 저장한 뒤 deferred `onResume`을 단 한 번 호출한다. | queue CAS·notification outbox stage가 실패하면 스폰하지 않고 오류다. |
 | 15. 새 실행 시작 | `soul-server-ts/src/task/task_executor.ts:TaskExecutor.startNewExecution` (L267–299), `startExecutionWithoutOwnership` (L408–426) | backend·runner를 선택하고 task execution slot에 하나의 실행 promise를 건다. | 기존 runner나 다른 activation이 있으면 동시 실행을 거부한다. |
-| 16. 러너 스폰 | `soul-server-ts/src/runner/runner_process_runtime_factory.ts:createRunnerProcessRuntimeFactory` (L134–175), `runner_process_spawn.ts:RunnerProcessSpawner.spawn` (L155–336) | 불변 release·session config로 detached child를 만들고 registration identity와 PID proof를 확정한다. | 기존 runner 정리·entry 검증·PID/start identity 증명 중 하나라도 실패하면 fail-closed다. |
-| 17. 자식 identity와 lock | `soul-server-ts/src/runner/runner_child_runtime.ts:RunnerChildRuntime.start` (L91–143), `runner_registration_identity.ts:completeRunnerRegistrationIdentityFromChild` (L79–119) | 자식이 writer lock을 획득하고 자기 PID·start identity를 registration에 완성한 뒤 socket을 연다. | 기존 registration이 다른 session/release/process를 가리키면 시작을 거부한다. |
+| 16. 러너 스폰 | `soul-server-ts/src/runner/runner_process_runtime_factory.ts:createRunnerProcessRuntimeFactory` (L134–175), `runner_process_spawn.ts:RunnerProcessSpawner.spawn` (L101–306) | 불변 release·session config로 replacement 경계를 열고 kernel lock이 free임을 증명한 뒤 pending registration과 detached child를 만든다. | 기존 lock owner 정리·lock free 증명·entry 검증·child lock handshake 중 하나라도 실패하면 fail-closed다. |
+| 17. 자식 identity와 kernel lock | `soul-server-ts/src/runner/runner_child_runtime.ts:RunnerChildRuntime.start` (L91–143), `runner_writer_lock.ts:RunnerWriterLock.acquire` (L41–64), `runner_kernel_lock.ts:RunnerKernelLock.tryAcquire` (L21–42), `runner_registration_identity.ts:completeRunnerRegistrationIdentityFromChild` (L79–119) | 자식이 OS-enforced endpoint를 배타 bind해 process-lifetime liveness owner가 되고, 그 owner PID·start identity를 registration에 완성한 뒤 socket을 연다. | endpoint가 이미 held·unavailable이거나 pending registration이 다른 session/release/process를 가리키면 시작을 거부한다. |
 | 18. 세션 준비와 실행 활성화 | `soul-server-ts/src/task/task_executor.ts:TaskExecutor.startExecutionWithRunner` (L629–674) | runner session을 준비하고 durable intervention을 복원한 뒤 status를 `running`으로 바꾸고 activation을 resolve한다. | session 준비·복원·stream 소비 실패는 outer failure finalizer로 간다. |
 | 19. 프롬프트 주입 | `soul-server-ts/src/task/task_turn_input_builder.ts:prepareInitialTurnInput` (L57–67), `prepareFollowupTurnInput` (L69–100), `context/context_builder.ts:ExecutionContextBuilder.buildFollowupContext` (L128–168) | 초기/후속 prompt와 caller·thread·running-session context를 현재 턴 입력으로 조립한다. | intervention queue가 있으면 initial 입력도 follow-up 조립 경로를 사용한다. |
 | 20. 엔진 턴 | `soul-server-ts/src/task/task_engine_turn_runner.ts:TaskEngineTurnRunner.executeTurn` (L83–162), `task_executor.ts:consumeTurnLoop` (L910–985) | backend resume id·input uuid·intervention ids를 프레임에 싣고 SSE 이벤트를 순서대로 소비한다. | compact/rollover/follow-up 상태에 따라 다음 턴 입력을 재조립한다. |

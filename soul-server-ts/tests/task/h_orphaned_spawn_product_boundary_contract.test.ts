@@ -250,6 +250,12 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
           ? EXISTING_START_IDENTITY
           : null,
     }),
+    inspectWriterLock: async () => livePids.has(SPAWNED_PID)
+      ? {
+          kind: "held",
+          owner: { pid: SPAWNED_PID, startIdentity: SPAWNED_START_IDENTITY },
+        }
+      : { kind: "free" },
     isPidAlive: (pid) => livePids.has(pid),
     signalPid: (pid, signal) => {
       signalTargets.push({ pid, signal });

@@ -10,7 +10,7 @@ import {
   newExecutionOwnerToken,
   type ExecutionIdentityProof,
 } from "../task/execution_ownership.js";
-import { inspectProcessIdentity } from "./runner_process_lock.js";
+import { currentProcessLockOwner } from "./runner_process_lock.js";
 
 import {
   RunnerControlFrameSchema,
@@ -182,13 +182,10 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   }
 
   async prepareExecutionIdentity(ownerToken?: string): Promise<ExecutionIdentityProof> {
-    const observed = await inspectProcessIdentity(process.pid);
-    if (!observed.alive || !observed.startIdentity) {
-      throw new Error("in-process runner identity unavailable");
-    }
+    const observed = await currentProcessLockOwner();
     return {
       registrationId: this.attachedRegistrationId,
-      pid: process.pid,
+      pid: observed.pid,
       startIdentity: observed.startIdentity,
       executionCommandId: ownerToken ?? newExecutionOwnerToken(),
     };

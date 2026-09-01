@@ -20,6 +20,7 @@ import {
 } from "../../src/runner/runner_registration_identity.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
+import type { RunnerWriterLockState } from "../../src/runner/runner_writer_lock.js";
 
 const OLD_PID = 2_147_000_001;
 const NEW_PID = 2_147_000_002;
@@ -94,6 +95,34 @@ export class VirtualRunnerProcessTable {
     };
   };
 
+  inspectWriterLock = async (): Promise<RunnerWriterLockState> => {
+    const live = [...this.processes.entries()].filter(([, process]) => process.alive);
+    const old = this.processes.get(OLD_PID);
+    if (old?.alive && this.exitBeforeNextInspect) {
+      this.exitBeforeNextInspect = false;
+      old.alive = false;
+      this.events.push("natural-exit-before-signal");
+      this.recordLockAbsenceProof();
+      return { kind: "free" };
+    }
+    const current = live.find(([pid]) => pid === OLD_PID)
+      ?? live.find(([pid]) => pid === NEW_PID);
+    if (!current) {
+      this.recordLockAbsenceProof();
+      return { kind: "free" };
+    }
+    const [pid, process] = current;
+    this.events.push(`inspect:${pid}:live`);
+    if (pid === OLD_PID) {
+      this.comparedExactIdentity = true;
+      this.events.push("fresh-exact-reproof");
+    }
+    return {
+      kind: "held",
+      owner: { pid, startIdentity: process.startIdentity },
+    };
+  };
+
   signal = (pid: number, signal: NodeJS.Signals): void => {
     this.signals.push({ pid, signal });
     this.events.push("terminate");
@@ -127,6 +156,12 @@ export class VirtualRunnerProcessTable {
 
   liveProcessCount(): number {
     return [...this.processes.values()].filter((process) => process.alive).length;
+  }
+
+  private recordLockAbsenceProof(): void {
+    if (!this.afterBoundary) return;
+    this.events.push("liveness-check:dead");
+    if (!this.events.includes("exit-proof")) this.events.push("exit-proof");
   }
 
   private require(pid: number): VirtualProcess {
@@ -207,6 +242,7 @@ export async function createTerminalRetirementFixture(): Promise<RetirementFixtu
     },
     registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
     inspectProcess: processTable.inspect,
+    inspectWriterLock: processTable.inspectWriterLock,
     isPidAlive: processTable.isAlive,
     signalPid: processTable.signal,
     now: () => clock,

@@ -619,23 +619,21 @@ describe("RunnerSqliteEventOutbox", () => {
     recovered.close();
   });
 
-  it("refuses ambiguity resolution while a recorded runner pid is alive", async () => {
+  it("refuses ambiguity resolution while the runner writer lock is held", async () => {
     const outbox = await createAmbiguousIntervention("resolve-live-runner");
     const path = outbox.databasePath;
     outbox.close();
-    const release = vi.fn(async () => undefined);
+    const acquireWriterLock = vi.fn(async () => {
+      throw new Error("runner writer lock already held");
+    });
 
     await expect(resolveAmbiguousRunnerIntervention(
       path,
       "resolve-live-runner",
       "applied",
-      {
-        acquireWriterLock: vi.fn(async () => ({ release })),
-        inspectProcess: vi.fn(async () => ({ alive: true, startIdentity: "still-running" })),
-        readPidFile: vi.fn(async () => null),
-      },
-    )).rejects.toThrow("requires a stopped runner");
-    expect(release).toHaveBeenCalledOnce();
+      { acquireWriterLock },
+    )).rejects.toThrow("runner writer lock already held");
+    expect(acquireWriterLock).toHaveBeenCalledOnce();
 
     const recovered = await RunnerSqliteEventOutbox.open(path);
     const database = new DatabaseSync(path);
@@ -2285,8 +2283,6 @@ async function createAmbiguousIntervention(
 function stoppedRunnerResolutionDependencies() {
   return {
     acquireWriterLock: vi.fn(async () => ({ release: vi.fn(async () => undefined) })),
-    inspectProcess: vi.fn(async () => ({ alive: false, startIdentity: null })),
-    readPidFile: vi.fn(async () => null),
   };
 }
 

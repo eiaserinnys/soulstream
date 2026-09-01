@@ -111,7 +111,10 @@ export async function scanRunnerRegistrations(
     if (!entry.isDirectory() || !isRunnerRegistrationDirectoryName(entry.name)) continue;
     const directory = resolve(stateDirectory, entry.name);
     try {
-      registrations.push(await readRunnerRegistrationSummary(directory, options));
+      registrations.push(await readRunnerRegistrationSummary(directory, {
+        ...options,
+        verifyProcessIdentity: options.verifyProcessIdentity ?? true,
+      }));
     } catch (error) {
       const normalized = asError(error);
       const sessionId = (normalized as Error & { runnerSessionId?: unknown }).runnerSessionId;

@@ -23,38 +23,22 @@ export interface ProcessIdentity {
   startIdentity: string | null;
 }
 
-/**
- * What the OS can say about the process behind a pid number.
- *
- * `absent` and `command_line` are answers about the process itself, so a caller
- * may act on them. `unavailable` means the OS refused or could not tell -- a
- * protected Windows process whose `CommandLine` is null, a probe that failed,
- * an unsupported platform -- and must never be read as either proof or denial.
- */
-export type ProcessCommandLineProbe =
+export type ProcessStartIdentityProbe =
   | { kind: "absent" }
-  | { kind: "command_line"; value: string }
+  | { kind: "identity"; value: string }
   | { kind: "unavailable" };
 
 /**
- * Every Windows process probe below shells out to powershell.exe, so they all
- * pay the same floor and share one budget.
+ * Migration-only budget for pre-kernel ownership markers.
  *
- * Measured on eias-linegames (Windows 11, 10.0.26200): a bare
- * `powershell.exe -NoProfile` start costs ~2.5s, `Get-Process` brings the round
- * trip to ~2.7-3.0s idle, and the CIM query to 4.7-5.7s. A 5s budget sits below
- * that floor once the host is loaded: six concurrent `Get-Process` probes -- the
- * contention spawn, dispatch and termination already create -- had 2 of 6 killed
- * by a 5s timeout on an otherwise idle box.
- *
- * A timeout is indistinguishable from absence at the call site: the identity
- * probe catches it and answers `null`, the command line probe answers
- * `unavailable`, and both fail closed. That is the death these probes exist to
- * end, so the budget is sized for a loaded host, not for the best case.
+ * Runner liveness never reaches this PowerShell probe: schema-2 runners use the
+ * kernel writer lock. The explicit three-state result keeps a slow or failed
+ * legacy lookup fail-closed instead of turning it into false process absence.
  */
 const WINDOWS_PROCESS_PROBE_TIMEOUT_MS = 20_000;
 const WINDOWS_PROBE_ABSENT_MARKER = "process-absent";
-const WINDOWS_PROBE_COMMAND_LINE_MARKER = "process-command-line:";
+const WINDOWS_PROBE_UNAVAILABLE_MARKER = "process-unavailable";
+const WINDOWS_PROBE_IDENTITY_MARKER = "process-start:";
 
 export interface ProcessOwnershipLockDependencies {
   now(): number;
@@ -164,18 +148,22 @@ export function defaultProcessOwnershipLockDependencies(): ProcessOwnershipLockD
   return {
     now: Date.now,
     delay: async (ms) => await new Promise((resolveDelay) => setTimeout(resolveDelay, ms)),
-    currentOwner: async () => ({
-      pid: process.pid,
-      startIdentity: await getCurrentProcessStartIdentity(),
-    }),
+    currentOwner: currentProcessLockOwner,
     inspectProcess: inspectProcessIdentity,
+  };
+}
+
+export async function currentProcessLockOwner(): Promise<ProcessLockOwner> {
+  return {
+    pid: process.pid,
+    startIdentity: await getCurrentProcessStartIdentity(),
   };
 }
 
 async function getCurrentProcessStartIdentity(): Promise<string> {
   if (process.platform === "win32") return currentProcessFallbackIdentity;
   currentProcessStartIdentity ??= readProcessStartIdentity(process.pid)
-    .then((identity) => identity ?? currentProcessFallbackIdentity);
+    .then((probe) => probe.kind === "identity" ? probe.value : currentProcessFallbackIdentity);
   return await currentProcessStartIdentity;
 }
 
@@ -184,9 +172,10 @@ export async function inspectProcessIdentity(pid: number): Promise<ProcessIdenti
     throw new Error(`process identity pid must be positive: ${pid}`);
   }
   if (!isProcessAlive(pid)) return { alive: false, startIdentity: null };
+  const probe = await readProcessStartIdentity(pid);
   return {
-    alive: true,
-    startIdentity: await readProcessStartIdentity(pid),
+    alive: probe.kind !== "absent" || isProcessAlive(pid),
+    startIdentity: probe.kind === "identity" ? probe.value : null,
   };
 }
 
@@ -233,72 +222,16 @@ function isProcessAlive(pid: number): boolean {
 }
 
 /**
- * Reads the command line of a pid. Unlike `isProcessAlive`, which only reports
- * whether the *number* is claimable, this asks the OS what the process behind
- * the number actually is, which is the only evidence that survives pid reuse.
- */
-export async function readProcessCommandLine(pid: number): Promise<ProcessCommandLineProbe> {
-  if (!Number.isSafeInteger(pid) || pid <= 0) {
-    throw new Error(`process command line pid must be positive: ${pid}`);
-  }
-  if (process.platform === "win32") return await readWindowsProcessCommandLine(pid);
-  if (process.platform === "linux") return await readLinuxProcessCommandLine(pid);
-  return { kind: "unavailable" };
-}
-
-async function readWindowsProcessCommandLine(pid: number): Promise<ProcessCommandLineProbe> {
-  let stdout: string;
-  try {
-    ({ stdout } = await execFileAsync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        `$found = @(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}' -ErrorAction Stop); `
-        + `if ($found.Count -eq 0) { '${WINDOWS_PROBE_ABSENT_MARKER}' } `
-        + `else { '${WINDOWS_PROBE_COMMAND_LINE_MARKER}' + $found[0].CommandLine }`,
-      ],
-      { timeout: WINDOWS_PROCESS_PROBE_TIMEOUT_MS, windowsHide: true },
-    ));
-  } catch {
-    return { kind: "unavailable" };
-  }
-  const reported = stdout.trim();
-  if (reported === WINDOWS_PROBE_ABSENT_MARKER) return { kind: "absent" };
-  if (!reported.startsWith(WINDOWS_PROBE_COMMAND_LINE_MARKER)) return { kind: "unavailable" };
-  const commandLine = reported.slice(WINDOWS_PROBE_COMMAND_LINE_MARKER.length).trim();
-  // The process exists but hides its command line (protected process, or a
-  // CommandLine this account may not read). Existence alone proves nothing.
-  return commandLine ? { kind: "command_line", value: commandLine } : { kind: "unavailable" };
-}
-
-async function readLinuxProcessCommandLine(pid: number): Promise<ProcessCommandLineProbe> {
-  let raw: string;
-  try {
-    raw = await readFile(`/proc/${pid}/cmdline`, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "absent" };
-    return { kind: "unavailable" };
-  }
-  // argv arrives NUL-separated; kernel threads report nothing at all.
-  const commandLine = raw.split("\0").filter((argument) => argument !== "").join(" ").trim();
-  return commandLine ? { kind: "command_line", value: commandLine } : { kind: "unavailable" };
-}
-
-/**
  * A process start time, used as the identity that survives pid reuse.
  *
- * On Windows this stays on `Get-Process` rather than moving to the
- * `Win32_Process` CIM instance the command line probe uses, for two measured
- * reasons. CIM is the slower of the two (4.7s against 2.7s idle), and -- the
- * blocking one -- `CreationDate` is truncated to microseconds while `StartTime`
- * is not: the same live pid reports ticks that differ by 6-7 (measured on pids
- * 44892 and 9264). Same-kind identities are compared for exact equality, so
- * swapping the source would invalidate every `windows-process-<ticks>` identity
- * already persisted and fail closed against the runners it was meant to save.
+ * On Windows this migration reader stays on `Get-Process`: changing its source
+ * would invalidate persisted `windows-process-<ticks>` identities because CIM
+ * `CreationDate` and `StartTime` do not have identical precision.
  */
-export async function readProcessStartIdentity(pid: number): Promise<string | null> {
+export async function readProcessStartIdentity(pid: number): Promise<ProcessStartIdentityProbe> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) {
+    throw new Error(`process start identity pid must be positive: ${pid}`);
+  }
   if (process.platform === "win32") {
     try {
       const { stdout } = await execFileAsync(
@@ -307,25 +240,39 @@ export async function readProcessStartIdentity(pid: number): Promise<string | nu
           "-NoProfile",
           "-NonInteractive",
           "-Command",
-          `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().Ticks`,
+          `$found = @(Get-Process -Id ${pid} -ErrorAction SilentlyContinue); `
+          + `if ($found.Count -eq 0) { '${WINDOWS_PROBE_ABSENT_MARKER}' } `
+          + `else { try { '${WINDOWS_PROBE_IDENTITY_MARKER}' `
+          + `+ $found[0].StartTime.ToUniversalTime().Ticks } `
+          + `catch { '${WINDOWS_PROBE_UNAVAILABLE_MARKER}' } }`,
         ],
         { timeout: WINDOWS_PROCESS_PROBE_TIMEOUT_MS, windowsHide: true },
       );
-      const ticks = stdout.trim();
-      return ticks ? `windows-process-${ticks}` : null;
+      const reported = stdout.trim();
+      if (reported === WINDOWS_PROBE_ABSENT_MARKER) return { kind: "absent" };
+      if (reported === WINDOWS_PROBE_UNAVAILABLE_MARKER) return { kind: "unavailable" };
+      if (!reported.startsWith(WINDOWS_PROBE_IDENTITY_MARKER)) return { kind: "unavailable" };
+      const ticks = reported.slice(WINDOWS_PROBE_IDENTITY_MARKER.length).trim();
+      return ticks
+        ? { kind: "identity", value: `windows-process-${ticks}` }
+        : { kind: "unavailable" };
     } catch {
-      return null;
+      return { kind: "unavailable" };
     }
   }
-  if (process.platform !== "linux") return null;
+  if (process.platform !== "linux") return { kind: "unavailable" };
   try {
     const stat = await readFile(`/proc/${pid}/stat`, "utf8");
     const closeParen = stat.lastIndexOf(")");
-    if (closeParen < 0) return null;
+    if (closeParen < 0) return { kind: "unavailable" };
     const fields = stat.slice(closeParen + 1).trim().split(/\s+/);
     const startTime = fields[19];
-    return startTime ? `linux-proc-${startTime}` : null;
-  } catch {
-    return null;
+    return startTime
+      ? { kind: "identity", value: `linux-proc-${startTime}` }
+      : { kind: "unavailable" };
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? { kind: "absent" }
+      : { kind: "unavailable" };
   }
 }

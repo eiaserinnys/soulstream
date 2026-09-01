@@ -21,33 +21,6 @@ export interface RunnerProcessPaths {
   logPath: string;
 }
 
-/**
- * The spawn contract is `node <snapshot>/runner_entry.js --config <configPath>`
- * (`runner_process_spawn.ts`). Both halves are required as proof: the entry
- * module says "a Soulstream runner", the config path says "of this session".
- * Either half alone would convict a sibling session's runner.
- */
-export const RUNNER_ENTRY_MODULE = "runner_entry.js";
-
-export function commandLineOwnedBySession(
-  commandLine: string,
-  paths: RunnerProcessPaths,
-  platform: NodeJS.Platform = process.platform,
-): boolean {
-  const reported = normalizeCommandLinePath(commandLine, platform);
-  return reported.includes(normalizeCommandLinePath(RUNNER_ENTRY_MODULE, platform))
-    && reported.includes(normalizeCommandLinePath(paths.configPath, platform));
-}
-
-/**
- * The OS reports the command line as it was quoted, not as `join` produced it,
- * so separators and (on Windows) case are not stable across the comparison.
- */
-function normalizeCommandLinePath(value: string, platform: NodeJS.Platform): string {
-  const separatorNormalized = value.replaceAll("\\", "/");
-  return platform === "win32" ? separatorNormalized.toLowerCase() : separatorNormalized;
-}
-
 export const LINUX_UNIX_SOCKET_PATH_MAX_BYTES = 107;
 const RUNNER_SESSION_SLUG_LENGTH = 24;
 const RUNNER_SOCKET_FILE_NAME = "runner.sock";

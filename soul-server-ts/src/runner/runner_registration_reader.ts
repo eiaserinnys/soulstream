@@ -16,10 +16,14 @@ import {
   type RunnerChildConfig,
 } from "./runner_process_spawn.js";
 import {
-  inspectProcessIdentity,
+  defaultProcessOwnershipLockDependencies,
   processStartIdentitiesMatch,
   type ProcessIdentity,
 } from "./runner_process_lock.js";
+import {
+  inspectRunnerWriterLock,
+  type RunnerWriterLockState,
+} from "./runner_writer_lock.js";
 import {
   runnerProcessPaths,
   type RunnerProcessPaths,
@@ -37,6 +41,7 @@ export async function readRunnerRegistrationSummary(
   options: {
     verifyProcessIdentity?: boolean;
     inspectProcess?: (pid: number) => Promise<ProcessIdentity>;
+    inspectWriterLock?: (path: string) => Promise<RunnerWriterLockState>;
   } & AuthoritativeRunnerLifecycleOptions = {},
 ): Promise<RunnerRegistration> {
   const configPath = resolve(directory, "runner-config.json");
@@ -114,13 +119,21 @@ export async function readRunnerRegistrationSummary(
     if (identity && identity.pid !== null && identity.pid !== pid) {
       throw new Error(`runner pid identity does not match registration: ${directory}`);
     }
-    let pidAlive = pid !== null && isPidAlive(pid);
-    if (options.verifyProcessIdentity && pid !== null && pidAlive) {
-      const observed = await (options.inspectProcess ?? inspectProcessIdentity)(pid);
-      pidAlive = observed.alive && (
-        !identity?.startIdentity
-        || observed.startIdentity === null
-        || processStartIdentitiesMatch(observed.startIdentity, identity.startIdentity)
+    let pidAlive = !options.verifyProcessIdentity && pid !== null && isPidAlive(pid);
+    if (options.verifyProcessIdentity && pid !== null) {
+      const defaults = defaultProcessOwnershipLockDependencies();
+      const observed = await (options.inspectWriterLock ?? (async (path: string) =>
+        await inspectRunnerWriterLock(path, {
+          ...defaults,
+          ...(options.inspectProcess ? { inspectProcess: options.inspectProcess } : {}),
+        })))(config.paths.lockPath);
+      pidAlive = observed.kind === "unavailable" || (
+        observed.kind === "held"
+        && observed.owner.pid === pid
+        && (
+          !identity?.startIdentity
+          || processStartIdentitiesMatch(observed.owner.startIdentity, identity.startIdentity)
+        )
       );
     }
     return {

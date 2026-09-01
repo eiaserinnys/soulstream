@@ -4,6 +4,7 @@ import {
   type ExactRunnerProcess,
   type RunnerProcessTerminationDependencies,
   exactRunnerStartIdentitiesMatch,
+  inspectRunnerLivenessLock,
   terminateExactRunner,
 } from "./runner_process_termination.js";
 import { RunnerMutationFailure } from "./runner_mutation_failure.js";
@@ -65,7 +66,7 @@ export async function retireTerminalExecutionIdentity(
 
     // Destructive termination only accepts the exact canonical identity token.
     // Cross-format timestamp tolerance is observation-only and never authorizes a signal.
-    await terminateExactRunner(expected, deps);
+    await terminateExactRunner(expected, deps, paths.lockPath);
     await prepareRunnerWriterLockForSpawn(paths.lockPath);
     await requireCentralCommit(paths, commitOwnership);
     await retireTerminalRunnerRegistrationFilesLocked(
@@ -97,10 +98,10 @@ export async function retireReleasedTerminalExecutionEvidence(
         `runner process identity appeared before released terminal retirement: ${paths.sessionDirectory}`,
       );
     }
-    const pidEvidence = await readRunnerPid(paths.pidPath);
-    if (pidEvidence !== null && deps.isPidAlive(pidEvidence)) {
+    const lockState = await inspectRunnerLivenessLock(paths.lockPath, deps);
+    if (lockState.kind !== "free") {
       throw identityProofFailure(
-        `live runner has no registration before released terminal retirement: ${paths.sessionDirectory}`,
+        `runner lock is not free before released terminal retirement: ${paths.sessionDirectory}`,
       );
     }
     await requireCentralCommit(paths, confirmCentralRelease);
@@ -123,20 +124,8 @@ async function retireAbsentIdentity(
   commitOwnership: () => Promise<boolean>,
   deps: RunnerProcessTerminationDependencies,
 ): Promise<void> {
-  let expectedProcessAbsent = !deps.isPidAlive(expected.pid);
-  if (!expectedProcessAbsent) {
-    const observed = await deps.inspectProcess(expected.pid).catch((error: unknown) => {
-      throw identityProofFailure(
-        `could not inspect runner pid ${expected.pid} before ownership retirement`,
-        error,
-      );
-    });
-    expectedProcessAbsent = !observed.alive
-      ? !deps.isPidAlive(expected.pid)
-      : observed.startIdentity !== null
-        && !exactRunnerStartIdentitiesMatch(observed.startIdentity, expected.startIdentity);
-  }
-  if (!expectedProcessAbsent) {
+  const lockState = await inspectRunnerLivenessLock(paths.lockPath, deps);
+  if (lockState.kind !== "free") {
     throw identityProofFailure(
       `live exact runner has no registration before ownership retirement: ${paths.sessionDirectory}`,
     );

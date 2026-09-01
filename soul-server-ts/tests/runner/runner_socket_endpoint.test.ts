@@ -184,10 +184,13 @@ describe("runner socket ownership", () => {
     const lock = await RunnerWriterLock.acquire(lockPath, deps);
 
     await expect(access(bootstrapPath)).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(lockPath, "utf8")).resolves.toBe(`${JSON.stringify({
-      pid: 4004,
-      startIdentity: "replacement-owner",
-    })}\n`);
+    await expect(readFile(lockPath, "utf8").then((raw) => JSON.parse(raw)))
+      .resolves.toEqual({
+        schemaVersion: 2,
+        lockKind: "kernel-endpoint",
+        pid: 4004,
+        startIdentity: "replacement-owner",
+      });
     await lock.release();
   });
 });

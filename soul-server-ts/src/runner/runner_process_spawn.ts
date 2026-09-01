@@ -2,23 +2,18 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { access, chmod, mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { z } from "zod";
 import type { Logger } from "pino";
 
 import {
-  AgentBackendSchema,
-  AgentProfileSchema,
-  AgentsSdkMcpServerSchema,
-} from "../agent_registry.js";
-import { assertRunnerJsonValue } from "./frame_protocol.js";
+  parseRunnerChildConfig,
+  type RunnerChildConfig,
+} from "./runner_child_config.js";
 import { runnerProcessPaths, type RunnerProcessPaths } from "./runner_process_paths.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
-import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 import {
+  defaultProcessOwnershipLockDependencies,
   inspectProcessIdentity,
   processStartIdentitiesMatch,
-  readProcessCommandLine,
-  type ProcessCommandLineProbe,
   type ProcessIdentity,
 } from "./runner_process_lock.js";
 import { RunnerMutationFailure } from "./runner_mutation_failure.js";
@@ -41,7 +36,11 @@ import {
   invalidateRunnerRegistrationFiles,
   retireTerminalRunnerRegistrationFilesLocked,
 } from "./runner_registration_mutation.js";
-import { prepareRunnerWriterLockForSpawn } from "./runner_writer_lock.js";
+import {
+  inspectRunnerWriterLock,
+  prepareRunnerWriterLockForSpawn,
+  type RunnerWriterLockState,
+} from "./runner_writer_lock.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 import {
   retireReleasedTerminalExecutionEvidence,
@@ -49,63 +48,11 @@ import {
   type TerminalExecutionOwnershipRetirement,
 } from "./runner_terminal_identity_retirement.js";
 
-const RunnerProcessPathsSchema = z.object({
-  sessionDirectory: z.string().min(1),
-  databasePath: z.string().min(1),
-  socketPath: z.string().min(1),
-  // Older persisted configs predate socketKind. runner-state is host-local,
-  // so the platform reading the config is the platform that wrote it — the
-  // same rule the paths factory uses.
-  socketKind: z.enum(["unix_socket", "named_pipe"]).optional(),
-  pidPath: z.string().min(1),
-  lockPath: z.string().min(1),
-  configPath: z.string().min(1),
-  logPath: z.string().min(1).optional(),
-}).transform((paths) => ({
-  ...paths,
-  socketKind: paths.socketKind
-    ?? (process.platform === "win32" ? "named_pipe" as const : "unix_socket" as const),
-  logPath: paths.logPath ?? join(paths.sessionDirectory, "runner.log"),
-}));
-
-const RunnerChildConfigFields = {
-  sessionId: z.string().min(1),
-  backend: AgentBackendSchema,
-  agent: AgentProfileSchema,
-  paths: RunnerProcessPathsSchema,
-  codeSha: z.string().min(1),
-  releaseManifestId: z.string().min(1).optional(),
-  runtimeEnvIdentity: z.string().min(1).optional(),
-  snapshotPath: z.string().min(1),
-  codexAdapterMode: z.enum(["sdk", "app-server"]),
-  codexCliPath: z.string().min(1).optional(),
-  claudeRuntimeV2Enabled: z.boolean(),
-  claudeRuntimeIdleTtlMs: z.number().int().positive(),
-  claudeRuntimeMaxEntries: z.number().int().positive(),
-  claudeRuntimeTurnTimeoutMs: z.number().int().positive(),
-  runnerLeaseTimeoutMs: z.number().int().positive().optional(),
-  internalMcpUrl: z.string().url(),
-  resolvedMcpServers: z.array(AgentsSdkMcpServerSchema).optional(),
-  codexHome: z.string().min(1).nullable(),
-  rolloutRoot: z.string().min(1).nullable(),
-};
-
-// Runner configs are consumed by the immutable snapshot selected by codeSha,
-// not necessarily by the host version that writes them. The writer may raise
-// this discriminator only after every snapshot that can be restarted already
-// accepts the new value. Additive fields remain rolling-compatible because
-// older Zod object readers discard unknown keys.
-export const RunnerChildConfigSchema = z.object({
-  schemaVersion: z.literal(1),
-  ...RunnerChildConfigFields,
-});
-
-export type RunnerChildConfig = z.infer<typeof RunnerChildConfigSchema>;
-
-export function parseRunnerChildConfig(value: unknown): RunnerChildConfig {
-  assertRunnerJsonValue(value, "runner child config");
-  return RunnerChildConfigSchema.parse(value);
-}
+export {
+  RunnerChildConfigSchema,
+  parseRunnerChildConfig,
+  type RunnerChildConfig,
+} from "./runner_child_config.js";
 
 export interface SpawnRunnerProcessInput extends Omit<RunnerChildConfig, "schemaVersion" | "paths"> {
   stateDirectory: string;
@@ -143,8 +90,7 @@ interface SpawnDependencies {
   signalPid(pid: number, signal: NodeJS.Signals): void;
   now(): number;
   delay(ms: number): Promise<void>;
-  readLifecycle?(path: string): Promise<RunnerLifecycleRecord | null>;
-  readCommandLine?(pid: number): Promise<ProcessCommandLineProbe>;
+  inspectWriterLock?(path: string): Promise<RunnerWriterLockState>;
 }
 
 export class RunnerProcessSpawner {
@@ -274,33 +220,57 @@ export class RunnerProcessSpawner {
           startIdentity: childIdentity.startIdentity,
         };
       } else {
-        const observed = await this.deps.inspectProcess(child.pid);
-        if (!observed.alive) {
+        const observed = await this.inspectWriterLock(paths.lockPath);
+        if (observed.kind === "free" && !this.deps.inspectWriterLock) {
+          // Injected legacy snapshot adapters predate child identity publication
+          // and the kernel lock. Production dependencies always provide both.
+          const legacy = await this.deps.inspectProcess(child.pid);
+          if (!legacy.alive) {
+            childAbsenceProven = true;
+            throw new Error(`detached runner process exited before registration: ${child.pid}`);
+          }
+          if (!legacy.startIdentity) {
+            this.logger?.info(
+              { sessionId: input.sessionId, pid: child.pid },
+              "Legacy runner identity lookup was unavailable; child was left intact",
+            );
+            throw new RunnerMutationFailure(
+              "runner_registration_identity_proof_failed",
+              `detached runner process identity unavailable: ${child.pid}`,
+            );
+          }
+          childProcessProof = { pid: child.pid, startIdentity: legacy.startIdentity };
+          await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+            ...registrationIdentity,
+            pid: child.pid,
+            startIdentity: legacy.startIdentity,
+          });
+        } else if (observed.kind === "free") {
           childAbsenceProven = true;
           throw new Error(`detached runner process exited before registration: ${child.pid}`);
-        }
-        if (!observed.startIdentity) {
+        } else if (observed.kind === "unavailable" || observed.owner.pid !== child.pid) {
           this.logger?.info(
             { sessionId: input.sessionId, pid: child.pid },
-            "Live runner identity lookup was unavailable; child was left intact",
+            "Live runner lock ownership was unavailable; child was left intact",
           );
           throw new RunnerMutationFailure(
             "runner_registration_identity_proof_failed",
-            `detached runner process identity unavailable: ${child.pid}`,
+            `detached runner lock ownership unavailable: ${child.pid}`,
           );
+        } else {
+          childProcessProof = observed.owner;
+          await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+            ...registrationIdentity,
+            pid: child.pid,
+            startIdentity: observed.owner.startIdentity,
+          });
         }
-        childProcessProof = { pid: child.pid, startIdentity: observed.startIdentity };
-        await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
-          ...registrationIdentity,
-          pid: child.pid,
-          startIdentity: observed.startIdentity,
-        });
       }
       await this.deps.registerPid(paths.pidPath, child.pid);
     } catch (registrationError) {
       try {
         if (childProcessProof) {
-          await terminateExactRunner(childProcessProof, this.deps);
+          await terminateExactRunner(childProcessProof, this.deps, paths.lockPath);
         } else if (!childAbsenceProven) {
           if (registrationError instanceof RunnerMutationFailure) throw registrationError;
           throw new RunnerMutationFailure(
@@ -349,12 +319,20 @@ export class RunnerProcessSpawner {
         || current.startIdentity === null
         || !processStartIdentitiesMatch(current.startIdentity, pidStartIdentity)
       ) return null;
-      if (!this.deps.isPidAlive(pid)) return null;
-      const observed = await this.deps.inspectProcess(pid);
+      if (!this.deps.inspectWriterLock) {
+        const observed = await this.deps.inspectProcess(pid);
+        if (
+          !observed.alive
+          || !observed.startIdentity
+          || !processStartIdentitiesMatch(observed.startIdentity, current.startIdentity)
+        ) return null;
+        return { pid, registrationId, paths: config.paths, config, adopted: true };
+      }
+      const observed = await this.deps.inspectWriterLock(config.paths.lockPath);
       if (
-        !observed.alive
-        || !observed.startIdentity
-        || !processStartIdentitiesMatch(observed.startIdentity, current.startIdentity)
+        observed.kind !== "held"
+        || observed.owner.pid !== pid
+        || !processStartIdentitiesMatch(observed.owner.startIdentity, current.startIdentity)
       ) return null;
       return { pid, registrationId, paths: config.paths, config, adopted: true };
     });
@@ -390,12 +368,9 @@ export class RunnerProcessSpawner {
   /**
    * Disposition for a registration that no longer proves an identity.
    *
-   * The host clears `pid`/`startIdentity` while the child keeps running, so the
-   * registration is residue rather than evidence of a live runner. Without an
-   * expected process there is nothing to compare against by identity, and
-   * `stopExistingRunnerLocked` already decides such a pid by what the process
-   * *is* -- the R30 substance comparison -- so this reuses that owner instead of
-   * adding a second disposition path.
+   * Registration fields are observational residue. `stopExistingRunnerLocked`
+   * decides whether the runner is alive from the session's kernel writer lock,
+   * then uses that lock's exact owner if termination is required.
    */
   async disposeUnprovenRegistration(
     paths: RunnerProcessPaths,
@@ -429,6 +404,7 @@ export class RunnerProcessSpawner {
         await terminateExactRunner(
           { pid: identity.pid, startIdentity: identity.startIdentity },
           this.deps,
+          paths.lockPath,
         );
       }
       await retireTerminalRunnerRegistrationFilesLocked(
@@ -446,6 +422,17 @@ export class RunnerProcessSpawner {
     return retireTerminalExecutionIdentity(input, commitOwnership, this.deps);
   }
 
+  private async inspectWriterLock(path: string): Promise<RunnerWriterLockState> {
+    if (this.deps.inspectWriterLock) return await this.deps.inspectWriterLock(path);
+    const defaults = defaultProcessOwnershipLockDependencies();
+    return await inspectRunnerWriterLock(path, {
+      now: this.deps.now,
+      delay: this.deps.delay,
+      currentOwner: defaults.currentOwner,
+      inspectProcess: this.deps.inspectProcess,
+    });
+  }
+
 }
 
 function defaultDependencies(): SpawnDependencies {
@@ -461,6 +448,7 @@ function defaultDependencies(): SpawnDependencies {
     spawnProcess: (entry, args, options) => spawn(process.execPath, [entry, ...args], options),
     registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
     inspectProcess: inspectProcessIdentity,
+    inspectWriterLock: inspectRunnerWriterLock,
     waitForChildRegistrationIdentity: async (paths, pending, pid) =>
       await waitForChildRunnerRegistrationIdentity(paths.sessionDirectory, pending, pid, {
         isPidAlive: isProcessAlive,
@@ -468,7 +456,6 @@ function defaultDependencies(): SpawnDependencies {
         delay,
       }),
     isPidAlive: isProcessAlive,
-    readCommandLine: readProcessCommandLine,
     signalPid: (pid, signal) => process.kill(pid, signal),
     now: Date.now,
     delay,

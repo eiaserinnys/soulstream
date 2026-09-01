@@ -53,3 +53,31 @@ jobs:
 
       - name: Test soul-server-ts
         run: corepack pnpm --dir soul-server-ts test -- --minWorkers=1 --maxWorkers=2
+
+  runner-kernel-lock-windows:
+    name: runner kernel lock (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install repository dependencies
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+          corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
+
+      - name: Verify Windows kernel lock contracts
+        shell: bash
+        run: >-
+          corepack pnpm --dir soul-server-ts exec vitest run
+          tests/runner/runner_kernel_lock.test.ts
+          tests/runner/runner_writer_lock_liveness.test.ts
+          --minWorkers=1 --maxWorkers=2
