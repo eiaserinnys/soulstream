@@ -14,6 +14,7 @@ import type {
 } from "../engine/protocol.js";
 import { sseEventsFromRunnerFrames } from "./engine_event_stream.js";
 import { normalizeRunnerInterventionResult } from "./runner_intervention_result.js";
+import { RunnerIpcRequestTimeoutError } from "./runner_ipc_connection.js";
 import type { RunnerProcessDispatcher } from "./runner_process_dispatcher.js";
 
 /** Adapts the process command dispatcher to the existing EnginePort surface. */
@@ -42,8 +43,15 @@ export class RunnerProcessEngineProxy implements EnginePort {
     await this.dispatcher.invoke("compact", [sessionId], "turn");
   }
   async intervene(input: EngineUserInput): Promise<EngineInterventionResult> {
-    const result = await this.dispatcher.invoke("intervene", [input]);
-    return normalizeRunnerInterventionResult(result);
+    try {
+      const result = await this.dispatcher.invoke("intervene", [input]);
+      return normalizeRunnerInterventionResult(result);
+    } catch (error) {
+      if (error instanceof RunnerIpcRequestTimeoutError) {
+        await this.dispatcher.interrupt();
+      }
+      throw error;
+    }
   }
   async deliverInputResponse(
     requestId: string,

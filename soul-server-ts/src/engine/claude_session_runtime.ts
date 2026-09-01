@@ -162,9 +162,6 @@ export class ClaudeSessionRuntime<TMessage> {
     this.assertOpen();
     const existing = this.inputs.get(input.uuid);
     if (existing) {
-      if (existing.payloadHash !== input.payloadHash) {
-        throw new Error(`Claude input UUID conflict: ${input.uuid}`);
-      }
       return false;
     }
     this.inputs.set(input.uuid, {

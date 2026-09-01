@@ -148,6 +148,33 @@ describe("ClaudeSessionRuntime", () => {
     expect(runtime.snapshot().foregroundPhase).toBe("generating");
   });
 
+  it("R34 treats a consumed UUID with a conflicting replay payload as already seen", async () => {
+    const { runtime, query } = makeSubject();
+    runtime.enqueueInput({
+      uuid: "runtime-followup-consumed",
+      payloadHash: "canonical-before-restart",
+      message: "consumed follow-up",
+    });
+    runtime.beginForegroundTurn("runtime-followup-consumed");
+    runtime.observeResult({
+      userMessageUuid: "runtime-followup-consumed",
+      interrupted: false,
+    });
+    runtime.finishForegroundResult();
+
+    expect(runtime.enqueueInput({
+      uuid: "runtime-followup-consumed",
+      payloadHash: "rebuilt-after-restart",
+      message: "stale replay",
+    })).toBe(false);
+    expect(runtime.snapshot().pendingInputs).toContainEqual({
+      uuid: "runtime-followup-consumed",
+      payloadHash: "canonical-before-restart",
+      state: "settled",
+    });
+    expect(query.close).not.toHaveBeenCalled();
+  });
+
   it("drain phase input starts the next turn without interrupting the settled turn", () => {
     const { runtime, query } = makeSubject();
     runtime.enqueueInput({ uuid: "turn-1", payloadHash: "hash-1", message: "first" });

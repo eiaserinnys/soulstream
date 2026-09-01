@@ -137,6 +137,11 @@ export class QueuedDeliveryTranscriptRecovery {
         }
         if (receipt.kind === "absent") {
           if (this.deps.redeliverContent) {
+            const current = await this.deps.deliveryRepository.get(row.delivery_id);
+            if (hasConsumptionReceipt(current)) {
+              settled += 1;
+              continue;
+            }
             await this.deps.redeliverContent(row);
             settled += 1;
             continue;
@@ -193,4 +198,10 @@ export class QueuedDeliveryTranscriptRecovery {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function hasConsumptionReceipt(row: SessionDeliveryRow | null): boolean {
+  return row?.state === "consumed"
+    && row.aggregate_state === "consumed"
+    && Boolean(row.target_receipt_id);
 }
