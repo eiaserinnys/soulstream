@@ -804,7 +804,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
-  it("turn-start receipt가 없으면 iterator 종료만으로 consume하지 않는다", async () => {
+  it("turn-start receipt가 없으면 exact replay 1회 뒤에도 consume하지 않는다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "runtime result",
@@ -837,7 +837,7 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(2);
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 

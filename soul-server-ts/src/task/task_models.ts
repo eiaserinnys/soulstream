@@ -398,9 +398,6 @@ export interface Task {
   /** Latest Claude context window telemetry retained between turns for incoming-size gating. */
   claudeContextUsage?: { usedTokens: number; maxTokens: number };
 
-  /** 지연된 Claude runtime follow-up retry 전 중간 종료임을 finalizer에 알리는 런타임 플래그. */
-  pendingClaudeRuntimeFollowupRetry?: boolean;
-
   /** 진행 중 runner의 단일 정본. 엔진 capability와 command dispatcher는 원자적으로 구성된다. */
   runner?: TaskRunnerRuntime;
 

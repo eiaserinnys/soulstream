@@ -1,5 +1,3 @@
-import type { InterventionMessage, Task } from "./task_models.js";
-
 export interface PendingRuntimeTaskFollowup {
   taskId: string;
   status?: string;
@@ -50,24 +48,6 @@ export function buildClaudeRuntimeTaskFollowupPrompt(
   ].join("\n");
 }
 
-export function buildClaudeRuntimeTaskFollowupFallbackPrompt(
-  originalText: string,
-  reason: "empty_response" | "repeated_response",
-): string {
-  const reasonText = reason === "empty_response"
-    ? "이전 follow-up turn이 빈 응답으로 끝났습니다."
-    : "이전 follow-up turn이 직전 응답을 반복했습니다.";
-  return [
-    "<claude-runtime-background-task-followup-retry>",
-    reasonText,
-    "아래 원래 follow-up 지시를 다시 수행하되, 백그라운드 작업의 실제 상태와 output_file/summary를 다시 확인하고 다음 사용자-visible 작업을 이어서 진행하세요.",
-    "같은 문장을 반복하지 말고, 진행 불가 시 이유와 필요한 사용자 확인을 명시하세요.",
-    "",
-    originalText,
-    "</claude-runtime-background-task-followup-retry>",
-  ].join("\n");
-}
-
 export function buildFollowupKey(
   sessionId: string,
   items: PendingRuntimeTaskFollowup[],
@@ -75,41 +55,8 @@ export function buildFollowupKey(
   return `${sessionId}:${items.map((item) => item.taskId).join(",")}`;
 }
 
-export function buildRefreshedClaudeRuntimeTaskFollowupPrompt(
-  task: Task,
-  message: InterventionMessage,
-): string | undefined {
-  const taskIds = message.followupTaskIds;
-  if (!taskIds || taskIds.length === 0) return undefined;
-
-  const items: PendingRuntimeTaskFollowup[] = [];
-  for (const [firstSeen, taskId] of taskIds.entries()) {
-    const runtimeTask = task.claudeRuntime?.tasks[taskId];
-    if (!runtimeTask) return undefined;
-    items.push({
-      taskId,
-      status: runtimeTask.status,
-      outputFile: runtimeTask.outputFile,
-      summary: runtimeTask.summary,
-      description: runtimeTask.description,
-      toolUseId: runtimeTask.toolUseId,
-      error: runtimeTask.error,
-      terminalRevision:
-        normalizeRevision(runtimeTask.endTime ?? runtimeTask.updatedAt) ??
-        `${runtimeTask.status ?? "unknown"}:unknown`,
-      firstSeen,
-      inlineObserved: false,
-    });
-  }
-  return buildClaudeRuntimeTaskFollowupPrompt(items);
-}
-
 export function buildTaskKey(sessionId: string, taskId: string): string {
   return `${sessionId}:${taskId}`;
-}
-
-function normalizeRevision(value: number | undefined): string | undefined {
-  return value === undefined || !Number.isFinite(value) ? undefined : String(value);
 }
 
 function formatRuntimeTaskStatusNote(

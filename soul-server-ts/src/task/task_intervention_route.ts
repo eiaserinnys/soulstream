@@ -100,7 +100,7 @@ export interface TaskInterventionRouteDeps {
     TaskDeliveryLedgerGate,
     "admit" | "beginDispatch" | "recordResult" | "recordFailure"
       | "recordNotificationPublished" | "recordNotificationFailure"
-  > & Partial<Pick<TaskDeliveryLedgerGate, "reserveRetry">>;
+  >;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
 }
 
@@ -306,25 +306,6 @@ export class TaskInterventionRoute {
       }
       throw err;
     }
-  }
-
-  /** Persist a delayed retry reservation; this is not a conversation entry. */
-  async reserveDeliveryRetry(
-    params: AddInterventionParams,
-    deliveryNextAttemptAt: string,
-  ): Promise<void> {
-    if (!this.deps.deliveryLedgerGate) return;
-    await this.resolveTask(params.agentSessionId);
-    const admission = await this.deps.deliveryLedgerGate.admit(params);
-    const reserveRetry = this.deps.deliveryLedgerGate.reserveRetry;
-    if (!reserveRetry) {
-      throw new Error("Delivery retry reservation capability is unavailable");
-    }
-    await reserveRetry.call(
-      this.deps.deliveryLedgerGate,
-      admission,
-      deliveryNextAttemptAt,
-    );
   }
 
   private async awaitInitializingTask(task: Task): Promise<void> {

@@ -64,6 +64,19 @@ export function dequeueInterventions(task: Task): InterventionMessage[] {
   return drained;
 }
 
+export function dequeueInterventionsInLane(
+  task: Task,
+  lane: InterventionPriorityLane,
+): InterventionMessage[] {
+  const drained: InterventionMessage[] = [];
+  const retained: InterventionMessage[] = [];
+  for (const message of sortInterventionsByPriority(task.interventionQueue)) {
+    (interventionPriorityLane(message) === lane ? drained : retained).push(message);
+  }
+  task.interventionQueue = retained;
+  return drained;
+}
+
 function laneRank(lane: InterventionPriorityLane): number {
   return lane === "high" ? 0 : 1;
 }

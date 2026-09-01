@@ -1,10 +1,3 @@
-export function sleepWithoutHoldingProcess(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    timer.unref();
-  });
-}
-
 export function normalizeRuntimeRevision(
   value: number | undefined,
 ): string | undefined {

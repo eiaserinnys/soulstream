@@ -11,7 +11,7 @@ import { readClaudeBackgroundProvenance } from
 
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskManager } from "./task_manager.js";
-import type { InterventionMessage, Task } from "./task_models.js";
+import type { Task } from "./task_models.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { buildClaudeRuntimeFollowupDelivery } from "./claude_runtime_followup_delivery.js";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
@@ -21,79 +21,32 @@ import {
   buildTaskKey,
   type PendingRuntimeTaskFollowup,
 } from "./claude_runtime_task_followup_prompt.js";
-import {
-  buildRuntimeFollowupFallback,
-  CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-  type ClaudeRuntimeFollowupStallReason,
-} from "./claude_runtime_followup_fallback.js";
 import { hasPendingClaudeBackgroundRuntimeWork } from "./claude_runtime_state.js";
 import {
   normalizeRuntimeEventRevision as normalizeEventRevision,
   normalizeRuntimeRevision as normalizeRevision,
   runtimeRecord as asRecord,
   runtimeString as asString,
-  sleepWithoutHoldingProcess as sleep,
 } from "./claude_runtime_followup_utils.js";
-import { interventionPriorityLane } from "./task_intervention_queue.js";
+
+export const CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE = "claude_runtime_task_followup";
 
 export { buildClaudeRuntimeTaskFollowupPrompt } from
   "./claude_runtime_task_followup_prompt.js";
-
-export {
-  CLAUDE_RUNTIME_FOLLOWUP_RETRY_DELAY_MS,
-  CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-  MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT,
-  type ClaudeRuntimeFollowupStallReason,
-} from "./claude_runtime_followup_fallback.js";
 
 export interface ClaudeRuntimeTaskFollowupPort {
   collect(task: Task, event: SSEEventPayload): void;
   flush(task: Task): Promise<void>;
   collectDetached(task: Task, event: SSEEventPayload): Promise<void>;
-  queueFallback(
-    task: Task,
-    message: InterventionMessage,
-    reason: ClaudeRuntimeFollowupStallReason,
-  ): ClaudeRuntimeFallbackSchedule;
-  cancelScheduledFallback(
-    task: Task,
-    supersedingMessage: InterventionMessage,
-  ): Promise<void>;
-  takeScheduledFallbacks(): ClaudeRuntimeScheduledFallback[];
-}
-
-export interface ClaudeRuntimeFallbackSchedule {
-  reserved: Promise<void>;
-  completed: Promise<void>;
-}
-
-export interface ClaudeRuntimeScheduledFallback {
-  task: Task;
-  message: InterventionMessage;
-  reason: ClaudeRuntimeFollowupStallReason;
 }
 
 export interface ClaudeRuntimeTaskFollowupDeps {
-  taskManager: Pick<TaskManager, "addIntervention" | "reserveInterventionRetry">;
+  taskManager: Pick<TaskManager, "addIntervention">;
   onResume: StartExecutionCallback;
   releaseRetainedRunner(task: Task): Promise<void>;
   logger: Logger;
-  sleep?: (ms: number) => Promise<void>;
   deliveryV2Enabled?: boolean;
   inlineConsumptionRecorder?: Pick<TaskDeliveryLedgerGate, "recordInlineConsumed">;
-  pendingSupersessionRecorder?: Pick<
-    TaskDeliveryLedgerGate,
-    "recordPendingSuperseded"
-  >;
-}
-
-interface ScheduledRuntimeTaskFallback {
-  sessionId: string;
-  token: symbol;
-  promise: Promise<void>;
-  reservation: Promise<void>;
-  fallbackMessage: InterventionMessage;
-  pending: ClaudeRuntimeScheduledFallback;
 }
 
 const TERMINAL_RUNTIME_TASK_STATUSES = new Set([
@@ -106,7 +59,6 @@ const TERMINAL_RUNTIME_TASK_STATUSES = new Set([
 export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFollowupPort {
   private readonly pendingBySession = new Map<string, Map<string, PendingRuntimeTaskFollowup>>();
   private readonly flushedTaskKeys = new Set<string>();
-  private readonly scheduledFallbacks = new Map<string, ScheduledRuntimeTaskFallback>();
   private readonly durableDeliveryByTaskKey =
     new Map<string, ClaudeBackgroundDeliveryMetadata>();
   private sequence = 0;
@@ -281,191 +233,6 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       );
       throw err;
     }
-  }
-
-  queueFallback(
-    task: Task,
-    message: InterventionMessage,
-    reason: ClaudeRuntimeFollowupStallReason,
-  ): ClaudeRuntimeFallbackSchedule {
-    const { attempt, followupKey, delayMs, fallbackMessage } =
-      buildRuntimeFollowupFallback(
-        task,
-        message,
-        reason,
-        this.deps.deliveryV2Enabled === true,
-      );
-    const existing = this.scheduledFallbacks.get(followupKey);
-    if (existing) {
-      return { reserved: existing.reservation, completed: existing.promise };
-    }
-
-    const token = Symbol(followupKey);
-    const executionPromise = task.executionPromise;
-    task.pendingClaudeRuntimeFollowupRetry = true;
-
-    const reservation = this.reserveFallbackDelivery(fallbackMessage, delayMs);
-
-    const promise = this.deliverFallbackAfterDelay({
-      task,
-      reason,
-      attempt,
-      followupKey,
-      delayMs,
-      token,
-      executionPromise,
-      reservation,
-      fallbackMessage,
-    }).finally(() => {
-      if (this.scheduledFallbacks.get(followupKey)?.token === token) {
-        this.scheduledFallbacks.delete(followupKey);
-      }
-      if (!this.hasScheduledFallback(task.agentSessionId)) {
-        task.pendingClaudeRuntimeFollowupRetry = false;
-      }
-    });
-    this.scheduledFallbacks.set(followupKey, {
-      sessionId: task.agentSessionId,
-      token,
-      promise,
-      reservation,
-      fallbackMessage,
-      pending: { task, message, reason },
-    });
-    this.deps.logger.info(
-      { sessionId: task.agentSessionId, followupKey, attempt, delayMs },
-      "Claude runtime task follow-up fallback scheduled after terminal drain",
-    );
-    return { reserved: reservation, completed: promise };
-  }
-
-  async cancelScheduledFallback(
-    task: Task,
-    supersedingMessage: InterventionMessage,
-  ): Promise<void> {
-    if (interventionPriorityLane(supersedingMessage) !== "high") return;
-
-    const cancelled: ScheduledRuntimeTaskFallback[] = [];
-    for (const [followupKey, scheduled] of this.scheduledFallbacks) {
-      if (scheduled.sessionId !== task.agentSessionId) continue;
-      this.scheduledFallbacks.delete(followupKey);
-      cancelled.push(scheduled);
-    }
-    if (cancelled.length === 0) return;
-
-    task.pendingClaudeRuntimeFollowupRetry = false;
-    const supersessionResults = await Promise.allSettled(cancelled.map(async (scheduled) => {
-      await scheduled.reservation;
-      await this.deps.pendingSupersessionRecorder?.recordPendingSuperseded(
-        scheduled.fallbackMessage,
-        supersedingMessage.source?.trim()
-          || supersedingMessage.callerInfo?.source?.trim()
-          || "unknown",
-      );
-    }));
-    const failures = supersessionResults.filter((result) => result.status === "rejected");
-    if (failures.length > 0) {
-      this.deps.logger.warn(
-        { sessionId: task.agentSessionId, failures: failures.length },
-        "Claude runtime task follow-up durable fallback supersession failed",
-      );
-    }
-    this.deps.logger.info(
-      { sessionId: task.agentSessionId, cancelled: cancelled.length },
-      "Claude runtime task follow-up fallback cancelled by a newer message",
-    );
-  }
-
-  takeScheduledFallbacks(): ClaudeRuntimeScheduledFallback[] {
-    const scheduled = Array.from(this.scheduledFallbacks.values());
-    this.scheduledFallbacks.clear();
-    for (const { pending } of scheduled) {
-      pending.task.pendingClaudeRuntimeFollowupRetry = false;
-    }
-    if (scheduled.length > 0) {
-      this.deps.logger.warn(
-        { count: scheduled.length },
-        "Claude runtime task follow-up fallbacks cancelled by server shutdown",
-      );
-    }
-    return scheduled.map(({ pending }) => pending);
-  }
-
-  private async deliverFallbackAfterDelay(params: {
-    task: Task;
-    reason: ClaudeRuntimeFollowupStallReason;
-    attempt: number;
-    followupKey: string;
-    delayMs: number;
-    token: symbol;
-    executionPromise: Promise<void> | undefined;
-    reservation: Promise<void>;
-    fallbackMessage: Parameters<TaskManager["addIntervention"]>[0];
-  }): Promise<void> {
-    const {
-      task,
-      reason,
-      attempt,
-      followupKey,
-      delayMs,
-      token,
-      executionPromise,
-      reservation,
-      fallbackMessage,
-    } = params;
-
-    if (executionPromise) {
-      try {
-        await executionPromise;
-      } catch {
-        // The executor persists its terminal state before the delayed retry.
-      }
-    }
-    if (!this.isCurrentFallback(followupKey, token)) return;
-    await reservation;
-    await (this.deps.sleep ?? sleep)(delayMs);
-    if (!this.isCurrentFallback(followupKey, token)) return;
-
-    task.pendingClaudeRuntimeFollowupRetry = false;
-    try {
-      const result = await this.deps.taskManager.addIntervention(
-        fallbackMessage,
-        this.deps.onResume,
-      );
-      if ("deferred" in result && result.deferred) {
-        this.deps.logger.info(
-          { sessionId: task.agentSessionId, followupKey, attempt },
-          "Claude runtime task follow-up fallback skipped because another turn is running",
-        );
-      }
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId, followupKey, reason },
-        "Claude runtime task follow-up fallback intervention failed",
-      );
-      throw err;
-    }
-  }
-
-  private async reserveFallbackDelivery(
-    fallbackMessage: Parameters<TaskManager["addIntervention"]>[0],
-    delayMs: number,
-  ): Promise<void> {
-    if (this.deps.deliveryV2Enabled !== true) return;
-    await this.deps.taskManager.reserveInterventionRetry(
-      fallbackMessage,
-      new Date(Date.now() + delayMs).toISOString(),
-    );
-  }
-
-  private isCurrentFallback(followupKey: string, token: symbol): boolean {
-    return this.scheduledFallbacks.get(followupKey)?.token === token;
-  }
-
-  private hasScheduledFallback(sessionId: string): boolean {
-    return Array.from(this.scheduledFallbacks.values()).some(
-      (scheduled) => scheduled.sessionId === sessionId,
-    );
   }
 
   private getPendingMap(sessionId: string): Map<string, PendingRuntimeTaskFollowup> {

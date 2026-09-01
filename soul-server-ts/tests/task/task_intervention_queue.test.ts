@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   dequeueInterventions,
+  dequeueInterventionsInLane,
   enqueueInterventionOnce,
   sortInterventionsByPriority,
 } from "../../src/task/task_intervention_queue.js";
@@ -56,6 +57,30 @@ describe("enqueueInterventionOnce", () => {
       "stale runtime follow-up",
     ]);
     expect(target.interventionQueue).toEqual([]);
+  });
+
+  it("drains only the requested priority lane and preserves the other lane", () => {
+    const target = task();
+    target.interventionQueue.push(
+      {
+        text: "runtime first",
+        user: "system",
+        deliveryIntent: "runtime_followup",
+      },
+      { text: "user second", user: "alice" },
+      {
+        text: "completion third",
+        user: "agent",
+        deliveryIntent: "completion_notification",
+      },
+    );
+
+    expect(dequeueInterventionsInLane(target, "high").map((message) => message.text))
+      .toEqual(["user second"]);
+    expect(target.interventionQueue.map((message) => message.text)).toEqual([
+      "runtime first",
+      "completion third",
+    ]);
   });
 
   it("converges a retried durable delivery on one queue position", () => {

@@ -470,42 +470,6 @@ describe("TaskDeliveryLedgerGate", () => {
     });
   });
 
-  it("reserves a delayed retry without dispatching a conversation message", async () => {
-    const deliveryId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-    const retryLeasedDelivery = vi.fn().mockResolvedValue(row(deliveryId, "pending"));
-    const gate = new TaskDeliveryLedgerGate(true, {
-      register: vi.fn(),
-      claimForTarget: vi.fn(),
-      beginDispatch: vi.fn(),
-      get: vi.fn(),
-      markQueued: vi.fn(),
-      markDelivered: vi.fn(),
-      markUncertain: vi.fn(),
-      markConsumed: vi.fn(),
-      markConsumedByRelation: vi.fn(),
-      recordRelationConsumed: vi.fn(),
-      retryLeasedDelivery,
-      markPendingSuperseded: vi.fn(),
-    });
-    const dueAt = "2026-08-18T04:00:05.000Z";
-
-    await gate.reserveRetry({
-      kind: "admitted",
-      deliveryId,
-      row: {
-        ...row(deliveryId, "claimed"),
-        lease_owner: "route-1",
-      },
-    }, dueAt);
-
-    expect(retryLeasedDelivery).toHaveBeenCalledWith(
-      deliveryId,
-      "route-1",
-      "scheduled_runtime_followup_retry",
-      expect.any(Number),
-    );
-  });
-
   it("keeps an unknown first result retryable under the active dispatch lease", async () => {
     const deliveryId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
     const markUncertain = vi.fn();
