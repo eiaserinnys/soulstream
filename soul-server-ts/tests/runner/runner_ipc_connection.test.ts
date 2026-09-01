@@ -16,6 +16,7 @@ import {
 } from "../../src/runner/frame_protocol.js";
 import {
   RunnerIpcConnection,
+  RunnerIpcRequestTimeoutError,
 } from "../../src/runner/runner_ipc_connection.js";
 import { runnerDroppedFrameLogContext } from "../../src/runner/runner_frame_drop.js";
 import { RunnerHostRequestClient } from
@@ -251,6 +252,9 @@ describe("RunnerIpcConnection", () => {
       await expect(pending).rejects.toThrow(
         mode === "timeout" ? "timed out" : mode === "abort" ? "cancelled" : "closed",
       );
+      if (mode === "timeout") {
+        await expect(pending).rejects.toBeInstanceOf(RunnerIpcRequestTimeoutError);
+      }
       expect(hostConnection.pendingRequestCount).toBe(0);
     },
   );

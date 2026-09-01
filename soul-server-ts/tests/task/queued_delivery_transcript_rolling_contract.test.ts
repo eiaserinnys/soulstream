@@ -106,6 +106,56 @@ describe("queued transcript recovery rolling contract", () => {
     },
   );
 
+  it("R34 skips transcript-absent replay when the live turn consumed the claimed delivery", async () => {
+    const claimedRow = {
+      delivery_id: "delivery-consumed-during-restart",
+      intent: "runtime_followup",
+      state: "claimed",
+      aggregate_state: "pending",
+      lease_owner: "rolling-worker",
+      target_receipt_id: null,
+    } as SessionDeliveryRow;
+    let currentRow = claimedRow;
+    const redeliverContent = vi.fn(async () => undefined);
+    const retryLeasedDelivery = vi.fn(async () => null);
+    const recovery = new QueuedDeliveryTranscriptRecovery({
+      deliveryRepository: {
+        get: vi.fn(async () => currentRow),
+        markConsumed: vi.fn(async () => null),
+        markUncertain: vi.fn(async () => null),
+        retryLeasedDelivery,
+      },
+      recoveryRepository: {
+        claimQueuedAfterNodeRestart: vi.fn(async () => [claimedRow]),
+        markDeliveredFromTranscript: vi.fn(async () => null),
+      },
+      transcriptReceipt: {
+        inspect: vi.fn(async () => {
+          currentRow = {
+            ...claimedRow,
+            state: "consumed",
+            aggregate_state: "consumed",
+            lease_owner: null,
+            target_receipt_id: "event:260901",
+          };
+          return {
+            kind: "absent" as const,
+            inputUuid: "delivery:delivery-consumed-during-restart",
+          };
+        }),
+      },
+      redeliverContent,
+      logger: { warn: vi.fn() },
+    }, "rolling-worker");
+
+    await expect(recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 1,
+      settled: 1,
+    });
+    expect(redeliverContent).not.toHaveBeenCalled();
+    expect(retryLeasedDelivery).not.toHaveBeenCalled();
+  });
+
   it("returns transcript-pending input to pending for reconnect reclaim", async () => {
     const harness = makeDeferredHarness("input_pending");
 

@@ -39,6 +39,13 @@ export class RunnerObservationDroppedError extends Error {
   }
 }
 
+export class RunnerIpcRequestTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`Runner IPC request timed out after ${timeoutMs}ms`);
+    this.name = "RunnerIpcRequestTimeoutError";
+  }
+}
+
 /** One newline-delimited, JSON-validated runner socket connection. */
 export class RunnerIpcConnection {
   private buffer = "";
@@ -119,7 +126,7 @@ export class RunnerIpcConnection {
     if (options.signal?.aborted) abortFromParent();
     else options.signal?.addEventListener("abort", abortFromParent, { once: true });
     const timer = setTimeout(
-      () => controller.abort(new Error(`Runner IPC request timed out after ${options.timeoutMs}ms`)),
+      () => controller.abort(new RunnerIpcRequestTimeoutError(options.timeoutMs)),
       options.timeoutMs,
     );
     timer.unref?.();
