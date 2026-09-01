@@ -3,8 +3,7 @@ import { access, mkdir, rename } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
 import {
-  inspectProcessIdentity,
-  processStartIdentitiesMatch,
+  defaultProcessOwnershipLockDependencies,
   type ProcessIdentity,
 } from "./runner_process_lock.js";
 import {
@@ -14,6 +13,10 @@ import {
 import { readRunnerPid } from "./runner_process_spawn.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
+import {
+  inspectRunnerWriterLock,
+  type RunnerWriterLockState,
+} from "./runner_writer_lock.js";
 
 type RegistrationFailure = RunnerRegistrationScan["errors"][number];
 
@@ -27,13 +30,12 @@ type RunnerRegistrationQuarantineStage =
   (typeof RUNNER_REGISTRATION_QUARANTINE_STAGES)[number];
 
 export type RunnerRegistrationQuarantineResult =
-  | { status: "quarantined"; path: string; pid: number }
+  | { status: "quarantined"; path: string; pid: number | null }
   | {
     status: "retained";
     reason:
       | "unsupported_failure_stage"
       | "registration_recovered"
-      | "pid_evidence_missing"
       | "runner_alive";
   }
   | { status: "missing" };
@@ -43,6 +45,7 @@ export async function quarantineUnreadableRunnerRegistration(
   failure: RegistrationFailure,
   dependencies: {
     inspectProcess?: (pid: number) => Promise<ProcessIdentity>;
+    inspectWriterLock?: (path: string) => Promise<RunnerWriterLockState>;
     now?: () => number;
   } = {},
 ): Promise<RunnerRegistrationQuarantineResult> {
@@ -60,22 +63,24 @@ export async function quarantineUnreadableRunnerRegistration(
         ...(dependencies.inspectProcess
           ? { inspectProcess: dependencies.inspectProcess }
           : {}),
+        ...(dependencies.inspectWriterLock
+          ? { inspectWriterLock: dependencies.inspectWriterLock }
+          : {}),
       });
       return { status: "retained", reason: "registration_recovered" };
     } catch {
       // The same config is still unreadable under the session mutation lock.
     }
 
+    const defaults = defaultProcessOwnershipLockDependencies();
+    const observed = await (dependencies.inspectWriterLock ?? (async (path: string) =>
+      await inspectRunnerWriterLock(path, {
+        ...defaults,
+        ...(dependencies.inspectProcess ? { inspectProcess: dependencies.inspectProcess } : {}),
+      })))(join(failure.directory, "runner.lock"));
+    if (observed.kind !== "free") return { status: "retained", reason: "runner_alive" };
     const identity = await readIdentityIfValid(failure.directory);
     const pid = identity?.pid ?? await readPidIfValid(join(failure.directory, "runner.pid"));
-    if (pid === null) return { status: "retained", reason: "pid_evidence_missing" };
-    const observed = await (dependencies.inspectProcess ?? inspectProcessIdentity)(pid);
-    const originalRunnerAlive = observed.alive && (
-      !identity?.startIdentity
-      || observed.startIdentity === null
-      || processStartIdentitiesMatch(observed.startIdentity, identity.startIdentity)
-    );
-    if (originalRunnerAlive) return { status: "retained", reason: "runner_alive" };
 
     const quarantineRoot = `${resolve(stateDirectory)}.quarantine`;
     await mkdir(quarantineRoot, { recursive: true, mode: 0o700 });

@@ -28,11 +28,14 @@ import {
   pendingRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
+import { RunnerWriterLock } from "../../src/runner/runner_writer_lock.js";
 
 const temporaryDirectories: string[] = [];
+const writerLocks: RunnerWriterLock[] = [];
 const NOW = Date.parse("2026-08-11T00:00:30.000Z");
 
 afterEach(async () => {
+  await Promise.all(writerLocks.splice(0).map(async (lock) => await lock.release()));
   await Promise.all(temporaryDirectories.splice(0).map((directory) =>
     rm(directory, { recursive: true, force: true })));
 });
@@ -492,14 +495,16 @@ describe("runner process registry", () => {
       await mkdir(paths.sessionDirectory, { recursive: true });
       await writeFile(paths.configPath, JSON.stringify(current.config));
       await writeFile(paths.pidPath, String(process.pid));
+      const writerLock = await RunnerWriterLock.acquire(paths.lockPath);
+      writerLocks.push(writerLock);
       const identity = pendingRunnerRegistrationIdentity(
         current.config.sessionId,
         current.config.codeSha,
       );
       await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
         ...identity,
-        pid: process.pid,
-        startIdentity: "current-process",
+        pid: writerLock.owner.pid,
+        startIdentity: writerLock.owner.startIdentity,
       });
       const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
       await outbox.initializeBootstrap({

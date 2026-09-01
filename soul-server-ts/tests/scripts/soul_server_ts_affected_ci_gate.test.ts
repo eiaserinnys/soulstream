@@ -58,7 +58,7 @@ describe("soul-server-ts affected CI gate", () => {
       jobs: Object.keys(workflow.jobs),
     }))).toEqual([{
       name: "soul-server-ts.yml",
-      jobs: ["soul-server-ts"],
+      jobs: ["soul-server-ts", "runner-kernel-lock-windows"],
     }]);
 
     const job = selected[0]?.workflow.jobs["soul-server-ts"];
