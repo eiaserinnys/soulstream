@@ -1,3 +1,5 @@
+import { rm } from "node:fs/promises";
+
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,6 +13,10 @@ import type {
   RunnerRegistration,
   RunnerRegistrationScan,
 } from "../../src/runner/runner_process_registry.js";
+import { readRunnerRegistrationSummary } from
+  "../../src/runner/runner_registration_reader.js";
+import { readRunnerRegistrationIdentity } from
+  "../../src/runner/runner_registration_identity.js";
 import { RunnerRecoveryCoordinator } from
   "../../src/runner/runner_recovery_coordinator.js";
 import {
@@ -23,6 +29,10 @@ import {
 } from "../../src/task/task_lifecycle_route.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";
+import {
+  durableMissingSessionFixture,
+  pathExists,
+} from "./r36b_missing_session_fixture.js";
 
 const ACTIVE_SESSION = "delete-active";
 const LEGACY_RESIDUE = "1ed01abc-residue";
@@ -224,6 +234,123 @@ describe("R36 delete_session lifecycle lab", () => {
       "catalog-deleted",
     ]);
   });
+
+  it("retires and garbage-collects a missing session with only a terminal historical pid", async () => {
+    let now = STARTED_AT;
+    const fixture = await durableMissingSessionFixture("reaped", () => now);
+    const logger = testLogger();
+    const taskManager = missingSessionTaskManager();
+    const coordinator = new RunnerRecoveryCoordinator({
+      nodeId: "node-a",
+      stateDirectory: fixture.stateDirectory,
+      leaseTimeoutMs: 1_000,
+      scanIntervalMs: 15_000,
+      taskManager,
+      taskExecutor: recoveryTaskExecutor(),
+      closedTailDrainer: { drain: vi.fn(async () => {}) },
+      logger,
+      spawner: fixture.spawner,
+      now: () => now,
+      sessionGarbageCollector: new RunnerSessionGarbageCollector(
+        fixture.stateDirectory,
+        1_000,
+        logger,
+      ),
+    });
+
+    try {
+      const initial = await readRunnerRegistrationSummary(
+        fixture.paths.sessionDirectory,
+        { verifyProcessIdentity: true },
+      );
+      expect(initial).toMatchObject({
+        pid: fixture.historicalPid,
+        pidAlive: false,
+        pidStartIdentity: null,
+        retiredAt: null,
+        lifecycle: {
+          runner_pid: fixture.historicalPid,
+          execution_state: "reaped",
+          terminal_error: { code: "runner_exited" },
+        },
+      });
+      expect(await readRunnerRegistrationIdentity(fixture.paths.sessionDirectory))
+        .toMatchObject({ pid: null, startIdentity: null });
+      expect(await Promise.all([
+        pathExists(fixture.paths.pidPath),
+        pathExists(fixture.paths.lockPath),
+        pathExists(fixture.paths.socketPath),
+      ])).toEqual([false, false, false]);
+
+      await coordinator.scanOnce();
+      await coordinator.waitForSettled();
+
+      expect((await readRunnerRegistrationIdentity(
+        fixture.paths.sessionDirectory,
+      ))?.retiredAt).toBeTruthy();
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        expect.anything(),
+        "runner registration has no durable session",
+      );
+
+      now += 60 * 60 * 1_000 + 1_001;
+      await coordinator.scanOnce();
+      await coordinator.waitForSettled();
+      await coordinator.stop();
+
+      expect(await pathExists(fixture.paths.sessionDirectory)).toBe(false);
+    } finally {
+      await coordinator.stop();
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a missing session with a non-terminal historical lifecycle pid", async () => {
+    const fixture = await durableMissingSessionFixture("running", () => STARTED_AT);
+    const logger = testLogger();
+    const taskManager = missingSessionTaskManager();
+    const terminate = vi.spyOn(fixture.spawner, "terminate");
+    const coordinator = new RunnerRecoveryCoordinator({
+      nodeId: "node-a",
+      stateDirectory: fixture.stateDirectory,
+      leaseTimeoutMs: 1_000,
+      scanIntervalMs: 15_000,
+      taskManager,
+      taskExecutor: recoveryTaskExecutor(),
+      closedTailDrainer: { drain: vi.fn(async () => {}) },
+      logger,
+      spawner: fixture.spawner,
+      now: () => STARTED_AT,
+    });
+
+    try {
+      const initial = await readRunnerRegistrationSummary(
+        fixture.paths.sessionDirectory,
+        { verifyProcessIdentity: true },
+      );
+      expect(initial).toMatchObject({
+        pid: fixture.historicalPid,
+        pidAlive: false,
+        pidStartIdentity: null,
+        lifecycle: { execution_state: "running" },
+      });
+
+      await coordinator.scanOnce();
+      await coordinator.waitForSettled();
+
+      expect(terminate).not.toHaveBeenCalled();
+      expect((await readRunnerRegistrationIdentity(
+        fixture.paths.sessionDirectory,
+      ))?.retiredAt).toBeUndefined();
+      expect(logger.warn).toHaveBeenCalledWith(
+        { sessionId: fixture.sessionId },
+        "runner registration has no durable session",
+      );
+    } finally {
+      await coordinator.stop();
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
 });
 
 function task(agentSessionId: string): Task {
@@ -280,6 +407,31 @@ function registration(
 }
 
 function silentLogger() {
+  return {
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  } as never;
+}
+
+function missingSessionTaskManager(): TaskManager {
+  return {
+    hydrateRunnerRecoveryTask: vi.fn(async () => null),
+    listOwnerNullRunningInventory: vi.fn(async () => []),
+    markRunnerFailureAndResume: vi.fn(async () => {}),
+    projectClosedRunner: vi.fn(async () => true),
+    reconcileExecutionOwnershipObservations: vi.fn(async () => false),
+  } as unknown as TaskManager;
+}
+
+function recoveryTaskExecutor() {
+  return {
+    recoverRegisteredRunner: vi.fn(async () => {}),
+    restartRegisteredRunner: vi.fn(),
+  };
+}
+
+function testLogger() {
   return {
     error: vi.fn(),
     info: vi.fn(),

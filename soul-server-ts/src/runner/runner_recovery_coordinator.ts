@@ -5,6 +5,7 @@ import { releaseTaskRunner } from "../task/task_runner_release.js";
 import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
+  isTerminalRunnerExecutionState,
   runnerReleaseGcCandidateFingerprint,
   scanRunnerRegistrations,
   type RunnerRegistration,
@@ -242,7 +243,13 @@ export class RunnerRecoveryCoordinator {
         if (
           outcome.status === "missing"
           && !registration.pidAlive
-          && registration.pid === null
+          && (
+            registration.pid === null
+            || (
+              registration.lifecycle !== null
+              && isTerminalRunnerExecutionState(registration.lifecycle.execution_state)
+            )
+          )
           && registration.pidStartIdentity === null
         ) {
           try {
