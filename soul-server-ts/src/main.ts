@@ -256,7 +256,6 @@ async function main(): Promise<void> {
     await runtime.runnerRecoveryCoordinator?.stop();
     try {
       runtime.scheduleDispatcher.stop();
-      await runtime.taskExecutor.failScheduledClaudeRuntimeFollowupsForShutdown();
       await runtime.taskManager.shutdown();
       if (runtime.claudeSessionClientRegistry) {
         await runtime.claudeSessionClientRegistry.shutdown();

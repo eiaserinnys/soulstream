@@ -435,28 +435,4 @@ describe("TaskExecutorFinalizer.finalize", () => {
     );
   });
 
-  it("지연 runtime follow-up이 예약된 중간 종료는 caller 완료로 통지하지 않는다", async () => {
-    const persistExecutorFinalState = vi.fn(async () => ({
-      newlyFinalized: true,
-      terminalTransitionApplied: true,
-    }));
-    const close = vi.fn(async () => undefined);
-    const notify = vi.fn(async () => undefined);
-    const finalizer = new TaskExecutorFinalizer({
-      lifecycleTransition: { persistExecutorFinalState },
-      logger: makeLogger(),
-      completionNotifier: { notify },
-    });
-    const task = makeTask({
-      callerSessionId: "parent-sess-1",
-      pendingClaudeRuntimeFollowupRetry: true,
-    });
-    task.runner = createInProcessTaskRunnerRuntime(makeEngine(close));
-
-    await finalizer.finalize(task);
-
-    expect(persistExecutorFinalState).toHaveBeenCalledWith(task, true);
-    expect(close).toHaveBeenCalledTimes(1);
-    expect(notify).not.toHaveBeenCalled();
-  });
 });

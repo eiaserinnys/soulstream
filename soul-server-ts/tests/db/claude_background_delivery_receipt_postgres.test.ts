@@ -11,10 +11,8 @@ import { buildDeterministicDeliveryIdentity } from
   "../../src/task/delivery_identity.js";
 import { buildCanonicalDeliveryPayload } from
   "../../src/task/delivery_payload.js";
-import {
-  CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-  ClaudeRuntimeTaskFollowupController,
-} from "../../src/task/claude_runtime_task_followup.js";
+import { CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE } from
+  "../../src/task/claude_runtime_task_followup.js";
 import { TaskDeliveryLedgerGate } from
   "../../src/task/task_delivery_ledger_gate.js";
 import {
@@ -31,7 +29,7 @@ import {
 const describePostgres =
   hasFullSchemaPostgresBackend || hasDockerBinary() ? describe : describe.skip;
 
-describePostgres("Claude background fallback PostgreSQL integration", () => {
+describePostgres("Claude background delivery receipt PostgreSQL integration", () => {
   let harness: FullSchemaPostgresHarness;
 
   beforeAll(async () => {
@@ -59,11 +57,10 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
     await harness.cleanup();
   });
 
-  it("delivers stalled attempts 2 and 3 as child deliveries without mutating the parent", async () => {
+  it("keeps one exact runtime follow-up delivery replayable until a receipt consumes it", async () => {
     const repository = new SessionDeliveryRepository(harness.sql);
     const ledger = new TaskDeliveryLedgerGate(true, repository);
     const task = makeTask();
-    task.executionPromise = Promise.resolve();
     const counts = { resume: 0, wake: 0, notification: 0 };
     const dispatched: InterventionMessage[] = [];
     const route = makeRoute(task, ledger, counts, dispatched);
@@ -72,52 +69,19 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
     await route.addIntervention(original.params, () => {
       counts.wake += 1;
     });
+
     expect(dispatched).toHaveLength(1);
-    const parent = dispatched[0] as InterventionMessage & {
+    const delivered = dispatched[0] as InterventionMessage & {
       storedDeliveryPayload?: Record<string, unknown>;
       storedDeliveryPayloadHash?: string;
     };
-    expect(parent.deliveryId).toBe(original.params.deliveryId);
-    expect(parent.storedDeliveryPayload).toEqual(original.payload);
-    expect(parent.storedDeliveryPayloadHash).toBe(original.payloadHash);
-    await ledger.recordTurnStarted(parent, task);
-
-    const controller = new ClaudeRuntimeTaskFollowupController({
-      taskManager: {
-        addIntervention: (params, onResume) =>
-          route.addIntervention(params, onResume),
-        reserveInterventionRetry: (params, deliveryNextAttemptAt) =>
-          route.reserveDeliveryRetry(params, deliveryNextAttemptAt),
-      },
-      onResume: () => {
-        counts.wake += 1;
-      },
-      releaseRetainedRunner: async () => undefined,
-      logger: pino({ level: "silent" }),
-      sleep: async () => undefined,
-      deliveryV2Enabled: true,
+    expect(delivered).toMatchObject({
+      deliveryId: original.params.deliveryId,
+      storedDeliveryPayload: original.payload,
+      storedDeliveryPayloadHash: original.payloadHash,
     });
+    expect(counts).toEqual({ resume: 1, wake: 1, notification: 1 });
 
-    const attempt2Schedule = controller.queueFallback(task, parent, "empty_response");
-    await attempt2Schedule.reserved;
-    await attempt2Schedule.completed;
-    expect(dispatched).toHaveLength(2);
-    const attempt2 = dispatched[1]!;
-    expect(attempt2.deliveryId).not.toBe(parent.deliveryId);
-    expect(attempt2.parentDeliveryId).toBe(parent.deliveryId);
-    expect(attempt2.followupAttempt).toBe(2);
-    await ledger.recordTurnStarted(attempt2, task);
-
-    const attempt3Schedule = controller.queueFallback(task, attempt2, "repeated_response");
-    await attempt3Schedule.reserved;
-    await attempt3Schedule.completed;
-    expect(dispatched).toHaveLength(3);
-    const attempt3 = dispatched[2]!;
-    expect(attempt3.deliveryId).not.toBe(attempt2.deliveryId);
-    expect(attempt3.parentDeliveryId).toBe(attempt2.deliveryId);
-    expect(attempt3.followupAttempt).toBe(3);
-
-    expect(counts).toEqual({ resume: 3, wake: 3, notification: 3 });
     const rows = await harness.sql<Array<{
       delivery_id: string;
       parent_delivery_id: string | null;
@@ -128,28 +92,17 @@ describePostgres("Claude background fallback PostgreSQL integration", () => {
       FROM session_deliveries
       ORDER BY created_at, delivery_id
     `;
-    expect(rows).toHaveLength(3);
-    expect(rows.map((row) => row.state)).not.toContain("uncertain");
-    expect(new Set(rows.map((row) => row.delivery_id)).size).toBe(3);
-    expect(rows.find((row) => row.delivery_id === parent.deliveryId)).toMatchObject({
+    expect(rows).toEqual([{
+      delivery_id: original.params.deliveryId,
+      parent_delivery_id: null,
+      state: "delivered",
       payload_hash: original.payloadHash,
-      state: "delivered",
-    });
-    expect(rows.find((row) => row.delivery_id === attempt2.deliveryId)).toMatchObject({
-      parent_delivery_id: parent.deliveryId,
-      state: "delivered",
-      payload_hash: attempt2.storedDeliveryPayloadHash,
-    });
-    expect(rows.find((row) => row.delivery_id === attempt3.deliveryId)).toMatchObject({
-      parent_delivery_id: attempt2.deliveryId,
-      state: "delivered",
-      payload_hash: attempt3.storedDeliveryPayloadHash,
-    });
+    }]);
     await expect(harness.sql`
       SELECT COUNT(*)::int AS count
       FROM session_delivery_notification_outbox
       WHERE state = 'published'
-    `).resolves.toMatchObject([{ count: 3 }]);
+    `).resolves.toMatchObject([{ count: 1 }]);
   });
 
   it.each([

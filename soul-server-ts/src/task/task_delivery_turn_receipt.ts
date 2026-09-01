@@ -37,9 +37,7 @@ export class TaskDeliveryTurnReceipt {
 
   private add(intervention: InterventionMessage): DeliveryReceipt | undefined {
     const duplicate = this.receipts.some((receipt) =>
-      intervention.deliveryId !== undefined
-        ? receipt.intervention.deliveryId === intervention.deliveryId
-        : receipt.intervention === intervention
+      matchesIntervention(receipt.intervention, intervention)
     );
     if (duplicate) return undefined;
     const receipt: DeliveryReceipt = {
@@ -49,6 +47,12 @@ export class TaskDeliveryTurnReceipt {
     };
     this.receipts.push(receipt);
     return receipt;
+  }
+
+  hasConsumptionReceipt(intervention: InterventionMessage): boolean {
+    return this.receipts.some((receipt) =>
+      receipt.recorded && matchesIntervention(receipt.intervention, intervention)
+    );
   }
 
   async observe(task: Task, event: SSEEventPayload): Promise<void> {
@@ -99,6 +103,15 @@ export class TaskDeliveryTurnReceipt {
       receipt.consumed = true;
     }
   }
+}
+
+function matchesIntervention(
+  candidate: InterventionMessage,
+  intervention: InterventionMessage,
+): boolean {
+  return intervention.deliveryId !== undefined
+    ? candidate.deliveryId === intervention.deliveryId
+    : candidate === intervention;
 }
 
 function turnReceiptId(task: Task): string {

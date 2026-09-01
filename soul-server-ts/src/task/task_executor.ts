@@ -73,8 +73,6 @@ import {
 import { failBlockingClaudeRuntimeWork } from "./claude_runtime_state.js";
 import {
   CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-  MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT,
-  type ClaudeRuntimeFollowupStallReason,
   type ClaudeRuntimeTaskFollowupPort,
 } from "./claude_runtime_task_followup.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
@@ -850,18 +848,6 @@ export class TaskExecutor {
     };
   }
 
-  async failScheduledClaudeRuntimeFollowupsForShutdown(): Promise<void> {
-    if (!this.claudeRuntimeTaskFollowup) return;
-    for (const { task, message, reason } of this.claudeRuntimeTaskFollowup.takeScheduledFallbacks()) {
-      await this.handleScheduledClaudeRuntimeFollowupFailure(
-        task,
-        message,
-        reason,
-        new Error("server shutdown while delayed retry was scheduled"),
-      );
-    }
-  }
-
   /**
    * Turn 시퀀스 drain (B-4 multi-turn). 분석 캐시
    * `20260517-1410-codex-ts-folder-resume-intervene.md` §D-3 상태도.
@@ -931,11 +917,6 @@ export class TaskExecutor {
         ?? turnInput.backendSessionRolloverFrom;
       const contextRecovery = createClaudeContextRecoveryObservation();
       let currentTurnInterventions = turnInput.interventions ?? [];
-      if (this.claudeRuntimeTaskFollowup) {
-        for (const intervention of currentTurnInterventions) {
-          await this.claudeRuntimeTaskFollowup.cancelScheduledFallback(task, intervention);
-        }
-      }
       const compactedBeforeTurn = await this.compactClaudeContextIfNeeded(
         task,
         agent,
@@ -1095,10 +1076,11 @@ export class TaskExecutor {
       }
       await this.flushClaudeRuntimeTaskFollowups(task);
       for (const intervention of currentTurnInterventions) {
-        await this.handleClaudeRuntimeFollowupStall(
+        this.observeClaudeRuntimeFollowupNoResponse(
           task,
           intervention,
           previousAssistantText,
+          turnReceipt,
         );
       }
       await task.interruptRequest;
@@ -1441,82 +1423,37 @@ export class TaskExecutor {
     }
   }
 
-  private async handleClaudeRuntimeFollowupStall(
+  private observeClaudeRuntimeFollowupNoResponse(
     task: Task,
     intervention: InterventionMessage | undefined,
     previousAssistantText: string,
-  ): Promise<boolean> {
-    if (intervention?.source !== CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) return false;
+    receipt: TaskDeliveryTurnReceipt | undefined,
+  ): void {
+    if (intervention?.source !== CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) return;
     const nextAssistantText = normalizeAssistantText(task.lastAssistantText);
     const reason = resolveFollowupStallReason(previousAssistantText, nextAssistantText);
-    if (!reason) return false;
+    if (!reason) return;
 
-    const attempt = intervention.followupAttempt ?? 1;
-    if (attempt < MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT && this.claudeRuntimeTaskFollowup) {
-      try {
-        const scheduledFallback = this.claudeRuntimeTaskFollowup.queueFallback(
-          task,
-          intervention,
-          reason,
-        );
-        await scheduledFallback.reserved;
-        void scheduledFallback.completed.catch((err: unknown) => {
-          void this.handleScheduledClaudeRuntimeFollowupFailure(task, intervention, reason, err);
-        });
-        return true;
-      } catch (err) {
-        this.logger.warn(
-          {
-            err,
-            sessionId: task.agentSessionId,
-            followupAttempt: attempt,
-            followupKey: intervention.followupKey,
-            reason,
-          },
-          "Claude runtime task follow-up fallback enqueue failed",
-        );
-        await this.publishClaudeRuntimeFollowupRetryFailed(task, err);
-        return true;
-      }
-    }
-
-    await this.publishClaudeRuntimeFollowupExhausted(task, attempt);
-    return true;
-  }
-
-  private async handleScheduledClaudeRuntimeFollowupFailure(
-    task: Task,
-    intervention: InterventionMessage,
-    reason: ClaudeRuntimeFollowupStallReason,
-    err: unknown,
-  ): Promise<void> {
-    try {
-      if (task.status === "running") {
-        this.logger.info(
-          { sessionId: task.agentSessionId, followupKey: intervention.followupKey },
-          "Claude runtime task follow-up delayed failure ignored after another turn resumed",
-        );
-        return;
-      }
-      this.logger.warn(
-        {
-          err,
-          sessionId: task.agentSessionId,
-          followupAttempt: intervention.followupAttempt ?? 1,
-          followupKey: intervention.followupKey,
-          reason,
-        },
-        "Claude runtime task follow-up delayed fallback enqueue failed",
+    const consumptionReceiptObserved =
+      receipt?.hasConsumptionReceipt(intervention) ?? false;
+    const details = {
+      sessionId: task.agentSessionId,
+      deliveryId: intervention.deliveryId,
+      followupKey: intervention.followupKey,
+      reason,
+      consumptionReceiptObserved,
+    };
+    if (consumptionReceiptObserved) {
+      this.logger.info(
+        details,
+        "Claude runtime task follow-up ended without a new response after consumption",
       );
-      await this.publishClaudeRuntimeFollowupRetryFailed(task, err);
-      task.completedAt = new Date();
-      await this._finalize(task);
-    } catch (finalizeErr) {
-      this.logger.error(
-        { err: finalizeErr, sessionId: task.agentSessionId },
-        "Claude runtime task follow-up delayed failure finalization failed",
-      );
+      return;
     }
+    this.logger.warn(
+      details,
+      "Claude runtime task follow-up had no consumption receipt; original delivery remains replayable",
+    );
   }
 
   private async publishClaudeRuntimeFollowupEnqueueFailed(
@@ -1534,44 +1471,6 @@ export class TaskExecutor {
       recovery_hint:
         "Send another message to resume this session if the automatic follow-up does not appear.",
     } as SSEEventPayload);
-  }
-
-  private async publishClaudeRuntimeFollowupRetryFailed(
-    task: Task,
-    err: unknown,
-  ): Promise<void> {
-    const message =
-      `Background task follow-up retry could not be queued: ${formatErrorMessage(err)}. ` +
-      "Automatic follow-up cannot continue; send another message to resume and inspect the background task result.";
-    await this.engineEventPublisher.publishEngineEvent(task, {
-      type: "error",
-      message,
-      error_code: "claude_runtime_followup_stalled",
-      fatal: true,
-      recoverable: true,
-      recovery_hint:
-        "Send another message to resume this session in a fresh turn and inspect the background task result.",
-    } as SSEEventPayload);
-    this.engineFailureRecovery.recoverFromSynthesizedFailure(task, message);
-  }
-
-  private async publishClaudeRuntimeFollowupExhausted(
-    task: Task,
-    attempt: number,
-  ): Promise<void> {
-    const message =
-      `Background task follow-up did not produce a new response after ${attempt} attempt(s); ` +
-      "automatic retries were exhausted. Send another message to resume and inspect the background task result.";
-    await this.engineEventPublisher.publishEngineEvent(task, {
-      type: "error",
-      message,
-      error_code: "claude_runtime_followup_stalled",
-      fatal: true,
-      recoverable: true,
-      recovery_hint:
-        "Send another message to resume this session in a fresh turn and inspect the background task result.",
-    } as SSEEventPayload);
-    this.engineFailureRecovery.recoverFromSynthesizedFailure(task, message);
   }
 
   /**
@@ -1624,7 +1523,7 @@ function normalizeAssistantText(text: string | undefined): string {
 function resolveFollowupStallReason(
   previousAssistantText: string,
   nextAssistantText: string,
-): ClaudeRuntimeFollowupStallReason | null {
+): "empty_response" | "repeated_response" | null {
   if (!nextAssistantText) return "empty_response";
   if (previousAssistantText && nextAssistantText === previousAssistantText) {
     return "repeated_response";
