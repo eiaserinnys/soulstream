@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
 import {
   open as fsOpen,
   readFile,
@@ -16,6 +15,13 @@ import {
   fingerprintInventory,
   inspectUserObjectInventory,
 } from "./database-release-inventory.mjs";
+import {
+  assertUnchangedZeroEffectPreflight,
+  inventoryObjectCount,
+  migrationIdentity,
+  planIdentity,
+  sameJson,
+} from "./database-release-plan-identity.mjs";
 import { readHanielReleaseEvidence, readStringList } from "./database-release-evidence.mjs";
 
 export { fingerprintInventory, inspectUserObjectInventory };
@@ -79,42 +85,6 @@ export function journalIdentity(env, operation) {
     writer_services: readStringList(env, "HANIEL_DATABASE_WRITER_SERVICES"),
     required_subphases: optionalList(env, "HANIEL_DATABASE_REQUIRED_SUBPHASES"),
   };
-}
-
-function migrationIdentity(item) {
-  return {
-    id: item.id ?? item.migration_id,
-    checksum: item.sha256 ?? item.checksum,
-  };
-}
-
-function ledgerIdentity(item) {
-  return {
-    migration_id: item.migration_id,
-    checksum: item.checksum,
-    release_id: item.release_id,
-    ordinal: Number(item.ordinal),
-    applied_kind: item.applied_kind ?? null,
-  };
-}
-
-function planIdentity(plan) {
-  return {
-    bootstrap: (plan.bootstrap ?? []).map(migrationIdentity),
-    pending: plan.pending.map(migrationIdentity),
-    ledger: (plan.ledger ?? []).map(ledgerIdentity),
-  };
-}
-
-function inventoryObjectCount(inventory) {
-  return Number(inventory.object_count ?? (
-    Number(inventory.relation_count) + Number(inventory.routine_count)
-    + Number(inventory.type_count) + Number(inventory.ledger_count)
-  ));
-}
-
-function sameJson(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 export async function readDatabaseReleaseJournal(path) {
@@ -229,56 +199,6 @@ function matchesRecoveredOuterAttempt(attempt, journal, path) {
     && attempt.recovered === true;
 }
 
-function assertUnchangedReleasePlanAndInventory(journal, plan, inventory) {
-  const expectedPlan = planIdentity(plan);
-  const bootstrap = expectedPlan.bootstrap;
-  const pending = expectedPlan.pending;
-  if (
-    journal.pre_schema_fingerprint !== fingerprintInventory(inventory)
-    || journal.pre_object_count !== inventoryObjectCount(inventory)
-    || !sameJson(journal.bootstrap_migrations, bootstrap)
-    || !sameJson(journal.pending_migrations, pending)
-    || !sameJson(journal.planned_migrations, [...bootstrap, ...pending])
-    || !sameJson(journal.pre_migration_plan, expectedPlan)
-  ) {
-    throw new Error("JOURNAL_GATE_FAILED: migration plan or database inventory changed");
-  }
-}
-
-function assertUnchangedZeroEffectPreflight(journal, plan, inventory) {
-  const history = journal.history;
-  if (
-    journal.revision !== 1
-    || journal.status !== "preflight_complete"
-    || journal.last_committed_phase !== "preflight"
-    || journal.failed_operation !== null
-    || journal.backup !== null
-    || journal.apply_started_at !== null
-    || journal.apply_committed_at !== null
-    || journal.quiescence_receipt_digest !== null
-    || journal.quiescence_owner_instance !== null
-    || journal.quiescence_nonce !== null
-    || !Array.isArray(journal.completed_subphases)
-    || journal.completed_subphases.length !== 0
-    || !Array.isArray(journal.applied_ledger)
-    || journal.applied_ledger.length !== 0
-    || journal.error !== null
-    || !Array.isArray(history)
-    || history.length !== 1
-    || history[0].phase !== "preflight"
-    || history[0].status !== "preflight_complete"
-    || typeof history[0].occurred_at !== "string"
-    || journal.updated_at !== history[0].occurred_at
-  ) {
-    throw new Error("JOURNAL_IDENTITY_CONFLICT: preflight journal has effects or unknown fields");
-  }
-  try {
-    assertUnchangedReleasePlanAndInventory(journal, plan, inventory);
-  } catch {
-    throw new Error("JOURNAL_IDENTITY_CONFLICT: preflight plan or inventory changed");
-  }
-}
-
 async function retireRecoveredPreflightJournal({ path, current, identity, plan, inventory, now }) {
   if (
     current.repo !== identity.repo
@@ -376,7 +296,6 @@ export async function createDatabaseReleaseJournal({
       quiescence_receipt_digest: null,
       quiescence_owner_instance: null,
       quiescence_nonce: null,
-      backup: null,
       completed_subphases: [],
       status: "preflight_complete",
       last_committed_phase: "preflight",
@@ -393,16 +312,12 @@ export async function createDatabaseReleaseJournal({
 
 const TERMINAL = new Set(["verified", "recovered"]);
 const ALLOWED_TRANSITIONS = new Map([
-  ["preflight_complete", new Set(["backup_created", "backup_failed", "apply_started", "applied_reconciled"])],
-  ["backup_failed", new Set(["backup_created", "backup_failed"])],
-  ["backup_created", new Set(["backup_verified", "backup_verify_failed"])],
-  ["backup_verify_failed", new Set(["backup_verified", "backup_verify_failed"])],
-  ["backup_verified", new Set(["apply_started"])],
+  ["preflight_complete", new Set(["apply_started", "applied_reconciled", "recovered"])],
   ["apply_started", new Set(["apply_failed", "sql_applied", "applied", "applied_reconciled", "recovered"])],
   ["apply_failed", new Set(["apply_started", "applied_reconciled", "recovered"])],
-  ["sql_applied", new Set(["subphase_started", "applied"])],
-  ["subphase_started", new Set(["subphase_started", "subphase_complete"])],
-  ["subphase_complete", new Set(["subphase_started", "applied"])],
+  ["sql_applied", new Set(["subphase_started", "applied", "recovered"])],
+  ["subphase_started", new Set(["subphase_started", "subphase_complete", "recovered"])],
+  ["subphase_complete", new Set(["subphase_started", "applied", "recovered"])],
   ["applied", new Set(["verified", "recovered"])],
   ["applied_reconciled", new Set(["verified", "recovered"])],
 ]);
@@ -482,42 +397,6 @@ export function classifyLedgerReconciliation(journal, plan, inventory) {
   return exact ? "full" : "ambiguous";
 }
 
-async function sha256File(path) {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
-  return hash.digest("hex");
-}
-
-function pendingIds(plan) {
-  return plan.pending.map((migration) => migration.id ?? migration.migration_id);
-}
-
-async function assertCurrentBackup({ env, journal, plan }) {
-  const metadataPath = resolve(required(env, "HANIEL_BACKUP_DIR"), "database-backup.json");
-  let metadata;
-  try {
-    metadata = JSON.parse(await readFile(metadataPath, "utf8"));
-  } catch (error) {
-    throw new Error(`JOURNAL_GATE_FAILED: backup metadata is unavailable: ${error.message}`);
-  }
-  if (
-    JSON.stringify(metadata) !== JSON.stringify(journal.backup?.metadata)
-    || metadata.release_id !== journal.release_id
-    || metadata.target_head !== journal.target_head
-    || !new Set(["verified", "verified_not_required"]).has(metadata.status)
-    || JSON.stringify(metadata.pending_migrations ?? []) !== JSON.stringify(pendingIds(plan))
-  ) {
-    throw new Error("JOURNAL_GATE_FAILED: current backup metadata differs");
-  }
-  if (metadata.status === "verified") {
-    const dumpPath = resolve(required(env, "HANIEL_BACKUP_DIR"), metadata.dump_file ?? "");
-    if (!metadata.dump_file || await sha256File(dumpPath) !== metadata.dump_sha256) {
-      throw new Error("JOURNAL_GATE_FAILED: current backup archive differs");
-    }
-  }
-  return metadata;
-}
-
 export async function assertDatabaseReleaseApplyGate({ env, operation, plan, inventory }) {
   const path = databaseReleaseJournalPath(env);
   const journal = await readDatabaseReleaseJournal(path);
@@ -534,13 +413,6 @@ export async function assertDatabaseReleaseApplyGate({ env, operation, plan, inv
     throw new Error("JOURNAL_GATE_FAILED: journal revision differs");
   }
   if (operation === "upgrade") {
-    const noInlineBackup = journal.backup === null
-      && typeof journal.quiescence_receipt_digest === "string"
-      && typeof journal.quiescence_owner_instance === "string"
-      && typeof journal.quiescence_nonce === "string";
-    if (!noInlineBackup && !journal.backup?.verified_at) {
-      throw new Error("JOURNAL_GATE_FAILED: verified backup phase is required");
-    }
     const evidence = await readHanielReleaseEvidence({ env, journal, phase: "apply" });
     if (
       evidence.receipt_digest !== journal.quiescence_receipt_digest
@@ -548,11 +420,6 @@ export async function assertDatabaseReleaseApplyGate({ env, operation, plan, inv
       || evidence.quiescence_nonce !== journal.quiescence_nonce
     ) {
       throw new Error("JOURNAL_GATE_FAILED: quiescence evidence changed");
-    }
-    if (noInlineBackup) {
-      assertNoInlineDatabaseReleaseGate({ journal, plan, inventory });
-    } else {
-      await assertCurrentBackup({ env, journal, plan });
     }
   }
   if (fingerprintInventory(inventory) !== journal.pre_schema_fingerprint) {
@@ -567,18 +434,6 @@ export async function assertDatabaseReleaseApplyGate({ env, operation, plan, inv
   ) {
     throw new Error("JOURNAL_GATE_FAILED: migration plan differs");
   }
-  return journal;
-}
-
-export function assertNoInlineDatabaseReleaseGate({ journal, plan, inventory }) {
-  if (journal.operation !== "upgrade" || journal.backup !== null) {
-    throw new Error("JOURNAL_GATE_FAILED: no-inline upgrade evidence differs");
-  }
-  if (!Array.isArray(plan.pending)
-    || plan.pending.some((migration) => migration.destructive !== false)) {
-    throw new Error("JOURNAL_GATE_FAILED: no-inline migration is destructive or unclassified");
-  }
-  assertUnchangedReleasePlanAndInventory(journal, plan, inventory);
   return journal;
 }
 

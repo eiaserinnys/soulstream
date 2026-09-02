@@ -1,10 +1,12 @@
 # 메시지 도착에서 종단까지
 
-작업 기준 커밋 SHA: `854b2fee6ff184e9cf154d4760f270658e5213ed`
+작업 기준 커밋 SHA: `b68f528bd5744b68187c9b31affeeb9597622685`
 
 > 상태 배지: **R32 · R33 · R34-③ · R35 · R38 · Wave 3 코드 반영**
 
 > 범위 주석: REST·내부 세션 송신·노드 명령은 `TaskManager.addIntervention` 이후 하나의 경로로 수렴한다. 실행 시작은 DB owner를 선출하지 않고 exact runtime registration identity를 한 번 기록한다.
+
+> 배포 경계: `085a`와 `085b`는 같은 ordered migration 적용에서 실행한다. 이후 eiaserinnys(orch+host) → wsl → linegames 순으로 런타임을 갱신하며, 배포 경로에는 파괴 분류나 백업 게이트가 없다.
 
 | 단계 | 파일:심볼(라인) | 이 단계가 소유한 사실 | 거부/분기 조건 |
 | --- | --- | --- | --- |

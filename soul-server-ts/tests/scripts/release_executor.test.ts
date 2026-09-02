@@ -83,8 +83,6 @@ function migration(id: string, ordinal: number, releaseId?: string) {
     sha256: String(ordinal % 10).repeat(64),
     checksum: String(ordinal % 10).repeat(64),
     release_id: releaseId,
-    destructive: true,
-    rollback_compatibility: "restore_required",
   };
 }
 function emptyInventory() {
@@ -226,59 +224,11 @@ describe("database release executor", () => {
     expect(existsSync(`${report.journal_path}.tmp`)).toBe(false);
   });
 
-  it("rejects backup before a matching quiescence receipt", async () => {
-    const directory = makeTempDirSync("soul-release-quiescence-");
-    directories.push(directory);
-    const env = environment(directory);
-    const backupCreate = vi.fn();
-    await preflight(env);
-
-    await expect(runDatabaseRelease("backup", { env, backupCreate }))
-      .rejects.toThrow("QUIESCENCE_REQUIRED");
-    expect(backupCreate).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["create", "BACKUP_CREATE_FAILED"],
-    ["verify", "BACKUP_VERIFY_FAILED"],
-  ])("keeps apply at zero when backup %s fails", async (failure, code) => {
-    const directory = makeTempDirSync("soul-release-backup-");
-    directories.push(directory);
-    const env = await writeReceipt(environment(directory));
-    const migrationRun = vi.fn();
-    await preflight(env);
-
-    if (failure === "create") {
-      await expect(runDatabaseRelease("backup", {
-        env,
-        backupCreate: async () => { throw new Error("dump failed"); },
-      })).rejects.toThrow(code);
-    } else {
-      await runDatabaseRelease("backup", {
-        env,
-        backupCreate: async () => ({ status: "created", dump_sha256: "b".repeat(64) }),
-      });
-      await expect(runDatabaseRelease("verify-backup", {
-        env,
-        backupVerify: async () => { throw new Error("archive invalid"); },
-      })).rejects.toThrow(code);
-    }
-    await expect(runDatabaseRelease("apply", {
-      env,
-      inventoryRead: async () => populatedInventory(),
-      planRead: async () => plan({ pending: [migration("061_contract.sql", 61)] }),
-      migrationRun,
-    })).rejects.toThrow("JOURNAL_GATE_FAILED");
-    expect(migrationRun).not.toHaveBeenCalled();
-  });
-
-  it("does not require dump or restore for an empty fresh_install", async () => {
+  it("applies an empty fresh_install without backup machinery", async () => {
     const directory = makeTempDirSync("soul-release-fresh-");
     directories.push(directory);
     const env = environment(directory, "fresh_install");
     const all = [migration("001_initial.sql", 1)];
-    const backupCreate = vi.fn();
-    const backupRecover = vi.fn();
     const migrationRun = vi.fn(async () => ({ status: "ok" }));
     let ledger: Array<Record<string, unknown>> = [];
     await runDatabaseRelease("preflight", {
@@ -296,9 +246,62 @@ describe("database release executor", () => {
       },
     });
 
-    expect(backupCreate).not.toHaveBeenCalled();
-    expect(backupRecover).not.toHaveBeenCalled();
     expect(migrationRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies the destructive 085b plan to fresh and migrated databases without a backup gate", async () => {
+    const pending = [migration(
+      "085b_execution_ownership_projection_drop.sql",
+      MANIFEST_MIGRATION_COUNT,
+    )];
+
+    const freshDirectory = makeTempDirSync("soul-release-destructive-fresh-");
+    directories.push(freshDirectory);
+    const freshEnv = environment(freshDirectory, "fresh_install");
+    let freshLedger: Array<Record<string, unknown>> = [];
+    await runDatabaseRelease("preflight", {
+      env: freshEnv,
+      inventoryRead: async () => emptyInventory(),
+      planRead: async () => plan({ pending }),
+    });
+    await expect(runDatabaseRelease("apply", {
+      env: freshEnv,
+      inventoryRead: async () => freshLedger.length ? populatedInventory() : emptyInventory(),
+      planRead: async () => plan({
+        ledger: freshLedger,
+        pending: freshLedger.length ? [] : pending,
+      }),
+      migrationRun: async () => {
+        freshLedger = pending.map((item) => ({
+          ...item,
+          release_id: freshEnv.HANIEL_RELEASE_ID,
+        }));
+      },
+    })).resolves.toMatchObject({ ok: true, status: "applied" });
+
+    const upgradeDirectory = makeTempDirSync("soul-release-destructive-upgrade-");
+    directories.push(upgradeDirectory);
+    const upgradeEnv = await writeReceipt(environment(upgradeDirectory));
+    let upgradeLedger: Array<Record<string, unknown>> = [];
+    await preflight(upgradeEnv, pending);
+    await setHanielState(upgradeEnv, "migrating");
+    await expect(runDatabaseRelease("apply", {
+      env: upgradeEnv,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan({
+        ledger: upgradeLedger,
+        pending: upgradeLedger.length ? [] : pending,
+      }),
+      migrationRun: async () => {
+        upgradeLedger = pending.map((item) => ({
+          ...item,
+          release_id: upgradeEnv.HANIEL_RELEASE_ID,
+        }));
+      },
+    })).resolves.toMatchObject({ ok: true, status: "applied" });
+
+    expect(existsSync(join(freshDirectory, "database-backup.json"))).toBe(false);
+    expect(existsSync(join(upgradeDirectory, "database-backup.json"))).toBe(false);
   });
 
   it("reconciles a commit that completed before the journal update", async () => {
@@ -434,7 +437,7 @@ describe("database release executor", () => {
     })).rejects.toThrow("AMBIGUOUS_COMMIT_STATE");
   });
 
-  it("permits recovery only after a verified upgrade reaches apply", async () => {
+  it("closes a failed upgrade journal without restoring the database", async () => {
     const directory = makeTempDirSync("soul-release-recovery-");
     directories.push(directory);
     const env = await writeReceipt(environment(directory));
@@ -444,18 +447,7 @@ describe("database release executor", () => {
       HANIEL_FAILED_DATABASE_OPERATION: "upgrade",
     };
     const pending = [migration("061_contract.sql", 61)];
-    const backupRecover = vi.fn(async () => ({ status: "restored" }));
     await preflight(env, pending);
-    await expect(executeDatabaseReleasePhase("restore", { env: recoveryEnv, backupRecover }))
-      .rejects.toThrow("RECOVERY_FORBIDDEN");
-    await runDatabaseRelease("backup", {
-      env,
-      backupCreate: async () => ({ status: "created", dump_sha256: "b".repeat(64) }),
-    });
-    await runDatabaseRelease("verify-backup", {
-      env,
-      backupVerify: async () => ({ status: "verified", verified_at: "2026-08-09T00:00:00Z" }),
-    });
     await setHanielState(env, "migrating");
     await expect(runDatabaseRelease("apply", {
       env,
@@ -464,9 +456,9 @@ describe("database release executor", () => {
       migrationRun: async () => { throw new Error("migration failed"); },
     })).rejects.toThrow("APPLY_FAILED");
     await setHanielState(env, "recovering");
-    await expect(executeDatabaseReleasePhase("restore", { env: recoveryEnv, backupRecover }))
+    await expect(runDatabaseRelease("recover", { env: recoveryEnv }))
       .resolves.toMatchObject({ operation: "recovery", recovered: true, phase: "recovery" });
-    expect(backupRecover).toHaveBeenCalledTimes(1);
+    expect(existsSync(join(directory, "database-backup.json"))).toBe(false);
   });
 
   it("refuses the deepest writer without an apply_started journal", async () => {

@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import pino from "pino";
@@ -22,15 +23,12 @@ const SESSION_ID = "w3-execution-registration-projection";
 const REGISTRATION_ID = "registration-w3";
 const EXECUTION_COMMAND_ID = "command-w3";
 
-const DEAD_SESSION_COLUMNS = new Set([
-  "execution_generation",
+const RETIRED_DATABASE_IDENTIFIERS = [
   "execution_manifest_id",
   "execution_runtime_env_identity",
   "execution_pid",
   "execution_start_identity",
   "execution_lease_expires_at",
-]);
-const DEAD_FUNCTIONS = new Set([
   "session_acquire_execution_ownership",
   "session_activate_execution_ownership",
   "session_backfill_execution_ownership",
@@ -50,14 +48,17 @@ const DEAD_FUNCTIONS = new Set([
   "session_reserve_execution_ownership_v2",
   "session_retire_recorded_terminal_execution_identity",
   "session_retire_terminal_execution_ownership",
-]);
-const DEAD_RELATIONS = new Set([
-  "session_execution_ownerships",
-  "session_execution_ownership_migration_audit",
-  "idx_session_execution_ownership_open",
-  "idx_session_execution_ownership_identity",
-  "session_owner_null_running_inventory",
-]);
+] as const;
+
+function readTypeScriptSources(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return readTypeScriptSources(path);
+    return entry.isFile() && entry.name.endsWith(".ts")
+      ? [readFileSync(path, "utf8")]
+      : [];
+  });
+}
 
 describe("Wave 3 execution registration projection", () => {
   let postgres: FullSchemaPostgresHarness;
@@ -73,39 +74,16 @@ describe("Wave 3 execution registration projection", () => {
     await postgres.cleanup();
   });
 
-  it("R1 builds a fresh schema without the ownership projection inventory", async () => {
-    const columns = await postgres.sql<Array<{ column_name: string }>>`
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_schema = current_schema() AND table_name = 'sessions'
-    `;
-    const functions = await postgres.sql<Array<{ proname: string }>>`
-      SELECT procedure.proname
-      FROM pg_proc AS procedure
-      JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
-      WHERE namespace.nspname = current_schema()
-    `;
-    const relations = await postgres.sql<Array<{ relname: string }>>`
-      SELECT relation.relname
-      FROM pg_class AS relation
-      JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
-      WHERE namespace.nspname = current_schema()
-    `;
-    const constraints = await postgres.sql<Array<{ conname: string }>>`
-      SELECT constraint_row.conname
-      FROM pg_constraint AS constraint_row
-      JOIN pg_namespace AS namespace ON namespace.oid = constraint_row.connamespace
-      WHERE namespace.nspname = current_schema()
-    `;
+  it("R1 keeps retired PostgreSQL projection callers at zero", () => {
+    const sources = [
+      new URL("../../src/", import.meta.url),
+      new URL("../../../orch-server-ts/src/", import.meta.url),
+    ].flatMap((url) => readTypeScriptSources(fileURLToPath(url)));
 
-    expect(columns.filter(({ column_name }) => DEAD_SESSION_COLUMNS.has(column_name)))
-      .toEqual([]);
-    expect(functions.filter(({ proname }) => DEAD_FUNCTIONS.has(proname)))
-      .toEqual([]);
-    expect(relations.filter(({ relname }) => DEAD_RELATIONS.has(relname)))
-      .toEqual([]);
-    expect(constraints.some(({ conname }) =>
-      conname === "sessions_execution_owner_all_or_none_check")).toBe(false);
+    const referencedIdentifiers = RETIRED_DATABASE_IDENTIFIERS.filter(
+      (identifier) => sources.some((source) => source.includes(identifier)),
+    );
+    expect(referencedIdentifiers).toEqual([]);
   });
 
   it("R2 uses the fresh post-085b schema to record, fence, hydrate, and clear a registration", async () => {

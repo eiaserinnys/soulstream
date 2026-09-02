@@ -1,8 +1,10 @@
 # 전달 원장 상태 전이
 
-작업 기준 커밋 SHA: `854b2fee6ff184e9cf154d4760f270658e5213ed`
+작업 기준 커밋 SHA: `b68f528bd5744b68187c9b31affeeb9597622685`
 
 > 범위 주석: `state`는 현재 시도, `aggregate_state`는 논리 delivery의 종합 결과이며 둘을 함께 쓰는 모든 production writer를 열거한다.
+
+> 배포 경계: `085a`와 `085b`를 같은 ordered migration 적용에서 실행한 뒤 eiaserinnys(orch+host) → wsl → linegames 순으로 런타임을 갱신한다. 배포 경로에는 파괴 분류나 백업 게이트가 없다.
 
 | 단계 | 파일:심볼(라인) | 이 단계가 소유한 사실 | 거부/분기 조건 |
 | --- | --- | --- | --- |

@@ -81,8 +81,6 @@ function assertReceipt(receipt, env, expectedServices) {
 }
 
 const PHASE_STATES = {
-  backup: new Set(["backing_up"]),
-  verify_backup: new Set(["backing_up"]),
   apply: new Set(["migrating"]),
   verify: new Set(["verifying"]),
   recovery: new Set(["recovering"]),

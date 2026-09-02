@@ -184,16 +184,16 @@ describe.sequential("database release cross-process and subphase boundaries", ()
       import { transitionDatabaseReleaseJournal } from ${JSON.stringify(JOURNAL_MODULE)};
       try {
         await transitionDatabaseReleaseJournal(process.env.JOURNAL_PATH, process.env.STATUS, {
-          phase: "backup", expectedRevision: 1, expectedStatuses: ["preflight_complete"]
+          phase: "apply", expectedRevision: 1, expectedStatuses: ["preflight_complete"]
         });
       } catch (error) { process.stderr.write(String(error)); process.exitCode = 1; }
     `;
     const results = await Promise.all([
       nodeChild(transitionSource, {
-        JOURNAL_PATH: databaseReleaseJournalPath(env), STATUS: "backup_created",
+        JOURNAL_PATH: databaseReleaseJournalPath(env), STATUS: "apply_started",
       }),
       nodeChild(transitionSource, {
-        JOURNAL_PATH: databaseReleaseJournalPath(env), STATUS: "backup_failed",
+        JOURNAL_PATH: databaseReleaseJournalPath(env), STATUS: "apply_started",
       }),
     ]);
     expect(results.filter((entry) => entry.code === 0)).toHaveLength(1);

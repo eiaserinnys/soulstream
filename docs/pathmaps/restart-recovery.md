@@ -1,8 +1,10 @@
 # 재시작 복구
 
-최종 대조 커밋 SHA: `854b2fee6ff184e9cf154d4760f270658e5213ed`
+최종 대조 커밋 SHA: `b68f528bd5744b68187c9b31affeeb9597622685`
 
 > 범위 주석: accepted input producer는 boot 1회·node-ready·orch maintenance이며, 5초 maintenance lane은 lease와 notification 투영만 회수한다.
+
+> 배포 경계: `085a`와 `085b`를 같은 ordered migration 적용에서 실행한 뒤 eiaserinnys(orch+host) → wsl → linegames 순으로 재시작한다. 배포 경로에는 파괴 분류나 백업 게이트가 없다.
 
 | 단계 | 파일:심볼(라인) | 이 단계가 소유한 사실 | 거부/분기 조건 |
 | --- | --- | --- | --- |

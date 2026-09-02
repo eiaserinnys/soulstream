@@ -54,7 +54,7 @@ The pnpm workspace is declared in `pnpm-workspace.yaml`. The node ↔ orchestrat
 
 The installer bootstraps a TypeScript worker installation, installs or reuses Haniel, prepares the repository and dashboard bundle, initializes an empty PostgreSQL database safely, and registers the service.
 
-Prerequisites are checked before installation: Python 3.11 or newer, Node.js 20 or newer, and PostgreSQL 16 or newer client tools (`pg_dump` and `pg_restore`) on `PATH`.
+Prerequisites are checked before installation: Python 3.11 or newer and Node.js 20 or newer.
 
 Interactive install:
 
@@ -188,10 +188,10 @@ Useful contract and component references:
 
 [Haniel](https://github.com/eiaserinnys/haniel) is Soulstream's process and release manager. The repository keeps deployment behavior explicit:
 
-- `deploy/release-manifest.json` makes the central orchestrator deployment the shared database migration authority and defines preflight, backup, apply, post-start verification, and recovery.
+- `deploy/release-manifest.json` makes the central orchestrator deployment the shared database migration authority and defines preflight, apply, post-start verification, and recovery.
 - `deploy/release-manifest-worker.json` keeps worker-only deployments database-free and limits them to runtime verification and rollback.
 - `deploy/release-manifest-standalone.json` owns the database lifecycle for a standalone installation.
 - `install/haniel-soul-server-ts.example.yaml` is the worker-node integration reference.
 - `install/haniel-standalone.yaml.template` is rendered by the Windows installer.
 
-Normal service starts never apply schema changes. Database upgrades run through the release manifest so writer quiescence, backup requirements, migration checksums, health checks, and recovery remain one audited path.
+Normal service starts never apply schema changes. Database upgrades run through the release manifest so writer quiescence, migration checksums, health checks, and release-journal recovery remain one audited path. Backups are operated independently from deployment.

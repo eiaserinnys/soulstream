@@ -125,7 +125,7 @@ describe("database release CI contract", () => {
     for (const test of databaseTestFiles) expect(commands).toContain(test);
     expect(commands).toContain("verify-vitest-contract-result.mjs");
     expect(commands).toContain(
-      "soul-server-ts/database-release-postgres-results.json 30",
+      "soul-server-ts/database-release-postgres-results.json 27",
     );
     expect(commands).toContain("--maxWorkers=2 --minWorkers=1");
     expect(commands).toContain("--reporter=default --reporter=json");
@@ -143,7 +143,7 @@ describe("database release CI contract", () => {
     expect(commands).toContain("--reporter=default --reporter=json");
     expect(commands).toContain("--outputFile.json=$resultPath");
     expect(commands).toContain("verify-vitest-contract-result.mjs");
-    expect(commands).toContain("26");
+    expect(commands).toContain("23");
   });
 
   it("routes all three real PostgreSQL suites through the shared safe harness", () => {

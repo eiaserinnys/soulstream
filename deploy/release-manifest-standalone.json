@@ -3,7 +3,6 @@
   "release_id": "soulstream-standalone-runtime-v2",
   "environment_service": "soul-server-ts",
   "migration": {
-    "destructive": true,
     "operation": "discover",
     "result_contract": "soulstream.database-release.v1",
     "provenance_probe": {
@@ -21,16 +20,6 @@
     "preflight": {
       "name": "migration-preflight",
       "command": "node packages/db-schema/scripts/release-executor.mjs preflight --manifest deploy/release-manifest-standalone.json --database-contract deploy/database-release-standalone.json",
-      "timeout_seconds": 300
-    },
-    "backup": {
-      "name": "database-backup",
-      "command": "node packages/db-schema/scripts/release-executor.mjs backup --manifest deploy/release-manifest-standalone.json --database-contract deploy/database-release-standalone.json",
-      "timeout_seconds": 300
-    },
-    "verify_backup": {
-      "name": "verify-database-backup",
-      "command": "node packages/db-schema/scripts/release-executor.mjs verify-backup --manifest deploy/release-manifest-standalone.json --database-contract deploy/database-release-standalone.json",
       "timeout_seconds": 300
     },
     "apply": {

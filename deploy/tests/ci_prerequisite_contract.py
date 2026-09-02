@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import importlib.metadata
 import json
 from pathlib import Path
@@ -15,18 +14,10 @@ CENTRAL_MANIFEST_PATH = REPOSITORY_ROOT / "deploy" / "release-manifest.json"
 STANDALONE_MANIFEST_PATH = (
     REPOSITORY_ROOT / "deploy" / "release-manifest-standalone.json"
 )
-MIGRATION_MANIFEST_PATH = REPOSITORY_ROOT / "packages" / "db-schema" / "migration-manifest.json"
 WRITER_SOURCES_PATH = REPOSITORY_ROOT / "deploy" / "database-release-writer-sources.json"
 INSTALL_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "test-install.yml"
 
-CENTRAL_DESTRUCTIVE = "CENTRAL_NO_INLINE_MIGRATION_MUST_BE_NON_DESTRUCTIVE"
-CENTRAL_INLINE_BACKUP = "CENTRAL_INLINE_BACKUP_COMMANDS_MUST_STAY_ABSENT"
-STANDALONE_DESTRUCTIVE = "STANDALONE_MIGRATION_MUST_STAY_DESTRUCTIVE"
-STANDALONE_BACKUP = "STANDALONE_BACKUP_COMMAND_MUST_STAY_PRESENT"
-STANDALONE_VERIFY_BACKUP = "STANDALONE_VERIFY_BACKUP_COMMAND_MUST_STAY_PRESENT"
-OWNERLESS_MIGRATION_DESTRUCTIVE = (
-    "OWNERLESS_TERMINAL_GENERATION_CAS_MUST_BE_NON_DESTRUCTIVE"
-)
+MIGRATION_POLICY_FIELDS_ABSENT = "MIGRATION_POLICY_FIELDS_MUST_STAY_ABSENT"
 HANIEL_PIN = "HANIEL_PINNED_CONTRACT_SHA_MUST_MATCH_CI"
 HANIEL_MATRIX = "HANIEL_CONTRACT_MATRIX_MUST_NAME_PINNED_AND_ROLLING"
 HANIEL_RUNTIME = "HANIEL_RUNTIME_CONTRACT_SHA_MUST_BE_PINNED_OR_ROLLING"
@@ -52,60 +43,22 @@ def require(condition: bool, code: str, detail: str) -> None:
 
 def assert_central_manifest(payload: dict[str, Any]) -> None:
     migration = payload.get("migration", {})
-    require(
-        migration.get("destructive") is False,
-        CENTRAL_DESTRUCTIVE,
-        "central migration has no inline backup owner and must declare destructive=false",
-    )
-    for command_name in ("backup", "verify_backup"):
+    for command_name in ("destructive", "backup", "verify_backup"):
         require(
             command_name not in migration,
-            CENTRAL_INLINE_BACKUP,
-            f"central migration unexpectedly declares {command_name}",
+            MIGRATION_POLICY_FIELDS_ABSENT,
+            f"central migration unexpectedly declares retired field {command_name}",
         )
 
 
-def assert_standalone_manifest(
-    payload: dict[str, Any],
-    contract: dict[str, Any] | None = None,
-) -> None:
-    contract = contract or load_contract()
+def assert_standalone_manifest(payload: dict[str, Any]) -> None:
     migration = payload.get("migration", {})
-    require(
-        migration.get("destructive") is True,
-        STANDALONE_DESTRUCTIVE,
-        "standalone migration owns backup and must declare destructive=true",
-    )
-    require(
-        migration.get("backup")
-        == contract["standalone"]["inline_backup_commands"]["backup"],
-        STANDALONE_BACKUP,
-        "standalone backup command is missing or differs",
-    )
-    require(
-        migration.get("verify_backup")
-        == contract["standalone"]["inline_backup_commands"]["verify_backup"],
-        STANDALONE_VERIFY_BACKUP,
-        "standalone verify_backup command is missing or differs",
-    )
-
-
-def assert_pending_migration(
-    payload: dict[str, Any],
-    migration_id: str = "077_ownerless_terminal_stale_event_cas.sql",
-) -> None:
-    migrations = payload.get("migrations", [])
-    matches = [entry for entry in migrations if entry.get("id") == migration_id]
-    require(
-        len(matches) == 1,
-        OWNERLESS_MIGRATION_DESTRUCTIVE,
-        f"expected exactly one manifest entry for {migration_id}, found {len(matches)}",
-    )
-    require(
-        matches[0].get("destructive") is False,
-        OWNERLESS_MIGRATION_DESTRUCTIVE,
-        f"{migration_id} must declare destructive=false",
-    )
+    for command_name in ("destructive", "backup", "verify_backup"):
+        require(
+            command_name not in migration,
+            MIGRATION_POLICY_FIELDS_ABSENT,
+            f"standalone migration unexpectedly declares retired field {command_name}",
+        )
 
 
 def assert_haniel_contract_matrix(
@@ -153,14 +106,6 @@ def assert_installed_haniel_lane(contract: dict[str, Any]) -> None:
         HANIEL_RUNTIME,
         f"installed Haniel {commit} is outside the pinned/rolling contract matrix",
     )
-
-
-def target_central_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    target = copy.deepcopy(payload)
-    target["migration"]["destructive"] = False
-    target["migration"].pop("backup", None)
-    target["migration"].pop("verify_backup", None)
-    return target
 
 
 def assert_ordered_trace(
