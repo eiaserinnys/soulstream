@@ -16,7 +16,7 @@ export interface DeliveryInterventionTarget {
 /** Rebuilds an intervention exclusively from its canonical durable row. */
 export function deliveryRowToInterventionParams(
   row: SessionDeliveryRow,
-  leaseOwner: string,
+  attemptToken: string,
 ): AddInterventionParams {
   const message = readCanonicalDeliveryPayload(row.payload);
   return {
@@ -38,7 +38,7 @@ export function deliveryRowToInterventionParams(
     followupAttempt: message.followupAttempt,
     followupTaskIds: message.followupTaskIds,
     deliveryCreatedAt: row.created_at.toISOString(),
-    deliveryLeaseOwner: leaseOwner,
+    deliveryAttemptToken: attemptToken,
     storedDeliveryPayload: row.payload,
     storedDeliveryPayloadHash: row.payload_hash,
   };
@@ -52,7 +52,7 @@ export async function redeliverStoredDeliveryContent(
 ): Promise<void> {
   const result = await target.addIntervention(
     {
-      ...deliveryRowToInterventionParams(row, requiredLeaseOwner(row)),
+      ...deliveryRowToInterventionParams(row, requiredAttemptToken(row)),
       targetContentReceiptAbsent:
         row.caller_turn_id === null
         && row.target_receipt_id === null
@@ -74,9 +74,9 @@ function requiredTarget(row: SessionDeliveryRow): string {
   return row.target_session_id;
 }
 
-function requiredLeaseOwner(row: SessionDeliveryRow): string {
-  if (!row.lease_owner) {
-    throw new Error(`Delivery ${row.delivery_id} has no lease owner`);
+function requiredAttemptToken(row: SessionDeliveryRow): string {
+  if (!row.attempt_token) {
+    throw new Error(`Delivery ${row.delivery_id} has no attempt token`);
   }
-  return row.lease_owner;
+  return row.attempt_token;
 }

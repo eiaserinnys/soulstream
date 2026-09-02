@@ -75,14 +75,14 @@ export class RuntimeFollowupLedger {
     );
   }
 
-  claimRuntimeRows(leaseOwner: string): SessionDeliveryRow[] {
+  claimRuntimeRows(attemptToken: string): SessionDeliveryRow[] {
     const claimed = [...this.rows.values()]
       .filter((row) => row.intent === "runtime_followup" && row.state === "pending")
       .sort((left, right) => left.enqueue_sequence - right.enqueue_sequence);
     for (const row of claimed) {
       row.state = "claimed";
       row.claimed_at = new Date("2026-08-28T10:05:01.000Z");
-      row.lease_owner = leaseOwner;
+      row.attempt_token = attemptToken;
       this.counts[row.delivery_id]!.claim += 1;
     }
     return claimed.map((row) => structuredClone(row) as SessionDeliveryRow);
@@ -92,7 +92,7 @@ export class RuntimeFollowupLedger {
     const row = this.require(deliveryId);
     row.state = "pending";
     row.claimed_at = null;
-    row.lease_owner = null;
+    row.attempt_token = null;
   }
 
   noteDispatch(deliveryId: string): void {

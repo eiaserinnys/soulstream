@@ -44,8 +44,8 @@ export interface SessionDeliveryRow {
   updated_at: Date;
   claimed_at: Date | null;
   dispatching_at: Date | null;
-  lease_owner: string | null;
-  lease_expires_at: Date | null;
+  attempt_token: string | null;
+  attempt_expires_at: Date | null;
   /** Retry budget spent; accepted admissions are recorded in session_delivery_attempts. */
   attempt_count: number;
   next_attempt_at: Date;
@@ -137,8 +137,8 @@ export interface SessionDeliveryNotificationOutboxRow {
   projection_state: "staged" | "publishing" | "published" | "discarded";
   target_receipt_id: string | null;
   target_receipt_at: Date | null;
-  lease_owner: string | null;
-  lease_expires_at: Date | null;
+  attempt_token: string | null;
+  attempt_expires_at: Date | null;
   attempt_count: number;
   next_attempt_at: Date;
   last_error: string | null;

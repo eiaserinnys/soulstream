@@ -352,8 +352,8 @@ CREATE TABLE IF NOT EXISTS session_deliveries (
     updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     claimed_at                 TIMESTAMPTZ,
     dispatching_at             TIMESTAMPTZ,
-    lease_owner                TEXT,
-    lease_expires_at           TIMESTAMPTZ,
+    attempt_token                TEXT,
+    attempt_expires_at           TIMESTAMPTZ,
     attempt_count              INTEGER NOT NULL DEFAULT 0,
     next_attempt_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_error                 TEXT,
@@ -396,8 +396,8 @@ ALTER TABLE session_deliveries
 ALTER TABLE session_deliveries
     ADD COLUMN IF NOT EXISTS enqueue_sequence BIGINT GENERATED ALWAYS AS IDENTITY,
     ADD COLUMN IF NOT EXISTS dispatching_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS lease_owner TEXT,
-    ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS attempt_token TEXT,
+    ADD COLUMN IF NOT EXISTS attempt_expires_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS last_error TEXT,
@@ -421,7 +421,7 @@ ALTER TABLE session_deliveries
 CREATE INDEX IF NOT EXISTS idx_session_deliveries_target_state
     ON session_deliveries(target_session_id, state, created_at);
 CREATE INDEX IF NOT EXISTS idx_session_deliveries_recovery
-    ON session_deliveries(state, next_attempt_at, lease_expires_at, created_at);
+    ON session_deliveries(state, next_attempt_at, attempt_expires_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_session_deliveries_completion
     ON session_deliveries(completion_id)
     WHERE completion_id IS NOT NULL;
@@ -461,8 +461,8 @@ CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox (
     payload            JSONB NOT NULL,
     disposition        TEXT NOT NULL,
     state              TEXT NOT NULL DEFAULT 'claimed',
-    lease_owner        TEXT,
-    lease_expires_at   TIMESTAMPTZ,
+    attempt_token        TEXT,
+    attempt_expires_at   TIMESTAMPTZ,
     attempt_count      INTEGER NOT NULL DEFAULT 0,
     next_attempt_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_error         TEXT,
@@ -488,7 +488,7 @@ CREATE INDEX IF NOT EXISTS idx_session_delivery_notification_recovery
     ON session_delivery_notification_outbox(
         state,
         next_attempt_at,
-        lease_expires_at,
+        attempt_expires_at,
         created_at
     );
 
@@ -1613,8 +1613,8 @@ BEGIN
                consumed_reason = 'superseded by terminal resume',
                superseded_at = p_recorded_at,
                superseded_terminal_revision = p_expected_terminal_event_id::text,
-               lease_owner = NULL,
-               lease_expires_at = NULL,
+               attempt_token = NULL,
+               attempt_expires_at = NULL,
                updated_at = p_recorded_at
          WHERE source_session_id = p_session_id
            AND intent = 'completion_notification'
@@ -1753,8 +1753,8 @@ BEGIN
                consumed_reason = 'superseded by terminal resume',
                superseded_at = p_updated_at,
                superseded_terminal_revision = p_expected_terminal_event_id::text,
-               lease_owner = NULL,
-               lease_expires_at = NULL,
+               attempt_token = NULL,
+               attempt_expires_at = NULL,
                updated_at = p_updated_at
          WHERE source_session_id = p_session_id
            AND intent = 'completion_notification'
@@ -2598,7 +2598,7 @@ ALTER TABLE session_deliveries
 CREATE TABLE IF NOT EXISTS session_delivery_attempts (
     delivery_id                TEXT NOT NULL REFERENCES session_deliveries(delivery_id) ON DELETE CASCADE,
     attempt_number             INTEGER NOT NULL,
-    lease_owner                TEXT,
+    attempt_token                TEXT,
     payload_hash               TEXT NOT NULL,
     outcome                    TEXT NOT NULL,
     reason                     TEXT,
@@ -2632,7 +2632,7 @@ WITH legacy AS MATERIALIZED (
     SELECT delivery.delivery_id,
            delivery.state,
            delivery.attempt_count,
-           delivery.lease_owner,
+           delivery.attempt_token,
            delivery.payload_hash,
            delivery.last_error,
            delivery.created_at,
@@ -2672,8 +2672,8 @@ WITH legacy AS MATERIALIZED (
         END,
         target_receipt_id = COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id),
         target_receipt_at = COALESCE(legacy.target_receipt_at, legacy.outbox_receipt_at),
-        lease_owner = NULL,
-        lease_expires_at = NULL,
+        attempt_token = NULL,
+        attempt_expires_at = NULL,
         attempt_count = legacy.attempt_count + 1,
         next_attempt_at = CASE
             WHEN COALESCE(legacy.target_receipt_id, legacy.outbox_receipt_id) IS NULL
@@ -2711,10 +2711,10 @@ WITH legacy AS MATERIALIZED (
     RETURNING delivery.*
 )
 INSERT INTO session_delivery_attempts (
-    delivery_id, attempt_number, lease_owner, payload_hash, outcome, reason,
+    delivery_id, attempt_number, attempt_token, payload_hash, outcome, reason,
     target_receipt_id, created_at
 )
-SELECT delivery_id, attempt_count, lease_owner, payload_hash,
+SELECT delivery_id, attempt_count, attempt_token, payload_hash,
        CASE aggregate_state
            WHEN 'delivered' THEN 'accepted'
            WHEN 'dead_letter' THEN 'rejected'
@@ -2745,13 +2745,13 @@ SET projection_state = CASE
         THEN 'pending'
         ELSE outbox.state
     END,
-    lease_owner = CASE
+    attempt_token = CASE
         WHEN delivery.aggregate_state IN ('pending', 'consumed', 'dead_letter') THEN NULL
-        ELSE outbox.lease_owner
+        ELSE outbox.attempt_token
     END,
-    lease_expires_at = CASE
+    attempt_expires_at = CASE
         WHEN delivery.aggregate_state IN ('pending', 'consumed', 'dead_letter') THEN NULL
-        ELSE outbox.lease_expires_at
+        ELSE outbox.attempt_expires_at
     END,
     last_error = CASE
         WHEN delivery.aggregate_state = 'consumed'
@@ -2786,8 +2786,8 @@ BEGIN
         UPDATE session_delivery_notification_outbox
            SET state = 'dead_letter',
                projection_state = 'discarded',
-               lease_owner = NULL,
-               lease_expires_at = NULL,
+               attempt_token = NULL,
+               attempt_expires_at = NULL,
                last_error = 'delivery aggregate consumed before notification projection',
                dead_lettered_at = COALESCE(dead_lettered_at, NOW()),
                updated_at = NOW()

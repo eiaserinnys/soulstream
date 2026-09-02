@@ -152,7 +152,7 @@ export class SessionDeliveryNotificationHostClient {
 
   stageWithQueuedDelivery(params: {
     deliveryId: string;
-    leaseOwner: string;
+    attemptToken: string;
     targetSessionId: string;
     disposition: "queued" | "auto_resume";
     payload: Record<string, unknown>;
@@ -162,24 +162,24 @@ export class SessionDeliveryNotificationHostClient {
 
   claimDue(
     targetNodeId: string,
-    leaseOwner: string,
+    attemptToken: string,
     limit = 100,
-    leaseMs = 15_000,
+    attemptTtlMs = 15_000,
   ): Promise<SessionDeliveryNotificationOutboxRow[]> {
     return this.transport.request(
       "session-deliveries",
       "claim_due_notifications",
-      [targetNodeId, leaseOwner, limit, leaseMs],
+      [targetNodeId, attemptToken, limit, attemptTtlMs],
     );
   }
 
-  markPublished(deliveryId: string, leaseOwner: string, targetReceiptId: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
-    return this.transport.request("session-deliveries", "mark_notification_published", [deliveryId, leaseOwner, targetReceiptId]);
+  markPublished(deliveryId: string, attemptToken: string, targetReceiptId: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
+    return this.transport.request("session-deliveries", "mark_notification_published", [deliveryId, attemptToken, targetReceiptId]);
   }
 
   retry(
     deliveryId: string,
-    leaseOwner: string,
+    attemptToken: string,
     error: string,
     nextAttemptAt: Date,
     maxAttempts: number,
@@ -190,7 +190,7 @@ export class SessionDeliveryNotificationHostClient {
       "retry_notification",
       [
         deliveryId,
-        leaseOwner,
+        attemptToken,
         error,
         nextAttemptAt,
         maxAttempts,
@@ -199,11 +199,11 @@ export class SessionDeliveryNotificationHostClient {
     );
   }
 
-  deadLetter(deliveryId: string, leaseOwner: string, error: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
+  deadLetter(deliveryId: string, attemptToken: string, error: string): Promise<SessionDeliveryNotificationOutboxRow | null> {
     return this.transport.request(
       "session-deliveries",
       "dead_letter_notification",
-      [deliveryId, leaseOwner, error],
+      [deliveryId, attemptToken, error],
     );
   }
 
@@ -223,10 +223,10 @@ export class SessionDeliveryNotificationHostClient {
     );
   }
 
-  releaseExpiredLeases(maxAttempts: number, oldestAllowedCreatedAt: Date): Promise<number> {
+  expireStaleNotificationAttempts(maxAttempts: number, oldestAllowedCreatedAt: Date): Promise<number> {
     return this.transport.request(
       "session-deliveries",
-      "release_expired_notification_leases",
+      "expire_stale_notification_attempts",
       [maxAttempts, oldestAllowedCreatedAt],
     );
   }
@@ -241,20 +241,20 @@ export interface QueuedDeliveryRecoveryScan {
 export class SessionDeliveryRecoveryHostClient {
   constructor(private readonly transport: PersistenceHostTransport) {}
 
-  claimQueuedAfterNodeRestart(nodeId: string, leaseOwner: string, limit = 100, leaseMs = 15_000, includeDelivered = false): Promise<SessionDeliveryRow[]> {
-    return this.transport.request("session-deliveries", "claim_queued_after_node_restart", [nodeId, leaseOwner, limit, leaseMs, includeDelivered]);
+  claimQueuedAfterNodeRestart(nodeId: string, attemptToken: string, limit = 100, attemptTtlMs = 15_000, includeDelivered = false): Promise<SessionDeliveryRow[]> {
+    return this.transport.request("session-deliveries", "claim_queued_after_node_restart", [nodeId, attemptToken, limit, attemptTtlMs, includeDelivered]);
   }
 
-  claimRecoverableQueued(scan: QueuedDeliveryRecoveryScan, leaseOwner: string, limit = 100, leaseMs = 15_000): Promise<SessionDeliveryRow[]> {
-    return this.transport.request("session-deliveries", "claim_recoverable_queued", [scan, leaseOwner, limit, leaseMs]);
+  claimRecoverableQueued(scan: QueuedDeliveryRecoveryScan, attemptToken: string, limit = 100, attemptTtlMs = 15_000): Promise<SessionDeliveryRow[]> {
+    return this.transport.request("session-deliveries", "claim_recoverable_queued", [scan, attemptToken, limit, attemptTtlMs]);
   }
 
-  markDeliveredFromTranscript(deliveryId: string, leaseOwner: string, assistantMessageUuid: string): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "mark_delivered_from_transcript", [deliveryId, leaseOwner, assistantMessageUuid]);
+  markDeliveredFromTranscript(deliveryId: string, attemptToken: string, assistantMessageUuid: string): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "mark_delivered_from_transcript", [deliveryId, attemptToken, assistantMessageUuid]);
   }
 
-  deferQueuedTranscriptCheck(deliveryId: string, leaseOwner: string, error: string, retryDelayMs: number): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "defer_queued_transcript_check", [deliveryId, leaseOwner, error, retryDelayMs]);
+  deferQueuedTranscriptCheck(deliveryId: string, attemptToken: string, error: string, retryDelayMs: number): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "defer_queued_transcript_check", [deliveryId, attemptToken, error, retryDelayMs]);
   }
 }
 
@@ -290,32 +290,32 @@ export class SessionDeliveryHostClient {
   recordObservedChildCompletions(params: RecordObservedChildCompletionParams[]): Promise<RecordObservedChildCompletionBatchResult> {
     return this.transport.request("session-deliveries", "record_observed_child_completions", [params]);
   }
-  claim(deliveryId: string, leaseOwner = "legacy", leaseMs = 15_000): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "claim", [deliveryId, leaseOwner, leaseMs]);
+  claim(deliveryId: string, attemptToken = "legacy", attemptTtlMs = 15_000): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "claim", [deliveryId, attemptToken, attemptTtlMs]);
   }
-  claimForTarget(deliveryId: string, targetSessionId: string, leaseOwner = "legacy", leaseMs = 15_000): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "claim_for_target", [deliveryId, targetSessionId, leaseOwner, leaseMs]);
+  claimAttemptForTarget(deliveryId: string, targetSessionId: string, attemptToken = "legacy", attemptTtlMs = 15_000): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "claim_attempt_for_target", [deliveryId, targetSessionId, attemptToken, attemptTtlMs]);
   }
-  beginDispatch(deliveryId: string, leaseOwner?: string): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "begin_dispatch", [deliveryId, leaseOwner]);
+  beginDispatch(deliveryId: string, attemptToken?: string): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "begin_dispatch", [deliveryId, attemptToken]);
   }
-  claimRecoverableCompletionDeliveries(leaseOwner: string, limit = 100, leaseMs = 15_000): Promise<SessionDeliveryRow[]> {
-    return this.transport.request("session-deliveries", "claim_recoverable_completion_deliveries", [leaseOwner, limit, leaseMs]);
+  claimRecoverableCompletionDeliveries(attemptToken: string, limit = 100, attemptTtlMs = 15_000): Promise<SessionDeliveryRow[]> {
+    return this.transport.request("session-deliveries", "claim_recoverable_completion_deliveries", [attemptToken, limit, attemptTtlMs]);
   }
   deferPending(deliveryId: string, error: string, retryDelayMs: number): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "defer_pending", [deliveryId, error, retryDelayMs]);
   }
-  retryLeasedDelivery(deliveryId: string, leaseOwner: string, error: string, retryDelayMs: number): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "retry_leased_delivery", [deliveryId, leaseOwner, error, retryDelayMs]);
+  retryDeliveryAttempt(deliveryId: string, attemptToken: string, error: string, retryDelayMs: number): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "retry_delivery_attempt", [deliveryId, attemptToken, error, retryDelayMs]);
   }
   markPendingSuperseded(deliveryId: string, supersededTerminalRevision: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "mark_pending_superseded", [deliveryId, supersededTerminalRevision]);
   }
-  releaseExpiredDeliveryLeases(): Promise<number> {
-    return this.transport.request("session-deliveries", "release_expired_delivery_leases", []);
+  expireStaleDeliveryAttempts(): Promise<number> {
+    return this.transport.request("session-deliveries", "expire_stale_delivery_attempts", []);
   }
-  markQueued(deliveryId: string, leaseOwner?: string): Promise<SessionDeliveryRow | null> {
-    return this.transport.request("session-deliveries", "mark_queued", [deliveryId, leaseOwner]);
+  markQueued(deliveryId: string, attemptToken?: string): Promise<SessionDeliveryRow | null> {
+    return this.transport.request("session-deliveries", "mark_queued", [deliveryId, attemptToken]);
   }
   markDelivered(deliveryId: string, callerTurnId: string): Promise<SessionDeliveryRow | null> {
     return this.transport.request("session-deliveries", "mark_delivered", [deliveryId, callerTurnId]);
@@ -328,13 +328,13 @@ export class SessionDeliveryHostClient {
   }
   markUncertain(
     deliveryId: string,
-    leaseOwner?: string,
+    attemptToken?: string,
     error?: string,
   ): Promise<SessionDeliveryRow | null> {
     return this.transport.request(
       "session-deliveries",
       "mark_uncertain",
-      [deliveryId, leaseOwner, error],
+      [deliveryId, attemptToken, error],
     );
   }
 }

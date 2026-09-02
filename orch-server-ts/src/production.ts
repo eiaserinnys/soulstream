@@ -511,7 +511,7 @@ export async function createLiveProductionApplication(
             sessionRouter: runtimeServices.sessionRouter,
             sessionBridge: runtimeServices.sessionBridge,
             warn: context.warn,
-            leaseOwnerPrefix: "maintenance",
+            attemptTokenPrefix: "maintenance",
           });
         } catch (error) {
           context.warn(warningMessage(
@@ -570,13 +570,13 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
   sessionRouter: OrchestratorRuntimeServices["sessionRouter"];
   sessionBridge: OrchestratorRuntimeServices["sessionBridge"];
   warn(message: string): void;
-  leaseOwnerPrefix?: "node-ready" | "maintenance";
+  attemptTokenPrefix?: "node-ready" | "maintenance";
 }): Promise<void> {
-  const leaseOwnerPrefix = input.leaseOwnerPrefix ?? "node-ready";
-  const leaseOwner = `${leaseOwnerPrefix}:${input.nodeId}:${input.connectionId}`;
+  const attemptTokenPrefix = input.attemptTokenPrefix ?? "node-ready";
+  const attemptToken = `${attemptTokenPrefix}:${input.nodeId}:${input.connectionId}`;
   const claimed = await input.deliveries.recovery.claimPendingImmediateIntentsForNode(
     input.nodeId,
-    leaseOwner,
+    attemptToken,
   );
   for (const row of claimed) {
     try {
@@ -602,7 +602,7 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
         parent_delivery_id: row.parent_delivery_id,
         caller_turn_id: row.caller_turn_id,
         created_at: row.created_at.toISOString(),
-        delivery_lease_owner: leaseOwner,
+        delivery_attempt_token: attemptToken,
       });
       if (!parsed.ok) throw new Error(parsed.message);
       const routed = await input.sessionRouter
@@ -613,17 +613,17 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
       }
     } catch (error) {
       const failure = warningMessage(
-        `${leaseOwnerPrefix} delivery ${row.delivery_id} dispatch failed`,
+        `${attemptTokenPrefix} delivery ${row.delivery_id} dispatch failed`,
         error,
       );
       const current = await input.deliveries.get(row.delivery_id);
       if (
-        current?.lease_owner === leaseOwner
+        current?.attempt_token === attemptToken
         && (current.state === "claimed" || current.state === "dispatching")
       ) {
-        await input.deliveries.retryLeasedDelivery(
+        await input.deliveries.retryDeliveryAttempt(
           row.delivery_id,
-          leaseOwner,
+          attemptToken,
           failure,
           0,
         );

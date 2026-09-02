@@ -308,10 +308,10 @@ export class TaskManager {
   }
 
   async recoverDeliveryNotifications(
-    leaseOwner: string,
+    attemptToken: string,
     limit = 100,
   ): Promise<number> {
-    return await this.deliveryNotificationRecovery?.recover(leaseOwner, limit) ?? 0;
+    return await this.deliveryNotificationRecovery?.recover(attemptToken, limit) ?? 0;
   }
 
   async listClaudeRuntimeTasks(sessionId: string): Promise<ClaudeRuntimeTaskListResult> {

@@ -1624,9 +1624,9 @@ export interface Intervene {
   caller_turn_id?: string;
   created_at?: string;
   /**
-   * Opaque recovery lease token fencing one delivery attempt.
+   * Opaque attempt token fencing one delivery attempt.
    */
-  delivery_lease_owner?: string;
+  delivery_attempt_token?: string;
   [k: string]: unknown;
 }
 /**

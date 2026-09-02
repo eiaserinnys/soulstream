@@ -40,8 +40,8 @@ export interface RuntimeFollowupFixtureRow {
   updated_at: Date;
   claimed_at: Date | null;
   dispatching_at: Date | null;
-  lease_owner: string | null;
-  lease_expires_at: Date | null;
+  attempt_token: string | null;
+  attempt_expires_at: Date | null;
   attempt_count: number;
   next_attempt_at: Date;
   last_error: string | null;
@@ -94,8 +94,8 @@ export function runtimeFollowupRow(
     updated_at: createdAt,
     claimed_at: null,
     dispatching_at: null,
-    lease_owner: null,
-    lease_expires_at: null,
+    attempt_token: null,
+    attempt_expires_at: null,
     attempt_count: 0,
     next_attempt_at: createdAt,
     last_error: null,
@@ -125,7 +125,7 @@ export function runtimeFollowupCommand(row: RuntimeFollowupFixtureRow) {
     relation_key: row.relation_key,
     producer_terminal_revision: row.producer_terminal_revision,
     created_at: row.created_at.toISOString(),
-    delivery_lease_owner: row.lease_owner,
+    delivery_attempt_token: row.attempt_token,
   };
 }
 

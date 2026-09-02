@@ -13,7 +13,7 @@ import type {
 export interface QueuedDeliveryTranscriptRecoveryDeps {
   deliveryRepository: Pick<
     SessionDeliveryRepository,
-    "get" | "markConsumed" | "markUncertain" | "retryLeasedDelivery"
+    "get" | "markConsumed" | "markUncertain" | "retryDeliveryAttempt"
   >;
   recoveryRepository: Pick<
     SessionDeliveryRecoveryRepository,
@@ -46,23 +46,23 @@ export interface QueuedDeliveryTranscriptRecoveryPass {
  */
 /**
  * One claim covers the whole batch, so the batch — not just one row — has to
- * finish inside the lease. Reading a transcript is bounded, and the loop stops
- * accepting new rows once too little lease remains to cover another read, so
- * the sweeper never returns a row to `queued` underneath its own owner.
+ * finish inside the attempt TTL. Reading a transcript is bounded, and the loop stops
+ * accepting new rows once too little TTL remains to cover another read, so
+ * stale-attempt recovery never returns a row to `queued` underneath its own token.
  */
-const TRANSCRIPT_LEASE_MS = 60_000;
+const TRANSCRIPT_ATTEMPT_TTL_MS = 60_000;
 const TRANSCRIPT_READ_TIMEOUT_MS = 10_000;
 
 export class QueuedDeliveryTranscriptRecovery {
   constructor(
     private readonly deps: QueuedDeliveryTranscriptRecoveryDeps,
     private readonly workerId: string,
-    private readonly leaseMs = TRANSCRIPT_LEASE_MS,
+    private readonly attemptTtlMs = TRANSCRIPT_ATTEMPT_TTL_MS,
     private readonly readTimeoutMs = TRANSCRIPT_READ_TIMEOUT_MS,
   ) {
-    if (readTimeoutMs >= leaseMs) {
+    if (readTimeoutMs >= attemptTtlMs) {
       throw new Error(
-        `Transcript read timeout ${readTimeoutMs}ms must be shorter than the ${leaseMs}ms lease`,
+        `Transcript read timeout ${readTimeoutMs}ms must be shorter than the ${attemptTtlMs}ms attempt TTL`,
       );
     }
   }
@@ -76,7 +76,7 @@ export class QueuedDeliveryTranscriptRecovery {
         nodeId,
         this.workerId,
         limit,
-        this.leaseMs,
+        this.attemptTtlMs,
         this.deps.redeliverContent !== undefined,
       );
     return {
@@ -92,8 +92,8 @@ export class QueuedDeliveryTranscriptRecovery {
   ): Promise<number> {
     let settled = 0;
     const startedAtMs = Date.now();
-    // Leave one read's worth of lease so a row started here cannot outlive it.
-    const acceptUntilMs = startedAtMs + (this.leaseMs - this.readTimeoutMs);
+    // Leave one read's worth of TTL so a row started here cannot outlive it.
+    const acceptUntilMs = startedAtMs + (this.attemptTtlMs - this.readTimeoutMs);
     for (const row of rows) {
       if (Date.now() >= acceptUntilMs) {
         await this.returnToPending(
@@ -187,7 +187,7 @@ export class QueuedDeliveryTranscriptRecovery {
     deliveryId: string,
     reason: string,
   ): Promise<void> {
-    await this.deps.deliveryRepository.retryLeasedDelivery(
+    await this.deps.deliveryRepository.retryDeliveryAttempt(
       deliveryId,
       this.workerId,
       reason,

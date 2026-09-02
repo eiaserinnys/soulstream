@@ -278,39 +278,39 @@ export class MemoryDeliveryRepository {
     return { row, inserted: true, conflict: false };
   });
 
-  readonly claimForTarget = vi.fn(async (
+  readonly claimAttemptForTarget = vi.fn(async (
     deliveryId: string,
     targetSessionId: string,
-    leaseOwner: string,
+    attemptToken: string,
   ) => this.update(deliveryId, ["pending", "queued"], (row) => ({
     ...row,
     target_session_id: targetSessionId,
     state: "claimed",
     claimed_at: new Date(),
-    lease_owner: leaseOwner,
-    lease_expires_at: new Date(Date.now() + 15_000),
+    attempt_token: attemptToken,
+    attempt_expires_at: new Date(Date.now() + 15_000),
   })));
 
-  readonly beginDispatch = vi.fn(async (deliveryId: string, leaseOwner?: string) =>
+  readonly beginDispatch = vi.fn(async (deliveryId: string, attemptToken?: string) =>
     this.update(deliveryId, ["claimed"], (row) =>
-      leaseOwner && row.lease_owner !== leaseOwner ? null : {
+      attemptToken && row.attempt_token !== attemptToken ? null : {
         ...row,
         state: "dispatching",
         dispatching_at: new Date(),
       }));
 
-  readonly markQueued = vi.fn(async (deliveryId: string, leaseOwner?: string) =>
+  readonly markQueued = vi.fn(async (deliveryId: string, attemptToken?: string) =>
     this.update(deliveryId, ["dispatching"], (row) =>
-      leaseOwner && row.lease_owner !== leaseOwner ? null : {
+      attemptToken && row.attempt_token !== attemptToken ? null : {
         ...row,
         state: "queued",
         aggregate_state: "pending",
         queued_at: new Date(),
       }));
 
-  readonly retryLeasedDelivery = vi.fn(async (deliveryId: string, leaseOwner: string) =>
+  readonly retryDeliveryAttempt = vi.fn(async (deliveryId: string, attemptToken: string) =>
     this.update(deliveryId, ["claimed", "dispatching", "queued"], (row) =>
-      row.lease_owner !== leaseOwner ? null : pendingRetry(row)));
+      row.attempt_token !== attemptToken ? null : pendingRetry(row)));
 
   readonly markConsumed = vi.fn(async (deliveryId: string, receiptId: string) =>
     this.update(deliveryId, ["pending", "claimed", "delivered", "queued"], (row) => ({
@@ -363,8 +363,8 @@ function pendingRetry(row: SessionDeliveryRow): SessionDeliveryRow {
     ...row,
     state: "pending",
     aggregate_state: "pending",
-    lease_owner: null,
-    lease_expires_at: null,
+    attempt_token: null,
+    attempt_expires_at: null,
     attempt_count: row.attempt_count + 1,
     next_attempt_at: new Date(),
     last_error: "queued_transcript_input_absent",
@@ -394,8 +394,8 @@ function deliveryRow(params: RegisterSessionDeliveryParams): SessionDeliveryRow 
     updated_at: createdAt,
     claimed_at: null,
     dispatching_at: null,
-    lease_owner: null,
-    lease_expires_at: null,
+    attempt_token: null,
+    attempt_expires_at: null,
     attempt_count: 0,
     next_attempt_at: createdAt,
     last_error: null,

@@ -87,6 +87,7 @@
     { "id": "083_recovered_ownerless_terminal_projection.sql", "sha256": "d84006fbfaaf9f4e01aae8c67d6676d44a4de3f75cb08b23f6d6097a36c6377c" },
     { "id": "084_runtime_ownership_machine_removal.sql", "sha256": "3381afb013835f4c49fa87a0f675c87b8d45b755484a6f40b399715ad440a22b" },
     { "id": "085a_execution_registration_projection.sql", "sha256": "d5617309f56351b591e75b6ba86309233ea84af6188af76402efce282f7dbfbb" },
-    { "id": "085b_execution_ownership_projection_drop.sql", "sha256": "f55315730232b23db26b29d8e925e6e385310925e647deed3fba9e0f97873bfc" }
+    { "id": "085b_execution_ownership_projection_drop.sql", "sha256": "f55315730232b23db26b29d8e925e6e385310925e647deed3fba9e0f97873bfc" },
+    { "id": "086_delivery_attempt_terminology.sql", "sha256": "43012bbfedf03d5000ce67f790bfc038289d205748ff077e392e9e6403f4341b" }
   ]
 }

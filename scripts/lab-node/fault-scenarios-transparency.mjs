@@ -319,9 +319,9 @@ async function runInterventionControl(runtime, recorder) {
 
 async function prepareDurableIntervention(runtime, sessionId, text) {
   const seed = shortId();
-  const leaseOwner = `lab-transparent-${seed}`;
-  const delivery = buildDurableDeliverySeed(randomUUID(), sessionId, text, leaseOwner);
-  await runtime.deliveries.seed(delivery, { state: "claimed", leaseOwner });
+  const attemptToken = `lab-transparent-${seed}`;
+  const delivery = buildDurableDeliverySeed(randomUUID(), sessionId, text, attemptToken);
+  await runtime.deliveries.seed(delivery, { state: "claimed", attemptToken });
   return delivery;
 }
 

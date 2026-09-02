@@ -199,7 +199,7 @@ describe("SessionDeliveryRepository", () => {
     const { sql, calls } = createMockSql([[claimed]]);
     const repository = new SessionDeliveryRepository(sql);
 
-    await expect(repository.claimForTarget(
+    await expect(repository.claimAttemptForTarget(
       claimed.delivery_id,
       "caller-replacement",
     )).resolves.toEqual(claimed);

@@ -56,7 +56,7 @@ import {
 
 const DELIVERY_ID = LIVE_COMPLETED_DELIVERY_IDS[1];
 const WORKER_ID = "restart-transcript:fake-node:new-connection";
-const LEASE_OWNER = "node-ready:fake-node:new-connection";
+const ATTEMPT_TOKEN = "node-ready:fake-node:new-connection";
 const logger = {
   child: () => logger,
   trace: vi.fn(),
@@ -249,12 +249,12 @@ describe("terminal queued delivery across node restart", () => {
           await queuedRecovery.recoverAfterNodeRestart(nodeId);
           const claimed = await ledger.claimPendingImmediateIntentsForNode(
             nodeId,
-            LEASE_OWNER,
+            ATTEMPT_TOKEN,
           );
           for (const row of claimed) {
             const routed = await router.routeExistingSessionPendingCommand({
               ...interventionCommand(row.delivery_id),
-              delivery_lease_owner: LEASE_OWNER,
+              delivery_attempt_token: ATTEMPT_TOKEN,
             } as never);
             await bridge.sendPendingCommand(routed);
           }
@@ -387,21 +387,21 @@ class RestartDeliveryLedger {
   ) => {
     if (this.row.state !== "queued") return [];
     this.row.state = "claimed";
-    this.row.lease_owner = workerId;
-    this.row.lease_expires_at = new Date(Date.now() + 60_000);
+    this.row.attempt_token = workerId;
+    this.row.attempt_expires_at = new Date(Date.now() + 60_000);
     this.trace.push("transcript_claimed");
     return [structuredClone(this.row)];
   });
 
-  readonly retryLeasedDelivery = vi.fn(async (
+  readonly retryDeliveryAttempt = vi.fn(async (
     deliveryId: string,
-    leaseOwner: string,
+    attemptToken: string,
     error: string,
   ) => {
-    if (deliveryId !== DELIVERY_ID || this.row.lease_owner !== leaseOwner) return null;
+    if (deliveryId !== DELIVERY_ID || this.row.attempt_token !== attemptToken) return null;
     this.row.state = "pending";
-    this.row.lease_owner = null;
-    this.row.lease_expires_at = null;
+    this.row.attempt_token = null;
+    this.row.attempt_expires_at = null;
     this.row.last_error = error;
     this.row.next_attempt_at = new Date();
     this.trace.push("pending");
@@ -410,28 +410,28 @@ class RestartDeliveryLedger {
 
   readonly claimPendingImmediateIntentsForNode = vi.fn(async (
     _nodeId: string,
-    leaseOwner: string,
+    attemptToken: string,
   ) => {
     if (this.row.state !== "pending") return [];
     this.row.state = "claimed";
-    this.row.lease_owner = leaseOwner;
-    this.row.lease_expires_at = new Date(Date.now() + 30_000);
+    this.row.attempt_token = attemptToken;
+    this.row.attempt_expires_at = new Date(Date.now() + 30_000);
     this.row.claimed_at = new Date();
     this.row.attempt_count += 1;
     this.trace.push("node_ready_claimed");
     return [structuredClone(this.row)];
   });
 
-  readonly claimForTarget = vi.fn(async () => null);
+  readonly claimAttemptForTarget = vi.fn(async () => null);
 
   readonly beginDispatch = vi.fn(async (
     deliveryId: string,
-    leaseOwner?: string,
+    attemptToken?: string,
   ) => {
     if (
       deliveryId !== DELIVERY_ID
       || this.row.state !== "claimed"
-      || this.row.lease_owner !== leaseOwner
+      || this.row.attempt_token !== attemptToken
     ) return null;
     this.row.state = "dispatching";
     this.row.dispatching_at = new Date();
@@ -441,18 +441,18 @@ class RestartDeliveryLedger {
 
   readonly markQueued = vi.fn(async (
     deliveryId: string,
-    leaseOwner?: string,
+    attemptToken?: string,
   ) => {
     if (
       deliveryId !== DELIVERY_ID
       || this.row.state !== "dispatching"
-      || this.row.lease_owner !== leaseOwner
+      || this.row.attempt_token !== attemptToken
     ) return null;
     this.row.state = "queued";
     this.row.aggregate_state = "pending";
     this.row.queued_at = new Date();
-    this.row.lease_owner = null;
-    this.row.lease_expires_at = null;
+    this.row.attempt_token = null;
+    this.row.attempt_expires_at = null;
     this.trace.push("queued_after_route");
     return structuredClone(this.row);
   });
@@ -478,18 +478,18 @@ class RestartDeliveryLedger {
   readonly markDelivered = vi.fn(async () => null);
   readonly markUncertain = vi.fn(async (
     deliveryId: string,
-    leaseOwner?: string,
+    attemptToken?: string,
     error?: string,
   ) => {
     if (
       deliveryId !== DELIVERY_ID
       || this.row.state !== "queued"
-      || this.row.lease_owner !== leaseOwner
+      || this.row.attempt_token !== attemptToken
     ) return null;
     this.row.state = "uncertain";
     this.row.aggregate_state = "dead_letter";
-    this.row.lease_owner = null;
-    this.row.lease_expires_at = null;
+    this.row.attempt_token = null;
+    this.row.attempt_expires_at = null;
     this.row.last_error = error ?? "delivery result rejected";
     this.row.dead_letter_reason = this.row.last_error;
     this.row.dead_lettered_at = new Date();

@@ -162,10 +162,10 @@ class ReconnectDeliveryLedger {
     return eligible;
   }
 
-  async claimForTarget(
+  async claimAttemptForTarget(
     deliveryId: string,
     targetSessionId: string,
-    leaseOwner: string,
+    attemptToken: string,
   ) {
     const row = this.store.get(deliveryId);
     if (!row || row.state !== "pending" || row.target_session_id !== targetSessionId) {
@@ -175,15 +175,15 @@ class ReconnectDeliveryLedger {
     const claimed = structuredClone(row);
     claimed.state = "claimed";
     claimed.claimed_at = new Date();
-    claimed.lease_owner = leaseOwner;
-    claimed.lease_expires_at = new Date(Date.now() + 30_000);
+    claimed.attempt_token = attemptToken;
+    claimed.attempt_expires_at = new Date(Date.now() + 30_000);
     this.store.set(deliveryId, claimed);
     return structuredClone(claimed);
   }
 
-  async beginDispatch(deliveryId: string, leaseOwner: string) {
+  async beginDispatch(deliveryId: string, attemptToken: string) {
     const row = this.store.get(deliveryId);
-    if (!row || row.state !== "claimed" || row.lease_owner !== leaseOwner) return null;
+    if (!row || row.state !== "claimed" || row.attempt_token !== attemptToken) return null;
     const dispatching = structuredClone(row);
     dispatching.state = "dispatching";
     dispatching.dispatching_at = new Date();
@@ -191,14 +191,14 @@ class ReconnectDeliveryLedger {
     return structuredClone(dispatching);
   }
 
-  async markQueued(deliveryId: string, leaseOwner: string) {
+  async markQueued(deliveryId: string, attemptToken: string) {
     const row = this.store.get(deliveryId);
-    if (!row || row.state !== "dispatching" || row.lease_owner !== leaseOwner) return null;
+    if (!row || row.state !== "dispatching" || row.attempt_token !== attemptToken) return null;
     const queued = structuredClone(row);
     queued.state = "queued";
     queued.queued_at = new Date();
-    queued.lease_owner = null;
-    queued.lease_expires_at = null;
+    queued.attempt_token = null;
+    queued.attempt_expires_at = null;
     this.store.set(deliveryId, queued);
     return structuredClone(queued);
   }
@@ -222,7 +222,7 @@ class ReconnectDeliveryLedger {
   async markUncertain() { return null; }
   async markConsumedByRelation() { return null; }
   async recordRelationConsumed() { return null; }
-  async retryLeasedDelivery() { return null; }
+  async retryDeliveryAttempt() { return null; }
   async markPendingSuperseded() { return null; }
   notifications = {
     stageWithQueuedDelivery: vi.fn(),

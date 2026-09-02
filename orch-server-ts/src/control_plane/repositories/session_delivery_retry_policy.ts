@@ -26,8 +26,8 @@ export interface DeliveryRetryOrDeadLetterInput {
   retryDelayMs?: number;
   /**
    * Keep an error already recorded on the row instead of overwriting it. Used
-   * by the lease sweeper, whose own reason ("lease expired") is less useful
-   * than whatever the previous owner recorded before it died.
+   * by stale-attempt recovery, whose own reason ("attempt expired") is less useful
+   * than whatever the previous attempt recorded before it ended.
    */
   preserveExistingError?: boolean;
   /**
@@ -79,8 +79,8 @@ export function deliveryRetryOrDeadLetterSet(
     attempt_count = attempt_count + ${spendsAttempt ? 1 : 0},
     state = CASE WHEN ${exhausted} THEN 'uncertain' ELSE ${input.retryState} END,
     aggregate_state = CASE WHEN ${exhausted} THEN 'dead_letter' ELSE 'pending' END,
-    lease_owner = NULL,
-    lease_expires_at = NULL,
+    attempt_token = NULL,
+    attempt_expires_at = NULL,
     next_attempt_at = CASE
       WHEN ${exhausted} THEN next_attempt_at
       ELSE NOW() + ${retryDelay}

@@ -86,7 +86,7 @@ function makeLedgerGate(terminalStates: ReadonlyMap<string, TerminalDeliveryStat
         producer_terminal_revision: null,
         parent_delivery_id: null,
         caller_turn_id: null,
-        lease_owner: "route-contract",
+        attempt_token: "route-contract",
         attempt_count: 1,
         created_at: new Date("2026-08-23T20:02:00.000Z"),
         payload: {

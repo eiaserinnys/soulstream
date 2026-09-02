@@ -338,7 +338,7 @@ describe("control-plane host routes", () => {
       SessionDeliveryNotificationHostClient: new (transport: unknown) => {
         stageWithQueuedDelivery(input: {
           deliveryId: string;
-          leaseOwner: string;
+          attemptToken: string;
           targetSessionId: string;
           disposition: "queued" | "auto_resume";
           payload: Record<string, unknown>;
@@ -346,12 +346,12 @@ describe("control-plane host routes", () => {
       };
     }>("../../soul-server-ts/src/control_plane/persistence_host_clients.ts");
     let storedPayload: unknown;
-    const leaseExpiresAt = new Date("2026-08-12T00:01:00.000Z");
+    const attemptExpiresAt = new Date("2026-08-12T00:01:00.000Z");
     const query = Object.assign(
       async (strings: TemplateStringsArray) => {
         const statement = strings.join("?");
         if (statement.includes("UPDATE session_deliveries")) {
-          return [{ lease_expires_at: leaseExpiresAt }];
+          return [{ attempt_expires_at: attemptExpiresAt }];
         }
         if (statement.includes("INSERT INTO session_delivery_notification_outbox")) {
           return [{ delivery_id: "delivery-1" }];
@@ -407,7 +407,7 @@ describe("control-plane host routes", () => {
 
     await expect(client.stageWithQueuedDelivery({
       deliveryId: "delivery-1",
-      leaseOwner: "worker-1",
+      attemptToken: "worker-1",
       targetSessionId: "target-1",
       disposition: "queued",
       payload,

@@ -87,9 +87,9 @@ export class TaskCompletionNotifier implements CompletionNotifier {
             throw new Error("Completion delivery exhausted local and cross-node routes");
           }
           if (verdict.kind === "unknown") {
-            if (!params.deliveryId || !params.deliveryLeaseOwner) {
+            if (!params.deliveryId || !params.deliveryAttemptToken) {
               throw new Error(
-                "Unknown completion verdict requires a durable delivery id and lease owner",
+                "Unknown completion verdict requires a durable delivery id and attempt token",
               );
             }
             throw new Error(
@@ -158,7 +158,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     sourceSessionId?: string,
   ): Promise<CompletionDeliveryVerdict> {
     const callerSessionId = params.agentSessionId;
-    // Gate OFF is the pre-v2 local-first contract: no ownership DB scheduling point.
+    // Gate OFF is the pre-v2 local-first contract: no DB attempt scheduling point.
     if (!this.deliveryV2Enabled || await this._isLocalTarget(callerSessionId)) {
       try {
         const result = await this.taskManager.addIntervention(params, this.onResume);
@@ -323,7 +323,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
             parent_delivery_id: params.parentDeliveryId,
             caller_turn_id: params.callerTurnId,
             created_at: params.deliveryCreatedAt,
-            delivery_lease_owner: params.deliveryLeaseOwner,
+            delivery_attempt_token: params.deliveryAttemptToken,
           }
         : {}),
     };

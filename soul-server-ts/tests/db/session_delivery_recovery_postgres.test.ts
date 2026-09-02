@@ -43,23 +43,6 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
-    const pendingMigration = readFileSync(
-      new URL(
-        "../../../packages/db-schema/sql/migrations/045_session_deliveries.sql",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-    await harness.sql.unsafe(pendingMigration);
-    await harness.sql.unsafe(pendingMigration);
-    const terminalFenceMigration = readFileSync(
-      new URL(
-        "../../../packages/db-schema/sql/migrations/065_completion_terminal_revision_fence.sql",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-    await harness.sql.unsafe(terminalFenceMigration);
     repository = new SessionDeliveryRepository(harness.sql);
   }, 45_000);
 
@@ -111,7 +94,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       "worker-b",
       1,
     )).resolves.toMatchObject([
-      { delivery_id: "delivery-free", lease_owner: "worker-b" },
+      { delivery_id: "delivery-free", attempt_token: "worker-b" },
     ]);
     release.resolve();
     await blockingTransaction;
@@ -153,7 +136,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       "worker-healthy",
       1,
     )).resolves.toMatchObject([
-      { delivery_id: "delivery-healthy", lease_owner: "worker-healthy" },
+      { delivery_id: "delivery-healthy", attempt_token: "worker-healthy" },
     ]);
   });
 
@@ -175,7 +158,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     )).resolves.toMatchObject([{
       delivery_id: "human-live-recovery",
       state: "claimed",
-      lease_owner: "worker-human-live",
+      attempt_token: "worker-human-live",
     }]);
   });
 
@@ -531,7 +514,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         INSERT INTO session_deliveries (
           delivery_id, target_session_id, relation_key, intent, source,
           payload_hash, payload, state, created_at, updated_at,
-          lease_owner, lease_expires_at
+          attempt_token, attempt_expires_at
         ) VALUES (
           ${deliveryId}, 'caller-session', ${relationKey},
           'runtime_followup', 'claude_runtime_task_followup',
@@ -556,7 +539,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     )).resolves.toMatchObject([{
       delivery_id: "runtime-pending-latest",
       state: "claimed",
-      lease_owner: "recovery-worker",
+      attempt_token: "recovery-worker",
     }]);
     await expect(repository.get("runtime-pending-old")).resolves.toMatchObject({
       state: "superseded",
@@ -564,7 +547,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
     await expect(repository.get("runtime-claimed")).resolves.toMatchObject({
       state: "claimed",
-      lease_owner: "existing-worker",
+      attempt_token: "existing-worker",
     });
   });
 
@@ -635,7 +618,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
 
   it("does not probe a fresh queued delivery when a newer execution activates", async () => {
     await registerUserDelivery("delivery-queued-revive", "queued before restart");
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-queued-revive",
       "caller-session",
       "worker-before-restart",
@@ -784,11 +767,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     }
   });
 
-  it("recovers an expired crash lease and fences the old worker from dispatch", async () => {
+  it("recovers an expired crash attempt and fences the old token from dispatch", async () => {
     await register("delivery-crash", "relation-crash", {
       targetSessionId: "caller-session",
     });
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-crash",
       "caller-session",
       "worker-dead",
@@ -797,11 +780,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await repository.beginDispatch("delivery-crash", "worker-dead");
     await harness.sql`
       UPDATE session_deliveries
-      SET lease_expires_at = NOW() - INTERVAL '1 second'
+      SET attempt_expires_at = NOW() - INTERVAL '1 second'
       WHERE delivery_id = 'delivery-crash'
     `;
 
-    await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(1);
+    await expect(repository.expireStaleDeliveryAttempts()).resolves.toBe(1);
     await harness.sql`
       UPDATE session_deliveries
       SET next_attempt_at = NOW()
@@ -814,7 +797,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       {
         delivery_id: "delivery-crash",
         state: "claimed",
-        lease_owner: "worker-recovered",
+        attempt_token: "worker-recovered",
       },
     ]);
     await expect(repository.beginDispatch(
@@ -842,7 +825,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       await register(boundary.deliveryId, boundary.relation, {
         targetSessionId: "caller-session",
       });
-      await repository.claimForTarget(
+      await repository.claimAttemptForTarget(
         boundary.deliveryId,
         "caller-session",
         `dead:${boundary.deliveryId}`,
@@ -855,7 +838,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await register("delivery-other-node-queued", "other-node-queued", {
       targetSessionId: "other-node-target",
     });
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-other-node-queued",
       "other-node-target",
       "healthy-other-node",
@@ -882,7 +865,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     );
     await harness.sql`
       UPDATE session_deliveries
-      SET lease_expires_at = NOW() - INTERVAL '1 second'
+      SET attempt_expires_at = NOW() - INTERVAL '1 second'
       WHERE state = 'dispatching'
     `;
 
@@ -900,7 +883,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       aggregate_state: "dead_letter",
       last_error: "queued_transcript_input_absent",
     });
-    await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(2);
+    await expect(repository.expireStaleDeliveryAttempts()).resolves.toBe(2);
 
     const dispatch = vi.fn();
     const coordinator = new CompletionDeliveryCoordinator({
@@ -955,7 +938,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await register("delivery-transcript", "relation-transcript", {
       targetSessionId: "caller-session",
     });
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-transcript",
       "caller-session",
       "worker-before-crash",
@@ -1006,7 +989,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await register(deliveryId, relationKey, {
       targetSessionId: "caller-session",
     });
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       deliveryId,
       "caller-session",
       "worker-before-restart",
@@ -1014,7 +997,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await repository.beginDispatch(deliveryId, "worker-before-restart");
     await repository.notifications.stageWithQueuedDelivery({
       deliveryId,
-      leaseOwner: "worker-before-restart",
+      attemptToken: "worker-before-restart",
       targetSessionId: "caller-session",
       disposition: "queued",
       payload: notificationPayload(deliveryId, relationKey),
@@ -1105,7 +1088,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     ] as const) {
       await registerUserDelivery(deliveryId, `content for ${deliveryId}`);
       const worker = `crashed:${deliveryId}`;
-      await repository.claimForTarget(deliveryId, "caller-session", worker);
+      await repository.claimAttemptForTarget(deliveryId, "caller-session", worker);
       await repository.beginDispatch(deliveryId, worker);
       await repository.markQueued(deliveryId, worker);
       await harness.sql`
@@ -1115,7 +1098,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       `;
     }
     await registerUserDelivery("unseen-after-sigint", "deliver me once");
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "unseen-after-sigint",
       "caller-session",
       "crashed:unseen-after-sigint",
@@ -1140,12 +1123,12 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         redelivered.push(row.delivery_id);
         const dispatching = await repository.beginDispatch(
           row.delivery_id,
-          row.lease_owner ?? undefined,
+          row.attempt_token ?? undefined,
         );
         if (!dispatching) throw new Error(`cannot dispatch ${row.delivery_id}`);
         const queued = await repository.markQueued(
           row.delivery_id,
-          row.lease_owner ?? undefined,
+          row.attempt_token ?? undefined,
         );
         if (!queued) throw new Error(`cannot queue ${row.delivery_id}`);
         const consumed = await repository.markConsumed(
@@ -1189,7 +1172,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     for (const deliveryId of ["orphan-queued", "orphan-delivered"] as const) {
       await registerUserDelivery(deliveryId, `content for ${deliveryId}`);
       const worker = `crashed:${deliveryId}`;
-      await repository.claimForTarget(deliveryId, "caller-session", worker);
+      await repository.claimAttemptForTarget(deliveryId, "caller-session", worker);
       await repository.beginDispatch(deliveryId, worker);
       await repository.markQueued(deliveryId, worker);
     }
@@ -1200,7 +1183,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     ] as const) {
       await registerUserDelivery(deliveryId, `content for ${deliveryId}`);
       const worker = `crashed:${deliveryId}`;
-      await repository.claimForTarget(deliveryId, "caller-session", worker);
+      await repository.claimAttemptForTarget(deliveryId, "caller-session", worker);
       await repository.beginDispatch(deliveryId, worker);
       await repository.markQueued(deliveryId, worker);
       await harness.sql`
@@ -1224,12 +1207,12 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         redelivered.push(row.delivery_id);
         const dispatching = await repository.beginDispatch(
           row.delivery_id,
-          row.lease_owner ?? undefined,
+          row.attempt_token ?? undefined,
         );
         if (!dispatching) throw new Error(`cannot dispatch ${row.delivery_id}`);
         const queued = await repository.markQueued(
           row.delivery_id,
-          row.lease_owner ?? undefined,
+          row.attempt_token ?? undefined,
         );
         if (!queued) throw new Error(`cannot queue ${row.delivery_id}`);
       },
@@ -1266,7 +1249,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await register("delivery-old-soul-new-orch", "relation-old-soul-new-orch", {
       targetSessionId: "caller-session",
     });
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-old-soul-new-orch",
       "caller-session",
       "worker-before-crash",
@@ -1290,12 +1273,12 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     const recovery = repository.recovery as typeof repository.recovery & {
       markDeliveredFromTranscript?: (
         deliveryId: string,
-        leaseOwner: string,
+        attemptToken: string,
         assistantMessageUuid: string,
       ) => Promise<SessionDeliveryRow | null>;
       markConsumedFromTranscript?: (
         deliveryId: string,
-        leaseOwner: string,
+        attemptToken: string,
         assistantMessageUuid: string,
       ) => Promise<SessionDeliveryRow | null>;
     };
@@ -1334,7 +1317,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await register("delivery-input-pending", "relation-input-pending", {
       targetSessionId: "caller-session",
     });
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-input-pending",
       "caller-session",
       "worker-before-crash",
@@ -1373,7 +1356,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await register("delivery-stale-identity", "relation-stale-identity", {
       targetSessionId: "caller-session",
     });
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-stale-identity",
       "caller-session",
       "worker-before-crash",
@@ -1415,7 +1398,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await register("delivery-outbox", "relation-outbox", {
       targetSessionId: "caller-session",
     });
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-outbox",
       "caller-session",
       "worker-outbox",
@@ -1435,7 +1418,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
 
     await expect(repository.notifications.stageWithQueuedDelivery({
       deliveryId: "delivery-outbox",
-      leaseOwner: "worker-outbox",
+      attemptToken: "worker-outbox",
       targetSessionId: "caller-session",
       disposition: "queued",
       payload: notificationPayload("delivery-outbox", "relation-outbox"),
@@ -1454,17 +1437,17 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     `;
     await expect(repository.notifications.stageWithQueuedDelivery({
       deliveryId: "delivery-outbox",
-      leaseOwner: "worker-outbox",
+      attemptToken: "worker-outbox",
       targetSessionId: "caller-session",
       disposition: "queued",
       payload: notificationPayload("delivery-outbox", "relation-outbox"),
     })).resolves.toMatchObject({ state: "queued" });
     expect(await harness.sql`
-      SELECT state, lease_owner
+      SELECT state, attempt_token
       FROM session_delivery_notification_outbox
       WHERE delivery_id = 'delivery-outbox'
     `).toMatchObject([
-      { state: "claimed", lease_owner: "worker-outbox" },
+      { state: "claimed", attempt_token: "worker-outbox" },
     ]);
   });
 
@@ -1472,7 +1455,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await register("delivery-invalid-stage", "relation-invalid-stage", {
       targetSessionId: "caller-session",
     });
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-invalid-stage",
       "caller-session",
       "worker-invalid-stage",
@@ -1481,7 +1464,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
 
     await expect(repository.notifications.stageWithQueuedDelivery({
       deliveryId: "delivery-invalid-stage",
-      leaseOwner: "worker-invalid-stage",
+      attemptToken: "worker-invalid-stage",
       targetSessionId: "caller-session",
       disposition: "queued",
       payload: { text: "done" },
@@ -1514,11 +1497,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       ],
     ] as const) {
       await register(deliveryId, relationKey, { targetSessionId });
-      await repository.claimForTarget(deliveryId, targetSessionId, worker);
+      await repository.claimAttemptForTarget(deliveryId, targetSessionId, worker);
       await repository.beginDispatch(deliveryId, worker);
       await repository.notifications.stageWithQueuedDelivery({
         deliveryId,
-        leaseOwner: worker,
+        attemptToken: worker,
         targetSessionId,
         disposition: "queued",
         payload: notificationPayload(deliveryId, relationKey),
@@ -1526,7 +1509,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     }
     await harness.sql`
       UPDATE session_delivery_notification_outbox
-      SET state = 'pending', lease_owner = NULL, lease_expires_at = NULL
+      SET state = 'pending', attempt_token = NULL, attempt_expires_at = NULL
     `;
 
     await expect(repository.notifications.claimDue(
@@ -1560,11 +1543,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       ["delivery-age-cap", "relation-age-cap", "worker-age-cap"],
     ] as const) {
       await register(deliveryId, relationKey, { targetSessionId: "caller-session" });
-      await repository.claimForTarget(deliveryId, "caller-session", worker);
+      await repository.claimAttemptForTarget(deliveryId, "caller-session", worker);
       await repository.beginDispatch(deliveryId, worker);
       await repository.notifications.stageWithQueuedDelivery({
         deliveryId,
-        leaseOwner: worker,
+        attemptToken: worker,
         targetSessionId: "caller-session",
         disposition: "queued",
         payload: notificationPayload(deliveryId, relationKey),
@@ -1619,29 +1602,9 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
   });
 
   it("quarantines residual camelCase deliveryIntent rows in migration 062", async () => {
-    await register("delivery-legacy-camel", "relation-legacy-camel", {
-      targetSessionId: "caller-session",
-    });
-    await repository.claimForTarget(
-      "delivery-legacy-camel",
-      "caller-session",
-      "worker-legacy-camel",
-    );
-    await repository.beginDispatch("delivery-legacy-camel", "worker-legacy-camel");
-    await repository.notifications.stageWithQueuedDelivery({
-      deliveryId: "delivery-legacy-camel",
-      leaseOwner: "worker-legacy-camel",
-      targetSessionId: "caller-session",
-      disposition: "queued",
-      payload: notificationPayload("delivery-legacy-camel", "relation-legacy-camel"),
-    });
-    await harness.sql`
-      UPDATE session_delivery_notification_outbox
-      SET payload = (payload - 'delivery_intent')
-        || jsonb_build_object('deliveryIntent', 'completion_notification'),
-        state = 'pending', lease_owner = NULL, lease_expires_at = NULL
-      WHERE delivery_id = 'delivery-legacy-camel'
-    `;
+    const legacySchema =
+      `delivery_062_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const legacySql = harness.createPeer();
     const migration = readFileSync(
       new URL(
         "../../../packages/db-schema/sql/migrations/062_notification_outbox_hardening.sql",
@@ -1650,17 +1613,59 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       "utf8",
     );
 
-    await harness.sql.unsafe(migration);
+    try {
+      await legacySql.unsafe(`
+        CREATE SCHEMA ${legacySchema};
+        SET search_path TO ${legacySchema};
+        CREATE TABLE sessions (
+          session_id TEXT PRIMARY KEY,
+          node_id TEXT
+        );
+        CREATE TABLE session_deliveries (
+          delivery_id TEXT PRIMARY KEY
+        );
+        CREATE TABLE session_delivery_notification_outbox (
+          delivery_id TEXT PRIMARY KEY
+            REFERENCES session_deliveries(delivery_id) ON DELETE CASCADE,
+          target_session_id TEXT NOT NULL,
+          payload JSONB NOT NULL,
+          state TEXT NOT NULL,
+          lease_owner TEXT,
+          lease_expires_at TIMESTAMPTZ,
+          last_error TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CONSTRAINT session_delivery_notification_state_check
+            CHECK (state IN ('pending', 'claimed', 'published'))
+        );
+        INSERT INTO sessions (session_id, node_id)
+        VALUES ('caller-session', 'node-test');
+        INSERT INTO session_deliveries (delivery_id)
+        VALUES ('delivery-legacy-camel');
+        INSERT INTO session_delivery_notification_outbox (
+          delivery_id, target_session_id, payload, state,
+          lease_owner, lease_expires_at
+        ) VALUES (
+          'delivery-legacy-camel', 'caller-session',
+          '{"deliveryIntent":"completion_notification"}'::jsonb,
+          'pending', NULL, NULL
+        );
+      `);
+      await legacySql.unsafe(migration);
 
-    expect(await harness.sql`
-      SELECT state, dead_lettered_at, last_error
-      FROM session_delivery_notification_outbox
-      WHERE delivery_id = 'delivery-legacy-camel'
-    `).toMatchObject([{
-      state: "dead_letter",
-      dead_lettered_at: expect.any(Date),
-      last_error: "legacy camelCase deliveryIntent quarantined by migration 062",
-    }]);
+      expect(await legacySql`
+        SELECT state, dead_lettered_at, last_error
+        FROM session_delivery_notification_outbox
+        WHERE delivery_id = 'delivery-legacy-camel'
+      `).toMatchObject([{
+        state: "dead_letter",
+        dead_lettered_at: expect.any(Date),
+        last_error: "legacy camelCase deliveryIntent quarantined by migration 062",
+      }]);
+    } finally {
+      await legacySql.unsafe(`DROP SCHEMA IF EXISTS ${legacySchema} CASCADE`);
+      await legacySql.end({ timeout: 5 });
+    }
   });
 
   async function register(

@@ -32,8 +32,8 @@ function pendingRow(overrides: Record<string, unknown> = {}) {
     attempt_count: 0,
     next_attempt_at: createdAt,
     last_error: null,
-    lease_owner: null,
-    lease_expires_at: null,
+    attempt_token: null,
+    attempt_expires_at: null,
     created_at: createdAt,
     updated_at: createdAt,
     claimed_at: null,
@@ -51,25 +51,25 @@ function repositoryFixture(row = pendingRow()) {
   const claimed = {
     ...row,
     state: "claimed",
-    lease_owner: "completion:test-worker",
-    lease_expires_at: new Date(createdAt.getTime() + 60_000),
+    attempt_token: "completion:test-worker",
+    attempt_expires_at: new Date(createdAt.getTime() + 60_000),
   };
   return {
     register: vi.fn().mockResolvedValue({ row, inserted: true, conflict: false }),
     get: vi.fn().mockResolvedValue(row),
-    claimForTarget: vi.fn().mockResolvedValue(claimed),
+    claimAttemptForTarget: vi.fn().mockResolvedValue(claimed),
     claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([claimed]),
     deferPending: vi.fn(),
-    retryLeasedDelivery: vi.fn().mockResolvedValue({
+    retryDeliveryAttempt: vi.fn().mockResolvedValue({
       ...claimed,
       state: "pending",
-      lease_owner: null,
+      attempt_token: null,
     }),
-    releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
+    expireStaleDeliveryAttempts: vi.fn().mockResolvedValue(0),
     markUncertain: vi.fn().mockResolvedValue({
       ...claimed,
       state: "uncertain",
-      lease_owner: null,
+      attempt_token: null,
     }),
   };
 }
@@ -91,7 +91,7 @@ describe("CompletionDeliveryCoordinator", () => {
     vi.restoreAllMocks();
   });
 
-  it("periodic recovery only releases expired leases and never dispatches held input", async () => {
+  it("periodic recovery only expires stale attempts and never dispatches held input", async () => {
     const repository = repositoryFixture();
     const dispatch = vi.fn();
     const coordinator = new CompletionDeliveryCoordinator({
@@ -103,7 +103,7 @@ describe("CompletionDeliveryCoordinator", () => {
     await coordinator.recoverPending();
     await coordinator.recoverPending();
 
-    expect(repository.releaseExpiredDeliveryLeases).toHaveBeenCalledTimes(2);
+    expect(repository.expireStaleDeliveryAttempts).toHaveBeenCalledTimes(2);
     expect(repository.claimRecoverableCompletionDeliveries).not.toHaveBeenCalled();
     expect(dispatch).not.toHaveBeenCalled();
   });
@@ -126,7 +126,7 @@ describe("CompletionDeliveryCoordinator", () => {
       createdAt,
     });
 
-    expect(repository.claimForTarget).toHaveBeenCalledOnce();
+    expect(repository.claimAttemptForTarget).toHaveBeenCalledOnce();
     expect(dispatch).toHaveBeenCalledOnce();
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
       agentSessionId: "caller-session",
@@ -157,7 +157,7 @@ describe("CompletionDeliveryCoordinator", () => {
     await coordinator.recoverPending();
 
     expect(dispatch).toHaveBeenCalledOnce();
-    expect(repository.retryLeasedDelivery).toHaveBeenCalledOnce();
+    expect(repository.retryDeliveryAttempt).toHaveBeenCalledOnce();
     expect(repository.claimRecoverableCompletionDeliveries).not.toHaveBeenCalled();
     expect(repository.markUncertain).not.toHaveBeenCalled();
   });
@@ -192,7 +192,7 @@ describe("CompletionDeliveryCoordinator", () => {
     });
 
     expect(dispatch).toHaveBeenCalledOnce();
-    expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
+    expect(repository.retryDeliveryAttempt).not.toHaveBeenCalled();
     expect(repository.markUncertain).not.toHaveBeenCalled();
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -203,13 +203,13 @@ describe("CompletionDeliveryCoordinator", () => {
     );
   });
 
-  it("reports an explicit enqueue lease CAS loss without claiming a retry", async () => {
+  it("reports an explicit enqueue attempt CAS loss without claiming a retry", async () => {
     const row = pendingRow();
     const repository = repositoryFixture(row);
     repository.get
       .mockResolvedValueOnce(row)
       .mockResolvedValueOnce(row);
-    repository.retryLeasedDelivery.mockResolvedValueOnce(null);
+    repository.retryDeliveryAttempt.mockResolvedValueOnce(null);
     const dispatch = vi.fn().mockRejectedValue(new Error("dispatch failed"));
     const logger = loggerFixture();
     const coordinator = new CompletionDeliveryCoordinator({
@@ -228,11 +228,11 @@ describe("CompletionDeliveryCoordinator", () => {
     });
 
     expect(dispatch).toHaveBeenCalledOnce();
-    expect(repository.retryLeasedDelivery).toHaveBeenCalledOnce();
+    expect(repository.retryDeliveryAttempt).toHaveBeenCalledOnce();
     expect(repository.markUncertain).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ deliveryId: "delivery-completion" }),
-      "Completion delivery retry not scheduled because the dispatch lease was lost",
+      "Completion delivery retry not scheduled because the attempt token was lost",
     );
     expect(logger.warn).not.toHaveBeenCalledWith(
       expect.anything(),
@@ -261,7 +261,7 @@ describe("CompletionDeliveryCoordinator", () => {
     });
 
     expect(repository.markUncertain).toHaveBeenCalledOnce();
-    expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
+    expect(repository.retryDeliveryAttempt).not.toHaveBeenCalled();
   });
 
   it("retries a failed delivery immediately before the 24-hour age limit", async () => {
@@ -285,7 +285,7 @@ describe("CompletionDeliveryCoordinator", () => {
       createdAt: boundaryCreatedAt,
     });
 
-    expect(repository.retryLeasedDelivery).toHaveBeenCalledOnce();
+    expect(repository.retryDeliveryAttempt).toHaveBeenCalledOnce();
     expect(repository.markUncertain).not.toHaveBeenCalled();
   });
 
@@ -311,7 +311,7 @@ describe("CompletionDeliveryCoordinator", () => {
     });
 
     expect(repository.markUncertain).toHaveBeenCalledOnce();
-    expect(repository.retryLeasedDelivery).not.toHaveBeenCalled();
+    expect(repository.retryDeliveryAttempt).not.toHaveBeenCalled();
   });
 
   it("suppresses a stale self completion during explicit enqueue", async () => {

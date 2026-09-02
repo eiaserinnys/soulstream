@@ -67,7 +67,7 @@ describePostgres("terminal target delivery settlement", () => {
       "terminal-queued",
       "terminal-delivered",
     ] as const) {
-      await repository.claimForTarget(
+      await repository.claimAttemptForTarget(
         deliveryId,
         "terminal-parent",
         `worker-${deliveryId}`,
@@ -90,7 +90,7 @@ describePostgres("terminal target delivery settlement", () => {
       )
     `;
 
-    await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(0);
+    await expect(repository.expireStaleDeliveryAttempts()).resolves.toBe(0);
 
     const rows = await harness.sql<Array<{
       delivery_id: string;

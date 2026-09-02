@@ -92,9 +92,9 @@ interface RuntimeReconnectAttempt extends ReconnectAttemptObservation {
 
 type PendingImmediateClaim = (
   nodeId: string,
-  leaseOwner: string,
+  attemptToken: string,
   limit?: number,
-  leaseMs?: number,
+  attemptTtlMs?: number,
 ) => Promise<SessionDeliveryRow[]>;
 
 export interface PublicClaimCandidate {
@@ -205,10 +205,10 @@ export async function observeRuntimeFollowupReconnect(input: {
         await socketClosed.wait();
       }
       try {
-        const leaseOwner = `node-ready:${NODE_ID}:${connectionId}`;
+        const attemptToken = `node-ready:${NODE_ID}:${connectionId}`;
         const claimed = await publicClaimComposition.claim(
           NODE_ID,
-          leaseOwner,
+          attemptToken,
         );
         for (const row of claimed) {
           attempt.claimOrder.push(row.delivery_id);

@@ -45,7 +45,7 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
   });
 
   it.each([0, 250])(
-    "retries a leased delivery with an explicit %dms delay",
+    "retries a claimed delivery attempt with an explicit %dms delay",
     async (retryDelayMs) => {
       const deliveryId = `retry-delay-${retryDelayMs}`;
       await harness.sql`
@@ -57,8 +57,8 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
           payload_hash,
           payload,
           state,
-          lease_owner,
-          lease_expires_at
+          attempt_token,
+          attempt_expires_at
         ) VALUES (
           ${deliveryId},
           ${`relation-${retryDelayMs}`},
@@ -75,7 +75,7 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
         SELECT NOW() AS now
       `;
 
-      const retried = await repository.retryLeasedDelivery(
+      const retried = await repository.retryDeliveryAttempt(
         deliveryId,
         "worker-a",
         "transient failure",
@@ -89,8 +89,8 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
         delivery_id: deliveryId,
         state: "pending",
         aggregate_state: "pending",
-        lease_owner: null,
-        lease_expires_at: null,
+        attempt_token: null,
+        attempt_expires_at: null,
         attempt_count: 1,
         last_error: "transient failure",
       });
@@ -99,13 +99,13 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
       expect(retried!.next_attempt_at.getTime())
         .toBeLessThanOrEqual(after.getTime() + retryDelayMs);
       await expect(harness.sql`
-        SELECT delivery_id, attempt_number, lease_owner, outcome, reason
+        SELECT delivery_id, attempt_number, attempt_token, outcome, reason
         FROM session_delivery_attempts
         WHERE delivery_id = ${deliveryId}
       `).resolves.toEqual([{
         delivery_id: deliveryId,
         attempt_number: 1,
-        lease_owner: "worker-a",
+        attempt_token: "worker-a",
         outcome: "retryable",
         reason: "transient failure",
       }]);
@@ -122,8 +122,8 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
         payload_hash,
         payload,
         state,
-        lease_owner,
-        lease_expires_at
+        attempt_token,
+        attempt_expires_at
       ) VALUES (
         'legacy-retry-at',
         'legacy-retry-at-relation',
@@ -140,7 +140,7 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/api/session-deliveries/host/retry_leased_delivery",
+      url: "/api/session-deliveries/host/retry_delivery_attempt",
       headers: { authorization: "Bearer service-token" },
       payload: {
         args: [
@@ -155,7 +155,7 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
     expect(response.statusCode).toBe(200);
     await expect(repository.get("legacy-retry-at")).resolves.toMatchObject({
       state: "pending",
-      lease_owner: null,
+      attempt_token: null,
       attempt_count: 1,
       last_error: "legacy client retry",
     });

@@ -9,12 +9,12 @@ export async function appendSessionDeliveryAttempt(
     deliveryId: string;
     outcome: SessionDeliveryAttemptOutcome;
     reason: string;
-    leaseOwner?: string | null;
+    attemptToken?: string | null;
   },
 ): Promise<void> {
   await sql`
     INSERT INTO session_delivery_attempts (
-      delivery_id, attempt_number, lease_owner, payload_hash, outcome, reason
+      delivery_id, attempt_number, attempt_token, payload_hash, outcome, reason
     )
     SELECT delivery.delivery_id,
       COALESCE((
@@ -22,7 +22,7 @@ export async function appendSessionDeliveryAttempt(
         FROM session_delivery_attempts AS attempt
         WHERE attempt.delivery_id = delivery.delivery_id
       ), 1),
-      COALESCE(${input.leaseOwner ?? null}, delivery.lease_owner),
+      COALESCE(${input.attemptToken ?? null}, delivery.attempt_token),
       delivery.payload_hash,
       ${input.outcome},
       ${input.reason}

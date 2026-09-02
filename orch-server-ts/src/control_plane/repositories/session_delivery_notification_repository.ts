@@ -9,7 +9,7 @@ import { appendSessionDeliveryAttempt } from
 import { validateNotificationPayload } from
   "./session_delivery_notification_payload.js";
 
-const DEFAULT_NOTIFICATION_LEASE_MS = 15_000;
+const DEFAULT_NOTIFICATION_ATTEMPT_TTL_MS = 15_000;
 
 export class SessionDeliveryNotificationRepository {
   constructor(private readonly sql: SqlClient) {}
@@ -27,11 +27,11 @@ export class SessionDeliveryNotificationRepository {
 
   async stageWithQueuedDelivery(params: {
     deliveryId: string;
-    leaseOwner: string;
+    attemptToken: string;
     targetSessionId: string;
     disposition: "queued" | "auto_resume";
     payload: Record<string, unknown>;
-  }, leaseMs = DEFAULT_NOTIFICATION_LEASE_MS): Promise<SessionDeliveryRow | null> {
+  }, attemptTtlMs = DEFAULT_NOTIFICATION_ATTEMPT_TTL_MS): Promise<SessionDeliveryRow | null> {
     const payload = validateNotificationPayload(params);
     return await this.sql.begin(async (transaction) => {
       const advanced = await transaction<SessionDeliveryRow[]>`
@@ -40,7 +40,7 @@ export class SessionDeliveryNotificationRepository {
             queued_at = NOW(), updated_at = NOW()
         WHERE delivery_id = ${params.deliveryId}
           AND state = 'dispatching'
-          AND lease_owner = ${params.leaseOwner}
+          AND attempt_token = ${params.attemptToken}
         RETURNING *
       `;
       const row = advanced[0];
@@ -53,8 +53,8 @@ export class SessionDeliveryNotificationRepository {
           disposition,
           state,
           projection_state,
-          lease_owner,
-          lease_expires_at,
+          attempt_token,
+          attempt_expires_at,
           next_attempt_at,
           created_at,
           updated_at
@@ -65,8 +65,8 @@ export class SessionDeliveryNotificationRepository {
           ${params.disposition},
           'claimed',
           'publishing',
-          ${params.leaseOwner},
-          NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
+          ${params.attemptToken},
+          NOW() + (${attemptTtlMs}::double precision * INTERVAL '1 millisecond'),
           NOW(),
           NOW(),
           NOW()
@@ -78,8 +78,8 @@ export class SessionDeliveryNotificationRepository {
           disposition = EXCLUDED.disposition,
           state = 'claimed',
           projection_state = 'publishing',
-          lease_owner = EXCLUDED.lease_owner,
-          lease_expires_at = EXCLUDED.lease_expires_at,
+          attempt_token = EXCLUDED.attempt_token,
+          attempt_expires_at = EXCLUDED.attempt_expires_at,
           next_attempt_at = NOW(),
           last_error = NULL,
           updated_at = NOW()
@@ -95,7 +95,7 @@ export class SessionDeliveryNotificationRepository {
           AND (
             (
               session_delivery_notification_outbox.state = 'pending'
-              AND session_delivery_notification_outbox.lease_owner IS NULL
+              AND session_delivery_notification_outbox.attempt_token IS NULL
               AND session_delivery_notification_outbox.projection_state
                 IN ('staged', 'publishing')
             )
@@ -103,8 +103,8 @@ export class SessionDeliveryNotificationRepository {
               session_delivery_notification_outbox.state = 'claimed'
               AND session_delivery_notification_outbox.projection_state = 'publishing'
               AND (
-                session_delivery_notification_outbox.lease_owner = EXCLUDED.lease_owner
-                OR session_delivery_notification_outbox.lease_expires_at <= NOW()
+                session_delivery_notification_outbox.attempt_token = EXCLUDED.attempt_token
+                OR session_delivery_notification_outbox.attempt_expires_at <= NOW()
               )
             )
           )
@@ -117,7 +117,7 @@ export class SessionDeliveryNotificationRepository {
         deliveryId: params.deliveryId,
         outcome: "accepted",
         reason: "durable notification admission",
-        leaseOwner: params.leaseOwner,
+        attemptToken: params.attemptToken,
       });
       return row;
     });
@@ -125,9 +125,9 @@ export class SessionDeliveryNotificationRepository {
 
   async claimDue(
     targetNodeId: string,
-    leaseOwner: string,
+    attemptToken: string,
     limit = 100,
-    leaseMs = DEFAULT_NOTIFICATION_LEASE_MS,
+    attemptTtlMs = DEFAULT_NOTIFICATION_ATTEMPT_TTL_MS,
   ): Promise<SessionDeliveryNotificationOutboxRow[]> {
     return await this.sql.begin(async (transaction) => {
       const rows = await transaction<SessionDeliveryNotificationOutboxRow[]>`
@@ -141,7 +141,7 @@ export class SessionDeliveryNotificationRepository {
               outbox.state = 'pending'
               OR (
                 outbox.state = 'claimed'
-                AND outbox.lease_expires_at <= NOW()
+                AND outbox.attempt_expires_at <= NOW()
               )
             )
             AND outbox.next_attempt_at <= NOW()
@@ -153,8 +153,8 @@ export class SessionDeliveryNotificationRepository {
         SET
           state = 'claimed',
           projection_state = 'publishing',
-          lease_owner = ${leaseOwner},
-          lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
+          attempt_token = ${attemptToken},
+          attempt_expires_at = NOW() + (${attemptTtlMs}::double precision * INTERVAL '1 millisecond'),
           updated_at = NOW()
         FROM due
         WHERE outbox.delivery_id = due.delivery_id
@@ -166,7 +166,7 @@ export class SessionDeliveryNotificationRepository {
 
   async markPublished(
     deliveryId: string,
-    leaseOwner: string,
+    attemptToken: string,
     targetReceiptId: string,
   ): Promise<SessionDeliveryNotificationOutboxRow | null> {
     if (!targetReceiptId) throw new Error("notification target receipt required");
@@ -178,13 +178,13 @@ export class SessionDeliveryNotificationRepository {
           projection_state = 'published',
           target_receipt_id = ${targetReceiptId},
           target_receipt_at = NOW(),
-          lease_owner = NULL,
-          lease_expires_at = NULL,
+          attempt_token = NULL,
+          attempt_expires_at = NULL,
           published_at = NOW(),
           updated_at = NOW()
         WHERE delivery_id = ${deliveryId}
           AND state = 'claimed'
-          AND lease_owner = ${leaseOwner}
+          AND attempt_token = ${attemptToken}
         RETURNING *
       `;
       if (!rows[0]) return null;
@@ -222,7 +222,7 @@ export class SessionDeliveryNotificationRepository {
 
   async retry(
     deliveryId: string,
-    leaseOwner: string,
+    attemptToken: string,
     error: string,
     nextAttemptAt: Date,
     maxAttempts: number,
@@ -239,8 +239,8 @@ export class SessionDeliveryNotificationRepository {
           ELSE 'pending'
         END,
         projection_state = 'staged',
-        lease_owner = NULL,
-        lease_expires_at = NULL,
+        attempt_token = NULL,
+        attempt_expires_at = NULL,
         attempt_count = attempt_count + 1,
         next_attempt_at = ${nextAttemptAt},
         last_error = ${error},
@@ -253,7 +253,7 @@ export class SessionDeliveryNotificationRepository {
         updated_at = NOW()
       WHERE delivery_id = ${deliveryId}
         AND state = 'claimed'
-        AND lease_owner = ${leaseOwner}
+        AND attempt_token = ${attemptToken}
       RETURNING *
     `;
     const row = rows[0];
@@ -263,7 +263,7 @@ export class SessionDeliveryNotificationRepository {
       deliveryId,
       outcome: rejected ? "rejected" : "retryable",
       reason: error,
-      leaseOwner,
+      attemptToken,
     });
     await transaction`
       UPDATE session_deliveries
@@ -280,7 +280,7 @@ export class SessionDeliveryNotificationRepository {
 
   async deadLetter(
     deliveryId: string,
-    leaseOwner: string,
+    attemptToken: string,
     error: string,
   ): Promise<SessionDeliveryNotificationOutboxRow | null> {
     return await this.sql.begin(async (transaction) => {
@@ -289,14 +289,14 @@ export class SessionDeliveryNotificationRepository {
         SET
           state = 'dead_letter',
           projection_state = 'staged',
-          lease_owner = NULL,
-          lease_expires_at = NULL,
+          attempt_token = NULL,
+          attempt_expires_at = NULL,
           last_error = ${error},
           dead_lettered_at = NOW(),
           updated_at = NOW()
         WHERE delivery_id = ${deliveryId}
           AND state = 'claimed'
-          AND lease_owner = ${leaseOwner}
+          AND attempt_token = ${attemptToken}
         RETURNING *
       `;
       if (!rows[0]) return null;
@@ -311,7 +311,7 @@ export class SessionDeliveryNotificationRepository {
         deliveryId,
         outcome: "rejected",
         reason: error,
-        leaseOwner,
+        attemptToken,
       });
       return rows[0];
     });
@@ -337,8 +337,8 @@ export class SessionDeliveryNotificationRepository {
         SET
           state = 'pending',
           projection_state = 'staged',
-          lease_owner = NULL,
-          lease_expires_at = NULL,
+          attempt_token = NULL,
+          attempt_expires_at = NULL,
           attempt_count = 0,
           next_attempt_at = NOW(),
           last_error = NULL,
@@ -361,7 +361,7 @@ export class SessionDeliveryNotificationRepository {
     });
   }
 
-  async releaseExpiredLeases(
+  async expireStaleNotificationAttempts(
     maxAttempts: number,
     oldestAllowedCreatedAt: Date,
   ): Promise<number> {
@@ -375,8 +375,8 @@ export class SessionDeliveryNotificationRepository {
             THEN 'dead_letter'
             ELSE 'pending'
           END,
-          lease_owner = NULL,
-          lease_expires_at = NULL,
+          attempt_token = NULL,
+          attempt_expires_at = NULL,
           attempt_count = attempt_count + 1,
           next_attempt_at = NOW()
             + LEAST(
@@ -384,7 +384,7 @@ export class SessionDeliveryNotificationRepository {
                 INTERVAL '100 milliseconds'
                   * POWER(2, LEAST(attempt_count, 9))
               ),
-          last_error = COALESCE(last_error, 'notification lease expired'),
+          last_error = COALESCE(last_error, 'notification attempt expired'),
           dead_lettered_at = CASE
             WHEN attempt_count + 1 >= ${maxAttempts}
               OR created_at <= ${oldestAllowedCreatedAt}
@@ -393,15 +393,15 @@ export class SessionDeliveryNotificationRepository {
           END,
           updated_at = NOW()
         WHERE state = 'claimed'
-          AND lease_expires_at <= NOW()
+          AND attempt_expires_at <= NOW()
         RETURNING delivery_id, state
       `;
       const capped = await transaction<Array<{ delivery_id: string; state: string }>>`
         UPDATE session_delivery_notification_outbox
         SET
           state = 'dead_letter',
-          lease_owner = NULL,
-          lease_expires_at = NULL,
+          attempt_token = NULL,
+          attempt_expires_at = NULL,
           last_error = COALESCE(last_error, 'notification retry ceiling exceeded'),
           dead_lettered_at = NOW(),
           updated_at = NOW()
@@ -416,7 +416,7 @@ export class SessionDeliveryNotificationRepository {
         const rejected = row.state === "dead_letter";
         const reason = rejected
           ? "notification retry ceiling exceeded"
-          : "notification lease expired";
+          : "notification attempt expired";
         await transaction`
           UPDATE session_deliveries
           SET aggregate_state = ${rejected ? "dead_letter" : "pending"},

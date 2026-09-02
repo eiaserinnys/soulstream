@@ -60,7 +60,7 @@ describe("ClaudeRuntimeStartupRecovery", () => {
     const claimedRow = {
       delivery_id: "delivery-restart-ack-gap",
       state: "claimed",
-      lease_owner: "startup-worker",
+      attempt_token: "startup-worker",
     } as SessionDeliveryRow;
     const inspect = vi.fn().mockResolvedValue({
       kind: "input_pending" as const,
@@ -76,7 +76,7 @@ describe("ClaudeRuntimeStartupRecovery", () => {
       deliveryRepository: {
         get: vi.fn(async () => claimedRow),
         markConsumed,
-        retryLeasedDelivery: vi.fn(async () => null),
+        retryDeliveryAttempt: vi.fn(async () => null),
       },
       recoveryRepository: {
         claimQueuedAfterNodeRestart: vi.fn(async () => [claimedRow]),
