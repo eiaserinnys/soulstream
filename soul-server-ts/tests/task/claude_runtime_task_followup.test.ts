@@ -42,10 +42,11 @@ function makeController(
     logger: silentLogger,
     releaseRetainedRunner,
     deliveryV2Enabled,
+    // Legacy dependency is deliberately injected: producer observation must not consume.
     inlineConsumptionRecorder: recordInlineConsumed
       ? { recordInlineConsumed }
       : undefined,
-  });
+  } as never);
   return {
     controller,
     addIntervention,
@@ -149,7 +150,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     );
   });
 
-  it("caller turn이 inline으로 소비한 runtime 완료는 늦은 notifier를 표시·재개하지 않는다", async () => {
+  it("producer가 inline으로 관측한 runtime 완료도 exact next-turn delivery로 전달한다", async () => {
     const task = makeTask();
     task.lastEventId = 91;
     task.claudeRuntime!.tasks["task-inline"] = {
@@ -174,16 +175,16 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     await controller.flush(task);
     await controller.collectDetached(task, markPostResultDrainEvent(event));
 
-    expect(recordInlineConsumed).toHaveBeenCalledTimes(1);
-    expect(recordInlineConsumed).toHaveBeenCalledWith(
+    expect(recordInlineConsumed).not.toHaveBeenCalled();
+    expect(addIntervention).toHaveBeenCalledOnce();
+    expect(addIntervention).toHaveBeenCalledWith(
       expect.objectContaining({
         agentSessionId: "sess-1",
         deliveryIntent: "runtime_followup",
         relationKey: "claude_runtime:sess-1:unknown:task-inline@77",
       }),
-      task,
+      onResume,
     );
-    expect(addIntervention).not.toHaveBeenCalled();
     expect(onResume).not.toHaveBeenCalled();
     expect(releaseRetainedRunner).toHaveBeenCalledOnce();
     expect(releaseRetainedRunner).toHaveBeenCalledWith(task);

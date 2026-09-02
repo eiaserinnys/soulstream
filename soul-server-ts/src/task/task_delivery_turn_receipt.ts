@@ -80,7 +80,14 @@ export class TaskDeliveryTurnReceipt {
         task,
         receipt.intervention,
       );
-      if (receipt.recorded) receipt.consumedTurnId = consumedTurnId;
+      if (!receipt.recorded) return;
+      receipt.consumedTurnId = consumedTurnId;
+      await this.consumption.recordConsumed(
+        task,
+        receipt.intervention,
+        consumedTurnId,
+      );
+      receipt.consumed = true;
     })();
     receipt.recording = recording;
     try {

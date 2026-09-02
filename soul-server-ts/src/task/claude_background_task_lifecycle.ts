@@ -256,7 +256,6 @@ function buildDelivery(input: {
     error: input.error,
     terminalRevision: input.terminalRevision,
     firstSeen: 0,
-    inlineObserved: false,
   };
   const canonical = buildCanonicalDeliveryPayload({
     text: buildClaudeRuntimeTaskFollowupPrompt([item]),
