@@ -254,12 +254,6 @@ export interface RunningSessionSummaryRow {
   updated_at: Date;
 }
 
-export interface OwnerNullRunningSessionRow {
-  session_id: string;
-  node_id: string | null;
-  updated_at: Date;
-}
-
 export interface ListSessionSummaryRow {
   session_id: string;
   display_name: string | null;
