@@ -13,7 +13,7 @@ import { projectNotificationReceipt } from "./notification_receipt_projection.js
 export interface SessionDeliveryNotificationRecoveryDeps {
   repository: Pick<
     SessionDeliveryNotificationRepository,
-    "claimDue" | "deadLetter" | "get" | "markPublished" | "releaseExpiredLeases" | "retry"
+    "claimDue" | "deadLetter" | "get" | "markPublished" | "expireStaleNotificationAttempts" | "retry"
   >;
   publish(
     task: Task,
@@ -28,20 +28,20 @@ export interface SessionDeliveryNotificationRecoveryDeps {
 export class SessionDeliveryNotificationRecovery {
   constructor(private readonly deps: SessionDeliveryNotificationRecoveryDeps) {}
 
-  async recover(leaseOwner: string, limit = 100): Promise<number> {
+  async recover(attemptToken: string, limit = 100): Promise<number> {
     const oldestAllowedCreatedAt = notificationOldestAllowedCreatedAt();
-    await this.deps.repository.releaseExpiredLeases(
+    await this.deps.repository.expireStaleNotificationAttempts(
       DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
       oldestAllowedCreatedAt,
     );
     const rows = await this.deps.repository.claimDue(
       this.deps.targetNodeId,
-      leaseOwner,
+      attemptToken,
       limit,
     );
     let processed = 0;
     for (const row of rows) {
-      await this.process(row, leaseOwner);
+      await this.process(row, attemptToken);
       processed += 1;
     }
     return processed;
@@ -49,7 +49,7 @@ export class SessionDeliveryNotificationRecovery {
 
   private async process(
     row: SessionDeliveryNotificationOutboxRow,
-    leaseOwner: string,
+    attemptToken: string,
   ): Promise<void> {
     try {
       const task = await this.deps.resolveTask(row.target_session_id);
@@ -69,17 +69,17 @@ export class SessionDeliveryNotificationRecovery {
       await projectNotificationReceipt(
         this.deps.repository,
         row.delivery_id,
-        leaseOwner,
+        attemptToken,
         published.targetReceiptId,
       );
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       if (err instanceof NonRetryableNotificationError) {
-        await this.deps.repository.deadLetter(row.delivery_id, leaseOwner, error);
+        await this.deps.repository.deadLetter(row.delivery_id, attemptToken, error);
       } else {
         await this.deps.repository.retry(
           row.delivery_id,
-          leaseOwner,
+          attemptToken,
           error,
           notificationRetryAt(row.attempt_count),
           DELIVERY_NOTIFICATION_MAX_ATTEMPTS,

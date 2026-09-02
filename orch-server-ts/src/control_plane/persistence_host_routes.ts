@@ -16,7 +16,7 @@ const HOST_RECEIVED_AT_HEADER = "x-soulstream-host-received-at-ms";
 const HOST_RESPONDED_AT_HEADER = "x-soulstream-host-responded-at-ms";
 const RETRY_DELAY_ARG_INDEX = new Map<string, number>([
   ["defer_pending", 2],
-  ["retry_leased_delivery", 3],
+  ["retry_delivery_attempt", 3],
   ["defer_queued_transcript_check", 3],
 ]);
 
@@ -29,13 +29,13 @@ const deliveryOperations = {
   record_observed_child_completion: ["deliveries", null, "recordObservedChildCompletion"],
   record_observed_child_completions: ["deliveries", null, "recordObservedChildCompletions"],
   claim: ["deliveries", null, "claim"],
-  claim_for_target: ["deliveries", null, "claimForTarget"],
+  claim_attempt_for_target: ["deliveries", null, "claimAttemptForTarget"],
   begin_dispatch: ["deliveries", null, "beginDispatch"],
   claim_recoverable_completion_deliveries: ["deliveries", null, "claimRecoverableCompletionDeliveries"],
   defer_pending: ["deliveries", null, "deferPending"],
-  retry_leased_delivery: ["deliveries", null, "retryLeasedDelivery"],
+  retry_delivery_attempt: ["deliveries", null, "retryDeliveryAttempt"],
   mark_pending_superseded: ["deliveries", null, "markPendingSuperseded"],
-  release_expired_delivery_leases: ["deliveries", null, "releaseExpiredDeliveryLeases"],
+  expire_stale_delivery_attempts: ["deliveries", null, "expireStaleDeliveryAttempts"],
   mark_queued: ["deliveries", null, "markQueued"],
   mark_delivered: ["deliveries", null, "markDelivered"],
   mark_consumed: ["deliveries", null, "markConsumed"],
@@ -49,7 +49,7 @@ const deliveryOperations = {
   dead_letter_notification: ["deliveries", "notifications", "deadLetter"],
   list_dead_letter_notifications: ["deliveries", "notifications", "listDeadLetters"],
   requeue_dead_letter_notification: ["deliveries", "notifications", "requeueDeadLetter"],
-  release_expired_notification_leases: ["deliveries", "notifications", "releaseExpiredLeases"],
+  expire_stale_notification_attempts: ["deliveries", "notifications", "expireStaleNotificationAttempts"],
   claim_queued_after_node_restart: ["deliveries", "recovery", "claimQueuedAfterNodeRestart"],
   claim_recoverable_queued: ["deliveries", "recovery", "claimRecoverableQueued"],
   mark_delivered_from_transcript: ["deliveries", "recovery", "markDeliveredFromTranscript"],

@@ -233,8 +233,8 @@ function interveneCommandPayload(
   }
   if (payload.caller_turn_id !== undefined) command.caller_turn_id = payload.caller_turn_id;
   if (payload.created_at !== undefined) command.created_at = payload.created_at;
-  if (payload.delivery_lease_owner !== undefined) {
-    command.delivery_lease_owner = payload.delivery_lease_owner;
+  if (payload.delivery_attempt_token !== undefined) {
+    command.delivery_attempt_token = payload.delivery_attempt_token;
   }
   return command;
 }

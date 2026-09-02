@@ -21,13 +21,13 @@ describe("TaskDeliveryLedgerGate", () => {
       inserted: true,
       conflict: false,
     }));
-    const claimForTarget = vi.fn(async () => ({
+    const claimAttemptForTarget = vi.fn(async () => ({
       ...row(deliveryId, "claimed"),
       aggregate_state: "pending",
     }));
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
-      claimForTarget,
+      claimAttemptForTarget,
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -49,7 +49,7 @@ describe("TaskDeliveryLedgerGate", () => {
       source: "user_message",
     })).resolves.toMatchObject({ kind: "admitted", deliveryId });
     expect(register).toHaveBeenCalledOnce();
-    expect(claimForTarget).toHaveBeenCalledWith(
+    expect(claimAttemptForTarget).toHaveBeenCalledWith(
       deliveryId,
       "caller-1",
       expect.stringMatching(/^route:/),
@@ -70,7 +70,7 @@ describe("TaskDeliveryLedgerGate", () => {
     const markUncertain = vi.fn();
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued,
@@ -87,7 +87,7 @@ describe("TaskDeliveryLedgerGate", () => {
       row: {
         ...row(deliveryId, "dispatching"),
         intent: "human_live_steer",
-        lease_owner: "route-live",
+        attempt_token: "route-live",
       },
     }, { delivered: true });
 
@@ -106,12 +106,12 @@ describe("TaskDeliveryLedgerGate", () => {
       inserted: true,
       conflict: false,
     }));
-    const claimForTarget = vi.fn(
+    const claimAttemptForTarget = vi.fn(
       async (deliveryId: string) => row(deliveryId, "claimed"),
     );
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
-      claimForTarget,
+      claimAttemptForTarget,
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -169,7 +169,7 @@ describe("TaskDeliveryLedgerGate", () => {
     const get = vi.fn().mockResolvedValue(existing);
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get,
       markQueued: vi.fn(),
@@ -214,7 +214,7 @@ describe("TaskDeliveryLedgerGate", () => {
     const markConsumed = vi.fn();
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -257,7 +257,7 @@ describe("TaskDeliveryLedgerGate", () => {
       .mockResolvedValueOnce(row(deliveryId, "consumed"));
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get,
       markQueued: vi.fn(),
@@ -330,7 +330,7 @@ describe("TaskDeliveryLedgerGate", () => {
     const repositoryError = new Error("delivery consume write failed");
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -373,7 +373,7 @@ describe("TaskDeliveryLedgerGate", () => {
     const deliveryId = `dispatch-cas-${state}`;
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn().mockResolvedValue(null),
       get: vi.fn().mockResolvedValue(row(deliveryId, state)),
       markQueued: vi.fn(),
@@ -399,7 +399,7 @@ describe("TaskDeliveryLedgerGate", () => {
     const deliveryId = "dispatch-cas-missing";
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn().mockResolvedValue(null),
       get: vi.fn().mockResolvedValue(null),
       markQueued: vi.fn(),
@@ -421,13 +421,13 @@ describe("TaskDeliveryLedgerGate", () => {
     });
   });
 
-  it("keeps an unknown first result retryable under the active dispatch lease", async () => {
+  it("keeps an unknown first result retryable under the active dispatch attempt", async () => {
     const deliveryId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
     const markUncertain = vi.fn();
-    const retryLeasedDelivery = vi.fn().mockResolvedValue(row(deliveryId, "pending"));
+    const retryDeliveryAttempt = vi.fn().mockResolvedValue(row(deliveryId, "pending"));
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -436,7 +436,7 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
-      retryLeasedDelivery,
+      retryDeliveryAttempt,
       markPendingSuperseded: vi.fn(),
     });
 
@@ -445,7 +445,7 @@ describe("TaskDeliveryLedgerGate", () => {
       deliveryId,
       row: {
         ...row(deliveryId, "dispatching"),
-        lease_owner: "route-uncertain",
+        attempt_token: "route-uncertain",
         attempt_count: 0,
         created_at: new Date(),
       },
@@ -455,7 +455,7 @@ describe("TaskDeliveryLedgerGate", () => {
       consumeWhen: null,
     });
 
-    expect(retryLeasedDelivery).toHaveBeenCalledWith(
+    expect(retryDeliveryAttempt).toHaveBeenCalledWith(
       deliveryId,
       "route-uncertain",
       "verdict_unknown",
@@ -482,7 +482,7 @@ describe("TaskDeliveryLedgerGate", () => {
     });
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get,
       markQueued,
@@ -498,7 +498,7 @@ describe("TaskDeliveryLedgerGate", () => {
       row: {
         ...row(deliveryId, "dispatching"),
         ...exactIdentity,
-        lease_owner: "route-durable-acceptance",
+        attempt_token: "route-durable-acceptance",
       },
     };
     const result = { queued: true as const, reason: "session_busy" };
@@ -514,7 +514,7 @@ describe("TaskDeliveryLedgerGate", () => {
     const deliveryId = "edededed-eded-4ded-8ded-edededededed";
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn().mockResolvedValue({
         ...row(deliveryId, "queued"),
@@ -541,7 +541,7 @@ describe("TaskDeliveryLedgerGate", () => {
         relation_key: `user_message:caller-1:${deliveryId}`,
         completion_id: `message:${deliveryId}`,
         payload_hash: "hash-durable-acceptance",
-        lease_owner: "route-durable-acceptance",
+        attempt_token: "route-durable-acceptance",
       },
     };
 
@@ -558,7 +558,7 @@ describe("TaskDeliveryLedgerGate", () => {
     );
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -567,7 +567,7 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
-      retryLeasedDelivery: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
       markPendingSuperseded,
     });
 
@@ -581,12 +581,12 @@ describe("TaskDeliveryLedgerGate", () => {
     expect(markPendingSuperseded).toHaveBeenCalledWith(deliveryId, "user_message");
   });
 
-  it("returns a queued ownership collision to the existing delivery retry ledger", async () => {
+  it("returns a queued reservation collision to the existing delivery retry ledger", async () => {
     const deliveryId = "abababab-abab-4bab-8bab-abababababab";
-    const retryLeasedDelivery = vi.fn().mockResolvedValue(row(deliveryId, "pending"));
+    const retryDeliveryAttempt = vi.fn().mockResolvedValue(row(deliveryId, "pending"));
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -595,7 +595,7 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
-      retryLeasedDelivery,
+      retryDeliveryAttempt,
       markPendingSuperseded: vi.fn(),
     });
     const now = Date.parse("2026-08-19T00:09:00.000Z");
@@ -608,14 +608,14 @@ describe("TaskDeliveryLedgerGate", () => {
       row: {
         ...row(deliveryId, "queued"),
         intent: "durable_next_turn",
-        lease_owner: "route-reservation",
+        attempt_token: "route-reservation",
         attempt_count: 9,
         created_at: new Date(),
       },
     }, retryAt)).resolves.toBe("scheduled");
     nowSpy.mockRestore();
 
-    expect(retryLeasedDelivery).toHaveBeenCalledWith(
+    expect(retryDeliveryAttempt).toHaveBeenCalledWith(
       deliveryId,
       "route-reservation",
       "reservation_in_flight",
@@ -623,15 +623,15 @@ describe("TaskDeliveryLedgerGate", () => {
     );
   });
 
-  it("parks ownership retries after the active cadence is exhausted", async () => {
+  it("parks reservation retries after the active cadence is exhausted", async () => {
     const deliveryId = "acacacac-acac-4cac-8cac-acacacacacac";
     const markUncertain = vi.fn();
-    const retryLeasedDelivery = vi.fn().mockResolvedValue(
+    const retryDeliveryAttempt = vi.fn().mockResolvedValue(
       row(deliveryId, "pending"),
     );
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
-      claimForTarget: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
       beginDispatch: vi.fn(),
       get: vi.fn(),
       markQueued: vi.fn(),
@@ -640,7 +640,7 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
-      retryLeasedDelivery,
+      retryDeliveryAttempt,
       markPendingSuperseded: vi.fn(),
     });
 
@@ -650,16 +650,16 @@ describe("TaskDeliveryLedgerGate", () => {
       row: {
         ...row(deliveryId, "queued"),
         intent: "durable_next_turn",
-        lease_owner: "route-exhausted",
+        attempt_token: "route-exhausted",
         attempt_count: 15,
         created_at: new Date(),
       },
     }, "2026-08-19T00:10:00.000Z")).resolves.toBe("parked");
 
-    expect(retryLeasedDelivery).toHaveBeenCalledWith(
+    expect(retryDeliveryAttempt).toHaveBeenCalledWith(
       deliveryId,
       "route-exhausted",
-      "automatic ownership retry budget exhausted; explicit intent required",
+      "automatic attempt retry budget exhausted; explicit intent required",
       0,
     );
     expect(markUncertain).not.toHaveBeenCalled();

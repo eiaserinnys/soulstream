@@ -24,7 +24,7 @@ describe("queued transcript recovery rolling contract", () => {
     const row = {
       delivery_id: "delivery-proof",
       target_session_id: "session-proof",
-      lease_owner: "startup-proof",
+      attempt_token: "startup-proof",
       source: "user_message",
       intent: "human_live_steer",
       payload: { text: "keep this steer", user: "alice" },
@@ -81,7 +81,7 @@ describe("queued transcript recovery rolling contract", () => {
       "rolling-worker",
       "queued_transcript_input_absent",
     );
-    expect(harness.retryLeasedDelivery).not.toHaveBeenCalled();
+    expect(harness.retryDeliveryAttempt).not.toHaveBeenCalled();
     expect(harness.deferQueuedTranscriptCheck).not.toHaveBeenCalled();
   });
 
@@ -102,7 +102,7 @@ describe("queued transcript recovery rolling contract", () => {
         intent,
       }));
       expect(harness.markUncertain).not.toHaveBeenCalled();
-      expect(harness.retryLeasedDelivery).not.toHaveBeenCalled();
+      expect(harness.retryDeliveryAttempt).not.toHaveBeenCalled();
     },
   );
 
@@ -112,18 +112,18 @@ describe("queued transcript recovery rolling contract", () => {
       intent: "runtime_followup",
       state: "claimed",
       aggregate_state: "pending",
-      lease_owner: "rolling-worker",
+      attempt_token: "rolling-worker",
       target_receipt_id: null,
     } as SessionDeliveryRow;
     let currentRow = claimedRow;
     const redeliverContent = vi.fn(async () => undefined);
-    const retryLeasedDelivery = vi.fn(async () => null);
+    const retryDeliveryAttempt = vi.fn(async () => null);
     const recovery = new QueuedDeliveryTranscriptRecovery({
       deliveryRepository: {
         get: vi.fn(async () => currentRow),
         markConsumed: vi.fn(async () => null),
         markUncertain: vi.fn(async () => null),
-        retryLeasedDelivery,
+        retryDeliveryAttempt,
       },
       recoveryRepository: {
         claimQueuedAfterNodeRestart: vi.fn(async () => [claimedRow]),
@@ -135,7 +135,7 @@ describe("queued transcript recovery rolling contract", () => {
             ...claimedRow,
             state: "consumed",
             aggregate_state: "consumed",
-            lease_owner: null,
+            attempt_token: null,
             target_receipt_id: "event:260901",
           };
           return {
@@ -153,7 +153,7 @@ describe("queued transcript recovery rolling contract", () => {
       settled: 1,
     });
     expect(redeliverContent).not.toHaveBeenCalled();
-    expect(retryLeasedDelivery).not.toHaveBeenCalled();
+    expect(retryDeliveryAttempt).not.toHaveBeenCalled();
   });
 
   it("returns transcript-pending input to pending for reconnect reclaim", async () => {
@@ -163,7 +163,7 @@ describe("queued transcript recovery rolling contract", () => {
       claimed: 1,
       settled: 0,
     });
-    expect(harness.retryLeasedDelivery).toHaveBeenCalledWith(
+    expect(harness.retryDeliveryAttempt).toHaveBeenCalledWith(
       "delivery-deferred",
       "rolling-worker",
       "queued_transcript_input_pending",
@@ -184,30 +184,30 @@ function makeDeferredHarness(
     delivery_id: "delivery-deferred",
     intent: options.intent ?? "human_live_steer",
     state: "claimed",
-    lease_owner: "rolling-worker",
+    attempt_token: "rolling-worker",
   } as SessionDeliveryRow;
-  const retryLeasedDelivery = vi.fn(async () => ({
+  const retryDeliveryAttempt = vi.fn(async () => ({
     ...claimedRow,
     state: "pending",
-    lease_owner: null,
+    attempt_token: null,
   }) as SessionDeliveryRow);
   const markUncertain = vi.fn(async () => ({
     ...claimedRow,
     state: "uncertain",
     aggregate_state: "dead_letter",
-    lease_owner: null,
+    attempt_token: null,
   }) as SessionDeliveryRow);
   const deferQueuedTranscriptCheck = vi.fn(async () => ({
     ...claimedRow,
     state: "queued",
-    lease_owner: null,
+    attempt_token: null,
   }) as SessionDeliveryRow);
   const recovery = new QueuedDeliveryTranscriptRecovery({
     deliveryRepository: {
       get: vi.fn(async () => claimedRow),
       markConsumed: vi.fn(async () => null),
       markUncertain,
-      retryLeasedDelivery,
+      retryDeliveryAttempt,
     },
     recoveryRepository: {
       claimQueuedAfterNodeRestart: vi.fn(async () => [claimedRow]),
@@ -229,7 +229,7 @@ function makeDeferredHarness(
   return {
     recovery,
     markUncertain,
-    retryLeasedDelivery,
+    retryDeliveryAttempt,
     deferQueuedTranscriptCheck,
   };
 }
@@ -269,8 +269,8 @@ function makeHarness(orchVersion: "old_orch" | "new_orch") {
       ? new Date("2026-08-24T15:50:09.100Z")
       : null,
     consumed_reason: null,
-    lease_owner: state === "claimed" ? "rolling-worker" : null,
-    lease_expires_at: state === "claimed"
+    attempt_token: state === "claimed" ? "rolling-worker" : null,
+    attempt_expires_at: state === "claimed"
       ? new Date("2026-08-24T15:51:08.000Z")
       : null,
     attempt_count: 0,
@@ -291,7 +291,7 @@ function makeHarness(orchVersion: "old_orch" | "new_orch") {
     claimRecoverableQueued: vi.fn(async () => []),
     markDeliveredFromTranscript: vi.fn(async (
       _deliveryId: string,
-      _leaseOwner: string,
+      _attemptToken: string,
       assistantMessageUuid: string,
     ) => {
       if (state !== "claimed") return null;
@@ -314,7 +314,7 @@ function makeHarness(orchVersion: "old_orch" | "new_orch") {
     }),
   };
   const deliveryRepository = {
-    retryLeasedDelivery: vi.fn(async () => null),
+    retryDeliveryAttempt: vi.fn(async () => null),
     markConsumed: vi.fn(async (_deliveryId: string, consumedTurnId: string) => {
       if (state !== "delivered" || consumedTurnId !== receiptId) return null;
       state = "consumed";
@@ -344,7 +344,7 @@ function makeHarness(orchVersion: "old_orch" | "new_orch") {
       expect(consumedTransitions).toBe(1);
       expect(recoveryRepository.markDeliveredFromTranscript).toHaveBeenCalledOnce();
       expect(recoveryRepository.markConsumedFromTranscript).not.toHaveBeenCalled();
-      expect(deliveryRepository.retryLeasedDelivery).not.toHaveBeenCalled();
+      expect(deliveryRepository.retryDeliveryAttempt).not.toHaveBeenCalled();
       await expect(recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
         claimed: 0,
         settled: 0,

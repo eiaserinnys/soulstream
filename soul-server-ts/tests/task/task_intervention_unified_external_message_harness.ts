@@ -416,7 +416,7 @@ function admitted(params: AddInterventionParams): DeliveryLedgerAdmission {
       producer_terminal_revision: params.producerTerminalRevision ?? null,
       parent_delivery_id: null,
       caller_turn_id: null,
-      lease_owner: "unified-route-red",
+      attempt_token: "unified-route-red",
       attempt_count: 0,
       created_at: new Date("2026-08-25T00:00:00.000Z"),
       payload: {

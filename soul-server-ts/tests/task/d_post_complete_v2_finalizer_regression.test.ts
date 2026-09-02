@@ -54,7 +54,7 @@ describe("D post-complete V2 finalizer regression", () => {
         producer_terminal_revision: "2352",
         parent_delivery_id: null,
         caller_turn_id: null,
-        lease_owner: "d-regression",
+        attempt_token: "d-regression",
         attempt_count: 0,
         created_at: new Date("2026-08-24T14:36:39.375Z"),
         payload: { text: "child completed", user: "agent" },
@@ -100,7 +100,7 @@ describe("D post-complete V2 finalizer regression", () => {
           completionId: "completion:child:2352",
           relationKey: "child_session:child:2352",
           producerTerminalRevision: "2352",
-          deliveryLeaseOwner: "d-regression",
+          deliveryAttemptToken: "d-regression",
         }, (task) => {
           nextGeneration();
           task.status = "running";
@@ -147,7 +147,7 @@ describe("D post-complete V2 finalizer regression", () => {
         producer_terminal_revision: "5215",
         parent_delivery_id: null,
         caller_turn_id: null,
-        lease_owner: "d-live-red",
+        attempt_token: "d-live-red",
         attempt_count: 0,
         created_at: new Date("2026-08-28T00:00:00.000Z"),
         payload: { text: "row5215 child completed", user: "agent" },
@@ -199,7 +199,7 @@ describe("D post-complete V2 finalizer regression", () => {
       completionId: "completion:row5215",
       relationKey: "child_session:row5215",
       producerTerminalRevision: "5215",
-      deliveryLeaseOwner: "d-live-red",
+      deliveryAttemptToken: "d-live-red",
     }, vi.fn())).resolves.toEqual({ autoResumed: true });
 
     expect(deliveryState).toBe("queued");

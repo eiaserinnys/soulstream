@@ -6,7 +6,7 @@ import type { SqlClient } from "../control_plane_types.js";
  * An exact relation receipt wins over target lifecycle: it proves the caller
  * already observed this child revision even if the delivery-row ACK was lost.
  * Target lifecycle alone is not content-observation evidence: unreceived rows
- * remain recoverable by the ordinary delivery owner.
+ * remain recoverable by the ordinary delivery recovery path.
  */
 export async function settleTerminalTargetCompletionDeliveries(
   sql: SqlClient,
@@ -31,8 +31,8 @@ export async function settleTerminalTargetCompletionDeliveries(
       ),
       consumed_at = consumption.consumed_at,
       consumed_reason = 'exact relation receipt recovery',
-      lease_owner = NULL,
-      lease_expires_at = NULL,
+      attempt_token = NULL,
+      attempt_expires_at = NULL,
       updated_at = NOW()
     FROM session_delivery_relation_consumptions AS consumption
     WHERE delivery.relation_key = consumption.relation_key

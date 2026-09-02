@@ -286,7 +286,7 @@ describe("Execute proxy and push route harnesses", () => {
         delivery_intent: "runtime_followup",
         source: "claude_runtime_followup",
         relation_key: "runtime_task:task-1:done",
-        delivery_lease_owner: "runtime:node-a",
+        delivery_attempt_token: "runtime:node-a",
       },
     });
 
@@ -308,7 +308,7 @@ describe("Execute proxy and push route harnesses", () => {
       delivery_intent: "runtime_followup",
       source: "claude_runtime_followup",
       relation_key: "runtime_task:task-1:done",
-      delivery_lease_owner: "runtime:node-a",
+      delivery_attempt_token: "runtime:node-a",
     });
     expect(provider.executeNew).not.toHaveBeenCalled();
 

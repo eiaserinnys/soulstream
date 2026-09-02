@@ -87,8 +87,8 @@ class SharedDeliveryLedger {
         } else {
           stored.row.state = "claimed";
           stored.row.aggregate_state = "pending";
-          stored.row.lease_owner = `route:${nodeId}`;
-          stored.row.lease_expires_at = new Date(
+          stored.row.attempt_token = `route:${nodeId}`;
+          stored.row.attempt_expires_at = new Date(
             this.clock.now + RETRY_HORIZON_MS,
           );
         }
@@ -139,17 +139,17 @@ class SharedDeliveryLedger {
   ): Promise<void> {
     for (const [deliveryId, stored] of [...this.rows]) {
       if (stored.row.aggregate_state === "consumed") continue;
-      if ((stored.row.lease_expires_at?.getTime() ?? Infinity) > this.clock.now) {
+      if ((stored.row.attempt_expires_at?.getTime() ?? Infinity) > this.clock.now) {
         continue;
       }
       // resolveTask currently throws before the route's try/catch, so the
       // NOT_OWNER row receives no recordFailure call. It remains claimed until
-      // the ordinary expired-lease recovery horizon makes it eligible again.
+      // the ordinary stale-attempt recovery horizon makes it eligible again.
       stored.row.attempt_count += 1;
       stored.row.next_attempt_at = new Date(this.clock.now);
       await deliver({
         ...stored.request,
-        deliveryLeaseOwner: "recovery:owner-node",
+        deliveryAttemptToken: "recovery:owner-node",
         deliveryCreatedAt: stored.row.created_at.toISOString(),
         storedDeliveryPayload: stored.row.payload,
         storedDeliveryPayloadHash: stored.row.payload_hash,
@@ -205,8 +205,8 @@ function makeDeliveryRow(
     updated_at: new Date(now),
     claimed_at: new Date(now),
     dispatching_at: null,
-    lease_owner: `route:${nodeId}`,
-    lease_expires_at: new Date(now + RETRY_HORIZON_MS),
+    attempt_token: `route:${nodeId}`,
+    attempt_expires_at: new Date(now + RETRY_HORIZON_MS),
     attempt_count: 0,
     next_attempt_at: new Date(now),
     last_error: null,

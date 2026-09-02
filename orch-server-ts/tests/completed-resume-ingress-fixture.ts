@@ -38,8 +38,8 @@ interface CompletedResumeDeliveryRow {
   updated_at: Date;
   claimed_at: Date | null;
   dispatching_at: Date | null;
-  lease_owner: string | null;
-  lease_expires_at: Date | null;
+  attempt_token: string | null;
+  attempt_expires_at: Date | null;
   attempt_count: number;
   next_attempt_at: Date;
   last_error: string | null;
@@ -95,8 +95,8 @@ export class InMemoryDeliveryLedger {
       updated_at: createdAt,
       claimed_at: null,
       dispatching_at: null,
-      lease_owner: null,
-      lease_expires_at: null,
+      attempt_token: null,
+      attempt_expires_at: null,
       attempt_count: 0,
       next_attempt_at: createdAt,
       last_error: null,
@@ -121,7 +121,7 @@ export class InMemoryDeliveryLedger {
     return row ? structuredClone(row) : null;
   }
 
-  async claimForTarget(deliveryId: string, targetSessionId: string, leaseOwner: string) {
+  async claimAttemptForTarget(deliveryId: string, targetSessionId: string, attemptToken: string) {
     this.claimCalls += 1;
     const row = this.store.get(deliveryId);
     if (!row || row.state !== "pending") return null;
@@ -129,16 +129,16 @@ export class InMemoryDeliveryLedger {
     claimed.state = "claimed";
     claimed.target_session_id = targetSessionId;
     claimed.claimed_at = new Date();
-    claimed.lease_owner = leaseOwner;
-    claimed.lease_expires_at = new Date(Date.now() + 30_000);
+    claimed.attempt_token = attemptToken;
+    claimed.attempt_expires_at = new Date(Date.now() + 30_000);
     this.store.set(deliveryId, claimed);
     return structuredClone(claimed);
   }
 
-  async beginDispatch(deliveryId: string, leaseOwner?: string) {
+  async beginDispatch(deliveryId: string, attemptToken?: string) {
     this.beginCalls += 1;
     const row = this.store.get(deliveryId);
-    if (!row || row.lease_owner !== leaseOwner) return null;
+    if (!row || row.attempt_token !== attemptToken) return null;
     const dispatching = structuredClone(row);
     dispatching.state = "dispatching";
     dispatching.dispatching_at = new Date();
@@ -146,14 +146,14 @@ export class InMemoryDeliveryLedger {
     return structuredClone(dispatching);
   }
 
-  async markQueued(deliveryId: string, leaseOwner: string) {
+  async markQueued(deliveryId: string, attemptToken: string) {
     const row = this.store.get(deliveryId);
-    if (!row || row.lease_owner !== leaseOwner) return null;
+    if (!row || row.attempt_token !== attemptToken) return null;
     const queued = structuredClone(row);
     queued.state = "queued";
     queued.queued_at = new Date();
-    queued.lease_owner = null;
-    queued.lease_expires_at = null;
+    queued.attempt_token = null;
+    queued.attempt_expires_at = null;
     this.store.set(deliveryId, queued);
     return structuredClone(queued);
   }
@@ -163,14 +163,14 @@ export class InMemoryDeliveryLedger {
   async markConsumed() { return null; }
   async markConsumedByRelation() { return null; }
   async recordRelationConsumed() { return null; }
-  async retryLeasedDelivery() { return null; }
-  async releaseExpiredDeliveryLeases() { return 0; }
-  async claimQueuedAfterNodeRestart(_nodeId: string, leaseOwner: string) {
+  async retryDeliveryAttempt() { return null; }
+  async expireStaleDeliveryAttempts() { return 0; }
+  async claimQueuedAfterNodeRestart(_nodeId: string, attemptToken: string) {
     return this.rows().filter((row) => row.state === "queued").map((row) => {
       const dispatching = structuredClone(row);
       dispatching.state = "dispatching";
-      dispatching.lease_owner = leaseOwner;
-      dispatching.lease_expires_at = new Date(Date.now() + 60_000);
+      dispatching.attempt_token = attemptToken;
+      dispatching.attempt_expires_at = new Date(Date.now() + 60_000);
       this.store.set(dispatching.delivery_id, dispatching);
       return structuredClone(dispatching);
     });
@@ -178,15 +178,15 @@ export class InMemoryDeliveryLedger {
   async markDeliveredFromTranscript() { return null; }
   async deferQueuedTranscriptCheck(
     deliveryId: string,
-    leaseOwner: string,
+    attemptToken: string,
     reason: string,
   ) {
     const row = this.store.get(deliveryId);
-    if (!row || row.lease_owner !== leaseOwner) return null;
+    if (!row || row.attempt_token !== attemptToken) return null;
     const queued = structuredClone(row);
     queued.state = "queued";
-    queued.lease_owner = null;
-    queued.lease_expires_at = null;
+    queued.attempt_token = null;
+    queued.attempt_expires_at = null;
     queued.last_error = reason;
     this.store.set(deliveryId, queued);
     return structuredClone(queued);

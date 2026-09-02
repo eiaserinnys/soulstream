@@ -5,7 +5,7 @@ import type {
 export interface NotificationReceiptRepository {
   markPublished(
     deliveryId: string,
-    leaseOwner: string,
+    attemptToken: string,
     targetReceiptId: string,
   ): Promise<SessionDeliveryNotificationOutboxRow | null>;
   get(deliveryId: string): Promise<SessionDeliveryNotificationOutboxRow | null>;
@@ -14,12 +14,12 @@ export interface NotificationReceiptRepository {
 export async function projectNotificationReceipt(
   repository: NotificationReceiptRepository,
   deliveryId: string,
-  leaseOwner: string,
+  attemptToken: string,
   targetReceiptId: string,
 ): Promise<"published" | "idempotent"> {
   const published = await repository.markPublished(
     deliveryId,
-    leaseOwner,
+    attemptToken,
     targetReceiptId,
   );
   if (published) return "published";

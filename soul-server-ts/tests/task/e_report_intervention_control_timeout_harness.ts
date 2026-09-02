@@ -181,8 +181,8 @@ export function makeCompletionRepository() {
         payload: params.payload,
         state: "pending",
         attempt_count: 0,
-        lease_owner: null,
-        lease_expires_at: null,
+        attempt_token: null,
+        attempt_expires_at: null,
         last_error: null,
         created_at: params.createdAt,
         updated_at: params.createdAt,
@@ -195,23 +195,23 @@ export function makeCompletionRepository() {
       return { row: stored, inserted: true, conflict: false };
     }),
     get: vi.fn(async () => stored),
-    claimForTarget: vi.fn(async (
+    claimAttemptForTarget: vi.fn(async (
       _deliveryId: string,
       targetSessionId: string,
-      leaseOwner: string,
+      attemptToken: string,
     ) => {
       stored = {
         ...stored,
         target_session_id: targetSessionId,
         state: "claimed",
-        lease_owner: leaseOwner,
+        attempt_token: attemptToken,
       };
       return stored;
     }),
     claimRecoverableCompletionDeliveries: vi.fn().mockResolvedValue([]),
     deferPending: vi.fn(),
-    retryLeasedDelivery: vi.fn(),
-    releaseExpiredDeliveryLeases: vi.fn().mockResolvedValue(0),
+    retryDeliveryAttempt: vi.fn(),
+    expireStaleDeliveryAttempts: vi.fn().mockResolvedValue(0),
     markUncertain: vi.fn(),
   };
   const consumptionRecorder = {

@@ -70,7 +70,7 @@ export interface DeliveryMetadata {
   parentDeliveryId?: string;
   callerTurnId?: string;
   createdAt?: string;
-  deliveryLeaseOwner?: string;
+  deliveryAttemptToken?: string;
 }
 
 export function isDeliveryIntent(value: unknown): value is DeliveryIntent {

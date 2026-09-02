@@ -30,8 +30,8 @@ describe("queued transcript finite restart recovery", () => {
     expect(harness.state()).toBe("pending");
     expect(harness.claimQueuedAfterNodeRestart).toHaveBeenCalledOnce();
     expect(harness.inspect).toHaveBeenCalledOnce();
-    expect(harness.retryLeasedDelivery).toHaveBeenCalledOnce();
-    expect(harness.retryLeasedDelivery).toHaveBeenCalledWith(
+    expect(harness.retryDeliveryAttempt).toHaveBeenCalledOnce();
+    expect(harness.retryDeliveryAttempt).toHaveBeenCalledWith(
       harness.deliveryId,
       "startup-worker",
       "queued_transcript_input_pending",
@@ -53,7 +53,7 @@ describe("queued transcript finite restart recovery", () => {
     expect(harness.claimQueuedAfterNodeRestart).toHaveBeenCalledOnce();
     expect(harness.inspect).toHaveBeenCalledOnce();
     expect(harness.markConsumed).toHaveBeenCalledOnce();
-    expect(harness.retryLeasedDelivery).not.toHaveBeenCalled();
+    expect(harness.retryDeliveryAttempt).not.toHaveBeenCalled();
     await harness.startup.stop();
   });
 
@@ -65,7 +65,7 @@ describe("queued transcript finite restart recovery", () => {
       delivery_id: deliveryId,
       state,
       aggregate_state: state === "consumed" ? "consumed" : "pending",
-      lease_owner: state === "claimed" ? "startup-worker" : null,
+      attempt_token: state === "claimed" ? "startup-worker" : null,
       target_receipt_id: targetReceiptId,
     }) as SessionDeliveryRow;
     const message: InterventionMessage = {
@@ -122,7 +122,7 @@ describe("queued transcript finite restart recovery", () => {
       deliveryRepository: {
         get: vi.fn(async () => row()),
         markConsumed: vi.fn(),
-        retryLeasedDelivery: vi.fn(),
+        retryDeliveryAttempt: vi.fn(),
       },
       recoveryRepository: {
         claimQueuedAfterNodeRestart,
@@ -158,7 +158,7 @@ function makeHarness(receiptKind: "input_pending" | "completed") {
     delivery_id: deliveryId,
     state,
     aggregate_state: state === "consumed" ? "consumed" : "pending",
-    lease_owner: state === "claimed" ? "startup-worker" : null,
+    attempt_token: state === "claimed" ? "startup-worker" : null,
     target_receipt_id: receiptId,
   }) as SessionDeliveryRow;
   const claimQueuedAfterNodeRestart = vi.fn(async () => {
@@ -166,14 +166,14 @@ function makeHarness(receiptKind: "input_pending" | "completed") {
     state = "claimed";
     return [row()];
   });
-  const retryLeasedDelivery = vi.fn(async () => {
+  const retryDeliveryAttempt = vi.fn(async () => {
     if (state !== "claimed") return null;
     state = "pending";
     return row();
   });
   const markDeliveredFromTranscript = vi.fn(async (
     _deliveryId: string,
-    _leaseOwner: string,
+    _attemptToken: string,
     assistantMessageUuid: string,
   ) => {
     if (state !== "claimed") return null;
@@ -197,7 +197,7 @@ function makeHarness(receiptKind: "input_pending" | "completed") {
     deliveryRepository: {
       get: vi.fn(async () => row()),
       markConsumed,
-      retryLeasedDelivery,
+      retryDeliveryAttempt,
     },
     recoveryRepository: {
       claimQueuedAfterNodeRestart,
@@ -228,7 +228,7 @@ function makeHarness(receiptKind: "input_pending" | "completed") {
     claimQueuedAfterNodeRestart,
     inspect,
     markConsumed,
-    retryLeasedDelivery,
+    retryDeliveryAttempt,
   };
 }
 

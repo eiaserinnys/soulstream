@@ -70,7 +70,7 @@ export interface InterveneRuntimeParams {
   parentDeliveryId?: string;
   callerTurnId?: string;
   deliveryCreatedAt?: string;
-  deliveryLeaseOwner?: string;
+  deliveryAttemptToken?: string;
 }
 
 export interface SessionCreatedAck {
@@ -229,7 +229,7 @@ export class TaskRuntimeCommands {
         parentDeliveryId: params.parentDeliveryId,
         callerTurnId: params.callerTurnId,
         deliveryCreatedAt: params.deliveryCreatedAt,
-        deliveryLeaseOwner: params.deliveryLeaseOwner,
+        deliveryAttemptToken: params.deliveryAttemptToken,
       },
       (task, activation) => this.startResumedTask(task, activation),
     );

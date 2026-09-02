@@ -114,7 +114,7 @@ function admitted(
       producer_terminal_revision: null,
       parent_delivery_id: null,
       caller_turn_id: null,
-      lease_owner: "test-route",
+      attempt_token: "test-route",
       created_at: new Date("2026-07-26T00:00:00.000Z"),
       payload: {
         text: "stored delivery text",
@@ -401,7 +401,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       deliveryIntent: "human_live_steer",
       completionId: `message:${deliveryId}`,
       relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
-      deliveryLeaseOwner: "test-route",
+      deliveryAttemptToken: "test-route",
       targetContentReceiptAbsent: true,
     }, vi.fn());
 
@@ -436,7 +436,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       deliveryIntent: "durable_next_turn",
       completionId: `message:${deliveryId}`,
       relationKey: `user_message:${task.agentSessionId}:${deliveryId}`,
-      deliveryLeaseOwner: "recovery-worker",
+      deliveryAttemptToken: "recovery-worker",
     }, vi.fn())).resolves.toEqual({ autoResumed: true });
 
     expect(autoResumeTransition.resume).toHaveBeenCalledWith(
@@ -456,7 +456,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     "completion_notification",
     "runtime_followup",
   ] as const)(
-    "routes a completed %s delivery through its existing ownership boundary",
+    "routes a completed %s delivery through its existing attempt boundary",
     async (intent) => {
       const deliveryId = `73737373-7373-4737-8737-${intent.length.toString().padStart(12, "0")}`;
       const gate = {
@@ -1013,7 +1013,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
 
   it("does not start a resumed terminal task when post-transition ledger staging fails", async () => {
     const deliveryId = "89898989-8989-4898-8989-898989898989";
-    const stageError = new Error("notification staging lease expired");
+    const stageError = new Error("notification staging attempt expired");
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),

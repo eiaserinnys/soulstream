@@ -104,9 +104,9 @@ describe("persistence host retry contract compatibility", () => {
       repository: (callable: ReturnType<typeof vi.fn>) => ({ deliveries: { deferPending: callable } }),
     },
     {
-      operation: "retry_leased_delivery",
+      operation: "retry_delivery_attempt",
       args: ["delivery-1", "worker-1", "retry", "2026-08-21T03:00:02.000Z"],
-      repository: (callable: ReturnType<typeof vi.fn>) => ({ deliveries: { retryLeasedDelivery: callable } }),
+      repository: (callable: ReturnType<typeof vi.fn>) => ({ deliveries: { retryDeliveryAttempt: callable } }),
     },
     {
       operation: "defer_queued_transcript_check",
@@ -132,18 +132,18 @@ describe("persistence host retry contract compatibility", () => {
   });
 
   it("preserves the current numeric retry duration", async () => {
-    const retryLeasedDelivery = vi.fn(async () => null);
-    const app = persistenceApp({ deliveries: { retryLeasedDelivery } });
+    const retryDeliveryAttempt = vi.fn(async () => null);
+    const app = persistenceApp({ deliveries: { retryDeliveryAttempt } });
 
     const response = await app.inject({
       method: "POST",
-      url: "/api/session-deliveries/host/retry_leased_delivery",
+      url: "/api/session-deliveries/host/retry_delivery_attempt",
       headers: { authorization: `Bearer ${token}` },
       payload: { args: ["delivery-1", "worker-1", "retry", 250] },
     });
 
     expect(response.statusCode).toBe(200);
-    expect(retryLeasedDelivery).toHaveBeenCalledWith("delivery-1", "worker-1", "retry", 250);
+    expect(retryDeliveryAttempt).toHaveBeenCalledWith("delivery-1", "worker-1", "retry", 250);
   });
 });
 

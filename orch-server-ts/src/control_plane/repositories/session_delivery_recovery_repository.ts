@@ -28,11 +28,11 @@ export interface QueuedDeliveryRecoveryScan {
   queuedAfterMs: number;
 }
 /**
- * Owns the short recovery lease used while a worker checks the Claude
+ * Owns the short-lived attempt token used while a worker checks the Claude
  * transcript for a previously queued delivery.
  *
  * Transcript I/O cannot run inside a PostgreSQL transaction. Moving queued
- * rows to a leased `claimed` state first prevents two recovery workers from
+ * rows to a token-fenced `claimed` state first prevents two recovery workers from
  * independently deciding to replay the same SDK input.
  */
 export class SessionDeliveryRecoveryRepository {
@@ -40,9 +40,9 @@ export class SessionDeliveryRecoveryRepository {
 
   async claimPendingImmediateIntentsForNode(
     nodeId: string,
-    leaseOwner: string,
+    attemptToken: string,
     limit = 100,
-    leaseMs = 15_000,
+    attemptTtlMs = 15_000,
   ): Promise<SessionDeliveryRow[]> {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
       return await transaction<SessionDeliveryRow[]>`
@@ -62,9 +62,9 @@ export class SessionDeliveryRecoveryRepository {
           SET
             state = 'claimed',
             claimed_at = NOW(),
-            lease_owner = ${leaseOwner},
-            lease_expires_at = NOW()
-              + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
+            attempt_token = ${attemptToken},
+            attempt_expires_at = NOW()
+              + (${attemptTtlMs}::double precision * INTERVAL '1 millisecond'),
             updated_at = NOW()
           FROM due
           WHERE delivery.delivery_id = due.delivery_id
@@ -79,9 +79,9 @@ export class SessionDeliveryRecoveryRepository {
   }
 
   async claimRecoverableCompletionDeliveries(
-    leaseOwner: string,
+    attemptToken: string,
     limit = 100,
-    leaseMs = 15_000,
+    attemptTtlMs = 15_000,
   ): Promise<SessionDeliveryRow[]> {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
       await settleTerminalTargetCompletionDeliveries(transaction);
@@ -161,8 +161,8 @@ export class SessionDeliveryRecoveryRepository {
         const updated = await transaction<SessionDeliveryRow[]>`
           UPDATE session_deliveries
           SET target_session_id = ${targetSessionId}, state = 'claimed',
-              claimed_at = NOW(), lease_owner = ${leaseOwner},
-              lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
+              claimed_at = NOW(), attempt_token = ${attemptToken},
+              attempt_expires_at = NOW() + (${attemptTtlMs}::double precision * INTERVAL '1 millisecond'),
               updated_at = NOW()
           WHERE delivery_id = ${row.delivery_id} AND state = 'pending'
           RETURNING *
@@ -175,36 +175,36 @@ export class SessionDeliveryRecoveryRepository {
 
   async claimQueuedAfterNodeRestart(
     nodeId: string,
-    leaseOwner: string,
+    attemptToken: string,
     limit = 100,
-    leaseMs = 15_000,
+    attemptTtlMs = 15_000,
     includeDelivered = false,
   ): Promise<SessionDeliveryRow[]> {
     return await this.claimQueued(
-      leaseOwner,
+      attemptToken,
       limit,
-      leaseMs,
+      attemptTtlMs,
       { startupNodeId: nodeId, includeDelivered },
     );
   }
 
   async claimRecoverableQueued(
     scan: QueuedDeliveryRecoveryScan,
-    leaseOwner: string,
+    attemptToken: string,
     limit = 100,
-    leaseMs = 15_000,
+    attemptTtlMs = 15_000,
   ): Promise<SessionDeliveryRow[]> {
     return await this.claimQueued(
-      leaseOwner,
+      attemptToken,
       limit,
-      leaseMs,
+      attemptTtlMs,
       { scan },
     );
   }
 
   async markDeliveredFromTranscript(
     deliveryId: string,
-    leaseOwner: string,
+    attemptToken: string,
     assistantMessageUuid: string,
   ): Promise<SessionDeliveryRow | null> {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
@@ -216,13 +216,13 @@ export class SessionDeliveryRecoveryRepository {
           caller_turn_id = ${receiptId},
           target_receipt_id = ${receiptId}, target_receipt_at = NOW(),
           delivered_at = COALESCE(delivered_at, NOW()),
-          lease_owner = NULL,
-          lease_expires_at = NULL,
+          attempt_token = NULL,
+          attempt_expires_at = NULL,
           last_error = 'worker_restart_transcript_reconciled',
           updated_at = NOW()
         WHERE delivery_id = ${deliveryId}
           AND state = 'claimed'
-          AND lease_owner = ${leaseOwner}
+          AND attempt_token = ${attemptToken}
         RETURNING *
       `;
       const delivered = rows[0] ?? null;
@@ -246,7 +246,7 @@ export class SessionDeliveryRecoveryRepository {
 
   async deferQueuedTranscriptCheck(
     deliveryId: string,
-    leaseOwner: string,
+    attemptToken: string,
     error: string,
     retryDelayMs: number,
   ): Promise<SessionDeliveryRow | null> {
@@ -263,7 +263,7 @@ export class SessionDeliveryRecoveryRepository {
         })}
         WHERE delivery_id = ${deliveryId}
           AND state = 'claimed'
-          AND lease_owner = ${leaseOwner}
+          AND attempt_token = ${attemptToken}
         RETURNING *
       `;
       const row = rows[0];
@@ -275,7 +275,7 @@ export class SessionDeliveryRecoveryRepository {
           deliveryId,
           outcome: attemptOutcomeFor(row),
           reason: error,
-          leaseOwner,
+          attemptToken,
         });
       }
       return row;
@@ -283,9 +283,9 @@ export class SessionDeliveryRecoveryRepository {
   }
 
   private async claimQueued(
-    leaseOwner: string,
+    attemptToken: string,
     limit: number,
-    leaseMs: number,
+    attemptTtlMs: number,
     mode: {
       startupNodeId?: string;
       scan?: QueuedDeliveryRecoveryScan;
@@ -347,8 +347,8 @@ export class SessionDeliveryRecoveryRepository {
       UPDATE session_deliveries AS delivery
       SET
         state = 'claimed',
-        lease_owner = ${leaseOwner},
-        lease_expires_at = NOW() + (${leaseMs}::double precision * INTERVAL '1 millisecond'),
+        attempt_token = ${attemptToken},
+        attempt_expires_at = NOW() + (${attemptTtlMs}::double precision * INTERVAL '1 millisecond'),
         updated_at = NOW()
       FROM recoverable
       WHERE delivery.delivery_id = recoverable.delivery_id

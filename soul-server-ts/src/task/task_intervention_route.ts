@@ -64,7 +64,7 @@ export interface AddInterventionParams {
   parentDeliveryId?: string;
   callerTurnId?: string;
   deliveryCreatedAt?: string;
-  deliveryLeaseOwner?: string;
+  deliveryAttemptToken?: string;
   followupAttempt?: number;
   followupKey?: string;
   followupTaskIds?: string[];
@@ -125,7 +125,7 @@ export class TaskInterventionRoute {
     const request = this.deps.deliveryLedgerGate
       ? ensureHumanDeliveryIdentity(params)
       : params;
-    // Every session-directed message enters through the same ownership check.
+    // Every session-directed message enters through the same delivery admission check.
     // Producer intent affects durable identity and notification projection only,
     // never whether an active conversation hears the message.
     const task = await this.resolveTask(params.agentSessionId);
@@ -147,7 +147,7 @@ export class TaskInterventionRoute {
       parentDeliveryId: request.parentDeliveryId,
       callerTurnId: request.callerTurnId,
       deliveryCreatedAt: request.deliveryCreatedAt,
-      deliveryLeaseOwner: request.deliveryLeaseOwner,
+      deliveryAttemptToken: request.deliveryAttemptToken,
       followupAttempt: request.followupAttempt,
       followupKey: request.followupKey,
       followupTaskIds: request.followupTaskIds,
@@ -426,7 +426,7 @@ function hydrateStoredDeliveryMessage(
     parentDeliveryId: row.parent_delivery_id ?? undefined,
     callerTurnId: row.caller_turn_id ?? undefined,
     deliveryCreatedAt: row.created_at.toISOString(),
-    deliveryLeaseOwner: row.lease_owner ?? undefined,
+    deliveryAttemptToken: row.attempt_token ?? undefined,
     storedDeliveryPayload: row.payload,
     storedDeliveryPayloadHash: row.payload_hash,
   };

@@ -277,8 +277,8 @@ async function recordRelationConsumedInTransaction(
       target_receipt_at = COALESCE(target_receipt_at, ${relation.consumed_at}),
       consumed_at = ${relation.consumed_at},
       consumed_reason = 'exact relation receipt',
-      lease_owner = NULL,
-      lease_expires_at = NULL,
+      attempt_token = NULL,
+      attempt_expires_at = NULL,
       updated_at = NOW()
     WHERE relation_key = ${params.relationKey}
       AND completion_id = ${params.completionId}

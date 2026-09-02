@@ -79,14 +79,14 @@ describe("worker control-plane host clients", () => {
     }));
     const transport = new PersistenceHostTransport({ orch, logger: timingLogger });
 
-    await expect(transport.request("session-deliveries", "release_expired_delivery_leases", []))
+    await expect(transport.request("session-deliveries", "expire_stale_delivery_attempts", []))
       .rejects.toMatchObject({ name: "PersistenceHostRequestError" });
 
     expect(warn).toHaveBeenCalledWith(
       {
         requestId,
         domain: "session-deliveries",
-        operation: "release_expired_delivery_leases",
+        operation: "expire_stale_delivery_attempts",
         nodeRequestedAtMs: 2_000,
         nodeRequestFailedAtMs: 12_000,
         totalDurationMs: 10_000,
@@ -301,7 +301,7 @@ describe("worker control-plane host clients", () => {
       const request = JSON.parse(String(init?.body));
       expect(request.args[0]).toEqual({
         delivery_id: "delivery-1",
-        lease_owner: "worker-1",
+        attempt_token: "worker-1",
         target_session_id: "target-1",
         disposition: "queued",
         payload: {
@@ -321,7 +321,7 @@ describe("worker control-plane host clients", () => {
 
     await client.stageWithQueuedDelivery({
       deliveryId: "delivery-1",
-      leaseOwner: "worker-1",
+      attemptToken: "worker-1",
       targetSessionId: "target-1",
       disposition: "queued",
       payload: {

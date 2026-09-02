@@ -1188,9 +1188,9 @@
         "parent_delivery_id": { "type": "string" },
         "caller_turn_id": { "type": "string" },
         "created_at": { "type": "string", "format": "date-time" },
-        "delivery_lease_owner": {
+        "delivery_attempt_token": {
           "type": "string",
-          "description": "Opaque recovery lease token fencing one delivery attempt."
+          "description": "Opaque attempt token fencing one delivery attempt."
         }
       }
     },

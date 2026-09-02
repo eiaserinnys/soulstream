@@ -35,14 +35,14 @@ export class LabDeliveryRuntime {
     if (!Number.isInteger(nextAttemptDelaySeconds) || nextAttemptDelaySeconds < 0) {
       throw new Error("seeded retry delay must be a non-negative integer");
     }
-    const leaseOwner = options.leaseOwner ?? null;
-    if (leaseOwner !== null) assertIdentifier(leaseOwner, "lease owner");
+    const attemptToken = options.attemptToken ?? null;
+    if (attemptToken !== null) assertIdentifier(attemptToken, "attempt token");
     return await this.runtime.psqlOne(`
       WITH inserted AS (
         INSERT INTO session_deliveries (
           delivery_id, target_session_id, relation_key, completion_id,
           intent, source, payload_hash, payload, state, aggregate_state,
-          attempt_count, next_attempt_at, lease_owner, lease_expires_at,
+          attempt_count, next_attempt_at, attempt_token, attempt_expires_at,
           claimed_at, created_at, updated_at
         ) VALUES (
           ${sqlLiteral(seed.deliveryId)}, ${sqlLiteral(seed.sessionId)},
@@ -51,8 +51,8 @@ export class LabDeliveryRuntime {
           ${sqlLiteral(seed.payloadHash)}, ${sqlText(JSON.stringify(seed.payload))}::jsonb,
           ${sqlLiteral(state)}, ${sqlLiteral(aggregateState)}, ${attemptCount},
           NOW() + (${nextAttemptDelaySeconds} * INTERVAL '1 second'),
-          ${leaseOwner === null ? "NULL" : sqlLiteral(leaseOwner)},
-          ${leaseOwner === null ? "NULL" : "NOW() + INTERVAL '5 minutes'"},
+          ${attemptToken === null ? "NULL" : sqlLiteral(attemptToken)},
+          ${attemptToken === null ? "NULL" : "NOW() + INTERVAL '5 minutes'"},
           ${state === "claimed" ? "NOW()" : "NULL"}, NOW(), NOW()
         ) RETURNING delivery_id, state, aggregate_state, attempt_count, enqueue_sequence
       ) SELECT row_to_json(inserted) FROM inserted

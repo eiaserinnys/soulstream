@@ -70,12 +70,6 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
-    for (const migration of [
-      "../../../packages/db-schema/sql/migrations/045_session_deliveries.sql",
-      "../../../packages/db-schema/sql/migrations/046_claude_background_tasks.sql",
-    ]) {
-      await harness.sql.unsafe(readFileSync(new URL(migration, import.meta.url), "utf8"));
-    }
   }, 45_000);
 
   beforeEach(async () => {
@@ -189,7 +183,7 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
         })),
       } as never,
       warn: (message) => warnings.push(message),
-      leaseOwnerPrefix: "maintenance",
+      attemptTokenPrefix: "maintenance",
     });
     await expect(repository.get(deliveryId)).resolves.toMatchObject({
       state: "pending",
@@ -221,7 +215,7 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
           sessionRouter: path.sessionRouter,
           sessionBridge: path.sessionBridge,
           warn: (message) => warnings.push(message),
-          leaseOwnerPrefix: "maintenance",
+          attemptTokenPrefix: "maintenance",
         });
       },
     });
@@ -239,7 +233,7 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
       sessionRouter: path.sessionRouter,
       sessionBridge: path.sessionBridge,
       warn: (message) => warnings.push(message),
-      leaseOwnerPrefix: "maintenance",
+      attemptTokenPrefix: "maintenance",
     });
     expect(path.resumedDeliveryIds).toEqual([deliveryId]);
     await expect(repository.get(deliveryId)).resolves.toMatchObject({
@@ -267,7 +261,7 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
     for (const deliveryId of deliveryIds) {
       await registerRestartRuntimeDelivery(repository, deliveryId);
     }
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       deliveryIds[0],
       "caller-session",
       "r25-crashed-worker",
@@ -275,7 +269,7 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
     await harness.sql`
       UPDATE session_deliveries
       SET attempt_count = 8,
-          lease_expires_at = NOW() - INTERVAL '1 second'
+          attempt_expires_at = NOW() - INTERVAL '1 second'
       WHERE delivery_id = ${deliveryIds[0]}
     `;
     await harness.sql`
@@ -302,7 +296,7 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
     }));
     expect(deliveryConvergenceViolations(ideal)).toEqual([]);
 
-    await repository.releaseExpiredDeliveryLeases();
+    await repository.expireStaleDeliveryAttempts();
     await harness.sql`
       UPDATE session_deliveries
       SET next_attempt_at = NOW()

@@ -238,11 +238,11 @@ export const DELIVERY_SCENARIOS = Object.freeze({
     const marker = `DELIVERY_ACCEPTED_CAS_OK_${seed}`;
     const text = `Reply with exactly ${marker}.`;
     const spec = [{ label: "only", text, marker }];
-    const leaseOwner = `lab-cas-${seed}`;
+    const attemptToken = `lab-cas-${seed}`;
     const delivery = buildDurableDeliverySeed(
-      randomUUID(), baseline.sessionId, text, leaseOwner,
+      randomUUID(), baseline.sessionId, text, attemptToken,
     );
-    await runtime.deliveries.seed(delivery, { state: "claimed", leaseOwner });
+    await runtime.deliveries.seed(delivery, { state: "claimed", attemptToken });
     await runtime.deliveries.installQueuedCasFault(delivery.deliveryId);
 
     let result;
@@ -314,11 +314,11 @@ async function steadyDeliveryBaseline(runtime, recorder, labels, callerDispositi
   const cleanup = [];
   try {
     for (const spec of specs) {
-      const leaseOwner = `lab-steady-${shortId()}`;
+      const attemptToken = `lab-steady-${shortId()}`;
       const delivery = buildDurableDeliverySeed(
-        randomUUID(), sessionId, spec.text, leaseOwner,
+        randomUUID(), sessionId, spec.text, attemptToken,
       );
-      await runtime.deliveries.seed(delivery, { state: "claimed", leaseOwner });
+      await runtime.deliveries.seed(delivery, { state: "claimed", attemptToken });
       const callerOutcome = await settle(runtime.intervene(sessionId, delivery.intervention));
       outcomes.push(callerOutcome);
       await runtime.waitForMarker(sessionId, spec.marker);

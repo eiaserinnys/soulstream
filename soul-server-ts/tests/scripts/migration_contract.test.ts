@@ -24,6 +24,7 @@ const empty = {
   runbookOperations: null,
   taskItemsHasParent: false,
   taskItemsHasSection: false,
+  deliveryAttemptTerminologyCurrent: false,
 };
 
 const current = {
@@ -37,6 +38,12 @@ const current = {
   runbookOperations: "v",
   taskItemsHasParent: false,
   taskItemsHasSection: true,
+  deliveryAttemptTerminologyCurrent: true,
+};
+
+const currentPre086 = {
+  ...current,
+  deliveryAttemptTerminologyCurrent: false,
 };
 
 const legacyPre041 = {
@@ -50,6 +57,7 @@ const legacyPre041 = {
   runbookOperations: "r",
   taskItemsHasParent: true,
   taskItemsHasSection: false,
+  deliveryAttemptTerminologyCurrent: false,
 };
 
 describe("versioned migration contract", () => {
@@ -248,11 +256,11 @@ describe("versioned migration contract", () => {
     expect(migration?.sql).not.toContain("DROP TRIGGER IF EXISTS board_delete_session_refs_trigger");
   });
 
-  it("bootstraps an already-current database without scheduling DROP or rename", async () => {
+  it("bootstraps an already-current delivery-attempt schema through 086", async () => {
     const migrations = await loadMigrationManifest();
     const plan = buildMigrationPlan(migrations, [], current);
     const currentBaselineIndex = migrations.findIndex(
-      (item) => item.id === "042_runbook_to_task.sql",
+      (item) => item.id === "086_delivery_attempt_terminology.sql",
     );
 
     expect(plan.state).toBe("current");
@@ -260,6 +268,20 @@ describe("versioned migration contract", () => {
     expect(plan.bootstrap).toHaveLength(currentBaselineIndex + 1);
     expect(plan.pending.map((item) => item.id)).toEqual(
       migrations.slice(currentBaselineIndex + 1).map((item) => item.id),
+    );
+  });
+
+  it("replays post-042 migrations for a current pre-086 delivery schema", async () => {
+    const migrations = await loadMigrationManifest();
+    const plan = buildMigrationPlan(migrations, [], currentPre086);
+    const taskBaselineIndex = migrations.findIndex(
+      (item) => item.id === "042_runbook_to_task.sql",
+    );
+
+    expect(plan.state).toBe("current");
+    expect(plan.bootstrap).toHaveLength(taskBaselineIndex + 1);
+    expect(plan.pending.map((item) => item.id)).toEqual(
+      migrations.slice(taskBaselineIndex + 1).map((item) => item.id),
     );
   });
 

@@ -37,10 +37,10 @@ type CompletionDeliveryRepository = Pick<
   SessionDeliveryRepository,
   | "register"
   | "get"
-  | "claimForTarget"
+  | "claimAttemptForTarget"
   | "deferPending"
-  | "retryLeasedDelivery"
-  | "releaseExpiredDeliveryLeases"
+  | "retryDeliveryAttempt"
+  | "expireStaleDeliveryAttempts"
   | "markUncertain"
 >;
 
@@ -51,7 +51,7 @@ export interface CompletionDeliveryCoordinatorDeps {
 }
 
 /**
- * Durable owner of completion delivery admission.
+ * Durable coordinator of completion delivery admission.
  *
  * Registration always precedes target claiming, so a transient failure leaves a
  * replayable `pending` row instead of losing the finalizer's only call.
@@ -67,26 +67,26 @@ export class CompletionDeliveryCoordinator {
   private readonly workerId: string;
 
   /**
-   * `leaseMs` must exceed `dispatchTimeoutMs`.
+   * `attemptTtlMs` must exceed `dispatchTimeoutMs`.
    *
-   * The lease is what stops a second worker from re-dispatching a delivery that
-   * is still in flight. When a dispatch could outlive its lease — which an
-   * unbounded dispatch always could — `releaseExpiredDeliveryLeases` returned
-   * the row to `pending` underneath its own owner and the next scan claimed it
+   * The attempt token is what stops a second worker from re-dispatching a delivery that
+   * is still in flight. When a dispatch could outlive its attempt TTL — which an
+   * unbounded dispatch always could — `expireStaleDeliveryAttempts` returned
+   * the row to `pending` underneath its own token and the next scan claimed it
    * again (260820 incident).
    *
-   * Periodic recovery only releases abandoned admission leases. It never
+   * Periodic recovery only expires stale admission attempts. It never
    * dispatches accepted input; a new explicit intent must claim it again.
    */
   constructor(
     private readonly deps: CompletionDeliveryCoordinatorDeps,
     workerId = `completion:${randomUUID()}`,
-    private readonly leaseMs = 60_000,
+    private readonly attemptTtlMs = 60_000,
     private readonly dispatchTimeoutMs = 15_000,
   ) {
-    if (dispatchTimeoutMs >= leaseMs) {
+    if (dispatchTimeoutMs >= attemptTtlMs) {
       throw new Error(
-        `Delivery dispatch timeout ${dispatchTimeoutMs}ms must be shorter than the ${leaseMs}ms lease`,
+        `Delivery dispatch timeout ${dispatchTimeoutMs}ms must be shorter than the ${attemptTtlMs}ms attempt TTL`,
       );
     }
     this.workerId = workerId;
@@ -116,7 +116,7 @@ export class CompletionDeliveryCoordinator {
 
   async recoverPending(_limit = 100): Promise<void> {
     try {
-      await this.deps.repository.releaseExpiredDeliveryLeases();
+      await this.deps.repository.expireStaleDeliveryAttempts();
     } catch (err) {
       this.deps.logger.warn({ err }, "Completion delivery recovery scan failed");
     }
@@ -126,11 +126,11 @@ export class CompletionDeliveryCoordinator {
     try {
       const current = await this.deps.repository.get(deliveryId);
       if (!current || !isRecoverable(current)) return;
-      const claimed = await this.deps.repository.claimForTarget(
+      const claimed = await this.deps.repository.claimAttemptForTarget(
         deliveryId,
         requiredTarget(current),
         this.workerId,
-        this.leaseMs,
+        this.attemptTtlMs,
       );
       if (!claimed) {
         await this.deps.repository.deferPending(
@@ -150,7 +150,7 @@ export class CompletionDeliveryCoordinator {
   }
 
   private async dispatchClaimed(row: SessionDeliveryRow): Promise<void> {
-    const leaseOwner = requiredLeaseOwner(row);
+    const attemptToken = requiredAttemptToken(row);
     const targetSessionId = requiredTarget(row);
     // TaskCompletionNotifier.notify() is the explicit admission boundary. The
     // dispatch below belongs only to that enqueue attempt; periodic maintenance
@@ -159,7 +159,7 @@ export class CompletionDeliveryCoordinator {
       try {
         const terminal = await this.deps.repository.markUncertain(
           row.delivery_id,
-          leaseOwner,
+          attemptToken,
           "stale_self_completion_delivery",
         );
         this.deps.logger.info(
@@ -181,7 +181,7 @@ export class CompletionDeliveryCoordinator {
     }
     try {
       await withDeadline(
-        this.deps.dispatch(deliveryRowToInterventionParams(row, leaseOwner)),
+        this.deps.dispatch(deliveryRowToInterventionParams(row, attemptToken)),
         this.dispatchTimeoutMs,
         () => new DeliveryDispatchTimeoutError(
           row.delivery_id,
@@ -201,7 +201,7 @@ export class CompletionDeliveryCoordinator {
       if (isRetryExhausted(row)) {
         const terminal = await this.deps.repository.markUncertain(
           row.delivery_id,
-          leaseOwner,
+          attemptToken,
           failure,
         );
         this.deps.logger.warn(
@@ -215,16 +215,16 @@ export class CompletionDeliveryCoordinator {
         );
         return;
       }
-      const retried = await this.deps.repository.retryLeasedDelivery(
+      const retried = await this.deps.repository.retryDeliveryAttempt(
         row.delivery_id,
-        leaseOwner,
+        attemptToken,
         failure,
         deliveryRetryDelayMs(row.attempt_count),
       );
       if (!retried) {
         this.deps.logger.warn(
           { err, deliveryId: row.delivery_id },
-          "Completion delivery retry not scheduled because the dispatch lease was lost",
+          "Completion delivery retry not scheduled because the attempt token was lost",
         );
         return;
       }
@@ -296,11 +296,11 @@ function requiredTarget(row: SessionDeliveryRow): string {
   return row.target_session_id;
 }
 
-function requiredLeaseOwner(row: SessionDeliveryRow): string {
-  if (!row.lease_owner) {
-    throw new Error(`Delivery ${row.delivery_id} has no lease owner`);
+function requiredAttemptToken(row: SessionDeliveryRow): string {
+  if (!row.attempt_token) {
+    throw new Error(`Delivery ${row.delivery_id} has no attempt token`);
   }
-  return row.lease_owner;
+  return row.attempt_token;
 }
 
 

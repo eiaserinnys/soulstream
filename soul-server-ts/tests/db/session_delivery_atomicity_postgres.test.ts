@@ -62,7 +62,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
 
   it("serializes consume-first, dispatch-first, and queued-first on the real row", async () => {
     await register("delivery-consume-first", "relation-consume-first");
-    await repository.claimForTarget("delivery-consume-first", "caller-old");
+    await repository.claimAttemptForTarget("delivery-consume-first", "caller-old");
 
     let blockedDispatch!: ReturnType<SessionDeliveryRepository["beginDispatch"]>;
     await peer.begin(async (transaction) => {
@@ -86,7 +86,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     expect((await repository.get("delivery-consume-first"))?.state).toBe("consumed");
 
     await register("delivery-dispatch-first", "relation-dispatch-first");
-    await repository.claimForTarget("delivery-dispatch-first", "caller-old");
+    await repository.claimAttemptForTarget("delivery-dispatch-first", "caller-old");
     let blockedConsume!: ReturnType<
       SessionDeliveryRepository["markConsumedByRelation"]
     >;
@@ -113,7 +113,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       .toBe("dispatching");
 
     await register("delivery-queued-first", "relation-queued-first");
-    await repository.claimForTarget("delivery-queued-first", "caller-old");
+    await repository.claimAttemptForTarget("delivery-queued-first", "caller-old");
     let blockedQueuedConsume!: ReturnType<
       SessionDeliveryRepository["markConsumedByRelation"]
     >;
@@ -143,7 +143,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
 
   it("atomically supersedes a claimed completion when its source auto-resumes", async () => {
     await register("delivery-resume-race", "relation-resume-race");
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-resume-race",
       "caller-old",
       "worker-before-resume",
@@ -169,8 +169,8 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       state: "superseded",
       superseded_at: expect.any(Date),
       superseded_terminal_revision: "42",
-      lease_owner: null,
-      lease_expires_at: null,
+      attempt_token: null,
+      attempt_expires_at: null,
       last_error: "transient dispatch failure before resume",
     });
     await expect(repository.beginDispatch(
@@ -186,7 +186,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
 
   it("discards an unpublished notification projection when its aggregate is consumed", async () => {
     await register("delivery-projection-discard", "relation-projection-discard");
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-projection-discard",
       "caller-old",
       "projection-worker",
@@ -197,7 +197,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     );
     await repository.notifications.stageWithQueuedDelivery({
       deliveryId: "delivery-projection-discard",
-      leaseOwner: "projection-worker",
+      attemptToken: "projection-worker",
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload: {
@@ -226,15 +226,15 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     await expect(harness.sql<Array<{
       state: string;
       projection_state: string;
-      lease_owner: string | null;
+      attempt_token: string | null;
     }>>`
-      SELECT state, projection_state, lease_owner
+      SELECT state, projection_state, attempt_token
       FROM session_delivery_notification_outbox
       WHERE delivery_id = 'delivery-projection-discard'
     `).resolves.toEqual([{
       state: "dead_letter",
       projection_state: "discarded",
-      lease_owner: null,
+      attempt_token: null,
     }]);
     await expect(repository.notifications.listDeadLetters()).resolves.toEqual([]);
     await expect(repository.notifications.requeueDeadLetter(
@@ -251,11 +251,11 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     const deliveryId = "delivery-orphaned-receipt";
     const targetReceiptId = "event:901";
     await register(deliveryId, "relation-orphaned-receipt");
-    await repository.claimForTarget(deliveryId, "caller-old", "route-worker");
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", "route-worker");
     await repository.beginDispatch(deliveryId, "route-worker");
     await repository.notifications.stageWithQueuedDelivery({
       deliveryId,
-      leaseOwner: "route-worker",
+      attemptToken: "route-worker",
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload: {
@@ -313,7 +313,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
 
   it("[A2 durability] responds before activation failure returns the real notification row to pending", async () => {
     const deliveryId = "delivery-a2-post-response-retry";
-    const leaseOwner = "route-a2-post-response";
+    const attemptToken = "route-a2-post-response";
     await repository.register({
       deliveryId,
       targetSessionId: "caller-old",
@@ -328,12 +328,12 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       payloadHash: "hash-relation-a2-post-response-retry",
       payload: { text: "done", user: "agent", caller_info: null },
     });
-    await repository.claimForTarget(deliveryId, "caller-old", leaseOwner);
-    const dispatching = await repository.beginDispatch(deliveryId, leaseOwner);
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", attemptToken);
+    const dispatching = await repository.beginDispatch(deliveryId, attemptToken);
     expect(dispatching).toMatchObject({
       delivery_id: deliveryId,
       state: "dispatching",
-      lease_owner: leaseOwner,
+      attempt_token: attemptToken,
     });
     const gate = new TaskDeliveryLedgerGate(true, repository);
     const sent: unknown[] = [];
@@ -404,13 +404,13 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       delivery_id: string;
       delivery_state: string;
       aggregate_state: string;
-      delivery_lease_owner: string | null;
-      delivery_lease_expires_at: Date | null;
+      delivery_attempt_token: string | null;
+      delivery_attempt_expires_at: Date | null;
       delivery_last_error: string | null;
       notification_state: string;
       projection_state: string;
-      notification_lease_owner: string | null;
-      notification_lease_expires_at: Date | null;
+      notification_attempt_token: string | null;
+      notification_attempt_expires_at: Date | null;
       notification_attempt_count: number;
       notification_last_error: string | null;
     }>>`
@@ -418,13 +418,13 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
         delivery.delivery_id,
         delivery.state AS delivery_state,
         delivery.aggregate_state,
-        delivery.lease_owner AS delivery_lease_owner,
-        delivery.lease_expires_at AS delivery_lease_expires_at,
+        delivery.attempt_token AS delivery_attempt_token,
+        delivery.attempt_expires_at AS delivery_attempt_expires_at,
         delivery.last_error AS delivery_last_error,
         notification.state AS notification_state,
         notification.projection_state,
-        notification.lease_owner AS notification_lease_owner,
-        notification.lease_expires_at AS notification_lease_expires_at,
+        notification.attempt_token AS notification_attempt_token,
+        notification.attempt_expires_at AS notification_attempt_expires_at,
         notification.attempt_count AS notification_attempt_count,
         notification.last_error AS notification_last_error
       FROM session_deliveries AS delivery
@@ -435,17 +435,16 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       delivery_id: deliveryId,
       delivery_state: "queued",
       aggregate_state: "pending",
-      // The queued aggregate keeps its dispatch lease by design; recovery
-      // replaces stale ownership. See the expired same-owner contract below
-      // ("stages an expired same-owner dispatch...", lines 589-635).
-      delivery_lease_owner: leaseOwner,
-      delivery_lease_expires_at: expect.any(Date),
+      // The queued aggregate keeps its dispatch attempt token by design;
+      // recovery replaces a stale token. See the expired-token contract below.
+      delivery_attempt_token: attemptToken,
+      delivery_attempt_expires_at: expect.any(Date),
       delivery_last_error:
         "auto-resume activation failed: activation rejected after durable publish",
       notification_state: "pending",
       projection_state: "staged",
-      notification_lease_owner: null,
-      notification_lease_expires_at: null,
+      notification_attempt_token: null,
+      notification_attempt_expires_at: null,
       notification_attempt_count: 1,
       notification_last_error:
         "auto-resume activation failed: activation rejected after durable publish",
@@ -463,16 +462,16 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     const deliveryId = "delivery-advanced-target-receipt";
     const publishedReceiptId = "event:390";
     const consumedTurnId = "event:447";
-    const leaseOwner = "cross-node-worker";
+    const attemptToken = "cross-node-worker";
     await harness.sql`
       UPDATE sessions SET node_id = 'node-a' WHERE session_id = 'caller-old'
     `;
     await register(deliveryId, "relation-advanced-target-receipt");
-    await repository.claimForTarget(deliveryId, "caller-old", leaseOwner);
-    await repository.beginDispatch(deliveryId, leaseOwner);
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", attemptToken);
+    await repository.beginDispatch(deliveryId, attemptToken);
     await repository.notifications.stageWithQueuedDelivery({
       deliveryId,
-      leaseOwner,
+      attemptToken,
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload: {
@@ -489,7 +488,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
     await repository.notifications.markPublished(
       deliveryId,
-      leaseOwner,
+      attemptToken,
       publishedReceiptId,
     );
 
@@ -530,15 +529,15 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     const deliveryId = "delivery-relation-tombstone-recovery";
     const relationKey = "relation-tombstone-recovery";
     const completionId = `completion-${relationKey}`;
-    const leaseOwner = "relation-recovery-worker";
+    const attemptToken = "relation-recovery-worker";
     const publishedReceiptId = "event:555";
     const consumedTurnId = "event:626";
     await register(deliveryId, relationKey);
-    await repository.claimForTarget(deliveryId, "caller-old", leaseOwner);
-    await repository.beginDispatch(deliveryId, leaseOwner);
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", attemptToken);
+    await repository.beginDispatch(deliveryId, attemptToken);
     await repository.notifications.stageWithQueuedDelivery({
       deliveryId,
-      leaseOwner,
+      attemptToken,
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload: {
@@ -555,7 +554,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
     await repository.notifications.markPublished(
       deliveryId,
-      leaseOwner,
+      attemptToken,
       publishedReceiptId,
     );
     await harness.sql`
@@ -580,7 +579,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
 
     const unrelatedId = "delivery-unrelated-delivered";
     await register(unrelatedId, "relation-unrelated-delivered");
-    await repository.claimForTarget(unrelatedId, "caller-old");
+    await repository.claimAttemptForTarget(unrelatedId, "caller-old");
     await repository.markDelivered(unrelatedId, "event:unrelated");
     await repository.claimRecoverableCompletionDeliveries("periodic-recovery");
     await expect(repository.get(unrelatedId)).resolves.toMatchObject({
@@ -589,12 +588,12 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
   });
 
-  it("stages an expired same-owner dispatch and rejects the replaced owner", async () => {
+  it("stages an expired same-token dispatch and rejects the replaced token", async () => {
     await harness.sql`
       UPDATE sessions SET node_id = 'node-a' WHERE session_id = 'caller-old'
     `;
     await register("delivery-expired-stage", "relation-expired-stage");
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-expired-stage",
       "caller-old",
       "worker-original",
@@ -602,13 +601,13 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     await repository.beginDispatch("delivery-expired-stage", "worker-original");
     await harness.sql`
       UPDATE session_deliveries
-      SET lease_expires_at = NOW() - INTERVAL '1 second'
+      SET attempt_expires_at = NOW() - INTERVAL '1 second'
       WHERE delivery_id = 'delivery-expired-stage'
     `;
 
     await expect(repository.notifications.stageWithQueuedDelivery({
       deliveryId: "delivery-expired-stage",
-      leaseOwner: "worker-original",
+      attemptToken: "worker-original",
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload: {
@@ -623,12 +622,12 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
         caller_info: null,
       },
     })).resolves.toMatchObject({ state: "queued" });
-    await expect(harness.sql<Array<{ lease_is_fresh: boolean }>>`
-      SELECT lease_expires_at > NOW() AS lease_is_fresh
+    await expect(harness.sql<Array<{ attempt_is_fresh: boolean }>>`
+      SELECT attempt_expires_at > NOW() AS attempt_is_fresh
       FROM session_delivery_notification_outbox
       WHERE delivery_id = 'delivery-expired-stage'
-    `).resolves.toEqual([{ lease_is_fresh: true }]);
-    await expect(repository.notifications.releaseExpiredLeases(
+    `).resolves.toEqual([{ attempt_is_fresh: true }]);
+    await expect(repository.notifications.expireStaleNotificationAttempts(
       4,
       new Date(0),
     )).resolves.toBe(0);
@@ -637,31 +636,31 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       "notification-recovery",
     )).resolves.toEqual([]);
 
-    await register("delivery-replaced-owner", "relation-replaced-owner");
-    await repository.claimForTarget(
-      "delivery-replaced-owner",
+    await register("delivery-replaced-token", "relation-replaced-token");
+    await repository.claimAttemptForTarget(
+      "delivery-replaced-token",
       "caller-old",
       "worker-old",
     );
-    await repository.beginDispatch("delivery-replaced-owner", "worker-old");
+    await repository.beginDispatch("delivery-replaced-token", "worker-old");
     await harness.sql`
       UPDATE session_deliveries
-      SET lease_owner = 'worker-new'
-      WHERE delivery_id = 'delivery-replaced-owner'
+      SET attempt_token = 'worker-new'
+      WHERE delivery_id = 'delivery-replaced-token'
     `;
     await expect(repository.notifications.stageWithQueuedDelivery({
-      deliveryId: "delivery-replaced-owner",
-      leaseOwner: "worker-old",
+      deliveryId: "delivery-replaced-token",
+      attemptToken: "worker-old",
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload: {
         text: "done",
         user: "agent",
         source: "completion_notifier",
-        delivery_id: "delivery-replaced-owner",
+        delivery_id: "delivery-replaced-token",
         delivery_intent: "completion_notification",
-        completion_id: "completion-relation-replaced-owner",
-        relation_key: "relation-replaced-owner",
+        completion_id: "completion-relation-replaced-token",
+        relation_key: "relation-replaced-token",
         disposition: "auto_resume",
         caller_info: null,
       },
@@ -673,27 +672,27 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     const relationKey = "relation-stale-outbox-retry";
     const payload = notificationPayload(deliveryId, relationKey);
     await register(deliveryId, relationKey);
-    await repository.claimForTarget(deliveryId, "caller-old", "worker-old");
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-old");
     await repository.beginDispatch(deliveryId, "worker-old");
     await repository.notifications.stageWithQueuedDelivery({
       deliveryId,
-      leaseOwner: "worker-old",
+      attemptToken: "worker-old",
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload,
     }, 0);
-    await repository.retryLeasedDelivery(
+    await repository.retryDeliveryAttempt(
       deliveryId,
       "worker-old",
       "worker stopped before publish",
       0,
     );
-    await repository.claimForTarget(deliveryId, "caller-old", "worker-retry");
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-retry");
     await repository.beginDispatch(deliveryId, "worker-retry");
 
     await expect(repository.notifications.stageWithQueuedDelivery({
       deliveryId,
-      leaseOwner: "worker-retry",
+      attemptToken: "worker-retry",
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload,
@@ -705,7 +704,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       delivery_id: deliveryId,
       state: "claimed",
       projection_state: "publishing",
-      lease_owner: "worker-retry",
+      attempt_token: "worker-retry",
       payload: expect.objectContaining({
         delivery_id: deliveryId,
         completion_id: "completion-" + relationKey,
@@ -714,43 +713,43 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
   });
 
-  it("rejects an exact outbox retry while another writer still owns the live lease", async () => {
+  it("rejects an exact outbox retry while another writer holds the live attempt token", async () => {
     const deliveryId = "delivery-live-outbox-writer";
     const relationKey = "relation-live-outbox-writer";
     const payload = notificationPayload(deliveryId, relationKey);
     await register(deliveryId, relationKey);
-    await repository.claimForTarget(deliveryId, "caller-old", "worker-live");
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-live");
     await repository.beginDispatch(deliveryId, "worker-live");
     await repository.notifications.stageWithQueuedDelivery({
       deliveryId,
-      leaseOwner: "worker-live",
+      attemptToken: "worker-live",
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload,
     });
-    await repository.retryLeasedDelivery(
+    await repository.retryDeliveryAttempt(
       deliveryId,
       "worker-live",
       "delivery retry raced live notification writer",
       0,
     );
-    await repository.claimForTarget(deliveryId, "caller-old", "worker-racing");
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-racing");
     await repository.beginDispatch(deliveryId, "worker-racing");
 
     await expect(repository.notifications.stageWithQueuedDelivery({
       deliveryId,
-      leaseOwner: "worker-racing",
+      attemptToken: "worker-racing",
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload,
     })).rejects.toThrow("notification outbox already exists: " + deliveryId);
     await expect(repository.get(deliveryId)).resolves.toMatchObject({
       state: "dispatching",
-      lease_owner: "worker-racing",
+      attempt_token: "worker-racing",
     });
     await expect(repository.notifications.get(deliveryId)).resolves.toMatchObject({
       state: "claimed",
-      lease_owner: "worker-live",
+      attempt_token: "worker-live",
     });
   });
 
@@ -758,27 +757,27 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     const deliveryId = "delivery-stale-outbox-identity";
     const relationKey = "relation-stale-outbox-identity";
     await register(deliveryId, relationKey);
-    await repository.claimForTarget(deliveryId, "caller-old", "worker-old");
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-old");
     await repository.beginDispatch(deliveryId, "worker-old");
     await repository.notifications.stageWithQueuedDelivery({
       deliveryId,
-      leaseOwner: "worker-old",
+      attemptToken: "worker-old",
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload: notificationPayload(deliveryId, relationKey),
     }, 0);
-    await repository.retryLeasedDelivery(
+    await repository.retryDeliveryAttempt(
       deliveryId,
       "worker-old",
       "worker stopped before publish",
       0,
     );
-    await repository.claimForTarget(deliveryId, "caller-old", "worker-retry");
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-retry");
     await repository.beginDispatch(deliveryId, "worker-retry");
 
     await expect(repository.notifications.stageWithQueuedDelivery({
       deliveryId,
-      leaseOwner: "worker-retry",
+      attemptToken: "worker-retry",
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload: notificationPayload(
@@ -789,7 +788,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     })).rejects.toThrow("notification outbox already exists: " + deliveryId);
     await expect(repository.get(deliveryId)).resolves.toMatchObject({
       state: "dispatching",
-      lease_owner: "worker-retry",
+      attempt_token: "worker-retry",
     });
     await expect(repository.notifications.get(deliveryId)).resolves.toMatchObject({
       payload: expect.objectContaining({
@@ -861,7 +860,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       payloadHash: "hash-stale-at-dispatch",
       payload: { text: "stale" },
     });
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       "delivery-stale-at-dispatch",
       "caller-old",
       "stale-worker",
@@ -1169,7 +1168,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
 
   it("keeps attempt verdicts, aggregate state, and target receipts on separate layers", async () => {
     await register("delivery-accepted", "relation-accepted");
-    await repository.claimForTarget("delivery-accepted", "caller-old", "worker-a");
+    await repository.claimAttemptForTarget("delivery-accepted", "caller-old", "worker-a");
     await repository.beginDispatch("delivery-accepted", "worker-a");
     await expect(repository.markQueued("delivery-accepted", "worker-a"))
       .resolves.toMatchObject({ aggregate_state: "pending" });
@@ -1186,10 +1185,10 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       });
 
     await register("delivery-retryable", "relation-retryable");
-    await repository.claimForTarget("delivery-retryable", "caller-old", "worker-b");
+    await repository.claimAttemptForTarget("delivery-retryable", "caller-old", "worker-b");
     await repository.beginDispatch("delivery-retryable", "worker-b");
     await repository.markQueued("delivery-retryable", "worker-b");
-    await expect(repository.retryLeasedDelivery(
+    await expect(repository.retryDeliveryAttempt(
       "delivery-retryable",
       "worker-b",
       "target busy",
@@ -1197,7 +1196,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     )).resolves.toMatchObject({ aggregate_state: "pending" });
 
     await register("delivery-rejected", "relation-rejected");
-    await repository.claimForTarget("delivery-rejected", "caller-old", "worker-c");
+    await repository.claimAttemptForTarget("delivery-rejected", "caller-old", "worker-c");
     await repository.beginDispatch("delivery-rejected", "worker-c");
     await repository.markQueued("delivery-rejected", "worker-c");
     await expect(repository.markUncertain(
@@ -1212,9 +1211,9 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     await expect(harness.sql<Array<{
       delivery_id: string;
       outcome: string;
-      lease_owner: string | null;
+      attempt_token: string | null;
     }>>`
-      SELECT delivery_id, outcome, lease_owner
+      SELECT delivery_id, outcome, attempt_token
       FROM session_delivery_attempts
       WHERE delivery_id IN (
         'delivery-accepted', 'delivery-retryable', 'delivery-rejected'
@@ -1224,27 +1223,27 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       {
         delivery_id: "delivery-accepted",
         outcome: "accepted",
-        lease_owner: "worker-a",
+        attempt_token: "worker-a",
       },
       {
         delivery_id: "delivery-rejected",
         outcome: "accepted",
-        lease_owner: "worker-c",
+        attempt_token: "worker-c",
       },
       {
         delivery_id: "delivery-rejected",
         outcome: "rejected",
-        lease_owner: "worker-c",
+        attempt_token: "worker-c",
       },
       {
         delivery_id: "delivery-retryable",
         outcome: "accepted",
-        lease_owner: "worker-b",
+        attempt_token: "worker-b",
       },
       {
         delivery_id: "delivery-retryable",
         outcome: "retryable",
-        lease_owner: "worker-b",
+        attempt_token: "worker-b",
       },
     ]);
   });
@@ -1274,7 +1273,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
 
       const firstAdmission = await gate.beginDispatch(await gate.admit({
         ...request,
-        deliveryLeaseOwner: "route-first",
+        deliveryAttemptToken: "route-first",
       }));
       expect(firstAdmission.kind).toBe("admitted");
       await gate.recordResult(firstAdmission, { delivered: true });
@@ -1296,7 +1295,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
         15_000,
       );
       expect(recovered.map((row) => row.delivery_id)).toContain(deliveryId);
-      await expect(repository.retryLeasedDelivery(
+      await expect(repository.retryDeliveryAttempt(
         deliveryId,
         "recovery-worker",
         "failed turn kept for explicit resume",
@@ -1308,7 +1307,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
 
       const resumeAdmission = await gate.beginDispatch(await gate.admit({
         ...request,
-        deliveryLeaseOwner: "route-resume",
+        deliveryAttemptToken: "route-resume",
       }));
       expect(resumeAdmission.kind).toBe("admitted");
       await expect(repository.markQueued(
@@ -1348,20 +1347,20 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       "delivered",
     ] as const) {
       const deliveryId = `delivery-consume-observed-${state}`;
-      const leaseOwner = `worker-${state}`;
+      const attemptToken = `worker-${state}`;
       await register(deliveryId, `relation-consume-observed-${state}`);
       if (state !== "pending") {
-        await repository.claimForTarget(
+        await repository.claimAttemptForTarget(
           deliveryId,
           "caller-old",
-          leaseOwner,
+          attemptToken,
         );
       }
       if (state === "dispatching" || state === "queued" || state === "delivered") {
-        await repository.beginDispatch(deliveryId, leaseOwner);
+        await repository.beginDispatch(deliveryId, attemptToken);
       }
       if (state === "queued") {
-        await repository.markQueued(deliveryId, leaseOwner);
+        await repository.markQueued(deliveryId, attemptToken);
       }
       if (state === "delivered") {
         await repository.markDelivered(deliveryId, "event:transcript-proof");
@@ -1378,31 +1377,31 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     }
   });
 
-  it("terminalizes turn-observed input after its dispatch lease expires", async () => {
-    const deliveryId = "delivery-consume-after-lease-expiry";
+  it("terminalizes turn-observed input after its dispatch attempt expires", async () => {
+    const deliveryId = "delivery-consume-after-attempt-expiry";
     await register(
       deliveryId,
-      "relation-consume-after-lease-expiry",
+      "relation-consume-after-attempt-expiry",
       "runtime_followup",
     );
-    await repository.claimForTarget(
+    await repository.claimAttemptForTarget(
       deliveryId,
       "caller-old",
-      "expired-owner",
+      "expired-attempt",
       60_000,
     );
-    await repository.beginDispatch(deliveryId, "expired-owner");
+    await repository.beginDispatch(deliveryId, "expired-attempt");
     await harness.sql`
       UPDATE session_deliveries
-      SET lease_expires_at = NOW() - INTERVAL '1 second'
+      SET attempt_expires_at = NOW() - INTERVAL '1 second'
       WHERE delivery_id = ${deliveryId}
     `;
 
-    await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(1);
+    await expect(repository.expireStaleDeliveryAttempts()).resolves.toBe(1);
     await expect(repository.get(deliveryId)).resolves.toMatchObject({
       state: "pending",
       aggregate_state: "pending",
-      last_error: "delivery lease expired",
+      last_error: "delivery attempt expired",
     });
     await harness.sql`
       UPDATE session_deliveries
@@ -1476,7 +1475,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
             const deliveryId = `matrix-${intent}-${outcome}-${aggregate}-${hasReceipt}`;
             const receipt = hasReceipt ? `event:${deliveryId}` : null;
         await register(deliveryId, `relation-${deliveryId}`, intent);
-        await repository.claimForTarget(deliveryId, "caller-old", `worker-${deliveryId}`);
+        await repository.claimAttemptForTarget(deliveryId, "caller-old", `worker-${deliveryId}`);
         await repository.beginDispatch(deliveryId, `worker-${deliveryId}`);
             if (outcome === "accepted" && aggregate === "pending") {
           await repository.markQueued(deliveryId, `worker-${deliveryId}`);
@@ -1488,7 +1487,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
               await repository.markDelivered(deliveryId, receipt!);
               await repository.markConsumed(deliveryId, receipt!);
             } else if (outcome === "retryable") {
-          await repository.retryLeasedDelivery(
+          await repository.retryDeliveryAttempt(
             deliveryId,
             `worker-${deliveryId}`,
             "retryable",
@@ -1551,11 +1550,31 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
          'published', NULL, NULL)
     `;
 
+    await harness.sql.unsafe(`
+      DROP TRIGGER IF EXISTS trg_session_discard_notification_projection
+        ON session_deliveries;
+      DROP FUNCTION IF EXISTS session_discard_notification_projection_on_consumed();
+      ALTER TABLE session_deliveries
+        RENAME COLUMN attempt_token TO lease_owner;
+      ALTER TABLE session_deliveries
+        RENAME COLUMN attempt_expires_at TO lease_expires_at;
+      ALTER TABLE session_delivery_notification_outbox
+        RENAME COLUMN attempt_token TO lease_owner;
+      ALTER TABLE session_delivery_notification_outbox
+        RENAME COLUMN attempt_expires_at TO lease_expires_at;
+      ALTER TABLE session_delivery_attempts
+        RENAME COLUMN attempt_token TO lease_owner;
+    `);
     const migration = readFileSync(new URL(
       "../../../packages/db-schema/sql/migrations/067_execution_ownership_delivery_convergence.sql",
       import.meta.url,
     ), "utf8");
     await harness.sql.unsafe(migration);
+    const terminologyMigration = readFileSync(new URL(
+      "../../../packages/db-schema/sql/migrations/086_delivery_attempt_terminology.sql",
+      import.meta.url,
+    ), "utf8");
+    await harness.sql.unsafe(terminologyMigration);
 
     await expect(harness.sql<Array<{
       delivery_id: string;
@@ -1620,9 +1639,9 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       SET attempt_count = ${DELIVERY_MAX_ATTEMPTS - 1}
       WHERE delivery_id = 'delivery-budget'
     `;
-    await repository.claimForTarget("delivery-budget", "caller-old", "worker-budget");
+    await repository.claimAttemptForTarget("delivery-budget", "caller-old", "worker-budget");
 
-    await expect(repository.retryLeasedDelivery(
+    await expect(repository.retryDeliveryAttempt(
       "delivery-budget",
       "worker-budget",
       "target busy",
@@ -1661,7 +1680,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       SET attempt_count = ${DELIVERY_MAX_ATTEMPTS - 1}
       WHERE delivery_id = 'delivery-probe'
     `;
-    await repository.claimForTarget("delivery-probe", "caller-old", "worker-probe");
+    await repository.claimAttemptForTarget("delivery-probe", "caller-old", "worker-probe");
 
     // The real cycle is claim -> probe -> back to queued, repeating once a
     // second for as long as the transcript stays unsettled.
@@ -1674,7 +1693,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       )).resolves.toMatchObject({ state: "queued", aggregate_state: "pending" });
       await harness.sql`
         UPDATE session_deliveries
-        SET state = 'claimed', lease_owner = 'worker-probe'
+        SET state = 'claimed', attempt_token = 'worker-probe'
         WHERE delivery_id = 'delivery-probe'
       `;
     }
@@ -1698,7 +1717,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       SET created_at = NOW() - (${DELIVERY_MAX_AGE_MS + 1_000} * INTERVAL '1 millisecond')
       WHERE delivery_id = 'delivery-probe-aged'
     `;
-    await repository.claimForTarget("delivery-probe-aged", "caller-old", "worker-probe");
+    await repository.claimAttemptForTarget("delivery-probe-aged", "caller-old", "worker-probe");
 
     await expect(repository.recovery.deferQueuedTranscriptCheck(
       "delivery-probe-aged",
@@ -1718,9 +1737,9 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       SET created_at = NOW() - (${DELIVERY_MAX_AGE_MS + 1_000} * INTERVAL '1 millisecond')
       WHERE delivery_id = 'delivery-aged'
     `;
-    await repository.claimForTarget("delivery-aged", "caller-old", "worker-aged");
+    await repository.claimAttemptForTarget("delivery-aged", "caller-old", "worker-aged");
 
-    await expect(repository.retryLeasedDelivery(
+    await expect(repository.retryDeliveryAttempt(
       "delivery-aged",
       "worker-aged",
       "target busy",
@@ -1733,8 +1752,8 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
 
   it("schedules the next attempt on the database clock, not the caller's", async () => {
     await register("delivery-clock", "relation-clock", "durable_next_turn");
-    await repository.claimForTarget("delivery-clock", "caller-old", "worker-clock");
-    await repository.retryLeasedDelivery(
+    await repository.claimAttemptForTarget("delivery-clock", "caller-old", "worker-clock");
+    await repository.retryDeliveryAttempt(
       "delivery-clock",
       "worker-clock",
       "target busy",

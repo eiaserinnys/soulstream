@@ -1,6 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ClaudeBackgroundTaskRepository } from
@@ -27,12 +25,6 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
-    for (const migration of [
-      "../../../packages/db-schema/sql/migrations/045_session_deliveries.sql",
-      "../../../packages/db-schema/sql/migrations/046_claude_background_tasks.sql",
-    ]) {
-      await harness.sql.unsafe(readFileSync(new URL(migration, import.meta.url), "utf8"));
-    }
   }, 45_000);
 
   beforeEach(async () => {
@@ -237,7 +229,7 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
     });
   });
 
-  it("records restart terminal before recovering an expired dispatch lease", async () => {
+  it("records restart terminal before recovering an expired dispatch attempt", async () => {
     const lifecycle = makeLifecycle(harness.sql);
     await lifecycle.observe("caller-session", started("task-restart"));
     await expect(lifecycle.recoverAfterRestart()).resolves.toBe(1);
@@ -261,10 +253,10 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
     await repository.beginDispatch(task!.notification_delivery_id!, "worker-dead");
     await harness.sql`
       UPDATE session_deliveries
-      SET lease_expires_at = NOW() - INTERVAL '1 second'
+      SET attempt_expires_at = NOW() - INTERVAL '1 second'
       WHERE delivery_id = ${task!.notification_delivery_id!}
     `;
-    await expect(repository.releaseExpiredDeliveryLeases()).resolves.toBe(1);
+    await expect(repository.expireStaleDeliveryAttempts()).resolves.toBe(1);
     await harness.sql`
       UPDATE session_deliveries
       SET next_attempt_at = NOW()
@@ -274,7 +266,7 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
       "worker-recovered",
       1,
     )).resolves.toMatchObject([
-      { lease_owner: "worker-recovered", state: "claimed" },
+      { attempt_token: "worker-recovered", state: "claimed" },
     ]);
     await expect(repository.beginDispatch(
       task!.notification_delivery_id!,

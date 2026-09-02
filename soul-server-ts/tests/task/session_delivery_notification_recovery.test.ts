@@ -25,8 +25,8 @@ function row(
     projection_state: "publishing",
     target_receipt_id: null,
     target_receipt_at: null,
-    lease_owner: "notification-worker",
-    lease_expires_at: new Date("2026-07-26T00:01:00Z"),
+    attempt_token: "notification-worker",
+    attempt_expires_at: new Date("2026-07-26T00:01:00Z"),
     attempt_count: 0,
     next_attempt_at: now,
     last_error: null,
@@ -54,7 +54,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const poison = row("delivery-poison", "missing-target");
     const healthy = row("delivery-healthy", "healthy-target");
     const repository = {
-      releaseExpiredLeases: vi.fn().mockResolvedValue(0),
+      expireStaleNotificationAttempts: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([poison, healthy]),
       get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(healthy),
@@ -95,7 +95,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
   it("keeps a failed persistence attempt retryable", async () => {
     const pending = row("delivery-persist-failure", "target");
     const repository = {
-      releaseExpiredLeases: vi.fn().mockResolvedValue(0),
+      expireStaleNotificationAttempts: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([pending]),
       get: vi.fn(),
       markPublished: vi.fn(),
@@ -132,7 +132,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
       deliveryIntent: "completion_notification",
     };
     const repository = {
-      releaseExpiredLeases: vi.fn().mockResolvedValue(0),
+      expireStaleNotificationAttempts: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([legacy]),
       get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(legacy),
@@ -170,7 +170,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
       followup_attempt: 3,
     };
     const repository = {
-      releaseExpiredLeases: vi.fn().mockResolvedValue(0),
+      expireStaleNotificationAttempts: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([runtimeFollowup]),
       get: vi.fn(),
       markPublished: vi.fn().mockResolvedValue(runtimeFollowup),
@@ -205,7 +205,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
     const invalid = row("delivery-invalid", "target");
     invalid.payload = { ...invalid.payload, delivery_intent: "unknown" };
     const repository = {
-      releaseExpiredLeases: vi.fn().mockResolvedValue(0),
+      expireStaleNotificationAttempts: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([invalid]),
       get: vi.fn(),
       markPublished: vi.fn(),
@@ -232,7 +232,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
 
   it("passes node ownership and retry ceilings to the repository", async () => {
     const repository = {
-      releaseExpiredLeases: vi.fn().mockResolvedValue(0),
+      expireStaleNotificationAttempts: vi.fn().mockResolvedValue(0),
       claimDue: vi.fn().mockResolvedValue([]),
       get: vi.fn(),
       markPublished: vi.fn(),
@@ -249,7 +249,7 @@ describe("SessionDeliveryNotificationRecovery", () => {
 
     await recovery.recover("notification-worker", 25);
 
-    expect(repository.releaseExpiredLeases).toHaveBeenCalledWith(16, expect.any(Date));
+    expect(repository.expireStaleNotificationAttempts).toHaveBeenCalledWith(16, expect.any(Date));
     expect(repository.claimDue).toHaveBeenCalledWith(
       "node-test",
       "notification-worker",

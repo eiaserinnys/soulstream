@@ -31,15 +31,15 @@ export type DeliveryLedgerAdmission =
   | { kind: "suppressed"; deliveryId: string; reason: string }
   | { kind: "admitted"; deliveryId: string; row: SessionDeliveryRow };
 
-const OWNERSHIP_CONFLICT_RETRY_MAX_DELAY_MS = 10_000;
+const RESERVATION_CONFLICT_RETRY_MAX_DELAY_MS = 10_000;
 
 type LedgerRepository = Pick<
   SessionDeliveryRepository,
-  "register" | "claimForTarget" | "beginDispatch" | "get"
+  "register" | "claimAttemptForTarget" | "beginDispatch" | "get"
   | "markQueued" | "markDelivered"
   | "markUncertain" | "markConsumed" | "markConsumedByRelation"
   | "recordRelationConsumed"
-  | "retryLeasedDelivery" | "markPendingSuperseded"
+  | "retryDeliveryAttempt" | "markPendingSuperseded"
 > & {
   notifications: Pick<
     SessionDeliveryRepository["notifications"],
@@ -101,8 +101,8 @@ export class TaskDeliveryLedgerGate {
     if (registered.row.state === "claimed") {
       if (
         registered.row.target_session_id !== params.agentSessionId ||
-        !params.deliveryLeaseOwner ||
-        registered.row.lease_owner !== params.deliveryLeaseOwner
+        !params.deliveryAttemptToken ||
+        registered.row.attempt_token !== params.deliveryAttemptToken
       ) {
         return {
           kind: "suppressed",
@@ -117,7 +117,7 @@ export class TaskDeliveryLedgerGate {
       };
     }
     const explicitQueuedIntent =
-      registered.row.state === "queued" && !params.deliveryLeaseOwner;
+      registered.row.state === "queued" && !params.deliveryAttemptToken;
     if (registered.row.state !== "pending" && !explicitQueuedIntent) {
       return {
         kind: "suppressed",
@@ -126,10 +126,10 @@ export class TaskDeliveryLedgerGate {
       };
     }
 
-    const claimed = await repository.claimForTarget(
+    const claimed = await repository.claimAttemptForTarget(
       registered.row.delivery_id,
       params.agentSessionId,
-      params.deliveryLeaseOwner ?? `route:${randomUUID()}`,
+      params.deliveryAttemptToken ?? `route:${randomUUID()}`,
     );
     if (!claimed) {
       const current = await repository.get(registered.row.delivery_id);
@@ -148,7 +148,7 @@ export class TaskDeliveryLedgerGate {
     if (admission.kind !== "admitted") return admission;
     const dispatching = await this.requireRepository().beginDispatch(
       admission.deliveryId,
-      admission.row.lease_owner ?? undefined,
+      admission.row.attempt_token ?? undefined,
     );
     if (!dispatching) {
       const current = await this.requireRepository().get(admission.deliveryId);
@@ -182,15 +182,15 @@ export class TaskDeliveryLedgerGate {
     const repository = this.requireRepository();
     if ("queued" in result || "autoResumed" in result) {
       const disposition = "queued" in result ? "queued" : "auto_resume";
-      const leaseOwner = admission.row.lease_owner;
+      const attemptToken = admission.row.attempt_token;
       const targetSessionId = admission.row.target_session_id;
-      if (!leaseOwner || !targetSessionId) {
-        throw new Error(`Delivery ${admission.deliveryId} lost its dispatch lease`);
+      if (!attemptToken || !targetSessionId) {
+        throw new Error(`Delivery ${admission.deliveryId} lost its attempt token`);
       }
       if (isNotificationDeliveryIntent(admission.row.intent)) {
         const staged = await repository.notifications.stageWithQueuedDelivery({
           deliveryId: admission.deliveryId,
-          leaseOwner,
+          attemptToken,
           targetSessionId,
           disposition,
           payload: buildNotificationOutboxPayload(admission.row, disposition),
@@ -199,7 +199,7 @@ export class TaskDeliveryLedgerGate {
           throw new Error(`Delivery ${admission.deliveryId} could not stage notification`);
         }
       } else {
-        const queued = await repository.markQueued(admission.deliveryId, leaseOwner);
+        const queued = await repository.markQueued(admission.deliveryId, attemptToken);
         if (!queued) {
           const current = await repository.get(admission.deliveryId);
           const sameQueuedDelivery = current?.state === "queued"
@@ -217,28 +217,28 @@ export class TaskDeliveryLedgerGate {
       return;
     }
     if ("delivered" in result && result.delivered === true) {
-      const leaseOwner = admission.row.lease_owner;
-      if (!leaseOwner) {
-        throw new Error(`Delivery ${admission.deliveryId} lost its dispatch lease`);
+      const attemptToken = admission.row.attempt_token;
+      if (!attemptToken) {
+        throw new Error(`Delivery ${admission.deliveryId} lost its attempt token`);
       }
       await repository.markQueued(
         admission.deliveryId,
-        leaseOwner,
+        attemptToken,
       );
       return;
     }
-    const leaseOwner = admission.row.lease_owner;
-    if (!leaseOwner) {
-      throw new Error(`Delivery ${admission.deliveryId} lost its dispatch lease`);
+    const attemptToken = admission.row.attempt_token;
+    if (!attemptToken) {
+      throw new Error(`Delivery ${admission.deliveryId} lost its attempt token`);
     }
     if ("delivered" in result && result.delivered === null) {
       const retryExhausted =
         admission.row.attempt_count + 1 >= DELIVERY_NOTIFICATION_MAX_ATTEMPTS
         || admission.row.created_at <= notificationOldestAllowedCreatedAt();
       if (!retryExhausted) {
-        const retried = await repository.retryLeasedDelivery(
+        const retried = await repository.retryDeliveryAttempt(
           admission.deliveryId,
-          leaseOwner,
+          attemptToken,
           result.reason,
           deliveryRetryDelayMs(admission.row.attempt_count),
         );
@@ -250,7 +250,7 @@ export class TaskDeliveryLedgerGate {
     }
     const uncertain = await repository.markUncertain(
       admission.deliveryId,
-      leaseOwner,
+      attemptToken,
       "delivered" in result && result.delivered === null
         ? `delivery retry budget exhausted: ${result.reason}`
         : "delivery_result_not_accepted",
@@ -262,7 +262,7 @@ export class TaskDeliveryLedgerGate {
 
   async recordFailure(admission: DeliveryLedgerAdmission): Promise<void> {
     if (admission.kind !== "admitted") return;
-    // The end-to-end coordinator owns retry scheduling. Keeping the lease
+    // The end-to-end coordinator owns retry scheduling. Keeping the attempt token
     // intact lets a cross-node fallback reuse the same fenced attempt token.
   }
 
@@ -271,8 +271,8 @@ export class TaskDeliveryLedgerGate {
     retryAt: string,
   ): Promise<"scheduled" | "parked" | "lost"> {
     if (admission.kind !== "admitted") return "lost";
-    const leaseOwner = admission.row.lease_owner;
-    if (!leaseOwner) return "lost";
+    const attemptToken = admission.row.attempt_token;
+    if (!attemptToken) return "lost";
     const requestedDueAt = new Date(retryAt);
     if (!Number.isFinite(requestedDueAt.getTime())) {
       throw new Error(`Delivery ${admission.deliveryId} has an invalid reservation retry time`);
@@ -282,10 +282,10 @@ export class TaskDeliveryLedgerGate {
       || admission.row.created_at <= notificationOldestAllowedCreatedAt();
     const repository = this.requireRepository();
     if (exhausted) {
-      const parked = await repository.retryLeasedDelivery(
+      const parked = await repository.retryDeliveryAttempt(
         admission.deliveryId,
-        leaseOwner,
-        "automatic ownership retry budget exhausted; explicit intent required",
+        attemptToken,
+        "automatic attempt retry budget exhausted; explicit intent required",
         0,
       );
       return parked ? "parked" : "lost";
@@ -296,11 +296,11 @@ export class TaskDeliveryLedgerGate {
     const retryDelayMs = Math.max(0, Math.min(
       requestedDueAt.getTime() - Date.now(),
       deliveryRetryDelayMs(admission.row.attempt_count),
-      OWNERSHIP_CONFLICT_RETRY_MAX_DELAY_MS,
+      RESERVATION_CONFLICT_RETRY_MAX_DELAY_MS,
     ));
-    const retried = await repository.retryLeasedDelivery(
+    const retried = await repository.retryDeliveryAttempt(
       admission.deliveryId,
-      leaseOwner,
+      attemptToken,
       "reservation_in_flight",
       retryDelayMs,
     );
@@ -313,12 +313,12 @@ export class TaskDeliveryLedgerGate {
   ): Promise<void> {
     if (admission.kind !== "admitted") return;
     if (!isNotificationDeliveryIntent(admission.row.intent)) return;
-    const leaseOwner = admission.row.lease_owner;
-    if (!leaseOwner) return;
+    const attemptToken = admission.row.attempt_token;
+    if (!attemptToken) return;
     await projectNotificationReceipt(
       this.requireRepository().notifications,
       admission.deliveryId,
-      leaseOwner,
+      attemptToken,
       targetReceiptId,
     );
   }
@@ -329,11 +329,11 @@ export class TaskDeliveryLedgerGate {
   ): Promise<void> {
     if (admission.kind !== "admitted") return;
     if (!isNotificationDeliveryIntent(admission.row.intent)) return;
-    const leaseOwner = admission.row.lease_owner;
-    if (!leaseOwner) return;
+    const attemptToken = admission.row.attempt_token;
+    if (!attemptToken) return;
     await this.requireRepository().notifications.retry(
       admission.deliveryId,
-      leaseOwner,
+      attemptToken,
       error,
       notificationRetryAt(admission.row.attempt_count),
       DELIVERY_NOTIFICATION_MAX_ATTEMPTS,

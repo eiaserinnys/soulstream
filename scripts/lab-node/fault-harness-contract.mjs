@@ -279,7 +279,7 @@ export function buildDurableDeliverySeed(
   deliveryId,
   sessionId,
   text,
-  leaseOwner,
+  attemptToken,
   logicalMessageId,
 ) {
   requireNonEmpty(deliveryId, "delivery id");
@@ -324,7 +324,7 @@ export function buildDurableDeliverySeed(
       delivery_intent: "durable_next_turn",
       completion_id: completionId,
       relation_key: relationKey,
-      ...(leaseOwner ? { delivery_lease_owner: leaseOwner } : {}),
+      ...(attemptToken ? { delivery_attempt_token: attemptToken } : {}),
     },
   };
 }

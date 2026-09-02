@@ -6,8 +6,8 @@ import { PeriodicMaintenanceLoop } from "../runtime/periodic_maintenance_loop.js
  * Comfortably above a healthy drain, so the deadline means "something is
  * wrong" rather than "the batch was large".
  *
- * Each step's own batch budget already stops it well inside its 60s claim
- * lease, so a step that reaches this deadline is stuck, not busy — which is
+ * Each step's own batch budget already stops it well inside its 60s attempt
+ * TTL, so a step that reaches this deadline is stuck, not busy — which is
  * what makes the resulting error log worth reading.
  */
 const RECOVERY_STEP_TIMEOUT_MS = 90_000;
@@ -23,7 +23,7 @@ export interface CompletionDeliveryRecoveryWorkerDeps {
  *
  * The lane semantics — per-step deadlines, isolation of a hung step from its
  * siblings, and the stalled-tick watchdog — belong to PeriodicMaintenanceLoop.
- * `recoverPending` only releases abandoned admission leases; it cannot claim,
+ * `recoverPending` only expires stale admission attempts; it cannot claim,
  * dispatch, or auto-resume queued input. Transcript-proven ACK reconciliation
  * is a separate one-shot startup boundary.
  */
