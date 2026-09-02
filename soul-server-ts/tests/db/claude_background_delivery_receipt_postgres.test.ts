@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 
 import pino from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -34,12 +33,6 @@ describePostgres("Claude background delivery receipt PostgreSQL integration", ()
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
-    for (const migration of [
-      "../../../packages/db-schema/sql/migrations/045_session_deliveries.sql",
-      "../../../packages/db-schema/sql/migrations/046_claude_background_tasks.sql",
-    ]) {
-      await harness.sql.unsafe(readFileSync(new URL(migration, import.meta.url), "utf8"));
-    }
   }, 45_000);
 
   beforeEach(async () => {
