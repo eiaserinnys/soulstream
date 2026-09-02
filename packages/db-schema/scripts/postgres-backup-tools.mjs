@@ -28,16 +28,33 @@ export function postgresCli(databaseUrl, env = process.env) {
   };
 }
 
+// Version probes and schema-only probes finish in seconds; archive dump/restore of the
+// production database (events ~14 GB) takes longer than five minutes, so callers that
+// move the whole database pass their own budget (see readPostgresArchiveTimeoutMs).
+export const DEFAULT_POSTGRES_COMMAND_TIMEOUT_MS = 300_000;
+export const DEFAULT_POSTGRES_ARCHIVE_TIMEOUT_MS = 3_600_000;
+
+export function readPostgresArchiveTimeoutMs(env = process.env) {
+  const raw = env.HANIEL_POSTGRES_ARCHIVE_TIMEOUT_MS?.trim();
+  if (!raw) return DEFAULT_POSTGRES_ARCHIVE_TIMEOUT_MS;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error("HANIEL_POSTGRES_ARCHIVE_TIMEOUT_MS must be a positive integer of milliseconds");
+  }
+  return value;
+}
+
 export function runPostgresCommand(
   command,
   args,
   options = {},
   spawn = spawnSync,
 ) {
+  const { timeout = DEFAULT_POSTGRES_COMMAND_TIMEOUT_MS, ...spawnOptions } = options;
   const result = spawn(command, args, {
-    ...options,
+    ...spawnOptions,
     encoding: "utf8",
-    timeout: 300_000,
+    timeout,
   });
   if (result.error) {
     if (result.error.code === "ENOENT") {

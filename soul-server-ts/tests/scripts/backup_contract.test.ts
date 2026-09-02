@@ -11,8 +11,13 @@ import {
 } from "../../../packages/db-schema/scripts/backup.mjs";
 
 import { makeTempDirSync } from "../helpers/temp_dir.js";
-import { assertPostgresBackupPrerequisites } from
-  "../../../packages/db-schema/scripts/postgres-backup-tools.mjs";
+import {
+  DEFAULT_POSTGRES_ARCHIVE_TIMEOUT_MS,
+  DEFAULT_POSTGRES_COMMAND_TIMEOUT_MS,
+  assertPostgresBackupPrerequisites,
+  readPostgresArchiveTimeoutMs,
+  runPostgresCommand,
+} from "../../../packages/db-schema/scripts/postgres-backup-tools.mjs";
 import { assertRollbackUnsafeApplyGates, preflightPendingMigrations } from
   "../../../packages/db-schema/scripts/migrate.mjs";
 
@@ -174,4 +179,47 @@ describe("pending destructive backup contract", () => {
     })).rejects.toThrow("objects have another owner");
   });
 
+});
+
+describe("archive command timeout budget (R46)", () => {
+  it("keeps the five-minute default for probes but lets archive callers pass their own budget", () => {
+    const spawn = vi.fn(() => ({ error: null, status: 0, stdout: "", stderr: "" }));
+    runPostgresCommand("pg_dump", ["--version"], { env: {} }, spawn);
+    runPostgresCommand("pg_dump", ["--format", "custom"], { env: {}, timeout: 42_000 }, spawn);
+    expect(spawn.mock.calls[0]?.[2]).toMatchObject({ timeout: DEFAULT_POSTGRES_COMMAND_TIMEOUT_MS });
+    expect(spawn.mock.calls[1]?.[2]).toMatchObject({ timeout: 42_000 });
+  });
+
+  it("reads the archive budget from HANIEL_POSTGRES_ARCHIVE_TIMEOUT_MS and rejects garbage", () => {
+    expect(readPostgresArchiveTimeoutMs({})).toBe(DEFAULT_POSTGRES_ARCHIVE_TIMEOUT_MS);
+    expect(DEFAULT_POSTGRES_ARCHIVE_TIMEOUT_MS).toBeGreaterThan(DEFAULT_POSTGRES_COMMAND_TIMEOUT_MS);
+    expect(readPostgresArchiveTimeoutMs({ HANIEL_POSTGRES_ARCHIVE_TIMEOUT_MS: "900000" })).toBe(900_000);
+    expect(() => readPostgresArchiveTimeoutMs({ HANIEL_POSTGRES_ARCHIVE_TIMEOUT_MS: "soon" }))
+      .toThrow("HANIEL_POSTGRES_ARCHIVE_TIMEOUT_MS");
+    expect(() => readPostgresArchiveTimeoutMs({ HANIEL_POSTGRES_ARCHIVE_TIMEOUT_MS: "0" }))
+      .toThrow("HANIEL_POSTGRES_ARCHIVE_TIMEOUT_MS");
+  });
+
+  it("dumps the whole database with the archive budget, not the probe budget", async () => {
+    const directory = makeTempDirSync("soul-backup-timeout-");
+    tempDirs.push(directory);
+    const spawn = vi.fn((command: string, args: string[]) => {
+      if (args.includes("--file")) {
+        const target = args[args.indexOf("--file") + 1]!;
+        require("node:fs").writeFileSync(target, "PGDMP");
+      }
+      return { error: null, status: 0, stdout: "", stderr: "" };
+    });
+    await createBackup({
+      env: { ...backupEnvironment(directory), HANIEL_POSTGRES_ARCHIVE_TIMEOUT_MS: "1200000" },
+      spawn,
+      planRead: async () => ({
+        state: "current",
+        bootstrap: [],
+        pending: [{ id: "085b_drop.sql", rollback_compatibility: "restore_required", destructive: true }],
+      }),
+    });
+    const dumpCall = spawn.mock.calls.find(([command, args]) => command === "pg_dump" && args.includes("--format"));
+    expect(dumpCall?.[2]).toMatchObject({ timeout: 1_200_000 });
+  });
 });

@@ -21,7 +21,9 @@ import {
   sha256,
 } from "./migration-contract.mjs";
 import { readMigrationPlan } from "./migrate.mjs";
-import { postgresCli, runPostgresCommand } from "./postgres-backup-tools.mjs";
+import { postgresCli, runPostgresCommand,
+  readPostgresArchiveTimeoutMs,
+} from "./postgres-backup-tools.mjs";
 
 const METADATA_NAME = "database-backup.json";
 const DUMP_NAME = "database.dump";
@@ -121,7 +123,7 @@ export async function createBackup(
   runPostgresCommand(
     "pg_dump",
     [...cli.args, "--format", "custom", "--file", dumpPath],
-    { env: cli.env },
+    { env: cli.env, timeout: readPostgresArchiveTimeoutMs(env) },
     spawn,
   );
   const size = (await stat(dumpPath)).size;
@@ -257,7 +259,7 @@ export async function restoreBackup(
       "--exit-on-error",
       dumpPath,
     ],
-    { env: cli.env },
+    { env: cli.env, timeout: readPostgresArchiveTimeoutMs(env) },
     spawn,
   );
 
