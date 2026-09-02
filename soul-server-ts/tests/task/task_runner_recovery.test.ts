@@ -56,29 +56,6 @@ describe("TaskRunnerRecovery", () => {
     expect(applyRunnerTerminalFact).not.toHaveBeenCalled();
   });
 
-  it("accepts only stable complete ownerless inventory observations", async () => {
-    const current = task();
-    const recovery = subject();
-    const first = {
-      manifestId: "sha-a",
-      runtimeEnvIdentity: "env-a",
-      registrationId: "registration-a",
-      pid: 4123,
-      startIdentity: "start-4123",
-      executionCommandId: "execute-a",
-      observedAt: new Date("2026-08-11T00:00:30.000Z"),
-    };
-    await expect(recovery.reconcileExecutionOwnershipObservations(current, {
-      first,
-      second: { ...first, observedAt: new Date("2026-08-11T00:00:45.000Z") },
-      leaseExpiresAt: new Date("2026-08-11T00:02:45.000Z"),
-    })).resolves.toBe(true);
-    await expect(recovery.reconcileExecutionOwnershipObservations(current, {
-      first,
-      second: { ...first, registrationId: "registration-b" },
-      leaseExpiresAt: new Date("2026-08-11T00:02:45.000Z"),
-    })).resolves.toBe(false);
-  });
 });
 
 function subject(overrides: Record<string, unknown> = {}): TaskRunnerRecovery {

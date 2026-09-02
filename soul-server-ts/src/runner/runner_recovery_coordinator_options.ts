@@ -21,11 +21,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   taskManager: Pick<
     TaskManager,
     "hydrateRunnerRecoveryTask" | "markRunnerFailure"
-      | "listOwnerNullRunningInventory"
-  > & Partial<Pick<
-    TaskManager,
-    "projectClosedRunner" | "reconcileExecutionOwnershipObservations"
-  >>;
+  > & Partial<Pick<TaskManager, "projectClosedRunner">>;
   taskExecutor: Pick<
     TaskExecutor,
     | "recoverRegisteredRunner"

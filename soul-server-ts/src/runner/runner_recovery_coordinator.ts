@@ -39,14 +39,12 @@ import {
 } from "./runner_adoption_failure_recovery.js";
 import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
-import { OwnerNullInventoryReconciler } from "./owner_null_inventory_reconciler.js";
 import { RunnerSessionGarbageCollectionScheduler } from "./runner_session_gc_scheduler.js";
 import { UnreadableRunnerRegistrationHandler } from "./unreadable_runner_registration_handler.js";
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
-  private readonly ownerNullInventoryReconciler: OwnerNullInventoryReconciler;
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
   private readonly recoveryLogger: RunnerRecoveryLogger;
@@ -59,18 +57,6 @@ export class RunnerRecoveryCoordinator {
   private stopped = false;
   constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
     this.registrationControl = new RunnerRegistrationControl(options.spawner);
-    this.ownerNullInventoryReconciler = new OwnerNullInventoryReconciler({
-      nodeId: options.nodeId,
-      scanIntervalMs: options.scanIntervalMs,
-      leaseTimeoutMs: options.leaseTimeoutMs,
-      taskManager: options.taskManager as Required<Pick<
-        typeof options.taskManager,
-        "listOwnerNullRunningInventory" | "hydrateRunnerRecoveryTask"
-          | "reconcileExecutionOwnershipObservations"
-      >>,
-      logger: options.logger,
-      now: options.now ?? Date.now,
-    });
     this.sessionGarbageCollectionScheduler = new RunnerSessionGarbageCollectionScheduler({
       ...(options.sessionGarbageCollector
         ? {
@@ -166,7 +152,6 @@ export class RunnerRecoveryCoordinator {
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
     );
-    await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
     await this.unreadableRegistrationHandler.handle(scan.errors);
     this.recoveryLogger.prune(scan.registrations);
     this.adoptionFailureRecovery.prune(

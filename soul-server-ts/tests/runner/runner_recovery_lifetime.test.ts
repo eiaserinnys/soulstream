@@ -25,7 +25,7 @@ describe("RunnerRecoveryCoordinator recovery lifetime", () => {
     expect(harness.recoveryModes).toEqual(["offline"]);
   });
 
-  it("reaches replacement after failed adoption without a host-local recovery lease", async () => {
+  it("terminalizes failed adoption through offline replay without a replacement", async () => {
     const running = runnerRegistration({ lifecycleState: "running", pidAlive: true });
     const stopped = runnerRegistration({ lifecycleState: "running", pidAlive: false });
     const harness = makeHarness({
@@ -39,7 +39,7 @@ describe("RunnerRecoveryCoordinator recovery lifetime", () => {
     await harness.coordinator.scanOnce();
     await harness.coordinator.waitForSettled();
 
-    expect(harness.replacementStarts).toBe(1);
+    expect(harness.recoveryModes).toEqual(["adopt", "offline"]);
   });
 });
 
@@ -76,10 +76,7 @@ function makeHarness(input: {
   const terminate = vi.fn(async () => {});
   const invalidateRegistration = vi.fn(async () => {});
   const retireTerminalRegistration = vi.fn(async () => {});
-  let replacementStarts = 0;
-  const restartRegisteredRunner = vi.fn(async () => {
-    replacementStarts += 1;
-  });
+  const markRunnerFailure = vi.fn(async () => {});
   const recoverRegisteredRunner = vi.fn((
     candidate: Task,
     _config: unknown,
@@ -103,18 +100,11 @@ function makeHarness(input: {
     scanIntervalMs: 15_000,
     taskManager: {
       hydrateRunnerRecoveryTask: vi.fn(async () => task),
-      markRunnerFailureAndResume: vi.fn(async (
-        recoveredTask: Task,
-        _message: string,
-        resume: (candidate: Task) => void,
-      ) => resume(recoveredTask)),
-      listOwnerNullRunningInventory: vi.fn(async () => []),
+      markRunnerFailure,
       projectClosedRunner: vi.fn(async () => true),
-      reconcileExecutionOwnershipObservations: vi.fn(async () => false),
     } as never,
     taskExecutor: {
       recoverRegisteredRunner: recoverRegisteredRunner as never,
-      restartRegisteredRunner,
     },
     closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
@@ -133,11 +123,7 @@ function makeHarness(input: {
     runner,
     detachHost,
     terminate,
-    restartRegisteredRunner,
     recoveryModes,
-    get replacementStarts() {
-      return replacementStarts;
-    },
     setRegistration(registration: RunnerRegistration) {
       scannedRegistration = registration;
     },

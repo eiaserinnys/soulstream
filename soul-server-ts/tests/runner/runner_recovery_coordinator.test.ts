@@ -253,19 +253,15 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   it("recovers a live registered owner-null runner on the first scan", async () => {
     const recoveredTask = task("session-a");
     recoveredTask.hydratedFromDb = true;
-    const reconcileExecutionOwnershipObservations = vi.fn(async () => false);
     const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => recoveredTask),
-        markRunnerFailureAndResume: vi.fn(async () => {}),
         projectClosedRunner: vi.fn(async () => true),
-        reconcileExecutionOwnershipObservations,
       },
     });
 
     await subject.coordinator.scanOnce();
 
-    expect(reconcileExecutionOwnershipObservations).not.toHaveBeenCalled();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       recoveredTask,
@@ -291,19 +287,15 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       executionCommandId: "owner:stable-a",
       ownershipGeneration: 30,
     };
-    const reconcileExecutionOwnershipObservations = vi.fn(async () => false);
     const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => recoveredTask),
-        markRunnerFailureAndResume: vi.fn(async () => {}),
         projectClosedRunner: vi.fn(async () => true),
-        reconcileExecutionOwnershipObservations,
       },
     });
 
     await subject.coordinator.scanOnce();
 
-    expect(reconcileExecutionOwnershipObservations).not.toHaveBeenCalled();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       recoveredTask,
@@ -311,81 +303,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
-    );
-  });
-
-  it("converges e5d01ad7 and c643e966 owner-null inventory rows without registrations", async () => {
-    let now = RECOVERY_NOW_MS;
-    const sessions = ["e5d01ad7-regression", "c643e966-regression"];
-    const tasks = new Map(sessions.map((sessionId) => {
-      const candidate = task(sessionId);
-      candidate.hydratedFromDb = true;
-      return [sessionId, candidate] as const;
-    }));
-    const reconcileExecutionOwnershipObservations = vi.fn(async (candidate: Task) => {
-      candidate.status = "interrupted";
-      return false;
-    });
-    const subject = makeSubject([], now, [], {
-      now: () => now,
-      taskManager: {
-        listOwnerNullRunningInventory: vi.fn(async () => sessions.map((sessionId) => ({
-          session_id: sessionId,
-          node_id: "node-a",
-          updated_at: new Date("2026-08-11T00:00:00.000Z"),
-        }))),
-        hydrateRunnerRecoveryTask: vi.fn(async (sessionId) => tasks.get(sessionId) ?? null),
-        markRunnerFailureAndResume: vi.fn(async () => {}),
-        projectClosedRunner: vi.fn(async () => true),
-        reconcileExecutionOwnershipObservations,
-      },
-    });
-
-    await subject.coordinator.scanOnce();
-    now += 15_000;
-    await subject.coordinator.scanOnce();
-
-    expect(reconcileExecutionOwnershipObservations).toHaveBeenCalledTimes(2);
-    for (const sessionId of sessions) {
-      expect(tasks.get(sessionId)?.status).toBe("interrupted");
-    }
-    for (const [, input] of reconcileExecutionOwnershipObservations.mock.calls) {
-      expect(input).toMatchObject({
-        first: {
-          manifestId: null,
-          registrationId: null,
-          pid: null,
-          startIdentity: null,
-          executionCommandId: null,
-        },
-        second: {
-          manifestId: null,
-          registrationId: null,
-          pid: null,
-          startIdentity: null,
-          executionCommandId: null,
-        },
-        leaseExpiresAt: expect.any(Date),
-      });
-    }
-  });
-
-  it("isolates owner-null inventory read failure from registration recovery", async () => {
-    const current = registration({ lifecycleState: "running" });
-    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
-      taskManager: {
-        listOwnerNullRunningInventory: vi.fn(async () => {
-          throw new Error("orchestrator unavailable");
-        }),
-      },
-    });
-
-    await subject.coordinator.scanOnce();
-
-    expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
-    expect(subject.logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ nodeId: "node-a" }),
-      "owner-null running inventory read failed",
     );
   });
 
@@ -1958,8 +1875,6 @@ function makeSubject(
   const markRunnerFailure = vi.fn(async () => {});
   const markRunnerFailureAndResume = markRunnerFailure;
   const projectClosedRunner = vi.fn(async () => true);
-  const listOwnerNullRunningInventory = vi.fn(async () => []);
-  const reconcileExecutionOwnershipObservations = vi.fn(async () => false);
   const terminate = vi.fn(async () => {});
   const invalidateRegistration = vi.fn(async () => {});
   const retireTerminalRegistration = vi.fn(async () => {});
@@ -1973,8 +1888,6 @@ function makeSubject(
     hydrateRunnerRecoveryTask,
     markRunnerFailure,
     projectClosedRunner,
-    listOwnerNullRunningInventory,
-    reconcileExecutionOwnershipObservations,
   };
   const options: RunnerRecoveryCoordinatorOptions = {
     nodeId: "node-a",

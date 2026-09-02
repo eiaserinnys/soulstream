@@ -88,8 +88,6 @@ export async function composeRunnerRecoveryCoordinator(options: {
     | "hydrateRunnerRecoveryTask"
     | "markRunnerFailure"
     | "projectClosedRunner"
-    | "reconcileExecutionOwnershipObservations"
-    | "listOwnerNullRunningInventory"
   >;
   taskExecutor: Pick<
     TaskExecutor,

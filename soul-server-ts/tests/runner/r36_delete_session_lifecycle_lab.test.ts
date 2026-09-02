@@ -113,10 +113,8 @@ describe("R36 delete_session lifecycle lab", () => {
       deleteTask: async (sessionId: string) => await route.deleteTask(sessionId),
       hydrateRunnerRecoveryTask: vi.fn(async (sessionId: string) =>
         centralSessions.has(sessionId) ? tasks.get(sessionId) ?? task(sessionId) : null),
-      listOwnerNullRunningInventory: vi.fn(async () => []),
       markRunnerFailureAndResume: vi.fn(async () => {}),
       projectClosedRunner: vi.fn(async () => true),
-      reconcileExecutionOwnershipObservations: vi.fn(async () => false),
     } as unknown as TaskManager;
     const catalogService = {
       // RED seam: the legacy handler deletes only the central row.
@@ -417,10 +415,8 @@ function silentLogger() {
 function missingSessionTaskManager(): TaskManager {
   return {
     hydrateRunnerRecoveryTask: vi.fn(async () => null),
-    listOwnerNullRunningInventory: vi.fn(async () => []),
     markRunnerFailureAndResume: vi.fn(async () => {}),
     projectClosedRunner: vi.fn(async () => true),
-    reconcileExecutionOwnershipObservations: vi.fn(async () => false),
   } as unknown as TaskManager;
 }
 
