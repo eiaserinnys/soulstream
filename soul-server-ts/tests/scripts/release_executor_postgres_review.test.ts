@@ -201,6 +201,16 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
       expect(kinds).toContain("user_mapping");
       expect(kinds).toContain("subscription");
 
+      const sibling = postgres(databaseUrl, { max: 1, idle_timeout: 1 });
+      try {
+        const siblingInventory = await inspectUserObjectInventory(sibling);
+        expect(siblingInventory.objects).not.toEqual(expect.arrayContaining([
+          expect.objectContaining({ kind: "subscription", identity: "review_subscription" }),
+        ]));
+      } finally {
+        await sibling.end({ timeout: 5 });
+      }
+
       const url = safeTestDatabaseUrl(
         databaseUrlForRole(adminUrl, reader, "unprivileged-secret"),
       );
