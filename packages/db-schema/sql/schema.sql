@@ -1668,59 +1668,22 @@ BEGIN
         RAISE EXCEPTION 'terminal event id must be a positive integer';
     END IF;
 
-    IF EXISTS (
-        SELECT 1
-          FROM information_schema.columns
-         WHERE table_schema = current_schema()
-           AND table_name = 'sessions'
-           AND column_name = 'execution_manifest_id'
-    ) THEN
-        -- 085a is deployed before the code rollout. Keep the previous release's
-        -- all-or-none row constraint valid without retaining a static dependency
-        -- on columns that 085b removes.
-        EXECUTE $update$
-            UPDATE sessions AS session
-               SET status = $1,
-                   termination_reason = $2,
-                   termination_detail = $3,
-                   review_state = $4,
-                   last_assistant_text = $5,
-                   termination_event_id = $6,
-                   execution_manifest_id = NULL,
-                   execution_runtime_env_identity = NULL,
-                   execution_registration_id = NULL,
-                   execution_pid = NULL,
-                   execution_start_identity = NULL,
-                   execution_command_id = NULL,
-                   execution_lease_expires_at = NULL,
-                   updated_at = $7
-             WHERE session.session_id = $8
-               AND session.status NOT IN ('completed', 'error', 'interrupted')
-               AND (
-                   session.termination_event_id IS NULL
-                   OR session.termination_event_id < $6
-               )
-        $update$ USING p_status, p_termination_reason, p_termination_detail,
-            p_review_state, p_last_assistant_text, p_terminal_event_id,
-            p_updated_at, p_session_id;
-    ELSE
-        UPDATE sessions AS session
-           SET status = p_status,
-               termination_reason = p_termination_reason,
-               termination_detail = p_termination_detail,
-               review_state = p_review_state,
-               last_assistant_text = p_last_assistant_text,
-               termination_event_id = p_terminal_event_id,
-               execution_registration_id = NULL,
-               execution_command_id = NULL,
-               updated_at = p_updated_at
-         WHERE session.session_id = p_session_id
-           AND session.status NOT IN ('completed', 'error', 'interrupted')
-           AND (
-               session.termination_event_id IS NULL
-               OR session.termination_event_id < p_terminal_event_id
-           );
-    END IF;
+    UPDATE sessions AS session
+       SET status = p_status,
+           termination_reason = p_termination_reason,
+           termination_detail = p_termination_detail,
+           review_state = p_review_state,
+           last_assistant_text = p_last_assistant_text,
+           termination_event_id = p_terminal_event_id,
+           execution_registration_id = NULL,
+           execution_command_id = NULL,
+           updated_at = p_updated_at
+     WHERE session.session_id = p_session_id
+       AND session.status NOT IN ('completed', 'error', 'interrupted')
+       AND (
+           session.termination_event_id IS NULL
+           OR session.termination_event_id < p_terminal_event_id
+       );
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
 
     RETURN QUERY

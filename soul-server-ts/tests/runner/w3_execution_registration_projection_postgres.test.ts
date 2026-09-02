@@ -108,7 +108,7 @@ describe("Wave 3 execution registration projection", () => {
       conname === "sessions_execution_owner_all_or_none_check")).toBe(false);
   });
 
-  it("R2 records a registration, passes the ingress fence, clears it at terminal, and hydrates it", async () => {
+  it("R2 uses the fresh post-085b schema to record, fence, hydrate, and clear a registration", async () => {
     await postgres.sql`
       INSERT INTO sessions (
         session_id, session_type, status, agent_id, node_id, review_state,
@@ -167,7 +167,7 @@ describe("Wave 3 execution registration projection", () => {
     });
   });
 
-  it("085a terminal compatibility clears the previous release's all-or-none identity", async () => {
+  it("085a compatibility clears the legacy identity and 085b converges terminal writes to two columns", async () => {
     await postgres.sql.unsafe(`
       ALTER TABLE sessions
         ADD COLUMN execution_manifest_id TEXT,
@@ -195,6 +195,11 @@ describe("Wave 3 execution registration projection", () => {
           )
         )
     `);
+    const compatibilityMigration = readFileSync(fileURLToPath(new URL(
+      "../../../packages/db-schema/sql/migrations/085a_execution_registration_projection.sql",
+      import.meta.url,
+    )), "utf8");
+    await postgres.sql.unsafe(compatibilityMigration);
     await postgres.sql`
       INSERT INTO sessions (
         session_id, session_type, status, agent_id, node_id, review_state,
@@ -246,5 +251,50 @@ describe("Wave 3 execution registration projection", () => {
         )
     `;
     expect(remainingColumns).toEqual([]);
+
+    const [finalFunction] = await postgres.sql<Array<{ definition: string }>>`
+      SELECT pg_get_functiondef(procedure.oid) AS definition
+      FROM pg_proc AS procedure
+      JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+      WHERE namespace.nspname = current_schema()
+        AND procedure.proname = 'session_apply_terminal_transition'
+    `;
+    expect(finalFunction?.definition).not.toContain("information_schema.columns");
+    expect(finalFunction?.definition).not.toContain("EXECUTE $update$");
+    expect(finalFunction?.definition).not.toContain("execution_manifest_id");
+    expect(finalFunction?.definition).toContain("execution_registration_id = NULL");
+    expect(finalFunction?.definition).toContain("execution_command_id = NULL");
+
+    await postgres.sql`
+      INSERT INTO sessions (
+        session_id, session_type, status, agent_id, node_id, review_state,
+        execution_registration_id, execution_command_id
+      ) VALUES (
+        'w3-post-085b-terminal', 'codex', 'running', 'agent-w3',
+        ${OWNERLESS_NODE_ID}, 'not_required', 'registration-final', 'command-final'
+      )
+    `;
+    const finalApplication = await postgres.sql<Array<{ applied: boolean }>>`
+      SELECT applied
+      FROM session_apply_terminal_transition(
+        'w3-post-085b-terminal', 'completed', 'completed_ok', NULL,
+        'not_required', NULL, 4816, NOW()
+      )
+    `;
+    expect(finalApplication).toEqual([{ applied: true }]);
+    const [finalRow] = await postgres.sql<Array<{
+      status: string;
+      execution_registration_id: string | null;
+      execution_command_id: string | null;
+    }>>`
+      SELECT status, execution_registration_id, execution_command_id
+      FROM sessions
+      WHERE session_id = 'w3-post-085b-terminal'
+    `;
+    expect(finalRow).toEqual({
+      status: "completed",
+      execution_registration_id: null,
+      execution_command_id: null,
+    });
   });
 });
