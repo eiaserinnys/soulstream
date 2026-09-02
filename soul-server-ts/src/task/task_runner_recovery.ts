@@ -10,9 +10,9 @@ export interface TaskRunnerRecoveryDeps {
 }
 
 /**
- * Rehydrates runner-owned tasks and converts an unrecoverable runner lease into
- * the ordinary terminal-error transition. A later explicit input or resume owns
- * any replacement execution.
+ * Rehydrates runner-backed tasks and converts an unrecoverable runner into the
+ * ordinary terminal-error transition. A later explicit input or resume may
+ * start another execution.
  */
 export class TaskRunnerRecovery {
   constructor(private readonly deps: TaskRunnerRecoveryDeps) {}

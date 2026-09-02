@@ -1590,10 +1590,10 @@ CREATE OR REPLACE FUNCTION session_get(
     SELECT * FROM sessions WHERE session_id = p_session_id;
 $$;
 
--- New and resumed turns no longer acquire execution ownership. A session may
--- therefore have a historical generation while its current turn is ownerless.
--- The current owner columns, not the monotonic history counter, decide whether
--- the canonical ownerless terminal transition may apply.
+-- New and resumed turns record a generation and exact runtime identity without
+-- electing or leasing an owner. Terminal transition is the single writer that
+-- clears that compatibility projection; the monotonic generation remains as
+-- ingress stale-event evidence.
 CREATE OR REPLACE FUNCTION session_apply_terminal_transition(
     p_session_id           TEXT,
     p_status               TEXT,

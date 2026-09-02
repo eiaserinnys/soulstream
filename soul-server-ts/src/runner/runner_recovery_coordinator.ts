@@ -522,8 +522,8 @@ export class RunnerRecoveryCoordinator {
     }
     if (task.runner || task.executionPromise) {
       // This guard returned in silence for three hours during the 260822
-      // outage: a settled execution promise left behind by a failed ownership
-      // reservation reads exactly like a live execution, so every later scan
+      // outage: a settled execution promise left behind by failed startup
+      // reads exactly like a live execution, so every later scan
       // skipped the offline replay without saying so. An offline replay that
       // cannot run is a stranded terminal fact, never routine.
       this.options.logger[mode === "offline" ? "warn" : "info"](

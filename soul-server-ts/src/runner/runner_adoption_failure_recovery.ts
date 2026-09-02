@@ -180,7 +180,7 @@ export class RunnerAdoptionFailureRecovery {
       // Absence is not supersession. An adoption that rejects before it assigns
       // `task.executionPromise` leaves the slot empty, and reading empty as "a
       // newer execution owns this" abandons a live runner that still holds the
-      // session's execution ownership.
+      // session's execution slot.
       const supersededBy = supersedingExecution(task, completion, recoveryRunner);
       if (supersededBy) {
         // A different runner owns the task now, so the rejected attempt no

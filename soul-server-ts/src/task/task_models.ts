@@ -55,7 +55,7 @@ export type PendingTerminationHint = Exclude<
   "completed_ok" | "unknown"
 >;
 
-/** Single in-memory barrier for one execution ownership admission. */
+/** Single in-memory barrier for one execution startup. */
 export interface ExecutionActivation {
   promise: Promise<void>;
   resolve(): void;
@@ -423,7 +423,7 @@ export interface Task {
   /** task_executor.startExecution 반환 promise. shutdown 시 await. */
   executionPromise?: Promise<void>;
 
-  /** Single execution ownership admission barrier. */
+  /** Single execution startup barrier. */
   executionActivation?: ExecutionActivation;
 
   /** Runtime-only explicit cancel request serialized against turn finalization. */
