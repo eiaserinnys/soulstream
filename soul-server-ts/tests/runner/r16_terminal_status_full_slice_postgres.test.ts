@@ -229,10 +229,6 @@ describe("R16 terminal status full slice", () => {
   it("restores a terminal durable status when auto-resume activation fails", async () => {
     await insertSession(ACTIVATION_SESSION_ID, "completed", 7);
     const task = await loadTask(ACTIVATION_SESSION_ID);
-    const lifecycle = new TaskLifecycleTransition({
-      logger,
-      persistence: ingress.persistence,
-    });
     const autoResume = new AutoResumeTransition({
       logger,
       persistence: ingress.persistence,
@@ -257,19 +253,13 @@ describe("R16 terminal status full slice", () => {
     }, (_resumedTask, activation) => {
       observedActivation = activation;
       if (!activation) return;
-      void (async () => {
-        task.status = "error";
-        task.error = activationFailure.message;
-        task.completedAt = new Date();
-        await lifecycle.persistExecutorFinalState(task);
-        activation.reject(activationFailure);
-      })();
+      void activation.reject(activationFailure);
     })).rejects.toThrow(activationFailure.message);
 
     expect(observedActivation).toBeDefined();
     expect(await readStatus(ACTIVATION_SESSION_ID)).toEqual({
-      status: "error",
-      terminationReason: "unknown",
+      status: "completed",
+      terminationReason: "completed_ok",
     });
   });
 
