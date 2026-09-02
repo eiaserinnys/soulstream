@@ -1,6 +1,6 @@
 # 러너 생애주기
 
-최종 대조 커밋 SHA: `b05c1194f2c542cf526dec68890c3678f8e4b9c3`
+최종 대조 커밋 SHA: `d5f21d50833dd530a2688f7778b5980402fee6ee`
 
 > 범위 주석: process liveness의 단일 owner는 OS-enforced kernel writer lock이다. registration id·PID·start identity는 그 lock owner를 식별하고 세대 교체를 fence하는 내구 metadata다. DB execution generation은 event stale fence일 뿐 process owner나 replacement 권한이 아니다.
 

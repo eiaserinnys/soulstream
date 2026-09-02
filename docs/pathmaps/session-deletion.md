@@ -1,6 +1,6 @@
 # 세션 삭제 경로
 
-최종 대조 커밋 SHA: `b05c1194f2c542cf526dec68890c3678f8e4b9c3`
+최종 대조 커밋 SHA: `d5f21d50833dd530a2688f7778b5980402fee6ee`
 
 > 범위 주석: 삭제의 단일 owner는 `TaskLifecycleRoute.deleteTask`다. CatalogService는 중앙 row를 삭제하지 않고 삭제 완료 뒤 catalog projection만 발행한다. 과거 중앙-only 삭제 residue는 별도 scanner 없이 기존 15초 recovery scan과 시간당 GC가 수렴시키며, DB execution owner reproof는 이 경로에 없다.
 
