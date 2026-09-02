@@ -2,6 +2,8 @@
 
 > 갱신 강제 계약: 이 지도들이 다루는 경로를 바꾸는 PR은 해당 장 갱신을 같은 PR에 포함한다.
 
+> Wave 1 기준: DB execution generation은 stale event fence용 기록이며 owner 선출·lease·replacement 권한이 아니다. process liveness의 정본은 runner kernel lock이다.
+
 | 장 | 정본 범위 |
 | --- | --- |
 | [메시지에서 종단까지](message-to-terminal.md) | 메시지 접수·라우팅·전이·실행·종단·투영·통지 |

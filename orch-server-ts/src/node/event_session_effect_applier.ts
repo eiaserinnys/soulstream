@@ -64,11 +64,11 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
         ${new Date(effect.updated_at)}
       )
     `;
-    const application = canonicalTransitionApplication(rows, "execution acquire");
+    const application = canonicalTransitionApplication(rows, "execution generation record");
     const row = rows[0]!;
     const generation = Number(row.execution_generation);
     if (!Number.isSafeInteger(generation) || generation < 0) {
-      throw new Error("execution acquire returned an invalid generation");
+      throw new Error("execution generation record returned an invalid generation");
     }
     return {
       ...application,
@@ -86,45 +86,6 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
             phase: "active",
             failure_reason: null,
           },
-    };
-  }
-  if (effect.kind === "execution_renew") {
-    const rows = await sql<RenewTransitionRow[]>`
-      SELECT * FROM session_renew_execution_ownership(
-        ${envelope.session_id},
-        ${effect.ownership_generation},
-        ${effect.manifest_id},
-        ${effect.runtime_env_identity},
-        ${effect.registration_id},
-        ${effect.pid},
-        ${effect.start_identity},
-        ${effect.execution_command_id},
-        ${new Date(effect.lease_expires_at)},
-        ${new Date(effect.updated_at)}
-      )
-    `;
-    const application = canonicalTransitionApplication(rows, "execution renew");
-    const row = rows[0]!;
-    const generation = Number(row.execution_generation);
-    if (!Number.isSafeInteger(generation) || generation < 0) {
-      throw new Error("execution renew returned an invalid generation");
-    }
-    return {
-      ...application,
-      canonicalExecutionOwnership: application.applied
-        ? {
-            ownership_generation: generation,
-            owner_kind: effect.owner_kind,
-            manifest_id: effect.manifest_id,
-            runtime_env_identity: effect.runtime_env_identity,
-            registration_id: effect.registration_id,
-            pid: effect.pid,
-            start_identity: effect.start_identity,
-            execution_command_id: effect.execution_command_id,
-            phase: "active",
-            failure_reason: null,
-          }
-        : null,
     };
   }
   if (effect.kind === "execution_reserve") {
@@ -320,30 +281,6 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
       "terminal execution ownership retirement",
     );
   }
-  if (effect.kind === "execution_retire_recorded_terminal_identity") {
-    const rows = await sql<CanonicalTransitionRow[]>`
-      SELECT * FROM session_reconcile_recorded_runner_terminal_fact(
-        ${envelope.session_id},
-        ${effect.ownership_generation},
-        ${effect.manifest_id},
-        ${effect.runtime_env_identity},
-        ${effect.registration_id},
-        ${effect.pid},
-        ${effect.start_identity},
-        ${effect.execution_command_id},
-        ${effect.terminal_event_id},
-        ${effect.runner_fact},
-        ${effect.termination_detail},
-        ${effect.review_state},
-        ${effect.last_assistant_text ?? null},
-        ${new Date(effect.updated_at)}
-      )
-    `;
-    return {
-      ...canonicalTransitionApplication(rows, "recorded terminal execution reconciliation"),
-      canonicalExecutionOwnership: null,
-    };
-  }
   if (effect.kind === "execution_orphaned_spawn") {
     const rows = await sql<CanonicalTransitionRow[]>`
       WITH application AS (
@@ -436,60 +373,6 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
         `;
     return canonicalTransitionApplication(rows, "execution backfill");
   }
-  if (effect.kind === "runner_terminal_fact") {
-    const rows = await sql<CanonicalTransitionRow[]>`
-      SELECT * FROM session_project_runner_terminal_fact(
-        ${envelope.session_id},
-        ${effect.ownership_generation},
-        ${effect.execution_command_id},
-        ${effect.runner_fact},
-        ${effect.termination_detail},
-        ${effect.review_state},
-        ${effect.last_assistant_text ?? null},
-        ${input.eventId},
-        ${new Date(effect.updated_at)}
-      )
-    `;
-    return canonicalTransitionApplication(rows, "runner terminal fact");
-  }
-  if (effect.kind === "execution_release") {
-    const rows = await sql<CanonicalTransitionRow[]>`
-      SELECT * FROM session_release_execution_ownership(
-        ${envelope.session_id},
-        ${effect.ownership_generation},
-        ${effect.execution_command_id},
-        ${effect.runner_fact},
-        ${effect.termination_detail},
-        ${effect.review_state},
-        ${effect.last_assistant_text ?? null},
-        ${input.eventId},
-        ${new Date(effect.updated_at)}
-      )
-    `;
-    return {
-      ...canonicalTransitionApplication(rows, "execution release"),
-      canonicalExecutionOwnership: null,
-    };
-  }
-  if (effect.kind === "recovered_runner_terminal_fact") {
-    const rows = await sql<CanonicalTransitionRow[]>`
-      SELECT * FROM session_project_recovered_runner_terminal_fact(
-        ${envelope.session_id},
-        ${effect.manifest_id},
-        ${effect.registration_id},
-        ${effect.pid},
-        ${effect.start_identity},
-        ${effect.execution_command_id},
-        ${effect.runner_fact},
-        ${effect.termination_detail},
-        ${effect.review_state},
-        ${effect.last_assistant_text ?? null},
-        ${input.eventId},
-        ${new Date(effect.updated_at)}
-      )
-    `;
-    return canonicalTransitionApplication(rows, "recovered runner terminal fact");
-  }
   if (effect.kind === "terminal_transition") {
     return await applyTerminalTransition(sql, envelope.session_id, input.eventId, effect);
   }
@@ -520,8 +403,6 @@ type AcquireTransitionRow = CanonicalTransitionRow & {
   execution_generation: string | number;
   execution_lease_expires_at: Date | string | null;
 };
-
-type RenewTransitionRow = AcquireTransitionRow;
 
 async function applyTerminalTransition(
   sql: EventIngressQuerySql,

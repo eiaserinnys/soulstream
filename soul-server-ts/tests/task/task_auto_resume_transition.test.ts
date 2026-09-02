@@ -130,9 +130,9 @@ describe("AutoResumeTransition", () => {
     const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
       capabilityProfile: "execution_ownership",
     });
-    const acquireExecutionOwnershipAndWaitForApplication = vi.fn();
+    const recordExecutionGenerationAndWaitForApplication = vi.fn();
     const persistence = Object.assign(persistenceDouble.persistence, {
-      acquireExecutionOwnershipAndWaitForApplication,
+      recordExecutionGenerationAndWaitForApplication,
     });
     const startNewExecution = vi.fn((
       resumedTask: Task,
@@ -166,7 +166,7 @@ describe("AutoResumeTransition", () => {
     expect(startNewExecution).toHaveBeenCalledWith(task, expect.any(Object));
     expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
       .toHaveBeenCalledTimes(1);
-    expect(acquireExecutionOwnershipAndWaitForApplication).not.toHaveBeenCalled();
+    expect(recordExecutionGenerationAndWaitForApplication).not.toHaveBeenCalled();
   });
 
   it("fences a resume running transition to the terminal revision captured before async metadata work", async () => {
@@ -178,7 +178,7 @@ describe("AutoResumeTransition", () => {
     });
     const enqueueMetadataEffect = vi.fn(async () => await metadataBlocked);
     const persistence = Object.assign(persistenceDouble.persistence, {
-      acquireExecutionOwnershipAndWaitForApplication: vi.fn(),
+      recordExecutionGenerationAndWaitForApplication: vi.fn(),
       enqueueMetadataEffect,
     });
     const transition = new AutoResumeTransition({ logger: silentLogger, persistence });

@@ -115,8 +115,6 @@ describe("runner process composition feature gate", () => {
   it("composes runner recovery without starting a pre-listener scan", async () => {
     const root = await mkdtemp(join(tmpdir(), "runner-recovery-composition-"));
     directories.push(root);
-    const listOwnerNullRunningInventory = vi.fn(async () => []);
-
     const coordinator = await composeRunnerRecoveryCoordinator({
       env: {
         SOULSTREAM_NODE_ID: "node-a",
@@ -126,9 +124,7 @@ describe("runner process composition feature gate", () => {
       } as never,
       runnerProcessFactory: {} as never,
       closedTailDrainer: { drain: vi.fn(async () => {}) },
-      taskManager: {
-        listOwnerNullRunningInventory,
-      } as never,
+      taskManager: {} as never,
       taskExecutor: {} as never,
       logger: {
         error: vi.fn(),
@@ -138,7 +134,6 @@ describe("runner process composition feature gate", () => {
     });
 
     expect(coordinator).toBeDefined();
-    expect(listOwnerNullRunningInventory).not.toHaveBeenCalled();
     await coordinator!.stop();
   });
 

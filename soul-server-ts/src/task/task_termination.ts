@@ -70,12 +70,9 @@ export function buildSessionEndedEvent(task: Task): {
 
 function terminalDedupeKey(task: Task): string {
   const ownership = task.executionOwnership;
-  const recovered = task.recoveredExecutionOwnership;
   const completedAt = task.completedAt ?? task.createdAt;
   const transitionIdentity = [
     ownership && `generation:${ownership.ownershipGeneration}`,
-    recovered
-      && `runner:${recovered.registrationId}:${recovered.executionCommandId ?? "legacy"}`,
     `completed_at:${completedAt.toISOString()}`,
   ].find(Boolean);
   return `session_terminal:${task.agentSessionId}:${String(transitionIdentity)}`;

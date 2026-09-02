@@ -140,6 +140,7 @@ describe.sequential("versioned migration runner", () => {
             "059_scope_board_seed_items.sql",
             "073_sessions_execution_owner_v1.sql",
             "075_sessions_execution_owner_release.sql",
+            "084_runtime_ownership_machine_removal.sql",
           ],
         });
       expect(existsSync(join(backupDirectory, "database.dump"))).toBe(true);

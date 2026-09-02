@@ -35,12 +35,10 @@ import {
   createInProcessTaskRunnerRuntime,
   type TaskRunnerRuntime,
 } from "../runner/task_runner_runtime.js";
-import type { RunnerChildConfig } from "../runner/runner_process_spawn.js";
 import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
-import type { ExecutionOwnershipBackoff } from "./execution_ownership_backoff.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
 import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
@@ -86,14 +84,10 @@ import {
   effectiveTaskBackend,
 } from "./task_model_preset.js";
 import {
-  ExecutionOwnershipConflictError,
   isCompleteExecutionIdentity,
-  isExecutionOwnershipConflictError,
   type ExecutionOwnerKind,
   type RunnerTerminalFact,
 } from "./execution_ownership.js";
-import { ExecutionOwnershipCoordinator } from
-  "./execution_ownership_coordinator.js";
 import {
   CLAUDE_BACKEND_ROLLOVER_LIMIT,
   claudeBackendRolloverMetadataEntry,
@@ -124,11 +118,6 @@ export interface RunnerProcessRuntimeFactory {
     registration: RunnerRegistration,
     snapshots: RunnerSnapshotPersistence,
     mode?: "adopt" | "replay" | "offline",
-  ): TaskRunnerRuntime;
-  restart?(
-    task: Task,
-    config: RunnerChildConfig,
-    snapshots: RunnerSnapshotPersistence,
   ): TaskRunnerRuntime;
   describe?(agent: AgentProfile): Promise<{
     ownerKind: "runner_process";
@@ -174,7 +163,6 @@ export class TaskExecutor {
   private readonly engineTurnRunner: TaskEngineTurnRunner;
   private readonly turnInputBuilder: TaskTurnInputBuilder;
   private readonly deliveryConsumption?: TaskDeliveryConsumption;
-  private readonly executionOwnershipCoordinator: ExecutionOwnershipCoordinator;
   constructor(
     private readonly engineFactory: EngineFactory,
     private readonly db: SessionDB,
@@ -203,8 +191,6 @@ export class TaskExecutor {
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
     transientEventLogAggregator?: TransientEventLogAggregator,
-    private readonly executionOwnershipBackoff?: ExecutionOwnershipBackoff,
-    private readonly executionOwnershipLeaseMs = 60_000,
     private readonly queuedTerminalResume?: (task: Task) => void | Promise<void>,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
@@ -246,10 +232,6 @@ export class TaskExecutor {
     this.deliveryConsumption = deliveryConsumptionRecorder
       ? new TaskDeliveryConsumption(deliveryConsumptionRecorder, this.logger)
       : undefined;
-    this.executionOwnershipCoordinator = new ExecutionOwnershipCoordinator(
-      persistence,
-      this.logger,
-    );
   }
 
   /**
@@ -263,7 +245,7 @@ export class TaskExecutor {
     agent: AgentProfile,
     transferredActivation?: ExecutionActivation,
   ): Promise<void> {
-    return this.startExecutionWithOwnership(task, agent, transferredActivation);
+    return this.startExecutionWithGenerationRecord(task, agent, transferredActivation);
   }
 
   startNewExecution(
@@ -271,43 +253,44 @@ export class TaskExecutor {
     agent: AgentProfile,
     activation?: ExecutionActivation,
   ): Promise<void> {
+    return this.startExecutionWithGenerationRecord(task, agent, activation);
+  }
+
+  private startExecutionWithGenerationRecord(
+    task: Task,
+    agent: AgentProfile,
+    transferredActivation?: ExecutionActivation,
+  ): Promise<void> {
+    let prepared: ReturnType<TaskExecutor["prepareExecution"]>;
     try {
-      const { backend, retainedRunner } = this.prepareExecution(task, agent);
-      return this.startExecutionWithoutOwnership(
-        task,
-        agent,
-        backend,
-        retainedRunner,
-        activation,
-      );
+      prepared = this.prepareExecution(task, agent);
     } catch (error) {
-      if (!activation) throw error;
-      task.executionActivation = activation;
-      void activation.promise.catch(() => undefined);
+      if (!transferredActivation) throw error;
+      task.executionActivation = transferredActivation;
+      void transferredActivation.promise.catch(() => undefined);
       const promise = (async () => {
         try {
           await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, error);
           task.completedAt = new Date();
           await this._finalize(task);
         } finally {
-          if (task.executionActivation === activation) {
+          if (task.executionActivation === transferredActivation) {
             task.executionActivation = undefined;
           }
-          activation.reject(error);
+          transferredActivation.reject(error);
         }
       })();
       return this.holdExecutionSlot(task, promise);
     }
-  }
-
-  private startExecutionWithOwnership(
-    task: Task,
-    agent: AgentProfile,
-    transferredActivation?: ExecutionActivation,
-  ): Promise<void> {
-    const { backend, retainedRunner } = this.prepareExecution(task, agent);
-    if (!this.supportsExecutionOwnership()) {
-      return this.startExecutionWithoutOwnership(task, agent, backend, retainedRunner);
+    const { backend, retainedRunner } = prepared;
+    if (!this.supportsExecutionGenerationRecord()) {
+      return this.startExecutionWithoutOwnership(
+        task,
+        agent,
+        backend,
+        retainedRunner,
+        transferredActivation,
+      );
     }
 
     const activation = transferredActivation ?? createExecutionActivation();
@@ -324,7 +307,7 @@ export class TaskExecutor {
     const releaseActivation = (): void => {
       if (task.executionActivation === activation) task.executionActivation = undefined;
     };
-    const promise = this.startOwnedExecution(
+    const promise = this.startRecordedExecution(
       task,
       agent,
       backend,
@@ -337,33 +320,6 @@ export class TaskExecutor {
       async (err: unknown) => {
         activation.reject(err);
         releaseActivation();
-        if (isExecutionOwnershipConflictError(err)) {
-          // Recovery scans consult this so they stop re-attempting a session
-          // faster than the rejection said was worth trying.
-          this.executionOwnershipBackoff?.observeConflict(
-            task.agentSessionId,
-            err.retryAt,
-          );
-          this.logger.warn(
-            {
-              err,
-              sessionId: task.agentSessionId,
-              retryAt: err.retryAt,
-              reason: err.reason,
-            },
-            "Execution ownership conflict rejected before message delivery",
-          );
-          await this.persistence.enqueueEvent(task.agentSessionId, {
-            type: "error",
-            message: "This message was not delivered because another runner owns the session.",
-            error_code: "execution_ownership_conflict",
-            fatal: false,
-            recoverable: true,
-            recovery_hint: "Retry the message if no response appears.",
-          } as SSEEventPayload);
-          return;
-        }
-        this.executionOwnershipBackoff?.clear(task.agentSessionId);
         if (err instanceof RunnerOrphanedSpawnError) {
           this.logger.error(
             { err, sessionId: task.agentSessionId, proof: err.proof },
@@ -481,63 +437,14 @@ export class TaskExecutor {
     }
   }
 
-  private async startOwnedExecution(
+  private async startRecordedExecution(
     task: Task,
     agent: AgentProfile,
     backend: BackendId,
     retainedRunner: TaskRunnerRuntime | undefined,
     resolveActivation: () => void,
   ): Promise<void> {
-    // An attempt that lost to an owner it then proved dead has displaced the
-    // only thing in its way, and giving up there left the session waiting on a
-    // "durable delivery recovery" that had already consumed its message -- so
-    // nothing ever reserved again. In the lab the expiry and the surrender
-    // land in the same millisecond, and the session never speaks again.
-    //
-    // One retry is the whole fix: the corpse is now `failed`, and a second
-    // conflict means somebody genuinely holds the session.
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        await this.startOwnedExecutionLocked(
-          task,
-          agent,
-          backend,
-          retainedRunner,
-          resolveActivation,
-        );
-        return;
-      } catch (error) {
-        if (
-          attempt >= 1
-          || !isExecutionOwnershipConflictError(error)
-          || !error.blockingOwnerDisplaced
-        ) throw error;
-        this.logger.info(
-          { sessionId: task.agentSessionId, phase: error.phase },
-          "retrying the execution reservation that displaced a dead owner",
-        );
-      }
-    }
-  }
-
-  private async startOwnedExecutionLocked(
-    task: Task,
-    agent: AgentProfile,
-    backend: BackendId,
-    retainedRunner: TaskRunnerRuntime | undefined,
-    resolveActivation: () => void,
-  ): Promise<void> {
-    const deferredUntil = this.executionOwnershipBackoff?.deferUntil(
-      task.agentSessionId,
-    );
-    if (deferredUntil) {
-      throw new ExecutionOwnershipConflictError(
-        task.agentSessionId,
-        deferredUntil,
-        "active",
-      );
-    }
-    const descriptor = await this.executionOwnerDescriptor(agent, backend);
+    const descriptor = await this.executionRuntimeDescriptor(agent, backend);
     task.executionOwnership = undefined;
     let runner: TaskRunnerRuntime | undefined;
     let proof: import("./execution_ownership.js").ExecutionIdentityProof | undefined;
@@ -562,12 +469,11 @@ export class TaskExecutor {
       if (!proof || !isCompleteExecutionIdentity(proof)) {
         throw new Error(`Runner identity proof unavailable: ${task.agentSessionId}`);
       }
-      const acquisition = await this.executionOwnershipCoordinator.acquire(
+      const application = await this.persistence.recordExecutionGenerationAndWaitForApplication(
         task.agentSessionId,
         {
           ...descriptor,
           ...proof,
-          leaseExpiresAt: new Date(Date.now() + this.executionOwnershipLeaseMs),
           reviewState: task.reviewState ?? "not_required",
           ...(task.pendingExecutionExpectedTerminalEventId === undefined
             ? {}
@@ -577,24 +483,22 @@ export class TaskExecutor {
               }),
         },
       );
-      applyCanonicalSessionProjection(task, acquisition.canonicalSession);
-      const canonical = acquisition.canonicalExecutionOwnership;
-      if (!acquisition.applied || !canonical
+      applyCanonicalSessionProjection(task, application.canonicalSession);
+      const canonical = application.canonicalExecutionOwnership;
+      if (!application.applied || !canonical
         || canonical.manifestId !== descriptor.manifestId
         || canonical.runtimeEnvIdentity !== descriptor.runtimeEnvIdentity
         || canonical.registrationId !== proof.registrationId
         || canonical.pid !== proof.pid
         || canonical.startIdentity !== proof.startIdentity
         || canonical.executionCommandId !== proof.executionCommandId) {
-        throw this.executionOwnershipConflict(task.agentSessionId, acquisition);
+        throw new Error(`Execution generation record rejected: ${task.agentSessionId}`);
       }
-      this.executionOwnershipBackoff?.clear(task.agentSessionId);
       task.executionOwnership = {
         ...descriptor,
         ...proof,
         ownershipGeneration: canonical.ownershipGeneration,
       };
-      task.recoveredExecutionOwnership = undefined;
       task.runnerTerminalFact = undefined;
       task.pendingExecutionExpectedTerminalEventId = undefined;
       resolveActivation();
@@ -617,26 +521,12 @@ export class TaskExecutor {
     }
   }
 
-  private executionOwnershipConflict(
-    sessionId: string,
-    application: Awaited<ReturnType<ExecutionOwnershipCoordinator["acquire"]>>,
-  ): ExecutionOwnershipConflictError {
-    const ownership = application.canonicalExecutionOwnership;
-    const retryAt = new Date(Date.now() + this.executionOwnershipLeaseMs).toISOString();
-    return new ExecutionOwnershipConflictError(
-      sessionId,
-      retryAt,
-      ownership?.phase ?? "reserved",
-      ownership ?? undefined,
-    );
-  }
-
-  private async executionOwnerDescriptor(
+  private async executionRuntimeDescriptor(
     agent: AgentProfile,
     backend: BackendId,
   ): Promise<{ ownerKind: ExecutionOwnerKind; manifestId: string; runtimeEnvIdentity: string }> {
-    // A new ownership generation describes the runtime that will execute it.
-    // Historical runner identity remains authoritative only in the adoption path.
+    // The legacy projection carries the runtime identity beside the generation
+    // until Wave 3 removes those columns. It does not elect or lease an owner.
     if (this.runnerProcessFactory) {
       const descriptor = await this.runnerProcessFactory.describe?.(agent);
       if (!descriptor) throw new Error("Runner process manifest descriptor unavailable");
@@ -649,8 +539,8 @@ export class TaskExecutor {
     };
   }
 
-  private supportsExecutionOwnership(): boolean {
-    return typeof this.persistence.acquireExecutionOwnershipAndWaitForApplication === "function";
+  private supportsExecutionGenerationRecord(): boolean {
+    return typeof this.persistence.recordExecutionGenerationAndWaitForApplication === "function";
   }
 
   async releaseRetainedClaudeRunner(task: Task): Promise<void> {
@@ -848,20 +738,6 @@ export class TaskExecutor {
         "unadopted runner event stream release failed; the stream may stay registered",
       );
     }
-  }
-
-  restartRegisteredRunner(task: Task, config: RunnerChildConfig): Promise<void> {
-    if (this.supportsExecutionOwnership()) {
-      return this.startExecution(task, config.agent);
-    }
-    const runner = this.runnerProcessFactory?.restart?.(
-      task,
-      config,
-      this.snapshotPersistenceFor(task),
-    );
-    if (!runner) throw new Error("runner process restart factory unavailable");
-    this.startExecutionWithRunner(task, config.agent, runner);
-    return task.executionPromise!;
   }
 
   private snapshotPersistenceFor(task: Task): RunnerSnapshotPersistence {
@@ -1347,7 +1223,7 @@ export class TaskExecutor {
       await this.restoreDurableRunnerInterventions(task, runner);
       await task.interruptRequest;
       if (terminalObservation) {
-        this.lifecycleTransition.applyRecoveredRunnerTerminalFact(
+        this.lifecycleTransition.applyRunnerTerminalFact(
           task,
           terminalObservation.fact,
           terminalObservation.detail,

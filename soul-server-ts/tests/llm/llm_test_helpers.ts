@@ -138,9 +138,6 @@ function makeAppliedTransitionAcknowledgement(
     "execution_fail",
     "execution_expire_dead_owner",
     "execution_retire_terminal_ownership",
-    "execution_retire_recorded_terminal_identity",
-    "runner_terminal_fact",
-    "recovered_runner_terminal_fact",
   ].includes(effect.kind)) {
     throw new Error("transition acknowledgement requires a transition effect");
   }

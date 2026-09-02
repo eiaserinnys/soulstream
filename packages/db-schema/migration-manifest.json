@@ -84,6 +84,7 @@
     { "id": "080_terminal_execution_identity_retirement.sql", "sha256": "bf2dc2e7f276e47e4c357a28a0b85dd1dddaa59db515003d6f44b4c4da6cbe46", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "081_recorded_terminal_receipt_reconciliation.sql", "sha256": "94f329e3fa934b79452c5196d6f3a31eafbfa8ffe27333aa19aeba01711f63a8", "destructive": false, "rollback_compatibility": "previous_release_safe" },
     { "id": "082_ownerless_terminal_historical_generation.sql", "sha256": "bbef6baa8bc02b0b411ae8561579c14bb3a60ff8d98bb089cce2f55e2f3dbbd2", "destructive": false, "rollback_compatibility": "previous_release_safe" },
-    { "id": "083_recovered_ownerless_terminal_projection.sql", "sha256": "d84006fbfaaf9f4e01aae8c67d6676d44a4de3f75cb08b23f6d6097a36c6377c", "destructive": false, "rollback_compatibility": "previous_release_safe" }
+    { "id": "083_recovered_ownerless_terminal_projection.sql", "sha256": "d84006fbfaaf9f4e01aae8c67d6676d44a4de3f75cb08b23f6d6097a36c6377c", "destructive": false, "rollback_compatibility": "previous_release_safe" },
+    { "id": "084_runtime_ownership_machine_removal.sql", "sha256": "3381afb013835f4c49fa87a0f675c87b8d45b755484a6f40b399715ad440a22b", "destructive": false, "rollback_compatibility": "restore_required" }
   ]
 }

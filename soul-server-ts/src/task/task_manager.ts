@@ -18,10 +18,7 @@ import type { Task, TaskStatus } from "./task_models.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import { createEvictedTaskLoader } from "./task_evicted_hydration.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
-import {
-  TaskRunnerRecovery,
-  type ExecutionOwnershipReconciliationInput,
-} from "./task_runner_recovery.js";
+import { TaskRunnerRecovery } from "./task_runner_recovery.js";
 import {
   TaskLifecycleRoute,
   type FinalizeTaskParams,
@@ -284,12 +281,11 @@ export class TaskManager {
     return await this.db.listOwnerNullRunningInventory({ nodeId, limit });
   }
 
-  async markRunnerFailureAndResume(
+  async markRunnerFailure(
     task: Task,
     message: string,
-    onResume: StartExecutionCallback,
   ): Promise<void> {
-    await this.runnerRecovery.markFailureAndResume(task, message, onResume);
+    await this.runnerRecovery.markFailure(task, message);
   }
 
   async resumeQueuedAfterTerminal(
@@ -301,17 +297,6 @@ export class TaskManager {
 
   async projectClosedRunner(task: Task, detail: string): Promise<boolean> {
     return await this.runnerRecovery.projectClosed(task, detail);
-  }
-
-  async reconcileRecordedTerminalExecution(task: Task): Promise<boolean> {
-    return await this.runnerRecovery.reconcileRecordedTerminalExecution(task);
-  }
-
-  async reconcileExecutionOwnershipObservations(
-    task: Task,
-    input: ExecutionOwnershipReconciliationInput,
-  ): Promise<boolean> {
-    return await this.runnerRecovery.reconcileExecutionOwnershipObservations(task, input);
   }
 
   getDeliveryConsumptionRecorder(): Pick<

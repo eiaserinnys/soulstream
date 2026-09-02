@@ -74,49 +74,6 @@ describe("parseEventAppendBatch sanitization", () => {
     ).toThrow("session_effect has unexpected fields: unexpected");
   });
 
-  it("requires execution_command_id on recovered terminal facts", () => {
-    const effect = {
-      kind: "recovered_runner_terminal_fact",
-      manifest_id: "manifest-1",
-      registration_id: "registration-1",
-      pid: 123,
-      start_identity: "start-1",
-      execution_command_id: "execute-1",
-      runner_fact: "reaped",
-      termination_detail: "runner_exited",
-      review_state: "not_required",
-      last_assistant_text: null,
-      updated_at: "2026-08-18T00:00:00.000Z",
-    };
-
-    expect(
-      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
-    ).toEqual(effect);
-    const { execution_command_id: _omitted, ...withoutCommand } = effect;
-    expect(() => parseEventAppendBatch(batchWithEffect(withoutCommand)))
-      .toThrow("session_effect.execution_command_id must be a non-empty string");
-  });
-
-  it("requires execution_command_id on generation-fenced terminal facts", () => {
-    const effect = {
-      kind: "runner_terminal_fact",
-      ownership_generation: 3,
-      execution_command_id: "execute-3",
-      runner_fact: "completed",
-      termination_detail: null,
-      review_state: "not_required",
-      last_assistant_text: "done",
-      updated_at: "2026-08-18T00:00:00.000Z",
-    };
-
-    expect(
-      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
-    ).toEqual(effect);
-    const { execution_command_id: _omitted, ...withoutCommand } = effect;
-    expect(() => parseEventAppendBatch(batchWithEffect(withoutCommand)))
-      .toThrow("session_effect.execution_command_id must be a non-empty string");
-  });
-
   it("requires the exact process identity on dead-owner expiry", () => {
     const effect = {
       kind: "execution_expire_dead_owner",
@@ -153,33 +110,6 @@ describe("parseEventAppendBatch sanitization", () => {
     expect(
       parseEventAppendBatch(batchWithEffect(persisted)).events[0]!.session_effect,
     ).toEqual(effect);
-  });
-
-  it("requires the terminal receipt and complete sessions-row identity on the new effect", () => {
-    const effect = {
-      kind: "execution_retire_recorded_terminal_identity",
-      ownership_generation: 113_641_988_538_614,
-      manifest_id: "manifest-1",
-      runtime_env_identity: "runtime-1",
-      registration_id: "registration-1",
-      pid: 968_764,
-      start_identity: "start-1",
-      execution_command_id: "execute-1",
-      terminal_event_id: 3,
-      runner_fact: "completed",
-      termination_detail: null,
-      review_state: "not_required",
-      last_assistant_text: "done",
-      updated_at: "2026-08-29T00:00:00.000Z",
-    };
-
-    expect(
-      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
-    ).toEqual(effect);
-    expect(() => parseEventAppendBatch(batchWithEffect({
-      ...effect,
-      registration_id: "",
-    }))).toThrow("session_effect.registration_id must be a non-empty string");
   });
 
   it("keeps the two owner-null observations and evidence hash intact", () => {

@@ -44,8 +44,6 @@ import {
 import type { RunnerRegistration } from "./runner_process_registry.js";
 import {
   retireReleasedTerminalExecutionEvidence,
-  retireTerminalExecutionIdentity,
-  type TerminalExecutionOwnershipRetirement,
 } from "./runner_terminal_identity_retirement.js";
 
 export {
@@ -341,10 +339,10 @@ export class RunnerProcessSpawner {
     paths: RunnerProcessPaths,
     expected?: ExactRunnerProcess,
     releasedRegistration?: RunnerRegistration,
-    confirmCentralRelease?: () => Promise<boolean>,
+    confirmRetirementStillValid?: () => Promise<boolean>,
   ): Promise<RunnerTerminationOutcome> {
     if (!expected) {
-      if (!releasedRegistration || !confirmCentralRelease) {
+      if (!releasedRegistration || !confirmRetirementStillValid) {
         throw new RunnerMutationFailure(
           "runner_registration_identity_proof_failed",
           `released terminal evidence required before termination: ${paths.sessionDirectory}`,
@@ -355,7 +353,7 @@ export class RunnerProcessSpawner {
           paths,
           registrationId: releasedRegistration.registrationId ?? null,
         },
-        confirmCentralRelease,
+        confirmRetirementStillValid,
         this.deps,
       );
       return "registration_absent";
@@ -413,13 +411,6 @@ export class RunnerProcessSpawner {
         new Date(this.deps.now()),
       );
     });
-  }
-
-  retireTerminalOwnership(
-    input: TerminalExecutionOwnershipRetirement,
-    commitOwnership: () => Promise<boolean>,
-  ): Promise<void> {
-    return retireTerminalExecutionIdentity(input, commitOwnership, this.deps);
   }
 
   private async inspectWriterLock(path: string): Promise<RunnerWriterLockState> {

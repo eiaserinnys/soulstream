@@ -150,7 +150,7 @@ export async function createStoppedProductHarness(): Promise<ProductHarness> {
         counters: (): RuntimeCounters => ({
           automaticStarts: automaticStart.mock.calls.length,
           executionAcquires:
-            persistenceDouble.acquireExecutionOwnershipAndWaitForApplication.mock.calls.length,
+            persistenceDouble.recordExecutionGenerationAndWaitForApplication.mock.calls.length,
           turnStarts: turnStarted.mock.calls.length,
           modelCalls: modelCall.mock.calls.length,
         }),

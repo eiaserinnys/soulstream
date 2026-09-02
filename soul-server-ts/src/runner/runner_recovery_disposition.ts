@@ -1,9 +1,6 @@
 import type { Logger } from "pino";
 
-import { isExecutionOwnershipConflictError } from "../task/execution_ownership.js";
-import type { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import type { Task } from "../task/task_models.js";
-import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import type {
   RunnerRegistration,
   RunnerRecoveryDisposition,
@@ -15,7 +12,6 @@ import {
 import type { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import {
   prepareRecoveredTask,
-  prepareRecoveredTerminalExecutionIdentity,
 } from "./runner_recovery_task.js";
 
 export type RecoverableRunnerDisposition = Extract<
@@ -29,15 +25,6 @@ export function dispositionRequiresTask(
   return disposition !== "wait_for_bootstrap" && disposition !== "retired_terminal";
 }
 
-/** Only these dispositions go on to reserve execution ownership. */
-export function contendsForExecutionOwnership(
-  disposition: RunnerRecoveryDisposition,
-): boolean {
-  return disposition === "adopt_prebootstrap"
-    || disposition === "adopt_running"
-    || disposition === "already_reaped";
-}
-
 export async function handleRecoveryWithFailureTracking(input: {
   registration: RunnerRegistration;
   disposition: RunnerRecoveryDisposition;
@@ -48,53 +35,37 @@ export async function handleRecoveryWithFailureTracking(input: {
     task?: Task,
   ): Promise<void>;
   recoveryLogger: RunnerRecoveryLogger;
-  ownershipBackoff: ExecutionOwnershipBackoff;
 }): Promise<void> {
   try {
     await input.handle(input.registration, input.disposition, input.task);
     input.recoveryLogger.clear(input.registration.config.sessionId);
-    if (contendsForExecutionOwnership(input.disposition)) {
-      input.ownershipBackoff.clear(input.registration.config.sessionId);
-    }
   } catch (error) {
-    if (isExecutionOwnershipConflictError(error)) {
-      input.ownershipBackoff.observeConflict(
-        input.registration.config.sessionId,
-        error.retryAt,
-      );
-      return;
-    }
     input.recoveryLogger.failure(input.registration, input.disposition, error);
   }
 }
 
-export async function resumeReapedRunner(input: {
+export async function terminalizeReapedRunner(input: {
   registration: RunnerRegistration;
   task: Task;
   hydrate?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
   terminate(registration: RunnerRegistration): Promise<void>;
   invalidate(registration: RunnerRegistration): Promise<void>;
   recoverOffline(registration: RunnerRegistration, task: Task): Promise<Task>;
-  resumeReplacement(task: Task, message: string, config: RunnerChildConfig): Promise<void>;
   logger: Pick<Logger, "info">;
 }): Promise<void> {
   const hydrated = await (input.hydrate ?? hydrateRunnerRegistration)(input.registration);
   if (hydrated.pidAlive) await input.terminate(hydrated);
   await input.invalidate(hydrated);
-  await input.recoverOffline({ ...hydrated, pidAlive: false }, input.task);
   prepareRecoveredTask(input.task, hydrated);
-  prepareRecoveredTerminalExecutionIdentity(input.task, hydrated);
   input.task.runnerTerminalFact = "reaped";
-  const message = hydrated.lifecycle?.terminal_error?.message
-    ?? "runner was reaped before recovery completed";
-  await input.resumeReplacement(input.task, message, hydrated.config);
+  await input.recoverOffline({ ...hydrated, pidAlive: false }, input.task);
   input.logger.info(
     { sessionId: hydrated.config.sessionId, disposition: "already_reaped" },
-    "reaped runner recovery resumed",
+    "reaped runner recovery terminalized",
   );
 }
 
-export async function reapAndResumeRunner(input: {
+export async function terminalizeFailedRunner(input: {
   registration: RunnerRegistration;
   disposition: "reap_dead" | "reap_stalled";
   task: Task;

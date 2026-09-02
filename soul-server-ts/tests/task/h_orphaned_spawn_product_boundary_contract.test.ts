@@ -291,8 +291,8 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
   };
 
   Object.assign(persistenceDouble.persistence, {
-    acquireExecutionOwnershipAndWaitForApplication: vi.fn(async () => {
-      trace.push("acquire_rejected");
+    recordExecutionGenerationAndWaitForApplication: vi.fn(async () => {
+      trace.push("generation_record_rejected");
       return transition(false, "running", canonicalOwner);
     }),
   });

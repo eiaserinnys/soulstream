@@ -25,7 +25,6 @@ import type { AgentProfile } from "../agent_registry.js";
 import type { TaskRunnerRuntime } from "../runner/task_runner_runtime.js";
 import type {
   ExecutionOwnershipToken,
-  RecoveredExecutionOwnershipIdentity,
   RunnerTerminalFact,
 } from "./execution_ownership.js";
 
@@ -56,7 +55,7 @@ export type PendingTerminationHint = Exclude<
   "completed_ok" | "unknown"
 >;
 
-/** Single in-memory barrier for one execution ownership admission. */
+/** Single in-memory barrier for one execution startup. */
 export interface ExecutionActivation {
   promise: Promise<void>;
   resolve(): void;
@@ -404,8 +403,6 @@ export interface Task {
   /** Durable generation fence for the materialized runner that may project terminal state. */
   executionOwnership?: ExecutionOwnershipToken;
   runnerTerminalFact?: RunnerTerminalFact;
-  /** Identity proof restored from runner storage before its generation token is known. */
-  recoveredExecutionOwnership?: RecoveredExecutionOwnershipIdentity;
   pendingExecutionExpectedTerminalEventId?: number | null;
 
   /** foreground Result 뒤 Claude background runtime을 소유하여 다음 turn까지 보존된 runner. */
@@ -426,7 +423,7 @@ export interface Task {
   /** task_executor.startExecution 반환 promise. shutdown 시 await. */
   executionPromise?: Promise<void>;
 
-  /** Single execution ownership admission barrier. */
+  /** Single execution startup barrier. */
   executionActivation?: ExecutionActivation;
 
   /** Runtime-only explicit cancel request serialized against turn finalization. */

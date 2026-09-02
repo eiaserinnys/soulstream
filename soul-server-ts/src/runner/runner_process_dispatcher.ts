@@ -103,7 +103,6 @@ export interface RunnerHostCall {
     | "session_store"
     | "claude_runtime"
     | "detached_event"
-    | "execution_ownership"
     | "snapshot";
   operation: string;
   args: unknown[];
@@ -279,7 +278,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
 
     this.closed = true;
-    this.abortRequestLifetimes(new Error("Runner execution ownership rejected"));
+    this.abortRequestLifetimes(new Error("Runner execution generation record rejected"));
     const cleanupErrors: unknown[] = [];
     try {
       await this.releaseHostResources();
@@ -304,14 +303,14 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         proof,
         new AggregateError(
           [...cleanupErrors, terminationError],
-          "execution ownership rollback left the spawned child live",
+          "execution generation rollback left the spawned child live",
         ),
       );
     }
     if (cleanupErrors.length > 0) {
       throw new AggregateError(
         cleanupErrors,
-        "execution ownership rollback cleanup failed after child termination",
+        "execution generation rollback cleanup failed after child termination",
       );
     }
   }

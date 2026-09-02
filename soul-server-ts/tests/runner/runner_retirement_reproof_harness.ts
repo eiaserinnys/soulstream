@@ -224,9 +224,7 @@ function makeCoordinatorSubject(
     taskManager: {
       hydrateRunnerRecoveryTask: async () => task,
       markRunnerFailureAndResume: async (_task, _message, resume) => resume(task),
-      listOwnerNullRunningInventory: async () => [],
       projectClosedRunner: async () => true,
-      reconcileExecutionOwnershipObservations: async () => false,
     },
     taskExecutor: {
       recoverRegisteredRunner: async () => {

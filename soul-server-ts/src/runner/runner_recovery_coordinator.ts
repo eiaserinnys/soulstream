@@ -1,5 +1,4 @@
 import { performance } from "node:perf_hooks";
-import { ExecutionOwnershipBackoff } from "../task/execution_ownership_backoff.js";
 import { isTerminalTaskStatus, type Task } from "../task/task_models.js";
 import { releaseTaskRunner } from "../task/task_runner_release.js";
 import {
@@ -14,19 +13,17 @@ import {
 import { RunnerRecoveryHydrationPhase } from "./runner_recovery_hydration_phase.js";
 import { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import {
-  contendsForExecutionOwnership,
   dispositionRequiresTask,
   handleRecoveryWithFailureTracking,
-  reapAndResumeRunner,
+  terminalizeFailedRunner,
   recoverRunnerByDisposition,
-  resumeReapedRunner,
+  terminalizeReapedRunner,
   type RecoverableRunnerDisposition,
 } from "./runner_recovery_disposition.js";
 import { classifyRunnerRegistrationSafely } from "./runner_recovery_classification.js";
 import {
   markRegistrationReaped,
   prepareRecoveredTask,
-  prepareRecoveredTerminalExecutionIdentity,
   requireRecoveryTask,
 } from "./runner_recovery_task.js";
 import { RunnerRegistrationControl } from "./runner_registration_control.js";
@@ -42,14 +39,12 @@ import {
 } from "./runner_adoption_failure_recovery.js";
 import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
-import { OwnerNullInventoryReconciler } from "./owner_null_inventory_reconciler.js";
 import { RunnerSessionGarbageCollectionScheduler } from "./runner_session_gc_scheduler.js";
 import { UnreadableRunnerRegistrationHandler } from "./unreadable_runner_registration_handler.js";
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
-  private readonly ownerNullInventoryReconciler: OwnerNullInventoryReconciler;
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
   private readonly recoveryLogger: RunnerRecoveryLogger;
@@ -58,28 +53,10 @@ export class RunnerRecoveryCoordinator {
   private readonly sessionGarbageCollectionScheduler: RunnerSessionGarbageCollectionScheduler;
   private readonly unreadableRegistrationHandler: UnreadableRunnerRegistrationHandler;
   private readonly registrationControl: RunnerRegistrationControl;
-  private readonly ownershipBackoff: ExecutionOwnershipBackoff;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
   constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
     this.registrationControl = new RunnerRegistrationControl(options.spawner);
-    this.ownershipBackoff = options.ownershipBackoff
-      ?? new ExecutionOwnershipBackoff({
-        logger: options.logger,
-        ...(options.now ? { now: options.now } : {}),
-      });
-    this.ownerNullInventoryReconciler = new OwnerNullInventoryReconciler({
-      nodeId: options.nodeId,
-      scanIntervalMs: options.scanIntervalMs,
-      leaseTimeoutMs: options.leaseTimeoutMs,
-      taskManager: options.taskManager as Required<Pick<
-        typeof options.taskManager,
-        "listOwnerNullRunningInventory" | "hydrateRunnerRecoveryTask"
-          | "reconcileExecutionOwnershipObservations"
-      >>,
-      logger: options.logger,
-      now: options.now ?? Date.now,
-    });
     this.sessionGarbageCollectionScheduler = new RunnerSessionGarbageCollectionScheduler({
       ...(options.sessionGarbageCollector
         ? {
@@ -140,8 +117,8 @@ export class RunnerRecoveryCoordinator {
       },
       recoverOffline: async (registration, task) =>
         (await this.recoverRegistered(registration, task, "offline")).task,
-      resumeReplacement: async (task, message, config) =>
-        await this.resumeReplacement(task, message, config),
+      markFailure: async (task, message) =>
+        await this.options.taskManager.markRunnerFailure(task, message),
       onFailure: (registration, disposition, error) =>
         this.recoveryLogger.failure(registration, disposition, error),
     });
@@ -175,12 +152,8 @@ export class RunnerRecoveryCoordinator {
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
     );
-    await this.ownerNullInventoryReconciler.reconcile(scan.registrations);
     await this.unreadableRegistrationHandler.handle(scan.errors);
     this.recoveryLogger.prune(scan.registrations);
-    this.ownershipBackoff.prune(
-      scan.registrations.map((registration) => registration.config.sessionId),
-    );
     this.adoptionFailureRecovery.prune(
       scan.registrations.map((registration) => registration.config.sessionId),
     );
@@ -215,15 +188,6 @@ export class RunnerRecoveryCoordinator {
         this.recoveryLogger.clear(sessionId);
         continue;
       }
-      // The ownership backoff only governs work that goes on to claim
-      // ownership. Reaping a dead runner, draining a closed one, or
-      // reconciling an owner-null row neither contends for ownership nor
-      // benefits from waiting — and holding those back for five minutes would
-      // leave a session with a dead runner stranded exactly as long.
-      if (
-        contendsForExecutionOwnership(disposition)
-        && this.ownershipBackoff.shouldSkip(sessionId)
-      ) continue;
       admitted.push({ registration, disposition });
     }
     const hydrationOutcomes = await this.hydrationPhase.run(
@@ -343,26 +307,6 @@ export class RunnerRecoveryCoordinator {
       ]);
     }
   }
-  private async resumeReplacement(
-    task: Task,
-    message: string,
-    config: RunnerRegistration["config"],
-    onRunnerAttached?: () => void,
-  ): Promise<void> {
-    await this.options.taskManager.markRunnerFailureAndResume(
-      task,
-      message,
-      (resumedTask) => {
-        if (this.stopped) return;
-        const completion = this.options.taskExecutor.restartRegisteredRunner(
-          resumedTask,
-          config,
-        );
-        onRunnerAttached?.();
-        return completion;
-      },
-    );
-  }
   private async handle(
     registration: RunnerRegistration,
     disposition: RunnerRecoveryDisposition,
@@ -379,7 +323,11 @@ export class RunnerRecoveryCoordinator {
       && !task.runner
       && !task.executionPromise
     ) {
-      await this.retireRecordedTerminalExecution(registration, task);
+      await this.registrationControl.retireTerminal(registration);
+      this.options.logger.info(
+        { sessionId: registration.config.sessionId },
+        "recorded terminal runner registration retired without replay",
+      );
       return;
     }
     if (
@@ -406,7 +354,7 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     if (disposition === "reap_dead") {
-      await this.reapAndResume(
+      await this.terminalizeFailed(
         registration,
         disposition,
         requireRecoveryTask(task, registration),
@@ -443,10 +391,7 @@ export class RunnerRecoveryCoordinator {
       if (closedRunnerTailRequiresDrain(closedRegistration)) {
         await this.options.closedTailDrainer.drain(closedRegistration);
       }
-      if (recoveredTask.executionOwnership) {
-        prepareRecoveredTask(recoveredTask, closedRegistration);
-        prepareRecoveredTerminalExecutionIdentity(recoveredTask, closedRegistration);
-      }
+      prepareRecoveredTask(recoveredTask, closedRegistration);
       const projectClosedRunner = this.options.taskManager.projectClosedRunner;
       if (!projectClosedRunner) {
         throw new Error("closed runner central projection is not configured");
@@ -459,7 +404,7 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     if (disposition === "already_reaped") {
-      await resumeReapedRunner({
+      await terminalizeReapedRunner({
         registration,
         task: requireRecoveryTask(task, registration),
         ...(this.options.hydrate ? { hydrate: this.options.hydrate } : {}),
@@ -476,13 +421,6 @@ export class RunnerRecoveryCoordinator {
             undefined,
             onRunnerAttached,
           )).task,
-        resumeReplacement: async (recoveredTask, message, config) =>
-          await this.resumeReplacement(
-            recoveredTask,
-            message,
-            config,
-            onRunnerAttached,
-          ),
         logger: this.options.logger,
       });
       return;
@@ -490,57 +428,6 @@ export class RunnerRecoveryCoordinator {
     throw new Error(`unsupported runner recovery disposition: ${disposition}`);
   }
 
-  private async retireRecordedTerminalExecution(
-    registration: RunnerRegistration,
-    task: Task,
-  ): Promise<void> {
-    const ownership = task.executionOwnership;
-    const registrationId = ownership?.registrationId ?? registration.registrationId;
-    const pid = ownership?.pid ?? registration.pid;
-    const startIdentity = ownership?.startIdentity ?? registration.pidStartIdentity;
-    if (
-      registration.pidStartIdentity === null
-      && !registration.pidAlive
-    ) {
-      const reconcile = this.options.taskManager.reconcileRecordedTerminalExecution;
-      if (!reconcile) {
-        throw new Error("terminal execution ownership reconciliation is not configured");
-      }
-      await this.registrationControl.retireReleasedTerminal(
-        registration,
-        async () => await reconcile.call(this.options.taskManager, task),
-      );
-      this.options.logger.info(
-        { sessionId: registration.config.sessionId },
-        "released terminal runner evidence retired without replay",
-      );
-      return;
-    }
-    if (
-      !registrationId
-      || typeof pid !== "number"
-      || !Number.isSafeInteger(pid)
-      || pid <= 0
-      || !startIdentity
-    ) {
-      throw new Error(
-        `recorded terminal execution identity is incomplete: ${registration.config.sessionId}`,
-      );
-    }
-    const reconcile = this.options.taskManager.reconcileRecordedTerminalExecution;
-    if (!reconcile) {
-      throw new Error("terminal execution ownership reconciliation is not configured");
-    }
-    await this.registrationControl.retireTerminalOwnership(
-      registration.config.paths,
-      { registrationId, pid, startIdentity },
-      async () => await reconcile.call(this.options.taskManager, task),
-    );
-    this.options.logger.info(
-      { sessionId: registration.config.sessionId },
-      "recorded terminal execution identity retired without terminal replay",
-    );
-  }
   private async handleWithFailureTracking(
     registration: RunnerRegistration,
     disposition: RunnerRecoveryDisposition,
@@ -559,7 +446,6 @@ export class RunnerRecoveryCoordinator {
           onRunnerAttached,
         ),
       recoveryLogger: this.recoveryLogger,
-      ownershipBackoff: this.ownershipBackoff,
     });
   }
   private async recoverRegistered(
@@ -636,8 +522,8 @@ export class RunnerRecoveryCoordinator {
     }
     if (task.runner || task.executionPromise) {
       // This guard returned in silence for three hours during the 260822
-      // outage: a settled execution promise left behind by a failed ownership
-      // reservation reads exactly like a live execution, so every later scan
+      // outage: a settled execution promise left behind by failed startup
+      // reads exactly like a live execution, so every later scan
       // skipped the offline replay without saying so. An offline replay that
       // cannot run is a stranded terminal fact, never routine.
       this.options.logger[mode === "offline" ? "warn" : "info"](
@@ -663,9 +549,6 @@ export class RunnerRecoveryCoordinator {
     const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
     const lifecycle = hydrated.lifecycle;
     prepareRecoveredTask(task, hydrated);
-    if (mode !== "adopt") {
-      prepareRecoveredTerminalExecutionIdentity(task, hydrated);
-    }
     let attemptRunner: TaskRunnerRuntime | undefined;
     const completion = this.options.taskExecutor.recoverRegisteredRunner(
       task,
@@ -706,13 +589,13 @@ export class RunnerRecoveryCoordinator {
     return { task, replayed: true };
   }
 
-  private async reapAndResume(
+  private async terminalizeFailed(
     registration: RunnerRegistration,
     disposition: "reap_dead" | "reap_stalled",
     task: Task,
     onRunnerAttached?: () => void,
   ): Promise<void> {
-    await reapAndResumeRunner({
+    await terminalizeFailedRunner({
       registration,
       disposition,
       task,

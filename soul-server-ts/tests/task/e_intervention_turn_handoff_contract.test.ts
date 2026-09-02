@@ -469,9 +469,7 @@ function makeTerminalCleanupCoordinator(
     taskManager: {
       hydrateRunnerRecoveryTask: vi.fn(async () => task),
       markRunnerFailureAndResume: vi.fn(),
-      listOwnerNullRunningInventory: vi.fn(async () => []),
       projectClosedRunner: vi.fn(async () => true),
-      reconcileExecutionOwnershipObservations: vi.fn(async () => false),
     },
     taskExecutor: {
       recoverRegisteredRunner: vi.fn(async () => undefined),

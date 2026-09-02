@@ -8,10 +8,8 @@ import {
   readRunnerRegistrationSummary,
   type RunnerRegistration,
 } from "./runner_process_registry.js";
-import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import {
   prepareRecoveredTask,
-  prepareRecoveredTerminalExecutionIdentity,
 } from "./runner_recovery_task.js";
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
 
@@ -31,7 +29,7 @@ export interface RunnerAdoptionFailureRecoveryDeps {
     error: { code: string; message: string },
   ): Promise<void>;
   recoverOffline(registration: RunnerRegistration, task: Task): Promise<Task>;
-  resumeReplacement(task: Task, message: string, config: RunnerChildConfig): Promise<void>;
+  markFailure(task: Task, message: string): Promise<void>;
   onFailure(
     registration: RunnerRegistration,
     disposition: RunnerAdoptionDisposition,
@@ -39,7 +37,7 @@ export interface RunnerAdoptionFailureRecoveryDeps {
   ): void;
 }
 
-/** Converts a failed live adoption into one identity-fenced replacement path. */
+/** Converts a failed live adoption into one identity-fenced terminal path. */
 export class RunnerAdoptionFailureRecovery {
   private readonly active = new Map<string, Promise<void>>();
   private readonly deferredUntilMs = new Map<string, number>();
@@ -112,8 +110,9 @@ export class RunnerAdoptionFailureRecovery {
       );
     }
     await this.deps.invalidateRegistration(registration);
-    const recoveredTask = registration.lifecycle
-      ? await this.deps.recoverOffline({
+    if (registration.lifecycle) {
+      task.runnerTerminalFact = "reaped";
+      await this.deps.recoverOffline({
           ...registration,
           pidAlive: false,
           lifecycle: {
@@ -121,15 +120,15 @@ export class RunnerAdoptionFailureRecovery {
             execution_state: "reaped",
             terminal_error: error,
           },
-        }, task)
-      : task;
-    prepareRecoveredTask(recoveredTask, registration);
-    prepareRecoveredTerminalExecutionIdentity(recoveredTask, registration);
-    recoveredTask.runnerTerminalFact = "reaped";
-    await this.deps.resumeReplacement(recoveredTask, error.message, registration.config);
+        }, task);
+    } else {
+      prepareRecoveredTask(task, registration);
+      task.runnerTerminalFact = "reaped";
+      await this.deps.markFailure(task, error.message);
+    }
     this.deps.logger.info(
       { sessionId: registration.config.sessionId, disposition },
-      "runner failure drained and auto-resumed",
+      "runner failure drained and terminalized",
     );
   }
 
@@ -181,7 +180,7 @@ export class RunnerAdoptionFailureRecovery {
       // Absence is not supersession. An adoption that rejects before it assigns
       // `task.executionPromise` leaves the slot empty, and reading empty as "a
       // newer execution owns this" abandons a live runner that still holds the
-      // session's execution ownership.
+      // session's execution slot.
       const supersededBy = supersedingExecution(task, completion, recoveryRunner);
       if (supersededBy) {
         // A different runner owns the task now, so the rejected attempt no
@@ -230,7 +229,7 @@ export class RunnerAdoptionFailureRecovery {
       ) {
         this.deps.logger.info(
           { ...recoveryLogContext(registration, error, verifiedDisposition), pid: hydrated.pid },
-          "identity-verified runner with a missing socket will be replaced",
+          "identity-verified runner with a missing socket will be terminalized",
         );
         await this.terminalize(
           hydrated,

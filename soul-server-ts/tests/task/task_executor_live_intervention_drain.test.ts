@@ -219,8 +219,6 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
       undefined,
       undefined,
       undefined,
-      undefined,
-      60_000,
       async (terminalTask) => {
         await autoResume.resumeQueuedAfterTerminal(
           terminalTask,

@@ -23,7 +23,6 @@ import {
 } from "../../src/runner/sqlite_runner_lifecycle.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
-import { ExecutionOwnershipBackoff } from "../../src/task/execution_ownership_backoff.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
@@ -254,19 +253,15 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   it("recovers a live registered owner-null runner on the first scan", async () => {
     const recoveredTask = task("session-a");
     recoveredTask.hydratedFromDb = true;
-    const reconcileExecutionOwnershipObservations = vi.fn(async () => false);
     const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => recoveredTask),
-        markRunnerFailureAndResume: vi.fn(async () => {}),
         projectClosedRunner: vi.fn(async () => true),
-        reconcileExecutionOwnershipObservations,
       },
     });
 
     await subject.coordinator.scanOnce();
 
-    expect(reconcileExecutionOwnershipObservations).not.toHaveBeenCalled();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       recoveredTask,
@@ -292,19 +287,15 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       executionCommandId: "owner:stable-a",
       ownershipGeneration: 30,
     };
-    const reconcileExecutionOwnershipObservations = vi.fn(async () => false);
     const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => recoveredTask),
-        markRunnerFailureAndResume: vi.fn(async () => {}),
         projectClosedRunner: vi.fn(async () => true),
-        reconcileExecutionOwnershipObservations,
       },
     });
 
     await subject.coordinator.scanOnce();
 
-    expect(reconcileExecutionOwnershipObservations).not.toHaveBeenCalled();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       recoveredTask,
@@ -315,82 +306,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
-  it("converges e5d01ad7 and c643e966 owner-null inventory rows without registrations", async () => {
-    let now = RECOVERY_NOW_MS;
-    const sessions = ["e5d01ad7-regression", "c643e966-regression"];
-    const tasks = new Map(sessions.map((sessionId) => {
-      const candidate = task(sessionId);
-      candidate.hydratedFromDb = true;
-      return [sessionId, candidate] as const;
-    }));
-    const reconcileExecutionOwnershipObservations = vi.fn(async (candidate: Task) => {
-      candidate.status = "interrupted";
-      return false;
-    });
-    const subject = makeSubject([], now, [], {
-      now: () => now,
-      taskManager: {
-        listOwnerNullRunningInventory: vi.fn(async () => sessions.map((sessionId) => ({
-          session_id: sessionId,
-          node_id: "node-a",
-          updated_at: new Date("2026-08-11T00:00:00.000Z"),
-        }))),
-        hydrateRunnerRecoveryTask: vi.fn(async (sessionId) => tasks.get(sessionId) ?? null),
-        markRunnerFailureAndResume: vi.fn(async () => {}),
-        projectClosedRunner: vi.fn(async () => true),
-        reconcileExecutionOwnershipObservations,
-      },
-    });
-
-    await subject.coordinator.scanOnce();
-    now += 15_000;
-    await subject.coordinator.scanOnce();
-
-    expect(reconcileExecutionOwnershipObservations).toHaveBeenCalledTimes(2);
-    for (const sessionId of sessions) {
-      expect(tasks.get(sessionId)?.status).toBe("interrupted");
-    }
-    for (const [, input] of reconcileExecutionOwnershipObservations.mock.calls) {
-      expect(input).toMatchObject({
-        first: {
-          manifestId: null,
-          registrationId: null,
-          pid: null,
-          startIdentity: null,
-          executionCommandId: null,
-        },
-        second: {
-          manifestId: null,
-          registrationId: null,
-          pid: null,
-          startIdentity: null,
-          executionCommandId: null,
-        },
-        leaseExpiresAt: expect.any(Date),
-      });
-    }
-  });
-
-  it("isolates owner-null inventory read failure from registration recovery", async () => {
-    const current = registration({ lifecycleState: "running" });
-    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
-      taskManager: {
-        listOwnerNullRunningInventory: vi.fn(async () => {
-          throw new Error("orchestrator unavailable");
-        }),
-      },
-    });
-
-    await subject.coordinator.scanOnce();
-
-    expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce();
-    expect(subject.logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ nodeId: "node-a" }),
-      "owner-null running inventory read failed",
-    );
-  });
-
-  it("reaps and restarts when adoption loses a runner before its socket becomes available", async () => {
+  it("reaps and terminalizes when adoption loses a runner before its socket becomes available", async () => {
     const socketError = runnerSocketMissingError();
     const failedRunner = failedRecoveryRunner();
     const restartRegisteredRunner = vi.fn();
@@ -423,17 +339,14 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.logger.error.mock.calls).toEqual([]);
     await vi.waitFor(() => expect(subject.markReaped).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(recoverRegisteredRunner).toHaveBeenCalledTimes(2));
-    await vi.waitFor(() => expect(subject.markRunnerFailureAndResume).toHaveBeenCalledOnce());
-    await vi.waitFor(() => expect(restartRegisteredRunner).toHaveBeenCalledOnce());
+    expect(subject.markRunnerFailure).not.toHaveBeenCalled();
+    expect(restartRegisteredRunner).not.toHaveBeenCalled();
 
     expect(refreshRegistration).toHaveBeenCalledOnce();
     expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.invalidateRegistration).toHaveBeenCalledWith(
       current.config.paths,
       "registration-a",
-    );
-    expect(subject.invalidateRegistration.mock.invocationCallOrder[0]).toBeLessThan(
-      restartRegisteredRunner.mock.invocationCallOrder[0]!,
     );
     expect(recoverRegisteredRunner).toHaveBeenNthCalledWith(
       2,
@@ -449,7 +362,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(failedRunner.detachHost).toHaveBeenCalledOnce();
   });
 
-  it("identity-fences a live running registration whose socket disappeared before restart", async () => {
+  it("identity-fences and terminalizes a live registration whose socket disappeared", async () => {
     const socketError = runnerSocketMissingError();
     const failedRunner = failedRecoveryRunner();
     const restartRegisteredRunner = vi.fn();
@@ -482,8 +395,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.logger.error.mock.calls).toEqual([]);
     await vi.waitFor(() => expect(subject.markReaped).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(recoverRegisteredRunner).toHaveBeenCalledTimes(2));
-    await vi.waitFor(() => expect(subject.markRunnerFailureAndResume).toHaveBeenCalledOnce());
-    await vi.waitFor(() => expect(restartRegisteredRunner).toHaveBeenCalledOnce());
+    expect(subject.markRunnerFailure).not.toHaveBeenCalled();
+    expect(restartRegisteredRunner).not.toHaveBeenCalled();
 
     expect(subject.terminate).toHaveBeenCalledWith(
       expect.anything(),
@@ -650,11 +563,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
-  it("runner death while the server lives drains offline, marks error, and auto-resumes", async () => {
+  it("runner death while the server lives drains its terminal fact without replacement", async () => {
     const subject = makeSubject([registration({ pidAlive: false })]);
 
     await subject.coordinator.scanOnce();
-    await vi.waitFor(() => expect(subject.markRunnerFailureAndResume).toHaveBeenCalledOnce());
+    await subject.coordinator.waitForSettled();
 
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
@@ -663,21 +576,19 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "offline",
       expect.any(Function),
     );
-    expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce();
+    expect(subject.markRunnerFailure).not.toHaveBeenCalled();
+    expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
   });
 
-  it("runner death while the server was absent follows the same startup scan path", async () => {
+  it("runner death while the server was absent follows the same terminal-only startup path", async () => {
     const subject = makeSubject([registration({ pidAlive: false })]);
 
     await subject.coordinator.start();
-    await vi.waitFor(() => expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(subject.recoverRegisteredRunner).toHaveBeenCalledOnce());
     await subject.coordinator.stop();
 
-    expect(subject.markRunnerFailureAndResume).toHaveBeenCalledWith(
-      subject.task,
-      "runner process exited before execution completed",
-      expect.any(Function),
-    );
+    expect(subject.markRunnerFailure).not.toHaveBeenCalled();
+    expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
   });
 
   it("startup terminates a live failed runner before replaying its durable error offline", async () => {
@@ -839,9 +750,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       _paths: unknown,
       _expected: unknown,
       _registration: RunnerRegistration,
-      confirmCentralRelease: () => Promise<boolean>,
+      confirmRetirementStillValid: () => Promise<boolean>,
     ) => {
-      expect(await confirmCentralRelease()).toBe(true);
+      expect(await confirmRetirementStillValid()).toBe(true);
       current.retiredAt = new Date(RECOVERY_NOW_MS).toISOString();
       return "registration_absent" as const;
     });
@@ -863,33 +774,14 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.logger.warn).not.toHaveBeenCalled();
   });
 
-  it("retires a recorded terminal identity before offline replay can duplicate session_ended", async () => {
+  it("retires a recorded terminal registration before replay can duplicate session_ended", async () => {
     const current = registration({ pidAlive: false, lifecycleState: "completed" });
-    const trace: string[] = [];
-    const reconcileRecordedTerminalExecution = vi.fn(async () => {
-      trace.push("sessions-identity-retired");
-      return true;
-    });
-    const retireTerminalOwnership = vi.fn(async (
-      input: { registrationId: string; pid: number; startIdentity: string },
-      commit: () => Promise<boolean>,
-    ) => {
-      expect(input).toMatchObject({
-        registrationId: "registration-a",
-        pid: 4123,
-        startIdentity: "start-4123",
-      });
-      trace.push("exact-process-absent");
-      expect(await commit()).toBe(true);
-      trace.push("local-registration-retired");
-    });
+    const retireTerminalRegistration = vi.fn(async () => {});
     const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
-      taskManager: { reconcileRecordedTerminalExecution } as never,
       spawner: {
         terminate: vi.fn(async () => {}),
         invalidateRegistration: vi.fn(async () => {}),
-        retireTerminalRegistration: vi.fn(async () => {}),
-        retireTerminalOwnership,
+        retireTerminalRegistration,
       } as never,
     });
     subject.task.status = "error";
@@ -912,23 +804,17 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await subject.coordinator.waitForSettled();
 
     expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
-    expect(reconcileRecordedTerminalExecution).toHaveBeenCalledOnce();
-    expect(retireTerminalOwnership).toHaveBeenCalledOnce();
-    expect(trace).toEqual([
-      "exact-process-absent",
-      "sessions-identity-retired",
-      "local-registration-retired",
-    ]);
+    expect(retireTerminalRegistration).toHaveBeenCalledWith(
+      current.config.paths,
+      "registration-a",
+    );
   });
 
   it("retires the measured released sidecar shape without trusting stale lifecycle pid", async () => {
     const fixture = await releasedTerminalSidecarFixture();
     try {
-      const proveCentralOwnerAbsent = vi.fn(async (candidate: Task) =>
-        candidate.executionOwnership === undefined);
       const subject = makeSubject([fixture.registration], RECOVERY_NOW_MS, [], {
         spawner: fixture.spawner,
-        taskManager: { reconcileRecordedTerminalExecution: proveCentralOwnerAbsent } as never,
       });
       recordTerminalCompletion(subject.task);
 
@@ -942,7 +828,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         ([, message]) => message === "runner recovery action failed",
       );
       const retirementMarkers = subject.logger.info.mock.calls.filter(
-        ([, message]) => message === "released terminal runner evidence retired without replay",
+        ([, message]) => message === "recorded terminal runner registration retired without replay",
       );
       const violations = [
         ...(fixture.registration.pid === fixture.staleLifecyclePid
@@ -959,8 +845,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         ...(await pathExists(fixture.paths.lockPath) ? ["writer_lock_remains"] : []),
         ...recoveryFailures.map(() => "released_terminal_retried"),
         ...(retirementMarkers.length === 1 ? [] : ["released_retirement_marker_missing"]),
-        ...(proveCentralOwnerAbsent.mock.calls.length === 1
-          ? [] : ["central_owner_absence_not_reproved"]),
         ...(fixture.registration.lifecycle?.runner_pid === fixture.staleLifecyclePid
           ? [] : ["stale_lifecycle_pid_fixture_lost"]),
       ];
@@ -971,84 +855,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     }
   });
 
-  it("retires the released sidecar in the same scan while terminal ownership is clearing", async () => {
-    const fixture = await releasedTerminalSidecarFixture({
-      lifecyclePid: 2_147_483_647,
-    });
-    try {
-      const initialIdentity = await readRunnerRegistrationIdentity(
-        fixture.paths.sessionDirectory,
-      );
-      const reconcileRecordedTerminalExecution = vi.fn(async (candidate: Task) => {
-        candidate.executionOwnership = undefined;
-        return true;
-      });
-      const subject = makeSubject([fixture.registration], RECOVERY_NOW_MS, [], {
-        spawner: fixture.spawner,
-        taskManager: { reconcileRecordedTerminalExecution } as never,
-      });
-      recordTerminalCompletion(subject.task);
-      subject.task.executionOwnership = {
-        ownerKind: "runner_process",
-        ownershipGeneration: 2,
-        manifestId: "sha256-b271cc86",
-        runtimeEnvIdentity: "sha256-51ae3e79",
-        registrationId: fixture.registration.registrationId,
-        pid: null,
-        startIdentity: null,
-        executionCommandId: "execute-a",
-      } as never;
-
-      expect(releasedTransitionWindowViolations({
-        readerRegistrationIdPresent: true,
-        sidecarProcessIdentityAbsent: true,
-        readerStartIdentityAbsent: true,
-        readerMarkedPidDead: true,
-        staleLifecyclePidObserved: true,
-        ownershipPresentBeforeScan: true,
-        centralOwnershipRetired: true,
-        sidecarRetired: true,
-        recoveryFailureCount: 0,
-        retirementMarkerCount: 1,
-        reconcileCount: 1,
-      })).toEqual([]);
-
-      const ownershipPresentBeforeScan = subject.task.executionOwnership !== undefined;
-      await subject.coordinator.scanOnce();
-      await subject.coordinator.waitForSettled();
-
-      const retiredIdentity = await readRunnerRegistrationIdentity(
-        fixture.paths.sessionDirectory,
-      );
-      const recoveryFailureCount = subject.logger.error.mock.calls.filter(
-        ([, message]) => message === "runner recovery action failed",
-      ).length;
-      const retirementMarkerCount = subject.logger.info.mock.calls.filter(
-        ([, message]) => message === "released terminal runner evidence retired without replay",
-      ).length;
-      expect(releasedTransitionWindowViolations({
-        readerRegistrationIdPresent: fixture.registration.registrationId !== null,
-        sidecarProcessIdentityAbsent:
-          initialIdentity?.pid === null && initialIdentity.startIdentity === null,
-        readerStartIdentityAbsent: fixture.registration.pidStartIdentity === null,
-        readerMarkedPidDead: !fixture.registration.pidAlive,
-        staleLifecyclePidObserved:
-          fixture.registration.pid === fixture.staleLifecyclePid
-          && fixture.registration.lifecycle?.runner_pid === fixture.staleLifecyclePid,
-        ownershipPresentBeforeScan,
-        centralOwnershipRetired: subject.task.executionOwnership === undefined,
-        sidecarRetired: Boolean(retiredIdentity?.retiredAt),
-        recoveryFailureCount,
-        retirementMarkerCount,
-        reconcileCount: reconcileRecordedTerminalExecution.mock.calls.length,
-      })).toEqual([]);
-      expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
-    } finally {
-      await rm(fixture.root, { recursive: true, force: true });
-    }
-  });
-
-  it("keeps live pid and residual start identity outside released cleanup", async () => {
+  it("retires exact live or residual registration identity after terminal event", async () => {
     const livePid = await releasedTerminalSidecarFixture({
       lifecyclePid: process.pid,
       identityPid: process.pid,
@@ -1067,7 +874,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     try {
       for (const [label, fixture] of controls) {
-        const subject = makeSubject([fixture.registration]);
+        const subject = makeSubject([fixture.registration], RECOVERY_NOW_MS, [], {
+          spawner: fixture.spawner,
+        });
         recordTerminalCompletion(subject.task);
         await subject.coordinator.scanOnce();
         await subject.coordinator.waitForSettled();
@@ -1075,9 +884,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
           ([, message]) => message === "runner recovery action failed",
         );
         const identity = await readRunnerRegistrationIdentity(fixture.paths.sessionDirectory);
-        if (failures.length !== 1) violations.push(`${label}_not_fail_closed`);
+        if (failures.length !== 0) violations.push(`${label}_recovery_failed`);
         if (subject.terminate.mock.calls.length !== 0) violations.push(`${label}_terminated`);
-        if (identity?.retiredAt) violations.push(`${label}_registration_retired`);
+        if (identity && !identity.retiredAt) violations.push(`${label}_registration_not_retired`);
       }
     } finally {
       await Promise.all(controls.map(async ([, fixture]) =>
@@ -1085,38 +894,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     }
 
     expect(violations).toEqual([]);
-  });
-
-  it("fails closed when central ownership reappears during released retirement", async () => {
-    const fixture = await releasedTerminalSidecarFixture();
-    try {
-      const subject = makeSubject([fixture.registration], RECOVERY_NOW_MS, [], {
-        spawner: fixture.spawner,
-        taskManager: {
-          reconcileRecordedTerminalExecution: vi.fn(async (candidate: Task) => {
-            candidate.executionOwnership = executionOwnership("registration-successor");
-            return false;
-          }),
-        } as never,
-      });
-      recordTerminalCompletion(subject.task);
-
-      await subject.coordinator.scanOnce();
-      await subject.coordinator.waitForSettled();
-
-      const identity = await readRunnerRegistrationIdentity(fixture.paths.sessionDirectory);
-      expect(identity?.retiredAt).toBeUndefined();
-      expect(subject.logger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ err: expect.any(Error) }),
-        "runner recovery action failed",
-      );
-      expect(subject.logger.info).not.toHaveBeenCalledWith(
-        expect.anything(),
-        "released terminal runner evidence retired without replay",
-      );
-    } finally {
-      await rm(fixture.root, { recursive: true, force: true });
-    }
   });
 
   it("fails closed when process identity reappears before released retirement", async () => {
@@ -1134,9 +911,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     try {
       const subject = makeSubject([fixture.registration], RECOVERY_NOW_MS, [], {
         spawner: fixture.spawner,
-        taskManager: {
-          reconcileRecordedTerminalExecution: vi.fn(async () => true),
-        } as never,
       });
       recordTerminalCompletion(subject.task);
 
@@ -1317,7 +1091,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
   });
 
-  it("retries a previously reaped registration through offline drain and auto-resume", async () => {
+  it("drains a previously reaped registration without replacement", async () => {
     const subject = makeSubject([registration({
       pidAlive: false,
       lifecycleState: "reaped",
@@ -1334,17 +1108,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "offline",
       expect.any(Function),
     );
-    expect(subject.markRunnerFailureAndResume).toHaveBeenCalledWith(
-      subject.task,
-      "lease expired before restart",
-      expect.any(Function),
-    );
+    expect(subject.markRunnerFailure).not.toHaveBeenCalled();
     expect(subject.task.runnerTerminalFact).toBe("reaped");
-    expect(subject.task.recoveredExecutionOwnership).toMatchObject({
-      registrationId: "registration-a",
-      executionCommandId: "execute-a",
-    });
-    expect(subject.restartRegisteredRunner).toHaveBeenCalledOnce();
+    expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
   });
 
   it("conservatively drains a closed registration across restarts when tail state is missing", async () => {
@@ -1567,16 +1333,17 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await Promise.all([first, second]);
   });
 
-  it("a reboot scan independently drains and resumes every dead registration", async () => {
+  it("a reboot scan independently drains every dead registration without replacement", async () => {
     const first = registration({ sessionId: "session-a", pidAlive: false });
     const second = registration({ sessionId: "session-b", pidAlive: false });
     const subject = makeSubject([first, second]);
 
     await subject.coordinator.scanOnce();
-    await vi.waitFor(() => expect(subject.restartRegisteredRunner).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(subject.recoverRegisteredRunner).toHaveBeenCalledTimes(2));
 
     expect(subject.hydrateRunnerRecoveryTask).toHaveBeenCalledWith("session-a");
     expect(subject.hydrateRunnerRecoveryTask).toHaveBeenCalledWith("session-b");
+    expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
   });
 
   it("hydrates every admitted task before starting any recovery execution", async () => {
@@ -2088,84 +1855,6 @@ describe("RunnerRecoveryCoordinator GC cadence", () => {
   });
 });
 
-describe("RunnerRecoveryCoordinator execution ownership backoff", () => {
-  /**
-   * 260820 incident: the scan re-attempted a session whose ownership was
-   * wedged on its own 14s cadence, ignoring the +60s the rejection asked for.
-   */
-  it("skips a session until the ownership backoff it was given expires", async () => {
-    let nowMs = RECOVERY_NOW_MS;
-    const backoff = new ExecutionOwnershipBackoff({
-      logger: { warn: vi.fn(), error: vi.fn() },
-      now: () => nowMs,
-    });
-    const subject = makeSubject(
-      [registration({ lifecycleState: "running" })],
-      RECOVERY_NOW_MS,
-      [],
-      { ownershipBackoff: backoff, now: () => nowMs },
-    );
-
-    await subject.coordinator.scanOnce();
-    await subject.coordinator.waitForSettled();
-    expect(subject.recoverRegisteredRunner).toHaveBeenCalledTimes(1);
-
-    backoff.observeConflict("session-a", new Date(nowMs + 60_000).toISOString());
-
-    nowMs += 14_000;
-    await subject.coordinator.scanOnce();
-    expect(subject.recoverRegisteredRunner).toHaveBeenCalledTimes(1);
-
-    nowMs += 50_000;
-    await subject.coordinator.scanOnce();
-    expect(subject.recoverRegisteredRunner).toHaveBeenCalledTimes(2);
-  });
-
-  /**
-   * The backoff exists to stop a session from re-contending for ownership it
-   * keeps losing. Reaping a runner that has since died contends for nothing,
-   * and holding it back would strand the session for the whole backoff.
-   */
-  it("still reaps a dead runner while its ownership backoff is in force", async () => {
-    let nowMs = RECOVERY_NOW_MS;
-    const backoff = new ExecutionOwnershipBackoff({
-      logger: { warn: vi.fn(), error: vi.fn() },
-      now: () => nowMs,
-    });
-    backoff.observeConflict("session-a", new Date(nowMs + 60_000).toISOString());
-    const subject = makeSubject(
-      [registration({ pidAlive: false })],
-      RECOVERY_NOW_MS,
-      [],
-      { ownershipBackoff: backoff, now: () => nowMs },
-    );
-
-    await subject.coordinator.scanOnce();
-
-    expect(subject.markReaped).toHaveBeenCalled();
-  });
-
-  it("does not clear a shared ownership conflict after terminal replay work", async () => {
-    let nowMs = RECOVERY_NOW_MS;
-    const backoff = new ExecutionOwnershipBackoff({
-      logger: { warn: vi.fn(), error: vi.fn() },
-      now: () => nowMs,
-    });
-    backoff.observeConflict("session-a", new Date(nowMs + 60_000).toISOString());
-    const subject = makeSubject(
-      [registration({ pidAlive: false, lifecycleState: "completed" })],
-      RECOVERY_NOW_MS,
-      [],
-      { ownershipBackoff: backoff, now: () => nowMs },
-    );
-
-    await subject.coordinator.scanOnce();
-
-    nowMs += 14_000;
-    expect(backoff.shouldSkip("session-a")).toBe(true);
-  });
-});
-
 function makeSubject(
   registrations: RunnerRegistration[],
   now = Date.parse("2026-08-11T00:00:30.000Z"),
@@ -2183,14 +1872,9 @@ function makeSubject(
     tasks.get(sessionId) ?? fallbackTask);
   const recoverRegisteredRunner = vi.fn(async () => {});
   const restartRegisteredRunner = vi.fn();
-  const markRunnerFailureAndResume = vi.fn(async (
-    recovered: Task,
-    _message: string,
-    resume: (task: Task) => void,
-  ) => resume(recovered));
+  const markRunnerFailure = vi.fn(async () => {});
+  const markRunnerFailureAndResume = markRunnerFailure;
   const projectClosedRunner = vi.fn(async () => true);
-  const listOwnerNullRunningInventory = vi.fn(async () => []);
-  const reconcileExecutionOwnershipObservations = vi.fn(async () => false);
   const terminate = vi.fn(async () => {});
   const invalidateRegistration = vi.fn(async () => {});
   const retireTerminalRegistration = vi.fn(async () => {});
@@ -2202,10 +1886,8 @@ function makeSubject(
   };
   const baseTaskManager = {
     hydrateRunnerRecoveryTask,
-    markRunnerFailureAndResume,
+    markRunnerFailure,
     projectClosedRunner,
-    listOwnerNullRunningInventory,
-    reconcileExecutionOwnershipObservations,
   };
   const options: RunnerRecoveryCoordinatorOptions = {
     nodeId: "node-a",
@@ -2222,7 +1904,7 @@ function makeSubject(
     ...overrides,
     taskExecutor: {
       recoverRegisteredRunner,
-      restartRegisteredRunner,
+      ...({ restartRegisteredRunner } as object),
       ...overrides.taskExecutor,
     },
     taskManager: {
@@ -2236,6 +1918,7 @@ function makeSubject(
     hydrateRunnerRecoveryTask,
     recoverRegisteredRunner,
     restartRegisteredRunner,
+    markRunnerFailure,
     markRunnerFailureAndResume,
     projectClosedRunner,
     markReaped,
@@ -2490,50 +2173,6 @@ function recordTerminalCompletion(task: Task): void {
   task.runner = undefined;
   task.executionPromise = undefined;
   task.executionOwnership = undefined;
-}
-
-function executionOwnership(
-  registrationId: string,
-): NonNullable<Task["executionOwnership"]> {
-  return {
-    ownerKind: "runner_process",
-    ownershipGeneration: 2,
-    manifestId: "sha-successor",
-    runtimeEnvIdentity: "env-successor",
-    registrationId,
-    pid: 880_003,
-    startIdentity: "start-880003",
-    executionCommandId: "execute-successor",
-  };
-}
-
-function releasedTransitionWindowViolations(observation: {
-  readerRegistrationIdPresent: boolean;
-  sidecarProcessIdentityAbsent: boolean;
-  readerStartIdentityAbsent: boolean;
-  readerMarkedPidDead: boolean;
-  staleLifecyclePidObserved: boolean;
-  ownershipPresentBeforeScan: boolean;
-  centralOwnershipRetired: boolean;
-  sidecarRetired: boolean;
-  recoveryFailureCount: number;
-  retirementMarkerCount: number;
-  reconcileCount: number;
-}): string[] {
-  return [
-    ...(observation.readerRegistrationIdPresent ? [] : ["reader_registration_id_missing"]),
-    ...(observation.sidecarProcessIdentityAbsent ? [] : ["sidecar_process_identity_present"]),
-    ...(observation.readerStartIdentityAbsent ? [] : ["reader_start_identity_present"]),
-    ...(observation.readerMarkedPidDead ? [] : ["reader_marked_stale_pid_live"]),
-    ...(observation.staleLifecyclePidObserved ? [] : ["stale_lifecycle_pid_fixture_lost"]),
-    ...(observation.ownershipPresentBeforeScan ? [] : ["transition_ownership_missing"]),
-    ...(observation.centralOwnershipRetired ? [] : ["central_ownership_not_retired"]),
-    ...(observation.sidecarRetired ? [] : ["released_sidecar_not_retired"]),
-    ...(observation.recoveryFailureCount === 0 ? [] : ["released_terminal_retried"]),
-    ...(observation.retirementMarkerCount === 1
-      ? [] : ["released_retirement_marker_not_exactly_once"]),
-    ...(observation.reconcileCount === 1 ? [] : ["central_retirement_not_exactly_once"]),
-  ];
 }
 
 async function pathExists(path: string): Promise<boolean> {
