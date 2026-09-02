@@ -58,7 +58,7 @@ describe.sequential("versioned migration runner", () => {
     const serviceEnvironment = { HANIEL_SERVICE_CWD: cwd };
 
     const fresh = runWithEnv(MIGRATE, REPOSITORY_ROOT, serviceEnvironment, "initialize");
-    expect(fresh.status).toBe(0);
+    expect(fresh.status, fresh.stderr || fresh.stdout).toBe(0);
     expectNoSecret(fresh);
 
     const sql = postgres(url, { max: 1, idle_timeout: 1 });

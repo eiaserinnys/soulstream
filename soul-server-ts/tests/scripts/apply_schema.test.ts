@@ -362,7 +362,8 @@ describe("apply-schema.mjs", () => {
     async () => {
       const { url } = await startPostgres();
       const cwd = writeEnv(url);
-      expect(runApplySchema(cwd).status).toBe(0);
+      const initialized = runApplySchema(cwd);
+      expect(initialized.status, initialized.stderr || initialized.stdout).toBe(0);
 
       const sql = postgres(url, { max: 1, idle_timeout: 1 });
       try {
@@ -498,7 +499,8 @@ describe("apply-schema.mjs", () => {
     async () => {
       const { url } = await startPostgres();
       const cwd = writeEnv(url);
-      expect(runApplySchema(cwd).status).toBe(0);
+      const initialized = runApplySchema(cwd);
+      expect(initialized.status, initialized.stderr || initialized.stdout).toBe(0);
 
       const sql = postgres(url, { max: 2, idle_timeout: 1 });
       try {
@@ -746,7 +748,8 @@ describe("apply-schema.mjs", () => {
     async () => {
       const { url } = await startPostgres();
       const cwd = writeEnv(url);
-      expect(runApplySchema(cwd).status).toBe(0);
+      const initialized = runApplySchema(cwd);
+      expect(initialized.status, initialized.stderr || initialized.stdout).toBe(0);
 
       const sql = postgres(url, { max: 1, idle_timeout: 1 });
       try {
