@@ -3,10 +3,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { recoverRunnerByDisposition } from
   "../../src/runner/runner_recovery_disposition.js";
-import {
-  prepareRecoveredTask,
-  prepareRecoveredTerminalExecutionIdentity,
-} from "../../src/runner/runner_recovery_task.js";
+import { prepareRecoveredTask } from
+  "../../src/runner/runner_recovery_task.js";
 import { AutoResumeTransition } from
   "../../src/task/task_auto_resume_transition.js";
 import { hydrateEvictedTaskFromSessionRow } from
@@ -34,7 +32,6 @@ import {
 const logger = pino({ level: "silent" });
 const OFFLINE_SESSION_ID = "r16-offline-terminal-status";
 const RETRY_SESSION_ID = "r21-offline-terminal-status-retry";
-const RECORDED_RECEIPT_SESSION_ID = "r23-recorded-terminal-receipt";
 const ACTIVATION_SESSION_ID = "r16-activation-failure-status";
 const OWNERLESS_RECOVERED_SESSION_ID = "r26b-ownerless-recovered-terminal";
 const EXPIRED_IDENTITY_SESSION_ID = "r26b-expired-identity-terminal";
@@ -85,14 +82,9 @@ describe("R16 terminal status full slice", () => {
       recoverOffline: async (owned, recoveredTask, prepare) => {
         const guarded = await prepare(owned);
         prepareRecoveredTask(recoveredTask, guarded);
-        prepareRecoveredTerminalExecutionIdentity(recoveredTask, guarded);
         recoveredTask.status = "completed";
         recoveredTask.completedAt = new Date();
         recoveredTask.runnerTerminalFact = "completed";
-        expect(recoveredTask.recoveredExecutionOwnership).toMatchObject({
-          registrationId: LIVE_OWNER_IDENTITY.registrationId,
-          executionCommandId: LIVE_OWNER_IDENTITY.executionCommandId,
-        });
         const persisted = await lifecycle.persistExecutorFinalState(recoveredTask);
         expect(persisted.terminalTransitionApplied).toBe(true);
         return { task: recoveredTask, replayed: true };
@@ -118,11 +110,11 @@ describe("R16 terminal status full slice", () => {
     const terminalWrite = vi.fn()
       .mockRejectedValueOnce(new Error("terminal projection RPC reset"))
       .mockImplementation((...args) => ingress.persistence
-        .enqueueRecoveredRunnerTerminalFactAndWaitForApplication(...args));
+        .enqueueTerminalTransitionAndWaitForApplication(...args));
     const lifecycle = new TaskLifecycleTransition({
       logger,
       persistence: {
-        enqueueRecoveredRunnerTerminalFactAndWaitForApplication: terminalWrite,
+        enqueueTerminalTransitionAndWaitForApplication: terminalWrite,
       } as never,
     });
     const finalizer = new TaskExecutorFinalizer({
@@ -147,8 +139,7 @@ describe("R16 terminal status full slice", () => {
       recoverOffline: async (owned, recoveredTask, prepare) => {
         const guarded = await prepare(owned);
         prepareRecoveredTask(recoveredTask, guarded);
-        prepareRecoveredTerminalExecutionIdentity(recoveredTask, guarded);
-        lifecycle.applyRecoveredRunnerTerminalFact(recoveredTask, "completed", null);
+        lifecycle.applyRunnerTerminalFact(recoveredTask, "completed", null);
         await finalizer.finalize(recoveredTask);
         return { task: recoveredTask, replayed: true };
       },
@@ -173,66 +164,6 @@ describe("R16 terminal status full slice", () => {
     expect(retireTerminal).toHaveBeenCalledOnce();
   });
 
-  it("projects an already-recorded session_ended receipt whose session row stayed running", async () => {
-    const terminalEventId = 531;
-    await insertOwnedRunningSession(RECORDED_RECEIPT_SESSION_ID);
-    await postgres.sql`
-      INSERT INTO events (session_id, id, event_type, payload, created_at)
-      VALUES (
-        ${RECORDED_RECEIPT_SESSION_ID}, ${terminalEventId}, 'session_ended',
-        ${JSON.stringify({
-          type: "session_ended",
-          status: "completed",
-          termination_reason: "completed_ok",
-        })}, NOW()
-      )
-    `;
-    await postgres.sql`
-      UPDATE sessions
-         SET termination_event_id = ${terminalEventId},
-             last_event_id = ${terminalEventId}
-       WHERE session_id = ${RECORDED_RECEIPT_SESSION_ID}
-    `;
-    const task = await loadTask(RECORDED_RECEIPT_SESSION_ID);
-    const lifecycle = new TaskLifecycleTransition({
-      logger,
-      persistence: ingress.persistence,
-    });
-    const finalizer = new TaskExecutorFinalizer({
-      lifecycleTransition: lifecycle,
-      logger,
-    });
-    const registration = {
-      ...makeOwnerlessRegistration(RECORDED_RECEIPT_SESSION_ID, Date.now(), {
-        pidAlive: false,
-      }),
-      lifecycle: {
-        ...makeOwnerlessRegistration(
-          RECORDED_RECEIPT_SESSION_ID,
-          Date.now(),
-        ).lifecycle!,
-        execution_state: "completed" as const,
-      },
-    };
-    prepareRecoveredTask(task, registration);
-    prepareRecoveredTerminalExecutionIdentity(task, registration);
-    lifecycle.applyRecoveredRunnerTerminalFact(task, "completed", null);
-
-    await finalizer.finalize(task);
-
-    expect(await readStatus(RECORDED_RECEIPT_SESSION_ID)).toEqual({
-      status: "completed",
-      terminationReason: "completed_ok",
-    });
-    const terminalEvents = await postgres.sql<Array<{ count: number }>>`
-      SELECT COUNT(*)::int AS count
-      FROM events
-      WHERE session_id = ${RECORDED_RECEIPT_SESSION_ID}
-        AND event_type = 'session_ended'
-    `;
-    expect(terminalEvents[0]?.count).toBe(1);
-  });
-
   it("projects a recovered terminal fact when the durable session has no owner history", async () => {
     await insertSession(OWNERLESS_RECOVERED_SESSION_ID, "running");
 
@@ -245,7 +176,7 @@ describe("R16 terminal status full slice", () => {
     });
   });
 
-  it("ignores an expired identity proof when projecting a recovered terminal fact", async () => {
+  it("projects a terminal fact independently of expired ownership history", async () => {
     await insertSession(EXPIRED_IDENTITY_SESSION_ID, "running");
     await postgres.sql`
       INSERT INTO session_execution_ownerships (
@@ -272,7 +203,7 @@ describe("R16 terminal status full slice", () => {
     });
   });
 
-  it("does not let a recovered terminal fact supersede a live successor owner", async () => {
+  it("clears a legacy live-owner projection through the plain terminal transition", async () => {
     await insertSession(LIVE_SUCCESSOR_SESSION_ID, "running");
     await postgres.sql`
       INSERT INTO session_execution_ownerships (
@@ -288,10 +219,10 @@ describe("R16 terminal status full slice", () => {
 
     const persisted = await persistRecoveredTerminal(LIVE_SUCCESSOR_SESSION_ID);
 
-    expect(persisted.terminalTransitionApplied).toBe(false);
+    expect(persisted.terminalTransitionApplied).toBe(true);
     expect(await readStatus(LIVE_SUCCESSOR_SESSION_ID)).toEqual({
-      status: "running",
-      terminationReason: null,
+      status: "completed",
+      terminationReason: "completed_ok",
     });
   });
 
@@ -377,7 +308,7 @@ describe("R16 terminal status full slice", () => {
   async function insertOwnedRunningSession(sessionId: string): Promise<void> {
     await insertSession(sessionId, "running");
     const acquired = await ingress.persistence
-      .acquireExecutionOwnershipAndWaitForApplication(sessionId, {
+      .recordExecutionGenerationAndWaitForApplication(sessionId, {
         ...LIVE_OWNER_IDENTITY,
         ownerKind: "runner_process",
         leaseExpiresAt: new Date(Date.now() + 60_000),
@@ -420,15 +351,13 @@ describe("R16 terminal status full slice", () => {
       },
     };
     prepareRecoveredTask(task, registration);
-    prepareRecoveredTerminalExecutionIdentity(task, registration);
     const lifecycle = new TaskLifecycleTransition({
       logger,
       persistence: ingress.persistence,
     });
-    task.status = "completed";
+    lifecycle.applyRunnerTerminalFact(task, "completed", null);
     task.completedAt = completedAt;
-    task.runnerTerminalFact = "completed";
-    return await lifecycle.persistExecutorFinalState(task);
+    return await lifecycle.persistExecutorFinalState(task, true);
   }
 
   async function readStatus(sessionId: string): Promise<{

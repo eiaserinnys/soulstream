@@ -209,7 +209,7 @@ export function makeEventPersistenceTestDouble(
       };
     },
   );
-  const acquireExecutionOwnershipAndWaitForApplication = vi.fn(
+  const recordExecutionGenerationAndWaitForApplication = vi.fn(
     async (
       _sessionId: string,
       input: {
@@ -293,8 +293,7 @@ export function makeEventPersistenceTestDouble(
     ) => await enqueueTerminalTransitionAndWaitForApplication(sessionId, event, effect),
     ...(options.capabilityProfile === "execution_ownership"
       ? {
-          recordExecutionGenerationAndWaitForApplication:
-            acquireExecutionOwnershipAndWaitForApplication,
+          recordExecutionGenerationAndWaitForApplication,
         }
       : {}),
     waitForSessionAck,
@@ -310,7 +309,9 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForAck,
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
-    acquireExecutionOwnershipAndWaitForApplication,
+    recordExecutionGenerationAndWaitForApplication,
+    acquireExecutionOwnershipAndWaitForApplication:
+      recordExecutionGenerationAndWaitForApplication,
     releaseExecutionOwnershipAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,

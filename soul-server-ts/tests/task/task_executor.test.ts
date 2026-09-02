@@ -129,7 +129,7 @@ function makeMocks() {
     enqueueTerminalTransitionAndWaitForApplication:
       persistenceDouble.enqueueTerminalTransitionAndWaitForApplication,
     recordExecutionGenerationAndWaitForApplication:
-      persistenceDouble.acquireExecutionOwnershipAndWaitForApplication,
+      persistenceDouble.recordExecutionGenerationAndWaitForApplication,
     enqueueMetadataEffect,
     handleSideEffects,
     updateSession,
@@ -2566,14 +2566,6 @@ describe("TaskExecutor runner process boundary", () => {
       );
       const task = makeTask();
       task.status = "initializing";
-      task.recoveredExecutionOwnership = {
-        manifestId: "release-old",
-        runtimeEnvIdentity: "env-old",
-        registrationId: "registration-old",
-        pid: 4321,
-        startIdentity: "start-old",
-        executionCommandId: "execute-old",
-      };
       const registration = {
         config: { agent },
         lifecycle: {
