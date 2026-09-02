@@ -58,7 +58,12 @@ export async function stopExistingRunnerLocked(
     if (!expected) {
       throw identityProofFailure(`runner writer lock ownership unavailable: ${paths.lockPath}`);
     }
-    await terminateExactRunner(expected, deps, paths.lockPath, lockState);
+    await terminateRegisteredRunnerDuringLockRelease(
+      expected,
+      deps,
+      paths.lockPath,
+      lockState,
+    );
   }
   if (lockState.kind === "held") {
     const owner = expected ?? lockState.owner;
@@ -88,7 +93,46 @@ export async function terminateExactRunner(
   lockPath: string,
   initialState?: RunnerWriterLockState,
 ): Promise<void> {
-  if (await exactProcessIsAbsent(expected, lockPath, deps, initialState)) return;
+  return await terminateExactRunnerWithPolicy(
+    expected,
+    deps,
+    lockPath,
+    initialState,
+    false,
+  );
+}
+
+async function terminateRegisteredRunnerDuringLockRelease(
+  expected: ExactRunnerProcess,
+  deps: RunnerProcessTerminationDependencies,
+  lockPath: string,
+  initialState: RunnerWriterLockState,
+): Promise<void> {
+  return await terminateExactRunnerWithPolicy(
+    expected,
+    deps,
+    lockPath,
+    initialState,
+    true,
+  );
+}
+
+async function terminateExactRunnerWithPolicy(
+  expected: ExactRunnerProcess,
+  deps: RunnerProcessTerminationDependencies,
+  lockPath: string,
+  initialState: RunnerWriterLockState | undefined,
+  acceptRegisteredReleaseGap: boolean,
+): Promise<void> {
+  if (await exactProcessIsAbsent(
+    expected,
+    lockPath,
+    deps,
+    initialState,
+    "SIGTERM",
+    false,
+    acceptRegisteredReleaseGap,
+  )) return;
   signalRunnerProcess(expected.pid, "SIGTERM", deps);
   if (await waitForExactProcessExit(expected, lockPath, deps, "SIGKILL")) return;
   signalRunnerProcess(expected.pid, "SIGKILL", deps);
@@ -127,6 +171,7 @@ async function exactProcessIsAbsent(
   initialState?: RunnerWriterLockState,
   boundary: "SIGTERM" | "SIGKILL" | "retirement" = "SIGTERM",
   retryUnavailable = false,
+  acceptRegisteredReleaseGap = false,
 ): Promise<boolean> {
   const state = initialState ?? await inspectRunnerLivenessLock(lockPath, deps);
   if (state.kind === "free") return true;
@@ -136,6 +181,9 @@ async function exactProcessIsAbsent(
     // process, so confirm its current start identity before signalling it.
     // Without that proof stopExistingRunnerLocked fails closed above.
     if (retryUnavailable) return false;
+    if (!acceptRegisteredReleaseGap) {
+      throw identityProofFailure(`runner writer lock ownership unavailable: ${lockPath}`);
+    }
     const observed = await deps.inspectProcess(expected.pid);
     if (!observed.alive) return true;
     if (observed.startIdentity === null) {
