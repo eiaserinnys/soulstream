@@ -229,7 +229,7 @@ export class RunnerAdoptionFailureRecovery {
       ) {
         this.deps.logger.info(
           { ...recoveryLogContext(registration, error, verifiedDisposition), pid: hydrated.pid },
-          "identity-verified runner with a missing socket will be replaced",
+          "identity-verified runner with a missing socket will be terminalized",
         );
         await this.terminalize(
           hydrated,
