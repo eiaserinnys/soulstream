@@ -64,12 +64,7 @@ export class TaskInitialMessagePublisher {
         type: "context_manifest",
         ...manifest,
       } satisfies SSEEventPayload;
-      await this.deps.persistence.enqueueEvent(
-        task.agentSessionId,
-        event,
-        undefined,
-        task.executionOwnership?.registrationId,
-      );
+      await this.enqueueTaskEvent(task, event);
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
@@ -87,11 +82,20 @@ export class TaskInitialMessagePublisher {
       type: "system_message",
       text: effectiveSystemPrompt,
     };
+    await this.enqueueTaskEvent(task, event as SSEEventPayload);
+  }
+
+  private async enqueueTaskEvent(task: Task, event: SSEEventPayload): Promise<void> {
+    const registrationId = task.executionOwnership?.registrationId;
+    if (registrationId === undefined) {
+      await this.deps.persistence.enqueueEvent(task.agentSessionId, event);
+      return;
+    }
     await this.deps.persistence.enqueueEvent(
       task.agentSessionId,
-      event as SSEEventPayload,
+      event,
       undefined,
-      task.executionOwnership?.registrationId,
+      registrationId,
     );
   }
 }
