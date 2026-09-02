@@ -884,16 +884,6 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       completionId: "completion-consumed-e2e",
       relationKey: "relation-consumed-e2e",
     };
-    await gate.recordConsumed(params, {
-      agentSessionId: "caller-old",
-      prompt: "",
-      status: "completed",
-      lastEventId: 9,
-      lastReadEventId: 0,
-      interventionQueue: [],
-      createdAt: new Date(),
-    });
-
     const task = {
       agentSessionId: "caller-old",
       prompt: "",
@@ -903,6 +893,12 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       interventionQueue: [],
       createdAt: new Date(),
     };
+    await expect(gate.admit(params)).resolves.toMatchObject({
+      kind: "admitted",
+      deliveryId: "delivery-consumed-e2e",
+    });
+    await gate.recordConsumed(params, task);
+
     const getTask = vi.fn().mockReturnValue(task);
     const queueOnly = vi.fn();
     const deliver = vi.fn();
