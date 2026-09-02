@@ -128,17 +128,12 @@ export class TaskEngineEventPublisher {
     }
 
     try {
-      const generation = task.executionOwnership?.ownershipGeneration;
-      if (generation === undefined) {
-        await this.deps.persistence.enqueueEvent(task.agentSessionId, event, effect);
-      } else {
-        await this.deps.persistence.enqueueEvent(
-          task.agentSessionId,
-          event,
-          effect,
-          generation,
-        );
-      }
+      await this.deps.persistence.enqueueEvent(
+        task.agentSessionId,
+        event,
+        effect,
+        task.executionOwnership?.registrationId,
+      );
       return true;
     } finally {
       clearEventPersistenceInternals(event);

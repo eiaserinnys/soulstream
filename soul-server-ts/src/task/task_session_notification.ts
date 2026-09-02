@@ -56,6 +56,8 @@ export class SessionNotificationPublisher {
       const { eventId } = await this.deps.persistence.enqueueEventAndWaitForSessionAck(
         task.agentSessionId,
         event,
+        undefined,
+        task.executionOwnership?.registrationId,
       );
       task.lastEventId = eventId;
       targetReceiptId = `event:${eventId}`;

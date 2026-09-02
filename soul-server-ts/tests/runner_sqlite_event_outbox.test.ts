@@ -27,6 +27,8 @@ import { handleRunnerInterventionCommand } from
   "../src/runner/runner_intervention_command.js";
 import { inspectRunnerOutboxCopy } from "../src/runner/runner_outbox_inspector.js";
 import { computeRunnerAckCheckpointHash } from "../src/runner/sqlite_event_outbox_database.js";
+import { runnerRegistrationIdentityPath, writeRunnerRegistrationIdentity } from
+  "../src/runner/runner_registration_identity.js";
 import {
   readRunnerLifecycleSummary,
   runnerLifecycleSummaryPath,
@@ -44,6 +46,70 @@ afterEach(async () => {
 });
 
 describe("RunnerSqliteEventOutbox", () => {
+  it("attaches a v10 sidecar identity and stays fail-closed after migration without it", async () => {
+    const path = await temporaryDatabasePath();
+    const original = await RunnerSqliteEventOutbox.create(path);
+    await original.initializeBootstrap(bootstrapInput());
+    const durable = await original.append(eventInput("legacy pending"));
+    original.close();
+
+    const {
+      payload_hash: _payloadHash,
+      registration_id: _registrationId,
+      ...unsigned
+    } = durable;
+    const legacyHash = computeEventOutboxPayloadHash({
+      ...unsigned,
+      execution_generation: 7,
+    } as never);
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      ALTER TABLE runner_event_outbox
+      ADD COLUMN execution_generation INTEGER CHECK (
+        execution_generation IS NULL OR execution_generation > 0
+      );
+    `);
+    legacy.prepare(`
+      UPDATE runner_event_outbox
+      SET execution_generation = 7, payload_hash = ?
+      WHERE record_kind = 'event'
+    `).run(legacyHash);
+    legacy.exec(`
+      ALTER TABLE runner_event_outbox DROP COLUMN registration_id;
+      PRAGMA user_version = 10;
+    `);
+    legacy.close();
+
+    await writeRunnerRegistrationIdentity(dirname(path), {
+      schemaVersion: 1,
+      registrationId: "registration-v10",
+      sessionId: "session-a",
+      codeSha: "sha-v10",
+      pid: process.pid,
+      startIdentity: "start-v10",
+    });
+    const reattached = await RunnerSqliteEventOutbox.openReadOnly(path);
+    const batch = await reattached.readBatch();
+    expect(batch?.events[0]).toMatchObject({
+      source_seq: durable.source_seq,
+      registration_id: "registration-v10",
+    });
+    expect(batch?.events[0]).not.toHaveProperty("execution_generation");
+    expect(batch?.events[0]?.payload_hash).not.toBe(legacyHash);
+    reattached.close();
+
+    await rm(runnerRegistrationIdentityPath(dirname(path)));
+    const migrated = await RunnerSqliteEventOutbox.open(path);
+    expect((await migrated.readBatch())?.events[0]).toMatchObject({ registration_id: null });
+    migrated.close();
+
+    const reopened = await RunnerSqliteEventOutbox.openReadOnly(path);
+    const failClosed = (await reopened.readBatch())?.events[0];
+    expect(failClosed).toMatchObject({ registration_id: null });
+    expect(failClosed).not.toHaveProperty("execution_generation");
+    reopened.close();
+  });
+
   it("atomically rotates the durable backend session id with its orch-bound event", async () => {
     const path = await temporaryDatabasePath();
     const outbox = await RunnerSqliteEventOutbox.create(path);
@@ -1232,7 +1298,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
     const legacy = new DatabaseSync(path);
     legacy.exec(`
-      ALTER TABLE runner_event_outbox DROP COLUMN execution_generation;
+      ALTER TABLE runner_event_outbox DROP COLUMN registration_id;
       ALTER TABLE runner_event_outbox DROP COLUMN in_flight_tools_json;
       ALTER TABLE runner_event_outbox DROP COLUMN liveness_at;
       ALTER TABLE runner_prebootstrap_lifecycle DROP COLUMN in_flight_tools_json;
@@ -1253,10 +1319,10 @@ describe("RunnerSqliteEventOutbox", () => {
         expect(columns).toContain("liveness_at");
         expect(columns).toContain("in_flight_tools_json");
         if (table === "runner_event_outbox") {
-          expect(columns).toContain("execution_generation");
+          expect(columns).toContain("registration_id");
         }
       }
-      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 10 });
+      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 11 });
     } finally {
       verified.close();
     }
@@ -1318,7 +1384,7 @@ describe("RunnerSqliteEventOutbox", () => {
       application_state: "claimed",
       claimed_execution_command_id: "execute-v8",
     });
-    expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 10 });
+    expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 11 });
     verified.close();
     migrated.close();
   });
@@ -1363,7 +1429,7 @@ describe("RunnerSqliteEventOutbox", () => {
       application_state: "claimed",
       claimed_execution_command_id: "execute-interrupted-v9",
     });
-    expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 10 });
+    expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 11 });
     verified.close();
     recovered.close();
   });
@@ -1861,7 +1927,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
     const verified = new DatabaseSync(path);
     try {
-      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 10 });
+      expect(verified.prepare("PRAGMA user_version").get()).toEqual({ user_version: 11 });
       expect(verified.prepare(`
         SELECT acked_through, ack_checkpoint_hash
         FROM runner_event_outbox WHERE record_kind = 'bootstrap'

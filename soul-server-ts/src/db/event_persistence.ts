@@ -109,13 +109,13 @@ export class EventPersistence extends EventTransitionPublisher {
     sessionId: string,
     event: SSEEventPayload,
     explicitEffect?: EventOutboxSessionEffect,
-    executionGeneration?: number | null,
+    registrationId?: string | null,
   ): Promise<EventOutboxRecord> {
     if (!shouldPersistEvent(event)) {
       throw new Error("transient live events must not be persisted");
     }
     const record = await this.outbox.append(
-      buildEventOutboxAppendInput(sessionId, event, explicitEffect, executionGeneration),
+      buildEventOutboxAppendInput(sessionId, event, explicitEffect, registrationId),
     );
     this.latestPendingAckBySession.set(sessionId, record);
     return record;
@@ -125,8 +125,9 @@ export class EventPersistence extends EventTransitionPublisher {
     sessionId: string,
     event: SSEEventPayload,
     effect?: EventOutboxSessionEffect,
+    registrationId?: string | null,
   ): Promise<{ record: EventOutboxRecord; eventId: number }> {
-    const record = await this.enqueueEvent(sessionId, event, effect);
+    const record = await this.enqueueEvent(sessionId, event, effect, registrationId);
     const eventId = await this.outboxPump.waitForAcknowledgement(record);
     this.clearPendingAckTarget(sessionId, record.source_seq);
     return { record, eventId };
@@ -147,6 +148,7 @@ export class EventPersistence extends EventTransitionPublisher {
       replaceExistingType?: string;
       waitForAck?: boolean;
       semanticDedupeKey?: string;
+      registrationId?: string;
     } = {},
   ): Promise<number | null> {
     const timestamp = new Date().toISOString();
@@ -169,9 +171,14 @@ export class EventPersistence extends EventTransitionPublisher {
         : {}),
     };
     if (options.waitForAck) {
-      return (await this.enqueueEventAndWaitForSessionAck(sessionId, event, effect)).eventId;
+      return (await this.enqueueEventAndWaitForSessionAck(
+        sessionId,
+        event,
+        effect,
+        options.registrationId,
+      )).eventId;
     }
-    await this.enqueueEvent(sessionId, event, effect);
+    await this.enqueueEvent(sessionId, event, effect, options.registrationId);
     return null;
   }
 
@@ -262,7 +269,7 @@ export function buildEventOutboxAppendInput(
   sessionId: string,
   event: SSEEventPayload,
   explicitEffect?: EventOutboxSessionEffect,
-  executionGeneration?: number | null,
+  registrationId?: string | null,
 ): import("../upstream/event_outbox.js").EventOutboxAppendInput {
   if (!shouldPersistEvent(event)) {
     throw new Error("transient live events must not be persisted");
@@ -275,9 +282,9 @@ export function buildEventOutboxAppendInput(
   const createdAt = extractTimestamp(event) ?? new Date();
   return {
     session_id: sessionId,
-    ...(executionGeneration === undefined
+    ...(registrationId === undefined
       ? {}
-      : { execution_generation: executionGeneration }),
+      : { registration_id: registrationId }),
     event_type: eventType,
     payload: safeEvent,
     searchable_text: extractSearchableText(safeEvent),

@@ -26,7 +26,7 @@ describe("EventIngressRepository", () => {
       }
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
         order.push("session-lock");
-        return [{ execution_generation: 0, execution_command_id: null }];
+        return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) {
         order.push("semantic-lock");
@@ -112,6 +112,61 @@ describe("EventIngressRepository", () => {
     ]);
   });
 
+  it.each([
+    { label: "matches", envelopeRegistrationId: "registration-current", expected: "committed" },
+    { label: "is absent for a pre-registration event", envelopeRegistrationId: undefined, expected: "committed" },
+  ])("commits when the registration identity $label", async ({ envelopeRegistrationId, expected }) => {
+    const sql = fakeSql(async (text) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_registration_id: "registration-current" }];
+      }
+      if (text.includes("SELECT event_append")) return [{ event_id: 41 }];
+      if (text.includes("INSERT INTO event_ingress_receipts")) return [];
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+    const input = batch({
+      semantic_dedupe_key: null,
+      ...(envelopeRegistrationId === undefined
+        ? {}
+        : { registration_id: envelopeRegistrationId }),
+    });
+
+    await expect(repository.commitBatch("node-a", input)).resolves.toMatchObject([
+      { outcome: expected, eventId: 41 },
+    ]);
+  });
+
+  it.each([
+    { label: "does not match", envelopeRegistrationId: "registration-stale", currentRegistrationId: "registration-current" },
+    { label: "is explicitly null", envelopeRegistrationId: null, currentRegistrationId: "registration-current" },
+    { label: "has no sessions-row counterpart", envelopeRegistrationId: "registration-stale", currentRegistrationId: null },
+  ])("dead-letters when the envelope registration identity $label", async ({
+    envelopeRegistrationId,
+    currentRegistrationId,
+  }) => {
+    const sql = fakeSql(async (text) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_registration_id: currentRegistrationId }];
+      }
+      throw new Error(`stale registration must not reach another statement: ${text}`);
+    });
+    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+
+    await expect(repository.commitBatch("node-a", batch({
+      registration_id: envelopeRegistrationId,
+      semantic_dedupe_key: null,
+    }))).resolves.toMatchObject([{
+      outcome: "dead_lettered",
+      deadLetter: {
+        code: "STALE_REGISTRATION",
+        path: "registration_id",
+      },
+    }]);
+  });
+
   it("replays the exact canonical effect application from a durable transport receipt", async () => {
     const canonicalSession = {
       status: "completed",
@@ -182,7 +237,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0, execution_command_id: null }];
+        return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) {
@@ -236,7 +291,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0, execution_command_id: null }];
+        return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
@@ -282,7 +337,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0, execution_command_id: null }];
+        return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
@@ -320,7 +375,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts") && text.includes("FOR UPDATE")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0, execution_command_id: null }];
+        return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) {
@@ -350,7 +405,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts") && text.includes("FOR UPDATE")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0, execution_command_id: null }];
+        return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) {
@@ -476,7 +531,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_generation: 0, execution_command_id: null }];
+        return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) return [];

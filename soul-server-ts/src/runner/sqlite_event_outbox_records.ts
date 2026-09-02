@@ -30,9 +30,9 @@ export function runnerRowToRecord(row: RunnerEventOutboxRow): EventOutboxRecord 
     stream_id: row.stream_id,
     source_seq: row.source_seq,
     session_id: row.session_id,
-    ...(row.execution_generation == null
+    ...(row.record_kind === "bootstrap" || row.registration_id === undefined
       ? {}
-      : { execution_generation: row.execution_generation }),
+      : { registration_id: row.registration_id }),
     event_type: row.event_type,
     payload: parseJson(row.payload_json, "payload"),
     searchable_text: row.searchable_text,
@@ -44,10 +44,20 @@ export function runnerRowToRecord(row: RunnerEventOutboxRow): EventOutboxRecord 
     payload_hash: row.payload_hash,
   };
   const { payload_hash: payloadHash, ...unsigned } = record;
-  if (computeEventOutboxPayloadHash(unsigned) !== payloadHash) {
+  if (computeEventOutboxPayloadHash(unsigned) === payloadHash) return record;
+
+  const { registration_id: _registrationId, ...withoutRegistration } = unsigned;
+  const legacyUnsigned = row.execution_generation == null
+    ? withoutRegistration
+    : { ...withoutRegistration, execution_generation: row.execution_generation };
+  if (computeEventOutboxPayloadHash(legacyUnsigned) !== payloadHash) {
     throw new Error(`event outbox payload hash mismatch at source_seq ${record.source_seq}`);
   }
-  return record;
+  if (row.registration_id !== null) return record;
+  return {
+    ...unsigned,
+    payload_hash: computeEventOutboxPayloadHash(unsigned),
+  };
 }
 
 export function buildRunnerEventBatch(

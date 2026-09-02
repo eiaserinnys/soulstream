@@ -55,6 +55,8 @@ export async function persistUserMessageEvent(
   await deps.persistence.enqueueEvent(
     task.agentSessionId,
     event as SSEEventPayload,
+    undefined,
+    task.executionOwnership?.registrationId,
   );
 }
 

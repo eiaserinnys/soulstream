@@ -311,8 +311,8 @@ export class TaskLifecycleTransition {
       termination_reason: terminationReason,
       ...common,
     };
-    const generation = task.executionOwnership?.ownershipGeneration;
-    const application = generation === undefined
+    const registrationId = task.executionOwnership?.registrationId;
+    const application = registrationId === undefined
       ? await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
           task.agentSessionId,
           event,
@@ -322,7 +322,7 @@ export class TaskLifecycleTransition {
           task.agentSessionId,
           event,
           effect,
-          generation,
+          registrationId,
         );
     applyCanonicalSessionProjection(task, application.canonicalSession);
     if (

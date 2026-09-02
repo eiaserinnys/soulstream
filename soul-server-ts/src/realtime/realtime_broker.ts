@@ -262,6 +262,8 @@ export class RealtimeBroker {
       const { eventId } = await this.deps.persistence.enqueueEventAndWaitForSessionAck(
         row.session_id,
         event,
+        undefined,
+        row.execution_registration_id ?? undefined,
       );
       task.lastEventId = eventId;
       await this.deps.persistence.handleSideEffects(row.session_id, event, task);

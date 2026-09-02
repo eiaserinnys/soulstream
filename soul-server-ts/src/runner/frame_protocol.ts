@@ -29,7 +29,6 @@ const jsonRecord = z.record(z.string(), z.json());
 
 export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   agentSessionId: z.string().min(1),
-  executionGeneration: z.number().int().positive().optional(),
   prompt: z.string(),
   inputUuid: z.string().min(1).optional(),
   runnerInterventionId: z.string().min(1).optional(),

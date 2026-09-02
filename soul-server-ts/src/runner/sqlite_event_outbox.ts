@@ -13,6 +13,7 @@ import {
   EVENT_OUTBOX_MAX_BATCH_EVENTS,
   EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES,
   computeEventOutboxPayloadHash,
+  normalizeEventOutboxAppendInput,
   type EventOutboxAppendInput,
   type EventOutboxBatch,
   type EventOutboxRecord,
@@ -83,6 +84,7 @@ import {
   type RunnerSqliteTransactionOptions,
   type RunnerSqliteTransactionObserver,
 } from "./runner_sqlite_connection.js";
+import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
 
 export type { RunnerBootstrapInput, RunnerBootstrapRecord, RunnerResumeMaterial }
   from "./sqlite_event_outbox_schema.js";
@@ -109,6 +111,8 @@ export class RunnerSqliteEventOutbox {
     readonly databasePath: string,
     private bootstrap: RunnerBootstrapRecord | null,
     private acknowledgedThrough: number,
+    private readonly registrationId: string | undefined,
+    private readonly legacyRegistrationRequired: boolean,
     private readonly options: RunnerSqliteEventOutboxOptions,
   ) {}
 
@@ -150,11 +154,14 @@ export class RunnerSqliteEventOutbox {
       const version = readUserVersion(database);
       assertRunnerReadOnlySchema(database, version);
       const recovered = recover(database);
+      const registrationId = await readOutboxRegistrationId(databasePath, recovered.bootstrap);
       return new RunnerSqliteEventOutbox(
         database,
         databasePath,
         recovered.bootstrap,
         recovered.ackedThrough,
+        registrationId,
+        version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
         options,
       );
     } catch (error) {
@@ -174,11 +181,14 @@ export class RunnerSqliteEventOutbox {
       const version = readUserVersion(database);
       assertRunnerReadOnlySchema(database, version);
       const recovered = recoverTail(database);
+      const registrationId = await readOutboxRegistrationId(databasePath, recovered.bootstrap);
       return new RunnerSqliteEventOutbox(
         database,
         databasePath,
         recovered.bootstrap,
         recovered.ackedThrough,
+        registrationId,
+        version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
         options,
       );
     } catch (error) {
@@ -217,11 +227,11 @@ export class RunnerSqliteEventOutbox {
             )
           `);
         }
-        if (!hasColumn(database, "runner_event_outbox", "execution_generation")) {
+        if (!hasColumn(database, "runner_event_outbox", "registration_id")) {
           database.exec(`
             ALTER TABLE runner_event_outbox
-            ADD COLUMN execution_generation INTEGER CHECK (
-              execution_generation IS NULL OR execution_generation > 0
+            ADD COLUMN registration_id TEXT CHECK (
+              registration_id IS NULL OR length(registration_id) > 0
             )
           `);
         }
@@ -231,14 +241,23 @@ export class RunnerSqliteEventOutbox {
           migrateLegacyAckCheckpoint: version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
         });
         migrateRunnerInterventionInboxV9(database, version);
-        if (version < 10) database.exec("PRAGMA user_version = 10");
-        return next;
+        if (version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
+          database.exec(`PRAGMA user_version = ${RUNNER_EVENT_OUTBOX_SCHEMA_VERSION}`);
+        }
+        return {
+          ...next,
+          legacyRegistrationRequired:
+            version > 0 && version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
+        };
       });
+      const registrationId = await readOutboxRegistrationId(databasePath, recovered.bootstrap);
       return new RunnerSqliteEventOutbox(
         database,
         databasePath,
         recovered.bootstrap,
         recovered.ackedThrough,
+        registrationId,
+        recovered.legacyRegistrationRequired,
         options,
       );
     } catch (error) {
@@ -331,8 +350,9 @@ export class RunnerSqliteEventOutbox {
 
   async append(input: EventOutboxAppendInput): Promise<EventOutboxRecord> {
     const bootstrap = this.requireBootstrap();
-    validateRunnerAppendInput(input);
-    if (input.session_id !== bootstrap.session_id) {
+    const appendInput = this.withRegistrationIdentity(input);
+    validateRunnerAppendInput(appendInput);
+    if (appendInput.session_id !== bootstrap.session_id) {
       throw new Error("runner event session_id differs from bootstrap record");
     }
 
@@ -342,7 +362,7 @@ export class RunnerSqliteEventOutbox {
       const unsigned = {
         stream_id: bootstrap.stream_id,
         source_seq: sourceSeq,
-        ...input,
+        ...appendInput,
       };
       record = {
         ...unsigned,
@@ -363,11 +383,14 @@ export class RunnerSqliteEventOutbox {
     queuedAt: string;
   }): Promise<{ eventSourceSeq: number | null; queuePosition: number }> {
     const bootstrap = this.requireBootstrap();
+    const stagedInput = input.event
+      ? { ...input, event: this.withRegistrationIdentity(input.event) }
+      : input;
     const staged = await stageRunnerIntervention(
       this.database,
       (operation) => this.transaction("stage_intervention", operation),
       bootstrap,
-      input,
+      stagedInput,
     );
     for (const listener of this.appendListeners) listener();
     return staged;
@@ -467,12 +490,13 @@ export class RunnerSqliteEventOutbox {
     },
   ): Promise<EventOutboxRecord & { ipc_frame_seq: number }> {
     const bootstrap = this.requireBootstrap();
-    validateRunnerAppendInput(input);
-    if (input.session_id !== bootstrap.session_id) {
+    const appendInput = this.withRegistrationIdentity(input);
+    validateRunnerAppendInput(appendInput);
+    if (appendInput.session_id !== bootstrap.session_id) {
       throw new Error("runner event session_id differs from bootstrap record");
     }
-    const rotationEffect = input.session_effect?.kind === "rotate_backend_session_id"
-      ? input.session_effect
+    const rotationEffect = appendInput.session_effect?.kind === "rotate_backend_session_id"
+      ? appendInput.session_effect
       : undefined;
     if (
       backendSessionRotation
@@ -488,7 +512,7 @@ export class RunnerSqliteEventOutbox {
       throw new Error("runner backend session rotation effect requires atomic bootstrap rotation");
     }
     const parsedFrame = engineEventFrame(frame.payload, frame.metadata);
-    if (JSON.stringify(parsedFrame.payload) !== JSON.stringify(input.payload)) {
+    if (JSON.stringify(parsedFrame.payload) !== JSON.stringify(appendInput.payload)) {
       throw new Error("runner frame payload differs from durable event payload");
     }
 
@@ -548,7 +572,7 @@ export class RunnerSqliteEventOutbox {
       const unsigned = {
         stream_id: bootstrap.stream_id,
         source_seq: sourceSeq,
-        ...input,
+        ...appendInput,
       };
       record = {
         ...unsigned,
@@ -683,7 +707,7 @@ export class RunnerSqliteEventOutbox {
       ORDER BY source_seq
       LIMIT ?
     `).all(acknowledgedThrough, maxEvents) as unknown as RunnerEventOutboxRow[];
-    const pending = rows.map(runnerRowToRecord);
+    const pending = rows.map((row) => this.attachRegistrationIdentity(runnerRowToRecord(row)));
     if (pending.length === 0) return null;
 
     const selected: EventOutboxRecord[] = [];
@@ -718,7 +742,7 @@ export class RunnerSqliteEventOutbox {
       SELECT * FROM runner_event_outbox WHERE source_seq = ?
     `).get(sourceSeq) as unknown as RunnerEventOutboxRow | undefined;
     if (!row || row.record_kind !== "event") return null;
-    return runnerRowToRecord(row);
+    return this.attachRegistrationIdentity(runnerRowToRecord(row));
   }
 
   async readLatestPendingRecord(): Promise<EventOutboxRecord | null> {
@@ -741,7 +765,7 @@ export class RunnerSqliteEventOutbox {
       ORDER BY source_seq DESC
       LIMIT 1
     `).get(acknowledgedThrough) as unknown as RunnerEventOutboxRow | undefined;
-    return row ? runnerRowToRecord(row) : null;
+    return row ? this.attachRegistrationIdentity(runnerRowToRecord(row)) : null;
   }
 
   latestDurableSourceSeq(): number {
@@ -947,6 +971,44 @@ export class RunnerSqliteEventOutbox {
     };
   }
 
+  private withRegistrationIdentity(
+    input: EventOutboxAppendInput,
+  ): EventOutboxAppendInput {
+    const normalized = normalizeEventOutboxAppendInput(input);
+    if (!this.registrationId) {
+      return normalized.registration_id === undefined
+        ? { ...normalized, registration_id: null }
+        : normalized;
+    }
+    if (
+      normalized.registration_id !== undefined
+      && normalized.registration_id !== this.registrationId
+    ) {
+      throw new Error("runner event registration differs from registration sidecar");
+    }
+    return { ...normalized, registration_id: this.registrationId };
+  }
+
+  private attachRegistrationIdentity(record: EventOutboxRecord): EventOutboxRecord {
+    if (typeof record.registration_id === "string") {
+      if (this.registrationId && record.registration_id !== this.registrationId) {
+        throw new Error("runner event registration differs from registration sidecar");
+      }
+      return record;
+    }
+    if (!this.registrationId && record.registration_id === null) return record;
+    if (!this.registrationId && !this.legacyRegistrationRequired) return record;
+    const { payload_hash: _payloadHash, ...unsigned } = record;
+    const identified = {
+      ...unsigned,
+      registration_id: this.registrationId ?? null,
+    };
+    return {
+      ...identified,
+      payload_hash: computeEventOutboxPayloadHash(identified),
+    };
+  }
+
   private requireBootstrap(): RunnerBootstrapRecord {
     this.requireOpen();
     const bootstrap = this.refreshBootstrap();
@@ -967,6 +1029,18 @@ export class RunnerSqliteEventOutbox {
   private requireOpen(): void {
     if (this.closed) throw new Error("runner event outbox is closed");
   }
+}
+
+async function readOutboxRegistrationId(
+  databasePath: string,
+  bootstrap: RunnerBootstrapRecord | null,
+): Promise<string | undefined> {
+  const identity = await readRunnerRegistrationIdentity(dirname(databasePath));
+  if (!identity) return undefined;
+  if (bootstrap && identity.sessionId !== bootstrap.session_id) {
+    throw new Error("runner registration sidecar session differs from SQLite bootstrap");
+  }
+  return identity.registrationId;
 }
 
 function assertAcknowledgedThrough(value: number): void {

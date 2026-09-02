@@ -139,6 +139,8 @@ export class LlmExecutor {
     await this.params.persistence.enqueueEvent(
       task.agentSessionId,
       event as SSEEventPayload,
+      undefined,
+      task.executionOwnership?.registrationId,
     );
     await this.params.persistence.handleSideEffects(
       task.agentSessionId,

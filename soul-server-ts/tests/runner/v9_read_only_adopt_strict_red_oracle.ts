@@ -1,4 +1,4 @@
-export type GenerationObservation = number | null | "unobserved";
+export type RegistrationObservation = string | null;
 
 export interface LiveV9AdoptObservation {
   adopted: boolean;
@@ -12,7 +12,7 @@ export interface IdentityContinuityObservation {
   adoptedRegistrationIds: string[];
   expectedRegistrationId: string;
   newRunnerCount: number;
-  projectedGenerations: GenerationObservation[];
+  projectedRegistrations: RegistrationObservation[];
 }
 
 export interface TerminalHarvestObservation {
@@ -39,9 +39,9 @@ export interface FailSafeObservation {
 export interface CompatibilityMutationObservation {
   supportedVersions: number[];
   v9Accepted: boolean;
-  v11Accepted: boolean;
+  v12Accepted: boolean;
   v9SourceMutated: boolean;
-  projectedGeneration: GenerationObservation;
+  projectedRegistration: RegistrationObservation;
 }
 
 export function liveV9AdoptViolations(
@@ -66,11 +66,13 @@ export function identityContinuityViolations(
   return compact([
     !reusedTwice ? "v9-registration-identity-not-reused-after-disconnect" : null,
     observation.newRunnerCount !== 0 ? "v9-re-adopt-spawned-successor" : null,
-    observation.projectedGenerations.length !== 2
-      ? "v9-generation-null-not-surfaced"
+    observation.projectedRegistrations.length !== 2
+      ? "v9-registration-not-projected"
       : null,
-    observation.projectedGenerations.some((generation) => generation !== null)
-      ? "v9-generation-fabricated"
+    observation.projectedRegistrations.some(
+      (registrationId) => registrationId !== observation.expectedRegistrationId,
+    )
+      ? "v9-registration-not-projected"
       : null,
   ]);
 }
@@ -115,17 +117,15 @@ export function compatibilityMutationViolations(
   return compact([
     !observation.supportedVersions.includes(9) ? "supported-set-dropped-v9" : null,
     !observation.supportedVersions.includes(10) ? "supported-set-dropped-v10" : null,
-    observation.supportedVersions.some((version) => version > 10)
+    !observation.supportedVersions.includes(11) ? "supported-set-dropped-v11" : null,
+    observation.supportedVersions.some((version) => version > 11)
       ? "supported-set-includes-future-version"
       : null,
     !observation.v9Accepted ? "v9-read-support-missing" : null,
-    observation.v11Accepted ? "future-version-accepted" : null,
+    observation.v12Accepted ? "future-version-accepted" : null,
     observation.v9SourceMutated ? "v9-reader-mutated-source" : null,
-    typeof observation.projectedGeneration === "number"
-      ? "v9-generation-fabricated"
-      : null,
-    observation.projectedGeneration === "unobserved"
-      ? "v9-generation-null-not-surfaced"
+    observation.projectedRegistration !== "registration-v9-stable"
+      ? "v9-registration-not-projected"
       : null,
   ]);
 }

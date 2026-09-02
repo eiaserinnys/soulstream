@@ -57,6 +57,8 @@ async function persistIntervention(
     await deps.persistence.enqueueEvent(
       task.agentSessionId,
       interventionEvent as SSEEventPayload,
+      undefined,
+      task.executionOwnership?.registrationId,
     );
   } catch (err) {
     deps.logger.warn(

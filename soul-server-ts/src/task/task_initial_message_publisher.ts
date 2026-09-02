@@ -67,6 +67,8 @@ export class TaskInitialMessagePublisher {
       await this.deps.persistence.enqueueEvent(
         task.agentSessionId,
         event,
+        undefined,
+        task.executionOwnership?.registrationId,
       );
     } catch (err) {
       this.deps.logger.warn(
@@ -88,6 +90,8 @@ export class TaskInitialMessagePublisher {
     await this.deps.persistence.enqueueEvent(
       task.agentSessionId,
       event as SSEEventPayload,
+      undefined,
+      task.executionOwnership?.registrationId,
     );
   }
 }

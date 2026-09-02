@@ -52,6 +52,9 @@ export class TaskAgentsSnapshotPersistence {
     try {
       await this.deps.persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
         replaceExistingType: "agents_run_state",
+        ...(task.executionOwnership
+          ? { registrationId: task.executionOwnership.registrationId }
+          : {}),
         ...(idempotencyKey ? { semanticDedupeKey: idempotencyKey } : {}),
       });
     } catch (err) {
@@ -84,6 +87,9 @@ export class TaskAgentsSnapshotPersistence {
     try {
       await this.deps.persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
         replaceExistingType: "agents_session_items",
+        ...(task.executionOwnership
+          ? { registrationId: task.executionOwnership.registrationId }
+          : {}),
         ...(idempotencyKey ? { semanticDedupeKey: idempotencyKey } : {}),
       });
     } catch (err) {
