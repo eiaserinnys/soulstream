@@ -113,7 +113,7 @@ async function writeHanielEvidence(env: ReturnType<typeof environment>) {
     expected_operation: "upgrade",
     manifest_digest: env.HANIEL_MANIFEST_DIGEST,
     database_journal_path: databaseReleaseJournalPath(env),
-    state: "backing_up",
+    state: "migrating",
     quiescence_receipt: receipt,
   })}\n`, "utf8");
   return { ...env, HANIEL_QUIESCENCE_RECEIPT: receiptPath };
@@ -247,14 +247,14 @@ describe.sequential("database release review regressions", () => {
     expect(created.revision).toBe(1);
 
     const settled = await Promise.allSettled([
-      transitionDatabaseReleaseJournal(databaseReleaseJournalPath(env), "backup_created", {
-        phase: "backup",
+      transitionDatabaseReleaseJournal(databaseReleaseJournalPath(env), "apply_started", {
+        phase: "apply",
         details: { winner: "left" },
         expectedRevision: 1,
         expectedStatuses: ["preflight_complete"],
       }),
-      transitionDatabaseReleaseJournal(databaseReleaseJournalPath(env), "backup_failed", {
-        phase: "backup",
+      transitionDatabaseReleaseJournal(databaseReleaseJournalPath(env), "apply_started", {
+        phase: "apply",
         details: { winner: "right" },
         expectedRevision: 1,
         expectedStatuses: ["preflight_complete"],
@@ -380,30 +380,33 @@ describe.sequential("database release review regressions", () => {
       quiesced_services: ["writer"],
     }), "utf8");
 
-    const backupCreate = vi.fn();
-    await expect(runDatabaseRelease("backup", {
+    const migrationRun = vi.fn();
+    await expect(runDatabaseRelease("apply", {
       env: { ...env, HANIEL_QUIESCENCE_RECEIPT: receiptPath },
-      backupCreate,
+      inventoryRead: async () => inventory(),
+      planRead: async () => plan(),
+      migrationRun,
     })).rejects.toThrow("QUIESCENCE_REQUIRED");
-    expect(backupCreate).not.toHaveBeenCalled();
+    expect(migrationRun).not.toHaveBeenCalled();
   });
 
-  it("accepts only exact Haniel-linked owner, nonce, operation, manifest and service evidence", async () => {
+  it("accepts exact Haniel-linked owner, nonce, operation, manifest and service evidence", async () => {
     const directory = tempDirectory("release-haniel-evidence-");
     const baseEnv = environment(directory);
     await createJournal(baseEnv);
     const env = await writeHanielEvidence(baseEnv);
-    const backupCreate = vi.fn(async () => ({
-      status: "created",
-      release_id: env.HANIEL_RELEASE_ID,
-      target_head: env.HANIEL_TARGET_HEAD,
-      pending_migrations: ["061_contract.sql"],
-      rollback_unsafe_pending: ["061_contract.sql"],
-    }));
+    let ledger: Array<Record<string, unknown>> = [];
+    const migrationRun = vi.fn(async () => {
+      ledger = [migration()].map((entry) => ({ ...entry, release_id: env.HANIEL_RELEASE_ID }));
+    });
 
-    await expect(runDatabaseRelease("backup", { env, backupCreate }))
-      .resolves.toMatchObject({ status: "backup_created" });
-    expect(backupCreate).toHaveBeenCalledTimes(1);
+    await expect(runDatabaseRelease("apply", {
+      env,
+      inventoryRead: async () => inventory(),
+      planRead: async () => plan(ledger.length ? [] : [migration()], ledger),
+      migrationRun,
+    })).resolves.toMatchObject({ status: "applied" });
+    expect(migrationRun).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -451,19 +454,20 @@ describe.sequential("database release review regressions", () => {
         value.quiesced_services = ["other"];
       });
     }],
-  ])("rejects %s Haniel evidence before backup and apply", async (_name, mutate) => {
+  ])("rejects %s Haniel evidence before apply", async (_name, mutate) => {
     const directory = tempDirectory("release-haniel-evidence-mismatch-");
     const baseEnv = environment(directory);
     await createJournal(baseEnv);
     const env = await writeHanielEvidence(baseEnv);
     await mutate(env);
-    const backupCreate = vi.fn();
     const migrationRun = vi.fn();
 
-    await expect(runDatabaseRelease("backup", { env, backupCreate }))
-      .rejects.toThrow("QUIESCENCE_REQUIRED");
-    await expect(runDatabaseRelease("apply", { env, migrationRun })).rejects.toThrow();
-    expect(backupCreate).not.toHaveBeenCalled();
+    await expect(runDatabaseRelease("apply", {
+      env,
+      inventoryRead: async () => inventory(),
+      planRead: async () => plan(),
+      migrationRun,
+    })).rejects.toThrow("QUIESCENCE_REQUIRED");
     expect(migrationRun).not.toHaveBeenCalled();
   });
 
@@ -502,28 +506,11 @@ describe.sequential("database release review regressions", () => {
     expect(migrationRun).toHaveBeenCalledTimes(1);
   });
 
-  it("attaches a recovered retry without invoking restore again", async () => {
+  it("attaches a recovered retry without repeating recovery", async () => {
     const directory = tempDirectory("release-recovered-attach-");
     const env = environment(directory);
     let journal = await createJournal(env, "upgrade");
     const path = databaseReleaseJournalPath(env);
-    journal = await transitionDatabaseReleaseJournal(path, "backup_created", {
-      phase: "backup",
-      expectedRevision: journal.revision,
-      expectedStatuses: [journal.status],
-      details: { backup: { metadata: { status: "created" }, verified_at: null } },
-    });
-    journal = await transitionDatabaseReleaseJournal(path, "backup_verified", {
-      phase: "verify_backup",
-      expectedRevision: journal.revision,
-      expectedStatuses: [journal.status],
-      details: {
-        backup: {
-          metadata: { status: "verified", verified_at: "2026-08-09T00:00:00Z" },
-          verified_at: "2026-08-09T00:00:00Z",
-        },
-      },
-    });
     journal = await transitionDatabaseReleaseJournal(path, "apply_started", {
       phase: "apply",
       expectedRevision: journal.revision,
@@ -534,16 +521,13 @@ describe.sequential("database release review regressions", () => {
       expectedRevision: journal.revision,
       expectedStatuses: [journal.status],
     });
-    const backupRecover = vi.fn();
     await expect(runDatabaseRelease("recover", {
       env: {
         ...env,
         HANIEL_DATABASE_OPERATION: "recovery",
         HANIEL_FAILED_DATABASE_OPERATION: "upgrade",
       },
-      backupRecover,
     })).resolves.toMatchObject({ status: "recovered", recovered: true });
-    expect(backupRecover).not.toHaveBeenCalled();
   });
 
 });

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import dotenv from "dotenv";
@@ -9,20 +8,13 @@ import postgres from "postgres";
 import {
   MIGRATION_LOCK_ID,
   MIGRATION_LOCK_NAMESPACE,
-  assertLegacyBackupResolved,
   buildMigrationPlan,
   canonicalSchemaPath,
   deploymentEnvironmentPath,
-  destructivePending,
-  legacyRetirementPending,
-  loadLegacyBackupContract,
   loadMigrationManifest,
   readDatabaseUrl,
   readReleaseId,
-  rollbackUnsafePending,
-  validateBackupGate,
 } from "./migration-contract.mjs";
-import { assertPostgresBackupPrerequisites } from "./postgres-backup-tools.mjs";
 import {
   assertDatabaseReleaseApplyGate,
   inspectUserObjectInventory,
@@ -35,7 +27,6 @@ const MODES = new Set([
   "verify",
   "fresh-install",
   "initialize",
-  "recover",
 ]);
 
 export async function inspectSchemaShape(sql) {
@@ -138,75 +129,6 @@ function planReport(mode, plan) {
     ledger_count: plan.ledger.length,
     bootstrap: plan.bootstrap.map((item) => item.id),
     pending: plan.pending.map((item) => item.id),
-    destructive_pending: destructivePending(plan).map((item) => item.id),
-    rollback_unsafe_pending: rollbackUnsafePending(plan).map((item) => item.id),
-  };
-}
-
-async function assertDestructivePreflight(plan) {
-  if (!legacyRetirementPending(plan)) return;
-  assertLegacyBackupResolved(await loadLegacyBackupContract());
-}
-
-export async function preflightPendingMigrations(
-  plan,
-  {
-    env = process.env,
-    backupPreflight = assertPostgresBackupPrerequisites,
-  } = {},
-) {
-  const destructive = destructivePending(plan);
-  const rollbackUnsafe = rollbackUnsafePending(plan);
-  if (rollbackUnsafe.length === 0) {
-    return {
-      destructive_pending: [],
-      rollback_unsafe_pending: [],
-      backup_prerequisites: "not_required",
-      writer_quiescence: "not_required",
-    };
-  }
-  await assertDestructivePreflight(plan);
-  const prerequisites = await backupPreflight({
-    databaseUrl: readDatabaseUrl(env),
-    env,
-  });
-  return {
-    destructive_pending: destructive.map((migration) => migration.id),
-    rollback_unsafe_pending: rollbackUnsafe.map((migration) => migration.id),
-    backup_prerequisites: prerequisites,
-    writer_quiescence: "central_service_stop",
-  };
-}
-
-async function readVerifiedBackupGate(env, plan) {
-  const directory = env.HANIEL_BACKUP_DIR?.trim();
-  if (!directory) throw new Error("HANIEL_BACKUP_DIR is required for destructive migration");
-  const gate = JSON.parse(
-    await readFile(resolve(directory, "database-backup.json"), "utf8"),
-  );
-  return validateBackupGate(
-    gate,
-    env,
-    rollbackUnsafePending(plan).map((migration) => migration.id),
-  );
-}
-
-export async function assertRollbackUnsafeApplyGates(
-  plan,
-  env = process.env,
-  {
-    backupGateRead = readVerifiedBackupGate,
-  } = {},
-) {
-  const rollbackUnsafe = rollbackUnsafePending(plan);
-  if (rollbackUnsafe.length === 0) {
-    return { rollback_unsafe_pending: [], gates: "not_required" };
-  }
-  await backupGateRead(env, plan);
-  return {
-    rollback_unsafe_pending: rollbackUnsafe.map((migration) => migration.id),
-    gates: "verified",
-    writer_quiescence: "central_service_stop",
   };
 }
 
@@ -292,8 +214,7 @@ export async function runMigrations(
   try {
     const initial = await readMigrationPlan(sql, migrations);
     if (mode === "preflight") {
-      const preflight = await preflightPendingMigrations(initial, { env });
-      return { ...planReport(mode, initial), ...preflight };
+      return planReport(mode, initial);
     }
     if (mode === "verify") {
       if (initial.bootstrap.length > 0 || initial.pending.length > 0) {
@@ -309,12 +230,11 @@ export async function runMigrations(
     if (mode === "fresh-install" || (mode === "initialize" && initial.state === "empty")) {
       await freshInstall(sql, migrations, releaseId, env);
     } else {
-      await assertDestructivePreflight(initial);
       await applyPending(
         sql,
         migrations,
         releaseId,
-        mode === "recover" ? "recovery" : "migration",
+        "migration",
         env,
       );
     }

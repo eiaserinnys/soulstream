@@ -4,18 +4,12 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { validateBackupArchive } from "../../../packages/db-schema/scripts/backup.mjs";
 import {
-  assertLegacyBackupResolved,
   buildMigrationPlan,
   classifySchemaState,
   deploymentEnvironmentPath,
-  loadLegacyBackupContract,
   loadMigrationManifest,
-  legacyRetirementPending,
   migrationSha256,
-  rollbackUnsafePending,
-  validateBackupGate,
   validateLedger,
 } from "../../../packages/db-schema/scripts/migration-contract.mjs";
 
@@ -66,17 +60,15 @@ describe("versioned migration contract", () => {
     expect(migrationSha256(crlf)).toBe(migrationSha256(lf));
   });
 
-  it("enforces CENTRAL_NO_INLINE_MIGRATION_MUST_BE_NON_DESTRUCTIVE for the central manifest", () => {
+  it("keeps the central manifest free of removed migration policy fields", () => {
     const manifest = JSON.parse(readFileSync(fileURLToPath(
       new URL("../../../deploy/release-manifest.json", import.meta.url),
     ), "utf8"));
 
     expect(manifest.environment_service).toBe("soulstream-orch-server");
-    expect(
-      manifest.migration.destructive,
-      "CENTRAL_NO_INLINE_MIGRATION_MUST_BE_NON_DESTRUCTIVE: "
-        + "central migration has no inline backup owner and must declare destructive=false",
-    ).toBe(false);
+    expect(manifest.migration).not.toHaveProperty("destructive");
+    expect(manifest.migration).not.toHaveProperty("backup");
+    expect(manifest.migration).not.toHaveProperty("verify_backup");
     expect(manifest.migration).toMatchObject({
       operation: "discover",
       result_contract: "soulstream.database-release.v1",
@@ -124,16 +116,9 @@ describe("versioned migration contract", () => {
 
     expect(standalone.environment_service).toBe("soul-server-ts");
     expect(standalone.migration).toMatchObject({
-      destructive: true,
       operation: "discover",
       result_contract: "soulstream.database-release.v1",
       preflight: {
-        command: expect.stringContaining("--manifest deploy/release-manifest-standalone.json"),
-      },
-      backup: {
-        command: expect.stringContaining("--manifest deploy/release-manifest-standalone.json"),
-      },
-      verify_backup: {
         command: expect.stringContaining("--manifest deploy/release-manifest-standalone.json"),
       },
       apply: {
@@ -144,6 +129,9 @@ describe("versioned migration contract", () => {
         timeout_seconds: 300,
       },
     });
+    expect(standalone.migration).not.toHaveProperty("destructive");
+    expect(standalone.migration).not.toHaveProperty("backup");
+    expect(standalone.migration).not.toHaveProperty("verify_backup");
     expect(standaloneContract).toEqual({
       schema_version: "soulstream.database-release-manifest.v1",
       writer_services: ["soul-server-ts"],
@@ -194,39 +182,8 @@ describe("versioned migration contract", () => {
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
     );
-    expect(migrations.filter((item) => item.destructive).map((item) => item.id)).toEqual([
-      "041_retire_task_tree.sql",
-      "042_runbook_to_task.sql",
-      "053_retire_supervisor.sql",
-      "085b_execution_ownership_projection_drop.sql",
-    ]);
-    const releaseMigrationIndex = migrations.findIndex(
-      (item) => item.id === "041_retire_task_tree.sql",
-    );
-    expect(releaseMigrationIndex).toBeGreaterThanOrEqual(0);
-    expect(migrations.slice(0, releaseMigrationIndex).every(
-      (item) => item.rollback_compatibility === "bootstrap_only",
-    )).toBe(true);
-    const restoreRequiredMigrationIds = [
-      "041_retire_task_tree.sql",
-      "042_runbook_to_task.sql",
-      "053_retire_supervisor.sql",
-      "058_session_delete_ydoc_guard.sql",
-      "059_scope_board_seed_items.sql",
-      "073_sessions_execution_owner_v1.sql",
-      "075_sessions_execution_owner_release.sql",
-      "084_runtime_ownership_machine_removal.sql",
-      "085b_execution_ownership_projection_drop.sql",
-    ];
-    expect(migrations.filter(
-      (item) => item.rollback_compatibility === "restore_required",
-    ).map((item) => item.id)).toEqual(restoreRequiredMigrationIds);
-    const restoreRequired = new Set(restoreRequiredMigrationIds);
-    expect(migrations.slice(releaseMigrationIndex).every((item) => (
-      item.rollback_compatibility === (
-        restoreRequired.has(item.id) ? "restore_required" : "previous_release_safe"
-      )
-    ))).toBe(true);
+    expect(migrations.every((item) => !Object.hasOwn(item, "destructive"))).toBe(true);
+    expect(migrations.every((item) => !Object.hasOwn(item, "rollback_compatibility"))).toBe(true);
   });
 
   it("keeps terminal status and execution registration on the sessions-row canon", async () => {
@@ -284,33 +241,11 @@ describe("versioned migration contract", () => {
       item.id === "058_session_delete_ydoc_guard.sql"
     );
 
-    expect(migration?.rollback_compatibility).toBe("restore_required");
     expect(migration?.sql).toContain("BEFORE DELETE ON sessions");
     expect(migration?.sql).toContain("FROM board_yjs_catalog_cache cache");
     expect(migration?.sql).not.toContain("DELETE FROM board_items");
     expect(migration?.sql).not.toContain("DROP FUNCTION IF EXISTS board_delete_session_refs");
     expect(migration?.sql).not.toContain("DROP TRIGGER IF EXISTS board_delete_session_refs_trigger");
-  });
-
-  it("treats only explicit one-release compatibility as data-preserving rollback", () => {
-    const plan = {
-      pending: [
-        {
-          id: "043_expand.sql",
-          destructive: false,
-          rollback_compatibility: "previous_release_safe",
-        },
-        {
-          id: "044_contract.sql",
-          destructive: false,
-          rollback_compatibility: "restore_required",
-        },
-      ],
-    };
-
-    expect(rollbackUnsafePending(plan).map((item) => item.id)).toEqual([
-      "044_contract.sql",
-    ]);
   });
 
   it("bootstraps an already-current database without scheduling DROP or rename", async () => {
@@ -366,59 +301,4 @@ describe("versioned migration contract", () => {
     );
   });
 
-  it("keeps the 589 versus 592 evidence gap as an explicit destructive blocker", async () => {
-    const contract = await loadLegacyBackupContract();
-
-    expect(contract).toMatchObject({
-      status: "unresolved",
-      stored_operation_count: 589,
-      observed_pre_drop_operation_count: 592,
-      missing_operation_count: 3,
-    });
-    expect(() => assertLegacyBackupResolved(contract)).toThrow(
-      "stored=589, observed=592, missing=3",
-    );
-    expect(legacyRetirementPending({
-      pending: [{ id: "043_future_destructive.sql", destructive: true }],
-    })).toBe(false);
-  });
-
-  it("accepts only a verified backup for the same release and target commit", () => {
-    const gate = {
-      schema_version: "soulstream.database-backup.v1",
-      status: "verified",
-      release_id: "release-1",
-      target_head: "abc123",
-      dump_sha256: "a".repeat(64),
-      destructive_pending: ["041_retire_task_tree.sql"],
-      rollback_unsafe_pending: ["041_retire_task_tree.sql"],
-    };
-    const env = { HANIEL_RELEASE_ID: "release-1", HANIEL_TARGET_HEAD: "abc123" };
-
-    expect(validateBackupGate(gate, env, ["041_retire_task_tree.sql"])).toBe(gate);
-    expect(() => validateBackupGate({ ...gate, target_head: "wrong" }, env)).toThrow(
-      "target commit differs",
-    );
-    expect(() => validateBackupGate(gate, env, ["042_runbook_to_task.sql"])).toThrow(
-      "migration plan differs",
-    );
-  });
-
-  it("rejects a changed dump and a non-restorable archive listing", () => {
-    const bytes = Buffer.from("database backup");
-    const metadata = {
-      dump_sha256: "8e0a5e1ba54ac547e1202e11dec2ecb425a3a5f4194353aab6261ebf5c268d95",
-    };
-    const toc = Array.from({ length: 10 }, (_, index) => (
-      `${index + 1}; 0 0 TABLE public table_${index} owner`
-    )).join("\n");
-
-    expect(() => validateBackupArchive(metadata, bytes, toc)).not.toThrow();
-    expect(() => validateBackupArchive(metadata, Buffer.from("changed"), toc)).toThrow(
-      "checksum differs",
-    );
-    expect(() => validateBackupArchive(metadata, bytes, "; no entries")).toThrow(
-      "credible database archive",
-    );
-  });
 });

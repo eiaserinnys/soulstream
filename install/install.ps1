@@ -4,7 +4,7 @@
 #   irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1 | iex
 #
 # What this does:
-#   1. Checks prerequisites (Python 3.11+, Node.js 20+, PostgreSQL client 16+)
+#   1. Checks prerequisites (Python 3.11+, Node.js 20+)
 #   2. Installs Claude Code CLI if missing
 #   3. Installs Haniel if missing
 #   4. Installs pnpm if missing
@@ -69,14 +69,6 @@ function Get-PnpmMajorVersion {
     if (-not (Test-CommandExists "pnpm")) { return $null }
     $version = (pnpm --version 2>$null).Trim()
     if ($version -match "^(\d+)\.") { return [int]$Matches[1] }
-    return $null
-}
-
-function Get-PostgresToolMajorVersion {
-    param([string]$Command)
-    if (-not (Test-CommandExists $Command)) { return $null }
-    $version = (& $Command --version 2>$null).Trim()
-    if ($version -match "PostgreSQL\)\s+(\d+)") { return [int]$Matches[1] }
     return $null
 }
 
@@ -157,22 +149,6 @@ if ($nodeMajor -lt 20) {
     exit 1
 }
 Write-Ok "Node.js found (v$nodeVer)"
-
-# PostgreSQL client 16+ (destructive release backup and verified recovery)
-$pgDumpMajor = Get-PostgresToolMajorVersion "pg_dump"
-$pgRestoreMajor = Get-PostgresToolMajorVersion "pg_restore"
-if ($null -eq $pgDumpMajor -or $null -eq $pgRestoreMajor) {
-    Write-Fail "PostgreSQL client tools pg_dump and pg_restore are required but not found."
-    Write-Host "    Download: https://www.postgresql.org/download/windows/" -ForegroundColor DarkGray
-    Write-Host "    Add the PostgreSQL bin directory to PATH, then retry." -ForegroundColor DarkGray
-    exit 1
-}
-if ($pgDumpMajor -lt 16 -or $pgRestoreMajor -lt 16) {
-    Write-Fail "PostgreSQL client 16+ required, found pg_dump $pgDumpMajor and pg_restore $pgRestoreMajor."
-    Write-Host "    Download: https://www.postgresql.org/download/windows/" -ForegroundColor DarkGray
-    exit 1
-}
-Write-Ok "PostgreSQL client found (pg_dump $pgDumpMajor, pg_restore $pgRestoreMajor)"
 
 # ── step 2: Claude Code ───────────────────────────────────────────────────────
 

@@ -362,7 +362,8 @@ describe("apply-schema.mjs", () => {
     async () => {
       const { url } = await startPostgres();
       const cwd = writeEnv(url);
-      expect(runApplySchema(cwd).status).toBe(0);
+      const initialized = runApplySchema(cwd);
+      expect(initialized.status, initialized.stderr || initialized.stdout).toBe(0);
 
       const sql = postgres(url, { max: 1, idle_timeout: 1 });
       try {
@@ -498,7 +499,8 @@ describe("apply-schema.mjs", () => {
     async () => {
       const { url } = await startPostgres();
       const cwd = writeEnv(url);
-      expect(runApplySchema(cwd).status).toBe(0);
+      const initialized = runApplySchema(cwd);
+      expect(initialized.status, initialized.stderr || initialized.stdout).toBe(0);
 
       const sql = postgres(url, { max: 2, idle_timeout: 1 });
       try {
@@ -746,7 +748,8 @@ describe("apply-schema.mjs", () => {
     async () => {
       const { url } = await startPostgres();
       const cwd = writeEnv(url);
-      expect(runApplySchema(cwd).status).toBe(0);
+      const initialized = runApplySchema(cwd);
+      expect(initialized.status, initialized.stderr || initialized.stdout).toBe(0);
 
       const sql = postgres(url, { max: 1, idle_timeout: 1 });
       try {
@@ -829,9 +832,9 @@ describe("apply-schema.mjs", () => {
     expect(installer).toContain(
       '$env:SOULSTREAM_RELEASE_ID = "standalone-install-$installHead"',
     );
-    expect(installer).toContain('Get-PostgresToolMajorVersion "pg_dump"');
-    expect(installer).toContain('Get-PostgresToolMajorVersion "pg_restore"');
-    expect(installer).toContain("PostgreSQL client 16+ required");
+    expect(installer).not.toContain("Get-PostgresToolMajorVersion");
+    expect(installer).not.toContain("pg_dump");
+    expect(installer).not.toContain("pg_restore");
     expect(installer.trimEnd()).toMatch(/exit 0$/);
     expect(installer).toContain("-AuthBearerToken is required in non-interactive mode");
     expect(
@@ -1020,7 +1023,7 @@ function prepareDatabaseRelease(cwd: string): Record<string, string> {
     expected_operation: "upgrade",
     manifest_digest: environment.HANIEL_MANIFEST_DIGEST,
     database_journal_path: join(backupDirectory, "database-release.json"),
-    state: "backing_up",
+    state: "migrating",
     quiescence_receipt: JSON.parse(readFileSync(receiptPath, "utf8")),
   }), "utf8");
   const preflight = spawnSync(process.execPath, [RELEASE_EXECUTOR_PATH, "preflight"], {
@@ -1031,19 +1034,6 @@ function prepareDatabaseRelease(cwd: string): Record<string, string> {
   });
   expect(preflight.status).toBe(0);
   expectNoSecretLeak(preflight);
-  for (const phase of ["backup", "verify-backup"]) {
-    const result = spawnSync(process.execPath, [RELEASE_EXECUTOR_PATH, phase], {
-      cwd,
-      encoding: "utf8",
-      env: minimalEnv(environment),
-      timeout: 30_000,
-    });
-    expect(result.status).toBe(0);
-    expectNoSecretLeak(result);
-  }
-  const haniel = JSON.parse(readFileSync(environment.HANIEL_DEPLOYMENT_JOURNAL, "utf8"));
-  haniel.state = "migrating";
-  writeFileSync(environment.HANIEL_DEPLOYMENT_JOURNAL, JSON.stringify(haniel), "utf8");
   return environment;
 }
 

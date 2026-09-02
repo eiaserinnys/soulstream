@@ -39,11 +39,6 @@ export async function applyManifestContract(manifestPath, databaseContractPath, 
   if (!manifest.migration || !manifest.environment_service) {
     throw new Error("JOURNAL_GATE_FAILED: database release manifest is incomplete");
   }
-  const hasBackup = Object.hasOwn(manifest.migration, "backup");
-  const hasVerifyBackup = Object.hasOwn(manifest.migration, "verify_backup");
-  if (hasBackup !== hasVerifyBackup) {
-    throw new Error("JOURNAL_GATE_FAILED: inline backup commands must be declared together");
-  }
   const isStringList = (value) => Array.isArray(value)
     && value.every((item) => typeof item === "string" && item.trim())
     && new Set(value).size === value.length;

@@ -14,18 +14,15 @@ from haniel.core.release_manifest import ReleaseManifest
 from ci_prerequisite_contract import (
     CENTRAL_MANIFEST_PATH,
     INSTALL_WORKFLOW_PATH,
-    MIGRATION_MANIFEST_PATH,
     STANDALONE_MANIFEST_PATH,
     WRITER_SOURCES_PATH,
     assert_central_manifest,
     assert_haniel_contract_matrix,
     assert_installed_haniel_lane,
     assert_ordered_trace,
-    assert_pending_migration,
     assert_standalone_manifest,
     load_contract,
     load_json,
-    target_central_payload,
 )
 
 
@@ -34,17 +31,11 @@ class CiPrerequisiteStrictTest(unittest.TestCase):
         self.contract = load_contract()
         self.central = load_json(CENTRAL_MANIFEST_PATH)
 
-    def test_central_no_inline_manifest_is_non_destructive(self) -> None:
+    def test_central_has_no_retired_migration_policy_fields(self) -> None:
         assert_central_manifest(self.central)
 
-    def test_standalone_keeps_destructive_backup_ownership(self) -> None:
-        assert_standalone_manifest(
-            load_json(STANDALONE_MANIFEST_PATH),
-            self.contract,
-        )
-
-    def test_ownerless_terminal_generation_cas_stays_non_destructive(self) -> None:
-        assert_pending_migration(load_json(MIGRATION_MANIFEST_PATH))
+    def test_standalone_has_no_retired_migration_policy_fields(self) -> None:
+        assert_standalone_manifest(load_json(STANDALONE_MANIFEST_PATH))
 
     def test_pinned_and_rolling_haniel_contract_lanes_are_explicit(self) -> None:
         assert_haniel_contract_matrix(
@@ -57,7 +48,7 @@ class CiPrerequisiteStrictTest(unittest.TestCase):
     def test_central_target_runs_preflight_apply_and_migration_ledger_verify(
         self,
     ) -> None:
-        payload = target_central_payload(self.central)
+        payload = self.central
         assert_central_manifest(payload)
         manifest = ReleaseManifest.model_validate(payload)
         command_trace: list[str] = []

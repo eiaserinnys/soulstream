@@ -11,11 +11,6 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const migrationDirectory = resolve(packageRoot, "sql/migrations");
 export const migrationManifestPath = resolve(packageRoot, "migration-manifest.json");
 export const canonicalSchemaPath = resolve(packageRoot, "sql/schema.sql");
-export const legacyBackupContractPath = resolve(
-  packageRoot,
-  "legacy-task-tree-backup.json",
-);
-
 export function deploymentEnvironmentPath(env = process.env, cwd = process.cwd()) {
   const serviceCwd = env.HANIEL_SERVICE_CWD?.trim();
   return resolve(serviceCwd || cwd, ".env.soul-server-ts");
@@ -74,19 +69,6 @@ export async function loadMigrationManifest() {
     }
     if (!/^[a-f0-9]{64}$/.test(entry.sha256)) {
       throw new Error(`invalid migration checksum: ${entry.id}`);
-    }
-    if (typeof entry.destructive !== "boolean") {
-      throw new Error(`migration destructive flag missing: ${entry.id}`);
-    }
-    if (!new Set([
-      "bootstrap_only",
-      "previous_release_safe",
-      "restore_required",
-    ]).has(entry.rollback_compatibility)) {
-      throw new Error(`migration rollback compatibility missing: ${entry.id}`);
-    }
-    if (entry.destructive && entry.rollback_compatibility !== "restore_required") {
-      throw new Error(`destructive migration must require restore: ${entry.id}`);
     }
     const path = resolve(migrationDirectory, entry.id);
     const sql = await readFile(path, "utf8");
@@ -202,55 +184,4 @@ export function buildMigrationPlan(migrations, ledger, shape) {
     bootstrap: migrations.slice(0, bootstrapCount),
     pending: migrations.slice(bootstrapCount),
   };
-}
-
-export function destructivePending(plan) {
-  return plan.pending.filter((migration) => migration.destructive);
-}
-
-export function rollbackUnsafePending(plan) {
-  return plan.pending.filter(
-    (migration) => migration.rollback_compatibility !== "previous_release_safe",
-  );
-}
-
-export function legacyRetirementPending(plan) {
-  const ids = new Set(plan.pending.map((migration) => migration.id));
-  return ids.has("041_retire_task_tree.sql") || ids.has("042_runbook_to_task.sql");
-}
-
-export async function loadLegacyBackupContract() {
-  return JSON.parse(await readFile(legacyBackupContractPath, "utf8"));
-}
-
-export function assertLegacyBackupResolved(contract) {
-  const stored = Number(contract.stored_operation_count);
-  const observed = Number(contract.observed_pre_drop_operation_count);
-  const missing = observed - stored;
-  if (contract.status !== "resolved" || stored !== observed || missing !== 0) {
-    throw new Error(
-      `legacy Task Tree backup unresolved: stored=${stored}, observed=${observed}, missing=${missing}`,
-    );
-  }
-}
-
-export function validateBackupGate(gate, env = process.env, expectedRollbackUnsafe = null) {
-  if (gate?.schema_version !== "soulstream.database-backup.v1" || gate.status !== "verified") {
-    throw new Error("verified database backup gate is required");
-  }
-  const releaseId = readReleaseId(env);
-  if (gate.release_id !== releaseId) throw new Error("backup gate release ID differs");
-  if (gate.target_head !== env.HANIEL_TARGET_HEAD) {
-    throw new Error("backup gate target commit differs");
-  }
-  if (!/^[a-f0-9]{64}$/.test(gate.dump_sha256 ?? "")) {
-    throw new Error("backup gate checksum is invalid");
-  }
-  if (
-    expectedRollbackUnsafe
-    && JSON.stringify(gate.rollback_unsafe_pending) !== JSON.stringify(expectedRollbackUnsafe)
-  ) {
-    throw new Error("backup gate migration plan differs");
-  }
-  return gate;
 }

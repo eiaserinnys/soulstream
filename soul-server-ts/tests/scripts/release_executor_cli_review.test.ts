@@ -56,7 +56,7 @@ describe("database release CLI and direct writer boundaries", () => {
     const contractPath = join(directory, "database-release.json");
     writeFileSync(manifestPath, JSON.stringify({
       environment_service: "writer",
-      migration: { destructive: true },
+      migration: {},
     }), "utf8");
     writeFileSync(contractPath, JSON.stringify({
       schema_version: "soulstream.database-release-manifest.v1",
@@ -92,7 +92,7 @@ describe("database release CLI and direct writer boundaries", () => {
     const manifestPath = join(directory, "release-manifest.json");
     writeFileSync(manifestPath, JSON.stringify({
       environment_service: "writer",
-      migration: { destructive: true },
+      migration: {},
     }), "utf8");
     const errors: string[] = [];
     const runner = async () => ({ ok: true });

@@ -1,7 +1,6 @@
 import dotenv from "dotenv";
 import postgres from "postgres";
 
-import { createBackup, recoverPreviousReleaseData, verifyBackup } from "./backup.mjs";
 import { inspectUserObjectInventory } from "./database-release-inventory.mjs";
 import { deploymentEnvironmentPath, readDatabaseUrl } from "./migration-contract.mjs";
 import { readMigrationPlan, runMigrations } from "./migrate.mjs";
@@ -39,8 +38,5 @@ export async function resolveDatabaseReleaseContext(options, command) {
     planRead: options.planRead ?? (() => readMigrationPlan(sql)),
     migrationRun: options.migrationRun ?? ((mode, runOptions) =>
       runMigrations(mode, { ...runOptions, sql })),
-    backupCreate: options.backupCreate ?? createBackup,
-    backupVerify: options.backupVerify ?? verifyBackup,
-    backupRecover: options.backupRecover ?? recoverPreviousReleaseData,
   };
 }

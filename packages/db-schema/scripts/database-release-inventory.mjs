@@ -463,6 +463,9 @@ export async function inspectUserObjectInventory(sql) {
           'stream', subscription.substream, 'slot', subscription.subslotname,
           'publications', subscription.subpublications)::text
       FROM pg_subscription subscription
+      WHERE subscription.subdbid = (
+        SELECT oid FROM pg_database WHERE datname = current_database()
+      )
       UNION ALL
       SELECT 'extended_statistics', namespace.nspname || '.' || statistics.stxname,
         statistics.oid::text,

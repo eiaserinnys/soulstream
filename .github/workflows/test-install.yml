@@ -165,7 +165,7 @@ jobs:
             --reporter=default --reporter=json \
             --outputFile.json=database-release-postgres-results.json
           node packages/db-schema/scripts/verify-vitest-contract-result.mjs \
-            soul-server-ts/database-release-postgres-results.json 30
+            soul-server-ts/database-release-postgres-results.json 27
 
   test-install:
     runs-on: windows-latest
@@ -285,7 +285,7 @@ jobs:
             --reporter=default --reporter=json --outputFile.json=$resultPath
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node packages/db-schema/scripts/verify-vitest-contract-result.mjs `
-            (Join-Path "soul-server-ts" $resultPath) 26
+            (Join-Path "soul-server-ts" $resultPath) 23
 
       - name: Verify release activation contract stub
         shell: pwsh
