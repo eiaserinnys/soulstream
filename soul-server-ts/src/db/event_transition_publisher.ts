@@ -100,6 +100,48 @@ export abstract class EventTransitionPublisher {
     );
   }
 
+  /**
+   * Wave 0 compatibility surface for fixed recovery contracts.
+   *
+   * The legacy name no longer acquires or leases an owner. It records the same
+   * generation projection as the runtime path; `leaseExpiresAt` is accepted
+   * only to keep the pre-Wave-1 caller shape stable until Wave 3 removes it.
+   */
+  async acquireExecutionOwnershipAndWaitForApplication(
+    sessionId: string,
+    input: {
+      ownerKind: ExecutionOwnerKind;
+      manifestId: string;
+      runtimeEnvIdentity: string;
+      registrationId: string;
+      pid: number;
+      startIdentity: string;
+      executionCommandId: string;
+      leaseExpiresAt: Date;
+      reviewState: string;
+      expectedTerminalEventId?: number | null;
+      updatedAt?: Date;
+    },
+  ): Promise<EventSessionTransitionApplication> {
+    return await this.recordExecutionGenerationAndWaitForApplication(
+      sessionId,
+      {
+        ownerKind: input.ownerKind,
+        manifestId: input.manifestId,
+        runtimeEnvIdentity: input.runtimeEnvIdentity,
+        registrationId: input.registrationId,
+        pid: input.pid,
+        startIdentity: input.startIdentity,
+        executionCommandId: input.executionCommandId,
+        reviewState: input.reviewState,
+        ...(input.expectedTerminalEventId === undefined
+          ? {}
+          : { expectedTerminalEventId: input.expectedTerminalEventId }),
+        ...(input.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }),
+      },
+    );
+  }
+
   async enqueueTerminalTransitionAndWaitForApplication(
     sessionId: string,
     event: SSEEventPayload,
