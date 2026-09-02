@@ -175,16 +175,6 @@ export function createRunnerProcessRuntimeFactory(
       spawnInput.then(async (input) => await spawner.spawn(input)),
     );
   }) as RunnerProcessRuntimeFactory;
-  factory.describe = async (agent) => {
-    const release = options.releaseManifest
-      ? null
-      : await options.releasePool.resolveCurrentRelease();
-    return {
-      ownerKind: "runner_process",
-      manifestId: options.releaseManifest?.manifest_id ?? release!.releaseId,
-      runtimeEnvIdentity: agentRuntimeEnvIdentity(agent),
-    };
-  };
   // Adoption, live terminal replay, and offline replay reuse the registered
   // child/config rather than resolving current profile MCP settings.
   factory.recover = (task, registration, snapshots, mode = "adopt") => {

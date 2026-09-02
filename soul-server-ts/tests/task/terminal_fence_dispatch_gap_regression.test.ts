@@ -89,7 +89,7 @@ describe("terminal fence dispatch persistence gap", () => {
           interventionSentCount(persistence.enqueueEvent.mock.calls, TEXT),
         automaticStarts: runtime.automaticStart.mock.calls.length,
         executionAcquires:
-          persistence.recordExecutionGenerationAndWaitForApplication.mock.calls.length,
+          persistence.recordExecutionRegistrationAndWaitForApplication.mock.calls.length,
         turnStarts: runtime.turnStarted.mock.calls.length,
         modelCalls: runtime.modelCall.mock.calls.length,
         taskStatus: task.status,
@@ -170,7 +170,7 @@ describe("terminal fence dispatch persistence gap", () => {
         ),
         automaticStarts: runtime.automaticStart.mock.calls.length,
         executionAcquires:
-          persistence.recordExecutionGenerationAndWaitForApplication.mock.calls.length,
+          persistence.recordExecutionRegistrationAndWaitForApplication.mock.calls.length,
         turnStarts: runtime.turnStarted.mock.calls.length,
         modelCalls: runtime.modelCall.mock.calls.length,
         taskStatus: task.status,
@@ -224,7 +224,7 @@ describe("terminal fence dispatch persistence gap", () => {
         runningTransitions:
           persistence.enqueueRunningTransitionAndWaitForApplication.mock.calls.length,
         executionAcquires:
-          persistence.recordExecutionGenerationAndWaitForApplication.mock.calls.length,
+          persistence.recordExecutionRegistrationAndWaitForApplication.mock.calls.length,
         turnStarts: runtime.turnStarted.mock.calls.length,
         modelCalls: runtime.modelCall.mock.calls.length,
       }).toEqual({

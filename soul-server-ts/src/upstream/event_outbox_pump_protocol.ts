@@ -51,6 +51,12 @@ export type EventCanonicalSessionProjection = {
   last_event_id: number | null;
 };
 
+export type EventCanonicalExecutionRegistrationProjection = {
+  registration_id: string;
+  execution_command_id: string;
+};
+
+/** One-release ACK compatibility for a legacy execution_acquire record. */
 export type EventCanonicalExecutionOwnershipProjection = {
   ownership_generation: number;
   owner_kind: "runner_process" | "adopted_runner" | "in_process";
@@ -70,6 +76,7 @@ export type EventAppendAcknowledgement = {
   effect_application?: {
     applied: boolean;
     canonical_session: EventCanonicalSessionProjection;
+    canonical_execution_registration?: EventCanonicalExecutionRegistrationProjection | null;
     canonical_execution_ownership?: EventCanonicalExecutionOwnershipProjection | null;
   };
 };
@@ -170,6 +177,9 @@ function isValidEffectApplication(
 ): boolean {
   if (value === undefined) return true;
   if (typeof value.applied !== "boolean") return false;
+  if (!isValidCanonicalExecutionRegistration(
+    value.canonical_execution_registration,
+  )) return false;
   if (!isValidCanonicalExecutionOwnership(value.canonical_execution_ownership)) return false;
   const session = value.canonical_session;
   return Boolean(session && typeof session === "object"
@@ -182,6 +192,17 @@ function isValidEffectApplication(
       || Number.isSafeInteger(session.termination_event_id))
     && typeof session.updated_at === "string"
     && (session.last_event_id === null || Number.isSafeInteger(session.last_event_id)));
+}
+
+function isValidCanonicalExecutionRegistration(
+  value: EventCanonicalExecutionRegistrationProjection | null | undefined,
+): boolean {
+  if (value === undefined || value === null) return true;
+  return typeof value === "object"
+    && typeof value.registration_id === "string"
+    && value.registration_id.length > 0
+    && typeof value.execution_command_id === "string"
+    && value.execution_command_id.length > 0;
 }
 
 function isValidCanonicalExecutionOwnership(

@@ -14,9 +14,9 @@ import type {
 import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 import {
-  newExecutionOwnerToken,
-  type ExecutionIdentityProof,
-} from "../task/execution_ownership.js";
+  newExecutionCommandId,
+  type RunnerExecutionIdentity,
+} from "../task/execution_registration.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
@@ -113,7 +113,6 @@ export interface RunnerHostCall {
     | "session_store"
     | "claude_runtime"
     | "detached_event"
-    | "execution_ownership"
     | "snapshot";
   operation: string;
   args: unknown[];
@@ -146,7 +145,7 @@ export interface RunnerProcessDispatcherOptions {
 
 export class RunnerOrphanedSpawnError extends Error {
   constructor(
-    readonly proof: ExecutionIdentityProof,
+    readonly proof: RunnerExecutionIdentity,
     cause: unknown,
   ) {
     super(`spawned runner rollback failed: ${proof.pid}`, { cause });
@@ -254,7 +253,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     ));
   }
 
-  async prepareExecutionIdentity(ownerToken?: string): Promise<ExecutionIdentityProof> {
+  async prepareExecutionIdentity(ownerToken?: string): Promise<RunnerExecutionIdentity> {
     await this.ready;
     const spawned = this.spawnedProcess;
     if (!spawned) throw new Error("runner process identity unavailable");
@@ -270,11 +269,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       registrationId: identity.registrationId,
       pid: identity.pid,
       startIdentity: identity.startIdentity,
-      executionCommandId: ownerToken ?? newExecutionOwnerToken(),
+      executionCommandId: ownerToken ?? newExecutionCommandId(),
     };
   }
 
-  async rollbackExecutionIdentity(proof: ExecutionIdentityProof): Promise<void> {
+  async rollbackExecutionIdentity(proof: RunnerExecutionIdentity): Promise<void> {
     await this.ready;
     const spawned = this.spawnedProcess;
     if (!spawned) throw new Error("runner process identity unavailable for rollback");
@@ -610,7 +609,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
 
   private async prepareSpawnedIdentityProof(
     spawned: import("./runner_process_spawn.js").SpawnedRunnerProcess,
-  ): Promise<ExecutionIdentityProof> {
+  ): Promise<RunnerExecutionIdentity> {
     const identity = await readRunnerRegistrationIdentity(spawned.paths.sessionDirectory);
     if (
       !identity
@@ -623,7 +622,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       registrationId: identity.registrationId,
       pid: identity.pid,
       startIdentity: identity.startIdentity,
-      executionCommandId: newExecutionOwnerToken(),
+      executionCommandId: newExecutionCommandId(),
     };
     return proof;
   }
@@ -631,7 +630,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private async rollbackSpawnAfterParentInitializationFailure(
     spawner: RunnerProcessDispatcherOptions["spawner"] | RunnerProcessSpawner,
     spawned: import("./runner_process_spawn.js").SpawnedRunnerProcess,
-    proof: ExecutionIdentityProof,
+    proof: RunnerExecutionIdentity,
     initializationError: unknown,
   ): Promise<never> {
     const cleanupErrors: unknown[] = [];
@@ -1048,12 +1047,6 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         async (idempotencyKey) => {
           if (idempotencyKey !== call.correlationId) {
             throw new Error("runner host-call idempotency key mismatch");
-          }
-          // Previous-release children still emit this while attached to a new
-          // host. It is compatibility-only: do not restore ownership or lease
-          // renewal. Remove in Wave 3 after the live old-runner count reaches 0.
-          if (call.service === "execution_ownership" && call.operation === "renew") {
-            return false;
           }
           return await this.options.handleHostCall(call, (continuation) => {
             postResponse = continuation;

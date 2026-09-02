@@ -52,7 +52,7 @@ export async function persistUserMessageEvent(
   if (!deps.persistence) {
     throw new Error("user_message durable event persistence is required");
   }
-  const registrationId = task.executionOwnership?.registrationId;
+  const registrationId = task.executionRegistration?.registrationId;
   if (registrationId === undefined) {
     await deps.persistence.enqueueEvent(task.agentSessionId, event as SSEEventPayload);
     return;

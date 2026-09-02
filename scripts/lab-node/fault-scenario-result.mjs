@@ -32,8 +32,8 @@ export function preflightRefusalReasons(preflight = {}) {
     ...(preflight.nonterminalSessions ?? []).map(
       (session) => `nonterminal_session:${session.session_id}:${session.status}`,
     ),
-    ...(preflight.openOwnerships ?? []).map(
-      (ownership) => `open_ownership:${ownership.session_id}:${ownership.ownership_generation}`,
+    ...(preflight.openRegistrations ?? []).map(
+      (registration) => `open_registration:${registration.session_id}:${registration.registration_id}`,
     ),
     ...(preflight.runnerProcesses ?? []).map(
       (runner) => `runner_process:${runner.pid}`,

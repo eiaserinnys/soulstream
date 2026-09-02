@@ -58,7 +58,7 @@ describe("R16 terminal status full slice", () => {
     // v18 recovery decouples the hydrated task from the pre-restart execution
     // owner. The durable row still has the old generation; only the runner
     // registration can reintroduce the identity needed to project terminal.
-    task.executionOwnership = undefined;
+    task.executionRegistration = undefined;
     const lifecycle = new TaskLifecycleTransition({
       logger,
       persistence: ingress.persistence,
@@ -106,7 +106,7 @@ describe("R16 terminal status full slice", () => {
   it("converges after one terminal write failure before retiring replay_terminal_dead", async () => {
     await insertOwnedRunningSession(RETRY_SESSION_ID);
     const task = await loadTask(RETRY_SESSION_ID);
-    task.executionOwnership = undefined;
+    task.executionRegistration = undefined;
     const terminalWrite = vi.fn()
       .mockRejectedValueOnce(new Error("terminal projection RPC reset"))
       .mockImplementation((...args) => ingress.persistence
@@ -176,20 +176,8 @@ describe("R16 terminal status full slice", () => {
     });
   });
 
-  it("projects a terminal fact independently of expired ownership history", async () => {
+  it("projects a terminal fact without lease history", async () => {
     await insertSession(EXPIRED_IDENTITY_SESSION_ID, "running");
-    await postgres.sql`
-      INSERT INTO session_execution_ownerships (
-        session_id, ownership_generation, owner_kind, manifest_id,
-        registration_id, pid, start_identity, execution_command_id,
-        phase, reserved_at, identity_proven_at, reservation_expires_at
-      ) VALUES (
-        ${EXPIRED_IDENTITY_SESSION_ID}, 9, 'runner_process', 'stale-manifest',
-        'stale-registration', 9009, 'stale-start', 'stale-command',
-        'identity_proven', NOW() - INTERVAL '2 minutes',
-        NOW() - INTERVAL '2 minutes', NOW() - INTERVAL '1 minute'
-      )
-    `;
 
     const persisted = await persistRecoveredTerminal(
       EXPIRED_IDENTITY_SESSION_ID,
@@ -203,19 +191,16 @@ describe("R16 terminal status full slice", () => {
     });
   });
 
-  it("clears a legacy live-owner projection through the plain terminal transition", async () => {
+  it("clears a live registration through the plain terminal transition", async () => {
     await insertSession(LIVE_SUCCESSOR_SESSION_ID, "running");
-    await postgres.sql`
-      INSERT INTO session_execution_ownerships (
-        session_id, ownership_generation, owner_kind, manifest_id,
-        registration_id, pid, start_identity, execution_command_id,
-        phase, reserved_at, identity_proven_at, activated_at
-      ) VALUES (
-        ${LIVE_SUCCESSOR_SESSION_ID}, 10, 'runner_process', 'successor-manifest',
-        'successor-registration', 9010, 'successor-start', 'successor-command',
-        'active', NOW(), NOW(), NOW()
-      )
-    `;
+    await ingress.persistence.recordExecutionRegistrationAndWaitForApplication(
+      LIVE_SUCCESSOR_SESSION_ID,
+      {
+        registrationId: "successor-registration",
+        executionCommandId: "successor-command",
+        reviewState: "not_required",
+      },
+    );
 
     const persisted = await persistRecoveredTerminal(LIVE_SUCCESSOR_SESSION_ID);
 
@@ -298,25 +283,13 @@ describe("R16 terminal status full slice", () => {
   async function insertOwnedRunningSession(sessionId: string): Promise<void> {
     await insertSession(sessionId, "running");
     const acquired = await ingress.persistence
-      .recordExecutionGenerationAndWaitForApplication(sessionId, {
+      .recordExecutionRegistrationAndWaitForApplication(sessionId, {
         ...LIVE_OWNER_IDENTITY,
         ownerKind: "runner_process",
         leaseExpiresAt: new Date(Date.now() + 60_000),
         reviewState: "not_required",
       });
     expect(acquired.applied).toBe(true);
-    await postgres.sql`
-      INSERT INTO session_execution_ownerships (
-        session_id, ownership_generation, owner_kind, manifest_id,
-        registration_id, pid, start_identity, execution_command_id,
-        phase, identity_proven_at, activated_at
-      ) VALUES (
-        ${sessionId}, 1, 'runner_process',
-        ${LIVE_OWNER_IDENTITY.manifestId}, ${LIVE_OWNER_IDENTITY.registrationId},
-        ${LIVE_OWNER_IDENTITY.pid}, ${LIVE_OWNER_IDENTITY.startIdentity},
-        ${LIVE_OWNER_IDENTITY.executionCommandId}, 'active', NOW(), NOW()
-      )
-    `;
   }
 
   async function loadTask(sessionId: string): Promise<Task> {

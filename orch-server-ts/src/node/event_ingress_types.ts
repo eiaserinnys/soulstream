@@ -4,16 +4,13 @@ import type {
   EventIngressEnvelope,
   EventSessionEffect,
 } from "./event_ingress_contract.js";
-import { parseExecutionFailureEffect } from "./event_ingress_execution_failure.js";
 import {
   assertExactKeys,
-  booleanValue,
   EventIngressValidationError,
   isRecord,
   isoTimestamp,
   nonEmptyString,
   nullableNonEmptyString,
-  nullablePositiveInteger,
   nullableString,
   positiveInteger,
   recordValue,
@@ -27,6 +24,7 @@ export type {
   EventAppendAck,
   EventAppendAcknowledgement,
   EventAppendBatch,
+  EventCanonicalExecutionRegistrationProjection,
   EventCanonicalExecutionOwnershipProjection,
   EventCanonicalSessionProjection,
   EventIngressEnvelope,
@@ -200,6 +198,36 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }
+  if (value.kind === "execution_registration") {
+    assertExactKeys(
+      value,
+      [
+        "kind", "registration_id", "execution_command_id", "review_state",
+        "expected_terminal_event_id", "updated_at",
+      ],
+      field,
+    );
+    return {
+      kind: value.kind,
+      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
+      execution_command_id: nonEmptyString(
+        value.execution_command_id,
+        `${field}.execution_command_id`,
+      ),
+      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
+      ...(value.expected_terminal_event_id === undefined
+        ? {}
+        : {
+            expected_terminal_event_id: value.expected_terminal_event_id === null
+              ? null
+              : positiveInteger(
+                  value.expected_terminal_event_id,
+                  `${field}.expected_terminal_event_id`,
+                ),
+          }),
+      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
+    };
+  }
   if (value.kind === "execution_acquire") {
     assertExactKeys(
       value,
@@ -241,239 +269,6 @@ function parseSessionEffect(value: unknown, index: number): EventSessionEffect |
                   `${field}.expected_terminal_event_id`,
                 ),
           }),
-      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
-    };
-  }
-  if (value.kind === "execution_reserve") {
-    assertExactKeys(
-      value,
-      [
-        "kind", "ownership_generation", "owner_kind", "manifest_id",
-        "runtime_env_identity", "updated_at",
-      ],
-      field,
-    );
-    const ownerKind = nonEmptyString(value.owner_kind, `${field}.owner_kind`);
-    if (!["runner_process", "adopted_runner", "in_process"].includes(ownerKind)) {
-      throw new EventIngressValidationError(`${field}.owner_kind is invalid`);
-    }
-    return {
-      kind: value.kind,
-      ownership_generation: positiveInteger(
-        value.ownership_generation,
-        `${field}.ownership_generation`,
-      ),
-      owner_kind: ownerKind as "runner_process" | "adopted_runner" | "in_process",
-      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
-      ...(value.runtime_env_identity === undefined
-        ? {}
-        : {
-            runtime_env_identity: nonEmptyString(
-              value.runtime_env_identity,
-              `${field}.runtime_env_identity`,
-            ),
-          }),
-      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
-    };
-  }
-  if (value.kind === "execution_prove") {
-    assertExactKeys(
-      value,
-      [
-        "kind", "ownership_generation", "registration_id", "pid",
-        "start_identity", "execution_command_id", "updated_at",
-      ],
-      field,
-    );
-    return {
-      kind: value.kind,
-      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
-      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
-      pid: positiveInteger(value.pid, `${field}.pid`),
-      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
-      execution_command_id: nonEmptyString(value.execution_command_id, `${field}.execution_command_id`),
-      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
-    };
-  }
-  if (value.kind === "execution_adopt_reserve") {
-    assertExactKeys(
-      value,
-      [
-        "kind", "ownership_generation", "manifest_id", "runtime_env_identity",
-        "previous_registration_id", "pid", "start_identity",
-        "execution_command_id", "updated_at",
-      ],
-      field,
-    );
-    return {
-      kind: value.kind,
-      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
-      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
-      ...(value.runtime_env_identity === undefined
-        ? {}
-        : {
-            runtime_env_identity: nonEmptyString(
-              value.runtime_env_identity,
-              `${field}.runtime_env_identity`,
-            ),
-          }),
-      previous_registration_id: nonEmptyString(
-        value.previous_registration_id,
-        `${field}.previous_registration_id`,
-      ),
-      pid: positiveInteger(value.pid, `${field}.pid`),
-      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
-      execution_command_id: nonEmptyString(
-        value.execution_command_id,
-        `${field}.execution_command_id`,
-      ),
-      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
-    };
-  }
-  if (value.kind === "execution_activate") {
-    assertExactKeys(
-      value,
-      ["kind", "ownership_generation", "review_state", "expected_terminal_event_id", "updated_at"],
-      field,
-    );
-    return {
-      kind: value.kind,
-      ownership_generation: positiveInteger(value.ownership_generation, `${field}.ownership_generation`),
-      review_state: nonEmptyString(value.review_state, `${field}.review_state`),
-      ...(value.expected_terminal_event_id === undefined
-        ? {}
-        : {
-            expected_terminal_event_id: value.expected_terminal_event_id === null
-              ? null
-              : positiveInteger(value.expected_terminal_event_id, `${field}.expected_terminal_event_id`),
-          }),
-      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
-    };
-  }
-  const executionFailureEffect = parseExecutionFailureEffect(value, field);
-  if (executionFailureEffect) return executionFailureEffect;
-  if (value.kind === "execution_retire_terminal_ownership") {
-    assertExactKeys(
-      value,
-      [
-        "kind", "ownership_generation", "manifest_id", "registration_id", "pid",
-        "start_identity", "execution_command_id", "runner_fact", "updated_at",
-      ],
-      field,
-    );
-    const runnerFact = nonEmptyString(value.runner_fact, `${field}.runner_fact`);
-    if (!["completed", "failed", "reaped", "closed"].includes(runnerFact)) {
-      throw new EventIngressValidationError(`${field}.runner_fact is invalid`);
-    }
-    return {
-      kind: value.kind,
-      ownership_generation: positiveInteger(
-        value.ownership_generation,
-        `${field}.ownership_generation`,
-      ),
-      manifest_id: nonEmptyString(value.manifest_id, `${field}.manifest_id`),
-      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
-      pid: positiveInteger(value.pid, `${field}.pid`),
-      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
-      execution_command_id: nonEmptyString(
-        value.execution_command_id,
-        `${field}.execution_command_id`,
-      ),
-      runner_fact: runnerFact as "completed" | "failed" | "reaped" | "closed",
-      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
-    };
-  }
-  if (value.kind === "execution_orphaned_spawn") {
-    assertExactKeys(
-      value,
-      [
-        "kind", "ownership_generation", "registration_id", "pid",
-        "start_identity", "execution_command_id", "updated_at",
-      ],
-      field,
-    );
-    return {
-      kind: value.kind,
-      ownership_generation: positiveInteger(
-        value.ownership_generation,
-        `${field}.ownership_generation`,
-      ),
-      registration_id: nonEmptyString(value.registration_id, `${field}.registration_id`),
-      pid: positiveInteger(value.pid, `${field}.pid`),
-      start_identity: nonEmptyString(value.start_identity, `${field}.start_identity`),
-      execution_command_id: nonEmptyString(
-        value.execution_command_id,
-        `${field}.execution_command_id`,
-      ),
-      updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
-    };
-  }
-  if (value.kind === "execution_backfill") {
-    assertExactKeys(
-      value,
-      [
-        "kind", "first_manifest_id", "first_runtime_env_identity",
-        "first_registration_id", "first_pid",
-        "first_start_identity", "first_execution_command_id", "first_observed_at",
-        "second_manifest_id", "second_runtime_env_identity",
-        "second_registration_id", "second_pid",
-        "second_start_identity", "second_execution_command_id", "second_observed_at",
-        "evidence_hash", "minimum_lease_interval_ms", "probe_only", "updated_at",
-      ],
-      field,
-    );
-    const evidenceHash = nonEmptyString(value.evidence_hash, `${field}.evidence_hash`);
-    if (!SHA256_PATTERN.test(evidenceHash)) {
-      throw new EventIngressValidationError(`${field}.evidence_hash must be sha256`);
-    }
-    if ((value.first_runtime_env_identity === undefined)
-      !== (value.second_runtime_env_identity === undefined)) {
-      throw new EventIngressValidationError(
-        `${field} runtime env identities must be supplied together`,
-      );
-    }
-    return {
-      kind: value.kind,
-      first_manifest_id: nullableNonEmptyString(value.first_manifest_id, `${field}.first_manifest_id`),
-      ...(value.first_runtime_env_identity === undefined
-        ? {}
-        : {
-            first_runtime_env_identity: nullableNonEmptyString(
-              value.first_runtime_env_identity,
-              `${field}.first_runtime_env_identity`,
-            ),
-          }),
-      first_registration_id: nullableNonEmptyString(value.first_registration_id, `${field}.first_registration_id`),
-      first_pid: nullablePositiveInteger(value.first_pid, `${field}.first_pid`),
-      first_start_identity: nullableNonEmptyString(value.first_start_identity, `${field}.first_start_identity`),
-      first_execution_command_id: nullableNonEmptyString(
-        value.first_execution_command_id,
-        `${field}.first_execution_command_id`,
-      ),
-      first_observed_at: isoTimestamp(value.first_observed_at, `${field}.first_observed_at`),
-      second_manifest_id: nullableNonEmptyString(value.second_manifest_id, `${field}.second_manifest_id`),
-      ...(value.second_runtime_env_identity === undefined
-        ? {}
-        : {
-            second_runtime_env_identity: nullableNonEmptyString(
-              value.second_runtime_env_identity,
-              `${field}.second_runtime_env_identity`,
-            ),
-          }),
-      second_registration_id: nullableNonEmptyString(value.second_registration_id, `${field}.second_registration_id`),
-      second_pid: nullablePositiveInteger(value.second_pid, `${field}.second_pid`),
-      second_start_identity: nullableNonEmptyString(value.second_start_identity, `${field}.second_start_identity`),
-      second_execution_command_id: nullableNonEmptyString(
-        value.second_execution_command_id,
-        `${field}.second_execution_command_id`,
-      ),
-      second_observed_at: isoTimestamp(value.second_observed_at, `${field}.second_observed_at`),
-      evidence_hash: evidenceHash,
-      minimum_lease_interval_ms: positiveInteger(
-        value.minimum_lease_interval_ms,
-        `${field}.minimum_lease_interval_ms`,
-      ),
-      probe_only: booleanValue(value.probe_only, `${field}.probe_only`),
       updated_at: isoTimestamp(value.updated_at, `${field}.updated_at`),
     };
   }

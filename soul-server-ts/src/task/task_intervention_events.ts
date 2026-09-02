@@ -58,7 +58,7 @@ async function persistIntervention(
       task.agentSessionId,
       interventionEvent as SSEEventPayload,
       undefined,
-      task.executionOwnership?.registrationId,
+      task.executionRegistration?.registrationId,
     );
   } catch (err) {
     deps.logger.warn(

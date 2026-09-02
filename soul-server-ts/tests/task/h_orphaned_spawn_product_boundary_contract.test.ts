@@ -28,8 +28,8 @@ import {
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
-import type { CanonicalExecutionOwnership } from
-  "../../src/task/execution_ownership.js";
+import type { CanonicalExecutionRegistration } from
+  "../../src/task/execution_registration.js";
 import {
   TaskExecutor,
   type RunnerProcessRuntimeFactory,
@@ -194,7 +194,7 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
   const livePids = new Set([EXISTING_PID, SPAWNED_PID]);
   const signalTargets: Array<{ pid: number; signal: NodeJS.Signals }> = [];
   const persistenceDouble = makeEventPersistenceTestDouble();
-  const canonicalOwner: CanonicalExecutionOwnership = {
+  const canonicalOwner: CanonicalExecutionRegistration = {
     ownershipGeneration: 1,
     ownerKind: "runner_process",
     manifestId: "release-existing",
@@ -291,8 +291,8 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
   };
 
   Object.assign(persistenceDouble.persistence, {
-    recordExecutionGenerationAndWaitForApplication: vi.fn(async () => {
-      trace.push("generation_record_rejected");
+    recordExecutionRegistrationAndWaitForApplication: vi.fn(async () => {
+      trace.push("registration_record_rejected");
       return transition(false, "running", canonicalOwner);
     }),
   });
@@ -301,11 +301,6 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
     trace.push("spawn");
     return runner;
   }) as unknown as RunnerProcessRuntimeFactory;
-  processFactory.describe = vi.fn(async () => ({
-    ownerKind: "runner_process",
-    manifestId: "release-spawned",
-    runtimeEnvIdentity: "runtime-spawned",
-  }));
   const executor = new TaskExecutor(
     () => inertEngine(),
     {
@@ -404,7 +399,7 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
 function transition(
   applied: boolean,
   status: "initializing" | "running" | "error",
-  canonicalExecutionOwnership: CanonicalExecutionOwnership,
+  canonicalExecutionRegistration: CanonicalExecutionRegistration,
 ): EventSessionTransitionApplication {
   return {
     eventId: 10,
@@ -419,7 +414,7 @@ function transition(
       updated_at: OBSERVED_AT,
       last_event_id: 10,
     },
-    canonicalExecutionOwnership,
+    canonicalExecutionRegistration,
   };
 }
 

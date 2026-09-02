@@ -74,13 +74,12 @@ describe("parseEventAppendBatch sanitization", () => {
     ).toThrow("session_effect has unexpected fields: unexpected");
   });
 
-  it("requires the exact process identity on dead-owner expiry", () => {
+  it("accepts exactly the two-field execution registration", () => {
     const effect = {
-      kind: "execution_expire_dead_owner",
-      ownership_generation: 7,
-      pid: 968_764,
-      start_identity: "start-1",
-      failure_reason: "owner process is gone",
+      kind: "execution_registration",
+      registration_id: "registration-1",
+      execution_command_id: "execute-1",
+      review_state: "not_required",
       updated_at: "2026-08-21T00:00:00.000Z",
     };
 
@@ -89,66 +88,23 @@ describe("parseEventAppendBatch sanitization", () => {
     ).toEqual(effect);
     expect(() => parseEventAppendBatch(batchWithEffect({
       ...effect,
-      start_identity: "",
-    }))).toThrow("session_effect.start_identity must be a non-empty string");
+      registration_id: "",
+    }))).toThrow("session_effect.registration_id must be a non-empty string");
   });
 
-  it("replays the persisted legacy terminal ownership effect unchanged", () => {
-    const effect = {
-      kind: "execution_retire_terminal_ownership",
-      ownership_generation: 113_641_988_538_614,
-      manifest_id: "manifest-1",
-      registration_id: "registration-1",
-      pid: 968_764,
-      start_identity: "start-1",
-      execution_command_id: "execute-1",
-      runner_fact: "reaped",
-      updated_at: "2026-08-29T00:00:00.000Z",
-    };
-    const persisted = JSON.parse(JSON.stringify(effect));
-
-    expect(
-      parseEventAppendBatch(batchWithEffect(persisted)).events[0]!.session_effect,
-    ).toEqual(effect);
-  });
-
-  it("keeps the two owner-null observations and evidence hash intact", () => {
-    const effect = {
-      kind: "execution_backfill",
-      first_manifest_id: "manifest-1",
-      first_registration_id: "registration-1",
-      first_pid: 123,
-      first_start_identity: "start-1",
-      first_execution_command_id: "execute-1",
-      first_observed_at: "2026-08-18T00:00:00.000Z",
-      second_manifest_id: "manifest-1",
-      second_registration_id: "registration-1",
-      second_pid: 123,
-      second_start_identity: "start-1",
-      second_execution_command_id: "execute-1",
-      second_observed_at: "2026-08-18T00:00:31.000Z",
-      evidence_hash: "b".repeat(64),
-      minimum_lease_interval_ms: 30_000,
-      probe_only: false,
-      updated_at: "2026-08-18T00:00:31.000Z",
-    };
-
-    expect(
-      parseEventAppendBatch(batchWithEffect(effect)).events[0]!.session_effect,
-    ).toEqual(effect);
-
-    expect(() => parseEventAppendBatch(batchWithEffect({
-      ...effect,
-      first_runtime_env_identity: "runtime-env-1",
-    }))).toThrow("runtime env identities must be supplied together");
-    const withRuntimeIdentity = {
-      ...effect,
-      first_runtime_env_identity: "runtime-env-1",
-      second_runtime_env_identity: "runtime-env-1",
-    };
-    expect(
-      parseEventAppendBatch(batchWithEffect(withRuntimeIdentity)).events[0]!.session_effect,
-    ).toEqual(withRuntimeIdentity);
+  it.each([
+    "execution_reserve",
+    "execution_prove",
+    "execution_adopt_reserve",
+    "execution_activate",
+    "execution_fail",
+    "execution_expire_dead_owner",
+    "execution_retire_terminal_ownership",
+    "execution_orphaned_spawn",
+    "execution_backfill",
+  ])("rejects removed effect kind %s", (kind) => {
+    expect(() => parseEventAppendBatch(batchWithEffect({ kind })))
+      .toThrow("session_effect kind is invalid");
   });
 
   it("sanitizes payload, searchable_text, dedupe key, and session effect", () => {

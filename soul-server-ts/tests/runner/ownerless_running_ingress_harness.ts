@@ -143,37 +143,33 @@ export class OwnerlessIngressHarness {
     );
   }
 
-  async commitDirectAcquire(
+  async commitDirectRegistration(
     sessionId: string,
+    registrationId: string,
+    executionCommandId: string,
     now: Date,
   ): Promise<EventSessionEffectApplication> {
     this.directSourceSeq += 1;
-    const effect: EventOutboxSessionEffect = {
-      kind: "execution_acquire",
-      owner_kind: LIVE_OWNER_IDENTITY.ownerKind,
-      manifest_id: LIVE_OWNER_IDENTITY.manifestId,
-      runtime_env_identity: LIVE_OWNER_IDENTITY.runtimeEnvIdentity,
-      registration_id: LIVE_OWNER_IDENTITY.registrationId,
-      pid: LIVE_OWNER_IDENTITY.pid,
-      start_identity: LIVE_OWNER_IDENTITY.startIdentity,
-      execution_command_id: LIVE_OWNER_IDENTITY.executionCommandId,
-      lease_expires_at: new Date(now.getTime() + 60_000).toISOString(),
+    const effect = {
+      kind: "execution_registration",
+      registration_id: registrationId,
+      execution_command_id: executionCommandId,
       review_state: "not_required",
       updated_at: now.toISOString(),
-    };
+    } as EventOutboxSessionEffect;
     const input = buildEventOutboxAppendInput(
       sessionId,
       {
         type: "metadata",
-        metadata_type: "execution_ownership_transition",
-        value: { transition_id: `race-acquire-${this.directSourceSeq}` },
+        metadata_type: "execution_registration",
+        value: { registration_id: registrationId },
         timestamp: now,
-        _dedupe_key: `race-acquire:${sessionId}:${this.directSourceSeq}`,
+        _dedupe_key: `execution-registration:${sessionId}:${executionCommandId}`,
       } as never,
       effect,
     );
     const unsigned = {
-      stream_id: "00000000-0000-4000-8000-000000000202",
+      stream_id: "00000000-0000-4000-8000-000000000203",
       source_seq: this.directSourceSeq,
       ...input,
     };
@@ -189,7 +185,7 @@ export class OwnerlessIngressHarness {
       events: [record],
     });
     if (!result || result.outcome !== "committed" || !result.sessionEffectApplication) {
-      throw new Error("direct live acquire did not produce an ingress application");
+      throw new Error("direct execution registration did not produce an ingress application");
     }
     this.recordApplication(record, result);
     return result.sessionEffectApplication;
@@ -284,6 +280,12 @@ function toAck(
               effect_application: {
                 applied: result.sessionEffectApplication.applied,
                 canonical_session: result.sessionEffectApplication.canonicalSession,
+                ...(result.sessionEffectApplication.canonicalExecutionRegistration === undefined
+                  ? {}
+                  : {
+                      canonical_execution_registration:
+                        result.sessionEffectApplication.canonicalExecutionRegistration,
+                    }),
                 ...(result.sessionEffectApplication.canonicalExecutionOwnership === undefined
                   ? {}
                   : {

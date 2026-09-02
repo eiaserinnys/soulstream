@@ -18,7 +18,7 @@ describe("P0-R2 real boundary entry scaffold", () => {
     await postgres.cleanup();
   });
 
-  it("enters spawn, ownership, execution, persistence, and finalization", async () => {
+  it("enters spawn, registration, execution, persistence, and finalization", async () => {
     const harness = await P0R2FullSliceHarness.create(postgres);
     try {
       const observed = await harness.runEntryScaffold();
@@ -26,9 +26,8 @@ describe("P0-R2 real boundary entry scaffold", () => {
       expect(observed.firstExecution.pid).toBeGreaterThan(0);
       expect(observed.persistedInitialReplyCount).toBe(1);
       expect(observed.sessionStatus).toBe("completed");
-      expect(observed.executionGeneration).toBe(1);
-      expect(observed.executionIdentityCleared).toBe(true);
-      expect(observed.ownershipAcquireCount).toBe(1);
+      expect(observed.registrationCleared).toBe(true);
+      expect(observed.registrationRecordCount).toBe(1);
       expect(observed.taskStatus).toBe("completed");
       expect(observed.runnerAttached).toBe(false);
       expect(observed.executionPromiseAttached).toBe(false);

@@ -132,7 +132,7 @@ export class TaskEngineEventPublisher {
         task.agentSessionId,
         event,
         effect,
-        task.executionOwnership?.registrationId,
+        task.executionRegistration?.registrationId,
       );
       return true;
     } finally {

@@ -1,8 +1,5 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
-import type {
-  CanonicalExecutionOwnership,
-  ExecutionOwnerKind,
-} from "../task/execution_ownership.js";
+import type { ExecutionRegistration } from "../task/execution_registration.js";
 import type {
   EventOutboxRecord,
   EventOutboxSessionEffect,
@@ -16,7 +13,7 @@ export type EventSessionTransitionApplication = {
   eventId: number;
   applied: boolean;
   canonicalSession: EventCanonicalSessionProjection;
-  canonicalExecutionOwnership?: CanonicalExecutionOwnership | null;
+  canonicalExecutionRegistration?: ExecutionRegistration | null;
 };
 
 /** Owns the ordered durable transition API layered over event persistence. */
@@ -60,15 +57,10 @@ export abstract class EventTransitionPublisher {
     return await this.waitForTransitionApplication(sessionId, record, "running");
   }
 
-  async recordExecutionGenerationAndWaitForApplication(
+  async recordExecutionRegistrationAndWaitForApplication(
     sessionId: string,
     input: {
-      ownerKind: ExecutionOwnerKind;
-      manifestId: string;
-      runtimeEnvIdentity: string;
       registrationId: string;
-      pid: number;
-      startIdentity: string;
       executionCommandId: string;
       reviewState: string;
       expectedTerminalEventId?: number | null;
@@ -78,66 +70,16 @@ export abstract class EventTransitionPublisher {
     const updatedAt = input.updatedAt ?? new Date();
     return await this.enqueueExecutionEffectAndWait(
       sessionId,
-      `generation:${input.executionCommandId}`,
+      `registration:${input.executionCommandId}`,
       {
-        kind: "execution_acquire",
-        owner_kind: input.ownerKind,
-        manifest_id: input.manifestId,
-        runtime_env_identity: input.runtimeEnvIdentity,
+        kind: "execution_registration",
         registration_id: input.registrationId,
-        pid: input.pid,
-        start_identity: input.startIdentity,
         execution_command_id: input.executionCommandId,
-        // Legacy all-or-none session projection. This timestamp is not a lease;
-        // no runtime renews it or uses it for admission after Wave 1.
-        lease_expires_at: updatedAt.toISOString(),
         review_state: input.reviewState,
         ...(input.expectedTerminalEventId === undefined
           ? {}
           : { expected_terminal_event_id: input.expectedTerminalEventId }),
         updated_at: updatedAt.toISOString(),
-      },
-    );
-  }
-
-  /**
-   * Wave 0 compatibility surface for fixed recovery contracts.
-   *
-   * The legacy name no longer acquires or leases an owner. It records the same
-   * generation projection as the runtime path; `leaseExpiresAt` is accepted
-   * only to keep the pre-Wave-1 caller shape stable until Wave 3 removes it.
-   */
-  async acquireExecutionOwnershipAndWaitForApplication(
-    sessionId: string,
-    input: {
-      ownerKind: ExecutionOwnerKind;
-      manifestId: string;
-      runtimeEnvIdentity: string;
-      registrationId: string;
-      pid: number;
-      startIdentity: string;
-      executionCommandId: string;
-      leaseExpiresAt: Date;
-      reviewState: string;
-      expectedTerminalEventId?: number | null;
-      updatedAt?: Date;
-    },
-  ): Promise<EventSessionTransitionApplication> {
-    return await this.recordExecutionGenerationAndWaitForApplication(
-      sessionId,
-      {
-        ownerKind: input.ownerKind,
-        manifestId: input.manifestId,
-        runtimeEnvIdentity: input.runtimeEnvIdentity,
-        registrationId: input.registrationId,
-        pid: input.pid,
-        startIdentity: input.startIdentity,
-        executionCommandId: input.executionCommandId,
-        reviewState: input.reviewState,
-        ...(input.expectedTerminalEventId === undefined
-          ? {}
-          : { expectedTerminalEventId: input.expectedTerminalEventId }),
-        ...(input.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }),
       },
     );
   }
@@ -155,14 +97,14 @@ export abstract class EventTransitionPublisher {
   private async enqueueExecutionEffectAndWait(
     sessionId: string,
     transitionId: string,
-    effect: Extract<EventOutboxSessionEffect, { kind: "execution_acquire" }>,
+    effect: Extract<EventOutboxSessionEffect, { kind: "execution_registration" }>,
   ): Promise<EventSessionTransitionApplication> {
     const event = {
       type: "metadata",
-      metadata_type: "execution_ownership_transition",
+      metadata_type: "execution_registration",
       value: { transition_id: transitionId, phase: effect.kind },
       timestamp: effect.updated_at,
-      [INTERNAL_DEDUPE_KEY]: `execution_ownership:${sessionId}:${transitionId}`,
+      [INTERNAL_DEDUPE_KEY]: `execution_registration:${sessionId}:${transitionId}`,
     } as unknown as SSEEventPayload;
     const record = await this.enqueueEvent(sessionId, event, effect);
     return await this.waitForTransitionApplication(sessionId, record, effect.kind);

@@ -141,20 +141,21 @@ export class LabRuntime {
             'completed', 'failed', 'error', 'interrupted', 'cancelled', 'killed'
           )
         ),
-        'openOwnerships', (
+        'openRegistrations', (
           SELECT COALESCE(json_agg(json_build_object(
             'session_id', session_id,
-            'ownership_generation', ownership_generation,
-            'phase', phase
-          ) ORDER BY session_id, ownership_generation), '[]'::json)
-          FROM session_execution_ownerships
-          WHERE phase IN ('reserved', 'identity_proven', 'active')
+            'registration_id', execution_registration_id,
+            'execution_command_id', execution_command_id
+          ) ORDER BY session_id), '[]'::json)
+          FROM sessions
+          WHERE execution_registration_id IS NOT NULL
+             OR execution_command_id IS NOT NULL
         )
       )
     `);
     return {
       nonterminalSessions: central?.nonterminalSessions ?? [],
-      openOwnerships: central?.openOwnerships ?? [],
+      openRegistrations: central?.openRegistrations ?? [],
       runnerProcesses: await ownedRunnerProcesses(this.root),
     };
   }

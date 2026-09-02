@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 132개 $defs (top-level wire 66 + supporting/SSE 66). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 135개 $defs (top-level wire 66 + supporting/SSE 69). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-persistence-only-event-types": [
     "metadata",
     "system_message"
@@ -614,6 +614,25 @@
                   },
                   {
                     "type": "object",
+                    "required": [
+                      "kind", "registration_id", "execution_command_id",
+                      "review_state", "updated_at"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "execution_registration" },
+                      "registration_id": { "type": "string", "minLength": 1 },
+                      "execution_command_id": { "type": "string", "minLength": 1 },
+                      "review_state": { "type": "string", "minLength": 1 },
+                      "expected_terminal_event_id": {
+                        "type": ["integer", "null"],
+                        "minimum": 1
+                      },
+                      "updated_at": { "type": "string", "format": "date-time" }
+                    }
+                  },
+                  {
+                    "type": "object",
                     "required": ["kind", "status", "termination_reason", "termination_detail", "review_state", "updated_at"],
                     "additionalProperties": false,
                     "properties": {
@@ -644,6 +663,50 @@
         }
       }
     },
+    "EventCanonicalSessionProjection": {
+      "type": "object",
+      "required": [
+        "status", "termination_reason", "termination_detail", "review_state",
+        "last_assistant_text", "termination_event_id", "updated_at", "last_event_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string" },
+        "termination_reason": { "type": ["string", "null"] },
+        "termination_detail": { "type": ["string", "null"] },
+        "review_state": { "type": "string" },
+        "last_assistant_text": { "type": ["string", "null"] },
+        "termination_event_id": { "type": ["integer", "null"] },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "last_event_id": { "type": ["integer", "null"] }
+      }
+    },
+    "EventCanonicalExecutionRegistrationProjection": {
+      "type": "object",
+      "required": ["registration_id", "execution_command_id"],
+      "additionalProperties": false,
+      "properties": {
+        "registration_id": { "type": "string", "minLength": 1 },
+        "execution_command_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "EventSessionEffectApplication": {
+      "type": "object",
+      "required": ["applied", "canonical_session"],
+      "additionalProperties": false,
+      "properties": {
+        "applied": { "type": "boolean" },
+        "canonical_session": {
+          "$ref": "#/$defs/EventCanonicalSessionProjection"
+        },
+        "canonical_execution_registration": {
+          "oneOf": [
+            { "$ref": "#/$defs/EventCanonicalExecutionRegistrationProjection" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
     "EventAppendAck": {
       "type": "object",
       "description": "orch→노드: batch 전체 commit과 broadcast 시도 뒤 반환하는 durable ACK.",
@@ -663,7 +726,10 @@
             "additionalProperties": false,
             "properties": {
               "source_seq": { "type": "integer", "minimum": 1 },
-              "event_id": { "type": "integer", "minimum": 1 }
+              "event_id": { "type": "integer", "minimum": 1 },
+              "effect_application": {
+                "$ref": "#/$defs/EventSessionEffectApplication"
+              }
             }
           }
         }

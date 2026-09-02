@@ -21,9 +21,9 @@ export function pendingContractRuntime(now, directory) {
       return { manifestId: "m", releaseCohortId: "c", sourceCommit: "s" };
     },
     async psqlOne(query) {
-      if (query.includes("'ownerlessRunning'")) {
+      if (query.includes("'unregisteredRunning'")) {
         return {
-          ownerlessRunning: [], overdueRetries: [], ambiguousUncertain: [],
+          unregisteredRunning: [], overdueRetries: [], ambiguousUncertain: [],
           reasonlessDeadLetters: [], sessions: [],
           activationReceipt: { manifest_id: "m", release_cohort_id: "c", source_commit: "s" },
         };

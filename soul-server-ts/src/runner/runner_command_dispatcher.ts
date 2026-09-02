@@ -7,9 +7,9 @@ import type {
   EngineUserInput,
 } from "../engine/protocol.js";
 import {
-  newExecutionOwnerToken,
-  type ExecutionIdentityProof,
-} from "../task/execution_ownership.js";
+  newExecutionCommandId,
+  type RunnerExecutionIdentity,
+} from "../task/execution_registration.js";
 import { currentProcessLockOwner } from "./runner_process_lock.js";
 
 import {
@@ -72,8 +72,8 @@ export interface RunnerCommandDispatcher {
   ): Promise<EngineInterventionResult>;
   discardIntervention?(interventionId: string): Promise<void>;
   recoverPendingInterventions?(): Promise<RunnerPendingIntervention[]>;
-  prepareExecutionIdentity?(ownerToken?: string): Promise<ExecutionIdentityProof>;
-  rollbackExecutionIdentity?(proof: ExecutionIdentityProof): Promise<void>;
+  prepareExecutionIdentity?(ownerToken?: string): Promise<RunnerExecutionIdentity>;
+  rollbackExecutionIdentity?(proof: RunnerExecutionIdentity): Promise<void>;
 }
 
 export interface RunnerInterventionStageInput {
@@ -185,13 +185,13 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     ));
   }
 
-  async prepareExecutionIdentity(ownerToken?: string): Promise<ExecutionIdentityProof> {
+  async prepareExecutionIdentity(ownerToken?: string): Promise<RunnerExecutionIdentity> {
     const observed = await currentProcessLockOwner();
     return {
       registrationId: this.attachedRegistrationId,
       pid: observed.pid,
       startIdentity: observed.startIdentity,
-      executionCommandId: ownerToken ?? newExecutionOwnerToken(),
+      executionCommandId: ownerToken ?? newExecutionCommandId(),
     };
   }
 
@@ -199,7 +199,7 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     return this.attachedRegistrationId;
   }
 
-  async rollbackExecutionIdentity(_proof: ExecutionIdentityProof): Promise<void> {
+  async rollbackExecutionIdentity(_proof: RunnerExecutionIdentity): Promise<void> {
     await this.close();
   }
 

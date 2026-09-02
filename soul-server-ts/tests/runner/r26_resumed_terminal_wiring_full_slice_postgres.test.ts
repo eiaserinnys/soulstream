@@ -290,25 +290,12 @@ async function insertOwnedRunningSession(
 ): Promise<void> {
   await insertSession(postgres, sessionId, "running");
   const acquired = await ingress.persistence
-    .recordExecutionGenerationAndWaitForApplication(sessionId, {
-      ...LIVE_OWNER_IDENTITY,
-      ownerKind: "runner_process",
-      leaseExpiresAt: new Date(Date.now() + 60_000),
+    .recordExecutionRegistrationAndWaitForApplication(sessionId, {
+      registrationId: LIVE_OWNER_IDENTITY.registrationId,
+      executionCommandId: LIVE_OWNER_IDENTITY.executionCommandId,
       reviewState: "not_required",
     });
   expect(acquired.applied).toBe(true);
-  await postgres.sql`
-    INSERT INTO session_execution_ownerships (
-      session_id, ownership_generation, owner_kind, manifest_id,
-      registration_id, pid, start_identity, execution_command_id,
-      phase, identity_proven_at, activated_at
-    ) VALUES (
-      ${sessionId}, 1, 'runner_process',
-      ${LIVE_OWNER_IDENTITY.manifestId}, ${LIVE_OWNER_IDENTITY.registrationId},
-      ${LIVE_OWNER_IDENTITY.pid}, ${LIVE_OWNER_IDENTITY.startIdentity},
-      ${LIVE_OWNER_IDENTITY.executionCommandId}, 'active', NOW(), NOW()
-    )
-  `;
 }
 
 async function loadTask(

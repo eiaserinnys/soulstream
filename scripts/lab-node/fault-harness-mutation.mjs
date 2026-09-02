@@ -139,11 +139,11 @@ const MUTATIONS = [
     },
   },
   {
-    invariant: "ownerless_running",
-    what: "a running session with no open execution ownership",
+    invariant: "unregistered_running",
+    what: "a running session with no execution registration",
     identity: (planted) => planted.sessionId,
     async inject(context) {
-      const sessionId = context.id("ownerless");
+      const sessionId = context.id("unregistered");
       await context.sql(`
         INSERT INTO sessions (session_id, status, node_id, session_type, created_at, updated_at)
         VALUES ('${sessionId}', 'running', 'eias-lab', 'claude', NOW(), NOW())
@@ -161,21 +161,18 @@ const MUTATIONS = [
     async inject(context) {
       const sessionId = context.id("projection");
       await context.sql(`
-        INSERT INTO sessions (session_id, status, node_id, session_type, created_at, updated_at)
-        VALUES ('${sessionId}', 'running', 'eias-lab', 'claude', NOW(), NOW())
-      `);
-      // An open ownership, so this row is a projection mismatch and *only*
-      // that. Without it the session is also ownerless-running, both judges
-      // fire, and a green from the mutation would not say which one saw it.
-      await context.sql(`
-        INSERT INTO session_execution_ownerships (
-          session_id, ownership_generation, owner_kind, manifest_id, phase,
-          reserved_at, reservation_expires_at
+        INSERT INTO sessions (
+          session_id, status, node_id, session_type,
+          execution_registration_id, execution_command_id,
+          created_at, updated_at
         ) VALUES (
-          '${sessionId}', 1, 'runner_process', 'sha256-${PREFIX}-manifest',
-          'reserved', NOW(), NOW() + INTERVAL '10 minutes'
+          '${sessionId}', 'running', 'eias-lab', 'claude',
+          'registration-${PREFIX}', 'command-${PREFIX}',
+          NOW(), NOW()
         )
       `);
+      // A complete registration makes this a terminal projection mismatch
+      // and only that. Without it the unregistered-running judge also fires.
       const directory = join(context.runtime.runnerStateDirectory, `${PREFIX}-projection`);
       await mkdir(directory, { recursive: true, mode: 0o700 });
       await writeFile(

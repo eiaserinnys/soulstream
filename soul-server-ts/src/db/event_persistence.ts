@@ -200,26 +200,25 @@ export class EventPersistence extends EventTransitionPublisher {
       eventId: acknowledgement.event_id,
       applied: application.applied,
       canonicalSession: application.canonical_session,
-      ...(application.canonical_execution_ownership
-        ? {
-            canonicalExecutionOwnership: {
-              ownershipGeneration:
-                application.canonical_execution_ownership.ownership_generation,
-              ownerKind: application.canonical_execution_ownership.owner_kind,
-              manifestId: application.canonical_execution_ownership.manifest_id,
-              runtimeEnvIdentity:
-                application.canonical_execution_ownership.runtime_env_identity
-                ?? `legacy:${application.canonical_execution_ownership.manifest_id}`,
-              registrationId: application.canonical_execution_ownership.registration_id,
-              pid: application.canonical_execution_ownership.pid,
-              startIdentity: application.canonical_execution_ownership.start_identity,
-              executionCommandId:
-                application.canonical_execution_ownership.execution_command_id,
-              phase: application.canonical_execution_ownership.phase,
-              failureReason: application.canonical_execution_ownership.failure_reason,
-            },
-          }
-        : { canonicalExecutionOwnership: null }),
+      canonicalExecutionRegistration:
+        application.canonical_execution_registration === null
+          ? null
+          : application.canonical_execution_registration
+            ? {
+                registrationId:
+                  application.canonical_execution_registration.registration_id,
+                executionCommandId:
+                  application.canonical_execution_registration.execution_command_id,
+              }
+            : application.canonical_execution_ownership?.registration_id
+                && application.canonical_execution_ownership.execution_command_id
+              ? {
+                  registrationId:
+                    application.canonical_execution_ownership.registration_id,
+                  executionCommandId:
+                    application.canonical_execution_ownership.execution_command_id,
+                }
+              : null,
     };
   }
 

@@ -69,7 +69,7 @@ export async function loadMigrationManifest() {
 
   const migrations = [];
   for (const [ordinal, entry] of parsed.migrations.entries()) {
-    if (!/^\d{3}_[a-z0-9_]+\.sql$/.test(entry.id)) {
+    if (!/^\d{3}[a-z]?_[a-z0-9_]+\.sql$/.test(entry.id)) {
       throw new Error(`invalid full-filename migration ID: ${entry.id}`);
     }
     if (!/^[a-f0-9]{64}$/.test(entry.sha256)) {

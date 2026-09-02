@@ -84,10 +84,9 @@ import {
   effectiveTaskBackend,
 } from "./task_model_preset.js";
 import {
-  isCompleteExecutionIdentity,
-  type ExecutionOwnerKind,
+  isCompleteRunnerExecutionIdentity,
   type RunnerTerminalFact,
-} from "./execution_ownership.js";
+} from "./execution_registration.js";
 import {
   CLAUDE_BACKEND_ROLLOVER_LIMIT,
   claudeBackendRolloverMetadataEntry,
@@ -119,11 +118,6 @@ export interface RunnerProcessRuntimeFactory {
     snapshots: RunnerSnapshotPersistence,
     mode?: "adopt" | "replay" | "offline",
   ): TaskRunnerRuntime;
-  describe?(agent: AgentProfile): Promise<{
-    ownerKind: "runner_process";
-    manifestId: string;
-    runtimeEnvIdentity: string;
-  }>;
 }
 
 interface RecoveredRunnerTerminalObservation {
@@ -245,7 +239,7 @@ export class TaskExecutor {
     agent: AgentProfile,
     transferredActivation?: ExecutionActivation,
   ): Promise<void> {
-    return this.startExecutionWithGenerationRecord(task, agent, transferredActivation);
+    return this.startExecutionWithRegistrationRecord(task, agent, transferredActivation);
   }
 
   startNewExecution(
@@ -253,14 +247,22 @@ export class TaskExecutor {
     agent: AgentProfile,
     activation?: ExecutionActivation,
   ): Promise<void> {
-    return this.startExecutionWithGenerationRecord(task, agent, activation);
+    return this.startExecutionWithRegistrationRecord(task, agent, activation);
   }
 
-  private startExecutionWithGenerationRecord(
+  private startExecutionWithRegistrationRecord(
     task: Task,
     agent: AgentProfile,
     transferredActivation?: ExecutionActivation,
   ): Promise<void> {
+    if (
+      task.executionPromise
+      || (task.executionActivation && task.executionActivation !== transferredActivation)
+    ) {
+      throw new Error(
+        `Task ${task.agentSessionId} already has an execution admission in flight`,
+      );
+    }
     let prepared: ReturnType<TaskExecutor["prepareExecution"]>;
     try {
       prepared = this.prepareExecution(task, agent);
@@ -291,8 +293,8 @@ export class TaskExecutor {
       return this.holdExecutionSlot(task, promise);
     }
     const { backend, retainedRunner } = prepared;
-    if (!this.supportsExecutionGenerationRecord()) {
-      return this.startExecutionWithoutOwnership(
+    if (!this.supportsExecutionRegistration()) {
+      return this.startExecutionWithoutRegistration(
         task,
         agent,
         backend,
@@ -302,14 +304,6 @@ export class TaskExecutor {
     }
 
     const activation = transferredActivation ?? createExecutionActivation();
-    if (
-      task.executionPromise
-      || (task.executionActivation && task.executionActivation !== activation)
-    ) {
-      throw new Error(
-        `Task ${task.agentSessionId} already has an execution admission in flight`,
-      );
-    }
     task.executionActivation = activation;
     void activation.promise.catch(() => undefined);
     const releaseActivation = (): void => {
@@ -372,7 +366,7 @@ export class TaskExecutor {
     return { backend, retainedRunner };
   }
 
-  private startExecutionWithoutOwnership(
+  private startExecutionWithoutRegistration(
     task: Task,
     agent: AgentProfile,
     backend: BackendId,
@@ -453,10 +447,9 @@ export class TaskExecutor {
     retainedRunner: TaskRunnerRuntime | undefined,
     resolveActivation: () => void,
   ): Promise<void> {
-    const descriptor = await this.executionRuntimeDescriptor(agent, backend);
-    task.executionOwnership = undefined;
+    task.executionRegistration = undefined;
     let runner: TaskRunnerRuntime | undefined;
-    let proof: import("./execution_ownership.js").ExecutionIdentityProof | undefined;
+    let proof: import("./execution_registration.js").RunnerExecutionIdentity | undefined;
     try {
       runner = retainedRunner ?? (this.runnerProcessFactory
         ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
@@ -475,14 +468,14 @@ export class TaskExecutor {
       }
       this.attachRunner(task, runner);
       proof = await runner.dispatcher.prepareExecutionIdentity?.();
-      if (!proof || !isCompleteExecutionIdentity(proof)) {
+      if (!proof || !isCompleteRunnerExecutionIdentity(proof)) {
         throw new Error(`Runner identity proof unavailable: ${task.agentSessionId}`);
       }
-      const application = await this.persistence.recordExecutionGenerationAndWaitForApplication(
+      const application = await this.persistence.recordExecutionRegistrationAndWaitForApplication(
         task.agentSessionId,
         {
-          ...descriptor,
-          ...proof,
+          registrationId: proof.registrationId,
+          executionCommandId: proof.executionCommandId,
           reviewState: task.reviewState ?? "not_required",
           ...(task.pendingExecutionExpectedTerminalEventId === undefined
             ? {}
@@ -493,20 +486,15 @@ export class TaskExecutor {
         },
       );
       applyCanonicalSessionProjection(task, application.canonicalSession);
-      const canonical = application.canonicalExecutionOwnership;
+      const canonical = application.canonicalExecutionRegistration;
       if (!application.applied || !canonical
-        || canonical.manifestId !== descriptor.manifestId
-        || canonical.runtimeEnvIdentity !== descriptor.runtimeEnvIdentity
         || canonical.registrationId !== proof.registrationId
-        || canonical.pid !== proof.pid
-        || canonical.startIdentity !== proof.startIdentity
         || canonical.executionCommandId !== proof.executionCommandId) {
-        throw new Error(`Execution generation record rejected: ${task.agentSessionId}`);
+        throw new Error(`Execution registration rejected: ${task.agentSessionId}`);
       }
-      task.executionOwnership = {
-        ...descriptor,
-        ...proof,
-        ownershipGeneration: canonical.ownershipGeneration,
+      task.executionRegistration = {
+        registrationId: proof.registrationId,
+        executionCommandId: proof.executionCommandId,
       };
       task.runnerTerminalFact = undefined;
       task.pendingExecutionExpectedTerminalEventId = undefined;
@@ -515,7 +503,7 @@ export class TaskExecutor {
       await this.restoreDurableRunnerInterventions(task, runner);
       await this._consumeEventStream(task, runner, agent);
     } catch (error) {
-      if (runner && task.executionOwnership === undefined) {
+      if (runner && task.executionRegistration === undefined) {
         try {
           if (proof && runner.dispatcher.rollbackExecutionIdentity) {
             await runner.dispatcher.rollbackExecutionIdentity(proof);
@@ -530,26 +518,8 @@ export class TaskExecutor {
     }
   }
 
-  private async executionRuntimeDescriptor(
-    agent: AgentProfile,
-    backend: BackendId,
-  ): Promise<{ ownerKind: ExecutionOwnerKind; manifestId: string; runtimeEnvIdentity: string }> {
-    // The legacy projection carries the runtime identity beside the generation
-    // until Wave 3 removes those columns. It does not elect or lease an owner.
-    if (this.runnerProcessFactory) {
-      const descriptor = await this.runnerProcessFactory.describe?.(agent);
-      if (!descriptor) throw new Error("Runner process manifest descriptor unavailable");
-      return descriptor;
-    }
-    return {
-      ownerKind: "in_process",
-      manifestId: `in-process:${backend}`,
-      runtimeEnvIdentity: `in-process:${backend}:${agent.id}`,
-    };
-  }
-
-  private supportsExecutionGenerationRecord(): boolean {
-    return typeof this.persistence.recordExecutionGenerationAndWaitForApplication === "function";
+  private supportsExecutionRegistration(): boolean {
+    return typeof this.persistence.recordExecutionRegistrationAndWaitForApplication === "function";
   }
 
   async releaseRetainedClaudeRunner(task: Task): Promise<void> {
@@ -952,8 +922,8 @@ export class TaskExecutor {
               waitForAck: true,
               semanticDedupeKey:
                 `claude-backend-rollover:${task.agentSessionId}:${previousSessionId}:${nextAttempts}`,
-              ...(task.executionOwnership
-                ? { registrationId: task.executionOwnership.registrationId }
+              ...(task.executionRegistration
+                ? { registrationId: task.executionRegistration.registrationId }
                 : {}),
             },
           );
@@ -1137,8 +1107,8 @@ export class TaskExecutor {
         waitForAck: true,
         semanticDedupeKey:
           `claude-backend-rollover:${task.agentSessionId}:${previousSessionId}:${backendSessionId}:completed`,
-        ...(task.executionOwnership
-          ? { registrationId: task.executionOwnership.registrationId }
+        ...(task.executionRegistration
+          ? { registrationId: task.executionRegistration.registrationId }
           : {}),
       },
     );

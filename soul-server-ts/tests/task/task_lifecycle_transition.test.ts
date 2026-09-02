@@ -229,7 +229,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
           updated_at: "2026-05-23T01:05:00.000Z",
           last_event_id: 9,
         },
-        canonicalExecutionOwnership: null,
+        canonicalExecutionRegistration: null,
       }));
     const transition = new TaskLifecycleTransition({
       logger: silentLogger,
@@ -245,14 +245,8 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     const engine = { interrupt, close } as unknown as EnginePort;
     const task = makeTask({
       executionPromise: Promise.resolve(),
-      executionOwnership: {
-        ownerKind: "in_process",
-        manifestId: "manifest-1",
-        runtimeEnvIdentity: "runtime-1",
-        ownershipGeneration: 1,
+      executionRegistration: {
         registrationId: "registration-1",
-        pid: 123,
-        startIdentity: "start-1",
         executionCommandId: "execute-1",
       },
       interventionQueue: [pendingDelivery],
@@ -287,7 +281,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     expect(terminalEvents[1]?._dedupe_key).toBe(terminalEvents[0]?._dedupe_key);
     expect(terminalEvents[1]?.timestamp).toBe(terminalEvents[0]?.timestamp);
     expect(task.status).toBe("interrupted");
-    expect(task.executionOwnership).toBeUndefined();
+    expect(task.executionRegistration).toBeUndefined();
     expect(task.runner).toBeUndefined();
     expect(task.executionPromise).toBeUndefined();
     expect(task.interventionQueue).toEqual([pendingDelivery]);

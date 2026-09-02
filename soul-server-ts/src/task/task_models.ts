@@ -24,9 +24,9 @@ import type { DeliveryIntent } from "./delivery_contract.js";
 import type { AgentProfile } from "../agent_registry.js";
 import type { TaskRunnerRuntime } from "../runner/task_runner_runtime.js";
 import type {
-  ExecutionOwnershipToken,
+  ExecutionRegistration,
   RunnerTerminalFact,
-} from "./execution_ownership.js";
+} from "./execution_registration.js";
 
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
 export type TaskStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
@@ -442,8 +442,8 @@ export interface Task {
   /** 진행 중 runner의 단일 정본. 엔진 capability와 command dispatcher는 원자적으로 구성된다. */
   runner?: TaskRunnerRuntime;
 
-  /** Durable generation fence for the materialized runner that may project terminal state. */
-  executionOwnership?: ExecutionOwnershipToken;
+  /** Durable registration fence for events emitted by the attached runner. */
+  executionRegistration?: ExecutionRegistration;
   runnerTerminalFact?: RunnerTerminalFact;
   pendingExecutionExpectedTerminalEventId?: number | null;
 

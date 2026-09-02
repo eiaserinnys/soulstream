@@ -157,22 +157,22 @@ test("intervention acceptance uses the explicit 60 second deadline", async () =>
   assert.equal(call[2], 60_000);
 });
 
-test("preflight refuses invariant, central-state, ownership, and runner residue", () => {
+test("preflight refuses invariant, central-state, registration, and runner residue", () => {
   assert.deepEqual(preflightRefusalReasons({
     violations: [],
     nonterminalSessions: [],
-    openOwnerships: [],
+    openRegistrations: [],
     runnerProcesses: [],
   }), []);
   assert.deepEqual(preflightRefusalReasons({
     violations: [{ invariant: "runner_terminal_projection", count: 1 }],
     nonterminalSessions: [{ session_id: "old", status: "running" }],
-    openOwnerships: [{ session_id: "old", ownership_generation: 2 }],
+    openRegistrations: [{ session_id: "old", registration_id: "registration-2" }],
     runnerProcesses: [{ pid: 42 }],
   }), [
     "invariant:runner_terminal_projection",
     "nonterminal_session:old:running",
-    "open_ownership:old:2",
+    "open_registration:old:registration-2",
     "runner_process:42",
   ]);
 });
@@ -501,7 +501,7 @@ test("distinct transport deliveries can retain one logical message identity", ()
 
 test("invariant verdict distinguishes explained dead letters from ambiguity", () => {
   const clean = evaluateInvariantSnapshot({
-    ownerlessRunning: 0,
+    unregisteredRunning: 0,
     terminalProjectionMismatches: [],
     overdueRetries: 0,
     ambiguousUncertain: 0,
@@ -511,7 +511,7 @@ test("invariant verdict distinguishes explained dead letters from ambiguity", ()
   assert.deepEqual(clean, []);
 
   const violations = evaluateInvariantSnapshot({
-    ownerlessRunning: 1,
+    unregisteredRunning: 1,
     terminalProjectionMismatches: [{ sessionId: "session-a" }],
     overdueRetries: 2,
     ambiguousUncertain: 1,
@@ -521,7 +521,7 @@ test("invariant verdict distinguishes explained dead letters from ambiguity", ()
   assert.deepEqual(
     violations.map((violation) => violation.invariant),
     [
-      "ownerless_running",
+      "unregistered_running",
       "runner_terminal_projection",
       "overdue_retry",
       "ambiguous_uncertain",
@@ -561,7 +561,7 @@ test("an unanswered user turn is a violation even when delivery bookkeeping is c
   // letters, no overdue retries, nothing uncertain, and a user turn that
   // never got a reply. The judge used to report it as healthy.
   const clean = {
-    ownerlessRunning: 0,
+    unregisteredRunning: 0,
     terminalProjectionMismatches: [],
     overdueRetries: 0,
     ambiguousUncertain: 0,
@@ -599,11 +599,11 @@ test("a violation that clears while another appears is still reported", () => {
   assert.deepEqual(fresh[0].examples, [{ session_id: "new-one" }]);
 });
 
-test("ownerless running sessions are named, so a swap is not a wash", () => {
+test("unregistered running sessions are named, so a swap is not a wash", () => {
   // This used to be counted, and a count cannot tell an old violation clearing
   // from a new one arriving -- the two cancelled and the run passed.
   const before = evaluateInvariantSnapshot({
-    ownerlessRunning: [{ session_id: "old-one" }],
+    unregisteredRunning: [{ session_id: "old-one" }],
     terminalProjectionMismatches: [],
     overdueRetries: [],
     ambiguousUncertain: [],
@@ -612,7 +612,7 @@ test("ownerless running sessions are named, so a swap is not a wash", () => {
     unansweredDemands: [],
   });
   const after = evaluateInvariantSnapshot({
-    ownerlessRunning: [{ session_id: "new-one" }],
+    unregisteredRunning: [{ session_id: "new-one" }],
     terminalProjectionMismatches: [],
     overdueRetries: [],
     ambiguousUncertain: [],
@@ -630,7 +630,7 @@ test("every invariant the verdict can emit has a mutation that plants it", () =>
   // written. An invariant with no mutation has never been observed to fire;
   // shipping one is shipping a green light wired to nothing.
   const everyInvariant = evaluateInvariantSnapshot({
-    ownerlessRunning: [{ session_id: "a" }],
+    unregisteredRunning: [{ session_id: "a" }],
     terminalProjectionMismatches: [{ sessionId: "a" }],
     overdueRetries: [{ delivery_id: "a" }],
     ambiguousUncertain: [{ delivery_id: "a" }],
@@ -650,7 +650,7 @@ test("the deleted judges are gone, not renamed", () => {
   // repairable in place, and leaving either name alive would let a future
   // reader assume the coverage still exists.
   const names = evaluateInvariantSnapshot({
-    ownerlessRunning: [],
+    unregisteredRunning: [],
     terminalProjectionMismatches: [],
     overdueRetries: [],
     ambiguousUncertain: [],

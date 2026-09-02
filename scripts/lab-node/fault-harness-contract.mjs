@@ -334,9 +334,9 @@ export function evaluateInvariantSnapshot(snapshot) {
   // Every invariant now names what it found. A violation that cannot be named
   // can only be compared by count, and counts cancel: an old one clearing as a
   // new one arrives reads as no change at all.
-  const ownerless = asExamples(snapshot.ownerlessRunning);
-  if (ownerless.length > 0) {
-    violations.push(invariant("ownerless_running", ownerless.length, ownerless));
+  const unregistered = asExamples(snapshot.unregisteredRunning);
+  if (unregistered.length > 0) {
+    violations.push(invariant("unregistered_running", unregistered.length, unregistered));
   }
   if (snapshot.terminalProjectionMismatches.length > 0) {
     violations.push(invariant(
