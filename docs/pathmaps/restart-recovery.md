@@ -1,6 +1,6 @@
 # 재시작 복구
 
-최종 대조 커밋 SHA: `bd0ff6b5766ff2172924565676ca6e98cae90073`
+최종 대조 커밋 SHA: `7262fc598ac2f0f2088ba492b7e0bba6270cd081`
 
 > 범위 주석: accepted input producer는 boot 1회·node-ready·orch maintenance이며, 5초 maintenance lane은 lease와 notification 투영만 회수한다.
 

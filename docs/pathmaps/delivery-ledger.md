@@ -1,6 +1,6 @@
 # 전달 원장 상태 전이
 
-최종 대조 커밋 SHA: `bd0ff6b5766ff2172924565676ca6e98cae90073`
+최종 대조 커밋 SHA: `7262fc598ac2f0f2088ba492b7e0bba6270cd081`
 
 > 범위 주석: `state`는 현재 시도, `aggregate_state`는 논리 delivery의 종합 결과이며 둘을 함께 쓰는 모든 production writer를 열거한다.
 
