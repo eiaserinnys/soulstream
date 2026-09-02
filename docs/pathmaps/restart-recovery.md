@@ -1,6 +1,6 @@
 # 재시작 복구
 
-최종 대조 커밋 SHA: `ec1ddda98ca4ad48086a177eda2cb26f5af7a539`
+최종 대조 커밋 SHA: `b05c1194f2c542cf526dec68890c3678f8e4b9c3`
 
 > 범위 주석: accepted input producer는 boot 1회·node-ready·orch maintenance이며, 5초 maintenance lane은 lease와 notification 투영만 회수한다.
 
@@ -19,10 +19,10 @@
 | 11. orch maintenance 트리거 | `orch-server-ts/src/runtime/orchestrator_maintenance_service.ts:OrchestratorMaintenanceService.start` (L56–62), `runMaintenanceOnce` (L96–105) | 기동 즉시와 60초마다 연결된 node의 pending replay를 보조 트리거로 호출한다. | 이전 delivery recovery가 진행 중이면 중첩 실행하지 않는다. |
 | 12. orch maintenance replay | `orch-server-ts/src/production.ts:createProductionRuntime` (L499–536) | 연결 목록을 순회하며 `maintenance:{node}:{connection}` 소유자로 같은 replay 정본을 재사용한다. | node별 실패는 다른 node replay를 중단하지 않는다. |
 | 13. lease maintenance | `soul-server-ts/src/task/completion_delivery_recovery_worker.ts:CompletionDeliveryRecoveryWorker` (L30–66), `completion_delivery_coordinator.ts:recoverPending` (L117–123) | 기동 즉시와 5초마다 expired admission lease와 notification outbox 투영을 회수한다. | accepted input을 claim·dispatch·auto-resume하지 않는다; step별 90초 deadline으로 격리한다. |
-| 14. runner registration scan | `soul-server-ts/src/runner/runner_recovery_coordinator.ts:RunnerRecoveryCoordinator.performScan` (L158–281) | registration·owner-null inventory·손상 registration을 대조하고 session별 recovery disposition을 직렬화한다. | active/adoption-pending·ownership backoff·retired terminal은 재진입하지 않는다. |
+| 14. runner registration scan | `soul-server-ts/src/runner/runner_recovery_coordinator.ts:RunnerRecoveryCoordinator.performScan` (L146–298) | node-local registration과 손상 registration을 읽고 session별 recovery disposition을 직렬화한다. owner-null 중앙 inventory를 두 번 관찰하거나 backfill하는 경로는 없다. | active·adoption-pending·retired terminal은 재진입하지 않는다. |
 | 15. runner 상태 분류 | `soul-server-ts/src/runner/runner_process_registry.ts:scanRunnerRegistrations` (L92–130), `classifyRunnerRegistration` (L133–168), `runner_registration_reader.ts:readRunnerRegistrationSummary` (L111–138) | registration·lifecycle과 kernel-lock 기반 생사 값을 `wait/adopt/replay/reap/closed/retired` 중 하나로 분류한다. | progress 시각만으로 process death를 추론하지 않고 lock unavailable은 보수적으로 live 취급하며, exact owner 검증은 adopt 경계가 소유한다. |
-| 16. runner 복구 실행 | `soul-server-ts/src/runner/runner_recovery_coordinator.ts:RunnerRecoveryCoordinator.handle` (L324–449), `recoverRegistered` (L523–665) | adopt·terminal replay·dead reap·closed tail drain을 disposition별 단일 경로로 실행하고 task execution에 재부착한다. | 기존 task runner/execution이 살아 있으면 겹치지 않으며 offline terminal replay 차단은 warning으로 드러낸다. |
+| 16. runner 복구 실행 | `soul-server-ts/src/runner/runner_recovery_coordinator.ts:RunnerRecoveryCoordinator.handle` (L310–448), `recoverRegistered` (L451–606), `runner_adoption_failure_recovery.ts:terminalize` | adopt·terminal replay·dead reap·closed tail drain을 disposition별 단일 경로로 실행하고 task execution에 재부착한다. 죽거나 reap된 runner는 terminalize하며 recovery가 자동 replacement를 만들지 않는다. | 기존 task runner/execution이 살아 있으면 겹치지 않으며 offline terminal replay 차단은 warning으로 드러낸다. 새 실행은 후속 명시 입력·resume만 시작한다. |
 | 17. runner 반복 scan | `soul-server-ts/src/runtime/runner_process_composition.ts:composeRunnerRecoveryCoordinator` (L81–129), `runner_recovery_coordinator.ts:start` (L139–149) | 초기 scan 후 env의 `SOUL_RUNNER_REAPER_INTERVAL_MS` cadence로 registration과 kernel lock 상태 변화를 계속 회수한다. | runner factory/state dir가 없으면 coordinator를 만들지 않으며 scan in-flight는 합류한다. |
-| 18. upstream inventory 재보고 | `soul-server-ts/src/upstream/initial_runner_state_sync.ts:sendInitialRunnerState` (L11–58) | 현재 connection에 runner inventory를 최대 5회 보고하여 orch가 node-ready session ownership을 다시 구성하게 한다. | connection 교체·WebSocket close면 즉시 중단; 5회 실패 뒤 현재 connection에서 종료한다. |
+| 18. upstream inventory 재보고 | `soul-server-ts/src/upstream/initial_runner_state_sync.ts:sendInitialRunnerState` (L11–58) | 현재 connection에 runner inventory를 최대 5회 보고하여 orch가 node-ready session-node mapping을 다시 구성하게 한다. | connection 교체·WebSocket close면 즉시 중단; 5회 실패 뒤 현재 connection에서 종료한다. |
 
 이 장을 갱신해야 하는 변경 부류: worker startup 순서·queued transcript recovery·node-ready/maintenance replay·delivery lease maintenance·runner scan/classification/adoption·initial inventory 변경.
