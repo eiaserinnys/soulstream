@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import postgres from "postgres";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 import {
@@ -73,6 +73,14 @@ const MANIFEST_TAIL_AFTER_TERMINAL_RETIREMENT = MANIFEST_MIGRATIONS
 const tempDirs: string[] = [];
 const databaseLeases: TestDatabaseLease[] = [];
 const itWithDatabase = hasTestDatabaseResource() ? it : it.skip;
+let initialSchemaDatabaseUrl = "";
+
+// Cold container startup is harness setup. Keep it outside the test deadline so
+// the assertion measures two schema applications, not registry/image latency.
+beforeAll(async () => {
+  if (!hasTestDatabaseResource()) return;
+  ({ url: initialSchemaDatabaseUrl } = await startPostgres());
+});
 
 afterEach(async () => {
   for (const dir of tempDirs.splice(0)) {
@@ -83,8 +91,7 @@ afterEach(async () => {
 
 describe("apply-schema.mjs", () => {
   itWithDatabase("initializes a fresh database and is safe on a current database", async () => {
-    const { url } = await startPostgres();
-    const cwd = writeEnv(url);
+    const cwd = writeEnv(initialSchemaDatabaseUrl);
 
     const first = runApplySchema(cwd);
     expect(first.status).toBe(0);
@@ -97,7 +104,7 @@ describe("apply-schema.mjs", () => {
     expectNoSecretLeak(repeated);
 
     const notices: Array<{ severity?: string; code?: string }> = [];
-    const sql = postgres(url, {
+    const sql = postgres(initialSchemaDatabaseUrl, {
       max: 1,
       idle_timeout: 1,
       onnotice: (notice) => notices.push(notice),
