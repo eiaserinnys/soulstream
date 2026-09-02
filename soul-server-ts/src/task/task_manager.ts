@@ -298,7 +298,7 @@ export class TaskManager {
   getDeliveryConsumptionRecorder(): Pick<
     TaskDeliveryLedgerGate,
     "recordConsumed" | "recordTurnStarted"
-      | "recordInlineConsumed" | "recordPendingSuperseded" | "discardIfConsumed"
+      | "recordPendingSuperseded" | "discardIfConsumed"
   > | undefined {
     return this.deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined;
   }

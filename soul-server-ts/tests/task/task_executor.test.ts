@@ -401,7 +401,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
-  it("iterator 성공 뒤 ACK barrier 실패는 delivery를 consume하지 않는다", async () => {
+  it("iterator 관측 뒤 ACK barrier가 실패해도 본 delivery를 consume한다", async () => {
     const mocks = makeMocks();
     mocks.waitForSessionAck.mockRejectedValueOnce(new Error("post-iterator ACK failed"));
     const message: InterventionMessage = {
@@ -435,10 +435,15 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledOnce();
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
+      message,
+      task,
+      expect.stringMatching(/^event:/),
+    );
   });
 
-  it("awaiting-runtime synthesized failure는 observed delivery를 consume하지 않는다", async () => {
+  it("awaiting-runtime synthesized failure도 이미 관측한 delivery는 consume한다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "runtime result",
@@ -488,14 +493,19 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.status).toBe("error");
     expect(task.error).toContain("remained active");
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalled();
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledOnce();
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
+      message,
+      task,
+      expect.stringMatching(/^event:/),
+    );
   });
 
   it.each([
     "completion_notification",
     "human_live_steer",
   ] as const)(
-    "replays failed %s with the same delivery id and consumes only the successful resume",
+    "consumes observed %s before a later stream failure can make it replayable",
     async (deliveryIntent) => {
       const mocks = makeMocks();
       const deliveryId = `failed-replay-${deliveryIntent}`;
@@ -571,29 +581,23 @@ describe("TaskExecutor.startExecution", () => {
       await failedTask.executionPromise;
 
       expect(failedTask.status).toBe("error");
-      expect(row).toMatchObject({ state: "queued", aggregate_state: "pending" });
-      expect(markConsumed).not.toHaveBeenCalled();
-
-      const resumedTask = makeTask();
-      resumedTask.interventionQueue.push(message);
-      executor.startExecution(resumedTask, agent);
-      await resumedTask.executionPromise;
-
-      expect(resumedTask.status).toBe("completed");
       expect(row).toMatchObject({ state: "consumed", aggregate_state: "consumed" });
       expect(markConsumed).toHaveBeenCalledTimes(1);
       expect(markConsumed).toHaveBeenCalledWith(
         deliveryId,
         expect.stringMatching(/^event:/),
       );
-      const release = mocks.enqueueTerminalTransitionAndWaitForApplication;
-      expect(release.mock.invocationCallOrder.at(-1)).toBeLessThan(
-        markConsumed.mock.invocationCallOrder[0]!,
+      expect(markConsumed.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.enqueueTerminalTransitionAndWaitForApplication.mock.invocationCallOrder[0]!,
       );
+      expect(attempt).toBe(1);
+      expect(mocks.enqueueTerminalTransitionAndWaitForApplication)
+        .toHaveBeenCalledOnce();
+      expect(markDelivered).not.toHaveBeenCalled();
     },
   );
 
-  it("does not consume a late successful turn when its terminal generation CAS loses", async () => {
+  it("consumes an observed turn even when its later terminal generation CAS loses", async () => {
     const mocks = makeMocks();
     const deliveryId = "late-generation-success";
     const message: InterventionMessage = {
@@ -659,11 +663,11 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
-    expect(markConsumed).not.toHaveBeenCalled();
+    expect(markConsumed).toHaveBeenCalledOnce();
     expect(row).toEqual({
       delivery_id: deliveryId,
-      state: "queued",
-      aggregate_state: "pending",
+      state: "consumed",
+      aggregate_state: "consumed",
     });
   });
 
@@ -1488,7 +1492,7 @@ describe("TaskExecutor.startExecution", () => {
       expect.stringMatching(/^in-process:/),
     );
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalled();
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledOnce();
   });
 
   it("Claude runtime timeout fatal event clears pending runtime and finalizes as error", async () => {
@@ -3779,16 +3783,16 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(task.error).toBeUndefined();
     expect(task.pendingTerminationHint).toBeUndefined();
     expect(task.interventionQueue).toHaveLength(0);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(2);
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
       successorDelivery,
       task,
       expect.stringMatching(/^event:/),
     );
-    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalledWith(
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
       interruptedDelivery,
       task,
-      expect.any(String),
+      expect.stringMatching(/^event:/),
     );
   });
 

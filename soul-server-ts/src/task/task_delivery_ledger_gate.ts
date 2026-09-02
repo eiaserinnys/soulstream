@@ -163,32 +163,6 @@ export class TaskDeliveryLedgerGate {
     return { ...admission, row: dispatching };
   }
 
-  async recordInlineConsumed(
-    params: AddInterventionParams,
-    task: Task,
-  ): Promise<boolean> {
-    if (!this.enabled || !isLedgerControlled(params)) return false;
-    if (!params.deliveryId || !params.relationKey || !params.completionId) return false;
-    const repository = this.requireRepository();
-    const registrationParams = {
-      ...params,
-      deliveryId: params.deliveryId,
-      relationKey: params.relationKey,
-      completionId: params.completionId,
-    };
-    const registered = await loadOrRegisterDelivery(repository, registrationParams);
-    if (registered.kind === "identity_mismatch") return false;
-    if (registered.conflict) return false;
-    const consumed = await repository.markConsumedByRelation(
-      params.relationKey,
-      params.completionId,
-      `event:${task.lastEventId ?? "unknown"}`,
-    );
-    if (consumed?.state !== "consumed") return false;
-    await discardConsumedRunnerIntervention(task, consumed.delivery_id);
-    return true;
-  }
-
   async discardIfConsumed(
     message: InterventionMessage,
     task: Task,
@@ -419,8 +393,8 @@ export class TaskDeliveryLedgerGate {
     _task: Task,
   ): Promise<void> {
     if (!this.enabled || !isControlledMessage(message) || !message.deliveryId) return;
-    // Turn observation is an in-memory eligibility fact. The durable row stays
-    // queued/pending until success consumes it, so a failed turn is replayable.
+    // This hook only confirms that an active receipt exists. The receipt owner
+    // immediately follows it with recordConsumed using the observed event id.
   }
 
   private requireRepository(): LedgerRepository {

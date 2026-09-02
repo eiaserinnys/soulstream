@@ -31,7 +31,7 @@ export class TaskExecutorFinalizer {
     ) {
       await consumeSuccessfulDeliveries();
     }
-    if (persistence.newlyFinalized && persistence.terminalTransitionApplied) {
+    if (persistence.terminalTransitionApplied) {
       await this.notifyCompletion(task);
     }
   }

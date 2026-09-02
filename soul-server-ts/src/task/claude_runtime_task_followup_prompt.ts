@@ -8,7 +8,6 @@ export interface PendingRuntimeTaskFollowup {
   error?: string;
   terminalRevision: string;
   firstSeen: number;
-  inlineObserved: boolean;
 }
 
 export function buildClaudeRuntimeTaskFollowupPrompt(
