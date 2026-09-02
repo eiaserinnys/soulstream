@@ -149,8 +149,6 @@ export function composeTaskRuntime(
     modelCatalog,
     runnerProcessFactory,
     transientEventLogAggregator,
-    undefined,
-    undefined,
     async (task) => {
       await taskManager.resumeQueuedAfterTerminal(task, onResume);
     },

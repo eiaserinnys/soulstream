@@ -191,8 +191,6 @@ export class TaskExecutor {
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
     transientEventLogAggregator?: TransientEventLogAggregator,
-    _removedAdmissionState?: unknown,
-    _removedAdmissionTimeoutMs?: unknown,
     private readonly queuedTerminalResume?: (task: Task) => void | Promise<void>,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({

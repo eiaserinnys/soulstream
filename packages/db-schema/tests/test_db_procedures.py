@@ -178,14 +178,22 @@ async def test_terminal_receipt_migration_contract_is_mirrored_in_schema_sql():
         assert required in schema_sql
 
 
-async def test_ownerless_terminal_historical_generation_contract_is_mirrored():
-    migration_sql = _migration_sql(
-        "082_ownerless_terminal_historical_generation.sql"
-    ).strip()
+async def test_runtime_ownership_removal_functions_are_mirrored():
+    migration_sql = _migration_sql("084_runtime_ownership_machine_removal.sql")
     schema_sql = _schema_sql()
 
-    assert migration_sql in schema_sql
-    terminal_update = migration_sql.split("UPDATE sessions AS session", 1)[1]
+    for signature in [
+        "CREATE OR REPLACE FUNCTION session_apply_terminal_transition(",
+        "CREATE OR REPLACE FUNCTION session_acquire_execution_ownership(",
+    ]:
+        assert _function_sql(migration_sql, signature) == _function_sql(
+            schema_sql, signature
+        )
+
+    terminal_update = _function_sql(
+        migration_sql,
+        "CREATE OR REPLACE FUNCTION session_apply_terminal_transition(",
+    ).split("UPDATE sessions AS session", 1)[1]
     for owner_column in [
         "execution_manifest_id",
         "execution_runtime_env_identity",
@@ -195,8 +203,17 @@ async def test_ownerless_terminal_historical_generation_contract_is_mirrored():
         "execution_command_id",
         "execution_lease_expires_at",
     ]:
-        assert f"session.{owner_column} IS NULL" in terminal_update
-    assert "session.execution_generation = 0" not in terminal_update
+        assert f"{owner_column} = NULL" in terminal_update
+        assert f"session.{owner_column} IS NULL" not in terminal_update
+
+    acquire = _function_sql(
+        migration_sql,
+        "CREATE OR REPLACE FUNCTION session_acquire_execution_ownership(",
+    )
+    assert "future execution lease required" not in acquire
+    assert "v_exact_identity" not in acquire
+    assert "FROM session_execution_ownerships" not in acquire
+    assert "execution_lease_expires_at = p_acquired_at" in acquire
 
 
 async def test_terminal_execution_ownership_retirement_is_exact_and_mirrored():
@@ -687,7 +704,7 @@ async def test_terminal_receipt_is_stable_until_a_new_running_turn(test_db):
     }
 
 
-async def test_ownerless_terminal_uses_current_owner_shape_not_history(test_db):
+async def test_terminal_transition_clears_compatibility_execution_identity(test_db):
     await _create_session(test_db, "sess-historical-ownerless")
     await test_db.execute(
         """
@@ -728,7 +745,7 @@ async def test_ownerless_terminal_uses_current_owner_shape_not_history(test_db):
         """,
         "sess-current-owner",
     )
-    owned = await test_db.fetchrow(
+    terminal = await test_db.fetchrow(
         "SELECT * FROM session_apply_terminal_transition($1, $2, $3, $4, $5, $6, $7, $8)",
         "sess-current-owner",
         "completed",
@@ -739,8 +756,71 @@ async def test_ownerless_terminal_uses_current_owner_shape_not_history(test_db):
         75,
         _utc_now(),
     )
-    assert owned["applied"] is False
-    assert owned["status"] == "running"
+    assert terminal["applied"] is True
+    assert terminal["status"] == "completed"
+    identity = await test_db.fetchrow(
+        """
+        SELECT execution_generation, execution_manifest_id,
+               execution_runtime_env_identity, execution_registration_id,
+               execution_pid, execution_start_identity, execution_command_id,
+               execution_lease_expires_at
+        FROM sessions WHERE session_id = $1
+        """,
+        "sess-current-owner",
+    )
+    assert dict(identity) == {
+        "execution_generation": 7,
+        "execution_manifest_id": None,
+        "execution_runtime_env_identity": None,
+        "execution_registration_id": None,
+        "execution_pid": None,
+        "execution_start_identity": None,
+        "execution_command_id": None,
+        "execution_lease_expires_at": None,
+    }
+
+
+async def test_execution_start_records_identity_without_lease_admission(test_db):
+    await _create_session(test_db, "sess-plain-execution-start")
+    acquired_at = _utc_now()
+    first = await test_db.fetchrow(
+        "SELECT * FROM session_acquire_execution_ownership($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+        "sess-plain-execution-start",
+        "manifest-1",
+        "runtime-1",
+        "registration-1",
+        7001,
+        "start-1",
+        "command-1",
+        acquired_at,
+        "not_required",
+        None,
+        False,
+        acquired_at,
+    )
+    assert first["applied"] is True
+    assert first["execution_generation"] == 1
+    assert first["execution_lease_expires_at"] == acquired_at
+
+    second_at = _utc_now()
+    second = await test_db.fetchrow(
+        "SELECT * FROM session_acquire_execution_ownership($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+        "sess-plain-execution-start",
+        "manifest-2",
+        "runtime-2",
+        "registration-2",
+        7002,
+        "start-2",
+        "command-2",
+        second_at,
+        "not_required",
+        None,
+        False,
+        second_at,
+    )
+    assert second["applied"] is True
+    assert second["execution_generation"] == 2
+    assert second["execution_lease_expires_at"] == second_at
 
 
 async def test_sessions_notify_completion_schema_contract(test_db):
