@@ -368,8 +368,7 @@ function makeCausalDispatcherProbe(input: {
   const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
     RunnerProcessDispatcher;
   Object.assign(dispatcher, {
-    activeExecuteCommandId: undefined,
-    activeStream: undefined,
+    activeExecution: undefined,
     closed: false,
     connection: undefined,
     eventStreamReleased: false,
@@ -429,12 +428,14 @@ function makeCausalDispatcherProbe(input: {
     }
     executeCommands.push(frame);
     const stream = (dispatcher as unknown as {
-      activeStream?: {
-        fail(error: Error): void;
-        finish(): void;
-        push(frame: ReturnType<typeof engineEventFrame>): boolean;
+      activeExecution?: {
+        stream: {
+          fail(error: Error): void;
+          finish(): void;
+          push(frame: ReturnType<typeof engineEventFrame>): boolean;
+        };
       };
-    }).activeStream;
+    }).activeExecution?.stream;
     if (!stream) throw new Error("causal fixture has no active stream");
     if (executeCommands.length === 1) {
       input.task.interventionQueue.push(input.intervention);

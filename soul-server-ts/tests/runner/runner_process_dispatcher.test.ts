@@ -114,6 +114,11 @@ describe("RunnerProcessDispatcher", () => {
       spawnedProcess: spawned,
       spawnInput: { sessionId: "session-a" },
       options: { spawner: { retireTerminalRegistration } },
+      activeExecution: undefined,
+      closed: false,
+      inFlightFrameHandlers: new Set(),
+      recentHostResponses: new Map(),
+      requestLifetimes: new Map(),
     });
 
     await dispatcher.retireTerminalRegistration();
@@ -122,6 +127,64 @@ describe("RunnerProcessDispatcher", () => {
       spawned.paths,
       "registration-a",
     );
+  });
+
+  it("rejects a running recovery when its exact registration is retired", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await outbox.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-09-02T04:52:10.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    outbox.close();
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    lifecycle.begin({
+      pid: 1001,
+      commandId: "execute-old",
+      progressedAt: "2026-09-02T04:52:10.000Z",
+    });
+    lifecycle.close();
+    const endpoint = new RunnerSocketEndpoint(
+      paths.socketPath,
+      async () => undefined,
+      vi.fn(),
+    );
+    await endpoint.listen();
+    const retireTerminalRegistration = vi.fn(async () => {});
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      runnerProcess: spawnedProcessForTest(paths),
+      spawner: { retireTerminalRegistration },
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+
+    const recovery = collect(dispatcher.recoverFrames("execute-old"));
+    await vi.waitFor(() => expect(dispatcher.hasActiveExecution()).toBe(true));
+    await dispatcher.retireTerminalRegistration();
+
+    await expect(recovery).rejects.toThrow(
+      "runner registration retired before terminal frame replay",
+    );
+    expect(dispatcher.activeExecutionCommandId()).toBeUndefined();
+    expect(dispatcher.isClosed()).toBe(true);
+    expect(retireTerminalRegistration).toHaveBeenCalledWith(
+      paths,
+      expect.any(String),
+    );
+    await endpoint.close();
   });
 
   it("released event stream registration은 뒤늦은 pump 등록도 남기지 않는다", async () => {
@@ -746,7 +809,7 @@ describe("RunnerProcessDispatcher", () => {
     await endpoint.close();
   });
 
-  it("keeps active recovery alive past reconnect backoff saturation and completes", async () => {
+  it("converges a running recovery from durable terminal state after IPC reconnect", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
@@ -844,26 +907,35 @@ describe("RunnerProcessDispatcher", () => {
       "Runner IPC disconnected; reconnecting",
     );
 
+    const completedLifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    completedLifecycle.finish(
+      "execute-old",
+      "completed",
+      "2026-08-17T00:01:00.000Z",
+    );
+    completedLifecycle.close();
+
     const endpoint = new RunnerSocketEndpoint(
       paths.socketPath,
       async () => undefined,
       vi.fn(),
     );
     await endpoint.listen();
-    await vi.waitFor(() => expect(endpoint.currentConnection).toBeDefined());
-    await endpoint.currentConnection!.send(executionEndedControlFrame("execute-old"));
-
-    await expect(recovery).resolves.toEqual([]);
-    await vi.waitFor(() => {
-      expect(registerPump).toHaveBeenCalledOnce();
-      expect(unregisterPump).not.toHaveBeenCalled();
-      expect(finishRecoveryObservation).toHaveBeenCalledOnce();
-    });
-    expect(dispatcher.isClosed()).toBe(false);
-    expect(dispatcher.hasActiveExecution()).toBe(false);
-
-    await dispatcher.detachHost();
-    await endpoint.close();
+    try {
+      await vi.waitFor(() => expect(endpoint.currentConnection).toBeDefined());
+      await vi.waitFor(() => expect(recoverySettled).toBe(true));
+      await expect(recovery).resolves.toEqual([]);
+      await vi.waitFor(() => {
+        expect(registerPump).toHaveBeenCalledOnce();
+        expect(unregisterPump).not.toHaveBeenCalled();
+        expect(finishRecoveryObservation).toHaveBeenCalledOnce();
+      });
+      expect(dispatcher.isClosed()).toBe(false);
+      expect(dispatcher.hasActiveExecution()).toBe(false);
+    } finally {
+      await dispatcher.detachHost();
+      await endpoint.close();
+    }
   });
 
   it("does not reuse an adopted command identity for the next execute turn", async () => {

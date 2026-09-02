@@ -313,13 +313,17 @@ export class RunnerRecoveryCoordinator {
     task?: Task,
     onRunnerAttached?: () => void,
   ): Promise<void> {
+    const recordedTerminal = task && hasRecordedTerminal(task);
     if (
       task
-      && isTerminalTaskStatus(task.status)
-      && task.terminationEventRecorded
-      && typeof task.terminalEventId === "number"
-      && Number.isSafeInteger(task.terminalEventId)
-      && task.terminalEventId > 0
+      && recordedTerminal
+      && await this.retireAttachedTerminalAdmission(registration, task)
+    ) {
+      return;
+    }
+    if (
+      task
+      && recordedTerminal
       && !task.runner
       && !task.executionPromise
     ) {
@@ -458,57 +462,19 @@ export class RunnerRecoveryCoordinator {
     adoptionDisposition?: RunnerAdoptionDisposition,
     onRunnerAttached?: () => void,
   ): Promise<{ task: Task; replayed: boolean }> {
-    // An offline recovery is only reached when the registration on disk says
-    // this runner finished. The host is not always told: the dispatcher stays
-    // open, holding the task, delivering nothing, and every replay after it is
-    // refused against a runner that has nothing left to run. Measured, that is
-    // thirteen skips at fifteen seconds each before the runner process happens
-    // to exit -- and when it never exits, forever (260822).
-    //
-    // A host-side execute can outlive its own durable terminal fact when the
-    // resumed Claude Query waits for input after restart. Exact command
-    // identity distinguishes that stranded execute from a successor admitted
-    // by the same runner: the terminal command is safe to detach, while a
-    // different active command remains protected by the guard below.
-    const attachedExecutionCommandId =
-      task.runner?.dispatcher.activeExecutionCommandId?.();
-    const terminalExecutionOwnsAttachedCommand =
-      typeof registration.lifecycle?.execution_command_id === "string"
-      && attachedExecutionCommandId === registration.lifecycle.execution_command_id;
     if (
       mode === "offline"
       && task.runner
+      && task.executionPromise === undefined
+      && task.runner.dispatcher.hasActiveExecution() !== true
       && registrationOwnsAttachedRunner(task, registration)
-      && (
-        task.runner.dispatcher.hasActiveExecution() !== true
-        || terminalExecutionOwnsAttachedCommand
-      )
     ) {
-      this.options.logger.warn(
-        {
-          sessionId: registration.config.sessionId,
-          runnerDispatcher: task.runner.dispatcher.dispatcherId?.(),
-          runnerDispatcherClosed: task.runner.dispatcher.isClosed?.(),
-          attachedExecutionCommandId,
-          terminalExecutionCommandId: registration.lifecycle?.execution_command_id,
-        },
-        "detaching a finished runner so its own replay can run",
-      );
-      const finished = task.runner;
-      releaseTaskRunner(task, finished);
-      // Letting go of the handle is only half of it. `detachHost` releases the
-      // host's resources but never settles the execution it was consuming, so
-      // the promise stays pending forever and the slot is never cleared -- the
-      // skip simply changes from `runner` to `execution_promise` and the same
-      // thirteen scans go by. Shutdown already states the whole gesture:
-      // detach, drop the runner, drop the execution (task_lifecycle_route).
-      task.executionPromise = undefined;
-      await finished.dispatcher.detachHost().catch((error: unknown) => {
-        this.options.logger.warn(
-          { err: error, sessionId: registration.config.sessionId },
-          "finished runner host detach failed before replay",
-        );
-      });
+      // A rejected adoption can leave a host handle without ever creating an
+      // execution admission. There is no stream or slot to settle in this
+      // shape, so only that unattached handle is released before offline replay.
+      const unadmitted = task.runner;
+      releaseTaskRunner(task, unadmitted);
+      await unadmitted.dispatcher.detachHost();
     }
     if (
       task.runner?.dispatcher.isClosed?.() === true
@@ -609,13 +575,15 @@ export class RunnerRecoveryCoordinator {
           recoveredTask,
           onRunnerAttached,
         ),
-      terminalize: async (owned, recoveredTask, error, verified) =>
+      terminalize: async (owned, recoveredTask, error, verified) => {
+        if (await this.retireAttachedTerminalAdmission(owned, recoveredTask)) return;
         await this.adoptionFailureRecovery.terminalize(
           owned,
           recoveredTask,
           error,
           verified,
-        ),
+        );
+      },
     });
   }
 
@@ -625,6 +593,12 @@ export class RunnerRecoveryCoordinator {
     task: Task,
     onRunnerAttached?: () => void,
   ): Promise<Task> {
+    if (
+      (disposition === "replay_terminal" || disposition === "replay_terminal_dead")
+      && await this.retireAttachedTerminalAdmission(registration, task)
+    ) {
+      return task;
+    }
     return await recoverRunnerByDisposition({
       registration,
       disposition,
@@ -654,6 +628,73 @@ export class RunnerRecoveryCoordinator {
       logger: this.options.logger,
     });
   }
+
+  private async retireAttachedTerminalAdmission(
+    registration: RunnerRegistration,
+    task: Task,
+  ): Promise<boolean> {
+    const runner = task.runner;
+    if (!runner || !registrationOwnsAttachedRunner(task, registration)) return false;
+    if (runner.dispatcher.isClosed?.() === true) return false;
+    const attachedExecutionCommandId =
+      runner.dispatcher.activeExecutionCommandId?.();
+    if (task.executionPromise === undefined && attachedExecutionCommandId === undefined) {
+      return false;
+    }
+    const terminalExecutionCommandId = registration.lifecycle?.execution_command_id;
+    const terminalOwnsAdmission =
+      typeof terminalExecutionCommandId === "string"
+      && attachedExecutionCommandId === terminalExecutionCommandId;
+    if (
+      attachedExecutionCommandId !== undefined
+      && terminalExecutionCommandId !== undefined
+      && !terminalOwnsAdmission
+    ) {
+      return false;
+    }
+    if (runner.dispatcher.hasActiveExecution() === true && !terminalOwnsAdmission) {
+      return false;
+    }
+    const retire = runner.dispatcher.retireTerminalRegistration;
+    if (!retire) {
+      throw new Error(
+        `runner terminal admission retirement unavailable: ${registration.config.sessionId}`,
+      );
+    }
+    const execution = task.executionPromise;
+    await retire.call(runner.dispatcher, async () => {
+      await execution?.catch(() => undefined);
+      if (task.executionPromise === execution && execution !== undefined) {
+        throw new Error(
+          `runner terminal retirement did not settle execution: ${registration.config.sessionId}`,
+        );
+      }
+      if (!hasRecordedTerminal(task)) {
+        throw new Error(
+          `runner terminal retirement did not record session terminal: ${registration.config.sessionId}`,
+        );
+      }
+    });
+    if (task.runner === runner) releaseTaskRunner(task, runner);
+    this.options.logger.info(
+      {
+        sessionId: registration.config.sessionId,
+        runnerDispatcher: runner.dispatcher.dispatcherId?.(),
+        attachedExecutionCommandId,
+        terminalExecutionCommandId,
+      },
+      "recorded terminal runner registration retired without replay",
+    );
+    return true;
+  }
+}
+
+function hasRecordedTerminal(task: Task): boolean {
+  return isTerminalTaskStatus(task.status)
+    && task.terminationEventRecorded === true
+    && typeof task.terminalEventId === "number"
+    && Number.isSafeInteger(task.terminalEventId)
+    && task.terminalEventId > 0;
 }
 
 function registrationOwnsAttachedRunner(

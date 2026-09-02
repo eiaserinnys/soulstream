@@ -67,7 +67,10 @@ import { runnerProcessPaths } from "./runner_process_paths.js";
 import { ProcessFrameStream } from "./runner_process_frame_stream.js";
 import { connectRunnerSocket } from "./runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
-import { readRunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
+import {
+  readRunnerSqliteLifecycle,
+  type RunnerLifecycleRecord,
+} from "./sqlite_runner_lifecycle.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
 import { RunnerWriterLock } from "./runner_writer_lock.js";
 
@@ -95,6 +98,13 @@ interface RequestLifetime {
   controller: AbortController;
   timer: ReturnType<typeof setTimeout>;
   timeoutMs: number;
+}
+
+interface ActiveProcessExecution {
+  commandId: string | undefined;
+  registrationId: string | undefined;
+  stream: ProcessFrameStream;
+  acceptsInterventions: boolean;
 }
 
 export interface RunnerHostCall {
@@ -170,9 +180,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private reconnectRequested = false;
   private reconnectAttempts = 0;
   private reconnectCause: Error | undefined;
-  private activeExecuteCommandId: string | undefined;
+  /** One host admission owns the exact runner registration, command and stream. */
+  private activeExecution: ActiveProcessExecution | undefined;
   private spawnedProcess: import("./runner_process_spawn.js").SpawnedRunnerProcess | undefined;
-  private activeStream: ProcessFrameStream | undefined;
   private latestPendingRecord: EventOutboxRecord | undefined;
   private latestConsumedFrameSeq: number | undefined;
   private readonly requestLifetimes = new Map<string, RequestLifetime>();
@@ -221,8 +231,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     const stream = new ProcessFrameStream(async (frameSeq) => {
       await this.acknowledgeConsumedFrame(frameSeq);
     });
-    this.activeExecuteCommandId = commandId;
-    this.activeStream = stream;
+    this.installActiveExecution(commandId, stream);
     void this.startExecute(commandId, params, stream);
     return stream;
   }
@@ -234,8 +243,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     const stream = new ProcessFrameStream(async (frameSeq) => {
       await this.acknowledgeConsumedFrame(frameSeq);
     });
-    this.activeExecuteCommandId = commandId;
-    this.activeStream = stream;
+    this.installActiveExecution(commandId, stream);
     void this.startRecovery(commandId, stream, onPendingFramesReplayed);
     return stream;
   }
@@ -375,7 +383,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
   }
 
-  async retireTerminalRegistration(): Promise<void> {
+  async retireTerminalRegistration(
+    beforeRegistrationRetired?: () => Promise<void>,
+  ): Promise<void> {
     await this.ready;
     const spawned = this.spawnedProcess;
     if (!spawned) {
@@ -387,10 +397,26 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     if (!spawner.retireTerminalRegistration) {
       throw new Error("runner terminal registration retirement is unavailable");
     }
-    await spawner.retireTerminalRegistration(
-      spawned.paths,
-      spawned.registrationId,
-    );
+    await this.replayPendingFrames();
+    const settled = await this.reconcileActiveLifecycleTerminal();
+    if (!settled && this.activeExecution) {
+      const active = this.activeExecution;
+      active.stream.fail(new Error(
+        "runner registration retired before terminal frame replay",
+      ));
+      this.clearActiveExecution(active.commandId);
+    }
+    await beforeRegistrationRetired?.();
+    this.closed = true;
+    this.abortRequestLifetimes(new Error("Runner terminal registration retired"));
+    try {
+      await this.releaseHostResources();
+    } finally {
+      await spawner.retireTerminalRegistration(
+        spawned.paths,
+        spawned.registrationId,
+      );
+    }
   }
 
   /**
@@ -408,11 +434,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   hasActiveExecution(): boolean {
-    return this.activeExecuteCommandId !== undefined;
+    return this.activeExecution?.acceptsInterventions === true;
   }
 
   activeExecutionCommandId(): string | undefined {
-    return this.activeExecuteCommandId;
+    return this.activeExecution?.commandId;
   }
 
   dispatcherId(): string {
@@ -650,32 +676,26 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     let commandId = requestedCommandId;
     try {
       await this.ready;
+      if (this.activeExecution?.stream !== stream) return;
       if (!commandId) {
         commandId = readActiveExecutionCommandId(assertCommandAccepted(
           await this.dispatch(executionStatusCommandFrame(`status:${randomUUID()}`)),
         ));
-        this.activeExecuteCommandId = commandId;
+        if (this.activeExecution?.stream === stream) {
+          this.activeExecution.commandId = commandId;
+        }
       }
+      if (this.activeExecution?.stream !== stream) return;
+      this.bindActiveExecution(stream);
       this.observeActiveExecution(commandId, "recover");
-      const lifecycle = readRunnerSqliteLifecycle(this.runnerDatabasePath);
-      if (lifecycle && lifecycle.execution_command_id !== commandId) {
-        throw new Error(`runner recovery command unavailable: ${commandId}`);
-      }
       await this.replayPendingFrames();
       onPendingFramesReplayed?.();
-      if (!lifecycle) return;
-      if (lifecycle.execution_state === "running") return;
-      if (lifecycle.execution_state === "completed" || lifecycle.execution_state === "closed") {
-        stream.finish();
-      } else {
-        stream.fail(new Error(
-          lifecycle.terminal_error?.message ?? `runner ${lifecycle.execution_state}`,
-        ));
-      }
-      this.clearActiveExecution(commandId);
+      await this.reconcileActiveLifecycleTerminal(commandId);
     } catch (error) {
       stream.fail(asError(error));
-      if (commandId) this.clearActiveExecution(commandId);
+      if (this.activeExecution?.stream === stream) {
+        this.clearActiveExecution(commandId);
+      }
     }
   }
 
@@ -686,10 +706,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   ): Promise<void> {
     try {
       await this.ready;
+      if (this.activeExecution?.stream !== stream) return;
+      this.bindActiveExecution(stream);
       this.observeActiveExecution(commandId, "execute");
       const recoverAcceptedExecution = await this.acceptExecuteCommand(commandId, params);
       if (recoverAcceptedExecution) {
-        if (this.activeExecuteCommandId === commandId) {
+        if (this.activeExecution?.commandId === commandId) {
           await this.startRecovery(commandId, stream);
         }
         return;
@@ -836,9 +858,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       }
       this.requestReconnect(socketPath, error, connectedForMs);
     });
-    void this.replayPendingFrames().catch((error) => {
+    void this.replayPendingFrames().then(async () => {
+      await this.reconcileActiveLifecycleTerminal();
+    }).catch((error) => {
       this.options.logger.error({ err: error }, "Runner IPC replay failed");
-      this.activeStream?.fail(asError(error));
+      this.activeExecution?.stream.fail(asError(error));
     });
   }
 
@@ -972,13 +996,19 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
     if (frame.kind === "execution_ended") {
       await this.replayPendingFrames();
-      if (this.activeExecuteCommandId === undefined) {
-        this.activeStream?.finish();
-        this.activeStream = undefined;
+      const active = this.activeExecution;
+      if (!active) return;
+      if (active.commandId !== undefined && active.commandId !== frame.commandId) {
+        this.options.logger.warn({
+          sessionId: this.spawnInput.sessionId,
+          activeCommandId: active.commandId,
+          terminalCommandId: frame.commandId,
+        }, "Runner terminal frame did not own the active execution");
         return;
       }
-      if (frame.error) this.activeStream?.fail(new Error(frame.error.message));
-      else this.activeStream?.finish();
+      active.commandId = frame.commandId;
+      if (frame.error) active.stream.fail(new Error(frame.error.message));
+      else active.stream.finish();
       this.clearActiveExecution(frame.commandId);
       return;
     }
@@ -1099,7 +1129,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   private async replayPendingFrames(): Promise<void> {
-    if (!this.outbox || !this.activeStream) return;
+    if (!this.outbox || !this.activeExecution) return;
     await this.ensurePump();
     const pending = await this.outbox.readPendingIpcFrames();
     for (const entry of pending) {
@@ -1110,20 +1140,21 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   private pushActiveFrame(frame: RunnerEventFrame, frameSeq?: number): boolean {
-    const stream = this.activeStream;
+    const stream = this.activeExecution?.stream;
     if (!stream) return false;
     const pushed = stream.push(frame, frameSeq);
     if (!pushed || !isLogicalTurnCompleteFrame(frame)) return pushed;
-    const commandId = this.activeExecuteCommandId;
+    const commandId = this.activeExecution?.commandId;
     if (commandId) this.releaseActiveExecution(commandId);
     return true;
   }
 
   private releaseActiveExecution(commandId: string): void {
-    if (this.activeExecuteCommandId !== commandId) return;
+    const active = this.activeExecution;
+    if (active?.commandId !== commandId) return;
     this.finishActiveRunnerObservation?.();
     this.finishActiveRunnerObservation = undefined;
-    this.activeExecuteCommandId = undefined;
+    active.acceptsInterventions = false;
     this.abortRequestLifetimes(new Error("Runner execution completed"));
   }
 
@@ -1156,13 +1187,76 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     this.requestLifetimes.clear();
   }
 
-  private clearActiveExecution(commandId: string): void {
-    if (this.activeExecuteCommandId !== commandId) return;
+  private clearActiveExecution(commandId: string | undefined): void {
+    if (this.activeExecution?.commandId !== commandId) return;
     this.finishActiveRunnerObservation?.();
     this.finishActiveRunnerObservation = undefined;
-    this.activeExecuteCommandId = undefined;
-    this.activeStream = undefined;
+    this.activeExecution = undefined;
     this.abortRequestLifetimes(new Error("Runner execution ended"));
+  }
+
+  private installActiveExecution(
+    commandId: string | undefined,
+    stream: ProcessFrameStream,
+  ): void {
+    const previous = this.activeExecution;
+    if (previous?.stream.isSettled()) {
+      this.clearActiveExecution(previous.commandId);
+    }
+    if (this.activeExecution) {
+      throw new Error(
+        `Runner execute command already active: ${this.activeExecution.commandId ?? "unknown"}`,
+      );
+    }
+    this.activeExecution = {
+      commandId,
+      registrationId: this.spawnedProcess?.registrationId,
+      stream,
+      acceptsInterventions: true,
+    };
+  }
+
+  private bindActiveExecution(stream: ProcessFrameStream): void {
+    const active = this.activeExecution;
+    if (!active || active.stream !== stream) return;
+    active.registrationId = this.spawnedProcess?.registrationId;
+  }
+
+  private async reconcileActiveLifecycleTerminal(
+    requiredCommandId?: string,
+  ): Promise<boolean> {
+    const active = this.activeExecution;
+    if (!active) return false;
+    const lifecycle = readRunnerSqliteLifecycle(this.runnerDatabasePath);
+    if (!lifecycle) return false;
+    const commandId = active.commandId ?? lifecycle.execution_command_id;
+    if (requiredCommandId !== undefined && lifecycle.execution_command_id !== requiredCommandId) {
+      throw new Error(`runner recovery command unavailable: ${requiredCommandId}`);
+    }
+    if (lifecycle.execution_command_id !== commandId) return false;
+    if (active.registrationId !== undefined) {
+      const spawned = this.spawnedProcess;
+      if (!spawned || spawned.registrationId !== active.registrationId) return false;
+    }
+    active.commandId = commandId;
+    if (lifecycle.execution_state === "running") return false;
+    this.settleActiveExecution(active, lifecycle);
+    return true;
+  }
+
+  private settleActiveExecution(
+    active: ActiveProcessExecution,
+    lifecycle: RunnerLifecycleRecord,
+  ): void {
+    if (this.activeExecution !== active) return;
+    if (lifecycle.execution_state === "completed" || lifecycle.execution_state === "closed") {
+      active.stream.finish();
+    } else {
+      active.stream.fail(new Error(
+        lifecycle.terminal_error?.message ?? `runner ${lifecycle.execution_state}`,
+      ));
+    }
+    this.clearActiveExecution(lifecycle.execution_command_id);
   }
 
   private async sendBestEffort(frame: RunnerFrame): Promise<void> {

@@ -269,7 +269,13 @@ export class TaskExecutor {
       task.executionActivation = transferredActivation;
       void transferredActivation.promise.catch(() => undefined);
       const promise = (async () => {
+        const compensatesRunningTransition =
+          transferredActivation.hasFailureCompensation?.() === true;
         try {
+          if (compensatesRunningTransition) {
+            await transferredActivation.reject(error);
+            if (isTerminalTaskStatus(task.status)) return;
+          }
           await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, error);
           task.completedAt = new Date();
           await this._finalize(task);
@@ -277,7 +283,9 @@ export class TaskExecutor {
           if (task.executionActivation === transferredActivation) {
             task.executionActivation = undefined;
           }
-          transferredActivation.reject(error);
+          if (!compensatesRunningTransition) {
+            await transferredActivation.reject(error);
+          }
         }
       })();
       return this.holdExecutionSlot(task, promise);
@@ -318,7 +326,7 @@ export class TaskExecutor {
       },
     ).catch(
       async (err: unknown) => {
-        activation.reject(err);
+        await activation.reject(err);
         releaseActivation();
         if (err instanceof RunnerOrphanedSpawnError) {
           this.logger.error(
@@ -327,6 +335,7 @@ export class TaskExecutor {
           );
           return;
         }
+        if (isTerminalTaskStatus(task.status)) return;
         await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
         task.completedAt = new Date();
         await this._finalize(task);
@@ -577,7 +586,13 @@ export class TaskExecutor {
       await this._consumeEventStream(task, runner, agent);
     })().catch(
       async (err: unknown) => {
+        const compensatesRunningTransition =
+          activation?.hasFailureCompensation?.() === true;
         try {
+          if (compensatesRunningTransition) {
+            await activation?.reject(err);
+            if (isTerminalTaskStatus(task.status)) return;
+          }
           // _consumeEventStream 내부 try/catch가 못 잡는 외부 throw용 안전망.
           await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
           task.completedAt = new Date();
@@ -587,7 +602,9 @@ export class TaskExecutor {
             if (task.executionActivation === activation) {
               task.executionActivation = undefined;
             }
-            activation.reject(err);
+            if (!compensatesRunningTransition) {
+              await activation.reject(err);
+            }
           }
         }
       },

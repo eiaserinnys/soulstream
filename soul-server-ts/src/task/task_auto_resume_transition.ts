@@ -11,6 +11,8 @@ import {
   type ExecutionActivation,
   type InterventionMessage,
   type Task,
+  type TaskStatus,
+  type TerminationReason,
 } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import { hasLiveExecutionEvidence } from "./task_execution_evidence.js";
@@ -35,6 +37,18 @@ export interface AutoResumeTransitionDeps {
   persistence?: EventPersistence;
   contextBuilder?: ExecutionContextBuilder;
   agentRegistry?: AgentRegistry;
+}
+
+interface TerminalResumeSnapshot {
+  status: Extract<TaskStatus, "completed" | "error" | "interrupted">;
+  terminationReason: TerminationReason;
+  terminationDetail: string | null;
+  reviewState: NonNullable<Task["reviewState"]>;
+  lastAssistantText: string | null;
+  result: string | undefined;
+  error: string | undefined;
+  pendingTerminationHint: Task["pendingTerminationHint"];
+  pendingTerminationDetail: Task["pendingTerminationDetail"];
 }
 
 /**
@@ -83,6 +97,12 @@ export class AutoResumeTransition {
       ? task.terminalEventId ?? null
       : undefined;
     const originalTerminalEventId = task.terminalEventId;
+    const terminalSnapshot = isTerminalTaskStatus(originalStatus)
+      ? captureTerminalResumeSnapshot(
+          task,
+          originalStatus as TerminalResumeSnapshot["status"],
+        )
+      : undefined;
     const activation = createExecutionActivation();
     task.status = "initializing";
     task.executionActivation = activation;
@@ -125,6 +145,15 @@ export class AutoResumeTransition {
           `auto-resume running transition rejected for ${task.agentSessionId}`,
         );
       }
+      if (terminalSnapshot) {
+        activation.setFailureCompensation?.(async () => {
+          await this.compensateRunningTransition(
+            task,
+            terminalSnapshot,
+            transitionRevision,
+          );
+        });
+      }
       await options.afterRunningTransition?.();
       applyCanonicalSessionProjection(task, application.canonicalSession);
       if (userMessageEvent) {
@@ -136,11 +165,16 @@ export class AutoResumeTransition {
     } catch (error) {
       if (task.executionActivation === activation) {
         task.executionActivation = undefined;
-        activation.reject(error);
       }
+      await activation.reject(error);
       if (task.status === "initializing") {
         task.status = originalStatus;
         task.terminalEventId = originalTerminalEventId;
+      }
+      try {
+        await activation.promise;
+      } catch (activationError) {
+        throw activationError;
       }
       throw error;
     }
@@ -217,6 +251,69 @@ export class AutoResumeTransition {
     }
   }
 
+  private async compensateRunningTransition(
+    task: Task,
+    snapshot: TerminalResumeSnapshot,
+    transitionRevision: number,
+  ): Promise<void> {
+    const persistence = this.deps.persistence;
+    if (!persistence) {
+      throw new Error("running transition compensation persistence is required");
+    }
+    const compensatedAt = new Date();
+    const event = {
+      type: "session_ended" as const,
+      status: snapshot.status,
+      termination_reason: snapshot.terminationReason,
+      termination_detail: snapshot.terminationDetail,
+      timestamp: Math.floor(compensatedAt.getTime() / 1000),
+      _dedupe_key:
+        `resume_compensation:${task.agentSessionId}:${transitionRevision}`,
+    };
+    const application = await persistence.enqueueTerminalTransitionAndWaitForApplication(
+      task.agentSessionId,
+      event,
+      {
+        kind: "terminal_transition",
+        status: snapshot.status,
+        termination_reason: snapshot.terminationReason,
+        termination_detail: snapshot.terminationDetail,
+        review_state: snapshot.reviewState,
+        last_assistant_text: snapshot.lastAssistantText,
+        updated_at: compensatedAt.toISOString(),
+      },
+    );
+    if (!application.applied) {
+      throw new Error(
+        `running transition compensation rejected for ${task.agentSessionId}`,
+      );
+    }
+    applyCanonicalSessionProjection(task, application.canonicalSession);
+    task.result = snapshot.result;
+    task.error = snapshot.error;
+    task.pendingTerminationHint = snapshot.pendingTerminationHint;
+    task.pendingTerminationDetail = snapshot.pendingTerminationDetail;
+    if (task.executionActivation) task.executionActivation = undefined;
+  }
+
+}
+
+function captureTerminalResumeSnapshot(
+  task: Task,
+  status: TerminalResumeSnapshot["status"],
+): TerminalResumeSnapshot {
+  return {
+    status,
+    terminationReason: task.terminationReason
+      ?? (status === "completed" ? "completed_ok" : "unknown"),
+    terminationDetail: task.terminationDetail ?? null,
+    reviewState: task.reviewState ?? "not_required",
+    lastAssistantText: task.lastAssistantText ?? null,
+    result: task.result,
+    error: task.error,
+    pendingTerminationHint: task.pendingTerminationHint,
+    pendingTerminationDetail: task.pendingTerminationDetail,
+  };
 }
 
 function findLastCallerInfoMetadataEntry(

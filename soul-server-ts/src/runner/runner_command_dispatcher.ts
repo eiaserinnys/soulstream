@@ -51,7 +51,9 @@ export interface RunnerCommandDispatcher {
   interrupt(): Promise<boolean>;
   close(): Promise<void>;
   /** Retires durable process registration evidence after the runtime is closed. */
-  retireTerminalRegistration?(): Promise<void>;
+  retireTerminalRegistration?(
+    beforeRegistrationRetired?: () => Promise<void>,
+  ): Promise<void>;
   detachHost(): Promise<void>;
   releaseEventStreamRegistration?(): Promise<void>;
   isClosed?(): boolean;
