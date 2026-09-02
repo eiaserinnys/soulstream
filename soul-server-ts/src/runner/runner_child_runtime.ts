@@ -29,7 +29,10 @@ import {
   setRunnerOomScore,
 } from "./runner_child_runtime_helpers.js";
 import { createRunnerChildEngine } from "./runner_child_engine_factory.js";
-import { RunnerHostRequestClient } from "./runner_host_request_client.js";
+import {
+  RunnerHostRequestClient,
+  RunnerHostUnavailableError,
+} from "./runner_host_request_client.js";
 import {
   claimRunnerInterventionExecution,
   handleRunnerInterventionCommand,
@@ -300,7 +303,15 @@ export class RunnerChildRuntime {
     try {
       await this.prepareExecution(command);
       for await (const frame of this.dispatcher.events(command.commandId)) {
-        await this.forwardRunnerFrame(frame, preBootstrap);
+        try {
+          await this.forwardRunnerFrame(frame, preBootstrap);
+        } catch (error) {
+          if (!(error instanceof RunnerHostUnavailableError)) throw error;
+          this.logger.warn({
+            err: error,
+            frameKind: frame.kind,
+          }, "Runner host unavailable; execution remains active");
+        }
       }
       if (requiresBackendSessionId(this.config.backend) && !(await this.outbox.readBootstrap())) {
         this.discardPreBootstrapFrames(preBootstrap, "backend_session_id_missing");
@@ -582,7 +593,10 @@ export class RunnerChildRuntime {
         await new Promise((resolve) => setTimeout(resolve, REQUIRED_HOST_SEND_RETRY_MS));
       }
     }
-    throw new Error("Required runner frame could not reach host", { cause: lastError });
+    throw new RunnerHostUnavailableError(
+      "Required runner frame could not reach host",
+      { cause: lastError },
+    );
   }
 
   private recordProgress(): void {
