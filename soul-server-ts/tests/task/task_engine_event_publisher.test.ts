@@ -21,6 +21,16 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     lastEventId: 7,
     lastReadEventId: 0,
     interventionQueue: [],
+    executionOwnership: {
+      ownerKind: "in_process",
+      manifestId: "manifest:sess-1",
+      runtimeEnvIdentity: "runtime:sess-1",
+      registrationId: "registration:sess-1",
+      pid: 42_201,
+      startIdentity: "start:sess-1",
+      executionCommandId: "command:sess-1",
+      ownershipGeneration: 1,
+    },
     ...overrides,
   };
 }
@@ -66,7 +76,12 @@ describe("TaskEngineEventPublisher", () => {
 
     await publisher.publishEngineEvent(task, event);
 
-    expect(deps.enqueueEvent).toHaveBeenCalledWith("sess-1", event, undefined);
+    expect(deps.enqueueEvent).toHaveBeenCalledWith(
+      "sess-1",
+      event,
+      undefined,
+      "registration:sess-1",
+    );
     expect(task.lastEventId).toBe(7);
     expect((event as Record<string, unknown>)._event_id).toBeUndefined();
     expect(deps.emitEventEnvelope).not.toHaveBeenCalled();
@@ -137,7 +152,7 @@ describe("TaskEngineEventPublisher", () => {
     expect(deps.enqueueEvent).toHaveBeenCalledWith("sess-1", event, {
       kind: "set_backend_session_id",
       backend_session_id: "thr-first",
-    });
+    }, "registration:sess-1");
     expect(deps.emitEventEnvelope).not.toHaveBeenCalled();
     expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
     expect(deps.logger.warn).not.toHaveBeenCalled();

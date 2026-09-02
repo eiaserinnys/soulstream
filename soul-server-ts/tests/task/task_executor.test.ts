@@ -749,6 +749,7 @@ describe("TaskExecutor.startExecution", () => {
       task.agentSessionId,
       expect.objectContaining({ type: "session_ended", status: "completed" }),
       expect.objectContaining({ kind: "terminal_transition", status: "completed" }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(rows.get(activeDeliveryId)).toMatchObject({
       state: "uncertain",
@@ -918,6 +919,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "completed",
         termination_reason: "completed_ok",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
@@ -1003,6 +1005,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "completed",
         termination_reason: "completed_ok",
       }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -1329,6 +1332,7 @@ describe("TaskExecutor.startExecution", () => {
         termination_reason: "error_aborted",
         termination_detail: "engine boom",
       }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -1372,6 +1376,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "error",
         termination_reason: "error_aborted",
       }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -1480,6 +1485,7 @@ describe("TaskExecutor.startExecution", () => {
         termination_reason: "limit_hit",
         termination_detail: "credential_alert",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalled();
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
@@ -1560,6 +1566,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "error",
         termination_reason: "error_aborted",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
@@ -1626,6 +1633,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "completed",
         termination_reason: "completed_ok",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
@@ -1700,6 +1708,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "error",
         termination_reason: "error_aborted",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
@@ -1904,6 +1913,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "interrupted",
         termination_reason: "unknown",
       }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -1977,6 +1987,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "completed",
         termination_reason: "completed_ok",
       }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -2037,6 +2048,7 @@ describe("TaskExecutor.startExecution", () => {
         termination_reason: "error_aborted",
         termination_detail: "prepare boom",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     const skippedBroadcast = mocks.emitEventEnvelope.mock.calls.find(
       (c) => /queued intervention\(s\) skipped/.test(
@@ -2124,6 +2136,7 @@ describe("TaskExecutor.startExecution", () => {
       "sess-1",
       expect.objectContaining({ type: "session_ended" }),
       expect.objectContaining({ kind: "terminal_transition", status: "completed" }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 

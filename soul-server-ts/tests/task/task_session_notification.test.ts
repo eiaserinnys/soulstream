@@ -13,6 +13,16 @@ function makeTask(): Task {
     lastEventId: 40,
     lastReadEventId: 10,
     interventionQueue: [],
+    executionOwnership: {
+      ownerKind: "in_process",
+      manifestId: "manifest:caller-1",
+      runtimeEnvIdentity: "runtime:caller-1",
+      registrationId: "registration:caller-1",
+      pid: 42_201,
+      startIdentity: "start:caller-1",
+      executionCommandId: "command:caller-1",
+      ownershipGeneration: 1,
+    },
   };
 }
 
@@ -64,6 +74,8 @@ describe("SessionNotificationPublisher", () => {
         _dedupe_key:
           "session_notification:99999999-9999-4999-8999-999999999999",
       }),
+      undefined,
+      "registration:caller-1",
     );
     expect(task.lastEventId).toBe(1041);
     expect(persistence.handleSideEffects).toHaveBeenCalledTimes(1);
