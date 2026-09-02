@@ -103,6 +103,7 @@ export interface RunnerHostCall {
     | "session_store"
     | "claude_runtime"
     | "detached_event"
+    | "execution_ownership"
     | "snapshot";
   operation: string;
   args: unknown[];
@@ -1017,6 +1018,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         async (idempotencyKey) => {
           if (idempotencyKey !== call.correlationId) {
             throw new Error("runner host-call idempotency key mismatch");
+          }
+          // Previous-release children still emit this while attached to a new
+          // host. It is compatibility-only: do not restore ownership or lease
+          // renewal. Remove in Wave 3 after the live old-runner count reaches 0.
+          if (call.service === "execution_ownership" && call.operation === "renew") {
+            return false;
           }
           return await this.options.handleHostCall(call, (continuation) => {
             postResponse = continuation;

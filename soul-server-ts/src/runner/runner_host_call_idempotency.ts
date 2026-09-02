@@ -16,6 +16,7 @@ const OPERATION_MUTABILITY = {
   },
   claude_runtime: { observe: true },
   detached_event: { publish: true },
+  execution_ownership: { renew: true },
 } as const satisfies Record<HostService, Record<string, boolean>>;
 
 /** Payload-free IPC replay receipt; exactly-once belongs to each mutation owner. */
