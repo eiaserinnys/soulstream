@@ -884,7 +884,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       completionId: "completion-consumed-e2e",
       relationKey: "relation-consumed-e2e",
     };
-    await gate.recordInlineConsumed(params, {
+    await gate.recordConsumed(params, {
       agentSessionId: "caller-old",
       prompt: "",
       status: "completed",

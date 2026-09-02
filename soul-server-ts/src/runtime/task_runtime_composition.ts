@@ -128,9 +128,6 @@ export function composeTaskRuntime(
       await taskExecutor.releaseRetainedClaudeRunner(task),
     logger,
     deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
-    inlineConsumptionRecorder: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
-      ? taskManager.getDeliveryConsumptionRecorder()
-      : undefined,
   });
 
   taskExecutor = new TaskExecutor(

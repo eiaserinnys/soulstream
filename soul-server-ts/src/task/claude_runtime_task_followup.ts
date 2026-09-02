@@ -1,7 +1,6 @@
 import type { Logger } from "pino";
 
 import type { SSEEventPayload } from "../engine/protocol.js";
-import { isPostResultDrainEvent } from "../engine/claude_event_phase.js";
 import {
   readClaudeBackgroundDeliveryMetadata,
   type ClaudeBackgroundDeliveryMetadata,
@@ -12,7 +11,6 @@ import { readClaudeBackgroundProvenance } from
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskManager } from "./task_manager.js";
 import type { Task } from "./task_models.js";
-import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { buildClaudeRuntimeFollowupDelivery } from "./claude_runtime_followup_delivery.js";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import {
@@ -46,7 +44,6 @@ export interface ClaudeRuntimeTaskFollowupDeps {
   releaseRetainedRunner(task: Task): Promise<void>;
   logger: Logger;
   deliveryV2Enabled?: boolean;
-  inlineConsumptionRecorder?: Pick<TaskDeliveryLedgerGate, "recordInlineConsumed">;
 }
 
 const TERMINAL_RUNTIME_TASK_STATUSES = new Set([
@@ -121,8 +118,6 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         previous?.terminalRevision ??
         `${status}:unknown`,
       firstSeen: previous?.firstSeen ?? this.sequence++,
-      inlineObserved:
-        (previous?.inlineObserved ?? true) && !isPostResultDrainEvent(event),
     });
   }
 
@@ -206,20 +201,10 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       ...delivery,
     };
     try {
-      const consumedInline =
-        items.every((item) => item.inlineObserved) &&
-        this.deps.inlineConsumptionRecorder
-          ? await this.deps.inlineConsumptionRecorder.recordInlineConsumed(
-              intervention,
-              task,
-            )
-          : false;
-      if (!consumedInline) {
-        await this.deps.taskManager.addIntervention(
-          intervention,
-          this.deps.onResume,
-        );
-      }
+      await this.deps.taskManager.addIntervention(
+        intervention,
+        this.deps.onResume,
+      );
       for (const item of items) {
         pending.delete(item.taskId);
         const taskKey = buildTaskKey(task.agentSessionId, item.taskId);

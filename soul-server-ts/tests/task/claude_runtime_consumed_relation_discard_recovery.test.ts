@@ -32,53 +32,29 @@ const agent: AgentProfile = {
 };
 
 class DeliveryRepositoryDouble {
-  readonly row = makeDeliveryRow();
-
-  readonly get = vi.fn(async (deliveryId: string) =>
-    deliveryId === DELIVERY_ID ? this.row : null);
-
-  readonly register = vi.fn(async () => ({
-    row: this.row,
-    inserted: false,
-    conflict: false,
-  }));
-
-  readonly markConsumedByRelation = vi.fn(async (
-    relationKey: string,
-    completionId: string,
-    callerTurnId: string,
-  ) => {
-    if (relationKey !== RELATION_KEY || completionId !== COMPLETION_ID) return null;
-    this.row.state = "consumed";
-    this.row.aggregate_state = "consumed";
-    this.row.caller_turn_id = callerTurnId;
-    return this.row;
-  });
-}
-
-function makeDeliveryRow(): SessionDeliveryRow {
-  return {
+  readonly row = {
     delivery_id: DELIVERY_ID,
     target_session_id: SESSION_ID,
     relation_key: RELATION_KEY,
     completion_id: COMPLETION_ID,
     intent: "runtime_followup",
     source: "claude_runtime_task_followup",
-    producer_terminal_revision: "1787441739424",
-    state: "delivered",
-    aggregate_state: "delivered",
-    target_receipt_id: "event:689",
-    caller_turn_id: null,
-    payload: {
-      text: message().text,
-      user: "system",
-      attachment_paths: null,
-      context: null,
-      caller_info: null,
-      followup_task_ids: ["bqqgtqzwh"],
-    },
-    payload_hash: `historical:${DELIVERY_ID}`,
+    state: "queued",
+    aggregate_state: "pending",
+    target_receipt_id: null,
   } as SessionDeliveryRow;
+
+  readonly get = vi.fn(async () => this.row);
+  readonly recordRelationConsumed = vi.fn(async () => undefined);
+  readonly markConsumed = vi.fn(async (
+    _deliveryId: string,
+    targetReceiptId: string,
+  ) => {
+    this.row.state = "consumed";
+    this.row.aggregate_state = "consumed";
+    this.row.target_receipt_id = targetReceiptId;
+    return this.row;
+  });
 }
 
 function message(): InterventionMessage {
@@ -92,142 +68,85 @@ function message(): InterventionMessage {
     relationKey: RELATION_KEY,
     producerTerminalRevision: "1787441739424",
     followupTaskIds: ["bqqgtqzwh"],
-    runnerInterventionId: DELIVERY_ID,
   };
 }
 
-function makeTask(queued = true): Task {
-  return {
-    agentSessionId: SESSION_ID,
-    prompt: "foreground turn already observed bqqgtqzwh inline",
-    status: "running",
-    profileId: agent.id,
-    createdAt: new Date("2026-08-22T23:35:00.000Z"),
-    lastEventId: 698,
-    lastReadEventId: 698,
-    interventionQueue: queued ? [message()] : [],
-  };
-}
-
-function makeRunner(input: {
-  inbox: Map<string, InterventionMessage>;
-  failDiscardOnce?: boolean;
-  includeDiscard?: boolean;
-}) {
-  let discardFailuresRemaining = input.failDiscardOnce ? 1 : 0;
-  const modelInputRelations: Array<string | undefined> = [];
-  const discardIntervention = vi.fn(async (interventionId: string) => {
-    if (discardFailuresRemaining > 0) {
-      discardFailuresRemaining -= 1;
-      throw new Error("injected durable discard failure");
-    }
-    input.inbox.delete(interventionId);
-  });
-  const dispatcher = {
-    ...(input.includeDiscard === false ? {} : { discardIntervention }),
-    recoverPendingInterventions: vi.fn(async () => [...input.inbox.entries()].map(
-      ([interventionId, queuedMessage]) => ({
-        interventionId,
-        message: queuedMessage as unknown as Record<string, unknown>,
-      }),
-    )),
-    executeFrames: vi.fn((params: EngineExecuteParams) => (async function* () {
-      const queuedMessage = params.runnerInterventionId
-        ? input.inbox.get(params.runnerInterventionId)
-        : undefined;
-      modelInputRelations.push(queuedMessage?.relationKey);
-      yield engineEventFrame({ type: "assistant_message", content: "done" });
-      yield engineEventFrame({ type: "complete", result: "done", timestamp: 1 });
-      if (params.runnerInterventionId) input.inbox.delete(params.runnerInterventionId);
-    })()),
-    prepareSession: vi.fn(async () => undefined),
-    waitForSessionAck: vi.fn(async () => null),
-    interrupt: vi.fn(async () => true),
-    close: vi.fn(async () => undefined),
-    detachHost: vi.fn(async () => undefined),
-    invoke: vi.fn(async () => undefined),
-    sendControlFrame: vi.fn(async () => true),
-    requestContext: vi.fn(() => undefined),
-  };
-  const runner: TaskRunnerRuntime = {
-    engine: new RunnerProcessEngineProxy(
-      "claude",
-      agent.workspace_dir,
-      dispatcher as never,
-    ),
-    dispatcher: dispatcher as never,
-    eventPersistence: "runner",
-  };
-  return { runner, dispatcher, discardIntervention, modelInputRelations };
-}
-
-function makeExecutor(
-  runner: TaskRunnerRuntime,
-  ledgerGate: TaskDeliveryLedgerGate,
-): TaskExecutor {
-  const persistenceDouble = makeEventPersistenceTestDouble();
-  const broadcaster = {
-    emitEventEnvelope: vi.fn(async () => undefined),
-    emitSessionUpdated: vi.fn(async () => undefined),
-  } as unknown as SessionBroadcaster;
-  const db = {
-    updateSession: vi.fn(async () => undefined),
-    setClaudeSessionId: vi.fn(async () => undefined),
-  } as unknown as SessionDB;
-  return new TaskExecutor(
-    () => runner.engine,
-    db,
-    persistenceDouble.persistence,
-    broadcaster,
-    silentLogger,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    ledgerGate,
-  );
-}
-
-describe("consumed Claude runtime durable inbox recovery", () => {
-  it("converges on restart after the first durable discard attempt fails", async () => {
+describe("queued Claude runtime delivery consumption", () => {
+  it("keeps an exact next-turn delivery without runner identity until that turn sees it", async () => {
     const repository = new DeliveryRepositoryDouble();
     const ledgerGate = new TaskDeliveryLedgerGate(true, repository as never);
-    const inbox = new Map([[DELIVERY_ID, message()]]);
-    const runnerHarness = makeRunner({ inbox, failDiscardOnce: true });
-    const inlineTask = makeTask();
-    inlineTask.runner = runnerHarness.runner;
-
-    let inlineFailure: unknown;
-    try {
-      await ledgerGate.recordInlineConsumed(message(), inlineTask);
-    } catch (error) {
-      inlineFailure = error;
-    }
-
-    const restartedTask = makeTask(false);
-    const executor = makeExecutor(runnerHarness.runner, ledgerGate);
-    executor.startExecutionWithRunner(restartedTask, agent, runnerHarness.runner);
-    await restartedTask.executionPromise;
-
-    expect(inlineFailure).toEqual(new Error("injected durable discard failure"));
-    expect(repository.row.state).toBe("consumed");
-    expect(runnerHarness.discardIntervention).toHaveBeenCalledTimes(2);
-    expect(inbox.has(DELIVERY_ID)).toBe(false);
-    expect(runnerHarness.modelInputRelations).not.toContain(RELATION_KEY);
-  });
-
-  it("fails hard when the runner cannot discard a consumed intervention", async () => {
-    const repository = new DeliveryRepositoryDouble();
-    const ledgerGate = new TaskDeliveryLedgerGate(true, repository as never);
-    const inbox = new Map([[DELIVERY_ID, message()]]);
-    const runnerHarness = makeRunner({ inbox, includeDiscard: false });
-    const task = makeTask();
-    task.runner = runnerHarness.runner;
-
-    await expect(ledgerGate.recordInlineConsumed(message(), task)).rejects.toThrow(
-      "runner intervention discard operation is unavailable",
+    const persistence = makeEventPersistenceTestDouble();
+    const discardIntervention = vi.fn(async () => undefined);
+    const dispatcher = {
+      recoverPendingInterventions: vi.fn(async () => []),
+      discardIntervention,
+      executeFrames: vi.fn((_params: EngineExecuteParams) => (async function* () {
+        yield engineEventFrame({ type: "assistant_message", content: "follow-up seen" });
+        yield engineEventFrame({ type: "complete", result: "follow-up handled" });
+      })()),
+      prepareSession: vi.fn(async () => undefined),
+      waitForSessionAck: vi.fn(async () => null),
+      interrupt: vi.fn(async () => true),
+      close: vi.fn(async () => undefined),
+      detachHost: vi.fn(async () => undefined),
+      invoke: vi.fn(async () => undefined),
+      sendControlFrame: vi.fn(async () => true),
+      requestContext: vi.fn(() => undefined),
+    };
+    const runner: TaskRunnerRuntime = {
+      engine: new RunnerProcessEngineProxy(
+        "claude",
+        agent.workspace_dir,
+        dispatcher as never,
+      ),
+      dispatcher: dispatcher as never,
+      eventPersistence: "runner",
+    };
+    const task: Task = {
+      agentSessionId: SESSION_ID,
+      prompt: "foreground turn",
+      status: "running",
+      profileId: agent.id,
+      createdAt: new Date("2026-09-02T00:00:00.000Z"),
+      lastEventId: 698,
+      lastReadEventId: 698,
+      interventionQueue: [message()],
+    };
+    const executor = new TaskExecutor(
+      () => runner.engine,
+      {
+        updateSession: vi.fn(async () => undefined),
+        setClaudeSessionId: vi.fn(async () => undefined),
+      } as unknown as SessionDB,
+      persistence.persistence,
+      {
+        emitEventEnvelope: vi.fn(async () => undefined),
+        emitSessionUpdated: vi.fn(async () => undefined),
+      } as unknown as SessionBroadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      ledgerGate,
     );
+
+    expect(repository.row.state).toBe("queued");
+    expect(runner.eventPersistence).toBe("runner");
+    expect(task.interventionQueue).toHaveLength(1);
+    expect(task.interventionQueue[0]?.runnerInterventionId).toBeUndefined();
+    expect(discardIntervention).not.toHaveBeenCalled();
+
+    executor.startExecutionWithRunner(task, agent, runner);
+    await task.executionPromise;
+
     expect(repository.row.state).toBe("consumed");
-    expect(inbox.has(DELIVERY_ID)).toBe(true);
+    expect(repository.markConsumed).toHaveBeenCalledOnce();
+    expect(task.interventionQueue).toEqual([]);
+    expect(discardIntervention).not.toHaveBeenCalled();
+    expect(persistence.enqueueEvent.mock.calls.some(
+      (call) => (call[1] as { error_code?: string }).error_code ===
+        "claude_runtime_followup_enqueue_failed",
+    )).toBe(false);
   });
 });

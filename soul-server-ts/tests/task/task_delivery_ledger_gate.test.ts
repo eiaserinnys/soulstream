@@ -56,7 +56,7 @@ describe("TaskDeliveryLedgerGate", () => {
     );
   });
 
-  it("records live-steer apply without consuming before turn success", async () => {
+  it("keeps live-steer route result replayable until active-turn receipt", async () => {
     const deliveryId = "78787878-7878-4878-8878-787878787878";
     const markQueued = vi.fn(async () => ({
       ...row(deliveryId, "queued"),
@@ -203,55 +203,6 @@ describe("TaskDeliveryLedgerGate", () => {
       payloadHash: "stored-runtime-hash",
       payload: { text: "stored runtime payload" },
     }));
-  });
-
-  it("records an inline completion against its semantic relation and caller turn", async () => {
-    const deliveryId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-    const pending = row(deliveryId, "pending");
-    const consumed = row(deliveryId, "consumed");
-    const register = vi.fn().mockResolvedValue({
-      row: pending,
-      inserted: true,
-      conflict: false,
-    });
-    const markConsumedByRelation = vi.fn().mockResolvedValue(consumed);
-    const gate = new TaskDeliveryLedgerGate(true, {
-      register,
-      claimForTarget: vi.fn(),
-      beginDispatch: vi.fn(),
-      get: vi.fn(),
-      markQueued: vi.fn(),
-      markDelivered: vi.fn(),
-      markUncertain: vi.fn(),
-      markConsumed: vi.fn(),
-      markConsumedByRelation,
-      recordRelationConsumed: vi.fn(),
-    });
-
-    await expect(gate.recordInlineConsumed({
-      agentSessionId: "caller-1",
-      text: "runtime finished",
-      user: "system",
-      deliveryId,
-      deliveryIntent: "runtime_followup",
-      completionId: "completion-runtime-1",
-      relationKey: "claude_runtime:caller-1:session-1:task-1@77",
-      source: "claude_runtime_task_followup",
-    }, {
-      agentSessionId: "caller-1",
-      prompt: "run",
-      status: "running",
-      createdAt: new Date(),
-      lastEventId: 91,
-      lastReadEventId: 0,
-      interventionQueue: [],
-    })).resolves.toBe(true);
-
-    expect(markConsumedByRelation).toHaveBeenCalledWith(
-      "claude_runtime:caller-1:session-1:task-1@77",
-      "completion-runtime-1",
-      "event:91",
-    );
   });
 
   it("records a child completion relation even before a notifier delivery row exists", async () => {
