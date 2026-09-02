@@ -222,16 +222,15 @@ export class EvidenceRecorder {
 async function sampleInvariantsImpl(runtime, since) {
   const database = await runtime.psqlOne(`
     SELECT json_build_object(
-      'ownerlessRunning', (
+      'unregisteredRunning', (
         -- Identities, not a tally. A count cannot tell an old violation
         -- clearing from a new one arriving, and the two cancel.
         SELECT COALESCE(json_agg(json_build_object('session_id', session.session_id)), '[]'::json)
         FROM sessions AS session
         WHERE session.status = 'running'
-          AND NOT EXISTS (
-            SELECT 1 FROM session_execution_ownerships AS ownership
-            WHERE ownership.session_id = session.session_id
-              AND ownership.phase IN ('reserved', 'identity_proven', 'active')
+          AND (
+            session.execution_registration_id IS NULL
+            OR session.execution_command_id IS NULL
           )
       ),
       'overdueRetries', (
@@ -255,11 +254,10 @@ async function sampleInvariantsImpl(runtime, since) {
       'sessions', (
         SELECT COALESCE(json_agg(row_to_json(summary)), '[]'::json) FROM (
           SELECT session.session_id, session.status,
-            EXISTS (
-              SELECT 1 FROM session_execution_ownerships AS ownership
-              WHERE ownership.session_id = session.session_id
-                AND ownership.phase IN ('reserved', 'identity_proven', 'active')
-            ) AS has_open_owner
+            (
+              session.execution_registration_id IS NOT NULL
+              AND session.execution_command_id IS NOT NULL
+            ) AS has_execution_registration
           FROM sessions AS session
         ) AS summary
       ),
@@ -302,7 +300,7 @@ async function sampleInvariantsImpl(runtime, since) {
   const manifest = await runtime.currentManifest();
   const receipt = database?.activationReceipt;
   const snapshot = {
-    ownerlessRunning: database?.ownerlessRunning ?? [],
+    unregisteredRunning: database?.unregisteredRunning ?? [],
     unansweredDemands,
     terminalProjectionMismatches,
     overdueRetries: database?.overdueRetries ?? [],
@@ -406,12 +404,12 @@ function findTerminalProjectionMismatches(lifecycles, sessionRows) {
   for (const lifecycle of lifecycles.values()) {
     if (!["completed", "failed"].includes(lifecycle.execution_state)) continue;
     const session = byId.get(lifecycle.session_id);
-    if (session && (session.status === "running" || session.has_open_owner)) {
+    if (session && (session.status === "running" || session.has_execution_registration)) {
       mismatches.push({
         sessionId: lifecycle.session_id,
         runnerState: lifecycle.execution_state,
         centralStatus: session.status,
-        hasOpenOwner: session.has_open_owner,
+        hasExecutionRegistration: session.has_execution_registration,
       });
     }
   }

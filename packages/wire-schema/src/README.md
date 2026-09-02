@@ -4,7 +4,7 @@
 
 ## 정본
 
-- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 132개 $defs (top-level wire 66 + supporting/SSE 66).
+- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 135개 $defs (top-level wire 66 + supporting/SSE 69).
   - wire 메시지 66종
   - SSE event payload 66종 (`event` 메시지의 `event` 키 안에 packed — canonical 65종 + production-gated 읽기 호환 `runbook_updated` 1종)
   - `x-soulstream-event-durability` — SSE event 66종과 outbox 내부 이벤트 2종의 `durable`/`transient` 명시 분류. 누락·미등록 타입은 생성 실패
