@@ -348,29 +348,15 @@ function isCanonicalTransitionEffect(
     kind:
       | "running_transition"
       | "terminal_transition"
+      | "execution_registration"
       | "execution_acquire"
-      | "execution_reserve"
-      | "execution_prove"
-      | "execution_adopt_reserve"
-      | "execution_activate"
-      | "execution_fail"
-      | "execution_expire_dead_owner"
-      | "execution_retire_terminal_ownership"
-      | "execution_orphaned_spawn"
       ;
   }
 > {
   return effect?.kind === "running_transition"
     || effect?.kind === "terminal_transition"
+    || effect?.kind === "execution_registration"
     || effect?.kind === "execution_acquire"
-    || effect?.kind === "execution_reserve"
-    || effect?.kind === "execution_prove"
-    || effect?.kind === "execution_adopt_reserve"
-    || effect?.kind === "execution_activate"
-    || effect?.kind === "execution_fail"
-    || effect?.kind === "execution_expire_dead_owner"
-    || effect?.kind === "execution_retire_terminal_ownership"
-    || effect?.kind === "execution_orphaned_spawn"
     ;
 }
 
@@ -381,6 +367,12 @@ function toReceiptEffectApplication(
     ? {
         applied: application.applied,
         canonical_session: application.canonicalSession,
+        ...(application.canonicalExecutionRegistration === undefined
+          ? {}
+          : {
+              canonical_execution_registration:
+                application.canonicalExecutionRegistration,
+            }),
         ...(application.canonicalExecutionOwnership === undefined
           ? {}
           : {
@@ -406,12 +398,44 @@ function parseEffectApplication(
   return {
     applied: value.applied,
     canonicalSession: value.canonical_session,
+    ...(value.canonical_execution_registration === undefined
+      ? {}
+      : {
+          canonicalExecutionRegistration:
+            parseCanonicalExecutionRegistration(
+              value.canonical_execution_registration,
+              sourceSeq,
+            ),
+        }),
     ...(value.canonical_execution_ownership === undefined
       ? {}
       : {
           canonicalExecutionOwnership:
             parseCanonicalExecutionOwnership(value.canonical_execution_ownership, sourceSeq),
         }),
+  };
+}
+
+function parseCanonicalExecutionRegistration(
+  value: unknown,
+  sourceSeq: number,
+): EventSessionEffectApplicationWire["canonical_execution_registration"] {
+  if (value === null) return null;
+  if (
+    !isRecord(value)
+    || typeof value.registration_id !== "string"
+    || value.registration_id.length === 0
+    || typeof value.execution_command_id !== "string"
+    || value.execution_command_id.length === 0
+  ) {
+    throw new EventIngressProtocolConflict(
+      `event ingress receipt has invalid canonical registration at source_seq ${sourceSeq}`,
+      sourceSeq,
+    );
+  }
+  return {
+    registration_id: value.registration_id,
+    execution_command_id: value.execution_command_id,
   };
 }
 

@@ -13,7 +13,7 @@ function makeTask(): Task {
     lastEventId: 40,
     lastReadEventId: 10,
     interventionQueue: [],
-    executionOwnership: {
+    executionRegistration: {
       ownerKind: "in_process",
       manifestId: "manifest:caller-1",
       runtimeEnvIdentity: "runtime:caller-1",

@@ -88,7 +88,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       pidAlive: false,
     });
     const continuingTask = task("session-a");
-    continuingTask.executionOwnership = {
+    continuingTask.executionRegistration = {
       ownerKind: "runner_process",
       manifestId: "sha-a",
       runtimeEnvIdentity: "env-a",
@@ -337,7 +337,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   it("adopts a hydrated sessions-row owner without owner-null reconciliation", async () => {
     const recoveredTask = task("session-a");
     recoveredTask.hydratedFromDb = true;
-    recoveredTask.executionOwnership = {
+    recoveredTask.executionRegistration = {
       ownerKind: "runner_process",
       manifestId: "sha-a",
       runtimeEnvIdentity: "env-a",
@@ -849,7 +849,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     subject.task.terminationDetail = "event outbox acknowledgement timed out";
     subject.task.terminationEventRecorded = true;
     subject.task.terminalEventId = 3;
-    subject.task.executionOwnership = {
+    subject.task.executionRegistration = {
       ownerKind: "spawned_runner",
       ownershipGeneration: 1,
       manifestId: "sha-a",
@@ -2242,7 +2242,7 @@ function recordTerminalCompletion(task: Task): void {
   task.terminalEventId = 3;
   task.runner = undefined;
   task.executionPromise = undefined;
-  task.executionOwnership = undefined;
+  task.executionRegistration = undefined;
 }
 
 async function pathExists(path: string): Promise<boolean> {

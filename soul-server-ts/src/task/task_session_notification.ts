@@ -57,7 +57,7 @@ export class SessionNotificationPublisher {
         task.agentSessionId,
         event,
         undefined,
-        task.executionOwnership?.registrationId,
+        task.executionRegistration?.registrationId,
       );
       task.lastEventId = eventId;
       targetReceiptId = `event:${eventId}`;

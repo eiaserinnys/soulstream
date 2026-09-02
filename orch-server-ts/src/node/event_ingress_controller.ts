@@ -169,6 +169,12 @@ export class NodeEventIngressController {
                   effect_application: {
                     applied: item.sessionEffectApplication.applied,
                     canonical_session: item.sessionEffectApplication.canonicalSession,
+                    ...(item.sessionEffectApplication.canonicalExecutionRegistration === undefined
+                      ? {}
+                      : {
+                          canonical_execution_registration:
+                            item.sessionEffectApplication.canonicalExecutionRegistration,
+                        }),
                     ...(item.sessionEffectApplication.canonicalExecutionOwnership === undefined
                       ? {}
                       : {

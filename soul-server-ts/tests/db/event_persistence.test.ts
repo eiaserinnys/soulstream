@@ -458,7 +458,7 @@ describe("EventPersistence durable ingress", () => {
     });
   });
 
-  it("maps the canonical generation projection from an applied=false ingress ACK", async () => {
+  it("maps a legacy ownership ACK onto the canonical registration", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
@@ -499,23 +499,15 @@ describe("EventPersistence durable ingress", () => {
       ingress.pump,
     );
 
-    await expect(ep.recordExecutionGenerationAndWaitForApplication("sess-1", {
-      ownerKind: "runner_process",
-      manifestId: "release-a",
-      runtimeEnvIdentity: "env-a",
+    await expect(ep.recordExecutionRegistrationAndWaitForApplication("sess-1", {
       registrationId: "registration-a",
-      pid: 4101,
-      startIdentity: "start-a",
       executionCommandId: "owner-a",
       reviewState: "not_required",
     })).resolves.toMatchObject({
       applied: false,
-      canonicalExecutionOwnership: {
-        ownershipGeneration: 17,
-        ownerKind: "runner_process",
-        manifestId: "release-a",
-        runtimeEnvIdentity: "env-a",
-        phase: "active",
+      canonicalExecutionRegistration: {
+        registrationId: "registration-a",
+        executionCommandId: "owner-a",
       },
     });
   });

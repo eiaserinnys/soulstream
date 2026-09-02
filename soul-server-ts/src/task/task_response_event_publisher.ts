@@ -86,7 +86,7 @@ export class ResponseEventPublisher {
         task.agentSessionId,
         event as SSEEventPayload,
         undefined,
-        task.executionOwnership?.registrationId,
+        task.executionRegistration?.registrationId,
       );
       task.lastEventId = eventId;
       await this.deps.persistence.handleSideEffects(

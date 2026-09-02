@@ -21,7 +21,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     lastEventId: 7,
     lastReadEventId: 0,
     interventionQueue: [],
-    executionOwnership: {
+    executionRegistration: {
       ownerKind: "in_process",
       manifestId: "manifest:sess-1",
       runtimeEnvIdentity: "runtime:sess-1",

@@ -198,6 +198,7 @@ describe("versioned migration contract", () => {
       "041_retire_task_tree.sql",
       "042_runbook_to_task.sql",
       "053_retire_supervisor.sql",
+      "085b_execution_ownership_projection_drop.sql",
     ]);
     const releaseMigrationIndex = migrations.findIndex(
       (item) => item.id === "041_retire_task_tree.sql",
@@ -215,6 +216,7 @@ describe("versioned migration contract", () => {
       "073_sessions_execution_owner_v1.sql",
       "075_sessions_execution_owner_release.sql",
       "084_runtime_ownership_machine_removal.sql",
+      "085b_execution_ownership_projection_drop.sql",
     ];
     expect(migrations.filter(
       (item) => item.rollback_compatibility === "restore_required",
@@ -227,31 +229,28 @@ describe("versioned migration contract", () => {
     ))).toBe(true);
   });
 
-  it("keeps terminal status and runner facts on the sessions-row canon", async () => {
-    const migration = (await loadMigrationManifest()).find((item) =>
-      item.id === "079_terminal_status_single_canon.sql"
+  it("keeps terminal status and execution registration on the sessions-row canon", async () => {
+    const migrations = await loadMigrationManifest();
+    const addMigration = migrations.find((item) =>
+      item.id === "085a_execution_registration_projection.sql"
+    );
+    const dropMigration = migrations.find((item) =>
+      item.id === "085b_execution_ownership_projection_drop.sql"
     );
     const schema = readFileSync(fileURLToPath(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
     ), "utf8");
 
-    expect(migration?.sql).toContain(
-      "session.status NOT IN ('completed', 'error', 'interrupted')",
+    expect(addMigration?.sql).toContain("session_record_execution_registration(");
+    expect(addMigration?.sql).toContain("execution_registration_id = NULL");
+    expect(dropMigration?.sql).toContain(
+      "DROP VIEW IF EXISTS session_owner_null_running_inventory",
     );
-    expect(migration?.sql).toContain(
-      "SELECT * FROM session_release_execution_ownership(",
-    );
-    expect(migration?.sql).not.toContain("session_execution_ownerships");
-    expect(migration?.sql).toContain("FROM events AS terminal");
-    expect(migration?.sql).toContain(
-      "terminal.id = session.termination_event_id",
-    );
-    expect(schema).toContain(
-      "session.status NOT IN ('completed', 'error', 'interrupted')",
-    );
-    expect(schema).toContain(
-      "SELECT * FROM session_release_execution_ownership(",
-    );
+    expect(dropMigration?.sql.match(/DROP FUNCTION IF EXISTS/g)).toHaveLength(19);
+    expect(schema).toContain("session_record_execution_registration(");
+    expect(schema).toContain("execution_registration_id = NULL");
+    expect(schema).not.toContain("session_execution_ownerships");
+    expect(schema).not.toContain("session_release_execution_ownership(");
   });
 
   it("keeps source task item references relational and removes the legacy duplicate FK", async () => {

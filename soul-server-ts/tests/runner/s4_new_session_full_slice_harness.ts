@@ -255,7 +255,7 @@ export class ProductionFullSliceHarness {
     await this.waitForTerminalCount(this.isStartupQueuedRecovery ? 2 : 1);
     if (this.scenario === "S8") {
       await this.waitForCompletionNotificationCount(1);
-      await this.stageHistoricalOwnerlessGeneration();
+      await this.stageTerminalWithoutRegistration();
     }
 
     if (this.isGhostRunningResume) {
@@ -684,47 +684,40 @@ export class ProductionFullSliceHarness {
     `;
     const [shape] = await this.postgres.sql<Array<{
       status: string;
-      active_owner_count: number;
+      active_registration_count: number;
     }>>`
       SELECT session.status,
-        (SELECT COUNT(*)::int FROM session_execution_ownerships AS ownership
-          WHERE ownership.session_id = session.session_id
-            AND ownership.phase = 'active') AS active_owner_count
+        CASE
+          WHEN session.execution_registration_id IS NOT NULL
+            AND session.execution_command_id IS NOT NULL
+          THEN 1 ELSE 0
+        END::int AS active_registration_count
       FROM sessions AS session
       WHERE session.session_id = ${this.sessionId}
     `;
-    if (shape?.status !== "running" || Number(shape.active_owner_count) !== 0) {
+    if (shape?.status !== "running" || Number(shape.active_registration_count) !== 0) {
       throw new Error("S7 failed to stage a running session without durable execution evidence");
     }
   }
 
-  private async stageHistoricalOwnerlessGeneration(): Promise<void> {
-    await this.postgres.sql`
-      UPDATE sessions
-      SET execution_generation = 7
-      WHERE session_id = ${this.sessionId}
-    `;
+  private async stageTerminalWithoutRegistration(): Promise<void> {
     const [shape] = await this.postgres.sql<Array<{
-      execution_generation: number;
-      owner_column_count: number;
+      status: string;
+      registration_column_count: number;
     }>>`
-      SELECT execution_generation,
-        (CASE WHEN execution_manifest_id IS NULL THEN 0 ELSE 1 END
-          + CASE WHEN execution_runtime_env_identity IS NULL THEN 0 ELSE 1 END
-          + CASE WHEN execution_registration_id IS NULL THEN 0 ELSE 1 END
-          + CASE WHEN execution_pid IS NULL THEN 0 ELSE 1 END
-          + CASE WHEN execution_start_identity IS NULL THEN 0 ELSE 1 END
+      SELECT status,
+        (CASE WHEN execution_registration_id IS NULL THEN 0 ELSE 1 END
           + CASE WHEN execution_command_id IS NULL THEN 0 ELSE 1 END
-          + CASE WHEN execution_lease_expires_at IS NULL THEN 0 ELSE 1 END
-        )::int AS owner_column_count
+        )::int AS registration_column_count
       FROM sessions
       WHERE session_id = ${this.sessionId}
     `;
     if (
-      Number(shape?.execution_generation) !== 7
-      || Number(shape?.owner_column_count) !== 0
+      !shape
+      || !["completed", "error", "interrupted"].includes(shape.status)
+      || Number(shape.registration_column_count) !== 0
     ) {
-      throw new Error("S8 failed to stage a historical ownerless terminal session");
+      throw new Error("S8 failed to stage a terminal session without registration");
     }
   }
 
@@ -823,11 +816,8 @@ export class ProductionFullSliceHarness {
         (SELECT COUNT(*)::int FROM sessions AS candidate
           WHERE candidate.session_id = ${this.sessionId}
             AND candidate.status = 'running'
-            AND NOT EXISTS (
-              SELECT 1 FROM session_execution_ownerships AS ownership
-              WHERE ownership.session_id = candidate.session_id
-                AND ownership.phase = 'active'
-            )) AS ghost_running_count
+            AND candidate.execution_registration_id IS NULL
+            AND candidate.execution_command_id IS NULL) AS ghost_running_count
     `;
     return {
       status: session?.status ?? "missing",

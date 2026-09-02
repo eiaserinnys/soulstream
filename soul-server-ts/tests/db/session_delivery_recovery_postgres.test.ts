@@ -228,7 +228,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         agentSessionId: "caller-session",
         prompt: "previous turn",
         status: "running",
-        executionOwnership: {
+        executionRegistration: {
           ownerKind: "adopted_runner",
           manifestId: "manifest-held-human",
           runtimeEnvIdentity: "runtime-held-human",
@@ -1707,16 +1707,11 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     generation: number,
   ): Promise<void> {
     await harness.sql`
-      INSERT INTO session_execution_ownerships (
-        session_id, ownership_generation, owner_kind, manifest_id,
-        registration_id, pid, start_identity, execution_command_id,
-        phase, identity_proven_at, activated_at
-      ) VALUES (
-        ${sessionId}, ${generation}, 'runner_process',
-        ${`manifest-${generation}`}, ${`registration-${generation}`},
-        ${10_000 + generation}, ${`start-${generation}`},
-        ${`command-${generation}`}, 'active', NOW(), NOW()
-      )
+      UPDATE sessions
+      SET execution_registration_id = ${`registration-${generation}`},
+          execution_command_id = ${`command-${generation}`},
+          updated_at = NOW()
+      WHERE session_id = ${sessionId}
     `;
   }
 

@@ -17,6 +17,15 @@ export type EventSessionEffect =
       updated_at: string;
     }
   | {
+      kind: "execution_registration";
+      registration_id: string;
+      execution_command_id: string;
+      review_state: string;
+      expected_terminal_event_id?: number | null;
+      updated_at: string;
+    }
+  | {
+      /** One-release compatibility for pre-Wave-3 host outbox records. */
       kind: "execution_acquire";
       owner_kind: "runner_process" | "adopted_runner" | "in_process";
       manifest_id: string;
@@ -28,96 +37,6 @@ export type EventSessionEffect =
       lease_expires_at: string;
       review_state: string;
       expected_terminal_event_id?: number | null;
-      updated_at: string;
-    }
-  | {
-      kind: "execution_reserve";
-      ownership_generation: number;
-      owner_kind: "runner_process" | "adopted_runner" | "in_process";
-      manifest_id: string;
-      runtime_env_identity?: string;
-      updated_at: string;
-    }
-  | {
-      kind: "execution_prove";
-      ownership_generation: number;
-      registration_id: string;
-      pid: number;
-      start_identity: string;
-      execution_command_id: string;
-      updated_at: string;
-    }
-  | {
-      kind: "execution_adopt_reserve";
-      ownership_generation: number;
-      manifest_id: string;
-      runtime_env_identity?: string;
-      previous_registration_id: string;
-      pid: number;
-      start_identity: string;
-      execution_command_id: string;
-      updated_at: string;
-    }
-  | {
-      kind: "execution_activate";
-      ownership_generation: number;
-      review_state: string;
-      expected_terminal_event_id?: number | null;
-      updated_at: string;
-    }
-  | {
-      kind: "execution_fail";
-      ownership_generation: number;
-      failure_reason: string;
-      updated_at: string;
-    }
-  | {
-      kind: "execution_expire_dead_owner";
-      ownership_generation: number;
-      pid: number;
-      start_identity: string;
-      failure_reason: string;
-      updated_at: string;
-    }
-  | {
-      kind: "execution_retire_terminal_ownership";
-      ownership_generation: number;
-      manifest_id: string;
-      registration_id: string;
-      pid: number;
-      start_identity: string;
-      execution_command_id: string;
-      runner_fact: "completed" | "failed" | "reaped" | "closed";
-      updated_at: string;
-    }
-  | {
-      kind: "execution_orphaned_spawn";
-      ownership_generation: number;
-      registration_id: string;
-      pid: number;
-      start_identity: string;
-      execution_command_id: string;
-      updated_at: string;
-    }
-  | {
-      kind: "execution_backfill";
-      first_manifest_id: string | null;
-      first_runtime_env_identity?: string | null;
-      first_registration_id: string | null;
-      first_pid: number | null;
-      first_start_identity: string | null;
-      first_execution_command_id: string | null;
-      first_observed_at: string;
-      second_manifest_id: string | null;
-      second_runtime_env_identity?: string | null;
-      second_registration_id: string | null;
-      second_pid: number | null;
-      second_start_identity: string | null;
-      second_execution_command_id: string | null;
-      second_observed_at: string;
-      evidence_hash: string;
-      minimum_lease_interval_ms: number;
-      probe_only: boolean;
       updated_at: string;
     }
   | {
@@ -204,15 +123,24 @@ export type EventCanonicalExecutionOwnershipProjection = {
   failure_reason: string | null;
 };
 
+export type EventCanonicalExecutionRegistrationProjection = {
+  registration_id: string;
+  execution_command_id: string;
+};
+
 export type EventSessionEffectApplication = {
   applied: boolean;
   canonicalSession: EventCanonicalSessionProjection | null;
+  canonicalExecutionRegistration?: EventCanonicalExecutionRegistrationProjection | null;
+  /** One-release response compatibility for a legacy execution_acquire. */
   canonicalExecutionOwnership?: EventCanonicalExecutionOwnershipProjection | null;
 };
 
 export type EventSessionEffectApplicationWire = {
   applied: boolean;
   canonical_session: EventCanonicalSessionProjection;
+  canonical_execution_registration?: EventCanonicalExecutionRegistrationProjection | null;
+  /** One-release response compatibility for a legacy execution_acquire. */
   canonical_execution_ownership?: EventCanonicalExecutionOwnershipProjection | null;
 };
 

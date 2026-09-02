@@ -1,24 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  EXECUTION_ENTRY_PATHS,
   RUNNER_TERMINAL_FACTS,
-  executionEntryTransitionId,
-  isCompleteExecutionIdentity,
+  isCompleteRunnerExecutionIdentity,
   runnerFactProjection,
-} from "../../src/task/execution_ownership.js";
+} from "../../src/task/execution_registration.js";
 
-describe("execution ownership contract", () => {
-  it("enumerates every running entry path with a stable activation identity", () => {
-    expect(EXECUTION_ENTRY_PATHS).toEqual(["initial", "auto_resume", "adopt"]);
-    expect(EXECUTION_ENTRY_PATHS.map((path) =>
-      executionEntryTransitionId(path, 7))).toEqual([
-      "initial:7",
-      "auto_resume:7",
-      "adopt:7",
-    ]);
-  });
-
+describe("execution registration contract", () => {
   it("maps all four runner facts onto the three canonical terminal states", () => {
     expect(RUNNER_TERMINAL_FACTS.map((fact) => [fact, runnerFactProjection(fact)]))
       .toEqual([
@@ -36,9 +24,9 @@ describe("execution ownership contract", () => {
       startIdentity: "start-a",
       executionCommandId: "execute-a",
     };
-    expect(isCompleteExecutionIdentity(complete)).toBe(true);
+    expect(isCompleteRunnerExecutionIdentity(complete)).toBe(true);
     for (const key of Object.keys(complete) as Array<keyof typeof complete>) {
-      expect(isCompleteExecutionIdentity({ ...complete, [key]: key === "pid" ? 0 : "" }))
+      expect(isCompleteRunnerExecutionIdentity({ ...complete, [key]: key === "pid" ? 0 : "" }))
         .toBe(false);
     }
   });

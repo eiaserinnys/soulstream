@@ -280,33 +280,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     review_required         BOOLEAN NOT NULL DEFAULT FALSE,
     review_state            TEXT NOT NULL DEFAULT 'not_required',
     predecessor_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    execution_generation    BIGINT NOT NULL DEFAULT 0,
-    execution_manifest_id   TEXT,
-    execution_runtime_env_identity TEXT,
     execution_registration_id TEXT,
-    execution_pid           INTEGER,
-    execution_start_identity TEXT,
-    execution_command_id    TEXT,
-    execution_lease_expires_at TIMESTAMPTZ,
-    CONSTRAINT sessions_execution_owner_all_or_none_check CHECK (
-        (
-            execution_manifest_id IS NULL
-            AND execution_runtime_env_identity IS NULL
-            AND execution_registration_id IS NULL
-            AND execution_pid IS NULL
-            AND execution_start_identity IS NULL
-            AND execution_command_id IS NULL
-            AND execution_lease_expires_at IS NULL
-        ) OR (
-            execution_manifest_id IS NOT NULL
-            AND execution_runtime_env_identity IS NOT NULL
-            AND execution_registration_id IS NOT NULL
-            AND execution_pid IS NOT NULL AND execution_pid > 0
-            AND execution_start_identity IS NOT NULL
-            AND execution_command_id IS NOT NULL
-            AND execution_lease_expires_at IS NOT NULL
-        )
-    )
+    execution_command_id    TEXT
 );
 
 -- 기존 테이블에 caller_session_id 컬럼 추가 (멱등)
@@ -329,35 +304,8 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_event_id INTEGER;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_assistant_text TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS review_required BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS review_state TEXT NOT NULL DEFAULT 'not_required';
-ALTER TABLE sessions ADD COLUMN IF NOT EXISTS execution_generation BIGINT NOT NULL DEFAULT 0;
-ALTER TABLE sessions ADD COLUMN IF NOT EXISTS execution_manifest_id TEXT;
-ALTER TABLE sessions ADD COLUMN IF NOT EXISTS execution_runtime_env_identity TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS execution_registration_id TEXT;
-ALTER TABLE sessions ADD COLUMN IF NOT EXISTS execution_pid INTEGER;
-ALTER TABLE sessions ADD COLUMN IF NOT EXISTS execution_start_identity TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS execution_command_id TEXT;
-ALTER TABLE sessions ADD COLUMN IF NOT EXISTS execution_lease_expires_at TIMESTAMPTZ;
-ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_execution_owner_all_or_none_check;
-ALTER TABLE sessions ADD CONSTRAINT sessions_execution_owner_all_or_none_check
-    CHECK (
-        (
-            execution_manifest_id IS NULL
-            AND execution_runtime_env_identity IS NULL
-            AND execution_registration_id IS NULL
-            AND execution_pid IS NULL
-            AND execution_start_identity IS NULL
-            AND execution_command_id IS NULL
-            AND execution_lease_expires_at IS NULL
-        ) OR (
-            execution_manifest_id IS NOT NULL
-            AND execution_runtime_env_identity IS NOT NULL
-            AND execution_registration_id IS NOT NULL
-            AND execution_pid IS NOT NULL AND execution_pid > 0
-            AND execution_start_identity IS NOT NULL
-            AND execution_command_id IS NOT NULL
-            AND execution_lease_expires_at IS NOT NULL
-        )
-    );
 ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_review_state_check;
 ALTER TABLE sessions ADD CONSTRAINT sessions_review_state_check
     CHECK (review_state IN ('not_required', 'needs_review', 'acknowledged'));
@@ -1590,10 +1538,109 @@ CREATE OR REPLACE FUNCTION session_get(
     SELECT * FROM sessions WHERE session_id = p_session_id;
 $$;
 
--- New and resumed turns record a generation and exact runtime identity without
--- electing or leasing an owner. Terminal transition is the single writer that
--- clears that compatibility projection; the monotonic generation remains as
--- ingress stale-event evidence.
+-- A turn has one durable registration identity. No ownership election or
+-- lease is involved; the terminal transition clears this two-field projection.
+CREATE OR REPLACE FUNCTION session_record_execution_registration(
+    p_session_id                 TEXT,
+    p_registration_id            TEXT,
+    p_execution_command_id       TEXT,
+    p_review_state               TEXT,
+    p_expected_terminal_event_id INTEGER,
+    p_terminal_resume            BOOLEAN,
+    p_recorded_at                TIMESTAMPTZ
+) RETURNS TABLE (
+    applied                      BOOLEAN,
+    execution_registration_id    TEXT,
+    execution_command_id         TEXT,
+    status                       TEXT,
+    termination_reason           TEXT,
+    termination_detail           TEXT,
+    review_state                 TEXT,
+    last_assistant_text          TEXT,
+    termination_event_id         INTEGER,
+    updated_at                   TIMESTAMPTZ,
+    last_event_id                INTEGER
+) LANGUAGE plpgsql AS $$
+DECLARE
+    v_row_count INTEGER := 0;
+BEGIN
+    IF p_registration_id IS NULL OR p_registration_id = ''
+       OR p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
+        RAISE EXCEPTION 'complete execution registration required';
+    END IF;
+    IF p_review_state NOT IN ('not_required', 'needs_review', 'acknowledged') THEN
+        RAISE EXCEPTION 'unsupported review state: %', p_review_state;
+    END IF;
+
+    PERFORM 1 FROM sessions WHERE session_id = p_session_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'session not found: %', p_session_id;
+    END IF;
+
+    IF p_terminal_resume THEN
+        UPDATE sessions AS session
+           SET status = 'running',
+               termination_reason = NULL,
+               termination_detail = NULL,
+               termination_event_id = NULL,
+               last_assistant_text = NULL,
+               review_state = p_review_state,
+               execution_registration_id = p_registration_id,
+               execution_command_id = p_execution_command_id,
+               updated_at = p_recorded_at
+         WHERE session.session_id = p_session_id
+           AND session.status IN ('completed', 'error', 'interrupted')
+           AND session.termination_event_id IS NOT DISTINCT FROM p_expected_terminal_event_id;
+    ELSE
+        UPDATE sessions AS session
+           SET status = 'running',
+               termination_reason = NULL,
+               termination_detail = NULL,
+               review_state = p_review_state,
+               execution_registration_id = p_registration_id,
+               execution_command_id = p_execution_command_id,
+               updated_at = p_recorded_at
+         WHERE session.session_id = p_session_id
+           AND session.status NOT IN ('completed', 'error', 'interrupted');
+    END IF;
+    GET DIAGNOSTICS v_row_count = ROW_COUNT;
+
+    IF v_row_count = 1 AND p_terminal_resume THEN
+        UPDATE session_deliveries
+           SET state = 'superseded',
+               aggregate_state = 'consumed',
+               consumed_at = p_recorded_at,
+               consumed_reason = 'superseded by terminal resume',
+               superseded_at = p_recorded_at,
+               superseded_terminal_revision = p_expected_terminal_event_id::text,
+               lease_owner = NULL,
+               lease_expires_at = NULL,
+               updated_at = p_recorded_at
+         WHERE source_session_id = p_session_id
+           AND intent = 'completion_notification'
+           AND source = 'completion_notifier'
+           AND producer_kind = 'child_session'
+           AND producer_terminal_revision = p_expected_terminal_event_id::text
+           AND state IN ('pending', 'claimed', 'dispatching', 'queued');
+    END IF;
+
+    RETURN QUERY
+    SELECT v_row_count = 1,
+           session.execution_registration_id,
+           session.execution_command_id,
+           session.status,
+           session.termination_reason,
+           session.termination_detail,
+           session.review_state,
+           session.last_assistant_text,
+           session.termination_event_id,
+           session.updated_at,
+           session.last_event_id
+      FROM sessions AS session
+     WHERE session.session_id = p_session_id;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION session_apply_terminal_transition(
     p_session_id           TEXT,
     p_status               TEXT,
@@ -1621,27 +1668,59 @@ BEGIN
         RAISE EXCEPTION 'terminal event id must be a positive integer';
     END IF;
 
-    UPDATE sessions AS session
-       SET status = p_status,
-           termination_reason = p_termination_reason,
-           termination_detail = p_termination_detail,
-           review_state = p_review_state,
-           last_assistant_text = p_last_assistant_text,
-           termination_event_id = p_terminal_event_id,
-           execution_manifest_id = NULL,
-           execution_runtime_env_identity = NULL,
-           execution_registration_id = NULL,
-           execution_pid = NULL,
-           execution_start_identity = NULL,
-           execution_command_id = NULL,
-           execution_lease_expires_at = NULL,
-           updated_at = p_updated_at
-     WHERE session.session_id = p_session_id
-       AND session.status NOT IN ('completed', 'error', 'interrupted')
-       AND (
-           session.termination_event_id IS NULL
-           OR session.termination_event_id < p_terminal_event_id
-       );
+    IF EXISTS (
+        SELECT 1
+          FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = 'sessions'
+           AND column_name = 'execution_manifest_id'
+    ) THEN
+        -- 085a is deployed before the code rollout. Keep the previous release's
+        -- all-or-none row constraint valid without retaining a static dependency
+        -- on columns that 085b removes.
+        EXECUTE $update$
+            UPDATE sessions AS session
+               SET status = $1,
+                   termination_reason = $2,
+                   termination_detail = $3,
+                   review_state = $4,
+                   last_assistant_text = $5,
+                   termination_event_id = $6,
+                   execution_manifest_id = NULL,
+                   execution_runtime_env_identity = NULL,
+                   execution_registration_id = NULL,
+                   execution_pid = NULL,
+                   execution_start_identity = NULL,
+                   execution_command_id = NULL,
+                   execution_lease_expires_at = NULL,
+                   updated_at = $7
+             WHERE session.session_id = $8
+               AND session.status NOT IN ('completed', 'error', 'interrupted')
+               AND (
+                   session.termination_event_id IS NULL
+                   OR session.termination_event_id < $6
+               )
+        $update$ USING p_status, p_termination_reason, p_termination_detail,
+            p_review_state, p_last_assistant_text, p_terminal_event_id,
+            p_updated_at, p_session_id;
+    ELSE
+        UPDATE sessions AS session
+           SET status = p_status,
+               termination_reason = p_termination_reason,
+               termination_detail = p_termination_detail,
+               review_state = p_review_state,
+               last_assistant_text = p_last_assistant_text,
+               termination_event_id = p_terminal_event_id,
+               execution_registration_id = NULL,
+               execution_command_id = NULL,
+               updated_at = p_updated_at
+         WHERE session.session_id = p_session_id
+           AND session.status NOT IN ('completed', 'error', 'interrupted')
+           AND (
+               session.termination_event_id IS NULL
+               OR session.termination_event_id < p_terminal_event_id
+           );
+    END IF;
     GET DIAGNOSTICS v_row_count = ROW_COUNT;
 
     RETURN QUERY
@@ -2533,1197 +2612,11 @@ BEGIN
 END;
 $$;
 
--- 067: generation-fenced execution ownership and delivery convergence
---
--- This migration is intentionally additive. Existing state columns and
--- transition functions remain available while orch and node releases roll.
 
-CREATE TABLE IF NOT EXISTS session_execution_ownerships (
-    session_id                 TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-    ownership_generation       BIGINT NOT NULL,
-    owner_kind                 TEXT NOT NULL,
-    manifest_id                TEXT NOT NULL,
-    registration_id            TEXT,
-    pid                        INTEGER,
-    start_identity             TEXT,
-    execution_command_id       TEXT,
-    phase                      TEXT NOT NULL DEFAULT 'reserved',
-    runner_fact                TEXT,
-    reserved_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    identity_proven_at         TIMESTAMPTZ,
-    activated_at               TIMESTAMPTZ,
-    reservation_expires_at     TIMESTAMPTZ,
-    terminal_at                TIMESTAMPTZ,
-    failure_reason             TEXT,
-    PRIMARY KEY (session_id, ownership_generation),
-    CONSTRAINT session_execution_ownership_owner_kind_check
-        CHECK (owner_kind IN ('runner_process', 'adopted_runner', 'in_process')),
-    CONSTRAINT session_execution_ownership_phase_check
-        CHECK (phase IN ('reserved', 'identity_proven', 'active', 'terminal', 'failed')),
-    CONSTRAINT session_execution_ownership_runner_fact_check
-        CHECK (runner_fact IS NULL OR runner_fact IN ('completed', 'failed', 'reaped', 'closed')),
-    CONSTRAINT session_execution_ownership_identity_shape_check
-        CHECK (
-            phase IN ('reserved', 'failed')
-            OR (
-                registration_id IS NOT NULL
-                AND pid IS NOT NULL
-                AND start_identity IS NOT NULL
-                AND execution_command_id IS NOT NULL
-                AND identity_proven_at IS NOT NULL
-            )
-        ),
-    CONSTRAINT session_execution_ownership_reservation_lease_check
-        CHECK (
-            (phase IN ('reserved', 'identity_proven') AND reservation_expires_at IS NOT NULL)
-            OR (phase NOT IN ('reserved', 'identity_proven'))
-        )
-);
 
-DROP INDEX IF EXISTS idx_session_execution_ownership_open;
-CREATE UNIQUE INDEX idx_session_execution_ownership_open
-    ON session_execution_ownerships(session_id)
-    WHERE phase = 'active';
 
-CREATE INDEX IF NOT EXISTS idx_session_execution_ownership_identity
-    ON session_execution_ownerships(registration_id, pid, start_identity)
-    WHERE registration_id IS NOT NULL;
 
-CREATE TABLE IF NOT EXISTS session_execution_ownership_migration_audit (
-    audit_id                    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    session_id                 TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-    action                     TEXT NOT NULL,
-    manifest_id                TEXT,
-    registration_id            TEXT,
-    pid                        INTEGER,
-    start_identity             TEXT,
-    execution_command_id       TEXT,
-    first_observed_at          TIMESTAMPTZ,
-    second_observed_at         TIMESTAMPTZ,
-    evidence_hash              TEXT,
-    first_observation          JSONB,
-    second_observation         JSONB,
-    detail                     TEXT NOT NULL,
-    created_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT session_execution_ownership_audit_action_check
-        CHECK (action IN ('observed', 'backfilled', 'interrupted'))
-);
 
-ALTER TABLE session_execution_ownership_migration_audit
-    ADD COLUMN IF NOT EXISTS execution_command_id TEXT,
-    ADD COLUMN IF NOT EXISTS evidence_hash TEXT,
-    ADD COLUMN IF NOT EXISTS first_observation JSONB,
-    ADD COLUMN IF NOT EXISTS second_observation JSONB;
-
-CREATE OR REPLACE VIEW session_owner_null_running_inventory AS
-SELECT session.session_id, session.node_id, session.updated_at
-FROM sessions AS session
-WHERE session.status = 'running'
-  AND NOT EXISTS (
-      SELECT 1
-      FROM session_execution_ownerships AS ownership
-      WHERE ownership.session_id = session.session_id
-        AND ownership.phase = 'active'
-  );
-
-CREATE OR REPLACE FUNCTION session_renew_execution_ownership(
-    p_session_id TEXT, p_ownership_generation BIGINT,
-    p_manifest_id TEXT, p_runtime_env_identity TEXT,
-    p_registration_id TEXT, p_pid INTEGER, p_start_identity TEXT,
-    p_execution_command_id TEXT, p_lease_expires_at TIMESTAMPTZ,
-    p_renewed_at TIMESTAMPTZ
-) RETURNS TABLE(
-    applied BOOLEAN, execution_generation BIGINT,
-    execution_lease_expires_at TIMESTAMPTZ, status TEXT,
-    termination_reason TEXT, termination_detail TEXT, review_state TEXT,
-    last_assistant_text TEXT, termination_event_id INTEGER,
-    updated_at TIMESTAMPTZ, last_event_id INTEGER
-) LANGUAGE plpgsql AS $$
-DECLARE v_row_count INTEGER := 0;
-BEGIN
-    IF p_session_id IS NULL OR btrim(p_session_id) = ''
-       OR p_ownership_generation IS NULL OR p_ownership_generation <= 0
-       OR p_manifest_id IS NULL OR btrim(p_manifest_id) = ''
-       OR p_runtime_env_identity IS NULL OR btrim(p_runtime_env_identity) = ''
-       OR p_registration_id IS NULL OR btrim(p_registration_id) = ''
-       OR p_pid IS NULL OR p_pid <= 0
-       OR p_start_identity IS NULL OR btrim(p_start_identity) = ''
-       OR p_execution_command_id IS NULL OR btrim(p_execution_command_id) = '' THEN
-        RAISE EXCEPTION 'execution renew requires a complete owner identity';
-    END IF;
-    IF p_renewed_at IS NULL OR p_lease_expires_at IS NULL
-       OR p_lease_expires_at <= p_renewed_at THEN
-        RAISE EXCEPTION 'execution renew requires a future lease';
-    END IF;
-
-    UPDATE sessions AS session SET
-        execution_lease_expires_at = p_lease_expires_at,
-        updated_at = p_renewed_at
-     WHERE session.session_id = p_session_id
-       AND session.execution_generation = p_ownership_generation
-       AND session.execution_manifest_id = p_manifest_id
-       AND session.execution_runtime_env_identity = p_runtime_env_identity
-       AND session.execution_registration_id = p_registration_id
-       AND session.execution_pid = p_pid
-       AND session.execution_start_identity = p_start_identity
-       AND session.execution_command_id = p_execution_command_id
-       AND session.execution_lease_expires_at > p_renewed_at;
-    GET DIAGNOSTICS v_row_count = ROW_COUNT;
-
-    RETURN QUERY SELECT v_row_count = 1, session.execution_generation,
-        session.execution_lease_expires_at, session.status,
-        session.termination_reason, session.termination_detail,
-        session.review_state, session.last_assistant_text,
-        session.termination_event_id, session.updated_at, session.last_event_id
-      FROM sessions AS session WHERE session.session_id = p_session_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_release_execution_ownership(
-    p_session_id                 TEXT,
-    p_ownership_generation       BIGINT,
-    p_execution_command_id       TEXT,
-    p_runner_fact                TEXT,
-    p_termination_detail         TEXT,
-    p_review_state               TEXT,
-    p_last_assistant_text        TEXT,
-    p_terminal_event_id          INTEGER,
-    p_updated_at                 TIMESTAMPTZ
-) RETURNS TABLE (
-    applied                      BOOLEAN,
-    status                       TEXT,
-    termination_reason           TEXT,
-    termination_detail           TEXT,
-    review_state                 TEXT,
-    last_assistant_text          TEXT,
-    termination_event_id         INTEGER,
-    updated_at                   TIMESTAMPTZ,
-    last_event_id                INTEGER
-) LANGUAGE plpgsql AS $$
-DECLARE
-    v_row_count INTEGER := 0;
-    v_status TEXT;
-    v_termination_reason TEXT;
-BEGIN
-    IF p_ownership_generation IS NULL OR p_ownership_generation <= 0 THEN
-        RAISE EXCEPTION 'positive execution ownership generation required';
-    END IF;
-    IF p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
-        RAISE EXCEPTION 'execution command id required';
-    END IF;
-    IF p_terminal_event_id IS NULL OR p_terminal_event_id <= 0 THEN
-        RAISE EXCEPTION 'positive terminal event id required';
-    END IF;
-    IF p_review_state NOT IN ('not_required', 'needs_review', 'acknowledged') THEN
-        RAISE EXCEPTION 'unsupported review state: %', p_review_state;
-    END IF;
-
-    CASE p_runner_fact
-        WHEN 'completed' THEN
-            v_status := 'completed';
-            v_termination_reason := 'completed_ok';
-        WHEN 'closed' THEN
-            v_status := 'interrupted';
-            v_termination_reason := 'killed';
-        WHEN 'failed' THEN
-            v_status := 'error';
-            v_termination_reason := 'error_aborted';
-        WHEN 'reaped' THEN
-            v_status := 'error';
-            v_termination_reason := 'error_aborted';
-        ELSE
-            RAISE EXCEPTION 'unsupported runner terminal fact: %', p_runner_fact;
-    END CASE;
-
-    UPDATE sessions AS session
-       SET status = v_status,
-           termination_reason = v_termination_reason,
-           termination_detail = p_termination_detail,
-           review_state = p_review_state,
-           last_assistant_text = p_last_assistant_text,
-           termination_event_id = p_terminal_event_id,
-           execution_manifest_id = NULL,
-           execution_runtime_env_identity = NULL,
-           execution_registration_id = NULL,
-           execution_pid = NULL,
-           execution_start_identity = NULL,
-           execution_command_id = NULL,
-           execution_lease_expires_at = NULL,
-           updated_at = p_updated_at
-     WHERE session.session_id = p_session_id
-       AND session.execution_generation = p_ownership_generation
-       AND session.execution_command_id = p_execution_command_id
-       AND session.status NOT IN ('completed', 'error', 'interrupted')
-       AND session.termination_event_id IS NULL;
-    GET DIAGNOSTICS v_row_count = ROW_COUNT;
-
-    RETURN QUERY
-    SELECT v_row_count = 1,
-           session.status,
-           session.termination_reason,
-           session.termination_detail,
-           session.review_state,
-           session.last_assistant_text,
-           session.termination_event_id,
-           session.updated_at,
-           session.last_event_id
-      FROM sessions AS session
-     WHERE session.session_id = p_session_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_reserve_execution_ownership(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_owner_kind               TEXT,
-    p_manifest_id              TEXT,
-    p_updated_at               TIMESTAMPTZ
-) RETURNS TABLE (
-    applied                    BOOLEAN,
-    ownership_generation       BIGINT,
-    status                     TEXT,
-    termination_reason         TEXT,
-    termination_detail         TEXT,
-    review_state               TEXT,
-    last_assistant_text        TEXT,
-    termination_event_id       INTEGER,
-    updated_at                 TIMESTAMPTZ,
-    last_event_id              INTEGER
-) LANGUAGE plpgsql AS $$
-DECLARE
-BEGIN
-    IF p_owner_kind NOT IN ('runner_process', 'adopted_runner', 'in_process') THEN
-        RAISE EXCEPTION 'unsupported execution owner kind: %', p_owner_kind;
-    END IF;
-    IF p_manifest_id IS NULL OR p_manifest_id = '' THEN
-        RAISE EXCEPTION 'execution manifest id required';
-    END IF;
-    IF p_ownership_generation IS NULL OR p_ownership_generation <= 0 THEN
-        RAISE EXCEPTION 'positive execution ownership generation required';
-    END IF;
-
-    PERFORM 1 FROM sessions WHERE session_id = p_session_id FOR UPDATE;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'session not found: %', p_session_id;
-    END IF;
-
-    UPDATE session_execution_ownerships
-       SET phase = 'failed', failure_reason = 'reservation lease expired',
-           terminal_at = p_updated_at, reservation_expires_at = NULL
-     WHERE session_id = p_session_id
-       AND phase IN ('reserved', 'identity_proven')
-       AND reservation_expires_at <= p_updated_at;
-
-    IF EXISTS (
-        SELECT 1 FROM session_execution_ownerships
-        WHERE session_id = p_session_id
-          AND phase IN ('reserved', 'identity_proven', 'active')
-    ) THEN
-        RETURN QUERY
-        SELECT FALSE, ownership.ownership_generation,
-               session.status, session.termination_reason,
-               session.termination_detail, session.review_state,
-               session.last_assistant_text, session.termination_event_id,
-               session.updated_at, session.last_event_id
-        FROM sessions AS session
-        JOIN LATERAL (
-            SELECT candidate.ownership_generation
-              FROM session_execution_ownerships AS candidate
-             WHERE candidate.session_id = session.session_id
-               AND candidate.phase IN ('reserved', 'identity_proven', 'active')
-             ORDER BY CASE candidate.phase WHEN 'active' THEN 0 ELSE 1 END,
-                      candidate.ownership_generation DESC
-             LIMIT 1
-        ) AS ownership ON TRUE
-        WHERE session.session_id = p_session_id;
-        RETURN;
-    END IF;
-
-    INSERT INTO session_execution_ownerships (
-        session_id, ownership_generation, owner_kind, manifest_id,
-        phase, reserved_at, reservation_expires_at
-    ) VALUES (
-        p_session_id, p_ownership_generation, p_owner_kind, p_manifest_id,
-        'reserved', p_updated_at, p_updated_at + INTERVAL '60 seconds'
-    );
-
-    RETURN QUERY
-    SELECT TRUE, p_ownership_generation,
-           session.status, session.termination_reason,
-           session.termination_detail, session.review_state,
-           session.last_assistant_text, session.termination_event_id,
-           session.updated_at, session.last_event_id
-      FROM sessions AS session
-     WHERE session.session_id = p_session_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_prove_execution_ownership(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_registration_id          TEXT,
-    p_pid                      INTEGER,
-    p_start_identity           TEXT,
-    p_execution_command_id     TEXT,
-    p_proven_at                TIMESTAMPTZ
-) RETURNS BOOLEAN LANGUAGE plpgsql AS $$
-DECLARE
-    v_row_count INTEGER;
-BEGIN
-    IF p_registration_id IS NULL OR p_registration_id = ''
-       OR p_pid IS NULL OR p_pid <= 0
-       OR p_start_identity IS NULL OR p_start_identity = ''
-       OR p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
-        RAISE EXCEPTION 'complete execution identity proof required';
-    END IF;
-    UPDATE session_execution_ownerships
-       SET registration_id = p_registration_id,
-           pid = p_pid,
-           start_identity = p_start_identity,
-           execution_command_id = p_execution_command_id,
-           phase = 'identity_proven',
-           identity_proven_at = p_proven_at,
-           reservation_expires_at = p_proven_at + INTERVAL '60 seconds'
-     WHERE session_id = p_session_id
-       AND ownership_generation = p_ownership_generation
-       AND phase = 'reserved'
-       AND reservation_expires_at > p_proven_at;
-    GET DIAGNOSTICS v_row_count = ROW_COUNT;
-    RETURN v_row_count = 1;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_mark_execution_orphaned_spawn(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_registration_id          TEXT,
-    p_pid                      INTEGER,
-    p_start_identity           TEXT,
-    p_execution_command_id     TEXT,
-    p_updated_at               TIMESTAMPTZ
-) RETURNS BOOLEAN LANGUAGE plpgsql AS $$
-DECLARE
-    v_row_count INTEGER;
-BEGIN
-    IF p_registration_id IS NULL OR p_registration_id = ''
-       OR p_pid IS NULL OR p_pid <= 0
-       OR p_start_identity IS NULL OR p_start_identity = ''
-       OR p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
-        RAISE EXCEPTION 'complete orphaned spawn identity required';
-    END IF;
-    UPDATE session_execution_ownerships
-       SET registration_id = p_registration_id,
-           pid = p_pid,
-           start_identity = p_start_identity,
-           execution_command_id = p_execution_command_id,
-           phase = 'identity_proven',
-           identity_proven_at = p_updated_at,
-           reservation_expires_at = p_updated_at + INTERVAL '60 seconds',
-           failure_reason = 'orphaned_spawn'
-     WHERE session_id = p_session_id
-       AND ownership_generation = p_ownership_generation
-       AND phase = 'reserved'
-       AND reservation_expires_at > p_updated_at;
-    GET DIAGNOSTICS v_row_count = ROW_COUNT;
-    RETURN v_row_count = 1;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_reserve_execution_adoption(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_manifest_id              TEXT,
-    p_previous_registration_id TEXT,
-    p_pid                      INTEGER,
-    p_start_identity           TEXT,
-    p_execution_command_id     TEXT,
-    p_updated_at               TIMESTAMPTZ
-) RETURNS TABLE (
-    applied                    BOOLEAN,
-    status                     TEXT,
-    termination_reason         TEXT,
-    termination_detail         TEXT,
-    review_state               TEXT,
-    last_assistant_text        TEXT,
-    termination_event_id       INTEGER,
-    updated_at                 TIMESTAMPTZ,
-    last_event_id              INTEGER
-) LANGUAGE plpgsql AS $$
-DECLARE
-    v_row_count INTEGER := 0;
-    v_previous_generation BIGINT;
-BEGIN
-    PERFORM 1 FROM sessions WHERE session_id = p_session_id FOR UPDATE;
-    UPDATE session_execution_ownerships
-       SET phase = 'failed', failure_reason = 'reservation lease expired',
-           terminal_at = p_updated_at, reservation_expires_at = NULL
-     WHERE session_id = p_session_id
-       AND phase IN ('reserved', 'identity_proven')
-       AND reservation_expires_at <= p_updated_at;
-    SELECT ownership_generation
-      INTO v_previous_generation
-      FROM session_execution_ownerships
-     WHERE session_id = p_session_id
-       AND (
-           phase = 'active'
-           OR (
-               phase = 'identity_proven'
-               AND failure_reason = 'orphaned_spawn'
-               AND reservation_expires_at > p_updated_at
-           )
-       )
-       AND manifest_id = p_manifest_id
-       AND registration_id = p_previous_registration_id
-       AND pid = p_pid
-       AND start_identity = p_start_identity
-       AND execution_command_id = p_execution_command_id
-     ORDER BY CASE phase WHEN 'active' THEN 0 ELSE 1 END
-     LIMIT 1
-     FOR UPDATE;
-    IF FOUND AND NOT EXISTS (
-        SELECT 1 FROM session_execution_ownerships
-         WHERE session_id = p_session_id
-           AND ownership_generation <> v_previous_generation
-           AND phase IN ('reserved', 'identity_proven')
-    ) THEN
-        INSERT INTO session_execution_ownerships (
-            session_id, ownership_generation, owner_kind, manifest_id,
-            phase, reserved_at, reservation_expires_at
-        ) VALUES (
-            p_session_id, p_ownership_generation, 'adopted_runner', p_manifest_id,
-            'reserved', p_updated_at, p_updated_at + INTERVAL '60 seconds'
-        );
-        v_row_count := 1;
-    END IF;
-    RETURN QUERY
-    SELECT v_row_count = 1, session.status, session.termination_reason,
-           session.termination_detail, session.review_state,
-           session.last_assistant_text, session.termination_event_id,
-           session.updated_at, session.last_event_id
-      FROM sessions AS session
-     WHERE session.session_id = p_session_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_activate_execution_ownership(
-    p_session_id                 TEXT,
-    p_ownership_generation       BIGINT,
-    p_review_state               TEXT,
-    p_expected_terminal_event_id INTEGER,
-    p_terminal_resume            BOOLEAN,
-    p_updated_at                 TIMESTAMPTZ
-) RETURNS TABLE (
-    applied                    BOOLEAN,
-    status                     TEXT,
-    termination_reason         TEXT,
-    termination_detail         TEXT,
-    review_state               TEXT,
-    last_assistant_text        TEXT,
-    termination_event_id       INTEGER,
-    updated_at                 TIMESTAMPTZ,
-    last_event_id              INTEGER
-) LANGUAGE plpgsql AS $$
-DECLARE
-    v_row_count INTEGER := 0;
-    v_owner_kind TEXT;
-    v_manifest_id TEXT;
-    v_registration_id TEXT;
-    v_pid INTEGER;
-    v_start_identity TEXT;
-    v_execution_command_id TEXT;
-BEGIN
-    SELECT owner_kind, manifest_id, registration_id, pid, start_identity,
-           execution_command_id
-      INTO v_owner_kind, v_manifest_id, v_registration_id, v_pid,
-           v_start_identity, v_execution_command_id
-      FROM session_execution_ownerships
-     WHERE session_id = p_session_id
-       AND ownership_generation = p_ownership_generation
-       AND phase = 'identity_proven'
-       AND reservation_expires_at > p_updated_at
-     FOR UPDATE;
-    IF FOUND THEN
-        IF v_owner_kind = 'adopted_runner' THEN
-            PERFORM 1
-             FROM session_execution_ownerships
-             WHERE session_id = p_session_id
-               AND ownership_generation <> p_ownership_generation
-               AND (
-                   phase = 'active'
-                   OR (
-                       phase = 'identity_proven'
-                       AND failure_reason = 'orphaned_spawn'
-                       AND reservation_expires_at > p_updated_at
-                   )
-               )
-               AND manifest_id = v_manifest_id
-               AND registration_id = v_registration_id
-               AND pid = v_pid
-               AND start_identity = v_start_identity
-               AND execution_command_id = v_execution_command_id
-             FOR UPDATE;
-            IF NOT FOUND THEN
-                RETURN QUERY
-                SELECT FALSE, session.status, session.termination_reason,
-                       session.termination_detail, session.review_state,
-                       session.last_assistant_text, session.termination_event_id,
-                       session.updated_at, session.last_event_id
-                  FROM sessions AS session
-                 WHERE session.session_id = p_session_id;
-                RETURN;
-            END IF;
-        END IF;
-        IF p_terminal_resume THEN
-            UPDATE sessions AS session
-               SET status = 'running', termination_reason = NULL,
-                   termination_detail = NULL, termination_event_id = NULL,
-                   last_assistant_text = NULL, review_state = p_review_state,
-                   updated_at = p_updated_at
-             WHERE session.session_id = p_session_id
-               AND session.status IN ('completed', 'error', 'interrupted')
-               AND session.termination_event_id IS NOT DISTINCT FROM p_expected_terminal_event_id;
-        ELSE
-            UPDATE sessions AS session
-               SET status = 'running', termination_reason = NULL,
-                   termination_detail = NULL, review_state = p_review_state,
-                   updated_at = p_updated_at
-             WHERE session.session_id = p_session_id
-               AND session.status NOT IN ('completed', 'error', 'interrupted');
-        END IF;
-        GET DIAGNOSTICS v_row_count = ROW_COUNT;
-        IF v_row_count = 1 THEN
-            IF v_owner_kind = 'adopted_runner' THEN
-                UPDATE session_execution_ownerships
-                   SET phase = 'terminal', terminal_at = p_updated_at,
-                       reservation_expires_at = NULL,
-                       failure_reason = 'ownership handed to adopting host'
-                 WHERE session_id = p_session_id
-                   AND ownership_generation <> p_ownership_generation
-                   AND (
-                       phase = 'active'
-                       OR (
-                           phase = 'identity_proven'
-                           AND failure_reason = 'orphaned_spawn'
-                       )
-                   )
-                   AND manifest_id = v_manifest_id
-                   AND registration_id = v_registration_id
-                   AND pid = v_pid
-                   AND start_identity = v_start_identity
-                   AND execution_command_id = v_execution_command_id;
-            END IF;
-            UPDATE session_execution_ownerships
-               SET phase = 'active', activated_at = p_updated_at,
-                   reservation_expires_at = NULL
-             WHERE session_id = p_session_id
-               AND ownership_generation = p_ownership_generation
-               AND phase = 'identity_proven';
-            IF p_terminal_resume THEN
-                UPDATE session_deliveries
-                   SET state = 'superseded',
-                       aggregate_state = 'consumed',
-                       consumed_at = p_updated_at,
-                       consumed_reason = 'superseded by terminal resume',
-                       superseded_at = p_updated_at,
-                       superseded_terminal_revision = p_expected_terminal_event_id::text,
-                       lease_owner = NULL,
-                       lease_expires_at = NULL,
-                       updated_at = p_updated_at
-                 WHERE source_session_id = p_session_id
-                   AND intent = 'completion_notification'
-                   AND source = 'completion_notifier'
-                   AND producer_kind = 'child_session'
-                   AND producer_terminal_revision = p_expected_terminal_event_id::text
-                   AND state IN ('pending', 'claimed', 'dispatching', 'queued');
-            END IF;
-        END IF;
-    END IF;
-
-    RETURN QUERY
-    SELECT v_row_count = 1, session.status, session.termination_reason,
-           session.termination_detail, session.review_state,
-           session.last_assistant_text, session.termination_event_id,
-           session.updated_at, session.last_event_id
-      FROM sessions AS session
-     WHERE session.session_id = p_session_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_project_runner_terminal_fact(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_execution_command_id     TEXT,
-    p_runner_fact              TEXT,
-    p_termination_detail       TEXT,
-    p_review_state             TEXT,
-    p_last_assistant_text      TEXT,
-    p_terminal_event_id        INTEGER,
-    p_updated_at               TIMESTAMPTZ
-) RETURNS TABLE (
-    applied                    BOOLEAN,
-    status                     TEXT,
-    termination_reason         TEXT,
-    termination_detail         TEXT,
-    review_state               TEXT,
-    last_assistant_text        TEXT,
-    termination_event_id       INTEGER,
-    updated_at                 TIMESTAMPTZ,
-    last_event_id              INTEGER
-) LANGUAGE sql AS $$
-    SELECT * FROM session_release_execution_ownership(
-        p_session_id,
-        p_ownership_generation,
-        p_execution_command_id,
-        p_runner_fact,
-        p_termination_detail,
-        p_review_state,
-        p_last_assistant_text,
-        p_terminal_event_id,
-        p_updated_at
-    );
-$$;
-
-CREATE OR REPLACE FUNCTION session_project_recovered_runner_terminal_fact(
-    p_session_id               TEXT,
-    p_manifest_id              TEXT,
-    p_registration_id          TEXT,
-    p_pid                      INTEGER,
-    p_start_identity           TEXT,
-    p_execution_command_id     TEXT,
-    p_runner_fact              TEXT,
-    p_termination_detail       TEXT,
-    p_review_state             TEXT,
-    p_last_assistant_text      TEXT,
-    p_terminal_event_id        INTEGER,
-    p_updated_at               TIMESTAMPTZ
-) RETURNS TABLE (
-    applied                    BOOLEAN,
-    status                     TEXT,
-    termination_reason         TEXT,
-    termination_detail         TEXT,
-    review_state               TEXT,
-    last_assistant_text        TEXT,
-    termination_event_id       INTEGER,
-    updated_at                 TIMESTAMPTZ,
-    last_event_id              INTEGER
-) LANGUAGE plpgsql AS $$
-DECLARE
-    v_ownership_generation BIGINT;
-    v_status TEXT;
-    v_termination_reason TEXT;
-BEGIN
-    -- Serialize recovered terminal projection with every ownership reservation
-    -- path, all of which lock the canonical session row before opening an owner.
-    PERFORM 1
-      FROM sessions
-     WHERE session_id = p_session_id
-     FOR UPDATE;
-    IF NOT FOUND THEN
-        RETURN;
-    END IF;
-
-    SELECT ownership.ownership_generation
-      INTO v_ownership_generation
-      FROM session_execution_ownerships AS ownership
-     WHERE ownership.session_id = p_session_id
-       AND ownership.manifest_id = p_manifest_id
-       AND ownership.registration_id = p_registration_id
-       AND ownership.pid = p_pid
-       AND ownership.start_identity = p_start_identity
-       AND ownership.execution_command_id = p_execution_command_id
-       AND ownership.phase = 'active'
-     FOR UPDATE;
-
-    IF FOUND THEN
-        RETURN QUERY
-        SELECT *
-          FROM session_project_runner_terminal_fact(
-              p_session_id,
-              v_ownership_generation,
-              p_execution_command_id,
-              p_runner_fact,
-              p_termination_detail,
-              p_review_state,
-              p_last_assistant_text,
-              p_terminal_event_id,
-              p_updated_at
-          );
-        RETURN;
-    END IF;
-
-    -- A recovered registration also exists for ownerless turns. Protect a real
-    -- successor owner, but do not let expired reservation history become a
-    -- permanent terminal gate.
-    IF EXISTS (
-        SELECT 1
-          FROM session_execution_ownerships AS ownership
-         WHERE ownership.session_id = p_session_id
-           AND (
-               ownership.phase = 'active'
-               OR (
-                   ownership.phase IN ('reserved', 'identity_proven')
-                   AND ownership.reservation_expires_at > CURRENT_TIMESTAMP
-               )
-           )
-    ) THEN
-        RETURN QUERY
-        SELECT FALSE, session.status, session.termination_reason,
-               session.termination_detail, session.review_state,
-               session.last_assistant_text, session.termination_event_id,
-               session.updated_at, session.last_event_id
-          FROM sessions AS session
-         WHERE session.session_id = p_session_id;
-        RETURN;
-    END IF;
-
-    CASE p_runner_fact
-        WHEN 'completed' THEN
-            v_status := 'completed';
-            v_termination_reason := 'completed_ok';
-        WHEN 'closed' THEN
-            v_status := 'interrupted';
-            v_termination_reason := 'killed';
-        WHEN 'failed' THEN
-            v_status := 'error';
-            v_termination_reason := 'error_aborted';
-        WHEN 'reaped' THEN
-            v_status := 'error';
-            v_termination_reason := 'error_aborted';
-        ELSE
-            RAISE EXCEPTION 'unsupported runner terminal fact: %', p_runner_fact;
-    END CASE;
-
-    RETURN QUERY
-    SELECT *
-      FROM session_apply_terminal_transition(
-          p_session_id,
-          v_status,
-          v_termination_reason,
-          p_termination_detail,
-          p_review_state,
-          p_last_assistant_text,
-          p_terminal_event_id,
-          p_updated_at
-      );
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_retire_terminal_execution_ownership(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_manifest_id              TEXT,
-    p_registration_id          TEXT,
-    p_pid                      INTEGER,
-    p_start_identity           TEXT,
-    p_execution_command_id     TEXT,
-    p_runner_fact              TEXT,
-    p_retired_at               TIMESTAMPTZ
-) RETURNS BOOLEAN LANGUAGE plpgsql AS $$
-DECLARE
-    v_row_count INTEGER;
-BEGIN
-    IF p_ownership_generation IS NULL OR p_ownership_generation <= 0 THEN
-        RAISE EXCEPTION 'ownership generation must be positive';
-    END IF;
-    IF p_manifest_id IS NULL OR p_manifest_id = ''
-       OR p_registration_id IS NULL OR p_registration_id = ''
-       OR p_pid IS NULL OR p_pid <= 0
-       OR p_start_identity IS NULL OR p_start_identity = ''
-       OR p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
-        RAISE EXCEPTION 'terminal ownership retirement requires complete identity';
-    END IF;
-    IF p_runner_fact NOT IN ('completed', 'failed', 'reaped', 'closed') THEN
-        RAISE EXCEPTION 'unsupported runner terminal fact: %', p_runner_fact;
-    END IF;
-    IF p_retired_at IS NULL THEN
-        RAISE EXCEPTION 'terminal ownership retirement timestamp is required';
-    END IF;
-
-    UPDATE session_execution_ownerships AS ownership
-       SET phase = 'terminal',
-           runner_fact = p_runner_fact,
-           terminal_at = p_retired_at,
-           reservation_expires_at = NULL,
-           failure_reason = NULL
-     WHERE ownership.session_id = p_session_id
-       AND ownership.ownership_generation = p_ownership_generation
-       AND ownership.manifest_id = p_manifest_id
-       AND ownership.registration_id = p_registration_id
-       AND ownership.pid = p_pid
-       AND ownership.start_identity = p_start_identity
-       AND ownership.execution_command_id = p_execution_command_id
-       AND ownership.phase IN ('identity_proven', 'active');
-    GET DIAGNOSTICS v_row_count = ROW_COUNT;
-    RETURN v_row_count = 1;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_retire_recorded_terminal_execution_identity(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_manifest_id              TEXT,
-    p_runtime_env_identity     TEXT,
-    p_registration_id          TEXT,
-    p_pid                      INTEGER,
-    p_start_identity           TEXT,
-    p_execution_command_id     TEXT,
-    p_terminal_event_id        INTEGER
-) RETURNS BOOLEAN LANGUAGE plpgsql AS $$
-DECLARE
-    v_row_count INTEGER;
-    v_already_retired BOOLEAN;
-BEGIN
-    IF p_ownership_generation IS NULL OR p_ownership_generation <= 0 THEN
-        RAISE EXCEPTION 'ownership generation must be positive';
-    END IF;
-    IF p_manifest_id IS NULL OR p_manifest_id = ''
-       OR p_runtime_env_identity IS NULL OR p_runtime_env_identity = ''
-       OR p_registration_id IS NULL OR p_registration_id = ''
-       OR p_pid IS NULL OR p_pid <= 0
-       OR p_start_identity IS NULL OR p_start_identity = ''
-       OR p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
-        RAISE EXCEPTION 'terminal execution retirement requires complete identity';
-    END IF;
-    IF p_terminal_event_id IS NULL OR p_terminal_event_id <= 0 THEN
-        RAISE EXCEPTION 'terminal execution retirement requires a terminal receipt';
-    END IF;
-
-    UPDATE sessions AS session
-       SET execution_manifest_id = NULL,
-           execution_runtime_env_identity = NULL,
-           execution_registration_id = NULL,
-           execution_pid = NULL,
-           execution_start_identity = NULL,
-           execution_command_id = NULL,
-           execution_lease_expires_at = NULL
-     WHERE session.session_id = p_session_id
-       AND session.status IN ('completed', 'error', 'interrupted')
-       AND session.termination_event_id = p_terminal_event_id
-       AND session.execution_generation = p_ownership_generation
-       AND session.execution_manifest_id = p_manifest_id
-       AND session.execution_runtime_env_identity = p_runtime_env_identity
-       AND session.execution_registration_id = p_registration_id
-       AND session.execution_pid = p_pid
-       AND session.execution_start_identity = p_start_identity
-       AND session.execution_command_id = p_execution_command_id;
-    GET DIAGNOSTICS v_row_count = ROW_COUNT;
-    IF v_row_count = 1 THEN
-        RETURN TRUE;
-    END IF;
-
-    SELECT EXISTS (
-        SELECT 1
-          FROM sessions AS session
-         WHERE session.session_id = p_session_id
-           AND session.status IN ('completed', 'error', 'interrupted')
-           AND session.termination_event_id = p_terminal_event_id
-           AND session.execution_generation = p_ownership_generation
-           AND session.execution_manifest_id IS NULL
-           AND session.execution_runtime_env_identity IS NULL
-           AND session.execution_registration_id IS NULL
-           AND session.execution_pid IS NULL
-           AND session.execution_start_identity IS NULL
-           AND session.execution_command_id IS NULL
-           AND session.execution_lease_expires_at IS NULL
-    ) INTO v_already_retired;
-    RETURN v_already_retired;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_reconcile_recorded_runner_terminal_fact(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_manifest_id              TEXT,
-    p_runtime_env_identity     TEXT,
-    p_registration_id          TEXT,
-    p_pid                      INTEGER,
-    p_start_identity           TEXT,
-    p_execution_command_id     TEXT,
-    p_terminal_event_id        INTEGER,
-    p_runner_fact              TEXT,
-    p_termination_detail       TEXT,
-    p_review_state             TEXT,
-    p_last_assistant_text      TEXT,
-    p_updated_at               TIMESTAMPTZ
-) RETURNS TABLE (
-    applied                    BOOLEAN,
-    status                     TEXT,
-    termination_reason         TEXT,
-    termination_detail         TEXT,
-    review_state               TEXT,
-    last_assistant_text        TEXT,
-    termination_event_id       INTEGER,
-    updated_at                 TIMESTAMPTZ,
-    last_event_id              INTEGER
-) LANGUAGE plpgsql AS $$
-DECLARE
-    v_row_count INTEGER := 0;
-    v_status TEXT;
-    v_termination_reason TEXT;
-BEGIN
-    IF p_ownership_generation IS NULL OR p_ownership_generation <= 0 THEN
-        RAISE EXCEPTION 'ownership generation must be positive';
-    END IF;
-    IF p_manifest_id IS NULL OR p_manifest_id = ''
-       OR p_runtime_env_identity IS NULL OR p_runtime_env_identity = ''
-       OR p_registration_id IS NULL OR p_registration_id = ''
-       OR p_pid IS NULL OR p_pid <= 0
-       OR p_start_identity IS NULL OR p_start_identity = ''
-       OR p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
-        RAISE EXCEPTION 'recorded terminal reconciliation requires complete identity';
-    END IF;
-    IF p_terminal_event_id IS NULL OR p_terminal_event_id <= 0 THEN
-        RAISE EXCEPTION 'recorded terminal reconciliation requires a terminal receipt';
-    END IF;
-    IF p_review_state NOT IN ('not_required', 'needs_review', 'acknowledged') THEN
-        RAISE EXCEPTION 'unsupported review state: %', p_review_state;
-    END IF;
-    IF p_updated_at IS NULL THEN
-        RAISE EXCEPTION 'recorded terminal reconciliation timestamp is required';
-    END IF;
-
-    CASE p_runner_fact
-        WHEN 'completed' THEN
-            v_status := 'completed';
-            v_termination_reason := 'completed_ok';
-        WHEN 'closed' THEN
-            v_status := 'interrupted';
-            v_termination_reason := 'killed';
-        WHEN 'failed' THEN
-            v_status := 'error';
-            v_termination_reason := 'error_aborted';
-        WHEN 'reaped' THEN
-            v_status := 'error';
-            v_termination_reason := 'error_aborted';
-        ELSE
-            RAISE EXCEPTION 'unsupported runner terminal fact: %', p_runner_fact;
-    END CASE;
-
-    UPDATE sessions AS session
-       SET status = v_status,
-           termination_reason = v_termination_reason,
-           termination_detail = p_termination_detail,
-           review_state = p_review_state,
-           last_assistant_text = p_last_assistant_text,
-           execution_manifest_id = NULL,
-           execution_runtime_env_identity = NULL,
-           execution_registration_id = NULL,
-           execution_pid = NULL,
-           execution_start_identity = NULL,
-           execution_command_id = NULL,
-           execution_lease_expires_at = NULL,
-           updated_at = p_updated_at
-     WHERE session.session_id = p_session_id
-       AND session.status NOT IN ('completed', 'error', 'interrupted')
-       AND session.termination_event_id = p_terminal_event_id
-       AND session.execution_generation = p_ownership_generation
-       AND session.execution_manifest_id = p_manifest_id
-       AND session.execution_runtime_env_identity = p_runtime_env_identity
-       AND session.execution_registration_id = p_registration_id
-       AND session.execution_pid = p_pid
-       AND session.execution_start_identity = p_start_identity
-       AND session.execution_command_id = p_execution_command_id
-       AND EXISTS (
-           SELECT 1
-             FROM events AS event
-            WHERE event.session_id = p_session_id
-              AND event.id = p_terminal_event_id
-              AND event.event_type = 'session_ended'
-       );
-    GET DIAGNOSTICS v_row_count = ROW_COUNT;
-
-    RETURN QUERY
-    SELECT (
-               v_row_count = 1
-               OR (
-                   session.status IN ('completed', 'error', 'interrupted')
-                   AND session.termination_event_id = p_terminal_event_id
-                   AND session.execution_generation = p_ownership_generation
-                   AND session.execution_manifest_id IS NULL
-                   AND session.execution_runtime_env_identity IS NULL
-                   AND session.execution_registration_id IS NULL
-                   AND session.execution_pid IS NULL
-                   AND session.execution_start_identity IS NULL
-                   AND session.execution_command_id IS NULL
-                   AND session.execution_lease_expires_at IS NULL
-               )
-           ) AS applied,
-           session.status,
-           session.termination_reason,
-           session.termination_detail,
-           session.review_state,
-           session.last_assistant_text,
-           session.termination_event_id,
-           session.updated_at,
-           session.last_event_id
-      FROM sessions AS session
-     WHERE session.session_id = p_session_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_fail_execution_ownership(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_failure_reason           TEXT,
-    p_failed_at                TIMESTAMPTZ
-) RETURNS BOOLEAN LANGUAGE plpgsql AS $$
-DECLARE
-    v_row_count INTEGER;
-BEGIN
-    UPDATE session_execution_ownerships
-       SET phase = 'failed', failure_reason = p_failure_reason,
-           terminal_at = p_failed_at, reservation_expires_at = NULL
-     WHERE session_id = p_session_id
-       AND ownership_generation = p_ownership_generation
-       AND phase IN ('reserved', 'identity_proven');
-    GET DIAGNOSTICS v_row_count = ROW_COUNT;
-    RETURN v_row_count = 1;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_expire_dead_execution_owner(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_pid                      INTEGER,
-    p_start_identity           TEXT,
-    p_failure_reason           TEXT,
-    p_failed_at                TIMESTAMPTZ
-) RETURNS BOOLEAN LANGUAGE plpgsql AS $$
-DECLARE
-    v_row_count INTEGER;
-BEGIN
-    IF p_start_identity IS NULL OR p_start_identity = '' THEN
-        RAISE EXCEPTION 'dead owner start identity required';
-    END IF;
-
-    UPDATE session_execution_ownerships
-       SET phase = 'failed', failure_reason = p_failure_reason,
-           terminal_at = p_failed_at, reservation_expires_at = NULL
-     WHERE session_id = p_session_id
-       AND ownership_generation = p_ownership_generation
-       AND phase IN ('identity_proven', 'active')
-       AND pid = p_pid
-       AND start_identity = p_start_identity;
-    GET DIAGNOSTICS v_row_count = ROW_COUNT;
-    RETURN v_row_count = 1;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_backfill_execution_ownership(
-    p_session_id               TEXT,
-    p_first_manifest_id        TEXT,
-    p_first_registration_id    TEXT,
-    p_first_pid                INTEGER,
-    p_first_start_identity     TEXT,
-    p_first_execution_command_id TEXT,
-    p_first_observed_at        TIMESTAMPTZ,
-    p_second_manifest_id       TEXT,
-    p_second_registration_id   TEXT,
-    p_second_pid               INTEGER,
-    p_second_start_identity    TEXT,
-    p_second_execution_command_id TEXT,
-    p_second_observed_at       TIMESTAMPTZ,
-    p_evidence_hash            TEXT,
-    p_minimum_lease_interval_ms INTEGER,
-    p_probe_only               BOOLEAN
-) RETURNS TEXT LANGUAGE plpgsql AS $$
-DECLARE
-    v_generation BIGINT;
-    v_identity_complete BOOLEAN;
-    v_first_observation JSONB;
-    v_second_observation JSONB;
-BEGIN
-    PERFORM 1 FROM sessions
-     WHERE session_id = p_session_id AND status = 'running'
-     FOR UPDATE;
-    IF NOT FOUND THEN RETURN 'not_running'; END IF;
-    IF EXISTS (
-        SELECT 1 FROM session_execution_ownerships
-        WHERE session_id = p_session_id AND phase = 'active'
-    ) THEN RETURN 'already_owned'; END IF;
-
-    v_first_observation := jsonb_build_object(
-        'manifest_id', p_first_manifest_id,
-        'registration_id', p_first_registration_id,
-        'pid', p_first_pid,
-        'start_identity', p_first_start_identity,
-        'execution_command_id', p_first_execution_command_id
-    );
-    v_second_observation := jsonb_build_object(
-        'manifest_id', p_second_manifest_id,
-        'registration_id', p_second_registration_id,
-        'pid', p_second_pid,
-        'start_identity', p_second_start_identity,
-        'execution_command_id', p_second_execution_command_id
-    );
-    IF p_probe_only THEN RETURN 'observation_required'; END IF;
-
-    v_identity_complete := p_first_manifest_id IS NOT NULL
-      AND p_first_manifest_id <> ''
-      AND p_first_registration_id IS NOT NULL
-      AND p_first_registration_id <> ''
-      AND p_first_pid > 0
-      AND p_first_start_identity IS NOT NULL
-      AND p_first_start_identity <> ''
-      AND p_first_execution_command_id IS NOT NULL
-      AND p_first_execution_command_id <> ''
-      AND p_second_manifest_id IS NOT DISTINCT FROM p_first_manifest_id
-      AND p_second_registration_id IS NOT DISTINCT FROM p_first_registration_id
-      AND p_second_pid IS NOT DISTINCT FROM p_first_pid
-      AND p_second_start_identity IS NOT DISTINCT FROM p_first_start_identity
-      AND p_second_execution_command_id IS NOT DISTINCT FROM p_first_execution_command_id
-      AND p_evidence_hash ~ '^[0-9a-f]{64}$'
-      AND p_minimum_lease_interval_ms > 0
-      AND p_second_observed_at - p_first_observed_at
-          >= p_minimum_lease_interval_ms * INTERVAL '1 millisecond';
-    IF v_identity_complete THEN
-        SELECT COALESCE(MAX(ownership_generation), 0) + 1 INTO v_generation
-          FROM session_execution_ownerships WHERE session_id = p_session_id;
-        INSERT INTO session_execution_ownerships (
-            session_id, ownership_generation, owner_kind, manifest_id,
-            registration_id, pid, start_identity, execution_command_id,
-            phase, reserved_at, identity_proven_at, activated_at
-        ) VALUES (
-            p_session_id, v_generation, 'adopted_runner', p_second_manifest_id,
-            p_second_registration_id, p_second_pid, p_second_start_identity,
-            p_second_execution_command_id,
-            'active', p_first_observed_at, p_second_observed_at, p_second_observed_at
-        );
-        INSERT INTO session_execution_ownership_migration_audit (
-            session_id, action, manifest_id, registration_id, pid,
-            start_identity, execution_command_id, first_observed_at,
-            second_observed_at, evidence_hash, first_observation,
-            second_observation, detail
-        ) VALUES (
-            p_session_id, 'backfilled', p_second_manifest_id,
-            p_second_registration_id, p_second_pid, p_second_start_identity,
-            p_second_execution_command_id, p_first_observed_at, p_second_observed_at,
-            p_evidence_hash, v_first_observation, v_second_observation,
-            'stable identity observed across lease interval'
-        );
-        RETURN 'backfilled';
-    END IF;
-
-    UPDATE sessions
-       SET status = 'interrupted', termination_reason = 'unknown',
-           termination_detail = 'owner-null running migration could not prove a stable runner identity',
-           updated_at = NOW()
-     WHERE session_id = p_session_id AND status = 'running';
-    INSERT INTO session_execution_ownership_migration_audit (
-        session_id, action, manifest_id, registration_id, pid,
-        start_identity, execution_command_id, first_observed_at,
-        second_observed_at, evidence_hash, first_observation,
-        second_observation, detail
-    ) VALUES (
-        p_session_id, 'interrupted', p_second_manifest_id,
-        p_second_registration_id, p_second_pid, p_second_start_identity,
-        p_second_execution_command_id, p_first_observed_at, p_second_observed_at,
-        p_evidence_hash, v_first_observation, v_second_observation,
-        'two-scan identity mismatch or incomplete proof; session converged to interrupted'
-    );
-    RETURN 'interrupted';
-END;
-$$;
 
 ALTER TABLE session_deliveries
     ADD COLUMN IF NOT EXISTS aggregate_state TEXT NOT NULL DEFAULT 'pending',
@@ -5279,379 +4172,3 @@ CREATE INDEX IF NOT EXISTS idx_node_release_activation_receipts_node_generation
 
 CREATE INDEX IF NOT EXISTS idx_node_release_activation_receipts_manifest
     ON node_release_activation_receipts(manifest_id);
-
-ALTER TABLE session_execution_ownerships
-    ADD COLUMN IF NOT EXISTS runtime_env_identity TEXT;
-
-CREATE OR REPLACE FUNCTION session_reserve_execution_ownership_v2(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_owner_kind               TEXT,
-    p_manifest_id              TEXT,
-    p_runtime_env_identity     TEXT,
-    p_updated_at               TIMESTAMPTZ
-) RETURNS TABLE (
-    applied                    BOOLEAN,
-    ownership_generation       BIGINT,
-    status                     TEXT,
-    termination_reason         TEXT,
-    termination_detail         TEXT,
-    review_state               TEXT,
-    last_assistant_text        TEXT,
-    termination_event_id       INTEGER,
-    updated_at                 TIMESTAMPTZ,
-    last_event_id              INTEGER
-) LANGUAGE plpgsql AS $$
-DECLARE
-    v_application RECORD;
-    v_row_count INTEGER;
-BEGIN
-    IF p_runtime_env_identity IS NULL OR p_runtime_env_identity = '' THEN
-        RAISE EXCEPTION 'runtime env identity required';
-    END IF;
-
-    SELECT * INTO v_application
-      FROM session_reserve_execution_ownership(
-          p_session_id,
-          p_ownership_generation,
-          p_owner_kind,
-          p_manifest_id,
-          p_updated_at
-      );
-
-    IF v_application.applied
-       AND v_application.ownership_generation = p_ownership_generation THEN
-        UPDATE session_execution_ownerships AS ownership
-           SET runtime_env_identity = p_runtime_env_identity
-         WHERE ownership.session_id = p_session_id
-           AND ownership.ownership_generation = p_ownership_generation
-           AND ownership.manifest_id = p_manifest_id
-           AND (
-               ownership.runtime_env_identity IS NULL
-               OR ownership.runtime_env_identity = p_runtime_env_identity
-           );
-        GET DIAGNOSTICS v_row_count = ROW_COUNT;
-        IF v_row_count <> 1 THEN
-            RAISE EXCEPTION 'execution runtime env identity conflict';
-        END IF;
-    END IF;
-
-    RETURN QUERY SELECT
-        v_application.applied,
-        v_application.ownership_generation,
-        v_application.status,
-        v_application.termination_reason,
-        v_application.termination_detail,
-        v_application.review_state,
-        v_application.last_assistant_text,
-        v_application.termination_event_id,
-        v_application.updated_at,
-        v_application.last_event_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_reserve_execution_adoption_v2(
-    p_session_id               TEXT,
-    p_ownership_generation     BIGINT,
-    p_manifest_id              TEXT,
-    p_runtime_env_identity     TEXT,
-    p_previous_registration_id TEXT,
-    p_pid                      INTEGER,
-    p_start_identity           TEXT,
-    p_execution_command_id     TEXT,
-    p_updated_at               TIMESTAMPTZ
-) RETURNS TABLE (
-    applied                    BOOLEAN,
-    status                     TEXT,
-    termination_reason         TEXT,
-    termination_detail         TEXT,
-    review_state               TEXT,
-    last_assistant_text        TEXT,
-    termination_event_id       INTEGER,
-    updated_at                 TIMESTAMPTZ,
-    last_event_id              INTEGER
-) LANGUAGE plpgsql AS $$
-DECLARE
-    v_application RECORD;
-    v_row_count INTEGER;
-BEGIN
-    IF p_runtime_env_identity IS NULL OR p_runtime_env_identity = '' THEN
-        RAISE EXCEPTION 'runtime env identity required';
-    END IF;
-
-    SELECT * INTO v_application
-      FROM session_reserve_execution_adoption(
-          p_session_id,
-          p_ownership_generation,
-          p_manifest_id,
-          p_previous_registration_id,
-          p_pid,
-          p_start_identity,
-          p_execution_command_id,
-          p_updated_at
-      );
-
-    IF v_application.applied THEN
-        UPDATE session_execution_ownerships AS ownership
-           SET runtime_env_identity = p_runtime_env_identity
-         WHERE ownership.session_id = p_session_id
-           AND ownership.ownership_generation = p_ownership_generation
-           AND ownership.manifest_id = p_manifest_id
-           AND (
-               ownership.runtime_env_identity IS NULL
-               OR ownership.runtime_env_identity = p_runtime_env_identity
-           );
-        GET DIAGNOSTICS v_row_count = ROW_COUNT;
-        IF v_row_count <> 1 THEN
-            RAISE EXCEPTION 'adopted execution runtime env identity conflict';
-        END IF;
-    END IF;
-
-    RETURN QUERY SELECT
-        v_application.applied,
-        v_application.status,
-        v_application.termination_reason,
-        v_application.termination_detail,
-        v_application.review_state,
-        v_application.last_assistant_text,
-        v_application.termination_event_id,
-        v_application.updated_at,
-        v_application.last_event_id;
-END;
-$$;
-
--- Wave 1 compatibility projection. The runtime no longer elects an execution
--- owner or evaluates a lease. This legacy function name and the all-or-none
--- columns remain until Wave 3, while each explicit execution start records one
--- fresh generation and its exact runner identity in a single row update.
-CREATE OR REPLACE FUNCTION session_acquire_execution_ownership(
-    p_session_id TEXT, p_manifest_id TEXT, p_runtime_env_identity TEXT,
-    p_registration_id TEXT, p_pid INTEGER, p_start_identity TEXT,
-    p_execution_command_id TEXT, p_lease_expires_at TIMESTAMPTZ,
-    p_review_state TEXT, p_expected_terminal_event_id INTEGER,
-    p_terminal_resume BOOLEAN, p_acquired_at TIMESTAMPTZ
-) RETURNS TABLE (
-    applied BOOLEAN, execution_generation BIGINT,
-    execution_lease_expires_at TIMESTAMPTZ, status TEXT,
-    termination_reason TEXT, termination_detail TEXT, review_state TEXT,
-    last_assistant_text TEXT, termination_event_id INTEGER,
-    updated_at TIMESTAMPTZ, last_event_id INTEGER
-) LANGUAGE plpgsql AS $$
-DECLARE
-    v_session sessions%ROWTYPE;
-    v_row_count INTEGER := 0;
-BEGIN
-    IF p_manifest_id IS NULL OR p_manifest_id = ''
-       OR p_runtime_env_identity IS NULL OR p_runtime_env_identity = ''
-       OR p_registration_id IS NULL OR p_registration_id = ''
-       OR p_pid IS NULL OR p_pid <= 0
-       OR p_start_identity IS NULL OR p_start_identity = ''
-       OR p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
-        RAISE EXCEPTION 'complete execution identity required';
-    END IF;
-    IF p_review_state NOT IN ('not_required', 'needs_review', 'acknowledged') THEN
-        RAISE EXCEPTION 'unsupported review state: %', p_review_state;
-    END IF;
-
-    SELECT * INTO v_session FROM sessions WHERE session_id = p_session_id FOR UPDATE;
-    IF NOT FOUND THEN RAISE EXCEPTION 'session not found: %', p_session_id; END IF;
-
-    IF p_terminal_resume THEN
-        UPDATE sessions AS session SET
-            status = 'running', termination_reason = NULL,
-            termination_detail = NULL, termination_event_id = NULL,
-            last_assistant_text = NULL, review_state = p_review_state,
-            execution_generation = session.execution_generation + 1,
-            execution_manifest_id = p_manifest_id,
-            execution_runtime_env_identity = p_runtime_env_identity,
-            execution_registration_id = p_registration_id,
-            execution_pid = p_pid, execution_start_identity = p_start_identity,
-            execution_command_id = p_execution_command_id,
-            execution_lease_expires_at = p_acquired_at,
-            updated_at = p_acquired_at
-         WHERE session.session_id = p_session_id
-           AND session.status IN ('completed', 'error', 'interrupted')
-           AND session.termination_event_id IS NOT DISTINCT FROM p_expected_terminal_event_id;
-    ELSE
-        UPDATE sessions AS session SET
-            status = 'running', termination_reason = NULL,
-            termination_detail = NULL, review_state = p_review_state,
-            execution_generation = session.execution_generation + 1,
-            execution_manifest_id = p_manifest_id,
-            execution_runtime_env_identity = p_runtime_env_identity,
-            execution_registration_id = p_registration_id,
-            execution_pid = p_pid, execution_start_identity = p_start_identity,
-            execution_command_id = p_execution_command_id,
-            execution_lease_expires_at = p_acquired_at,
-            updated_at = p_acquired_at
-         WHERE session.session_id = p_session_id
-           AND session.status NOT IN ('completed', 'error', 'interrupted');
-    END IF;
-    GET DIAGNOSTICS v_row_count = ROW_COUNT;
-
-    IF v_row_count = 1 AND p_terminal_resume THEN
-        UPDATE session_deliveries SET
-            state = 'superseded', aggregate_state = 'consumed',
-            consumed_at = p_acquired_at,
-            consumed_reason = 'superseded by terminal resume',
-            superseded_at = p_acquired_at,
-            superseded_terminal_revision = p_expected_terminal_event_id::text,
-            lease_owner = NULL, lease_expires_at = NULL,
-            updated_at = p_acquired_at
-         WHERE source_session_id = p_session_id
-           AND intent = 'completion_notification'
-           AND source = 'completion_notifier'
-           AND producer_kind = 'child_session'
-           AND producer_terminal_revision = p_expected_terminal_event_id::text
-           AND state IN ('pending', 'claimed', 'dispatching', 'queued');
-    END IF;
-
-    RETURN QUERY SELECT v_row_count = 1, session.execution_generation,
-        session.execution_lease_expires_at, session.status,
-        session.termination_reason, session.termination_detail,
-        session.review_state, session.last_assistant_text,
-        session.termination_event_id, session.updated_at, session.last_event_id
-      FROM sessions AS session WHERE session.session_id = p_session_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_reserve_execution_ownership(
-    p_session_id TEXT, p_ownership_generation BIGINT, p_owner_kind TEXT,
-    p_manifest_id TEXT, p_updated_at TIMESTAMPTZ
-) RETURNS TABLE (
-    applied BOOLEAN, ownership_generation BIGINT, status TEXT,
-    termination_reason TEXT, termination_detail TEXT, review_state TEXT,
-    last_assistant_text TEXT, termination_event_id INTEGER,
-    updated_at TIMESTAMPTZ, last_event_id INTEGER
-) LANGUAGE plpgsql AS $$
-BEGIN
-    PERFORM 1 FROM sessions WHERE session_id = p_session_id FOR UPDATE;
-    IF NOT FOUND THEN RAISE EXCEPTION 'session not found: %', p_session_id; END IF;
-    RETURN QUERY SELECT FALSE,
-        COALESCE(ownership.ownership_generation, p_ownership_generation),
-        session.status, session.termination_reason, session.termination_detail,
-        session.review_state, session.last_assistant_text,
-        session.termination_event_id, session.updated_at, session.last_event_id
-      FROM sessions AS session
-      LEFT JOIN LATERAL (
-          SELECT candidate.ownership_generation
-            FROM session_execution_ownerships AS candidate
-           WHERE candidate.session_id = session.session_id
-             AND candidate.phase IN ('reserved', 'identity_proven', 'active')
-           ORDER BY candidate.ownership_generation DESC LIMIT 1
-      ) AS ownership ON TRUE
-     WHERE session.session_id = p_session_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_reserve_execution_adoption(
-    p_session_id TEXT, p_ownership_generation BIGINT, p_manifest_id TEXT,
-    p_previous_registration_id TEXT, p_pid INTEGER, p_start_identity TEXT,
-    p_execution_command_id TEXT, p_updated_at TIMESTAMPTZ
-) RETURNS TABLE (
-    applied BOOLEAN, status TEXT, termination_reason TEXT,
-    termination_detail TEXT, review_state TEXT, last_assistant_text TEXT,
-    termination_event_id INTEGER, updated_at TIMESTAMPTZ,
-    last_event_id INTEGER
-) LANGUAGE plpgsql AS $$
-BEGIN
-    PERFORM 1 FROM sessions WHERE session_id = p_session_id FOR UPDATE;
-    IF NOT FOUND THEN RAISE EXCEPTION 'session not found: %', p_session_id; END IF;
-    RETURN QUERY SELECT FALSE, session.status, session.termination_reason,
-        session.termination_detail, session.review_state,
-        session.last_assistant_text, session.termination_event_id,
-        session.updated_at, session.last_event_id
-      FROM sessions AS session WHERE session.session_id = p_session_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION session_backfill_execution_ownership_v2(
-    p_session_id                 TEXT,
-    p_first_manifest_id          TEXT,
-    p_first_runtime_env_identity TEXT,
-    p_first_registration_id      TEXT,
-    p_first_pid                  INTEGER,
-    p_first_start_identity       TEXT,
-    p_first_execution_command_id TEXT,
-    p_first_observed_at          TIMESTAMPTZ,
-    p_second_manifest_id         TEXT,
-    p_second_runtime_env_identity TEXT,
-    p_second_registration_id     TEXT,
-    p_second_pid                 INTEGER,
-    p_second_start_identity      TEXT,
-    p_second_execution_command_id TEXT,
-    p_second_observed_at         TIMESTAMPTZ,
-    p_evidence_hash              TEXT,
-    p_minimum_lease_interval_ms  INTEGER,
-    p_probe_only                 BOOLEAN
-) RETURNS TEXT LANGUAGE plpgsql AS $$
-DECLARE
-    v_action TEXT;
-    v_row_count INTEGER;
-BEGIN
-    -- Only an observation that names a runtime can be required to identify it.
-    -- The owner-null reconciler exists to report that *nothing* is running, and
-    -- says so with an entirely empty observation; `session_backfill_execution_
-    -- ownership` treats that as a first-class input and takes its incomplete
-    -- identity branch. Requiring the identity unconditionally rejected exactly
-    -- that evidence, so from migration 070 onward the reconciler threw on every
-    -- real sample -- twenty-one times in one lab dead-owner run -- and an
-    -- owner-null running session had nothing left that could converge it.
-    IF (
-        p_second_manifest_id IS NOT NULL
-        OR p_second_registration_id IS NOT NULL
-        OR p_second_pid IS NOT NULL
-        OR p_second_start_identity IS NOT NULL
-        OR p_second_execution_command_id IS NOT NULL
-    ) AND (
-        p_second_runtime_env_identity IS NULL OR p_second_runtime_env_identity = ''
-    ) THEN
-        RAISE EXCEPTION 'second runtime env identity required';
-    END IF;
-    IF p_first_runtime_env_identity IS NOT NULL
-       AND p_first_runtime_env_identity <> p_second_runtime_env_identity THEN
-        RAISE EXCEPTION 'backfill runtime env identity changed across observations';
-    END IF;
-
-    SELECT session_backfill_execution_ownership(
-        p_session_id,
-        p_first_manifest_id,
-        p_first_registration_id,
-        p_first_pid,
-        p_first_start_identity,
-        p_first_execution_command_id,
-        p_first_observed_at,
-        p_second_manifest_id,
-        p_second_registration_id,
-        p_second_pid,
-        p_second_start_identity,
-        p_second_execution_command_id,
-        p_second_observed_at,
-        p_evidence_hash,
-        p_minimum_lease_interval_ms,
-        p_probe_only
-    ) INTO v_action;
-
-    IF v_action = 'backfilled' THEN
-        UPDATE session_execution_ownerships AS ownership
-           SET runtime_env_identity = p_second_runtime_env_identity
-         WHERE ownership.session_id = p_session_id
-           AND ownership.manifest_id = p_second_manifest_id
-           AND ownership.registration_id = p_second_registration_id
-           AND ownership.pid = p_second_pid
-           AND ownership.start_identity = p_second_start_identity
-           AND ownership.execution_command_id = p_second_execution_command_id
-           AND ownership.phase = 'active'
-           AND (
-               ownership.runtime_env_identity IS NULL
-               OR ownership.runtime_env_identity = p_second_runtime_env_identity
-           );
-        GET DIAGNOSTICS v_row_count = ROW_COUNT;
-        IF v_row_count <> 1 THEN
-            RAISE EXCEPTION 'backfilled execution runtime env identity conflict';
-        END IF;
-    END IF;
-
-    RETURN v_action;
-END;
-$$;

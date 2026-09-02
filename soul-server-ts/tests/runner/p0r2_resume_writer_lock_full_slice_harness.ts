@@ -95,12 +95,7 @@ export interface P0R2Observation {
   successorExecution: ExecutionObservation | null;
   successorActivation: {
     status: string;
-    executionGeneration: number;
-    manifestId: string | null;
-    runtimeEnvIdentity: string | null;
     registrationId: string | null;
-    pid: number | null;
-    startIdentity: string | null;
     commandId: string | null;
     registrationPid: number | null;
     registrationStartIdentity: string | null;
@@ -118,21 +113,15 @@ export interface P0R2Observation {
   };
   session: {
     status: string;
-    executionGeneration: number;
-    manifestId: string | null;
     registrationId: string | null;
-    pid: number | null;
-    startIdentity: string | null;
     commandId: string | null;
     terminationEventId: number | null;
   };
-  ownership: {
-    firstAcquire: OwnershipActivationObservation;
-    firstRelease: OwnershipReleaseObservation;
-    successorAcquireEventId: number;
-    finalRelease: OwnershipReleaseObservation;
-    legacyRowCount: number;
-    legacyOpenRowCount: number;
+  registration: {
+    firstRecord: RegistrationActivationObservation;
+    firstClear: RegistrationClearObservation;
+    successorRecordEventId: number;
+    finalClear: RegistrationClearObservation;
   };
   errorEventCount: number;
   task: {
@@ -150,29 +139,23 @@ interface ExecutionObservation {
   params: Record<string, unknown>;
 }
 
-interface OwnershipActivationObservation {
+interface RegistrationActivationObservation {
   status: string;
-  executionGeneration: number;
-  manifestId: string | null;
-  runtimeEnvIdentity: string | null;
   registrationId: string | null;
-  pid: number | null;
-  startIdentity: string | null;
   commandId: string | null;
 }
 
-interface OwnershipReleaseObservation {
+interface RegistrationClearObservation {
   status: string;
-  executionGeneration: number;
   terminationEventId: number;
   terminationCreatedAt: string;
-  executionIdentityCleared: boolean;
+  registrationCleared: boolean;
 }
 
 interface InitialExecutionObservation {
   execution: ExecutionObservation;
-  activation: OwnershipActivationObservation;
-  release: OwnershipReleaseObservation;
+  activation: RegistrationActivationObservation;
+  clear: RegistrationClearObservation;
 }
 
 interface SliceRuntime {
@@ -186,9 +169,8 @@ export interface P0R2EntryObservation {
   firstExecution: ExecutionObservation;
   persistedInitialReplyCount: number;
   sessionStatus: string;
-  executionGeneration: number;
-  executionIdentityCleared: boolean;
-  ownershipAcquireCount: number;
+  registrationCleared: boolean;
+  registrationRecordCount: number;
   taskStatus: string;
   runnerAttached: boolean;
   executionPromiseAttached: boolean;
@@ -377,19 +359,6 @@ export class P0R2FullSliceHarness {
         RUNNER_E2E_CONTROL_DIR: controlDirectory,
         RUNNER_E2E_P0R2_SCENARIO: "1",
       }),
-      renewExecutionOwnership: async (task, renewedAt) => {
-        const ownership = task.executionOwnership;
-        if (!ownership) throw new Error("P0R2 ownership unavailable for renewal");
-        const application = await persistence.renewExecutionOwnershipAndWaitForApplication(
-          task.agentSessionId,
-          {
-            ...ownership,
-            leaseExpiresAt: new Date(renewedAt.getTime() + env.SOUL_RUNNER_LEASE_TIMEOUT_MS),
-            updatedAt: renewedAt,
-          },
-        );
-        return application.applied;
-      },
     });
     if (!composition) throw new Error("P0R2 runner composition unexpectedly disabled");
     const releases = await readdir(releasesDirectory);
@@ -423,7 +392,7 @@ export class P0R2FullSliceHarness {
     const sse = await connectSessionSse(
       this.historyApp.listeningOrigin,
       P0R2_SESSION_ID,
-      initial.release.terminationEventId,
+      initial.clear.terminationEventId,
     );
     let handoff: P0R2Observation["handoff"] | undefined;
     const successor = { promise: undefined as Promise<void> | undefined };
@@ -477,28 +446,16 @@ export class P0R2FullSliceHarness {
         const registration = await readRunnerRegistrationIdentity(paths.sessionDirectory);
         const [activeSession] = await this.sql<Array<{
           status: string;
-          execution_generation: number;
-          execution_manifest_id: string | null;
-          execution_runtime_env_identity: string | null;
           execution_registration_id: string | null;
-          execution_pid: number | null;
-          execution_start_identity: string | null;
           execution_command_id: string | null;
         }>>`
-          SELECT status, execution_generation::int, execution_manifest_id,
-                 execution_runtime_env_identity, execution_registration_id,
-                 execution_pid, execution_start_identity, execution_command_id
+          SELECT status, execution_registration_id, execution_command_id
           FROM sessions WHERE session_id = ${P0R2_SESSION_ID}
         `;
         if (!activeSession) throw new Error("P0R2 successor activation row missing");
         successorActivation = {
           status: activeSession.status,
-          executionGeneration: Number(activeSession.execution_generation),
-          manifestId: activeSession.execution_manifest_id,
-          runtimeEnvIdentity: activeSession.execution_runtime_env_identity,
           registrationId: activeSession.execution_registration_id,
-          pid: activeSession.execution_pid,
-          startIdentity: activeSession.execution_start_identity,
           commandId: activeSession.execution_command_id,
           registrationPid: registration?.pid ?? null,
           registrationStartIdentity: registration?.startIdentity ?? null,
@@ -536,43 +493,31 @@ export class P0R2FullSliceHarness {
     if (!delivery) throw new Error("P0R2 delivery row missing");
     const [session] = await this.sql<Array<{
       status: string;
-      execution_generation: number;
-      execution_manifest_id: string | null;
       execution_registration_id: string | null;
-      execution_pid: number | null;
-      execution_start_identity: string | null;
       execution_command_id: string | null;
       termination_event_id: number | null;
     }>>`
-      SELECT status, execution_generation::int, execution_manifest_id,
-             execution_registration_id, execution_pid, execution_start_identity,
-             execution_command_id, termination_event_id
+      SELECT status, execution_registration_id, execution_command_id,
+             termination_event_id
       FROM sessions WHERE session_id = ${P0R2_SESSION_ID}
     `;
     if (!session) throw new Error("P0R2 session row missing");
-    const finalRelease = await this.readReleasedOwnership(2);
-    const acquireEvents = await this.sql<Array<{ id: number }>>`
+    const finalClear = await this.readClearedRegistration(
+      initial.clear.terminationEventId,
+    );
+    const registrationEvents = await this.sql<Array<{ id: number }>>`
       SELECT id FROM events
       WHERE session_id = ${P0R2_SESSION_ID}
         AND event_type = 'metadata'
-        AND payload->>'metadata_type' = 'execution_ownership_transition'
-        AND payload->'value'->>'phase' = 'execution_acquire'
+        AND payload->>'metadata_type' = 'execution_registration'
+        AND payload->'value'->>'phase' = 'execution_registration'
       ORDER BY id ASC
     `;
-    if (acquireEvents.length !== 2 || !acquireEvents[1]) {
-      throw new Error(`P0R2 expected two acquire events, got ${acquireEvents.length}`);
+    if (registrationEvents.length !== 2 || !registrationEvents[1]) {
+      throw new Error(
+        `P0R2 expected two registration events, got ${registrationEvents.length}`,
+      );
     }
-    const [legacy] = await this.sql<Array<{
-      row_count: number;
-      open_count: number;
-    }>>`
-      SELECT COUNT(*)::int AS row_count,
-             COUNT(*) FILTER (
-               WHERE phase IN ('reserved', 'identity_proven', 'active')
-             )::int AS open_count
-      FROM session_execution_ownerships
-      WHERE session_id = ${P0R2_SESSION_ID}
-    `;
     const [replyCount] = await this.sql<Array<{ count: number }>>`
       SELECT COUNT(*)::int AS count FROM events
       WHERE session_id = ${P0R2_SESSION_ID}
@@ -606,21 +551,15 @@ export class P0R2FullSliceHarness {
       },
       session: {
         status: session.status,
-        executionGeneration: Number(session.execution_generation),
-        manifestId: session.execution_manifest_id,
         registrationId: session.execution_registration_id,
-        pid: session.execution_pid,
-        startIdentity: session.execution_start_identity,
         commandId: session.execution_command_id,
         terminationEventId: session.termination_event_id,
       },
-      ownership: {
-        firstAcquire: initial.activation,
-        firstRelease: initial.release,
-        successorAcquireEventId: Number(acquireEvents[1].id),
-        finalRelease,
-        legacyRowCount: Number(legacy?.row_count ?? -1),
-        legacyOpenRowCount: Number(legacy?.open_count ?? -1),
+      registration: {
+        firstRecord: initial.activation,
+        firstClear: initial.clear,
+        successorRecordEventId: Number(registrationEvents[1].id),
+        finalClear,
       },
       errorEventCount: Number(errors?.count ?? -1),
       task: {
@@ -640,15 +579,10 @@ export class P0R2FullSliceHarness {
     let replyCount = 0;
     let session: {
       status: string;
-      execution_generation: number;
-      execution_manifest_id: string | null;
-      execution_runtime_env_identity: string | null;
       execution_registration_id: string | null;
-      execution_pid: number | null;
-      execution_start_identity: string | null;
       execution_command_id: string | null;
     } | undefined;
-    let acquireCount = 0;
+    let registrationCount = 0;
     await waitFor(async () => {
       const [reply] = await this.sql<Array<{ count: number }>>`
         SELECT COUNT(*)::int AS count FROM events
@@ -658,49 +592,38 @@ export class P0R2FullSliceHarness {
       `;
       [session] = await this.sql<Array<{
         status: string;
-        execution_generation: number;
-        execution_manifest_id: string | null;
-        execution_runtime_env_identity: string | null;
         execution_registration_id: string | null;
-        execution_pid: number | null;
-        execution_start_identity: string | null;
         execution_command_id: string | null;
       }>>`
-        SELECT status, execution_generation::int, execution_manifest_id,
-               execution_runtime_env_identity, execution_registration_id,
-               execution_pid, execution_start_identity, execution_command_id
+        SELECT status, execution_registration_id, execution_command_id
         FROM sessions WHERE session_id = ${P0R2_SESSION_ID}
       `;
-      const [ownership] = await this.sql<Array<{ count: number }>>`
+      const [registration] = await this.sql<Array<{ count: number }>>`
         SELECT COUNT(*)::int AS count FROM events
         WHERE session_id = ${P0R2_SESSION_ID}
           AND event_type = 'metadata'
-          AND payload->>'metadata_type' = 'execution_ownership_transition'
-          AND payload->'value'->>'phase' = 'execution_acquire'
+          AND payload->>'metadata_type' = 'execution_registration'
+          AND payload->'value'->>'phase' = 'execution_registration'
       `;
       replyCount = reply?.count ?? 0;
-      acquireCount = ownership?.count ?? 0;
+      registrationCount = registration?.count ?? 0;
       return replyCount === 1
         && session?.status === "completed"
-        && session.execution_generation === 1
-        && acquireCount === 1;
+        && session.execution_registration_id === null
+        && session.execution_command_id === null
+        && registrationCount === 1;
     });
     if (!session) throw new Error("P0R2 entry persistence missing");
-    const executionIdentityCleared = [
-      session.execution_manifest_id,
-      session.execution_runtime_env_identity,
+    const registrationCleared = [
       session.execution_registration_id,
-      session.execution_pid,
-      session.execution_start_identity,
       session.execution_command_id,
     ].every((value) => value === null);
     return {
       firstExecution,
       persistedInitialReplyCount: replyCount,
       sessionStatus: session.status,
-      executionGeneration: Number(session.execution_generation),
-      executionIdentityCleared,
-      ownershipAcquireCount: acquireCount,
+      registrationCleared,
+      registrationRecordCount: registrationCount,
       taskStatus: slice.task.status,
       runnerAttached: slice.task.runner !== undefined,
       executionPromiseAttached: slice.task.executionPromise !== undefined,
@@ -797,107 +720,76 @@ export class P0R2FullSliceHarness {
       paths,
     );
     this.childPids.add(firstExecution.pid);
-    let activation: OwnershipActivationObservation | undefined;
+    let activation: RegistrationActivationObservation | undefined;
     await waitFor(async () => {
       const [row] = await this.sql<Array<{
         status: string;
-        execution_generation: number;
-        execution_manifest_id: string | null;
-        execution_runtime_env_identity: string | null;
         execution_registration_id: string | null;
-        execution_pid: number | null;
-        execution_start_identity: string | null;
         execution_command_id: string | null;
       }>>`
-        SELECT status, execution_generation::int, execution_manifest_id,
-               execution_runtime_env_identity, execution_registration_id,
-               execution_pid, execution_start_identity, execution_command_id
+        SELECT status, execution_registration_id, execution_command_id
         FROM sessions WHERE session_id = ${P0R2_SESSION_ID}
       `;
       activation = row ? {
         status: row.status,
-        executionGeneration: Number(row.execution_generation),
-        manifestId: row.execution_manifest_id,
-        runtimeEnvIdentity: row.execution_runtime_env_identity,
         registrationId: row.execution_registration_id,
-        pid: row.execution_pid,
-        startIdentity: row.execution_start_identity,
         commandId: row.execution_command_id,
       } : undefined;
       return activation?.status === "running"
-        && activation.executionGeneration === 1
-        && activation.manifestId !== null
-        && activation.runtimeEnvIdentity !== null
         && activation.registrationId !== null
-        && activation.pid === firstExecution.pid
-        && activation.startIdentity !== null
         && activation.commandId !== null;
     });
-    if (!activation) throw new Error("P0R2 first ownership acquisition was not observed");
+    if (!activation) throw new Error("P0R2 first registration was not observed");
     await writeFile(join(this.controlDirectory, "p0r2-continue-first"), "continue\n");
     await initialExecution;
     return {
       execution: firstExecution,
       activation,
-      release: await this.readReleasedOwnership(1),
+      clear: await this.readClearedRegistration(),
     };
   }
 
-  private async readReleasedOwnership(
-    expectedGeneration: number,
-  ): Promise<OwnershipReleaseObservation> {
-    let released: OwnershipReleaseObservation | undefined;
+  private async readClearedRegistration(
+    afterTerminationEventId = 0,
+  ): Promise<RegistrationClearObservation> {
+    let cleared: RegistrationClearObservation | undefined;
     await waitFor(async () => {
       const [row] = await this.sql<Array<{
         status: string;
-        execution_generation: number;
-        execution_manifest_id: string | null;
-        execution_runtime_env_identity: string | null;
         execution_registration_id: string | null;
-        execution_pid: number | null;
-        execution_start_identity: string | null;
         execution_command_id: string | null;
-        execution_lease_expires_at: Date | string | null;
         termination_event_id: number | null;
         termination_created_at: Date | string | null;
       }>>`
-        SELECT session.status, session.execution_generation::int,
-               session.execution_manifest_id, session.execution_runtime_env_identity,
-               session.execution_registration_id, session.execution_pid,
-               session.execution_start_identity, session.execution_command_id,
-               session.execution_lease_expires_at, session.termination_event_id,
+        SELECT session.status, session.execution_registration_id,
+               session.execution_command_id, session.termination_event_id,
                terminal.created_at AS termination_created_at
         FROM sessions AS session
         LEFT JOIN events AS terminal ON terminal.id = session.termination_event_id
         WHERE session.session_id = ${P0R2_SESSION_ID}
       `;
-      if (!row || row.execution_generation !== expectedGeneration
-        || row.termination_event_id === null || row.termination_created_at === null) {
+      if (!row || row.termination_event_id === null
+        || row.termination_event_id <= afterTerminationEventId
+        || row.termination_created_at === null) {
         return false;
       }
-      const executionIdentityCleared = [
-        row.execution_manifest_id,
-        row.execution_runtime_env_identity,
+      const registrationCleared = [
         row.execution_registration_id,
-        row.execution_pid,
-        row.execution_start_identity,
         row.execution_command_id,
-        row.execution_lease_expires_at,
       ].every((value) => value === null);
-      if (!executionIdentityCleared) return false;
-      released = {
+      if (!registrationCleared) return false;
+      cleared = {
         status: row.status,
-        executionGeneration: Number(row.execution_generation),
         terminationEventId: Number(row.termination_event_id),
         terminationCreatedAt: new Date(row.termination_created_at).toISOString(),
-        executionIdentityCleared,
+        registrationCleared,
       };
       return true;
     });
-    if (!released) {
-      throw new Error(`P0R2 generation ${expectedGeneration} release was not observed`);
+    if (!cleared) {
+      throw new Error("P0R2 registration clear was not observed");
     }
-    return released;
+    return cleared;
   }
 
   private async rememberRegisteredChild(

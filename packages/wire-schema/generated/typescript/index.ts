@@ -1134,6 +1134,14 @@ export interface EventAppendBatch {
             updated_at: string;
           }
         | {
+            kind: "execution_registration";
+            registration_id: string;
+            execution_command_id: string;
+            review_state: string;
+            expected_terminal_event_id?: number | null;
+            updated_at: string;
+          }
+        | {
             kind: "terminal_transition";
             status: string;
             termination_reason: string;
@@ -1188,6 +1196,14 @@ export interface EventAppendBatch {
             updated_at: string;
           }
         | {
+            kind: "execution_registration";
+            registration_id: string;
+            execution_command_id: string;
+            review_state: string;
+            expected_terminal_event_id?: number | null;
+            updated_at: string;
+          }
+        | {
             kind: "terminal_transition";
             status: string;
             termination_reason: string;
@@ -1221,13 +1237,34 @@ export interface EventAppendAck {
     {
       source_seq: number;
       event_id: number;
+      effect_application?: EventSessionEffectApplication;
     },
     ...{
       source_seq: number;
       event_id: number;
+      effect_application?: EventSessionEffectApplication;
     }[]
   ];
   [k: string]: unknown;
+}
+export interface EventSessionEffectApplication {
+  applied: boolean;
+  canonical_session: EventCanonicalSessionProjection;
+  canonical_execution_registration?: EventCanonicalExecutionRegistrationProjection | null;
+}
+export interface EventCanonicalSessionProjection {
+  status: string;
+  termination_reason: string | null;
+  termination_detail: string | null;
+  review_state: string;
+  last_assistant_text: string | null;
+  termination_event_id: number | null;
+  updated_at: string;
+  last_event_id: number | null;
+}
+export interface EventCanonicalExecutionRegistrationProjection {
+  registration_id: string;
+  execution_command_id: string;
 }
 /**
  * 노드→orch: 전체 세션 목록 dump. soul-server-ts/src/upstream/session_list_commands.ts.

@@ -206,7 +206,7 @@ describe("applyRunnerHostCall", () => {
     } as never;
     const task = {
       agentSessionId: "session-a",
-      executionOwnership: {
+      executionRegistration: {
         ownershipGeneration: 7,
         ownerKind: "runner_process",
         manifestId: "manifest-a",

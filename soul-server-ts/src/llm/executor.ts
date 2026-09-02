@@ -136,7 +136,7 @@ export class LlmExecutor {
     task: Task,
     event: Record<string, unknown>,
   ): Promise<void> {
-    const registrationId = task.executionOwnership?.registrationId;
+    const registrationId = task.executionRegistration?.registrationId;
     if (registrationId === undefined) {
       await this.params.persistence.enqueueEvent(
         task.agentSessionId,

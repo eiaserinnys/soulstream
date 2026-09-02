@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { applyEventSessionEffect } from "../src/node/event_session_effect_applier.js";
 import type { EventIngressQuerySql } from "../src/node/event_ingress_repository.js";
@@ -10,16 +10,8 @@ describe("applyEventSessionEffect", () => {
     ["set_backend_session_id", "session_set_claude_id"],
     ["rotate_backend_session_id", "session_rotate_claude_id"],
     ["running_transition", "session_apply_running_transition"],
-    ["execution_acquire", "session_acquire_execution_ownership"],
-    ["execution_reserve", "session_reserve_execution_ownership"],
-    ["execution_prove", "session_prove_execution_ownership"],
-    ["execution_adopt_reserve", "session_reserve_execution_adoption"],
-    ["execution_activate", "session_activate_execution_ownership"],
-    ["execution_fail", "session_fail_execution_ownership"],
-    ["execution_expire_dead_owner", "session_expire_dead_execution_owner"],
-    ["execution_retire_terminal_ownership", "session_retire_terminal_execution_ownership"],
-    ["execution_orphaned_spawn", "session_mark_execution_orphaned_spawn"],
-    ["execution_backfill", "session_backfill_execution_ownership"],
+    ["execution_registration", "session_record_execution_registration"],
+    ["execution_acquire", "session_record_execution_registration"],
     ["terminal_transition", "session_apply_terminal_transition"],
     ["append_metadata", "session_apply_metadata_entry"],
   ] as const)("applies %s through its session stored procedure", async (kind, procedure) => {
@@ -27,190 +19,113 @@ describe("applyEventSessionEffect", () => {
     const sql = (async (strings: TemplateStringsArray) => {
       const statement = strings.join("?");
       statements.push(statement);
-      if (statement.includes("FROM session_execution_ownerships")) {
-        return [canonicalOwnershipRow()];
-      }
-      if (statement.includes("session_acquire_execution_ownership")) {
-        return [{
-          ...canonicalRow(true),
-          execution_generation: 1,
-          execution_lease_expires_at: new Date("2026-08-06T00:01:00.000Z"),
-        }];
-      }
-      return statement.includes("session_apply_running_transition")
-        || statement.includes("session_apply_terminal_transition")
-        || statement.includes("execution_ownership")
-        || statement.includes("expire_dead_execution_owner")
-        || statement.includes("execution_adoption")
-        || statement.includes("terminal_execution_identity")
-        || statement.includes("execution_orphaned_spawn")
-        || statement.includes("runner_terminal_fact")
-        ? [canonicalRow(true)]
-        : [];
+      return statement.includes("session_record_execution_registration")
+        ? [canonicalRegistrationRow(true)]
+        : statement.includes("session_apply_running_transition")
+          || statement.includes("session_apply_terminal_transition")
+          ? [canonicalRow(true)]
+          : [];
     }) as EventIngressQuerySql;
+    const sessionEffect = effect(kind);
 
     await applyEventSessionEffect(sql, {
       nodeId: "node-a",
       eventId: 41,
-      envelope: envelope(effect(kind)),
-      effect: effect(kind),
+      envelope: envelope(sessionEffect),
+      effect: sessionEffect,
     });
 
-    const ownershipEffect = kind.startsWith("execution_")
-      && kind !== "execution_backfill";
-    expect(statements).toHaveLength(
-      ownershipEffect && kind !== "execution_acquire" ? 2 : 1,
-    );
+    expect(statements).toHaveLength(1);
     expect(statements[0]).toContain(procedure);
-    if (
-      kind !== "execution_prove"
-      && kind !== "execution_fail"
-      && kind !== "execution_expire_dead_owner"
-      && kind !== "execution_retire_terminal_ownership"
-      && kind !== "execution_orphaned_spawn"
-      && kind !== "execution_backfill"
-    ) {
-      expect(statements[0]).not.toContain("last_event_id");
-    }
   });
 
-  it.each([
-    ["execution_reserve", "session_reserve_execution_ownership_v2"],
-    ["execution_adopt_reserve", "session_reserve_execution_adoption_v2"],
-    ["execution_backfill", "session_backfill_execution_ownership_v2"],
-  ] as const)("routes %s with runtime identity through the v2 procedure", async (kind, procedure) => {
-    const statements: string[] = [];
-    const values: unknown[][] = [];
-    const sql = (async (strings: TemplateStringsArray, ...params: unknown[]) => {
-      const statement = strings.join("?");
-      statements.push(statement);
-      values.push(params);
-      if (statement.includes("FROM session_execution_ownerships")) {
-        return [canonicalOwnershipRow({ runtime_env_identity: "runtime-env-1" })];
-      }
-      return [canonicalRow(true)];
-    }) as EventIngressQuerySql;
-    const legacy = effect(kind);
-    const releaseEffect = kind === "execution_backfill"
-      ? {
-          ...legacy,
-          first_runtime_env_identity: "runtime-env-1",
-          second_runtime_env_identity: "runtime-env-1",
-        }
-      : { ...legacy, runtime_env_identity: "runtime-env-1" };
-
-    const result = await applyEventSessionEffect(sql, {
-      nodeId: "node-a",
-      eventId: 41,
-      envelope: envelope(releaseEffect),
-      effect: releaseEffect,
-    });
-
-    expect(statements[0]).toContain(procedure);
-    expect(values[0]).toContain("runtime-env-1");
-    if (kind !== "execution_backfill") {
-      expect(result.canonicalExecutionOwnership).toMatchObject({
-        runtime_env_identity: "runtime-env-1",
-      });
-    }
-  });
-
-  it("persists the first terminal event id as the canonical receipt", async () => {
-    const values: unknown[][] = [];
-    const sql = (async (_strings: TemplateStringsArray, ...params: unknown[]) => {
-      values.push(params);
-      return [canonicalRow(true)];
-    }) as EventIngressQuerySql;
-    const terminal = effect("terminal_transition");
-
-    await applyEventSessionEffect(sql, {
-      nodeId: "node-a",
-      eventId: 41,
-      envelope: envelope(terminal),
-      effect: terminal,
-    });
-
-    expect(values[0]).toContain(41);
-    expect(values[0]).toContain("done");
-  });
-
-  it("marks terminal resumes with their expected canonical receipt", async () => {
-    const statements: string[] = [];
-    const values: unknown[][] = [];
-    const sql = (async (strings: TemplateStringsArray, ...params: unknown[]) => {
-      statements.push(strings.join("?"));
-      values.push(params);
-      return [canonicalRow(true)];
-    }) as EventIngressQuerySql;
-    const running = {
-      ...effect("running_transition"),
-      expected_terminal_event_id: 41,
-    } as EventSessionEffect;
-
-    await applyEventSessionEffect(sql, {
-      nodeId: "node-a",
-      eventId: 42,
-      envelope: envelope(running),
-      effect: running,
-    });
-
-    expect(statements[0]).toContain("session_apply_running_transition");
-    expect(values[0]).toContain("session-a");
-    expect(values[0]).toContain(41);
-    expect(values[0]).toContain(true);
-  });
-
-  it("returns the canonical terminal row when running receipt CAS is rejected", async () => {
-    const sql = Object.assign(async () => [canonicalRow(false, {
-      status: "completed",
-      termination_reason: "completed_ok",
-      termination_event_id: 41,
-    })], { json: (value: unknown) => value }) as unknown as EventIngressQuerySql;
-    const running = {
-      ...effect("running_transition"),
-      expected_terminal_event_id: 999,
-    } as EventSessionEffect;
+  it("returns the two-field canonical registration", async () => {
+    const sql = Object.assign(async () => [canonicalRegistrationRow(true)], {
+      json: (value: unknown) => value,
+    }) as unknown as EventIngressQuerySql;
+    const registration = effect("execution_registration");
 
     await expect(applyEventSessionEffect(sql, {
       nodeId: "node-a",
-      eventId: 42,
-      envelope: envelope(running),
-      effect: running,
-    })).resolves.toEqual({
-      applied: false,
-      canonicalSession: expect.objectContaining({
-        status: "completed",
-        termination_reason: "completed_ok",
-        termination_event_id: 41,
-      }),
-    });
-  });
-
-  it("returns the canonical owner when an execution generation CAS is idempotently rejected", async () => {
-    const sql = (async (strings: TemplateStringsArray) => {
-      const statement = strings.join("?");
-      return statement.includes("FROM session_execution_ownerships")
-        ? [canonicalOwnershipRow({ phase: "active" })]
-        : [canonicalRow(false)];
-    }) as EventIngressQuerySql;
-    const activation = effect("execution_activate");
-
-    await expect(applyEventSessionEffect(sql, {
-      nodeId: "node-a",
-      eventId: 42,
-      envelope: envelope(activation),
-      effect: activation,
+      eventId: 41,
+      envelope: envelope(registration),
+      effect: registration,
     })).resolves.toMatchObject({
-      applied: false,
-      canonicalExecutionOwnership: {
-        ownership_generation: 1,
-        owner_kind: "runner_process",
-        manifest_id: "release-1",
-        phase: "active",
+      applied: true,
+      canonicalExecutionRegistration: {
+        registration_id: "registration-1",
+        execution_command_id: "execute-1",
       },
     });
   });
 
+  it("accepts one-release execution_acquire through the same writer", async () => {
+    const statements: string[] = [];
+    const sql = (async (strings: TemplateStringsArray) => {
+      statements.push(strings.join("?"));
+      return [canonicalRegistrationRow(true)];
+    }) as EventIngressQuerySql;
+    const legacyAcquire = effect("execution_acquire");
+
+    await expect(applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 41,
+      envelope: envelope(legacyAcquire),
+      effect: legacyAcquire,
+    })).resolves.toMatchObject({
+      canonicalExecutionRegistration: {
+        registration_id: "registration-1",
+        execution_command_id: "execute-1",
+      },
+      canonicalExecutionOwnership: {
+        registration_id: "registration-1",
+        execution_command_id: "execute-1",
+        phase: "active",
+      },
+    });
+    expect(statements).toEqual([
+      expect.stringContaining("session_record_execution_registration"),
+    ]);
+  });
+
+  it("returns the DB canonical registration when the write is rejected", async () => {
+    const sql = Object.assign(async () => [canonicalRegistrationRow(false, {
+      execution_registration_id: null,
+      execution_command_id: null,
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_event_id: 40,
+    })], { json: (value: unknown) => value }) as unknown as EventIngressQuerySql;
+    const registration = effect("execution_registration");
+
+    await expect(applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 41,
+      envelope: envelope(registration),
+      effect: registration,
+    })).resolves.toMatchObject({
+      applied: false,
+      canonicalExecutionRegistration: null,
+      canonicalSession: { status: "completed", termination_event_id: 40 },
+    });
+  });
+
+  it("passes the terminal event id and clears canonical registration", async () => {
+    const values: unknown[][] = [];
+    const sql = (async (_strings: TemplateStringsArray, ...params: unknown[]) => {
+      values.push(params);
+      return [canonicalRow(true, { status: "completed", termination_event_id: 41 })];
+    }) as EventIngressQuerySql;
+    const terminal = effect("terminal_transition");
+
+    await expect(applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 41,
+      envelope: envelope(terminal),
+      effect: terminal,
+    })).resolves.toMatchObject({ canonicalExecutionRegistration: null });
+    expect(values[0]).toContain(41);
+  });
 });
 
 function canonicalRow(
@@ -231,20 +146,14 @@ function canonicalRow(
   };
 }
 
-function canonicalOwnershipRow(
+function canonicalRegistrationRow(
+  applied: boolean,
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
-    ownership_generation: 1,
-    owner_kind: "runner_process",
-    manifest_id: "release-1",
-    runtime_env_identity: null,
-    registration_id: "registration-1",
-    pid: 123,
-    start_identity: "start-1",
+    ...canonicalRow(applied),
+    execution_registration_id: "registration-1",
     execution_command_id: "execute-1",
-    phase: "active",
-    failure_reason: null,
     ...overrides,
   };
 }
@@ -252,10 +161,17 @@ function canonicalOwnershipRow(
 function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
   if (kind === "last_message") return {
     kind,
-    last_message: { type: "assistant_message", preview: "done", timestamp: "2026-08-06T00:00:00.000Z" },
+    last_message: {
+      type: "assistant_message",
+      preview: "done",
+      timestamp: "2026-08-06T00:00:00.000Z",
+    },
     updated_at: "2026-08-06T00:00:00.000Z",
   };
-  if (kind === "set_backend_session_id") return { kind, backend_session_id: "thread-1" };
+  if (kind === "set_backend_session_id") return {
+    kind,
+    backend_session_id: "thread-1",
+  };
   if (kind === "rotate_backend_session_id") return {
     kind,
     expected_backend_session_id: "thread-1",
@@ -263,6 +179,13 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
   };
   if (kind === "running_transition") return {
     kind,
+    review_state: "not_required",
+    updated_at: "2026-08-06T00:00:00.000Z",
+  };
+  if (kind === "execution_registration") return {
+    kind,
+    registration_id: "registration-1",
+    execution_command_id: "execute-1",
     review_state: "not_required",
     updated_at: "2026-08-06T00:00:00.000Z",
   };
@@ -274,100 +197,15 @@ function effect(kind: EventSessionEffect["kind"]): EventSessionEffect {
     registration_id: "registration-1",
     pid: 123,
     start_identity: "start-1",
-    execution_command_id: "owner-1",
+    execution_command_id: "execute-1",
     lease_expires_at: "2026-08-06T00:01:00.000Z",
     review_state: "not_required",
     updated_at: "2026-08-06T00:00:00.000Z",
   };
-  if (kind === "execution_reserve") return {
-    kind,
-    ownership_generation: 1,
-    owner_kind: "runner_process",
-    manifest_id: "release-1",
-    updated_at: "2026-08-06T00:00:00.000Z",
-  };
-  if (kind === "execution_adopt_reserve") return {
-    kind,
-    ownership_generation: 2,
-    manifest_id: "release-1",
-    previous_registration_id: "registration-1",
-    pid: 123,
-    start_identity: "start-1",
-    execution_command_id: "execute-1",
-    updated_at: "2026-08-06T00:00:00.000Z",
-  };
-  if (kind === "execution_prove") return {
-    kind,
-    ownership_generation: 1,
-    registration_id: "registration-1",
-    pid: 123,
-    start_identity: "start-1",
-    execution_command_id: "execute-1",
-    updated_at: "2026-08-06T00:00:00.000Z",
-  };
-  if (kind === "execution_activate") return {
-    kind,
-    ownership_generation: 1,
-    review_state: "not_required",
-    updated_at: "2026-08-06T00:00:00.000Z",
-  };
-  if (kind === "execution_fail") return {
-    kind,
-    ownership_generation: 1,
-    failure_reason: "spawn failed",
-    updated_at: "2026-08-06T00:00:00.000Z",
-  };
-  if (kind === "execution_expire_dead_owner") return {
-    kind,
-    ownership_generation: 1,
-    pid: 123,
-    start_identity: "start-1",
-    failure_reason: "owner process is gone",
-    updated_at: "2026-08-06T00:00:00.000Z",
-  };
-  if (kind === "execution_retire_terminal_ownership") return {
-    kind,
-    ownership_generation: 1,
-    manifest_id: "release-1",
-    registration_id: "registration-1",
-    pid: 123,
-    start_identity: "start-1",
-    execution_command_id: "execute-1",
-    runner_fact: "reaped",
-    updated_at: "2026-08-06T00:00:00.000Z",
-  };
-  if (kind === "execution_orphaned_spawn") return {
-    kind,
-    ownership_generation: 1,
-    registration_id: "registration-1",
-    pid: 123,
-    start_identity: "start-1",
-    execution_command_id: "execute-1",
-    updated_at: "2026-08-06T00:00:00.000Z",
-  };
-  if (kind === "execution_backfill") return {
-    kind,
-    first_manifest_id: "release-1",
-    first_registration_id: "registration-1",
-    first_pid: 123,
-    first_start_identity: "start-1",
-    first_execution_command_id: "execute-1",
-    first_observed_at: "2026-08-06T00:00:00.000Z",
-    second_manifest_id: "release-1",
-    second_registration_id: "registration-1",
-    second_pid: 123,
-    second_start_identity: "start-1",
-    second_execution_command_id: "execute-1",
-    second_observed_at: "2026-08-06T00:00:15.000Z",
-    evidence_hash: "a".repeat(64),
-    minimum_lease_interval_ms: 15_000,
-    probe_only: false,
-    updated_at: "2026-08-06T00:00:15.000Z",
-  };
   if (kind === "terminal_transition") return {
     kind,
     status: "completed",
-    termination_reason: "completed",
+    termination_reason: "completed_ok",
     termination_detail: null,
     review_state: "not_required",
     last_assistant_text: "done",

@@ -732,7 +732,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       task: makeTask({
         agentSessionId: "sess-adopting-runner",
         runner: undefined,
-        executionOwnership: {
+        executionRegistration: {
           ownerKind: "adopted_runner",
           manifestId: "manifest-adopting",
           runtimeEnvIdentity: "runtime-adopting",

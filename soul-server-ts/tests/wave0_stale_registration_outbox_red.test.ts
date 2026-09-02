@@ -85,13 +85,10 @@ describe("Wave 0 stale registration outbox contract", () => {
     await postgres.sql`
       INSERT INTO sessions (
         session_id, session_type, status, agent_id, node_id, review_state,
-        execution_generation, execution_manifest_id, execution_runtime_env_identity,
-        execution_registration_id, execution_pid, execution_start_identity,
-        execution_command_id, execution_lease_expires_at
+        execution_registration_id, execution_command_id
       ) VALUES (
         ${SESSION_ID}, 'codex', 'running', 'agent-wave0', ${NODE_ID}, 'not_required',
-        7, 'manifest-current', 'runtime-current', ${CURRENT_REGISTRATION_ID}, 7007,
-        'start-current', 'execute-current', NOW() + INTERVAL '1 hour'
+        ${CURRENT_REGISTRATION_ID}, 'execute-current'
       )
     `;
     const ingress = new EventIngressRepository(

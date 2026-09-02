@@ -69,10 +69,10 @@ export function buildSessionEndedEvent(task: Task): {
 }
 
 function terminalDedupeKey(task: Task): string {
-  const ownership = task.executionOwnership;
+  const registration = task.executionRegistration;
   const completedAt = task.completedAt ?? task.createdAt;
   const transitionIdentity = [
-    ownership && `generation:${ownership.ownershipGeneration}`,
+    registration && `command:${registration.executionCommandId}`,
     `completed_at:${completedAt.toISOString()}`,
   ].find(Boolean);
   return `session_terminal:${task.agentSessionId}:${String(transitionIdentity)}`;

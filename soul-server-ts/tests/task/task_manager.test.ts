@@ -25,7 +25,7 @@ import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.
 const silentLogger = pino({ level: "silent" });
 
 function markDurablyRunning(task: Task): void {
-  task.executionOwnership = {
+  task.executionRegistration = {
     ownerKind: "adopted_runner",
     manifestId: `manifest:${task.agentSessionId}`,
     runtimeEnvIdentity: `runtime:${task.agentSessionId}`,
@@ -726,14 +726,8 @@ describe("TaskManager.deliverToolApproval", () => {
       agent_id: "agent-openai",
       caller_session_id: null,
       away_summary: null,
-      execution_generation: 1,
-      execution_manifest_id: "manifest:sess-evicted-approval",
-      execution_runtime_env_identity: "runtime:sess-evicted-approval",
       execution_registration_id: "registration:sess-evicted-approval",
-      execution_pid: 42_201,
-      execution_start_identity: "start:sess-evicted-approval",
       execution_command_id: "command:sess-evicted-approval",
-      execution_lease_expires_at: new Date("2026-05-21T02:00:00Z"),
     });
     const enqueueEvent = vi.fn().mockResolvedValue(99);
     const enqueueEventAndWaitForSessionAck = vi.fn().mockResolvedValue({
@@ -1786,7 +1780,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(result).toEqual({ autoResumed: true });
     expect(onResumeCalled).toHaveLength(1);
     expect(task.runner).toBeUndefined();
-    expect(task.executionOwnership).toBeUndefined();
+    expect(task.executionRegistration).toBeUndefined();
   });
 
   it("completed task에 stale engine만 남아도 정리 후 auto-resume한다", async () => {
@@ -1821,7 +1815,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
 
     expect(close).toHaveBeenCalledTimes(1);
     expect(task.runner).toBeUndefined();
-    expect(task.executionOwnership).toBeUndefined();
+    expect(task.executionRegistration).toBeUndefined();
     expect(onResume).toHaveBeenCalledWith(task);
   });
 

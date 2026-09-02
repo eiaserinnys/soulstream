@@ -135,7 +135,7 @@ function makeHarness() {
 }
 
 describe("UPSTREAM_TERMINAL_FOLLOWUP_NEW_EXECUTION", () => {
-  it("starts the terminal follow-up after recording one execution generation", async () => {
+  it("starts the terminal follow-up after recording one execution registration", async () => {
     const harness = makeHarness();
     const task = await harness.taskManager.createTask({
       agentSessionId: "strict-red-session",
@@ -169,8 +169,8 @@ describe("UPSTREAM_TERMINAL_FOLLOWUP_NEW_EXECUTION", () => {
         && autoResumeActivation === observation?.installed,
       installedActivation: observation?.installed !== undefined,
       newExecutionCount: harness.newExecutionObservations.length,
-      generationRecordCount:
-        harness.persistenceDouble.recordExecutionGenerationAndWaitForApplication
+      registrationRecordCount:
+        harness.persistenceDouble.recordExecutionRegistrationAndWaitForApplication
           .mock.calls.length,
       consumedPrompts: harness.executeInputs.map((input) => input.prompt),
       pendingFollowups: task.interventionQueue.map((message) => message.text),
@@ -181,7 +181,7 @@ describe("UPSTREAM_TERMINAL_FOLLOWUP_NEW_EXECUTION", () => {
       callbackActivationForwarded: true,
       installedActivation: true,
       newExecutionCount: 1,
-      generationRecordCount: 1,
+      registrationRecordCount: 1,
       consumedPrompts: ["consume this terminal follow-up"],
       pendingFollowups: [],
       runtimeError: null,

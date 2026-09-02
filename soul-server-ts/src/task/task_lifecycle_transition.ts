@@ -10,7 +10,7 @@ import {
 import {
   runnerFactProjection,
   type RunnerTerminalFact,
-} from "./execution_ownership.js";
+} from "./execution_registration.js";
 import { reviewStateAfterTerminal } from "./session_review.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
@@ -57,7 +57,7 @@ export function isUserStopConverged(task: Task | undefined): boolean {
   return Boolean(
     task
     && isTerminalTaskStatus(task.status)
-    && !task.executionOwnership
+    && !task.executionRegistration
     && !task.runner
     && !task.executionPromise,
   );
@@ -311,7 +311,7 @@ export class TaskLifecycleTransition {
       termination_reason: terminationReason,
       ...common,
     };
-    const registrationId = task.executionOwnership?.registrationId;
+    const registrationId = task.executionRegistration?.registrationId;
     const application = registrationId === undefined
       ? await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
           task.agentSessionId,
@@ -327,9 +327,9 @@ export class TaskLifecycleTransition {
     applyCanonicalSessionProjection(task, application.canonicalSession);
     if (
       isTerminalTaskStatus(task.status)
-      && application.canonicalExecutionOwnership == null
+      && application.canonicalExecutionRegistration == null
     ) {
-      task.executionOwnership = undefined;
+      task.executionRegistration = undefined;
     }
     return application.applied;
   }

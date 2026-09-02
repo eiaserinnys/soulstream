@@ -133,7 +133,10 @@ describe.sequential("versioned migration runner", () => {
         .toMatchObject({
           status: "verified",
           target_head: "2".repeat(40),
-          destructive_pending: ["053_retire_supervisor.sql"],
+          destructive_pending: [
+            "053_retire_supervisor.sql",
+            "085b_execution_ownership_projection_drop.sql",
+          ],
           rollback_unsafe_pending: [
             "053_retire_supervisor.sql",
             "058_session_delete_ydoc_guard.sql",
@@ -141,6 +144,7 @@ describe.sequential("versioned migration runner", () => {
             "073_sessions_execution_owner_v1.sql",
             "075_sessions_execution_owner_release.sql",
             "084_runtime_ownership_machine_removal.sql",
+            "085b_execution_ownership_projection_drop.sql",
           ],
         });
       expect(existsSync(join(backupDirectory, "database.dump"))).toBe(true);

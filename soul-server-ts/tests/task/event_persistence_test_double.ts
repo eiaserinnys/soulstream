@@ -8,7 +8,7 @@ import type { EventOutboxSessionEffect } from "../../src/upstream/event_outbox.j
 
 export type EventPersistenceTestDoubleCapabilityProfile =
   | "legacy_transition_only"
-  | "execution_ownership";
+  | "execution_registration";
 
 export interface EventPersistenceTestDoubleOptions {
   readonly capabilityProfile: EventPersistenceTestDoubleCapabilityProfile;
@@ -25,7 +25,7 @@ export function makeEventPersistenceTestDouble(
     event: SSEEventPayload;
   }> = [],
   options: EventPersistenceTestDoubleOptions = {
-    capabilityProfile: "execution_ownership",
+    capabilityProfile: "execution_registration",
   },
 ) {
   let sourceSeq = initialEvents.reduce(
@@ -232,18 +232,14 @@ export function makeEventPersistenceTestDouble(
       };
     },
   );
-  const recordExecutionGenerationAndWaitForApplication = vi.fn(
+  const recordExecutionRegistrationAndWaitForApplication = vi.fn(
     async (
       _sessionId: string,
       input: {
-        ownerKind: "runner_process" | "adopted_runner" | "in_process";
-        manifestId: string;
-        runtimeEnvIdentity: string;
         registrationId: string;
-        pid: number;
-        startIdentity: string;
         executionCommandId: string;
         reviewState: string;
+        expectedTerminalEventId?: number | null;
         updatedAt?: Date;
       },
     ) => ({
@@ -259,45 +255,11 @@ export function makeEventPersistenceTestDouble(
         updated_at: input.updatedAt?.toISOString() ?? new Date().toISOString(),
         last_event_id: null,
       },
-      canonicalExecutionOwnership: {
-        ownershipGeneration: 1,
-        ownerKind: input.ownerKind,
-        manifestId: input.manifestId,
-        runtimeEnvIdentity: input.runtimeEnvIdentity,
+      canonicalExecutionRegistration: {
         registrationId: input.registrationId,
-        pid: input.pid,
-        startIdentity: input.startIdentity,
         executionCommandId: input.executionCommandId,
-        phase: "active" as const,
-        failureReason: null,
       },
     }),
-  );
-  const releaseExecutionOwnershipAndWaitForApplication = vi.fn(
-    async (
-      sessionId: string,
-      event: SSEEventPayload,
-      input: {
-        reviewState: string;
-        lastAssistantText?: string | null;
-        updatedAt?: Date;
-      },
-    ) => await enqueueTerminalTransitionAndWaitForApplication(
-      sessionId,
-      event,
-      {
-        kind: "terminal_transition",
-        status: String((event as Record<string, unknown>).status),
-        termination_reason: String(
-          (event as Record<string, unknown>).termination_reason,
-        ),
-        termination_detail: ((event as Record<string, unknown>)
-          .termination_detail as string | null | undefined) ?? null,
-        review_state: input.reviewState,
-        last_assistant_text: input.lastAssistantText ?? null,
-        updated_at: (input.updatedAt ?? new Date()).toISOString(),
-      },
-    ),
   );
   const handleSideEffects = vi.fn(
     sideEffect ?? (async () => undefined),
@@ -322,9 +284,9 @@ export function makeEventPersistenceTestDouble(
           effect,
           registrationId,
         ),
-    ...(options.capabilityProfile === "execution_ownership"
+    ...(options.capabilityProfile === "execution_registration"
       ? {
-          recordExecutionGenerationAndWaitForApplication,
+          recordExecutionRegistrationAndWaitForApplication,
         }
       : {}),
     waitForSessionAck,
@@ -340,10 +302,7 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForAck,
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
-    recordExecutionGenerationAndWaitForApplication,
-    acquireExecutionOwnershipAndWaitForApplication:
-      recordExecutionGenerationAndWaitForApplication,
-    releaseExecutionOwnershipAndWaitForApplication,
+    recordExecutionRegistrationAndWaitForApplication,
     waitForSessionAck,
     handleSideEffects,
     getEventById(eventId: number): SSEEventPayload | undefined {

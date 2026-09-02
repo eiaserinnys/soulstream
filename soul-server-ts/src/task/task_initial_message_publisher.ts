@@ -44,7 +44,7 @@ export class TaskInitialMessagePublisher {
       contextItems: ctx ? ctx.combinedContextItems : task.contextItems,
     });
     await persistUserMessageEvent(task, event, this.deps);
-    if (!task.executionOwnership) {
+    if (!task.executionRegistration) {
       const application = await this.deps.persistence
         .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
           reviewState: task.reviewState ?? "not_required",
@@ -86,7 +86,7 @@ export class TaskInitialMessagePublisher {
   }
 
   private async enqueueTaskEvent(task: Task, event: SSEEventPayload): Promise<void> {
-    const registrationId = task.executionOwnership?.registrationId;
+    const registrationId = task.executionRegistration?.registrationId;
     if (registrationId === undefined) {
       await this.deps.persistence.enqueueEvent(task.agentSessionId, event);
       return;
