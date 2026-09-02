@@ -55,7 +55,10 @@ export async function stopExistingRunnerLocked(
     return "registration_absent";
   }
   if (lockState.kind === "unavailable") {
-    throw identityProofFailure(`runner writer lock ownership unavailable: ${paths.lockPath}`);
+    if (!expected) {
+      throw identityProofFailure(`runner writer lock ownership unavailable: ${paths.lockPath}`);
+    }
+    await terminateExactRunner(expected, deps, paths.lockPath, lockState);
   }
   if (lockState.kind === "held") {
     const owner = expected ?? lockState.owner;
@@ -129,12 +132,16 @@ async function exactProcessIsAbsent(
   if (state.kind === "free") return true;
   if (state.kind === "unavailable") {
     // RunnerWriterLock.release removes its owner record before closing the
-    // kernel endpoint. A post-signal observer can therefore see a brief
-    // held-without-record transition. Keep failing closed, but retry that
-    // transition until the existing termination deadline instead of turning
-    // orderly shutdown into an identity-proof failure.
+    // kernel endpoint. An exact pre-close proof still authorizes this one
+    // process, so confirm its current start identity before signalling it.
+    // Without that proof stopExistingRunnerLocked fails closed above.
     if (retryUnavailable) return false;
-    throw identityProofFailure(`runner writer lock ownership unavailable: ${lockPath}`);
+    const observed = await deps.inspectProcess(expected.pid);
+    if (!observed.alive) return true;
+    if (observed.startIdentity === null) {
+      throw identityProofFailure(`runner writer lock ownership unavailable: ${lockPath}`);
+    }
+    return !exactRunnerStartIdentitiesMatch(observed.startIdentity, expected.startIdentity);
   }
   if (sameExactRunner(state.owner, expected)) return false;
   throw identityProofFailure(`runner writer lock owner changed before ${boundary}: ${lockPath}`);
