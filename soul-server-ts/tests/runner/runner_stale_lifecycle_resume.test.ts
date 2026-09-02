@@ -50,6 +50,32 @@ describe("stopExistingRunnerLocked with stale lifecycle evidence", () => {
     }))).rejects.toMatchObject({ code: "runner_registration_identity_proof_failed" });
   });
 
+  it("uses an exact pre-close proof while the same runner releases its writer lock", async () => {
+    const startIdentity = "runner-lock-owner-closing";
+    const { paths } = await sessionFixture({
+      pid: STALE_LIFECYCLE_PID,
+      startIdentity,
+    });
+    const signalPid = vi.fn();
+
+    const outcome = await stopExistingRunnerLocked(paths, dependencies({
+      signalPid,
+      inspectProcess: async () => ({ alive: true, startIdentity }),
+      inspectWriterLock: sequence(
+        { kind: "unavailable" },
+        { kind: "free" },
+      ),
+    }), {
+      registrationId: "3cc2bea2-19bc-4b94-b296-c399a89892ed",
+      pid: STALE_LIFECYCLE_PID,
+      startIdentity,
+    });
+
+    expect(outcome).toBe("registration_invalidated");
+    expect(signalPid).toHaveBeenCalledOnce();
+    expect(signalPid).toHaveBeenCalledWith(STALE_LIFECYCLE_PID, "SIGTERM");
+  });
+
   it("terminates the session runner proven by the held lock even after identity loss", async () => {
     const { paths } = await sessionFixture({ pid: null, startIdentity: null });
     const signalPid = vi.fn();

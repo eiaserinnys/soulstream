@@ -1052,6 +1052,51 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
   });
 
+  it("keeps a staged delivery queued when the deferred execution admission rejects", async () => {
+    const deliveryId = "91919191-9191-4919-8919-919191919191";
+    const admissionError = new Error("execution generation record rejected");
+    const gate = {
+      admit: vi.fn().mockResolvedValue(admitted(deliveryId, "durable_next_turn")),
+      beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } satisfies Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    >;
+    const task = makeTask({ status: "completed" });
+    const { route, autoResumeTransition } = makeSubject([task], gate);
+    let rejectActivation!: (error: unknown) => void;
+    const activation = activationBarrier(new Promise<void>((_resolve, reject) => {
+      rejectActivation = reject;
+    }));
+    vi.mocked(autoResumeTransition.resume).mockImplementation(
+      async (resumedTask, _message, deferResume, options) => {
+        await options?.afterRunningTransition?.();
+        deferResume(resumedTask, activation);
+        return { autoResumed: true };
+      },
+    );
+    const onResume = vi.fn(() => {
+      rejectActivation(admissionError);
+    });
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "retry after startup recovery",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "durable_next_turn",
+      completionId: `message:${deliveryId}`,
+      relationKey: `delivery:${deliveryId}`,
+      source: "test",
+    }, onResume)).rejects.toBe(admissionError);
+
+    expect(gate.recordResult).toHaveBeenCalledOnce();
+    expect(gate.recordFailure).not.toHaveBeenCalled();
+    expect(onResume).toHaveBeenCalledOnce();
+  });
+
   it("does not start a resumed terminal task when notification publishing throws", async () => {
     const deliveryId = "90909090-9090-4909-8909-909090909090";
     const publishError = new Error("notification publish unavailable");

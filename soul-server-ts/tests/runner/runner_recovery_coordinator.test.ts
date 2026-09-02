@@ -42,11 +42,25 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     // reads.
     const finishedRegistration = registration({ lifecycleState: "completed", pidAlive: false });
     const strandedTask = task("session-a");
-    const { runner, detachHost } = finishedRunner();
+    let settleExecution!: () => void;
+    const originalExecution = new Promise<void>((resolve) => {
+      settleExecution = resolve;
+    }).finally(() => {
+      strandedTask.executionPromise = undefined;
+    });
+    const { runner, detachHost, retireTerminalRegistration } = finishedRunner(
+      "registration-a",
+      undefined,
+      async () => {
+        strandedTask.status = "completed";
+        strandedTask.terminationReason = "completed_ok";
+        strandedTask.terminationEventRecorded = true;
+        strandedTask.terminalEventId = 13;
+        settleExecution();
+      },
+    );
     strandedTask.runner = runner;
-    // A pending execution promise is the other half of the same hold: without
-    // it being dropped the skip only changes which field it names.
-    strandedTask.executionPromise = new Promise<void>(() => {});
+    strandedTask.executionPromise = originalExecution;
     const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
@@ -55,16 +69,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     await subject.coordinator.scanOnce();
 
-    expect(detachHost).toHaveBeenCalledOnce();
+    expect(retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(detachHost).not.toHaveBeenCalled();
     expect(strandedTask.runner).toBeUndefined();
     expect(strandedTask.executionPromise).toBeUndefined();
-    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
-      expect.objectContaining({ agentSessionId: "session-a" }),
-      expect.anything(),
-      expect.anything(),
-      "offline",
-      expect.any(Function),
-    );
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
   });
 
   it("does not detach a terminal command while its execution generation opens a successor", async () => {
@@ -110,15 +119,30 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
   });
 
-  it("detaches a terminal registration when the stuck host execution is the same command", async () => {
+  it("retires a still-running registration after its exact session terminal is recorded", async () => {
     const finishedRegistration = registration({
-      lifecycleState: "completed",
-      pidAlive: false,
+      lifecycleState: "running",
+      pidAlive: true,
     });
     const strandedTask = task("session-a");
-    const { runner, detachHost } = finishedRunner("registration-a", "execute-a");
+    strandedTask.status = "error";
+    strandedTask.terminationReason = "error_aborted";
+    strandedTask.terminationDetail = "startup execution admission rejected";
+    strandedTask.terminationEventRecorded = true;
+    strandedTask.terminalEventId = 12;
+    let settleExecution!: () => void;
+    const originalExecution = new Promise<void>((resolve) => {
+      settleExecution = resolve;
+    }).finally(() => {
+      strandedTask.executionPromise = undefined;
+    });
+    const { runner, detachHost, retireTerminalRegistration } = finishedRunner(
+      "registration-a",
+      "execute-a",
+      async () => settleExecution(),
+    );
     strandedTask.runner = runner;
-    strandedTask.executionPromise = new Promise<void>(() => {});
+    strandedTask.executionPromise = originalExecution;
     const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
@@ -127,16 +151,52 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     await subject.coordinator.scanOnce();
 
-    expect(detachHost).toHaveBeenCalledOnce();
+    expect(retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(detachHost).not.toHaveBeenCalled();
     expect(strandedTask.runner).toBeUndefined();
     expect(strandedTask.executionPromise).toBeUndefined();
-    expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
-      strandedTask,
-      expect.anything(),
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
+  it("settles the exact recovery admission before reaping a runner that died while lifecycle stayed running", async () => {
+    const deadRegistration = registration({
+      lifecycleState: "running",
+      pidAlive: false,
+    });
+    const strandedTask = task("session-a");
+    let settleExecution!: () => void;
+    const originalExecution = new Promise<void>((resolve) => {
+      settleExecution = resolve;
+    }).finally(() => {
+      strandedTask.executionPromise = undefined;
+    });
+    const { runner, retireTerminalRegistration } = finishedRunner(
+      "registration-a",
       "execute-a",
-      "offline",
-      expect.any(Function),
+      async () => {
+        strandedTask.status = "error";
+        strandedTask.terminationReason = "error_aborted";
+        strandedTask.terminationEventRecorded = true;
+        strandedTask.terminalEventId = 13;
+        settleExecution();
+      },
     );
+    strandedTask.runner = runner;
+    strandedTask.executionPromise = originalExecution;
+    const subject = makeSubject([deadRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(strandedTask.executionPromise).toBeUndefined();
+    expect(strandedTask.status).toBe("error");
+    expect(strandedTask.terminationEventRecorded).toBe(true);
+    expect(subject.markReaped).not.toHaveBeenCalled();
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
   });
 
   it("does not detach a live successor while replaying an older terminal registration", async () => {
@@ -162,8 +222,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
   it("호스트가 포기한 러너를 붙들고 offline replay를 막지 않는다", async () => {
     // Reconnect exhaustion announces that the execution "will be terminalized",
-    // but the only thing carrying that out is `activeStream.fail`. With no
-    // active stream nothing propagated, the task kept the runner, and every
+    // but the old path only detached the host. With no admission settlement
+    // nothing propagated, the task kept the runner, and every
     // offline replay after it was refused -- the finished runner's output never
     // reached the session, which stayed running for good (260822 lab F9).
     const stranded = registration({ lifecycleState: "completed", pidAlive: false });
@@ -1951,15 +2011,24 @@ function recoveryMockWithReadiness(
 function finishedRunner(
   registrationId = "registration-a",
   activeExecutionCommandId?: string,
+  onRetire: () => Promise<void> = async () => {},
 ): {
   runner: NonNullable<Task["runner"]>;
   detachHost: ReturnType<typeof vi.fn>;
+  retireTerminalRegistration: ReturnType<typeof vi.fn>;
 } {
   const detachHost = vi.fn(async () => {});
+  const retireTerminalRegistration = vi.fn(
+    async (beforeRegistrationRetired?: () => Promise<void>) => {
+      await onRetire();
+      await beforeRegistrationRetired?.();
+    },
+  );
   return {
     runner: {
       dispatcher: {
         detachHost,
+        retireTerminalRegistration,
         isClosed: () => false,
         hasActiveExecution: () => activeExecutionCommandId !== undefined,
         activeExecutionCommandId: () => activeExecutionCommandId,
@@ -1970,6 +2039,7 @@ function finishedRunner(
       eventPersistence: "runner",
     },
     detachHost,
+    retireTerminalRegistration,
   };
 }
 

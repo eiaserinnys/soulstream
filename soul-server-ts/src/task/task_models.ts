@@ -59,17 +59,59 @@ export type PendingTerminationHint = Exclude<
 export interface ExecutionActivation {
   promise: Promise<void>;
   resolve(): void;
-  reject(error: unknown): void;
+  reject(error: unknown): void | Promise<void>;
+  setFailureCompensation?(compensate: () => Promise<void>): void;
+  hasFailureCompensation?(): boolean;
 }
 
 export function createExecutionActivation(): ExecutionActivation {
-  let resolve!: () => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
+  let resolvePromise!: () => void;
+  let rejectPromise!: (error: unknown) => void;
+  let state: "pending" | "resolved" | "rejecting" | "rejected" = "pending";
+  let failureCompensation: (() => Promise<void>) | undefined;
+  let rejectionSettlement: Promise<void> | undefined;
+  const promise = new Promise<void>((resolveActivation, rejectActivation) => {
+    resolvePromise = resolveActivation;
+    rejectPromise = rejectActivation;
   });
-  return { promise, resolve, reject };
+  return {
+    promise,
+    resolve: () => {
+      if (state !== "pending") return;
+      state = "resolved";
+      failureCompensation = undefined;
+      resolvePromise();
+    },
+    reject: (error: unknown) => {
+      if (state !== "pending") return rejectionSettlement;
+      state = "rejecting";
+      const compensate = failureCompensation;
+      failureCompensation = undefined;
+      rejectionSettlement = (async () => {
+        let rejection = error;
+        if (compensate) {
+          try {
+            await compensate();
+          } catch (compensationError) {
+            rejection = new AggregateError(
+              [error, compensationError],
+              "execution admission failed and running transition compensation failed",
+            );
+          }
+        }
+        state = "rejected";
+        rejectPromise(rejection);
+      })();
+      return rejectionSettlement;
+    },
+    setFailureCompensation: (compensate) => {
+      if (state !== "pending") {
+        throw new Error("execution activation already settled");
+      }
+      failureCompensation = compensate;
+    },
+    hasFailureCompensation: () => failureCompensation !== undefined,
+  };
 }
 
 /**

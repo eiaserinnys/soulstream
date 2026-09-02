@@ -2173,6 +2173,74 @@ describe("TaskExecutor.startExecution", () => {
 });
 
 describe("TaskExecutor runner process boundary", () => {
+  it("terminal stream retirement releases one slot and admits the exact queued delivery once", async () => {
+    const mocks = makeMocks();
+    const retired = deferred<void>();
+    const acquireNextGeneration = vi.fn(async (resumedTask: Task) => {
+      expect(resumedTask.interventionQueue).toEqual([
+        expect.objectContaining({ deliveryId: "delivery-after-retire" }),
+      ]);
+    });
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      acquireNextGeneration,
+    );
+    const dispatcher = {
+      recoverFrames: vi.fn(() => (async function* () {
+        await retired.promise;
+        throw new Error("runner registration retired before terminal frame replay");
+      })()),
+      registrationId: vi.fn(() => "registration-a"),
+      waitForSessionAck: vi.fn(async () => null),
+      close: vi.fn(async () => {}),
+    };
+    const runner = {
+      engine: makeFakeEngine([]),
+      dispatcher: dispatcher as never,
+      eventPersistence: "runner" as const,
+    };
+    const task = makeTask();
+    task.status = "running";
+    task.interventionQueue.push({
+      text: "retry exact delivery",
+      user: "agent",
+      deliveryId: "delivery-after-retire",
+      deliveryIntent: "durable_next_turn",
+    });
+
+    const originalExecution = executor.recoverRunnerExecution(
+      task,
+      agent,
+      runner,
+      "execute-a",
+      "offline",
+    );
+    task.status = "error";
+    task.terminationReason = "error_aborted";
+    task.terminationDetail = "runner registration retired";
+    task.terminationEventRecorded = true;
+    task.terminalEventId = 12;
+    retired.resolve();
+
+    await expect(originalExecution).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(acquireNextGeneration).toHaveBeenCalledOnce());
+    expect(task.executionPromise).toBeUndefined();
+    expect(task.runner).toBeUndefined();
+    expect(acquireNextGeneration).toHaveBeenCalledWith(task);
+  });
+
   it("startNewExecution activation은 동기 startup 실패도 terminal writer 뒤 거절한다", async () => {
     const mocks = makeMocks();
     const startupError = new Error("runner factory boom");

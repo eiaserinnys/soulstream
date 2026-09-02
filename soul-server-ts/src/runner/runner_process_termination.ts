@@ -55,7 +55,15 @@ export async function stopExistingRunnerLocked(
     return "registration_absent";
   }
   if (lockState.kind === "unavailable") {
-    throw identityProofFailure(`runner writer lock ownership unavailable: ${paths.lockPath}`);
+    if (!expected) {
+      throw identityProofFailure(`runner writer lock ownership unavailable: ${paths.lockPath}`);
+    }
+    await terminateRegisteredRunnerDuringLockRelease(
+      expected,
+      deps,
+      paths.lockPath,
+      lockState,
+    );
   }
   if (lockState.kind === "held") {
     const owner = expected ?? lockState.owner;
@@ -85,7 +93,46 @@ export async function terminateExactRunner(
   lockPath: string,
   initialState?: RunnerWriterLockState,
 ): Promise<void> {
-  if (await exactProcessIsAbsent(expected, lockPath, deps, initialState)) return;
+  return await terminateExactRunnerWithPolicy(
+    expected,
+    deps,
+    lockPath,
+    initialState,
+    false,
+  );
+}
+
+async function terminateRegisteredRunnerDuringLockRelease(
+  expected: ExactRunnerProcess,
+  deps: RunnerProcessTerminationDependencies,
+  lockPath: string,
+  initialState: RunnerWriterLockState,
+): Promise<void> {
+  return await terminateExactRunnerWithPolicy(
+    expected,
+    deps,
+    lockPath,
+    initialState,
+    true,
+  );
+}
+
+async function terminateExactRunnerWithPolicy(
+  expected: ExactRunnerProcess,
+  deps: RunnerProcessTerminationDependencies,
+  lockPath: string,
+  initialState: RunnerWriterLockState | undefined,
+  acceptRegisteredReleaseGap: boolean,
+): Promise<void> {
+  if (await exactProcessIsAbsent(
+    expected,
+    lockPath,
+    deps,
+    initialState,
+    "SIGTERM",
+    false,
+    acceptRegisteredReleaseGap,
+  )) return;
   signalRunnerProcess(expected.pid, "SIGTERM", deps);
   if (await waitForExactProcessExit(expected, lockPath, deps, "SIGKILL")) return;
   signalRunnerProcess(expected.pid, "SIGKILL", deps);
@@ -124,17 +171,25 @@ async function exactProcessIsAbsent(
   initialState?: RunnerWriterLockState,
   boundary: "SIGTERM" | "SIGKILL" | "retirement" = "SIGTERM",
   retryUnavailable = false,
+  acceptRegisteredReleaseGap = false,
 ): Promise<boolean> {
   const state = initialState ?? await inspectRunnerLivenessLock(lockPath, deps);
   if (state.kind === "free") return true;
   if (state.kind === "unavailable") {
     // RunnerWriterLock.release removes its owner record before closing the
-    // kernel endpoint. A post-signal observer can therefore see a brief
-    // held-without-record transition. Keep failing closed, but retry that
-    // transition until the existing termination deadline instead of turning
-    // orderly shutdown into an identity-proof failure.
+    // kernel endpoint. An exact pre-close proof still authorizes this one
+    // process, so confirm its current start identity before signalling it.
+    // Without that proof stopExistingRunnerLocked fails closed above.
     if (retryUnavailable) return false;
-    throw identityProofFailure(`runner writer lock ownership unavailable: ${lockPath}`);
+    if (!acceptRegisteredReleaseGap) {
+      throw identityProofFailure(`runner writer lock ownership unavailable: ${lockPath}`);
+    }
+    const observed = await deps.inspectProcess(expected.pid);
+    if (!observed.alive) return true;
+    if (observed.startIdentity === null) {
+      throw identityProofFailure(`runner writer lock ownership unavailable: ${lockPath}`);
+    }
+    return !exactRunnerStartIdentitiesMatch(observed.startIdentity, expected.startIdentity);
   }
   if (sameExactRunner(state.owner, expected)) return false;
   throw identityProofFailure(`runner writer lock owner changed before ${boundary}: ${lockPath}`);

@@ -37,6 +37,10 @@ export class ProcessFrameStream implements AsyncIterable<RunnerEventFrame> {
     this.waiter = undefined;
   }
 
+  isSettled(): boolean {
+    return this.ended || this.error !== undefined;
+  }
+
   async *[Symbol.asyncIterator](): AsyncIterator<RunnerEventFrame> {
     while (true) {
       if (this.delivered?.frameSeq !== undefined) {

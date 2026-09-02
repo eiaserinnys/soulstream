@@ -10,19 +10,33 @@ import type { Task } from "../../src/task/task_models.js";
 const NOW_MS = Date.parse("2026-08-24T02:30:07.900Z");
 
 describe("RunnerRecoveryCoordinator recovery lifetime", () => {
-  it("starts terminal detach, termination, and offline replay in one owner-free scan", async () => {
+  it("settles and retires one terminal admission without an offline replay", async () => {
     const terminal = runnerRegistration({ lifecycleState: "completed", pidAlive: true });
     const task = runnerTask();
-    const harness = makeHarness({ registration: terminal, task });
+    const settlement = deferred<void>();
+    const harness = makeHarness({
+      registration: terminal,
+      task,
+      retire: async () => {
+        task.status = "completed";
+        task.terminationReason = "completed_ok";
+        task.terminationEventRecorded = true;
+        task.terminalEventId = 12;
+        settlement.resolve();
+      },
+    });
     task.runner = harness.runner;
-    task.executionPromise = new Promise<void>(() => {});
+    task.executionPromise = settlement.promise.finally(() => {
+      task.executionPromise = undefined;
+    });
 
     await harness.coordinator.scanOnce();
     await harness.coordinator.waitForSettled();
 
-    expect(harness.detachHost).toHaveBeenCalledOnce();
-    expect(harness.terminate).toHaveBeenCalledOnce();
-    expect(harness.recoveryModes).toEqual(["offline"]);
+    expect(harness.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(harness.detachHost).not.toHaveBeenCalled();
+    expect(harness.terminate).not.toHaveBeenCalled();
+    expect(harness.recoveryModes).toEqual([]);
   });
 
   it("terminalizes failed adoption through offline replay without a replacement", async () => {
@@ -50,6 +64,7 @@ function makeHarness(input: {
   task?: Task;
   hydrate?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
   refreshRegistration?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
+  retire?: () => Promise<void>;
   recover?: (input: {
     mode: RecoveryMode;
     task: Task;
@@ -61,9 +76,16 @@ function makeHarness(input: {
   let detached = false;
   const task = input.task ?? runnerTask();
   const detachHost = vi.fn(async () => { detached = true; });
+  const retireTerminalRegistration = vi.fn(
+    async (beforeRegistrationRetired?: () => Promise<void>) => {
+      await input.retire?.();
+      await beforeRegistrationRetired?.();
+    },
+  );
   const runner = {
     dispatcher: {
       detachHost,
+      retireTerminalRegistration,
       isClosed: () => detached,
       hasActiveExecution: () => false,
       dispatcherId: () => "runner-a",
@@ -75,7 +97,6 @@ function makeHarness(input: {
   const recoveryModes: RecoveryMode[] = [];
   const terminate = vi.fn(async () => {});
   const invalidateRegistration = vi.fn(async () => {});
-  const retireTerminalRegistration = vi.fn(async () => {});
   const markRunnerFailure = vi.fn(async () => {});
   const recoverRegisteredRunner = vi.fn((
     candidate: Task,
@@ -122,6 +143,7 @@ function makeHarness(input: {
     task,
     runner,
     detachHost,
+    retireTerminalRegistration,
     terminate,
     recoveryModes,
     setRegistration(registration: RunnerRegistration) {

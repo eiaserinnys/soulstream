@@ -604,7 +604,13 @@ describe("AutoResumeTransition", () => {
   });
 
   it("restores the terminal task when post-transition durable admission fails", async () => {
-    const task = makeTerminalTask();
+    const task = makeTerminalTask({
+      terminationReason: "completed_ok",
+      terminationDetail: null,
+      terminationEventRecorded: true,
+      reviewState: "needs_review",
+      lastAssistantText: "completed answer",
+    });
     const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
       capabilityProfile: "legacy_transition_only",
     });
@@ -626,10 +632,64 @@ describe("AutoResumeTransition", () => {
 
     expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
       .toHaveBeenCalledOnce();
+    expect(persistenceDouble.enqueueTerminalTransitionAndWaitForApplication)
+      .toHaveBeenCalledWith(
+        "s1",
+        expect.objectContaining({
+          type: "session_ended",
+          status: "completed",
+          termination_reason: "completed_ok",
+        }),
+        expect.objectContaining({
+          kind: "terminal_transition",
+          status: "completed",
+          termination_reason: "completed_ok",
+          review_state: "needs_review",
+          last_assistant_text: "completed answer",
+        }),
+      );
     expect(task.status).toBe("completed");
-    expect(task.terminalEventId).toBe(6);
+    expect(task.terminationEventRecorded).toBe(true);
+    expect(task.terminalEventId).not.toBe(6);
     expect(task.executionActivation).toBeUndefined();
     expect(onResume).not.toHaveBeenCalled();
+  });
+
+  it("compensates the durable running transition when execution admission rejects", async () => {
+    const task = makeTerminalTask({
+      terminationReason: "completed_ok",
+      terminationDetail: null,
+      terminationEventRecorded: true,
+      reviewState: "needs_review",
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "legacy_transition_only",
+    });
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+    const admissionError = new Error("execution generation record rejected");
+    let activation!: NonNullable<Task["executionActivation"]>;
+
+    await transition.resume(
+      task,
+      { text: "retry after restart", user: "agent" },
+      (_resumedTask, startedActivation) => {
+        activation = startedActivation!;
+        activation.reject(admissionError);
+      },
+    );
+
+    await expect(activation.promise).rejects.toBe(admissionError);
+    await vi.waitFor(() => {
+      expect(persistenceDouble.enqueueTerminalTransitionAndWaitForApplication)
+        .toHaveBeenCalledOnce();
+    });
+    expect(task.status).toBe("completed");
+    expect(task.terminationReason).toBe("completed_ok");
+    expect(task.terminationEventRecorded).toBe(true);
+    expect(task.executionActivation).toBeUndefined();
   });
 
   it("stores resume message context for the executor initial-message path", async () => {
