@@ -277,10 +277,6 @@ export class TaskManager {
     return await this.runnerRecovery.hydrate(sessionId);
   }
 
-  async listOwnerNullRunningInventory(nodeId: string, limit = 100) {
-    return await this.db.listOwnerNullRunningInventory({ nodeId, limit });
-  }
-
   async markRunnerFailure(
     task: Task,
     message: string,

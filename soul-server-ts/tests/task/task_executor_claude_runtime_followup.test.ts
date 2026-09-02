@@ -615,6 +615,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         kind: "terminal_transition",
         status: "interrupted",
       }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 

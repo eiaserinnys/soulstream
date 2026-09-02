@@ -60,6 +60,7 @@ function sessionRow(overrides: Partial<SessionRow> = {}): SessionRow {
     agent_id: "codex-realtime",
     caller_session_id: null,
     away_summary: null,
+    execution_registration_id: "registration:sess-rt",
     ...overrides,
   };
 }
@@ -150,6 +151,8 @@ describe("RealtimeBroker.createCall", () => {
     expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       "sess-rt",
       expect.objectContaining({ type: "realtime_status", status: "connected" }),
+      undefined,
+      "registration:sess-rt",
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
@@ -268,6 +271,8 @@ describe("RealtimeBroker.relayEvent", () => {
         text: "승인합니다",
         call_id: "call_123",
       }),
+      undefined,
+      "registration:sess-rt",
     );
   });
 });
@@ -298,6 +303,8 @@ describe("RealtimeBroker.resolveToolApproval", () => {
         realtime: true,
         source: "voice",
       }),
+      undefined,
+      "registration:sess-rt",
     );
   });
 });

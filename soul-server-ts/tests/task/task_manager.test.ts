@@ -560,6 +560,7 @@ describe("TaskManager.deliverToolApproval", () => {
       profileId: "agent-openai",
     });
     task.status = "running";
+    markDurablyRunning(task);
     const deliverToolApproval = vi.fn().mockResolvedValue({ status: "delivered" });
     task.runner = createInProcessTaskRunnerRuntime({
       backendId: "openai-agents",
@@ -595,6 +596,8 @@ describe("TaskManager.deliverToolApproval", () => {
         rejected: true,
         message: "no prod write",
       }),
+      undefined,
+      "registration:sess-approval",
     );
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
   });
@@ -723,6 +726,14 @@ describe("TaskManager.deliverToolApproval", () => {
       agent_id: "agent-openai",
       caller_session_id: null,
       away_summary: null,
+      execution_generation: 1,
+      execution_manifest_id: "manifest:sess-evicted-approval",
+      execution_runtime_env_identity: "runtime:sess-evicted-approval",
+      execution_registration_id: "registration:sess-evicted-approval",
+      execution_pid: 42_201,
+      execution_start_identity: "start:sess-evicted-approval",
+      execution_command_id: "command:sess-evicted-approval",
+      execution_lease_expires_at: new Date("2026-05-21T02:00:00Z"),
     });
     const enqueueEvent = vi.fn().mockResolvedValue(99);
     const enqueueEventAndWaitForSessionAck = vi.fn().mockResolvedValue({
@@ -776,6 +787,8 @@ describe("TaskManager.deliverToolApproval", () => {
     expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith(
       "sess-evicted-approval",
       expect.objectContaining({ type: "tool_approval_resolved" }),
+      undefined,
+      "registration:sess-evicted-approval",
     );
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
   });
@@ -872,6 +885,7 @@ describe("TaskManager.deliverInputResponse", () => {
       profileId: "claude-roselin",
     });
     task.status = "running";
+    markDurablyRunning(task);
     const deliverInputResponse = vi.fn().mockResolvedValue({ status: "delivered" });
     task.runner = createInProcessTaskRunnerRuntime({
       backendId: "claude",
@@ -893,7 +907,7 @@ describe("TaskManager.deliverInputResponse", () => {
     expect(enqueueEventAndWaitForSessionAck).toHaveBeenCalledWith("sess-ask", expect.objectContaining({
       type: "input_request_responded",
       request_id: "ask-1",
-    }));
+    }), undefined, "registration:sess-ask");
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(handleSideEffects).toHaveBeenCalledWith(
       "sess-ask",
@@ -1346,6 +1360,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       profileId: "codex-default",
     });
     task.status = "running";
+    markDurablyRunning(task);
     const intervene = vi.fn().mockResolvedValue({
       status: "delivered",
       mechanism: "active_turn",
@@ -1380,6 +1395,8 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(mocks.enqueueEvent).toHaveBeenCalledWith(
       "s-live",
       expect.objectContaining({ type: "intervention_sent" }),
+      undefined,
+      "registration:s-live",
     );
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
   });
@@ -1393,6 +1410,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       profileId: "claude-default",
     });
     task.status = "running";
+    markDurablyRunning(task);
     const intervene = vi.fn().mockResolvedValue({
       status: "not_delivered",
       mechanism: "interrupt_then_next_turn",
@@ -1431,6 +1449,8 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(mocks.enqueueEvent).toHaveBeenCalledWith(
       "s-claude-steer",
       expect.objectContaining({ type: "intervention_sent" }),
+      undefined,
+      "registration:s-claude-steer",
     );
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
   });
@@ -1462,6 +1482,8 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(mocks.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({ type: "intervention_sent" }),
+      undefined,
+      "registration:s1",
     );
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(onResume).not.toHaveBeenCalled();

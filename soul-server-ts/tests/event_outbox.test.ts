@@ -47,6 +47,34 @@ describe("EventOutbox", () => {
     expect(await reopened.readBatch()).toMatchObject({ first_seq: 1, events: [record] });
   });
 
+  it("fail-closes a legacy generation row without sending its generation field", async () => {
+    const directory = await temporaryDirectory();
+    const streamId = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
+    const legacyUnsigned = {
+      stream_id: streamId,
+      source_seq: 1,
+      session_id: "session-a",
+      execution_generation: 7,
+      event_type: "assistant_message",
+      payload: { type: "assistant_message", content: "legacy" },
+      searchable_text: "legacy",
+      created_at: "2026-08-06T00:00:00.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+    };
+    const legacy = {
+      ...legacyUnsigned,
+      payload_hash: computeEventOutboxPayloadHash(legacyUnsigned as never),
+    } as EventOutboxRecord;
+    await writeFixture(directory, streamId, [legacy], 0);
+
+    const recovered = await EventOutbox.open(directory);
+    const envelope = (await recovered.readBatch())?.events[0];
+    expect(envelope).toMatchObject({ registration_id: null });
+    expect(envelope).not.toHaveProperty("execution_generation");
+    expect(envelope?.payload_hash).not.toBe(legacy.payload_hash);
+  });
+
   it("truncates only an incomplete final JSONL row during startup recovery", async () => {
     const directory = await temporaryDirectory();
     const outbox = await EventOutbox.open(directory);

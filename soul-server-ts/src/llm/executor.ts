@@ -136,10 +136,20 @@ export class LlmExecutor {
     task: Task,
     event: Record<string, unknown>,
   ): Promise<void> {
-    await this.params.persistence.enqueueEvent(
-      task.agentSessionId,
-      event as SSEEventPayload,
-    );
+    const registrationId = task.executionOwnership?.registrationId;
+    if (registrationId === undefined) {
+      await this.params.persistence.enqueueEvent(
+        task.agentSessionId,
+        event as SSEEventPayload,
+      );
+    } else {
+      await this.params.persistence.enqueueEvent(
+        task.agentSessionId,
+        event as SSEEventPayload,
+        undefined,
+        registrationId,
+      );
+    }
     await this.params.persistence.handleSideEffects(
       task.agentSessionId,
       event as SSEEventPayload,

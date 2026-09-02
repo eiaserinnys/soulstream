@@ -1,7 +1,7 @@
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 
-export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 10;
-export const RUNNER_EVENT_OUTBOX_READ_ONLY_SCHEMA_VERSIONS: ReadonlySet<number> = new Set([9, 10]);
+export const RUNNER_EVENT_OUTBOX_SCHEMA_VERSION = 11;
+export const RUNNER_EVENT_OUTBOX_READ_ONLY_SCHEMA_VERSIONS: ReadonlySet<number> = new Set([9, 10, 11]);
 export const RUNNER_EVENT_OUTBOX_READ_ONLY_REQUIRED_COLUMNS = [
   "source_seq",
   "record_kind",
@@ -72,8 +72,8 @@ CREATE TABLE IF NOT EXISTS runner_event_outbox (
   record_kind TEXT NOT NULL CHECK (record_kind IN ('bootstrap', 'event')),
   stream_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
-  execution_generation INTEGER CHECK (
-    execution_generation IS NULL OR execution_generation > 0
+  registration_id TEXT CHECK (
+    registration_id IS NULL OR length(registration_id) > 0
   ),
   event_type TEXT NOT NULL,
   payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
@@ -217,6 +217,8 @@ export type RunnerEventOutboxRow = {
   record_kind: "bootstrap" | "event";
   stream_id: string;
   session_id: string;
+  registration_id?: string | null;
+  /** Physical read compatibility for v10 databases. Never emitted upstream. */
   execution_generation?: number | null;
   event_type: string;
   payload_json: string;

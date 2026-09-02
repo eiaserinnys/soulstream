@@ -140,7 +140,7 @@ export type EventIngressEnvelope = {
   stream_id: string;
   source_seq: number;
   session_id: string;
-  execution_generation?: number | null;
+  registration_id?: string | null;
   event_type: string;
   payload: unknown;
   searchable_text: string | null;

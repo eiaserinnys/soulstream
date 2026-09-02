@@ -154,20 +154,20 @@ export class EventIngressRepository {
     if (sessionOwner === null) {
       throw new Error(`session ${envelope.session_id} does not exist`);
     }
-    if (envelope.execution_generation !== undefined
-      && envelope.execution_generation !== null
+    if (envelope.registration_id !== undefined
       && (
-        envelope.execution_generation !== sessionOwner.executionGeneration
-        || sessionOwner.executionCommandId === null
+        envelope.registration_id === null
+        || sessionOwner.executionRegistrationId === null
+        || envelope.registration_id !== sessionOwner.executionRegistrationId
       )) {
       return {
         outcome: "dead_lettered",
         envelope,
         deadLetter: {
-          code: "STALE_EXECUTION_GENERATION",
-          reason: `execution generation ${envelope.execution_generation} is not current`,
+          code: "STALE_REGISTRATION",
+          reason: "event registration identity is not current",
           rejectedAt: new Date().toISOString(),
-          path: "execution_generation",
+          path: "registration_id",
         },
       };
     }
@@ -226,24 +226,18 @@ export class EventIngressRepository {
 async function lockSession(
   sql: EventIngressQuerySql,
   sessionId: string,
-): Promise<{ executionGeneration: number; executionCommandId: string | null } | null> {
+): Promise<{ executionRegistrationId: string | null } | null> {
   const rows = await sql<Array<{
-    execution_generation: string | number;
-    execution_command_id: string | null;
+    execution_registration_id: string | null;
   }>>`
-    SELECT execution_generation, execution_command_id
+    SELECT execution_registration_id
     FROM sessions
     WHERE session_id = ${sessionId}
     FOR UPDATE
   `;
   if (!rows[0]) return null;
-  const generation = Number(rows[0].execution_generation);
-  if (!Number.isSafeInteger(generation) || generation < 0) {
-    throw new Error(`session ${sessionId} has an invalid execution generation`);
-  }
   return {
-    executionGeneration: generation,
-    executionCommandId: rows[0].execution_command_id,
+    executionRegistrationId: rows[0].execution_registration_id,
   };
 }
 

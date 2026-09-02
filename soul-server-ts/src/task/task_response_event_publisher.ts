@@ -85,6 +85,8 @@ export class ResponseEventPublisher {
       const { eventId } = await this.deps.persistence.enqueueEventAndWaitForSessionAck(
         task.agentSessionId,
         event as SSEEventPayload,
+        undefined,
+        task.executionOwnership?.registrationId,
       );
       task.lastEventId = eventId;
       await this.deps.persistence.handleSideEffects(

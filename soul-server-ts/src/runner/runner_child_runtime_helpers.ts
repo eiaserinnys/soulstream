@@ -30,7 +30,6 @@ export function buildDurableRunnerEvent(
   event: SSEEventPayload,
   effect?: EventOutboxSessionEffect,
   metadata?: unknown,
-  executionGeneration?: number,
 ): {
   appendInput: ReturnType<typeof buildEventOutboxAppendInput>;
   frame: ReturnType<typeof engineEventFrame>;
@@ -39,7 +38,6 @@ export function buildDurableRunnerEvent(
     sessionId,
     event,
     effect,
-    executionGeneration,
   );
   return {
     appendInput,

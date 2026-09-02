@@ -99,10 +99,9 @@ function parseEnvelope(
     throw new EventIngressValidationError("event_append_batch source_seq must be contiguous");
   }
   const sessionId = nonEmptyString(value.session_id, `events[${index}].session_id`);
-  const executionGeneration = value.execution_generation === undefined
-    || value.execution_generation === null
-    ? value.execution_generation
-    : positiveInteger(value.execution_generation, `events[${index}].execution_generation`);
+  const registrationId = value.registration_id === undefined
+    ? (Object.hasOwn(value, "execution_generation") ? null : undefined)
+    : nullableNonEmptyString(value.registration_id, `events[${index}].registration_id`);
   const eventType = nonEmptyString(value.event_type, `events[${index}].event_type`);
   const createdAt = nonEmptyString(value.created_at, `events[${index}].created_at`);
   if (!Number.isFinite(Date.parse(createdAt))) {
@@ -122,9 +121,9 @@ function parseEnvelope(
     stream_id: streamId,
     source_seq: sourceSeq,
     session_id: sessionId,
-    ...(executionGeneration === undefined
+    ...(registrationId === undefined
       ? {}
-      : { execution_generation: executionGeneration }),
+      : { registration_id: registrationId }),
     event_type: eventType,
     payload: sanitizePgJsonValue(value.payload),
     searchable_text: searchableText === null ? null : sanitizePgText(searchableText),

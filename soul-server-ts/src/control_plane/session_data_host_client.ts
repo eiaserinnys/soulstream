@@ -1,7 +1,6 @@
 import type {
   ListSessionSummaryRow,
   RunningSessionSummaryRow,
-  OwnerNullRunningSessionRow,
   SessionRow,
   UpstreamSessionDumpRow,
 } from "../db/session_db_types.js";
@@ -22,7 +21,6 @@ export const SESSION_DATA_READ_OPERATIONS = [
   "get",
   "list_summary",
   "list_running",
-  "owner_null_running_inventory",
   "upstream_dump",
   "event_count",
   "event_read_page",
@@ -92,10 +90,6 @@ export interface SessionDataHost {
     limit: number;
     excludeSessionId?: string | null;
   }): Promise<{ sessions: RunningSessionSummaryRow[]; total: number }>;
-  listOwnerNullRunningInventory(params: {
-    nodeId: string;
-    limit: number;
-  }): Promise<OwnerNullRunningSessionRow[]>;
   listSessionsForUpstreamDump(params: {
     limit: number;
     offset: number;
@@ -154,10 +148,6 @@ export class SessionDataHostClient implements SessionDataHost {
 
   listRunningSessionsSummary(params: Parameters<SessionDataHost["listRunningSessionsSummary"]>[0]): ReturnType<SessionDataHost["listRunningSessionsSummary"]> {
     return this.turnCritical("list_running", [params]);
-  }
-
-  listOwnerNullRunningInventory(params: Parameters<SessionDataHost["listOwnerNullRunningInventory"]>[0]): ReturnType<SessionDataHost["listOwnerNullRunningInventory"]> {
-    return this.turnCritical("owner_null_running_inventory", [params]);
   }
 
   listSessionsForUpstreamDump(params: Parameters<SessionDataHost["listSessionsForUpstreamDump"]>[0]): ReturnType<SessionDataHost["listSessionsForUpstreamDump"]> {

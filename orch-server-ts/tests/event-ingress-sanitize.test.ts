@@ -222,6 +222,29 @@ describe("parseEventAppendBatch sanitization", () => {
     expect(JSON.stringify(batch.events[0]!.payload)).toBe(JSON.stringify(payload));
     expect(batch.events[0]!.searchable_text).toBe("정상 본문 🙂");
   });
+
+  it("preserves registration identity and fail-closes legacy generation envelopes", () => {
+    const base = batchWithEffect({
+      kind: "append_metadata",
+      entry: { type: "registration-test" },
+      updated_at: "2026-08-11T00:00:00.000Z",
+    });
+    const identified = structuredClone(base);
+    (identified.events as Array<Record<string, unknown>>)[0]!.registration_id = "registration-1";
+    expect(parseEventAppendBatch(identified).events[0]!.registration_id).toBe("registration-1");
+
+    const legacy = structuredClone(base);
+    (legacy.events as Array<Record<string, unknown>>)[0]!.execution_generation = 7;
+    const parsedLegacy = parseEventAppendBatch(legacy).events[0]!;
+    expect(parsedLegacy.registration_id).toBeNull();
+    expect(parsedLegacy).not.toHaveProperty("execution_generation");
+
+    const invalid = structuredClone(base);
+    (invalid.events as Array<Record<string, unknown>>)[0]!.registration_id = "";
+    expect(() => parseEventAppendBatch(invalid)).toThrow(
+      "events[0].registration_id must be a non-empty string",
+    );
+  });
 });
 
 function batchWithEffect(sessionEffect: Record<string, unknown>): Record<string, unknown> {

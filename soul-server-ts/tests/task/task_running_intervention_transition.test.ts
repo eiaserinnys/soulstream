@@ -25,6 +25,16 @@ function makeRunningTask(overrides: Partial<Task> = {}): Task {
     lastEventId: 7,
     lastReadEventId: 3,
     interventionQueue: [],
+    executionOwnership: {
+      ownerKind: "in_process",
+      manifestId: "manifest:s1",
+      runtimeEnvIdentity: "runtime:s1",
+      registrationId: "registration:s1",
+      pid: 42_201,
+      startIdentity: "start:s1",
+      executionCommandId: "command:s1",
+      ownershipGeneration: 1,
+    },
     ...overrides,
   };
 }
@@ -157,6 +167,8 @@ describe("RunningInterventionTransition", () => {
         type: "intervention_sent",
         text: "queue after no active turn",
       }),
+      undefined,
+      "registration:s1",
     );
     expect(task.interventionQueue).toEqual([
       { text: "queue after no active turn", user: "soak" },
@@ -274,6 +286,8 @@ describe("RunningInterventionTransition", () => {
         type: "intervention_sent",
         text: "redirect the active turn",
       }),
+      undefined,
+      "registration:s1",
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([
@@ -328,6 +342,8 @@ describe("RunningInterventionTransition", () => {
         text: "reach the active turn",
         attachments: ["/tmp/a.png"],
       }),
+      undefined,
+      "registration:s1",
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([]);
@@ -374,6 +390,8 @@ describe("RunningInterventionTransition", () => {
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
       expect.objectContaining({ type: "intervention_sent", text: "safe boundary" }),
+      undefined,
+      "registration:s1",
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([
@@ -424,6 +442,8 @@ describe("RunningInterventionTransition", () => {
         type: "intervention_sent",
         text: "queue after unsafe boundary",
       }),
+      undefined,
+      "registration:s1",
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([
@@ -461,6 +481,8 @@ describe("RunningInterventionTransition", () => {
         type: "intervention_sent",
         text: "next turn only",
       }),
+      undefined,
+      "registration:s1",
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([

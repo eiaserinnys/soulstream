@@ -58,20 +58,6 @@ describe("session-data read repositories", () => {
     expect(summaryQuery!.indexOf("LIMIT")).toBeLessThan(summaryQuery!.indexOf("FROM events"));
   });
 
-  it("reads restart ownership inventory only from the sessions-row owner canon", async () => {
-    const { sql, calls } = createSql(() => []);
-    const repository = new SessionReadRepository(sql);
-
-    await repository.listOwnerNullRunningInventory({ nodeId: "node-a", limit: 100 });
-
-    const query = calls[0]?.text;
-    expect(query).toBeDefined();
-    expect(query).toContain("FROM session_owner_null_running_inventory AS inventory");
-    expect(query).toContain("session.execution_manifest_id IS NULL");
-    expect(query).not.toContain("session_execution_ownerships");
-    expect(query).not.toContain("reconciliation_kind");
-  });
-
   it("owns all seven event read operations and preserves payload contracts", async () => {
     const now = new Date("2026-08-06T00:00:00.000Z");
     const event = {

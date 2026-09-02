@@ -642,12 +642,14 @@ export class TaskExecutor {
       // turn before replaying runner frames. A stable execution command id
       // suppresses duplicate client updates across repeated host restarts.
       if (mode === "adopt") {
+        const registrationId = runner.dispatcher.registrationId();
         const application = await this.persistence
           .enqueueRunningTransitionAndWaitForApplication(
           task.agentSessionId,
           {
             reviewState: task.reviewState ?? "not_required",
             transitionId: `adopt:${commandId ?? task.lastEventId}`,
+            ...(registrationId ? { registrationId } : {}),
           },
         );
         applyCanonicalSessionProjection(task, application.canonicalSession);
@@ -933,6 +935,9 @@ export class TaskExecutor {
               waitForAck: true,
               semanticDedupeKey:
                 `claude-backend-rollover:${task.agentSessionId}:${previousSessionId}:${nextAttempts}`,
+              ...(task.executionOwnership
+                ? { registrationId: task.executionOwnership.registrationId }
+                : {}),
             },
           );
           if (metadataEventId !== null) task.lastEventId = metadataEventId;
@@ -1115,6 +1120,9 @@ export class TaskExecutor {
         waitForAck: true,
         semanticDedupeKey:
           `claude-backend-rollover:${task.agentSessionId}:${previousSessionId}:${backendSessionId}:completed`,
+        ...(task.executionOwnership
+          ? { registrationId: task.executionOwnership.registrationId }
+          : {}),
       },
     );
     if (metadataEventId !== null) task.lastEventId = metadataEventId;

@@ -172,7 +172,7 @@ export function insertRunnerRecord(
 ): void {
   database.prepare(`
     INSERT INTO runner_event_outbox (
-      source_seq, record_kind, stream_id, session_id, execution_generation, event_type,
+      source_seq, record_kind, stream_id, session_id, registration_id, event_type,
       payload_json, searchable_text, created_at, semantic_dedupe_key,
       session_effect_json, payload_hash, runner_metadata_json, acked_through,
       ack_checkpoint_hash
@@ -182,7 +182,7 @@ export function insertRunnerRecord(
     kind,
     record.stream_id,
     record.session_id,
-    record.execution_generation ?? null,
+    record.registration_id ?? null,
     record.event_type,
     stringifyRunnerJson(record.payload, "payload"),
     record.searchable_text,
@@ -222,9 +222,11 @@ export function assertRunnerReadOnlySchema(database: DatabaseSync, version: numb
   if (!RUNNER_EVENT_OUTBOX_READ_ONLY_SCHEMA_VERSIONS.has(version)) {
     throw new Error(`runner event outbox schema version ${version} is not supported read-only`);
   }
-  const requiredColumns = version === RUNNER_EVENT_OUTBOX_SCHEMA_VERSION
+  const requiredColumns = version === 10
     ? [...RUNNER_EVENT_OUTBOX_READ_ONLY_REQUIRED_COLUMNS, "execution_generation"]
-    : RUNNER_EVENT_OUTBOX_READ_ONLY_REQUIRED_COLUMNS;
+    : version === RUNNER_EVENT_OUTBOX_SCHEMA_VERSION
+      ? [...RUNNER_EVENT_OUTBOX_READ_ONLY_REQUIRED_COLUMNS, "registration_id"]
+      : RUNNER_EVENT_OUTBOX_READ_ONLY_REQUIRED_COLUMNS;
   const columns = new Set(
     (database.prepare("PRAGMA table_info(runner_event_outbox)").all() as Array<{ name: string }>)
       .map((column) => column.name),

@@ -32,7 +32,7 @@ export type EventOutboxRecord = {
   stream_id: string;
   source_seq: number;
   session_id: string;
-  execution_generation?: number | null;
+  registration_id?: string | null;
   event_type: string;
   payload: unknown;
   searchable_text: string | null;
@@ -99,7 +99,7 @@ export class EventOutbox {
       const unsigned = {
         stream_id: this.metadata.stream_id,
         source_seq: this.metadata.next_seq,
-        ...input,
+        ...normalizeEventOutboxAppendInput(input),
       };
       const record: EventOutboxRecord = {
         ...unsigned,
@@ -277,7 +277,7 @@ export class EventOutbox {
       if (!isOutboxRecord(parsed)) {
         throw new Error(`event outbox has invalid record at row ${index + 1}`);
       }
-      return parsed;
+      return normalizeRecoveredEventOutboxRecord(parsed);
     });
   }
 
@@ -343,13 +343,23 @@ function buildBatch(
 export function computeEventOutboxPayloadHash(
   record: Omit<EventOutboxRecord, "payload_hash">,
 ): string {
+  const legacyExecutionGeneration = (
+    record as Omit<EventOutboxRecord, "payload_hash"> & {
+      execution_generation?: number | null;
+    }
+  ).execution_generation;
   const canonical = {
     stream_id: record.stream_id,
     source_seq: record.source_seq,
     session_id: record.session_id,
-    ...(record.execution_generation === undefined
+    ...(record.registration_id === undefined
       ? {}
-      : { execution_generation: record.execution_generation }),
+      : { registration_id: record.registration_id }),
+    // Read compatibility only. New appenders cannot construct this field, but
+    // pre-Wave-2 JSONL rows must retain their original hash until ACK/compaction.
+    ...(legacyExecutionGeneration === undefined
+      ? {}
+      : { execution_generation: legacyExecutionGeneration }),
     event_type: record.event_type,
     payload: record.payload,
     searchable_text: record.searchable_text,
@@ -376,11 +386,65 @@ function validateAppendInput(input: EventOutboxAppendInput): void {
   if (JSON.stringify(input.payload) === undefined) {
     throw new Error("event outbox payload must be JSON serializable");
   }
-  if (input.execution_generation !== undefined
-    && input.execution_generation !== null
-    && (!Number.isSafeInteger(input.execution_generation) || input.execution_generation <= 0)) {
-    throw new Error("event outbox execution_generation must be a positive integer");
+  if (input.registration_id !== undefined
+    && input.registration_id !== null
+    && input.registration_id.length === 0) {
+    throw new Error("event outbox registration_id must be non-empty");
   }
+}
+
+export function normalizeEventOutboxAppendInput(
+  input: EventOutboxAppendInput,
+): EventOutboxAppendInput {
+  return {
+    session_id: input.session_id,
+    ...(input.registration_id === undefined
+      ? {}
+      : { registration_id: input.registration_id }),
+    event_type: input.event_type,
+    payload: input.payload,
+    searchable_text: input.searchable_text,
+    created_at: input.created_at,
+    semantic_dedupe_key: input.semantic_dedupe_key,
+    session_effect: input.session_effect,
+  };
+}
+
+function normalizeRecoveredEventOutboxRecord(
+  record: EventOutboxRecord,
+): EventOutboxRecord {
+  const legacy = record as EventOutboxRecord & {
+    execution_generation?: number | null;
+  };
+  if (!Object.hasOwn(legacy, "execution_generation")) return record;
+  if (record.registration_id !== undefined) {
+    throw new Error("event outbox record mixes registration and generation identities");
+  }
+  if (
+    legacy.execution_generation !== null
+    && (
+      !Number.isSafeInteger(legacy.execution_generation)
+      || (legacy.execution_generation ?? 0) <= 0
+    )
+  ) {
+    throw new Error("legacy event outbox execution generation is invalid");
+  }
+  const {
+    payload_hash: payloadHash,
+    execution_generation: executionGeneration,
+    ...base
+  } = legacy;
+  if (computeEventOutboxPayloadHash({
+    ...base,
+    execution_generation: executionGeneration,
+  } as Omit<EventOutboxRecord, "payload_hash">) !== payloadHash) {
+    throw new Error(`event outbox payload hash mismatch at source_seq ${record.source_seq}`);
+  }
+  const identified = { ...base, registration_id: null };
+  return {
+    ...identified,
+    payload_hash: computeEventOutboxPayloadHash(identified),
+  };
 }
 
 function validateRecoveredRecords(
@@ -426,6 +490,9 @@ function isOutboxRecord(value: unknown): value is EventOutboxRecord {
   return typeof item.stream_id === "string"
     && Number.isSafeInteger(item.source_seq) && (item.source_seq as number) > 0
     && typeof item.session_id === "string" && item.session_id.length > 0
+    && (item.registration_id === undefined
+      || item.registration_id === null
+      || (typeof item.registration_id === "string" && item.registration_id.length > 0))
     && typeof item.event_type === "string" && item.event_type.length > 0
     && typeof item.created_at === "string"
     && typeof item.payload_hash === "string" && /^[0-9a-f]{64}$/.test(item.payload_hash);

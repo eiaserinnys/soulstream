@@ -12,6 +12,8 @@ import {
 } from "../../src/runner/runner_recovery_coordinator.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import { writeRunnerRegistrationIdentity } from
+  "../../src/runner/runner_registration_identity.js";
 import type { RunnerExecutionState } from "../../src/runner/sqlite_event_outbox_schema.js";
 import {
   RunnerSqliteLifecycle,
@@ -32,7 +34,7 @@ import {
   terminalHarvestViolations,
   type CompatibilityMutationObservation,
   type FailSafeObservation,
-  type GenerationObservation,
+  type RegistrationObservation,
   type IdentityContinuityObservation,
   type LiveV9AdoptObservation,
   type TerminalHarvestObservation,
@@ -60,14 +62,12 @@ describe("v9 read-only rolling adoption strict RED", () => {
     diagnose("axis-1", actual, liveV9AdoptViolations(actual));
     expect(liveV9AdoptViolations(actual)).toEqual([]);
   });
-  it("axis 2: re-adopts the same v9 registration with NULL generation and no successor", async () => {
-    // Contract: a missing v9 execution_generation is explicitly projected as
-    // NULL. Identity continuity never depends on inventing generation 0 or 1.
+  it("axis 2: re-adopts the same v9 sidecar registration and no successor", async () => {
     const ideal: IdentityContinuityObservation = {
       adoptedRegistrationIds: ["registration-v9-stable", "registration-v9-stable"],
       expectedRegistrationId: "registration-v9-stable",
       newRunnerCount: 0,
-      projectedGenerations: [null, null],
+      projectedRegistrations: ["registration-v9-stable", "registration-v9-stable"],
     };
     expect(identityContinuityViolations(ideal)).toEqual([]);
     const actual = await observeDisconnectAndReadopt();
@@ -111,23 +111,23 @@ describe("v9 read-only rolling adoption strict RED", () => {
   });
   it("axis 5: every inverse mutation adds a new named violation over the fixed baseline", async () => {
     const fixed: CompatibilityMutationObservation = {
-      supportedVersions: [9, 10],
+      supportedVersions: [9, 10, 11],
       v9Accepted: true,
-      v11Accepted: false,
+      v12Accepted: false,
       v9SourceMutated: false,
-      projectedGeneration: null,
+      projectedRegistration: "registration-v9-stable",
     };
     const baseline = compatibilityMutationViolations(fixed);
     expect(baseline).toEqual([]);
     const mutants: Array<[string, CompatibilityMutationObservation]> = [
       ["supported-set-dropped-v9", {
-        ...fixed, supportedVersions: [10], v9Accepted: false, projectedGeneration: "unobserved",
+        ...fixed, supportedVersions: [10, 11], v9Accepted: false, projectedRegistration: null,
       }],
       ["future-version-accepted", {
-        ...fixed, supportedVersions: [9, 10, 11], v11Accepted: true,
+        ...fixed, supportedVersions: [9, 10, 11, 12], v12Accepted: true,
       }],
       ["v9-reader-mutated-source", { ...fixed, v9SourceMutated: true }],
-      ["v9-generation-fabricated", { ...fixed, projectedGeneration: 1 }],
+      ["v9-registration-not-projected", { ...fixed, projectedRegistration: null }],
     ];
     const mutationEvidence = Object.fromEntries(mutants.map(([name, mutant]) => [
       name,
@@ -174,7 +174,7 @@ async function observeDisconnectAndReadopt(): Promise<IdentityContinuityObservat
     adoptedRegistrationIds: [],
     expectedRegistrationId: "registration-v9-stable",
     newRunnerCount: 0,
-    projectedGenerations: [],
+    projectedRegistrations: [],
   };
   for (let host = 0; host < 2; host += 1) {
     const coordinator = makeCoordinator(registration, observation);
@@ -243,19 +243,19 @@ async function observeCompletedTailHarvest(
 async function observeVersionAndStructureGuards(): Promise<FailSafeObservation> {
   const v9 = await createFixture(9);
   const v10 = await createFixture(10);
-  const v11 = await createFixture(10);
-  setUserVersion(v11.databasePath, 11);
+  const v12 = await createFixture(10);
+  setUserVersion(v12.databasePath, 12);
   const malformedV9 = await createFixture(9);
   const malformedV10 = await createFixture(10);
   removeRequiredColumn(malformedV9.databasePath);
   removeRequiredColumn(malformedV10.databasePath);
-  const guarded = [v11, malformedV9, malformedV10];
+  const guarded = [v12, malformedV9, malformedV10];
   const before = await Promise.all(guarded.map((fixture) => fingerprint(fixture.databasePath)));
   const [v9Tail, v10Read, v10Tail, future, bad9, bad10] = await Promise.all([
     attemptRead(v9.databasePath, "tail"),
     attemptRead(v10.databasePath, "full"),
     attemptRead(v10.databasePath, "tail"),
-    attemptRead(v11.databasePath, "full"),
+    attemptRead(v12.databasePath, "full"),
     attemptRead(malformedV9.databasePath, "full"),
     attemptRead(malformedV10.databasePath, "full"),
   ]);
@@ -275,26 +275,29 @@ async function observeVersionAndStructureGuards(): Promise<FailSafeObservation> 
 async function observeCompatibilityBaseline(): Promise<CompatibilityMutationObservation> {
   const v9 = await createFixture(9);
   const v10 = await createFixture(10);
-  const v11 = await createFixture(10);
-  setUserVersion(v11.databasePath, 11);
+  const v11 = await createFixture(11);
+  const v12 = await createFixture(11);
+  setUserVersion(v12.databasePath, 12);
   const before = await fingerprint(v9.databasePath);
-  const [read9, read10, read11] = await Promise.all([
+  const [read9, read10, read11, read12] = await Promise.all([
     attemptRead(v9.databasePath, "full"),
     attemptRead(v10.databasePath, "full"),
     attemptRead(v11.databasePath, "full"),
+    attemptRead(v12.databasePath, "full"),
   ]);
   const after = await fingerprint(v9.databasePath);
   const supportedVersions = [
     ...(read9.adopted ? [9] : []),
     ...(read10.adopted ? [10] : []),
     ...(read11.adopted ? [11] : []),
+    ...(read12.adopted ? [12] : []),
   ];
   return {
     supportedVersions,
     v9Accepted: read9.adopted,
-    v11Accepted: read11.adopted,
+    v12Accepted: read12.adopted,
     v9SourceMutated: !sameFingerprint(before, after),
-    projectedGeneration: read9.generation,
+    projectedRegistration: read9.registration,
   };
 }
 interface Fixture {
@@ -305,7 +308,7 @@ interface Fixture {
   bootstrap: RunnerRegistration["bootstrap"];
 }
 async function createFixture(
-  version: 9 | 10,
+  version: 9 | 10 | 11,
   state: RunnerExecutionState = "running",
   terminalTail = false,
 ): Promise<Fixture> {
@@ -327,13 +330,15 @@ async function createFixture(
       snapshot_path: "/release/v9-compat",
     },
   });
-  await writer.append(eventInput(sessionId, "assistant_message", "v9 tail one", 1));
+  const legacyEvents = [
+    await writer.append(eventInput(sessionId, "assistant_message", "v9 tail one", 1)),
+  ];
   if (terminalTail) {
-    await writer.append({
+    legacyEvents.push(await writer.append({
       ...eventInput(sessionId, "session_ended", null, 2),
       payload: { type: "session_ended", status: "completed" },
       semantic_dedupe_key: `terminal:${sessionId}`,
-    });
+    }));
   }
   const lifecycle = RunnerSqliteLifecycle.open(databasePath, sessionId);
   lifecycle.begin({ pid: 4123, commandId: "execute-v9", progressedAt: "2026-08-28T00:00:00.500Z" });
@@ -342,10 +347,47 @@ async function createFixture(
   writer.close();
   if (version === 9) {
     const database = new DatabaseSync(databasePath);
-    database.exec("ALTER TABLE runner_event_outbox DROP COLUMN execution_generation; PRAGMA user_version = 9");
+    rewriteLegacyEventHashes(database, legacyEvents);
+    database.exec("ALTER TABLE runner_event_outbox DROP COLUMN registration_id; PRAGMA user_version = 9");
+    database.close();
+  } else if (version === 10) {
+    const database = new DatabaseSync(databasePath);
+    rewriteLegacyEventHashes(database, legacyEvents);
+    database.exec(`
+      ALTER TABLE runner_event_outbox
+      ADD COLUMN execution_generation INTEGER CHECK (
+        execution_generation IS NULL OR execution_generation > 0
+      );
+      ALTER TABLE runner_event_outbox DROP COLUMN registration_id;
+      PRAGMA user_version = 10;
+    `);
     database.close();
   }
+  await writeRunnerRegistrationIdentity(directory, {
+    schemaVersion: 1,
+    registrationId: "registration-v9-stable",
+    sessionId,
+    codeSha: "release-v9-compat",
+    pid: 4123,
+    startIdentity: "start-4123-v9",
+  });
   return { directory, databasePath, sessionId, streamId: bootstrap.stream_id, bootstrap };
+}
+function rewriteLegacyEventHashes(
+  database: SqliteDatabase,
+  records: readonly EventOutboxRecord[],
+): void {
+  const update = database.prepare(`
+    UPDATE runner_event_outbox SET payload_hash = ? WHERE source_seq = ?
+  `);
+  for (const record of records) {
+    const {
+      payload_hash: _payloadHash,
+      registration_id: _registrationId,
+      ...legacyUnsigned
+    } = record;
+    update.run(computeEventOutboxPayloadHash(legacyUnsigned), record.source_seq);
+  }
 }
 function makeRegistration(fixture: Fixture, pidAlive: boolean): RunnerRegistration {
   return {
@@ -392,9 +434,7 @@ function makeCoordinator(
         try {
           const batch = await parent.readBatch();
           const first = batch?.events[0];
-          observation.projectedGenerations.push(first
-            ? (first.execution_generation ?? null)
-            : "unobserved");
+          observation.projectedRegistrations.push(first?.registration_id ?? null);
         } finally {
           parent.close();
         }
@@ -436,7 +476,7 @@ class ActiveV9Writer {
   close() { this.database.close(); }
 }
 async function attemptRead(path: string, mode: "full" | "tail"): Promise<{
-  adopted: boolean; returnedData: boolean; generation: GenerationObservation;
+  adopted: boolean; returnedData: boolean; registration: RegistrationObservation;
 }> {
   let reader: RunnerSqliteEventOutbox | undefined;
   try {
@@ -445,9 +485,9 @@ async function attemptRead(path: string, mode: "full" | "tail"): Promise<{
       : await RunnerSqliteEventOutbox.openReadOnlyTail(path);
     const batch = await reader.readBatch();
     const first = batch?.events[0];
-    return { adopted: true, returnedData: Boolean(first), generation: first ? (first.execution_generation ?? null) : "unobserved" };
+    return { adopted: true, returnedData: Boolean(first), registration: first?.registration_id ?? null };
   } catch {
-    return { adopted: false, returnedData: false, generation: "unobserved" };
+    return { adopted: false, returnedData: false, registration: null };
   } finally {
     reader?.close();
   }

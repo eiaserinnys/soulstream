@@ -25,7 +25,7 @@ export abstract class EventTransitionPublisher {
     sessionId: string,
     event: SSEEventPayload,
     explicitEffect?: EventOutboxSessionEffect,
-    executionGeneration?: number | null,
+    registrationId?: string | null,
   ): Promise<EventOutboxRecord>;
 
   protected abstract waitForTransitionApplication(
@@ -39,7 +39,7 @@ export abstract class EventTransitionPublisher {
     input: RunningTransitionInput,
   ): Promise<EventOutboxRecord> {
     const { event, effect } = buildRunningTransitionRecord(sessionId, input);
-    return this.enqueueEvent(sessionId, event, effect);
+    return this.enqueueEvent(sessionId, event, effect, input.registrationId);
   }
 
   async enqueueRunningTransitionAndWaitForAck(
@@ -146,9 +146,9 @@ export abstract class EventTransitionPublisher {
     sessionId: string,
     event: SSEEventPayload,
     effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
-    executionGeneration?: number,
+    registrationId?: string,
   ): Promise<EventSessionTransitionApplication> {
-    const record = await this.enqueueEvent(sessionId, event, effect, executionGeneration);
+    const record = await this.enqueueEvent(sessionId, event, effect, registrationId);
     return await this.waitForTransitionApplication(sessionId, record, "terminal");
   }
 
@@ -172,6 +172,7 @@ export abstract class EventTransitionPublisher {
 type RunningTransitionInput = {
   reviewState: string;
   transitionId: string;
+  registrationId?: string;
   expectedTerminalEventId?: number | null;
   updatedAt?: Date;
 };

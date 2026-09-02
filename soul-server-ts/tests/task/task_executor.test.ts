@@ -749,6 +749,7 @@ describe("TaskExecutor.startExecution", () => {
       task.agentSessionId,
       expect.objectContaining({ type: "session_ended", status: "completed" }),
       expect.objectContaining({ kind: "terminal_transition", status: "completed" }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(rows.get(activeDeliveryId)).toMatchObject({
       state: "uncertain",
@@ -918,6 +919,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "completed",
         termination_reason: "completed_ok",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
@@ -1003,6 +1005,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "completed",
         termination_reason: "completed_ok",
       }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -1109,7 +1112,7 @@ describe("TaskExecutor.startExecution", () => {
         kind: "set_backend_session_id",
         backend_session_id: "claude-sess-1",
       },
-      1,
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -1286,7 +1289,10 @@ describe("TaskExecutor.startExecution", () => {
           conversationId: "conv-2",
         }),
       }),
-      { replaceExistingType: "agents_run_state" },
+      {
+        replaceExistingType: "agents_run_state",
+        registrationId: expect.stringMatching(/^in-process:/),
+      },
     );
     expect(mocks.enqueueMetadataEffect).toHaveBeenCalledWith(
       "sess-1",
@@ -1296,7 +1302,10 @@ describe("TaskExecutor.startExecution", () => {
           items: [{ role: "user", content: "hi" }],
         }),
       }),
-      { replaceExistingType: "agents_session_items" },
+      {
+        replaceExistingType: "agents_session_items",
+        registrationId: expect.stringMatching(/^in-process:/),
+      },
     );
   });
 
@@ -1323,6 +1332,7 @@ describe("TaskExecutor.startExecution", () => {
         termination_reason: "error_aborted",
         termination_detail: "engine boom",
       }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -1366,6 +1376,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "error",
         termination_reason: "error_aborted",
       }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -1474,6 +1485,7 @@ describe("TaskExecutor.startExecution", () => {
         termination_reason: "limit_hit",
         termination_detail: "credential_alert",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalled();
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
@@ -1554,6 +1566,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "error",
         termination_reason: "error_aborted",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
@@ -1620,6 +1633,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "completed",
         termination_reason: "completed_ok",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
@@ -1694,6 +1708,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "error",
         termination_reason: "error_aborted",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
@@ -1837,7 +1852,7 @@ describe("TaskExecutor.startExecution", () => {
         kind: "set_backend_session_id",
         backend_session_id: "thr-codex-1",
       },
-      1,
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -1898,6 +1913,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "interrupted",
         termination_reason: "unknown",
       }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -1971,6 +1987,7 @@ describe("TaskExecutor.startExecution", () => {
         status: "completed",
         termination_reason: "completed_ok",
       }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -2031,6 +2048,7 @@ describe("TaskExecutor.startExecution", () => {
         termination_reason: "error_aborted",
         termination_detail: "prepare boom",
       }),
+      expect.stringMatching(/^in-process:/),
     );
     const skippedBroadcast = mocks.emitEventEnvelope.mock.calls.find(
       (c) => /queued intervention\(s\) skipped/.test(
@@ -2118,6 +2136,7 @@ describe("TaskExecutor.startExecution", () => {
       "sess-1",
       expect.objectContaining({ type: "session_ended" }),
       expect.objectContaining({ kind: "terminal_transition", status: "completed" }),
+      expect.stringMatching(/^in-process:/),
     );
   });
 
@@ -2342,7 +2361,7 @@ describe("TaskExecutor runner process boundary", () => {
         expect.objectContaining({
           kind: "terminal_transition",
         }),
-        7,
+        proof.registrationId,
       );
       expect(task.executionOwnership).toBeUndefined();
       expect(task.pendingExecutionExpectedTerminalEventId).toBeUndefined();
@@ -2436,7 +2455,7 @@ describe("TaskExecutor runner process boundary", () => {
       task.agentSessionId,
       expect.objectContaining({ type: "session_ended" }),
       expect.objectContaining({ kind: "terminal_transition" }),
-      8,
+      proof.registrationId,
     );
     expect(task.executionOwnership).toBeUndefined();
   });
@@ -2932,6 +2951,7 @@ describe("TaskExecutor runner process boundary", () => {
       {
         reviewState: "not_required",
         transitionId: "adopt:execute-old",
+        registrationId: "registration-1",
       },
     ));
     expect(dispatcher.recoverFrames).toHaveBeenCalledWith(
@@ -3060,6 +3080,7 @@ describe("TaskExecutor runner process boundary", () => {
           await finishRecoveredTurn.promise;
           yield engineEventFrame({ type: "complete", result: "recovered", timestamp: 2 });
         })()),
+        registrationId: vi.fn(() => `registration-${backend}`),
         prepareSession: vi.fn(async () => {}),
         interrupt: vi.fn(async () => true),
         close: vi.fn(async () => {}),
@@ -3125,6 +3146,7 @@ function makeRunnerProcessRuntime(events: SSEEventPayload[]): {
     dispatch: vi.fn(),
     executeFrames: vi.fn(() => frameStream(events)),
     recoverFrames: vi.fn(() => frameStream(events)),
+    registrationId: vi.fn(() => "registration-1"),
     prepareExecutionIdentity: vi.fn(async () => ({
       registrationId: "registration-1",
       pid: 321,
@@ -3996,7 +4018,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
         expected_backend_session_id: "claude-over-limit",
         backend_session_id: "claude-fresh",
       },
-      1,
+      expect.stringMatching(/^in-process:/),
     );
     expect(task.codexThreadId).toBe("claude-fresh");
     expect(task.status).toBe("completed");
@@ -4464,7 +4486,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       task.agentSessionId,
       expect.objectContaining({ type: "compact", trigger: "auto_preemptive" }),
       undefined,
-      1,
+      expect.stringMatching(/^in-process:/),
     );
   });
 

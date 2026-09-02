@@ -1099,6 +1099,7 @@ export interface EventAppendBatch {
       stream_id: string;
       source_seq: number;
       session_id: string;
+      registration_id?: string | null;
       event_type: string;
       payload: unknown;
       searchable_text: string | null;
@@ -1152,6 +1153,7 @@ export interface EventAppendBatch {
       stream_id: string;
       source_seq: number;
       session_id: string;
+      registration_id?: string | null;
       event_type: string;
       payload: unknown;
       searchable_text: string | null;

@@ -39,11 +39,11 @@ export function makeEventPersistenceTestDouble(
   type EnqueueEventArgs = Parameters<EventPersistence["enqueueEvent"]>;
   const persistSemanticEvent = vi.fn(
     async (...args: EnqueueEventArgs): Promise<unknown> => {
-      const [sessionId, event, effect] = args;
+      const [sessionId, event, effect, registrationId] = args;
       sourceSeq += 1;
       latestBySession.set(sessionId, sourceSeq);
       eventsById.set(sourceSeq, event);
-      return makeRecord(sourceSeq, sessionId, event, effect);
+      return makeRecord(sourceSeq, sessionId, event, effect, registrationId);
     },
   );
   const semanticEvents = new Map<string, unknown>();
@@ -68,14 +68,17 @@ export function makeEventPersistenceTestDouble(
       sessionId: string,
       event: SSEEventPayload,
       effect?: EventOutboxSessionEffect,
+      registrationId?: string | null,
     ) => {
-      const result = await enqueueEvent(sessionId, event, effect);
+      const result = registrationId === undefined
+        ? await enqueueEvent(sessionId, event, effect)
+        : await enqueueEvent(sessionId, event, effect, registrationId);
       const eventId = eventIdFromResult(result, latestBySession.get(sessionId));
       latestBySession.delete(sessionId);
       return {
         record: isRecord(result)
           ? result as unknown as EventOutboxRecord
-          : makeRecord(eventId, sessionId, event, effect),
+          : makeRecord(eventId, sessionId, event, effect, registrationId),
         eventId,
       };
     },
@@ -84,7 +87,12 @@ export function makeEventPersistenceTestDouble(
     async (
       sessionId: string,
       entry: Record<string, unknown>,
-      options: { replaceExistingType?: string; waitForAck?: boolean } = {},
+      options: {
+        replaceExistingType?: string;
+        waitForAck?: boolean;
+        semanticDedupeKey?: string;
+        registrationId?: string;
+      } = {},
     ): Promise<number | null> => {
       const effect: EventOutboxSessionEffect = {
         kind: "append_metadata",
@@ -98,11 +106,23 @@ export function makeEventPersistenceTestDouble(
         type: "metadata",
         metadata_type: entry.type,
         value: entry.value,
+        ...(options.semanticDedupeKey
+          ? { _dedupe_key: options.semanticDedupeKey }
+          : {}),
       } as unknown as SSEEventPayload;
       if (options.waitForAck) {
-        return (await enqueueEventAndWaitForSessionAck(sessionId, event, effect)).eventId;
+        return (await enqueueEventAndWaitForSessionAck(
+          sessionId,
+          event,
+          effect,
+          options.registrationId,
+        )).eventId;
       }
-      await enqueueEvent(sessionId, event, effect);
+      if (options.registrationId === undefined) {
+        await enqueueEvent(sessionId, event, effect);
+      } else {
+        await enqueueEvent(sessionId, event, effect, options.registrationId);
+      }
       return null;
     },
   );
@@ -112,6 +132,7 @@ export function makeEventPersistenceTestDouble(
       input: {
         reviewState: string;
         transitionId: string;
+        registrationId?: string;
         expectedTerminalEventId?: number | null;
         updatedAt?: Date;
       },
@@ -136,6 +157,7 @@ export function makeEventPersistenceTestDouble(
             : { expected_terminal_event_id: input.expectedTerminalEventId }),
           updated_at: timestamp,
         },
+        input.registrationId,
       );
     },
   );
@@ -189,8 +211,9 @@ export function makeEventPersistenceTestDouble(
       sessionId: string,
       event: SSEEventPayload,
       effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
+      registrationId?: string,
     ) => {
-      const result = await enqueueEvent(sessionId, event, effect);
+      const result = await enqueueEvent(sessionId, event, effect, registrationId);
       const eventId = eventIdFromResult(result, latestBySession.get(sessionId));
       latestBySession.delete(sessionId);
       return {
@@ -290,7 +313,15 @@ export function makeEventPersistenceTestDouble(
       sessionId: string,
       event: SSEEventPayload,
       effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
-    ) => await enqueueTerminalTransitionAndWaitForApplication(sessionId, event, effect),
+      registrationId?: string,
+    ) => registrationId === undefined
+      ? await enqueueTerminalTransitionAndWaitForApplication(sessionId, event, effect)
+      : await enqueueTerminalTransitionAndWaitForApplication(
+          sessionId,
+          event,
+          effect,
+          registrationId,
+        ),
     ...(options.capabilityProfile === "execution_ownership"
       ? {
           recordExecutionGenerationAndWaitForApplication,
@@ -326,12 +357,14 @@ function makeRecord(
   sessionId: string,
   event: SSEEventPayload,
   effect?: EventOutboxSessionEffect,
+  registrationId?: string | null,
 ): EventOutboxRecord {
   const semanticDedupeKey = (event as Record<string, unknown>)._dedupe_key;
   return {
     stream_id: "stream-test",
     source_seq: sourceSeq,
     session_id: sessionId,
+    ...(registrationId === undefined ? {} : { registration_id: registrationId }),
     event_type: event.type,
     payload: event,
     searchable_text: null,

@@ -358,6 +358,7 @@ class Event(TypedDict, closed=True):
     stream_id: str
     source_seq: int
     session_id: str
+    registration_id: NotRequired[str | None]
     event_type: str
     payload: Any
     searchable_text: str | None
