@@ -969,6 +969,7 @@ async function resetToPreRuntimeMigrationState(
     WHERE ordinal >= 46
   `;
   await sql.unsafe(`
+    DROP TABLE IF EXISTS session_delivery_attempts CASCADE;
     DROP TABLE IF EXISTS session_delivery_relation_consumptions CASCADE;
     DROP TABLE IF EXISTS claude_background_tasks CASCADE;
     DROP TABLE IF EXISTS session_delivery_notification_outbox CASCADE;

@@ -156,12 +156,12 @@ export function classifySchemaState(shape) {
 export function buildMigrationPlan(migrations, ledger, shape) {
   const state = classifySchemaState(shape);
   const pendingFromLedger = validateLedger(migrations, ledger);
-  const currentBaselineCount = migrations.findIndex(
+  const taskBaselineCount = migrations.findIndex(
     (item) => item.id === "042_runbook_to_task.sql",
   ) + 1;
-  if (currentBaselineCount === 0) throw new Error("current schema bootstrap boundary missing");
+  if (taskBaselineCount === 0) throw new Error("current schema bootstrap boundary missing");
   if (ledger.length > 0) {
-    if (ledger.length < currentBaselineCount) {
+    if (ledger.length < taskBaselineCount) {
       throw new Error("partial pre-baseline migration ledger is not a supported state");
     }
     if (pendingFromLedger.length === 0 && state !== "current") {
@@ -171,7 +171,18 @@ export function buildMigrationPlan(migrations, ledger, shape) {
   }
 
   let bootstrapCount = 0;
-  if (state === "current") bootstrapCount = currentBaselineCount;
+  if (state === "current") {
+    if (shape.deliveryAttemptTerminologyCurrent) {
+      bootstrapCount = migrations.findIndex(
+        (item) => item.id === "086_delivery_attempt_terminology.sql",
+      ) + 1;
+      if (bootstrapCount === 0) {
+        throw new Error("delivery attempt terminology bootstrap boundary missing");
+      }
+    } else {
+      bootstrapCount = taskBaselineCount;
+    }
+  }
   if (state === "legacy_pre_041") {
     bootstrapCount = migrations.findIndex((item) => item.id === "041_retire_task_tree.sql");
   }

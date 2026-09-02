@@ -47,14 +47,49 @@ export async function inspectSchemaShape(sql) {
           AS runbook_operations
     `,
     sql`
-      SELECT column_name
+      SELECT table_name, column_name
       FROM information_schema.columns
       WHERE table_schema = current_schema()
-        AND table_name = 'task_items'
-        AND column_name IN ('parent_id', 'section_id')
+        AND (
+          (table_name = 'task_items'
+            AND column_name IN ('parent_id', 'section_id'))
+          OR (table_name = 'session_deliveries'
+            AND column_name IN (
+              'lease_owner', 'lease_expires_at',
+              'attempt_token', 'attempt_expires_at'
+            ))
+          OR (table_name = 'session_delivery_notification_outbox'
+            AND column_name IN (
+              'lease_owner', 'lease_expires_at',
+              'attempt_token', 'attempt_expires_at'
+            ))
+          OR (table_name = 'session_delivery_attempts'
+            AND column_name IN ('lease_owner', 'attempt_token'))
+        )
     `,
   ]);
-  const names = new Set(columns.map((row) => row.column_name));
+  const taskItemColumns = new Set(
+    columns
+      .filter((row) => row.table_name === "task_items")
+      .map((row) => row.column_name),
+  );
+  const deliveryColumns = new Set(
+    columns.map((row) => `${row.table_name}.${row.column_name}`),
+  );
+  const currentDeliveryAttemptColumns = [
+    "session_deliveries.attempt_token",
+    "session_deliveries.attempt_expires_at",
+    "session_delivery_notification_outbox.attempt_token",
+    "session_delivery_notification_outbox.attempt_expires_at",
+    "session_delivery_attempts.attempt_token",
+  ];
+  const legacyDeliveryLeaseColumns = [
+    "session_deliveries.lease_owner",
+    "session_deliveries.lease_expires_at",
+    "session_delivery_notification_outbox.lease_owner",
+    "session_delivery_notification_outbox.lease_expires_at",
+    "session_delivery_attempts.lease_owner",
+  ];
   return {
     sessions: relations[0]?.sessions ?? null,
     tasks: relations[0]?.tasks ?? null,
@@ -64,8 +99,11 @@ export async function inspectSchemaShape(sql) {
     taskItems: relations[0]?.task_items ?? null,
     taskOperations: relations[0]?.task_operations ?? null,
     runbookOperations: relations[0]?.runbook_operations ?? null,
-    taskItemsHasParent: names.has("parent_id"),
-    taskItemsHasSection: names.has("section_id"),
+    taskItemsHasParent: taskItemColumns.has("parent_id"),
+    taskItemsHasSection: taskItemColumns.has("section_id"),
+    deliveryAttemptTerminologyCurrent:
+      currentDeliveryAttemptColumns.every((column) => deliveryColumns.has(column))
+      && legacyDeliveryLeaseColumns.every((column) => !deliveryColumns.has(column)),
   };
 }
 
