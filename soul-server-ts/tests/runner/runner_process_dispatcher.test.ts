@@ -11,7 +11,10 @@ import {
   outboxAvailableControlFrame,
   runnerCommandResultFrame,
   runnerRequestFrame,
+  RunnerFrameSchema,
 } from "../../src/runner/frame_protocol.js";
+import { RunnerHostCallIdempotency } from
+  "../../src/runner/runner_host_call_idempotency.js";
 import { RunnerOrphanedSpawnError, RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
 import { buildDurableRunnerEvent } from
@@ -42,6 +45,62 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessDispatcher", () => {
+  it("accepts a previous-release execution ownership renewal and replies without disconnecting", async () => {
+    const sent: unknown[] = [];
+    const applied = new Map<string, {
+      correlationId: string;
+      service: string;
+      operation: string;
+    }>();
+    const handleHostCall = vi.fn(async () => {
+      throw new Error("legacy renewal must not reach live ownership machinery");
+    });
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher & {
+        handleFrame(frame: ReturnType<typeof RunnerFrameSchema.parse>): Promise<void>;
+      };
+    Object.assign(dispatcher, {
+      options: { handleHostCall },
+      recentHostResponses: new Map(),
+      hostCallIdempotency: new RunnerHostCallIdempotency({
+        readHostCallApplied: async (correlationId) => applied.get(correlationId) ?? null,
+        recordHostCallApplied: async (input) => {
+          applied.set(input.correlationId, input);
+        },
+        acknowledgeHostCall: async (correlationId) => {
+          applied.delete(correlationId);
+        },
+      }),
+      sendBestEffort: async (frame: unknown) => {
+        sent.push(frame);
+      },
+    });
+    const legacyFrame = RunnerFrameSchema.parse({
+      protocolVersion: 1,
+      channel: "event",
+      kind: "request",
+      correlationId: "host:legacy-renew",
+      timeoutMs: 30_000,
+      request: {
+        kind: "host_call",
+        service: "execution_ownership",
+        operation: "renew",
+        args: ["session-a", "2026-09-02T03:00:00.000Z"],
+      },
+    });
+
+    await expect(dispatcher.handleFrame(legacyFrame)).resolves.toBeUndefined();
+
+    expect(handleHostCall).not.toHaveBeenCalled();
+    expect(sent).toEqual([{
+      protocolVersion: 1,
+      channel: "control",
+      kind: "response",
+      correlationId: "host:legacy-renew",
+      result: { status: "ok", data: false },
+    }]);
+  });
+
   it("forwards terminal registration retirement with the spawned generation", async () => {
     const retireTerminalRegistration = vi.fn(async () => {});
     const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
