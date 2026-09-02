@@ -302,10 +302,6 @@ export class TaskManager {
     return await this.runnerRecovery.projectClosed(task, detail);
   }
 
-  async reconcileRecordedTerminalExecution(task: Task): Promise<boolean> {
-    return await this.runnerRecovery.reconcileRecordedTerminalExecution(task);
-  }
-
   async reconcileExecutionOwnershipObservations(
     task: Task,
     input: ExecutionOwnershipReconciliationInput,

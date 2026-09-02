@@ -178,9 +178,9 @@ describe("R36 delete_session lifecycle lab", () => {
       _paths: unknown,
       _expected: unknown,
       released: RunnerRegistration,
-      confirmCentralRelease: () => Promise<boolean>,
+      confirmRetirementStillValid: () => Promise<boolean>,
     ) => {
-      expect(await confirmCentralRelease()).toBe(true);
+      expect(await confirmRetirementStillValid()).toBe(true);
       const current = registrations.get(released.config.sessionId)!;
       current.retiredAt = new Date(now).toISOString();
       return "registration_absent" as const;

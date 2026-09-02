@@ -204,8 +204,8 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     expect(task.interventionQueue).toEqual([pendingDelivery]);
   });
 
-  it("retries the same stop fence after executor finalization releases the runner", async () => {
-    const releaseExecutionOwnershipAndWaitForApplication = vi.fn()
+  it("retries the same stop fence after executor finalization clears the runner", async () => {
+    const enqueueTerminalTransitionAndWaitForApplication = vi.fn()
       .mockRejectedValueOnce(new Error("persistence unavailable"))
       .mockImplementation(async (
         _sessionId: string,
@@ -233,7 +233,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
       }));
     const transition = new TaskLifecycleTransition({
       logger: silentLogger,
-      persistence: { releaseExecutionOwnershipAndWaitForApplication } as never,
+      persistence: { enqueueTerminalTransitionAndWaitForApplication } as never,
     });
     const pendingDelivery = {
       text: "held input",
@@ -281,8 +281,8 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
 
     expect(interrupt).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
-    expect(releaseExecutionOwnershipAndWaitForApplication).toHaveBeenCalledTimes(2);
-    const terminalEvents = releaseExecutionOwnershipAndWaitForApplication.mock.calls
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledTimes(2);
+    const terminalEvents = enqueueTerminalTransitionAndWaitForApplication.mock.calls
       .map((call) => call[1] as { _dedupe_key: string; timestamp: number });
     expect(terminalEvents[1]?._dedupe_key).toBe(terminalEvents[0]?._dedupe_key);
     expect(terminalEvents[1]?.timestamp).toBe(terminalEvents[0]?.timestamp);
@@ -576,44 +576,13 @@ describe("TaskLifecycleTransition.persistExecutorFinalState", () => {
     expect(task.terminationEventRecorded).toBe(true);
   });
 
-  it("projects a reaped recovery through the restored runner identity", async () => {
-    const enqueueRecoveredRunnerTerminalFactAndWaitForApplication = vi.fn(async (
-      _sessionId: string,
-      _event: unknown,
-      effect: { updated_at: string },
-    ) => ({
-      eventId: 8,
-      applied: true,
-      canonicalSession: {
-        status: "error",
-        termination_reason: "error_aborted",
-        termination_detail: "runner exited",
-        review_state: "acknowledged",
-        last_assistant_text: null,
-        termination_event_id: 8,
-        updated_at: effect.updated_at,
-        last_event_id: 8,
-      },
-    }));
-    const enqueueTerminalTransitionAndWaitForApplication = vi.fn();
-    const transition = new TaskLifecycleTransition({
-      logger: silentLogger,
-      persistence: {
-        enqueueRecoveredRunnerTerminalFactAndWaitForApplication,
-        enqueueTerminalTransitionAndWaitForApplication,
-      } as never,
-    });
+  it("projects a reaped recovery through the ordinary terminal transition", async () => {
+    const { transition, enqueueTerminalTransitionAndWaitForApplication } = makeMocks();
     const task = makeTask({
       status: "error",
       error: "runner exited",
       completedAt: new Date("2026-08-18T00:00:00.000Z"),
       runnerTerminalFact: "reaped",
-      recoveredExecutionOwnership: {
-        manifestId: "release-1",
-        registrationId: "registration-1",
-        pid: 123,
-        startIdentity: "start-1",
-      },
     });
 
     await expect(transition.persistExecutorFinalState(task)).resolves.toEqual({
@@ -621,20 +590,11 @@ describe("TaskLifecycleTransition.persistExecutorFinalState", () => {
       terminalTransitionApplied: true,
     });
 
-    expect(enqueueRecoveredRunnerTerminalFactAndWaitForApplication)
-      .toHaveBeenCalledWith(
-        "sess-1",
-        expect.objectContaining({ type: "session_ended" }),
-        expect.objectContaining({
-          kind: "recovered_runner_terminal_fact",
-          manifest_id: "release-1",
-          registration_id: "registration-1",
-          pid: 123,
-          start_identity: "start-1",
-          runner_fact: "reaped",
-        }),
-      );
-    expect(enqueueTerminalTransitionAndWaitForApplication).not.toHaveBeenCalled();
+    expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ type: "session_ended" }),
+      expect.objectContaining({ kind: "terminal_transition", status: "error" }),
+    );
   });
 
   it("persists and broadcasts the existing final status without mutating it", async () => {

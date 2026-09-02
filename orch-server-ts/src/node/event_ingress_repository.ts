@@ -362,7 +362,6 @@ function isCanonicalTransitionEffect(
       | "execution_fail"
       | "execution_expire_dead_owner"
       | "execution_retire_terminal_ownership"
-      | "execution_retire_recorded_terminal_identity"
       | "execution_orphaned_spawn"
       ;
   }
@@ -377,7 +376,6 @@ function isCanonicalTransitionEffect(
     || effect?.kind === "execution_fail"
     || effect?.kind === "execution_expire_dead_owner"
     || effect?.kind === "execution_retire_terminal_ownership"
-    || effect?.kind === "execution_retire_recorded_terminal_identity"
     || effect?.kind === "execution_orphaned_spawn"
     ;
 }

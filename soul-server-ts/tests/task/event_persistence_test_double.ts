@@ -209,64 +209,6 @@ export function makeEventPersistenceTestDouble(
       };
     },
   );
-  const enqueueRecoveredRunnerTerminalFactAndWaitForApplication = vi.fn(
-    async (
-      sessionId: string,
-      event: SSEEventPayload,
-      effect: Extract<EventOutboxSessionEffect, { kind: "recovered_runner_terminal_fact" }>,
-    ) => {
-      const result = await enqueueEvent(sessionId, event, effect);
-      const eventId = eventIdFromResult(result, latestBySession.get(sessionId));
-      latestBySession.delete(sessionId);
-      return {
-        eventId,
-        applied: true,
-        canonicalSession: {
-          status: String((event as Record<string, unknown>).status),
-          termination_reason: String(
-            (event as Record<string, unknown>).termination_reason,
-          ),
-          termination_detail: effect.termination_detail,
-          review_state: effect.review_state,
-          last_assistant_text: effect.last_assistant_text ?? null,
-          termination_event_id: eventId,
-          updated_at: effect.updated_at,
-          last_event_id: eventId,
-        },
-      };
-    },
-  );
-  const reconcileRecordedTerminalExecutionAndWaitForApplication = vi.fn(
-    async (
-      _sessionId: string,
-      input: {
-        terminalEventId: number;
-        runnerFact: "completed" | "failed" | "reaped" | "closed";
-        terminationDetail: string | null;
-        reviewState: string;
-        lastAssistantText?: string | null;
-        updatedAt?: Date;
-      },
-    ) => ({
-      eventId: ++sourceSeq,
-      applied: true,
-      canonicalSession: {
-        status: input.runnerFact === "completed"
-          ? "completed"
-          : input.runnerFact === "closed" ? "interrupted" : "error",
-        termination_reason: input.runnerFact === "completed"
-          ? "completed_ok"
-          : input.runnerFact === "closed" ? "killed" : "error_aborted",
-        termination_detail: input.terminationDetail,
-        review_state: input.reviewState,
-        last_assistant_text: input.lastAssistantText ?? null,
-        termination_event_id: input.terminalEventId,
-        updated_at: input.updatedAt?.toISOString() ?? new Date().toISOString(),
-        last_event_id: sourceSeq,
-      },
-      canonicalExecutionOwnership: null,
-    }),
-  );
   const acquireExecutionOwnershipAndWaitForApplication = vi.fn(
     async (
       _sessionId: string,
@@ -349,8 +291,6 @@ export function makeEventPersistenceTestDouble(
       event: SSEEventPayload,
       effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
     ) => await enqueueTerminalTransitionAndWaitForApplication(sessionId, event, effect),
-    enqueueRecoveredRunnerTerminalFactAndWaitForApplication,
-    reconcileRecordedTerminalExecutionAndWaitForApplication,
     ...(options.capabilityProfile === "execution_ownership"
       ? {
           recordExecutionGenerationAndWaitForApplication:
@@ -370,8 +310,6 @@ export function makeEventPersistenceTestDouble(
     enqueueRunningTransitionAndWaitForAck,
     enqueueRunningTransitionAndWaitForApplication,
     enqueueTerminalTransitionAndWaitForApplication,
-    enqueueRecoveredRunnerTerminalFactAndWaitForApplication,
-    reconcileRecordedTerminalExecutionAndWaitForApplication,
     acquireExecutionOwnershipAndWaitForApplication,
     releaseExecutionOwnershipAndWaitForApplication,
     waitForSessionAck,
