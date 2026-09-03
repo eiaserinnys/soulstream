@@ -425,6 +425,7 @@ function makeCoordinator(
     now: () => Date.parse("2026-08-28T00:00:30.000Z"),
     spawner: { terminate: async () => {}, invalidateRegistration: async () => {}, retireTerminalRegistration: async () => {} },
     taskExecutor: {
+      retainRegisteredClaudeBackgroundRunner: async () => false,
       recoverRegisteredRunner: async (_task: Task, hydrated: RunnerRegistration) => {
         observation.adoptedRegistrationIds.push(hydrated.registrationId ?? "missing");
         const parent = await RunnerParentOutbox.open(
