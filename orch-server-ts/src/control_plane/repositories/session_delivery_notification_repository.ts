@@ -93,14 +93,8 @@ export class SessionDeliveryNotificationRepository {
           last_error = NULL,
           updated_at = NOW()
         WHERE
-          session_delivery_notification_outbox.payload->>'delivery_id'
-            = EXCLUDED.payload->>'delivery_id'
-          AND session_delivery_notification_outbox.payload->>'completion_id'
-            = EXCLUDED.payload->>'completion_id'
-          AND session_delivery_notification_outbox.payload->>'relation_key'
-            = EXCLUDED.payload->>'relation_key'
-          AND session_delivery_notification_outbox.payload->>'delivery_intent'
-            = EXCLUDED.payload->>'delivery_intent'
+          session_delivery_notification_outbox.payload - 'disposition'
+            = EXCLUDED.payload - 'disposition'
           AND (
             (
               session_delivery_notification_outbox.state = 'pending'
