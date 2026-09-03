@@ -200,18 +200,29 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         storedMessage?.followupTaskIds ?? items.map((item) => item.taskId),
       ...delivery,
     };
+    // Claim ownership before crossing into addIntervention: that call can resume the
+    // target synchronously and re-enter collectDetached for the same completion.
+    const ownedItems = items.map((item) => {
+      const taskKey = buildTaskKey(task.agentSessionId, item.taskId);
+      const durableDelivery = this.durableDeliveryByTaskKey.get(taskKey);
+      pending.delete(item.taskId);
+      this.flushedTaskKeys.add(taskKey);
+      this.durableDeliveryByTaskKey.delete(taskKey);
+      return { item, taskKey, durableDelivery };
+    });
     try {
       await this.deps.taskManager.addIntervention(
         intervention,
         this.deps.onResume,
       );
-      for (const item of items) {
-        pending.delete(item.taskId);
-        const taskKey = buildTaskKey(task.agentSessionId, item.taskId);
-        this.flushedTaskKeys.add(taskKey);
-        this.durableDeliveryByTaskKey.delete(taskKey);
-      }
     } catch (err) {
+      for (const { item, taskKey, durableDelivery } of ownedItems) {
+        this.flushedTaskKeys.delete(taskKey);
+        pending.set(item.taskId, item);
+        if (durableDelivery) {
+          this.durableDeliveryByTaskKey.set(taskKey, durableDelivery);
+        }
+      }
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId, taskIds: items.map((item) => item.taskId) },
         "Claude runtime task follow-up intervention failed",

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import { markPostResultDrainEvent } from "../../src/engine/claude_event_phase.js";
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import {
   CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
@@ -869,6 +870,90 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     expect(errorPersist).toBeUndefined();
     expect(task.status).toBe("completed");
     expect(task.error).toBeUndefined();
+  });
+
+  it("detached 배달이 turn-end flush에 재진입해도 같은 delivery를 다시 stage하거나 거짓 error를 내지 않는다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.claudeRuntime = {
+      sessionState: "idle",
+      updatedAt: Date.now(),
+      tasks: {
+        "task-reentrant": {
+          taskId: "task-reentrant",
+          status: "completed",
+          updatedAt: 77,
+          isBackgrounded: true,
+        },
+      },
+    };
+    const event = markPostResultDrainEvent({
+      type: "claude_runtime_task_notification",
+      task_id: "task-reentrant",
+      status: "completed",
+      _event_id: 77,
+    } as SSEEventPayload);
+    let controller!: ClaudeRuntimeTaskFollowupController;
+    let reentered = false;
+    const addIntervention = vi.fn(async () => {
+      if (!reentered) {
+        reentered = true;
+        await controller.collectDetached(task, event);
+      } else {
+        throw new Error(
+          "Delivery delivery-reentrant could not stage notification",
+        );
+      }
+      return { queued: true as const, queuePosition: 1 };
+    });
+    controller = new ClaudeRuntimeTaskFollowupController({
+      taskManager: { addIntervention },
+      onResume: vi.fn(),
+      releaseRetainedRunner: vi.fn(async () => undefined),
+      logger: silentLogger,
+      deliveryV2Enabled: true,
+    });
+    const followup: ClaudeRuntimeTaskFollowupPort = {
+      collect: vi.fn(),
+      collectDetached: (target, payload) =>
+        controller.collectDetached(target, payload),
+      flush: async (target) => {
+        controller.collect(target, event);
+        await controller.flush(target);
+      },
+    };
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield { type: "text_delta", text: "foreground done" } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      followup,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(addIntervention).toHaveBeenCalledOnce();
+    const falseError = mocks.enqueueEvent.mock.calls.find(
+      (call) =>
+        (call[1] as { type: string }).type === "error" &&
+        (call[1] as { error_code?: string }).error_code ===
+          "claude_runtime_followup_enqueue_failed",
+    );
+    expect(falseError).toBeUndefined();
   });
 
   it("flush가 follow-up을 큐잉하지 못하면 사용자 가시 nonfatal error를 남긴다", async () => {
