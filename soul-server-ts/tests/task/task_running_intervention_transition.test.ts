@@ -148,8 +148,11 @@ describe("RunningInterventionTransition", () => {
     },
   );
 
-  it("queues a machine report when the active engine lacks the push-only capability", async () => {
-    const intervene = vi.fn();
+  it("falls back to interrupt when the active engine lacks the push-only capability", async () => {
+    const intervene = vi.fn().mockResolvedValue({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
     const task = makeRunningTask({
       runner: createInProcessTaskRunnerRuntime({
         backendId: "claude",
@@ -171,12 +174,89 @@ describe("RunningInterventionTransition", () => {
       user: "system",
       callerInfo: { source: "system" },
       deliveryId: "delivery-idle-machine-report",
+    })).resolves.toEqual({ delivered: true });
+
+    expect(intervene).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to interrupt when an old runner reports tool-boundary injection unsupported", async () => {
+    const intervene = vi.fn().mockResolvedValue({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    const injectAtToolBoundary = vi.fn().mockResolvedValue({
+      status: "not_delivered",
+      mechanism: "unsupported",
+      reason: "not_supported",
+    });
+    const task = makeRunningTask({
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+        injectAtToolBoundary,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+
+    await expect(transition.deliver(task, {
+      text: "report during a rolling deployment",
+      user: "system",
+      callerInfo: { source: "system" },
+      deliveryId: "delivery-old-runner-report",
+    })).resolves.toEqual({ delivered: true });
+
+    expect(injectAtToolBoundary).toHaveBeenCalledOnce();
+    expect(intervene).toHaveBeenCalledOnce();
+    expect(intervene).toHaveBeenCalledWith(expect.objectContaining({
+      inputUuid: expect.any(String),
+      prompt: "report during a rolling deployment",
+    }));
+  });
+
+  it("does not interrupt when tool-boundary injection reports no active turn", async () => {
+    const intervene = vi.fn();
+    const injectAtToolBoundary = vi.fn().mockResolvedValue({
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "no_active_turn",
+    });
+    const task = makeRunningTask({
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+        injectAtToolBoundary,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+
+    await expect(transition.deliver(task, {
+      text: "report after the active turn ended",
+      user: "system",
+      callerInfo: { source: "system" },
+      deliveryId: "delivery-no-active-turn",
     })).resolves.toMatchObject({
       delivered: false,
       queued: true,
-      reason: "not_supported",
+      reason: "no_active_turn",
     });
 
+    expect(injectAtToolBoundary).toHaveBeenCalledOnce();
     expect(intervene).not.toHaveBeenCalled();
   });
 
