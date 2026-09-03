@@ -780,7 +780,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
   });
 
-  it("rejects an exact outbox retry while another writer holds the live attempt token", async () => {
+  it("treats an exact staged outbox as idempotent while its first writer is live", async () => {
     const deliveryId = "delivery-live-outbox-writer";
     const relationKey = "relation-live-outbox-writer";
     const payload = notificationPayload(deliveryId, relationKey);
@@ -802,6 +802,11 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     );
     await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-racing");
     await repository.beginDispatch(deliveryId, "worker-racing");
+    const [{ count: attemptsBefore }] = await harness.sql<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM session_delivery_attempts
+      WHERE delivery_id = ${deliveryId}
+    `;
 
     await expect(repository.notifications.stageWithQueuedDelivery({
       deliveryId,
@@ -809,15 +814,71 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       targetSessionId: "caller-old",
       disposition: "auto_resume",
       payload,
-    })).rejects.toThrow("notification outbox already exists: " + deliveryId);
+    })).resolves.toMatchObject({
+      delivery_id: deliveryId,
+      state: "queued",
+      aggregate_state: "pending",
+    });
     await expect(repository.get(deliveryId)).resolves.toMatchObject({
-      state: "dispatching",
+      state: "queued",
       attempt_token: "worker-racing",
     });
     await expect(repository.notifications.get(deliveryId)).resolves.toMatchObject({
       state: "claimed",
       attempt_token: "worker-live",
     });
+    await expect(harness.sql<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM session_delivery_attempts
+      WHERE delivery_id = ${deliveryId}
+    `).resolves.toEqual([{ count: attemptsBefore }]);
+  });
+
+  it("treats exact delivered and consumed notification stages as idempotent no-ops", async () => {
+    const deliveryId = "delivery-terminal-stage-noop";
+    const relationKey = "relation-terminal-stage-noop";
+    const attemptToken = "worker-terminal-stage";
+    const payload = notificationPayload(deliveryId, relationKey);
+    const stage = () => repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      attemptToken,
+      targetSessionId: "caller-old",
+      disposition: "auto_resume" as const,
+      payload,
+    });
+    await register(deliveryId, relationKey);
+    await repository.claimAttemptForTarget(
+      deliveryId,
+      "caller-old",
+      attemptToken,
+    );
+    await repository.beginDispatch(deliveryId, attemptToken);
+    await expect(stage()).resolves.toMatchObject({ state: "queued" });
+    await repository.notifications.markPublished(
+      deliveryId,
+      attemptToken,
+      "event:terminal-stage",
+    );
+    const [{ count: attemptsBefore }] = await harness.sql<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM session_delivery_attempts
+      WHERE delivery_id = ${deliveryId}
+    `;
+
+    await expect(stage()).resolves.toMatchObject({
+      state: "delivered",
+      aggregate_state: "delivered",
+    });
+    await repository.markConsumed(deliveryId, "turn:terminal-stage");
+    await expect(stage()).resolves.toMatchObject({
+      state: "consumed",
+      aggregate_state: "consumed",
+    });
+    await expect(harness.sql<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM session_delivery_attempts
+      WHERE delivery_id = ${deliveryId}
+    `).resolves.toEqual([{ count: attemptsBefore }]);
   });
 
   it("rejects a stale outbox retry with a competing delivery identity", async () => {

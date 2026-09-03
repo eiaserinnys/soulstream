@@ -1166,9 +1166,26 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await expect(startup.stop()).resolves.toBe("drained");
   });
 
-  it("claims only nonterminal boot rows and preserves an existing target receipt", async () => {
+  it("does not reclaim or re-inject a delivered runtime follow-up with a receipt", async () => {
+    await registerUserDelivery("orphan-queued", "content for orphan-queued");
+    await repository.register({
+      deliveryId: "orphan-delivered",
+      targetSessionId: "caller-session",
+      relationKey: "claude_runtime:caller-session:sdk-session:task@77",
+      completionId: "runtime-followup:task@77",
+      intent: "runtime_followup",
+      source: "claude_runtime_task_followup",
+      producerKind: "claude_background_task",
+      producerId: "task",
+      producerTerminalRevision: "task@77",
+      payloadHash: "hash-orphan-delivered",
+      payload: {
+        text: "background task finished",
+        user: "system",
+        source: "claude_runtime_task_followup",
+      },
+    });
     for (const deliveryId of ["orphan-queued", "orphan-delivered"] as const) {
-      await registerUserDelivery(deliveryId, `content for ${deliveryId}`);
       const worker = `crashed:${deliveryId}`;
       await repository.claimAttemptForTarget(deliveryId, "caller-session", worker);
       await repository.beginDispatch(deliveryId, worker);
@@ -1194,13 +1211,17 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       `;
     }
 
+    const inspected: string[] = [];
     const redelivered: string[] = [];
     const queuedRecovery = makeQueuedRecovery(
       "orphan-content-worker",
-      async (row) => ({
-        kind: "absent",
-        inputUuid: buildDeliveryInputUuid(row.delivery_id),
-      }),
+      async (row) => {
+        inspected.push(row.delivery_id);
+        return {
+          kind: "absent" as const,
+          inputUuid: buildDeliveryInputUuid(row.delivery_id),
+        };
+      },
       async (row) => {
         redelivered.push(row.delivery_id);
         const dispatching = await repository.beginDispatch(
@@ -1217,19 +1238,22 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     );
 
     await expect(queuedRecovery.recoverAfterNodeRestart("node-test")).resolves
-      .toEqual({ claimed: 2, settled: 2 });
-    expect(redelivered.sort()).toEqual(["orphan-delivered", "orphan-queued"]);
+      .toEqual({ claimed: 1, settled: 1 });
+    expect(inspected).toEqual(["orphan-queued"]);
+    expect(redelivered).toEqual(["orphan-queued"]);
     await expect(repository.get("orphan-queued")).resolves.toMatchObject({
       state: "queued",
       aggregate_state: "pending",
     });
     await expect(repository.get("orphan-delivered")).resolves.toMatchObject({
-      state: "queued",
-      aggregate_state: "pending",
+      state: "delivered",
+      aggregate_state: "delivered",
       caller_turn_id: "event:orphan-delivered",
       target_receipt_id: "event:orphan-delivered",
       target_receipt_at: expect.any(Date),
       delivered_at: expect.any(Date),
+      attempt_count: 0,
+      dead_lettered_at: null,
     });
     await expect(repository.get("terminal-consumed")).resolves.toMatchObject({
       state: "queued",
