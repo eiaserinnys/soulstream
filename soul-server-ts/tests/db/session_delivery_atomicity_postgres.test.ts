@@ -834,6 +834,43 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     `).resolves.toEqual([{ count: attemptsBefore }]);
   });
 
+  it("rejects a live outbox retry when the staged notification payload differs", async () => {
+    const deliveryId = "delivery-live-outbox-payload-mismatch";
+    const relationKey = "relation-live-outbox-payload-mismatch";
+    const payload = notificationPayload(deliveryId, relationKey);
+    await register(deliveryId, relationKey);
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-live");
+    await repository.beginDispatch(deliveryId, "worker-live");
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      attemptToken: "worker-live",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload,
+    });
+    await repository.retryDeliveryAttempt(
+      deliveryId,
+      "worker-live",
+      "delivery retry raced live notification writer",
+      0,
+    );
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-racing");
+    await repository.beginDispatch(deliveryId, "worker-racing");
+
+    await expect(repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      attemptToken: "worker-racing",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload: { ...payload, text: "different notification body" },
+    })).rejects.toThrow("notification outbox already exists: " + deliveryId);
+    await expect(repository.notifications.get(deliveryId)).resolves.toMatchObject({
+      state: "claimed",
+      attempt_token: "worker-live",
+      payload: expect.objectContaining({ text: payload.text }),
+    });
+  });
+
   it("treats exact delivered and consumed notification stages as idempotent no-ops", async () => {
     const deliveryId = "delivery-terminal-stage-noop";
     const relationKey = "relation-terminal-stage-noop";
