@@ -107,20 +107,23 @@ export class ClaudeBackgroundTaskLifecycle {
     return true;
   }
 
-  async recoverAfterRestart(): Promise<number> {
+  async terminalizeDeadRunner(sessionId: string): Promise<number> {
     let recovered = 0;
     for (;;) {
-      const active = await this.deps.repository.activeForNode(
+      const active = await this.deps.repository.activeForSession(
         this.deps.sourceNode,
+        sessionId,
       );
       if (active.length === 0) return recovered;
       for (const row of active) {
-        if (await this.terminalizeRestart(row)) recovered += 1;
+        if (await this.terminalizeDeadRunnerRow(row)) recovered += 1;
       }
     }
   }
 
-  private async terminalizeRestart(row: ClaudeBackgroundTaskRow): Promise<boolean> {
+  private async terminalizeDeadRunnerRow(
+    row: ClaudeBackgroundTaskRow,
+  ): Promise<boolean> {
     const createdAt = this.now();
     const terminalRevision = `restart:${createdAt.getTime()}`;
     const delivery = buildDelivery({

@@ -83,7 +83,6 @@ export async function composeClaudeRuntime(
   const startupRecovery = new ClaudeRuntimeStartupRecovery({
     recoverQueuedDeliveries: () =>
       queuedDeliveryRecovery.recoverAfterNodeRestart(params.sourceNode),
-    recoverBackgroundTasks: () => backgroundLifecycle.recoverAfterRestart(),
     logger: params.logger,
     nodeId: params.sourceNode,
   });

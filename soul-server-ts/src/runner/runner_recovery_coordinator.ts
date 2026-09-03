@@ -313,6 +313,27 @@ export class RunnerRecoveryCoordinator {
     task?: Task,
     onRunnerAttached?: () => void,
   ): Promise<void> {
+    if (
+      task
+      && disposition === "replay_terminal"
+      && await this.options.taskExecutor.retainRegisteredClaudeBackgroundRunner(
+        task,
+        registration,
+      )
+    ) {
+      this.options.logger.info(
+        {
+          sessionId: registration.config.sessionId,
+          disposition,
+          blockedBy: "background",
+        },
+        "registered runner recovery skipped because SDK background work owns the process",
+      );
+      return;
+    }
+    if (disposition === "replay_terminal_dead") {
+      await this.terminalizeDeadClaudeBackgroundTasks(registration);
+    }
     const recordedTerminal = task && hasRecordedTerminal(task);
     if (
       task
@@ -577,6 +598,9 @@ export class RunnerRecoveryCoordinator {
         ),
       terminalize: async (owned, recoveredTask, error, verified) => {
         if (await this.retireAttachedTerminalAdmission(owned, recoveredTask)) return;
+        if (verified === "reap_dead") {
+          await this.terminalizeDeadClaudeBackgroundTasks(owned);
+        }
         await this.adoptionFailureRecovery.terminalize(
           owned,
           recoveredTask,
@@ -585,6 +609,14 @@ export class RunnerRecoveryCoordinator {
         );
       },
     });
+  }
+
+  private async terminalizeDeadClaudeBackgroundTasks(
+    registration: RunnerRegistration,
+  ): Promise<void> {
+    await this.options.terminalizeClaudeBackgroundTasks?.(
+      registration.config.sessionId,
+    );
   }
 
   private async recoverByDisposition(

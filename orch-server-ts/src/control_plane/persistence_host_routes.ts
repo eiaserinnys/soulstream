@@ -61,6 +61,7 @@ const claudeRuntimeOperations = {
   terminalize_background_task: ["claudeBackgroundTasks", null, "terminalize"],
   get_background_task: ["claudeBackgroundTasks", null, "get"],
   active_background_tasks_for_node: ["claudeBackgroundTasks", null, "activeForNode"],
+  active_background_tasks_for_session: ["claudeBackgroundTasks", null, "activeForSession"],
   append_transcript_entries: ["claudeTranscripts", null, "appendClaudeTranscriptEntries"],
   append_transcript_entries_idempotent: ["claudeTranscripts", null, "appendClaudeTranscriptEntriesIdempotent"],
   load_transcript_entries: ["claudeTranscripts", null, "loadClaudeTranscriptEntries"],

@@ -46,18 +46,26 @@ export class TaskExecutorFinalizer {
     await this.closeRunnerDispatcher(task, runner);
   }
 
+  async retainClaudeRunnerIfActive(
+    task: Task,
+    runner: NonNullable<Task["runner"]>,
+  ): Promise<boolean> {
+    if (
+      task.runnerIsOfflineReplay === true
+      || !await this.shouldRetainClaudeRuntime(task, runner.engine)
+      || task.runner !== runner
+    ) {
+      return false;
+    }
+    task.runnerRetainedForClaudeBackground = true;
+    return true;
+  }
+
   private async closeEngine(task: Task): Promise<void> {
     const runner = task.runner;
     // An offline replay handle has no live child to keep background work in,
     // so retaining it only strands `task.runner` and blocks every later turn.
-    if (
-      runner
-      && task.runnerIsOfflineReplay !== true
-      && await this.shouldRetainClaudeRuntime(task, runner.engine)
-    ) {
-      task.runnerRetainedForClaudeBackground = true;
-      return;
-    }
+    if (runner && await this.retainClaudeRunnerIfActive(task, runner)) return;
     if (runner) await this.closeRunnerDispatcher(task, runner);
     if (runner) releaseTaskRunner(task, runner);
   }

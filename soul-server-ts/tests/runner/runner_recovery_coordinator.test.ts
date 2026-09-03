@@ -2032,6 +2032,7 @@ function makeSubject(
   const hydrateRunnerRecoveryTask = vi.fn(async (sessionId: string) =>
     tasks.get(sessionId) ?? fallbackTask);
   const recoverRegisteredRunner = vi.fn(async () => {});
+  const retainRegisteredClaudeBackgroundRunner = vi.fn(async () => false);
   const restartRegisteredRunner = vi.fn();
   const markRunnerFailure = vi.fn(async () => {});
   const markRunnerFailureAndResume = markRunnerFailure;
@@ -2065,6 +2066,7 @@ function makeSubject(
     ...overrides,
     taskExecutor: {
       recoverRegisteredRunner,
+      retainRegisteredClaudeBackgroundRunner,
       ...({ restartRegisteredRunner } as object),
       ...overrides.taskExecutor,
     },
@@ -2078,6 +2080,7 @@ function makeSubject(
     task: tasks.get("session-a") ?? fallbackTask,
     hydrateRunnerRecoveryTask,
     recoverRegisteredRunner,
+    retainRegisteredClaudeBackgroundRunner,
     restartRegisteredRunner,
     markRunnerFailure,
     markRunnerFailureAndResume,

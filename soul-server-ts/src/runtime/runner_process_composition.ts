@@ -92,7 +92,9 @@ export async function composeRunnerRecoveryCoordinator(options: {
   taskExecutor: Pick<
     TaskExecutor,
     | "recoverRegisteredRunner"
+    | "retainRegisteredClaudeBackgroundRunner"
   >;
+  terminalizeClaudeBackgroundTasks?: (sessionId: string) => Promise<number>;
   logger: Logger;
 }): Promise<RunnerRecoveryCoordinator | undefined> {
   if (!options.runnerProcessFactory) return undefined;
@@ -112,6 +114,12 @@ export async function composeRunnerRecoveryCoordinator(options: {
     taskExecutor: options.taskExecutor,
     closedTailDrainer: options.closedTailDrainer,
     logger: options.logger,
+    ...(options.terminalizeClaudeBackgroundTasks
+      ? {
+        terminalizeClaudeBackgroundTasks:
+          options.terminalizeClaudeBackgroundTasks,
+      }
+      : {}),
     ...(options.releaseGarbageCollector
       ? { releaseGarbageCollector: options.releaseGarbageCollector }
       : {}),

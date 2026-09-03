@@ -290,7 +290,6 @@ export async function composeWorkerRuntime(
     transientEventLogAggregator,
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
   });
-  await claudeRuntime.startupRecovery?.start();
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({
     env,
     runnerProcessFactory: runnerProcess?.runtimeFactory,
@@ -300,6 +299,12 @@ export async function composeWorkerRuntime(
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,
     logger,
+    ...(claudeRuntime.backgroundLifecycle
+      ? {
+        terminalizeClaudeBackgroundTasks: (sessionId: string) =>
+          claudeRuntime.backgroundLifecycle!.terminalizeDeadRunner(sessionId),
+      }
+      : {}),
   });
   const taskService = new TaskService(orchHostClientDeps);
   db.configureTaskReader(taskService);
