@@ -1,6 +1,6 @@
 # 재시작 복구
 
-R3 코드 대조 커밋 SHA: `3e32c3d0d61fc653d5665ce2029b1e1001fd2c39`
+R3 코드 대조 커밋 SHA: `b9f7d3c5e29f8978970692bcadd6d6fd942908b1`
 
 > 범위 주석: accepted input producer는 boot 1회·node-ready·orch maintenance이며, 5초 maintenance lane은 stale attempt와 notification 투영만 회수한다.
 
