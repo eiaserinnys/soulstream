@@ -4,6 +4,7 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type {
   EngineInterventionFailureReason,
   EngineInterventionResult,
+  SupportsToolBoundaryInjection,
 } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
@@ -13,6 +14,14 @@ import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import { publishInterventionSent } from "./task_intervention_events.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 import { interventionTurnOrigin } from "./turn_origin.js";
+
+const HUMAN_CALLER_SOURCES = new Set(["slack", "browser", "soul-app"]);
+
+/** Missing source keeps the legacy human path; every explicit non-human source is push-only. */
+export function isHumanAuthored(message: Pick<InterventionMessage, "callerInfo">): boolean {
+  const source = message.callerInfo?.source;
+  return source === undefined || source === null || HUMAN_CALLER_SOURCES.has(source);
+}
 
 export type RunningInterventionResult =
   | { delivered: true }
@@ -182,7 +191,19 @@ export class RunningInterventionTransition {
       turnOrigin: interventionTurnOrigin(message, inputUuid),
     };
     try {
-      return await engine.intervene(input);
+      if (isHumanAuthored(message) || engine.backendId !== "claude") {
+        return await engine.intervene(input);
+      }
+      const injection = engine as typeof engine & Partial<SupportsToolBoundaryInjection>;
+      if (!injection.injectAtToolBoundary) {
+        return {
+          status: "not_delivered",
+          mechanism: "unsupported",
+          reason: "not_supported",
+          message: "Task runner engine does not support tool-boundary injection",
+        };
+      }
+      return await injection.injectAtToolBoundary(input);
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },

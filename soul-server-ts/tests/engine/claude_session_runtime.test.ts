@@ -16,6 +16,37 @@ function makeSubject(receipt: ClaudeInterruptReceipt = { still_queued: [] }) {
 }
 
 describe("ClaudeSessionRuntime", () => {
+  it("merges tool-boundary input into the active result without changing its owner", async () => {
+    const { runtime, query } = makeSubject();
+    runtime.enqueueInput({ uuid: "foreground", payloadHash: "hash-1", message: "first" });
+    runtime.beginForegroundTurn("foreground");
+
+    expect(runtime.enqueueForegroundContinuation({
+      uuid: "machine-report",
+      payloadHash: "hash-2",
+      message: "report",
+    })).toBe(true);
+    expect(runtime.snapshot().pendingInputs).toContainEqual({
+      uuid: "machine-report",
+      payloadHash: "hash-2",
+      state: "merged",
+    });
+    expect(runtime.isForegroundResultOwner("foreground")).toBe(true);
+    expect(runtime.isForegroundResultOwner("machine-report")).toBe(true);
+
+    runtime.observeResult({ userMessageUuid: "foreground", interrupted: false });
+    runtime.settleMergedInputs();
+    runtime.finishForegroundResult();
+
+    expect(runtime.snapshot().pendingInputs).toEqual([
+      expect.objectContaining({ uuid: "foreground", state: "settled" }),
+      expect.objectContaining({ uuid: "machine-report", state: "settled" }),
+    ]);
+    expect(query.interrupt).not.toHaveBeenCalled();
+    await expect(runtime.inputQueue.next()).resolves.toEqual({ done: false, value: "first" });
+    await expect(runtime.inputQueue.next()).resolves.toEqual({ done: false, value: "report" });
+  });
+
   it("Result는 foreground만 끝내고 Query와 input queue를 닫지 않는다", async () => {
     const { runtime, query } = makeSubject();
     runtime.setSessionId("claude-session-1");

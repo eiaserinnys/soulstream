@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   Query as ClaudeSdkQuery,
   SDKMessage,
@@ -6,6 +8,7 @@ import type {
 import type { Logger } from "pino";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
 import { markPostResultDrainEvent } from "./claude_event_phase.js";
+import type { EngineUserInput } from "./protocol.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import {
   isTerminalPersistentBackgroundEvent,
@@ -26,6 +29,7 @@ import {
   type ClaudeSdkPersistentSessionConfig,
   createInterventionInterruptObservation,
   describeResultProvenance,
+  hashSdkUserMessage,
   isExpectedInterruptDiagnostic,
   isExpectedInterruptTerminalEvent,
   isTurnStartingUserInput,
@@ -36,6 +40,7 @@ import {
   turnInactivityError,
   waitForInterventionEffect,
 } from "./claude_sdk_persistent_session_support.js";
+import { makeUserMessage } from "./claude_sdk_user_message.js";
 import { startPersistentForegroundTurn } from "./claude_sdk_persistent_turn_handoff.js";
 import {
   ClaudeSessionRuntime,
@@ -128,6 +133,27 @@ export class ClaudeSdkPersistentSession {
       await this.close("fatal");
       throw error;
     }
+  }
+
+  injectAtToolBoundary(input: EngineUserInput): boolean {
+    const active = this.activeForeground;
+    if (!active || this.runtime.snapshot().foregroundPhase !== "generating") return false;
+    const uuid = input.inputUuid ?? randomUUID();
+    const message = makeUserMessage(
+      input.prompt,
+      input.imageAttachmentPaths,
+      {
+        uuid,
+        priority: "next",
+        origin: { kind: "coordinator" },
+      },
+    );
+    this.runtime.enqueueForegroundContinuation({
+      uuid,
+      payloadHash: hashSdkUserMessage(message),
+      message,
+    });
+    return true;
   }
 
   snapshot(): ClaudeSessionRuntimeSnapshot {
@@ -297,7 +323,9 @@ export class ClaudeSdkPersistentSession {
       }
       return;
     }
-    if (!active || explicitUserMessageUuid !== active.uuid) {
+    const activeOwnsResult = active !== null
+      && this.runtime.isForegroundResultOwner(explicitUserMessageUuid);
+    if (!activeOwnsResult) {
       const observation = this.runtime.observeDetachedResult(explicitUserMessageUuid);
       if (observation === "duplicate") return;
       if (observation === "unknown") {
@@ -323,9 +351,10 @@ export class ClaudeSdkPersistentSession {
     }
 
     this.runtime.observeResult({
-      userMessageUuid: explicitUserMessageUuid,
+      userMessageUuid: active.uuid,
       interrupted: phase === "interrupting",
     });
+    this.runtime.settleMergedInputs();
     if (active) this.followupWatchdog.resultArrived(active.uuid);
     this.clearForegroundTimers(active);
     this.runtime.finishForegroundResult();
@@ -386,6 +415,7 @@ export class ClaudeSdkPersistentSession {
     if (active?.rateLimitTerminationState === "terminal") {
       active.output.push(event);
       this.runtime.observeResult({ userMessageUuid: active.uuid, interrupted: false });
+      this.runtime.settleMergedInputs();
       this.clearForegroundTimers(active);
       this.runtime.finishForegroundResult();
       this.armDrainTimer();

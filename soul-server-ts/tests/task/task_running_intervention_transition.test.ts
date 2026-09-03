@@ -180,6 +180,39 @@ describe("RunningInterventionTransition", () => {
     expect(intervene).not.toHaveBeenCalled();
   });
 
+  it("keeps the Codex turn/steer path unchanged for a machine-authored report", async () => {
+    const intervene = vi.fn().mockResolvedValue({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    const injectAtToolBoundary = vi.fn();
+    const task = makeRunningTask({
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "codex",
+        workspaceDir: "/tmp/codex",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+        injectAtToolBoundary,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+
+    await expect(transition.deliver(task, {
+      text: "agent report to Codex",
+      user: "roselin",
+      callerInfo: { source: "agent" },
+    })).resolves.toEqual({ delivered: true });
+
+    expect(intervene).toHaveBeenCalledOnce();
+    expect(injectAtToolBoundary).not.toHaveBeenCalled();
+  });
+
   it("queues an idle runner notification in the normal next-turn queue without runner inbox staging", async () => {
     let task!: Task;
     const stageIntervention = vi.fn(async () => {

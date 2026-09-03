@@ -21,6 +21,7 @@ export type ClaudeRuntimeCloseReason =
 export type ClaudeInputState =
   | "queued"
   | "submitted"
+  | "merged"
   | "receipt_still_queued"
   | "settled";
 
@@ -176,6 +177,21 @@ export class ClaudeSessionRuntime<TMessage> {
     return true;
   }
 
+  enqueueForegroundContinuation(input: ClaudeRuntimeInput<TMessage>): boolean {
+    this.assertOpen();
+    if (this.foregroundPhase !== "generating") {
+      throw new Error(`Cannot inject Claude input while ${this.foregroundPhase}`);
+    }
+    const enqueued = this.enqueueInput(input);
+    if (enqueued) this.requireInput(input.uuid).state = "merged";
+    return enqueued;
+  }
+
+  isForegroundResultOwner(uuid: string): boolean {
+    const state = this.inputs.get(uuid)?.state;
+    return state === "submitted" || state === "merged";
+  }
+
   beginForegroundTurn(uuid: string): void {
     this.assertOpen();
     if (
@@ -260,6 +276,12 @@ export class ClaudeSessionRuntime<TMessage> {
     if (input.state === "settled") return "duplicate";
     input.state = "settled";
     return "settled";
+  }
+
+  settleMergedInputs(): void {
+    for (const input of this.inputs.values()) {
+      if (input.state === "merged") input.state = "settled";
+    }
   }
 
   finishForegroundResult(): void {
