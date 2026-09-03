@@ -196,14 +196,17 @@ export class RunningInterventionTransition {
       }
       const injection = engine as typeof engine & Partial<SupportsToolBoundaryInjection>;
       if (!injection.injectAtToolBoundary) {
-        return {
-          status: "not_delivered",
-          mechanism: "unsupported",
-          reason: "not_supported",
-          message: "Task runner engine does not support tool-boundary injection",
-        };
+        return await engine.intervene(input);
       }
-      return await injection.injectAtToolBoundary(input);
+      const result = await injection.injectAtToolBoundary(input);
+      if (
+        result.status === "not_delivered"
+        && result.mechanism === "unsupported"
+        && result.reason === "not_supported"
+      ) {
+        return await engine.intervene(input);
+      }
+      return result;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
