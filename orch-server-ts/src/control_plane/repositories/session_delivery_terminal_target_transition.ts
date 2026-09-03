@@ -1,4 +1,6 @@
 import type { SqlClient } from "../control_plane_types.js";
+import { discardSessionDeliveryNotificationProjections } from
+  "./session_delivery_notification_projection_repository.js";
 
 /**
  * Settles completion notifications whose target can no longer consume them.
@@ -11,7 +13,7 @@ import type { SqlClient } from "../control_plane_types.js";
 export async function settleTerminalTargetCompletionDeliveries(
   sql: SqlClient,
 ): Promise<void> {
-  await sql`
+  const consumed = await sql<Array<{ delivery_id: string }>>`
     UPDATE session_deliveries AS delivery
     SET
       state = 'consumed',
@@ -44,5 +46,10 @@ export async function settleTerminalTargetCompletionDeliveries(
       AND delivery.state IN (
         'pending', 'claimed', 'dispatching', 'queued', 'delivered'
       )
+    RETURNING delivery.delivery_id
   `;
+  await discardSessionDeliveryNotificationProjections(
+    sql,
+    consumed.map((row) => row.delivery_id),
+  );
 }

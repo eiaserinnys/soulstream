@@ -7,6 +7,9 @@ import type {
   EventSessionEffect,
   EventSessionEffectApplication,
 } from "./event_ingress_types.js";
+import type { SqlClient } from "../control_plane/control_plane_types.js";
+import { discardTerminalResumeNotificationProjections } from
+  "../control_plane/repositories/session_delivery_notification_projection_repository.js";
 
 export const applyEventSessionEffect: EventSessionEffectApplier = async (
   sql,
@@ -45,7 +48,14 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
       ${effect.expected_terminal_event_id !== undefined},
       ${new Date(effect.updated_at)}
     )`;
-    return canonicalTransitionApplication(rows, "running");
+    const application = canonicalTransitionApplication(rows, "running");
+    await discardTerminalResumeProjectionIfApplied(
+      sql,
+      envelope.session_id,
+      effect.expected_terminal_event_id,
+      application.applied,
+    );
+    return application;
   }
   if (effect.kind === "execution_registration") {
     return await applyExecutionRegistration(
@@ -131,6 +141,12 @@ async function applyExecutionRegistration(
     )
   `;
   const application = canonicalTransitionApplication(rows, "execution registration");
+  await discardTerminalResumeProjectionIfApplied(
+    sql,
+    sessionId,
+    effect.expected_terminal_event_id,
+    application.applied,
+  );
   const row = rows[0]!;
   if (
     (row.execution_registration_id === null)
@@ -149,6 +165,20 @@ async function applyExecutionRegistration(
           execution_command_id: row.execution_command_id!,
         },
   };
+}
+
+async function discardTerminalResumeProjectionIfApplied(
+  sql: EventIngressQuerySql,
+  sessionId: string,
+  terminalRevision: number | null | undefined,
+  applied: boolean,
+): Promise<void> {
+  if (!applied || terminalRevision == null) return;
+  await discardTerminalResumeNotificationProjections(
+    sql as unknown as SqlClient,
+    sessionId,
+    terminalRevision,
+  );
 }
 
 async function applyTerminalTransition(

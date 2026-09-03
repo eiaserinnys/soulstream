@@ -367,6 +367,71 @@ describe("TaskExecutor.startExecution", () => {
     );
   });
 
+  it("keeps an engine-completed turn terminal when consumption bookkeeping fails", async () => {
+    const mocks = makeMocks();
+    const deliveryId = "delivery-consumption-bookkeeping-failure";
+    const markUncertain = vi.fn().mockResolvedValue({
+      delivery_id: deliveryId,
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+    });
+    const gate = new TaskDeliveryLedgerGate(true, {
+      get: vi.fn().mockResolvedValue(null),
+      markConsumed: vi.fn().mockRejectedValue(
+        new Error("session-deliveries host mark_consumed failed: deadlock detected"),
+      ),
+      markUncertain,
+    } as never);
+    const warn = vi.spyOn(silentLogger, "warn");
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "assistant_message", content: "engine completed", timestamp: 1 },
+        { type: "complete", result: "engine completed", timestamp: 2 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      gate,
+    );
+    const task = makeTask();
+    task.interventionQueue.push({
+      text: "child result",
+      user: "agent",
+      deliveryId,
+      deliveryIntent: "completion_notification",
+    });
+
+    try {
+      executor.startExecution(task, agent);
+      await task.executionPromise;
+
+      expect(task.status).toBe("completed");
+      expect(markUncertain).toHaveBeenCalledWith(
+        deliveryId,
+        undefined,
+        expect.stringContaining("deadlock detected"),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ deliveryId }),
+        "delivery ledger consume update failed",
+      );
+      expect(mocks.enqueueTerminalTransitionAndWaitForApplication)
+        .toHaveBeenCalledWith(
+          task.agentSessionId,
+          expect.objectContaining({ status: "completed" }),
+          expect.objectContaining({ status: "completed" }),
+          expect.any(String),
+        );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("queued delivery execute 실패는 receipt 없이 consume하지 않는다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {

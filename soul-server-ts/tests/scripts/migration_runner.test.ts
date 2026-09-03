@@ -52,7 +52,7 @@ afterEach(async () => {
 });
 
 describe.sequential("versioned migration runner", () => {
-  itWithDatabase("initializes fresh and bootstraps the canonical schema through 086", async () => {
+  itWithDatabase("initializes fresh and applies the post-086 trigger retirement", async () => {
     const url = await startPostgres();
     const cwd = environmentDirectory(url);
     const serviceEnvironment = { HANIEL_SERVICE_CWD: cwd };
@@ -128,16 +128,19 @@ describe.sequential("versioned migration runner", () => {
           (SELECT applied_kind FROM schema_migrations
             WHERE migration_id = '042_runbook_to_task.sql') AS migration_042_kind,
           (SELECT applied_kind FROM schema_migrations
-            WHERE migration_id = '086_delivery_attempt_terminology.sql') AS migration_086_kind
+            WHERE migration_id = '086_delivery_attempt_terminology.sql') AS migration_086_kind,
+          (SELECT applied_kind FROM schema_migrations
+            WHERE migration_id = '087_delivery_notification_lock_order.sql') AS migration_087_kind
       `;
       expect(rows[0]).toMatchObject({
         migration_count: MANIFEST_MIGRATION_COUNT,
         operation_count: 1,
-        applied_kind_count: 1,
+        applied_kind_count: 2,
         applied_kind: "bootstrap",
         migration_041_kind: "bootstrap",
         migration_042_kind: "bootstrap",
         migration_086_kind: "bootstrap",
+        migration_087_kind: "migration",
       });
 
       const repeated = runWithEnv(RELEASE_EXECUTOR, REPOSITORY_ROOT, gatedEnvironment, "apply");

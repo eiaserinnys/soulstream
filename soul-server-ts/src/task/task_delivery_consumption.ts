@@ -1,12 +1,14 @@
 import type { Logger } from "pino";
 
-import { isDeliveryIntent } from "./delivery_contract.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 
 type ConsumptionRecorder = Pick<
   TaskDeliveryLedgerGate,
-  "recordConsumed" | "recordTurnStarted" | "discardIfConsumed"
+  | "recordConsumed"
+  | "recordTurnStarted"
+  | "discardIfConsumed"
+  | "recordConsumptionFailure"
 >;
 
 export class TaskDeliveryConsumption {
@@ -32,12 +34,7 @@ export class TaskDeliveryConsumption {
         { err, sessionId: task.agentSessionId, deliveryId: intervention.deliveryId },
         "delivery ledger consume update failed",
       );
-      if (requiresExactConsumption(intervention)) {
-        // Child result consumption is an exactly-once boundary. Returning
-        // success without its relation tombstone lets a later notifier wake
-        // and display the already-observed completion again.
-        throw err;
-      }
+      await this.recordBookkeepingFailure(task, intervention, err);
     }
   }
 
@@ -54,6 +51,7 @@ export class TaskDeliveryConsumption {
         { err, sessionId: task.agentSessionId, deliveryId: intervention.deliveryId },
         "delivery ledger turn-start update failed",
       );
+      await this.recordBookkeepingFailure(task, intervention, err);
       return false;
     }
   }
@@ -63,13 +61,35 @@ export class TaskDeliveryConsumption {
     intervention: InterventionMessage,
   ): Promise<boolean> {
     if (!this.recorder) return false;
-    return await this.recorder.discardIfConsumed(intervention, task);
+    try {
+      return await this.recorder.discardIfConsumed(intervention, task);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId, deliveryId: intervention.deliveryId },
+        "delivery ledger consumed-state check failed",
+      );
+      await this.recordBookkeepingFailure(task, intervention, err);
+      return false;
+    }
   }
-}
 
-function requiresExactConsumption(
-  intervention: InterventionMessage,
-): boolean {
-  return isDeliveryIntent(intervention.deliveryIntent)
-    || intervention.source === "claude_runtime_task_followup";
+  private async recordBookkeepingFailure(
+    task: Task,
+    intervention: InterventionMessage,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      await this.recorder?.recordConsumptionFailure(intervention, error);
+    } catch (uncertainError) {
+      this.logger.warn(
+        {
+          err: uncertainError,
+          sessionId: task.agentSessionId,
+          deliveryId: intervention.deliveryId,
+          bookkeepingError: error,
+        },
+        "delivery ledger uncertain-state update failed",
+      );
+    }
+  }
 }

@@ -59,6 +59,32 @@ describe("applyEventSessionEffect", () => {
     });
   });
 
+  it("discards the terminal completion projection after a resumed delivery is consumed", async () => {
+    const statements: string[] = [];
+    const sql = (async (strings: TemplateStringsArray) => {
+      const statement = strings.join("?");
+      statements.push(statement);
+      return statement.includes("session_apply_running_transition")
+        ? [canonicalRow(true)]
+        : [];
+    }) as EventIngressQuerySql;
+    const running = {
+      ...effect("running_transition"),
+      expected_terminal_event_id: 42,
+    } as EventSessionEffect;
+
+    await applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 43,
+      envelope: envelope(running),
+      effect: running,
+    });
+
+    expect(statements).toHaveLength(2);
+    expect(statements[0]).toContain("session_apply_running_transition");
+    expect(statements[1]).toContain("UPDATE session_delivery_notification_outbox");
+  });
+
   it("accepts one-release execution_acquire through the same writer", async () => {
     const statements: string[] = [];
     const sql = (async (strings: TemplateStringsArray) => {

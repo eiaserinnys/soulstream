@@ -11,6 +11,8 @@ import type {
   SqlClient,
 } from "../control_plane_types.js";
 import { SessionDeliveryNotificationRepository } from "./session_delivery_notification_repository.js";
+import { discardSessionDeliveryNotificationProjection } from
+  "./session_delivery_notification_projection_repository.js";
 import { SessionDeliveryRecoveryRepository } from
   "./session_delivery_recovery_repository.js";
 import { markSessionDeliveryConsumed } from
@@ -237,21 +239,25 @@ export class SessionDeliveryRepository {
     deliveryId: string,
     supersededTerminalRevision: string,
   ): Promise<SessionDeliveryRow | null> {
-    const rows = await this.sql<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
-      SET
-        state = 'superseded',
-        aggregate_state = 'consumed',
-        consumed_reason = ${supersededTerminalRevision},
-        consumed_at = NOW(),
-        superseded_at = NOW(),
-        superseded_terminal_revision = ${supersededTerminalRevision},
-        updated_at = NOW()
-      WHERE delivery_id = ${deliveryId}
-        AND state = 'pending'
-      RETURNING *
-    `;
-    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
+    return await withDeliveryTransaction(this.sql, async (transaction) => {
+      const rows = await transaction<SessionDeliveryRow[]>`
+        UPDATE session_deliveries
+        SET
+          state = 'superseded',
+          aggregate_state = 'consumed',
+          consumed_reason = ${supersededTerminalRevision},
+          consumed_at = NOW(),
+          superseded_at = NOW(),
+          superseded_terminal_revision = ${supersededTerminalRevision},
+          updated_at = NOW()
+        WHERE delivery_id = ${deliveryId}
+          AND state = 'pending'
+        RETURNING *
+      `;
+      if (!rows[0]) return null;
+      await discardSessionDeliveryNotificationProjection(transaction, deliveryId);
+      return normalizeDeliveryRow(rows[0]);
+    });
   }
 
   async expireStaleDeliveryAttempts(): Promise<number> {
@@ -349,23 +355,27 @@ export class SessionDeliveryRepository {
     completionId: string,
     callerTurnId: string,
   ): Promise<SessionDeliveryRow | null> {
-    const rows = await this.sql<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
-      SET
-        state = 'consumed',
-        aggregate_state = 'consumed',
-        caller_turn_id = ${callerTurnId},
-        target_receipt_id = COALESCE(target_receipt_id, ${callerTurnId}),
-        target_receipt_at = COALESCE(target_receipt_at, NOW()),
-        consumed_at = NOW(),
-        updated_at = NOW()
-      WHERE relation_key = ${relationKey}
-        AND completion_id = ${completionId}
-        AND aggregate_state IN ('pending', 'delivered')
-        AND state IN ('pending', 'claimed', 'delivered')
-      RETURNING *
-    `;
-    return rows[0] ? normalizeDeliveryRow(rows[0]) : null;
+    return await withDeliveryTransaction(this.sql, async (transaction) => {
+      const rows = await transaction<SessionDeliveryRow[]>`
+        UPDATE session_deliveries
+        SET
+          state = 'consumed',
+          aggregate_state = 'consumed',
+          caller_turn_id = ${callerTurnId},
+          target_receipt_id = COALESCE(target_receipt_id, ${callerTurnId}),
+          target_receipt_at = COALESCE(target_receipt_at, NOW()),
+          consumed_at = NOW(),
+          updated_at = NOW()
+        WHERE relation_key = ${relationKey}
+          AND completion_id = ${completionId}
+          AND aggregate_state IN ('pending', 'delivered')
+          AND state IN ('pending', 'claimed', 'delivered')
+        RETURNING *
+      `;
+      if (!rows[0]) return null;
+      await discardSessionDeliveryNotificationProjection(transaction, rows[0].delivery_id);
+      return normalizeDeliveryRow(rows[0]);
+    });
   }
 
   async markUncertain(
@@ -414,6 +424,11 @@ export class SessionDeliveryRepository {
         reason,
         attemptToken: row.attempt_token_snapshot,
       });
+      await discardSessionDeliveryNotificationProjection(
+        transaction,
+        deliveryId,
+        reason,
+      );
       return normalizeDeliveryRow(row);
     });
   }

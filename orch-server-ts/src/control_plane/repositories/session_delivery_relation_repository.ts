@@ -13,6 +13,8 @@ import type {
 import { asPostgresJsonValue } from "../repository_helpers.js";
 import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
+import { discardSessionDeliveryNotificationProjections } from
+  "./session_delivery_notification_projection_repository.js";
 import {
   readRuntimeFollowupCandidate,
   registerRuntimeFollowupDelivery,
@@ -285,6 +287,10 @@ async function recordRelationConsumedInTransaction(
       AND state IN ('pending', 'claimed', 'delivered')
     RETURNING *
   `;
+  await discardSessionDeliveryNotificationProjections(
+    transaction,
+    consumedRows.map((row) => row.delivery_id),
+  );
   return {
     relation,
     relationInserted: Boolean(insertedRows[0]),

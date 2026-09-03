@@ -180,7 +180,10 @@ export class TaskExecutor {
     private readonly claudeRuntimeTaskFollowup?: ClaudeRuntimeTaskFollowupPort,
     deliveryConsumptionRecorder?: Pick<
       TaskDeliveryLedgerGate,
-      "recordConsumed" | "recordTurnStarted" | "discardIfConsumed"
+      | "recordConsumed"
+      | "recordTurnStarted"
+      | "discardIfConsumed"
+      | "recordConsumptionFailure"
     >,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,

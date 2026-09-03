@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
+import { applyEventSessionEffect } from
+  "../../../orch-server-ts/src/node/event_session_effect_applier.js";
 import {
   DELIVERY_MAX_AGE_MS,
   DELIVERY_MAX_ATTEMPTS,
@@ -28,11 +30,13 @@ const describePostgres =
 describePostgres("session delivery atomicity PostgreSQL integration", () => {
   let harness: FullSchemaPostgresHarness;
   let peer: SqlClient;
+  let lockObserver: SqlClient;
   let repository: SessionDeliveryRepository;
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
     peer = harness.createPeer();
+    lockObserver = harness.createPeer();
     repository = new SessionDeliveryRepository(harness.sql);
   }, 45_000);
 
@@ -213,11 +217,17 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       },
     });
 
-    await harness.sql`
-      SELECT * FROM session_apply_running_transition(
-        'child-session', 'not_required', 42, TRUE, NOW()
-      )
-    `;
+    await applyEventSessionEffect(harness.sql as never, {
+      nodeId: "node-a",
+      eventId: 43,
+      envelope: { session_id: "child-session" },
+      effect: {
+        kind: "running_transition",
+        review_state: "not_required",
+        expected_terminal_event_id: 42,
+        updated_at: new Date().toISOString(),
+      },
+    } as never);
 
     await expect(repository.get("delivery-projection-discard")).resolves.toMatchObject({
       state: "superseded",
@@ -245,6 +255,63 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       WHERE delivery_id = 'delivery-projection-discard'
       ORDER BY attempt_number
     `).resolves.toEqual([{ outcome: "accepted" }]);
+  });
+
+  it("serializes notification publish behind consume without a cross-table deadlock", async () => {
+    const deliveryId = "delivery-publish-consume-lock-order";
+    const attemptToken = "projection-lock-order-worker";
+    await register(deliveryId, "relation-publish-consume-lock-order");
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", attemptToken);
+    await repository.beginDispatch(deliveryId, attemptToken);
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      attemptToken,
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload: {
+        text: "done",
+        user: "agent",
+        source: "completion_notifier",
+        delivery_id: deliveryId,
+        delivery_intent: "completion_notification",
+        completion_id: "completion-publish-consume-lock-order",
+        relation_key: "relation-publish-consume-lock-order",
+        disposition: "auto_resume",
+        caller_info: null,
+      },
+    });
+    await harness.sql`SET application_name = 'r52-publish-lock-order'`;
+
+    let published!: ReturnType<
+      SessionDeliveryRepository["notifications"]["markPublished"]
+    >;
+    await peer.begin(async (transaction) => {
+      const transactional = new SessionDeliveryRepository(
+        transaction as unknown as SqlClient,
+      );
+      await transaction`
+        SELECT 1 FROM session_deliveries
+        WHERE delivery_id = ${deliveryId}
+        FOR UPDATE
+      `;
+      published = repository.notifications.markPublished(
+        deliveryId,
+        attemptToken,
+        "event:publish-race",
+      );
+      await waitForApplicationLock(lockObserver, "r52-publish-lock-order");
+      await expect(transactional.markConsumed(deliveryId, "event:consume-race"))
+        .resolves.toMatchObject({ aggregate_state: "consumed" });
+    });
+
+    await expect(published).resolves.toBeNull();
+    await expect(repository.get(deliveryId)).resolves.toMatchObject({
+      aggregate_state: "consumed",
+    });
+    await expect(repository.notifications.get(deliveryId)).resolves.toMatchObject({
+      state: "dead_letter",
+      projection_state: "discarded",
+    });
   });
 
   it("projects an orphaned notification receipt when the same target turn already delivered the aggregate", async () => {
@@ -1818,6 +1885,27 @@ function silentLogger() {
     error: vi.fn(),
     warn: vi.fn(),
   };
+}
+
+async function waitForApplicationLock(
+  sql: SqlClient,
+  applicationName: string,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const rows = await sql<Array<{ waiting: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_stat_activity
+        WHERE application_name = ${applicationName}
+          AND wait_event_type = 'Lock'
+      ) AS waiting
+    `;
+    if (rows[0]?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timed out waiting for ${applicationName} to block on a lock`);
 }
 
 function hasDockerBinary(): boolean {

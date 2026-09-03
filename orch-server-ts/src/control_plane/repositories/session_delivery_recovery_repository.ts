@@ -6,6 +6,8 @@ import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
 import { markSessionDeliveryConsumed } from
   "./session_delivery_consumption_transition.js";
+import { discardSessionDeliveryNotificationProjections } from
+  "./session_delivery_notification_projection_repository.js";
 import {
   attemptOutcomeFor,
   deliveryRetryOrDeadLetterSet,
@@ -85,7 +87,7 @@ export class SessionDeliveryRecoveryRepository {
   ): Promise<SessionDeliveryRow[]> {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
       await settleTerminalTargetCompletionDeliveries(transaction);
-      await transaction`
+      const superseded = await transaction<Array<{ delivery_id: string }>>`
         WITH ranked AS (
           SELECT delivery_id,
             ROW_NUMBER() OVER (
@@ -111,7 +113,12 @@ export class SessionDeliveryRecoveryRepository {
         WHERE delivery.delivery_id = ranked.delivery_id
           AND ranked.followup_rank > 1
           AND delivery.state = 'pending'
+        RETURNING delivery.delivery_id
       `;
+      await discardSessionDeliveryNotificationProjections(
+        transaction as unknown as SqlClient,
+        superseded.map((row) => row.delivery_id),
+      );
       const due = await transaction<SessionDeliveryRow[]>`
         SELECT delivery.*
         FROM session_deliveries AS delivery

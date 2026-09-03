@@ -218,6 +218,25 @@ describe("versioned migration contract", () => {
     expect(schema).not.toContain("session_release_execution_ownership(");
   });
 
+  it("retires the consumed-projection trigger with a drop-only migration", async () => {
+    const migration = (await loadMigrationManifest()).find((item) =>
+      item.id === "087_delivery_notification_lock_order.sql"
+    );
+    const schema = readFileSync(fileURLToPath(
+      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
+    ), "utf8");
+
+    expect(migration?.sql).toContain(
+      "DROP TRIGGER IF EXISTS trg_session_discard_notification_projection",
+    );
+    expect(migration?.sql).toContain(
+      "DROP FUNCTION IF EXISTS session_discard_notification_projection_on_consumed()",
+    );
+    expect(migration?.sql).not.toMatch(/\b(?:CREATE|INSERT|UPDATE|DELETE|ALTER)\b/i);
+    expect(schema).not.toContain("trg_session_discard_notification_projection");
+    expect(schema).not.toContain("session_discard_notification_projection_on_consumed");
+  });
+
   it("keeps source task item references relational and removes the legacy duplicate FK", async () => {
     const migration = (await loadMigrationManifest()).find((item) =>
       item.id === "057_source_task_item_integrity.sql"

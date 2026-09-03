@@ -7,6 +7,8 @@ import type {
 import { asPostgresJsonValue } from "../repository_helpers.js";
 import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
+import { discardSessionDeliveryNotificationProjections } from
+  "./session_delivery_notification_projection_repository.js";
 
 export interface RuntimeFollowupCandidate {
   followupKey: string;
@@ -98,6 +100,10 @@ export async function registerRuntimeFollowupDelivery(
         AND state = 'pending'
       RETURNING *
     `;
+    await discardSessionDeliveryNotificationProjections(
+      transaction,
+      supersededRows.map((row) => row.delivery_id),
+    );
     return {
       row: supersededRows[0] ?? exact,
       inserted: false,
@@ -170,7 +176,7 @@ async function supersedePendingRuntimeFollowupSiblings(
   followupKey: string,
   retainedDeliveryId: string,
 ): Promise<void> {
-  await transaction`
+  const superseded = await transaction<Array<{ delivery_id: string }>>`
     UPDATE session_deliveries
     SET
       state = 'superseded', aggregate_state = 'consumed',
@@ -183,7 +189,12 @@ async function supersedePendingRuntimeFollowupSiblings(
       AND delivery_id <> ${retainedDeliveryId}
       AND target_session_id IS NOT DISTINCT FROM ${targetSessionId}
       AND payload->>'followup_key' = ${followupKey}
+    RETURNING delivery_id
   `;
+  await discardSessionDeliveryNotificationProjections(
+    transaction,
+    superseded.map((row) => row.delivery_id),
+  );
 }
 
 async function resolveRegistrationConflict(
