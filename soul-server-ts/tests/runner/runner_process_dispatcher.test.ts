@@ -1,4 +1,5 @@
 import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,6 +33,9 @@ import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
 import { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js";
+
+const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as
+  typeof import("node:sqlite");
 
 const directories: string[] = [];
 
@@ -642,6 +646,123 @@ describe("RunnerProcessDispatcher", () => {
     await endpoint.close();
   });
 
+  it("replays only the current registration and settles stale registration IPC frames", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const registrationA = {
+      ...pendingRunnerRegistrationIdentity("session-a", "sha-a"),
+      pid: 1001,
+      startIdentity: "start-1001",
+    };
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, registrationA);
+    const writerA = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await writerA.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-09-03T08:27:49.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    await writerA.appendEngineFrame({
+      session_id: "session-a",
+      event_type: "assistant_message",
+      payload: { type: "assistant_message", content: "registration-a-stale" },
+      searchable_text: "registration-a-stale",
+      created_at: "2026-09-03T08:27:50.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+    }, {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "registration-a-stale" },
+    });
+    writerA.close();
+
+    const registrationB = {
+      ...pendingRunnerRegistrationIdentity("session-a", "sha-b"),
+      pid: 1002,
+      startIdentity: "start-1002",
+    };
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, registrationB);
+    const writerB = await RunnerSqliteEventOutbox.open(paths.databasePath);
+    await writerB.appendEngineFrame({
+      session_id: "session-a",
+      event_type: "assistant_message",
+      payload: { type: "assistant_message", content: "registration-b-current" },
+      searchable_text: "registration-b-current",
+      created_at: "2026-09-03T09:00:38.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+    }, {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload: { type: "assistant_message", content: "registration-b-current" },
+    });
+
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel === "control" && frame.kind === "host_frame_applied") {
+        await writerB.acknowledgeHostFrame(frame.frameSeq);
+        return;
+      }
+      if (frame.channel !== "command") return;
+      await endpoint.currentConnection!.send(
+        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+      );
+      if (frame.kind === "execute") {
+        await endpoint.currentConnection!.send(executionEndedControlFrame(frame.commandId));
+      }
+    }, vi.fn());
+    await endpoint.listen();
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      runnerProcess: Promise.resolve({
+        pid: registrationB.pid,
+        registrationId: registrationB.registrationId,
+        paths,
+        config: {} as never,
+        adopted: false,
+      }),
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+
+    const frames = await collect(dispatcher.executeFrames({
+      agentSessionId: "session-a",
+      prompt: "resume with registration b",
+      resumeSessionId: "backend-a",
+    }));
+
+    expect(frames.map((frame) => frame.kind === "engine_event" && frame.payload)).toEqual([
+      { type: "assistant_message", content: "registration-b-current" },
+    ]);
+    await vi.waitFor(() => expect(readRegistrationJournal(paths.databasePath)).toEqual([
+      { registration_id: registrationA.registrationId, host_acked: 1 },
+      { registration_id: registrationB.registrationId, host_acked: 1 },
+    ]));
+    expect(dispatcher.hasActiveExecution()).toBe(false);
+    await expect(collect(dispatcher.executeFrames({
+      agentSessionId: "session-a",
+      prompt: "next message after replay",
+      resumeSessionId: "backend-a",
+    }))).resolves.toEqual([]);
+    expect(dispatcher.hasActiveExecution()).toBe(false);
+
+    await dispatcher.close();
+    writerB.close();
+    await endpoint.close();
+  });
+
   it("keeps the original stream when an accepted execute ACK is lost", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
@@ -1050,6 +1171,24 @@ function emptyStore(streamId: string) {
     async readBatch() { return null; },
     async acknowledge() {},
   };
+}
+
+function readRegistrationJournal(databasePath: string): Array<{
+  registration_id: string | null;
+  host_acked: number;
+}> {
+  const database = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    return database.prepare(`
+      SELECT outbox.registration_id, journal.host_acked
+      FROM runner_ipc_journal AS journal
+      JOIN runner_event_outbox AS outbox
+        ON outbox.source_seq = journal.outbox_source_seq
+      ORDER BY journal.frame_seq
+    `).all() as Array<{ registration_id: string | null; host_acked: number }>;
+  } finally {
+    database.close();
+  }
 }
 
 async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {

@@ -251,7 +251,7 @@ export class RunnerSqliteEventOutbox {
         };
       });
       const registrationId = await readOutboxRegistrationId(databasePath, recovered.bootstrap);
-      return new RunnerSqliteEventOutbox(
+      const outbox = new RunnerSqliteEventOutbox(
         database,
         databasePath,
         recovered.bootstrap,
@@ -260,6 +260,8 @@ export class RunnerSqliteEventOutbox {
         recovered.legacyRegistrationRequired,
         options,
       );
+      await outbox.settleStaleRegistrationIpcFrames();
+      return outbox;
     } catch (error) {
       database.close();
       throw error;
@@ -604,6 +606,9 @@ export class RunnerSqliteEventOutbox {
     frame: Extract<RunnerEventFrame, { kind: "engine_event" }>;
   }>> {
     this.requireOpen();
+    const registrationPredicate = this.registrationId
+      ? "AND (outbox.registration_id IS NULL OR outbox.registration_id = ?)"
+      : "";
     const rows = this.database.prepare(`
       SELECT
         journal.frame_seq,
@@ -616,8 +621,11 @@ export class RunnerSqliteEventOutbox {
       JOIN runner_event_outbox AS outbox
         ON outbox.source_seq = journal.outbox_source_seq
       WHERE journal.host_acked = 0
+        ${registrationPredicate}
       ORDER BY journal.frame_seq
-    `).all() as unknown as Array<RunnerIpcJournalRow & RunnerEventOutboxRow>;
+    `).all(...(this.registrationId ? [this.registrationId] : [])) as unknown as Array<
+      RunnerIpcJournalRow & RunnerEventOutboxRow
+    >;
     return rows.map((row) => {
       if (row.outbox_source_seq === null || row.frame_kind !== "engine_event") {
         throw new Error("runner IPC event journal row is invalid");
@@ -950,6 +958,25 @@ export class RunnerSqliteEventOutbox {
         WHERE host_acked = 1 AND outbox_source_seq <= ?
       `).run(this.acknowledgedThrough);
     });
+  }
+
+  private async settleStaleRegistrationIpcFrames(): Promise<void> {
+    const registrationId = this.registrationId;
+    if (!registrationId) return;
+    await this.transaction("settle_stale_registration_ipc_frames", () => {
+      this.database.prepare(`
+        UPDATE runner_ipc_journal
+        SET host_acked = 1
+        WHERE host_acked = 0
+          AND EXISTS (
+            SELECT 1 FROM runner_event_outbox AS outbox
+            WHERE outbox.source_seq = runner_ipc_journal.outbox_source_seq
+              AND outbox.registration_id IS NOT NULL
+              AND outbox.registration_id <> ?
+          )
+      `).run(registrationId);
+    });
+    await this.compactJournal();
   }
 
   private async transaction<T>(transactionLabel: string, operation: () => T): Promise<T> {
