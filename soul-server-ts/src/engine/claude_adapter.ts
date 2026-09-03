@@ -35,6 +35,7 @@ import type {
   SupportsClaudeBackgroundTasks,
   SupportsCompact,
   SupportsInputResponse,
+  SupportsToolBoundaryInjection,
 } from "./protocol.js";
 import {
   mapClaudeClientEvent,
@@ -108,6 +109,7 @@ export interface ClaudeClient {
     taskId: string,
   ): Promise<ClaudeBackgroundTaskControlResult> | ClaudeBackgroundTaskControlResult;
   interruptActiveTurnForSteer?(): Promise<boolean>;
+  injectAtToolBoundary?(input: EngineUserInput): Promise<boolean> | boolean;
   interrupt?(): Promise<boolean>;
   persistentRuntimeActivity?(): ClaudePersistentRuntimeActivity | null;
   close?(reason?: import("./claude_session_runtime.js").ClaudeRuntimeCloseReason): Promise<void>;
@@ -134,7 +136,8 @@ export class ClaudeEngineAdapter
     EnginePort,
     SupportsInputResponse,
     SupportsCompact,
-    SupportsClaudeBackgroundTasks
+    SupportsClaudeBackgroundTasks,
+    SupportsToolBoundaryInjection
 {
   public readonly backendId: BackendId = "claude";
   public readonly workspaceDir: string;
@@ -332,6 +335,33 @@ export class ClaudeEngineAdapter
       : {
           status: "not_delivered",
           mechanism: "interrupt_then_next_turn",
+          reason: "no_active_turn",
+        };
+  }
+
+  async injectAtToolBoundary(input: EngineUserInput): Promise<EngineInterventionResult> {
+    if (!this.currentTurn) {
+      return {
+        status: "not_delivered",
+        mechanism: "active_turn",
+        reason: "no_active_turn",
+      };
+    }
+    const client = this.activeClient ?? this.client;
+    if (!client.injectAtToolBoundary) {
+      return {
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "not_supported",
+        message: "Claude client does not support tool-boundary injection",
+      };
+    }
+    const delivered = await client.injectAtToolBoundary(input);
+    return delivered
+      ? { status: "delivered", mechanism: "active_turn" }
+      : {
+          status: "not_delivered",
+          mechanism: "active_turn",
           reason: "no_active_turn",
         };
   }

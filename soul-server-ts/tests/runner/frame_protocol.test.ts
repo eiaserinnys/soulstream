@@ -194,14 +194,22 @@ describe("runner frame protocol", () => {
     expect(applyInterventionCommandFrame({
       commandId: "apply-intervention-1",
       interventionId: "intervention-1",
-      interventionInput: { prompt: "change course" },
+      interventionInput: {
+        prompt: "change course",
+        inputUuid: "delivery-input-1",
+        turnOrigin: { kind: "completion_notification", id: "delivery-1" },
+      },
     })).toEqual({
       protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
       channel: "command",
       kind: "invoke",
       commandId: "apply-intervention-1",
       capability: "runner.apply_intervention",
-      args: ["intervention-1", { prompt: "change course" }],
+      args: ["intervention-1", {
+        prompt: "change course",
+        inputUuid: "delivery-input-1",
+        turnOrigin: { kind: "completion_notification", id: "delivery-1" },
+      }],
     });
   });
 

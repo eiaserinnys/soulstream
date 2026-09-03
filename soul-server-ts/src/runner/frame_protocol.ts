@@ -488,6 +488,16 @@ export function applyInterventionCommandFrame(input: {
   interventionInput: {
     prompt: string;
     imageAttachmentPaths?: string[];
+    inputUuid?: string;
+    turnOrigin?: {
+      kind:
+        | "initial_prompt"
+        | "user_message"
+        | "durable_next_turn"
+        | "completion_notification"
+        | "runtime_followup";
+      id?: string;
+    };
   };
 }): Extract<RunnerCommandFrame, { kind: "invoke" }> {
   return invokeCommandFrame(

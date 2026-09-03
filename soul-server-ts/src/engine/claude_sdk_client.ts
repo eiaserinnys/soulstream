@@ -28,7 +28,10 @@ import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 import { ClaudeSdkToolPermissionController } from "./claude_sdk_tool_permissions.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
 import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
-import type { ClaudeBackgroundTaskControlResult } from "./protocol.js";
+import type {
+  ClaudeBackgroundTaskControlResult,
+  EngineUserInput,
+} from "./protocol.js";
 
 export { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
 const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
@@ -320,6 +323,10 @@ export class ClaudeSdkClient implements ClaudeClient {
         this.toolPermissionController.pendingInputRequestCount(),
       pendingRuntimeSignalCount: this.runtimeState.hasPendingWork() ? 1 : 0,
     };
+  }
+
+  injectAtToolBoundary(input: EngineUserInput): boolean {
+    return this.persistentSession?.injectAtToolBoundary(input) ?? false;
   }
 
   async backgroundClaudeRuntimeTasks(

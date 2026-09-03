@@ -7,6 +7,7 @@ import { getImageAttachmentMediaType } from "../attachments/image_media.js";
 export interface ClaudeUserMessageIdentity {
   uuid: string;
   priority?: SDKUserMessage["priority"];
+  origin?: SDKUserMessage["origin"];
 }
 
 export function makeUserMessage(
@@ -25,7 +26,7 @@ export function makeUserMessage(
     ...(identity
       ? {
           uuid: identity.uuid as NonNullable<SDKUserMessage["uuid"]>,
-          origin: { kind: "human" as const },
+          origin: identity.origin ?? { kind: "human" as const },
         }
       : {}),
   };

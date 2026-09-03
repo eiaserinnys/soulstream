@@ -1,11 +1,8 @@
-import type {
-  Query as ClaudeSdkQuery,
-  SDKMessage,
-  SDKUserMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+import type { Query as ClaudeSdkQuery, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
 import { markPostResultDrainEvent } from "./claude_event_phase.js";
+import type { EngineUserInput } from "./protocol.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import {
   isTerminalPersistentBackgroundEvent,
@@ -24,7 +21,6 @@ import {
   type ClaudeDetachedEventSink,
   type ClaudeRuntimeEventSink,
   type ClaudeSdkPersistentSessionConfig,
-  createInterventionInterruptObservation,
   describeResultProvenance,
   isExpectedInterruptDiagnostic,
   isExpectedInterruptTerminalEvent,
@@ -34,8 +30,11 @@ import {
   settleInterventionInterrupt,
   shouldFencePostInterruptContinuation,
   turnInactivityError,
-  waitForInterventionEffect,
 } from "./claude_sdk_persistent_session_support.js";
+import {
+  injectPersistentToolBoundary,
+  interruptPersistentForeground,
+} from "./claude_sdk_persistent_intervention.js";
 import { startPersistentForegroundTurn } from "./claude_sdk_persistent_turn_handoff.js";
 import {
   ClaudeSessionRuntime,
@@ -108,26 +107,22 @@ export class ClaudeSdkPersistentSession {
   }
 
   async interruptForeground(): Promise<boolean> {
-    const active = this.activeForeground;
-    if (!active || this.runtime.snapshot().foregroundPhase !== "generating") return false;
-    if (active.interventionInterrupt) return await active.interventionInterrupt.promise;
+    return await interruptPersistentForeground({
+      active: this.activeForeground,
+      runtime: this.runtime,
+      logger: this.logger,
+      clearForegroundTimers: (active) => this.clearForegroundTimers(active),
+      setInterventionFence: (active) => { this.interventionFence = active; },
+      close: async (reason) => await this.close(reason),
+    });
+  }
 
-    const observation = createInterventionInterruptObservation();
-    active.interventionInterrupt = observation;
-    this.interventionFence = active;
-    this.clearForegroundTimers(active);
-    try {
-      return await waitForInterventionEffect(
-        observation,
-        () => this.runtime.interruptForeground(makeStaleInterruptReceiptLogger(this.logger)),
-        this.logger,
-        active.uuid,
-      );
-    } catch (error) {
-      if (observation.observed) return true;
-      await this.close("fatal");
-      throw error;
-    }
+  injectAtToolBoundary(input: EngineUserInput): boolean {
+    return injectPersistentToolBoundary({
+      input,
+      active: this.activeForeground,
+      runtime: this.runtime,
+    });
   }
 
   snapshot(): ClaudeSessionRuntimeSnapshot {
@@ -297,7 +292,9 @@ export class ClaudeSdkPersistentSession {
       }
       return;
     }
-    if (!active || explicitUserMessageUuid !== active.uuid) {
+    const activeOwnsResult = active !== null
+      && this.runtime.isForegroundResultOwner(explicitUserMessageUuid);
+    if (!activeOwnsResult) {
       const observation = this.runtime.observeDetachedResult(explicitUserMessageUuid);
       if (observation === "duplicate") return;
       if (observation === "unknown") {
@@ -323,9 +320,10 @@ export class ClaudeSdkPersistentSession {
     }
 
     this.runtime.observeResult({
-      userMessageUuid: explicitUserMessageUuid,
+      userMessageUuid: active.uuid,
       interrupted: phase === "interrupting",
     });
+    this.runtime.settleMergedInputs();
     if (active) this.followupWatchdog.resultArrived(active.uuid);
     this.clearForegroundTimers(active);
     this.runtime.finishForegroundResult();
@@ -386,6 +384,7 @@ export class ClaudeSdkPersistentSession {
     if (active?.rateLimitTerminationState === "terminal") {
       active.output.push(event);
       this.runtime.observeResult({ userMessageUuid: active.uuid, interrupted: false });
+      this.runtime.settleMergedInputs();
       this.clearForegroundTimers(active);
       this.runtime.finishForegroundResult();
       this.armDrainTimer();

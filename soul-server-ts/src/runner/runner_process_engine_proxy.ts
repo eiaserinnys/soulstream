@@ -11,6 +11,7 @@ import type {
   ToolApprovalDecision,
   ToolApprovalDeliveryOptions,
   ToolApprovalDeliveryResult,
+  SupportsToolBoundaryInjection,
 } from "../engine/protocol.js";
 import { sseEventsFromRunnerFrames } from "./engine_event_stream.js";
 import { normalizeRunnerInterventionResult } from "./runner_intervention_result.js";
@@ -18,7 +19,7 @@ import { RunnerIpcRequestTimeoutError } from "./runner_ipc_connection.js";
 import type { RunnerProcessDispatcher } from "./runner_process_dispatcher.js";
 
 /** Adapts the process command dispatcher to the existing EnginePort surface. */
-export class RunnerProcessEngineProxy implements EnginePort {
+export class RunnerProcessEngineProxy implements EnginePort, SupportsToolBoundaryInjection {
   readonly detachedClaudeRuntime: true | undefined;
 
   constructor(
@@ -52,6 +53,10 @@ export class RunnerProcessEngineProxy implements EnginePort {
       }
       throw error;
     }
+  }
+  async injectAtToolBoundary(input: EngineUserInput): Promise<EngineInterventionResult> {
+    const result = await this.dispatcher.invoke("injectAtToolBoundary", [input]);
+    return normalizeRunnerInterventionResult(result);
   }
   async deliverInputResponse(
     requestId: string,

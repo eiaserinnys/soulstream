@@ -247,6 +247,15 @@ export interface SupportsDetachedClaudeRuntime {
   detachedClaudeRuntimeActivity(): Promise<DetachedClaudeRuntimeActivity | null>;
 }
 
+/**
+ * Pushes machine-authored input into an active persistent turn without
+ * interrupting its current tool. The backend owns the exact tool-boundary
+ * scheduling policy; callers only use this capability after author classification.
+ */
+export interface SupportsToolBoundaryInjection {
+  injectAtToolBoundary(input: EngineUserInput): Promise<EngineInterventionResult>;
+}
+
 export interface DetachedClaudeRuntimeActivity {
   foregroundPhase: string;
   queryLifecycle: string;
