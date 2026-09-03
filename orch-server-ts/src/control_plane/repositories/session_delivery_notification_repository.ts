@@ -512,10 +512,7 @@ async function findIdempotentNotificationStage(
       AND delivery.intent = ${payload.delivery_intent as string}
       AND outbox.target_session_id = ${params.targetSessionId}
       AND outbox.disposition = ${params.disposition}
-      AND outbox.payload->>'delivery_id' = ${params.deliveryId}
-      AND outbox.payload->>'completion_id' = ${payload.completion_id as string}
-      AND outbox.payload->>'relation_key' = ${payload.relation_key as string}
-      AND outbox.payload->>'delivery_intent' = ${payload.delivery_intent as string}
+      AND outbox.payload = ${sql.json(asPostgresJsonValue(payload))}
       AND (
         (
           delivery.state = 'queued'
