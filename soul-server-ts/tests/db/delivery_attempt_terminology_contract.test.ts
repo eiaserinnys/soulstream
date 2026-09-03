@@ -29,6 +29,10 @@ const MIGRATION_PATH = join(
   "packages/db-schema/sql/migrations",
   MIGRATION_ID,
 );
+const LOCK_ORDER_MIGRATION_PATH = join(
+  REPOSITORY_ROOT,
+  "packages/db-schema/sql/migrations/087_delivery_notification_lock_order.sql",
+);
 const SCHEMA_PATH = join(REPOSITORY_ROOT, "packages/db-schema/sql/schema.sql");
 
 const DELIVERY_SOURCE_FILES = [
@@ -219,7 +223,7 @@ describeWithPostgres.sequential("086 delivery attempt terminology migration", ()
     await database?.cleanup();
   });
 
-  it("preserves rows and makes migrated and fresh delivery columns equivalent", async () => {
+  it("preserves rows and makes fully migrated and fresh delivery schemas equivalent", async () => {
     await sql.unsafe("CREATE SCHEMA migrated; SET search_path TO migrated");
     await createPre086Fixture(sql);
     await sql.unsafe(readFileSync(MIGRATION_PATH, "utf8"));
@@ -236,6 +240,7 @@ describeWithPostgres.sequential("086 delivery attempt terminology migration", ()
       },
       attempt: { attempt_token: "attempt-token" },
     });
+    await sql.unsafe(readFileSync(LOCK_ORDER_MIGRATION_PATH, "utf8"));
 
     await sql.unsafe("CREATE SCHEMA fresh; SET search_path TO fresh");
     await sql.unsafe(readFileSync(SCHEMA_PATH, "utf8"));
@@ -311,29 +316,13 @@ describeWithPostgres.sequential("086 delivery attempt terminology migration", ()
       attempt_expires_at: null,
     });
 
-    await sql`
-      UPDATE session_deliveries SET aggregate_state = 'pending'
-      WHERE delivery_id = 'delivery-1'
+    const retiredProjectionTrigger = await sql<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM pg_trigger
+      WHERE tgname = 'trg_session_discard_notification_projection'
+        AND NOT tgisinternal
     `;
-    await sql`
-      UPDATE session_delivery_notification_outbox
-      SET state = 'claimed', projection_state = 'publishing',
-          attempt_token = 'projection-token',
-          attempt_expires_at = '2030-01-07T00:00:00.000Z'
-      WHERE delivery_id = 'delivery-1'
-    `;
-    await sql`UPDATE session_deliveries SET aggregate_state = 'consumed' WHERE delivery_id = 'delivery-1'`;
-    const [projection] = await sql<Array<Record<string, unknown>>>`
-      SELECT state, projection_state, attempt_token, attempt_expires_at
-      FROM session_delivery_notification_outbox
-      WHERE delivery_id = 'delivery-1'
-    `;
-    expect(projection).toEqual({
-      state: "dead_letter",
-      projection_state: "discarded",
-      attempt_token: null,
-      attempt_expires_at: null,
-    });
+    expect(retiredProjectionTrigger).toEqual([{ count: 0 }]);
 
     const indexDefinitions = await sql<Array<{ indexdef: string }>>`
       SELECT indexdef FROM pg_indexes

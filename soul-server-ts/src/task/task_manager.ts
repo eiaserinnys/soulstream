@@ -299,6 +299,7 @@ export class TaskManager {
     TaskDeliveryLedgerGate,
     "recordConsumed" | "recordTurnStarted"
       | "recordPendingSuperseded" | "discardIfConsumed"
+      | "recordConsumptionFailure"
   > | undefined {
     return this.deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined;
   }

@@ -2778,33 +2778,6 @@ SET projection_state = CASE
 FROM session_deliveries AS delivery
 WHERE delivery.delivery_id = outbox.delivery_id;
 
-CREATE OR REPLACE FUNCTION session_discard_notification_projection_on_consumed()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-    IF NEW.aggregate_state = 'consumed'
-       AND OLD.aggregate_state IS DISTINCT FROM NEW.aggregate_state THEN
-        UPDATE session_delivery_notification_outbox
-           SET state = 'dead_letter',
-               projection_state = 'discarded',
-               attempt_token = NULL,
-               attempt_expires_at = NULL,
-               last_error = 'delivery aggregate consumed before notification projection',
-               dead_lettered_at = COALESCE(dead_lettered_at, NOW()),
-               updated_at = NOW()
-         WHERE delivery_id = NEW.delivery_id
-           AND state IN ('pending', 'claimed');
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_session_discard_notification_projection
-    ON session_deliveries;
-CREATE TRIGGER trg_session_discard_notification_projection
-AFTER UPDATE OF aggregate_state ON session_deliveries
-FOR EACH ROW
-EXECUTE FUNCTION session_discard_notification_projection_on_consumed();
-
 CREATE INDEX IF NOT EXISTS idx_session_delivery_aggregate_recovery
     ON session_deliveries(aggregate_state, next_attempt_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_session_delivery_attempt_outcome

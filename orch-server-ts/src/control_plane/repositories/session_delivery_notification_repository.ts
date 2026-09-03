@@ -8,6 +8,10 @@ import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
 import { validateNotificationPayload } from
   "./session_delivery_notification_payload.js";
+import {
+  lockSessionDeliveries,
+  lockSessionDelivery,
+} from "./session_delivery_notification_projection_repository.js";
 
 const DEFAULT_NOTIFICATION_ATTEMPT_TTL_MS = 15_000;
 
@@ -171,6 +175,10 @@ export class SessionDeliveryNotificationRepository {
   ): Promise<SessionDeliveryNotificationOutboxRow | null> {
     if (!targetReceiptId) throw new Error("notification target receipt required");
     return await this.sql.begin(async (transaction) => {
+      if (!await lockSessionDelivery(
+        transaction as unknown as SqlClient,
+        deliveryId,
+      )) return null;
       const rows = await transaction<SessionDeliveryNotificationOutboxRow[]>`
         UPDATE session_delivery_notification_outbox
         SET
@@ -229,52 +237,56 @@ export class SessionDeliveryNotificationRepository {
     oldestAllowedCreatedAt: Date,
   ): Promise<SessionDeliveryNotificationOutboxRow | null> {
     return await this.sql.begin(async (transaction) => {
-    const rows = await transaction<SessionDeliveryNotificationOutboxRow[]>`
-      UPDATE session_delivery_notification_outbox
-      SET
-        state = CASE
-          WHEN attempt_count + 1 >= ${maxAttempts}
-            OR created_at <= ${oldestAllowedCreatedAt}
-          THEN 'dead_letter'
-          ELSE 'pending'
-        END,
-        projection_state = 'staged',
-        attempt_token = NULL,
-        attempt_expires_at = NULL,
-        attempt_count = attempt_count + 1,
-        next_attempt_at = ${nextAttemptAt},
-        last_error = ${error},
-        dead_lettered_at = CASE
-          WHEN attempt_count + 1 >= ${maxAttempts}
-            OR created_at <= ${oldestAllowedCreatedAt}
-          THEN NOW()
-          ELSE NULL
-        END,
-        updated_at = NOW()
-      WHERE delivery_id = ${deliveryId}
-        AND state = 'claimed'
-        AND attempt_token = ${attemptToken}
-      RETURNING *
-    `;
-    const row = rows[0];
-    if (!row) return null;
-    const rejected = row.state === "dead_letter";
-    await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
-      deliveryId,
-      outcome: rejected ? "rejected" : "retryable",
-      reason: error,
-      attemptToken,
-    });
-    await transaction`
-      UPDATE session_deliveries
-      SET aggregate_state = ${rejected ? "dead_letter" : "pending"},
-          dead_letter_reason = ${rejected ? error : null},
-          dead_lettered_at = ${rejected ? new Date() : null},
-          last_error = ${error}, updated_at = NOW()
-      WHERE delivery_id = ${deliveryId}
-        AND aggregate_state NOT IN ('consumed', 'dead_letter')
-    `;
-    return row;
+      if (!await lockSessionDelivery(
+        transaction as unknown as SqlClient,
+        deliveryId,
+      )) return null;
+      const rows = await transaction<SessionDeliveryNotificationOutboxRow[]>`
+        UPDATE session_delivery_notification_outbox
+        SET
+          state = CASE
+            WHEN attempt_count + 1 >= ${maxAttempts}
+              OR created_at <= ${oldestAllowedCreatedAt}
+            THEN 'dead_letter'
+            ELSE 'pending'
+          END,
+          projection_state = 'staged',
+          attempt_token = NULL,
+          attempt_expires_at = NULL,
+          attempt_count = attempt_count + 1,
+          next_attempt_at = ${nextAttemptAt},
+          last_error = ${error},
+          dead_lettered_at = CASE
+            WHEN attempt_count + 1 >= ${maxAttempts}
+              OR created_at <= ${oldestAllowedCreatedAt}
+            THEN NOW()
+            ELSE NULL
+          END,
+          updated_at = NOW()
+        WHERE delivery_id = ${deliveryId}
+          AND state = 'claimed'
+          AND attempt_token = ${attemptToken}
+        RETURNING *
+      `;
+      const row = rows[0];
+      if (!row) return null;
+      const rejected = row.state === "dead_letter";
+      await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
+        deliveryId,
+        outcome: rejected ? "rejected" : "retryable",
+        reason: error,
+        attemptToken,
+      });
+      await transaction`
+        UPDATE session_deliveries
+        SET aggregate_state = ${rejected ? "dead_letter" : "pending"},
+            dead_letter_reason = ${rejected ? error : null},
+            dead_lettered_at = ${rejected ? new Date() : null},
+            last_error = ${error}, updated_at = NOW()
+        WHERE delivery_id = ${deliveryId}
+          AND aggregate_state NOT IN ('consumed', 'dead_letter')
+      `;
+      return row;
     });
   }
 
@@ -284,6 +296,10 @@ export class SessionDeliveryNotificationRepository {
     error: string,
   ): Promise<SessionDeliveryNotificationOutboxRow | null> {
     return await this.sql.begin(async (transaction) => {
+      if (!await lockSessionDelivery(
+        transaction as unknown as SqlClient,
+        deliveryId,
+      )) return null;
       const rows = await transaction<SessionDeliveryNotificationOutboxRow[]>`
         UPDATE session_delivery_notification_outbox
         SET
@@ -332,6 +348,10 @@ export class SessionDeliveryNotificationRepository {
     deliveryId: string,
   ): Promise<SessionDeliveryNotificationOutboxRow | null> {
     return await this.sql.begin(async (transaction) => {
+      if (!await lockSessionDelivery(
+        transaction as unknown as SqlClient,
+        deliveryId,
+      )) return null;
       const rows = await transaction<SessionDeliveryNotificationOutboxRow[]>`
         UPDATE session_delivery_notification_outbox
         SET
@@ -366,6 +386,27 @@ export class SessionDeliveryNotificationRepository {
     oldestAllowedCreatedAt: Date,
   ): Promise<number> {
     return await this.sql.begin(async (transaction) => {
+      const candidates = await transaction<Array<{ delivery_id: string }>>`
+        SELECT delivery_id
+        FROM session_delivery_notification_outbox
+        WHERE (
+          state = 'claimed'
+          AND attempt_expires_at <= NOW()
+        ) OR (
+          state = 'pending'
+          AND (
+            attempt_count >= ${maxAttempts}
+            OR created_at <= ${oldestAllowedCreatedAt}
+          )
+        )
+        ORDER BY delivery_id
+      `;
+      const candidateIds = candidates.map((row) => row.delivery_id);
+      await lockSessionDeliveries(
+        transaction as unknown as SqlClient,
+        candidateIds,
+      );
+      if (candidateIds.length === 0) return 0;
       const expired = await transaction<Array<{ delivery_id: string; state: string }>>`
         UPDATE session_delivery_notification_outbox
         SET
@@ -394,6 +435,7 @@ export class SessionDeliveryNotificationRepository {
           updated_at = NOW()
         WHERE state = 'claimed'
           AND attempt_expires_at <= NOW()
+          AND delivery_id = ANY(${transaction.array(candidateIds)})
         RETURNING delivery_id, state
       `;
       const capped = await transaction<Array<{ delivery_id: string; state: string }>>`
@@ -406,6 +448,7 @@ export class SessionDeliveryNotificationRepository {
           dead_lettered_at = NOW(),
           updated_at = NOW()
         WHERE state = 'pending'
+          AND delivery_id = ANY(${transaction.array(candidateIds)})
           AND (
             attempt_count >= ${maxAttempts}
             OR created_at <= ${oldestAllowedCreatedAt}

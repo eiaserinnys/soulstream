@@ -374,6 +374,19 @@ export class TaskDeliveryLedgerGate {
     }
   }
 
+  async recordConsumptionFailure(
+    message: InterventionMessage,
+    error: unknown,
+  ): Promise<void> {
+    if (!this.enabled || !isControlledMessage(message) || !message.deliveryId) return;
+    const detail = error instanceof Error ? error.message : String(error);
+    await this.requireRepository().markUncertain(
+      message.deliveryId,
+      undefined,
+      `delivery consumption bookkeeping failed: ${detail}`,
+    );
+  }
+
   async recordPendingSuperseded(
     message: InterventionMessage,
     reason: string,

@@ -30,6 +30,8 @@ describe("TaskDeliveryConsumption", () => {
     const recorder = {
       recordConsumed: vi.fn().mockResolvedValue(undefined),
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(false),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const subject = new TaskDeliveryConsumption(
       recorder,
@@ -48,6 +50,8 @@ describe("TaskDeliveryConsumption", () => {
     const recorder = {
       recordConsumed: vi.fn().mockResolvedValue(undefined),
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(false),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const subject = new TaskDeliveryConsumption(
       recorder,
@@ -62,24 +66,27 @@ describe("TaskDeliveryConsumption", () => {
     expect(recorder.recordConsumed).not.toHaveBeenCalled();
   });
 
-  it("isolates advisory receipt failures but fails closed for controlled consumption", async () => {
+  it("marks failed consumption bookkeeping uncertain without changing turn outcome", async () => {
     const warn = vi.fn();
+    const recordConsumptionFailure = vi.fn().mockResolvedValue(undefined);
     const subject = new TaskDeliveryConsumption(
       {
         recordConsumed: vi.fn().mockRejectedValue(new Error("db unavailable")),
         recordTurnStarted: vi.fn().mockRejectedValue(new Error("db unavailable")),
+        discardIfConsumed: vi.fn().mockRejectedValue(new Error("db unavailable")),
+        recordConsumptionFailure,
       },
       { warn } as unknown as Logger,
     );
 
     await expect(subject.recordTurnStarted(makeTask(), makeMessage())).resolves.toBe(false);
     await expect(subject.recordConsumed(makeTask(), makeMessage()))
-      .rejects.toThrow("db unavailable");
+      .resolves.toBeUndefined();
     await expect(subject.recordConsumed(makeTask(), {
       ...makeMessage(),
       completionId: "completion-child",
       relationKey: "child_session:child-1:42",
-    })).rejects.toThrow("db unavailable");
+    })).resolves.toBeUndefined();
     const runtimeFollowup = {
       ...makeMessage(),
       deliveryIntent: "runtime_followup" as const,
@@ -92,7 +99,14 @@ describe("TaskDeliveryConsumption", () => {
     await expect(subject.recordConsumed(
       makeTask(),
       runtimeFollowup,
-    )).rejects.toThrow("db unavailable");
-    expect(warn).toHaveBeenCalledTimes(5);
+    )).resolves.toBeUndefined();
+    await expect(subject.discardIfConsumed(makeTask(), makeMessage()))
+      .resolves.toBe(false);
+    expect(recordConsumptionFailure).toHaveBeenCalledTimes(6);
+    expect(recordConsumptionFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId: makeMessage().deliveryId }),
+      expect.any(Error),
+    );
+    expect(warn).toHaveBeenCalledTimes(6);
   });
 });
