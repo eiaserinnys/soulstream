@@ -435,7 +435,7 @@ export class SessionDeliveryNotificationRepository {
           updated_at = NOW()
         WHERE state = 'claimed'
           AND attempt_expires_at <= NOW()
-          AND delivery_id = ANY(${transaction.array(candidateIds)})
+          AND delivery_id = ANY(${candidateIds}::text[])
         RETURNING delivery_id, state
       `;
       const capped = await transaction<Array<{ delivery_id: string; state: string }>>`
@@ -448,7 +448,7 @@ export class SessionDeliveryNotificationRepository {
           dead_lettered_at = NOW(),
           updated_at = NOW()
         WHERE state = 'pending'
-          AND delivery_id = ANY(${transaction.array(candidateIds)})
+          AND delivery_id = ANY(${candidateIds}::text[])
           AND (
             attempt_count >= ${maxAttempts}
             OR created_at <= ${oldestAllowedCreatedAt}

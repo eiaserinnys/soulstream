@@ -25,7 +25,7 @@ export async function lockSessionDeliveries(
   await sql`
     SELECT delivery_id
     FROM session_deliveries
-    WHERE delivery_id = ANY(${sql.array(orderedIds)})
+    WHERE delivery_id = ANY(${orderedIds}::text[])
     ORDER BY delivery_id
     FOR UPDATE
   `;
@@ -56,7 +56,7 @@ export async function discardSessionDeliveryNotificationProjections(
       last_error = ${reason},
       dead_lettered_at = COALESCE(dead_lettered_at, NOW()),
       updated_at = NOW()
-    WHERE delivery_id = ANY(${sql.array(uniqueIds)})
+    WHERE delivery_id = ANY(${uniqueIds}::text[])
       AND state IN ('pending', 'claimed')
   `;
 }
