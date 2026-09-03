@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runnerControlResponseFrame } from "../../src/runner/frame_protocol.js";
-import { RunnerHostRequestClient } from "../../src/runner/runner_host_request_client.js";
+import {
+  RunnerHostRequestClient,
+  RunnerHostUnavailableError,
+} from "../../src/runner/runner_host_request_client.js";
 
 describe("RunnerHostRequestClient", () => {
   it("retries with one correlation id and returns a recovered host response", async () => {
@@ -84,11 +87,13 @@ describe("RunnerHostRequestClient", () => {
     const delay = vi.fn(async () => {});
     const client = new RunnerHostRequestClient(() => undefined, delay);
 
-    await expect(client.call("session_store", "append", [{}, []], {
+    const request = client.call("session_store", "append", [{}, []], {
       timeoutMs: 10,
       attempts: 3,
       retryDelayMs: 1,
-    })).rejects.toThrow("failed after 3 attempts");
+    });
+    await expect(request).rejects.toThrow("failed after 3 attempts");
+    await expect(request).rejects.toBeInstanceOf(RunnerHostUnavailableError);
     expect(delay).toHaveBeenCalledTimes(2);
   });
 
@@ -114,11 +119,13 @@ describe("RunnerHostRequestClient", () => {
       }));
     const client = new RunnerHostRequestClient(() => ({ request } as never));
 
-    await expect(client.call("session_store", "load", [{}], {
+    const requestResult = client.call("session_store", "load", [{}], {
       timeoutMs: 10,
       attempts: 61,
       retryDelayMs: 1,
-    })).rejects.toThrow("timed out after 10ms");
+    });
+    await expect(requestResult).rejects.toThrow("timed out after 10ms");
+    await expect(requestResult).rejects.toBeInstanceOf(RunnerHostUnavailableError);
     expect(request).toHaveBeenCalledOnce();
   });
 });

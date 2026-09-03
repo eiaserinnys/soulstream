@@ -21,6 +21,10 @@ export interface RunnerHostRequestOptions {
   retryDelayMs?: number;
 }
 
+export class RunnerHostUnavailableError extends Error {
+  override readonly name = "RunnerHostUnavailableError";
+}
+
 /**
  * Runner-side proxy for host-owned state. Retries retain the same correlation
  * id so a replacement host can retry the same durable-owner mutation without
@@ -55,7 +59,15 @@ export class RunnerHostRequestClient {
       args,
     }, { timeoutMs: options.timeoutMs });
     const overallTimeoutMs = maxAttempts === undefined ? undefined : options.timeoutMs;
-    const lifetime = createRequestLifetime(options.signal, overallTimeoutMs);
+    const lifetime = createRequestLifetime(
+      options.signal,
+      overallTimeoutMs,
+      maxAttempts === undefined
+        ? undefined
+        : new RunnerHostUnavailableError(
+          `Runner host request ${service}.${operation} timed out after ${options.timeoutMs}ms`,
+        ),
+    );
     const deadline = overallTimeoutMs === undefined ? undefined : Date.now() + overallTimeoutMs;
     let lastError: Error | undefined;
     try {
@@ -90,7 +102,7 @@ export class RunnerHostRequestClient {
           }
         }
         if (maxAttempts !== undefined && attempt >= maxAttempts) {
-          throw new Error(
+          throw new RunnerHostUnavailableError(
             `Runner host request ${service}.${operation} failed after ${maxAttempts} attempts`,
             { cause: lastError },
           );
@@ -135,7 +147,11 @@ function abortReason(signal: AbortSignal): Error {
     : new Error(signal.reason ? String(signal.reason) : "Runner host request aborted");
 }
 
-function createRequestLifetime(parent: AbortSignal | undefined, timeoutMs?: number): {
+function createRequestLifetime(
+  parent: AbortSignal | undefined,
+  timeoutMs?: number,
+  timeoutReason?: Error,
+): {
   signal: AbortSignal;
   cleanup(): void;
 } {
@@ -144,7 +160,9 @@ function createRequestLifetime(parent: AbortSignal | undefined, timeoutMs?: numb
   if (parent?.aborted) relayParentAbort();
   else parent?.addEventListener("abort", relayParentAbort, { once: true });
   const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
-    controller.abort(new Error(`Runner host request timed out after ${timeoutMs}ms`));
+    controller.abort(
+      timeoutReason ?? new Error(`Runner host request timed out after ${timeoutMs}ms`),
+    );
   }, timeoutMs);
   timer?.unref?.();
   return {

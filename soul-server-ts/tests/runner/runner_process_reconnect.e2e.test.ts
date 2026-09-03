@@ -275,6 +275,96 @@ describe("runner process detach/reconnect E2E", () => {
     await waitFor(async () => !isPidAlive(pid));
     childPids.delete(pid);
   }, 30_000);
+
+  it.each([
+    ["before the required-frame forwarding budget expires", 100, true],
+    ["after the required-frame forwarding budget expires", 31_000, false],
+  ])("keeps the active turn alive and replays its durable frame %s", async (
+    _label,
+    hostGapMs,
+    expectRequestFrame,
+  ) => {
+    const root = await mkdtemp(join(tmpdir(), "runner-host-gap-e2e-"));
+    directories.push(root);
+    const stateDirectory = join(root, "state");
+    const snapshotPath = join(root, "snapshot");
+    const controlDirectory = join(root, "control");
+    await mkdir(snapshotPath, { recursive: true });
+    await mkdir(controlDirectory, { recursive: true });
+    await writeFile(join(snapshotPath, "package.json"), JSON.stringify({ type: "module" }));
+    await writeFile(
+      join(snapshotPath, "runner_entry.js"),
+      `await import(${JSON.stringify(pathToFileURL(childFixturePath).href)});\n`,
+    );
+    const baseInput = spawnInput(stateDirectory, snapshotPath, controlDirectory);
+    const input = {
+      ...baseInput,
+      childProcessEnv: {
+        ...baseInput.childProcessEnv,
+        RUNNER_E2E_HOST_GAP_SCENARIO: "1",
+      },
+    };
+    const spawned = await new RunnerProcessSpawner().spawn(input);
+    childPids.add(spawned.pid);
+    const { mux, batches } = autoAcknowledgingMux();
+    const firstHost = processDispatcher(input, mux);
+    const firstIterator = firstHost.executeFrames({
+      agentSessionId: "session-e2e",
+      prompt: "remain alive across the host gap",
+    })[Symbol.asyncIterator]();
+
+    await expect(withTimeout(firstIterator.next())).resolves.toMatchObject({
+      done: false,
+      value: {
+        kind: "engine_event",
+        payload: { type: "session", session_id: "backend-session-e2e" },
+      },
+    });
+    void firstIterator.next().catch(() => {});
+    const paths = runnerProcessPaths(stateDirectory, "session-e2e");
+    await waitFor(async () => await pendingFrameCount(paths.databasePath) === 0);
+    await firstHost.detachHost();
+    await writeFile(join(controlDirectory, "emit-host-required-frame"), "go\n");
+    await waitFor(async () => await pathExists(
+      join(controlDirectory, "host-required-frame-emitted"),
+    ));
+    await new Promise((resolveGap) => setTimeout(resolveGap, hostGapMs));
+
+    const reattachedHost = processDispatcher(input, mux);
+    const reattachedIterator = reattachedHost.recoverFrames()[Symbol.asyncIterator]();
+    if (expectRequestFrame) {
+      await expect(withTimeout(reattachedIterator.next())).resolves.toMatchObject({
+        done: false,
+        value: { kind: "request", correlationId: "host-gap-can-use-tool" },
+      });
+    }
+    await expect(withTimeout(reattachedIterator.next())).resolves.toMatchObject({
+      done: false,
+      value: {
+        kind: "engine_event",
+        payload: { type: "assistant_message", content: "after-host-gap" },
+      },
+    });
+    await waitFor(async () => await pathExists(
+      join(controlDirectory, "host-required-frame-settled"),
+    ));
+    const finished = reattachedIterator.next();
+    await writeFile(join(controlDirectory, "finish-host-gap"), "go\n");
+    await expect(withTimeout(finished)).resolves.toEqual({ done: true, value: undefined });
+
+    expect(await pathExists(join(controlDirectory, "host-gap-interrupt-count"))).toBe(false);
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    expect(lifecycle.read()).toMatchObject({ execution_state: "completed" });
+    lifecycle.close();
+    expect(batches.flatMap((batch) => batch.events.flatMap((event) => {
+      const content = (event.payload as { content?: unknown }).content;
+      return content === "after-host-gap" ? [content] : [];
+    }))).toEqual(["after-host-gap"]);
+
+    await reattachedHost.close();
+    await waitFor(async () => !isPidAlive(spawned.pid));
+    childPids.delete(spawned.pid);
+  }, 45_000);
 });
 
 function processDispatcher(

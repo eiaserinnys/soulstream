@@ -18,6 +18,7 @@ import type {
 } from "../../../src/engine/protocol.js";
 import {
   engineEventFrame,
+  runnerRequestFrame,
   type RunnerEventFrame,
 } from "../../../src/runner/frame_protocol.js";
 import { RunnerChildRuntime } from "../../../src/runner/runner_child_runtime.js";
@@ -40,6 +41,7 @@ class ControlledEngine implements EnginePort {
   private liveInterventionCount = 0;
   private p0r2InterruptCount = 0;
   private p0r2CloseCount = 0;
+  private hostGapInterruptCount = 0;
   private fullSliceExecuteCount = 0;
   private fullSliceInterveneCount = 0;
   private fullSliceInterruptCount = 0;
@@ -161,6 +163,27 @@ class ControlledEngine implements EnginePort {
         type: "complete",
         result: generation === 1 ? "initial reply" : "successor reply",
       });
+      return;
+    }
+    if (process.env.RUNNER_E2E_HOST_GAP_SCENARIO === "1") {
+      yield engineEventFrame({ type: "session", session_id: "backend-session-e2e" });
+      await writeFile(`${this.controlDirectory}/execute-started`, "ready\n");
+      await waitForFile(`${this.controlDirectory}/emit-host-required-frame`);
+      await writeFile(`${this.controlDirectory}/host-required-frame-emitted`, "ready\n");
+      yield runnerRequestFrame("host-gap-can-use-tool", {
+        kind: "can_use_tool",
+        agentSessionId: config.sessionId,
+        toolUseId: "host-gap-tool-use",
+        toolName: "AskUserQuestion",
+        input: { questions: [] },
+      });
+      await writeFile(`${this.controlDirectory}/host-required-frame-settled`, "ready\n");
+      yield engineEventFrame({
+        type: "assistant_message",
+        content: "after-host-gap",
+        timestamp: 2,
+      });
+      await waitForFile(`${this.controlDirectory}/finish-host-gap`);
       return;
     }
     if (process.env.RUNNER_E2E_BACKGROUND_SCENARIO === "multi-terminal") {
@@ -355,6 +378,13 @@ class ControlledEngine implements EnginePort {
       await writeFile(
         `${this.controlDirectory}/p0r2-interrupt-${process.pid}-${this.p0r2InterruptCount}`,
         "interrupted\n",
+      );
+    }
+    if (process.env.RUNNER_E2E_HOST_GAP_SCENARIO === "1") {
+      this.hostGapInterruptCount += 1;
+      await writeFile(
+        `${this.controlDirectory}/host-gap-interrupt-count`,
+        `${this.hostGapInterruptCount}\n`,
       );
     }
     return true;
