@@ -1071,6 +1071,8 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     await expect(repository.notifications.get(deliveryId)).resolves.toMatchObject({
       state: "published",
       projection_state: "published",
+      disposition: "auto_resume",
+      payload: expect.objectContaining({ disposition: "queued" }),
       target_receipt_id: "event:r37-redelivery",
     });
 

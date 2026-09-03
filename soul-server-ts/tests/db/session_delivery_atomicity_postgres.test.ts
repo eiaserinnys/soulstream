@@ -908,6 +908,36 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
   });
 
+  it("rejects a live same-token replay when its disposition differs", async () => {
+    const deliveryId = "delivery-live-outbox-disposition-mismatch";
+    const relationKey = "relation-live-outbox-disposition-mismatch";
+    const payload = notificationPayload(deliveryId, relationKey);
+    await register(deliveryId, relationKey);
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-live");
+    await repository.beginDispatch(deliveryId, "worker-live");
+    await repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      attemptToken: "worker-live",
+      targetSessionId: "caller-old",
+      disposition: "auto_resume",
+      payload,
+    });
+    await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-live");
+    await repository.beginDispatch(deliveryId, "worker-live");
+
+    await expect(repository.notifications.stageWithQueuedDelivery({
+      deliveryId,
+      attemptToken: "worker-live",
+      targetSessionId: "caller-old",
+      disposition: "queued",
+      payload: { ...payload, disposition: "queued" },
+    })).rejects.toThrow("notification outbox already exists: " + deliveryId);
+    await expect(repository.notifications.get(deliveryId)).resolves.toMatchObject({
+      disposition: "auto_resume",
+      payload: expect.objectContaining({ disposition: "auto_resume" }),
+    });
+  });
+
   it("treats exact delivered and consumed notification stages as idempotent no-ops", async () => {
     const deliveryId = "delivery-terminal-stage-noop";
     const relationKey = "relation-terminal-stage-noop";
