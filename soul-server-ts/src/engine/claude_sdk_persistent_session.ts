@@ -1,10 +1,4 @@
-import { randomUUID } from "node:crypto";
-
-import type {
-  Query as ClaudeSdkQuery,
-  SDKMessage,
-  SDKUserMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+import type { Query as ClaudeSdkQuery, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
 import { markPostResultDrainEvent } from "./claude_event_phase.js";
@@ -27,9 +21,7 @@ import {
   type ClaudeDetachedEventSink,
   type ClaudeRuntimeEventSink,
   type ClaudeSdkPersistentSessionConfig,
-  createInterventionInterruptObservation,
   describeResultProvenance,
-  hashSdkUserMessage,
   isExpectedInterruptDiagnostic,
   isExpectedInterruptTerminalEvent,
   isTurnStartingUserInput,
@@ -38,9 +30,11 @@ import {
   settleInterventionInterrupt,
   shouldFencePostInterruptContinuation,
   turnInactivityError,
-  waitForInterventionEffect,
 } from "./claude_sdk_persistent_session_support.js";
-import { makeUserMessage } from "./claude_sdk_user_message.js";
+import {
+  injectPersistentToolBoundary,
+  interruptPersistentForeground,
+} from "./claude_sdk_persistent_intervention.js";
 import { startPersistentForegroundTurn } from "./claude_sdk_persistent_turn_handoff.js";
 import {
   ClaudeSessionRuntime,
@@ -113,47 +107,22 @@ export class ClaudeSdkPersistentSession {
   }
 
   async interruptForeground(): Promise<boolean> {
-    const active = this.activeForeground;
-    if (!active || this.runtime.snapshot().foregroundPhase !== "generating") return false;
-    if (active.interventionInterrupt) return await active.interventionInterrupt.promise;
-
-    const observation = createInterventionInterruptObservation();
-    active.interventionInterrupt = observation;
-    this.interventionFence = active;
-    this.clearForegroundTimers(active);
-    try {
-      return await waitForInterventionEffect(
-        observation,
-        () => this.runtime.interruptForeground(makeStaleInterruptReceiptLogger(this.logger)),
-        this.logger,
-        active.uuid,
-      );
-    } catch (error) {
-      if (observation.observed) return true;
-      await this.close("fatal");
-      throw error;
-    }
+    return await interruptPersistentForeground({
+      active: this.activeForeground,
+      runtime: this.runtime,
+      logger: this.logger,
+      clearForegroundTimers: (active) => this.clearForegroundTimers(active),
+      setInterventionFence: (active) => { this.interventionFence = active; },
+      close: async (reason) => await this.close(reason),
+    });
   }
 
   injectAtToolBoundary(input: EngineUserInput): boolean {
-    const active = this.activeForeground;
-    if (!active || this.runtime.snapshot().foregroundPhase !== "generating") return false;
-    const uuid = input.inputUuid ?? randomUUID();
-    const message = makeUserMessage(
-      input.prompt,
-      input.imageAttachmentPaths,
-      {
-        uuid,
-        priority: "next",
-        origin: { kind: "coordinator" },
-      },
-    );
-    this.runtime.enqueueForegroundContinuation({
-      uuid,
-      payloadHash: hashSdkUserMessage(message),
-      message,
+    return injectPersistentToolBoundary({
+      input,
+      active: this.activeForeground,
+      runtime: this.runtime,
     });
-    return true;
   }
 
   snapshot(): ClaudeSessionRuntimeSnapshot {
