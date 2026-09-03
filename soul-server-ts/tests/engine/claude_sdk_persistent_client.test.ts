@@ -1,4 +1,4 @@
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { SDKMessage, SessionMessage } from "@anthropic-ai/claude-agent-sdk";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,6 +7,9 @@ import {
   ClaudeSdkClient,
 } from "../../src/engine/claude_adapter.js";
 import { ClaudeSessionClientRegistry } from "../../src/engine/claude_session_client_registry.js";
+import { findClaudeDeliveryTranscriptReceipt } from
+  "../../src/engine/claude_delivery_transcript_receipt.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import {
   abortSignal,
   collect,
@@ -24,6 +27,77 @@ import {
 const silentLogger = pino({ level: "silent" });
 
 describe("ClaudeSdkClient persistent runtime", () => {
+  it("pushes a machine report with explicit next priority and keeps the foreground owner", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      { query: harness.queryFn, detachedEventSink: harness.detached },
+      silentLogger,
+    );
+    const registry = new ClaudeSessionClientRegistry(
+      () => client,
+      { idleTtlMs: 300_000, maxEntries: 16 },
+    );
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-persistent",
+        persistentSessionRegistry: registry,
+        processEnv: {},
+      },
+      silentLogger,
+    );
+    const deliveryId = "delivery-tool-boundary-next";
+    const inputUuid = buildDeliveryInputUuid(deliveryId);
+    const turn = collectSse(engine.execute({
+      agentSessionId: "agent-session",
+      prompt: "foreground tool owner",
+    }));
+    const foregroundInput = await harness.nextInput();
+
+    await expect(engine.injectAtToolBoundary({
+      prompt: "machine-authored completion report",
+      inputUuid,
+      turnOrigin: { kind: "completion_notification", id: deliveryId },
+    })).resolves.toEqual({ status: "delivered", mechanism: "active_turn" });
+    const injectedInput = await harness.nextInput();
+
+    expect(injectedInput).toMatchObject({
+      type: "user",
+      uuid: inputUuid,
+      priority: "next",
+      origin: { kind: "coordinator" },
+    });
+    expect(harness.interrupt).not.toHaveBeenCalled();
+
+    harness.push(sdkAssistantText("assistant-after-machine-report", "report consumed"));
+    harness.push(sdkResult("sdk-session", foregroundInput.uuid, "foreground completed"));
+    const events = await turn;
+
+    expect(events.filter((event) => event.type === "error")).toEqual([]);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "complete",
+      result: "foreground completed",
+    }));
+    expect(findClaudeDeliveryTranscriptReceipt(
+      [
+        injectedInput as unknown as SessionMessage,
+        {
+          type: "assistant",
+          uuid: "assistant-after-machine-report",
+          session_id: "sdk-session",
+          message: {},
+          parent_tool_use_id: null,
+          parent_agent_id: null,
+        } as SessionMessage,
+      ],
+      inputUuid,
+    )).toEqual({
+      kind: "completed",
+      inputUuid,
+      assistantMessageUuid: "assistant-after-machine-report",
+    });
+    await registry.shutdown();
+  });
+
   it("omits SDK maxTurns from one persistent Query while preserving later turns", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(

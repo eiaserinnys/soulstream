@@ -54,6 +54,9 @@ describe("RunnerProcessEngineProxy", () => {
         if (capability === "intervene") {
           return { status: "delivered", mechanism: "active_turn" };
         }
+        if (capability === "injectAtToolBoundary") {
+          return { status: "delivered", mechanism: "active_turn" };
+        }
         if (capability === "deliverInputResponse") return { status: "delivered" };
         if (capability === "deliverToolApproval") return { status: "already_resolved" };
         if (capability === "detachedClaudeRuntimeActivity") {
@@ -72,6 +75,14 @@ describe("RunnerProcessEngineProxy", () => {
 
     await expect(proxy.interrupt()).resolves.toBe(true);
     await expect(proxy.intervene({ prompt: "redirect" })).resolves.toEqual({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    await expect(proxy.injectAtToolBoundary({
+      prompt: "machine report",
+      inputUuid: "delivery-input",
+      turnOrigin: { kind: "completion_notification", id: "delivery-1" },
+    })).resolves.toEqual({
       status: "delivered",
       mechanism: "active_turn",
     });
@@ -94,16 +105,25 @@ describe("RunnerProcessEngineProxy", () => {
     );
     expect(dispatcher.invoke).toHaveBeenNthCalledWith(
       2,
+      "injectAtToolBoundary",
+      [{
+        prompt: "machine report",
+        inputUuid: "delivery-input",
+        turnOrigin: { kind: "completion_notification", id: "delivery-1" },
+      }],
+    );
+    expect(dispatcher.invoke).toHaveBeenNthCalledWith(
+      3,
       "deliverInputResponse",
       ["request-1", { answer: "yes" }],
     );
     expect(dispatcher.invoke).toHaveBeenNthCalledWith(
-      3,
+      4,
       "deliverToolApproval",
       ["approval-1", "approved", {}],
     );
     expect(dispatcher.invoke).toHaveBeenNthCalledWith(
-      4,
+      5,
       "detachedClaudeRuntimeActivity",
       [],
     );
