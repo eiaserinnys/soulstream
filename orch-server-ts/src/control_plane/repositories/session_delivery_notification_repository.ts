@@ -15,6 +15,14 @@ import {
 
 const DEFAULT_NOTIFICATION_ATTEMPT_TTL_MS = 15_000;
 
+interface NotificationStageParams {
+  deliveryId: string;
+  attemptToken: string;
+  targetSessionId: string;
+  disposition: "queued" | "auto_resume";
+  payload: Record<string, unknown>;
+}
+
 export class SessionDeliveryNotificationRepository {
   constructor(private readonly sql: SqlClient) {}
 
@@ -29,13 +37,10 @@ export class SessionDeliveryNotificationRepository {
     return rows[0] ?? null;
   }
 
-  async stageWithQueuedDelivery(params: {
-    deliveryId: string;
-    attemptToken: string;
-    targetSessionId: string;
-    disposition: "queued" | "auto_resume";
-    payload: Record<string, unknown>;
-  }, attemptTtlMs = DEFAULT_NOTIFICATION_ATTEMPT_TTL_MS): Promise<SessionDeliveryRow | null> {
+  async stageWithQueuedDelivery(
+    params: NotificationStageParams,
+    attemptTtlMs = DEFAULT_NOTIFICATION_ATTEMPT_TTL_MS,
+  ): Promise<SessionDeliveryRow | null> {
     const payload = validateNotificationPayload(params);
     return await this.sql.begin(async (transaction) => {
       const advanced = await transaction<SessionDeliveryRow[]>`
@@ -48,8 +53,8 @@ export class SessionDeliveryNotificationRepository {
         RETURNING *
       `;
       const row = advanced[0];
-      if (!row) return null;
-      const stagedOutbox = await transaction<Array<{ delivery_id: string }>>`
+      const stagedOutbox = row
+        ? await transaction<Array<{ delivery_id: string }>>`
         INSERT INTO session_delivery_notification_outbox (
           delivery_id,
           target_session_id,
@@ -111,10 +116,18 @@ export class SessionDeliveryNotificationRepository {
                 OR session_delivery_notification_outbox.attempt_expires_at <= NOW()
               )
             )
-          )
+        )
         RETURNING delivery_id
-      `;
-      if (!stagedOutbox[0]) {
+      `
+        : [];
+      if (!row || !stagedOutbox[0]) {
+        const idempotent = await findIdempotentNotificationStage(
+          transaction as unknown as SqlClient,
+          params,
+          payload,
+        );
+        if (idempotent) return idempotent;
+        if (!row) return null;
         throw new Error(`notification outbox already exists: ${params.deliveryId}`);
       }
       await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
@@ -478,4 +491,39 @@ export class SessionDeliveryNotificationRepository {
       return expired.length + capped.length;
     });
   }
+}
+
+// A matching outbox row is the durable proof that this exact notification has
+// already been staged. Repeating the same stage request must not create a writer.
+async function findIdempotentNotificationStage(
+  sql: SqlClient,
+  params: NotificationStageParams,
+  payload: Record<string, unknown>,
+): Promise<SessionDeliveryRow | null> {
+  const rows = await sql<SessionDeliveryRow[]>`
+    SELECT delivery.*
+    FROM session_deliveries AS delivery
+    JOIN session_delivery_notification_outbox AS outbox
+      ON outbox.delivery_id = delivery.delivery_id
+    WHERE delivery.delivery_id = ${params.deliveryId}
+      AND delivery.target_session_id = ${params.targetSessionId}
+      AND delivery.completion_id = ${payload.completion_id as string}
+      AND delivery.relation_key = ${payload.relation_key as string}
+      AND delivery.intent = ${payload.delivery_intent as string}
+      AND outbox.target_session_id = ${params.targetSessionId}
+      AND outbox.disposition = ${params.disposition}
+      AND outbox.payload->>'delivery_id' = ${params.deliveryId}
+      AND outbox.payload->>'completion_id' = ${payload.completion_id as string}
+      AND outbox.payload->>'relation_key' = ${payload.relation_key as string}
+      AND outbox.payload->>'delivery_intent' = ${payload.delivery_intent as string}
+      AND (
+        (
+          delivery.state = 'queued'
+          AND delivery.aggregate_state = 'pending'
+          AND outbox.state IN ('pending', 'claimed', 'published')
+        )
+        OR delivery.aggregate_state IN ('delivered', 'consumed')
+      )
+  `;
+  return rows[0] ?? null;
 }

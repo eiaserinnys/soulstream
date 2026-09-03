@@ -77,7 +77,9 @@ export class QueuedDeliveryTranscriptRecovery {
         this.workerId,
         limit,
         this.attemptTtlMs,
-        this.deps.redeliverContent !== undefined,
+        // A transcript receipt is delivery proof. Boot recovery must not turn a
+        // delivered follow-up back into a queued user message.
+        false,
       );
     return {
       claimed: rows.length,
