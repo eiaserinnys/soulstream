@@ -82,8 +82,6 @@ export class SessionDeliveryNotificationRepository {
         )
         ON CONFLICT (delivery_id) DO UPDATE
         SET
-          target_session_id = EXCLUDED.target_session_id,
-          payload = EXCLUDED.payload,
           disposition = EXCLUDED.disposition,
           state = 'claimed',
           projection_state = 'publishing',
@@ -93,7 +91,9 @@ export class SessionDeliveryNotificationRepository {
           last_error = NULL,
           updated_at = NOW()
         WHERE
-          session_delivery_notification_outbox.payload - 'disposition'
+          session_delivery_notification_outbox.target_session_id
+            = EXCLUDED.target_session_id
+          AND session_delivery_notification_outbox.payload - 'disposition'
             = EXCLUDED.payload - 'disposition'
           AND (
             (
@@ -105,10 +105,14 @@ export class SessionDeliveryNotificationRepository {
             OR (
               session_delivery_notification_outbox.state = 'claimed'
               AND session_delivery_notification_outbox.projection_state = 'publishing'
-              AND (
-                session_delivery_notification_outbox.attempt_token = EXCLUDED.attempt_token
-                OR session_delivery_notification_outbox.attempt_expires_at <= NOW()
-              )
+              AND session_delivery_notification_outbox.attempt_expires_at <= NOW()
+            )
+            OR (
+              session_delivery_notification_outbox.state = 'claimed'
+              AND session_delivery_notification_outbox.projection_state = 'publishing'
+              AND session_delivery_notification_outbox.attempt_token = EXCLUDED.attempt_token
+              AND session_delivery_notification_outbox.disposition = EXCLUDED.disposition
+              AND session_delivery_notification_outbox.payload = EXCLUDED.payload
             )
         )
         RETURNING delivery_id
