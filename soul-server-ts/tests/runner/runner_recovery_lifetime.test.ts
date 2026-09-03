@@ -126,6 +126,7 @@ function makeHarness(input: {
     } as never,
     taskExecutor: {
       recoverRegisteredRunner: recoverRegisteredRunner as never,
+      retainRegisteredClaudeBackgroundRunner: vi.fn(async () => false),
     },
     closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },

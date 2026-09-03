@@ -191,6 +191,7 @@ describe("R36 delete_session lifecycle lab", () => {
       taskManager,
       taskExecutor: {
         recoverRegisteredRunner: vi.fn(async () => {}),
+        retainRegisteredClaudeBackgroundRunner: vi.fn(async () => false),
         restartRegisteredRunner: vi.fn(),
       },
       closedTailDrainer: { drain: vi.fn(async () => {}) },
@@ -423,6 +424,7 @@ function missingSessionTaskManager(): TaskManager {
 function recoveryTaskExecutor() {
   return {
     recoverRegisteredRunner: vi.fn(async () => {}),
+    retainRegisteredClaudeBackgroundRunner: vi.fn(async () => false),
     restartRegisteredRunner: vi.fn(),
   };
 }

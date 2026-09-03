@@ -223,7 +223,7 @@ describe("worker composition boundary", () => {
     expect(recoveryIndex).toBeGreaterThan(executorIndex);
   });
 
-  it("arms startup recovery after route binding and drains queued content after runner scan", () => {
+  it("leaves background ownership to runner recovery and drains queued content after runner scan", () => {
     const workerComposition = source("runtime/worker_composition.ts");
     const claudeComposition = source("runtime/claude_runtime_composition.ts");
     const workerStartup = source("runtime/worker_startup.ts");
@@ -242,7 +242,7 @@ describe("worker composition boundary", () => {
     );
 
     expect(taskRuntimeIndex).toBeGreaterThan(-1);
-    expect(backgroundRecoveryIndex).toBeGreaterThan(taskRuntimeIndex);
+    expect(backgroundRecoveryIndex).toBe(-1);
     expect(runnerScanIndex).toBeGreaterThan(-1);
     expect(upstreamRegistrationIndex).toBeGreaterThan(runnerScanIndex);
     expect(queuedRecoveryIndex).toBeGreaterThan(upstreamRegistrationIndex);

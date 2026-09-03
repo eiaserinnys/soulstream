@@ -25,6 +25,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   taskExecutor: Pick<
     TaskExecutor,
     | "recoverRegisteredRunner"
+    | "retainRegisteredClaudeBackgroundRunner"
   >;
   closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain">;
   logger: Pick<Logger, "error" | "info" | "warn">;
@@ -49,4 +50,5 @@ export interface RunnerRecoveryCoordinatorOptions {
   quarantineFailure?: typeof quarantineUnreadableRunnerRegistration;
   hydrationDeadlineMs?: number;
   hydrationConcurrency?: number;
+  terminalizeClaudeBackgroundTasks?: (sessionId: string) => Promise<number>;
 }

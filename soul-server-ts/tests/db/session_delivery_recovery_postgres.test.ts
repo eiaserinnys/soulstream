@@ -1143,12 +1143,10 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     );
     const startup = new ClaudeRuntimeStartupRecovery({
       recoverQueuedDeliveries: recoverBootSnapshot,
-      recoverBackgroundTasks: vi.fn(async () => 0),
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       nodeId: "node-test",
     });
 
-    await startup.start();
     await startup.afterRunnerRecovery();
     await startup.afterRunnerRecovery();
 

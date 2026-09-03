@@ -249,4 +249,19 @@ export class ClaudeBackgroundTaskRepository {
       LIMIT ${limit}
     `;
   }
+
+  async activeForSession(
+    sourceNode: string,
+    sessionId: string,
+    limit = 1_000,
+  ): Promise<ClaudeBackgroundTaskRow[]> {
+    return await this.sql<ClaudeBackgroundTaskRow[]>`
+      SELECT * FROM claude_background_tasks
+      WHERE source_node = ${sourceNode}
+        AND session_id = ${sessionId}
+        AND status IN ('pending', 'running')
+      ORDER BY updated_at, task_id
+      LIMIT ${limit}
+    `;
+  }
 }

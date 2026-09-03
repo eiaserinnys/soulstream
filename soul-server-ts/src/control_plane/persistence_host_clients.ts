@@ -377,6 +377,13 @@ export class ClaudeRuntimeHostClient {
   activeForNode(sourceNode: string, limit = 1_000): Promise<ClaudeBackgroundTaskRow[]> {
     return this.transport.request("claude-runtime", "active_background_tasks_for_node", [sourceNode, limit]);
   }
+  activeForSession(sourceNode: string, sessionId: string, limit = 1_000): Promise<ClaudeBackgroundTaskRow[]> {
+    return this.transport.request(
+      "claude-runtime",
+      "active_background_tasks_for_session",
+      [sourceNode, sessionId, limit],
+    );
+  }
   appendClaudeTranscriptEntries(key: ClaudeTranscriptKey, entries: ClaudeTranscriptEntry[]): Promise<number> {
     return this.transport.request("claude-runtime", "append_transcript_entries", [key, entries]);
   }

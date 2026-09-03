@@ -372,11 +372,10 @@ export async function observeCompletedResumeIngress(
         startupRecoveryScans += 1;
         return await queuedRecovery.recoverAfterNodeRestart(NODE_ID);
       },
-      recoverBackgroundTasks: async () => 0,
       logger,
       nodeId: NODE_ID,
     });
-    await startupRecovery.start();
+    await startupRecovery.afterRunnerRecovery();
     await startupRecovery.stop();
   }
   await app.close();

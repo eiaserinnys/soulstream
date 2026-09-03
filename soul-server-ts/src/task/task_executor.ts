@@ -526,6 +526,38 @@ export class TaskExecutor {
     await this.executorFinalizer.releaseRetainedClaudeRunner(task);
   }
 
+  /**
+   * Reattaches the host to a terminal runner only long enough to ask the SDK
+   * whether that process still owns detached background work. No execution
+   * admission or foreground frame replay is created here.
+   */
+  async retainRegisteredClaudeBackgroundRunner(
+    task: Task,
+    registration: RunnerRegistration,
+  ): Promise<boolean> {
+    if (task.executionPromise !== undefined) return false;
+    const attached = task.runner;
+    if (attached) {
+      if (attached.dispatcher.registrationId() !== registration.registrationId) {
+        return false;
+      }
+      return await this.executorFinalizer.retainClaudeRunnerIfActive(task, attached);
+    }
+    const runner = this.runnerProcessFactory?.recover?.(
+      task,
+      registration,
+      this.snapshotPersistenceFor(task),
+      "adopt",
+    );
+    if (!runner) throw new Error("runner process recovery factory unavailable");
+    this.attachRunner(task, runner);
+    if (await this.executorFinalizer.retainClaudeRunnerIfActive(task, runner)) {
+      return true;
+    }
+    if (releaseTaskRunner(task, runner)) await runner.dispatcher.detachHost();
+    return false;
+  }
+
   startExecutionWithRunner(
     task: Task,
     agent: AgentProfile,

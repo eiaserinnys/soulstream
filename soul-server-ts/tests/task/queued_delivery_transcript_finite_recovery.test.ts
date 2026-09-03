@@ -22,7 +22,6 @@ describe("queued transcript finite restart recovery", () => {
   it("returns input-pending identity once and does not reselect it in the same boot", async () => {
     const harness = makeHarness("input_pending");
 
-    await harness.startup.start();
     await afterRunnerRecovery(harness.startup);
     await vi.advanceTimersByTimeAsync(50);
     await vi.advanceTimersByTimeAsync(150);
@@ -44,7 +43,6 @@ describe("queued transcript finite restart recovery", () => {
   it("consumes a transcript-completed delivery exactly once before retiring", async () => {
     const harness = makeHarness("completed");
 
-    await harness.startup.start();
     await afterRunnerRecovery(harness.startup);
     await vi.advanceTimersByTimeAsync(50);
     await vi.advanceTimersByTimeAsync(150);
@@ -214,7 +212,6 @@ function makeHarness(receiptKind: "input_pending" | "completed") {
     {
       recoverQueuedDeliveries: () =>
         queuedRecovery.recoverAfterNodeRestart("node-a"),
-      recoverBackgroundTasks: vi.fn(async () => 0),
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       nodeId: "node-a",
     },

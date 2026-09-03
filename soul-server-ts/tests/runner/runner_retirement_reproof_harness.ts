@@ -227,6 +227,7 @@ function makeCoordinatorSubject(
       projectClosedRunner: async () => true,
     },
     taskExecutor: {
+      retainRegisteredClaudeBackgroundRunner: async () => false,
       recoverRegisteredRunner: async () => {
         counters.replay += 1;
         counters.terminal += 1;

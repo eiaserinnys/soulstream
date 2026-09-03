@@ -11,28 +11,20 @@ afterEach(() => {
 });
 
 describe("ClaudeRuntimeStartupRecovery", () => {
-  it("keeps startup non-fatal without retrying either failed boot step", async () => {
+  it("keeps queued recovery non-fatal without retrying the failed boot step", async () => {
     const recoverQueuedDeliveries = vi.fn()
       .mockRejectedValue(new Error("orchestrator unavailable"));
-    const recoverBackgroundTasks = vi.fn()
-      .mockRejectedValue(new Error("still unavailable"));
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const recovery = new ClaudeRuntimeStartupRecovery({
       recoverQueuedDeliveries,
-      recoverBackgroundTasks,
       logger,
       nodeId: "windows-node",
     });
 
-    await expect(recovery.start()).resolves.toBeUndefined();
-    expect(recoverBackgroundTasks).toHaveBeenCalledTimes(1);
-    expect(recoverQueuedDeliveries).not.toHaveBeenCalled();
-
     await expect(recovery.afterRunnerRecovery()).resolves.toBeUndefined();
     await expect(recovery.afterRunnerRecovery()).resolves.toBeUndefined();
     expect(recoverQueuedDeliveries).toHaveBeenCalledOnce();
-    expect(recoverBackgroundTasks).toHaveBeenCalledOnce();
-    expect(logger.error).toHaveBeenCalledTimes(2);
+    expect(logger.error).toHaveBeenCalledOnce();
   });
 
   it("waits for runner convergence before taking its one queued snapshot", async () => {
@@ -40,20 +32,16 @@ describe("ClaudeRuntimeStartupRecovery", () => {
       claimed: 0,
       settled: 0,
     });
-    const recoverBackgroundTasks = vi.fn().mockResolvedValue(0);
     const recovery = new ClaudeRuntimeStartupRecovery({
       recoverQueuedDeliveries,
-      recoverBackgroundTasks,
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       nodeId: "windows-node",
     });
 
-    await recovery.start();
     expect(recoverQueuedDeliveries).not.toHaveBeenCalled();
     await recovery.afterRunnerRecovery();
     await recovery.afterRunnerRecovery();
     expect(recoverQueuedDeliveries).toHaveBeenCalledOnce();
-    expect(recoverBackgroundTasks).toHaveBeenCalledOnce();
   });
 
   it("returns input-pending content without selecting it again in the same boot", async () => {
@@ -90,13 +78,11 @@ describe("ClaudeRuntimeStartupRecovery", () => {
       {
         recoverQueuedDeliveries: () =>
           queuedRecovery.recoverAfterNodeRestart("node-a"),
-        recoverBackgroundTasks: vi.fn(async () => 0),
         logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
         nodeId: "node-a",
       },
     );
 
-    await recovery.start();
     await recovery.afterRunnerRecovery();
     await recovery.afterRunnerRecovery();
     expect(inspect).toHaveBeenCalledTimes(1);
@@ -110,21 +96,17 @@ describe("ClaudeRuntimeStartupRecovery", () => {
       release = () => resolve({ claimed: 0, settled: 0 });
     });
     const recoverQueuedDeliveries = vi.fn(() => blocked);
-    const recoverBackgroundTasks = vi.fn().mockResolvedValue(0);
     const recovery = new ClaudeRuntimeStartupRecovery({
       recoverQueuedDeliveries,
-      recoverBackgroundTasks,
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       nodeId: "windows-node",
     });
 
-    await recovery.start();
     const recovering = recovery.afterRunnerRecovery();
     const stopping = recovery.stop(1_000);
     release();
 
     await expect(stopping).resolves.toBe("drained");
     await recovering;
-    expect(recoverBackgroundTasks).toHaveBeenCalledOnce();
   });
 });

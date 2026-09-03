@@ -29,6 +29,107 @@ const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
 
+  it("keeps a retained terminal runner across repeated scans while its SDK live set is non-empty", async () => {
+    const terminalRegistration = registration({
+      lifecycleState: "completed",
+      pidAlive: true,
+    });
+    const recovered = task("session-a");
+    recovered.status = "completed";
+    recovered.terminationReason = "completed_ok";
+    recovered.terminationEventRecorded = true;
+    recovered.terminalEventId = 14;
+    const { runner, detachHost } = finishedRunner("registration-a");
+    recovered.runner = runner;
+    recovered.runnerRetainedForClaudeBackground = true;
+    const retainRegisteredClaudeBackgroundRunner = vi.fn(async () => true);
+    const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
+      } as never,
+      taskExecutor: {
+        retainRegisteredClaudeBackgroundRunner,
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.scanOnce();
+
+    expect(retainRegisteredClaudeBackgroundRunner).toHaveBeenCalledTimes(2);
+    expect(detachHost).not.toHaveBeenCalled();
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(recovered.runner).toBe(runner);
+    expect(subject.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blockedBy: "background",
+        disposition: "replay_terminal",
+        sessionId: "session-a",
+      }),
+      "registered runner recovery skipped because SDK background work owns the process",
+    );
+  });
+
+  it("adopts a live terminal registration before restart recovery can classify its background rows", async () => {
+    const terminalRegistration = registration({
+      lifecycleState: "completed",
+      pidAlive: true,
+    });
+    const recovered = task("session-a");
+    recovered.status = "completed";
+    recovered.terminationReason = "completed_ok";
+    recovered.terminationEventRecorded = true;
+    recovered.terminalEventId = 14;
+    const { runner } = finishedRunner("registration-a");
+    const retainRegisteredClaudeBackgroundRunner = vi.fn(async (owned: Task) => {
+      owned.runner = runner;
+      owned.runnerRetainedForClaudeBackground = true;
+      return true;
+    });
+    const terminalizeClaudeBackgroundTasks = vi.fn(async () => 0);
+    const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
+      } as never,
+      taskExecutor: {
+        retainRegisteredClaudeBackgroundRunner,
+      } as never,
+      terminalizeClaudeBackgroundTasks,
+    } as never);
+
+    await subject.coordinator.scanOnce();
+
+    expect(retainRegisteredClaudeBackgroundRunner).toHaveBeenCalledWith(
+      recovered,
+      expect.objectContaining({ registrationId: "registration-a" }),
+    );
+    expect(terminalizeClaudeBackgroundTasks).not.toHaveBeenCalled();
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(recovered.runner).toBe(runner);
+  });
+
+  it.each([
+    { lifecycleState: "running" as const, disposition: "reap_dead" },
+    { lifecycleState: "completed" as const, disposition: "replay_terminal_dead" },
+  ])("terminalizes only the proven-dead runner's Claude background rows for $disposition", async ({
+    lifecycleState,
+  }) => {
+    const deadRegistration = registration({ lifecycleState, pidAlive: false });
+    const terminalizeClaudeBackgroundTasks = vi.fn(async () => 1);
+    const subject = makeSubject([deadRegistration], RECOVERY_NOW_MS, [], {
+      terminalizeClaudeBackgroundTasks,
+    } as never);
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(terminalizeClaudeBackgroundTasks).toHaveBeenCalledOnce();
+    expect(terminalizeClaudeBackgroundTasks).toHaveBeenCalledWith("session-a");
+  });
+
 
   it("턴을 끝낸 러너는 dispatcher가 열려 있어도 자기 replay를 막지 않는다", async () => {
     // The blocking handle is not an abandoned runner -- measured, it reports
@@ -1931,6 +2032,7 @@ function makeSubject(
   const hydrateRunnerRecoveryTask = vi.fn(async (sessionId: string) =>
     tasks.get(sessionId) ?? fallbackTask);
   const recoverRegisteredRunner = vi.fn(async () => {});
+  const retainRegisteredClaudeBackgroundRunner = vi.fn(async () => false);
   const restartRegisteredRunner = vi.fn();
   const markRunnerFailure = vi.fn(async () => {});
   const markRunnerFailureAndResume = markRunnerFailure;
@@ -1964,6 +2066,7 @@ function makeSubject(
     ...overrides,
     taskExecutor: {
       recoverRegisteredRunner,
+      retainRegisteredClaudeBackgroundRunner,
       ...({ restartRegisteredRunner } as object),
       ...overrides.taskExecutor,
     },
@@ -1977,6 +2080,7 @@ function makeSubject(
     task: tasks.get("session-a") ?? fallbackTask,
     hydrateRunnerRecoveryTask,
     recoverRegisteredRunner,
+    retainRegisteredClaudeBackgroundRunner,
     restartRegisteredRunner,
     markRunnerFailure,
     markRunnerFailureAndResume,

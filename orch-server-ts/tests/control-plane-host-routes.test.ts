@@ -323,6 +323,29 @@ describe("control-plane host routes", () => {
     expect(input.delivery.createdAt).toBeInstanceOf(Date);
   });
 
+  it("routes a Claude background active-row query to one runner session", async () => {
+    const activeForSession = vi.fn(async () => []);
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        claudeBackgroundTasks: { activeForSession },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/claude-runtime/host/active_background_tasks_for_session",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { args: ["node-1", "session-1", 1_000] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([]);
+    expect(activeForSession).toHaveBeenCalledWith("node-1", "session-1", 1_000);
+  });
+
   it("round-trips an opaque payload from the soul client through the route into the repository", async () => {
     const {
       PersistenceHostTransport,

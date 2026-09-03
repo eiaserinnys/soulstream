@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { ClaudeBackgroundTaskRow } from
+  "../../src/db/repositories/claude_background_task_repository.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
@@ -76,3 +78,61 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
     }));
   });
 });
+
+describe("ClaudeBackgroundTaskLifecycle dead-runner recovery", () => {
+  it("terminalizes only active rows owned by the proven-dead runner session", async () => {
+    const target = row("session-dead", "task-a");
+    const other = row("session-live", "task-b");
+    const activeForSession = vi.fn()
+      .mockResolvedValueOnce([target])
+      .mockResolvedValueOnce([]);
+    const terminalize = vi.fn(async () => ({
+      accepted: true as const,
+      row: { ...target, status: "killed" as const },
+      delivery: { delivery_id: "delivery-a" },
+    }));
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { activeForSession, terminalize } as never,
+      sourceNode: "node-a",
+      now: () => new Date("2026-09-03T05:36:28.000Z"),
+    });
+
+    await expect(
+      lifecycle.terminalizeDeadRunner("session-dead"),
+    ).resolves.toBe(1);
+
+    expect(activeForSession).toHaveBeenCalledTimes(2);
+    expect(activeForSession).toHaveBeenCalledWith("node-a", "session-dead");
+    expect(terminalize).toHaveBeenCalledOnce();
+    expect(terminalize).toHaveBeenCalledWith(expect.objectContaining({
+      sourceNode: "node-a",
+      sessionId: "session-dead",
+      taskId: "task-a",
+      status: "killed",
+      closeReason: "worker_restart",
+    }));
+    expect(terminalize).not.toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: other.session_id,
+    }));
+  });
+});
+
+function row(sessionId: string, taskId: string): ClaudeBackgroundTaskRow {
+  return {
+    source_node: "node-a",
+    session_id: sessionId,
+    task_id: taskId,
+    sdk_session_id: "sdk-a",
+    status: "running",
+    close_reason: null,
+    description: "long work",
+    summary: null,
+    output_file: null,
+    tool_use_id: null,
+    terminal_revision: null,
+    notification_delivery_id: null,
+    created_at: new Date("2026-09-03T05:36:13.000Z"),
+    updated_at: new Date("2026-09-03T05:36:13.000Z"),
+    terminal_at: null,
+  };
+}

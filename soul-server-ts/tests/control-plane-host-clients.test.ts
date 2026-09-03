@@ -334,6 +334,24 @@ describe("worker control-plane host clients", () => {
     });
   });
 
+  it("scopes Claude background recovery reads to one runner session", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body));
+      expect(request.args).toEqual(["node-1", "session-1", 1_000]);
+      return new Response("[]", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ClaudeRuntimeHostClient({ orch, logger });
+
+    await expect(
+      client.activeForSession("node-1", "session-1"),
+    ).resolves.toEqual([]);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://orch.example/api/claude-runtime/host/active_background_tasks_for_session",
+    );
+  });
+
   it("uses explicit notification dead-letter list and requeue host operations", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       const operation = new URL(url).pathname.split("/").at(-1);

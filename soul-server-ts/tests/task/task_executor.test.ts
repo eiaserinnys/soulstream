@@ -2173,6 +2173,68 @@ describe("TaskExecutor.startExecution", () => {
 });
 
 describe("TaskExecutor runner process boundary", () => {
+  it("adopts a terminal Claude runner as the SDK background owner without opening an execution", async () => {
+    const mocks = makeMocks();
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    const detachedClaudeRuntimeActivity = vi.fn(async () => ({
+      foregroundPhase: "post_result_drain" as const,
+      queryLifecycle: "open" as const,
+      backgroundTaskCount: 1,
+      pendingInputRequestCount: 0,
+      pendingRuntimeSignalCount: 0,
+    }));
+    runner.engine = {
+      ...makeFakeEngine([]),
+      backendId: "claude",
+      detachedClaudeRuntime: true,
+      detachedClaudeRuntimeActivity,
+    } as EnginePort;
+    const processFactory = vi.fn() as unknown as RunnerProcessRuntimeFactory;
+    processFactory.recover = vi.fn(() => runner);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+    const recovered = makeTask();
+    recovered.status = "completed";
+    const registration = {
+      registrationId: "registration-1",
+      config: {
+        sessionId: recovered.agentSessionId,
+        agent: claudeAgent,
+        backend: "claude",
+      },
+    } as unknown as RunnerRegistration;
+
+    await expect(
+      executor.retainRegisteredClaudeBackgroundRunner(recovered, registration),
+    ).resolves.toBe(true);
+
+    expect(processFactory.recover).toHaveBeenCalledWith(
+      recovered,
+      registration,
+      expect.anything(),
+      "adopt",
+    );
+    expect(detachedClaudeRuntimeActivity).toHaveBeenCalledOnce();
+    expect(recovered.runner).toBe(runner);
+    expect(recovered.runnerRetainedForClaudeBackground).toBe(true);
+    expect(dispatcher.recoverFrames).not.toHaveBeenCalled();
+    expect(dispatcher.close).not.toHaveBeenCalled();
+    expect(dispatcher.detachHost).not.toHaveBeenCalled();
+    expect(recovered.executionPromise).toBeUndefined();
+  });
+
   it("terminal stream retirement releases one slot and admits the exact queued delivery once", async () => {
     const mocks = makeMocks();
     const retired = deferred<void>();
