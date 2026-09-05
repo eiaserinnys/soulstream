@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EngineExecuteParams, SSEEventPayload } from "../../src/engine/protocol.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { engineEventFrame } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessEngineProxy } from
   "../../src/runner/runner_process_engine_proxy.js";
@@ -56,7 +57,7 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function makeLedgerGate(terminalStates: ReadonlyMap<string, TerminalDeliveryState>) {
+function makeLedgerGate(terminalStates: Map<string, TerminalDeliveryState>) {
   const admit = vi.fn(async (params: {
     deliveryId?: string;
     text: string;
@@ -105,7 +106,9 @@ function makeLedgerGate(terminalStates: ReadonlyMap<string, TerminalDeliveryStat
   const recordResult = vi.fn(async () => undefined);
   const recordFailure = vi.fn(async () => undefined);
   const recordReservationRetry = vi.fn(async () => "retryable" as const);
-  const recordConsumed = vi.fn(async () => undefined);
+  const recordConsumed = vi.fn(async (message: InterventionMessage) => {
+    if (message.deliveryId) terminalStates.set(message.deliveryId, "consumed");
+  });
   const recordTurnStarted = vi.fn(async () => "turn-contract");
   const discardIfConsumed = vi.fn(async (
     message: InterventionMessage,
@@ -201,7 +204,7 @@ function deliveryMessage(deliveryId: string, text: string): InterventionMessage 
 }
 
 function makeHarness(input: {
-  terminalStates?: ReadonlyMap<string, TerminalDeliveryState>;
+  terminalStates?: Map<string, TerminalDeliveryState>;
   localRows?: readonly LocalInboxRow[];
   task?: Task;
   enforceRunningTransitionFence?: boolean;
@@ -373,5 +376,35 @@ describe("central delivery ↔ runner inbox reconciliation contract", () => {
 
     expect(harness.executed.map((input) => input.prompt)).toEqual(["shared delivery"]);
     expect([...harness.openRows.keys()]).toEqual([]);
+  });
+
+  it("uses one stable input identity and one turn receipt when the same delivery re-enters", async () => {
+    const terminalStates = new Map<string, TerminalDeliveryState>();
+    const harness = makeHarness({ terminalStates });
+    const deliveryId = "delivery-r33-retry";
+    const message = deliveryMessage(deliveryId, "deliver exactly once");
+
+    await expect(harness.resume(message)).resolves.toEqual({ autoResumed: true });
+    await expect(harness.resume(message)).resolves.toMatchObject({
+      suppressed: true,
+      deliveryId,
+      reason: "delivery_consumed",
+    });
+
+    expect(harness.executed).toHaveLength(1);
+    expect(harness.executed[0]).toMatchObject({
+      prompt: "deliver exactly once",
+      inputUuid: buildDeliveryInputUuid(deliveryId),
+      turnOrigin: {
+        kind: "durable_next_turn",
+      },
+    });
+    expect(harness.ledgerGate.recordTurnStarted).toHaveBeenCalledOnce();
+    expect(harness.ledgerGate.recordConsumed).toHaveBeenCalledOnce();
+    expect(harness.ledgerGate.recordConsumed).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId }),
+      harness.task,
+      expect.any(String),
+    );
   });
 });
