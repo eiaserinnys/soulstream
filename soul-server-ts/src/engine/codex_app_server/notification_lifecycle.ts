@@ -11,6 +11,7 @@ export interface ActiveTurnState {
 }
 
 export interface NotificationLifecycleState {
+  readonly executionThreadId: string | null;
   readonly activeTurn: ActiveTurnState | null;
   readonly emittedSessionIds: ReadonlySet<string>;
   readonly reportedSessionIds: ReadonlySet<string>;
@@ -35,9 +36,21 @@ export interface TurnStartResponseResult {
 
 export function createNotificationLifecycleState(): NotificationLifecycleState {
   return {
+    executionThreadId: null,
     activeTurn: null,
     emittedSessionIds: new Set<string>(),
     reportedSessionIds: new Set<string>(),
+  };
+}
+
+export function beginNotificationExecution(
+  state: NotificationLifecycleState,
+  threadId: string,
+): NotificationLifecycleState {
+  return {
+    ...state,
+    executionThreadId: threadId,
+    activeTurn: null,
   };
 }
 
@@ -71,24 +84,27 @@ export function recordTurnStartResponse(
   threadId: string,
   turn: AppServerTurn,
 ): TurnStartResponseResult {
+  const executionState = state.executionThreadId === threadId
+    ? state
+    : beginNotificationExecution(state, threadId);
   if (turn.status !== "inProgress") {
     return {
-      state: clearActiveTurn(state),
+      state: clearNotificationExecution(executionState),
       closeQueue: true,
     };
   }
 
   return {
-    state: setActiveTurn(state, { threadId, turnId: turn.id }),
+    state: setActiveTurn(executionState, { threadId, turnId: turn.id }),
     closeQueue: false,
   };
 }
 
-export function clearActiveTurn(
+export function clearNotificationExecution(
   state: NotificationLifecycleState,
 ): NotificationLifecycleState {
-  if (state.activeTurn === null) return state;
-  return { ...state, activeTurn: null };
+  if (state.executionThreadId === null && state.activeTurn === null) return state;
+  return { ...state, executionThreadId: null, activeTurn: null };
 }
 
 export function applyNotificationLifecycle(
@@ -96,6 +112,10 @@ export function applyNotificationLifecycle(
   notification: AppServerNotification,
   options: { suppressThreadStartedSession: boolean },
 ): NotificationLifecycleResult {
+  if (!belongsToNotificationExecution(state, notification)) {
+    return { state, payloads: [], closeQueue: false };
+  }
+
   let nextState = state;
 
   if (notification.method === "turn/started") {
@@ -124,11 +144,11 @@ export function applyNotificationLifecycle(
   const payloads = mapAppServerNotification(notification);
 
   if (notification.method === "turn/completed") {
-    const params = notification.params as { turn: { id: string } };
-    if (params.turn.id === nextState.activeTurn?.turnId) {
-      nextState = clearActiveTurn(nextState);
-    }
-    return { state: nextState, payloads, closeQueue: true };
+    return {
+      state: clearNotificationExecution(nextState),
+      payloads,
+      closeQueue: true,
+    };
   }
 
   if (
@@ -136,13 +156,67 @@ export function applyNotificationLifecycle(
     (notification.params as { willRetry?: boolean }).willRetry !== true
   ) {
     return {
-      state: clearActiveTurn(nextState),
+      state: clearNotificationExecution(nextState),
       payloads,
       closeQueue: true,
     };
   }
 
   return { state: nextState, payloads, closeQueue: false };
+}
+
+function belongsToNotificationExecution(
+  state: NotificationLifecycleState,
+  notification: AppServerNotification,
+): boolean {
+  const { threadId, turnId } = notificationIdentity(notification);
+
+  if (threadId !== undefined) {
+    if (state.executionThreadId === null || threadId !== state.executionThreadId) {
+      return false;
+    }
+  }
+
+  if (turnId === undefined) return true;
+
+  if (notification.method === "turn/started") {
+    return state.activeTurn === null || turnId === state.activeTurn.turnId;
+  }
+
+  return state.activeTurn !== null && turnId === state.activeTurn.turnId;
+}
+
+function notificationIdentity(
+  notification: AppServerNotification,
+): { threadId?: string; turnId?: string } {
+  const params = asRecord(notification.params);
+  let threadId = stringField(params, "threadId");
+  let turnId = stringField(params, "turnId");
+
+  if (notification.method === "thread/started") {
+    threadId = stringField(asRecord(params?.thread), "id");
+  } else if (
+    notification.method === "turn/started" ||
+    notification.method === "turn/completed"
+  ) {
+    turnId = stringField(asRecord(params?.turn), "id");
+  }
+
+  return { threadId, turnId };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function stringField(
+  value: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const field = value?.[key];
+  return typeof field === "string" ? field : undefined;
 }
 
 function setActiveTurn(
