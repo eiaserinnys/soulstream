@@ -41,6 +41,10 @@ interface RuntimeTask {
   status: string;
   profileId?: string;
   lastEventId?: number;
+  executionRegistration?: {
+    registrationId: string;
+    executionCommandId: string;
+  };
   interventionQueue: Array<{
     deliveryId?: string;
     deliveryIntent?: string;
@@ -304,6 +308,10 @@ export async function observeCompletedDeliveryReconnect(
       status: "running",
       profileId: "seosoyoung",
       lastEventId: 308,
+      executionRegistration: {
+        registrationId: "active-control-registration",
+        executionCommandId: "active-control-command",
+      },
       interventionQueue: [],
     });
   }
@@ -329,6 +337,10 @@ export async function observeCompletedDeliveryReconnect(
       proveIds.push(deliveryId);
       activateIds.push(deliveryId);
       task.status = "running";
+      task.executionRegistration = {
+        registrationId: `reconnect-registration:${deliveryId}`,
+        executionCommandId: `reconnect-command:${deliveryId}`,
+      };
       task.executionActivation = undefined;
       activation?.resolve();
     }),

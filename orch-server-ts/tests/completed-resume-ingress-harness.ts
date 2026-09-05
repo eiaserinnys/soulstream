@@ -23,6 +23,10 @@ type RuntimeConstructor = new (...args: any[]) => any;
 interface RuntimeTask {
   agentSessionId: string;
   status: string;
+  executionRegistration?: {
+    registrationId: string;
+    executionCommandId: string;
+  };
   executionPromise?: Promise<void>;
   executionActivation?: {
     promise?: Promise<void>;
@@ -275,6 +279,10 @@ export async function observeCompletedResumeIngress(
     }) => {
       executionStarts += 1;
       task.status = "running";
+      task.executionRegistration = {
+        registrationId: "completed-resume-registration",
+        executionCommandId: "completed-resume-command",
+      };
       activation?.resolve();
     }),
   };
