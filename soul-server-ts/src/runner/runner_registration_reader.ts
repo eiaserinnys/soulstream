@@ -109,9 +109,12 @@ export async function readRunnerRegistrationSummary(
     );
   }
   try {
+    const hasCompleteIdentity = identity !== null
+      && identity.pid !== null
+      && identity.startIdentity !== null;
     const pid = resolveRegisteredRunnerPid(
       await readRunnerPid(config.paths.pidPath),
-      lifecycle?.runner_pid ?? null,
+      hasCompleteIdentity ? null : lifecycle?.runner_pid ?? null,
       identity?.pid ?? null,
       directory,
       isPidAlive,
