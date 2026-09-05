@@ -130,4 +130,29 @@ describe("structured tool result lazy loading", () => {
     expect(hook?.resultContent).toBe(JSON.stringify(result, null, 2));
     expect(hook?.resultContent).toContain('"annotations"');
   });
+
+  it.each([
+    ["null", { result: null }, "null"],
+    ["false", { result: false }, "false"],
+    ["zero", { result: 0 }, "0"],
+    ["empty string", { result: "" }, ""],
+    ["missing", {}, "local result"],
+  ])("distinguishes %s from a missing trace result", async (_label, traceResult, expected) => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ timeline_id: "tool:368", tool_use_id: "tool-r57", ...traceResult }),
+    }) as Response);
+    let hook: ReturnType<typeof useLazyLoadToolTrace> | undefined;
+    function TraceProbe() {
+      hook = useLazyLoadToolTrace(message({ toolTraceId: "tool:368", toolResult: "local result" }));
+      return <Probe>{null}</Probe>;
+    }
+    await act(async () => root.render(<TraceProbe />));
+    await act(async () => {
+      hook!.loadTrace();
+      await vi.waitFor(() => expect(hook?.loading).toBe(false));
+    });
+
+    expect(hook?.resultContent).toBe(expected);
+  });
 });

@@ -177,9 +177,10 @@ export function useLazyLoadToolTrace(
 
   return {
     inputContent: stringifyTraceValue(trace?.input ?? msg.toolInput),
-    resultContent: trace
-      ? toolResultToText(trace.result)
-      : msg.toolResult,
+    resultContent:
+      trace && Object.prototype.hasOwnProperty.call(trace, "result")
+        ? toolResultToText(trace.result)
+        : msg.toolResult,
     progressContent: progressText(trace),
     loading,
     error,
