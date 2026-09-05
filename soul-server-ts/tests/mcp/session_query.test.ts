@@ -54,6 +54,7 @@ function makeRuntime(params: {
     } as unknown as SessionDB,
     taskManager: {} as TaskManager,
     taskExecutor: {} as TaskExecutor,
+    onResume: () => undefined,
     ...(params.childCompletionConsumption
       ? { childCompletionConsumption: params.childCompletionConsumption }
       : {}),

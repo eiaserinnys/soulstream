@@ -60,6 +60,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
       db,
       taskManager: {} as TaskManager,
       taskExecutor: {} as TaskExecutor,
+      onResume: () => undefined,
       childCompletionConsumption: consumptionRecorder,
       agentRegistry: {} as McpRuntime["agentRegistry"],
       catalogService: {} as CatalogService,

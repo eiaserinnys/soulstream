@@ -17,7 +17,10 @@ import type { ChecklistTaskAdapter } from "../page/checklist_task_adapter.js";
 import type { TaskService } from "../work-task/task_service.js";
 import type { TaskIdentityHostClient } from "../work-task/task_identity_host_client.js";
 import type { TaskExecutor } from "../task/task_executor.js";
-import type { TaskManager } from "../task/task_manager.js";
+import type {
+  StartExecutionCallback,
+  TaskManager,
+} from "../task/task_manager.js";
 import type { ChildCompletionConsumptionRecorder } from
   "../task/child_completion_consumption.js";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
@@ -35,6 +38,8 @@ export interface McpRuntime {
   db: SessionDB;
   taskManager: TaskManager;
   taskExecutor: TaskExecutor;
+  /** Canonical auto-resume handoff. Callers must preserve its activation argument. */
+  onResume: StartExecutionCallback;
   /** Present only behind the persistent-runtime gate. */
   childCompletionConsumption?: Pick<
     ChildCompletionConsumptionRecorder,

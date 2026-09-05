@@ -395,6 +395,7 @@ function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRunti
     db,
     taskManager,
     taskExecutor,
+    onResume: () => undefined,
     agentRegistry,
     catalogService,
     logger: createSilentLogger(),

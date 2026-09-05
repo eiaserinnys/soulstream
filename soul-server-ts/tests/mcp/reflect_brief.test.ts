@@ -58,6 +58,7 @@ function makeRuntime(overrides: Partial<McpRuntime> = {}): McpRuntime {
       getTask: () => undefined,
     } as unknown as McpRuntime["taskManager"],
     taskExecutor: {} as McpRuntime["taskExecutor"],
+    onResume: () => undefined,
     agentRegistry: new AgentRegistry([
       {
         id: "codex-default",
