@@ -84,11 +84,12 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
 });
 
 describe("ClaudeBackgroundTaskLifecycle dead-runner recovery", () => {
-  it("terminalizes only active rows owned by the proven-dead runner session", async () => {
-    const target = row("session-dead", "task-a");
-    const other = row("session-live", "task-b");
-    const activeGenerationsForSession = vi.fn()
+  it("terminalizes only rows owned by the exact dead execution and is re-entry idempotent", async () => {
+    const target = row("session-shared", "task-a", "registration-dead", "command-dead");
+    const successor = row("session-shared", "task-b", "registration-live", "command-live");
+    const activeGenerationsForExecution = vi.fn()
       .mockResolvedValueOnce([target])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
     const terminalizeGeneration = vi.fn(async () => ({
       accepted: true as const,
@@ -96,32 +97,51 @@ describe("ClaudeBackgroundTaskLifecycle dead-runner recovery", () => {
       delivery: { delivery_id: "delivery-a" },
     }));
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
-      repository: { activeGenerationsForSession, terminalizeGeneration } as never,
+      repository: { activeGenerationsForExecution, terminalizeGeneration } as never,
       sourceNode: "node-a",
       now: () => new Date("2026-09-03T05:36:28.000Z"),
     });
 
     await expect(
-      lifecycle.terminalizeDeadRunner("session-dead"),
+      lifecycle.terminalizeDeadRunner("session-shared", {
+        registrationId: "registration-dead",
+        executionCommandId: "command-dead",
+      }),
     ).resolves.toBe(1);
+    await expect(
+      lifecycle.terminalizeDeadRunner("session-shared", {
+        registrationId: "registration-dead",
+        executionCommandId: "command-dead",
+      }),
+    ).resolves.toBe(0);
 
-    expect(activeGenerationsForSession).toHaveBeenCalledTimes(2);
-    expect(activeGenerationsForSession).toHaveBeenCalledWith("node-a", "session-dead");
+    expect(activeGenerationsForExecution).toHaveBeenCalledTimes(3);
+    expect(activeGenerationsForExecution).toHaveBeenCalledWith(
+      "node-a",
+      "session-shared",
+      "registration-dead",
+      "command-dead",
+    );
     expect(terminalizeGeneration).toHaveBeenCalledOnce();
     expect(terminalizeGeneration).toHaveBeenCalledWith(expect.objectContaining({
       sourceNode: "node-a",
-      sessionId: "session-dead",
+      sessionId: "session-shared",
       taskId: "task-a",
       status: "killed",
       closeReason: "runner_dead",
     }));
     expect(terminalizeGeneration).not.toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: other.session_id,
+      taskId: successor.task_id,
     }));
   });
 });
 
-function row(sessionId: string, taskId: string): ClaudeBackgroundTaskGenerationRow {
+function row(
+  sessionId: string,
+  taskId: string,
+  runnerRegistrationId = "registration-a",
+  executionCommandId = "command-a",
+): ClaudeBackgroundTaskGenerationRow {
   return {
     source_node: "node-a",
     session_id: sessionId,
@@ -132,6 +152,8 @@ function row(sessionId: string, taskId: string): ClaudeBackgroundTaskGenerationR
     generation_key: `generation-${taskId}`,
     relation_key: `relation-${taskId}`,
     completion_id: `completion-${taskId}`,
+    runner_registration_id: runnerRegistrationId,
+    execution_command_id: executionCommandId,
     status: "running",
     close_reason: null,
     description: "long work",

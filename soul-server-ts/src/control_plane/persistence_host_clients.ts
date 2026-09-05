@@ -371,6 +371,11 @@ export class ClaudeRuntimeHostClient {
       [sourceNode, sessionId, limit],
     );
   }
+  terminalForNode(sourceNode: string, limit = 1_000): Promise<ClaudeBackgroundTaskRow[]> {
+    return this.transport.request(
+      "claude-runtime", "terminal_background_tasks_for_node", [sourceNode, limit],
+    );
+  }
   observeGeneration(
     params: ObserveClaudeBackgroundTaskGenerationParams,
   ): Promise<ClaudeBackgroundTaskGenerationRow> {
@@ -404,6 +409,21 @@ export class ClaudeRuntimeHostClient {
     limit = 1_000,
   ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
     return this.generations.activeForSession(sourceNode, sessionId, limit);
+  }
+  activeGenerationsForExecution(
+    sourceNode: string,
+    sessionId: string,
+    runnerRegistrationId: string,
+    executionCommandId: string,
+    limit = 1_000,
+  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
+    return this.generations.activeForExecution(
+      sourceNode,
+      sessionId,
+      runnerRegistrationId,
+      executionCommandId,
+      limit,
+    );
   }
   resolveGeneration(
     sourceNode: string,

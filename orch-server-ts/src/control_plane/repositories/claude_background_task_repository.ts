@@ -49,6 +49,8 @@ export interface ClaudeBackgroundTaskGenerationRow {
   generation_key: string;
   relation_key: string;
   completion_id: string;
+  runner_registration_id: string | null;
+  execution_command_id: string | null;
   status: ClaudeBackgroundTaskStatus;
   close_reason: string | null;
   description: string | null;
@@ -81,6 +83,8 @@ export interface ObserveClaudeBackgroundTaskGenerationParams
   generationKey: string;
   relationKey: string;
   completionId: string;
+  runnerRegistrationId?: string;
+  executionCommandId?: string;
 }
 
 export interface TerminalizeClaudeBackgroundTaskParams
@@ -175,6 +179,22 @@ export class ClaudeBackgroundTaskRepository {
     limit = 1_000,
   ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
     return await this.generations.activeForSession(sourceNode, sessionId, limit);
+  }
+
+  async activeGenerationsForExecution(
+    sourceNode: string,
+    sessionId: string,
+    runnerRegistrationId: string,
+    executionCommandId: string,
+    limit = 1_000,
+  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
+    return await this.generations.activeForExecution(
+      sourceNode,
+      sessionId,
+      runnerRegistrationId,
+      executionCommandId,
+      limit,
+    );
   }
 
   async resolveGeneration(
@@ -379,6 +399,21 @@ export class ClaudeBackgroundTaskRepository {
         AND session_id = ${sessionId}
         AND status IN ('pending', 'running')
       ORDER BY updated_at, task_id
+      LIMIT ${limit}
+    `;
+  }
+
+  async terminalForNode(
+    sourceNode: string,
+    limit = 1_000,
+  ): Promise<ClaudeBackgroundTaskRow[]> {
+    return await this.sql<ClaudeBackgroundTaskRow[]>`
+      SELECT * FROM claude_background_tasks
+      WHERE source_node = ${sourceNode}
+        AND status IN ('completed', 'failed', 'stopped', 'killed')
+        AND sdk_session_id IS NOT NULL
+        AND tool_use_id IS NOT NULL
+      ORDER BY terminal_at DESC NULLS LAST, session_id, task_id
       LIMIT ${limit}
     `;
   }

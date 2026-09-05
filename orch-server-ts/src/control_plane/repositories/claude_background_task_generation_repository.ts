@@ -91,6 +91,25 @@ export class ClaudeBackgroundTaskGenerationRepository {
     `;
   }
 
+  async activeForExecution(
+    sourceNode: string,
+    sessionId: string,
+    runnerRegistrationId: string,
+    executionCommandId: string,
+    limit = 1_000,
+  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
+    return await this.sql<ClaudeBackgroundTaskGenerationRow[]>`
+      SELECT * FROM claude_background_task_generations
+      WHERE source_node = ${sourceNode}
+        AND session_id = ${sessionId}
+        AND runner_registration_id = ${runnerRegistrationId}
+        AND execution_command_id = ${executionCommandId}
+        AND status IN ('pending', 'running')
+      ORDER BY generation_sequence
+      LIMIT ${limit}
+    `;
+  }
+
   async resolve(
     sourceNode: string,
     sessionId: string,
@@ -132,11 +151,13 @@ export class ClaudeBackgroundTaskGenerationRepository {
       INSERT INTO claude_background_task_generations (
         source_node, session_id, sdk_session_id, task_id,
         initiating_tool_use_id, generation_key, relation_key, completion_id,
+        runner_registration_id, execution_command_id,
         status, description, summary, output_file, created_at, updated_at
       ) VALUES (
         ${params.sourceNode}, ${params.sessionId}, ${params.sdkSessionId},
         ${params.taskId}, ${params.initiatingToolUseId}, ${params.generationKey},
         ${params.relationKey}, ${params.completionId},
+        ${params.runnerRegistrationId ?? null}, ${params.executionCommandId ?? null},
         ${params.status ?? "running"}, ${params.description ?? null},
         ${params.summary ?? null}, ${params.outputFile ?? null},
         ${observedAt}, ${observedAt}
@@ -148,6 +169,14 @@ export class ClaudeBackgroundTaskGenerationRepository {
         description = COALESCE(EXCLUDED.description, claude_background_task_generations.description),
         summary = COALESCE(EXCLUDED.summary, claude_background_task_generations.summary),
         output_file = COALESCE(EXCLUDED.output_file, claude_background_task_generations.output_file),
+        runner_registration_id = COALESCE(
+          claude_background_task_generations.runner_registration_id,
+          EXCLUDED.runner_registration_id
+        ),
+        execution_command_id = COALESCE(
+          claude_background_task_generations.execution_command_id,
+          EXCLUDED.execution_command_id
+        ),
         updated_at = EXCLUDED.updated_at
       WHERE claude_background_task_generations.status IN ('pending', 'running')
         AND claude_background_task_generations.generation_key = EXCLUDED.generation_key
@@ -157,8 +186,32 @@ export class ClaudeBackgroundTaskGenerationRepository {
     `;
     const row = rows[0] ?? await this.require(transaction, params);
     this.assertIdentity(row, params);
+    this.assertExecutionOwner(row, params);
     await this.projectLegacy(transaction, row);
     return row;
+  }
+
+  private assertExecutionOwner(
+    row: ClaudeBackgroundTaskGenerationRow,
+    params: Pick<
+      ObserveClaudeBackgroundTaskGenerationParams,
+      "runnerRegistrationId" | "executionCommandId"
+    >,
+  ): void {
+    const registrationId = params.runnerRegistrationId ?? null;
+    const commandId = params.executionCommandId ?? null;
+    if ((registrationId === null) !== (commandId === null)) {
+      throw new Error(`Incomplete Claude background execution owner: ${row.generation_key}`);
+    }
+    if (
+      registrationId !== null
+      && (
+        row.runner_registration_id !== registrationId
+        || row.execution_command_id !== commandId
+      )
+    ) {
+      throw new Error(`Claude background execution owner conflict: ${row.generation_key}`);
+    }
   }
 
   private async terminalizeWithSql(

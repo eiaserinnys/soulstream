@@ -390,6 +390,35 @@ describe("worker control-plane host clients", () => {
     expect(row?.created_at).toBeInstanceOf(Date);
   });
 
+  it("sends exact execution recovery and legacy terminal inventory dimensions", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      return new Response(JSON.stringify(JSON.parse(String(init?.body)).args), {
+        status: 200,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ClaudeRuntimeHostClient({ orch, logger });
+
+    await expect(client.activeGenerationsForExecution(
+      "node-1",
+      "session-1",
+      "registration-1",
+      "command-1",
+    )).resolves.toEqual([
+      "node-1", "session-1", "registration-1", "command-1", 1_000,
+    ]);
+    await expect(client.terminalForNode("node-1")).resolves.toEqual([
+      "node-1", 1_000,
+    ]);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://orch.example/api/claude-runtime/host/active_background_generations_for_execution",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "https://orch.example/api/claude-runtime/host/terminal_background_tasks_for_node",
+    );
+  });
+
   it("uses explicit notification dead-letter list and requeue host operations", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       const operation = new URL(url).pathname.split("/").at(-1);

@@ -16,6 +16,7 @@ import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
 } from "../db/session_db_types.js";
+import type { ExecutionRegistration } from "./execution_registration.js";
 
 import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
 import { buildClaudeBackgroundGenerationIdentity } from
@@ -45,6 +46,7 @@ export class ClaudeBackgroundTaskLifecycle {
     sessionId: string,
     event: ClaudeClientEvent,
     idempotencyKey?: string,
+    execution?: ExecutionRegistration,
   ): Promise<boolean> {
     const parsed = parseBackgroundEvent(event);
     if (!parsed || !parsed.sdkSessionId || !parsed.toolUseId) return true;
@@ -68,6 +70,12 @@ export class ClaudeBackgroundTaskLifecycle {
         sdkSessionId: parsed.sdkSessionId,
         initiatingToolUseId: parsed.toolUseId,
         ...identity,
+        ...(execution
+          ? {
+            runnerRegistrationId: execution.registrationId,
+            executionCommandId: execution.executionCommandId,
+          }
+          : {}),
         status: parsed.status,
         description: parsed.description,
         summary: parsed.summary,
@@ -103,6 +111,12 @@ export class ClaudeBackgroundTaskLifecycle {
       sdkSessionId: parsed.sdkSessionId,
       initiatingToolUseId: parsed.toolUseId,
       ...identity,
+      ...(execution
+        ? {
+          runnerRegistrationId: execution.registrationId,
+          executionCommandId: execution.executionCommandId,
+        }
+        : {}),
       status: parsed.terminalStatus,
       closeReason: parsed.closeReason ?? `sdk_${parsed.terminalStatus}`,
       terminalRevision,
@@ -120,12 +134,17 @@ export class ClaudeBackgroundTaskLifecycle {
     return true;
   }
 
-  async terminalizeDeadRunner(sessionId: string): Promise<number> {
+  async terminalizeDeadRunner(
+    sessionId: string,
+    execution: ExecutionRegistration,
+  ): Promise<number> {
     let recovered = 0;
     for (;;) {
-      const active = await this.deps.repository.activeGenerationsForSession(
+      const active = await this.deps.repository.activeGenerationsForExecution(
         this.deps.sourceNode,
         sessionId,
+        execution.registrationId,
+        execution.executionCommandId,
       );
       if (active.length === 0) return recovered;
       for (const row of active) {
@@ -172,6 +191,12 @@ export class ClaudeBackgroundTaskLifecycle {
       generationKey: row.generation_key,
       relationKey: row.relation_key,
       completionId: row.completion_id,
+      ...(row.runner_registration_id && row.execution_command_id
+        ? {
+          runnerRegistrationId: row.runner_registration_id,
+          executionCommandId: row.execution_command_id,
+        }
+        : {}),
       status: "killed",
       closeReason: "runner_dead",
       terminalRevision,

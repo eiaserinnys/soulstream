@@ -26,6 +26,7 @@ import type {
   RunnerSnapshotPersistence,
 } from "../task/task_executor.js";
 import type { Task } from "../task/task_models.js";
+import type { ExecutionRegistration } from "../task/execution_registration.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { createTaskRunnerRuntime } from "./task_runner_runtime.js";
 import {
@@ -78,6 +79,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
     sessionId: string,
     event: ClaudeClientEvent,
     idempotencyKey: string,
+    execution?: ExecutionRegistration,
   ): Promise<boolean>;
   publishDetachedClaudeEvent?(
     sessionId: string,
@@ -326,7 +328,12 @@ export async function applyRunnerHostCall(
   restoreRunnerEngineEventMetadata(event, call.args[2]);
   if (call.service === "claude_runtime" && call.operation === "observe") {
     const accepted =
-      await options.observeClaudeRuntime?.(sessionId, event, call.correlationId) !== false;
+      await options.observeClaudeRuntime?.(
+        sessionId,
+        event,
+        call.correlationId,
+        task.executionRegistration,
+      ) !== false;
     return buildRunnerClaudeRuntimeObservationResult(accepted, event);
   }
   if (call.service === "detached_event" && call.operation === "publish") {

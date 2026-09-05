@@ -34,7 +34,13 @@ export async function registerRuntimeFollowupDelivery(
       WHERE relation_key = ${params.relationKey}
     `;
   const consumption = consumptionRows[0];
-  if (consumption && consumption.completion_id !== (params.completionId ?? null)) {
+  if (
+    consumption
+    && (
+      consumption.completion_id !== (params.completionId ?? null)
+      || consumption.caller_session_id !== targetSessionId
+    )
+  ) {
     throw new Error(`Completion relation identity conflict: ${params.relationKey}`);
   }
   await transaction`

@@ -614,8 +614,12 @@ export class RunnerRecoveryCoordinator {
   private async terminalizeDeadClaudeBackgroundTasks(
     registration: RunnerRegistration,
   ): Promise<void> {
+    const registrationId = registration.registrationId;
+    const executionCommandId = registration.lifecycle?.execution_command_id;
+    if (!registrationId || !executionCommandId) return;
     await this.options.terminalizeClaudeBackgroundTasks?.(
       registration.config.sessionId,
+      { registrationId, executionCommandId },
     );
   }
 

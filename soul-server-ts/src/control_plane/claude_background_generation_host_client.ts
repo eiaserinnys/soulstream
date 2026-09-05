@@ -15,6 +15,7 @@ export interface ClaudeBackgroundTaskGenerationRow {
   source_node: string; session_id: string; sdk_session_id: string; task_id: string;
   initiating_tool_use_id: string; generation_sequence: string | number;
   generation_key: string; relation_key: string; completion_id: string;
+  runner_registration_id: string | null; execution_command_id: string | null;
   status: ClaudeBackgroundGenerationStatus; close_reason: string | null;
   description: string | null; summary: string | null; output_file: string | null;
   terminal_revision: string | null; notification_delivery_id: string | null;
@@ -26,6 +27,7 @@ export interface ObserveClaudeBackgroundTaskGenerationParams {
   sourceNode: string; sessionId: string; taskId: string; sdkSessionId: string;
   initiatingToolUseId: string; generationKey: string; relationKey: string;
   completionId: string; status?: "pending" | "running"; description?: string;
+  runnerRegistrationId?: string; executionCommandId?: string;
   summary?: string; outputFile?: string; observedAt?: Date;
 }
 
@@ -78,6 +80,14 @@ export class ClaudeBackgroundGenerationHostClient {
     return this.transport.request<ClaudeBackgroundTaskGenerationRow[]>(
       "claude-runtime", "active_background_generations_for_session",
       [sourceNode, sessionId, limit],
+    );
+  }
+
+  activeForExecution(sourceNode: string, sessionId: string,
+    runnerRegistrationId: string, executionCommandId: string, limit = 1_000) {
+    return this.transport.request<ClaudeBackgroundTaskGenerationRow[]>(
+      "claude-runtime", "active_background_generations_for_execution",
+      [sourceNode, sessionId, runnerRegistrationId, executionCommandId, limit],
     );
   }
 

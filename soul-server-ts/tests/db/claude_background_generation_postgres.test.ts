@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { SessionMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import {
   ClaudeBackgroundTaskRepository,
@@ -13,6 +14,12 @@ import type { RegisterSessionDeliveryParams } from
 import type { SqlClient } from "../../src/db/session_db.js";
 import { buildClaudeBackgroundGenerationIdentity } from
   "../../src/task/claude_background_generation_identity.js";
+import { ClaudeBackgroundTaskLifecycle } from
+  "../../src/task/claude_background_task_lifecycle.js";
+import { ClaudeBackgroundGenerationStartupRecovery } from
+  "../../src/task/claude_background_generation_startup_recovery.js";
+import { ClaudeRuntimeStartupRecovery } from
+  "../../src/runtime/claude_runtime_startup_recovery.js";
 import { buildDeterministicDeliveryIdentity } from
   "../../src/task/delivery_identity.js";
 import {
@@ -117,6 +124,73 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     `;
   });
 
+  it("reaps only the exact dead execution while preserving a live successor in the same session", async () => {
+    const dead = {
+      ...generation("toolu-dead"),
+      runnerRegistrationId: "registration-dead",
+      executionCommandId: "command-dead",
+    };
+    const live = {
+      ...generation("toolu-live"),
+      runnerRegistrationId: "registration-live",
+      executionCommandId: "command-live",
+    };
+    await repository.observeGeneration(dead);
+    await repository.observeGeneration(live);
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository,
+      sourceNode: "node-test",
+      now: () => new Date("2026-09-05T00:35:00.000Z"),
+    });
+
+    await expect(lifecycle.terminalizeDeadRunner("caller-session", {
+      registrationId: "registration-dead",
+      executionCommandId: "command-dead",
+    })).resolves.toBe(1);
+    await expect(lifecycle.terminalizeDeadRunner("caller-session", {
+      registrationId: "registration-dead",
+      executionCommandId: "command-dead",
+    })).resolves.toBe(0);
+
+    await expect(repository.getGeneration(
+      dead.sourceNode, dead.sessionId, dead.sdkSessionId, dead.taskId,
+      dead.initiatingToolUseId,
+    )).resolves.toMatchObject({ status: "killed", close_reason: "runner_dead" });
+    await expect(repository.getGeneration(
+      live.sourceNode, live.sessionId, live.sdkSessionId, live.taskId,
+      live.initiatingToolUseId,
+    )).resolves.toMatchObject({ status: "running", notification_delivery_id: null });
+    await expect(harness.sql`
+      SELECT COUNT(*)::int AS count FROM session_deliveries
+    `).resolves.toEqual([{ count: 1 }]);
+  });
+
+  it("rejects an execution owner conflict without changing the canonical generation", async () => {
+    const owned = {
+      ...generation("toolu-owned"),
+      runnerRegistrationId: "registration-a",
+      executionCommandId: "command-a",
+    };
+    await repository.observeGeneration(owned);
+
+    await expect(repository.observeGeneration({
+      ...owned,
+      runnerRegistrationId: "registration-b",
+      executionCommandId: "command-b",
+    })).rejects.toThrow("Claude background execution owner conflict");
+    await expect(repository.getGeneration(
+      owned.sourceNode,
+      owned.sessionId,
+      owned.sdkSessionId,
+      owned.taskId,
+      owned.initiatingToolUseId,
+    )).resolves.toMatchObject({
+      runner_registration_id: "registration-a",
+      execution_command_id: "command-a",
+      status: "running",
+    });
+  });
+
   it("resolves TaskOutput only when exactly one unconsumed generation remains", async () => {
     const a = generation("toolu-A");
     const b = generation("toolu-B");
@@ -166,6 +240,42 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     });
   });
 
+  it("rejects a preconsumed runtime relation when its caller is not the target session", async () => {
+    await harness.sql`
+      INSERT INTO sessions (session_id, session_type, status, agent_id)
+      VALUES ('other-session', 'claude', 'running', 'worker')
+    `;
+    const input = generation("toolu-caller-bound");
+    await new SessionDeliveryRepository(harness.sql).recordRelationConsumed({
+      relationKey: input.relationKey,
+      completionId: input.completionId,
+      callerSessionId: input.sessionId,
+      consumedTurnId: "event:caller-bound-proof",
+    });
+    const mismatched = terminal(input, "completed", "caller-bound-mismatch");
+    mismatched.delivery = {
+      ...mismatched.delivery,
+      targetSessionId: "other-session",
+    };
+
+    await expect(repository.terminalizeGeneration(mismatched))
+      .rejects.toThrow("Completion relation identity conflict");
+    await expect(harness.sql`
+      SELECT COUNT(*)::int AS count FROM session_deliveries
+      WHERE relation_key = ${input.relationKey}
+    `).resolves.toEqual([{ count: 0 }]);
+    await expect(harness.sql`
+      SELECT COUNT(*)::int AS count FROM session_delivery_notification_outbox
+    `).resolves.toEqual([{ count: 0 }]);
+
+    await expect(repository.terminalizeGeneration(
+      terminal(input, "completed", "caller-bound-match"),
+    )).resolves.toMatchObject({
+      accepted: true,
+      delivery: { state: "consumed", target_session_id: input.sessionId },
+    });
+  });
+
   it("consumes an already queued runtime delivery when exact proof arrives later", async () => {
     const input = generation("toolu-register-first");
     const delivery = generationDelivery(input, "register-first");
@@ -204,7 +314,7 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     `).resolves.toEqual([{ count: 0 }]);
   });
 
-  it("keeps exact old-worker SQL and PK operational while exposing its terminal collision loss", async () => {
+  it("recovers a legacy-collided B exactly once through the real startup owner", async () => {
     const oldA = {
       sourceNode: "node-test",
       sessionId: "caller-session",
@@ -222,7 +332,6 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     })).resolves.toMatchObject({ accepted: true });
 
     const newB = generation("toolu-new-B");
-    await repository.observeGeneration(newB);
     await expect(repository.observe({
       ...oldA,
       toolUseId: "toolu-new-B",
@@ -238,10 +347,54 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
       terminalRevision: "old-worker-B",
       delivery: legacyDelivery("old-worker-B"),
     })).resolves.toMatchObject({ accepted: false });
+    await expect(repository.getGeneration(
+      newB.sourceNode,
+      newB.sessionId,
+      newB.sdkSessionId,
+      newB.taskId,
+      newB.initiatingToolUseId,
+    )).resolves.toBeNull();
 
-    await expect(repository.terminalizeGeneration(
-      terminal(newB, "completed", "new-worker-B"),
-    )).resolves.toMatchObject({ accepted: true });
+    const deliveryRepository = new SessionDeliveryRepository(harness.sql);
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository,
+      sourceNode: "node-test",
+      now: () => new Date("2026-09-05T00:40:00.000Z"),
+    });
+    const exactRecovery = new ClaudeBackgroundGenerationStartupRecovery({
+      repository,
+      lifecycle,
+      recordRelationConsumed: (input) =>
+        deliveryRepository.recordRelationConsumed(input),
+      sourceNode: "node-test",
+      sessionStore: {} as never,
+      getSession: async () => ({
+        session_id: "caller-session",
+        claude_session_id: "sdk-session",
+        agent_id: "worker",
+        model_preset: null,
+        node_id: "node-test",
+      }) as never,
+      getAgent: () => ({
+        id: "worker",
+        name: "Worker",
+        backend: "claude",
+        workspace_dir: "/workspace/worker",
+      }) as never,
+      loadMessages: async () => [
+        nativeNotificationMessage("toolu-new-B"),
+        assistantTranscriptMessage("assistant-after-B"),
+      ],
+    });
+    const startup = new ClaudeRuntimeStartupRecovery({
+      recoverBackgroundGenerations: () => exactRecovery.recoverAfterNodeRestart(),
+      recoverQueuedDeliveries: async () => ({ claimed: 0, settled: 0 }),
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+      nodeId: "node-test",
+    });
+    await startup.afterRunnerRecovery();
+    await startup.afterRunnerRecovery();
+
     await expect(repository.get("node-test", "caller-session", "shared-task"))
       .resolves.toMatchObject({
         status: "completed",
@@ -256,8 +409,25 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
       newB.initiatingToolUseId,
     )).resolves.toMatchObject({
       status: "completed",
-      terminal_revision: "new-worker-B",
+      close_reason: "sdk_completed",
     });
+    const recoveredIdentity = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: newB.sourceNode,
+      agentSessionId: newB.sessionId,
+      sdkSessionId: newB.sdkSessionId,
+      sdkTaskId: newB.taskId,
+      initiatingToolUseId: newB.initiatingToolUseId,
+    });
+    await expect(deliveryRepository.get(recoveredIdentity.deliveryId))
+      .resolves.toMatchObject({
+        state: "consumed",
+        aggregate_state: "consumed",
+        target_receipt_id: "assistant-after-B",
+      });
+    await expect(harness.sql`
+      SELECT COUNT(*)::int AS count FROM session_deliveries
+      WHERE delivery_id = ${recoveredIdentity.deliveryId}
+    `).resolves.toEqual([{ count: 1 }]);
   });
 });
 
@@ -356,4 +526,39 @@ function legacyDelivery(revision: string): RegisterSessionDeliveryParams {
 
 function hasDockerBinary(): boolean {
   return spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
+}
+
+function nativeNotificationMessage(toolUseId: string): SessionMessage {
+  return {
+    type: "user",
+    uuid: "native-B",
+    session_id: "sdk-session",
+    parent_tool_use_id: null,
+    parent_agent_id: null,
+    message: {
+      role: "user",
+      content: [{
+        type: "text",
+        text: [
+          "<task-notification>",
+          "<task-id>shared-task</task-id>",
+          `<tool-use-id>${toolUseId}</tool-use-id>`,
+          "<status>completed</status>",
+          "<summary>recovered B</summary>",
+          "</task-notification>",
+        ].join("\n"),
+      }],
+    },
+  };
+}
+
+function assistantTranscriptMessage(uuid: string): SessionMessage {
+  return {
+    type: "assistant",
+    uuid,
+    session_id: "sdk-session",
+    parent_tool_use_id: null,
+    parent_agent_id: null,
+    message: { role: "assistant", content: [{ type: "text", text: "continued" }] },
+  };
 }

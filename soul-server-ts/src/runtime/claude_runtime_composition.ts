@@ -15,6 +15,8 @@ import { ClaudeSessionClientRegistry } from
   "../engine/claude_session_client_registry.js";
 import { ClaudeBackgroundTaskLifecycle } from
   "../task/claude_background_task_lifecycle.js";
+import { ClaudeBackgroundGenerationStartupRecovery } from
+  "../task/claude_background_generation_startup_recovery.js";
 import { ChildCompletionConsumptionRecorder } from
   "../task/child_completion_consumption.js";
 import { QueuedDeliveryTranscriptRecovery } from
@@ -80,7 +82,26 @@ export async function composeClaudeRuntime(
     repository: params.db.claudeBackgroundTasks(),
     sourceNode: params.sourceNode,
   });
+  const backgroundGenerationRecovery = new ClaudeBackgroundGenerationStartupRecovery({
+    repository: params.db.claudeBackgroundTasks(),
+    lifecycle: backgroundLifecycle,
+    recordRelationConsumed: (input) =>
+      deliveryRepository.recordRelationConsumed(input),
+    sourceNode: params.sourceNode,
+    sessionStore: params.sessionStore,
+    getSession: (sessionId) => params.db.getSession(sessionId),
+    getAgent: (agentId) => params.agentRegistry.get(agentId),
+    getModelPresetBackend: (presetId) => {
+      try {
+        return params.modelCatalog.resolve(presetId).backend;
+      } catch {
+        return undefined;
+      }
+    },
+  });
   const startupRecovery = new ClaudeRuntimeStartupRecovery({
+    recoverBackgroundGenerations: () =>
+      backgroundGenerationRecovery.recoverAfterNodeRestart(),
     recoverQueuedDeliveries: () =>
       queuedDeliveryRecovery.recoverAfterNodeRestart(params.sourceNode),
     logger: params.logger,

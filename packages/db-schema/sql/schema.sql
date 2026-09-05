@@ -542,6 +542,8 @@ CREATE TABLE IF NOT EXISTS claude_background_task_generations (
     generation_key           TEXT NOT NULL UNIQUE,
     relation_key             TEXT NOT NULL UNIQUE,
     completion_id            TEXT NOT NULL UNIQUE,
+    runner_registration_id   TEXT,
+    execution_command_id     TEXT,
     status                   TEXT NOT NULL DEFAULT 'running',
     close_reason             TEXT,
     description              TEXT,
@@ -567,7 +569,13 @@ CREATE TABLE IF NOT EXISTS claude_background_task_generations (
             'failed',
             'stopped',
             'killed'
-        ))
+        )),
+    CONSTRAINT claude_background_task_generations_execution_owner_check
+        CHECK (
+            (runner_registration_id IS NULL AND execution_command_id IS NULL)
+            OR
+            (runner_registration_id IS NOT NULL AND execution_command_id IS NOT NULL)
+        )
 );
 
 CREATE INDEX IF NOT EXISTS idx_claude_background_generations_active_session
@@ -590,6 +598,17 @@ CREATE INDEX IF NOT EXISTS idx_claude_background_generations_task_resolution
 CREATE INDEX IF NOT EXISTS idx_claude_background_generations_delivery
     ON claude_background_task_generations(notification_delivery_id)
     WHERE notification_delivery_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_claude_background_generations_active_execution
+    ON claude_background_task_generations(
+        source_node,
+        session_id,
+        runner_registration_id,
+        execution_command_id,
+        generation_sequence
+    )
+    WHERE status IN ('pending', 'running')
+      AND runner_registration_id IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION board_delete_session_refs()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$

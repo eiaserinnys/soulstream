@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
+import type { ExecutionRegistration } from "../task/execution_registration.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
 import type { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import type {
@@ -50,5 +51,8 @@ export interface RunnerRecoveryCoordinatorOptions {
   quarantineFailure?: typeof quarantineUnreadableRunnerRegistration;
   hydrationDeadlineMs?: number;
   hydrationConcurrency?: number;
-  terminalizeClaudeBackgroundTasks?: (sessionId: string) => Promise<number>;
+  terminalizeClaudeBackgroundTasks?: (
+    sessionId: string,
+    execution: ExecutionRegistration,
+  ) => Promise<number>;
 }
