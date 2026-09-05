@@ -526,6 +526,53 @@ describe("session history/read-only route harness", () => {
     await app.close();
   });
 
+  it("preserves retryable error payload and event id in the live session SSE frame", async () => {
+    let liveListener: ((event: Record<string, unknown>) => void) | undefined;
+    const liveEvents: SessionHistoryLiveEventSource = {
+      subscribe: vi.fn((_sessionId, listener) => {
+        liveListener = listener;
+        return vi.fn();
+      }),
+    };
+    const provider = createProvider({
+      readLastEventId: vi.fn(async () => {
+        liveListener?.({
+          type: "event",
+          agentSessionId: "sess-1",
+          event: {
+            _event_id: 43,
+            type: "error",
+            message: "Reconnecting... 2/2",
+            fatal: false,
+            will_retry: true,
+          },
+        });
+        return 42;
+      }),
+    });
+    const app = createApp({
+      config,
+      sessionHistoryRoutes: {
+        provider,
+        liveEvents,
+        closeAfterHistorySync: true,
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/events",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain(
+      'event: error\n' +
+        'id: 43\n' +
+        'data: {"_event_id":43,"type":"error","message":"Reconnecting... 2/2","fatal":false,"will_retry":true}\n\n',
+    );
+    await app.close();
+  });
+
   it("prefers Last-Event-ID header over query and replays only raw events after that id", async () => {
     const provider = createProvider({
       streamEventsRaw: vi.fn(async function* () {

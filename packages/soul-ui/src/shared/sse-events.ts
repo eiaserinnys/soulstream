@@ -263,11 +263,27 @@ export interface ErrorEvent {
   message: string;
   error_code?: string;
   fatal?: boolean;
+  /** 현재 턴에서 자동 재연결을 시도하는 오류인지 여부 */
+  will_retry?: boolean;
+  /** 후속 턴에서 세션을 재개할 수 있는 오류인지 여부 */
   recoverable?: boolean;
   recovery_hint?: string;
+  error_info?: unknown;
+  additional_details?: unknown;
+  thread_id?: string;
+  turn_id?: string;
   /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
+}
+
+export const RETRYING_ERROR_HISTORY =
+  "응답 연결이 끊겨 같은 작업에 자동 재연결이 발생했습니다.";
+
+export function formatRetryingErrorHistory(message: string): string {
+  return message
+    ? `${RETRYING_ERROR_HISTORY} ${message}`
+    : RETRYING_ERROR_HISTORY;
 }
 
 export interface ContextUsageEvent {

@@ -555,6 +555,19 @@ describe("flattenTree", () => {
     expect(err.content).toBe("Something went wrong");
   });
 
+  it("retryable error 노드의 재연결 이력을 warning 표시 정보로 보존한다", () => {
+    const retryingError = {
+      ...makeError("e1", "응답 연결이 끊겨 같은 작업에 자동 재연결이 발생했습니다."),
+      isError: false,
+      isRetrying: true,
+    } as ErrorNode;
+    const msgs = flattenTree(makeSession([retryingError]));
+    const retry = msgs.find((message) => message.treeNodeType === "error")!;
+
+    expect(retry.isError).toBe(false);
+    expect(retry.isRetrying).toBe(true);
+  });
+
   it("intervention 노드", () => {
     const tree = makeSession([
       makeUserMessage("u1", "hi", []),

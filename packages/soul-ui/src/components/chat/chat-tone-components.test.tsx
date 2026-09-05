@@ -39,6 +39,22 @@ describe("chat tone component classes", () => {
     expect(errorHtml).not.toContain("text-center");
   });
 
+  it("uses warning tone for retryable error history", () => {
+    const retryHtml = renderToStaticMarkup(
+      createElement(SystemMessage, {
+        msg: makeMessage({
+          treeNodeType: "error",
+          isError: false,
+          isRetrying: true,
+          content: "응답 연결이 끊겨 같은 작업에 자동 재연결이 발생했습니다.",
+        }),
+      }),
+    );
+
+    expect(retryHtml).toContain("chat-tone-warning");
+    expect(retryHtml).not.toContain("chat-tone-danger");
+  });
+
   it("uses calm tone classes for tool done and error states", () => {
     const toolError = makeMessage({
       role: "tool",

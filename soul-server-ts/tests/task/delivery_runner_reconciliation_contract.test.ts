@@ -1,10 +1,19 @@
+import { EventEmitter } from "node:events";
+import type { Socket } from "node:net";
+
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EngineExecuteParams, SSEEventPayload } from "../../src/engine/protocol.js";
-import { engineEventFrame } from "../../src/runner/frame_protocol.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import {
+  engineEventFrame,
+  invokeCommandFrame,
+} from "../../src/runner/frame_protocol.js";
+import { RunnerIpcConnection } from
+  "../../src/runner/runner_ipc_connection.js";
 import { RunnerProcessEngineProxy } from
   "../../src/runner/runner_process_engine_proxy.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
@@ -19,7 +28,7 @@ import {
 } from "../../src/task/task_executor.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
-import type { RunningInterventionTransition } from
+import { RunningInterventionTransition } from
   "../../src/task/task_running_intervention_transition.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -56,7 +65,7 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function makeLedgerGate(terminalStates: ReadonlyMap<string, TerminalDeliveryState>) {
+function makeLedgerGate(terminalStates: Map<string, TerminalDeliveryState>) {
   const admit = vi.fn(async (params: {
     deliveryId?: string;
     text: string;
@@ -105,7 +114,9 @@ function makeLedgerGate(terminalStates: ReadonlyMap<string, TerminalDeliveryStat
   const recordResult = vi.fn(async () => undefined);
   const recordFailure = vi.fn(async () => undefined);
   const recordReservationRetry = vi.fn(async () => "retryable" as const);
-  const recordConsumed = vi.fn(async () => undefined);
+  const recordConsumed = vi.fn(async (message: InterventionMessage) => {
+    if (message.deliveryId) terminalStates.set(message.deliveryId, "consumed");
+  });
   const recordTurnStarted = vi.fn(async () => "turn-contract");
   const discardIfConsumed = vi.fn(async (
     message: InterventionMessage,
@@ -188,6 +199,46 @@ function makeRunner(localRows: readonly LocalInboxRow[]) {
   return { runner, openRows, executed, dispatcher };
 }
 
+function makeUnansweredInterventionRunner() {
+  const socket = new EventEmitter() as EventEmitter & Partial<Socket>;
+  const destroy = vi.fn(() => socket as Socket);
+  socket.setEncoding = vi.fn(() => socket as Socket) as never;
+  socket.write = vi.fn((
+    _line: string,
+    callback: (error?: Error | null) => void,
+  ) => {
+    callback();
+    return true;
+  }) as never;
+  socket.destroy = destroy as never;
+
+  const connection = new RunnerIpcConnection(socket as Socket);
+  const connectionFailure = vi.fn();
+  connection.onFailure(connectionFailure);
+  const invoke = vi.fn(async (capability: string, args: unknown[]) =>
+    await connection.request(
+      invokeCommandFrame("invoke-r33-ambiguous-timeout", capability, args),
+      { timeoutMs: 10 },
+    )
+  );
+  const dispatcher = {
+    invoke,
+    interrupt: vi.fn(async () => true),
+    close: vi.fn(async () => undefined),
+    hasActiveExecution: vi.fn(() => true),
+  };
+  const runner: TaskRunnerRuntime = {
+    engine: new RunnerProcessEngineProxy(
+      "claude",
+      agent.workspace_dir,
+      dispatcher as never,
+    ),
+    dispatcher: dispatcher as never,
+    eventPersistence: "runner",
+  };
+  return { runner, dispatcher, connectionFailure, destroy };
+}
+
 function deliveryMessage(deliveryId: string, text: string): InterventionMessage {
   return {
     text,
@@ -201,10 +252,11 @@ function deliveryMessage(deliveryId: string, text: string): InterventionMessage 
 }
 
 function makeHarness(input: {
-  terminalStates?: ReadonlyMap<string, TerminalDeliveryState>;
+  terminalStates?: Map<string, TerminalDeliveryState>;
   localRows?: readonly LocalInboxRow[];
   task?: Task;
   enforceRunningTransitionFence?: boolean;
+  useActualRunningInterventionTransition?: boolean;
 }) {
   const task = input.task ?? makeTerminalTask();
   const persistenceDouble = makeEventPersistenceTestDouble();
@@ -266,10 +318,16 @@ function makeHarness(input: {
     consumeWhen: "next_turn",
     reason: "queue_only_policy",
   } as const;
-  const runningInterventionTransition = {
-    deliver: vi.fn(async () => queued),
-    queueOnly: vi.fn(async () => queued),
-  } as unknown as Pick<RunningInterventionTransition, "deliver" | "queueOnly">;
+  const runningInterventionTransition = input.useActualRunningInterventionTransition
+    ? new RunningInterventionTransition({
+        broadcaster,
+        logger: silentLogger,
+        persistence: persistenceDouble.persistence,
+      })
+    : {
+        deliver: vi.fn(async () => queued),
+        queueOnly: vi.fn(async () => queued),
+      } as unknown as Pick<RunningInterventionTransition, "deliver" | "queueOnly">;
   const route = new TaskInterventionRoute({
     getTask: () => task,
     loadEvictedTask: vi.fn(async () => null),
@@ -373,5 +431,92 @@ describe("central delivery ↔ runner inbox reconciliation contract", () => {
 
     expect(harness.executed.map((input) => input.prompt)).toEqual(["shared delivery"]);
     expect([...harness.openRows.keys()]).toEqual([]);
+  });
+
+  it("queues an ambiguous IPC timeout once, then consumes that delivery once on retry", async () => {
+    const terminalStates = new Map<string, TerminalDeliveryState>();
+    const timedOut = makeUnansweredInterventionRunner();
+    const task = makeTerminalTask({
+      status: "running",
+      completedAt: undefined,
+      terminalEventId: undefined,
+      runner: timedOut.runner,
+      executionRegistration: {
+        ownerKind: "spawned_runner",
+        manifestId: "release-d-reconciliation",
+        runtimeEnvIdentity: "env-d-reconciliation",
+        registrationId: "registration-d-reconciliation",
+        pid: 8_382,
+        startIdentity: "start-d-reconciliation",
+        executionCommandId: "execute-d-reconciliation",
+        ownershipGeneration: 1,
+      },
+    });
+    const harness = makeHarness({
+      terminalStates,
+      task,
+      useActualRunningInterventionTransition: true,
+    });
+    const deliveryId = "delivery-r33-retry";
+    const message = deliveryMessage(deliveryId, "deliver exactly once");
+    const stableInputUuid = buildDeliveryInputUuid(deliveryId);
+
+    await expect(harness.route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      ...message,
+    }, vi.fn())).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "verdict_unknown",
+    });
+
+    expect(task.interventionQueue).toHaveLength(1);
+    expect(task.interventionQueue[0]).toMatchObject({ deliveryId });
+    expect(timedOut.dispatcher.invoke).toHaveBeenCalledWith(
+      "intervene",
+      [expect.objectContaining({
+        prompt: "deliver exactly once",
+        inputUuid: stableInputUuid,
+        turnOrigin: { kind: "durable_next_turn", id: deliveryId },
+      })],
+    );
+    expect(timedOut.connectionFailure).toHaveBeenCalledOnce();
+    expect(timedOut.destroy).toHaveBeenCalledOnce();
+    expect(timedOut.dispatcher.interrupt).not.toHaveBeenCalled();
+    expect(timedOut.dispatcher.close).not.toHaveBeenCalled();
+    expect(terminalStates.has(deliveryId)).toBe(false);
+    expect(harness.ledgerGate.recordConsumed).not.toHaveBeenCalled();
+
+    task.status = "completed";
+    task.completedAt = new Date("2026-08-23T20:03:00.000Z");
+    task.terminalEventId = task.lastEventId;
+    task.executionRegistration = undefined;
+    task.runner = undefined;
+
+    await expect(harness.resume(message)).resolves.toEqual({ autoResumed: true });
+    await expect(harness.resume(message)).resolves.toMatchObject({
+      suppressed: true,
+      deliveryId,
+      reason: "delivery_consumed",
+    });
+
+    expect(harness.executed).toHaveLength(1);
+    expect(harness.executed[0]).toMatchObject({
+      prompt: "deliver exactly once",
+      inputUuid: stableInputUuid,
+      turnOrigin: {
+        kind: "durable_next_turn",
+        id: deliveryId,
+      },
+    });
+    expect(harness.ledgerGate.recordTurnStarted).toHaveBeenCalledOnce();
+    expect(harness.ledgerGate.recordConsumed).toHaveBeenCalledOnce();
+    expect(harness.ledgerGate.recordConsumed).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId }),
+      harness.task,
+      expect.any(String),
+    );
   });
 });

@@ -51,7 +51,10 @@ import {
   readRunnerHostAcknowledgedThrough,
   runnerHostStatePath,
 } from "./runner_host_state_store.js";
-import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
+import {
+  RunnerLifecycleCommandMismatchError,
+  RunnerSqliteLifecycle,
+} from "./sqlite_runner_lifecycle.js";
 import { RunnerWriterLock } from "./runner_writer_lock.js";
 
 const REQUIRED_HOST_SEND_ATTEMPTS = 61;
@@ -600,29 +603,58 @@ export class RunnerChildRuntime {
   }
 
   private recordProgress(): void {
-    if (!this.activeCommandId || !this.lifecycle.read()) return;
-    this.lifecycle.progress(this.activeCommandId, new Date().toISOString());
+    const commandId = this.activeCommandId;
+    if (!commandId || !this.lifecycle.read()) return;
+    this.recordLifecycleObservation("progress", commandId, () => {
+      this.lifecycle.progress(commandId, new Date().toISOString());
+    });
   }
 
   private recordEngineProgress(event: SSEEventPayload): void {
-    if (!this.activeCommandId || !this.lifecycle.read()) return;
+    const commandId = this.activeCommandId;
+    if (!commandId || !this.lifecycle.read()) return;
     const progressedAt = new Date().toISOString();
     const transition = runnerToolLeaseTransition(event);
     if (transition?.kind === "start") {
-      this.lifecycle.toolStarted(this.activeCommandId, transition.toolUseId, progressedAt);
+      this.recordLifecycleObservation("tool_started", commandId, () => {
+        this.lifecycle.toolStarted(commandId, transition.toolUseId, progressedAt);
+      });
       return;
     }
     if (transition?.kind === "finish") {
-      this.lifecycle.toolFinished(this.activeCommandId, transition.toolUseId, progressedAt);
+      this.recordLifecycleObservation("tool_finished", commandId, () => {
+        this.lifecycle.toolFinished(commandId, transition.toolUseId, progressedAt);
+      });
       return;
     }
-    this.lifecycle.progress(this.activeCommandId, progressedAt);
+    this.recordLifecycleObservation("engine_progress", commandId, () => {
+      this.lifecycle.progress(commandId, progressedAt);
+    });
   }
 
   private async recordLiveness(): Promise<void> {
-    if (!this.activeCommandId || !this.lifecycle.read()) return;
-    const observedAt = new Date().toISOString();
-    this.lifecycle.liveness(this.activeCommandId, observedAt);
+    const commandId = this.activeCommandId;
+    if (!commandId || !this.lifecycle.read()) return;
+    this.recordLifecycleObservation("liveness", commandId, () => {
+      this.lifecycle.liveness(commandId, new Date().toISOString());
+    });
+  }
+
+  private recordLifecycleObservation(
+    observation: "progress" | "engine_progress" | "tool_started" | "tool_finished" | "liveness",
+    commandId: string,
+    record: () => void,
+  ): void {
+    try {
+      record();
+    } catch (error) {
+      if (!(error instanceof RunnerLifecycleCommandMismatchError)) throw error;
+      this.logger.warn({
+        err: error,
+        commandId,
+        observation,
+      }, "Stale runner lifecycle observation ignored");
+    }
   }
 
   private startLiveness(): void {

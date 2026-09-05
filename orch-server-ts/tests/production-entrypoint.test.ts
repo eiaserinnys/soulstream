@@ -13,6 +13,10 @@ import {
   createProductionOrchestrator,
   loadOrchServerEnvironment,
 } from "../src/index.js";
+import type {
+  LiveDbSqlResolver,
+  LivePostgresSql,
+} from "../src/runtime/live_db_sql.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -27,9 +31,26 @@ afterEach(async () => {
 describe("production orchestrator entrypoint", () => {
   it("assembles the complete live provider bundle without contacting external services", async () => {
     const config = loadOrchServerEnvironment(minimalEnvironment());
+    const databaseSchema = {
+      migration_id: "088_test_schema",
+      checksum: "test-schema-checksum",
+      ordinal: 88,
+    };
+    const schemaQuery = vi.fn(async (strings: TemplateStringsArray) => {
+      expect(strings.join(" ")).toContain("FROM schema_migrations");
+      return [databaseSchema];
+    });
+    const sql = Object.assign(schemaQuery, {
+      json: (value: unknown) => value,
+    }) as unknown as LivePostgresSql;
+    const sqlResolver: LiveDbSqlResolver = {
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(async () => undefined),
+    };
     const application = await createLiveProductionApplication(
       config,
       { warn: vi.fn() },
+      { sqlResolver },
     );
     const jwt = createLiveAuthJwtHelper({
       configProvider: createEnvironmentConfigProvider(config),
@@ -41,7 +62,13 @@ describe("production orchestrator entrypoint", () => {
 
     const health = await application.app.inject({ method: "GET", url: "/api/health" });
     expect(health.statusCode).toBe(200);
-    expect(health.json()).toMatchObject({ status: "ok", version: "0.1.0" });
+    expect(health.json()).toMatchObject({
+      status: "ok",
+      version: "0.1.0",
+      database_schema: databaseSchema,
+    });
+    expect(sqlResolver.resolveSql).toHaveBeenCalledOnce();
+    expect(schemaQuery).toHaveBeenCalledOnce();
 
     const protectedRoutes = ["/api/status", "/api/nodes", "/api/auth/token"];
     for (const url of protectedRoutes) {
@@ -89,6 +116,7 @@ describe("production orchestrator entrypoint", () => {
 
     await application.app.close();
     await application.closeResources();
+    expect(sqlResolver.close).toHaveBeenCalledOnce();
   });
 
   it("listens on an ephemeral port and serves health, status, and dashboard over real HTTP", async () => {

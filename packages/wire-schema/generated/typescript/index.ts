@@ -542,6 +542,22 @@ export interface SSEEventComplete {
  */
 export interface SSEEventError {
   type: "error";
+  message?: string;
+  error_code?: string;
+  fatal?: boolean;
+  /**
+   * 현재 턴에서 자동 재연결을 시도하는 오류인지 여부.
+   */
+  will_retry?: boolean;
+  /**
+   * 후속 턴에서 세션을 재개할 수 있는 오류인지 여부.
+   */
+  recoverable?: boolean;
+  recovery_hint?: string;
+  error_info?: unknown;
+  additional_details?: unknown;
+  thread_id?: string;
+  turn_id?: string;
   [k: string]: unknown;
 }
 /**

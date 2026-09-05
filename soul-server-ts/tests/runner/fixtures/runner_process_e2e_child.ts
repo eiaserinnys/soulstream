@@ -34,7 +34,9 @@ import { parseRunnerChildConfig } from "../../../src/runner/runner_process_spawn
 const configPath = argument("--config");
 const controlDirectory = required(process.env.RUNNER_E2E_CONTROL_DIR, "RUNNER_E2E_CONTROL_DIR");
 const config = parseRunnerChildConfig(JSON.parse(await readFile(configPath, "utf8")));
-const logger = pino({ level: "silent" });
+const logger = pino({
+  level: process.env.RUNNER_E2E_CAPTURE_WARNINGS === "1" ? "warn" : "silent",
+});
 class ControlledEngine implements EnginePort {
   readonly backendId = config.backend;
   readonly detachedClaudeRuntime = config.backend === "claude" ? true : undefined;
@@ -44,6 +46,7 @@ class ControlledEngine implements EnginePort {
   private p0r2InterruptCount = 0;
   private p0r2CloseCount = 0;
   private hostGapInterruptCount = 0;
+  private lifecycleObservationInterruptCount = 0;
   private fullSliceExecuteCount = 0;
   private fullSliceInterveneCount = 0;
   private fullSliceInterruptCount = 0;
@@ -187,6 +190,57 @@ class ControlledEngine implements EnginePort {
       });
       await waitForFile(`${this.controlDirectory}/finish-host-gap`);
       return;
+    }
+    const lifecycleObservationScenario =
+      process.env.RUNNER_E2E_LIFECYCLE_OBSERVATION_SCENARIO;
+    if (lifecycleObservationScenario) {
+      yield engineEventFrame({ type: "session", session_id: "backend-session-e2e" });
+      await writeFile(`${this.controlDirectory}/execute-started`, "ready\n");
+      await waitForFile(`${this.controlDirectory}/emit-lifecycle-observation`);
+      if (lifecycleObservationScenario === "mismatch") {
+        yield runnerRequestFrame("lifecycle-observation-request", {
+          kind: "can_use_tool",
+          agentSessionId: config.sessionId,
+          toolUseId: "lifecycle-observation-request-tool",
+          toolName: "AskUserQuestion",
+          input: { questions: [] },
+        });
+        yield engineEventFrame({
+          type: "tool_start",
+          tool_name: "Bash",
+          tool_input: {},
+          tool_use_id: "lifecycle-observation-tool",
+          timestamp: 2,
+        });
+        yield engineEventFrame({
+          type: "assistant_message",
+          content: "after-lifecycle-mismatch",
+          timestamp: 3,
+        });
+        await writeFile(`${this.controlDirectory}/lifecycle-observations-emitted`, "ready\n");
+        await waitForFile(`${this.controlDirectory}/finish-lifecycle-observation`);
+        yield engineEventFrame({
+          type: "tool_result",
+          tool_name: "Bash",
+          result: "done",
+          is_error: false,
+          tool_use_id: "lifecycle-observation-tool",
+          timestamp: 4,
+        });
+        yield engineEventFrame({ type: "complete", result: "observation complete" });
+        return;
+      }
+      if (lifecycleObservationScenario === "storage-failure") {
+        yield engineEventFrame({
+          type: "assistant_message",
+          content: "storage-failure-event",
+          timestamp: 2,
+        });
+        return;
+      }
+      throw new Error(
+        `unknown lifecycle observation scenario: ${lifecycleObservationScenario}`,
+      );
     }
     if (process.env.RUNNER_E2E_BACKGROUND_SCENARIO === "multi-terminal") {
       this.executionCount += 1;
@@ -441,6 +495,13 @@ class ControlledEngine implements EnginePort {
     }
     if (process.env.RUNNER_E2E_R57_STRUCTURED_RESULT === "1") {
       await writeFile(`${this.controlDirectory}/r57-interrupted`, "interrupted\n");
+    }
+    if (process.env.RUNNER_E2E_LIFECYCLE_OBSERVATION_SCENARIO) {
+      this.lifecycleObservationInterruptCount += 1;
+      await writeFile(
+        `${this.controlDirectory}/lifecycle-observation-interrupt-count`,
+        `${this.lifecycleObservationInterruptCount}\n`,
+      );
     }
     return true;
   }

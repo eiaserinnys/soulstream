@@ -20,7 +20,8 @@ import type {
 import { AppServerRpcError, CodexAppServerClient } from "./client.js";
 import {
   applyNotificationLifecycle,
-  clearActiveTurn,
+  beginNotificationExecution,
+  clearNotificationExecution,
   createNotificationLifecycleState,
   recordThreadOpened,
   recordTurnStartResponse,
@@ -147,6 +148,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     }
 
     this.executing = true;
+    this.notificationLifecycle = clearNotificationExecution(this.notificationLifecycle);
     const queue = new AsyncPayloadQueue<SSEEventPayload>();
     this.activeQueue = queue;
     const unsubscribe = [
@@ -212,7 +214,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
       }
     } finally {
       for (const off of unsubscribe) off();
-      this.notificationLifecycle = clearActiveTurn(this.notificationLifecycle);
+      this.notificationLifecycle = clearNotificationExecution(this.notificationLifecycle);
       this.activeQueue = null;
       this.executing = false;
     }
@@ -270,7 +272,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    this.notificationLifecycle = clearActiveTurn(this.notificationLifecycle);
+    this.notificationLifecycle = clearNotificationExecution(this.notificationLifecycle);
     this.activeQueue?.close();
     await this.client.close();
   }
@@ -311,7 +313,12 @@ export class CodexAppServerEngineAdapter implements EnginePort {
         throw error;
       }
       if (this.closed) return null;
-      return response.thread.id;
+      const threadId = response.thread.id;
+      this.notificationLifecycle = beginNotificationExecution(
+        this.notificationLifecycle,
+        threadId,
+      );
+      return threadId;
     }
 
     const response = await this.client.startThread(
@@ -325,7 +332,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     if (this.closed) return null;
     const threadId = response.thread.id;
     const opened = recordThreadOpened(this.notificationLifecycle, threadId);
-    this.notificationLifecycle = opened.state;
+    this.notificationLifecycle = beginNotificationExecution(opened.state, threadId);
     if (opened.emitSession) {
       const payload = { type: "session", session_id: threadId } as SSEEventPayload;
       queue.push(payload);

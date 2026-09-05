@@ -125,10 +125,11 @@ export class RunnerIpcConnection {
     const abortFromParent = () => controller.abort(abortReason(options.signal!));
     if (options.signal?.aborted) abortFromParent();
     else options.signal?.addEventListener("abort", abortFromParent, { once: true });
-    const timer = setTimeout(
-      () => controller.abort(new RunnerIpcRequestTimeoutError(options.timeoutMs)),
-      options.timeoutMs,
-    );
+    let requestTimeoutError: RunnerIpcRequestTimeoutError | undefined;
+    const timer = setTimeout(() => {
+      requestTimeoutError = new RunnerIpcRequestTimeoutError(options.timeoutMs);
+      controller.abort(requestTimeoutError);
+    }, options.timeoutMs);
     timer.unref?.();
     if (controller.signal.aborted) {
       clearTimeout(timer);
@@ -155,11 +156,24 @@ export class RunnerIpcConnection {
       (control) => ({ status: "resolved" as const, control }),
       (error: unknown) => ({ status: "rejected" as const, error }),
     );
+    const settleResponse = (outcome: Awaited<typeof responseOutcome>) => {
+      if (outcome.status === "resolved") return outcome.control;
+      const error = asError(outcome.error);
+      if (error === requestTimeoutError) this.fail(error);
+      throw error;
+    };
+    const sendOutcome = this.send(frame).then(
+      (sent) => ({ status: "sent" as const, sent }),
+      (error: unknown) => ({ status: "send_rejected" as const, error }),
+    );
     try {
-      if (!(await this.send(frame))) throw new RunnerObservationDroppedError();
-      const outcome = await responseOutcome;
-      if (outcome.status === "rejected") throw outcome.error;
-      return outcome.control;
+      const firstOutcome = await Promise.race([sendOutcome, responseOutcome]);
+      if (firstOutcome.status === "resolved" || firstOutcome.status === "rejected") {
+        return settleResponse(firstOutcome);
+      }
+      if (firstOutcome.status === "send_rejected") throw firstOutcome.error;
+      if (!firstOutcome.sent) throw new RunnerObservationDroppedError();
+      return settleResponse(await responseOutcome);
     } finally {
       if (this.pending.get(key) === pending) this.pending.delete(key);
       pending.cleanup();
