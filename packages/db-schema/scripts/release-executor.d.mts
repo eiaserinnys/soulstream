@@ -26,6 +26,11 @@ export function databaseReleaseFailure(
   phase: string,
 ): Record<string, unknown>;
 
+export function formatDatabaseReleaseError(
+  error: unknown,
+  env?: NodeJS.ProcessEnv,
+): string;
+
 export function sanitizeDatabaseReleaseResult<T>(
   value: T,
   env?: NodeJS.ProcessEnv,

@@ -7,7 +7,7 @@ import {
   runBoardYjsRunbookDeployment,
   type BoardYjsRunbookDeployMode,
 } from "../src/board-yjs/board_yjs_runbook_deploy.js";
-import { serializeDatabaseReleaseResult } from
+import { formatDatabaseReleaseError, serializeDatabaseReleaseResult } from
   "../../packages/db-schema/scripts/release-executor.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -111,7 +111,14 @@ function runNode(args: string[]): void {
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error(`deployment child command exited with ${result.status ?? "no status"}`);
+    const prefix = `deployment child command exited with ${result.status ?? "no status"}`;
+    const stderr = formatDatabaseReleaseError(result.stderr, process.env).trim();
+    const stdout = formatDatabaseReleaseError(result.stdout, process.env).trim();
+    const diagnostics = [
+      stderr ? `stderr=${stderr.slice(-3_000)}` : "",
+      stdout ? `stdout=${stdout.slice(-900)}` : "",
+    ].filter(Boolean).join("; ");
+    throw new Error(diagnostics ? `${prefix}; ${diagnostics}` : prefix);
   }
 }
 

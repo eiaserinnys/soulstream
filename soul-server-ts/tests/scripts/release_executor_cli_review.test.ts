@@ -325,4 +325,42 @@ describe("database release CLI and direct writer boundaries", () => {
     expect(`${result.stdout}\n${audit}`).not.toContain(secret);
     expect(`${result.stdout}\n${audit}`).not.toContain(`user:${secret}@`);
   });
+
+  it("preserves a board deployment child diagnostic in the failed audit", () => {
+    const directory = tempDirectory("release-board-child-error-");
+    writeFileSync(join(directory, ".env.soul-server-ts"), "\n", "utf8");
+    const result = spawnSync(process.execPath, [TSX, BOARD_DEPLOY, "--verify"], {
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        HANIEL_SERVICE_CWD: directory,
+        HANIEL_BACKUP_DIR: directory,
+        SOULSTREAM_NODE_ID: "eiaserinnys",
+      },
+      timeout: 10_000,
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe("");
+    const stdoutLines = result.stdout.trim().split("\n");
+    expect(stdoutLines).toHaveLength(1);
+    expect(Buffer.byteLength(stdoutLines[0], "utf8")).toBeLessThanOrEqual(32_768);
+    const output = JSON.parse(stdoutLines[0]) as Record<string, unknown>;
+    expect(output).toMatchObject({
+      schema_version: "soulstream.database-release.v1",
+      event: "board_yjs_runbook_migration",
+      status: "failed",
+      mode: "verify",
+      nodeId: "eiaserinnys",
+    });
+    expect(output.error).toContain("deployment child command exited with 1");
+    expect(output.error).toContain("DATABASE_URL is required");
+
+    const audit = readFileSync(
+      join(directory, "board-yjs-runbook-migration.jsonl"),
+      "utf8",
+    ).trim();
+    expect(JSON.parse(audit)).toEqual(output);
+  });
 });
