@@ -3,8 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { EnginePort } from "../../src/engine/protocol.js";
 import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
-import { RunnerIpcRequestTimeoutError } from
-  "../../src/runner/runner_ipc_connection.js";
 import { createInProcessTaskRunnerRuntime, createTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
@@ -420,72 +418,6 @@ describe("RunningInterventionTransition", () => {
     expect(task.interventionQueue).toEqual([
       { text: "queue after no active turn", user: "soak" },
     ]);
-  });
-
-  it("R33 resets a deaf process-backed CLI after the intervention IPC deadline without killing the session", async () => {
-    let rejectFirst!: (error: Error) => void;
-    let recovered = false;
-    const interrupt = vi.fn(async () => {
-      recovered = true;
-      return true;
-    });
-    const dispatcher = {
-      invoke: vi.fn(async () => {
-        if (dispatcher.invoke.mock.calls.length === 1) {
-          return await new Promise<never>((_resolve, reject) => {
-            rejectFirst = reject;
-          });
-        }
-        if (!recovered) throw new RunnerIpcRequestTimeoutError(30_000);
-        return { status: "delivered", mechanism: "active_turn" };
-      }),
-      interrupt,
-    };
-    const task = makeRunningTask({
-      runner: createTaskRunnerRuntime(
-        new RunnerProcessEngineProxy("claude", "/tmp/claude", dispatcher as never),
-        dispatcher as never,
-        "runner",
-      ),
-    });
-    const transition = new RunningInterventionTransition({
-      broadcaster: makeBroadcaster(),
-      logger: silentLogger,
-      persistence: makeEventPersistenceTestDouble().persistence,
-    });
-    const stuckMessage = {
-      text: "first retry reaches the deaf CLI",
-      user: "alice",
-      deliveryId: "r33-deaf-cli-delivery-1",
-    };
-    const recoveredMessage = {
-      text: "second retry reaches the replacement CLI",
-      user: "alice",
-      deliveryId: "r33-deaf-cli-delivery-2",
-    };
-
-    const first = transition.deliver(task, stuckMessage);
-    await vi.waitFor(() => expect(dispatcher.invoke).toHaveBeenCalledOnce());
-    const second = transition.deliver(task, recoveredMessage);
-    await Promise.resolve();
-    expect(dispatcher.invoke).toHaveBeenCalledOnce();
-
-    rejectFirst(new RunnerIpcRequestTimeoutError(30_000));
-
-    await expect(first).resolves.toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "verdict_unknown",
-    });
-    await expect(second).resolves.toEqual({ delivered: true });
-
-    expect(interrupt).toHaveBeenCalledOnce();
-    expect(dispatcher.invoke).toHaveBeenCalledTimes(2);
-    expect(task.interventionQueue).toEqual([stuckMessage]);
-    expect(task.status).toBe("running");
-    expect(task.error).toBeUndefined();
   });
 
   it("publishes acceptance before asking a Claude adapter to intervene", async () => {

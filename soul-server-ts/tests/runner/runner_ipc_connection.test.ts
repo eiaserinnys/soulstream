@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { createServer, connect, type Socket } from "node:net";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -238,6 +239,8 @@ describe("RunnerIpcConnection", () => {
     async (mode) => {
       const [host, runner] = await socketPair();
       const hostConnection = new RunnerIpcConnection(host);
+      const failure = vi.fn();
+      hostConnection.onFailure(failure);
       const controller = new AbortController();
       const pending = hostConnection.request(
         prepareSessionCommandFrame(`prepare-${mode}`, "session-1"),
@@ -256,8 +259,119 @@ describe("RunnerIpcConnection", () => {
         await expect(pending).rejects.toBeInstanceOf(RunnerIpcRequestTimeoutError);
       }
       expect(hostConnection.pendingRequestCount).toBe(0);
+      if (mode === "abort") {
+        expect(failure).not.toHaveBeenCalled();
+      } else {
+        await vi.waitFor(() => expect(failure).toHaveBeenCalledOnce());
+      }
     },
   );
+
+  it("expires a stalled socket write, fails the connection once, and clears sibling requests", async () => {
+    const { socket, writeCallbacks, destroy } = deferredWriteSocket();
+    const connection = new RunnerIpcConnection(socket);
+    const failure = vi.fn();
+    connection.onFailure(failure);
+    const first = connection.request(
+      prepareSessionCommandFrame("prepare-stalled-write", "session-1"),
+      { timeoutMs: 10 },
+    );
+    const sibling = connection.request(
+      prepareSessionCommandFrame("prepare-sibling", "session-1"),
+      { timeoutMs: 1_000 },
+    );
+    void first.catch(() => {});
+    void sibling.catch(() => {});
+
+    const firstOutcome = first.then(
+      () => ({ status: "resolved" as const }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+    const settledBeforeWriteRelease = await Promise.race([
+      firstOutcome,
+      new Promise<{ status: "pending" }>((resolve) => setTimeout(
+        () => resolve({ status: "pending" }),
+        50,
+      )),
+    ]);
+    for (const callback of writeCallbacks) callback();
+    const siblingOutcome = await sibling.then(
+      () => ({ status: "resolved" as const }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+
+    expect(settledBeforeWriteRelease).toEqual({
+      status: "rejected",
+      error: expect.any(RunnerIpcRequestTimeoutError),
+    });
+    expect(siblingOutcome).toEqual({
+      status: "rejected",
+      error: expect.any(RunnerIpcRequestTimeoutError),
+    });
+    expect(connection.pendingRequestCount).toBe(0);
+    expect(failure).toHaveBeenCalledOnce();
+    expect(failure.mock.calls[0]?.[0]).toBeInstanceOf(RunnerIpcRequestTimeoutError);
+    expect(destroy).toHaveBeenCalledOnce();
+
+    socket.emit("data", `${JSON.stringify(runnerCommandResultFrame(
+      "prepare-stalled-write",
+      { status: "ok" },
+    ))}\n`);
+    await Promise.resolve();
+    expect(failure).toHaveBeenCalledOnce();
+  });
+
+  it("honors a parent abort while the socket write callback is stalled", async () => {
+    const { socket, writeCallbacks, destroy } = deferredWriteSocket();
+    const connection = new RunnerIpcConnection(socket);
+    const failure = vi.fn();
+    connection.onFailure(failure);
+    const controller = new AbortController();
+    const cancelled = new Error("parent cancelled");
+    const pending = connection.request(
+      prepareSessionCommandFrame("prepare-parent-abort", "session-1"),
+      { signal: controller.signal, timeoutMs: 1_000 },
+    );
+    void pending.catch(() => {});
+
+    controller.abort(cancelled);
+    const outcome = pending.then(
+      () => ({ status: "resolved" as const }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+    const settledBeforeWriteRelease = await Promise.race([
+      outcome,
+      new Promise<{ status: "pending" }>((resolve) => setTimeout(
+        () => resolve({ status: "pending" }),
+        50,
+      )),
+    ]);
+    for (const callback of writeCallbacks) callback();
+    await pending.catch(() => {});
+
+    expect(settledBeforeWriteRelease).toEqual({ status: "rejected", error: cancelled });
+    expect(connection.pendingRequestCount).toBe(0);
+    expect(failure).not.toHaveBeenCalled();
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it("preserves a socket write error without failing the whole connection", async () => {
+    const writeError = new Error("write failed");
+    const { socket, writeCallbacks, destroy } = deferredWriteSocket();
+    const connection = new RunnerIpcConnection(socket);
+    const failure = vi.fn();
+    connection.onFailure(failure);
+    const pending = connection.request(
+      prepareSessionCommandFrame("prepare-write-error", "session-1"),
+      { timeoutMs: 1_000 },
+    );
+    writeCallbacks[0]?.(writeError);
+
+    await expect(pending).rejects.toBe(writeError);
+    expect(connection.pendingRequestCount).toBe(0);
+    expect(failure).not.toHaveBeenCalled();
+    expect(destroy).not.toHaveBeenCalled();
+  });
 
   it("normalizes ECONNRESET transport teardown as a closed connection on Windows", async () => {
     vi.spyOn(process, "platform", "get").mockReturnValue("win32");
@@ -500,4 +614,24 @@ async function socketPair(): Promise<[Socket, Socket]> {
   server.close();
   sockets.push(client, peer);
   return [client, peer];
+}
+
+function deferredWriteSocket(): {
+  socket: Socket;
+  writeCallbacks: Array<(error?: Error | null) => void>;
+  destroy: ReturnType<typeof vi.fn>;
+} {
+  const socket = new EventEmitter() as EventEmitter & Partial<Socket>;
+  const writeCallbacks: Array<(error?: Error | null) => void> = [];
+  const destroy = vi.fn(() => socket as Socket);
+  socket.setEncoding = vi.fn(() => socket as Socket) as never;
+  socket.write = vi.fn((
+    _line: string,
+    callback: (error?: Error | null) => void,
+  ) => {
+    writeCallbacks.push(callback);
+    return true;
+  }) as never;
+  socket.destroy = destroy as never;
+  return { socket: socket as Socket, writeCallbacks, destroy };
 }

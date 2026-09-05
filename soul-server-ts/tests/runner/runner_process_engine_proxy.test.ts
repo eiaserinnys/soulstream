@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runnerCommandResultFrame } from "../../src/runner/frame_protocol.js";
+import { RunnerIpcRequestTimeoutError } from
+  "../../src/runner/runner_ipc_connection.js";
 import { RunnerProcessEngineProxy } from
   "../../src/runner/runner_process_engine_proxy.js";
 import { RunnerProcessDispatcher } from
@@ -141,6 +143,20 @@ describe("RunnerProcessEngineProxy", () => {
       reason: "not_supported",
       message: "Runner child does not expose the intervention operation",
     });
+  });
+
+  it("does not turn an intervention IPC timeout into a runner interrupt", async () => {
+    const timeout = new RunnerIpcRequestTimeoutError(30_000);
+    const dispatcher = {
+      invoke: vi.fn().mockRejectedValue(timeout),
+      interrupt: vi.fn(async () => true),
+    };
+    const proxy = new RunnerProcessEngineProxy("claude", "/workspace/a", dispatcher as never);
+
+    await expect(proxy.intervene({ prompt: "redirect" })).rejects.toBe(timeout);
+
+    expect(dispatcher.invoke).toHaveBeenCalledOnce();
+    expect(dispatcher.interrupt).not.toHaveBeenCalled();
   });
 
   it.each([

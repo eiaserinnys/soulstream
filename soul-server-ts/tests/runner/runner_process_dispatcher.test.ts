@@ -10,11 +10,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   executionEndedControlFrame,
   outboxAvailableControlFrame,
+  prepareSessionCommandFrame,
   runnerCommandResultFrame,
   runnerRequestFrame,
 } from "../../src/runner/frame_protocol.js";
 import { RunnerOrphanedSpawnError, RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
+import {
+  RunnerIpcConnection,
+  RunnerIpcRequestTimeoutError,
+} from "../../src/runner/runner_ipc_connection.js";
 import { buildDurableRunnerEvent } from
   "../../src/runner/runner_child_runtime_helpers.js";
 import {
@@ -27,7 +32,10 @@ import {
   pendingRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
-import { RunnerSocketEndpoint } from "../../src/runner/runner_socket_endpoint.js";
+import {
+  connectRunnerSocket,
+  RunnerSocketEndpoint,
+} from "../../src/runner/runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
@@ -821,6 +829,119 @@ describe("RunnerProcessDispatcher", () => {
 
     await dispatcher.close();
     await endpoint.close();
+  });
+
+  it("reconnects the same registered runner after a request deadline and replays its active stream once", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-09-05T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    lifecycle.begin({
+      pid: 1001,
+      commandId: "execute-old",
+      progressedAt: "2026-09-05T00:00:00.000Z",
+    });
+    lifecycle.close();
+    const commandKinds: string[] = [];
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel !== "command") return;
+      commandKinds.push(frame.kind === "invoke" ? frame.capability : frame.kind);
+      if (frame.kind === "prepare_session" && frame.commandId === "deadline-stall") return;
+      await endpoint.currentConnection!.send(
+        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+      );
+    }, vi.fn());
+    await endpoint.listen();
+    const spawned = await spawnedProcessForTest(paths);
+    const terminate = vi.fn(async () => undefined);
+    let connectionCount = 0;
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      runnerProcess: spawned,
+      spawner: { terminate, retireTerminalRegistration: vi.fn(async () => undefined) },
+      connectSocket: async (socketPath, options) => {
+        const connection = await connectRunnerSocket(socketPath, options);
+        connectionCount += 1;
+        return connection;
+      },
+      reconnectPolicy: {
+        initialDelayMs: 1,
+        maxDelayMs: 1,
+        maxAttempts: 3,
+        stableConnectionMs: 1_000,
+      },
+      reconnectSleep: async () => undefined,
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+
+    try {
+      const recovery = collect(dispatcher.recoverFrames("execute-old"));
+      await vi.waitFor(() => expect(connectionCount).toBe(1));
+      const identityBefore = await dispatcher.prepareExecutionIdentity("owner-r33");
+      const hostConnection = (dispatcher as unknown as {
+        connection?: RunnerIpcConnection;
+      }).connection;
+      expect(hostConnection).toBeDefined();
+
+      await expect(hostConnection!.request(
+        prepareSessionCommandFrame("deadline-stall", "session-a"),
+        { timeoutMs: 10 },
+      )).rejects.toBeInstanceOf(RunnerIpcRequestTimeoutError);
+
+      await vi.waitFor(() => expect(connectionCount).toBe(2));
+      expect(dispatcher.hasActiveExecution()).toBe(true);
+      const identityAfter = await dispatcher.prepareExecutionIdentity("owner-r33");
+      expect(identityAfter).toEqual(identityBefore);
+      expect(identityAfter).toMatchObject({
+        pid: spawned.pid,
+        startIdentity: "start-1001",
+      });
+
+      const durable = await writer.appendEngineFrame({
+        session_id: "session-a",
+        event_type: "assistant_message",
+        payload: { type: "assistant_message", content: "after reconnect" },
+        searchable_text: "after reconnect",
+        created_at: "2026-09-05T00:00:01.000Z",
+        semantic_dedupe_key: null,
+        session_effect: null,
+      }, {
+        protocolVersion: 1,
+        channel: "event",
+        kind: "engine_event",
+        payload: { type: "assistant_message", content: "after reconnect" },
+      });
+      await endpoint.currentConnection!.send(outboxAvailableControlFrame(durable.source_seq));
+      await endpoint.currentConnection!.send(executionEndedControlFrame("execute-old"));
+
+      await expect(recovery).resolves.toEqual([expect.objectContaining({
+        kind: "engine_event",
+        payload: { type: "assistant_message", content: "after reconnect" },
+      })]);
+      expect(commandKinds.filter((kind) => kind === "interrupt" || kind === "close")).toEqual([]);
+      expect(terminate).not.toHaveBeenCalled();
+    } finally {
+      await dispatcher.detachHost();
+      writer.close();
+      await endpoint.close();
+    }
   });
 
   it("expires an unanswered runner request and removes its request lifetime", async () => {
