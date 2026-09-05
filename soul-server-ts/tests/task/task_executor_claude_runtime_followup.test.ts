@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { markPostResultDrainEvent } from "../../src/engine/claude_event_phase.js";
+import { attachClaudeResultReceiptMetadata } from
+  "../../src/engine/claude_result_receipt_metadata.js";
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import {
   CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
@@ -36,6 +38,17 @@ function makeTask(): Task {
     lastReadEventId: 0,
     interventionQueue: [],
   };
+}
+
+function exactResult(inputUuid: string | undefined): SSEEventPayload {
+  if (!inputUuid) throw new Error("exact Result input UUID is required");
+  const event = {
+    type: "result",
+    success: true,
+    output: "runtime follow-up consumed",
+  } as SSEEventPayload;
+  attachClaudeResultReceiptMetadata(event, { inputUuid });
+  return event;
 }
 
 function makeMocks() {
@@ -153,6 +166,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
   it("killed background task follow-up을 소비한 빈 turn은 단 한 번 전달되고 세션을 살려 둔다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
+    task.codexThreadId = "sdk-session-1";
     task.claudeRuntime = {
       sessionState: "idle",
       updatedAt: Date.now(),
@@ -162,6 +176,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           status: "running",
           updatedAt: 1,
           isBackgrounded: true,
+          toolUseId: "toolu-watcher",
         },
       },
     };
@@ -175,6 +190,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
       deliveryV2Enabled: true,
+      sourceNode: "node-1",
     });
     const deliveryRecorder = {
       recordTurnStarted: vi.fn(async () => undefined),
@@ -196,6 +212,8 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
             task_id: "watcher",
             status: "killed",
             _event_id: 77,
+            session_id: "sdk-session-1",
+            tool_use_id: "toolu-watcher",
           } as SSEEventPayload;
           yield {
             type: "complete",
@@ -204,6 +222,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           } as SSEEventPayload;
           return;
         }
+        yield exactResult(params.inputUuid);
         yield { type: "complete", result: "", timestamp: 2 } as SSEEventPayload;
       },
       interrupt,
@@ -277,6 +296,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         }
         if (turnCount === 2) {
           task.interventionQueue.push({ text: "?", user: "alice" });
+          yield exactResult(params.inputUuid);
           yield { type: "complete", result: "", timestamp: 2 } as SSEEventPayload;
           return;
         }
@@ -347,6 +367,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         deliveredInputUuids.push(params.inputUuid);
         turnCount += 1;
         if (turnCount === 1) return;
+        yield exactResult(params.inputUuid);
         yield { type: "complete", result: "", timestamp: 2 } as SSEEventPayload;
       },
       async interrupt() { return true; },
@@ -469,6 +490,9 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           });
           return;
         }
+        if (params.prompt === "runtime follow-up prompt" && turnCount > 1) {
+          yield exactResult(params.inputUuid);
+        }
         yield { type: "complete", result: "", timestamp: turnCount } as SSEEventPayload;
       },
       async interrupt() { return true; },
@@ -503,7 +527,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     expect(task.status).toBe("completed");
   });
 
-  it("exact replay가 없으면 high와 low intervention을 기존 한 turn에 합친다", async () => {
+  it("runtime exact proof가 없으면 user turn과 분리해 한 번만 replay한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     const followup: ClaudeRuntimeTaskFollowupPort = {
@@ -560,10 +584,15 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    expect(turnCount).toBe(2);
-    expect(prompts).toEqual(["hi", "?\n\nruntime follow-up prompt"]);
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(2);
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(2);
+    expect(turnCount).toBe(4);
+    expect(prompts).toEqual([
+      "hi",
+      "?",
+      "runtime follow-up prompt",
+      "runtime follow-up prompt",
+    ]);
+    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
+    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);
     expect(task.status).toBe("completed");
   });
 
@@ -576,6 +605,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       onResume: vi.fn(),
       releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
+      sourceNode: "node-1",
     });
     const engine: EnginePort = {
       backendId: "claude",
@@ -623,6 +653,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
   it("notification과 terminal task_updated를 같은 follow-up prompt에 반영한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
+    task.codexThreadId = "sdk-session-1";
     let addInterventionCalls = 0;
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: {
@@ -641,6 +672,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       onResume: vi.fn(),
       releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
+      sourceNode: "node-1",
     });
     const prompts: string[] = [];
     let turnCount = 0;
@@ -658,18 +690,27 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
               status: "completed",
               is_backgrounded: true,
               output_file: "/tmp/a.output",
+              tool_use_id: "toolu-task-a",
             },
+            session_id: "sdk-session-1",
           } as unknown as SSEEventPayload;
           yield {
             type: "claude_runtime_task_updated",
             task_id: "task-b",
-            patch: { status: "running", is_backgrounded: true },
+            patch: {
+              status: "running",
+              is_backgrounded: true,
+              tool_use_id: "toolu-task-b",
+            },
+            session_id: "sdk-session-1",
           } as unknown as SSEEventPayload;
           yield {
             type: "claude_runtime_task_notification",
             task_id: "task-b",
             status: "completed",
             summary: "second task done",
+            session_id: "sdk-session-1",
+            tool_use_id: "toolu-task-b",
           } as SSEEventPayload;
           yield { type: "complete", result: "first", timestamp: 1 } as SSEEventPayload;
           return;
@@ -696,13 +737,12 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    expect(addInterventionCalls).toBe(1);
-    expect(turnCount).toBe(2);
+    expect(addInterventionCalls).toBe(2);
+    expect(turnCount).toBe(3);
     expect(prompts[1]).toContain("task-a");
-    expect(prompts[1]).toContain("task-b");
     expect(prompts[1]).toContain("/tmp/a.output");
-    expect(prompts[1]).toContain("second task done");
-    expect(prompts[1].indexOf("task-a")).toBeLessThan(prompts[1].indexOf("task-b"));
+    expect(prompts[2]).toContain("task-b");
+    expect(prompts[2]).toContain("second task done");
   });
 
   it.each(["before", "after", "same_tick"] as const)(
@@ -729,6 +769,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         onResume: vi.fn(),
         releaseRetainedRunner: async () => undefined,
         logger: silentLogger,
+        sourceNode: "node-1",
       });
       const prompts: string[] = [];
       let turnCount = 0;
@@ -818,6 +859,8 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
           followupAttempt: 3,
           followupKey: "sess-1:task-1",
+          deliveryId: "99999999-9999-4999-8999-999999999999",
+          deliveryIntent: "runtime_followup",
         });
       }),
     };
@@ -829,7 +872,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     const engine: EnginePort = {
       backendId: "claude",
       workspaceDir: "/tmp/claude-roselin",
-      async *execute(): AsyncIterable<SSEEventPayload> {
+      async *execute(params): AsyncIterable<SSEEventPayload> {
         if (turnCount === 0) {
           turnCount += 1;
           yield { type: "assistant_message", content: "previous response", timestamp: 1 } as SSEEventPayload;
@@ -837,6 +880,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           return;
         }
         turnCount += 1;
+        yield exactResult(params.inputUuid);
         yield { type: "assistant_message", content: "previous response", timestamp: 2 } as SSEEventPayload;
         yield { type: "complete", result: "repeated", timestamp: 2 } as SSEEventPayload;
       },
@@ -875,6 +919,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
   it("detached 배달이 turn-end flush에 재진입해도 같은 delivery를 다시 stage하거나 거짓 error를 내지 않는다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
+    task.codexThreadId = "sdk-session-1";
     task.claudeRuntime = {
       sessionState: "idle",
       updatedAt: Date.now(),
@@ -884,6 +929,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           status: "completed",
           updatedAt: 77,
           isBackgrounded: true,
+          toolUseId: "toolu-reentrant",
         },
       },
     };
@@ -892,6 +938,8 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       task_id: "task-reentrant",
       status: "completed",
       _event_id: 77,
+      session_id: "sdk-session-1",
+      tool_use_id: "toolu-reentrant",
     } as SSEEventPayload);
     let controller!: ClaudeRuntimeTaskFollowupController;
     let reentered = false;
@@ -912,6 +960,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       releaseRetainedRunner: vi.fn(async () => undefined),
       logger: silentLogger,
       deliveryV2Enabled: true,
+      sourceNode: "node-1",
     });
     const followup: ClaudeRuntimeTaskFollowupPort = {
       collect: vi.fn(),

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ClaudeBackgroundTaskRow } from
+import type { ClaudeBackgroundTaskGenerationRow } from
   "../../src/db/repositories/claude_background_task_repository.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
@@ -10,12 +10,12 @@ import { ClaudeBackgroundTaskLifecycle } from
 
 describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
   it("does not persist synchronous foreground Bash/Agent terminal events", async () => {
-    const observe = vi.fn();
-    const terminalize = vi.fn();
+    const observeGeneration = vi.fn();
+    const terminalizeGeneration = vi.fn();
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
       repository: {
-        observe,
-        terminalize,
+        observeGeneration,
+        terminalizeGeneration,
       } as never,
       sourceNode: "node-test",
     });
@@ -29,17 +29,17 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
       })).resolves.toBe(true);
     }
 
-    expect(observe).not.toHaveBeenCalled();
-    expect(terminalize).not.toHaveBeenCalled();
+    expect(observeGeneration).not.toHaveBeenCalled();
+    expect(terminalizeGeneration).not.toHaveBeenCalled();
   });
 
   it("persists a terminal event after SDK background membership is proven", async () => {
-    const terminalize = vi.fn(async () => ({
+    const terminalizeGeneration = vi.fn(async () => ({
       accepted: true,
       delivery: {
         delivery_id: "delivery-background-agent",
         completion_id: "completion:background-agent",
-        relation_key: "claude_runtime:caller-session:background-agent",
+        relation_key: "relation-background-agent",
         producer_terminal_revision: "1785081600000",
         created_at: new Date("2026-07-27T00:00:00.000Z"),
         source: "claude_runtime_task_followup",
@@ -49,8 +49,8 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
     }));
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
       repository: {
-        observe: vi.fn(),
-        terminalize,
+        observeGeneration: vi.fn(),
+        terminalizeGeneration,
       } as never,
       sourceNode: "node-test",
       now: () => new Date("2026-07-27T00:00:00.000Z"),
@@ -58,6 +58,8 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
     const event: ClaudeClientEvent = {
       type: "claude_runtime_task_notification",
       taskId: "background-agent",
+      sessionId: "sdk-session",
+      toolUseId: "toolu-background-agent",
       status: "completed",
       summary: "detached work done",
     };
@@ -69,11 +71,13 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
       "runner:observe:terminal",
     )).resolves.toBe(true);
 
-    expect(terminalize).toHaveBeenCalledTimes(1);
-    expect(terminalize).toHaveBeenCalledWith(expect.objectContaining({
+    expect(terminalizeGeneration).toHaveBeenCalledTimes(1);
+    expect(terminalizeGeneration).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "caller-session",
       idempotencyKey: "runner:observe:terminal",
       taskId: "background-agent",
+      sdkSessionId: "sdk-session",
+      initiatingToolUseId: "toolu-background-agent",
       status: "completed",
     }));
   });
@@ -83,16 +87,16 @@ describe("ClaudeBackgroundTaskLifecycle dead-runner recovery", () => {
   it("terminalizes only active rows owned by the proven-dead runner session", async () => {
     const target = row("session-dead", "task-a");
     const other = row("session-live", "task-b");
-    const activeForSession = vi.fn()
+    const activeGenerationsForSession = vi.fn()
       .mockResolvedValueOnce([target])
       .mockResolvedValueOnce([]);
-    const terminalize = vi.fn(async () => ({
+    const terminalizeGeneration = vi.fn(async () => ({
       accepted: true as const,
       row: { ...target, status: "killed" as const },
       delivery: { delivery_id: "delivery-a" },
     }));
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
-      repository: { activeForSession, terminalize } as never,
+      repository: { activeGenerationsForSession, terminalizeGeneration } as never,
       sourceNode: "node-a",
       now: () => new Date("2026-09-03T05:36:28.000Z"),
     });
@@ -101,34 +105,38 @@ describe("ClaudeBackgroundTaskLifecycle dead-runner recovery", () => {
       lifecycle.terminalizeDeadRunner("session-dead"),
     ).resolves.toBe(1);
 
-    expect(activeForSession).toHaveBeenCalledTimes(2);
-    expect(activeForSession).toHaveBeenCalledWith("node-a", "session-dead");
-    expect(terminalize).toHaveBeenCalledOnce();
-    expect(terminalize).toHaveBeenCalledWith(expect.objectContaining({
+    expect(activeGenerationsForSession).toHaveBeenCalledTimes(2);
+    expect(activeGenerationsForSession).toHaveBeenCalledWith("node-a", "session-dead");
+    expect(terminalizeGeneration).toHaveBeenCalledOnce();
+    expect(terminalizeGeneration).toHaveBeenCalledWith(expect.objectContaining({
       sourceNode: "node-a",
       sessionId: "session-dead",
       taskId: "task-a",
       status: "killed",
-      closeReason: "worker_restart",
+      closeReason: "runner_dead",
     }));
-    expect(terminalize).not.toHaveBeenCalledWith(expect.objectContaining({
+    expect(terminalizeGeneration).not.toHaveBeenCalledWith(expect.objectContaining({
       sessionId: other.session_id,
     }));
   });
 });
 
-function row(sessionId: string, taskId: string): ClaudeBackgroundTaskRow {
+function row(sessionId: string, taskId: string): ClaudeBackgroundTaskGenerationRow {
   return {
     source_node: "node-a",
     session_id: sessionId,
     task_id: taskId,
     sdk_session_id: "sdk-a",
+    initiating_tool_use_id: `toolu-${taskId}`,
+    generation_sequence: 1,
+    generation_key: `generation-${taskId}`,
+    relation_key: `relation-${taskId}`,
+    completion_id: `completion-${taskId}`,
     status: "running",
     close_reason: null,
     description: "long work",
     summary: null,
     output_file: null,
-    tool_use_id: null,
     terminal_revision: null,
     notification_delivery_id: null,
     created_at: new Date("2026-09-03T05:36:13.000Z"),

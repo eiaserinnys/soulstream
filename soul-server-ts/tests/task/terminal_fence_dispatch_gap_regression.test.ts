@@ -354,6 +354,9 @@ function makeDb(repository: MemoryDeliveryRepository): SessionDB {
     getBoardItems: vi.fn(async () => []),
     getSession: vi.fn(async () => null),
     sessionDeliveries: vi.fn(() => repository),
+    claudeBackgroundTasks: vi.fn(() => ({
+      resolveGeneration: vi.fn(),
+    })),
   } as unknown as SessionDB;
 }
 

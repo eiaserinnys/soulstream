@@ -2,12 +2,16 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import { markPostResultDrainEvent } from "../../src/engine/claude_event_phase.js";
+import { attachClaudeSdkSessionMetadata } from
+  "../../src/engine/claude_sdk_session_metadata.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import {
   CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
   ClaudeRuntimeTaskFollowupController,
 } from "../../src/task/claude_runtime_task_followup.js";
 import type { Task } from "../../src/task/task_models.js";
+import { buildClaudeBackgroundGenerationIdentity } from
+  "../../src/task/claude_background_generation_identity.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -17,6 +21,7 @@ function makeTask(): Task {
     prompt: "hi",
     status: "running",
     profileId: "claude-roselin",
+    codexThreadId: "sdk-sess-1",
     createdAt: new Date(),
     lastEventId: 0,
     lastReadEventId: 0,
@@ -36,17 +41,42 @@ function makeController(
   const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
   const onResume = vi.fn();
   const releaseRetainedRunner = vi.fn(async () => undefined);
-  const controller = new ClaudeRuntimeTaskFollowupController({
+  const subject = new ClaudeRuntimeTaskFollowupController({
     taskManager: { addIntervention },
     onResume,
     logger: silentLogger,
     releaseRetainedRunner,
     deliveryV2Enabled,
+    sourceNode: "node-1",
     // Legacy dependency is deliberately injected: producer observation must not consume.
     inlineConsumptionRecorder: recordInlineConsumed
       ? { recordInlineConsumed }
       : undefined,
   } as never);
+  const withGeneration = (event: SSEEventPayload): SSEEventPayload => {
+    const payload = event as Record<string, unknown>;
+    const taskId = typeof payload.task_id === "string" ? payload.task_id : undefined;
+    if (!taskId || !String(payload.type).startsWith("claude_runtime_task_")) {
+      return event;
+    }
+    const patch = payload.patch && typeof payload.patch === "object"
+      ? payload.patch as Record<string, unknown>
+      : undefined;
+    return {
+      ...payload,
+      session_id: payload.session_id ?? "sdk-sess-1",
+      ...(payload.tool_use_id || patch?.tool_use_id
+        ? {}
+        : { tool_use_id: `toolu-${taskId}` }),
+    } as SSEEventPayload;
+  };
+  const controller = {
+    collect: (task: Task, event: SSEEventPayload) =>
+      subject.collect(task, withGeneration(event)),
+    flush: (task: Task) => subject.flush(task),
+    collectDetached: (task: Task, event: SSEEventPayload) =>
+      subject.collectDetached(task, withGeneration(event)),
+  };
   return {
     controller,
     addIntervention,
@@ -56,6 +86,142 @@ function makeController(
 }
 
 describe("ClaudeRuntimeTaskFollowupController", () => {
+  it("runner metadata의 실제 SDK session을 canonical generation 경계로 검증한다", async () => {
+    const task = makeTask();
+    task.claudeRuntime!.tasks["task-metadata-session"] = {
+      taskId: "task-metadata-session",
+      status: "completed",
+      updatedAt: 70,
+      isBackgrounded: true,
+      toolUseId: "toolu-metadata-session",
+    };
+    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+    const controller = new ClaudeRuntimeTaskFollowupController({
+      taskManager: { addIntervention },
+      onResume: vi.fn(),
+      logger: silentLogger,
+      releaseRetainedRunner: vi.fn(async () => undefined),
+      deliveryV2Enabled: true,
+      sourceNode: "node-1",
+    });
+    const event = {
+      type: "claude_runtime_task_notification",
+      task_id: "task-metadata-session",
+      tool_use_id: "toolu-metadata-session",
+      status: "completed",
+      _event_id: 70,
+    } as SSEEventPayload;
+    attachClaudeSdkSessionMetadata(event, { sessionId: "sdk-sess-1" });
+
+    controller.collect(task, event);
+    await controller.flush(task);
+
+    const expected = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: "node-1",
+      agentSessionId: "sess-1",
+      sdkSessionId: "sdk-sess-1",
+      sdkTaskId: "task-metadata-session",
+      initiatingToolUseId: "toolu-metadata-session",
+    });
+    expect(addIntervention).toHaveBeenCalledOnce();
+    expect(addIntervention.mock.calls[0]![0]).toMatchObject({
+      relationKey: expected.relationKey,
+      completionId: expected.completionId,
+      deliveryId: expected.deliveryId,
+    });
+  });
+
+  it("stale projection A가 native terminal B의 generation을 덮지 않는다", async () => {
+    const task = makeTask();
+    task.claudeRuntime!.tasks["shared-task"] = {
+      taskId: "shared-task",
+      status: "completed",
+      updatedAt: 123,
+      isBackgrounded: true,
+      toolUseId: "toolu-A",
+      summary: "stale A",
+    };
+    const { controller, addIntervention } = makeController(true);
+
+    controller.collect(task, {
+      type: "claude_runtime_task_notification",
+      task_id: "shared-task",
+      session_id: "sdk-sess-1",
+      tool_use_id: "toolu-B",
+      status: "completed",
+      summary: "fresh B",
+      _event_id: 77,
+    } as SSEEventPayload);
+    await controller.flush(task);
+
+    const expected = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: "node-1",
+      agentSessionId: "sess-1",
+      sdkSessionId: "sdk-sess-1",
+      sdkTaskId: "shared-task",
+      initiatingToolUseId: "toolu-B",
+    });
+    expect(addIntervention).toHaveBeenCalledOnce();
+    expect(addIntervention.mock.calls[0]![0]).toMatchObject({
+      relationKey: expected.relationKey,
+      completionId: expected.completionId,
+      deliveryId: expected.deliveryId,
+    });
+    expect(addIntervention.mock.calls[0]![0].text).toContain("fresh B");
+    expect(addIntervention.mock.calls[0]![0].text).not.toContain("stale A");
+  });
+
+  it("같은 task id의 A와 실제 resume B를 각각 한 번 전달하고 stopped→killed는 보강만 한다", async () => {
+    const task = makeTask();
+    const { controller, addIntervention } = makeController(true);
+    task.claudeRuntime!.tasks["shared-task"] = {
+      taskId: "shared-task",
+      status: "stopped",
+      updatedAt: 10,
+      isBackgrounded: true,
+      toolUseId: "toolu-A",
+    };
+    controller.collect(task, {
+      type: "claude_runtime_task_notification",
+      task_id: "shared-task",
+      session_id: "sdk-sess-1",
+      tool_use_id: "toolu-A",
+      status: "stopped",
+      _event_id: 10,
+    } as SSEEventPayload);
+    await controller.flush(task);
+    controller.collect(task, {
+      type: "claude_runtime_task_updated",
+      task_id: "shared-task",
+      session_id: "sdk-sess-1",
+      patch: { status: "killed", tool_use_id: "toolu-A", end_time: 11 },
+      _event_id: 11,
+    } as SSEEventPayload);
+    await controller.flush(task);
+
+    task.claudeRuntime!.tasks["shared-task"] = {
+      taskId: "shared-task",
+      status: "completed",
+      updatedAt: 20,
+      isBackgrounded: true,
+      toolUseId: "toolu-B",
+    };
+    controller.collect(task, {
+      type: "claude_runtime_task_notification",
+      task_id: "shared-task",
+      session_id: "sdk-sess-1",
+      tool_use_id: "toolu-B",
+      status: "completed",
+      _event_id: 20,
+    } as SSEEventPayload);
+    await controller.flush(task);
+
+    expect(addIntervention).toHaveBeenCalledTimes(2);
+    expect(addIntervention.mock.calls.map((call) => call[0].relationKey)).toEqual([
+      expect.stringContaining("toolu-A"),
+      expect.stringContaining("toolu-B"),
+    ]);
+  });
   it("foreground Bash/Agent task_notification은 follow-up으로 승격하지 않는다", async () => {
     for (const taskType of ["bash", "agent"]) {
       const task = makeTask();
@@ -101,13 +267,20 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     await controller.flush(task);
 
     expect(addIntervention).toHaveBeenCalledTimes(1);
+    const expected = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: "node-1",
+      agentSessionId: "sess-1",
+      sdkSessionId: "sdk-sess-1",
+      sdkTaskId: "task-1",
+      initiatingToolUseId: "toolu-task-1",
+    });
     expect(addIntervention).toHaveBeenCalledWith(
       expect.objectContaining({
         agentSessionId: "sess-1",
         user: "system",
         source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
         followupAttempt: 1,
-        followupKey: "sess-1:task-1",
+        followupKey: `sess-1:${expected.generationKey}`,
         text: expect.stringContaining("task-1"),
       }),
       onResume,
@@ -118,7 +291,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(text).toContain("직전 응답을 그대로 반복하지 마세요");
   });
 
-  it("v2는 terminal revision 기반 stable runtime_followup identity를 전달한다", async () => {
+  it("v2는 canonical generation 기반 stable runtime_followup identity를 전달한다", async () => {
     const task = makeTask();
     task.claudeRuntime!.tasks["task-v2"] = {
       taskId: "task-v2",
@@ -139,11 +312,20 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     await controller.flush(task);
 
     const params = addIntervention.mock.calls[0]![0];
+    const expected = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: "node-1",
+      agentSessionId: "sess-1",
+      sdkSessionId: "sdk-sess-1",
+      sdkTaskId: "task-v2",
+      initiatingToolUseId: "toolu-task-v2",
+    });
     expect(params).toMatchObject({
       deliveryIntent: "runtime_followup",
       source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-      producerTerminalRevision: "task-v2@77",
-      relationKey: "claude_runtime:sess-1:unknown:task-v2@77",
+      producerTerminalRevision: "77",
+      deliveryId: expected.deliveryId,
+      relationKey: expected.relationKey,
+      completionId: expected.completionId,
     });
     expect(params.deliveryId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
@@ -181,7 +363,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       expect.objectContaining({
         agentSessionId: "sess-1",
         deliveryIntent: "runtime_followup",
-        relationKey: "claude_runtime:sess-1:unknown:task-inline@77",
+        relationKey: expect.stringContaining("toolu-task-inline"),
       }),
       onResume,
     );
@@ -257,10 +439,10 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       _event_id: 80,
     } as SSEEventPayload));
 
-    expect(addIntervention).toHaveBeenCalledTimes(1);
-    expect(addIntervention.mock.calls[0]![0].followupTaskIds).toEqual([
-      "task-first",
-      "task-last",
+    expect(addIntervention).toHaveBeenCalledTimes(2);
+    expect(addIntervention.mock.calls.map((call) => call[0].followupTaskIds)).toEqual([
+      ["task-first"],
+      ["task-last"],
     ]);
   });
 
@@ -327,8 +509,8 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
         _event_id: 80,
       } as SSEEventPayload));
 
-      expect(addIntervention).toHaveBeenCalledTimes(1);
-      expect(addIntervention.mock.calls[0]![0].text).toContain(`status=${terminalStatus}`);
+      expect(addIntervention).toHaveBeenCalledTimes(2);
+      expect(addIntervention.mock.calls[1]![0].text).toContain(`status=${terminalStatus}`);
     },
   );
 
@@ -421,12 +603,16 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       controller.collect(task, {
         type: "claude_runtime_task_updated",
         task_id: taskId,
-        patch: { status: task.claudeRuntime!.tasks[taskId]!.status },
+        patch: {
+          status: task.claudeRuntime!.tasks[taskId]!.status,
+          tool_use_id: task.claudeRuntime!.tasks[taskId]!.toolUseId,
+        },
       } as unknown as SSEEventPayload);
     }
     await controller.flush(task);
 
-    const text = addIntervention.mock.calls[0]![0].text;
+    expect(addIntervention).toHaveBeenCalledTimes(3);
+    const text = addIntervention.mock.calls.map((call) => call[0].text).join("\n");
     expect(text).not.toContain("백그라운드 Claude runtime task가 완료되었습니다.");
     expect(text).toContain("status=failed 항목은 실패했습니다");
     expect(text).toContain("status=stopped 항목은 완료 전에 중단");
@@ -459,6 +645,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       onResume: vi.fn(),
       releaseRetainedRunner: async () => undefined,
       logger: silentLogger,
+      sourceNode: "node-1",
     });
 
     controller.collect(task, {
@@ -466,6 +653,8 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       task_id: "task-retry",
       status: "completed",
       summary: "retry me",
+      session_id: "sdk-sess-1",
+      tool_use_id: "toolu-task-retry",
     } as SSEEventPayload);
 
     await expect(controller.flush(task)).rejects.toThrow("route unavailable");
@@ -499,7 +688,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     await controller.flush(task);
 
     const params = addIntervention.mock.calls[0]![0];
-    expect(params.followupKey).toBe("sess-1:task-2");
+    expect(params.followupKey).toContain("toolu-task-2");
     expect(params.text).toContain("task-2");
     expect(params.text).toContain("/tmp/task-2.output");
   });
@@ -531,7 +720,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     await controller.flush(task);
 
     const text = addIntervention.mock.calls[0]![0].text;
-    expect((text.match(/task-3/g) ?? [])).toHaveLength(1);
+    expect((text.match(/task_id=task-3/g) ?? [])).toHaveLength(1);
     expect(text).toContain("final summary");
     expect(text).toContain("/tmp/result.output");
   });
@@ -559,7 +748,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(addIntervention).toHaveBeenCalledTimes(1);
   });
 
-  it("같은 turn의 여러 완료 task를 하나의 ordered batch prompt로 합친다", async () => {
+  it("같은 turn의 여러 완료 task도 generation별 delivery로 분리한다", async () => {
     const task = makeTask();
     task.claudeRuntime!.tasks["task-a"] = {
       taskId: "task-a",
@@ -589,12 +778,13 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     } as SSEEventPayload);
     await controller.flush(task);
 
-    expect(addIntervention).toHaveBeenCalledTimes(1);
-    const text = addIntervention.mock.calls[0]![0].text;
-    expect(text.indexOf("task-a")).toBeLessThan(text.indexOf("task-b"));
-    expect(text).toContain("first done");
-    expect(text).toContain("second done");
-    expect(addIntervention.mock.calls[0]![0].followupKey).toBe("sess-1:task-a,task-b");
+    expect(addIntervention).toHaveBeenCalledTimes(2);
+    expect(addIntervention.mock.calls[0]![0].text).toContain("task-a");
+    expect(addIntervention.mock.calls[1]![0].text).toContain("task-b");
+    expect(addIntervention.mock.calls[0]![0].text).toContain("first done");
+    expect(addIntervention.mock.calls[1]![0].text).toContain("second done");
+    expect(addIntervention.mock.calls[0]![0].followupKey).toContain("toolu-task-a");
+    expect(addIntervention.mock.calls[1]![0].followupKey).toContain("toolu-task-b");
   });
 
 });

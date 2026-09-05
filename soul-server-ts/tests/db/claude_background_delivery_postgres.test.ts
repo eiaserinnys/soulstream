@@ -75,6 +75,7 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
   beforeEach(async () => {
     await harness.sql`DELETE FROM session_delivery_notification_outbox`;
     await harness.sql`DELETE FROM session_deliveries`;
+    await harness.sql`DELETE FROM claude_background_task_generations`;
     await harness.sql`DELETE FROM claude_background_tasks`;
     await harness.sql`DELETE FROM sessions`;
     await harness.sql`
@@ -347,7 +348,7 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
     expect(deliveryConvergenceViolations(observations)).toEqual([]);
   });
 
-  it("keeps schema-only fresh install equal to the 045 then 046 then 047 upgrade", async () => {
+  it("keeps schema-only fresh install equal to the versioned background upgrade", async () => {
     const suffix = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const freshSchema = `background_fresh_${suffix}`;
     const upgradeSchema = `background_upgrade_${suffix}`;
@@ -378,6 +379,13 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
       ),
       "utf8",
     );
+    const generationMigration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/migrations/088_claude_background_task_generations.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
 
     try {
       await fresh.unsafe(`CREATE SCHEMA ${freshSchema}`);
@@ -390,8 +398,10 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
       await upgrade.unsafe(deliveryMigration);
       await upgrade.unsafe(backgroundMigration);
       await upgrade.unsafe(relationConsumptionMigration);
+      await upgrade.unsafe(generationMigration);
       await upgrade.unsafe(backgroundMigration);
       await upgrade.unsafe(relationConsumptionMigration);
+      await upgrade.unsafe(generationMigration);
 
       await expect(runtimeV2Catalog(fresh, freshSchema)).resolves.toEqual(
         await runtimeV2Catalog(upgrade, upgradeSchema),
@@ -466,6 +476,7 @@ function makeDeliveryPath(
     prompt: "finished foreground",
     profileId: "worker",
     status: "completed",
+    codexThreadId: "sdk-session",
     createdAt: new Date("2026-07-26T09:00:00.000Z"),
     lastEventId: 41,
     lastReadEventId: 0,
@@ -565,6 +576,7 @@ function makeDeliveryPath(
       releaseRetainedRunner: async () => undefined,
       logger: pino({ level: "silent" }),
       deliveryV2Enabled: true,
+      sourceNode: "node-test",
     }),
   };
 }
@@ -585,6 +597,8 @@ async function registerRestartRuntimeDelivery(
       text: `restart content:${deliveryId}`,
       user: "system",
       source: "claude_runtime_task_followup",
+      followup_key: `caller-session:${deliveryId}`,
+      followup_attempt: 1,
     },
   });
 }
@@ -668,10 +682,16 @@ async function runtimeV2Catalog(
   schema: string,
 ): Promise<{
   background: Awaited<ReturnType<typeof tableCatalog>>;
+  generations: Awaited<ReturnType<typeof tableCatalog>>;
   relationConsumptions: Awaited<ReturnType<typeof tableCatalog>>;
 }> {
   return {
     background: await tableCatalog(sql, schema, "claude_background_tasks"),
+    generations: await tableCatalog(
+      sql,
+      schema,
+      "claude_background_task_generations",
+    ),
     relationConsumptions: await tableCatalog(
       sql,
       schema,
@@ -733,6 +753,7 @@ function started(taskId: string): ClaudeClientEvent {
     type: "claude_runtime_task_started",
     taskId,
     sessionId: "sdk-session",
+    toolUseId: `toolu-${taskId}`,
     description: "long work",
   };
   attachClaudeBackgroundProvenance(event, "sdk_membership");
@@ -747,6 +768,7 @@ function terminal(
     type: "claude_runtime_task_notification",
     taskId,
     sessionId: "sdk-session",
+    toolUseId: `toolu-${taskId}`,
     status,
     summary: `${status} summary`,
   };
@@ -768,6 +790,7 @@ function updatedTerminal(
       is_backgrounded: true,
       summary: `updated ${status} summary`,
       end_time: status === "completed" ? 201 : 202,
+      tool_use_id: `toolu-${taskId}`,
       ...(error ? { error } : {}),
     },
   };

@@ -138,7 +138,10 @@ describe("runner host mutation owners", () => {
       intent: "runtime_followup",
       source: "claude_runtime_task_followup",
       payload_hash: "hash-a",
-      payload: {},
+      payload: {
+        followup_key: "session-a:task-a",
+        followup_attempt: 1,
+      },
       created_at: new Date("2026-08-06T00:00:00.000Z"),
     };
     const { sql } = fakeSql((text, values) => {
@@ -154,7 +157,10 @@ describe("runner host mutation owners", () => {
         });
         return [];
       }
-      if (text.includes("terminal_revision =")) {
+      if (
+        text.includes("UPDATE claude_background_tasks")
+        && text.includes("terminal_revision =")
+      ) {
         applications += 1;
         return [backgroundRow];
       }
@@ -178,7 +184,10 @@ describe("runner host mutation owners", () => {
         intent: "runtime_followup" as const,
         source: "claude_runtime_task_followup",
         payloadHash: "hash-a",
-        payload: {},
+        payload: {
+          followup_key: "session-a:task-a",
+          followup_attempt: 1,
+        },
       },
     };
 

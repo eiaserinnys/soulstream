@@ -7,6 +7,8 @@ import {
 } from "../engine/claude_background_delivery_metadata.js";
 import { readClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
+import { readClaudeSdkSessionMetadata } from
+  "../engine/claude_sdk_session_metadata.js";
 
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskManager } from "./task_manager.js";
@@ -16,9 +18,10 @@ import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import {
   buildClaudeRuntimeTaskFollowupPrompt,
   buildFollowupKey,
-  buildTaskKey,
   type PendingRuntimeTaskFollowup,
 } from "./claude_runtime_task_followup_prompt.js";
+import { buildClaudeBackgroundGenerationIdentity } from
+  "./claude_background_generation_identity.js";
 import { hasPendingClaudeBackgroundRuntimeWork } from "./claude_runtime_state.js";
 import {
   normalizeRuntimeEventRevision as normalizeEventRevision,
@@ -44,6 +47,7 @@ export interface ClaudeRuntimeTaskFollowupDeps {
   releaseRetainedRunner(task: Task): Promise<void>;
   logger: Logger;
   deliveryV2Enabled?: boolean;
+  sourceNode: string;
 }
 
 const TERMINAL_RUNTIME_TASK_STATUSES = new Set([
@@ -55,8 +59,8 @@ const TERMINAL_RUNTIME_TASK_STATUSES = new Set([
 
 export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFollowupPort {
   private readonly pendingBySession = new Map<string, Map<string, PendingRuntimeTaskFollowup>>();
-  private readonly flushedTaskKeys = new Set<string>();
-  private readonly durableDeliveryByTaskKey =
+  private readonly flushedGenerationKeys = new Set<string>();
+  private readonly durableDeliveryByGenerationKey =
     new Map<string, ClaudeBackgroundDeliveryMetadata>();
   private sequence = 0;
 
@@ -74,13 +78,30 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
 
     const taskId = asString(payload.task_id);
     if (!taskId) return;
-    const flushTaskKey = buildTaskKey(task.agentSessionId, taskId);
-    if (this.flushedTaskKeys.has(flushTaskKey)) return;
     const runtimeTask = task.claudeRuntime?.tasks[taskId];
     const patch = type === "claude_runtime_task_updated"
       ? asRecord(payload.patch) ?? {}
       : {};
-    const status = asString(payload.status) ?? asString(patch.status) ?? runtimeTask?.status;
+    const sdkSessionId = task.codexThreadId;
+    const eventSdkSessionId = asString(payload.session_id) ??
+      readClaudeSdkSessionMetadata(event)?.sessionId;
+    if (eventSdkSessionId && eventSdkSessionId !== sdkSessionId) return;
+    const initiatingToolUseId = asString(payload.tool_use_id) ??
+      asString(patch.tool_use_id);
+    if (!sdkSessionId || !initiatingToolUseId) return;
+    const identity = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: this.deps.sourceNode,
+      agentSessionId: task.agentSessionId,
+      sdkSessionId,
+      sdkTaskId: taskId,
+      initiatingToolUseId,
+    });
+    if (this.flushedGenerationKeys.has(identity.generationKey)) return;
+    const exactRuntimeTask = runtimeTask?.toolUseId === initiatingToolUseId
+      ? runtimeTask
+      : undefined;
+    const status = asString(payload.status) ?? asString(patch.status) ??
+      exactRuntimeTask?.status;
     if (!status || !TERMINAL_RUNTIME_TASK_STATUSES.has(status)) return;
     const isBackgrounded =
       Boolean(readClaudeBackgroundProvenance(event)) ||
@@ -89,32 +110,40 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     if (!isBackgrounded) return;
     const durableDelivery = readClaudeBackgroundDeliveryMetadata(event);
     if (durableDelivery) {
-      this.durableDeliveryByTaskKey.set(flushTaskKey, durableDelivery);
+      if (
+        durableDelivery.relationKey !== identity.relationKey ||
+        durableDelivery.completionId !== identity.completionId ||
+        durableDelivery.deliveryId !== identity.deliveryId
+      ) {
+        throw new Error(`Claude background generation identity mismatch: ${taskId}`);
+      }
+      this.durableDeliveryByGenerationKey.set(identity.generationKey, durableDelivery);
     }
 
     const pending = this.getPendingMap(task.agentSessionId);
-    const previous = pending.get(taskId);
-    pending.set(taskId, {
+    const previous = pending.get(identity.generationKey);
+    pending.set(identity.generationKey, {
+      ...identity,
+      sdkSessionId,
+      initiatingToolUseId,
       taskId,
       status,
       outputFile:
         asString(payload.output_file) ?? asString(patch.output_file) ??
-        runtimeTask?.outputFile ?? previous?.outputFile,
+        exactRuntimeTask?.outputFile ?? previous?.outputFile,
       summary:
         asString(payload.summary) ?? asString(patch.summary) ??
-        runtimeTask?.summary ?? previous?.summary,
+        exactRuntimeTask?.summary ?? previous?.summary,
       description:
-        runtimeTask?.description ?? asString(patch.description) ?? previous?.description,
-      toolUseId:
-        runtimeTask?.toolUseId ?? asString(payload.tool_use_id) ??
-        asString(patch.tool_use_id) ?? previous?.toolUseId,
+        asString(patch.description) ?? exactRuntimeTask?.description ?? previous?.description,
+      toolUseId: initiatingToolUseId,
       error:
         asString(payload.error) ?? asString(patch.error) ??
-        runtimeTask?.error ?? previous?.error,
+        exactRuntimeTask?.error ?? previous?.error,
       terminalRevision:
         normalizeEventRevision(payload._event_id) ??
         normalizeEventRevision(patch._event_id) ??
-        normalizeRevision(runtimeTask?.endTime ?? runtimeTask?.updatedAt) ??
+        normalizeRevision(exactRuntimeTask?.endTime ?? exactRuntimeTask?.updatedAt) ??
         previous?.terminalRevision ??
         `${status}:unknown`,
       firstSeen: previous?.firstSeen ?? this.sequence++,
@@ -143,14 +172,14 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
 
     const items = Array.from(pending.values()).sort((a, b) => a.firstSeen - b.firstSeen);
     const durableItems = items.filter((item) =>
-      this.durableDeliveryByTaskKey.has(buildTaskKey(task.agentSessionId, item.taskId))
+      this.durableDeliveryByGenerationKey.has(item.generationKey)
     );
     for (const item of durableItems) {
       await this.flushItems(task, pending, [item]);
     }
     const remaining = items.filter((item) => !durableItems.includes(item));
-    if (remaining.length > 0) {
-      await this.flushItems(task, pending, remaining);
+    for (const item of remaining) {
+      await this.flushItems(task, pending, [item]);
     }
     if (pending.size === 0) {
       this.pendingBySession.delete(task.agentSessionId);
@@ -164,9 +193,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
   ): Promise<void> {
     const durable =
       items.length === 1
-        ? this.durableDeliveryByTaskKey.get(
-            buildTaskKey(task.agentSessionId, items[0]!.taskId),
-          )
+        ? this.durableDeliveryByGenerationKey.get(items[0]!.generationKey)
         : undefined;
     const storedMessage = durable
       ? readCanonicalDeliveryPayload(durable.storedPayload)
@@ -183,7 +210,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           storedDeliveryPayloadHash: durable.storedPayloadHash,
         }
       : this.deps.deliveryV2Enabled === true
-        ? buildClaudeRuntimeFollowupDelivery(task, items)
+        ? buildClaudeRuntimeFollowupDelivery(items)
         : {};
     const intervention = {
       agentSessionId: task.agentSessionId,
@@ -203,12 +230,12 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     // Claim ownership before crossing into addIntervention: that call can resume the
     // target synchronously and re-enter collectDetached for the same completion.
     const ownedItems = items.map((item) => {
-      const taskKey = buildTaskKey(task.agentSessionId, item.taskId);
-      const durableDelivery = this.durableDeliveryByTaskKey.get(taskKey);
-      pending.delete(item.taskId);
-      this.flushedTaskKeys.add(taskKey);
-      this.durableDeliveryByTaskKey.delete(taskKey);
-      return { item, taskKey, durableDelivery };
+      const generationKey = item.generationKey;
+      const durableDelivery = this.durableDeliveryByGenerationKey.get(generationKey);
+      pending.delete(generationKey);
+      this.flushedGenerationKeys.add(generationKey);
+      this.durableDeliveryByGenerationKey.delete(generationKey);
+      return { item, generationKey, durableDelivery };
     });
     try {
       await this.deps.taskManager.addIntervention(
@@ -216,11 +243,11 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         this.deps.onResume,
       );
     } catch (err) {
-      for (const { item, taskKey, durableDelivery } of ownedItems) {
-        this.flushedTaskKeys.delete(taskKey);
-        pending.set(item.taskId, item);
+      for (const { item, generationKey, durableDelivery } of ownedItems) {
+        this.flushedGenerationKeys.delete(generationKey);
+        pending.set(generationKey, item);
         if (durableDelivery) {
-          this.durableDeliveryByTaskKey.set(taskKey, durableDelivery);
+          this.durableDeliveryByGenerationKey.set(generationKey, durableDelivery);
         }
       }
       this.deps.logger.warn(

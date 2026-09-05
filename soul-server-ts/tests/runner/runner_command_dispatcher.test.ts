@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { EnginePort } from "../../src/engine/protocol.js";
+import { attachClaudeResultReceiptMetadata } from
+  "../../src/engine/claude_result_receipt_metadata.js";
 import {
   RUNNER_FRAME_PROTOCOL_VERSION,
   applyInterventionCommandFrame,
@@ -33,6 +35,26 @@ async function drain<T>(values: AsyncIterable<T>): Promise<T[]> {
 }
 
 describe("RunnerCommandDispatcher", () => {
+  it("moves private Claude Result proof into the legacy runner metadata envelope", async () => {
+    const result = { type: "result", success: true, output: "done" } as const;
+    attachClaudeResultReceiptMetadata(result, { inputUuid: "input-1" });
+    const dispatcher = new InProcessRunnerCommandDispatcher(makeEngine({
+      async *execute() { yield result; },
+    }));
+
+    const frames = await drain(dispatcher.executeFrames({
+      agentSessionId: "session-1",
+      prompt: "hello",
+    }));
+
+    expect(frames).toEqual([
+      engineEventFrame(
+        { type: "result", success: true, output: "done" },
+        { claudeResultReceipt: { inputUuid: "input-1" } },
+      ),
+    ]);
+  });
+
   it("ACKs execute by commandId and runs the JSON-round-tripped DTO", async () => {
     const executeToFrameChannel = vi.fn(async (params, channel) => {
       expect(params).not.toBe(sourceParams);

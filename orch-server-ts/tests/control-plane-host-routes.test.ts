@@ -346,6 +346,36 @@ describe("control-plane host routes", () => {
     expect(activeForSession).toHaveBeenCalledWith("node-1", "session-1", 1_000);
   });
 
+  it("routes canonical generation resolution with all four lookup dimensions", async () => {
+    const resolveGeneration = vi.fn(async () => ({ status: "ambiguous" }));
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        claudeBackgroundTasks: { resolveGeneration },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/claude-runtime/host/resolve_background_generation",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        args: ["node-1", "session-1", "sdk-session-1", "task-1"],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: "ambiguous" });
+    expect(resolveGeneration).toHaveBeenCalledWith(
+      "node-1",
+      "session-1",
+      "sdk-session-1",
+      "task-1",
+    );
+  });
+
   it("round-trips an opaque payload from the soul client through the route into the repository", async () => {
     const {
       PersistenceHostTransport,

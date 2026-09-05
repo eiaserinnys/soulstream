@@ -111,7 +111,15 @@ describe("SessionDeliveryRepository", () => {
       payload: { followup_key: "session:task", followup_attempt: 1 },
       created_at: new Date("2026-08-18T01:00:00Z"),
     });
-    const { sql, calls } = createMockSql([[], [], [older], [candidate], []]);
+    const { sql, calls } = createMockSql([
+      [],
+      [],
+      [],
+      [],
+      [older],
+      [candidate],
+      [],
+    ]);
 
     await expect(new SessionDeliveryRepository(sql).register({
       deliveryId: candidate.delivery_id,
@@ -126,10 +134,10 @@ describe("SessionDeliveryRepository", () => {
     })).resolves.toEqual({ row: candidate, inserted: true, conflict: false });
 
     expect(calls[0].query).toContain("pg_advisory_xact_lock");
-    expect(calls[2].query).toContain("state = 'pending'");
-    expect(calls[2].query).toContain("followup_attempt");
-    expect(calls[4].query).toContain("state = 'superseded'");
     expect(calls[4].query).toContain("state = 'pending'");
+    expect(calls[4].query).toContain("followup_attempt");
+    expect(calls[6].query).toContain("state = 'superseded'");
+    expect(calls[6].query).toContain("state = 'pending'");
   });
   it("registers a new delivery with an atomic conflict boundary", async () => {
     const row = deliveryRow();

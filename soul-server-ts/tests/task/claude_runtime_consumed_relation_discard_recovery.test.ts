@@ -12,6 +12,7 @@ import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js"
 import { TaskDeliveryLedgerGate } from
   "../../src/task/task_delivery_ledger_gate.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -82,6 +83,14 @@ describe("queued Claude runtime delivery consumption", () => {
       discardIntervention,
       executeFrames: vi.fn((_params: EngineExecuteParams) => (async function* () {
         yield engineEventFrame({ type: "assistant_message", content: "follow-up seen" });
+        yield engineEventFrame(
+          { type: "result", success: true, output: "follow-up handled" },
+          {
+            claudeResultReceipt: {
+              inputUuid: buildDeliveryInputUuid(DELIVERY_ID),
+            },
+          },
+        );
         yield engineEventFrame({ type: "complete", result: "follow-up handled" });
       })()),
       prepareSession: vi.fn(async () => undefined),

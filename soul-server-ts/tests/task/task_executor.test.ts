@@ -508,7 +508,7 @@ describe("TaskExecutor.startExecution", () => {
     );
   });
 
-  it("awaiting-runtime synthesized failure도 이미 관측한 delivery는 consume한다", async () => {
+  it("awaiting-runtime synthesized failure의 generic SSE는 runtime delivery를 consume하지 않는다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "runtime result",
@@ -557,13 +557,8 @@ describe("TaskExecutor.startExecution", () => {
 
     expect(task.status).toBe("error");
     expect(task.error).toContain("remained active");
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalled();
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledOnce();
-    expect(deliveryRecorder.recordConsumed).toHaveBeenCalledWith(
-      message,
-      task,
-      expect.stringMatching(/^event:/),
-    );
+    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -868,7 +863,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 
-  it("turn-start receipt가 없으면 exact replay 1회 뒤에도 consume하지 않는다", async () => {
+  it("exact Result proof가 없으면 runtime replay 뒤에도 generic receipt를 쓰지 않는다", async () => {
     const mocks = makeMocks();
     const message: InterventionMessage = {
       text: "runtime result",
@@ -901,7 +896,7 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(2);
+    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
   });
 

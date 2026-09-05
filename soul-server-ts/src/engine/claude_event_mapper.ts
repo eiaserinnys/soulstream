@@ -12,6 +12,12 @@ import { copyClaudeBackgroundDeliveryMetadata } from
   "./claude_background_delivery_metadata.js";
 import { copyClaudeBackgroundProvenance } from
   "./claude_background_provenance.js";
+import { copyClaudeResultReceiptMetadata } from
+  "./claude_result_receipt_metadata.js";
+import { copyClaudeToolResultReceiptMetadata } from
+  "./claude_tool_result_receipt_metadata.js";
+import { copyClaudeSdkSessionMetadata } from
+  "./claude_sdk_session_metadata.js";
 
 export type ClaudeClientEvent =
   | { type: "session"; sessionId: string; pid?: number }
@@ -755,13 +761,21 @@ export function mapClaudeClientEvent(
       ];
     }
   })();
-  return copyClaudeBackgroundDeliveryMetadata(
+  const mappedPayloads = copyClaudeResultReceiptMetadata(
     event,
-    copyClaudeBackgroundProvenance(
+    copyClaudeToolResultReceiptMetadata(
       event,
-      attachInternalDedupeKey(payloads, event),
+      copyClaudeBackgroundDeliveryMetadata(
+        event,
+        copyClaudeBackgroundProvenance(
+          event,
+          attachInternalDedupeKey(payloads, event),
+        ),
+      ),
     ),
   );
+  for (const payload of mappedPayloads) copyClaudeSdkSessionMetadata(event, payload);
+  return mappedPayloads;
 }
 
 function nowEpochSec(): number {

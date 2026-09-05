@@ -165,6 +165,15 @@ export const RunnerEngineEventMetadataSchema = z.object({
   ]).optional(),
   claudeBackgroundDelivery:
     RunnerClaudeBackgroundDeliveryMetadataSchema.optional(),
+  claudeResultReceipt: z.object({
+    inputUuid: z.string().min(1),
+  }).passthrough().optional(),
+  claudeToolResultReceipt: z.object({
+    envelope: jsonRecord,
+  }).passthrough().optional(),
+  claudeSdkSession: z.object({
+    sessionId: z.string().min(1),
+  }).passthrough().optional(),
 }).passthrough();
 
 export const RunnerClaudeRuntimeObservationResultSchema = z.object({

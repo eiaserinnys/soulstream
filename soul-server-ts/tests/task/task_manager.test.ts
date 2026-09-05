@@ -1044,6 +1044,7 @@ describe("TaskManager.deliverInputResponse", () => {
     const mocks = makeMocks();
     Object.assign(mocks.db, {
       sessionDeliveries: vi.fn().mockReturnValue({}),
+      claudeBackgroundTasks: vi.fn().mockReturnValue({}),
     });
     let runtimePresent = true;
     const sessionRuntimeControl = {

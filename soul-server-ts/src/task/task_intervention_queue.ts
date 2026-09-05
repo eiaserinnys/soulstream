@@ -64,6 +64,33 @@ export function dequeueInterventions(task: Task): InterventionMessage[] {
   return drained;
 }
 
+/**
+ * A runtime follow-up owns a deterministic input UUID, so it can never share a
+ * model input with another delivery. Ordinary high-priority inputs may still
+ * be batched exactly as before.
+ */
+export function dequeueNextTurnInterventions(task: Task): InterventionMessage[] {
+  const sorted = sortInterventionsByPriority(task.interventionQueue);
+  const high = sorted.filter((message) => interventionPriorityLane(message) === "high");
+  if (high.length > 0) {
+    const ordinary = sorted.filter((message) => !isRuntimeFollowup(message));
+    task.interventionQueue = sorted.filter(isRuntimeFollowup);
+    return ordinary;
+  }
+  const first = sorted[0];
+  if (!first) {
+    task.interventionQueue = [];
+    return [];
+  }
+  if (isRuntimeFollowup(first)) {
+    task.interventionQueue = sorted.slice(1);
+    return [first];
+  }
+  const ordinaryLow = sorted.filter((message) => !isRuntimeFollowup(message));
+  task.interventionQueue = sorted.filter((message) => isRuntimeFollowup(message));
+  return ordinaryLow;
+}
+
 export function dequeueInterventionsInLane(
   task: Task,
   lane: InterventionPriorityLane,
@@ -79,4 +106,9 @@ export function dequeueInterventionsInLane(
 
 function laneRank(lane: InterventionPriorityLane): number {
   return lane === "high" ? 0 : 1;
+}
+
+function isRuntimeFollowup(message: InterventionMessage): boolean {
+  return message.deliveryIntent === "runtime_followup" ||
+    message.source === LEGACY_RUNTIME_FOLLOWUP_SOURCE;
 }

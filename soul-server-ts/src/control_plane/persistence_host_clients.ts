@@ -20,12 +20,18 @@ import {
   PersistenceHostTransport,
   type HostClientConfig,
 } from "./persistence_host_transport.js";
+import { ClaudeBackgroundGenerationHostClient } from
+  "./claude_background_generation_host_client.js";
+import type { ClaudeBackgroundTaskGenerationRow, ObserveClaudeBackgroundTaskGenerationParams, ResolveClaudeBackgroundTaskGenerationResult, TerminalizeClaudeBackgroundTaskGenerationParams, TerminalizeClaudeBackgroundTaskGenerationResult } from "./claude_background_generation_host_client.js";
+import type { ClaudeBackgroundTaskRow, ObserveClaudeBackgroundTaskParams, TerminalizeClaudeBackgroundTaskParams, TerminalizeClaudeBackgroundTaskResult } from "./claude_background_legacy_host_types.js";
 
 export {
   PersistenceHostRequestError,
   PersistenceHostTransport,
   type HostClientConfig,
 } from "./persistence_host_transport.js";
+export type { ClaudeBackgroundTaskGenerationRow, ObserveClaudeBackgroundTaskGenerationParams, ResolveClaudeBackgroundTaskGenerationResult, TerminalizeClaudeBackgroundTaskGenerationParams, TerminalizeClaudeBackgroundTaskGenerationResult } from "./claude_background_generation_host_client.js";
+export type { ClaudeBackgroundTaskRow, ClaudeBackgroundTaskStatus, ClaudeBackgroundTerminalStatus, ObserveClaudeBackgroundTaskParams, TerminalizeClaudeBackgroundTaskParams, TerminalizeClaudeBackgroundTaskResult } from "./claude_background_legacy_host_types.js";
 
 export type SessionTransitionFields = Pick<
   SessionUpdateFields,
@@ -339,32 +345,13 @@ export class SessionDeliveryHostClient {
   }
 }
 
-export type ClaudeBackgroundTaskStatus = "pending" | "running" | "completed" | "failed" | "stopped" | "killed";
-export type ClaudeBackgroundTerminalStatus = Exclude<ClaudeBackgroundTaskStatus, "pending" | "running">;
-export interface ClaudeBackgroundTaskRow {
-  source_node: string; session_id: string; task_id: string; sdk_session_id: string | null;
-  status: ClaudeBackgroundTaskStatus; close_reason: string | null; description: string | null;
-  summary: string | null; output_file: string | null; tool_use_id: string | null;
-  terminal_revision: string | null; notification_delivery_id: string | null;
-  created_at: Date; updated_at: Date; terminal_at: Date | null;
-}
-export interface ObserveClaudeBackgroundTaskParams {
-  idempotencyKey?: string;
-  sourceNode: string; sessionId: string; taskId: string; sdkSessionId?: string;
-  status?: "pending" | "running"; description?: string; summary?: string;
-  outputFile?: string; toolUseId?: string; observedAt?: Date;
-}
-export interface TerminalizeClaudeBackgroundTaskParams extends Omit<ObserveClaudeBackgroundTaskParams, "status"> {
-  status: ClaudeBackgroundTerminalStatus; closeReason: string; terminalRevision: string;
-  delivery: RegisterSessionDeliveryParams;
-}
-export type TerminalizeClaudeBackgroundTaskResult =
-  | { accepted: true; row: ClaudeBackgroundTaskRow; delivery: SessionDeliveryRow }
-  | { accepted: false; row: ClaudeBackgroundTaskRow };
-
 export class ClaudeRuntimeHostClient {
   private readonly transport: PersistenceHostTransport;
-  constructor(config: HostClientConfig) { this.transport = new PersistenceHostTransport(config); }
+  private readonly generations: ClaudeBackgroundGenerationHostClient;
+  constructor(config: HostClientConfig) {
+    this.transport = new PersistenceHostTransport(config);
+    this.generations = new ClaudeBackgroundGenerationHostClient(this.transport);
+  }
   observe(params: ObserveClaudeBackgroundTaskParams): Promise<ClaudeBackgroundTaskRow> {
     return this.transport.request("claude-runtime", "observe_background_task", [params]);
   }
@@ -383,6 +370,48 @@ export class ClaudeRuntimeHostClient {
       "active_background_tasks_for_session",
       [sourceNode, sessionId, limit],
     );
+  }
+  observeGeneration(
+    params: ObserveClaudeBackgroundTaskGenerationParams,
+  ): Promise<ClaudeBackgroundTaskGenerationRow> {
+    return this.generations.observe(params);
+  }
+  terminalizeGeneration(
+    params: TerminalizeClaudeBackgroundTaskGenerationParams,
+  ): Promise<TerminalizeClaudeBackgroundTaskGenerationResult> {
+    return this.generations.terminalize(params);
+  }
+  getGeneration(
+    sourceNode: string,
+    sessionId: string,
+    sdkSessionId: string,
+    taskId: string,
+    initiatingToolUseId: string,
+  ): Promise<ClaudeBackgroundTaskGenerationRow | null> {
+    return this.generations.get(
+      sourceNode, sessionId, sdkSessionId, taskId, initiatingToolUseId,
+    );
+  }
+  activeGenerationsForNode(
+    sourceNode: string,
+    limit = 1_000,
+  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
+    return this.generations.activeForNode(sourceNode, limit);
+  }
+  activeGenerationsForSession(
+    sourceNode: string,
+    sessionId: string,
+    limit = 1_000,
+  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
+    return this.generations.activeForSession(sourceNode, sessionId, limit);
+  }
+  resolveGeneration(
+    sourceNode: string,
+    sessionId: string,
+    sdkSessionId: string,
+    taskId: string,
+  ): Promise<ResolveClaudeBackgroundTaskGenerationResult> {
+    return this.generations.resolve(sourceNode, sessionId, sdkSessionId, taskId);
   }
   appendClaudeTranscriptEntries(key: ClaudeTranscriptKey, entries: ClaudeTranscriptEntry[]): Promise<number> {
     return this.transport.request("claude-runtime", "append_transcript_entries", [key, entries]);

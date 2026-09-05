@@ -17,10 +17,7 @@ import {
   type RunnerControlFrame,
   type RunnerEventFrame,
 } from "../runner/frame_protocol.js";
-import { readClaudeBackgroundDeliveryMetadata } from
-  "./claude_background_delivery_metadata.js";
-import { readClaudeBackgroundProvenance } from "./claude_background_provenance.js";
-import { isPostResultDrainEvent } from "./claude_event_phase.js";
+import { engineEventMetadata } from "./engine_event_metadata.js";
 import type {
   BackendId,
   EngineInterventionResult,
@@ -237,7 +234,7 @@ export class ClaudeEngineAdapter
         for (const payload of payloads) {
           await channel.emit(engineEventFrame(
             { ...payload } as Record<string, unknown>,
-            claudeEngineEventMetadata(payload),
+            engineEventMetadata(payload),
           ));
         }
         if (clientEvent.type === "input_request") {
@@ -564,14 +561,4 @@ function nowSeconds(): number {
   return Date.now() / 1000;
 }
 
-export function claudeEngineEventMetadata(payload: object): Record<string, unknown> | undefined {
-  const postResultDrain = isPostResultDrainEvent(payload);
-  const provenance = readClaudeBackgroundProvenance(payload);
-  const delivery = readClaudeBackgroundDeliveryMetadata(payload);
-  if (!postResultDrain && !provenance && !delivery) return undefined;
-  return {
-    ...(postResultDrain ? { claudePostResultDrain: true } : {}),
-    ...(provenance ? { claudeBackgroundProvenance: provenance } : {}),
-    ...(delivery ? { claudeBackgroundDelivery: delivery } : {}),
-  };
-}
+export const claudeEngineEventMetadata = engineEventMetadata;

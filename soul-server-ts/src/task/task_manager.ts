@@ -173,6 +173,8 @@ export class TaskManager {
     this.deliveryLedgerGate = new TaskDeliveryLedgerGate(
       deliveryRuntimeV2Enabled,
       deliveryRepository,
+      deliveryRuntimeV2Enabled ? db.claudeBackgroundTasks() : undefined,
+      deliveryRuntimeV2Enabled ? nodeId : undefined,
     );
     this.sessionNotificationPublisher = new SessionNotificationPublisher({
       broadcaster,
@@ -299,7 +301,7 @@ export class TaskManager {
     TaskDeliveryLedgerGate,
     "recordConsumed" | "recordTurnStarted"
       | "recordPendingSuperseded" | "discardIfConsumed"
-      | "recordConsumptionFailure"
+      | "recordConsumptionFailure" | "recordRuntimeFollowupRelationConsumed"
   > | undefined {
     return this.deliveryRuntimeV2Enabled ? this.deliveryLedgerGate : undefined;
   }

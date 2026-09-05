@@ -3,6 +3,8 @@ import { vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
+import { attachClaudeResultReceiptMetadata } from
+  "../../src/engine/claude_result_receipt_metadata.js";
 import { createTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import type {
@@ -139,6 +141,18 @@ async function observeIdle(
       if (params.prompt === text) {
         eventOrder.push("model_input");
         modelInputDeliveryIds.push(deliveryId);
+      }
+      if (axis.intent === "runtime_followup") {
+        if (!params.inputUuid) {
+          throw new Error("runtime follow-up model input requires an exact input UUID");
+        }
+        const result = {
+          type: "result",
+          success: true,
+          output: "runtime follow-up consumed",
+        } as const;
+        attachClaudeResultReceiptMetadata(result, { inputUuid: params.inputUuid });
+        yield result;
       }
       task.lastAssistantText = "idle next turn";
       yield { type: "assistant_message", content: "idle next turn", timestamp: 1 };

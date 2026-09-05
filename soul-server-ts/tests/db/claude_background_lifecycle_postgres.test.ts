@@ -30,6 +30,7 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
   beforeEach(async () => {
     await harness.sql`DELETE FROM session_delivery_notification_outbox`;
     await harness.sql`DELETE FROM session_deliveries`;
+    await harness.sql`DELETE FROM claude_background_task_generations`;
     await harness.sql`DELETE FROM claude_background_tasks`;
     await harness.sql`DELETE FROM sessions`;
     await harness.sql`
@@ -242,7 +243,7 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
     );
     expect(task).toMatchObject({
       status: "killed",
-      close_reason: "worker_restart",
+      close_reason: "runner_dead",
     });
     const repository = deliveries(harness.sql);
     await expect(repository.claimRecoverableCompletionDeliveries(
@@ -327,6 +328,7 @@ function started(taskId: string): ClaudeClientEvent {
     type: "claude_runtime_task_started",
     taskId,
     sessionId: "sdk-session",
+    toolUseId: `toolu-${taskId}`,
     description: "long work",
   };
   attachClaudeBackgroundProvenance(event, "sdk_membership");
@@ -341,6 +343,7 @@ function terminal(
     type: "claude_runtime_task_notification",
     taskId,
     sessionId: "sdk-session",
+    toolUseId: `toolu-${taskId}`,
     status,
     summary: `${status} summary`,
   };
@@ -361,6 +364,7 @@ function updated(
       status,
       is_backgrounded: true,
       close_reason: closeReason,
+      tool_use_id: `toolu-${taskId}`,
     },
   };
 }
