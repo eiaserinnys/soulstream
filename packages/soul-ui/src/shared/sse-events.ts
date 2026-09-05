@@ -391,7 +391,7 @@ export interface ToolResultEvent {
   type: "tool_result";
   timestamp: number;
   tool_name: string;
-  result: string;
+  result?: unknown;
   result_preview?: string;
   result_truncated?: boolean;
   timeline_id?: string;
