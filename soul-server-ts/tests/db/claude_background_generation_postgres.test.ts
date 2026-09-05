@@ -367,6 +367,7 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
       recordRelationConsumed: (input) =>
         deliveryRepository.recordRelationConsumed(input),
       sourceNode: "node-test",
+      logger: { error: () => undefined },
       sessionStore: {} as never,
       getSession: async () => ({
         session_id: "caller-session",
@@ -428,6 +429,118 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
       SELECT COUNT(*)::int AS count FROM session_deliveries
       WHERE delivery_id = ${recoveredIdentity.deliveryId}
     `).resolves.toEqual([{ count: 1 }]);
+  });
+
+  it("isolates a failed legacy row and recovers the next exact row once", async () => {
+    await harness.sql`
+      INSERT INTO claude_background_tasks (
+        source_node, session_id, task_id, sdk_session_id, status,
+        tool_use_id, close_reason, terminal_revision, terminal_at
+      ) VALUES
+        (
+          'node-test', 'caller-session', 'task-X', 'sdk-session', 'completed',
+          'toolu-old-X', 'sdk_completed', 'legacy-X',
+          '2026-09-05T00:02:00.000Z'
+        ),
+        (
+          'node-test', 'caller-session', 'task-Y', 'sdk-session', 'completed',
+          'toolu-old-Y', 'sdk_completed', 'legacy-Y',
+          '2026-09-05T00:01:00.000Z'
+        )
+    `;
+    const xIdentity = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: "node-test",
+      agentSessionId: "caller-session",
+      sdkSessionId: "sdk-session",
+      sdkTaskId: "task-X",
+      initiatingToolUseId: "toolu-new-X",
+    });
+    const yIdentity = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: "node-test",
+      agentSessionId: "caller-session",
+      sdkSessionId: "sdk-session",
+      sdkTaskId: "task-Y",
+      initiatingToolUseId: "toolu-new-Y",
+    });
+    const deliveryRepository = new SessionDeliveryRepository(harness.sql);
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository,
+      sourceNode: "node-test",
+      now: () => new Date("2026-09-05T00:40:00.000Z"),
+    });
+    const rowErrors: unknown[][] = [];
+    const exactRecovery = new ClaudeBackgroundGenerationStartupRecovery({
+      repository,
+      lifecycle,
+      recordRelationConsumed: async (input) => {
+        if (input.relationKey === xIdentity.relationKey) {
+          throw new Error("injected X ledger failure");
+        }
+        return await deliveryRepository.recordRelationConsumed(input);
+      },
+      sourceNode: "node-test",
+      logger: {
+        error: (...args: unknown[]) => {
+          rowErrors.push(args);
+        },
+      },
+      sessionStore: {} as never,
+      getSession: async () => ({
+        session_id: "caller-session",
+        claude_session_id: "sdk-session",
+        agent_id: "worker",
+        model_preset: null,
+        node_id: "node-test",
+      }) as never,
+      getAgent: () => ({
+        id: "worker",
+        name: "Worker",
+        backend: "claude",
+        workspace_dir: "/workspace/worker",
+      }) as never,
+      loadMessages: async () => [
+        nativeNotificationMessage("toolu-new-X", "task-X", "native-X"),
+        assistantTranscriptMessage("assistant-X"),
+        nativeNotificationMessage("toolu-new-Y", "task-Y", "native-Y"),
+        assistantTranscriptMessage("assistant-Y"),
+      ],
+    });
+    const startup = new ClaudeRuntimeStartupRecovery({
+      recoverBackgroundGenerations: () => exactRecovery.recoverAfterNodeRestart(),
+      recoverQueuedDeliveries: async () => ({ claimed: 0, settled: 0 }),
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+      nodeId: "node-test",
+    });
+
+    await startup.afterRunnerRecovery();
+    await startup.afterRunnerRecovery();
+
+    expect(rowErrors).toHaveLength(1);
+    await expect(repository.getGeneration(
+      "node-test",
+      "caller-session",
+      "sdk-session",
+      "task-X",
+      "toolu-new-X",
+    )).resolves.toBeNull();
+    await expect(deliveryRepository.get(xIdentity.deliveryId)).resolves.toBeNull();
+    await expect(repository.getGeneration(
+      "node-test",
+      "caller-session",
+      "sdk-session",
+      "task-Y",
+      "toolu-new-Y",
+    )).resolves.toMatchObject({ status: "completed" });
+    await expect(deliveryRepository.get(yIdentity.deliveryId)).resolves.toMatchObject({
+      state: "consumed",
+      aggregate_state: "consumed",
+      target_receipt_id: "assistant-Y",
+    });
+    await expect(harness.sql`
+      SELECT COUNT(*)::int AS count
+      FROM session_delivery_notification_outbox
+      WHERE delivery_id = ${yIdentity.deliveryId}
+    `).resolves.toEqual([{ count: 0 }]);
   });
 });
 
@@ -528,10 +641,14 @@ function hasDockerBinary(): boolean {
   return spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
 }
 
-function nativeNotificationMessage(toolUseId: string): SessionMessage {
+function nativeNotificationMessage(
+  toolUseId: string,
+  taskId = "shared-task",
+  uuid = "native-B",
+): SessionMessage {
   return {
     type: "user",
-    uuid: "native-B",
+    uuid,
     session_id: "sdk-session",
     parent_tool_use_id: null,
     parent_agent_id: null,
@@ -541,7 +658,7 @@ function nativeNotificationMessage(toolUseId: string): SessionMessage {
         type: "text",
         text: [
           "<task-notification>",
-          "<task-id>shared-task</task-id>",
+          `<task-id>${taskId}</task-id>`,
           `<tool-use-id>${toolUseId}</tool-use-id>`,
           "<status>completed</status>",
           "<summary>recovered B</summary>",

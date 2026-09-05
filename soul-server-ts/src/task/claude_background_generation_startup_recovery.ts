@@ -3,10 +3,13 @@ import type {
   SessionStore,
 } from "@anthropic-ai/claude-agent-sdk";
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
-import type { ClaudeBackgroundTaskRepository } from
-  "../db/repositories/claude_background_task_repository.js";
+import type {
+  ClaudeBackgroundTaskRepository,
+  ClaudeBackgroundTaskRow,
+} from "../db/repositories/claude_background_task_repository.js";
 import type { SessionRow } from "../db/session_db_types.js";
 import { attachClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
@@ -39,6 +42,7 @@ interface ClaudeBackgroundGenerationStartupRecoveryDeps {
   sessionStore: SessionStore;
   getSession(sessionId: string): Promise<SessionRow | null>;
   getAgent(agentId: string): AgentProfile | undefined;
+  logger: Pick<Logger, "error">;
   getModelPresetBackend?(presetId: string): AgentProfile["backend"] | undefined;
   loadMessages?(
     sessionId: string,
@@ -67,83 +71,103 @@ export class ClaudeBackgroundGenerationStartupRecovery {
     let recovered = 0;
     let ambiguous = 0;
     for (const legacy of legacyRows) {
-      const sdkSessionId = legacy.sdk_session_id;
-      const legacyToolUseId = legacy.tool_use_id;
-      if (!sdkSessionId || !legacyToolUseId) continue;
-      const session = await this.deps.getSession(legacy.session_id);
-      if (
-        !session
-        || session.claude_session_id !== sdkSessionId
-        || !session.agent_id
-      ) {
-        continue;
-      }
-      const profile = this.deps.getAgent(session.agent_id);
-      if (!profile) continue;
-      const backend = session.model_preset
-        ? this.deps.getModelPresetBackend?.(session.model_preset)
-        : profile.backend;
-      if (backend !== "claude") continue;
-      const messages = await this.loadMessages(sdkSessionId, {
-        dir: profile.workspace_dir,
-        sessionStore: this.deps.sessionStore,
-        includeSystemMessages: true,
-      });
-      const candidates = uniqueNativeNotifications(messages)
-        .filter((candidate) =>
-          candidate.taskId === legacy.task_id
-          && candidate.toolUseId !== legacyToolUseId);
-      const absent = [];
-      for (const candidate of candidates) {
-        const existing = await this.deps.repository.getGeneration(
-          this.deps.sourceNode,
-          legacy.session_id,
-          sdkSessionId,
-          candidate.taskId,
-          candidate.toolUseId,
+      try {
+        const outcome = await this.recoverLegacyRow(legacy);
+        if (outcome === "recovered") recovered += 1;
+        if (outcome === "ambiguous") ambiguous += 1;
+      } catch (err) {
+        this.deps.logger.error(
+          {
+            err,
+            sourceNode: this.deps.sourceNode,
+            sessionId: legacy.session_id,
+            sdkSessionId: legacy.sdk_session_id,
+            taskId: legacy.task_id,
+            legacyToolUseId: legacy.tool_use_id,
+          },
+          "Legacy-lost Claude background generation reconciliation row failed; continuing",
         );
-        if (!existing) absent.push(candidate);
-      }
-      if (absent.length === 0) continue;
-      if (absent.length !== 1) {
-        ambiguous += 1;
-        continue;
-      }
-      const candidate = absent[0]!;
-      if (candidate.consumedTurnId) {
-        const identity = buildClaudeBackgroundGenerationIdentity({
-          sourceNode: this.deps.sourceNode,
-          agentSessionId: legacy.session_id,
-          sdkSessionId,
-          sdkTaskId: candidate.taskId,
-          initiatingToolUseId: candidate.toolUseId,
-        });
-        await this.deps.recordRelationConsumed({
-          relationKey: identity.relationKey,
-          completionId: identity.completionId,
-          callerSessionId: legacy.session_id,
-          consumedTurnId: candidate.consumedTurnId,
-        });
-      }
-      const event: ClaudeClientEvent = {
-        type: "claude_runtime_task_notification",
-        taskId: candidate.taskId,
-        sessionId: sdkSessionId,
-        toolUseId: candidate.toolUseId,
-        status: candidate.status,
-        ...(candidate.outputFile ? { outputFile: candidate.outputFile } : {}),
-        ...(candidate.summary ? { summary: candidate.summary } : {}),
-      };
-      attachClaudeBackgroundProvenance(event, "sdk_membership");
-      if (await this.deps.lifecycle.observe(
-        legacy.session_id,
-        event,
-        `upgrade-native-task-notification:${candidate.uuid}`,
-      )) {
-        recovered += 1;
       }
     }
     return { examined: legacyRows.length, recovered, ambiguous };
+  }
+
+  private async recoverLegacyRow(
+    legacy: ClaudeBackgroundTaskRow,
+  ): Promise<"recovered" | "ambiguous" | "skipped"> {
+    const sdkSessionId = legacy.sdk_session_id;
+    const legacyToolUseId = legacy.tool_use_id;
+    if (!sdkSessionId || !legacyToolUseId) return "skipped";
+    const session = await this.deps.getSession(legacy.session_id);
+    if (
+      !session
+      || session.claude_session_id !== sdkSessionId
+      || !session.agent_id
+    ) {
+      return "skipped";
+    }
+    const profile = this.deps.getAgent(session.agent_id);
+    if (!profile) return "skipped";
+    const backend = session.model_preset
+      ? this.deps.getModelPresetBackend?.(session.model_preset)
+      : profile.backend;
+    if (backend !== "claude") return "skipped";
+    const messages = await this.loadMessages(sdkSessionId, {
+      dir: profile.workspace_dir,
+      sessionStore: this.deps.sessionStore,
+      includeSystemMessages: true,
+    });
+    const candidates = uniqueNativeNotifications(messages)
+      .filter((candidate) =>
+        candidate.taskId === legacy.task_id
+        && candidate.toolUseId !== legacyToolUseId);
+    const absent = [];
+    for (const candidate of candidates) {
+      const existing = await this.deps.repository.getGeneration(
+        this.deps.sourceNode,
+        legacy.session_id,
+        sdkSessionId,
+        candidate.taskId,
+        candidate.toolUseId,
+      );
+      if (!existing) absent.push(candidate);
+    }
+    if (absent.length === 0) return "skipped";
+    if (absent.length !== 1) return "ambiguous";
+    const candidate = absent[0]!;
+    if (candidate.consumedTurnId) {
+      const identity = buildClaudeBackgroundGenerationIdentity({
+        sourceNode: this.deps.sourceNode,
+        agentSessionId: legacy.session_id,
+        sdkSessionId,
+        sdkTaskId: candidate.taskId,
+        initiatingToolUseId: candidate.toolUseId,
+      });
+      await this.deps.recordRelationConsumed({
+        relationKey: identity.relationKey,
+        completionId: identity.completionId,
+        callerSessionId: legacy.session_id,
+        consumedTurnId: candidate.consumedTurnId,
+      });
+    }
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_task_notification",
+      taskId: candidate.taskId,
+      sessionId: sdkSessionId,
+      toolUseId: candidate.toolUseId,
+      status: candidate.status,
+      ...(candidate.outputFile ? { outputFile: candidate.outputFile } : {}),
+      ...(candidate.summary ? { summary: candidate.summary } : {}),
+    };
+    attachClaudeBackgroundProvenance(event, "sdk_membership");
+    if (await this.deps.lifecycle.observe(
+      legacy.session_id,
+      event,
+      `upgrade-native-task-notification:${candidate.uuid}`,
+    )) {
+      return "recovered";
+    }
+    return "skipped";
   }
 }
 

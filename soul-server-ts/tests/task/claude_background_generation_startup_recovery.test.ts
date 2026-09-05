@@ -17,6 +17,7 @@ describe("Claude background generation upgrade recovery", () => {
       lifecycle: { observe } as never,
       recordRelationConsumed: vi.fn(async () => undefined),
       sourceNode: "node-a",
+      logger: { error: vi.fn() },
       sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
@@ -72,6 +73,7 @@ describe("Claude background generation upgrade recovery", () => {
         lifecycle: { observe } as never,
         recordRelationConsumed: vi.fn(async () => undefined),
         sourceNode: "node-a",
+        logger: { error: vi.fn() },
         sessionStore: {} as never,
         getSession: vi.fn(async () => ({
           session_id: "caller-session",
@@ -105,6 +107,7 @@ describe("Claude background generation upgrade recovery", () => {
       lifecycle: { observe } as never,
       recordRelationConsumed: vi.fn(async () => undefined),
       sourceNode: "node-a",
+      logger: { error: vi.fn() },
       sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
@@ -146,6 +149,7 @@ describe("Claude background generation upgrade recovery", () => {
     const recordRelationConsumed = vi.fn(async () => {
       throw new Error("ledger unavailable");
     });
+    const generationLogger = { error: vi.fn() };
     const generationRecovery = new ClaudeBackgroundGenerationStartupRecovery({
       repository: {
         terminalForNode: vi.fn(async () => [legacyTerminal("toolu-A")]),
@@ -154,6 +158,7 @@ describe("Claude background generation upgrade recovery", () => {
       lifecycle: { observe } as never,
       recordRelationConsumed,
       sourceNode: "node-a",
+      logger: generationLogger,
       sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
@@ -184,10 +189,96 @@ describe("Claude background generation upgrade recovery", () => {
     await expect(startup.afterRunnerRecovery()).resolves.toBeUndefined();
     expect(recordRelationConsumed).toHaveBeenCalledOnce();
     expect(observe).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.any(Error), nodeId: "node-a" }),
-      "Background generation startup recovery failed; boot pass will not retry",
+    expect(generationLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: expect.any(Error),
+        sourceNode: "node-a",
+        sessionId: "caller-session",
+      }),
+      "Legacy-lost Claude background generation reconciliation row failed; continuing",
     );
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(queued).toHaveBeenCalledOnce();
+  });
+
+  it("isolates a failed legacy row so the next exact generation still recovers once", async () => {
+    const failed = {
+      ...legacyTerminal("toolu-old-X"),
+      session_id: "caller-X",
+      task_id: "task-X",
+      sdk_session_id: "sdk-X",
+    };
+    const recoverable = {
+      ...legacyTerminal("toolu-old-Y"),
+      session_id: "caller-Y",
+      task_id: "task-Y",
+      sdk_session_id: "sdk-Y",
+    };
+    const observe = vi.fn(async () => true);
+    const recordRelationConsumed = vi.fn(async (input: { callerSessionId: string }) => {
+      if (input.callerSessionId === "caller-X") throw new Error("ledger unavailable");
+    });
+    const generationLogger = { error: vi.fn() };
+    const generationRecovery = new ClaudeBackgroundGenerationStartupRecovery({
+      repository: {
+        terminalForNode: vi.fn(async () => [failed, recoverable]),
+        getGeneration: vi.fn(async () => null),
+      } as never,
+      lifecycle: { observe } as never,
+      recordRelationConsumed,
+      sourceNode: "node-a",
+      logger: generationLogger,
+      sessionStore: {} as never,
+      getSession: vi.fn(async (sessionId: string) => ({
+        session_id: sessionId,
+        claude_session_id: sessionId === "caller-X" ? "sdk-X" : "sdk-Y",
+        agent_id: "claude-agent",
+        model_preset: null,
+        node_id: "node-a",
+      })) as never,
+      getAgent: vi.fn(() => ({
+        id: "claude-agent",
+        backend: "claude",
+        workspace_dir: "/workspace/claude",
+      })) as never,
+      loadMessages: vi.fn(async (sdkSessionId: string) => [
+        nativeNotificationFor(
+          sdkSessionId === "sdk-X" ? "task-X" : "task-Y",
+          sdkSessionId === "sdk-X" ? "toolu-new-X" : "toolu-new-Y",
+          sdkSessionId === "sdk-X" ? "native-X" : "native-Y",
+          sdkSessionId,
+        ),
+        assistantMessageFor(
+          sdkSessionId === "sdk-X" ? "assistant-X" : "assistant-Y",
+          sdkSessionId,
+        ),
+      ]),
+    });
+    const queued = vi.fn(async () => ({ claimed: 0, settled: 0 }));
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const startup = new ClaudeRuntimeStartupRecovery({
+      recoverBackgroundGenerations: () => generationRecovery.recoverAfterNodeRestart(),
+      recoverQueuedDeliveries: queued,
+      logger,
+      nodeId: "node-a",
+    });
+
+    await startup.afterRunnerRecovery();
+    await startup.afterRunnerRecovery();
+
+    expect(recordRelationConsumed).toHaveBeenCalledTimes(2);
+    expect(observe).toHaveBeenCalledOnce();
+    expect(observe).toHaveBeenCalledWith(
+      "caller-Y",
+      expect.objectContaining({
+        taskId: "task-Y",
+        sessionId: "sdk-Y",
+        toolUseId: "toolu-new-Y",
+      }),
+      "upgrade-native-task-notification:native-Y",
+    );
+    expect(generationLogger.error).toHaveBeenCalledOnce();
+    expect(logger.error).not.toHaveBeenCalled();
     expect(queued).toHaveBeenCalledOnce();
   });
 });
@@ -216,10 +307,19 @@ function nativeNotification(
   toolUseId: string,
   uuid = "native-B",
 ): SessionMessage {
+  return nativeNotificationFor("shared-task", toolUseId, uuid, "sdk-session");
+}
+
+function nativeNotificationFor(
+  taskId: string,
+  toolUseId: string,
+  uuid: string,
+  sdkSessionId: string,
+): SessionMessage {
   return {
     type: "user",
     uuid,
-    session_id: "sdk-session",
+    session_id: sdkSessionId,
     parent_tool_use_id: null,
     parent_agent_id: null,
     message: {
@@ -229,7 +329,7 @@ function nativeNotification(
           type: "text",
           text: [
             "<task-notification>",
-            "<task-id>shared-task</task-id>",
+            `<task-id>${taskId}</task-id>`,
             `<tool-use-id>${toolUseId}</tool-use-id>`,
             "<status>completed</status>",
             "<summary>new B result</summary>",
@@ -242,10 +342,14 @@ function nativeNotification(
 }
 
 function assistantMessage(uuid: string): SessionMessage {
+  return assistantMessageFor(uuid, "sdk-session");
+}
+
+function assistantMessageFor(uuid: string, sdkSessionId: string): SessionMessage {
   return {
     type: "assistant",
     uuid,
-    session_id: "sdk-session",
+    session_id: sdkSessionId,
     parent_tool_use_id: null,
     parent_agent_id: null,
     message: { role: "assistant", content: [{ type: "text", text: "continued" }] },

@@ -88,6 +88,7 @@ export async function composeClaudeRuntime(
     recordRelationConsumed: (input) =>
       deliveryRepository.recordRelationConsumed(input),
     sourceNode: params.sourceNode,
+    logger: params.logger,
     sessionStore: params.sessionStore,
     getSession: (sessionId) => params.db.getSession(sessionId),
     getAgent: (agentId) => params.agentRegistry.get(agentId),
