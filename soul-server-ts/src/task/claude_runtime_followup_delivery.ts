@@ -1,30 +1,25 @@
-import type { InterventionMessage, Task } from "./task_models.js";
-import { buildDeterministicDeliveryIdentity } from "./delivery_identity.js";
-
+import type { InterventionMessage } from "./task_models.js";
 interface RuntimeFollowupTerminal {
+  deliveryId: string;
+  relationKey: string;
+  completionId: string;
   taskId: string;
   terminalRevision: string;
 }
 
 export function buildClaudeRuntimeFollowupDelivery(
-  task: Task,
   items: ReadonlyArray<RuntimeFollowupTerminal>,
 ): Partial<InterventionMessage> {
-  const terminalRevision = items
-    .map((item) => `${item.taskId}@${item.terminalRevision}`)
-    .sort()
-    .join(",");
-  const relationKey =
-    `claude_runtime:${task.agentSessionId}:${task.claudeRuntime?.sessionId ?? "unknown"}:${terminalRevision}`;
-  const identity = buildDeterministicDeliveryIdentity({
-    targetSessionId: task.agentSessionId,
-    relationKey,
-    intent: "runtime_followup",
-  });
+  if (items.length !== 1) {
+    throw new Error("A runtime follow-up delivery must own exactly one generation");
+  }
+  const item = items[0]!;
   return {
-    ...identity,
+    deliveryId: item.deliveryId,
+    relationKey: item.relationKey,
+    completionId: item.completionId,
     deliveryIntent: "runtime_followup",
-    producerTerminalRevision: terminalRevision,
+    producerTerminalRevision: item.terminalRevision,
     deliveryCreatedAt: new Date().toISOString(),
   };
 }

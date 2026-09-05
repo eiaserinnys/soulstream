@@ -5,6 +5,8 @@ import type {
 } from "../control_plane_types.js";
 import { SessionDeliveryRepository } from "./session_delivery_repository.js";
 import { runIdempotentSessionMutation } from "./idempotent_session_mutation.js";
+import { ClaudeBackgroundTaskGenerationRepository } from
+  "./claude_background_task_generation_repository.js";
 
 export type ClaudeBackgroundTaskStatus =
   | "pending"
@@ -36,6 +38,30 @@ export interface ClaudeBackgroundTaskRow {
   updated_at: Date;
   terminal_at: Date | null;
 }
+
+export interface ClaudeBackgroundTaskGenerationRow {
+  source_node: string;
+  session_id: string;
+  sdk_session_id: string;
+  task_id: string;
+  initiating_tool_use_id: string;
+  generation_sequence: string | number;
+  generation_key: string;
+  relation_key: string;
+  completion_id: string;
+  runner_registration_id: string | null;
+  execution_command_id: string | null;
+  status: ClaudeBackgroundTaskStatus;
+  close_reason: string | null;
+  description: string | null;
+  summary: string | null;
+  output_file: string | null;
+  terminal_revision: string | null;
+  notification_delivery_id: string | null;
+  created_at: Date;
+  updated_at: Date;
+  terminal_at: Date | null;
+}
 export interface ObserveClaudeBackgroundTaskParams {
   idempotencyKey?: string;
   sourceNode: string;
@@ -50,8 +76,27 @@ export interface ObserveClaudeBackgroundTaskParams {
   observedAt?: Date;
 }
 
+export interface ObserveClaudeBackgroundTaskGenerationParams
+  extends Omit<ObserveClaudeBackgroundTaskParams, "sdkSessionId" | "toolUseId"> {
+  sdkSessionId: string;
+  initiatingToolUseId: string;
+  generationKey: string;
+  relationKey: string;
+  completionId: string;
+  runnerRegistrationId?: string;
+  executionCommandId?: string;
+}
+
 export interface TerminalizeClaudeBackgroundTaskParams
   extends Omit<ObserveClaudeBackgroundTaskParams, "status"> {
+  status: ClaudeBackgroundTerminalStatus;
+  closeReason: string;
+  terminalRevision: string;
+  delivery: RegisterSessionDeliveryParams;
+}
+
+export interface TerminalizeClaudeBackgroundTaskGenerationParams
+  extends Omit<ObserveClaudeBackgroundTaskGenerationParams, "status"> {
   status: ClaudeBackgroundTerminalStatus;
   closeReason: string;
   terminalRevision: string;
@@ -69,9 +114,87 @@ export type TerminalizeClaudeBackgroundTaskResult =
       row: ClaudeBackgroundTaskRow;
     };
 
+export type TerminalizeClaudeBackgroundTaskGenerationResult =
+  | {
+      accepted: true;
+      row: ClaudeBackgroundTaskGenerationRow;
+      delivery: SessionDeliveryRow;
+    }
+  | {
+      accepted: false;
+      row: ClaudeBackgroundTaskGenerationRow;
+    };
+
+export type ResolveClaudeBackgroundTaskGenerationResult =
+  | { status: "absent" }
+  | { status: "resolved"; row: ClaudeBackgroundTaskGenerationRow }
+  | { status: "ambiguous" };
+
 /** PostgreSQL CAS owner for background state and its semantic delivery outbox. */
 export class ClaudeBackgroundTaskRepository {
-  constructor(private readonly sql: SqlClient) {}
+  private readonly generations: ClaudeBackgroundTaskGenerationRepository;
+
+  constructor(private readonly sql: SqlClient) {
+    this.generations = new ClaudeBackgroundTaskGenerationRepository(sql);
+  }
+
+  async observeGeneration(
+    params: ObserveClaudeBackgroundTaskGenerationParams,
+  ): Promise<ClaudeBackgroundTaskGenerationRow> {
+    return await this.generations.observe(params);
+  }
+
+  async terminalizeGeneration(
+    params: TerminalizeClaudeBackgroundTaskGenerationParams,
+  ): Promise<TerminalizeClaudeBackgroundTaskGenerationResult> {
+    return await this.generations.terminalize(params);
+  }
+
+  async getGeneration(
+    sourceNode: string,
+    sessionId: string,
+    sdkSessionId: string,
+    taskId: string,
+    initiatingToolUseId: string,
+  ): Promise<ClaudeBackgroundTaskGenerationRow | null> {
+    return await this.generations.get(
+      sourceNode,
+      sessionId,
+      sdkSessionId,
+      taskId,
+      initiatingToolUseId,
+    );
+  }
+
+  async activeGenerationsForExecution(
+    sourceNode: string,
+    sessionId: string,
+    runnerRegistrationId: string,
+    executionCommandId: string,
+    limit = 1_000,
+  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
+    return await this.generations.activeForExecution(
+      sourceNode,
+      sessionId,
+      runnerRegistrationId,
+      executionCommandId,
+      limit,
+    );
+  }
+
+  async resolveGeneration(
+    sourceNode: string,
+    sessionId: string,
+    sdkSessionId: string,
+    taskId: string,
+  ): Promise<ResolveClaudeBackgroundTaskGenerationResult> {
+    return await this.generations.resolve(
+      sourceNode,
+      sessionId,
+      sdkSessionId,
+      taskId,
+    );
+  }
 
   async observe(
     params: ObserveClaudeBackgroundTaskParams,
@@ -264,4 +387,20 @@ export class ClaudeBackgroundTaskRepository {
       LIMIT ${limit}
     `;
   }
+
+  async terminalForNode(
+    sourceNode: string,
+    limit = 1_000,
+  ): Promise<ClaudeBackgroundTaskRow[]> {
+    return await this.sql<ClaudeBackgroundTaskRow[]>`
+      SELECT * FROM claude_background_tasks
+      WHERE source_node = ${sourceNode}
+        AND status IN ('completed', 'failed', 'stopped', 'killed')
+        AND sdk_session_id IS NOT NULL
+        AND tool_use_id IS NOT NULL
+      ORDER BY terminal_at DESC NULLS LAST, session_id, task_id
+      LIMIT ${limit}
+    `;
+  }
+
 }

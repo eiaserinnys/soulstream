@@ -2,14 +2,16 @@
 
 최종 대조 커밋 SHA: `24da8a5b9027bb9265a3d50088d4474645355a98`
 
+R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
+
 > 상태 배지: **Wave 1 runtime ownership machine 제거 반영**
 
 > 범위 주석: 이 5장이 다루는 message·delivery·restart·runner 경로의 active cadence와 deadline만 열거하며, timer가 아닌 event trigger도 중복 producer 판정을 위해 포함한다.
 
 | 단계 | 파일:심볼(라인) | 이 단계가 소유한 사실 | 거부/분기 조건 |
 | --- | --- | --- | --- |
-| 1. queued transcript boot pass | `soul-server-ts/src/runtime/claude_runtime_startup_recovery.ts:afterRunnerRecovery` (L38–47), `worker_startup.ts:startWorkerRuntime` (L48–65), `release/release_activation_state.ts:ReleaseActivationState.waitUntilReady` (L64–95) | **owner:** worker startup; **cadence:** runner 초기 scan과 중앙 upstream 등록 ACK 뒤 boot당 1회; **목적:** queued transcript reconciliation; **판정:** R27에서 5초 반복 삭제, R25c에서 연결 대기를 pass deadline 밖으로 이동, one-shot 유지. | ACK 전에는 pass를 시작하지 않으며 cached promise·stopped가 같은 boot 재실행을 차단한다. |
-| 2. startup recovery deadline | `soul-server-ts/src/runtime/claude_runtime_startup_recovery.ts:STARTUP_RECOVERY_STEP_TIMEOUT_MS` (L7–12), `recoverQueuedDeliveries` (L63–83) | **owner:** startup recovery; **cadence:** 각 boot step 최대 15초; **목적:** startup hang 격리; **판정:** 유지. | deadline 실패를 periodic retry로 승격하지 않고 해당 boot에서 종료한다. |
+| 1. Claude startup boot pass | `soul-server-ts/src/runtime/claude_runtime_startup_recovery.ts:afterRunnerRecovery`, `recoverAll`, `worker_startup.ts:startWorkerRuntime`, `release/release_activation_state.ts:ReleaseActivationState.waitUntilReady` | **owner:** worker startup; **cadence:** runner 초기 scan과 중앙 upstream 등록 ACK 뒤 boot당 1회; **목적:** legacy-collision generation exact 승격 뒤 queued transcript reconciliation; **판정:** 기존 cached promise 하나에 순서를 추가하고 주기 timer는 만들지 않는다. | ACK 전에는 pass를 시작하지 않으며 cached promise·stopped가 같은 boot 재실행을 차단한다. |
+| 2. startup recovery deadline | `soul-server-ts/src/runtime/claude_runtime_startup_recovery.ts:STARTUP_RECOVERY_STEP_TIMEOUT_MS`, `recoverBackgroundGenerations`, `recoverQueuedDeliveries`, `task/claude_background_generation_startup_recovery.ts:recoverLegacyRow` | **owner:** startup recovery; **cadence:** 두 boot step 각각 최대 15초; **목적:** startup hang 격리; **판정:** 기존 deadline 재사용. generation pass 안에서는 legacy row별 오류를 기록하고 후속 row를 계속 처리한다. | 한 generation row의 transcript·ledger·observe 실패는 다른 row나 queued recovery를 막지 않는다. 실패를 periodic retry로 승격하지 않고 해당 boot에서 종료한다. |
 | 3. transcript attempt TTL·read deadline | `soul-server-ts/src/task/queued_delivery_transcript_recovery.ts:TRANSCRIPT_ATTEMPT_TTL_MS/TRANSCRIPT_READ_TIMEOUT_MS` (L47–65), `reconcile` (L88–101) | **owner:** queued transcript pass; **cadence:** claim attempt TTL 60초·row read 10초; **목적:** batch가 자기 attempt TTL을 넘지 않게 함; **판정:** 유지. | 남은 attempt TTL이 read 1회보다 짧으면 새 row 처리를 시작하지 않는다. |
 | 4. delivery maintenance lane | `soul-server-ts/src/task/completion_delivery_recovery_worker.ts:CompletionDeliveryRecoveryWorker` (L30–66), `runtime/periodic_maintenance_loop.ts:start` (L144–163) | **owner:** soul worker `session-deliveries`; **cadence:** 기동 즉시+5초; **목적:** stale delivery attempt·notification outbox 회수; **판정:** 유지. | active tick이 deadline 안이면 중첩 tick을 억제하고 accepted input을 새로 dispatch하지 않는다. |
 | 5. delivery maintenance step deadline | `soul-server-ts/src/task/completion_delivery_recovery_worker.ts:RECOVERY_STEP_TIMEOUT_MS` (L5–13), `runtime/periodic_maintenance_loop.ts:PeriodicMaintenanceLoop` (L119–139) | **owner:** maintenance lane; **cadence:** step당 90초, tick deadline은 step deadline 합의 2배; **목적:** hung step 격리; **판정:** 유지. | outstanding step은 재발행하지 않고 sibling step은 계속 실행한다. |

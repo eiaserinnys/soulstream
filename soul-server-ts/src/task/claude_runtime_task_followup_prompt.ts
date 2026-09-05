@@ -1,4 +1,10 @@
 export interface PendingRuntimeTaskFollowup {
+  generationKey: string;
+  relationKey: string;
+  completionId: string;
+  deliveryId: string;
+  sdkSessionId: string;
+  initiatingToolUseId: string;
   taskId: string;
   status?: string;
   outputFile?: string;
@@ -51,11 +57,7 @@ export function buildFollowupKey(
   sessionId: string,
   items: PendingRuntimeTaskFollowup[],
 ): string {
-  return `${sessionId}:${items.map((item) => item.taskId).join(",")}`;
-}
-
-export function buildTaskKey(sessionId: string, taskId: string): string {
-  return `${sessionId}:${taskId}`;
+  return `${sessionId}:${items.map((item) => item.generationKey).sort().join(",")}`;
 }
 
 function formatRuntimeTaskStatusNote(

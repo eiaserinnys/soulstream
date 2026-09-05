@@ -264,8 +264,13 @@ export async function composeWorkerRuntime(
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
     observeClaudeRuntime: claudeRuntime.backgroundLifecycle
-      ? (sessionId, event, idempotencyKey) =>
-        claudeRuntime.backgroundLifecycle!.observe(sessionId, event, idempotencyKey) : undefined,
+      ? (sessionId, event, idempotencyKey, execution) =>
+        claudeRuntime.backgroundLifecycle!.observe(
+          sessionId,
+          event,
+          idempotencyKey,
+          execution,
+        ) : undefined,
     releaseManifest: params.releaseActivationState.manifest,
   });
   params.releaseActivationState.markPrewarmed({
@@ -301,8 +306,11 @@ export async function composeWorkerRuntime(
     logger,
     ...(claudeRuntime.backgroundLifecycle
       ? {
-        terminalizeClaudeBackgroundTasks: (sessionId: string) =>
-          claudeRuntime.backgroundLifecycle!.terminalizeDeadRunner(sessionId),
+        terminalizeClaudeBackgroundTasks: (sessionId, execution) =>
+          claudeRuntime.backgroundLifecycle!.terminalizeDeadRunner(
+            sessionId,
+            execution,
+          ),
       }
       : {}),
   });

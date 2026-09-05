@@ -2,6 +2,8 @@ import type { Logger } from "pino";
 
 import type { InterventionMessage, Task } from "./task_models.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
+import type { ClaudeBackgroundConsumptionProof } from
+  "./claude_background_result_consumption.js";
 
 type ConsumptionRecorder = Pick<
   TaskDeliveryLedgerGate,
@@ -9,6 +11,7 @@ type ConsumptionRecorder = Pick<
   | "recordTurnStarted"
   | "discardIfConsumed"
   | "recordConsumptionFailure"
+  | "recordRuntimeFollowupRelationConsumed"
 >;
 
 export class TaskDeliveryConsumption {
@@ -69,6 +72,32 @@ export class TaskDeliveryConsumption {
         "delivery ledger consumed-state check failed",
       );
       await this.recordBookkeepingFailure(task, intervention, err);
+      return false;
+    }
+  }
+
+  async recordRuntimeFollowupRelationConsumed(
+    task: Task,
+    proof: ClaudeBackgroundConsumptionProof,
+    consumedTurnId: string,
+  ): Promise<boolean> {
+    if (!this.recorder) return false;
+    try {
+      return await this.recorder.recordRuntimeFollowupRelationConsumed(
+        task,
+        proof,
+        consumedTurnId,
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          err,
+          sessionId: task.agentSessionId,
+          sdkSessionId: task.codexThreadId,
+          taskId: proof.taskId,
+        },
+        "runtime follow-up relation consumption failed",
+      );
       return false;
     }
   }

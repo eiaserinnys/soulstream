@@ -118,6 +118,12 @@ describePostgres("Claude background delivery receipt PostgreSQL integration", ()
         source,
         completionId: identity.completionId,
         relationKey,
+        ...(intent === "runtime_followup"
+          ? {
+            followupKey: `caller-session:${intent}`,
+            followupAttempt: 1,
+          }
+          : {}),
       });
       await repository.register({
         ...identity,
@@ -173,7 +179,11 @@ describePostgres("Claude background delivery receipt PostgreSQL integration", ()
       intent: "runtime_followup",
       source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
       payloadHash: "different-hash",
-      payload: { text: "different payload" },
+      payload: {
+        text: "different payload",
+        followup_key: "caller-session:task-1",
+        followup_attempt: 1,
+      },
     });
 
     expect(conflict.conflict).toBe(true);

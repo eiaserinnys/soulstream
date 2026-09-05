@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   dequeueInterventions,
   dequeueInterventionsInLane,
+  dequeueNextTurnInterventions,
   enqueueInterventionOnce,
   sortInterventionsByPriority,
 } from "../../src/task/task_intervention_queue.js";
@@ -81,6 +82,30 @@ describe("enqueueInterventionOnce", () => {
       "runtime first",
       "completion third",
     ]);
+  });
+
+  it("isolates only runtime follow-up while preserving the existing ordinary batch", () => {
+    const target = task();
+    target.interventionQueue.push(
+      {
+        text: "completion",
+        user: "agent",
+        deliveryIntent: "completion_notification",
+      },
+      {
+        text: "runtime",
+        user: "system",
+        deliveryIntent: "runtime_followup",
+      },
+      { text: "human", user: "alice" },
+    );
+
+    expect(dequeueNextTurnInterventions(target).map((message) => message.text))
+      .toEqual(["human", "completion"]);
+    expect(target.interventionQueue.map((message) => message.text))
+      .toEqual(["runtime"]);
+    expect(dequeueNextTurnInterventions(target).map((message) => message.text))
+      .toEqual(["runtime"]);
   });
 
   it("converges a retried durable delivery on one queue position", () => {

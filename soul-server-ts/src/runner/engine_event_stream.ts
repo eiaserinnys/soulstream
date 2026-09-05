@@ -4,6 +4,12 @@ import { attachClaudeBackgroundDeliveryMetadata } from
 import { attachClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
 import { markPostResultDrainEvent } from "../engine/claude_event_phase.js";
+import { attachClaudeResultReceiptMetadata } from
+  "../engine/claude_result_receipt_metadata.js";
+import { attachClaudeToolResultReceiptMetadata } from
+  "../engine/claude_tool_result_receipt_metadata.js";
+import { attachClaudeSdkSessionMetadata } from
+  "../engine/claude_sdk_session_metadata.js";
 
 import {
   RunnerEngineEventMetadataSchema,
@@ -34,6 +40,15 @@ export function restoreRunnerEngineEventMetadata(
   }
   if (metadata?.claudeBackgroundDelivery) {
     attachClaudeBackgroundDeliveryMetadata(payload, metadata.claudeBackgroundDelivery);
+  }
+  if (metadata?.claudeResultReceipt) {
+    attachClaudeResultReceiptMetadata(payload, metadata.claudeResultReceipt);
+  }
+  if (metadata?.claudeToolResultReceipt) {
+    attachClaudeToolResultReceiptMetadata(payload, metadata.claudeToolResultReceipt);
+  }
+  if (metadata?.claudeSdkSession) {
+    attachClaudeSdkSessionMetadata(payload, metadata.claudeSdkSession);
   }
 }
 

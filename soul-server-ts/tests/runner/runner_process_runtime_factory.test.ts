@@ -265,7 +265,15 @@ describe("applyRunnerHostCall", () => {
       { backendId: "openai-agents", items: [] },
       "host:3",
     );
-    expect(observeClaudeRuntime).toHaveBeenCalledWith("session-a", event, "host:4");
+    expect(observeClaudeRuntime).toHaveBeenCalledWith(
+      "session-a",
+      event,
+      "host:4",
+      expect.objectContaining({
+        registrationId: "registration-a",
+        executionCommandId: "owner-a",
+      }),
+    );
     expect(publishDetachedClaudeEvent).toHaveBeenCalledWith("session-a", event, "host:5");
   });
 

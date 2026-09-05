@@ -89,6 +89,7 @@
     { "id": "085a_execution_registration_projection.sql", "sha256": "d5617309f56351b591e75b6ba86309233ea84af6188af76402efce282f7dbfbb" },
     { "id": "085b_execution_ownership_projection_drop.sql", "sha256": "f55315730232b23db26b29d8e925e6e385310925e647deed3fba9e0f97873bfc" },
     { "id": "086_delivery_attempt_terminology.sql", "sha256": "43012bbfedf03d5000ce67f790bfc038289d205748ff077e392e9e6403f4341b" },
-    { "id": "087_delivery_notification_lock_order.sql", "sha256": "d4b47326edf081a783487504b801e9abee234f336358a1ffd5874ccefa627de6" }
+    { "id": "087_delivery_notification_lock_order.sql", "sha256": "d4b47326edf081a783487504b801e9abee234f336358a1ffd5874ccefa627de6" },
+    { "id": "088_claude_background_task_generations.sql", "sha256": "eec7106d6b0a51e131487f99044e7c3acb2046df064ccfc0d9b105ed0662141b" }
   ]
 }

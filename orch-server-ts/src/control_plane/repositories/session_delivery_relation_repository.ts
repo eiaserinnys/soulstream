@@ -284,7 +284,10 @@ async function recordRelationConsumedInTransaction(
       updated_at = NOW()
     WHERE relation_key = ${params.relationKey}
       AND completion_id = ${params.completionId}
-      AND state IN ('pending', 'claimed', 'delivered')
+      AND (
+        state IN ('pending', 'claimed', 'delivered')
+        OR (intent = 'runtime_followup' AND state IN ('dispatching', 'queued'))
+      )
     RETURNING *
   `;
   await discardSessionDeliveryNotificationProjections(

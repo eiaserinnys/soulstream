@@ -184,6 +184,7 @@ export class TaskExecutor {
       | "recordTurnStarted"
       | "discardIfConsumed"
       | "recordConsumptionFailure"
+      | "recordRuntimeFollowupRelationConsumed"
     >,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,

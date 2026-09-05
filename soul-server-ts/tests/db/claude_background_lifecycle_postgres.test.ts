@@ -30,6 +30,7 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
   beforeEach(async () => {
     await harness.sql`DELETE FROM session_delivery_notification_outbox`;
     await harness.sql`DELETE FROM session_deliveries`;
+    await harness.sql`DELETE FROM claude_background_task_generations`;
     await harness.sql`DELETE FROM claude_background_tasks`;
     await harness.sql`DELETE FROM sessions`;
     await harness.sql`
@@ -231,9 +232,24 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
 
   it("records a proven-dead runner terminal before recovering an expired dispatch attempt", async () => {
     const lifecycle = makeLifecycle(harness.sql);
-    await lifecycle.observe("caller-session", started("task-restart"));
-    await expect(lifecycle.terminalizeDeadRunner("caller-session")).resolves.toBe(1);
-    await expect(lifecycle.terminalizeDeadRunner("caller-session")).resolves.toBe(0);
+    const deadExecution = {
+      registrationId: "registration-restart",
+      executionCommandId: "command-restart",
+    };
+    await lifecycle.observe(
+      "caller-session",
+      started("task-restart"),
+      undefined,
+      deadExecution,
+    );
+    await expect(lifecycle.terminalizeDeadRunner(
+      "caller-session",
+      deadExecution,
+    )).resolves.toBe(1);
+    await expect(lifecycle.terminalizeDeadRunner(
+      "caller-session",
+      deadExecution,
+    )).resolves.toBe(0);
 
     const task = await background(harness.sql).get(
       "node-test",
@@ -242,7 +258,7 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
     );
     expect(task).toMatchObject({
       status: "killed",
-      close_reason: "worker_restart",
+      close_reason: "runner_dead",
     });
     const repository = deliveries(harness.sql);
     await expect(repository.claimRecoverableCompletionDeliveries(
@@ -277,14 +293,23 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
   it("lets shutdown and dead-runner recovery race without duplicate terminal delivery", async () => {
     const shutdownWorker = makeLifecycle(harness.createPeer());
     const recoveryWorker = makeLifecycle(harness.createPeer());
-    await shutdownWorker.observe("caller-session", started("task-shutdown-race"));
+    const deadExecution = {
+      registrationId: "registration-shutdown-race",
+      executionCommandId: "command-shutdown-race",
+    };
+    await shutdownWorker.observe(
+      "caller-session",
+      started("task-shutdown-race"),
+      undefined,
+      deadExecution,
+    );
 
     const [shutdownAccepted, recovered] = await Promise.all([
       shutdownWorker.observe(
         "caller-session",
         updated("task-shutdown-race", "killed", "shutdown"),
       ),
-      recoveryWorker.terminalizeDeadRunner("caller-session"),
+      recoveryWorker.terminalizeDeadRunner("caller-session", deadExecution),
     ]);
 
     expect(Number(shutdownAccepted) + recovered).toBe(1);
@@ -327,6 +352,7 @@ function started(taskId: string): ClaudeClientEvent {
     type: "claude_runtime_task_started",
     taskId,
     sessionId: "sdk-session",
+    toolUseId: `toolu-${taskId}`,
     description: "long work",
   };
   attachClaudeBackgroundProvenance(event, "sdk_membership");
@@ -341,6 +367,7 @@ function terminal(
     type: "claude_runtime_task_notification",
     taskId,
     sessionId: "sdk-session",
+    toolUseId: `toolu-${taskId}`,
     status,
     summary: `${status} summary`,
   };
@@ -361,6 +388,7 @@ function updated(
       status,
       is_backgrounded: true,
       close_reason: closeReason,
+      tool_use_id: `toolu-${taskId}`,
     },
   };
 }

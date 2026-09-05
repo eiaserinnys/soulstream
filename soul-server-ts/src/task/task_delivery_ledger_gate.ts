@@ -4,6 +4,8 @@ import type {
   SessionDeliveryRow,
 } from "../db/session_db_types.js";
 import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
+import type { ClaudeBackgroundTaskRepository } from
+  "../db/repositories/claude_background_task_repository.js";
 
 import type {
   AddInterventionParams,
@@ -25,6 +27,10 @@ import {
   discardConsumedRunnerIntervention,
   matchesConsumedDelivery,
 } from "./consumed_runner_intervention.js";
+import type { ClaudeBackgroundConsumptionProof } from
+  "./claude_background_result_consumption.js";
+import { recordClaudeBackgroundRelationConsumption } from
+  "./claude_background_relation_consumption.js";
 
 export type DeliveryLedgerAdmission =
   | { kind: "legacy" }
@@ -51,6 +57,11 @@ export class TaskDeliveryLedgerGate {
   constructor(
     private readonly enabled: boolean,
     private readonly repository?: LedgerRepository,
+    private readonly backgroundRepository?: Pick<
+      ClaudeBackgroundTaskRepository,
+      "resolveGeneration"
+    >,
+    private readonly sourceNode?: string,
   ) {}
 
   async admit(params: AddInterventionParams): Promise<DeliveryLedgerAdmission> {
@@ -372,6 +383,28 @@ export class TaskDeliveryLedgerGate {
         }
       }
     }
+  }
+
+  async recordRuntimeFollowupRelationConsumed(
+    task: Task,
+    proof: ClaudeBackgroundConsumptionProof,
+    consumedTurnId: string,
+  ): Promise<boolean> {
+    if (
+      !this.enabled
+      || !this.backgroundRepository
+      || !this.sourceNode
+    ) {
+      return false;
+    }
+    return await recordClaudeBackgroundRelationConsumption(
+      this.requireRepository(),
+      this.backgroundRepository,
+      this.sourceNode,
+      task,
+      proof,
+      consumedTurnId,
+    );
   }
 
   async recordConsumptionFailure(

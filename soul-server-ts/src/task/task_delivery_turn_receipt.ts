@@ -1,5 +1,12 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
+import { readClaudeResultReceiptMetadata } from
+  "../engine/claude_result_receipt_metadata.js";
 
+import {
+  classifyClaudeBackgroundConsumptionProof,
+  type ClaudeToolStartObservation,
+} from "./claude_background_result_consumption.js";
+import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 
@@ -20,6 +27,8 @@ export class TaskDeliveryTurnReceipt {
   private readonly receipts: DeliveryReceipt[] = [];
   private observedTask: Task | undefined;
   private observedTurnId: string | undefined;
+  private readonly toolStarts = new Map<string, ClaudeToolStartObservation>();
+  private readonly exactResultInputUuids = new Set<string>();
 
   constructor(
     private readonly consumption: TaskDeliveryConsumption,
@@ -30,7 +39,20 @@ export class TaskDeliveryTurnReceipt {
 
   async register(intervention: InterventionMessage): Promise<void> {
     const receipt = this.add(intervention);
-    if (receipt && this.observedTask && this.observedTurnId) {
+    if (!receipt) return;
+    if (
+      isRuntimeFollowup(intervention) &&
+      intervention.deliveryId &&
+      this.exactResultInputUuids.has(buildDeliveryInputUuid(intervention.deliveryId)) &&
+      this.observedTask && this.observedTurnId
+    ) {
+      await this.record(this.observedTask, receipt, this.observedTurnId);
+      return;
+    }
+    if (
+      !isRuntimeFollowup(intervention) &&
+      this.observedTask && this.observedTurnId
+    ) {
       await this.record(this.observedTask, receipt, this.observedTurnId);
     }
   }
@@ -56,13 +78,55 @@ export class TaskDeliveryTurnReceipt {
   }
 
   async observe(task: Task, event: SSEEventPayload): Promise<void> {
+    await this.observeExplicitBackgroundResult(task, event);
     if (event.type === "session" || event.type === "error") return;
     const consumedTurnId = turnReceiptId(task);
     this.observedTask = task;
     this.observedTurnId = consumedTurnId;
+    const resultReceipt = readClaudeResultReceiptMetadata(event);
+    if (resultReceipt) this.exactResultInputUuids.add(resultReceipt.inputUuid);
     for (const receipt of this.receipts) {
+      if (isRuntimeFollowup(receipt.intervention)) {
+        if (
+          resultReceipt &&
+          receipt.intervention.deliveryId &&
+          resultReceipt.inputUuid ===
+            buildDeliveryInputUuid(receipt.intervention.deliveryId)
+        ) {
+          await this.record(task, receipt, consumedTurnId);
+        }
+        continue;
+      }
       await this.record(task, receipt, consumedTurnId);
     }
+  }
+
+  private async observeExplicitBackgroundResult(
+    task: Task,
+    event: SSEEventPayload,
+  ): Promise<void> {
+    const payload = event as Record<string, unknown>;
+    if (event.type === "tool_start") {
+      const toolUseId = stringValue(payload.tool_use_id);
+      const toolName = stringValue(payload.tool_name);
+      const toolInput = recordValue(payload.tool_input);
+      if (toolUseId && toolName && toolInput) {
+        this.toolStarts.set(toolUseId, { toolUseId, toolName, toolInput });
+      }
+      return;
+    }
+    if (event.type !== "tool_result") return;
+    const toolUseId = stringValue(payload.tool_use_id);
+    if (!toolUseId) return;
+    const start = this.toolStarts.get(toolUseId);
+    if (!start) return;
+    const proof = classifyClaudeBackgroundConsumptionProof(start, event);
+    if (!proof) return;
+    await this.consumption.recordRuntimeFollowupRelationConsumed(
+      task,
+      proof,
+      turnReceiptId(task),
+    );
   }
 
   private async record(
@@ -99,6 +163,7 @@ export class TaskDeliveryTurnReceipt {
 
   async consume(task: Task): Promise<void> {
     for (const receipt of this.receipts) {
+      if (isRuntimeFollowup(receipt.intervention)) continue;
       if (receipt.consumed || !receipt.recorded) continue;
       // Without an observed turn receipt the delivery stays replayable. Startup
       // transcript recovery owns the durable completed/absent decision.
@@ -110,6 +175,21 @@ export class TaskDeliveryTurnReceipt {
       receipt.consumed = true;
     }
   }
+}
+
+function isRuntimeFollowup(intervention: InterventionMessage): boolean {
+  return intervention.deliveryIntent === "runtime_followup" ||
+    intervention.source === "claude_runtime_task_followup";
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
 }
 
 function matchesIntervention(

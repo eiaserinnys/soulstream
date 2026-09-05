@@ -6,6 +6,7 @@ import type {
   EnginePort,
   EngineUserInput,
 } from "../engine/protocol.js";
+import { engineEventMetadata } from "../engine/engine_event_metadata.js";
 import {
   newExecutionCommandId,
   type RunnerExecutionIdentity,
@@ -340,7 +341,11 @@ async function* legacyEngineEventFrames(
   events: AsyncIterable<import("../engine/protocol.js").SSEEventPayload>,
 ): AsyncIterable<RunnerEventFrame> {
   for await (const event of events) {
-    yield engineEventFrame(event);
+    // Internal Claude proof travels on non-enumerable Symbols. Copy only the
+    // public event fields into the JSON payload and serialize that proof in the
+    // explicit runner metadata envelope. Passing the original object causes
+    // the strict JSON boundary to drop the whole observational frame.
+    yield engineEventFrame({ ...event }, engineEventMetadata(event));
   }
 }
 

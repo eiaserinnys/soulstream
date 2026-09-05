@@ -1,6 +1,7 @@
 import type {
   RegisterSessionDeliveryParams,
   RegisterSessionDeliveryResult,
+  SessionDeliveryRelationConsumptionRow,
   SessionDeliveryRow,
   SqlClient,
 } from "../control_plane_types.js";
@@ -25,6 +26,24 @@ export async function registerRuntimeFollowupDelivery(
 ): Promise<RegisterSessionDeliveryResult> {
   const targetSessionId = params.targetSessionId ?? null;
   await transaction`
+    SELECT pg_advisory_xact_lock(hashtextextended(${params.relationKey}, 0))
+  `;
+  const consumptionRows =
+    await transaction<SessionDeliveryRelationConsumptionRow[]>`
+      SELECT * FROM session_delivery_relation_consumptions
+      WHERE relation_key = ${params.relationKey}
+    `;
+  const consumption = consumptionRows[0];
+  if (
+    consumption
+    && (
+      consumption.completion_id !== (params.completionId ?? null)
+      || consumption.caller_session_id !== targetSessionId
+    )
+  ) {
+    throw new Error(`Completion relation identity conflict: ${params.relationKey}`);
+  }
+  await transaction`
     SELECT pg_advisory_xact_lock(
       hashtextextended(${`runtime_followup:${targetSessionId ?? "unresolved"}:${candidate.followupKey}`}, 0)
     )
@@ -38,6 +57,14 @@ export async function registerRuntimeFollowupDelivery(
   if (exact) {
     resolvedExact = await resolveRegistrationConflict(transaction, params, exact);
     if (resolvedExact.conflict) return resolvedExact;
+  }
+  if (consumption) {
+    return await registerConsumedRuntimeFollowup(
+      transaction,
+      params,
+      consumption,
+      exact,
+    );
   }
 
   const pendingRows = await transaction<SessionDeliveryRow[]>`
@@ -247,7 +274,9 @@ export function readRuntimeFollowupCandidate(
     || !Number.isInteger(followupAttempt)
     || followupAttempt < 1
   ) {
-    return undefined;
+    throw new Error(
+      "runtime_followup requires payload.followup_key and positive integer payload.followup_attempt",
+    );
   }
   return {
     followupKey,
@@ -255,6 +284,76 @@ export function readRuntimeFollowupCandidate(
     createdAt: params.createdAt ?? new Date(),
     enqueueSequence: null,
   };
+}
+
+async function registerConsumedRuntimeFollowup(
+  transaction: SqlClient,
+  params: RegisterSessionDeliveryParams,
+  consumption: SessionDeliveryRelationConsumptionRow,
+  exact: SessionDeliveryRow | undefined,
+): Promise<RegisterSessionDeliveryResult> {
+  if (exact) {
+    const rows = await transaction<SessionDeliveryRow[]>`
+      UPDATE session_deliveries
+      SET
+        state = 'consumed', aggregate_state = 'consumed',
+        caller_turn_id = ${consumption.consumed_turn_id},
+        target_receipt_id = COALESCE(target_receipt_id, ${consumption.consumed_turn_id}),
+        target_receipt_at = COALESCE(target_receipt_at, ${consumption.consumed_at}),
+        consumed_at = ${consumption.consumed_at},
+        consumed_reason = 'relation already consumed',
+        attempt_token = NULL, attempt_expires_at = NULL,
+        updated_at = NOW()
+      WHERE delivery_id = ${exact.delivery_id}
+        AND state NOT IN ('consumed', 'superseded')
+      RETURNING *
+    `;
+    await discardSessionDeliveryNotificationProjections(transaction, [exact.delivery_id]);
+    return {
+      row: rows[0] ?? exact,
+      inserted: false,
+      conflict: false,
+    };
+  }
+  const createdAt = params.createdAt ?? new Date();
+  const rows = await transaction<SessionDeliveryRow[]>`
+    INSERT INTO session_deliveries (
+      delivery_id, target_session_id, source_session_id, relation_key,
+      completion_id, intent, source, producer_kind, producer_id,
+      producer_terminal_revision, parent_delivery_id, caller_turn_id,
+      payload_hash, payload, state, aggregate_state,
+      target_receipt_id, target_receipt_at,
+      created_at, updated_at, consumed_at, consumed_reason
+    ) VALUES (
+      ${params.deliveryId}, ${params.targetSessionId ?? null},
+      ${params.sourceSessionId ?? null}, ${params.relationKey},
+      ${params.completionId ?? null}, ${params.intent}, ${params.source},
+      ${params.producerKind ?? null}, ${params.producerId ?? null},
+      ${params.producerTerminalRevision ?? null},
+      ${params.parentDeliveryId ?? null}, ${consumption.consumed_turn_id},
+      ${params.payloadHash},
+      ${transaction.json(asPostgresJsonValue(params.payload))},
+      'consumed', 'consumed',
+      ${consumption.consumed_turn_id}, ${consumption.consumed_at},
+      ${createdAt}, ${createdAt}, ${consumption.consumed_at},
+      'relation already consumed'
+    )
+    ON CONFLICT DO NOTHING
+    RETURNING *
+  `;
+  if (!rows[0]) {
+    const conflicts = await transaction<SessionDeliveryRow[]>`
+      SELECT * FROM session_deliveries
+      WHERE delivery_id = ${params.deliveryId}
+         OR relation_key = ${params.relationKey}
+      LIMIT 1
+    `;
+    if (!conflicts[0]) {
+      throw new Error(`Runtime follow-up disappeared: ${params.deliveryId}`);
+    }
+    return await resolveRegistrationConflict(transaction, params, conflicts[0]);
+  }
+  return { row: rows[0], inserted: true, conflict: false };
 }
 
 function runtimeFollowupCandidateFromRow(

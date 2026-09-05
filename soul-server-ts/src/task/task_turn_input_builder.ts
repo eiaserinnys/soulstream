@@ -13,7 +13,7 @@ import { formatContextItems } from "../context/prompt_assembler.js";
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { truncateClaudeTextToEstimatedTokens } from "./claude_context_recovery.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
-import { dequeueInterventions } from "./task_intervention_queue.js";
+import { dequeueNextTurnInterventions } from "./task_intervention_queue.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 import { effectiveTaskBackend } from "./task_model_preset.js";
@@ -56,7 +56,11 @@ export class TaskTurnInputBuilder {
 
   async prepareInitialTurnInput(task: Task, agent: AgentProfile): Promise<TaskTurnInput> {
     if (task.interventionQueue.length > 0) {
-      return this.prepareFollowupTurnInput(task, agent, dequeueInterventions(task));
+      return this.prepareFollowupTurnInput(
+        task,
+        agent,
+        dequeueNextTurnInterventions(task),
+      );
     }
 
     const ctx = await this.buildContext(task, agent);

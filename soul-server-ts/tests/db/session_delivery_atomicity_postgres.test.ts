@@ -2009,6 +2009,13 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       | "human_live_steer" =
       "completion_notification",
   ): Promise<void> {
+    const payload = intent === "runtime_followup"
+      ? {
+          text: "done",
+          followup_key: `followup-${relationKey}`,
+          followup_attempt: 1,
+        }
+      : { text: "done" };
     await repository.register({
       deliveryId,
       targetSessionId: "caller-old",
@@ -2021,7 +2028,7 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       producerId: "child-session",
       producerTerminalRevision: "42",
       payloadHash: `hash-${relationKey}`,
-      payload: { text: "done" },
+      payload,
     });
   }
 

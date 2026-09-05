@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
 import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
+import { buildClaudeBackgroundGenerationIdentity } from
+  "../../src/task/claude_background_generation_identity.js";
 
 function row(deliveryId: string, state: SessionDeliveryRow["state"]): SessionDeliveryRow {
   return {
@@ -11,6 +13,82 @@ function row(deliveryId: string, state: SessionDeliveryRow["state"]): SessionDel
 }
 
 describe("TaskDeliveryLedgerGate", () => {
+  it("records an Agent result as a pre-terminal tombstone for the exact generation", async () => {
+    const recordRelationConsumed = vi.fn().mockResolvedValue({
+      relation: {},
+      relationInserted: true,
+      deliveryConsumed: false,
+    });
+    const gate = new TaskDeliveryLedgerGate(
+      true,
+      { recordRelationConsumed } as never,
+      { resolveGeneration: vi.fn() } as never,
+      "node-test",
+    );
+    const task = {
+      agentSessionId: "caller-session",
+      codexThreadId: "sdk-session",
+    } as never;
+    const expected = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: "node-test",
+      agentSessionId: "caller-session",
+      sdkSessionId: "sdk-session",
+      sdkTaskId: "agent-task",
+      initiatingToolUseId: "toolu-agent",
+    });
+
+    await expect(gate.recordRuntimeFollowupRelationConsumed(task, {
+      kind: "exact_generation",
+      taskId: "agent-task",
+      initiatingToolUseId: "toolu-agent",
+    }, "event:agent-result")).resolves.toBe(true);
+    expect(recordRelationConsumed).toHaveBeenCalledWith({
+      relationKey: expected.relationKey,
+      completionId: expected.completionId,
+      callerSessionId: "caller-session",
+      consumedTurnId: "event:agent-result",
+    });
+  });
+
+  it("records TaskOutput only for one exact unconsumed generation", async () => {
+    const recordRelationConsumed = vi.fn().mockResolvedValue({});
+    const resolveGeneration = vi.fn()
+      .mockResolvedValueOnce({ status: "absent" })
+      .mockResolvedValueOnce({ status: "ambiguous" })
+      .mockResolvedValueOnce({
+        status: "resolved",
+        row: { relation_key: "relation-B", completion_id: "completion-B" },
+      });
+    const gate = new TaskDeliveryLedgerGate(
+      true,
+      { recordRelationConsumed } as never,
+      { resolveGeneration } as never,
+      "node-test",
+    );
+    const task = {
+      agentSessionId: "caller-session",
+      codexThreadId: "sdk-session",
+    } as never;
+    const proof = { kind: "task_output" as const, taskId: "shared-task" };
+
+    await expect(gate.recordRuntimeFollowupRelationConsumed(
+      task, proof, "event:absent",
+    )).resolves.toBe(false);
+    await expect(gate.recordRuntimeFollowupRelationConsumed(
+      task, proof, "event:ambiguous",
+    )).resolves.toBe(false);
+    await expect(gate.recordRuntimeFollowupRelationConsumed(
+      task, proof, "event:resolved",
+    )).resolves.toBe(true);
+    expect(recordRelationConsumed).toHaveBeenCalledOnce();
+    expect(recordRelationConsumed).toHaveBeenCalledWith({
+      relationKey: "relation-B",
+      completionId: "completion-B",
+      callerSessionId: "caller-session",
+      consumedTurnId: "event:resolved",
+    });
+  });
+
   it("admits human live steering through the same durable ledger as every other delivery", async () => {
     const deliveryId = "77777777-7777-4777-8777-777777777777";
     const register = vi.fn(async () => ({

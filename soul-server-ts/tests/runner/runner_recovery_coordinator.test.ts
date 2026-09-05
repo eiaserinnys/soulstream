@@ -127,7 +127,13 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await subject.coordinator.waitForSettled();
 
     expect(terminalizeClaudeBackgroundTasks).toHaveBeenCalledOnce();
-    expect(terminalizeClaudeBackgroundTasks).toHaveBeenCalledWith("session-a");
+    expect(terminalizeClaudeBackgroundTasks).toHaveBeenCalledWith(
+      "session-a",
+      {
+        registrationId: "registration-a",
+        executionCommandId: "execute-a",
+      },
+    );
   });
 
 

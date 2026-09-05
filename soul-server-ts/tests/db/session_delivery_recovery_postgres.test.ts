@@ -177,7 +177,16 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
             ? "claude_runtime_task_followup"
             : "user_message",
         payloadHash: `hash:${intent}`,
-        payload: { text: `content:${intent}`, user: "agent" },
+        payload: {
+          text: `content:${intent}`,
+          user: "agent",
+          ...(intent === "runtime_followup"
+            ? {
+              followup_key: "caller-session:node-ready",
+              followup_attempt: 1,
+            }
+            : {}),
+        },
       });
     }
 
@@ -1185,6 +1194,8 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         text: "background task finished",
         user: "system",
         source: "claude_runtime_task_followup",
+        followup_key: "caller-session:task",
+        followup_attempt: 1,
       },
     });
     for (const deliveryId of ["orphan-queued", "orphan-delivered"] as const) {

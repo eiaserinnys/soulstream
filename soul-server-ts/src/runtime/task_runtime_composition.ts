@@ -128,6 +128,7 @@ export function composeTaskRuntime(
       await taskExecutor.releaseRetainedClaudeRunner(task),
     logger,
     deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+    sourceNode: env.SOULSTREAM_NODE_ID,
   });
 
   taskExecutor = new TaskExecutor(

@@ -223,6 +223,94 @@ describe("RunnerProcessDispatcher", () => {
     );
   });
 
+  it("waits for an exact Claude runtime observation before detached follow-up admission", async () => {
+    const fixture = await spawnedInitializationFixture();
+    let releaseObservation!: () => void;
+    const observationGate = new Promise<void>((resolve) => {
+      releaseObservation = resolve;
+    });
+    const mutations: string[] = [];
+    const receipts: string[] = [];
+    const responses: string[] = [];
+    const admissions: string[] = [];
+    const trackedObservations = new Set<Promise<void>>();
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher;
+    Object.assign(dispatcher, {
+      ready: Promise.resolve(),
+      spawnedProcess: fixture.spawned,
+      spawnInput: spawnInput(fixture.stateDirectory),
+      closed: false,
+      inFlightFrameHandlers: new Set<Promise<void>>(),
+      inFlightClaudeRuntimeObservations: trackedObservations,
+      recentHostResponses: new Map(),
+      options: {
+        logger: { warn: vi.fn() },
+        handleHostCall: async (
+          call: { correlationId: string; service: string; operation: string },
+          registerPostResponse: (continuation: () => Promise<void>) => void,
+        ) => {
+          if (call.service === "claude_runtime" && call.operation === "observe") {
+            mutations.push(call.correlationId);
+            await observationGate;
+            return { observed: true };
+          }
+          registerPostResponse(async () => {
+            const identity = await dispatcher.prepareExecutionIdentity("execution-E2");
+            admissions.push(identity.executionCommandId);
+          });
+          return { published: true };
+        },
+      },
+      hostCallIdempotency: {
+        execute: async (
+          call: { correlationId: string },
+          apply: (idempotencyKey: string) => Promise<unknown>,
+        ) => {
+          const data = await apply(call.correlationId);
+          receipts.push(call.correlationId);
+          return { data, replayed: false };
+        },
+      },
+      connection: {
+        send: async (frame: { correlationId?: string }) => {
+          responses.push(frame.correlationId ?? "missing");
+        },
+      },
+    });
+    const tracked = dispatcher as unknown as {
+      trackFrameHandler(frame: ReturnType<typeof runnerRequestFrame>): Promise<void>;
+    };
+
+    const observing = tracked.trackFrameHandler(runnerRequestFrame("host:observe", {
+      kind: "host_call",
+      service: "claude_runtime",
+      operation: "observe",
+      args: [{ type: "task_progress", task_id: "task-E1" }],
+    }));
+    await vi.waitFor(() => expect(mutations).toEqual(["host:observe"]));
+    expect(trackedObservations.size).toBe(1);
+    const detached = tracked.trackFrameHandler(runnerRequestFrame("host:detached", {
+      kind: "host_call",
+      service: "detached_event",
+      operation: "publish",
+      args: ["session-a", { type: "task_notification", task_id: "task-E1" }],
+    }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(admissions).toEqual([]);
+    expect(responses).not.toContain("host:observe");
+
+    releaseObservation();
+    await Promise.all([observing, detached]);
+
+    expect(trackedObservations.size).toBe(0);
+    expect(admissions).toEqual(["execution-E2"]);
+    expect(mutations).toEqual(["host:observe"]);
+    expect(receipts.filter((value) => value === "host:observe")).toHaveLength(1);
+    expect(responses.filter((value) => value === "host:observe")).toHaveLength(1);
+  });
+
   it("prefers the first-durable child intervention and consumes a conflicting host fallback", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");

@@ -1,24 +1,26 @@
 import type { ClaudeClientEvent } from "../engine/claude_event_mapper.js";
 import { readClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
+import { readClaudeSdkSessionMetadata } from
+  "../engine/claude_sdk_session_metadata.js";
 import {
   attachClaudeBackgroundDeliveryMetadata,
   type ClaudeBackgroundDeliveryMetadata,
 } from "../engine/claude_background_delivery_metadata.js";
 import type {
   ClaudeBackgroundTaskRepository,
-  ClaudeBackgroundTaskRow,
+  ClaudeBackgroundTaskGenerationRow,
   ClaudeBackgroundTerminalStatus,
 } from "../db/repositories/claude_background_task_repository.js";
 import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
 } from "../db/session_db_types.js";
+import type { ExecutionRegistration } from "./execution_registration.js";
 
-import {
-  buildDeterministicDeliveryIdentity,
-} from "./delivery_identity.js";
 import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
+import { buildClaudeBackgroundGenerationIdentity } from
+  "./claude_background_generation_identity.js";
 import {
   buildClaudeRuntimeTaskFollowupPrompt,
   buildFollowupKey,
@@ -44,25 +46,40 @@ export class ClaudeBackgroundTaskLifecycle {
     sessionId: string,
     event: ClaudeClientEvent,
     idempotencyKey?: string,
+    execution?: ExecutionRegistration,
   ): Promise<boolean> {
     const parsed = parseBackgroundEvent(event);
-    if (!parsed) return true;
+    if (!parsed || !parsed.sdkSessionId || !parsed.toolUseId) return true;
+    const identity = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: this.deps.sourceNode,
+      agentSessionId: sessionId,
+      sdkSessionId: parsed.sdkSessionId,
+      sdkTaskId: parsed.taskId,
+      initiatingToolUseId: parsed.toolUseId,
+    });
     const timestamp = "timestamp" in event ? event.timestamp : undefined;
     const observedAt = timestamp
       ? new Date(timestamp * 1_000)
       : this.now();
     if (!parsed.terminalStatus) {
-      const row = await this.deps.repository.observe({
+      const row = await this.deps.repository.observeGeneration({
         ...(idempotencyKey ? { idempotencyKey } : {}),
         sourceNode: this.deps.sourceNode,
         sessionId,
         taskId: parsed.taskId,
         sdkSessionId: parsed.sdkSessionId,
+        initiatingToolUseId: parsed.toolUseId,
+        ...identity,
+        ...(execution
+          ? {
+            runnerRegistrationId: execution.registrationId,
+            executionCommandId: execution.executionCommandId,
+          }
+          : {}),
         status: parsed.status,
         description: parsed.description,
         summary: parsed.summary,
         outputFile: parsed.outputFile,
-        toolUseId: parsed.toolUseId,
         observedAt,
       });
       return row.status === "pending" || row.status === "running";
@@ -71,7 +88,10 @@ export class ClaudeBackgroundTaskLifecycle {
     const terminalRevision =
       parsed.terminalRevision ?? String(observedAt.getTime());
     const delivery = buildDelivery({
+      ...identity,
       sessionId,
+      sdkSessionId: parsed.sdkSessionId,
+      initiatingToolUseId: parsed.toolUseId,
       taskId: parsed.taskId,
       terminalRevision,
       status: parsed.terminalStatus,
@@ -83,19 +103,26 @@ export class ClaudeBackgroundTaskLifecycle {
       error: parsed.error,
       createdAt: observedAt,
     });
-    const result = await this.deps.repository.terminalize({
+    const result = await this.deps.repository.terminalizeGeneration({
       ...(idempotencyKey ? { idempotencyKey } : {}),
       sourceNode: this.deps.sourceNode,
       sessionId,
       taskId: parsed.taskId,
       sdkSessionId: parsed.sdkSessionId,
+      initiatingToolUseId: parsed.toolUseId,
+      ...identity,
+      ...(execution
+        ? {
+          runnerRegistrationId: execution.registrationId,
+          executionCommandId: execution.executionCommandId,
+        }
+        : {}),
       status: parsed.terminalStatus,
       closeReason: parsed.closeReason ?? `sdk_${parsed.terminalStatus}`,
       terminalRevision,
       description: parsed.description,
       summary: parsed.summary,
       outputFile: parsed.outputFile,
-      toolUseId: parsed.toolUseId,
       observedAt,
       delivery,
     });
@@ -107,12 +134,17 @@ export class ClaudeBackgroundTaskLifecycle {
     return true;
   }
 
-  async terminalizeDeadRunner(sessionId: string): Promise<number> {
+  async terminalizeDeadRunner(
+    sessionId: string,
+    execution: ExecutionRegistration,
+  ): Promise<number> {
     let recovered = 0;
     for (;;) {
-      const active = await this.deps.repository.activeForSession(
+      const active = await this.deps.repository.activeGenerationsForExecution(
         this.deps.sourceNode,
         sessionId,
+        execution.registrationId,
+        execution.executionCommandId,
       );
       if (active.length === 0) return recovered;
       for (const row of active) {
@@ -122,34 +154,55 @@ export class ClaudeBackgroundTaskLifecycle {
   }
 
   private async terminalizeDeadRunnerRow(
-    row: ClaudeBackgroundTaskRow,
+    row: ClaudeBackgroundTaskGenerationRow,
   ): Promise<boolean> {
     const createdAt = this.now();
-    const terminalRevision = `restart:${createdAt.getTime()}`;
+    const terminalRevision = `runner-dead:${row.generation_key}`;
     const delivery = buildDelivery({
+      generationKey: row.generation_key,
+      relationKey: row.relation_key,
+      completionId: row.completion_id,
+      deliveryId: buildClaudeBackgroundGenerationIdentity({
+        sourceNode: row.source_node,
+        agentSessionId: row.session_id,
+        sdkSessionId: row.sdk_session_id,
+        sdkTaskId: row.task_id,
+        initiatingToolUseId: row.initiating_tool_use_id,
+      }).deliveryId,
       sessionId: row.session_id,
+      sdkSessionId: row.sdk_session_id,
+      initiatingToolUseId: row.initiating_tool_use_id,
       taskId: row.task_id,
       terminalRevision,
       status: "killed",
-      closeReason: "worker_restart",
+      closeReason: "runner_dead",
       description: row.description ?? undefined,
       summary: row.summary ?? undefined,
       outputFile: row.output_file ?? undefined,
-      toolUseId: row.tool_use_id ?? undefined,
+      toolUseId: row.initiating_tool_use_id,
       createdAt,
     });
-    const result = await this.deps.repository.terminalize({
+    const result = await this.deps.repository.terminalizeGeneration({
       sourceNode: row.source_node,
       sessionId: row.session_id,
       taskId: row.task_id,
-      sdkSessionId: row.sdk_session_id ?? undefined,
+      sdkSessionId: row.sdk_session_id,
+      initiatingToolUseId: row.initiating_tool_use_id,
+      generationKey: row.generation_key,
+      relationKey: row.relation_key,
+      completionId: row.completion_id,
+      ...(row.runner_registration_id && row.execution_command_id
+        ? {
+          runnerRegistrationId: row.runner_registration_id,
+          executionCommandId: row.execution_command_id,
+        }
+        : {}),
       status: "killed",
-      closeReason: "worker_restart",
+      closeReason: "runner_dead",
       terminalRevision,
       description: row.description ?? undefined,
       summary: row.summary ?? undefined,
       outputFile: row.output_file ?? undefined,
-      toolUseId: row.tool_use_id ?? undefined,
       observedAt: createdAt,
       delivery,
     });
@@ -181,13 +234,16 @@ function parseBackgroundEvent(event: ClaudeClientEvent): ParsedBackgroundEvent |
   ) {
     return null;
   }
+  const sdkSessionId = "sessionId" in event && event.sessionId
+    ? event.sessionId
+    : readClaudeSdkSessionMetadata(event)?.sessionId;
   switch (event.type) {
     case "claude_runtime_task_started":
     case "claude_runtime_task_created":
     case "claude_runtime_task_progress":
       return {
         taskId: event.taskId,
-        sdkSessionId: event.sessionId,
+        sdkSessionId,
         status: event.type === "claude_runtime_task_created" ? "pending" : "running",
         description: event.description,
         summary: event.type === "claude_runtime_task_progress" ? event.summary : undefined,
@@ -196,14 +252,15 @@ function parseBackgroundEvent(event: ClaudeClientEvent): ParsedBackgroundEvent |
     case "claude_runtime_task_completed":
       return {
         taskId: event.taskId,
-        sdkSessionId: event.sessionId,
+        sdkSessionId,
         terminalStatus: "completed",
         description: event.description,
+        toolUseId: undefined,
       };
     case "claude_runtime_task_notification":
       return {
         taskId: event.taskId,
-        sdkSessionId: event.sessionId,
+        sdkSessionId,
         terminalStatus: event.status,
         closeReason: `sdk_${event.status}`,
         summary: event.summary,
@@ -214,7 +271,7 @@ function parseBackgroundEvent(event: ClaudeClientEvent): ParsedBackgroundEvent |
       const status = asTerminalStatus(event.patch.status);
       return {
         taskId: event.taskId,
-        sdkSessionId: event.sessionId,
+        sdkSessionId,
         ...(status ? { terminalStatus: status } : { status: "running" }),
         closeReason: asString(event.patch.close_reason),
         terminalRevision: revision(event.patch.end_time),
@@ -231,7 +288,13 @@ function parseBackgroundEvent(event: ClaudeClientEvent): ParsedBackgroundEvent |
 }
 
 function buildDelivery(input: {
+  generationKey: string;
+  relationKey: string;
+  completionId: string;
+  deliveryId: string;
   sessionId: string;
+  sdkSessionId: string;
+  initiatingToolUseId: string;
   taskId: string;
   terminalRevision: string;
   status: ClaudeBackgroundTerminalStatus;
@@ -243,13 +306,13 @@ function buildDelivery(input: {
   error?: string;
   createdAt: Date;
 }): RegisterSessionDeliveryParams {
-  const relationKey = `claude_runtime:${input.sessionId}:${input.taskId}`;
-  const identity = buildDeterministicDeliveryIdentity({
-    targetSessionId: input.sessionId,
-    relationKey,
-    intent: "runtime_followup",
-  });
   const item: PendingRuntimeTaskFollowup = {
+    generationKey: input.generationKey,
+    relationKey: input.relationKey,
+    completionId: input.completionId,
+    deliveryId: input.deliveryId,
+    sdkSessionId: input.sdkSessionId,
+    initiatingToolUseId: input.initiatingToolUseId,
     taskId: input.taskId,
     status: input.status,
     description: input.description,
@@ -264,18 +327,18 @@ function buildDelivery(input: {
     text: buildClaudeRuntimeTaskFollowupPrompt([item]),
     user: "system",
     source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-    completionId: identity.completionId,
-    relationKey,
+    completionId: input.completionId,
+    relationKey: input.relationKey,
     callerInfo: { source: "system", display_name: "Soulstream" },
     followupKey: buildFollowupKey(input.sessionId, [item]),
     followupAttempt: 1,
     followupTaskIds: [input.taskId],
   });
   return {
-    deliveryId: identity.deliveryId,
+    deliveryId: input.deliveryId,
     targetSessionId: input.sessionId,
-    relationKey,
-    completionId: identity.completionId,
+    relationKey: input.relationKey,
+    completionId: input.completionId,
     intent: "runtime_followup",
     source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
     producerKind: "claude_background_task",

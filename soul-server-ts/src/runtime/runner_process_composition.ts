@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { Env } from "../config.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
+import type { ExecutionRegistration } from "../task/execution_registration.js";
 import type { RunnerProcessRuntimeFactory } from "../task/task_executor.js";
 import {
   createRunnerProcessRuntimeFactory,
@@ -94,7 +95,10 @@ export async function composeRunnerRecoveryCoordinator(options: {
     | "recoverRegisteredRunner"
     | "retainRegisteredClaudeBackgroundRunner"
   >;
-  terminalizeClaudeBackgroundTasks?: (sessionId: string) => Promise<number>;
+  terminalizeClaudeBackgroundTasks?: (
+    sessionId: string,
+    execution: ExecutionRegistration,
+  ) => Promise<number>;
   logger: Logger;
 }): Promise<RunnerRecoveryCoordinator | undefined> {
   if (!options.runnerProcessFactory) return undefined;

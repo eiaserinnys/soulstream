@@ -1,10 +1,18 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import { attachClaudeBackgroundProvenance } from
   "./claude_background_provenance.js";
+import {
+  attachClaudeResultInputReceipt,
+  attachClaudeRuntimeSdkSession,
+  attachClaudeToolResultEnvelope,
+  copyClaudeSdkEventMetadata,
+  fallbackClaudeSdkMessageIdentity,
+  runtimeTaskId,
+} from "./claude_sdk_event_metadata.js";
 import { mapClaudeBackgroundTaskMembership } from
   "./claude_sdk_background_membership_mapper.js";
 import { mapClaudeSystemMessage } from "./claude_sdk_system_event_mapper.js";
@@ -45,6 +53,7 @@ export class ClaudeSdkEventMapper {
   private compactHookEventCount = 0;
   private latestIterationUsage: unknown;
   private latestIterationModel: string | undefined;
+  private currentSdkSessionId: string | undefined;
 
   constructor(runtimeState: ClaudeRuntimeState) {
     this.runtimeState = runtimeState;
@@ -62,6 +71,7 @@ export class ClaudeSdkEventMapper {
     this.compactHookEventCount = 0;
     this.latestIterationUsage = undefined;
     this.latestIterationModel = undefined;
+    this.currentSdkSessionId = undefined;
   }
 
   getCompactHookEventCount(): number {
@@ -105,8 +115,14 @@ export class ClaudeSdkEventMapper {
   }
 
   mapSystemMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
+    if (asString(message.subtype) === "init") {
+      this.currentSdkSessionId = asString(message.session_id);
+    }
     if (asString(message.subtype) === "background_tasks_changed") {
-      return mapClaudeBackgroundTaskMembership(message, this.runtimeState);
+      return attachClaudeRuntimeSdkSession(
+        mapClaudeBackgroundTaskMembership(message, this.runtimeState),
+        this.currentSdkSessionId,
+      );
     }
     const events = mapClaudeSystemMessage(message, {
       runtimeState: this.runtimeState,
@@ -132,7 +148,7 @@ export class ClaudeSdkEventMapper {
         attachClaudeBackgroundProvenance(event, "sdk_membership");
       }
     }
-    return events;
+    return attachClaudeRuntimeSdkSession(events, this.currentSdkSessionId);
   }
 
   mapAssistantMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
@@ -214,13 +230,15 @@ export class ClaudeSdkEventMapper {
       if (toolUseId && this.emittedToolResultIds.has(toolUseId)) continue;
       if (toolUseId) this.emittedToolResultIds.add(toolUseId);
       const toolName = toolUseId ? this.toolNamesById.get(toolUseId) : undefined;
-      events.push({
+      const resultEvent: ClaudeClientEvent = {
         type: "tool_result",
         ...(toolName !== undefined ? { toolName } : {}),
         toolUseId,
         result: record.content,
         isError: Boolean(record.is_error),
-      });
+      };
+      attachClaudeToolResultEnvelope(resultEvent, message);
+      events.push(resultEvent);
       events.push(
         ...this.mapBackgroundBashTaskFromToolResult({
           toolName,
@@ -273,11 +291,13 @@ export class ClaudeSdkEventMapper {
         fatal: !isRecoverableExecutionDiagnostic(message),
         errorCode: resultErrorCode(message),
       };
-      return this.withSdkMessageDedupe([
+      const events = this.withSdkMessageDedupe([
         resultEvent,
         ...(contextUsageEvent ? [contextUsageEvent] : []),
         errorEvent,
       ], message);
+      attachClaudeResultInputReceipt(events, message);
+      return events;
     }
 
     const claudeSessionId = asString(message.session_id);
@@ -288,11 +308,13 @@ export class ClaudeSdkEventMapper {
       ...(usage !== undefined ? { usage } : {}),
       ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
     };
-    return this.withSdkMessageDedupe([
+    const events = this.withSdkMessageDedupe([
       resultEvent,
       ...(contextUsageEvent ? [contextUsageEvent] : []),
       completeEvent,
     ], message);
+    attachClaudeResultInputReceipt(events, message);
+    return events;
   }
 
   mapPromptSuggestion(message: Record<string, unknown>): ClaudeClientEvent[] {
@@ -443,56 +465,13 @@ export class ClaudeSdkEventMapper {
       asString(message.uuid) ??
       asString(message.message_id) ??
       asString(asRecord(message.message)?.id) ??
-      fallbackSdkMessageIdentity(message);
-    return events.map((event, index) => ({
-      ...event,
-      sdkDedupeKey: `claude-sdk:${messageType}:${identity}:${index}`,
-    }) as unknown as ClaudeClientEvent);
+      fallbackClaudeSdkMessageIdentity(message);
+    return events.map((event, index) => {
+      const copied = {
+        ...event,
+        sdkDedupeKey: `claude-sdk:${messageType}:${identity}:${index}`,
+      } as unknown as ClaudeClientEvent;
+      return copyClaudeSdkEventMetadata(event, copied, this.currentSdkSessionId);
+    });
   }
-}
-
-function runtimeTaskId(event: ClaudeClientEvent): string | undefined {
-  switch (event.type) {
-    case "claude_runtime_task_started":
-    case "claude_runtime_task_created":
-    case "claude_runtime_task_updated":
-    case "claude_runtime_task_progress":
-    case "claude_runtime_task_completed":
-    case "claude_runtime_task_notification":
-      return event.taskId;
-    default:
-      return undefined;
-  }
-}
-
-function fallbackSdkMessageIdentity(message: Record<string, unknown>): string {
-  const nestedMessage = asRecord(message.message);
-  const role =
-    asString(nestedMessage?.role) ??
-    asString(message.role) ??
-    asString(message.type) ??
-    "message";
-  const content = nestedMessage?.content ?? message.content ?? message;
-  const hash = createHash("sha256")
-    .update(canonicalJson({ role, content }))
-    .digest("hex")
-    .slice(0, 32);
-  return `content:${role}:${hash}`;
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === undefined) {
-    return "undefined";
-  }
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value) ?? String(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-    .join(",")}}`;
 }

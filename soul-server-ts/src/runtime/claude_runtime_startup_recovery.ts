@@ -2,6 +2,8 @@ import type { Logger } from "pino";
 
 import type { QueuedDeliveryTranscriptRecoveryPass } from
   "../task/queued_delivery_transcript_recovery.js";
+import type { ClaudeBackgroundGenerationRecoveryPass } from
+  "../task/claude_background_generation_startup_recovery.js";
 import { withDeadline } from "./deadline.js";
 
 /**
@@ -11,6 +13,7 @@ import { withDeadline } from "./deadline.js";
 const STARTUP_RECOVERY_STEP_TIMEOUT_MS = 15_000;
 
 export interface ClaudeRuntimeStartupRecoveryDeps {
+  recoverBackgroundGenerations?(): Promise<ClaudeBackgroundGenerationRecoveryPass>;
   recoverQueuedDeliveries(): Promise<QueuedDeliveryTranscriptRecoveryPass>;
   logger: Pick<Logger, "info" | "warn" | "error">;
   nodeId: string;
@@ -18,7 +21,7 @@ export interface ClaudeRuntimeStartupRecoveryDeps {
 
 /** Runs each startup-only Claude recovery step at most once per worker boot. */
 export class ClaudeRuntimeStartupRecovery {
-  private queuedDeliveryRecovery?: Promise<void>;
+  private startupRecovery?: Promise<void>;
   private stopped = false;
 
   constructor(
@@ -33,13 +36,13 @@ export class ClaudeRuntimeStartupRecovery {
    */
   async afterRunnerRecovery(): Promise<void> {
     if (this.stopped) return;
-    this.queuedDeliveryRecovery ??= this.recoverQueuedDeliveries();
-    await this.queuedDeliveryRecovery;
+    this.startupRecovery ??= this.recoverAll();
+    await this.startupRecovery;
   }
 
   async stop(timeoutMs = 5_000): Promise<"drained" | "timed_out"> {
     this.stopped = true;
-    const active = [this.queuedDeliveryRecovery]
+    const active = [this.startupRecovery]
       .filter((pending): pending is Promise<void> => pending !== undefined);
     if (active.length === 0) return "drained";
     return await Promise.race([
@@ -49,6 +52,35 @@ export class ClaudeRuntimeStartupRecovery {
         timer.unref?.();
       }),
     ]);
+  }
+
+  private async recoverAll(): Promise<void> {
+    await this.recoverBackgroundGenerations();
+    await this.recoverQueuedDeliveries();
+  }
+
+  private async recoverBackgroundGenerations(): Promise<void> {
+    if (!this.deps.recoverBackgroundGenerations) return;
+    try {
+      const pass = await withDeadline(
+        this.deps.recoverBackgroundGenerations(),
+        this.stepTimeoutMs,
+        () => new Error(
+          `Background generation startup recovery exceeded ${this.stepTimeoutMs}ms`,
+        ),
+      );
+      if (pass.recovered > 0) {
+        this.deps.logger.warn(
+          { count: pass.recovered, nodeId: this.deps.nodeId },
+          "Reconciled legacy-lost Claude background generations after worker restart",
+        );
+      }
+    } catch (err) {
+      this.deps.logger.error(
+        { err, nodeId: this.deps.nodeId },
+        "Background generation startup recovery failed; boot pass will not retry",
+      );
+    }
   }
 
   private async recoverQueuedDeliveries(): Promise<void> {

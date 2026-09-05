@@ -352,6 +352,73 @@ describe("worker control-plane host clients", () => {
     );
   });
 
+  it("routes canonical background generation identity without collapsing it to task id", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        args: [
+          "node-1",
+          "session-1",
+          "sdk-session-1",
+          "task-1",
+          "toolu-resume-1",
+        ],
+      });
+      return new Response(JSON.stringify({
+        source_node: "node-1",
+        session_id: "session-1",
+        sdk_session_id: "sdk-session-1",
+        task_id: "task-1",
+        initiating_tool_use_id: "toolu-resume-1",
+        created_at: "2026-09-05T09:27:55.000Z",
+        updated_at: "2026-09-05T09:27:55.000Z",
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ClaudeRuntimeHostClient({ orch, logger });
+
+    const row = await client.getGeneration(
+      "node-1",
+      "session-1",
+      "sdk-session-1",
+      "task-1",
+      "toolu-resume-1",
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://orch.example/api/claude-runtime/host/get_background_generation",
+    );
+    expect(row?.created_at).toBeInstanceOf(Date);
+  });
+
+  it("sends exact execution recovery and legacy terminal inventory dimensions", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      return new Response(JSON.stringify(JSON.parse(String(init?.body)).args), {
+        status: 200,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ClaudeRuntimeHostClient({ orch, logger });
+
+    await expect(client.activeGenerationsForExecution(
+      "node-1",
+      "session-1",
+      "registration-1",
+      "command-1",
+    )).resolves.toEqual([
+      "node-1", "session-1", "registration-1", "command-1", 1_000,
+    ]);
+    await expect(client.terminalForNode("node-1")).resolves.toEqual([
+      "node-1", 1_000,
+    ]);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://orch.example/api/claude-runtime/host/active_background_generations_for_execution",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "https://orch.example/api/claude-runtime/host/terminal_background_tasks_for_node",
+    );
+  });
+
   it("uses explicit notification dead-letter list and requeue host operations", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       const operation = new URL(url).pathname.split("/").at(-1);
