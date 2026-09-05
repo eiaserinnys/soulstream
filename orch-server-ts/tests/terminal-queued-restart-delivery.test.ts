@@ -311,8 +311,16 @@ describe("terminal queued delivery across node restart", () => {
     ]);
     expect(queueOnly).not.toHaveBeenCalled();
     expect(autoResumeCall).toHaveBeenCalledOnce();
-    expect(persistence.recordExecutionGenerationAndWaitForApplication)
+    expect(persistence.recordExecutionRegistrationAndWaitForApplication)
       .toHaveBeenCalledOnce();
+    expect(persistence.recordExecutionRegistrationAndWaitForApplication)
+      .toHaveBeenCalledWith(
+        SESSION_ID,
+        expect.objectContaining({
+          registrationId: expect.stringMatching(/\S/),
+          executionCommandId: expect.stringMatching(/\S/),
+        }),
+      );
     expect(modelInputs).toHaveLength(1);
     expect(modelInputs[0]?.prompt).toContain(interventionBody(DELIVERY_ID).text);
     expect(persistedEventTypes.filter((type) => type === "assistant_message"))
