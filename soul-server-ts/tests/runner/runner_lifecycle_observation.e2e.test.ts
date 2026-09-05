@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { runnerControlResponseFrame } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
 import { scanRunnerRegistrations } from "../../src/runner/runner_process_registry.js";
@@ -63,8 +64,28 @@ describe("runner lifecycle observations", () => {
     await waitFor(async () => (await readFile(scenario.spawned.paths.logPath, "utf8"))
       .includes('"observation":"liveness"'));
 
-    const remaining = collectRemaining(iterator);
     await writeFile(join(scenario.controlDirectory, "emit-lifecycle-observation"), "go\n");
+    const request = await withTimeout(iterator.next());
+    expect(request).toMatchObject({
+      done: false,
+      value: {
+        kind: "request",
+        correlationId: "lifecycle-observation-request",
+      },
+    });
+    if (request.done || request.value.kind !== "request") {
+      throw new Error("runner lifecycle observation request missing");
+    }
+    await scenario.host.sendControlFrame(runnerControlResponseFrame(
+      request.value.correlationId,
+      { status: "ok", data: { accepted: true } },
+    ));
+    await waitFor(async () => countOccurrences(
+      await readFile(scenario.spawned.paths.logPath, "utf8"),
+      '"observation":"progress"',
+    ) >= 2);
+
+    const remaining = collectRemaining(iterator);
     await waitForPathWhile(
       join(scenario.controlDirectory, "lifecycle-observations-emitted"),
       remaining,
@@ -343,4 +364,8 @@ function killIfAlive(pid: number): void {
   try {
     process.kill(pid, "SIGKILL");
   } catch {}
+}
+
+function countOccurrences(value: string, needle: string): number {
+  return value.split(needle).length - 1;
 }
