@@ -189,6 +189,8 @@ export interface CompleteNode extends BaseNode {
 export interface ErrorNode extends BaseNode {
   type: "error";
   isError?: boolean;
+  /** 현재 상태가 아니라, 이 이벤트에서 자동 재연결이 발생했음을 표시한다. */
+  isRetrying?: boolean;
 }
 
 /** 사용자 입력 요청 노드 */

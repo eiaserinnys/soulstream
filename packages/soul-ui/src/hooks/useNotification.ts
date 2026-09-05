@@ -11,6 +11,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { SoulSSEEvent } from "../shared/types";
+import { formatRetryingErrorHistory } from "../shared/sse-events";
 
 /**
  * 브라우저 알림 권한을 요청하고 이벤트 기반 알림을 관리합니다.
@@ -102,7 +103,7 @@ export function useNotification(enabled = true) {
 /**
  * 이벤트 타입에 따라 알림 제목과 본문을 생성합니다.
  */
-function formatNotification(event: SoulSSEEvent): { title: string; body: string } {
+export function formatNotification(event: SoulSSEEvent): { title: string; body: string } {
   switch (event.type) {
     case "complete":
       return {
@@ -115,6 +116,12 @@ function formatNotification(event: SoulSSEEvent): { title: string; body: string 
       };
 
     case "error":
+      if (event.will_retry === true) {
+        return {
+          title: "⚠️ 자동 재연결 발생",
+          body: formatRetryingErrorHistory(event.message),
+        };
+      }
       return {
         title: "\u274C Session Error",
         body: event.message || "An error occurred",

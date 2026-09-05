@@ -515,6 +515,24 @@ describe("createNodeFromEvent", () => {
       expect((node as ErrorNode).isError).toBe(true);
     });
 
+    it("should preserve retryable errors as reconnect history instead of terminal danger", () => {
+      const event: ErrorEvent = {
+        type: "error",
+        message: "Reconnecting... 2/2",
+        fatal: false,
+        will_retry: true,
+      };
+
+      const node = createNodeFromEvent(event, 51) as ErrorNode;
+
+      expect(node.completed).toBe(true);
+      expect(node.isError).toBe(false);
+      expect(node.isRetrying).toBe(true);
+      expect(node.content).toBe(
+        "응답 연결이 끊겨 같은 작업에 자동 재연결이 발생했습니다. Reconnecting... 2/2",
+      );
+    });
+
     it("should create node for result", () => {
       const event: ResultEvent = {
         type: "result",

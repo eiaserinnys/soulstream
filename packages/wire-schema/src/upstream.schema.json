@@ -2010,7 +2010,25 @@
       "description": "SSE: 에러.",
       "required": ["type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "error" } }
+      "properties": {
+        "type": { "const": "error" },
+        "message": { "type": "string" },
+        "error_code": { "type": "string" },
+        "fatal": { "type": "boolean" },
+        "will_retry": {
+          "type": "boolean",
+          "description": "현재 턴에서 자동 재연결을 시도하는 오류인지 여부."
+        },
+        "recoverable": {
+          "type": "boolean",
+          "description": "후속 턴에서 세션을 재개할 수 있는 오류인지 여부."
+        },
+        "recovery_hint": { "type": "string" },
+        "error_info": {},
+        "additional_details": {},
+        "thread_id": { "type": "string" },
+        "turn_id": { "type": "string" }
+      }
     },
     "SSEEventCredentialAlert": {
       "type": "object",
