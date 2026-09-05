@@ -46,6 +46,8 @@ export interface ChatMessage {
   toolName?: string;
   toolDurationMs?: number;
   isError?: boolean;
+  /** error 이벤트에서 자동 재연결이 발생했음을 나타내는 표시 정보 */
+  isRetrying?: boolean;
   /** tool 전용: 도구 입력 파라미터 */
   toolInput?: Record<string, unknown> | string;
   /** tool 전용: 도구 실행 결과 */
@@ -417,7 +419,8 @@ function nodeToMessage(
         role: "system",
         content: node.content,
         timestamp: node.timestamp,
-        isError: true,
+        isError: node.isError,
+        isRetrying: node.isRetrying,
         treeNodeId: node.id,
         treeNodeType: node.type,
       };

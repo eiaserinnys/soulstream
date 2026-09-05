@@ -4,6 +4,7 @@ import { cn } from "../../lib/cn";
 
 export const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage }) {
   const isError = msg.isError;
+  const isRetrying = msg.isRetrying;
   const isComplete = msg.treeNodeType === "complete";
   const isTurnSummary = msg.treeNodeType === "turn_summary";
   const hasCompleteStats = isComplete
@@ -18,11 +19,13 @@ export const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMes
         "flex-1 min-w-0 text-xs px-2 py-1 rounded text-left",
         isTurnSummary && "whitespace-pre-line",
         hasCaptionStats && "flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1",
-        isError
-          ? "chat-tone-danger"
-          : isResult
-            ? "chat-tone-success"
-            : "text-muted-foreground bg-input",
+        isRetrying
+          ? "chat-tone-warning"
+          : isError
+            ? "chat-tone-danger"
+            : isResult
+              ? "chat-tone-success"
+              : "text-muted-foreground bg-input",
       )}>
         {hasCaptionStats ? (
           <>

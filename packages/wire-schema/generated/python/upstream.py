@@ -1390,6 +1390,16 @@ class SSEEventError(TypedDict):
     """
 
     type: Literal['error']
+    message: NotRequired[str]
+    error_code: NotRequired[str]
+    fatal: NotRequired[bool]
+    will_retry: NotRequired[bool]
+    recoverable: NotRequired[bool]
+    recovery_hint: NotRequired[str]
+    error_info: NotRequired[Any]
+    additional_details: NotRequired[Any]
+    thread_id: NotRequired[str]
+    turn_id: NotRequired[str]
 
 
 class SSEEventCredentialAlert(TypedDict):

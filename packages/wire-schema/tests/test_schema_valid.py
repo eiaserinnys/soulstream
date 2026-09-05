@@ -83,6 +83,20 @@ def test_schema_is_valid_draft_2020_12() -> None:
     jsonschema.Draft202012Validator.check_schema(schema)
 
 
+def test_sse_error_declares_current_turn_retry_separately_from_future_recovery() -> None:
+    properties = _load_schema()["$defs"]["SSEEventError"]["properties"]
+
+    assert properties["message"]["type"] == "string"
+    assert properties["fatal"]["type"] == "boolean"
+    assert properties["will_retry"]["type"] == "boolean"
+    assert properties["recoverable"]["type"] == "boolean"
+    assert properties["recovery_hint"]["type"] == "string"
+    assert properties["error_info"] == {}
+    assert properties["additional_details"] == {}
+    assert properties["thread_id"]["type"] == "string"
+    assert properties["turn_id"]["type"] == "string"
+
+
 def test_schema_top_level_keys() -> None:
     schema = _load_schema()
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"

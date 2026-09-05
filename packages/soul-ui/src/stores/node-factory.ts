@@ -32,6 +32,7 @@ import type {
   AwaySummaryEvent,
   TurnSummaryEvent,
 } from "@shared/types";
+import { formatRetryingErrorHistory } from "@shared/sse-events";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
 import { TRUNCATE_THRESHOLD } from "./event-update";
@@ -237,9 +238,14 @@ export function createNodeFromEvent(
 
     case "error": {
       const e = event as ErrorEvent;
-      return makeNode(`error-${eventId}`, "error", e.message, {
+      const isRetrying = e.will_retry === true;
+      const content = isRetrying
+        ? formatRetryingErrorHistory(e.message)
+        : e.message;
+      return makeNode(`error-${eventId}`, "error", content, {
         completed: true,
-        isError: true,
+        isError: !isRetrying,
+        ...(isRetrying ? { isRetrying: true } : {}),
       });
     }
 
