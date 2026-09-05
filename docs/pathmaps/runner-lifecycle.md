@@ -2,7 +2,7 @@
 
 최종 대조 커밋 SHA: `817c2f316fbd8cdb5c60f12e21258ddb6bf7e3d4`
 
-R51 코드 대조 커밋 SHA: `e62bbaf52ac013899d69faa2e680626719fe226a`
+R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 > 범위 주석: process liveness의 단일 owner는 OS-enforced kernel writer lock이다. registration id·PID·start identity는 그 lock owner를 식별하고 세대 교체와 event ingress를 fence하는 내구 metadata다. 중앙 DB는 exact `registration_id+execution_command_id`만 기록하며 generation·lease·replacement 권한을 갖지 않는다.
 
