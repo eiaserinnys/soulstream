@@ -150,6 +150,7 @@ export class EventIngressRepository {
         ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
       };
     }
+    const generationHandoff = await lockRetainedRunnerGenerations(transaction, nodeId, envelope);
     const sessionOwner = await lockSession(transaction, envelope.session_id);
     if (sessionOwner === null) {
       throw new Error(`session ${envelope.session_id} does not exist`);
@@ -199,6 +200,15 @@ export class EventIngressRepository {
         envelope.source_seq,
       );
     }
+    await handoffRetainedRunnerGenerations(
+      transaction,
+      nodeId,
+      envelope.session_id,
+      generationHandoff,
+      sessionOwner,
+      envelope.session_effect,
+      sessionEffectApplication,
+    );
 
     const receiptApplication = toReceiptEffectApplication(sessionEffectApplication);
     await transaction`
@@ -226,11 +236,12 @@ export class EventIngressRepository {
 async function lockSession(
   sql: EventIngressQuerySql,
   sessionId: string,
-): Promise<{ executionRegistrationId: string | null } | null> {
+): Promise<{ executionRegistrationId: string | null; executionCommandId: string | null } | null> {
   const rows = await sql<Array<{
     execution_registration_id: string | null;
+    execution_command_id: string | null;
   }>>`
-    SELECT execution_registration_id
+    SELECT execution_registration_id, execution_command_id
     FROM sessions
     WHERE session_id = ${sessionId}
     FOR UPDATE
@@ -238,7 +249,73 @@ async function lockSession(
   if (!rows[0]) return null;
   return {
     executionRegistrationId: rows[0].execution_registration_id,
+    executionCommandId: rows[0].execution_command_id,
   };
+}
+
+type GenerationHandoffRow = {
+  sdk_session_id: string; task_id: string; initiating_tool_use_id: string; execution_command_id: string;
+};
+
+async function lockRetainedRunnerGenerations(
+  sql: EventIngressQuerySql,
+  nodeId: string,
+  envelope: EventIngressEnvelope,
+): Promise<GenerationHandoffRow[]> {
+  const effect = envelope.session_effect;
+  if (effect?.kind !== "execution_registration") return [];
+  return await sql<GenerationHandoffRow[]>`
+    SELECT sdk_session_id, task_id, initiating_tool_use_id, execution_command_id
+    FROM claude_background_task_generations
+    WHERE source_node = ${nodeId}
+      AND session_id = ${envelope.session_id}
+      AND runner_registration_id = ${effect.registration_id}
+      AND status IN ('pending', 'running')
+    ORDER BY generation_sequence
+    FOR UPDATE
+  `;
+}
+
+async function handoffRetainedRunnerGenerations(
+  sql: EventIngressQuerySql,
+  nodeId: string,
+  sessionId: string,
+  rows: GenerationHandoffRow[],
+  owner: { executionRegistrationId: string | null; executionCommandId: string | null },
+  effect: EventSessionEffect | null,
+  application: EventSessionEffectApplication | undefined,
+): Promise<void> {
+  if (rows.length === 0 || effect?.kind !== "execution_registration" || !application?.applied) {
+    return;
+  }
+  const canonical = application.canonicalExecutionRegistration;
+  if (canonical?.registration_id !== effect.registration_id
+    || canonical.execution_command_id !== effect.execution_command_id) {
+    throw new Error("Claude background generation handoff canonical owner mismatch");
+  }
+  if (owner.executionRegistrationId !== effect.registration_id
+    || owner.executionCommandId === null
+    || rows.some((row) => row.execution_command_id !== owner.executionCommandId)) {
+    throw new Error("Claude background generation handoff owner mismatch");
+  }
+  for (const row of rows) {
+    const updated = await sql<Array<{ initiating_tool_use_id: string }>>`
+      UPDATE claude_background_task_generations
+      SET execution_command_id = ${canonical.execution_command_id}, updated_at = NOW()
+      WHERE source_node = ${nodeId}
+        AND session_id = ${sessionId}
+        AND sdk_session_id = ${row.sdk_session_id}
+        AND task_id = ${row.task_id}
+        AND initiating_tool_use_id = ${row.initiating_tool_use_id}
+        AND runner_registration_id = ${effect.registration_id}
+        AND execution_command_id = ${row.execution_command_id}
+        AND status IN ('pending', 'running')
+      RETURNING initiating_tool_use_id
+    `;
+    if (updated.length !== 1) {
+      throw new Error("Claude background generation handoff CAS failed");
+    }
+  }
 }
 
 function deadLetterResult(

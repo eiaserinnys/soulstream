@@ -397,19 +397,6 @@ export class ClaudeRuntimeHostClient {
       sourceNode, sessionId, sdkSessionId, taskId, initiatingToolUseId,
     );
   }
-  activeGenerationsForNode(
-    sourceNode: string,
-    limit = 1_000,
-  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
-    return this.generations.activeForNode(sourceNode, limit);
-  }
-  activeGenerationsForSession(
-    sourceNode: string,
-    sessionId: string,
-    limit = 1_000,
-  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
-    return this.generations.activeForSession(sourceNode, sessionId, limit);
-  }
   activeGenerationsForExecution(
     sourceNode: string,
     sessionId: string,

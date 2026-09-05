@@ -66,8 +66,6 @@ const claudeRuntimeOperations = {
   observe_background_generation: ["claudeBackgroundTasks", null, "observeGeneration"],
   terminalize_background_generation: ["claudeBackgroundTasks", null, "terminalizeGeneration"],
   get_background_generation: ["claudeBackgroundTasks", null, "getGeneration"],
-  active_background_generations_for_node: ["claudeBackgroundTasks", null, "activeGenerationsForNode"],
-  active_background_generations_for_session: ["claudeBackgroundTasks", null, "activeGenerationsForSession"],
   active_background_generations_for_execution: ["claudeBackgroundTasks", null, "activeGenerationsForExecution"],
   resolve_background_generation: ["claudeBackgroundTasks", null, "resolveGeneration"],
   append_transcript_entries: ["claudeTranscripts", null, "appendClaudeTranscriptEntries"],

@@ -98,6 +98,68 @@ describe("EventIngressRepository", () => {
     sessionEffectApplication: { applied: true, canonicalSession: null } }]);
   });
 
+  it("atomically hands active generations to the next command of the same registration", async () => {
+    const order: string[] = [];
+    const sql = fakeSql(async (text, values) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM claude_background_task_generations")
+        && text.includes("FOR UPDATE")) {
+        order.push("generation-lock");
+        expect(values).toEqual(["node-a", "session-a", "registration-R"]);
+        return [{
+          sdk_session_id: "sdk-a",
+          task_id: "task-a",
+          initiating_tool_use_id: "toolu-a",
+          execution_command_id: "execution-E1",
+        }];
+      }
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        order.push("session-lock");
+        return [{
+          execution_registration_id: "registration-R",
+          execution_command_id: "execution-E1",
+        }];
+      }
+      if (text.includes("SELECT event_append")) return [{ event_id: 41 }];
+      if (text.includes("UPDATE claude_background_task_generations")) {
+        order.push("generation-handoff");
+        return [{ initiating_tool_use_id: "toolu-a" }];
+      }
+      if (text.includes("INSERT INTO event_ingress_receipts")) {
+        order.push("receipt-insert");
+        return [];
+      }
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const effect = vi.fn(async () => ({
+      applied: true,
+      canonicalSession: null,
+      canonicalExecutionRegistration: {
+        registration_id: "registration-R",
+        execution_command_id: "execution-E2",
+      },
+    }));
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      effect,
+    );
+
+    await repository.commitBatch("node-a", batch({
+      semantic_dedupe_key: null,
+      session_effect: {
+        kind: "execution_registration",
+        registration_id: "registration-R",
+        execution_command_id: "execution-E2",
+        review_state: "not_required",
+        updated_at: "2026-09-05T00:00:00.000Z",
+      },
+    }));
+
+    expect(order).toEqual([
+      "generation-lock", "session-lock", "generation-handoff", "receipt-insert",
+    ]);
+  });
+
   it("returns an existing receipt without re-appending the semantic event", async () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) {

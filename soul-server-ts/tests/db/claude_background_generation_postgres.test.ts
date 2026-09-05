@@ -7,6 +7,12 @@ import {
   ClaudeBackgroundTaskRepository,
   type ObserveClaudeBackgroundTaskGenerationParams,
 } from "../../../orch-server-ts/src/control_plane/repositories/claude_background_task_repository.js";
+import {
+  EventIngressRepository,
+  type EventIngressSql,
+} from "../../../orch-server-ts/src/node/event_ingress_repository.js";
+import { applyEventSessionEffect } from
+  "../../../orch-server-ts/src/node/event_session_effect_applier.js";
 import { SessionDeliveryRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type { RegisterSessionDeliveryParams } from
@@ -90,6 +96,124 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     await expect(harness.sql`
       SELECT COUNT(*)::int AS count FROM session_deliveries
     `).resolves.toEqual([{ count: 2 }]);
+  });
+
+  it("hands active generations to a retained runner command in the registration transaction", async () => {
+    await harness.sql`
+      UPDATE sessions
+      SET execution_registration_id = 'registration-R',
+          execution_command_id = 'execution-E1'
+      WHERE session_id = 'caller-session'
+    `;
+    const e1 = {
+      ...generation("toolu-handoff"),
+      runnerRegistrationId: "registration-R",
+      executionCommandId: "execution-E1",
+    };
+    const other = {
+      ...generation("toolu-other"),
+      taskId: "other-task",
+      runnerRegistrationId: "registration-other",
+      executionCommandId: "execution-other",
+    };
+    await repository.observeGeneration(e1);
+    await repository.observeGeneration(other);
+    const ingress = new EventIngressRepository(
+      { resolveSql: async () => harness.sql as unknown as EventIngressSql },
+      applyEventSessionEffect,
+    );
+    const input = registrationBatch("018f47b7-c6de-7d64-9c8d-0b62cbbb2e41");
+
+    await expect(ingress.commitBatch("node-test", input)).resolves.toMatchObject([{
+      outcome: "committed",
+      duplicateReceipt: false,
+      sessionEffectApplication: {
+        applied: true,
+        canonicalExecutionRegistration: {
+          registration_id: "registration-R",
+          execution_command_id: "execution-E2",
+        },
+      },
+    }]);
+    await expect(ingress.commitBatch("node-test", input)).resolves.toMatchObject([{
+      outcome: "committed",
+      duplicateReceipt: true,
+    }]);
+    await expect(repository.getGeneration(
+      e1.sourceNode, e1.sessionId, e1.sdkSessionId, e1.taskId, e1.initiatingToolUseId,
+    )).resolves.toMatchObject({
+      runner_registration_id: "registration-R",
+      execution_command_id: "execution-E2",
+    });
+    await expect(repository.getGeneration(
+      other.sourceNode,
+      other.sessionId,
+      other.sdkSessionId,
+      other.taskId,
+      other.initiatingToolUseId,
+    )).resolves.toMatchObject({
+      runner_registration_id: "registration-other",
+      execution_command_id: "execution-other",
+    });
+    await expect(repository.terminalizeGeneration(terminal({
+      ...e1,
+      executionCommandId: "execution-E2",
+    }, "completed", "handoff-terminal"))).resolves.toMatchObject({ accepted: true });
+  });
+
+  it("rolls registration, generation handoff, event, and receipt back on a failed exact CAS", async () => {
+    await harness.sql`
+      UPDATE sessions
+      SET execution_registration_id = 'registration-R',
+          execution_command_id = 'execution-E1'
+      WHERE session_id = 'caller-session'
+    `;
+    const e1 = {
+      ...generation("toolu-cas"),
+      runnerRegistrationId: "registration-R",
+      executionCommandId: "execution-E1",
+    };
+    await repository.observeGeneration(e1);
+    await harness.sql.unsafe(`
+      CREATE OR REPLACE FUNCTION reject_generation_handoff()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.execution_command_id = 'execution-E2' THEN RETURN NULL; END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER reject_generation_handoff_update
+      BEFORE UPDATE ON claude_background_task_generations
+      FOR EACH ROW EXECUTE FUNCTION reject_generation_handoff();
+    `);
+    try {
+      const ingress = new EventIngressRepository(
+        { resolveSql: async () => harness.sql as unknown as EventIngressSql },
+        applyEventSessionEffect,
+      );
+      const input = registrationBatch("018f47b7-c6de-7d64-9c8d-0b62cbbb2e42");
+
+      await expect(ingress.commitBatch("node-test", input))
+        .rejects.toThrow("Claude background generation handoff CAS failed");
+      await expect(harness.sql`
+        SELECT execution_registration_id, execution_command_id
+        FROM sessions WHERE session_id = 'caller-session'
+      `).resolves.toEqual([{
+        execution_registration_id: "registration-R",
+        execution_command_id: "execution-E1",
+      }]);
+      await expect(repository.getGeneration(
+        e1.sourceNode, e1.sessionId, e1.sdkSessionId, e1.taskId, e1.initiatingToolUseId,
+      )).resolves.toMatchObject({ execution_command_id: "execution-E1" });
+      await expect(harness.sql`
+        SELECT COUNT(*)::int AS count FROM event_ingress_receipts
+        WHERE stream_id = ${input.stream_id}
+      `).resolves.toEqual([{ count: 0 }]);
+    } finally {
+      await harness.sql`DROP TRIGGER reject_generation_handoff_update
+        ON claude_background_task_generations`;
+      await harness.sql`DROP FUNCTION reject_generation_handoff()`;
+    }
   });
 
   it("rolls sidecar and legacy projection back when delivery registration fails", async () => {
@@ -563,6 +687,33 @@ function generation(
     }),
     status: "running",
     description: `generation ${initiatingToolUseId}`,
+  };
+}
+
+function registrationBatch(streamId: string) {
+  return {
+    type: "event_append_batch" as const,
+    protocol_version: 1 as const,
+    stream_id: streamId,
+    first_seq: 1,
+    events: [{
+      stream_id: streamId,
+      source_seq: 1,
+      session_id: "caller-session",
+      event_type: "metadata",
+      payload: { metadata_type: "execution_registration" },
+      searchable_text: null,
+      created_at: "2026-09-05T00:00:00.000Z",
+      semantic_dedupe_key: `execution-registration:${streamId}`,
+      session_effect: {
+        kind: "execution_registration" as const,
+        registration_id: "registration-R",
+        execution_command_id: "execution-E2",
+        review_state: "not_required",
+        updated_at: "2026-09-05T00:00:00.000Z",
+      },
+      payload_hash: "a".repeat(64),
+    }],
   };
 }
 

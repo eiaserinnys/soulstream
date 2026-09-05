@@ -70,19 +70,6 @@ export class ClaudeBackgroundGenerationHostClient {
     );
   }
 
-  activeForNode(sourceNode: string, limit = 1_000) {
-    return this.transport.request<ClaudeBackgroundTaskGenerationRow[]>(
-      "claude-runtime", "active_background_generations_for_node", [sourceNode, limit],
-    );
-  }
-
-  activeForSession(sourceNode: string, sessionId: string, limit = 1_000) {
-    return this.transport.request<ClaudeBackgroundTaskGenerationRow[]>(
-      "claude-runtime", "active_background_generations_for_session",
-      [sourceNode, sessionId, limit],
-    );
-  }
-
   activeForExecution(sourceNode: string, sessionId: string,
     runnerRegistrationId: string, executionCommandId: string, limit = 1_000) {
     return this.transport.request<ClaudeBackgroundTaskGenerationRow[]>(

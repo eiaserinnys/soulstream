@@ -187,6 +187,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private readonly requestLifetimes = new Map<string, RequestLifetime>();
   private readonly recentHostResponses = new Map<string, RunnerControlFrame>();
   private readonly inFlightFrameHandlers = new Set<Promise<void>>();
+  private readonly inFlightClaudeRuntimeObservations = new Set<Promise<void>>();
   private hostCallIdempotency!: RunnerHostCallIdempotency;
   private finishActiveRunnerObservation: (() => void) | undefined;
   private closed = false;
@@ -255,6 +256,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
 
   async prepareExecutionIdentity(ownerToken?: string): Promise<RunnerExecutionIdentity> {
     await this.ready;
+    await Promise.allSettled([...this.inFlightClaudeRuntimeObservations]);
     const spawned = this.spawnedProcess;
     if (!spawned) throw new Error("runner process identity unavailable");
     const identity = await readRunnerRegistrationIdentity(spawned.paths.sessionDirectory);
@@ -1016,11 +1018,18 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private async trackFrameHandler(frame: RunnerFrame): Promise<void> {
     if (this.closed) return;
     const handler = this.handleFrame(frame);
+    const tracksClaudeRuntimeObservation = frame.channel === "event"
+      && frame.kind === "request"
+      && frame.request.kind === "host_call"
+      && frame.request.service === "claude_runtime"
+      && frame.request.operation === "observe";
     this.inFlightFrameHandlers.add(handler);
+    if (tracksClaudeRuntimeObservation) this.inFlightClaudeRuntimeObservations.add(handler);
     try {
       await handler;
     } finally {
       this.inFlightFrameHandlers.delete(handler);
+      if (tracksClaudeRuntimeObservation) this.inFlightClaudeRuntimeObservations.delete(handler);
     }
   }
 

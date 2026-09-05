@@ -63,34 +63,6 @@ export class ClaudeBackgroundTaskGenerationRepository {
     return rows[0] ?? null;
   }
 
-  async activeForNode(
-    sourceNode: string,
-    limit = 1_000,
-  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
-    return await this.sql<ClaudeBackgroundTaskGenerationRow[]>`
-      SELECT * FROM claude_background_task_generations
-      WHERE source_node = ${sourceNode}
-        AND status IN ('pending', 'running')
-      ORDER BY generation_sequence
-      LIMIT ${limit}
-    `;
-  }
-
-  async activeForSession(
-    sourceNode: string,
-    sessionId: string,
-    limit = 1_000,
-  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
-    return await this.sql<ClaudeBackgroundTaskGenerationRow[]>`
-      SELECT * FROM claude_background_task_generations
-      WHERE source_node = ${sourceNode}
-        AND session_id = ${sessionId}
-        AND status IN ('pending', 'running')
-      ORDER BY generation_sequence
-      LIMIT ${limit}
-    `;
-  }
-
   async activeForExecution(
     sourceNode: string,
     sessionId: string,

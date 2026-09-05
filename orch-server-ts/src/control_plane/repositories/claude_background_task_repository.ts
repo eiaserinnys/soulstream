@@ -166,21 +166,6 @@ export class ClaudeBackgroundTaskRepository {
     );
   }
 
-  async activeGenerationsForNode(
-    sourceNode: string,
-    limit = 1_000,
-  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
-    return await this.generations.activeForNode(sourceNode, limit);
-  }
-
-  async activeGenerationsForSession(
-    sourceNode: string,
-    sessionId: string,
-    limit = 1_000,
-  ): Promise<ClaudeBackgroundTaskGenerationRow[]> {
-    return await this.generations.activeForSession(sourceNode, sessionId, limit);
-  }
-
   async activeGenerationsForExecution(
     sourceNode: string,
     sessionId: string,
