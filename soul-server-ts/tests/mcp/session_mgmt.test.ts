@@ -12,6 +12,10 @@ import { UnknownModelPresetError } from "../../src/model_catalog.js";
 import { buildServer } from "../../src/server.js";
 import { assertRunnerJsonValue } from "../../src/runner/frame_protocol.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
+import {
+  createExecutionActivation,
+  type Task,
+} from "../../src/task/task_models.js";
 import type {
   AddInterventionParams,
   AddInterventionResult,
@@ -58,6 +62,7 @@ function makeRuntime(
 ): McpRuntime & {
   addIntervention: ReturnType<typeof vi.fn>;
   createTask: ReturnType<typeof vi.fn>;
+  onResume: ReturnType<typeof vi.fn<StartExecutionCallback>>;
   startNewExecution: ReturnType<typeof vi.fn>;
 } {
   const addIntervention = vi.fn(
@@ -103,6 +108,18 @@ function makeRuntime(
       portrait_path: "portraits/codex.png",
     },
   ]);
+  const onResume = vi.fn<StartExecutionCallback>((task, activation) => {
+    if (!task.profileId) {
+      throw new Error(`Cannot auto-resume ${task.agentSessionId}: task is missing profileId`);
+    }
+    const agent = task.agentProfileSnapshot ?? agentRegistry.get(task.profileId);
+    if (!agent) {
+      throw new Error(
+        `Cannot auto-resume ${task.agentSessionId}: unknown agent profile ${task.profileId}`,
+      );
+    }
+    return startNewExecution(task, agent, activation);
+  });
   return {
     nodeId: "node-test",
     agentsConfigPath: "/tmp/agents.yaml",
@@ -127,6 +144,7 @@ function makeRuntime(
     } as unknown as SessionDB,
     taskManager,
     taskExecutor: { startNewExecution } as unknown as TaskExecutor,
+    onResume,
     agentRegistry,
     catalogService: {} as CatalogService,
     logger: createSilentLogger(),
@@ -1560,6 +1578,51 @@ describe("remote agent config mutation tools", () => {
 });
 
 describe("send_message_to_session", () => {
+  it("forwards the exact auto-resume activation through the canonical runtime callback", async () => {
+    const capture = await createOrchCapture();
+    try {
+      const runtime = makeRuntime({ autoResumed: true }, capture.orch);
+      const activation = createExecutionActivation();
+      const task = {
+        agentSessionId: "target-sess-1",
+        profileId: "codex-default",
+        status: "initializing",
+        executionActivation: activation,
+      } as Task;
+      runtime.addIntervention.mockImplementationOnce(async (_params, onResume) => {
+        await onResume(task, activation);
+        return { autoResumed: true };
+      });
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "send_message_to_session",
+        arguments: {
+          target_session_id: task.agentSessionId,
+          message: "resume locally",
+          caller_session_id: "caller-sess-1",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toEqual({
+        ok: true,
+        detail: { autoResumed: true },
+      });
+      expect(runtime.onResume).toHaveBeenCalledOnce();
+      expect(runtime.onResume).toHaveBeenCalledWith(task, activation);
+      expect(runtime.startNewExecution).toHaveBeenCalledOnce();
+      expect(runtime.startNewExecution).toHaveBeenCalledWith(
+        task,
+        runtime.agentRegistry.get("codex-default"),
+        activation,
+      );
+      expect(capture.requests).toHaveLength(0);
+    } finally {
+      await capture.close();
+    }
+  });
+
   it("local delivery succeeds without orch fallback", async () => {
     const runtime = makeRuntime({
       delivered: false,

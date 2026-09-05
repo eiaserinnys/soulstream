@@ -168,15 +168,7 @@ export function registerSessionMgmtTools(
           sessionLookup: runtime.db,
           logger: runtime.logger,
           orch: runtime.orch,
-          // TaskManager.addIntervention의 두 번째 인자 onResume이 auto-resume 분기에서 호출됨.
-          // 콜백 안에서 TaskExecutor.startNewExecution을 trigger — Python `mcp_session_mgmt.py`
-          // L153-161 (auto_resumed 분기 후 start_execution 호출) 정합.
-          onResume: (task) => {
-            if (!task.profileId) return;
-            const agent = task.agentProfileSnapshot ?? runtime.agentRegistry.get(task.profileId);
-            if (!agent) return;
-            runtime.taskExecutor.startNewExecution(task, agent);
-          },
+          onResume: runtime.onResume,
         },
         {
           targetSessionId: target_session_id,

@@ -374,6 +374,7 @@ export async function composeWorkerRuntime(
     db,
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,
+    onResume: taskRuntime.onResume,
     ...(claudeRuntime.childCompletionConsumption
       ? { childCompletionConsumption: claudeRuntime.childCompletionConsumption }
       : {}),
