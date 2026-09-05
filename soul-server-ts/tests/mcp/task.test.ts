@@ -82,6 +82,7 @@ function makeRuntime(
       getTask: vi.fn(() => undefined),
     } as unknown as TaskManager,
     taskExecutor: {} as TaskExecutor,
+    onResume: () => undefined,
     agentRegistry: new AgentRegistry([]),
     catalogService: (params.catalogService ?? {}) as CatalogService,
     taskService: params.taskService as never,

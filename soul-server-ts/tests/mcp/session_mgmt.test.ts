@@ -1611,12 +1611,14 @@ describe("send_message_to_session", () => {
       });
       expect(runtime.onResume).toHaveBeenCalledOnce();
       expect(runtime.onResume).toHaveBeenCalledWith(task, activation);
+      expect(runtime.onResume.mock.calls[0]![1]).toBe(activation);
       expect(runtime.startNewExecution).toHaveBeenCalledOnce();
       expect(runtime.startNewExecution).toHaveBeenCalledWith(
         task,
         runtime.agentRegistry.get("codex-default"),
         activation,
       );
+      expect(runtime.startNewExecution.mock.calls[0]![2]).toBe(activation);
       expect(capture.requests).toHaveLength(0);
     } finally {
       await capture.close();

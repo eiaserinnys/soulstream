@@ -79,6 +79,7 @@ function makeRuntime(warn: (...args: unknown[]) => void = () => {}): McpRuntime 
     db,
     taskManager,
     taskExecutor,
+    onResume: () => undefined,
     agentRegistry,
     catalogService,
     logger: createSilentLogger(warn),

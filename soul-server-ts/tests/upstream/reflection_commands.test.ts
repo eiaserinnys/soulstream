@@ -30,6 +30,7 @@ function makeRuntime(): McpRuntime {
     db: { ping: vi.fn(async () => undefined) } as unknown as SessionDB,
     taskManager: { listTasks: vi.fn(() => []) } as unknown as TaskManager,
     taskExecutor: {} as TaskExecutor,
+    onResume: () => undefined,
     agentRegistry: new AgentRegistry([
       {
         id: "codex-default",

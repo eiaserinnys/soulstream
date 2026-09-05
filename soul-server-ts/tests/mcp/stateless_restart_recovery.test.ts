@@ -514,6 +514,7 @@ function makeRuntime(): McpRuntime {
       getTask: () => undefined,
     } as unknown as TaskManager,
     taskExecutor: {} as TaskExecutor,
+    onResume: () => undefined,
     agentRegistry: new AgentRegistry([]),
     catalogService: {} as CatalogService,
     logger: createSilentLogger(),

@@ -36,6 +36,7 @@ function makeRuntime(params: {
     } as unknown as SessionDB,
     taskManager: {} as TaskManager,
     taskExecutor: {} as TaskExecutor,
+    onResume: () => undefined,
     agentRegistry: {} as McpRuntime["agentRegistry"],
     catalogService: {} as McpRuntime["catalogService"],
     logger: createSilentLogger(),
