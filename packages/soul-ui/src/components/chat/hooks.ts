@@ -8,6 +8,7 @@
 import { useMemo, useState, useRef, useCallback } from "react";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import type { ChatMessage } from "../../lib/flatten-tree";
+import { toolResultToText } from "../../shared/tool-result";
 
 // === LLM Context ===
 
@@ -61,7 +62,9 @@ export function useLazyLoadContent(
       const record = await res.json();
       const event = record.event;
       // tool_result 이벤트: result 필드, thinking 이벤트: thinking 필드
-      const content = event.result ?? event.thinking ?? event.text ?? "";
+      const content = event.type === "tool_result"
+        ? toolResultToText(event.result)
+        : event.thinking ?? event.text ?? "";
       setFullContent(content);
     } catch {
       setError("로드 실패. 다시 시도해주세요.");
@@ -174,7 +177,10 @@ export function useLazyLoadToolTrace(
 
   return {
     inputContent: stringifyTraceValue(trace?.input ?? msg.toolInput),
-    resultContent: stringifyTraceValue(trace?.result ?? msg.toolResult),
+    resultContent:
+      trace && Object.prototype.hasOwnProperty.call(trace, "result")
+        ? toolResultToText(trace.result)
+        : msg.toolResult,
     progressContent: progressText(trace),
     loading,
     error,

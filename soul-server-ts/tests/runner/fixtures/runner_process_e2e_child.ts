@@ -8,6 +8,8 @@ import {
   claudeEngineEventMetadata,
   type ClaudeRunOptions,
 } from "../../../src/engine/claude_adapter.js";
+import { mapAppServerNotification } from
+  "../../../src/engine/codex_app_server/event_mapper.js";
 import { buildMcpOptions } from "../../../src/engine/claude_sdk_mcp_options.js";
 import type {
   EngineExecuteParams,
@@ -390,6 +392,56 @@ class ControlledEngine implements EnginePort {
       });
       return;
     }
+    if (process.env.RUNNER_E2E_R57_STRUCTURED_RESULT === "1") {
+      yield engineEventFrame({ type: "session", session_id: "backend-session-r57" });
+      const item = {
+        type: "mcpToolCall" as const,
+        id: "tool-r57",
+        server: "soulstream",
+        tool: "list_session_events",
+        arguments: { tool_content: "full" },
+        status: "inProgress",
+        result: null,
+        error: null,
+      };
+      for (const event of mapAppServerNotification({
+        method: "item/started",
+        params: {
+          threadId: "thread-r57",
+          turnId: "turn-r57",
+          startedAtMs: 1_000,
+          item,
+        },
+      })) {
+        yield engineEventFrame(event);
+      }
+      for (const event of mapAppServerNotification({
+        method: "item/completed",
+        params: {
+          threadId: "thread-r57",
+          turnId: "turn-r57",
+          completedAtMs: 2_000,
+          item: {
+            ...item,
+            status: "completed",
+            result: amplifiedStructuredToolResult(),
+          },
+        },
+      })) {
+        yield engineEventFrame(event);
+      }
+      yield engineEventFrame({
+        type: "assistant_message",
+        content: "structured tool result preserved",
+        timestamp: 3,
+      });
+      yield engineEventFrame({
+        type: "complete",
+        result: "structured tool result preserved",
+        timestamp: 4,
+      });
+      return;
+    }
     if (process.env.RUNNER_E2E_REQUIRE_INTERNAL_MCP === "1") {
       await exerciseInternalMcp();
     }
@@ -440,6 +492,9 @@ class ControlledEngine implements EnginePort {
         `${this.controlDirectory}/host-gap-interrupt-count`,
         `${this.hostGapInterruptCount}\n`,
       );
+    }
+    if (process.env.RUNNER_E2E_R57_STRUCTURED_RESULT === "1") {
+      await writeFile(`${this.controlDirectory}/r57-interrupted`, "interrupted\n");
     }
     if (process.env.RUNNER_E2E_LIFECYCLE_OBSERVATION_SCENARIO) {
       this.lifecycleObservationInterruptCount += 1;
@@ -602,6 +657,15 @@ function preBootstrapHook(label: string, blob?: string): RunnerEventFrame {
     hook_input: blob === undefined ? {} : { blob },
     timestamp: 1,
   });
+}
+
+function amplifiedStructuredToolResult() {
+  return {
+    content: [{
+      type: "text",
+      text: String.raw`\"`.repeat(300_000),
+    }],
+  };
 }
 
 async function exerciseInternalMcp(): Promise<void> {

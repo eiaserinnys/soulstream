@@ -174,7 +174,7 @@ export function mapItemCompleted(
           type: "tool_result",
           ...toolUseId(item),
           tool_name: `mcp/${item.server}/${item.tool}`,
-          result: error ? errorMessage(error) : jsonStringify(item.result),
+          ...mappedToolResult(item, error ? errorMessage(error) : null),
           is_error: Boolean(error) || item.status === "failed",
           timestamp: context.timestamp,
           ...rawContext(context.method, context),
@@ -189,7 +189,7 @@ export function mapItemCompleted(
           type: "tool_result",
           ...toolUseId(item),
           tool_name: item.toolName ?? "dynamic_tool",
-          result: error ? errorMessage(error) : jsonStringify(item.result),
+          ...mappedToolResult(item, error ? errorMessage(error) : null),
           is_error: Boolean(error) || item.status === "failed",
           timestamp: context.timestamp,
           ...rawContext(context.method, context),
@@ -203,7 +203,7 @@ export function mapItemCompleted(
           type: "tool_result",
           ...toolUseId(item),
           tool_name: "web_search",
-          result: jsonStringify(item.result),
+          ...mappedToolResult(item, null),
           is_error: item.status === "failed",
           timestamp: context.timestamp,
           ...rawContext(context.method, context),
@@ -228,5 +228,15 @@ export function mapItemCompleted(
 function toolUseId(item: AppServerThreadItem): { tool_use_id?: string } {
   return typeof item.id === "string" && item.id.length > 0
     ? { tool_use_id: item.id }
+    : {};
+}
+
+function mappedToolResult(
+  item: object,
+  errorResult: string | null,
+): { result?: unknown } {
+  if (errorResult !== null) return { result: errorResult };
+  return Object.prototype.hasOwnProperty.call(item, "result")
+    ? { result: (item as { result?: unknown }).result }
     : {};
 }

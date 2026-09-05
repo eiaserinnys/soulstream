@@ -14,6 +14,7 @@ import type {
   ToolResultEvent,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
+import { toolResultToText } from "@shared/tool-result";
 
 export const TRUNCATE_THRESHOLD = 2000;
 
@@ -61,8 +62,8 @@ export function applyUpdate(
 
       if (found && (found.type === "tool" || found.type === "tool_use")) {
         const toolNode = found as ToolNode;
-        const result = e.result;
-        if (result && result.length > TRUNCATE_THRESHOLD) {
+        const result = toolResultToText(e.result);
+        if (result.length > TRUNCATE_THRESHOLD) {
           toolNode.toolResult = result.slice(0, TRUNCATE_THRESHOLD);
           toolNode.isTruncated = true;
           toolNode.fullContentEventId = eventId;

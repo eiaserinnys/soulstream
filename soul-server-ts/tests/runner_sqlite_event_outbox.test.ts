@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { access, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -6,6 +7,9 @@ import { Worker } from "node:worker_threads";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { mapAppServerNotification } from
+  "../src/engine/codex_app_server/event_mapper.js";
+import type { SSEEventPayload } from "../src/engine/protocol.js";
 import {
   EVENT_OUTBOX_COMPACT_BYTES,
   EVENT_OUTBOX_COMPACT_ROWS,
@@ -19,6 +23,8 @@ import {
   RunnerSqliteEventOutbox,
   type RunnerBootstrapInput,
 } from "../src/runner/sqlite_event_outbox.js";
+import { buildDurableRunnerEvent } from
+  "../src/runner/runner_child_runtime_helpers.js";
 import { resolveAmbiguousRunnerIntervention } from
   "../src/runner/runner_intervention_resolution.js";
 import { applyInterventionCommandFrame, invokeCommandFrame } from
@@ -1725,6 +1731,116 @@ describe("RunnerSqliteEventOutbox", () => {
     recovered.close();
   });
 
+  it("keeps an amplified structured tool result durable and exactly once across reopen and ACK", async () => {
+    const sourceResult = amplifiedStructuredToolResult();
+    const sourceJson = JSON.stringify(sourceResult);
+    expect(Buffer.byteLength(sourceJson, "utf8")).toBe(1_200_039);
+    expect(createHash("sha256").update(sourceJson).digest("hex"))
+      .toBe("1eb55038aaf02601e56fc731b3f7c76a116e217be59a62c1e4d52c3362a161ff");
+
+    const started = mapAppServerNotification({
+      method: "item/started",
+      params: {
+        threadId: "thread-r57",
+        turnId: "turn-r57",
+        startedAtMs: 1_000,
+        item: {
+          type: "mcpToolCall",
+          id: "tool-r57",
+          server: "soulstream",
+          tool: "list_session_events",
+          arguments: { tool_content: "full" },
+          status: "inProgress",
+          result: null,
+          error: null,
+        },
+      },
+    })[0]!;
+    const completed = mapAppServerNotification({
+      method: "item/completed",
+      params: {
+        threadId: "thread-r57",
+        turnId: "turn-r57",
+        completedAtMs: 2_000,
+        item: {
+          type: "mcpToolCall",
+          id: "tool-r57",
+          server: "soulstream",
+          tool: "list_session_events",
+          arguments: { tool_content: "full" },
+          status: "completed",
+          result: sourceResult,
+          error: null,
+        },
+      },
+    })[0]!;
+    const assistant = {
+      type: "assistant_message",
+      content: "result preserved",
+      timestamp: 3,
+    } as SSEEventPayload;
+    const complete = {
+      type: "complete",
+      result: "result preserved",
+      timestamp: 4,
+    } as SSEEventPayload;
+
+    const outbox = await createOutbox();
+    const path = outbox.databasePath;
+    const legacyCompleted = {
+      ...completed,
+      result: sourceJson,
+    } as SSEEventPayload;
+    await expect(outbox.append(
+      buildDurableRunnerEvent("session-a", legacyCompleted).appendInput,
+    )).rejects.toThrow("event payload exceeds 2 MiB ingress single-event contract");
+
+    const records = [];
+    for (const event of [started, completed, assistant, complete]) {
+      records.push(await outbox.append(
+        buildDurableRunnerEvent("session-a", event).appendInput,
+      ));
+    }
+    expect(records.map((record) => record.event_type)).toEqual([
+      "tool_start",
+      "tool_result",
+      "assistant_message",
+      "complete",
+    ]);
+    expect(records[1]?.payload).toMatchObject({ result: sourceResult });
+    outbox.close();
+
+    const firstReader = await RunnerSqliteEventOutbox.open(path);
+    const firstBatch = await firstReader.readBatch();
+    expect(firstBatch?.events.map((record) => record.event_type)).toEqual(["tool_start"]);
+    await firstReader.acknowledge(firstReader.streamId, firstBatch!.events[0]!.source_seq);
+    const resultBatch = await firstReader.readBatch();
+    expect(resultBatch?.events.map((record) => record.event_type)).toEqual(["tool_result"]);
+    const resultRecord = resultBatch!.events[0]!;
+    expect(resultRecord.payload).toMatchObject({ result: sourceResult });
+    firstReader.close();
+
+    const replayReader = await RunnerSqliteEventOutbox.open(path);
+    const replay = await replayReader.readBatch();
+    expect(replay).toEqual(resultBatch);
+    expect(replay!.events[0]).toMatchObject({
+      source_seq: resultRecord.source_seq,
+      payload_hash: resultRecord.payload_hash,
+    });
+    await replayReader.acknowledge(replayReader.streamId, resultRecord.source_seq);
+    const tail = await replayReader.readBatch();
+    expect(tail?.events.map((record) => record.event_type)).toEqual([
+      "assistant_message",
+      "complete",
+    ]);
+    await replayReader.acknowledge(replayReader.streamId, tail!.events.at(-1)!.source_seq);
+    replayReader.close();
+
+    const acknowledged = await RunnerSqliteEventOutbox.open(path);
+    await expect(acknowledged.readBatch()).resolves.toBeNull();
+    acknowledged.close();
+  });
+
   it("rejects an event over the Phase 11 2 MiB single-event ceiling", async () => {
     const outbox = await createOutbox();
 
@@ -2383,6 +2499,15 @@ function eventInput(content: string): EventOutboxAppendInput {
     created_at: "2026-08-11T00:00:01.000Z",
     semantic_dedupe_key: null,
     session_effect: null,
+  };
+}
+
+function amplifiedStructuredToolResult() {
+  return {
+    content: [{
+      type: "text",
+      text: String.raw`\"`.repeat(300_000),
+    }],
   };
 }
 

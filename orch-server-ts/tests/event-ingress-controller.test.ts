@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { NodeEventIngressController } from "../src/node/event_ingress_controller.js";
@@ -75,6 +77,99 @@ describe("NodeEventIngressController", () => {
         }),
       }),
     ]);
+  });
+
+  it("ingests one amplified structured result and its assistant/complete tail exactly once", async () => {
+    const result = amplifiedStructuredToolResult();
+    const resultJson = JSON.stringify(result);
+    expect(Buffer.byteLength(resultJson, "utf8")).toBe(1_200_039);
+    expect(createHash("sha256").update(resultJson).digest("hex"))
+      .toBe("1eb55038aaf02601e56fc731b3f7c76a116e217be59a62c1e4d52c3362a161ff");
+
+    const resultBatch = batch(1);
+    resultBatch.events[0] = {
+      ...resultBatch.events[0]!,
+      event_type: "tool_result",
+      payload: {
+        type: "tool_result",
+        tool_use_id: "tool-r57",
+        tool_name: "mcp/soulstream/list_session_events",
+        result,
+        is_error: false,
+      },
+      searchable_text: null,
+      payload_hash: "b".repeat(64),
+    };
+    const legacyBatch = structuredClone(resultBatch);
+    (legacyBatch.events[0]!.payload as Record<string, unknown>).result = resultJson;
+    expect(Buffer.byteLength(JSON.stringify(resultBatch), "utf8"))
+      .toBeLessThanOrEqual(2 * 1024 * 1024);
+    expect(Buffer.byteLength(JSON.stringify(legacyBatch), "utf8"))
+      .toBeGreaterThan(2 * 1024 * 1024);
+
+    const tailBatch = batch(2);
+    tailBatch.events = [
+      {
+        ...tailBatch.events[0]!,
+        source_seq: 2,
+        event_type: "assistant_message",
+        payload: { type: "assistant_message", content: "result preserved" },
+        searchable_text: "result preserved",
+        payload_hash: "c".repeat(64),
+      },
+      {
+        ...tailBatch.events[0]!,
+        source_seq: 3,
+        event_type: "complete",
+        payload: { type: "complete", result: "result preserved" },
+        searchable_text: null,
+        payload_hash: "d".repeat(64),
+      },
+    ];
+
+    const centralRows = new Map<number, {
+      eventId: number;
+      envelope: EventAppendBatch["events"][number];
+    }>();
+    const commitBatch = vi.fn(async (_nodeId: string, value: EventAppendBatch) =>
+      value.events.map((envelope) => {
+        const existing = centralRows.get(envelope.source_seq);
+        if (existing) {
+          expect(existing.envelope.payload_hash).toBe(envelope.payload_hash);
+          return {
+            envelope,
+            eventId: existing.eventId,
+            duplicateReceipt: true,
+          };
+        }
+        const committed = {
+          envelope,
+          eventId: 100 + envelope.source_seq,
+        };
+        centralRows.set(envelope.source_seq, committed);
+        return { ...committed, duplicateReceipt: false };
+      }));
+    const sent: Array<Record<string, unknown>> = [];
+    const controller = createController({
+      committer: { commitBatch },
+      send: (frame: Record<string, unknown>) => sent.push(frame),
+    });
+
+    controller.enqueue(resultBatch as unknown as Record<string, unknown>);
+    controller.enqueue(resultBatch as unknown as Record<string, unknown>);
+    controller.enqueue(tailBatch as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect([...centralRows.values()].map(({ envelope }) => envelope.event_type)).toEqual([
+      "tool_result",
+      "assistant_message",
+      "complete",
+    ]);
+    expect(
+      (centralRows.get(1)?.envelope.payload as Record<string, unknown>).result,
+    ).toEqual(result);
+    expect(commitBatch).toHaveBeenCalledTimes(3);
+    expect(sent.map((frame) => frame.acked_through)).toEqual([1, 1, 3]);
   });
 
   it("keeps the connection for a repository failure regardless of error type", async () => {
@@ -586,6 +681,15 @@ function batch(sourceSeq: number): EventAppendBatch {
       semantic_dedupe_key: null,
       session_effect: null,
       payload_hash: "a".repeat(64),
+    }],
+  };
+}
+
+function amplifiedStructuredToolResult() {
+  return {
+    content: [{
+      type: "text",
+      text: String.raw`\"`.repeat(300_000),
     }],
   };
 }
