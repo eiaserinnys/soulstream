@@ -23,6 +23,13 @@ export type { RunnerSqliteLifecycleOptions } from "./runner_lifecycle_summary_wr
 export type { RunnerInFlightTool, RunnerLifecycleRecord } from "./runner_lifecycle_record.js";
 export { ensureRunnerLifecycleColumns } from "./sqlite_runner_lifecycle_schema.js";
 
+export class RunnerLifecycleCommandMismatchError extends Error {
+  constructor(commandId: string) {
+    super(`runner lifecycle command mismatch: ${commandId}`);
+    this.name = "RunnerLifecycleCommandMismatchError";
+  }
+}
+
 export interface BeginRunnerExecutionInput {
   pid: number;
   commandId: string;
@@ -285,7 +292,7 @@ export class RunnerSqliteLifecycle {
       `).run(...args, commandId);
     }
     if (result.changes !== 1) {
-      throw new Error(`runner lifecycle command mismatch: ${commandId}`);
+      throw new RunnerLifecycleCommandMismatchError(commandId);
     }
   }
 
@@ -300,7 +307,7 @@ export class RunnerSqliteLifecycle {
     this.transaction(started ? "lifecycle.tool_started" : "lifecycle.tool_finished", () => {
       const current = this.requireLifecycle();
       if (current.execution_command_id !== commandId) {
-        throw new Error(`runner lifecycle command mismatch: ${commandId}`);
+        throw new RunnerLifecycleCommandMismatchError(commandId);
       }
       const tools = new Map(current.in_flight_tools.map((tool) => [tool.tool_use_id, tool]));
       if (started) {
