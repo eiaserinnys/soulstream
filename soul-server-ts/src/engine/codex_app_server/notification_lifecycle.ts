@@ -84,18 +84,18 @@ export function recordTurnStartResponse(
   threadId: string,
   turn: AppServerTurn,
 ): TurnStartResponseResult {
-  const executionState = state.executionThreadId === threadId
-    ? state
-    : beginNotificationExecution(state, threadId);
+  if (state.executionThreadId !== threadId) {
+    return { state, closeQueue: false };
+  }
   if (turn.status !== "inProgress") {
     return {
-      state: clearNotificationExecution(executionState),
+      state: clearNotificationExecution(state),
       closeQueue: true,
     };
   }
 
   return {
-    state: setActiveTurn(executionState, { threadId, turnId: turn.id }),
+    state: setActiveTurn(state, { threadId, turnId: turn.id }),
     closeQueue: false,
   };
 }

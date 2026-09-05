@@ -88,7 +88,10 @@ describe("Codex app-server notification lifecycle", () => {
   });
 
   it("tracks active turn and emits close effect on terminal notifications", () => {
-    let state = createNotificationLifecycleState();
+    let state = beginNotificationExecution(
+      createNotificationLifecycleState(),
+      "thread-1",
+    );
 
     const startResponse = recordTurnStartResponse(
       state,
@@ -186,7 +189,7 @@ describe("Codex app-server notification lifecycle", () => {
 
   it("keeps child threads and another turn on the root thread outside the active execution", () => {
     const root = recordTurnStartResponse(
-      createNotificationLifecycleState(),
+      beginNotificationExecution(createNotificationLifecycleState(), "root-thread"),
       "root-thread",
       turn("root-turn"),
     ).state;
@@ -227,7 +230,7 @@ describe("Codex app-server notification lifecycle", () => {
 
   it("preserves unscoped and one-sided error compatibility without accepting mismatches", () => {
     const active = recordTurnStartResponse(
-      createNotificationLifecycleState(),
+      beginNotificationExecution(createNotificationLifecycleState(), "thread-1"),
       "thread-1",
       turn("turn-1"),
     ).state;
@@ -291,7 +294,7 @@ describe("Codex app-server notification lifecycle", () => {
 
   it("closes immediately when a start response is already terminal", () => {
     const result = recordTurnStartResponse(
-      createNotificationLifecycleState(),
+      beginNotificationExecution(createNotificationLifecycleState(), "thread-1"),
       "thread-1",
       turn("turn-1", "failed"),
     );
@@ -300,9 +303,43 @@ describe("Codex app-server notification lifecycle", () => {
     expect(result.state.activeTurn).toBeNull();
   });
 
+  it("does not reopen an execution after terminal notification beats the start response", () => {
+    let state = beginNotificationExecution(
+      createNotificationLifecycleState(),
+      "thread-1",
+    );
+    state = applyNotificationLifecycle(
+      state,
+      {
+        method: "turn/started",
+        params: { threadId: "thread-1", turn: turn("turn-1") },
+      },
+      { suppressThreadStartedSession: false },
+    ).state;
+    const terminal = applyNotificationLifecycle(
+      state,
+      {
+        method: "turn/completed",
+        params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+      },
+      { suppressThreadStartedSession: false },
+    );
+
+    const lateResponse = recordTurnStartResponse(
+      terminal.state,
+      "thread-1",
+      turn("turn-1"),
+    );
+
+    expect(lateResponse.state).toBe(terminal.state);
+    expect(lateResponse.state.executionThreadId).toBeNull();
+    expect(lateResponse.state.activeTurn).toBeNull();
+    expect(lateResponse.closeQueue).toBe(false);
+  });
+
   it("clears active turn and closes on non-retryable errors", () => {
     const started = recordTurnStartResponse(
-      createNotificationLifecycleState(),
+      beginNotificationExecution(createNotificationLifecycleState(), "thread-1"),
       "thread-1",
       turn("turn-1", "inProgress"),
     );

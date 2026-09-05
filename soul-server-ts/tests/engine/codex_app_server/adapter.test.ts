@@ -537,6 +537,76 @@ describe("CodexAppServerEngineAdapter", () => {
     ]);
   });
 
+  it("does not reopen intervention when root terminal beats the turn/start response", async () => {
+    const client = new FakeClient();
+    const startedTurn = deferred<TurnStartResponse>();
+    client.startTurn.mockReturnValueOnce(startedTurn.promise);
+    const { adapter } = makeAdapter(client);
+    const iterator = adapter.execute({ prompt: "terminal before response" })[
+      Symbol.asyncIterator
+    ]();
+    const firstEventPromise = iterator.next();
+
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+    client.emit({
+      method: "turn/started",
+      params: { threadId: "thread-1", turn: turn("turn-1") },
+    });
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+
+    startedTurn.resolve({ turn: turn("turn-1") });
+    const firstEvent = await firstEventPromise;
+    expect(firstEvent).toEqual({
+      done: false,
+      value: expect.objectContaining({ type: "session", session_id: "thread-1" }),
+    });
+    await expect(adapter.intervene({ prompt: "too late" })).resolves.toEqual({
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "no_active_turn",
+      message: "No active Codex app-server turn",
+    });
+
+    const remaining: SSEEventPayload[] = [];
+    for (;;) {
+      const result = await iterator.next();
+      if (result.done) break;
+      remaining.push(result.value);
+    }
+    expect(remaining).toEqual([
+      expect.objectContaining({ type: "progress", thread_id: "thread-1", turn_id: "turn-1" }),
+      expect.objectContaining({ type: "complete", thread_id: "thread-1", turn_id: "turn-1" }),
+    ]);
+    expect(client.steerTurn).not.toHaveBeenCalled();
+
+    client.resumeThread.mockResolvedValueOnce(threadResponse("thread-1"));
+    client.startTurn.mockResolvedValueOnce({ turn: turn("turn-2") });
+    client.steerTurn.mockResolvedValueOnce({ turnId: "turn-2" });
+    const resumedEventsPromise = drain(
+      adapter.execute({ prompt: "next", resumeSessionId: "thread-1" }),
+    );
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(2));
+    await expect(adapter.intervene({ prompt: "during next" })).resolves.toEqual({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    expect(client.steerTurn).toHaveBeenLastCalledWith({
+      threadId: "thread-1",
+      expectedTurnId: "turn-2",
+      input: [{ type: "text", text: "during next", text_elements: [] }],
+    });
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-2", "completed") },
+    });
+    await expect(resumedEventsPromise).resolves.toEqual([
+      expect.objectContaining({ type: "complete", thread_id: "thread-1", turn_id: "turn-2" }),
+    ]);
+  });
+
   it("keeps a Codex turn open for hours after turn/start acknowledges it", async () => {
     vi.useFakeTimers();
     try {
