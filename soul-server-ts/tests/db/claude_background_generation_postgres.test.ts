@@ -98,7 +98,7 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     `).resolves.toEqual([{ count: 2 }]);
   });
 
-  it("hands active generations to a retained runner command in the registration transaction", async () => {
+  it("hands active generations from a completed foreground turn to a retained runner command", async () => {
     await harness.sql`
       UPDATE sessions
       SET execution_registration_id = 'registration-R',
@@ -118,6 +118,17 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     };
     await repository.observeGeneration(e1);
     await repository.observeGeneration(other);
+    await harness.sql`
+      SELECT * FROM session_apply_terminal_transition(
+        'caller-session', 'completed', 'completed_ok', NULL, 'not_required', NULL,
+        77, '2026-09-05T00:00:01.000Z'
+      )
+    `;
+    await harness.sql`
+      SELECT * FROM session_apply_running_transition(
+        'caller-session', 'not_required', 77, TRUE, '2026-09-05T00:00:02.000Z'
+      )
+    `;
     const ingress = new EventIngressRepository(
       { resolveSql: async () => harness.sql as unknown as EventIngressSql },
       applyEventSessionEffect,
@@ -155,10 +166,19 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
       runner_registration_id: "registration-other",
       execution_command_id: "execution-other",
     });
+    await harness.sql`
+      SELECT * FROM session_apply_terminal_transition(
+        'caller-session', 'completed', 'completed_ok', NULL, 'not_required', NULL,
+        78, '2026-09-05T00:00:03.000Z'
+      )
+    `;
     await expect(repository.terminalizeGeneration(terminal({
       ...e1,
       executionCommandId: "execution-E2",
     }, "completed", "handoff-terminal"))).resolves.toMatchObject({ accepted: true });
+    await expect(harness.sql`
+      SELECT COUNT(*)::int AS count FROM session_deliveries
+    `).resolves.toEqual([{ count: 1 }]);
   });
 
   it("rolls registration, generation handoff, event, and receipt back on a failed exact CAS", async () => {

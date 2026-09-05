@@ -98,7 +98,7 @@ describe("EventIngressRepository", () => {
     sessionEffectApplication: { applied: true, canonicalSession: null } }]);
   });
 
-  it("atomically hands active generations to the next command of the same registration", async () => {
+  it("atomically hands active generations from an ownerless terminal turn to the next command", async () => {
     const order: string[] = [];
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
@@ -116,8 +116,8 @@ describe("EventIngressRepository", () => {
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
         order.push("session-lock");
         return [{
-          execution_registration_id: "registration-R",
-          execution_command_id: "execution-E1",
+          execution_registration_id: null,
+          execution_command_id: null,
         }];
       }
       if (text.includes("SELECT event_append")) return [{ event_id: 41 }];

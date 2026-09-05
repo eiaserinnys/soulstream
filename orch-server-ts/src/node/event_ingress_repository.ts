@@ -293,9 +293,18 @@ async function handoffRetainedRunnerGenerations(
     || canonical.execution_command_id !== effect.execution_command_id) {
     throw new Error("Claude background generation handoff canonical owner mismatch");
   }
-  if (owner.executionRegistrationId !== effect.registration_id
-    || owner.executionCommandId === null
-    || rows.some((row) => row.execution_command_id !== owner.executionCommandId)) {
+  const priorExecutionCommandIds = new Set(
+    rows.map((row) => row.execution_command_id),
+  );
+  const priorExecutionCommandId = priorExecutionCommandIds.size === 1
+    ? rows[0]!.execution_command_id
+    : null;
+  const hasExactSessionOwner = owner.executionRegistrationId === effect.registration_id
+    && owner.executionCommandId === priorExecutionCommandId;
+  const hasClearedSessionOwner = owner.executionRegistrationId === null
+    && owner.executionCommandId === null;
+  if (priorExecutionCommandId === null
+    || (!hasExactSessionOwner && !hasClearedSessionOwner)) {
     throw new Error("Claude background generation handoff owner mismatch");
   }
   for (const row of rows) {
