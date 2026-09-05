@@ -339,6 +339,274 @@ describe("CodexAppServerEngineAdapter", () => {
     });
   });
 
+  it("keeps two child threads outside the root stream until the root turn completes", async () => {
+    const { adapter, client } = makeAdapter();
+    const eventsPromise = drain(adapter.execute({ prompt: "root work" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    client.emit({
+      method: "turn/started",
+      params: { threadId: "child-a", turn: turn("child-a-turn") },
+    });
+    client.emit({
+      method: "item/completed",
+      params: {
+        threadId: "child-a",
+        turnId: "child-a-turn",
+        item: { type: "agentMessage", id: "child-answer", text: "child final" },
+      },
+    });
+    client.emit({
+      method: "turn/started",
+      params: { threadId: "child-b", turn: turn("child-b-turn") },
+    });
+    client.emit({
+      method: "error",
+      params: {
+        threadId: "child-b",
+        turnId: "child-b-turn",
+        willRetry: false,
+        error: { message: "child failed" },
+      },
+    });
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "child-a", turn: turn("child-a-turn", "completed") },
+    });
+
+    await expect(adapter.intervene({ prompt: "continue root" })).resolves.toEqual({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    expect(client.steerTurn).toHaveBeenLastCalledWith({
+      threadId: "thread-1",
+      expectedTurnId: "turn-1",
+      input: [{ type: "text", text: "continue root", text_elements: [] }],
+    });
+
+    client.emit({
+      method: "item/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: {
+          type: "commandExecution",
+          id: "root-command",
+          command: "verify root",
+          status: "inProgress",
+        },
+      },
+    });
+    client.emit({
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: {
+          type: "commandExecution",
+          id: "root-command",
+          command: "verify root",
+          status: "completed",
+          aggregatedOutput: "root tool result",
+          exitCode: 0,
+        },
+      },
+    });
+    client.emit({
+      method: "item/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: { type: "agentMessage", id: "root-answer", text: "" },
+      },
+    });
+    client.emit({
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: { type: "agentMessage", id: "root-answer", text: "root final" },
+      },
+    });
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+
+    const events = await eventsPromise;
+    expect(events.map((event) => (event as { type: string }).type)).toEqual([
+      "session",
+      "tool_start",
+      "tool_result",
+      "text_start",
+      "assistant_message",
+      "text_end",
+      "complete",
+    ]);
+    expect(events.some((event) => (
+      (event as { thread_id?: string }).thread_id?.startsWith("child-") ?? false
+    ))).toBe(false);
+    expect(events.filter((event) => (event as { type?: string }).type === "complete"))
+      .toHaveLength(1);
+  });
+
+  it("waits for authoritative thread responses and resets scope between execute and resume", async () => {
+    const client = new FakeClient();
+    const startedThread = deferred<ThreadStartResponse>();
+    const startedTurn = deferred<TurnStartResponse>();
+    client.startThread.mockReturnValueOnce(startedThread.promise);
+    client.startTurn.mockReturnValueOnce(startedTurn.promise);
+    const { adapter } = makeAdapter(client);
+
+    const firstEventsPromise = drain(adapter.execute({ prompt: "first" }));
+    await vi.waitFor(() => expect(client.startThread).toHaveBeenCalledTimes(1));
+    client.emit({ method: "thread/started", params: { thread: { id: "child-before-root" } } });
+    client.emit({
+      method: "turn/completed",
+      params: {
+        threadId: "child-before-root",
+        turn: turn("child-before-root-turn", "completed"),
+      },
+    });
+
+    startedThread.resolve(threadResponse("thread-1"));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+    client.emit({
+      method: "turn/started",
+      params: { threadId: "thread-1", turn: turn("turn-1") },
+    });
+    await expect(adapter.intervene({ prompt: "during first" })).resolves.toEqual({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    startedTurn.resolve({ turn: turn("turn-1") });
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+    await expect(firstEventsPromise).resolves.toEqual([
+      expect.objectContaining({ type: "session", session_id: "thread-1" }),
+      expect.objectContaining({ type: "progress", thread_id: "thread-1", turn_id: "turn-1" }),
+      expect.objectContaining({ type: "complete", thread_id: "thread-1", turn_id: "turn-1" }),
+    ]);
+
+    const resumedThread = deferred<ThreadResumeResponse>();
+    client.resumeThread.mockReturnValueOnce(resumedThread.promise);
+    client.startTurn.mockResolvedValueOnce({ turn: turn("turn-2") });
+    client.steerTurn.mockResolvedValueOnce({ turnId: "turn-2" });
+    const resumedEventsPromise = drain(
+      adapter.execute({ prompt: "second", resumeSessionId: "thread-1" }),
+    );
+    await vi.waitFor(() => expect(client.resumeThread).toHaveBeenCalledTimes(1));
+
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+    client.emit({
+      method: "error",
+      params: {
+        threadId: "child-before-resume",
+        willRetry: false,
+        error: { message: "foreign before resume response" },
+      },
+    });
+    resumedThread.resolve(threadResponse("thread-1"));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(2));
+
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+    await expect(adapter.intervene({ prompt: "during second" })).resolves.toEqual({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    expect(client.steerTurn).toHaveBeenLastCalledWith({
+      threadId: "thread-1",
+      expectedTurnId: "turn-2",
+      input: [{ type: "text", text: "during second", text_elements: [] }],
+    });
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-2", "completed") },
+    });
+
+    await expect(resumedEventsPromise).resolves.toEqual([
+      expect.objectContaining({ type: "complete", thread_id: "thread-1", turn_id: "turn-2" }),
+    ]);
+  });
+
+  it("does not reopen intervention when root terminal beats the turn/start response", async () => {
+    const client = new FakeClient();
+    const startedTurn = deferred<TurnStartResponse>();
+    client.startTurn.mockReturnValueOnce(startedTurn.promise);
+    const { adapter } = makeAdapter(client);
+    const iterator = adapter.execute({ prompt: "terminal before response" })[
+      Symbol.asyncIterator
+    ]();
+    const firstEventPromise = iterator.next();
+
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+    client.emit({
+      method: "turn/started",
+      params: { threadId: "thread-1", turn: turn("turn-1") },
+    });
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+
+    startedTurn.resolve({ turn: turn("turn-1") });
+    const firstEvent = await firstEventPromise;
+    expect(firstEvent).toEqual({
+      done: false,
+      value: expect.objectContaining({ type: "session", session_id: "thread-1" }),
+    });
+    await expect(adapter.intervene({ prompt: "too late" })).resolves.toEqual({
+      status: "not_delivered",
+      mechanism: "active_turn",
+      reason: "no_active_turn",
+      message: "No active Codex app-server turn",
+    });
+
+    const remaining: SSEEventPayload[] = [];
+    for (;;) {
+      const result = await iterator.next();
+      if (result.done) break;
+      remaining.push(result.value);
+    }
+    expect(remaining).toEqual([
+      expect.objectContaining({ type: "progress", thread_id: "thread-1", turn_id: "turn-1" }),
+      expect.objectContaining({ type: "complete", thread_id: "thread-1", turn_id: "turn-1" }),
+    ]);
+    expect(client.steerTurn).not.toHaveBeenCalled();
+
+    client.resumeThread.mockResolvedValueOnce(threadResponse("thread-1"));
+    client.startTurn.mockResolvedValueOnce({ turn: turn("turn-2") });
+    client.steerTurn.mockResolvedValueOnce({ turnId: "turn-2" });
+    const resumedEventsPromise = drain(
+      adapter.execute({ prompt: "next", resumeSessionId: "thread-1" }),
+    );
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(2));
+    await expect(adapter.intervene({ prompt: "during next" })).resolves.toEqual({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    expect(client.steerTurn).toHaveBeenLastCalledWith({
+      threadId: "thread-1",
+      expectedTurnId: "turn-2",
+      input: [{ type: "text", text: "during next", text_elements: [] }],
+    });
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-2", "completed") },
+    });
+    await expect(resumedEventsPromise).resolves.toEqual([
+      expect.objectContaining({ type: "complete", thread_id: "thread-1", turn_id: "turn-2" }),
+    ]);
+  });
+
   it("keeps a Codex turn open for hours after turn/start acknowledges it", async () => {
     vi.useFakeTimers();
     try {
