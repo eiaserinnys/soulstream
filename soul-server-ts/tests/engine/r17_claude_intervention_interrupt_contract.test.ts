@@ -291,11 +291,18 @@ describe("R17 Claude intervention interrupt contract", () => {
       harness.push(oldInput as SDKMessage);
       harness.push(sdkInit("sdk-session"));
       harness.push({
+        ...sdkToolStart("assistant-background-before-intervention", "tool-background"),
+        parent_tool_use_id: null,
+      } as SDKMessage);
+      harness.push({
         type: "system",
         subtype: "background_tasks_changed",
         uuid: "background-membership-before-intervention",
         session_id: "sdk-session",
-        tasks: [{ task_id: "background-task", description: "long background task" }],
+        tasks: [{
+          task_id: "background-task", tool_use_id: "tool-background",
+          description: "long background task",
+        }],
       } as unknown as SDKMessage);
       harness.push({
         type: "system",
@@ -303,6 +310,7 @@ describe("R17 Claude intervention interrupt contract", () => {
         uuid: "task-started-before-intervention",
         session_id: "sdk-session",
         task_id: "background-task",
+        tool_use_id: "tool-background",
         description: "long background task",
       } as unknown as SDKMessage);
       await vi.waitFor(() => expect(

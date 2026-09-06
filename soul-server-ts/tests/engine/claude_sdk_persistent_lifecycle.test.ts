@@ -17,6 +17,7 @@ import {
   runOptions,
   sdkInterruptedResult,
   sdkResult,
+  sdkToolStart,
   sdkTaskNotificationResult,
 } from "./claude_sdk_persistent_test_harness.js";
 
@@ -54,11 +55,17 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
       }));
       const input = await harness.nextInput();
       harness.push({
+        ...sdkToolStart("assistant-bg-retained", "tool-bg-retained"),
+        parent_tool_use_id: null,
+      } as SDKMessage);
+      harness.push({
         type: "system",
         subtype: "background_tasks_changed",
         uuid: "background-membership-retained",
         session_id: "sdk-session",
-        tasks: [{ task_id: "bg-retained", description: "long task" }],
+        tasks: [{
+          task_id: "bg-retained", tool_use_id: "tool-bg-retained", description: "long task",
+        }],
       } as unknown as SDKMessage);
       harness.push({
         type: "system",
@@ -66,6 +73,7 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
         uuid: "task-started-retained",
         session_id: "sdk-session",
         task_id: "bg-retained",
+        tool_use_id: "tool-bg-retained",
         description: "long task",
       } as unknown as SDKMessage);
       harness.push(sdkResult("sdk-session", input.uuid, "foreground done"));
@@ -82,6 +90,7 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
         uuid: "task-notification-retained",
         session_id: "sdk-session",
         task_id: "bg-retained",
+        tool_use_id: "tool-bg-retained",
         status: "completed",
         summary: "background done",
       } as unknown as SDKMessage);
@@ -133,6 +142,20 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
       prompt: "create hooked task",
     }));
     const input = await harness.nextInput();
+    const createdHook =
+      harness.captured[0]?.options?.hooks?.TaskCreated?.[0]?.hooks[0];
+    const completedHook =
+      harness.captured[0]?.options?.hooks?.TaskCompleted?.[0]?.hooks[0];
+    await createdHook?.(
+      {
+        hook_event_name: "TaskCreated",
+        task_id: "hook-pump-task",
+        task_subject: "Queued hook work",
+        session_id: "sdk-session",
+      } as any,
+      "hook-created",
+      { signal: new AbortController().signal },
+    );
     harness.push({
       type: "system",
       subtype: "background_tasks_changed",
@@ -148,20 +171,6 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
       expect(client.persistentRuntimeActivity()).toMatchObject({
         backgroundTaskCount: 1,
       })
-    );
-    const createdHook =
-      harness.captured[0]?.options?.hooks?.TaskCreated?.[0]?.hooks[0];
-    const completedHook =
-      harness.captured[0]?.options?.hooks?.TaskCompleted?.[0]?.hooks[0];
-    await createdHook?.(
-      {
-        hook_event_name: "TaskCreated",
-        task_id: "hook-pump-task",
-        task_subject: "Queued hook work",
-        session_id: "sdk-session",
-      } as any,
-      "hook-created",
-      { signal: new AbortController().signal },
     );
     await vi.waitFor(() =>
       expect(client.persistentRuntimeActivity()).toMatchObject({
@@ -232,12 +241,17 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
     const turn = collect(client.runPersistent(runOptions("background"), abortSignal()));
     const input = await harness.nextInput();
     harness.push({
+      ...sdkToolStart("assistant-bg-close", "tool-bg-close"),
+      parent_tool_use_id: null,
+    } as SDKMessage);
+    harness.push({
       type: "system",
       subtype: "background_tasks_changed",
       uuid: "background-membership-close",
       session_id: "sdk-session",
       tasks: [{
         task_id: "bg-close",
+        tool_use_id: "tool-bg-close",
         description: "long task",
         task_type: "agent",
       }],
@@ -248,6 +262,7 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
       uuid: "task-started-1",
       session_id: "sdk-session",
       task_id: "bg-close",
+      tool_use_id: "tool-bg-close",
       description: "long task",
     } as unknown as SDKMessage);
     harness.push(sdkResult("sdk-session", input.uuid, "foreground done"));

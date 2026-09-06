@@ -18,6 +18,7 @@ import { ClaudeRuntimeFollowupWatchdog } from "./claude_runtime_followup_watchdo
 import { ClaudeTurnInactivityWatchdog } from "./claude_turn_inactivity_watchdog.js";
 import {
   type ActiveForeground,
+  ClaudeExactResultCache,
   type ClaudeDetachedEventSink,
   type ClaudeRuntimeEventSink,
   type ClaudeSdkPersistentSessionConfig,
@@ -66,7 +67,7 @@ export class ClaudeSdkPersistentSession {
   private readonly hookPump: Promise<void>;
   private readonly followupWatchdog: ClaudeRuntimeFollowupWatchdog;
   private readonly turnInactivityWatchdog: ClaudeTurnInactivityWatchdog;
-  private readonly exactResultsByInputUuid = new Map<string, ClaudeClientEvent>();
+  private readonly exactResultCache = new ClaudeExactResultCache();
   private activeForeground: ActiveForeground | null = null;
   private interventionFence: ActiveForeground | null = null;
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
@@ -101,7 +102,7 @@ export class ClaudeSdkPersistentSession {
       turnInactivityWatchdog: this.turnInactivityWatchdog,
       followupWatchdog: this.followupWatchdog,
       logger: this.logger,
-      cachedResultForInput: (uuid) => this.exactResultsByInputUuid.get(uuid),
+      cachedResultForInput: (uuid) => this.exactResultCache.get(uuid),
       setActiveForeground: (active) => {
         this.activeForeground = active;
       },
@@ -141,7 +142,7 @@ export class ClaudeSdkPersistentSession {
       this.drainTimer = null;
     }
     this.runtime.close(reason);
-    this.exactResultsByInputUuid.clear();
+    this.exactResultCache.clear();
     const active = this.activeForeground;
     this.clearForegroundTimers(active);
     active?.output.close();
@@ -233,9 +234,7 @@ export class ClaudeSdkPersistentSession {
   ): Promise<void> {
     const phase = this.runtime.snapshot().foregroundPhase;
     const active = this.activeForeground;
-    const explicitUserMessageUuid =
-      asString(message.user_message_uuid)
-      ?? provableTurnResultOwner(phase, active, message, this.logger);
+    const explicitUserMessageUuid = provableTurnResultOwner(phase, active, message, this.logger);
     if (!explicitUserMessageUuid) {
       const resultOriginKind = asString(asRecord(message.origin)?.kind);
       if (
@@ -262,12 +261,7 @@ export class ClaudeSdkPersistentSession {
       );
       return;
     }
-    const terminalEvents = this.eventMapper.mapResultMessage(message);
-    const rawUserMessageUuid = asString(message.user_message_uuid);
-    const exactResult = terminalEvents.find((event) => event.type === "result");
-    if (rawUserMessageUuid && exactResult && this.runtime.hasInput(rawUserMessageUuid)) {
-      this.exactResultsByInputUuid.set(rawUserMessageUuid, exactResult);
-    }
+    const terminalEvents = this.exactResultCache.mapAndRecord(message, this.eventMapper, this.runtime);
     if (
       active?.interruptedOwnerUuid
       && explicitUserMessageUuid === active.interruptedOwnerUuid

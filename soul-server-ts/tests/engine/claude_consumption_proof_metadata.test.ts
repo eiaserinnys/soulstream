@@ -88,6 +88,7 @@ describe("Claude consumption proof metadata", () => {
     } as never);
     mapper.mapSdkMessage({
       type: "assistant",
+      parent_tool_use_id: null,
       uuid: "assistant-bash",
       message: {
         content: [{
@@ -100,6 +101,7 @@ describe("Claude consumption proof metadata", () => {
     } as never);
     const events = mapper.mapSdkMessage({
       type: "user",
+      parent_tool_use_id: null,
       uuid: "user-bash",
       message: {
         content: [{

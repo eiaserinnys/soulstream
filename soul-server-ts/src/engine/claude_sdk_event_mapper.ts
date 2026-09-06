@@ -3,8 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
-import { attachClaudeBackgroundProvenance } from
-  "./claude_background_provenance.js";
+import { attachClaudeBackgroundProvenance } from "./claude_background_provenance.js";
 import {
   attachClaudeResultInputReceipt,
   attachClaudeRuntimeSdkSession,
@@ -13,12 +12,14 @@ import {
   fallbackClaudeSdkMessageIdentity,
   runtimeTaskId,
 } from "./claude_sdk_event_metadata.js";
-import { mapClaudeBackgroundTaskMembership } from
-  "./claude_sdk_background_membership_mapper.js";
+import {
+  ClaudeParentIngressScopeTracker,
+  mapClaudeBackgroundBashTaskFromToolResult,
+  mapClaudeBackgroundTaskMembership,
+} from "./claude_sdk_background_membership_mapper.js";
 import { mapClaudeSystemMessage } from "./claude_sdk_system_event_mapper.js";
 import {
   coerceResetsAt,
-  extractBackgroundBashOutput,
   makeContextUsageEvent,
   messageContent,
   permissionDenialsToStrings,
@@ -40,16 +41,10 @@ import {
 } from "./claude_sdk_diagnostics.js";
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 
-export type ClaudeParentIngressScope = "top_level" | "sidechain" | "unknown";
-
 export class ClaudeSdkEventMapper {
   private readonly runtimeState: ClaudeRuntimeState;
   private readonly toolNamesById = new Map<string, string>();
-  private readonly toolScopesById = new Map<string, ClaudeParentIngressScope>();
-  private readonly taskScopesById = new Map<
-    string,
-    { scope: ClaudeParentIngressScope; toolUseId?: string }
-  >();
+  private readonly parentIngressScopes = new ClaudeParentIngressScopeTracker();
   private readonly emittedToolResultIds = new Set<string>();
   private readonly interceptedScheduleToolUseIds = new Set<string>();
   private readonly backgroundAgentToolUseIds = new Set<string>();
@@ -68,8 +63,7 @@ export class ClaudeSdkEventMapper {
 
   clearPerRunState(): void {
     this.toolNamesById.clear();
-    this.toolScopesById.clear();
-    this.taskScopesById.clear();
+    this.parentIngressScopes.clear();
     this.emittedToolResultIds.clear();
     this.emittedSubagentStartIds.clear();
     this.emittedSubagentStopIds.clear();
@@ -97,15 +91,15 @@ export class ClaudeSdkEventMapper {
   }
 
   recordHookToolScope(toolUseId: string | undefined, agentId: string | undefined): void {
-    if (toolUseId) this.recordToolScope(toolUseId, agentId ? "sidechain" : "top_level");
+    this.parentIngressScopes.recordHookToolScope(toolUseId, agentId);
   }
 
   recordHookTaskScope(taskId: string, agentId: string | undefined): void {
-    this.recordTaskScope(taskId, agentId ? "sidechain" : "top_level");
+    this.parentIngressScopes.recordHookTaskScope(taskId, agentId);
   }
 
   isParentTaskEligible(taskId: string): boolean {
-    return this.resolveTaskScope(taskId) === "top_level";
+    return this.parentIngressScopes.isParentTaskEligible(taskId);
   }
 
   mapSdkMessage(message: SDKMessage): ClaudeClientEvent[] {
@@ -142,7 +136,8 @@ export class ClaudeSdkEventMapper {
     if (asString(message.subtype) === "background_tasks_changed") {
       return attachClaudeRuntimeSdkSession(
         mapClaudeBackgroundTaskMembership(message, this.runtimeState, {
-          linkTaskToTool: (taskId, toolUseId) => this.linkTaskToTool(taskId, toolUseId),
+          linkTaskToTool: (taskId, toolUseId) =>
+            this.parentIngressScopes.linkTaskToTool(taskId, toolUseId),
           isParentTaskEligible: (taskId) => this.isParentTaskEligible(taskId),
         }),
         this.currentSdkSessionId,
@@ -158,7 +153,8 @@ export class ClaudeSdkEventMapper {
       makeSubagentStartEvents: (agentId, agentType) =>
         this.makeSubagentStartEvents(agentId, agentType),
       makeSubagentStopEvents: (agentId) => this.makeSubagentStopEvents(agentId),
-      linkTaskToTool: (taskId, toolUseId) => this.linkTaskToTool(taskId, toolUseId),
+      linkTaskToTool: (taskId, toolUseId) =>
+        this.parentIngressScopes.linkTaskToTool(taskId, toolUseId),
       isParentTaskEligible: (taskId) => this.isParentTaskEligible(taskId),
     });
     for (const event of events) {
@@ -179,7 +175,6 @@ export class ClaudeSdkEventMapper {
 
   mapAssistantMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
     const events: ClaudeClientEvent[] = [];
-    const messageScope = this.messageParentScope(message);
     const nestedMessage = asRecord(message.message);
     if (nestedMessage?.usage !== undefined) {
       this.latestIterationUsage = nestedMessage.usage;
@@ -228,7 +223,7 @@ export class ClaudeSdkEventMapper {
         const toolUseId = asString(record.id) ?? null;
         const toolName = asString(record.name) ?? "tool";
         if (toolUseId) this.toolNamesById.set(toolUseId, toolName);
-        if (toolUseId) this.recordToolScope(toolUseId, messageScope);
+        if (toolUseId) this.parentIngressScopes.recordMessageToolScope(toolUseId, message);
         const toolInput = asRecord(record.input) ?? {};
         if (toolName === "Agent") this.rememberBackgroundAgentToolUse(toolUseId, toolInput);
         events.push({
@@ -246,7 +241,6 @@ export class ClaudeSdkEventMapper {
 
   mapUserMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
     const events: ClaudeClientEvent[] = [];
-    const messageScope = this.messageParentScope(message);
     const remoteTrigger = this.mapRemoteOriginUserMessage(message);
     if (remoteTrigger) events.push(remoteTrigger);
     const content = messageContent(message);
@@ -255,7 +249,7 @@ export class ClaudeSdkEventMapper {
       if (!record || record.type !== "tool_result") continue;
 
       const toolUseId = asString(record.tool_use_id) ?? null;
-      if (toolUseId) this.recordToolScope(toolUseId, messageScope);
+      if (toolUseId) this.parentIngressScopes.recordMessageToolScope(toolUseId, message);
       if (toolUseId && this.interceptedScheduleToolUseIds.has(toolUseId)) continue;
       if (toolUseId && this.emittedToolResultIds.has(toolUseId)) continue;
       if (toolUseId) this.emittedToolResultIds.add(toolUseId);
@@ -270,11 +264,11 @@ export class ClaudeSdkEventMapper {
       attachClaudeToolResultEnvelope(resultEvent, message);
       events.push(resultEvent);
       events.push(
-        ...this.mapBackgroundBashTaskFromToolResult({
-          toolName,
-          toolUseId,
-          content: [record.content, message.tool_use_result],
-        }),
+        ...mapClaudeBackgroundBashTaskFromToolResult(
+          { toolName, toolUseId, content: [record.content, message.tool_use_result] },
+          this.runtimeState,
+          this.parentIngressScopes,
+        ),
       );
     }
     return events;
@@ -426,92 +420,10 @@ export class ClaudeSdkEventMapper {
     };
   }
 
-  private mapBackgroundBashTaskFromToolResult(params: {
-    toolName?: string;
-    toolUseId: string | null;
-    content: unknown;
-  }): ClaudeClientEvent[] {
-    const background = extractBackgroundBashOutput(params.content);
-    if (!background.taskId) return [];
-    if (params.toolName && params.toolName !== "Bash" && params.toolName !== "bash") {
-      return [];
-    }
-
-    const patch: Record<string, unknown> = {
-      status: "running",
-      is_backgrounded: true,
-      task_type: "bash",
-    };
-    if (params.toolUseId) patch.tool_use_id = params.toolUseId;
-    if (background.outputFile) patch.output_file = background.outputFile;
-
-    const existing = this.runtimeState.getTaskStatus(background.taskId);
-    this.runtimeState.setTaskStatus(background.taskId, existing ?? "running");
-
-    this.runtimeState.markBackgroundTask(background.taskId);
-    if (params.toolUseId) this.linkTaskToTool(background.taskId, params.toolUseId);
-    if (!this.isParentTaskEligible(background.taskId)) return [];
-    const updateEvent: ClaudeClientEvent = {
-      type: "claude_runtime_task_updated",
-      taskId: background.taskId,
-      patch,
-    };
-    const events: ClaudeClientEvent[] = existing
-      ? [updateEvent]
-      : [
-          {
-            type: "claude_runtime_task_started",
-            taskId: background.taskId,
-            ...(params.toolUseId ? { toolUseId: params.toolUseId } : {}),
-            taskType: "bash",
-            description: "Background Bash task",
-          },
-          updateEvent,
-        ];
-    for (const event of events) {
-      attachClaudeBackgroundProvenance(event, "explicit_background_tool_result");
-    }
-    return events;
-  }
-
   private isBackgroundAgentIdentifier(agentId: string | undefined): boolean {
     return !!agentId && (
       this.backgroundAgentTaskIds.has(agentId) ||
       this.backgroundAgentToolUseIds.has(agentId)
-    );
-  }
-
-  private messageParentScope(message: Record<string, unknown>): ClaudeParentIngressScope {
-    if (!Object.prototype.hasOwnProperty.call(message, "parent_tool_use_id")) return "unknown";
-    if (message.parent_tool_use_id === null) return "top_level";
-    return asString(message.parent_tool_use_id) ? "sidechain" : "unknown";
-  }
-
-  private recordToolScope(toolUseId: string, scope: ClaudeParentIngressScope): void {
-    this.toolScopesById.set(toolUseId, mergeScope(this.toolScopesById.get(toolUseId), scope));
-  }
-
-  private recordTaskScope(taskId: string, scope: ClaudeParentIngressScope): void {
-    const current = this.taskScopesById.get(taskId);
-    this.taskScopesById.set(taskId, {
-      scope: mergeScope(current?.scope, scope),
-      ...(current?.toolUseId ? { toolUseId: current.toolUseId } : {}),
-    });
-  }
-
-  private linkTaskToTool(taskId: string, toolUseId: string): void {
-    const current = this.taskScopesById.get(taskId);
-    this.taskScopesById.set(taskId, {
-      scope: current?.scope ?? "unknown",
-      toolUseId,
-    });
-  }
-
-  private resolveTaskScope(taskId: string): ClaudeParentIngressScope {
-    const task = this.taskScopesById.get(taskId);
-    return mergeScope(
-      task?.scope,
-      task?.toolUseId ? this.toolScopesById.get(task.toolUseId) ?? "unknown" : "unknown",
     );
   }
 
@@ -540,13 +452,4 @@ export class ClaudeSdkEventMapper {
       return copyClaudeSdkEventMetadata(event, copied, this.currentSdkSessionId);
     });
   }
-}
-
-function mergeScope(
-  current: ClaudeParentIngressScope | undefined,
-  incoming: ClaudeParentIngressScope,
-): ClaudeParentIngressScope {
-  if (current === "sidechain" || incoming === "sidechain") return "sidechain";
-  if (current === "top_level" || incoming === "top_level") return "top_level";
-  return "unknown";
 }

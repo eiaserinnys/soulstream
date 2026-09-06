@@ -57,6 +57,32 @@ export type InterventionInterruptObservation = {
   settled: boolean;
 };
 
+export class ClaudeExactResultCache {
+  private readonly byInputUuid = new Map<string, ClaudeClientEvent>();
+
+  get(uuid: string): ClaudeClientEvent | undefined {
+    return this.byInputUuid.get(uuid);
+  }
+
+  clear(): void {
+    this.byInputUuid.clear();
+  }
+
+  mapAndRecord(
+    message: Record<string, unknown>,
+    mapper: Pick<ClaudeSdkEventMapper, "mapResultMessage">,
+    inputs: { hasInput(uuid: string): boolean },
+  ): ClaudeClientEvent[] {
+    const events = mapper.mapResultMessage(message);
+    const inputUuid = asString(message.user_message_uuid);
+    const exactResult = events.find((event) => event.type === "result");
+    if (inputUuid && exactResult && inputs.hasInput(inputUuid)) {
+      this.byInputUuid.set(inputUuid, exactResult);
+    }
+    return events;
+  }
+}
+
 export function createInterventionInterruptObservation(): InterventionInterruptObservation {
   let resolvePromise!: (observed: boolean) => void;
   const observation: InterventionInterruptObservation = {
@@ -172,6 +198,8 @@ export function provableTurnResultOwner(
   message: Record<string, unknown>,
   logger: Logger,
 ): string | null {
+  const explicitOwnerUuid = asString(message.user_message_uuid);
+  if (explicitOwnerUuid) return explicitOwnerUuid;
   // Bare Results also terminate SDK-owned notification turns. Only the abort
   // Result of our sole interrupting foreground can inherit local ownership.
   if (phase !== "interrupting" || !active) return null;
