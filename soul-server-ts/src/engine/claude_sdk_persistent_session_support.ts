@@ -16,7 +16,9 @@ import type { RateLimitTerminationState } from
 import type {
   ClaudeForegroundPhase,
   ClaudeStaleInterruptReceiptObservation,
+  ClaudeTurnOwner,
 } from "./claude_session_runtime.js";
+import type { TurnOrigin } from "./protocol.js";
 
 export type ClaudeDetachedEventSink = (event: ClaudeClientEvent) => Promise<void>;
 export type ClaudeRuntimeEventSink = (
@@ -200,7 +202,34 @@ export function isTurnStartingUserInput(message: Record<string, unknown>): boole
 }
 
 export function hashSdkUserMessage(message: SDKUserMessage): string {
-  return createHash("sha256").update(JSON.stringify(message)).digest("hex");
+  return createHash("sha256").update(canonicalJson({
+    role: message.message.role,
+    content: message.message.content,
+  })).digest("hex");
+}
+
+export function normalizePersistentTurnOwner(
+  turnOrigin: TurnOrigin | undefined,
+  uuid: string,
+): ClaudeTurnOwner {
+  return {
+    kind: turnOrigin?.kind ?? "initial_prompt",
+    id: turnOrigin?.id ?? uuid,
+  };
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === undefined) return "undefined";
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value) ?? String(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort().map((key) =>
+    `${JSON.stringify(key)}:${canonicalJson(record[key])}`
+  ).join(",")}}`;
 }
 
 export function turnInactivityError(timeoutMs: number): ClaudeClientEvent {

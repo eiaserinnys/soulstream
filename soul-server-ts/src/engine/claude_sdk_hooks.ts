@@ -33,9 +33,26 @@ export function buildClaudeSdkHooks(params: {
         hooks: [
           async (input) => {
             const record = asRecord(input);
+            eventMapper.recordHookToolScope(
+              asString(record?.tool_use_id),
+              asString(record?.agent_id),
+            );
             eventMapper.rememberBackgroundAgentToolUse(
               asString(record?.tool_use_id),
               asRecord(record?.tool_input),
+            );
+            return {};
+          },
+        ],
+      },
+      {
+        matcher: "Bash",
+        hooks: [
+          async (input) => {
+            const record = asRecord(input);
+            eventMapper.recordHookToolScope(
+              asString(record?.tool_use_id),
+              asString(record?.agent_id),
             );
             return {};
           },
@@ -90,7 +107,9 @@ export function buildClaudeSdkHooks(params: {
             const taskId = asString(record?.task_id);
             const subject = asString(record?.task_subject);
             if (!taskId || !subject) return {};
+            eventMapper.recordHookTaskScope(taskId, asString(record?.agent_id));
             runtimeState.setTaskStatus(taskId, "pending");
+            if (!eventMapper.isParentTaskEligible(taskId)) return {};
             output.push({
               type: "claude_runtime_task_created",
               taskId,
@@ -121,7 +140,9 @@ export function buildClaudeSdkHooks(params: {
             const taskId = asString(record?.task_id);
             const subject = asString(record?.task_subject);
             if (!taskId || !subject) return {};
+            eventMapper.recordHookTaskScope(taskId, asString(record?.agent_id));
             runtimeState.setTaskStatus(taskId, "completed");
+            if (!eventMapper.isParentTaskEligible(taskId)) return {};
             output.push({
               type: "claude_runtime_task_completed",
               taskId,

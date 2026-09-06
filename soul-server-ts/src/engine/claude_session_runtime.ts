@@ -30,15 +30,27 @@ export type ClaudeDetachedResultObservation =
   | "duplicate"
   | "unknown";
 
+export type ClaudeTurnOwner = {
+  kind: string;
+  id: string;
+};
+
+export type ClaudeInputAdmission = {
+  enqueued: boolean;
+  state: ClaudeInputState;
+};
+
 export interface ClaudeRuntimeInput<TMessage> {
   uuid: string;
   payloadHash: string;
+  turnOwner: ClaudeTurnOwner;
   message: TMessage;
 }
 
 export interface ClaudeInputRecord {
   uuid: string;
   payloadHash: string;
+  turnOwner: ClaudeTurnOwner;
   state: ClaudeInputState;
 }
 
@@ -159,22 +171,32 @@ export class ClaudeSessionRuntime<TMessage> {
     this.sessionId = sessionId;
   }
 
-  enqueueInput(input: ClaudeRuntimeInput<TMessage>): boolean {
+  enqueueInput(input: ClaudeRuntimeInput<TMessage>): ClaudeInputAdmission {
     this.assertOpen();
     const existing = this.inputs.get(input.uuid);
     if (existing) {
-      return false;
+      if (existing.payloadHash !== input.payloadHash) {
+        throw new Error(`Claude input UUID payload conflict: ${input.uuid}`);
+      }
+      if (
+        existing.turnOwner.kind !== input.turnOwner.kind
+        || existing.turnOwner.id !== input.turnOwner.id
+      ) {
+        throw new Error(`Claude input UUID owner conflict: ${input.uuid}`);
+      }
+      return { enqueued: false, state: existing.state };
     }
     this.inputs.set(input.uuid, {
       uuid: input.uuid,
       payloadHash: input.payloadHash,
+      turnOwner: input.turnOwner,
       state: "queued",
     });
     if (!this.inputQueue.push(input.message)) {
       this.inputs.delete(input.uuid);
       throw new Error("Persistent Claude input queue is closed");
     }
-    return true;
+    return { enqueued: true, state: "queued" };
   }
 
   enqueueForegroundContinuation(input: ClaudeRuntimeInput<TMessage>): boolean {
@@ -182,9 +204,13 @@ export class ClaudeSessionRuntime<TMessage> {
     if (this.foregroundPhase !== "generating") {
       throw new Error(`Cannot inject Claude input while ${this.foregroundPhase}`);
     }
-    const enqueued = this.enqueueInput(input);
-    if (enqueued) this.requireInput(input.uuid).state = "merged";
-    return enqueued;
+    const admission = this.enqueueInput(input);
+    if (admission.enqueued) this.requireInput(input.uuid).state = "merged";
+    return admission.enqueued;
+  }
+
+  hasInput(uuid: string): boolean {
+    return this.inputs.has(uuid);
   }
 
   isForegroundResultOwner(uuid: string): boolean {

@@ -16,6 +16,10 @@ import type { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 export function mapClaudeBackgroundTaskMembership(
   message: Record<string, unknown>,
   runtimeState: ClaudeRuntimeState,
+  scope: {
+    linkTaskToTool(taskId: string, toolUseId: string): void;
+    isParentTaskEligible(taskId: string): boolean;
+  },
 ): ClaudeClientEvent[] {
   const tasks = (asArray(message.tasks) ?? [])
     .map((task) => asRecord(task))
@@ -31,7 +35,13 @@ export function mapClaudeBackgroundTaskMembership(
     }),
   );
 
-  return transition.started.map((taskId) => {
+  for (const [taskId, task] of byId) {
+    const toolUseId = asString(task.tool_use_id);
+    if (toolUseId) scope.linkTaskToTool(taskId, toolUseId);
+    runtimeState.setTaskStatus(taskId, runtimeState.getTaskStatus(taskId) ?? "running");
+  }
+
+  return transition.started.filter((taskId) => scope.isParentTaskEligible(taskId)).map((taskId) => {
     const task = byId.get(taskId);
     const existing = runtimeState.getTaskStatus(taskId);
     runtimeState.setTaskStatus(taskId, existing ?? "running");
