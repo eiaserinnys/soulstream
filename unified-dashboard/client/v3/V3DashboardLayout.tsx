@@ -69,6 +69,7 @@ function V3DashboardContent() {
   const [selectedTaskSnapshot, setSelectedTaskSnapshot] = useState<PlannerTask | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [detailChatVisible, setDetailChatVisible] = useState(false);
   const [newDocumentOpen, setNewDocumentOpen] = useState(false);
   const [newDocumentTitle, setNewDocumentTitle] = useState("");
   const [sessionDefaults, setSessionDefaults] = useState<PageSessionDefaults | null>(null);
@@ -221,10 +222,15 @@ function V3DashboardContent() {
     targetedLoading: targetedRunSessionsLoading,
   }), [catalogSessions, plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
   const sessions = runSessionResolution.sessions;
-  useSessionProvider({
+  const cursorScope = `${window.location.origin}|${user?.email ?? "anonymous"}`;
+  const detailActive = workspaceOpen && detailChatVisible;
+  const { synchronizedSessionKey } = useSessionProvider({
     sessionKey: activeSessionKey,
     getSessionProvider: () => orchestratorSessionProvider,
+    active: detailActive,
+    cursorScope,
   });
+  const historyEnabled = detailActive && synchronizedSessionKey === activeSessionKey;
   const mobileTaskOptions = useMemo(
     () => buildMobileTaskOptions(currentTasks, sessions),
     [currentTasks, sessions],
@@ -468,6 +474,8 @@ function V3DashboardContent() {
           sessionDefaults={sessionDefaults}
           mobileMode={mobileMode}
           mobileTab={mobileTab}
+          historyEnabled={historyEnabled}
+          onChatVisibilityChange={setDetailChatVisible}
           taskMoveTargets={currentTasks}
           taskInToday={workspaceTask ? todayTaskIds.has(workspaceTask.page.id) : false}
           onReturnToToday={returnToPlanner}

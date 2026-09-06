@@ -102,11 +102,13 @@ const reactTestEnvironment = globalThis as typeof globalThis & {
 function Harness({
   sessionId,
   scrollerRef,
+  enabled = true,
 }: {
   sessionId: string;
   scrollerRef: RefObject<HTMLElement | null>;
+  enabled?: boolean;
 }) {
-  const result = useMessageHistoryBuffer(sessionId, scrollerRef);
+  const result = useMessageHistoryBuffer(sessionId, scrollerRef, enabled);
   useEffect(() => {
     latest = result;
   }, [result]);
@@ -142,10 +144,10 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
   let scroller: HTMLDivElement;
   let scrollerRef: RefObject<HTMLElement | null>;
 
-  async function renderSession(sessionId: string): Promise<void> {
+  async function renderSession(sessionId: string, enabled = true): Promise<void> {
     useDashboardStore.getState().setActiveSession(sessionId);
     await act(async () => {
-      root.render(createElement(Harness, { sessionId, scrollerRef }));
+      root.render(createElement(Harness, { sessionId, scrollerRef, enabled }));
     });
     await flush();
   }
@@ -496,5 +498,35 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
 
     expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(0);
     root = createRoot(container);
+  });
+
+  it("does not fetch while disabled and starts when the same session becomes visible", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(page([1], null));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-hidden", false);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await renderSession("sess-hidden", true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts an in-flight page when the same session becomes hidden", async () => {
+    let signal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-abort", true);
+    expect(latest?.loading).toBe(true);
+    await renderSession("sess-abort", false);
+
+    expect(signal?.aborted).toBe(true);
+    expect(latest?.loading).toBe(false);
+    expect(latest?.blockedReason).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import type { BoardContainerRef, CatalogBoardItem, CatalogFolder, CatalogState, SessionSummary } from "../shared/types";
+import { getSessionActivityMs as getSharedSessionActivityMs } from "../shared/session-activity";
 import {
   BOARD_FRAME_COLLAPSED_HEIGHT,
   BOARD_FRAME_COLLAPSED_WIDTH,
@@ -201,7 +202,7 @@ function parseTimeMs(value: string | undefined | null): number {
 }
 
 export function getSessionActivityMs(session: SessionSummary): number {
-  return parseTimeMs(session.lastMessage?.timestamp ?? session.updatedAt ?? session.createdAt);
+  return getSharedSessionActivityMs(session);
 }
 
 export function getFolderActivityMs(folder: CatalogFolder): number {

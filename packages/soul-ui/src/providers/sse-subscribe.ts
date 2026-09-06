@@ -24,10 +24,12 @@ export interface SSESubscribeOptions {
 
   /**
    * 구독 시작 시점의 lastEventId.
-   * 이 값을 기준으로 내부 currentLastEventId가 초기화되며,
-   * 이후 수신된 이벤트 ID로 자동 갱신된다.
+   * 외부 committed-cursor getter가 없을 때 모든 연결 시 사용하는 고정 fallback이다.
    */
   initialLastEventId?: number;
+
+  /** Read the cursor committed by the event processor immediately before every connect. */
+  getLastEventId?: () => number;
 
   /**
    * 디버그 로그 접두어.
@@ -54,15 +56,15 @@ function resolveEventId(data: SoulSSEEvent, sseLastEventId: string): number {
 /**
  * SSE 스트림을 구독하고 구독 해제 함수를 반환한다.
  *
- * - EventSource 연결, lastEventId 추적, 지수 백오프 재연결을 처리한다.
- * - currentLastEventId는 클로저 내부에서 관리하며, 재연결 시 URL에 반영된다.
+ * - EventSource 연결, committed lastEventId 조회, 지수 백오프 재연결을 처리한다.
+ * - 수신 자체는 처리 성공이 아니므로 이 계층에서 cursor를 전진시키지 않는다.
  *
  * @returns 구독 해제 함수
  */
 export function createSSESubscribe(options: SSESubscribeOptions): () => void {
   const { baseUrl, onEvent, onStatusChange, debugPrefix } = options;
 
-  let currentLastEventId = options.initialLastEventId ?? 0;
+  const initialLastEventId = options.initialLastEventId ?? 0;
   let eventSource: EventSource | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectAttempt = 0;
@@ -79,6 +81,11 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
     onStatusChange?.("connecting");
 
     const params = new URLSearchParams();
+    const requestedLastEventId = options.getLastEventId?.() ?? initialLastEventId;
+    const currentLastEventId = Number.isFinite(requestedLastEventId)
+      && requestedLastEventId > 0
+        ? requestedLastEventId
+        : 0;
     if (currentLastEventId > 0) {
       params.set("lastEventId", String(currentLastEventId));
     }
@@ -101,18 +108,6 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
         try {
           const data = JSON.parse(e.data) as SoulSSEEvent;
           const eventId = resolveEventId(data, e.lastEventId);
-
-          // history_sync는 SSE id 없이 payload.last_event_id로 baseline 전달.
-          // 재연결 시 정확한 lastEventId를 보내려면 이 baseline을 currentLastEventId에 반영해야 한다.
-          // SoulSSEEvent union에서 type narrowing으로 HistorySyncEvent로 좁혀 직접 접근.
-          if (data?.type === "history_sync") {
-            const syncId = data.last_event_id ?? 0;
-            if (syncId > currentLastEventId) {
-              currentLastEventId = syncId;
-            }
-          } else if (eventId > currentLastEventId) {
-            currentLastEventId = eventId;
-          }
 
           log(`event type=${eventType} id=${eventId}`, data);
           onEvent(data, eventId);

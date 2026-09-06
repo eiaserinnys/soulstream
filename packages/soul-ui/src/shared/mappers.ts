@@ -8,6 +8,7 @@
 import type { ReviewState, SessionSummary, SessionStatus, LlmUsage, MetadataEntry } from "./types";
 import { normalizeSessionBindingWarnings } from "@soulstream/page-model";
 import { normalizeSessionStatus } from "./session-status";
+import { normalizeLastMessage } from "./session-activity";
 
 /** snake_case / camelCase 양쪽 응답을 LlmUsage로 변환 */
 function toLlmUsage(raw: unknown): LlmUsage | undefined {
@@ -26,9 +27,7 @@ function toLlmUsage(raw: unknown): LlmUsage | undefined {
  * session_type을 보냅니다. eventCount는 포함하지 않을 수 있습니다.
  */
 export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
-  const lastMsg = (raw.last_message ?? raw.lastMessage) as
-    | Record<string, unknown>
-    | undefined;
+  const lastMessage = normalizeLastMessage(raw.last_message ?? raw.lastMessage);
   return {
     agentSessionId: (raw.agent_session_id ?? raw.agentSessionId) as string,
     status: normalizeSessionStatus(raw.status as SessionStatus | undefined),
@@ -47,13 +46,7 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
     llmModel: (raw.llm_model ?? raw.llmModel) as string | undefined,
     llmUsage: toLlmUsage(raw.llm_usage ?? raw.llmUsage),
     clientId: (raw.client_id ?? raw.clientId) as string | undefined,
-    lastMessage: lastMsg
-      ? {
-          type: lastMsg.type as string,
-          preview: lastMsg.preview as string,
-          timestamp: lastMsg.timestamp as string,
-        }
-      : undefined,
+    lastMessage,
     metadata: (raw.metadata as MetadataEntry[] | undefined) ?? [],
     folderId: (raw.folder_id ?? raw.folderId) as string | null | undefined,
     lastEventId: (raw.last_event_id ?? raw.lastEventId ?? 0) as number,

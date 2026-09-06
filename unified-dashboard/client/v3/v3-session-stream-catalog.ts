@@ -1,4 +1,5 @@
 import {
+  normalizeLastMessage,
   retainEqualValue,
   toSessionSummary,
   type CatalogState,
@@ -61,6 +62,23 @@ export function reconcileCanonicalReviewSessions(
 }
 
 function normalizeSnapshotSession(session: SessionSummary): SessionSummary {
-  if (typeof session.agentSessionId === "string") return session;
-  return toSessionSummary(session as unknown as Record<string, unknown>);
+  if (typeof session.agentSessionId !== "string") {
+    return toSessionSummary(session as unknown as Record<string, unknown>);
+  }
+  if (session.lastMessage === undefined) return session;
+  const normalized = normalizeLastMessage(session.lastMessage);
+  if (normalized === undefined) {
+    const { lastMessage: _invalidLastMessage, ...withoutLastMessage } = session;
+    return withoutLastMessage;
+  }
+  const raw = session.lastMessage as SessionSummary["lastMessage"] & { eventId?: number };
+  if (
+    normalized.type === raw.type
+    && normalized.preview === raw.preview
+    && normalized.timestamp === raw.timestamp
+    && normalized.eventId === raw.eventId
+  ) {
+    return session;
+  }
+  return { ...session, lastMessage: normalized };
 }

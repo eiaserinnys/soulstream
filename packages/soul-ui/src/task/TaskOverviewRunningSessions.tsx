@@ -8,10 +8,11 @@ import { applyCatalogDisplayNames } from "../hooks/session-catalog-helpers";
 import type { SessionPage } from "../hooks/session-stream-helpers";
 import { useIsMobile } from "../hooks/use-mobile";
 import { type SessionSummary } from "../shared/types";
+import { getSessionActivityTimestamp } from "../shared/session-activity";
 import { useDashboardStore } from "../stores/dashboard-store";
 
 function sessionTimeValue(session: SessionSummary): number {
-  const source = session.updatedAt ?? session.lastMessage?.timestamp ?? session.createdAt;
+  const source = getSessionActivityTimestamp(session);
   return source ? new Date(source).getTime() : 0;
 }
 

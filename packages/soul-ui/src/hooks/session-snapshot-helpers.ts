@@ -1,6 +1,7 @@
 import type { InfiniteData } from "@tanstack/react-query";
 
 import type { SessionSummary } from "../shared/types";
+import { normalizeLastMessage } from "../shared/session-activity";
 
 interface SessionPage {
   sessions: SessionSummary[];
@@ -90,6 +91,7 @@ export type SessionLifecycleSnapshot = Pick<
   | "updatedAt"
   | "createdAt"
   | "lastEventId"
+  | "lastMessage"
 >;
 
 /**
@@ -123,18 +125,38 @@ export function applySessionLifecycleSnapshotToList(
     if (
       snapshot === undefined
       || !shouldReplaceSessionSnapshot(session, snapshot)
-      || (
-        snapshot.status === session.status
-        && snapshot.reviewState === session.reviewState
-      )
     ) {
+      return session;
+    }
+    const lastMessage = normalizeLastMessage(snapshot.lastMessage);
+    const currentLastMessage = normalizeLastMessage(session.lastMessage);
+    const lastMessageChanged = lastMessage !== undefined && (
+      currentLastMessage === undefined
+      || currentLastMessage.type !== lastMessage.type
+      || currentLastMessage.preview !== lastMessage.preview
+      || currentLastMessage.timestamp !== lastMessage.timestamp
+      || currentLastMessage.eventId !== lastMessage.eventId
+    );
+    const patch: Partial<SessionSummary> = {
+      ...(snapshot.status === session.status ? {} : { status: snapshot.status }),
+      ...(snapshot.reviewState === undefined || snapshot.reviewState === session.reviewState
+        ? {}
+        : { reviewState: snapshot.reviewState }),
+      ...(snapshot.updatedAt === undefined || snapshot.updatedAt === session.updatedAt
+        ? {}
+        : { updatedAt: snapshot.updatedAt }),
+      ...(snapshot.lastEventId === undefined || snapshot.lastEventId === session.lastEventId
+        ? {}
+        : { lastEventId: snapshot.lastEventId }),
+      ...(lastMessageChanged ? { lastMessage } : {}),
+    };
+    if (Object.keys(patch).length === 0) {
       return session;
     }
     changed = true;
     return {
       ...session,
-      status: snapshot.status,
-      reviewState: snapshot.reviewState,
+      ...patch,
     };
   });
   return changed ? next : sessions;

@@ -11,6 +11,7 @@ import type {
   ReviewState,
   SoulSSEEvent,
 } from "@shared/types";
+import type { DetailCursorStore } from "./detail-cursor-store";
 
 // === Provider 인터페이스 ===
 
@@ -72,8 +73,11 @@ export interface SessionDetailProvider {
     sessionKey: string,
     onEvent: (event: SoulSSEEvent, eventId: number) => void,
     onStatusChange?: (status: "connecting" | "connected" | "error") => void,
-    options?: { lastEventId?: number },
+    options?: { lastEventId?: number; getLastEventId?: () => number },
   ): () => void;
+
+  /** Provider-owned committed cursor cache. Optional for external/test providers. */
+  detailCursorStore?: DetailCursorStore;
 }
 
 /**

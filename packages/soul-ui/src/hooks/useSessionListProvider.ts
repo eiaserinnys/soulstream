@@ -251,6 +251,9 @@ export function useSessionListProvider(
       // 빈 값 자동 skip. parseInt(NaN) 오염 회피.
       lastEventIdRef.current = eid;
     },
+    onSessionDeleted: (event) => {
+      getSessionProvider().detailCursorStore?.deleteSession(event.agent_session_id);
+    },
     onStreamMeta: (e) => {
       const update = reconcileStreamMeta(e, {
         instanceId: instanceIdRef.current,

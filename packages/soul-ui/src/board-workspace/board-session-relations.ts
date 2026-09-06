@@ -3,6 +3,7 @@ import type {
   CatalogState,
   SessionSummary,
 } from "../shared/types";
+import { getSessionActivityMs } from "../shared/session-activity";
 
 export interface SessionParentRef {
   parentSessionId: string;
@@ -41,14 +42,8 @@ export interface BuildBoardSessionRelationsParams {
   sessions: readonly SessionSummary[];
 }
 
-function parseTimeMs(value: string | undefined | null): number {
-  if (!value) return 0;
-  const ms = Date.parse(value);
-  return Number.isFinite(ms) ? ms : 0;
-}
-
 function getRelationSortMs(session: SessionSummary): number {
-  return parseTimeMs(session.updatedAt ?? session.createdAt);
+  return getSessionActivityMs(session);
 }
 
 function compactFirstLine(value: string | undefined | null): string {

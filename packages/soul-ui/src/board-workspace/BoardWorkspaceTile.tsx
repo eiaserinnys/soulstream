@@ -7,6 +7,7 @@ import type {
 import { Code2, FileText, Folder, Frame } from "lucide-react";
 
 import type { SessionSummary } from "../shared/types";
+import { getSessionActivityTimestamp } from "../shared/session-activity";
 import { Badge } from "../components/ui/badge";
 import { BoardAssetCard } from "../components/BoardAssetCard";
 import { STATUS_CONFIG } from "../components/SessionItem";
@@ -323,8 +324,7 @@ export function BoardWorkspaceTile({
   }
 
   const config = STATUS_CONFIG[item.session.status] ?? STATUS_CONFIG.unknown;
-  const activityTime =
-    item.session.lastMessage?.timestamp ?? item.session.updatedAt ?? item.session.createdAt;
+  const activityTime = getSessionActivityTimestamp(item.session);
   const stackStatus = item.childStack?.status;
   const isSessionRunning = item.session.status === "running";
   const isSessionActive = activeSessionKey === item.session.agentSessionId;

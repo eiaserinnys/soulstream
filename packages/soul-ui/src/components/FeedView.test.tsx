@@ -149,6 +149,7 @@ describe("FeedView sidebar placement", () => {
 
   it("keeps injected sidebar feed sessions visible after folder navigation", async () => {
     queryClient.clear();
+    const subscribe = vi.spyOn(queryClient.getQueryCache(), "subscribe");
     flushSync(() => {
       root.render(
         createElement(
@@ -166,6 +167,8 @@ describe("FeedView sidebar placement", () => {
       );
     });
     await Promise.resolve();
+
+    expect(subscribe).not.toHaveBeenCalled();
 
     const card = container.querySelector<HTMLElement>('[data-session-id="in-folder"]');
     expect(card).not.toBeNull();

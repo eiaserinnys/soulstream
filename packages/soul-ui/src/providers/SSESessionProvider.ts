@@ -14,6 +14,7 @@ import type { EventTreeNode, SoulSSEEvent } from "@shared/types";
 import { toSessionSummary } from "@shared/mappers";
 import { buildFetchSessionsUrl } from "./fetch-sessions-url";
 import { createSSESubscribe } from "./sse-subscribe";
+import { createRegisteredDetailCursorStore } from "./detail-cursor-store";
 
 // 주의: complete/error는 "턴" 종료이지 "세션" 종료가 아닙니다.
 // 멀티턴 세션(resume)에서는 complete 이후 새 user_message가 올 수 있으므로
@@ -36,6 +37,7 @@ interface SessionListResponse {
  * /api/sessions/:id/events SSE 스트림으로 실시간 이벤트를 수신합니다.
  */
 export class SSESessionProvider implements SessionStorageProvider {
+  readonly detailCursorStore = createRegisteredDetailCursorStore();
   /**
    * 세션 목록 조회 (페이지네이션 지원).
    *
@@ -103,13 +105,14 @@ export class SSESessionProvider implements SessionStorageProvider {
     sessionKey: string,
     onEvent: (event: SoulSSEEvent, eventId: number) => void,
     onStatusChange?: (status: "connecting" | "connected" | "error") => void,
-    options?: { lastEventId?: number },
+    options?: { lastEventId?: number; getLastEventId?: () => number },
   ): () => void {
     return createSSESubscribe({
       baseUrl: `/api/sessions/${encodeURIComponent(sessionKey)}/events`,
       onEvent,
       onStatusChange,
       initialLastEventId: options?.lastEventId,
+      getLastEventId: options?.getLastEventId,
     });
   }
 }

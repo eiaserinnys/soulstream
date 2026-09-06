@@ -217,13 +217,13 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
   );
 }
 
-export function AskQuestionBanner() {
+export function AskQuestionBanner({ enabled = true }: { enabled?: boolean } = {}) {
   const activeSessionKey = useDashboardStore((s: DashboardState & DashboardActions) => s.activeSessionKey);
   const tree = useDashboardStore((s: DashboardState & DashboardActions) => s.tree);
   // treeVersion을 구독하여 트리 변경 시 리렌더 트리거
   useDashboardStore((s: DashboardState & DashboardActions) => s.treeVersion);
 
-  if (!tree || !activeSessionKey) return null;
+  if (!enabled || !tree || !activeSessionKey) return null;
 
   // 트리 루트부터 순회 (session 루트의 children 포함)
   const pendingNode = findPendingPrompt([tree]);

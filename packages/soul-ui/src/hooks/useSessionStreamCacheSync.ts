@@ -81,6 +81,8 @@ export interface UseSessionStreamCacheSyncOptions {
   onReplayGap?: (event: ReplayGapStreamEvent) => void;
   /** task_updated 수신 시 호출 (업무 snapshot projection 갱신용). */
   onTaskUpdated?: (event: TaskUpdatedStreamEvent) => void;
+  /** session_deleted 캐시 반영 뒤 detail cursor 같은 외부 projection을 회수한다. */
+  onSessionDeleted?: (event: SessionDeletedStreamEvent) => void;
   /** custom_view_updated 수신 시 호출 (커스텀 뷰 projection 갱신용). */
   onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
   /** 모든 stream event의 타입별 캐시 처리가 끝난 뒤 호출한다. */
@@ -103,6 +105,7 @@ export function useSessionStreamCacheSync(
     onStreamMeta,
     onReplayGap,
     onTaskUpdated: onTaskUpdatedOption,
+    onSessionDeleted: onSessionDeletedOption,
     onCustomViewUpdated: onCustomViewUpdatedOption,
     onStreamEvent,
     transformCatalogUpdate,
@@ -250,8 +253,9 @@ export function useSessionStreamCacheSync(
           return applySessionDeleted(old, event.agent_session_id);
         },
       );
+      onSessionDeletedOption?.(event);
     },
-    [queryClient, onEventIdAdvance],
+    [queryClient, onEventIdAdvance, onSessionDeletedOption],
   );
 
   const onCatalogUpdated = useCallback(

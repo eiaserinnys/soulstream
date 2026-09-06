@@ -577,6 +577,36 @@ describe("buildSessionUpdates — F-10C user profile extraction", () => {
     });
   });
 
+  it("keeps a valid latest message even when legacy updated_at is absent", () => {
+    const updates = buildSessionUpdates({
+      type: "session_updated",
+      agent_session_id: "sess-1",
+      status: "running",
+      last_message: {
+        type: "user_message",
+        preview: "  question  ",
+        timestamp: "2026-09-06T12:00:00Z",
+      },
+    } as SessionUpdatedStreamEvent);
+
+    expect(updates.updatedAt).toBeUndefined();
+    expect(updates.lastMessage).toEqual({
+      type: "user_message",
+      preview: "question",
+      timestamp: "2026-09-06T12:00:00Z",
+    });
+  });
+
+  it("ignores malformed latest messages so an existing preview is preserved", () => {
+    expect(buildSessionUpdates(makeEvent({
+      last_message: {
+        type: "tool_result",
+        preview: "tool noise",
+        timestamp: "2026-09-06T12:00:00Z",
+      },
+    }))).not.toHaveProperty("lastMessage");
+  });
+
 });
 
 describe("normalizeSessionStatus", () => {
@@ -694,6 +724,32 @@ describe("filterFeedSessions", () => {
     );
 
     expect(result.map((s) => s.agentSessionId)).toEqual(["new", "old"]);
+  });
+
+  it("sorts loaded pages across a pagination boundary by message activity", () => {
+    const result = filterFeedSessions(
+      [
+        makeSession("page-1", {
+          updatedAt: "2026-09-06T23:00:00Z",
+          lastMessage: {
+            type: "assistant_message",
+            preview: "older message",
+            timestamp: "2026-09-04T00:00:00Z",
+          },
+        }),
+        makeSession("page-2", {
+          updatedAt: "2026-09-01T00:00:00Z",
+          lastMessage: {
+            type: "user_message",
+            preview: "newer message",
+            timestamp: "2026-09-05T00:00:00Z",
+          },
+        }),
+      ],
+      { folders: [], sessions: {} },
+    );
+
+    expect(result.map((item) => item.agentSessionId)).toEqual(["page-2", "page-1"]);
   });
 });
 

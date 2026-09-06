@@ -17,6 +17,7 @@ import { BackendBadge } from "./BackendBadge";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { LiquidGlassCard } from "./LiquidGlassCard";
 import { cn } from "../lib/cn";
+import { getSessionActivityTimestamp } from "../shared/session-activity";
 
 const DEFAULT_PROFILE: DashboardConfig = {
   user: { name: "User", id: "", hasPortrait: false },
@@ -57,7 +58,7 @@ export const FeedCard = memo(function FeedCard({
   const profileConfig = (dashboardConfig?.user != null ? dashboardConfig : null) ?? DEFAULT_PROFILE;
   const userPortraitUrl =
     session.userPortraitUrl ?? profileConfig.user.portraitUrl ?? undefined;
-  const actorIsUser = session.lastMessage?.type === "user";
+  const actorIsUser = session.lastMessage?.type === "user_message";
   const actorName = actorIsUser
     ? (session.userName ?? profileConfig.user.name)
     : (session.agentName ?? "Assistant");
@@ -83,7 +84,7 @@ export const FeedCard = memo(function FeedCard({
       : session.prompt || session.agentSessionId;
   const preview = session.lastMessage?.preview ?? session.prompt ?? "";
 
-  const displayTime = session.lastMessage?.timestamp ?? session.updatedAt ?? session.createdAt;
+  const displayTime = getSessionActivityTimestamp(session);
   const timeStr = displayTime
     ? new Date(displayTime).toLocaleString("ko-KR", {
         month: "2-digit",

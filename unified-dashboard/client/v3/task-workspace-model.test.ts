@@ -10,6 +10,7 @@ import {
   buildRunTree,
   clampWorkspaceSplit,
   descriptionMarkdown,
+  isTaskWorkspaceChatVisible,
   reduceWorkspaceEscape,
   reconcileTaskSessions,
   resolveRunSessions,
@@ -52,6 +53,34 @@ describe("task workspace split", () => {
     expect(workspaceSplitForKey(73.5, "ArrowRight")).toBe(75);
     expect(workspaceSplitForKey(31, "Home")).toBe(DEFAULT_WORKSPACE_SPLIT);
     expect(workspaceSplitForKey(60, "Enter")).toBeNull();
+  });
+});
+
+describe("task workspace chat visibility", () => {
+  const visibility = (overrides: Partial<Parameters<typeof isTaskWorkspaceChatVisible>[0]> = {}) =>
+    isTaskWorkspaceChatVisible({
+      hasActiveSession: true,
+      hasTask: true,
+      boardOpen: false,
+      chatOpen: true,
+      inspectorKind: "chat",
+      mobileMode: false,
+      mobileChatTab: false,
+      ...overrides,
+    });
+
+  it("keeps detail I/O active only for a visible chat surface", () => {
+    expect(visibility()).toBe(true);
+    expect(visibility({ inspectorKind: "document" })).toBe(false);
+    expect(visibility({ chatOpen: false })).toBe(false);
+    expect(visibility({ hasActiveSession: false })).toBe(false);
+  });
+
+  it("treats the desktop board chat as visible and gates every mobile layout by its chat tab", () => {
+    expect(visibility({ boardOpen: true, chatOpen: false })).toBe(true);
+    expect(visibility({ hasTask: false, chatOpen: false })).toBe(true);
+    expect(visibility({ boardOpen: true, mobileMode: true, mobileChatTab: false })).toBe(false);
+    expect(visibility({ boardOpen: true, mobileMode: true, mobileChatTab: true })).toBe(true);
   });
 });
 

@@ -18,11 +18,13 @@ import type {
   SessionListResult,
   SessionStorageProvider,
 } from "../providers/types";
+import { DetailCursorStore } from "../providers/detail-cursor-store";
 
 class FakeSessionProvider implements SessionStorageProvider {
+  readonly detailCursorStore = new DetailCursorStore();
   subscribeCalls: Array<{
     sessionKey: string;
-    options?: { lastEventId?: number };
+    options?: { lastEventId?: number; getLastEventId?: () => number };
   }> = [];
   unsubscribeCount = 0;
   onEvent: ((event: SoulSSEEvent, eventId: number) => void) | null = null;
@@ -43,7 +45,7 @@ class FakeSessionProvider implements SessionStorageProvider {
     sessionKey: string,
     onEvent: (event: SoulSSEEvent, eventId: number) => void,
     onStatusChange?: (status: "connecting" | "connected" | "error") => void,
-    options?: { lastEventId?: number },
+    options?: { lastEventId?: number; getLastEventId?: () => number },
   ): () => void {
     this.subscribeCalls.push({ sessionKey, options });
     this.onEvent = onEvent;
@@ -58,11 +60,22 @@ class FakeSessionProvider implements SessionStorageProvider {
   }
 }
 
-function SessionProviderProbe({ provider }: { provider: SessionStorageProvider }) {
-  useSessionProvider({
+function SessionProviderProbe({
+  provider,
+  active = true,
+  onValue,
+}: {
+  provider: SessionStorageProvider;
+  active?: boolean;
+  onValue?: (value: ReturnType<typeof useSessionProvider>) => void;
+}) {
+  const value = useSessionProvider({
     sessionKey: "sess-1",
     getSessionProvider: () => provider,
+    active,
+    cursorScope: "https://dashboard.test|alice",
   });
+  onValue?.(value);
   return null;
 }
 
@@ -83,6 +96,7 @@ describe("useSessionProvider", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     flushSync(() => {
       root.unmount();
     });
@@ -188,4 +202,117 @@ describe("useSessionProvider", () => {
       reviewState: "needs_review",
     });
   });
+
+  it("commits a durable cursor only after its queued chunk is processed", async () => {
+    vi.useFakeTimers();
+    const provider = new FakeSessionProvider();
+    flushSync(() => {
+      root.render(createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(SessionProviderProbe, { provider }),
+      ));
+    });
+    await Promise.resolve();
+
+    provider.emit({ type: "user_message", text: "hello" } as SoulSSEEvent, 12);
+    expect(provider.detailCursorStore.get("https://dashboard.test|alice", "sess-1")).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(50);
+    expect(provider.detailCursorStore.get("https://dashboard.test|alice", "sess-1")).toBe(12);
+    expect(provider.subscribeCalls[0].options?.getLastEventId?.()).toBe(12);
+    vi.useRealTimers();
+  });
+
+  it("suspends and resumes the same session without discarding its committed cursor", async () => {
+    const provider = new FakeSessionProvider();
+    provider.detailCursorStore.commit("https://dashboard.test|alice", "sess-1", 21);
+
+    flushSync(() => {
+      root.render(createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(SessionProviderProbe, { provider, active: true }),
+      ));
+    });
+    await Promise.resolve();
+    expect(provider.subscribeCalls[0].options?.lastEventId).toBe(21);
+
+    flushSync(() => {
+      root.render(createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(SessionProviderProbe, { provider, active: false }),
+      ));
+    });
+    expect(provider.unsubscribeCount).toBe(1);
+
+    flushSync(() => {
+      root.render(createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(SessionProviderProbe, { provider, active: true }),
+      ));
+    });
+    expect(provider.subscribeCalls).toHaveLength(2);
+    expect(provider.subscribeCalls[1].options?.lastEventId).toBe(21);
+  });
+
+  it("reconnects from the committed cursor without clearing the rendered tree", async () => {
+    vi.useFakeTimers();
+    const provider = new FakeSessionProvider();
+    let latest: ReturnType<typeof useSessionProvider> | undefined;
+    flushSync(() => {
+      root.render(createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(SessionProviderProbe, {
+          provider,
+          onValue: (value) => { latest = value; },
+        }),
+      ));
+    });
+    await Promise.resolve();
+    provider.emit({ type: "user_message", text: "keep me" } as SoulSSEEvent, 24);
+    await vi.advanceTimersByTimeAsync(50);
+    const treeBeforeReconnect = useDashboardStore.getState().tree;
+    expect(treeBeforeReconnect).not.toBeNull();
+
+    flushSync(() => latest?.reconnect());
+
+    expect(provider.unsubscribeCount).toBe(1);
+    expect(provider.subscribeCalls).toHaveLength(2);
+    expect(provider.subscribeCalls[1].options?.lastEventId).toBe(24);
+    expect(useDashboardStore.getState().tree).toBe(treeBeforeReconnect);
+  });
+
+  it("unblocks history after the committed history_sync marker is processed", async () => {
+    vi.useFakeTimers();
+    const provider = new FakeSessionProvider();
+    let latest: ReturnType<typeof useSessionProvider> | undefined;
+    flushSync(() => {
+      root.render(createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(SessionProviderProbe, {
+          provider,
+          onValue: (value) => { latest = value; },
+        }),
+      ));
+    });
+    await Promise.resolve();
+    expect(latest?.synchronizedSessionKey).toBeNull();
+
+    provider.emit({
+      type: "history_sync",
+      last_event_id: 31,
+      is_live: true,
+    } as SoulSSEEvent, 0);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(latest?.synchronizedSessionKey).toBe("sess-1");
+    expect(provider.detailCursorStore.get("https://dashboard.test|alice", "sess-1")).toBe(31);
+    vi.useRealTimers();
+  });
+
 });
