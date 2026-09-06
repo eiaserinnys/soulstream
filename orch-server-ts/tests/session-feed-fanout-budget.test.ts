@@ -8,9 +8,8 @@ import {
 } from "../src/index.js";
 
 describe("session feed fanout budget", () => {
-  it("does not fan out a multi-session raw-event storm and shrinks frames/bytes", () => {
+  it("does not fan out a multi-session raw-event storm and keeps updates compact", () => {
     const events: NodeRegistryEvent[] = [];
-    const legacyExpandedFrames: Record<string, unknown>[] = [];
     for (let sessionIndex = 0; sessionIndex < 3; sessionIndex += 1) {
       const sessionId = `session-${sessionIndex}`;
       for (let eventIndex = 0; eventIndex < 40; eventIndex += 1) {
@@ -26,14 +25,6 @@ describe("session feed fanout budget", () => {
               payload: "x".repeat(8 * 1024),
             },
           },
-        });
-        legacyExpandedFrames.push({
-          type: "session_updated",
-          agent_session_id: sessionId,
-          status: "running",
-          metadata: { raw: "x".repeat(8 * 1024) },
-          prompt: "p".repeat(2 * 1024),
-          last_event_id: eventIndex + 1,
         });
       }
       events.push({
@@ -62,10 +53,6 @@ describe("session feed fanout budget", () => {
     const result = dispatchNodeRegistryEventsToSessionBroadcaster(events, broadcaster);
     const frames = broadcaster.bufferedEvents.map(({ payload }) => payload);
     const afterBytes = frames.reduce((sum, frame) => sum + jsonBytes(frame), 0);
-    const beforeBytes = legacyExpandedFrames.reduce(
-      (sum, frame) => sum + jsonBytes(frame),
-      0,
-    );
 
     expect(result).toEqual({ appended: 3, skipped: 120, failed: 0 });
     expect(frames).toHaveLength(3);
@@ -76,7 +63,9 @@ describe("session feed fanout budget", () => {
       expect.objectContaining({ preview: "final 2" }),
     ]);
     expect(frames.every((frame) => !Object.hasOwn(frame, "metadata"))).toBe(true);
-    expect(afterBytes).toBeLessThan(beforeBytes / 100);
+    // This is an absolute payload budget. It intentionally makes no claim about
+    // a historical baseline, which must be measured by running the same trace.
+    expect(afterBytes).toBeLessThan(1_024);
   });
 });
 
