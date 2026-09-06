@@ -335,13 +335,21 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     if (payload.type === "assistant_message") {
       const assistantUuid = assistantUuidFromDedupeKey(asString(payload._dedupe_key));
       if (!assistantUuid) return;
-      const candidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
-        item.sessionId === task.agentSessionId &&
-        (item.phase === "awaiting-input" || item.phase === "awaiting-assistant" ||
-          item.phase === "awaiting-result")
+      const sessionCandidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
+        item.sessionId === task.agentSessionId
       );
-      if (candidates.length !== 1) return;
-      const candidate = candidates[0]!;
+      const readyCandidates = sessionCandidates.filter((item) =>
+        item.phase === "awaiting-assistant" || item.phase === "awaiting-result"
+      );
+      if (readyCandidates.length > 1) return;
+      let candidate = readyCandidates[0];
+      if (!candidate) {
+        const awaitingInputCandidates = sessionCandidates.filter((item) =>
+          item.phase === "awaiting-input"
+        );
+        if (awaitingInputCandidates.length !== 1) return;
+        candidate = awaitingInputCandidates[0]!;
+      }
       if (candidate.phase === "awaiting-input") {
         if (!this.deps.transcriptReceipt) return;
         try {
