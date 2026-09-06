@@ -227,8 +227,17 @@ export async function populateReasoningEfforts(
 
 /** Re-query after a settings field changed. */
 export async function refreshReasoningEfforts(scope: EffortScope): Promise<void> {
-  const shown = document.querySelector<HTMLSelectElement>("#reasoning-effort")?.value ?? "";
-  await populateReasoningEfforts(scope, selectionForScope(scope, shown));
+  const select = document.querySelector<HTMLSelectElement>("#reasoning-effort");
+  const shown = select?.value ?? "";
+  const selected = selectionForScope(scope, shown);
+  if (select && selected !== shown) {
+    // Applied now, not when the response lands. `resolveEffortPickerView` marks
+    // the new scope as current immediately, so a second refresh arriving while
+    // the first is still in flight would otherwise read the *previous* scope's
+    // value off the picker and re-adopt it as if it belonged to this one.
+    select.value = selected;
+  }
+  await populateReasoningEfforts(scope, selected);
 }
 
 /** Test seam: the sequence counter and current scope are module-level state. */
