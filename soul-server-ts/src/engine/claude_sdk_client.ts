@@ -321,7 +321,9 @@ export class ClaudeSdkClient implements ClaudeClient {
       backgroundTaskCount: snapshot.backgroundTaskIds.length,
       pendingInputRequestCount:
         this.toolPermissionController.pendingInputRequestCount(),
-      pendingRuntimeSignalCount: this.runtimeState.hasPendingWork() ? 1 : 0,
+      pendingRuntimeSignalCount:
+        (this.runtimeState.hasPendingWork() ? 1 : 0) +
+        this.persistentSession!.pendingNativeNotificationCount(),
     };
   }
 

@@ -99,7 +99,8 @@ export class TaskExecutorFinalizer {
     }
     try {
       const activity = await detached.detachedClaudeRuntimeActivity();
-      return (activity?.backgroundTaskCount ?? 0) > 0;
+      return (activity?.backgroundTaskCount ?? 0) > 0 ||
+        (activity?.pendingRuntimeSignalCount ?? 0) > 0;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },

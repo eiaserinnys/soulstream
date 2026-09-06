@@ -23,6 +23,8 @@ import {
 import { buildClaudeBackgroundGenerationIdentity } from
   "./claude_background_generation_identity.js";
 import { hasPendingClaudeBackgroundRuntimeWork } from "./claude_runtime_state.js";
+import { parseClaudeNativeTaskNotification } from
+  "./claude_native_task_notification.js";
 import {
   normalizeRuntimeEventRevision as normalizeEventRevision,
   normalizeRuntimeRevision as normalizeRevision,
@@ -42,12 +44,22 @@ export interface ClaudeRuntimeTaskFollowupPort {
 }
 
 export interface ClaudeRuntimeTaskFollowupDeps {
-  taskManager: Pick<TaskManager, "addIntervention">;
+  taskManager: Pick<TaskManager, "addIntervention"> &
+    Partial<Pick<TaskManager, "getDeliveryConsumptionRecorder">>;
   onResume: StartExecutionCallback;
   releaseRetainedRunner(task: Task): Promise<void>;
   logger: Logger;
   deliveryV2Enabled?: boolean;
   sourceNode: string;
+}
+
+interface NativeDeliveryOwnership {
+  sessionId: string;
+  generationKey: string;
+  taskId: string;
+  initiatingToolUseId: string;
+  phase: "awaiting-input" | "awaiting-assistant" | "native-visible-unsettled";
+  inputUuid?: string;
 }
 
 const TERMINAL_RUNTIME_TASK_STATUSES = new Set([
@@ -62,6 +74,8 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
   private readonly flushedGenerationKeys = new Set<string>();
   private readonly durableDeliveryByGenerationKey =
     new Map<string, ClaudeBackgroundDeliveryMetadata>();
+  private readonly nativeOwnershipByGenerationKey =
+    new Map<string, NativeDeliveryOwnership>();
   private sequence = 0;
 
   constructor(private readonly deps: ClaudeRuntimeTaskFollowupDeps) {}
@@ -86,8 +100,10 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     const eventSdkSessionId = asString(payload.session_id) ??
       readClaudeSdkSessionMetadata(event)?.sessionId;
     if (eventSdkSessionId && eventSdkSessionId !== sdkSessionId) return;
+    const durableDelivery = readClaudeBackgroundDeliveryMetadata(event);
     const initiatingToolUseId = asString(payload.tool_use_id) ??
-      asString(patch.tool_use_id);
+      asString(patch.tool_use_id) ?? durableDelivery?.initiatingToolUseId ??
+      runtimeTask?.toolUseId;
     if (!sdkSessionId || !initiatingToolUseId) return;
     const identity = buildClaudeBackgroundGenerationIdentity({
       sourceNode: this.deps.sourceNode,
@@ -108,7 +124,11 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       runtimeTask?.isBackgrounded === true ||
       patch.is_backgrounded === true;
     if (!isBackgrounded) return;
-    const durableDelivery = readClaudeBackgroundDeliveryMetadata(event);
+    if (
+      this.deps.deliveryV2Enabled === true &&
+      readClaudeBackgroundProvenance(event) === "sdk_membership" &&
+      !durableDelivery
+    ) return;
     if (durableDelivery) {
       if (
         durableDelivery.relationKey !== identity.relationKey ||
@@ -148,6 +168,18 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         `${status}:unknown`,
       firstSeen: previous?.firstSeen ?? this.sequence++,
     });
+    if (
+      readClaudeBackgroundProvenance(event) === "sdk_membership" &&
+      durableDelivery?.initiatingToolUseId === initiatingToolUseId
+    ) {
+      this.nativeOwnershipByGenerationKey.set(identity.generationKey, {
+        sessionId: task.agentSessionId,
+        generationKey: identity.generationKey,
+        taskId,
+        initiatingToolUseId,
+        phase: "awaiting-input",
+      });
+    }
   }
 
   async flush(task: Task): Promise<void> {
@@ -161,6 +193,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
 
   async collectDetached(task: Task, event: SSEEventPayload): Promise<void> {
     this.collect(task, event);
+    await this.observeNativeEvent(task, event);
     if (hasPendingClaudeBackgroundRuntimeWork(task)) return;
     await this.flushPending(task);
     await this.deps.releaseRetainedRunner(task);
@@ -170,7 +203,10 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     const pending = this.pendingBySession.get(task.agentSessionId);
     if (!pending || pending.size === 0) return;
 
-    const items = Array.from(pending.values()).sort((a, b) => a.firstSeen - b.firstSeen);
+    const items = Array.from(pending.values())
+      .filter((item) => !this.nativeOwnershipByGenerationKey.has(item.generationKey))
+      .sort((a, b) => a.firstSeen - b.firstSeen);
+    if (items.length === 0) return;
     const durableItems = items.filter((item) =>
       this.durableDeliveryByGenerationKey.has(item.generationKey)
     );
@@ -266,4 +302,65 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     return created;
   }
 
+  private async observeNativeEvent(task: Task, event: SSEEventPayload): Promise<void> {
+    const payload = event as Record<string, unknown>;
+    if (payload.type === "claude_runtime_remote_trigger") {
+      if (asString(payload.origin_kind) !== "task-notification") return;
+      const prompt = asString(payload.prompt);
+      const inputUuid = asString(payload.trigger_id);
+      const parsed = prompt ? parseClaudeNativeTaskNotification(prompt) : undefined;
+      if (!inputUuid || !parsed) return;
+      const candidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
+        item.sessionId === task.agentSessionId && item.phase === "awaiting-input" &&
+        item.taskId === parsed.taskId && item.initiatingToolUseId === parsed.toolUseId
+      );
+      if (candidates.length !== 1) return;
+      candidates[0]!.phase = "awaiting-assistant";
+      candidates[0]!.inputUuid = inputUuid;
+      return;
+    }
+    if (payload.type !== "assistant_message") return;
+    const assistantUuid = assistantUuidFromDedupeKey(asString(payload._dedupe_key));
+    if (!assistantUuid) return;
+    const candidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
+      item.sessionId === task.agentSessionId && item.phase === "awaiting-assistant"
+    );
+    if (candidates.length !== 1) return;
+    const candidate = candidates[0]!;
+    const recorder = this.deps.taskManager.getDeliveryConsumptionRecorder?.();
+    let consumed = false;
+    try {
+      consumed = await recorder?.recordRuntimeFollowupRelationConsumed(
+        task,
+        {
+          kind: "exact_generation",
+          taskId: candidate.taskId,
+          initiatingToolUseId: candidate.initiatingToolUseId,
+        },
+        assistantUuid,
+      ) ?? false;
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId, taskId: candidate.taskId },
+        "Claude native task-notification consumption failed",
+      );
+    }
+    if (!consumed) {
+      candidate.phase = "native-visible-unsettled";
+      return;
+    }
+    this.nativeOwnershipByGenerationKey.delete(candidate.generationKey);
+    const pending = this.pendingBySession.get(task.agentSessionId);
+    pending?.delete(candidate.generationKey);
+    if (pending?.size === 0) this.pendingBySession.delete(task.agentSessionId);
+    this.durableDeliveryByGenerationKey.delete(candidate.generationKey);
+    this.flushedGenerationKeys.add(candidate.generationKey);
+  }
+
+}
+
+function assistantUuidFromDedupeKey(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const match = /^claude-sdk:assistant:(.+):\d+$/.exec(value);
+  return match?.[1];
 }

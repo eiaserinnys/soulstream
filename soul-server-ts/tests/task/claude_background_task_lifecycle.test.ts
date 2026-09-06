@@ -4,11 +4,81 @@ import type { ClaudeBackgroundTaskGenerationRow } from
   "../../src/db/repositories/claude_background_task_repository.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
+import { readClaudeBackgroundDeliveryMetadata } from
+  "../../src/engine/claude_background_delivery_metadata.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
 import { ClaudeBackgroundTaskLifecycle } from
   "../../src/task/claude_background_task_lifecycle.js";
 
 describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
+  it("resolves the sole existing generation when terminal task_updated omits tool_use_id", async () => {
+    const resolved = row("caller-session", "background-agent");
+    const terminalizeGeneration = vi.fn(async () => ({
+      accepted: true as const,
+      row: { ...resolved, status: "completed" as const },
+      delivery: {
+        delivery_id: "delivery-background-agent",
+        completion_id: resolved.completion_id,
+        relation_key: resolved.relation_key,
+        producer_terminal_revision: "1785081600000",
+        created_at: new Date("2026-07-27T00:00:00.000Z"),
+        source: "claude_runtime_task_followup",
+        payload: { text: "done", user: "system" },
+        payload_hash: "hash-background-agent",
+      },
+    }));
+    const resolveGeneration = vi.fn(async () => ({ status: "resolved", row: resolved }));
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { resolveGeneration, terminalizeGeneration } as never,
+      sourceNode: "node-a",
+      now: () => new Date("2026-07-27T00:00:00.000Z"),
+    });
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_task_updated",
+      taskId: "background-agent",
+      sessionId: "sdk-a",
+      patch: { status: "completed", end_time: 1785081600 },
+    };
+    attachClaudeBackgroundProvenance(event, "sdk_membership");
+
+    await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+
+    expect(resolveGeneration).toHaveBeenCalledWith(
+      "node-a", "caller-session", "sdk-a", "background-agent",
+    );
+    expect(terminalizeGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      initiatingToolUseId: "toolu-background-agent",
+    }));
+    expect(readClaudeBackgroundDeliveryMetadata(event)).toMatchObject({
+      initiatingToolUseId: "toolu-background-agent",
+    });
+  });
+
+  it.each(["absent", "ambiguous"] as const)(
+    "leaves an unresolved %s terminal event raw without generation mutation",
+    async (status) => {
+      const terminalizeGeneration = vi.fn();
+      const lifecycle = new ClaudeBackgroundTaskLifecycle({
+        repository: {
+          resolveGeneration: vi.fn(async () => ({ status })),
+          terminalizeGeneration,
+        } as never,
+        sourceNode: "node-a",
+      });
+      const event: ClaudeClientEvent = {
+        type: "claude_runtime_task_updated",
+        taskId: "background-agent",
+        sessionId: "sdk-a",
+        patch: { status: "completed" },
+      };
+      attachClaudeBackgroundProvenance(event, "sdk_membership");
+
+      await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+      expect(terminalizeGeneration).not.toHaveBeenCalled();
+      expect(readClaudeBackgroundDeliveryMetadata(event)).toBeUndefined();
+    },
+  );
+
   it("does not persist synchronous foreground Bash/Agent terminal events", async () => {
     const observeGeneration = vi.fn();
     const terminalizeGeneration = vi.fn();

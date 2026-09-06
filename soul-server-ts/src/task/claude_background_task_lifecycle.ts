@@ -49,13 +49,25 @@ export class ClaudeBackgroundTaskLifecycle {
     execution?: ExecutionRegistration,
   ): Promise<boolean> {
     const parsed = parseBackgroundEvent(event);
-    if (!parsed || !parsed.sdkSessionId || !parsed.toolUseId) return true;
+    if (!parsed || !parsed.sdkSessionId) return true;
+    let initiatingToolUseId = parsed.toolUseId;
+    if (!initiatingToolUseId && parsed.terminalStatus) {
+      const resolved = await this.deps.repository.resolveGeneration(
+        this.deps.sourceNode,
+        sessionId,
+        parsed.sdkSessionId,
+        parsed.taskId,
+      );
+      if (resolved.status !== "resolved") return true;
+      initiatingToolUseId = resolved.row.initiating_tool_use_id;
+    }
+    if (!initiatingToolUseId) return true;
     const identity = buildClaudeBackgroundGenerationIdentity({
       sourceNode: this.deps.sourceNode,
       agentSessionId: sessionId,
       sdkSessionId: parsed.sdkSessionId,
       sdkTaskId: parsed.taskId,
-      initiatingToolUseId: parsed.toolUseId,
+      initiatingToolUseId,
     });
     const timestamp = "timestamp" in event ? event.timestamp : undefined;
     const observedAt = timestamp
@@ -68,7 +80,7 @@ export class ClaudeBackgroundTaskLifecycle {
         sessionId,
         taskId: parsed.taskId,
         sdkSessionId: parsed.sdkSessionId,
-        initiatingToolUseId: parsed.toolUseId,
+        initiatingToolUseId,
         ...identity,
         ...(execution
           ? {
@@ -91,7 +103,7 @@ export class ClaudeBackgroundTaskLifecycle {
       ...identity,
       sessionId,
       sdkSessionId: parsed.sdkSessionId,
-      initiatingToolUseId: parsed.toolUseId,
+      initiatingToolUseId,
       taskId: parsed.taskId,
       terminalRevision,
       status: parsed.terminalStatus,
@@ -99,7 +111,7 @@ export class ClaudeBackgroundTaskLifecycle {
       description: parsed.description,
       summary: parsed.summary,
       outputFile: parsed.outputFile,
-      toolUseId: parsed.toolUseId,
+      toolUseId: initiatingToolUseId,
       error: parsed.error,
       createdAt: observedAt,
     });
@@ -109,7 +121,7 @@ export class ClaudeBackgroundTaskLifecycle {
       sessionId,
       taskId: parsed.taskId,
       sdkSessionId: parsed.sdkSessionId,
-      initiatingToolUseId: parsed.toolUseId,
+      initiatingToolUseId,
       ...identity,
       ...(execution
         ? {
@@ -129,7 +141,7 @@ export class ClaudeBackgroundTaskLifecycle {
     if (!result.accepted) return false;
     attachClaudeBackgroundDeliveryMetadata(
       event,
-      deliveryMetadata(result.delivery),
+      deliveryMetadata(result.delivery, initiatingToolUseId),
     );
     return true;
   }
@@ -350,11 +362,15 @@ function buildDelivery(input: {
   };
 }
 
-function deliveryMetadata(row: SessionDeliveryRow): ClaudeBackgroundDeliveryMetadata {
+function deliveryMetadata(
+  row: SessionDeliveryRow,
+  initiatingToolUseId: string,
+): ClaudeBackgroundDeliveryMetadata {
   if (!row.completion_id || !row.producer_terminal_revision) {
     throw new Error(`Background delivery ${row.delivery_id} is missing identity metadata`);
   }
   return {
+    initiatingToolUseId,
     deliveryId: row.delivery_id,
     completionId: row.completion_id,
     relationKey: row.relation_key,

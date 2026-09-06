@@ -42,6 +42,29 @@ function makeEngine(close: () => Promise<void>): EnginePort {
 }
 
 describe("TaskExecutorFinalizer.finalize", () => {
+  it("retains a Claude runner while an accepted native notification turn is pending", async () => {
+    const close = vi.fn(async () => undefined);
+    const engine = {
+      ...makeEngine(close), backendId: "claude", detachedClaudeRuntime: true,
+      detachedClaudeRuntimeActivity: vi.fn(async () => ({
+        foregroundPhase: "idle", queryLifecycle: "open", backgroundTaskCount: 0,
+        pendingInputRequestCount: 0, pendingRuntimeSignalCount: 1,
+      })),
+    } as EnginePort;
+    const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn().mockResolvedValue({
+        newlyFinalized: true, terminalTransitionApplied: true,
+      }) },
+      logger: makeLogger(),
+    });
+
+    await finalizer.finalize(task);
+
+    expect(close).not.toHaveBeenCalled();
+    expect(task.runnerRetainedForClaudeBackground).toBe(true);
+  });
+
   it("retains the Claude runner owner while its persistent runtime has background work", async () => {
     const close = vi.fn(async () => undefined);
     const engine = {

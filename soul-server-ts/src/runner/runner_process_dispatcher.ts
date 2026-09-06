@@ -966,11 +966,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     return await this.connecting;
   }
 
-  private async handleFrame(frame: RunnerFrame): Promise<void> {
+  private async handleFrame(
+    frame: RunnerFrame,
+  ): Promise<(() => Promise<void>) | undefined> {
     if (frame.channel === "event") {
       if (frame.kind === "request" && frame.request.kind === "host_call") {
-        await this.handleHostRequest(frame);
-        return;
+        return await this.handleHostRequest(frame);
       }
       if (frame.kind === "request") this.startRequestLifetime(frame);
       this.pushActiveFrame(frame);
@@ -1017,7 +1018,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
 
   private async trackFrameHandler(frame: RunnerFrame): Promise<void> {
     if (this.closed) return;
-    const handler = this.handleFrame(frame);
+    let postResponse: (() => Promise<void>) | undefined;
+    const handler = this.handleFrame(frame).then((continuation) => {
+      postResponse = continuation;
+    });
     const tracksClaudeRuntimeObservation = frame.channel === "event"
       && frame.kind === "request"
       && frame.request.kind === "host_call"
@@ -1031,11 +1035,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.inFlightFrameHandlers.delete(handler);
       if (tracksClaudeRuntimeObservation) this.inFlightClaudeRuntimeObservations.delete(handler);
     }
+    await postResponse?.();
   }
 
   private async handleHostRequest(
     frame: Extract<RunnerEventFrame, { kind: "request" }>,
-  ): Promise<void> {
+  ): Promise<(() => Promise<void>) | undefined> {
     if (frame.request.kind !== "host_call") return;
     const cached = this.recentHostResponses.get(frame.correlationId);
     if (cached) {
@@ -1079,12 +1084,14 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.recentHostResponses.delete(oldest);
     }
     await this.sendBestEffort(response);
-    await postResponse().catch((error) => {
-      this.options.logger.warn({
-        err: error,
-        correlationId: frame.correlationId,
-      }, "Runner host post-response continuation failed; durable delivery remains pending");
-    });
+    return async () => {
+      await postResponse().catch((error) => {
+        this.options.logger.warn({
+          err: error,
+          correlationId: frame.correlationId,
+        }, "Runner host post-response continuation failed; durable delivery remains pending");
+      });
+    };
   }
 
   private async ensurePump(): Promise<void> {

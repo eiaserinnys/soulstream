@@ -63,4 +63,32 @@ describe("createDetachedClaudeEventBridge", () => {
       _dedupe_key: "runner:detached:1:0",
     });
   });
+
+  it("preserves the SDK assistant identity for post-publish native consumption", async () => {
+    const task = { agentSessionId: "session-a" } as never;
+    const collected: Record<string, unknown>[] = [];
+    const bridge = createDetachedClaudeEventBridge({
+      logger: pino({ level: "silent" }), findTask: () => task,
+      getPublisher: () => ({
+        publishEngineEvent: async (_task, payload) => {
+          delete (payload as Record<string, unknown>)._dedupe_key;
+        },
+      }),
+      collectDetached: async (_task, payload) => {
+        collected.push(payload as unknown as Record<string, unknown>);
+      },
+    });
+    const afterResponse = await bridge(
+      "session-a",
+      {
+        type: "text", text: "native done",
+        sdkDedupeKey: "claude-sdk:assistant:assistant-native:0",
+      } as never,
+      "runner-correlation",
+    );
+
+    await afterResponse();
+
+    expect(collected[0]?._dedupe_key).toBe("claude-sdk:assistant:assistant-native:0");
+  });
 });

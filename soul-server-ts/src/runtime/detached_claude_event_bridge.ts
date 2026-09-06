@@ -39,11 +39,15 @@ export function createDetachedClaudeEventBridge(
     }
     const detachedPayloads: SSEEventPayload[] = [];
     for (const [index, payload] of mapClaudeClientEvent(event).entries()) {
-      if (idempotencyKey) {
+      if (idempotencyKey && !(payload as Record<string, unknown>)._dedupe_key) {
         (payload as Record<string, unknown>)._dedupe_key = `${idempotencyKey}:${index}`;
       }
       if (isPostResultDrainEvent(event)) markPostResultDrainEvent(payload);
+      const sdkDedupeKey = (payload as Record<string, unknown>)._dedupe_key;
       await publisher.publishEngineEvent(task, payload);
+      if (typeof sdkDedupeKey === "string") {
+        (payload as Record<string, unknown>)._dedupe_key = sdkDedupeKey;
+      }
       detachedPayloads.push(payload);
     }
     return async () => {

@@ -64,6 +64,7 @@ function sameDelivery(
   right: ClaudeBackgroundDeliveryMetadata,
 ): boolean {
   return left.deliveryId === right.deliveryId
+    && left.initiatingToolUseId === right.initiatingToolUseId
     && left.completionId === right.completionId
     && left.relationKey === right.relationKey
     && left.producerTerminalRevision === right.producerTerminalRevision
