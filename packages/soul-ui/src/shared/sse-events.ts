@@ -6,6 +6,11 @@
  */
 
 import type { SessionStatus } from "./session-types";
+import type {
+  LiveTextEventMetadata,
+  LiveTextSnapshotWire,
+  SessionHistoryResetReason,
+} from "../../../../orch-server-ts/src/session/session_feed_contract";
 
 // === SSE Event Types ===
 
@@ -76,6 +81,7 @@ export type SSEEventType =
   | "input_request_responded"
   // 히스토리 동기화 이벤트
   | "history_sync"
+  | "text_snapshot"
   // LLM 프록시 이벤트
   | "assistant_message"
   // 메타데이터 이벤트
@@ -358,26 +364,26 @@ export interface ThinkingEvent {
   parent_event_id?: string;
 }
 
-export interface TextStartEvent {
+export interface TextStartEvent extends Partial<LiveTextEventMetadata> {
   type: "text_start";
-  timestamp: number;
+  timestamp?: number;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
-export interface TextDeltaEvent {
+export interface TextDeltaEvent extends Partial<LiveTextEventMetadata> {
   type: "text_delta";
-  timestamp: number;
+  timestamp?: number;
   text: string;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
-export interface TextEndEvent {
+export interface TextEndEvent extends Partial<LiveTextEventMetadata> {
   type: "text_end";
-  timestamp: number;
+  timestamp?: number;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
@@ -783,9 +789,12 @@ export interface HistorySyncEvent {
   is_live: boolean;
   /** 큰 catch-up 대신 REST snapshot으로 상태를 다시 읽어야 함 */
   reset_required?: boolean;
+  reset_reason?: SessionHistoryResetReason;
   /** 서버가 판정한 현재 세션 상태 (정본) */
   status?: SessionStatus;
 }
+
+export type TextSnapshotEvent = LiveTextSnapshotWire;
 
 /** 사용자 입력 요청 — 질문 항목 */
 export interface InputRequestQuestion {
@@ -829,7 +838,7 @@ export interface InputRequestRespondedEvent {
 }
 
 /** LLM 프록시 응답 이벤트 */
-export interface AssistantMessageEvent {
+export interface AssistantMessageEvent extends Partial<Pick<LiveTextEventMetadata, "streamIdentity">> {
   type: "assistant_message";
   content: string;
   usage?: { input_tokens: number; output_tokens: number };
@@ -839,6 +848,9 @@ export interface AssistantMessageEvent {
   /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
+  /** Rolling compatibility marker for app-server transient text replacement. */
+  _final_for_live_stream?: boolean;
+  tool_use_id?: string;
 }
 
 /**
@@ -919,6 +931,7 @@ export type SoulSSEEvent =
   | InputRequestExpiredEvent
   | InputRequestRespondedEvent
   | HistorySyncEvent
+  | TextSnapshotEvent
   | AssistantMessageEvent
   | AwaySummaryEvent
   | TurnSummaryEvent

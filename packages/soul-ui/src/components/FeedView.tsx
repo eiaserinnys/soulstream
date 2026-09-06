@@ -44,6 +44,24 @@ export interface FeedViewProps {
 }
 
 export function FeedView({
+  sessions,
+  ...props
+}: FeedViewProps = {}) {
+  return sessions === undefined
+    ? <CachedFeedView {...props} />
+    : <FeedViewSurface {...props} sessions={sessions} />;
+}
+
+function CachedFeedView(props: Omit<FeedViewProps, "sessions">) {
+  const sessions = useFeedSessions();
+  return <FeedViewSurface {...props} sessions={sessions} />;
+}
+
+type FeedViewSurfaceProps = Omit<FeedViewProps, "sessions"> & {
+  sessions: SessionSummary[];
+};
+
+function FeedViewSurface({
   onNewSession,
   placement = "main",
   onLoadMore,
@@ -51,10 +69,11 @@ export function FeedView({
   sessions,
   onRenameSession,
   onMoveSessions,
-}: FeedViewProps = {}) {
+}: FeedViewSurfaceProps) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
-  const catalog = useDashboardStore((s) => s.catalog);
+  const catalogFolders = useDashboardStore((s) => s.catalog?.folders);
+  const catalogSessions = useDashboardStore((s) => s.catalog?.sessions);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
@@ -67,14 +86,15 @@ export function FeedView({
   const itemHeight = CARD_HEIGHT;
   const itemGap = CARD_GAP;
 
-  // useFeedSessions: Zustand sessions + catalog 구독 → filterFeedSessions로 반응형 계산
-  const cachedFeedSessions = useFeedSessions();
+  const catalog = useMemo(
+    () => catalogFolders && catalogSessions
+      ? { folders: catalogFolders, sessions: catalogSessions }
+      : null,
+    [catalogFolders, catalogSessions],
+  );
   const feedSessions = useMemo(
-    () =>
-      sessions === undefined
-        ? cachedFeedSessions
-        : filterFeedSessions(sessions, catalog),
-    [cachedFeedSessions, catalog, sessions],
+    () => filterFeedSessions(sessions, catalog),
+    [catalog, sessions],
   );
   const firstFeedId = feedSessions[0]?.agentSessionId ?? null;
 

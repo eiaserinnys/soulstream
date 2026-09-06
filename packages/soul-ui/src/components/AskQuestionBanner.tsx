@@ -15,7 +15,13 @@ import {
 } from '../lib/input-request-actions';
 import { useInputRequestTimer } from '../hooks/useInputRequestTimer';
 import { formatTime } from '../lib/input-request-utils';
-import type { EventTreeNode, InputRequestNodeDef, InputRequestQuestion, ToolApprovalNodeDef } from '@shared/types';
+import type {
+  EventTreeNode,
+  InputRequestNodeDef,
+  InputRequestQuestion,
+  PendingAttention,
+  ToolApprovalNodeDef,
+} from '@shared/types';
 import { LiquidGlassCard } from './LiquidGlassCard';
 import { Button } from './ui/button';
 import { InputRequestAnswerForm } from './InputRequestAnswerForm';
@@ -50,6 +56,69 @@ function findPendingPrompt(nodes: EventTreeNode[]): PendingPromptNode | null {
     }
   }
   return null;
+}
+
+function attentionToPrompt(attention: PendingAttention): PendingPromptNode | null {
+  const common = {
+    id: attention.id,
+    content: attention.body,
+    completed: false,
+    children: [] as EventTreeNode[],
+  };
+  if (attention.kind === "input_request" && attention.requestId && attention.questions) {
+    return {
+      ...common,
+      type: "input_request",
+      requestId: attention.requestId,
+      toolUseId: attention.toolUseId,
+      questions: attention.questions as unknown as InputRequestQuestion[],
+      receivedAt: Date.parse(attention.requestedAt),
+      timeoutSec: attention.timeoutSec,
+      responded: false,
+      expired: false,
+    };
+  }
+  if (attention.approvalId) {
+    return {
+      ...common,
+      type: "tool_approval",
+      approvalId: attention.approvalId,
+      toolUseId: attention.toolUseId,
+      toolName: attention.toolName ?? attention.title,
+      toolInput: { ...(attention.toolInput ?? {}) },
+      resolved: false,
+    };
+  }
+  return null;
+}
+
+function AttentionDetailBanner({
+  attention,
+  onOpenDetail,
+}: { attention: PendingAttention; onOpenDetail?: () => void }) {
+  const openDetail = useDashboardStore((state) => state.setActiveRightTab);
+  return (
+    <LiquidGlassCard
+      data-testid="attention-detail-banner"
+      className={PROMPT_BANNER_FRAME_CLASS}
+    >
+      <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Attention</div>
+      <div className="font-medium text-foreground">{attention.title}</div>
+      <div className="text-xs text-muted-foreground">{attention.body}</div>
+      <div className="flex justify-end">
+        <Button
+          size="xs"
+          onClick={() => {
+            onOpenDetail?.();
+            openDetail("chat");
+            useDashboardStore.setState({ activeTab: "chat" });
+          }}
+        >
+          상세에서 확인
+        </Button>
+      </div>
+    </LiquidGlassCard>
+  );
 }
 
 interface AskQuestionBannerInnerProps {
@@ -217,17 +286,35 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
   );
 }
 
-export function AskQuestionBanner() {
+export function AskQuestionBanner({
+  enabled = true,
+  treeEnabled = true,
+  onOpenDetail,
+}: { enabled?: boolean; treeEnabled?: boolean; onOpenDetail?: () => void } = {}) {
   const activeSessionKey = useDashboardStore((s: DashboardState & DashboardActions) => s.activeSessionKey);
+  const activeSessionSummary = useDashboardStore((s: DashboardState & DashboardActions) => s.activeSessionSummary);
   const tree = useDashboardStore((s: DashboardState & DashboardActions) => s.tree);
   // treeVersion을 구독하여 트리 변경 시 리렌더 트리거
   useDashboardStore((s: DashboardState & DashboardActions) => s.treeVersion);
 
-  if (!tree || !activeSessionKey) return null;
+  if (!enabled || !activeSessionKey) return null;
 
-  // 트리 루트부터 순회 (session 루트의 children 포함)
-  const pendingNode = findPendingPrompt([tree]);
-  if (!pendingNode) return null;
+  // Visible detail is richer and wins. Hidden detail falls back to the compact
+  // session projection so prompts remain actionable without a per-card SSE.
+  const pendingNode = treeEnabled && tree ? findPendingPrompt([tree]) : null;
+  if (pendingNode) {
+    return <AskQuestionBannerInner node={pendingNode} sessionId={activeSessionKey} />;
+  }
 
-  return <AskQuestionBannerInner node={pendingNode} sessionId={activeSessionKey} />;
+  const attention = activeSessionSummary?.agentSessionId === activeSessionKey
+    ? [...(activeSessionSummary.pendingAttentions ?? [])]
+      .sort((a, b) => b.sourceEventId - a.sourceEventId || a.id.localeCompare(b.id))[0]
+    : undefined;
+  if (!attention) return null;
+  if (attention.requiresDetail) return <AttentionDetailBanner attention={attention} onOpenDetail={onOpenDetail} />;
+
+  const projectedNode = attentionToPrompt(attention);
+  if (!projectedNode) return <AttentionDetailBanner attention={attention} onOpenDetail={onOpenDetail} />;
+
+  return <AskQuestionBannerInner node={projectedNode} sessionId={activeSessionKey} />;
 }

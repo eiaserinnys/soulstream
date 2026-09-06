@@ -1,5 +1,9 @@
 import type { MouseEvent, ReactNode } from "react";
-import { ProfileAvatar, type SessionSummary } from "@seosoyoung/soul-ui";
+import {
+  getSessionActivityTimestamp,
+  ProfileAvatar,
+  type SessionSummary,
+} from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 
 import { singleLinePreview } from "./session-preview";
@@ -113,10 +117,7 @@ function runNumberLabel(runNumber: number | null): string {
 }
 
 function formatRelativeSessionTime(session: SessionSummary): string {
-  const value = session.lastMessage?.timestamp
-    ?? session.completedAt
-    ?? session.updatedAt
-    ?? session.createdAt;
+  const value = getSessionActivityTimestamp(session);
   if (!value) return "시각 미상";
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return "시각 미상";

@@ -1,4 +1,9 @@
-import type { CatalogBoardItem, CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
+import {
+  getSessionActivityMs,
+  type CatalogBoardItem,
+  type CatalogFolder,
+  type SessionSummary,
+} from "@seosoyoung/soul-ui";
 
 import { singleLinePreview } from "./session-preview";
 import {
@@ -105,10 +110,5 @@ function metadataTitle(item: CatalogBoardItem | undefined): string | null {
 }
 
 function sessionTimestamp(session: SessionSummary): number {
-  const value = session.updatedAt
-    ?? session.lastMessage?.timestamp
-    ?? session.completedAt
-    ?? session.createdAt;
-  const parsed = value ? Date.parse(value) : Number.NaN;
-  return Number.isFinite(parsed) ? parsed : 0;
+  return getSessionActivityMs(session);
 }

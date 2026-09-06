@@ -33,6 +33,12 @@ export interface ProcessingContext {
   activeTextTarget: TextTargetNode | null;
   /** final assistant_message가 먼저 도착한 app-server 텍스트 스트림 키. */
   finalizedTextStreams: Set<string>;
+  /** Global live sequence boundary installed by the latest text_snapshot. */
+  liveTextThroughSeq: number;
+  /** Per-stream accepted live sequence, used for exact id=0 deduplication. */
+  liveTextLastSeqByIdentity: Map<string, number>;
+  /** Oversized streams suppressed until their durable assistant_message arrives. */
+  resetRequiredTextStreams: Set<string>;
   /** 원본 request보다 먼저 복원된 response/expiry/approval resolution. */
   pendingResolutions: Map<string, PendingResolution>;
   /** history_sync 수신 여부. false인 동안은 히스토리 리플레이 알림을 억제. */
@@ -44,6 +50,11 @@ export function createProcessingContext(): ProcessingContext {
     nodeMap: new Map(),
     activeTextTarget: null,
     finalizedTextStreams: new Set(),
+    // liveSeq is zero-based. -1 means no exact live event/snapshot boundary
+    // has been observed yet, so the first liveSeq=0 event remains eligible.
+    liveTextThroughSeq: -1,
+    liveTextLastSeqByIdentity: new Map(),
+    resetRequiredTextStreams: new Set(),
     pendingResolutions: new Map(),
     historySynced: false,
   };

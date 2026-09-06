@@ -8,6 +8,13 @@
 import type { SessionBindingWarning } from "@soulstream/page-model";
 
 import type { EventRecord } from "./api-types";
+import type {
+  LastChatMessage,
+  PendingAttention,
+  SessionNotice,
+} from "../../../../orch-server-ts/src/session/session_feed_contract";
+
+export type { PendingAttention, SessionNotice } from "../../../../orch-server-ts/src/session/session_feed_contract";
 
 /** 세션 상태 */
 export type SessionStatus = "running" | "completed" | "error" | "interrupted" | "unknown";
@@ -21,11 +28,7 @@ export interface LlmUsage {
 }
 
 /** 세션의 마지막 readable-event 메시지 */
-export interface LastMessage {
-  type: string;
-  preview: string;
-  timestamp: string;
-}
+export type LastMessage = LastChatMessage;
 
 /** 세션 메타데이터 엔트리.
  *
@@ -93,6 +96,13 @@ export interface SessionSummary extends AgentProfile, UserProfile {
   clientId?: string;
   /** 마지막 readable-event의 메시지 정보 */
   lastMessage?: LastMessage;
+  /** Durable compact projection used while detail chat is not mounted. */
+  pendingAttentions?: readonly PendingAttention[];
+  attentionRevision?: number;
+  /** Bounded notification journal. Hydration is a baseline and never fires alerts. */
+  recentNotices?: readonly SessionNotice[];
+  notificationWatermark?: number;
+  noticesTruncated?: boolean;
   /** 카탈로그 폴더 배정. 세션 목록 응답에서 catalog.sessions를 보강할 때 사용한다. */
   folderId?: string | null;
   /** 카탈로그에서 설정한 세션 표시 이름 */

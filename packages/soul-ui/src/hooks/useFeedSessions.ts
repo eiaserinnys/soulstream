@@ -31,7 +31,8 @@ function isCurrentFeedQueryKey(
  */
 export function useFeedSessions(): SessionSummary[] {
   const queryClient = useQueryClient();
-  const catalog = useDashboardStore((s) => s.catalog);
+  const catalogFolders = useDashboardStore((s) => s.catalog?.folders);
+  const catalogSessions = useDashboardStore((s) => s.catalog?.sessions);
   const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
   const [cacheVersion, setCacheVersion] = useState(0);
 
@@ -51,8 +52,11 @@ export function useFeedSessions(): SessionSummary[] {
       null,
     ]);
     const feedSessions = data?.pages.flatMap((page) => page.sessions) ?? [];
+    const catalog = catalogFolders && catalogSessions
+      ? { folders: catalogFolders, sessions: catalogSessions }
+      : null;
     return filterFeedSessions(feedSessions, catalog);
-  }, [cacheVersion, catalog, queryClient, sessionTypeFilter]);
+  }, [cacheVersion, catalogFolders, catalogSessions, queryClient, sessionTypeFilter]);
 }
 
 /**

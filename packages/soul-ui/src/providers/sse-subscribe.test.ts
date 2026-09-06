@@ -218,8 +218,15 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
   it("id 없는 _live_only 이벤트는 브라우저 lastEventId가 남아 있어도 eventId=0으로 전달한다", async () => {
     const createSSESubscribe = await loadModule();
     const baseUrl = "/api/sessions/abc/events";
-    const onEvent = vi.fn();
-    const unsubscribe = createSSESubscribe({ baseUrl, onEvent });
+    let committed = 0;
+    const onEvent = vi.fn((_event: unknown, eventId: number) => {
+      if (eventId > 0) committed = eventId;
+    });
+    const unsubscribe = createSSESubscribe({
+      baseUrl,
+      onEvent,
+      getLastEventId: () => committed,
+    });
 
     instances[0].emit(
       "user_message",
@@ -272,12 +279,16 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
   it("연결 오류 후 재연결 URL에 lastEventId 쿼리가 포함된다", async () => {
     const createSSESubscribe = await loadModule();
     const baseUrl = "/api/sessions/abc/events";
-    const onEvent = vi.fn();
+    let committed = 0;
+    const onEvent = vi.fn((_event: unknown, eventId: number) => {
+      if (eventId > 0) committed = eventId;
+    });
     const onStatusChange = vi.fn();
     const unsubscribe = createSSESubscribe({
       baseUrl,
       onEvent,
       onStatusChange,
+      getLastEventId: () => committed,
     });
 
     // 1. 첫 이벤트로 currentLastEventId = 15
@@ -337,6 +348,57 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
     unsubscribe();
   });
 
+  it("reconnects from the externally committed cursor, not merely received events", async () => {
+    const createSSESubscribe = await loadModule();
+    const baseUrl = "/api/sessions/abc/events";
+    let committed = 7;
+    const unsubscribe = createSSESubscribe({
+      baseUrl,
+      onEvent: vi.fn(),
+      getLastEventId: () => committed,
+    });
+
+    expect(instances[0].url).toBe(`${baseUrl}?lastEventId=7`);
+    instances[0].emit(
+      "assistant_message",
+      { type: "assistant_message", text: "received but not committed", _event_id: 9 },
+      9,
+    );
+    instances[0].emitError();
+    vi.advanceTimersByTime(3000);
+    expect(instances[1].url).toBe(`${baseUrl}?lastEventId=7`);
+
+    committed = 9;
+    instances[1].emitOpen();
+    instances[1].emitError();
+    vi.advanceTimersByTime(3000);
+    expect(instances[2].url).toBe(`${baseUrl}?lastEventId=9`);
+
+    unsubscribe();
+  });
+
+  it("does not treat history_sync receipt as a committed cursor", async () => {
+    const createSSESubscribe = await loadModule();
+    const baseUrl = "/api/sessions/abc/events";
+    const unsubscribe = createSSESubscribe({
+      baseUrl,
+      onEvent: vi.fn(),
+      initialLastEventId: 5,
+      getLastEventId: () => 5,
+    });
+
+    instances[0].emit(
+      "history_sync",
+      { type: "history_sync", last_event_id: 99, is_live: true },
+      0,
+    );
+    instances[0].emitError();
+    vi.advanceTimersByTime(3000);
+
+    expect(instances[1].url).toBe(`${baseUrl}?lastEventId=5`);
+    unsubscribe();
+  });
+
   it("구독 해제 시 EventSource가 close되고 pending reconnect도 취소된다", async () => {
     const createSSESubscribe = await loadModule();
     const baseUrl = "/api/sessions/abc/events";
@@ -355,11 +417,18 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
     expect(instances).toHaveLength(1);
   });
 
-  it("history_sync 이벤트의 last_event_id로 currentLastEventId가 갱신된다 (재연결 시 baseline)", async () => {
+  it("uses a history_sync cursor only after the consumer commits it", async () => {
     const createSSESubscribe = await loadModule();
     const baseUrl = "/api/sessions/abc/events";
-    const onEvent = vi.fn();
-    const unsubscribe = createSSESubscribe({ baseUrl, onEvent });
+    let committed = 0;
+    const onEvent = vi.fn((event: { type: string; last_event_id?: number }) => {
+      if (event.type === "history_sync") committed = event.last_event_id ?? 0;
+    });
+    const unsubscribe = createSSESubscribe({
+      baseUrl,
+      onEvent,
+      getLastEventId: () => committed,
+    });
 
     // history_sync는 SSE id 필드 없이 (lastEventId=0) payload.last_event_id로 baseline 전달
     instances[0].emit(
@@ -379,8 +448,7 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
       0,
     );
 
-    // 재연결 시 history_sync.last_event_id가 currentLastEventId에 반영되어
-    // URL에 ?lastEventId=99로 전송되어야 함
+    // Consumer 처리 성공 뒤 commit된 baseline만 재연결 URL에 반영한다.
     instances[0].emitError();
     vi.advanceTimersByTime(3000);
     expect(instances).toHaveLength(2);

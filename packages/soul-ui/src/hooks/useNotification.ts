@@ -22,10 +22,10 @@ export function useNotification(enabled = true) {
   const pendingNotifications = useDashboardStore(
     (s) => s.pendingNotifications,
   );
-  const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
 
   // 알림 자동 닫기 타이머를 추적 (메모리 누수 방지)
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const consumedNoticeIdsRef = useRef<Set<string>>(new Set());
 
   // 컴포넌트 언마운트 시 타이머 정리
   useEffect(() => {
@@ -85,17 +85,23 @@ export function useNotification(enabled = true) {
 
   // 새 알림 이벤트 감지 → 알림 표시 → 큐 비우기
   useEffect(() => {
-    if (!enabled || !activeSessionKey) return;
+    if (!enabled) return;
     if (pendingNotifications.length === 0) return;
 
-    for (const event of pendingNotifications) {
-      const { title, body } = formatNotification(event);
-      showNotification(title, body, `soul-${event.type}-${Date.now()}`);
+    for (const notice of pendingNotifications) {
+      if (consumedNoticeIdsRef.current.has(notice.id)) continue;
+      consumedNoticeIdsRef.current.add(notice.id);
+      showNotification(notice.title, notice.body, `soul-${notice.id}`);
+    }
+    while (consumedNoticeIdsRef.current.size > 500) {
+      const oldest = consumedNoticeIdsRef.current.values().next().value;
+      if (oldest === undefined) break;
+      consumedNoticeIdsRef.current.delete(oldest);
     }
 
     // 처리 완료 후 큐 비우기
     useDashboardStore.setState({ pendingNotifications: [] });
-  }, [pendingNotifications, activeSessionKey, enabled, showNotification]);
+  }, [pendingNotifications, enabled, showNotification]);
 
   return { showNotification };
 }

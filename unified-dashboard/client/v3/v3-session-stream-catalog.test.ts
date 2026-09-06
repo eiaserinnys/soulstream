@@ -54,6 +54,34 @@ describe("v3 session_list catalog projection", () => {
     });
   });
 
+  it("normalizes readable messages on already-camel-cased snapshot rows", () => {
+    const event = {
+      type: "session_list",
+      sessions: [{
+        ...session("readable", "running"),
+        lastMessage: {
+          type: "assistant_message",
+          preview: "  latest  ",
+          timestamp: "2026-09-07T01:00:00Z",
+          eventId: 52,
+        },
+      }],
+      total: 1,
+    } as unknown as SessionListStreamEvent;
+
+    const projected = projectSessionListSnapshot(
+      { folders: [], sessions: {}, sessionList: [] },
+      event,
+    );
+
+    expect(projected.sessionList?.[0]?.lastMessage).toEqual({
+      type: "assistant_message",
+      preview: "latest",
+      timestamp: "2026-09-07T01:00:00Z",
+      eventId: 52,
+    });
+  });
+
   it("preserves an off-window review row when the latest session snapshot arrives", () => {
     const oldReview = reviewSession("old-review");
     const catalog: CatalogState = {

@@ -28,10 +28,11 @@ import {
 import {
   createNodeFromEvent,
   applyFinalAssistantMessageToLiveText,
+  canApplyReassertedLiveTextFinal,
   applyUpdate,
   applyPendingResolution,
 } from "./node-factory";
-import { placeInTree, handleTextStart } from "./tree-placer";
+import { applyLiveTextSnapshot, placeInTree, handleTextStart, repositionNodeInOrder } from "./tree-placer";
 import { shouldNotify } from "./session-updater";
 
 /** ensureRoot가 필요한 이벤트 타입 (text_delta, text_end, tool_result, subagent_stop 제외) */
@@ -43,6 +44,34 @@ const NEEDS_ROOT = new Set([
   "guardrail_tripwire", "assistant_message", "assistant_error", "away_summary",
   "turn_summary",
 ]);
+
+/** Legacy text events remain supported; exact id=0 metadata enables dedupe. */
+export function acceptLiveTextEvent(
+  event: SoulSSEEvent,
+  eventId: number,
+  ctx: ProcessingContext,
+): boolean {
+  if (
+    eventId !== 0
+    || (event.type !== "text_start" && event.type !== "text_delta" && event.type !== "text_end")
+  ) return true;
+  const { streamIdentity, liveSeq, liveTextMode } = event;
+  if (
+    typeof streamIdentity !== "string"
+    || streamIdentity.length === 0
+    || !Number.isSafeInteger(liveSeq)
+    || (liveSeq ?? -1) < 0
+    || (liveTextMode !== "replace" && liveTextMode !== "append")
+  ) return true;
+  const sequence = liveSeq as number;
+  const prior = Math.max(
+    ctx.liveTextThroughSeq,
+    ctx.liveTextLastSeqByIdentity.get(streamIdentity) ?? -1,
+  );
+  if (sequence <= prior) return false;
+  ctx.liveTextLastSeqByIdentity.set(streamIdentity, sequence);
+  return !ctx.resetRequiredTextStreams.has(streamIdentity);
+}
 
 /**
  * 세션 루트 노드에 LLM 메타데이터를 설정한다.
@@ -90,7 +119,11 @@ export function processEventSingle(
   lastEventId: number,
 ): SingleEventResult {
   // Dedup
-  if (eventId > 0 && eventId <= lastEventId) {
+  if (
+    eventId > 0
+    && eventId <= lastEventId
+    && !canApplyReassertedLiveTextFinal(event, eventId, lastEventId, ctx)
+  ) {
     return { root, updated: false, notify: false, newLastEventId: lastEventId, isHistorySync: false };
   }
 
@@ -133,6 +166,22 @@ export function processEventSingle(
     };
   }
 
+
+  if (event.type === "text_snapshot") {
+    const snapshot = applyLiveTextSnapshot(event, ctx, root);
+    return {
+      root: snapshot.root,
+      updated: snapshot.updated,
+      notify: false,
+      newLastEventId: lastEventId,
+      isHistorySync: false,
+    };
+  }
+
+  if (!acceptLiveTextEvent(event, eventId, ctx)) {
+    return { root, updated: false, notify: false, newLastEventId: lastEventId, isHistorySync: false };
+  }
+
   // root 보장
   if (NEEDS_ROOT.has(event.type)) {
     root = ensureRoot(root, ctx);
@@ -140,11 +189,12 @@ export function processEventSingle(
   }
 
   // 노드 생성/배치/업데이트
-  const replacedLiveText = applyFinalAssistantMessageToLiveText(event, ctx);
+  const replacedLiveText = applyFinalAssistantMessageToLiveText(event, eventId, ctx);
   const node = replacedLiveText ? null : createNodeFromEvent(event, eventId);
   let updated: boolean;
 
   if (replacedLiveText) {
+    if (root && eventId > 0) repositionNodeInOrder(root, replacedLiveText, eventId);
     updated = true;
   } else if (node) {
     root = ensureRoot(root, ctx);
@@ -163,7 +213,7 @@ export function processEventSingle(
     root,
     updated,
     notify,
-    newLastEventId: eventId > 0 ? eventId : lastEventId,
+    newLastEventId: eventId > 0 ? Math.max(lastEventId, eventId) : lastEventId,
     isHistorySync: false,
     clearPromptSuggestionFor:
       event.type === "text_start" && activeSessionKey ? activeSessionKey : null,
@@ -212,8 +262,22 @@ export function processEventsBatch(
   for (const { event, eventId } of events) {
     // Dedup — 라이브 SSE 배치 간 중복만 차단. skipDedup=true(history prepend)면 우회.
     // 같은 배치 내 ancestor 동봉 중복은 placeInTree의 nodeMap.has 가드가 silent skip.
-    if (!skipDedup && eventId > 0 && eventId <= lastEventId) continue;
+    if (
+      !skipDedup
+      && eventId > 0
+      && eventId <= lastEventId
+      && !canApplyReassertedLiveTextFinal(event, eventId, lastEventId, ctx)
+    ) continue;
     if (eventId > maxEventId) maxEventId = eventId;
+
+    if (event.type === "text_snapshot") {
+      const snapshot = applyLiveTextSnapshot(event, ctx, root);
+      root = snapshot.root;
+      updated = snapshot.updated || updated;
+      continue;
+    }
+
+    if (!acceptLiveTextEvent(event, eventId, ctx)) continue;
 
     // subtree_update / task_updated / custom_view_updated — 트리 변경 없음, dedup만 갱신.
     if (event.type === "subtree_update" || event.type === "task_updated" || event.type === "custom_view_updated") {
@@ -248,9 +312,10 @@ export function processEventsBatch(
     }
 
     // 노드 생성/배치/업데이트
-    const replacedLiveText = applyFinalAssistantMessageToLiveText(event, ctx);
+    const replacedLiveText = applyFinalAssistantMessageToLiveText(event, eventId, ctx);
     const node = replacedLiveText ? null : createNodeFromEvent(event, eventId);
     if (replacedLiveText) {
+      if (root && eventId > 0) repositionNodeInOrder(root, replacedLiveText, eventId);
       updated = true;
     } else if (node) {
       root = ensureRoot(root, ctx);

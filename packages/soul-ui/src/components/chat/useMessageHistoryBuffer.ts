@@ -9,7 +9,7 @@
 
 import {
   useCallback,
-  useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type RefObject,
@@ -123,9 +123,11 @@ export function buildHistoryPageUrl(sessionId: string, before: string | null): s
 async function fetchHistoryPage(
   sessionId: string,
   before: string | null,
+  signal: AbortSignal,
 ): Promise<TimelineResponse> {
   const response = await fetch(buildHistoryPageUrl(sessionId, before), {
     credentials: "include",
+    signal,
   });
   if (!response.ok) {
     throw new Error(`timeline request failed: ${response.status}`);
@@ -136,7 +138,9 @@ async function fetchHistoryPage(
 export function useMessageHistoryBuffer(
   sessionId: string | null,
   scrollerRef: RefObject<HTMLElement | null>,
+  enabled = true,
 ): UseMessageHistoryBufferResult {
+  const historyResetVersion = useDashboardStore((state) => state.historyResetVersion);
   const [loading, setLoading] = useState(false);
   const [reachedTop, setReachedTop] = useState(false);
   const [blockedReason, setBlockedReason] =
@@ -151,9 +155,13 @@ export function useMessageHistoryBuffer(
   const sessionTokenRef = useRef<symbol>(Symbol("initial"));
   const configuredSessionRef = useRef<string | null>(null);
   const fillRunRef = useRef<FillRun | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   const isCurrentSession = useCallback((token: symbol): boolean => (
     sessionId !== null
+    && enabledRef.current
     && sessionTokenRef.current === token
     && useDashboardStore.getState().activeSessionKey === sessionId
   ), [sessionId]);
@@ -180,8 +188,10 @@ export function useMessageHistoryBuffer(
 
     loadingRef.current = true;
     setLoading(true);
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
     try {
-      const data = await fetchHistoryPage(sessionId, before);
+      const data = await fetchHistoryPage(sessionId, before, abortController.signal);
       if (!isCurrentSession(run.token)) return "stale";
 
       const messages = Array.isArray(data.messages) ? data.messages : [];
@@ -227,6 +237,7 @@ export function useMessageHistoryBuffer(
       return "fetched";
     } catch (error) {
       if (!isCurrentSession(run.token)) return "stale";
+      if (error instanceof DOMException && error.name === "AbortError") return "stale";
       fillRunRef.current = null;
       updateBlockedReason("error");
       diag("history", "viewport fill failed", {
@@ -235,6 +246,9 @@ export function useMessageHistoryBuffer(
       });
       return "failed";
     } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
       // stale completion이 새 session의 in-flight projection을 덮지 않게 한다.
       if (isCurrentSession(run.token)) {
         loadingRef.current = false;
@@ -256,7 +270,7 @@ export function useMessageHistoryBuffer(
   }, [requestHistoryPage, updateBlockedReason]);
 
   const beginFillRun = useCallback((source: HistoryRequestSource): void => {
-    if (!sessionId || configuredSessionRef.current !== sessionId) return;
+    if (!enabledRef.current || !sessionId || configuredSessionRef.current !== sessionId) return;
     if (loadingRef.current || fillRunRef.current !== null) return;
     if (reachedTopRef.current) return;
     if (source === "automatic" && blockedReasonRef.current !== null) return;
@@ -277,7 +291,8 @@ export function useMessageHistoryBuffer(
 
   const notifyViewportGeometry = useCallback(() => {
     if (
-      !sessionId
+      !enabledRef.current
+      || !sessionId
       || configuredSessionRef.current !== sessionId
       || loadingRef.current
     ) return;
@@ -311,8 +326,10 @@ export function useMessageHistoryBuffer(
     void loadNextPage(run);
   }, [beginFillRun, isCurrentSession, loadNextPage, scrollerRef, sessionId, updateBlockedReason]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const token = Symbol("session");
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     sessionTokenRef.current = token;
     configuredSessionRef.current = sessionId;
     loadingRef.current = false;
@@ -325,18 +342,31 @@ export function useMessageHistoryBuffer(
     setReachedTop(false);
     setBlockedReason(null);
 
-    if (sessionId !== null) {
-      beginFillRun("automatic");
+    return () => {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      sessionTokenRef.current = Symbol("disposed");
+      configuredSessionRef.current = null;
+      fillRunRef.current = null;
+    };
+  }, [historyResetVersion, sessionId]);
+
+  useLayoutEffect(() => {
+    if (!sessionId) return;
+    if (!enabled) {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      sessionTokenRef.current = Symbol("suspended");
+      fillRunRef.current = null;
+      loadingRef.current = false;
+      setLoading(false);
+      return;
     }
 
-    return () => {
-      if (sessionTokenRef.current === token) {
-        sessionTokenRef.current = Symbol("disposed");
-        configuredSessionRef.current = null;
-        fillRunRef.current = null;
-      }
-    };
-  }, [beginFillRun, sessionId]);
+    sessionTokenRef.current = Symbol("active");
+    configuredSessionRef.current = sessionId;
+    if (!initialPageLoadedRef.current) beginFillRun("automatic");
+  }, [beginFillRun, enabled, historyResetVersion, sessionId]);
 
   return {
     loading,

@@ -114,6 +114,16 @@ export type {
 // === Mappers ===
 export { toSessionSummary } from "./mappers";
 export { normalizeSessionStatus } from "./session-status";
+export {
+  compareSessionActivityDesc,
+  getSessionActivityMs,
+  getSessionActivityTimestamp,
+  normalizeLastMessage,
+} from "./session-activity";
+export type {
+  NormalizedLastMessage,
+  ReadableMessageType,
+} from "./session-activity";
 
 // === Position keys ===
 export { generateKeyBetween } from "./fractional-position";

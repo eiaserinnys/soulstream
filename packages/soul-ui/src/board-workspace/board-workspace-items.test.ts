@@ -117,7 +117,7 @@ const sessions: SessionSummary[] = [
     prompt: "Fallback prompt",
     updatedAt: "2026-06-01T12:00:00.000Z",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "Latest assistant message",
       timestamp: "2026-06-04T00:00:00.000Z",
     },

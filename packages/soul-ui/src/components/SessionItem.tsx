@@ -14,6 +14,7 @@ import { NodeBadge } from "./NodeBadge";
 import { BackendBadge } from "./BackendBadge";
 import { LiquidGlassCard } from "./LiquidGlassCard";
 import type { SessionSummary, SessionStatus } from "../shared/types";
+import { getSessionActivityTimestamp } from "../shared/session-activity";
 
 // === Status Config ===
 
@@ -110,7 +111,7 @@ export const SessionItem = memo(function SessionItem({
         ? session.prompt
         : null;
 
-  const displayTime = session.lastMessage?.timestamp ?? session.updatedAt ?? session.createdAt;
+  const displayTime = getSessionActivityTimestamp(session);
   const timeStr = displayTime
     ? new Date(displayTime).toLocaleString("ko-KR", {
         month: "2-digit",

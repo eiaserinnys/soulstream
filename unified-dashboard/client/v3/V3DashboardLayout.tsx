@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type SessionSummary } from "@seosoyoung/soul-ui";
+import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type SessionSummary } from "@seosoyoung/soul-ui";
 import { clampDashboardLeftSidebarWidth, writeDashboardLeftSidebarWidth } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_NAVIGATION_DEFAULT_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX, readV3NavigationWidth } from "./v3-layout-metrics";
@@ -22,7 +22,7 @@ import { V3GlobalToolbar } from "./V3GlobalToolbar";
 import { V3Toast } from "./V3Toast";
 import { useV3PlannerActions } from "./use-v3-planner-actions";
 import { useV3Notifications } from "./use-v3-notifications";
-import { reduceMobilePlannerEscape, selectMobilePlannerTab, type MobilePlannerState, type MobilePlannerTab } from "./mobile-planner-state";
+import { reduceMobilePlannerEscape, revealAttentionDetail, selectMobilePlannerTab, type MobilePlannerState, type MobilePlannerTab } from "./mobile-planner-state";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import { useTaskStarChanges } from "./task-star-store";
 import { createPlannerDataDependencies, loadStarredPlannerTask, starredTaskPage, type PlannerTask } from "./planner-data";
@@ -69,6 +69,7 @@ function V3DashboardContent() {
   const [selectedTaskSnapshot, setSelectedTaskSnapshot] = useState<PlannerTask | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [detailChatVisible, setDetailChatVisible] = useState(false);
   const [newDocumentOpen, setNewDocumentOpen] = useState(false);
   const [newDocumentTitle, setNewDocumentTitle] = useState("");
   const [sessionDefaults, setSessionDefaults] = useState<PageSessionDefaults | null>(null);
@@ -89,6 +90,7 @@ function V3DashboardContent() {
   useUserPreferencesSync(user?.email ?? null);
   useInitialCatalogLoad(true);
   useReadPositionSync();
+  useNotification(true);
   useNodes();
   const mobileMode = useMobilePlannerMode();
   const catalog = useDashboardStore((state) => state.catalog);
@@ -221,10 +223,15 @@ function V3DashboardContent() {
     targetedLoading: targetedRunSessionsLoading,
   }), [catalogSessions, plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
   const sessions = runSessionResolution.sessions;
-  useSessionProvider({
+  const cursorScope = `${window.location.origin}|${user?.email ?? "anonymous"}`;
+  const detailActive = workspaceOpen && detailChatVisible;
+  const { synchronizedSessionKey } = useSessionProvider({
     sessionKey: activeSessionKey,
     getSessionProvider: () => orchestratorSessionProvider,
+    active: detailActive,
+    cursorScope,
   });
+  const historyEnabled = detailActive && synchronizedSessionKey === activeSessionKey;
   const mobileTaskOptions = useMemo(
     () => buildMobileTaskOptions(currentTasks, sessions),
     [currentTasks, sessions],
@@ -468,6 +475,8 @@ function V3DashboardContent() {
           sessionDefaults={sessionDefaults}
           mobileMode={mobileMode}
           mobileTab={mobileTab}
+          historyEnabled={historyEnabled}
+          onChatVisibilityChange={setDetailChatVisible}
           taskMoveTargets={currentTasks}
           taskInToday={workspaceTask ? todayTaskIds.has(workspaceTask.page.id) : false}
           onReturnToToday={returnToPlanner}
@@ -485,6 +494,18 @@ function V3DashboardContent() {
         />
       ) : null}
       <V3StandaloneDocumentInspector open={documentInspectorOpen} onClose={() => setDocumentInspectorOpen(false)} />
+      <AskQuestionBanner
+        treeEnabled={detailActive}
+        onOpenDetail={() => {
+          applyMobileState(revealAttentionDetail({
+            activeTab: mobileTab,
+            selectedTaskId,
+            selectedRunId: activeSessionKey,
+            workspaceOpen,
+            chatOpen,
+          }, mobileMode));
+        }}
+      />
       <TaskProjectMoveDialog {...taskProjectMove.dialogProps} />
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onActionApplied={applyRitualAction} onFocusSessionPanel={() => { requestAnimationFrame(() => sessionPanel.panelRef.current?.focus({ preventScroll: true })); }} />

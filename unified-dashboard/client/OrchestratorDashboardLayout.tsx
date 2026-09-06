@@ -34,6 +34,7 @@ import {
   useSessionProvider,
   useReadPositionSync,
   useNotification,
+  useIsMobile,
   useUrlSync,
   useDashboardConfig,
   useServerStatus,
@@ -57,18 +58,29 @@ import { FeedView } from "./components/FeedView";
 import { MAIN_DASHBOARD_PATH } from "./dashboard-routes";
 
 export function OrchestratorDashboardLayout() {
+  const { user } = useAuth();
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
+  const activeTab = useDashboardStore((s) => s.activeTab);
+  const activeRightTab = useDashboardStore((s) => s.activeRightTab);
+  const activeBoardDocumentId = useDashboardStore((s) => s.activeBoardDocumentId);
+  const activeCustomViewId = useDashboardStore((s) => s.activeCustomViewId);
+  const isMobile = useIsMobile();
+  const detailActive = isMobile
+    ? activeTab === "chat"
+    : activeRightTab === "chat"
+      && activeBoardDocumentId === null
+      && activeCustomViewId === null;
+  const cursorScope = `${window.location.origin}|${user?.email ?? "anonymous"}`;
   const nodes = useOrchestratorStore((s) => s.nodes);
   const connectionStatus = useOrchestratorStore((s) => s.connectionStatus);
 
   // 테마 초기화
   useEffect(() => { initTheme(); }, []);
-  const { user } = useAuth();
   useUserPreferencesSync(user?.email ?? null);
 
   // URL ↔ 스토어 동기화
@@ -78,7 +90,7 @@ export function OrchestratorDashboardLayout() {
   useReadPositionSync();
 
   // 브라우저 알림
-  useNotification();
+  useNotification(true);
 
   // 대시보드 프로필 설정 로드
   useDashboardConfig();
@@ -109,10 +121,13 @@ export function OrchestratorDashboardLayout() {
   });
 
   // 활성 세션 구독
-  const { status: sseStatus } = useSessionProvider({
+  const { status: sseStatus, synchronizedSessionKey } = useSessionProvider({
     sessionKey: activeSessionKey,
     getSessionProvider: () => orchestratorSessionProvider,
+    active: detailActive,
+    cursorScope,
   });
+  const historyEnabled = detailActive && synchronizedSessionKey === activeSessionKey;
 
   const activeSession = useMemo(
     () => resolveActiveSessionSummary(activeSessionKey, activeSessionSummary, sessions),
@@ -200,6 +215,7 @@ export function OrchestratorDashboardLayout() {
         <RightPanel
           chatInputDisabled={isChatInputDisabled}
           fileUploadUrl={chatFileUploadUrl}
+          historyEnabled={historyEnabled}
         />
       }
       connectionStatus={connectionStatus ?? sseStatus}
@@ -246,6 +262,7 @@ export function OrchestratorDashboardLayout() {
           chatInputDisabled={isChatInputDisabled}
           fileUploadUrl={chatFileUploadUrl}
           showHeader={false}
+          historyEnabled={historyEnabled}
         />
       }
       mobileSettingsContent={
@@ -279,7 +296,7 @@ export function OrchestratorDashboardLayout() {
             sessions={sessions}
           />
           <OrchestratorNewSessionModal />
-          <AskQuestionBanner />
+          <AskQuestionBanner treeEnabled={detailActive} />
         </>
       }
     />

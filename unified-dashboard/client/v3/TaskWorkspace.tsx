@@ -20,6 +20,7 @@ import type { PageSessionDefaults } from "./task-workspace-api";
 import {
   DEFAULT_WORKSPACE_SPLIT,
   clampWorkspaceSplit,
+  isTaskWorkspaceChatVisible,
   type RunSessionLoadState,
   workspaceInspectorKind,
   workspaceSplitForKey,
@@ -52,6 +53,8 @@ export function TaskWorkspace({
   sessionDefaults,
   mobileMode,
   mobileTab,
+  historyEnabled,
+  onChatVisibilityChange,
   taskMoveTargets,
   taskInToday,
   onReturnToToday,
@@ -88,6 +91,8 @@ export function TaskWorkspace({
   sessionDefaults: PageSessionDefaults | null;
   mobileMode: boolean;
   mobileTab: MobilePlannerTab;
+  historyEnabled: boolean;
+  onChatVisibilityChange(visible: boolean): void;
   taskMoveTargets: readonly PlannerTask[];
   taskInToday: boolean;
   onReturnToToday(): void;
@@ -113,6 +118,20 @@ export function TaskWorkspace({
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
   const activeBoardDocumentId = useDashboardStore((state) => state.activeBoardDocumentId);
   const inspectorKind = workspaceInspectorKind(activeBoardDocumentId, activeSessionKey);
+  const chatVisible = isTaskWorkspaceChatVisible({
+    hasActiveSession: activeSession !== undefined,
+    hasTask: task !== null,
+    boardOpen,
+    chatOpen,
+    inspectorKind,
+    mobileMode,
+    mobileChatTab: mobileTab === "chat",
+  });
+
+  useEffect(() => {
+    onChatVisibilityChange(chatVisible);
+    return () => onChatVisibilityChange(false);
+  }, [chatVisible, onChatVisibilityChange]);
 
   useEffect(() => {
     setBoardOpen(false);
@@ -220,7 +239,7 @@ export function TaskWorkspace({
             </header>
             {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
             <div className="v3-chat-content">
-              {activeSession ? <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} /> : <div className="v3-chat-empty"><strong>세션을 찾을 수 없습니다.</strong></div>}
+              {activeSession ? <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} historyEnabled={historyEnabled} /> : <div className="v3-chat-empty"><strong>세션을 찾을 수 없습니다.</strong></div>}
             </div>
           </section>
         </div>
@@ -244,6 +263,7 @@ export function TaskWorkspace({
         fileUploadUrl={fileUploadUrl}
         mobileMode={mobileMode}
         mobileTab={mobileTab}
+        historyEnabled={historyEnabled}
         taskMoveTargets={taskMoveTargets}
         folders={folders}
         contextInvalidationKey={contextInvalidationKey}
@@ -329,7 +349,7 @@ export function TaskWorkspace({
                 <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>
               ) : <div className="v3-chat-content">
                 {inspectorKind === "chat" && activeSession ? (
-                  <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} />
+                  <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} historyEnabled={historyEnabled} />
                 ) : (
                   <div className="v3-chat-empty" data-testid="v3-chat-empty">
                     <span className="v3-emoji" aria-hidden="true">💬</span>

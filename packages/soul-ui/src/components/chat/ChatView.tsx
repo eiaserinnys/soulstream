@@ -55,6 +55,7 @@ interface ChatViewProps {
   isOtherNodeSession?: boolean;
   fileUploadUrl?: string;
   showHeader?: boolean;
+  historyEnabled?: boolean;
 }
 
 export function ChatView({
@@ -62,6 +63,7 @@ export function ChatView({
   isOtherNodeSession = false,
   fileUploadUrl,
   showHeader = true,
+  historyEnabled = true,
 }: ChatViewProps = {}) {
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
@@ -134,7 +136,7 @@ export function ChatView({
     isFollowing,
     recordFirstVisibleKey,
   });
-  const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef);
+  const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef, historyEnabled);
   const notifyHistoryViewportGeometry = history.notifyViewportGeometry;
   const bindChatScroller = useCallback((ref: HTMLElement | Window | null) => {
     bindScrollerElement(ref);
@@ -142,7 +144,7 @@ export function ChatView({
   }, [bindScrollerElement, notifyHistoryViewportGeometry]);
   useLayoutEffect(() => {
     notifyHistoryViewportGeometry();
-  }, [history.loading, notifyHistoryViewportGeometry, timelineItems]);
+  }, [history.loading, historyEnabled, notifyHistoryViewportGeometry, timelineItems]);
   const resolveVirtuosoFollowOutput = useCallback(
     () => resolveFollowOutput(isFollowingRef.current),
     [],

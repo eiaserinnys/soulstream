@@ -18,6 +18,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
+import { clearAllDetailCursorStores } from "./detail-cursor-store";
 
 export interface DashboardAccess {
   restricted: boolean;
@@ -84,6 +85,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       credentials: "same-origin",
     });
     if (!res.ok) throw new Error(`Logout failed: ${res.status}`);
+    clearAllDetailCursorStores();
     setIsAuthenticated(false);
     setUser(null);
   }, []);

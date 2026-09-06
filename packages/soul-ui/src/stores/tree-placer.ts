@@ -28,31 +28,54 @@ import type {
   EventTreeNode,
   SoulSSEEvent,
   TextStartEvent,
+  TextSnapshotEvent,
   ToolStartEvent,
   InputRequestEvent,
   ToolApprovalRequestedEvent,
 } from "@shared/types";
 import type { ProcessingContext, TextTargetNode } from "./processing-context";
-import { makeNode, registerNode } from "./processing-context";
+import { ensureRoot, makeNode, registerNode } from "./processing-context";
 import { diag } from "../lib/diag";
 import { extractNodeEventId as readNodeEventId } from "../lib/event-tree-id";
 
 /**
  * insertNodeInOrder 의 caller-local adapter.
  *
- * 비정형 nodeId 를 -Infinity 로 변환하여 어떤 양수 eventId 보다도 작게 취급한다.
- * 즉 fast-path push 로 흘려보낸다 — children 에 비정형 노드가 invariant 상 없으므로
- * dead branch 지만 안전한 폴백 의미를 코드로 표현한다.
+ * durable ID가 없는 transient node를 +Infinity로 취급한다. snapshot으로 먼저
+ * append된 live text 뒤에 과거 durable history가 hydration되더라도 positive ID는
+ * transient tail 앞에 삽입되어야 한다.
  *
  * durable 이벤트 ID 판독의 정본은 lib/event-tree-id.ts 이다.
  */
 function extractNodeEventId(node: EventTreeNode): number {
-  return readNodeEventId(node) ?? Number.NEGATIVE_INFINITY;
+  return readNodeEventId(node) ?? Number.POSITIVE_INFINITY;
 }
 
 function textStreamKey(event: TextStartEvent): string | null {
+  if (typeof event.streamIdentity === "string" && event.streamIdentity) {
+    return event.streamIdentity;
+  }
   const toolUseId = (event as unknown as { tool_use_id?: unknown }).tool_use_id;
   return typeof toolUseId === "string" && toolUseId ? toolUseId : null;
+}
+
+function liveTextNodeKey(identity: string): string {
+  return `app-server-agent-message:${identity}`;
+}
+
+function removeLiveTextNode(
+  identity: string,
+  ctx: ProcessingContext,
+  root: EventTreeNode | null,
+): boolean {
+  const existing = ctx.nodeMap.get(liveTextNodeKey(identity));
+  if (!existing || existing.type !== "text") return false;
+  if (root) root.children = root.children.filter((child) => child !== existing);
+  if (ctx.activeTextTarget === existing) ctx.activeTextTarget = null;
+  for (const [key, value] of ctx.nodeMap) {
+    if (value === existing) ctx.nodeMap.delete(key);
+  }
+  return true;
 }
 
 /**
@@ -107,6 +130,17 @@ function insertNodeInOrder(
     }
   }
   children.splice(lo, 0, node);
+}
+
+/** Repositions a transient live text node after it receives its durable final ID. */
+export function repositionNodeInOrder(
+  root: EventTreeNode,
+  node: EventTreeNode,
+  eventId: number,
+): void {
+  const index = root.children.indexOf(node);
+  if (index >= 0) root.children.splice(index, 1);
+  insertNodeInOrder(root, node, eventId);
 }
 
 /**
@@ -185,6 +219,10 @@ export function handleTextStart(
   // ancestor 동봉으로 이미 처리된 text 노드의 재진입 방지 — silent skip.
   // 호출자(event-processor)에 false를 반환하여 activeTextTarget 변경을 막는다.
   if (ctx.nodeMap.has(nodeMapKey)) {
+    if (streamKey) {
+      const existing = ctx.nodeMap.get(liveTextNodeKey(streamKey));
+      if (existing?.type === "text") ctx.activeTextTarget = existing;
+    }
     diag("tree-placer", "→ skip text (already in nodeMap)", { eventId });
     return false;
   }
@@ -192,10 +230,15 @@ export function handleTextStart(
     diag("tree-placer", "→ skip text (stream already finalized)", { eventId, streamKey });
     return false;
   }
-  const textNode = makeNode(eventId > 0 ? `text-${eventId}` : `text-${streamKey ?? eventId}`, "text", "");
+  const textNode = makeNode(
+    eventId > 0 ? `text-${eventId}` : `text-${streamKey ?? eventId}`,
+    "text",
+    "",
+    eventId > 0 ? { eventId } : undefined,
+  );
   registerNode(ctx, textNode);
   ctx.nodeMap.set(nodeMapKey, textNode);
-  if (streamKey) ctx.nodeMap.set(`app-server-agent-message:${streamKey}`, textNode);
+  if (streamKey) ctx.nodeMap.set(liveTextNodeKey(streamKey), textNode);
   insertNodeInOrder(root, textNode, eventId);
   diag("tree-placer", "→ insert", {
     eventId,
@@ -205,4 +248,72 @@ export function handleTextStart(
 
   ctx.activeTextTarget = textNode as TextTargetNode;
   return true;
+}
+
+
+/** Installs a cumulative reconnect prefix without pretending truncated text was recovered. */
+export function applyLiveTextSnapshot(
+  event: TextSnapshotEvent,
+  ctx: ProcessingContext,
+  root: EventTreeNode | null,
+): { root: EventTreeNode | null; updated: boolean } {
+  ctx.liveTextThroughSeq = Math.max(ctx.liveTextThroughSeq, event.throughLiveSeq);
+  let updated = false;
+
+  // A reconnect snapshot is the authoritative set of streams that are still
+  // active at throughLiveSeq. In particular, the server advances that fence
+  // and returns an empty set after terminal/deletion/disconnect retirement.
+  // Remove preserved transient nodes that are absent without touching a
+  // durable final that already replaced its stream.
+  const snapshotIdentities = new Set(
+    event.streams
+      .map((stream) => stream.streamIdentity)
+      .filter((identity): identity is string => Boolean(identity)),
+  );
+  for (const identity of [...ctx.liveTextLastSeqByIdentity.keys()]) {
+    if (snapshotIdentities.has(identity) || ctx.finalizedTextStreams.has(identity)) continue;
+    updated = removeLiveTextNode(identity, ctx, root) || updated;
+    ctx.liveTextLastSeqByIdentity.delete(identity);
+    ctx.resetRequiredTextStreams.delete(identity);
+  }
+
+  for (const stream of event.streams) {
+    const identity = stream.streamIdentity;
+    if (!identity) continue;
+    ctx.liveTextLastSeqByIdentity.set(
+      identity,
+      Math.max(ctx.liveTextLastSeqByIdentity.get(identity) ?? -1, event.throughLiveSeq),
+    );
+    const mapKey = liveTextNodeKey(identity);
+    const existing = ctx.nodeMap.get(mapKey);
+    if (ctx.finalizedTextStreams.has(identity)) continue;
+
+    if (stream.resetRequired || stream.text === null) {
+      ctx.resetRequiredTextStreams.add(identity);
+      updated = removeLiveTextNode(identity, ctx, root) || updated;
+      continue;
+    }
+
+    ctx.resetRequiredTextStreams.delete(identity);
+    root = ensureRoot(root, ctx);
+    if (existing?.type === "text") {
+      if (existing.content !== stream.text || existing.completed) updated = true;
+      existing.content = stream.text;
+      existing.completed = false;
+      existing.textCompleted = false;
+      ctx.activeTextTarget = existing;
+      continue;
+    }
+
+    const node = makeNode(`text-live:${identity}`, "text", stream.text, {
+      timestamp: Date.parse(stream.updatedAt) / 1000,
+    }) as TextTargetNode;
+    registerNode(ctx, node);
+    ctx.nodeMap.set(`text:${identity}`, node);
+    ctx.nodeMap.set(mapKey, node);
+    insertNodeInOrder(root, node, 0);
+    ctx.activeTextTarget = node;
+    updated = true;
+  }
+  return { root, updated };
 }

@@ -14,12 +14,18 @@ import type {
 } from "../shared/types";
 import type { SessionUpdatedStreamEvent } from "../shared/stream-events";
 import { normalizeSessionStatus } from "../shared/session-status";
+import {
+  compareSessionActivityDesc,
+  getSessionActivityTimestamp,
+  normalizeLastMessage,
+} from "../shared/session-activity";
 import { retainEqualValue } from "../lib/structural-sharing";
 import {
   applyCatalogDisplayName,
   mergeSessionCreatedSummary,
 } from "./session-catalog-helpers";
 import { dedupeSessionSnapshots } from "./session-snapshot-helpers";
+import { applySessionFeedDelta } from "./session-feed-projection";
 export {
   applySessionLifecycleSnapshot,
   applySessionLifecycleSnapshotToList,
@@ -44,19 +50,21 @@ export interface SessionPage {
   total: number;
 }
 
+export type FeedCatalogProjection = Pick<CatalogState, "folders" | "sessions">;
+
 /**
  * 피드 세션 필터링 + 정렬 순수 함수.
- * Zustand getFeedSessions와 동일한 로직 — 훅/컴포넌트에서 import하여 사용.
+ * 피드 훅과 주입형 피드 표면이 같은 정본을 import하여 사용한다.
  *
  * - llm 세션 제외
  * - excludeFromFeed 폴더 제외 (미분류 세션은 항상 포함)
- * - updatedAt/createdAt 내림차순 정렬
+ * - lastMessage.timestamp/createdAt/legacy updatedAt 내림차순 정렬
  */
 export function filterFeedSessions(
   sessions: SessionSummary[],
-  catalog: CatalogState | null,
+  catalog: FeedCatalogProjection | null,
 ): SessionSummary[] {
-  const visibleSessions = sessions
+  const visibleSessions = dedupeSessionSnapshots(sessions)
     .filter((s) => {
       if (s.sessionType === "llm") return false;
       if (catalog) {
@@ -67,23 +75,17 @@ export function filterFeedSessions(
           if (folder?.settings?.excludeFromFeed) return false;
         }
       }
-      const t = s.updatedAt ?? s.createdAt;
-      return t != null && Number.isFinite(new Date(t).getTime());
+      return getSessionActivityTimestamp(s) !== undefined;
     })
-    .sort((a, b) => {
-      const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
-      const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
-      return tb - ta;
-    });
+    .sort(compareSessionActivityDesc);
 
-  return dedupeSessionSnapshots(visibleSessions)
-    .map((s) => {
-      const assignment = catalog?.sessions[s.agentSessionId];
-      if (assignment?.displayName) {
-        return { ...s, displayName: assignment.displayName };
-      }
-      return s;
-    });
+  return visibleSessions.map((s) => {
+    const assignment = catalog?.sessions[s.agentSessionId];
+    if (assignment?.displayName) {
+      return { ...s, displayName: assignment.displayName };
+    }
+    return s;
+  });
 }
 
 /**
@@ -321,6 +323,25 @@ export function applySessionUpdated(
   });
 }
 
+/** Applies lifecycle fields and current-dependent feed projections atomically. */
+export function applySessionUpdatedEvent(
+  data: InfiniteData<SessionPage>,
+  event: SessionUpdatedStreamEvent,
+  updates: Partial<SessionSummary>,
+): InfiniteData<SessionPage> {
+  return retainEqualValue(data, {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      sessions: page.sessions.map((session) =>
+        session.agentSessionId === event.agent_session_id
+          ? { ...session, ...updates, ...applySessionFeedDelta(session, event) }
+          : session,
+      ),
+    })),
+  });
+}
+
 /**
  * TanStack Query 캐시의 모든 SessionPage 데이터를 순회하여
  * agentSessionId와 일치하는 첫 번째 SessionSummary를 찾는다.
@@ -374,12 +395,9 @@ export function buildSessionUpdates(
   if (event.updated_at != null) {
     updates.updatedAt = event.updated_at;
   }
-  if (event.last_message) {
-    updates.lastMessage = {
-      type: event.last_message.type,
-      preview: event.last_message.preview,
-      timestamp: event.last_message.timestamp,
-    };
+  const lastMessage = normalizeLastMessage(event.last_message);
+  if (lastMessage) {
+    updates.lastMessage = lastMessage;
   }
   if (event.last_event_id != null) {
     updates.lastEventId = event.last_event_id;
