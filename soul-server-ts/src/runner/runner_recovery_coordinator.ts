@@ -743,24 +743,16 @@ export class RunnerRecoveryCoordinator {
     if (release === "not_released") return false;
     if (release === "retry_required") {
       await this.registrationControl.terminate(registration);
-      if (
-        !this.options.taskExecutor.completeRetainedRunnerReleaseAfterTermination(
-          task,
-          registration,
-        )
-      ) {
-        throw new Error(
-          `terminated retained runner claim changed: ${registration.config.sessionId}`,
-        );
-      }
     }
+    const claim = task.runnerReleaseClaim;
     if (
-      task.runner !== undefined
-      || task.runnerReleaseClaim !== undefined
+      !claim
+      || claim.registrationId !== registration.registrationId
+      || task.runner !== claim.runner
       || !hasRecordedTerminal(task)
     ) {
       throw new Error(
-        `retained runner release did not settle exact owner: ${registration.config.sessionId}`,
+        `retained runner claim changed before retirement: ${registration.config.sessionId}`,
       );
     }
     await this.registrationControl.retireTerminal({
@@ -769,6 +761,16 @@ export class RunnerRecoveryCoordinator {
       pidAlive: false,
       pidStartIdentity: null,
     });
+    if (
+      !this.options.taskExecutor.completeRetainedRunnerReleaseAfterTermination(
+        task,
+        registration,
+      )
+    ) {
+      throw new Error(
+        `retired retained runner claim changed: ${registration.config.sessionId}`,
+      );
+    }
     this.options.logger.info(
       { sessionId: registration.config.sessionId },
       "expired detached-command runner released and terminal registration retired",

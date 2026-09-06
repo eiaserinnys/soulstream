@@ -13,7 +13,10 @@ import {
   type RunnerReleaseClaim,
   type Task,
 } from "./task_models.js";
-import { releaseTaskRunner } from "./task_runner_release.js";
+import {
+  completeTaskRunnerReleaseClaim,
+  releaseTaskRunner,
+} from "./task_runner_release.js";
 
 interface TaskExecutorFinalizerDeps {
   lifecycleTransition: Pick<TaskLifecycleTransition, "persistExecutorFinalState">;
@@ -126,11 +129,6 @@ export class TaskExecutorFinalizer {
         "expired retained runner close failed; exact termination retry required",
       );
       return "retry_required";
-    }
-    if (!this.completeRunnerReleaseClaim(task, claim)) {
-      throw new Error(
-        `retained runner ownership changed after close: ${task.agentSessionId}`,
-      );
     }
     return "released";
   }
@@ -249,14 +247,7 @@ export class TaskExecutorFinalizer {
     task: Task,
     claim: RunnerReleaseClaim,
   ): boolean {
-    if (
-      task.runnerReleaseClaim !== claim
-      || task.runner !== claim.runner
-      || claim.runner.dispatcher.registrationId() !== claim.registrationId
-    ) {
-      return false;
-    }
-    return releaseTaskRunner(task, claim.runner);
+    return completeTaskRunnerReleaseClaim(task, claim);
   }
 
   private async notifyCompletion(task: Task): Promise<void> {

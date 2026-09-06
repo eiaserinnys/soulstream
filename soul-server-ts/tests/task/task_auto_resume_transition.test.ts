@@ -583,62 +583,6 @@ describe("AutoResumeTransition", () => {
     expect(onResume).toHaveBeenCalledWith(task, expect.any(Object));
   });
 
-  it("waits for an exact runner-release claim before mutating or admitting resume", async () => {
-    const engine = {
-      backendId: "codex",
-      workspaceDir: "/tmp/codex-work",
-      async *execute(): AsyncIterable<never> {},
-      interrupt: vi.fn(async () => true),
-      close: vi.fn(async () => undefined),
-    } as EnginePort;
-    const runner = createInProcessTaskRunnerRuntime(engine);
-    const claimed = deferred<void>();
-    const message = { text: "after retained result", user: "u" };
-    const task = makeTerminalTask({
-      runner,
-      runnerRetainedForDetachedWork: true,
-      interventionQueue: [message],
-      runnerReleaseClaim: {
-        runner,
-        registrationId: "registration-a",
-        completion: claimed.promise,
-        resolve: () => claimed.resolve(),
-      },
-    });
-    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
-      capabilityProfile: "execution_registration",
-    });
-    const onResume = vi.fn((
-      resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
-    ) => {
-      resumedTask.status = "running";
-      resumedTask.executionActivation = undefined;
-      activation.resolve();
-    });
-    const transition = new AutoResumeTransition({
-      logger: silentLogger,
-      persistence: persistenceDouble.persistence,
-    });
-
-    const resumed = transition.resume(task, message, onResume);
-    await Promise.resolve();
-    expect(task.status).toBe("completed");
-    expect(task.prompt).toBe("original prompt");
-    expect(task.executionActivation).toBeUndefined();
-    expect(task.interventionQueue).toEqual([message]);
-    expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
-      .not.toHaveBeenCalled();
-    expect(onResume).not.toHaveBeenCalled();
-
-    task.runner = undefined;
-    task.runnerRetainedForDetachedWork = undefined;
-    task.runnerReleaseClaim = undefined;
-    claimed.resolve();
-    await expect(resumed).resolves.toEqual({ autoResumed: true });
-    expect(onResume).toHaveBeenCalledWith(task, expect.any(Object));
-  });
-
   it("lets foreground activation beat a deferred expired-result query", async () => {
     const activity = deferred<{
       activeForegroundCount: number;

@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
+import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
 import {
   RunnerRecoveryCoordinator,
   type RunnerRecoveryCoordinatorOptions,
@@ -24,12 +26,20 @@ import {
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
 import type { Task } from "../../src/task/task_models.js";
+import { makeEventPersistenceTestDouble } from
+  "../task/event_persistence_test_double.js";
 
 const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+}
+
 describe("RunnerRecoveryCoordinator exception matrix", () => {
 
-  it("retires an exact recorded-terminal registration after expired Codex work closes", async () => {
+  it("keeps auto-resume claimed until the exact old registration is retired", async () => {
     const terminalRegistration = registration({
       lifecycleState: "completed",
       pidAlive: true,
@@ -39,12 +49,33 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     recovered.terminationReason = "completed_ok";
     recovered.terminationEventRecorded = true;
     recovered.terminalEventId = 14;
-    recovered.runner = finishedRunner("registration-a").runner;
+    const closing = deferred<void>();
+    const retirement = deferred<void>();
+    let retirementFinished = false;
+    const oldRunner = {
+      engine: {
+        codexDetachedCommandRuntime: true,
+        codexDetachedCommandActivity: vi.fn(async () => ({
+          activeForegroundCount: 0,
+          detachedRunningCount: 0,
+          retainedTerminalResultCount: 0,
+          earliestRetainedTerminalDeadlineAtMs: null,
+        })),
+      },
+      dispatcher: {
+        close: vi.fn(() => closing.promise),
+        registrationId: () => "registration-a",
+        activeExecutionCommandId: () => undefined,
+        hasActiveExecution: () => false,
+      },
+      eventPersistence: "runner",
+    } as unknown as NonNullable<Task["runner"]>;
+    const newRunner = finishedRunner("registration-new").runner;
+    recovered.runner = oldRunner;
     recovered.runnerRetainedForDetachedWork = true;
-    const releaseExpiredRetainedRunner = vi.fn(async (owned: Task) => {
-      owned.runner = undefined;
-      owned.runnerRetainedForDetachedWork = undefined;
-      return "released" as const;
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn() },
+      logger: { warn: vi.fn() } as never,
     });
     const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
       taskManager: {
@@ -52,29 +83,64 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       } as never,
       taskExecutor: {
         retainRegisteredDetachedRunner: vi.fn(async () => false),
-        releaseExpiredRetainedRunner,
+        releaseExpiredRetainedRunner: async (owned, exact, recorded) =>
+          await finalizer.releaseExpiredRetainedRunner(
+            owned,
+            exact.registrationId!,
+            recorded,
+          ),
+        completeRetainedRunnerReleaseAfterTermination: (owned, exact) =>
+          finalizer.completeRetainedRunnerReleaseAfterTermination(
+            owned,
+            exact.registrationId!,
+          ),
       } as never,
     });
+    subject.terminate.mockImplementation(async (...args) => {
+      if (args.length < 3) return;
+      await retirement.promise;
+      retirementFinished = true;
+    });
+    const persistence = makeEventPersistenceTestDouble();
+    const transition = new AutoResumeTransition({
+      logger: subject.logger as never,
+      persistence: persistence.persistence,
+    });
+    const message = { text: "new foreground", user: "human" };
+    const onResume = vi.fn((owned: Task) => {
+      expect(retirementFinished).toBe(true);
+      owned.runner = newRunner;
+      owned.status = "running";
+    });
 
-    await subject.coordinator.scanOnce();
+    const scan = subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(oldRunner.dispatcher.close).toHaveBeenCalledOnce());
+    const resumed = transition.resume(recovered, message, onResume);
+    await Promise.resolve();
+    expect(recovered.status).toBe("completed");
+    expect(recovered.runner).toBe(oldRunner);
+    expect(persistence.enqueueRunningTransitionAndWaitForApplication)
+      .not.toHaveBeenCalled();
 
-    expect(releaseExpiredRetainedRunner).toHaveBeenCalledWith(
-      recovered,
-      expect.objectContaining({ registrationId: "registration-a" }),
-      true,
-    );
-    expect(subject.terminate).toHaveBeenCalledOnce();
-    expect(subject.terminate).toHaveBeenCalledWith(
+    closing.resolve();
+    await vi.waitFor(() => expect(subject.terminate).toHaveBeenCalledWith(
       terminalRegistration.config.paths,
       undefined,
-      expect.objectContaining({
-        registrationId: "registration-a",
-        pid: null,
-        pidAlive: false,
-        pidStartIdentity: null,
-      }),
+      expect.objectContaining({ registrationId: "registration-a", pid: null }),
       expect.any(Function),
-    );
+    ));
+    expect(recovered.status).toBe("completed");
+    expect(recovered.runner).toBe(oldRunner);
+    expect(recovered.runnerReleaseClaim).toBeDefined();
+    expect(onResume).not.toHaveBeenCalled();
+
+    retirement.resolve();
+    await scan;
+    await resumed;
+
+    expect(recovered.runner).toBe(newRunner);
+    expect(recovered.runnerReleaseClaim).toBeUndefined();
+    expect(onResume).toHaveBeenCalledOnce();
     expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
   });
 

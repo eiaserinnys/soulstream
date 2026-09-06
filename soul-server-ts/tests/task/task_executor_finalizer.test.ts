@@ -177,7 +177,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     expect(task.runnerReleaseClaim).toBeUndefined();
   });
 
-  it("installs an exact claim before close and releases only after close succeeds", async () => {
+  it("keeps an exact claim after close until registration retirement completes", async () => {
     const closing = deferred<void>();
     const close = vi.fn(() => closing.promise);
     const runner = exactCodexRunner({
@@ -208,6 +208,13 @@ describe("TaskExecutorFinalizer.finalize", () => {
     closing.resolve();
 
     await expect(release).resolves.toBe("released");
+    expect(task.runner).toBe(runner);
+    expect(task.runnerReleaseClaim).toBe(claim);
+
+    expect(finalizer.completeRetainedRunnerReleaseAfterTermination(
+      task,
+      "registration-a",
+    )).toBe(true);
     await expect(claim!.completion).resolves.toBeUndefined();
     expect(task.runner).toBeUndefined();
     expect(task.runnerReleaseClaim).toBeUndefined();
