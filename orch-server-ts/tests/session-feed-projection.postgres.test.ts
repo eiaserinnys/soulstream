@@ -158,7 +158,10 @@ describePostgres("session feed PostgreSQL projection", () => {
           '2026-09-06T12:00:10Z'),
         ('migration-feed', 11, 'claude_runtime_mode_state',
           '{"type":"claude_runtime_mode_state","mode":"plan","active":true,"tool_name":"ExitPlanMode","tool_use_id":"exit-pending"}',
-          '2026-09-06T12:00:11Z')
+          '2026-09-06T12:00:11Z'),
+        ('migration-feed', 12, 'session_notification',
+          '{"type":"session_notification","delivery_id":"delivery-42","delivery_intent":"completion_notification","source":"background-agent","disposition":"auto_resume","text":"Background work finished"}',
+          '2026-09-06T12:00:12Z')
     `;
     await sql`
       INSERT INTO sessions (session_id, status)
@@ -194,6 +197,7 @@ describePostgres("session feed PostgreSQL projection", () => {
       import.meta.url,
     )), "utf8");
 
+    await sql.unsafe(migration);
     await sql.unsafe(migration);
 
     const session = await sql`
@@ -255,6 +259,29 @@ describePostgres("session feed PostgreSQL projection", () => {
       title: "세션 오류",
       body: "세션 오류",
     });
+    const notificationNotice = await sql`
+      SELECT projection FROM session_feed_notices
+      WHERE session_id = 'migration-feed' AND source_event_id = 12
+    `;
+    expect(notificationNotice).toHaveLength(1);
+    expect(notificationNotice[0]?.projection).toEqual({
+      id: "migration-feed:12",
+      sourceEventId: 12,
+      sessionId: "migration-feed",
+      kind: "response_wait",
+      title: "Soul Dashboard",
+      body: "Background work finished",
+      createdAt: "2026-09-06T12:00:12+00:00",
+    });
+    const noticeCounts = await sql`
+      SELECT
+        (SELECT COUNT(*)::INTEGER FROM session_feed_notices
+          WHERE session_id = 'migration-feed') AS stored_count,
+        notification_count
+      FROM session_feed_state
+      WHERE session_id = 'migration-feed'
+    `;
+    expect(noticeCounts[0]).toEqual({ stored_count: 7, notification_count: "7" });
   });
 });
 

@@ -265,6 +265,10 @@ export function sessionNotice(
     kind = "intervention";
     title = "새 메시지";
     body = firstText(payload.text) || title;
+  } else if (envelope.event_type === "session_notification") {
+    kind = "response_wait";
+    title = "Soul Dashboard";
+    body = firstText(payload.text) || title;
   } else if (envelope.event_type === "claude_runtime_notification") {
     kind = "runtime_notification";
     title = firstText(payload.title) || "런타임 알림";

@@ -159,6 +159,7 @@ export async function observeRuntimeFollowupReconnect(input: {
   const terminalRelease = new DeterministicBarrier();
   const socketClosed = new DeterministicBarrier();
   const secondCacheSeeded = new DeterministicBarrier();
+  const lifecycleEvidence: LifecycleEvidence[] = [];
   let followupQueueErrors = 0;
   let discardInterventionErrors = 0;
   let runnerSocketSendErrors = 0;
@@ -305,6 +306,16 @@ export async function observeRuntimeFollowupReconnect(input: {
           : {}),
       },
     );
+    // Lifecycle fields are an internal reconnect oracle. The public global
+    // session_updated projection is intentionally compact and omits them.
+    for (const event of events) {
+      if (event.type !== "node_session_session_updated") continue;
+      const kind = event.data.lifecycle_kind;
+      const id = event.data.lifecycle_id;
+      if (isLifecycleKind(kind) && typeof id === "string") {
+        lifecycleEvidence.push({ kind, id });
+      }
+    }
     nodeEventSink(events);
     clock.advance(1);
   };
@@ -312,7 +323,7 @@ export async function observeRuntimeFollowupReconnect(input: {
   await reconnect("pre_terminal");
   emitSessionUpdate("running", { kind: "generation", id: "generation-1" });
   emitSessionUpdate("running", { kind: "foreground_turn", id: "turn-1" });
-  const preTerminalLifecycle = lifecycleFrom(broadcaster);
+  const preTerminalLifecycle = deriveLifecycle(lifecycleEvidence);
   for (const row of ledger.seedActiveTurn()) {
     task.interventionQueue.push(messageFor(row as SessionDeliveryRow));
   }
@@ -368,7 +379,7 @@ export async function observeRuntimeFollowupReconnect(input: {
   terminalRelease.release();
   await Promise.all([terminalWork, secondReconnectWork]);
 
-  const lifecycle = lifecycleFrom(broadcaster);
+  const lifecycle = deriveLifecycle(lifecycleEvidence);
   const sessionUpdates = broadcaster.bufferedEvents
     .map((event) => event.payload)
     .filter((payload) => payload.type === "session_updated");
@@ -404,19 +415,6 @@ function makeRecoverySql(
     if (mode === "product" && !productQueryIncludesRuntime) return [];
     return ledger.claimRuntimeRows(String(values[2]));
   }) as unknown as SqlClient;
-}
-
-function lifecycleFrom(
-  broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
-) {
-  const evidence = broadcaster.bufferedEvents.flatMap(({ payload }) => {
-    const kind = payload.lifecycle_kind;
-    const id = payload.lifecycle_id;
-    return isLifecycleKind(kind) && typeof id === "string"
-      ? [{ kind, id } satisfies LifecycleEvidence]
-      : [];
-  });
-  return deriveLifecycle(evidence);
 }
 
 function isLifecycleKind(value: unknown): value is LifecycleEvidenceKind {
