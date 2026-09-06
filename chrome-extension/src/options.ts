@@ -1,17 +1,16 @@
 import {
   DEFAULT_CONFIG,
-  buildAgentsEndpoint,
-  buildModelPresetsEndpoint,
   buildSessionEndpoint,
-  effortsForPreset,
-  resolveProfilePreset,
   mergeConfig,
   normalizeBaseUrl,
   normalizeBodyCharLimit,
-  type AdvertisedAgent,
-  type AdvertisedModelPreset,
   type ExtensionConfig,
 } from "./shared/schema.js";
+import {
+  populateReasoningEfforts,
+  refreshReasoningEfforts,
+  type EffortScope,
+} from "./options_effort.js";
 import { sessionHeaders } from "./shared/soulstream.js";
 
 const form = document.querySelector<HTMLFormElement>("#settings-form");
@@ -29,127 +28,13 @@ testButton?.addEventListener("click", () => {
   void testConnection();
 });
 
-const EFFORT_LABELS: Record<string, string> = {
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "X High",
-  max: "Max",
-  ultra: "Ultra",
-};
-
-/**
- * Guards against out-of-order catalog responses: every scope field commit fires
- * its own request, and a slow earlier node must not repaint the picker after a
- * later one already did.
- */
-let populateSequence = 0;
-
-/**
- * Fills the effort picker from the model preset the configured profile actually
- * runs with. A stored value that preset no longer advertises is kept selected and
- * flagged for re-selection — never silently rewritten to another level.
- */
-async function populateReasoningEfforts(config: ExtensionConfig): Promise<void> {
-  const sequence = ++populateSequence;
-  const select = document.querySelector<HTMLSelectElement>("#reasoning-effort");
-  const note = document.querySelector<HTMLElement>("#reasoning-effort-note");
-  if (!select) return;
-
-  const headers: Record<string, string> = config.bearerToken
-    ? { Authorization: `Bearer ${config.bearerToken}` }
-    : {};
-  let efforts: string[] = [];
-  let presetDefault: string | undefined;
-  let scope = "";
-  let loadFailed = false;
-  let presetUnresolved = false;
-  try {
-    const [presetsResponse, agentsResponse] = await Promise.all([
-      fetch(buildModelPresetsEndpoint(config.baseUrl, config.nodeId), { headers }),
-      fetch(buildAgentsEndpoint(config.baseUrl, config.nodeId), { headers }),
-    ]);
-    if (!presetsResponse.ok) throw new Error(`HTTP ${presetsResponse.status}`);
-    const presetBody = (await presetsResponse.json()) as {
-      model_presets?: AdvertisedModelPreset[];
-    };
-    const presets = presetBody.model_presets ?? [];
-    const agents = agentsResponse.ok
-      ? ((await agentsResponse.json()) as { agents?: AdvertisedAgent[] }).agents ?? []
-      : [];
-
-    // Scoped to the preset this profile actually runs with, so the picker cannot
-    // offer a value that preset would reject at creation time. With no resolved
-    // preset we know nothing, so only the server default is offered — the union
-    // across the node's presets would advertise levels this profile cannot use.
-    const preset = config.profile
-      ? resolveProfilePreset(agents, presets, config.profile)
-      : undefined;
-    if (preset) {
-      efforts = effortsForPreset(preset);
-      presetDefault = preset.default_effort;
-      scope = preset.label || preset.id;
-    } else {
-      presetUnresolved = true;
-    }
-  } catch {
-    loadFailed = true;
-  }
-
-  // A newer scope change already repainted the picker; this response is stale.
-  if (sequence !== populateSequence) return;
-
-  select.replaceChildren();
-  select.append(new Option(
-    presetDefault
-      ? `Preset default (${EFFORT_LABELS[presetDefault] ?? presetDefault})`
-      : "Server default",
-    "",
-  ));
-  for (const effort of efforts) {
-    select.append(new Option(EFFORT_LABELS[effort] ?? effort, effort));
-  }
-
-  const stored = config.reasoningEffort;
-  const storedUnsupported = Boolean(stored) && !efforts.includes(stored);
-  if (storedUnsupported) {
-    // Keep the saved value visible so the user sees what must be re-chosen.
-    select.append(new Option(`${EFFORT_LABELS[stored] ?? stored} (unsupported)`, stored));
-  }
-  select.value = stored;
-
-  if (note) {
-    if (loadFailed) {
-      note.textContent =
-        "Could not load model presets. Set Soulstream URL, token and Node ID, then reopen.";
-      note.hidden = false;
-    } else if (presetUnresolved) {
-      // Checked before the stored value: with no resolved preset there is
-      // nothing to "pick a supported effort" from, so naming the real problem
-      // is the only actionable message.
-      note.textContent = stored
-        ? `Could not tell which model preset this profile runs with, so "${stored}"`
-          + " cannot be confirmed and only the server default is offered."
-          + " Check the profile and Node ID."
-        : "Could not tell which model preset this profile runs with, so only the"
-          + " server default is offered. Check the profile and Node ID.";
-      note.hidden = false;
-    } else if (storedUnsupported) {
-      note.textContent = scope
-        ? `"${stored}" is not offered by ${scope}. Pick a supported effort.`
-        : `"${stored}" is no longer offered by this node. Pick a supported effort.`;
-      note.hidden = false;
-    } else if (efforts.length === 0) {
-      note.textContent = scope
-        ? `${scope} has no effort control; the backend default applies.`
-        : "";
-      note.hidden = !scope;
-    } else {
-      note.textContent = "";
-      note.hidden = true;
-    }
-  }
+function effortScopeFromInputs(): EffortScope {
+  return {
+    nodeId: readInput("node-id"),
+    profile: readInput("profile"),
+    baseUrl: normalizeBaseUrl(readInput("base-url")),
+    bearerToken: readInput("bearer-token"),
+  };
 }
 
 /** Profile or node changes move the effort scope, so re-populate the picker. */
@@ -158,13 +43,10 @@ function refreshOnScopeChange(): void {
     document.querySelector<HTMLInputElement>(`#${id}`)?.addEventListener(
       "change",
       () => {
-        void readConfig().then((stored) => populateReasoningEfforts({
-          ...stored,
-          nodeId: readInput("node-id"),
-          profile: readInput("profile"),
-          baseUrl: normalizeBaseUrl(readInput("base-url")),
-          bearerToken: readInput("bearer-token"),
-        }));
+        // Deliberately not re-read from storage: the saved effort belongs to the
+        // scope it was saved in, and reapplying it here would both override the
+        // new preset's default and throw away an unsaved pick.
+        void refreshReasoningEfforts(effortScopeFromInputs());
       },
     );
   }
@@ -177,7 +59,7 @@ async function loadOptions(): Promise<void> {
   setInput("node-id", config.nodeId);
   setInput("profile", config.profile);
   setInput("folder-id", config.folderId);
-  await populateReasoningEfforts(config);
+  await populateReasoningEfforts(effortScopeFromInputs(), config.reasoningEffort);
   refreshOnScopeChange();
   setInput("body-char-limit", String(config.bodyCharLimit));
   const includeBody = document.querySelector<HTMLInputElement>("#include-body");

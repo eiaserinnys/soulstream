@@ -61,6 +61,26 @@ export const ModelPresetSchema = z.object({
 
 export type ModelPreset = z.infer<typeof ModelPresetSchema>;
 
+/**
+ * A non-empty list of efforts, spelled the way the wire contract states it
+ * (`minItems: 1`). zod v4's `.nonempty()` only adds a runtime check — it still
+ * infers a plain array — so the advertised surface carries this type instead and
+ * {@link toAdvertisedEfforts} is the one place the two meet.
+ */
+export type AdvertisedEfforts = [ReasoningEffort, ...ReasoningEffort[]];
+
+/**
+ * Absent, never `[]`: "no advertised effort choices" is expressed by omitting the
+ * field, which is exactly what the wire schema allows.
+ */
+function toAdvertisedEfforts(
+  efforts: readonly ReasoningEffort[] | undefined,
+): AdvertisedEfforts | undefined {
+  if (!efforts) return undefined;
+  const [head, ...tail] = efforts;
+  return head === undefined ? undefined : [head, ...tail];
+}
+
 export const ModelCatalogSchema = z.object({
   presets: z.array(ModelPresetSchema).default([]),
 }).superRefine((catalog, ctx) => {
@@ -91,8 +111,12 @@ export interface AdvertisedModelPreset {
    */
   usage_provider: "claude" | "codex" | null;
   usage_model_id?: string;
-  /** Advertised effort levels. Absent means this preset has no effort control. */
-  supported_efforts?: ReasoningEffort[];
+  /**
+   * Advertised effort levels. Absent means this preset has no effort control;
+   * present means at least one level, which is what the wire contract states
+   * (`minItems: 1`) — hence the non-empty tuple rather than a plain array.
+   */
+  supported_efforts?: AdvertisedEfforts;
   /** Advertised default effort. Absent means the backend default applies. */
   default_effort?: ReasoningEffort;
 }
@@ -153,12 +177,11 @@ export class ModelCatalog {
       { presetId: preset.id, backend: preset.backend, dropped },
       "Model preset advertises efforts the active transport cannot carry",
     );
+    const narrowed = toAdvertisedEfforts(supported);
     const { supported_efforts: _s, ...rest } = preset;
     return {
       ...rest,
-      ...(supported.length > 0
-        ? { supported_efforts: supported as ModelPreset["supported_efforts"] }
-        : {}),
+      ...(narrowed ? { supported_efforts: narrowed } : {}),
     };
   }
 
@@ -181,6 +204,7 @@ export class ModelCatalog {
         : preset.backend === "claude" || preset.backend === "codex"
           ? preset.backend
           : null;
+      const advertisedEfforts = toAdvertisedEfforts(preset.supported_efforts);
       return {
         id: preset.id,
         label: preset.label,
@@ -191,9 +215,7 @@ export class ModelCatalog {
         ...(usageProvider
           ? { usage_model_id: preset.usage_model_id ?? preset.model }
           : {}),
-        ...(preset.supported_efforts
-          ? { supported_efforts: [...preset.supported_efforts] }
-          : {}),
+        ...(advertisedEfforts ? { supported_efforts: advertisedEfforts } : {}),
         ...(preset.default_effort
           ? { default_effort: preset.default_effort }
           : {}),
