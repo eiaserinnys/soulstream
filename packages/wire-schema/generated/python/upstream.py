@@ -83,6 +83,12 @@ class ModelPreset(TypedDict, closed=True):
     reason: NotRequired[Literal['env_unresolved']]
     usage_provider: Literal['claude', 'codex'] | None
     usage_model_id: NotRequired[str]
+    supported_efforts: NotRequired[
+        list[Literal['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']]
+    ]
+    default_effort: NotRequired[
+        Literal['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+    ]
 
 
 class Alias(TypedDict, closed=True):
@@ -518,6 +524,7 @@ class ErrorMessage(TypedDict):
     requestId: NotRequired[str]
     request_id: NotRequired[str]
     command_type: NotRequired[str]
+    code: NotRequired[str]
 
 
 class InterveneAck(TypedDict):
@@ -762,7 +769,9 @@ class CreateSession(TypedDict):
     predecessor_session_id: NotRequired[str | None]
     notify_completion: NotRequired[bool]
     attachment_paths: NotRequired[list[str]]
-    reasoningEffort: NotRequired[Literal['minimal', 'low', 'medium', 'high', 'xhigh']]
+    reasoningEffort: NotRequired[
+        Literal['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+    ]
     pageAnchor: NotRequired[PageAnchor]
 
 

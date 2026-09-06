@@ -39,7 +39,7 @@ export interface CreateDashboardSessionInput {
   agentId?: string | null;
   agent?: SessionAgentMetadata | null;
   modelPreset?: string | null;
-  reasoningEffort?: ReasoningEffort | null;
+  reasoningEffort?: string | null;
   oauthProfileName?: string | null;
   container?: BoardContainerRef | null;
   sourceSessionId?: string | null;

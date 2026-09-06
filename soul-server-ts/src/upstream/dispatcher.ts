@@ -175,7 +175,7 @@ export class CommandDispatcher {
         await handler(cmd);
       } catch (err) {
         if (err instanceof CommandDispatchError) {
-          await this.sendError(cmd, err.message);
+          await this.sendError(cmd, err.message, err.code);
           return;
         }
         if (err instanceof RealtimeCommandDispatchError) {
@@ -205,12 +205,17 @@ export class CommandDispatcher {
     return commandRequestId(cmd).length > 0 && cmd.type !== "subscribe_events";
   }
 
-  private async sendError(cmd: CommandLike, message: string): Promise<void> {
+  private async sendError(
+    cmd: CommandLike,
+    message: string,
+    code?: string,
+  ): Promise<void> {
     await this.send({
       type: "error",
       message,
       requestId: cmd.requestId ?? cmd.request_id ?? "",
       command_type: cmd.type ?? "",
+      ...(code ? { code } : {}),
     });
     this.logger.warn(
       { ...summarizePayloadForLog(cmd), message },

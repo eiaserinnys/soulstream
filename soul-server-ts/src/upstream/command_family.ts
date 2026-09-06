@@ -18,9 +18,16 @@ export type CommandHandler = (cmd: CommandLike) => Promise<void>;
 export type CommandHandlerMap = Record<string, CommandHandler>;
 
 export class CommandDispatchError extends Error {
-  constructor(message: string) {
+  /**
+   * Structured failure code forwarded to orch so an input error can be mapped to
+   * a 4xx instead of the generic "node unavailable" 503.
+   */
+  readonly code: string | undefined;
+
+  constructor(message: string, code?: string) {
     super(message);
     this.name = "CommandDispatchError";
+    this.code = code;
   }
 }
 

@@ -102,6 +102,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       session_type TEXT,
       status TEXT,
       agent_id TEXT,
+      reasoning_effort TEXT,
       predecessor_session_id TEXT,
       review_state TEXT NOT NULL DEFAULT 'not_required',
       last_event_id INTEGER NOT NULL DEFAULT 0,

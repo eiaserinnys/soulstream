@@ -50,6 +50,12 @@ export class SessionReadRepository {
           s.node_id,
           s.model_preset,
           s.model,
+          -- "auto" is a DB-internal marker meaning "resolved to no effort"
+          -- (see soul-server-ts/src/task/session_effort_storage.ts). Public
+          -- projections report it the way an unspecified effort always was.
+          -- getSession() deliberately keeps the raw value: node hydration must
+          -- tell a pre-089 NULL apart from a recorded "auto".
+          NULLIF(s.reasoning_effort, 'auto') AS reasoning_effort,
           s.predecessor_session_id,
           COUNT(*) OVER()::BIGINT AS total_count
         FROM sessions s
@@ -113,6 +119,7 @@ export class SessionReadRepository {
         s.agent_id,
         s.model_preset,
         s.model,
+        NULLIF(s.reasoning_effort, 'auto') AS reasoning_effort,
         s.prompt,
         s.folder_id,
         s.metadata,

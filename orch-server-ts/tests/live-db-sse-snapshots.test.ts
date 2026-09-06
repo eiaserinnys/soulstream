@@ -178,6 +178,7 @@ describe("live DB SSE replay snapshots", () => {
           predecessorSessionId: null,
           agentId: "agent-a",
           modelPreset: null,
+          reasoningEffort: null,
           modelLabel: null,
           model: null,
           agentName: "Agent A",

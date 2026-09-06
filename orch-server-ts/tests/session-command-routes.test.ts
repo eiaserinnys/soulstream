@@ -469,6 +469,80 @@ describe("session command HTTP route harness", () => {
     });
   });
 
+  it("maps a rejected effort to 422 while preserving the node code and message", async () => {
+    // Requirement: an unusable effort must be a meaningful input error, not the
+    // generic "node unavailable" 503 every node error used to collapse into.
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          const message = JSON.parse(data) as Record<string, unknown>;
+          registry.receiveNodeMessage(
+            { nodeId: "fake-node", connectionId },
+            {
+              type: "error",
+              requestId: message.requestId,
+              command_type: "create_session",
+              code: "UNSUPPORTED_REASONING_EFFORT",
+              message: 'Reasoning effort "ultra" is not supported by model preset "claude-opus".',
+            },
+          );
+        },
+      },
+    });
+    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: {
+        prompt: "hello",
+        profile: "claude-roselin",
+        reasoningEffort: "ultra",
+      },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error.code).toBe("UNSUPPORTED_REASONING_EFFORT");
+    expect(response.json().error.message).toContain("claude-opus");
+  });
+
+  it("keeps 503 for node failures that are not input errors", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          const message = JSON.parse(data) as Record<string, unknown>;
+          registry.receiveNodeMessage(
+            { nodeId: "fake-node", connectionId },
+            {
+              type: "error",
+              requestId: message.requestId,
+              command_type: "create_session",
+              code: "SOMETHING_INTERNAL",
+              message: "boom",
+            },
+          );
+        },
+      },
+    });
+    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { prompt: "hello", profile: "claude-roselin" },
+    });
+
+    expect(response.statusCode).toBe(503);
+  });
+
   it("keeps NODE_COMMAND_TIMEOUT when the node session event is absent", async () => {
     const { registry, transports, router, bridge } = createHarness();
     const connectionId = registerNode(registry);

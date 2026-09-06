@@ -127,6 +127,8 @@ describe("SessionMutationRepository", () => {
       "session-a", "node-a", "roselin", null, "claude", "inspect", null,
       "running", now, now, null, true, true, "not_required", null,
       "claude-opus", "claude-opus-4-6",
+      // Appended last so pre-existing 17-argument callers keep resolving.
+      null,
     ]);
   });
 

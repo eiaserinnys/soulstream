@@ -110,6 +110,19 @@ export interface NodeRegister {
      * 모델 범위 쿼터 조인용 내부 식별자.
      */
     usage_model_id?: string;
+    /**
+     * 이 preset의 모델이 광고하는 effort 목록. 노드의 활성 transport가 실어 나를 수 있는 값으로 이미 좁혀져 있다. 없으면 effort 선택이 없는 preset.
+     *
+     * @minItems 1
+     */
+    supported_efforts?: [
+      "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra",
+      ...("minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra")[]
+    ];
+    /**
+     * 생성 요청이 effort를 생략했을 때 적용. 항상 supported_efforts의 원소.
+     */
+    default_effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
   }[];
   agents?: {
     id?: string;
@@ -1358,6 +1371,10 @@ export interface ErrorMessage {
    */
   request_id?: string;
   command_type?: string;
+  /**
+   * Structured failure code. Lets orch map input errors to 4xx instead of collapsing every node error to 503.
+   */
+  code?: string;
   [k: string]: unknown;
 }
 /**
@@ -1591,9 +1608,9 @@ export interface CreateSession {
   notify_completion?: boolean;
   attachment_paths?: string[];
   /**
-   * Codex-only reasoning effort. Missing means codex adapter default xhigh.
+   * Reasoning effort accept-set. Legacy values (minimal) stay readable; new sessions are validated against the selected model preset's advertised supported_efforts. Missing means the preset default, then the backend default.
    */
-  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
   /**
    * Optional page block converted to the canonical primary session_ref before the first turn.
    */

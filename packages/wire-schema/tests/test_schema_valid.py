@@ -441,7 +441,19 @@ def test_create_session_has_reasoning_effort() -> None:
     create_session = schema["$defs"]["CreateSession"]
     prop = create_session["properties"]["reasoningEffort"]
     assert prop["type"] == "string"
-    assert prop["enum"] == ["minimal", "low", "medium", "high", "xhigh"]
+    # Accept-set, not the selectable set. `minimal` stays readable for rows and
+    # clients written before the model catalog became the source of truth;
+    # `max`/`ultra` are advertised by real models. What a *new* session may use
+    # is decided per-preset by the node's advertised supported_efforts.
+    assert prop["enum"] == [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra",
+    ]
 
 
 def test_intervene_has_extra_context_items() -> None:

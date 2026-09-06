@@ -12,6 +12,10 @@ export type StaticModelPreset = {
   readonly reason?: "env_unresolved";
   readonly usage_provider: "claude" | "codex" | null;
   readonly usage_model_id?: string;
+  /** Effort levels the node advertised for this preset. Absent = no effort control. */
+  readonly supported_efforts?: readonly string[];
+  /** Default effort the node advertised. Absent = backend default. */
+  readonly default_effort?: string;
 };
 
 export type ModelPresetAvailability = {
@@ -27,6 +31,12 @@ export type ModelPresetAvailability = {
   readonly reason_label: string | null;
   readonly resets_at: string | null;
   readonly usage_warning: boolean;
+  /**
+   * Canonical list of selectable efforts for this preset. Clients render choices
+   * from this and nothing else — no per-frontend hardcoded table.
+   */
+  readonly supported_efforts?: readonly string[];
+  readonly default_effort?: string;
 };
 
 export type ModelPresetAvailabilityRegistry = {
@@ -164,16 +174,32 @@ export function resolvePresetAvailability(
 
 function publicPreset(
   preset: StaticModelPreset,
-): Pick<ModelPresetAvailability, "id" | "label" | "backend"> {
+): Pick<
+  ModelPresetAvailability,
+  "id" | "label" | "backend" | "supported_efforts" | "default_effort"
+> {
   return {
     id: preset.id,
     label: preset.label,
     backend: preset.backend,
+    ...(preset.supported_efforts
+      ? { supported_efforts: preset.supported_efforts }
+      : {}),
+    ...(preset.default_effort ? { default_effort: preset.default_effort } : {}),
   };
 }
 
+function isEffortList(value: unknown): value is string[] {
+  return Array.isArray(value)
+    && value.length > 0
+    && value.every((entry) => typeof entry === "string" && entry.length > 0);
+}
+
 function availablePreset(
-  preset: Pick<ModelPresetAvailability, "id" | "label" | "backend">,
+  preset: Pick<
+    ModelPresetAvailability,
+    "id" | "label" | "backend" | "supported_efforts" | "default_effort"
+  >,
   usageWarning: boolean,
 ): ModelPresetAvailability {
   return {
@@ -213,6 +239,12 @@ function parseStaticPreset(value: unknown): StaticModelPreset | undefined {
   return {
     id: value.id,
     label: value.label,
+    ...(isEffortList(value.supported_efforts)
+      ? { supported_efforts: value.supported_efforts }
+      : {}),
+    ...(typeof value.default_effort === "string"
+      ? { default_effort: value.default_effort }
+      : {}),
     backend: value.backend,
     available: value.available,
     ...(value.reason === "env_unresolved" ? { reason: value.reason } : {}),

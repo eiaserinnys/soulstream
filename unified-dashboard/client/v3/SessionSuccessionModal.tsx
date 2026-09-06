@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useId } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   FileAttachmentPreview,
   AtomNodeSelector,
+  reasoningEffortLabel,
   Dialog,
   DialogFooter,
   DialogHeader,
@@ -32,6 +33,7 @@ import {
 } from "./task-workspace-api";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import { buildSessionContextSelection } from "./session-context-items";
+import { useReasoningEffortSelection } from "../hooks/useReasoningEffortSelection";
 
 export interface SuccessionContextItem {
   id: string;
@@ -108,6 +110,17 @@ export function SessionSuccessionModal({
   >(
     resolvedDefaults.modelPreset ? "inherited" : null,
   );
+  const effort = useReasoningEffortSelection({
+    presetKey: selectedModelPreset
+      ? `${selectedNodeId}::${selectedModelPreset}`
+      : null,
+    preset: selectedModelPresetInfo,
+    // Inherited from the predecessor. Kept while the model is unchanged; picking
+    // a different model refills that preset's default instead.
+    initialEffort: resolvedDefaults.reasoningEffort,
+  });
+  const effortSelectId = useId();
+  const presetHasDefaultEffort = Boolean(selectedModelPresetInfo?.default_effort);
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,6 +169,7 @@ export function SessionSuccessionModal({
 
   const start = async () => {
     if (!selectedNodeId || !selectedAgentId || !modelPresetValid) return;
+    if (effort.unsupported) return;
     setPending(true);
     setError(null);
     try {
@@ -179,6 +193,9 @@ export function SessionSuccessionModal({
         agentId: selectedAgentId,
         agent: selectedAgent,
         modelPreset: selectedModelPreset || null,
+        // Only ever the value this form actually offers. Sending an inherited
+        // effort across a model change would 422 with no way to fix it here.
+        ...(effort.submitValue ? { reasoningEffort: effort.submitValue } : {}),
         container: { kind: "task", id: taskId },
         contextItems: contextSelection.contextItems.length > 0
           ? contextSelection.contextItems
@@ -254,6 +271,55 @@ export function SessionSuccessionModal({
                 onModelPresetValidityChange={setModelPresetValid}
                 onError={handleAssignmentError}
               />
+              {effort.options.length > 0 ? (
+                <>
+                  <label htmlFor={effortSelectId}>추론 강도</label>
+                  <select
+                    id={effortSelectId}
+                    aria-label="추론 강도 선택"
+                    value={effort.effective ?? ""}
+                    onChange={(event) => effort.setSelected(event.target.value || null)}
+                  >
+                    {/* An unusable carry-over stays the selected value so the box
+                        shows what is actually wrong — and so choosing 기본값 사용
+                        is a real change event rather than a no-op. */}
+                    {effort.unsupported ? (
+                      <option value={effort.selected ?? ""}>
+                        {reasoningEffortLabel(effort.selected ?? "")} (지원 안 함)
+                      </option>
+                    ) : null}
+                    {/* "Send nothing, let the preset default apply". It must stay
+                        available while the preset has no default of its own,
+                        otherwise picking a level is a one-way door. */}
+                    {effort.unsupported || !presetHasDefaultEffort ? (
+                      <option value="">
+                        {effort.unsupported ? "기본값 사용" : "기본값"}
+                      </option>
+                    ) : null}
+                    {effort.options.map((option) => (
+                      <option key={option} value={option}>
+                        {reasoningEffortLabel(option)}
+                      </option>
+                    ))}
+                  </select>
+
+                </>
+              ) : null}
+              {effort.unsupported && selectedModelPresetInfo !== null ? (
+                <small role="alert" data-testid="succession-effort-unsupported">
+                  {effort.options.length > 0
+                    ? `이어받은 추론 강도 “${reasoningEffortLabel(effort.selected ?? "")}”를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나 기본값으로 시작하세요.`
+                    : `이 모델이 광고한 추론 강도 목록이 없어 “${reasoningEffortLabel(effort.selected ?? "")}”를 그대로 쓸 수 없습니다. 기본값으로 시작하세요.`}
+                  {" "}
+                  <button
+                    type="button"
+                    data-testid="succession-effort-use-default"
+                    onClick={() => effort.setSelected(null)}
+                  >
+                    기본값 사용
+                  </button>
+                </small>
+              ) : null}
             </section>
             <section>
               <strong>컨텍스트</strong>
@@ -399,6 +465,9 @@ export function SessionSuccessionModal({
               || !selectedAgentId
               || selectedAgent?.id !== selectedAgentId
               || !modelPresetValid
+              // Keep the button state and the guard in start() on one predicate,
+              // otherwise an unusable carry-over reads as a dead button.
+              || effort.unsupported
             }
             onClick={() => { void start(); }}
           >

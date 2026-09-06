@@ -100,6 +100,68 @@ describe("TaskEngineTurnRunner", () => {
     }
   });
 
+  describe("reasoning effort at the turn boundary", () => {
+    async function capturedEffort(task: Task) {
+      let captured: EngineExecuteParams | undefined;
+      const engine = makeEngine((params) => {
+        captured = params;
+      });
+      const { runner } = makeSubject();
+      await drain(runner.executeTurn({
+        task,
+        agent,
+        runner: createInProcessTaskRunnerRuntime(engine),
+        input: { prompt: "p" },
+      }));
+      return captured?.reasoningEffort;
+    }
+
+    it("1. an untouched pre-089 Codex session replays its old xhigh", async () => {
+      expect(await capturedEffort(makeTask({
+        modelPresetBackend: "codex",
+        reasoningEffortRecorded: false,
+      }))).toBe("xhigh");
+    });
+
+    it("1b. an untouched pre-089 Claude session still sends nothing", async () => {
+      expect(await capturedEffort(makeTask({
+        reasoningEffortRecorded: false,
+      }))).toBeUndefined();
+    });
+
+    it("2. a new auto session sends nothing, including on Codex", async () => {
+      expect(await capturedEffort(makeTask({
+        modelPresetBackend: "codex",
+        reasoningEffortRecorded: true,
+      }))).toBeUndefined();
+    });
+
+    it("3. a new explicit level is forwarded as-is", async () => {
+      expect(await capturedEffort(makeTask({
+        modelPresetBackend: "codex",
+        reasoningEffort: "low",
+        reasoningEffortRecorded: true,
+      }))).toBe("low");
+    });
+
+    it("keeps an explicit effort even when the recorded flag is absent", async () => {
+      // In-memory tasks and recovery paths predate the flag. Replacing a real
+      // level with the legacy Codex value would change a live session.
+      expect(await capturedEffort(makeTask({
+        modelPresetBackend: "codex",
+        reasoningEffort: "low",
+      }))).toBe("low");
+    });
+
+    it("never forwards the internal auto marker to the engine", async () => {
+      const effort = await capturedEffort(makeTask({
+        modelPresetBackend: "codex",
+        reasoningEffortRecorded: true,
+      }));
+      expect(effort).not.toBe("auto");
+    });
+  });
+
   it("assembles one engine turn from task runtime policy and turn input", async () => {
     const task = makeTask({
       codexThreadId: "claude-sess-1",

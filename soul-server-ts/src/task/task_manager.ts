@@ -53,6 +53,10 @@ import {
 } from "./claude_runtime_control.js";
 import { TaskClaudeRuntimeControlRoute } from "./task_claude_runtime_control_route.js";
 import { resolveModelPresetSelection } from "./task_model_preset.js";
+import {
+  resolveEffortPreset,
+  resolveReasoningEffortForCreate,
+} from "./task_reasoning_effort.js";
 import { resolveSourceTaskItemProvenance } from "./source_task_item_provenance.js";
 
 export type { CreateTaskParams } from "./task_creation.js";
@@ -254,20 +258,32 @@ export class TaskManager {
     const canonicalParams = agent && resolvedParams.profileId !== agent.id
       ? { ...resolvedParams, profileId: agent.id }
       : resolvedParams;
-    if (!agent || resolvedParams.modelPresetBackend) {
-      return await this.taskCreation.createTask(canonicalParams);
-    }
+    // Reasoning effort is decided exactly once, here, so every creation entry
+    // point (REST, cross-node WS, local MCP, remote MCP) shares one validator.
+    // Callers must not pre-resolve or pre-validate it.
+    const selectedPreset = agent && !resolvedParams.modelPresetBackend
+      ? resolveModelPresetSelection(canonicalParams, agent, this.modelCatalog)
+      : undefined;
+    const effortPreset = selectedPreset
+      ?? resolveEffortPreset(canonicalParams.modelPreset, this.modelCatalog);
+    const reasoningEffort = resolveReasoningEffortForCreate(
+      effortPreset,
+      canonicalParams.reasoningEffort,
+    );
+    const paramsWithEffort: CreateTaskParams = {
+      ...canonicalParams,
+      reasoningEffort,
+    };
 
-    const preset = resolveModelPresetSelection(canonicalParams, agent, this.modelCatalog);
-    if (!preset) {
-      return await this.taskCreation.createTask(canonicalParams);
+    if (!agent || resolvedParams.modelPresetBackend || !selectedPreset) {
+      return await this.taskCreation.createTask(paramsWithEffort);
     }
     return await this.taskCreation.createTask({
-      ...canonicalParams,
-      model: preset.model,
-      modelPreset: preset.id,
-      modelPresetBackend: preset.backend,
-      modelPresetEnv: preset.env,
+      ...paramsWithEffort,
+      model: selectedPreset.model,
+      modelPreset: selectedPreset.id,
+      modelPresetBackend: selectedPreset.backend,
+      modelPresetEnv: selectedPreset.env,
     });
   }
 

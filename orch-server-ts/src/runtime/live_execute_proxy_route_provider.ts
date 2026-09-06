@@ -34,6 +34,7 @@ import type {
   RuntimeSessionEvent,
   RuntimeSessionEventHub,
 } from "./session_event_hub.js";
+import { CREATE_ACK_ERROR_HTTP_STATUS } from "../session/session_command_routes.js";
 
 const EXECUTE_PROXY_KEEPALIVE_MS = 30_000;
 
@@ -80,7 +81,7 @@ export function createLiveExecuteProxyRouteProvider(
           command,
         });
         if (isCommandError(result)) {
-          throw routeErrorFromAck(503, result);
+          throw routeErrorFromAck(createAckStatus(result), result);
         }
         const actualSessionId = stringField(result.agentSessionId) ?? agentSessionId;
         return streamResult({
@@ -90,7 +91,7 @@ export function createLiveExecuteProxyRouteProvider(
         });
       } catch (error) {
         queue.close();
-        throw mapCommandError(error, 503);
+        throw mapCommandError(error, createErrorStatus(error));
       }
     },
     executeResume: async (payload) => {
@@ -191,7 +192,10 @@ function createSessionCommandPayload(params: {
   if (payload.folderId !== undefined) command.folderId = payload.folderId;
   if (payload.system_prompt !== undefined) command.systemPrompt = payload.system_prompt;
   if (payload.model !== undefined) command.model = payload.model;
-  if (backend === "codex" && payload.reasoningEffort !== undefined) {
+  if (payload.reasoningEffort !== undefined) {
+    // Forwarded for every backend. The node's TaskManager is the single
+    // validator, so gating by backend here would silently drop a Claude
+    // request's effort and re-introduce a second authority.
     command.reasoningEffort = payload.reasoningEffort;
   }
   if (payload.extra_context_items !== undefined) {
@@ -379,4 +383,26 @@ class SessionEventQueue {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Create-path input errors are the caller's problem, not an unavailable node.
+ * Everything else keeps the historical 503 so timeouts and offline nodes stay
+ * distinguishable from a bad request. The status table is the one owned by the
+ * REST create route — a second copy would drift.
+ */
+function createStatusForCode(code: unknown): number {
+  return typeof code === "string" && Object.hasOwn(CREATE_ACK_ERROR_HTTP_STATUS, code)
+    ? CREATE_ACK_ERROR_HTTP_STATUS[code] ?? 503
+    : 503;
+}
+
+function createAckStatus(result: NodeCommandResponse): number {
+  return createStatusForCode((result as { code?: unknown }).code);
+}
+
+function createErrorStatus(error: unknown): number {
+  return createStatusForCode(
+    (error as { response?: { code?: unknown } } | undefined)?.response?.code,
+  );
 }

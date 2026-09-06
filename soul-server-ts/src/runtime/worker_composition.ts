@@ -23,7 +23,7 @@ import { AnthropicAdapter, OpenAIAdapter } from "../llm/adapters.js";
 import { LlmExecutor } from "../llm/executor.js";
 import { buildOrchProxyConfig } from "../mcp/orch_proxy.js";
 import type { McpRuntime } from "../mcp/runtime.js";
-import { ModelCatalog } from "../model_catalog.js";
+import { ModelCatalog, nodeEffortCapabilities } from "../model_catalog.js";
 import { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { TaskHandoffNotifier } from "../work-task/task_handoff_notifier.js";
 import { TaskService } from "../work-task/task_service.js";
@@ -68,7 +68,7 @@ export async function composeWorkerRuntime(
 ): Promise<WorkerComposition> {
   const { env, logger, agentRegistry, mcpConfigService, codexCliPath, agentProfileSource } = params;
   const modelCatalog =
-    params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger);
+    params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger, nodeEffortCapabilities(env.CODEX_ADAPTER_MODE));
   let upstreamAdapter: UpstreamAdapter | null = null;
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,

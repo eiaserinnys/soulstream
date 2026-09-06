@@ -23,6 +23,8 @@ import {
 } from "../model_preset_env.js";
 
 import type { Task } from "./task_models.js";
+import { effectiveTaskBackend } from "./task_model_preset.js";
+import { resolveTurnReasoningEffort } from "./session_effort_storage.js";
 
 export interface TaskEngineTurnInput {
   prompt: string;
@@ -90,6 +92,17 @@ export class TaskEngineTurnRunner {
     const queuedToolApproval = task.agentsQueuedToolApproval;
     task.agentsQueuedToolApproval = undefined;
 
+    // Single legacy-compat boundary: the effective backend is known here, so a
+    // pre-089 unrecorded row can replay exactly what it used to get.
+    const turnReasoningEffort = resolveTurnReasoningEffort(
+      {
+        recorded: task.reasoningEffortRecorded === true,
+        ...(task.reasoningEffort !== undefined
+          ? { effort: task.reasoningEffort }
+          : {}),
+      },
+      effectiveTaskBackend(task, agent),
+    );
     const effectiveAllowedTools = task.allowedTools ?? agent.allowed_tools;
     const effectiveDisallowedTools = task.disallowedTools ?? agent.disallowed_tools;
     const effectiveClaudePermissionMode = task.claudePermissionMode ?? agent.claude_permission_mode;
@@ -118,7 +131,9 @@ export class TaskEngineTurnRunner {
         ? { imageAttachmentPaths: input.imageAttachmentPaths }
         : {}),
       ...(effectiveModel !== undefined ? { model: effectiveModel } : {}),
-      ...(task.reasoningEffort !== undefined ? { reasoningEffort: task.reasoningEffort } : {}),
+      ...(turnReasoningEffort !== undefined
+        ? { reasoningEffort: turnReasoningEffort }
+        : {}),
       ...(input.backendSessionRolloverFrom !== undefined
         ? { backendSessionRolloverFrom: input.backendSessionRolloverFrom }
         : task.codexThreadId !== undefined

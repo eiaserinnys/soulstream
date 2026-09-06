@@ -6,6 +6,11 @@ import {
   normalizeBodyCharLimit,
   type ExtensionConfig,
 } from "./shared/schema.js";
+import {
+  populateReasoningEfforts,
+  refreshReasoningEfforts,
+  type EffortScope,
+} from "./options_effort.js";
 import { sessionHeaders } from "./shared/soulstream.js";
 
 const form = document.querySelector<HTMLFormElement>("#settings-form");
@@ -23,6 +28,30 @@ testButton?.addEventListener("click", () => {
   void testConnection();
 });
 
+function effortScopeFromInputs(): EffortScope {
+  return {
+    nodeId: readInput("node-id"),
+    profile: readInput("profile"),
+    baseUrl: normalizeBaseUrl(readInput("base-url")),
+    bearerToken: readInput("bearer-token"),
+  };
+}
+
+/** Profile or node changes move the effort scope, so re-populate the picker. */
+function refreshOnScopeChange(): void {
+  for (const id of ["profile", "node-id", "base-url", "bearer-token"]) {
+    document.querySelector<HTMLInputElement>(`#${id}`)?.addEventListener(
+      "change",
+      () => {
+        // Deliberately not re-read from storage: the saved effort belongs to the
+        // scope it was saved in, and reapplying it here would both override the
+        // new preset's default and throw away an unsaved pick.
+        void refreshReasoningEfforts(effortScopeFromInputs());
+      },
+    );
+  }
+}
+
 async function loadOptions(): Promise<void> {
   const config = await readConfig();
   setInput("base-url", config.baseUrl);
@@ -30,7 +59,8 @@ async function loadOptions(): Promise<void> {
   setInput("node-id", config.nodeId);
   setInput("profile", config.profile);
   setInput("folder-id", config.folderId);
-  setInput("reasoning-effort", config.reasoningEffort);
+  await populateReasoningEfforts(effortScopeFromInputs(), config.reasoningEffort);
+  refreshOnScopeChange();
   setInput("body-char-limit", String(config.bodyCharLimit));
   const includeBody = document.querySelector<HTMLInputElement>("#include-body");
   if (includeBody) includeBody.checked = config.includeBody;

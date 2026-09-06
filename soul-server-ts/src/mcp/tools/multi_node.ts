@@ -7,6 +7,16 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import {
+  REASONING_EFFORT_ACCEPT_SET,
+  type ReasoningEffort,
+} from "../../engine/protocol.js";
+
+/** Accepts the full read vocabulary; the node validates against the preset. */
+const ReasoningEffortToolSchema = z.enum(
+  REASONING_EFFORT_ACCEPT_SET as unknown as [ReasoningEffort, ...ReasoningEffort[]],
+);
+
 import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
 
 import { AgentProfileSchema } from "../../agent_registry.js";
@@ -264,6 +274,8 @@ export function registerMultiNodeTools(
         node_id: z.string().min(1),
         agent_id: z.string().optional(),
         model_preset: z.string().min(1).optional(),
+        /** Omit to use the selected model preset's advertised default effort. */
+        reasoning_effort: ReasoningEffortToolSchema.optional(),
         prompt: z.string(),
         caller_session_id: z.string().optional(),
         notify_completion: z.boolean().optional(),
@@ -273,7 +285,7 @@ export function registerMultiNodeTools(
       },
     },
     async (input) => {
-      const { node_id, agent_id, model_preset, prompt, caller_session_id, notify_completion, folder_id, container, source_task_item_id } = input;
+      const { node_id, agent_id, model_preset, reasoning_effort, prompt, caller_session_id, notify_completion, folder_id, container, source_task_item_id } = input;
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
 
@@ -291,6 +303,7 @@ export function registerMultiNodeTools(
       };
       if (agent_id !== undefined) body.profile = agent_id;
       if (model_preset !== undefined) body.model_preset = model_preset;
+      if (reasoning_effort !== undefined) body.reasoningEffort = reasoning_effort;
       const resolvedContainer = await resolveDelegatedContainer(runtime, {
         callerSessionId: caller.callerSessionId,
         ...(Object.prototype.hasOwnProperty.call(input, "folder_id") && folder_id !== undefined

@@ -35,6 +35,7 @@ import {
 } from "./task_session_position.js";
 import { resolveStructuralCallerSessionId } from "./delegation_relationship.js";
 import type { AgentProfile } from "../agent_registry.js";
+import { toStoredReasoningEffort } from "./session_effort_storage.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -153,6 +154,9 @@ export class TaskCreation {
       modelPresetEnv: params.modelPresetEnv,
       oauthToken: params.oauthToken,
       reasoningEffort: params.reasoningEffort,
+      // Creating a session always records a decision, even when that decision is
+      // "no explicit effort". Only rows from before this feature lack one.
+      reasoningEffortRecorded: true,
       allowedTools: params.allowedTools,
       disallowedTools: params.disallowedTools,
       useMcp: params.useMcp,
@@ -183,6 +187,7 @@ export class TaskCreation {
       predecessorSessionId: params.predecessorSessionId ?? null,
       modelPreset: task.modelPreset ?? null,
       model: task.model ?? null,
+      reasoningEffort: toStoredReasoningEffort(task.reasoningEffort),
       notifyCompletion: task.notifyCompletion ?? true,
       reviewRequired: task.reviewRequired === true,
       reviewState: task.reviewState ?? "not_required",

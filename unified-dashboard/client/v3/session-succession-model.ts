@@ -45,17 +45,23 @@ export function resolveRunAssignmentDefaults({
   agentId: string | null;
   nodeId: string | null;
   modelPreset: string | null;
+  /**
+   * Effort the predecessor session actually ran with. Page defaults do not carry
+   * effort, so it is inherited from the session alone.
+   */
+  reasoningEffort: string | null;
   source: "page-defaults" | "current-session" | "none";
 } {
   const agentId = pageDefaults?.agentId ?? currentSession?.agentId ?? null;
   const nodeId = pageDefaults?.nodeId ?? currentSession?.nodeId ?? null;
   const modelPreset = pageDefaults?.modelPreset ?? currentSession?.modelPreset ?? null;
+  const reasoningEffort = currentSession?.reasoningEffort ?? null;
   const source = pageDefaults && (pageDefaults.agentId || pageDefaults.nodeId || pageDefaults.modelPreset)
     ? "page-defaults"
     : currentSession && (currentSession.agentId || currentSession.nodeId || currentSession.modelPreset)
       ? "current-session"
       : "none";
-  return { agentId, nodeId, modelPreset, source };
+  return { agentId, nodeId, modelPreset, reasoningEffort, source };
 }
 
 export function latestTaskRun(

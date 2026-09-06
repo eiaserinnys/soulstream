@@ -20,17 +20,10 @@ import {
   SelectTrigger,
   SelectPopup,
   SelectItem,
-  DEFAULT_REASONING_EFFORT,
   DEFAULT_FOLDER_ID,
-  REASONING_EFFORT_OPTIONS,
   placeBoardSessionInYjs,
   type DashboardAgentConfig,
-  type ReasoningEffort,
 } from "@seosoyoung/soul-ui";
-import {
-  reasoningEffortForSubmit,
-  selectedAgentBackend,
-} from "../utils/reasoningEffort";
 import { createDashboardSession } from "client/lib/session-create";
 
 export function NewSessionModal() {
@@ -48,9 +41,6 @@ export function NewSessionModal() {
 
   const [selectedModalFolderId, setSelectedModalFolderId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState("");
-  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffort>(
-    DEFAULT_REASONING_EFFORT,
-  );
 
   // 에이전트 목록 (dashboardConfig에서)
   const agents: DashboardAgentConfig[] = dashboardConfig?.agents ?? [];
@@ -101,11 +91,11 @@ export function NewSessionModal() {
   const selectedModalFolderName =
     catalog?.folders.find((f) => f.id === selectedModalFolderId)?.name ??
     "Claude Code";
-  const selectedBackend = selectedAgentBackend(agents, selectedAgentId);
-  const submitReasoningEffort = reasoningEffortForSubmit(
-    selectedBackend,
-    selectedReasoningEffort,
-  );
+  // Single-node dashboard. No node serves /api/dashboard/config or the model
+  // preset catalog for this surface, so there is no advertised preset to take an
+  // effort default or option list from. Rather than hardcode a client-side table
+  // (the exact thing the model catalog replaced), this surface offers no effort
+  // control and lets the node apply the preset default.
 
   // 현재 draft 복원
   const initialDraft = useMemo(() => {
@@ -133,7 +123,6 @@ export function NewSessionModal() {
         sourceTaskItemId: newSessionDefaults?.sourceTaskItemId ?? null,
         agentId: selectedAgentId || null,
         agent: selectedAgent ?? null,
-        reasoningEffort: submitReasoningEffort,
         boardPosition,
       });
 
@@ -148,9 +137,8 @@ export function NewSessionModal() {
       }
       closeModal();
       setSelectedAgentId("");
-      setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
     },
-    [queryClient, selectedModalFolderId, selectedAgentId, submitReasoningEffort, agents, addOptimisticSession, clearDraft, draftKey, closeModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
+    [queryClient, selectedModalFolderId, selectedAgentId, agents, addOptimisticSession, clearDraft, draftKey, closeModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
   );
 
   const handleOpenChange = useCallback(
@@ -158,7 +146,6 @@ export function NewSessionModal() {
       if (!open) {
         closeModal();
         setSelectedAgentId("");
-        setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
       }
     },
     [closeModal],
@@ -208,28 +195,7 @@ export function NewSessionModal() {
     </div>
   ) : undefined;
 
-  const optionsSlot = submitReasoningEffort ? (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-medium text-muted-foreground">Reasoning Effort</label>
-      <Select
-        value={selectedReasoningEffort}
-        onValueChange={(v) => setSelectedReasoningEffort((v || DEFAULT_REASONING_EFFORT) as ReasoningEffort)}
-      >
-        <SelectTrigger>
-          <span className="flex-1 truncate">
-            {REASONING_EFFORT_OPTIONS.find((option) => option.value === selectedReasoningEffort)?.label}
-          </span>
-        </SelectTrigger>
-        <SelectPopup>
-          {REASONING_EFFORT_OPTIONS.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectPopup>
-      </Select>
-    </div>
-  ) : undefined;
+  const optionsSlot = undefined;
 
   return (
     <NewSessionDialog

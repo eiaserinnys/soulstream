@@ -17,11 +17,9 @@ import {
   SelectItem,
   useDashboardStore,
   cn,
-  DEFAULT_REASONING_EFFORT,
   DEFAULT_FOLDER_ID,
-  REASONING_EFFORT_OPTIONS,
+  reasoningEffortLabel,
   placeBoardSessionInYjs,
-  type ReasoningEffort,
 } from "@seosoyoung/soul-ui";
 import type {
   AgentInfo,
@@ -29,10 +27,7 @@ import type {
 } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { useAppConfig } from "../config/AppConfigContext";
-import {
-  reasoningEffortForSubmit,
-  selectedAgentBackend,
-} from "../utils/reasoningEffort";
+import { useReasoningEffortSelection } from "../hooks/useReasoningEffortSelection";
 import { createDashboardSession } from "client/lib/session-create";
 import { NodeModelPresetSelect } from "./NodeModelPresetSelect";
 
@@ -66,9 +61,7 @@ export function OrchestratorNewSessionModal() {
   const [modelPresetValid, setModelPresetValid] = useState(true);
   const [modelPresetError, setModelPresetError] = useState<string | null>(null);
   const modelPresetSource = useRef<"automatic" | "explicit" | "agent" | null>(null);
-  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffort>(
-    DEFAULT_REASONING_EFFORT,
-  );
+
   const [oauthProfiles, setOauthProfiles] = useState<OAuthProfile[]>([]);
   const [selectedOAuthProfile, setSelectedOAuthProfile] = useState<string | null>(null);
 
@@ -82,12 +75,15 @@ export function OrchestratorNewSessionModal() {
   const initialDraft = useMemo(() => {
     return useDashboardStore.getState().drafts[draftKey] ?? "";
   }, [draftKey, isModalOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-  const selectedBackend = selectedModelPresetInfo?.backend
-    ?? selectedAgentBackend(agents, selectedAgentId);
-  const submitReasoningEffort = reasoningEffortForSubmit(
-    selectedBackend,
-    selectedReasoningEffort,
-  );
+  const effort = useReasoningEffortSelection({
+    presetKey: selectedModelPreset
+      ? `${selectedNodeId}::${selectedModelPreset}`
+      : null,
+    preset: selectedModelPresetInfo,
+  });
+  const effortOptions = effort.options;
+  const effectiveReasoningEffort = effort.effective;
+  const submitReasoningEffort = effort.submitValue;
 
   const handleDraftChange = useCallback(
     (value: string) => {
@@ -207,6 +203,14 @@ export function OrchestratorNewSessionModal() {
   const handleSubmit = useCallback(
     async (prompt: string, attachmentPaths?: string[]) => {
       if (!selectedNodeId) throw new Error("Please select a node");
+      if (effort.unsupported) {
+        // Never submit an effort this preset cannot run; dropping it here would
+        // apply a different level than the one on screen. The form offers both
+        // ways out, so this message names them instead of blocking the model.
+        throw new Error(
+          "선택한 추론 강도를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나 기본값으로 시작하세요.",
+        );
+      }
 
       const { addOptimisticSession } = useDashboardStore.getState();
       const selectedAgent = agents.find((a) => a.id === selectedAgentId);
@@ -241,10 +245,10 @@ export function OrchestratorNewSessionModal() {
       setModelPresetValid(true);
       setModelPresetError(null);
       modelPresetSource.current = null;
-      setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
+      effort.reset();
       setSelectedOAuthProfile(null);
     },
-    [selectedNodeId, selectedModalFolderId, selectedAgentId, selectedModelPreset, submitReasoningEffort, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
+    [effort.unsupported, selectedNodeId, selectedModalFolderId, selectedAgentId, selectedModelPreset, submitReasoningEffort, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
   );
 
   const folderSelector = (
@@ -385,26 +389,44 @@ export function OrchestratorNewSessionModal() {
           {modelPresetError}
         </small>
       ) : null}
-      {submitReasoningEffort ? (
+      {effortOptions.length > 0 ? (
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground">Reasoning Effort</label>
           <Select
-            value={selectedReasoningEffort}
-            onValueChange={(v) => setSelectedReasoningEffort((v || DEFAULT_REASONING_EFFORT) as ReasoningEffort)}
+            value={effectiveReasoningEffort ?? ""}
+            onValueChange={(v) => effort.setSelected(v || null)}
           >
             <SelectTrigger>
               <span className="flex-1 truncate">
-                {REASONING_EFFORT_OPTIONS.find((option) => option.value === selectedReasoningEffort)?.label}
+                {effort.unsupported
+                  ? "선택 필요"
+                  : effectiveReasoningEffort
+                    ? reasoningEffortLabel(effectiveReasoningEffort)
+                    : "자동 (백엔드 기본값)"}
               </span>
             </SelectTrigger>
             <SelectPopup>
-              {REASONING_EFFORT_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
+              {effortOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {reasoningEffortLabel(option)}
                 </SelectItem>
               ))}
             </SelectPopup>
           </Select>
+          {effort.unsupported ? (
+            <small role="alert" className="text-xs text-destructive">
+              선택한 추론 강도를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나{" "}
+              <button
+                type="button"
+                className="underline"
+                data-testid="new-session-effort-use-default"
+                onClick={() => effort.setSelected(null)}
+              >
+                기본값 사용
+              </button>
+              을 누르세요.
+            </small>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -424,7 +446,7 @@ export function OrchestratorNewSessionModal() {
           setModelPresetValid(true);
           setModelPresetError(null);
           modelPresetSource.current = null;
-          setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
+          effort.reset();
           setSelectedOAuthProfile(null);
         }
       }}

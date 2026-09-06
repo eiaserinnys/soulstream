@@ -14,6 +14,7 @@ import {
   extractClaudeBackendRolloverState,
   extractClaudePermissionModeFromMetadata,
 } from "./task_metadata.js";
+import { readStoredReasoningEffort } from "./session_effort_storage.js";
 
 const VALID_TASK_STATUSES: readonly TaskStatus[] = [
   "initializing",
@@ -113,6 +114,7 @@ export function hydrateEvictedTaskFromSessionRow(
   const agentsRunState = extractAgentsRunStateFromMetadata(metadata);
   const agentsSessionItems = extractAgentsSessionItemsFromMetadata(metadata);
   const claudePermissionMode = extractClaudePermissionModeFromMetadata(metadata);
+  const storedReasoningEffort = readStoredReasoningEffort(row.reasoning_effort);
   const terminationReason = terminationReasonFromRow(row.termination_reason);
   const terminalEventId = positiveEventId(row.termination_event_id);
   if (row.termination_reason != null && terminationReason === undefined) {
@@ -170,6 +172,13 @@ export function hydrateEvictedTaskFromSessionRow(
       : {}),
     modelPreset: row.model_preset,
     model: row.model,
+    // The column alone cannot decide the turn's effort: a pre-089 NULL needs the
+    // effective backend, which a SessionRow does not carry. Keep the recorded /
+    // unrecorded distinction here and let the turn boundary apply it.
+    ...(storedReasoningEffort.effort !== undefined
+      ? { reasoningEffort: storedReasoningEffort.effort }
+      : {}),
+    reasoningEffortRecorded: storedReasoningEffort.recorded,
     createdAt: row.created_at,
     completedAt: completedAtFromRow(row, hydratedStatus),
     lastAssistantText: row.last_assistant_text ?? undefined,

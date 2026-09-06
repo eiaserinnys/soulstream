@@ -47,7 +47,7 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   resumeSessionId: z.string().optional(),
   backendSessionRolloverFrom: z.string().min(1).optional(),
   model: z.string().nullable().optional(),
-  reasoningEffort: z.enum(["minimal", "low", "medium", "high", "xhigh"]).optional(),
+  reasoningEffort: z.enum(["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]).optional(),
   systemPrompt: z.string().optional(),
   allowedTools: z.array(z.string()).optional(),
   disallowedTools: z.array(z.string()).optional(),

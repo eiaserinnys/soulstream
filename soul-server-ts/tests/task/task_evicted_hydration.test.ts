@@ -240,6 +240,39 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.model).toBe("gpt-5.6-sol");
   });
 
+  it("restores the persisted reasoning effort so resume keeps it", () => {
+    // Before 089 this was in-memory only: a session created with `low` came
+    // back after a restart with the adapter's hardcoded default instead.
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        model_preset: "codex-5.6-sol",
+        model: "gpt-5.6-sol",
+        reasoning_effort: "low",
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.reasoningEffort).toBe("low");
+  });
+
+  it("leaves legacy rows without an effort untouched", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({ model_preset: "codex-5.6-sol" }),
+      makeLogger(),
+    );
+
+    expect(task?.reasoningEffort).toBeUndefined();
+  });
+
+  it("ignores an unreadable effort value rather than propagating it", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({ reasoning_effort: "banana" }),
+      makeLogger(),
+    );
+
+    expect(task?.reasoningEffort).toBeUndefined();
+  });
+
   it("falls back to claude session type for non-llm values", () => {
     expect(hydrateEvictedTaskFromSessionRow(
       makeRow({ session_type: null }),

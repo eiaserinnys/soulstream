@@ -271,6 +271,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     agent_id                VARCHAR,
     model_preset            TEXT,
     model                   TEXT,
+    reasoning_effort        TEXT,
     caller_session_id       TEXT,
     notify_completion       BOOLEAN NOT NULL DEFAULT TRUE,
     termination_reason      TEXT,
@@ -287,6 +288,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- 기존 테이블에 caller_session_id 컬럼 추가 (멱등)
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS caller_session_id TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS model_preset TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS reasoning_effort TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS model TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS notify_completion BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS predecessor_session_id TEXT;
@@ -1428,8 +1430,10 @@ CREATE OR REPLACE FUNCTION session_register_with_predecessor(
     );
 $$;
 
--- Additive model-preset-aware registration. Older worker signatures remain intact.
+-- Additive model-preset-aware registration. The trailing DEFAULT keeps older
+-- 17-argument positional callers resolving against this single signature.
 DROP FUNCTION IF EXISTS session_register_with_model_preset(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, BOOLEAN, BOOLEAN, TEXT, TEXT, TEXT, TEXT);
+DROP FUNCTION IF EXISTS session_register_with_model_preset(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, BOOLEAN, BOOLEAN, TEXT, TEXT, TEXT, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION session_register_with_model_preset(
     p_session_id             TEXT,
     p_node_id                TEXT,
@@ -1447,14 +1451,17 @@ CREATE OR REPLACE FUNCTION session_register_with_model_preset(
     p_review_state           TEXT,
     p_predecessor_session_id TEXT,
     p_model_preset           TEXT,
-    p_model                  TEXT
+    p_model                  TEXT,
+    -- Appended last, with a default, so pre-existing 17-argument callers keep
+    -- working during a rolling deploy.
+    p_reasoning_effort       TEXT DEFAULT NULL
 ) RETURNS void LANGUAGE sql AS $$
     INSERT INTO sessions (
         session_id, node_id, agent_id, claude_session_id,
         session_type, prompt, client_id, status,
         created_at, updated_at, caller_session_id, notify_completion,
         review_required, review_state, predecessor_session_id,
-        model_preset, model
+        model_preset, model, reasoning_effort
     ) VALUES (
         p_session_id, p_node_id, p_agent_id, p_claude_session_id,
         p_session_type, p_prompt, p_client_id, p_status,
@@ -1462,7 +1469,7 @@ CREATE OR REPLACE FUNCTION session_register_with_model_preset(
         COALESCE(p_notify_completion, TRUE),
         COALESCE(p_review_required, FALSE),
         COALESCE(p_review_state, 'not_required'),
-        p_predecessor_session_id, p_model_preset, p_model
+        p_predecessor_session_id, p_model_preset, p_model, p_reasoning_effort
     );
 $$;
 

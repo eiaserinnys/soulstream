@@ -54,6 +54,12 @@ export function serializeSessionRow(
     agentId: firstDefined(row, "agent_id", "agentId") ?? null,
     modelPreset:
       firstDefined(row, "model_preset", "modelPreset") ?? null,
+    // Defence at the DTO boundary, not just in the list queries: `getSession`
+    // returns the raw column on purpose (node hydration must tell a pre-089 NULL
+    // apart from a recorded `auto`), and any row shape can reach this serializer.
+    reasoningEffort: publicReasoningEffort(
+      firstDefined(row, "reasoning_effort", "reasoningEffort"),
+    ),
     modelLabel: null,
     model: row.model ?? null,
     agentName: firstDefined(row, "agent_name", "agentName") ?? null,
@@ -274,4 +280,16 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+/**
+ * `auto` is a DB-internal marker meaning "resolved to no effort". Canon and the
+ * write side live in soul-server-ts/src/task/session_effort_storage.ts; it must
+ * never reach a client, which reports an unspecified effort as null.
+ */
+const REASONING_EFFORT_AUTO_MARKER = "auto";
+
+export function publicReasoningEffort(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  return value === REASONING_EFFORT_AUTO_MARKER ? null : value;
 }

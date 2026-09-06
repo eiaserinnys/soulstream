@@ -225,6 +225,7 @@ export interface SessionRow {
   agent_id: string | null;
   model_preset?: string | null;
   model?: string | null;
+  reasoning_effort?: string | null;
   caller_session_id: string | null;
   predecessor_session_id: string | null;
   notify_completion?: boolean | null;
@@ -264,6 +265,7 @@ export interface ListSessionSummaryRow {
   node_id: string | null;
   model_preset: string | null;
   model: string | null;
+  reasoning_effort: string | null;
   review_required?: boolean;
   review_state?: ReviewState;
 }
@@ -296,6 +298,8 @@ export interface RegisterSessionParams {
   predecessorSessionId: string | null;
   modelPreset?: string | null;
   model?: string | null;
+  /** Effort resolved at creation. Null keeps the pre-089 legacy behaviour. */
+  reasoningEffort?: string | null;
   notifyCompletion?: boolean | null;
   reviewRequired?: boolean;
   reviewState?: ReviewState;

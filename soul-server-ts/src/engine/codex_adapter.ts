@@ -28,6 +28,7 @@ import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
 import type { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.js";
 import { sanitizeCodexEnv } from "./codex_env.js";
 import { mapThreadEvent } from "./codex_event_mapper.js";
+import { toCodexSdkEffort } from "./effort_boundary.js";
 import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
 import type {
   BackendId,
@@ -38,8 +39,6 @@ import type {
   ReasoningEffort,
   SSEEventPayload,
 } from "./protocol.js";
-
-const DEFAULT_REASONING_EFFORT: ReasoningEffort = "xhigh";
 
 const NON_REASONING_MODEL_PATTERNS = [
   /^gpt-4o(?:$|[-_.])/i,
@@ -52,12 +51,16 @@ export function resolveCodexModelReasoningEffort(
   model: string | null | undefined,
   requested: ReasoningEffort | undefined,
 ): ReasoningEffort | undefined {
-  const effort = requested ?? DEFAULT_REASONING_EFFORT;
-  if (!model) return effort;
+  // No fallback here on purpose. The effort a session runs with is decided once
+  // at creation and stored; a pre-089 session's legacy value is restored at the
+  // turn boundary. Injecting a default here would be a second authority and
+  // would make the UI's "auto (backend default)" a lie.
+  if (requested === undefined) return undefined;
+  if (!model) return requested;
   if (NON_REASONING_MODEL_PATTERNS.some((pattern) => pattern.test(model))) {
     return undefined;
   }
-  return effort;
+  return requested;
 }
 
 export interface CodexAdapterConfig {
@@ -200,10 +203,18 @@ export class CodexEngineAdapter implements EnginePort {
     const model = typeof params.model === "string" && params.model.trim()
       ? params.model.trim()
       : undefined;
-    const modelReasoningEffort = resolveCodexModelReasoningEffort(
+    const resolvedEffort = resolveCodexModelReasoningEffort(
       model,
       params.reasoningEffort,
     );
+    const modelReasoningEffort = toCodexSdkEffort(resolvedEffort);
+    if (resolvedEffort && !modelReasoningEffort) {
+      this.logger.warn(
+        { model, reasoningEffort: resolvedEffort },
+        "CodexEngineAdapter: effort not expressible for the Codex SDK transport; "
+        + "using backend default (app-server transport supports the full set)",
+      );
+    }
     const threadOptions = {
       workingDirectory: this.workspaceDir,
       skipGitRepoCheck: true,
@@ -214,7 +225,7 @@ export class CodexEngineAdapter implements EnginePort {
     };
     if (model && !modelReasoningEffort) {
       this.logger.warn(
-        { model, reasoningEffort: params.reasoningEffort ?? DEFAULT_REASONING_EFFORT },
+        { model, reasoningEffort: params.reasoningEffort },
         "CodexEngineAdapter: dropping reasoning effort for non-reasoning model",
       );
     }

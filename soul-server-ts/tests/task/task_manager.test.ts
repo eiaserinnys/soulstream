@@ -456,18 +456,71 @@ describe("TaskManager.createTask", () => {
     expect(emptyCaller.metadata).toEqual([]);
   });
 
-  it("reasoningEffort를 task에 보존한다", async () => {
+  it("광고된 effort면 task에 보존한다", async () => {
     const { db, broadcaster } = makeMocks();
-    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const catalog = {
+      resolve: () => ({
+        id: "p",
+        label: "P",
+        backend: "codex" as const,
+        model: "gpt-5.6-sol",
+        supported_efforts: ["low", "high", "xhigh"] as const,
+        default_effort: "xhigh" as const,
+      }),
+    };
+    // modelCatalog is the 12th positional parameter.
+    const tm = new TaskManager(
+      "n",
+      db,
+      broadcaster,
+      silentLogger,
+      undefined, // persistence
+      undefined, // contextBuilder
+      undefined, // agentRegistry
+      undefined, // boardYjsService
+      undefined, // taskCreationHook
+      false, // deliveryRuntimeV2Enabled
+      undefined, // sessionRuntimeControl
+      catalog as never,
+    );
 
     const task = await tm.createTask({
       agentSessionId: "s-reasoning",
       prompt: "x",
       profileId: "a",
+      modelPreset: "p",
       reasoningEffort: "high",
     });
 
     expect(task.reasoningEffort).toBe("high");
+  });
+
+  it("지원 목록을 확인할 수 없으면 명시 effort를 거절한다", async () => {
+    // Without a catalogue there is no advertised list, so the value cannot be
+    // confirmed. Accepting it would let a client send an effort the backend may
+    // silently ignore — the exact failure this feature exists to remove.
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+
+    await expect(tm.createTask({
+      agentSessionId: "s-reasoning-unconfirmed",
+      prompt: "x",
+      profileId: "a",
+      reasoningEffort: "high",
+    })).rejects.toThrow(/cannot be confirmed/);
+  });
+
+  it("effort를 생략하면 카탈로그가 없어도 정상 생성된다", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+
+    const task = await tm.createTask({
+      agentSessionId: "s-reasoning-omitted",
+      prompt: "x",
+      profileId: "a",
+    });
+
+    expect(task.reasoningEffort).toBeUndefined();
   });
 
   it("요청별 도구/MCP 옵션을 task에 보존한다", async () => {
