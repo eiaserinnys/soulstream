@@ -334,5 +334,28 @@ describe("server-owned session feed v2 fixture", () => {
       textCompleted: true,
       eventId: 4,
     });
+
+    const retired = processEventsBatch(
+      [{
+        event: {
+          type: "text_snapshot",
+          basedOnEventId: 5,
+          throughLiveSeq: 4,
+          streams: [],
+        },
+        eventId: 0,
+      }],
+      ctx,
+      finalized.root,
+      "session-a",
+      null,
+      5,
+    );
+    expect(retired.updated).toBe(false);
+    expect(retired.root?.children[1]).toMatchObject({
+      content: "durable complete",
+      completed: true,
+      eventId: 4,
+    });
   });
 });
