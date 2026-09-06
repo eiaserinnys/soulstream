@@ -288,13 +288,17 @@ export function SessionSuccessionModal({
                       </option>
                     ))}
                   </select>
-                  {effort.unsupported ? (
-                    <small role="alert" data-testid="succession-effort-unsupported">
-                      이어받은 추론 강도 “{reasoningEffortLabel(effort.selected ?? "")}”를
-                      이 모델에서는 쓸 수 없습니다. 다시 선택해 주세요.
-                    </small>
-                  ) : null}
+
                 </>
+              ) : null}
+              {effort.unsupported ? (
+                <small role="alert" data-testid="succession-effort-unsupported">
+                  이어받은 추론 강도 “{reasoningEffortLabel(effort.selected ?? "")}”를
+                  이 모델에서는 쓸 수 없습니다.
+                  {effort.options.length > 0
+                    ? " 다시 선택해 주세요."
+                    : " 이 모델은 추론 강도를 지원하지 않으니 다른 모델을 선택해 주세요."}
+                </small>
               ) : null}
             </section>
             <section>
@@ -441,6 +445,9 @@ export function SessionSuccessionModal({
               || !selectedAgentId
               || selectedAgent?.id !== selectedAgentId
               || !modelPresetValid
+              // Keep the button state and the guard in start() on one predicate,
+              // otherwise an unusable carry-over reads as a dead button.
+              || effort.unsupported
             }
             onClick={() => { void start(); }}
           >

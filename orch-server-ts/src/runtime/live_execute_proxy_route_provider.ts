@@ -34,6 +34,7 @@ import type {
   RuntimeSessionEvent,
   RuntimeSessionEventHub,
 } from "./session_event_hub.js";
+import { CREATE_ACK_ERROR_HTTP_STATUS } from "../session/session_command_routes.js";
 
 const EXECUTE_PROXY_KEEPALIVE_MS = 30_000;
 
@@ -387,19 +388,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Create-path input errors are the caller's problem, not an unavailable node.
  * Everything else keeps the historical 503 so timeouts and offline nodes stay
- * distinguishable from a bad request. Mirrors CREATE_ACK_ERROR_HTTP_STATUS in
- * session/session_command_routes.ts.
+ * distinguishable from a bad request. The status table is the one owned by the
+ * REST create route — a second copy would drift.
  */
-const CREATE_INPUT_ERROR_CODES = new Set(["UNSUPPORTED_REASONING_EFFORT"]);
-
-function createAckStatus(result: NodeCommandResponse): number {
-  const code: unknown = (result as { code?: unknown }).code;
-  return typeof code === "string" && CREATE_INPUT_ERROR_CODES.has(code)
-    ? 422
+function createStatusForCode(code: unknown): number {
+  return typeof code === "string"
+    ? CREATE_ACK_ERROR_HTTP_STATUS[code] ?? 503
     : 503;
 }
 
+function createAckStatus(result: NodeCommandResponse): number {
+  return createStatusForCode((result as { code?: unknown }).code);
+}
+
 function createErrorStatus(error: unknown): number {
-  const code = (error as { response?: { code?: unknown } } | undefined)?.response?.code;
-  return typeof code === "string" && CREATE_INPUT_ERROR_CODES.has(code) ? 422 : 503;
+  return createStatusForCode(
+    (error as { response?: { code?: unknown } } | undefined)?.response?.code,
+  );
 }

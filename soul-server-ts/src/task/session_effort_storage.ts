@@ -2,10 +2,10 @@ import type { AgentProfile } from "../agent_registry.js";
 import { isReasoningEffort, type ReasoningEffort } from "../engine/protocol.js";
 
 /**
- * DB-internal marker meaning "this session went through the effort resolver and
- * the outcome was: no effort". It exists only so a row written after migration
- * 089 is distinguishable from a pre-089 row, whose column is NULL because
- * nothing ever recorded a decision.
+ * DB-internal marker meaning "the selected preset advertised an effort contract
+ * and the outcome was: no effort". It exists so such a row is distinguishable
+ * from one where no decision was made at all — a pre-089 row, or a node whose
+ * operator catalogue declares no efforts. Those keep NULL.
  *
  * It is deliberately NOT part of `ReasoningEffort`, not a wire value, not an MCP
  * input, and not selectable by any client. It is interpreted at the DB boundary
@@ -14,18 +14,19 @@ import { isReasoningEffort, type ReasoningEffort } from "../engine/protocol.js";
 export const REASONING_EFFORT_AUTO = "auto";
 
 /**
- * The effort the Codex path used to apply before effort was ever persisted.
- * Used ONLY to reproduce the previous behaviour of pre-089 Codex sessions on
- * resume. It is not a default for anything new.
+ * The effort the Codex path applied before effort was ever persisted. It
+ * reproduces the previous behaviour for any session with no recorded decision:
+ * a pre-089 row, or a new session on a catalogue that declares no efforts. It is
+ * deliberately not reachable once a preset advertises a contract.
  */
 const LEGACY_CODEX_EFFORT: ReasoningEffort = "xhigh";
 
 /** What the stored column tells us about a session's effort decision. */
 export interface StoredReasoningEffort {
   /**
-   * false only for pre-089 rows, where the column is NULL because the decision
-   * was never recorded. New sessions are always recorded — as a level, or as
-   * `auto` when the resolver concluded "no effort".
+   * false when no decision was recorded: a pre-089 row, or a new session whose
+   * preset advertised no effort contract. True sessions record either a level or
+   * `auto`.
    */
   readonly recorded: boolean;
   /** The recorded level. Undefined for `auto` and for unrecorded rows. */
@@ -70,8 +71,10 @@ export function readStoredReasoningEffort(
  * The single legacy-compatibility conversion, applied where the effective
  * backend is already known. Three cases stay distinguishable:
  *
- *   untouched pre-089 session -> Codex replays its old `xhigh`; Claude, which
- *                                ignored effort entirely back then, gets nothing
+ *   no recorded decision       -> Codex replays its old `xhigh`; Claude, which
+ *                                ignored effort entirely back then, gets nothing.
+ *                                Covers pre-089 rows and catalogues with no
+ *                                declared efforts.
  *   new session resolved auto -> nothing (the backend default applies)
  *   new session with a level  -> that level
  */

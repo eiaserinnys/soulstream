@@ -103,6 +103,33 @@ afterEach(() => {
   useOrchestratorStore.setState({ nodes: new Map(), connectionStatus: "connecting" });
 });
 
+function mountWithSession(session: Record<string, unknown> | null) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  flushSync(() => {
+    root.render(createElement(
+      QueryClientProvider,
+      { client },
+      createElement(SessionSuccessionModal, {
+        taskTitle: "업무",
+        taskPageId: "page-1",
+        taskId: "task-1",
+        contextItems: [],
+        documentOptions: [],
+        contextPending: false,
+        predecessorOptions: [],
+        pageDefaults: { agentId: "roselin", nodeId: "node-a", modelPreset: "claude-opus" } as never,
+        currentSession: session as never,
+        onClose: () => {},
+        onCreated: () => {},
+      }),
+    ));
+  });
+}
+
+function unsupportedNotice(): Element | null {
+  return document.body.querySelector('[data-testid="succession-effort-unsupported"]');
+}
+
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   flushSync(() => {
@@ -255,5 +282,58 @@ describe("SessionSuccessionModal reasoning effort", () => {
     expect(createDashboardSession.mock.calls[0]?.[0]).toMatchObject({
       reasoningEffort: "low",
     });
+  });
+});
+
+describe("unusable carried-over effort", () => {
+  const predecessorAtUltra = {
+    agentSessionId: "prev-1",
+    agentId: "roselin",
+    nodeId: "node-a",
+    modelPreset: "claude-opus",
+    // Recorded on a Codex preset; Opus advertises low..max but not ultra.
+    reasoningEffort: "ultra",
+  };
+
+  it("explains the problem and refuses to create", async () => {
+    stubFetch([OPUS]);
+    mountWithSession(predecessorAtUltra);
+    await settle();
+
+    expect(unsupportedNotice()).not.toBeNull();
+    expect(startButton()?.disabled).toBe(true);
+
+    flushSync(() => startButton()?.click());
+    await settle();
+    expect(createDashboardSession).not.toHaveBeenCalled();
+  });
+
+  it("clears once a supported level is chosen", async () => {
+    stubFetch([OPUS]);
+    mountWithSession(predecessorAtUltra);
+    await settle();
+
+    flushSync(() => setSelect(effortSelect()!, "low"));
+    await settle();
+    expect(unsupportedNotice()).toBeNull();
+    expect(startButton()?.disabled).toBe(false);
+
+    flushSync(() => startButton()?.click());
+    await settle();
+    expect(createDashboardSession.mock.calls[0]?.[0]).toMatchObject({
+      reasoningEffort: "low",
+    });
+  });
+
+  it("still explains itself when the preset advertises nothing at all", async () => {
+    // The notice used to live inside the "has options" branch, so this state
+    // rendered a dead button with no message and no control to clear it.
+    stubFetch([KIMI]);
+    mountWithSession({ ...predecessorAtUltra, modelPreset: "kimi-3" });
+    await settle();
+
+    expect(effortSelect()).toBeNull();
+    expect(unsupportedNotice()).not.toBeNull();
+    expect(startButton()?.disabled).toBe(true);
   });
 });

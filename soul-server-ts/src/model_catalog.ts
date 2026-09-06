@@ -132,6 +132,17 @@ export class ModelCatalog {
   }
 
   /**
+   * Presets whose *file* declares efforts, before transport narrowing. Lets the
+   * startup warning tell "the catalogue never declared any" apart from "the
+   * active transport dropped them", which needs a different fix.
+   */
+  declaredPresetIdsWithEfforts(): string[] {
+    return this.read().presets
+      .filter((preset) => (preset.supported_efforts?.length ?? 0) > 0)
+      .map((preset) => preset.id);
+  }
+
+  /**
    * Intersects declared efforts with what the active transport can carry. A
    * default that falls outside is dropped rather than clamped, so the preset
    * degrades to "auto" instead of promising a level it cannot deliver.
@@ -246,8 +257,12 @@ export function loadModelCatalog(
   const missingAtStartup = !fs.existsSync(catalogPath);
   const catalog = new ModelCatalog(catalogPath, logger, effortCapabilities);
   const presets = catalog.list();
+  const declared = new Set(
+    catalog.declaredPresetIdsWithEfforts(),
+  );
   const withoutEffortContract = presets
     .filter((preset) => (preset.supported_efforts?.length ?? 0) === 0)
+    .filter((preset) => !declared.has(preset.id))
     .map((preset) => preset.id);
   if (withoutEffortContract.length > 0) {
     logger?.warn?.(
