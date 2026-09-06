@@ -7,7 +7,57 @@ export const PAGE_ACTIONS = [
 
 export type PageAction = (typeof PAGE_ACTIONS)[number];
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+/**
+ * Read vocabulary only. Which values are *offered* comes from the node's model
+ * preset advertisement — this extension must not carry its own list.
+ */
+export type ReasoningEffort =
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
+
+export const REASONING_EFFORT_ACCEPT_SET: readonly ReasoningEffort[] = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+];
+
+export interface AdvertisedModelPreset {
+  id: string;
+  label: string;
+  supported_efforts?: readonly string[];
+  default_effort?: string;
+}
+
+export function buildModelPresetsEndpoint(baseUrl: string, nodeId: string): string {
+  const normalized = normalizeBaseUrl(baseUrl);
+  if (!normalized) throw new Error("Soulstream URL is not configured");
+  if (!nodeId) throw new Error("Node ID is not configured");
+  return `${normalized}/api/nodes/${encodeURIComponent(nodeId)}/model-presets`;
+}
+
+/**
+ * Every effort any preset on the node advertises. The options page has no preset
+ * picker, so it offers the node-wide union and lets the node reject a value the
+ * chosen agent's preset does not support.
+ */
+export function collectAdvertisedEfforts(
+  presets: readonly AdvertisedModelPreset[],
+): ReasoningEffort[] {
+  const seen = new Set<string>();
+  for (const preset of presets) {
+    for (const effort of preset.supported_efforts ?? []) seen.add(effort);
+  }
+  return REASONING_EFFORT_ACCEPT_SET.filter((effort) => seen.has(effort));
+}
 
 export interface MenuActionDefinition {
   id: PageAction;
@@ -136,7 +186,8 @@ export function mergeConfig(raw: Partial<Record<keyof ExtensionConfig, unknown>>
 }
 
 export function isReasoningEffort(value: unknown): value is ReasoningEffort {
-  return value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh";
+  return typeof value === "string"
+    && (REASONING_EFFORT_ACCEPT_SET as readonly string[]).includes(value);
 }
 
 export function isRestrictedUrl(url: string): boolean {

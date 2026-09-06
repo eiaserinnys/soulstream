@@ -6,6 +6,16 @@ import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import {
+  REASONING_EFFORT_ACCEPT_SET,
+  type ReasoningEffort,
+} from "../../engine/protocol.js";
+
+/** Accepts the full read vocabulary; the node validates against the preset. */
+const ReasoningEffortToolSchema = z.enum(
+  REASONING_EFFORT_ACCEPT_SET as unknown as [ReasoningEffort, ...ReasoningEffort[]],
+);
+
 import type { AgentProfile } from "../../agent_registry.js";
 import type { AgentProfileResolution } from "../../agent_profile_source.js";
 import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
@@ -65,6 +75,8 @@ export function registerSessionMgmtTools(
       inputSchema: {
         agent_id: z.string().optional(),
         model_preset: z.string().min(1).optional(),
+        /** Omit to use the selected model preset's advertised default effort. */
+        reasoning_effort: ReasoningEffortToolSchema.optional(),
         prompt: z.string(),
         caller_session_id: z.string().optional(),
         predecessor_session_id: z.string().min(1).optional(),
@@ -74,7 +86,7 @@ export function registerSessionMgmtTools(
         source_task_item_id: z.string().optional(),
       },
     },
-    async ({ agent_id, model_preset, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, container, source_task_item_id }) => {
+    async ({ agent_id, model_preset, reasoning_effort, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, container, source_task_item_id }) => {
       let agentResolution: AgentProfileResolution | undefined;
       let agent: AgentProfile | undefined;
       let resolvedAgentId: string;
@@ -119,6 +131,7 @@ export function registerSessionMgmtTools(
               }
             : {}),
           modelPreset: model_preset ?? agent.default_preset,
+          ...(reasoning_effort !== undefined ? { reasoningEffort: reasoning_effort } : {}),
           callerSessionId: resolveStructuralCallerSessionId(
             attribution.callerSessionId,
             notify_completion,

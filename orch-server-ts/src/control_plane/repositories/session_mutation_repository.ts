@@ -30,6 +30,7 @@ export type RegisterSessionMutation = {
   predecessorSessionId: string | null;
   modelPreset?: string | null;
   model?: string | null;
+  reasoningEffort?: string | null;
   notifyCompletion?: boolean | null;
   reviewRequired?: boolean;
   reviewState?: string;
@@ -58,7 +59,8 @@ export class SessionMutationRepository {
           ${sanitizedInput.reviewRequired ?? false},
           ${sanitizedInput.reviewState ?? "not_required"},
           ${sanitizedInput.predecessorSessionId},
-          ${sanitizedInput.modelPreset ?? null}, ${sanitizedInput.model ?? null}
+          ${sanitizedInput.modelPreset ?? null}, ${sanitizedInput.model ?? null},
+          ${sanitizedInput.reasoningEffort ?? null}
         )
       `;
       return { ok: true } as const;

@@ -183,6 +183,7 @@ export class TaskCreation {
       predecessorSessionId: params.predecessorSessionId ?? null,
       modelPreset: task.modelPreset ?? null,
       model: task.model ?? null,
+      reasoningEffort: task.reasoningEffort ?? null,
       notifyCompletion: task.notifyCompletion ?? true,
       reviewRequired: task.reviewRequired === true,
       reviewState: task.reviewState ?? "not_required",

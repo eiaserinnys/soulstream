@@ -179,6 +179,11 @@ export function SessionSuccessionModal({
         agentId: selectedAgentId,
         agent: selectedAgent,
         modelPreset: selectedModelPreset || null,
+        // Preserve the predecessor's effort. Dropping it here would silently
+        // rerun the successor at the preset default instead.
+        ...(resolvedDefaults.reasoningEffort
+          ? { reasoningEffort: resolvedDefaults.reasoningEffort }
+          : {}),
         container: { kind: "task", id: taskId },
         contextItems: contextSelection.contextItems.length > 0
           ? contextSelection.contextItems

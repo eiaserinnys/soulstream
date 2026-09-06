@@ -50,6 +50,7 @@ export class SessionReadRepository {
           s.node_id,
           s.model_preset,
           s.model,
+          s.reasoning_effort,
           s.predecessor_session_id,
           COUNT(*) OVER()::BIGINT AS total_count
         FROM sessions s
@@ -113,6 +114,7 @@ export class SessionReadRepository {
         s.agent_id,
         s.model_preset,
         s.model,
+        s.reasoning_effort,
         s.prompt,
         s.folder_id,
         s.metadata,

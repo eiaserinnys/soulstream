@@ -9,20 +9,37 @@ import type { SessionBindingWarning } from "@soulstream/page-model";
 
 import type { SessionSummary } from "./session-types";
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+/**
+ * Read vocabulary. `minimal` only exists for rows written before the model
+ * catalog became the source of truth; no current model advertises it.
+ * Selectable values always come from a preset's `supported_efforts`.
+ */
+export type ReasoningEffort =
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
 
-export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "xhigh";
+/**
+ * Display labels only. Which efforts are *offered* is decided by the selected
+ * model preset's advertised `supported_efforts` — never by a client-side list.
+ */
+export const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "X High",
+  max: "Max",
+  ultra: "Ultra",
+};
 
-export const REASONING_EFFORT_OPTIONS: readonly {
-  value: ReasoningEffort;
-  label: string;
-}[] = [
-  { value: "minimal", label: "Minimal" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "xhigh", label: "X High" },
-];
+export function reasoningEffortLabel(value: string): string {
+  return REASONING_EFFORT_LABELS[value] ?? value;
+}
 
 export interface ModelPresetAvailability {
   id: string;
@@ -33,6 +50,10 @@ export interface ModelPresetAvailability {
   reason_label: string | null;
   resets_at: string | null;
   usage_warning: boolean;
+  /** Selectable efforts advertised by the node. Absent = no effort control. */
+  supported_efforts?: readonly string[];
+  /** Effort applied when the request omits one. Absent = backend default. */
+  default_effort?: string;
 }
 
 // === JSONL Record ===
@@ -70,8 +91,12 @@ export interface CreateSessionRequest {
   model_preset?: string;
   /** 세션 생성 전에 업로드한 첨부 파일 경로. */
   attachmentPaths?: string[];
-  /** 추론 backend(codex/claude)용 reasoning effort. 생략 시 서버 기본값 xhigh. */
-  reasoningEffort?: ReasoningEffort;
+  /**
+   * Requested reasoning effort. Omit to let the node apply the selected model
+   * preset's advertised default. Typed as a plain string because the authority
+   * on which values are legal is the node's preset advertisement, not the client.
+   */
+  reasoningEffort?: string;
   /** orchestrator 모드 Claude OAuth 프로필 선택값. */
   oauth_profile_name?: string;
   /** Existing page block converted by the worker into the canonical primary session_ref. */

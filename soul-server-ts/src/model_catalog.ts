@@ -5,9 +5,17 @@ import { z } from "zod";
 
 import { AgentBackendSchema } from "./agent_registry.js";
 import {
+  REASONING_EFFORT_ACCEPT_SET,
+  type ReasoningEffort,
+} from "./engine/protocol.js";
+import {
   ANTHROPIC_API_KEY_ENV,
   isModelPresetEnvResolvable,
 } from "./model_preset_env.js";
+
+const ReasoningEffortSchema = z.enum(
+  REASONING_EFFORT_ACCEPT_SET as unknown as [ReasoningEffort, ...ReasoningEffort[]],
+);
 
 export const ModelPresetSchema = z.object({
   id: z.string().trim().min(1, "model preset id required"),
@@ -16,6 +24,35 @@ export const ModelPresetSchema = z.object({
   model: z.string().trim().min(1, "model preset model required"),
   env: z.record(z.string(), z.string()).optional(),
   usage_model_id: z.string().trim().min(1).optional(),
+  /**
+   * Effort levels this preset's model actually advertises. Canonical source for
+   * what a client may offer and what a create request may ask for. Omit when the
+   * model does not support effort at all — clients then show "auto (backend
+   * default)" instead of inventing a list.
+   */
+  supported_efforts: z.array(ReasoningEffortSchema).nonempty().optional(),
+  /** Effort applied when a create request does not specify one. */
+  default_effort: ReasoningEffortSchema.optional(),
+}).superRefine((preset, ctx) => {
+  if (preset.default_effort === undefined) return;
+  if (preset.supported_efforts === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["default_effort"],
+      message:
+        `Model preset ${preset.id}: default_effort requires supported_efforts`,
+    });
+    return;
+  }
+  if (!preset.supported_efforts.includes(preset.default_effort)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["default_effort"],
+      message:
+        `Model preset ${preset.id}: default_effort "${preset.default_effort}" `
+        + `is not in supported_efforts [${preset.supported_efforts.join(", ")}]`,
+    });
+  }
 });
 
 export type ModelPreset = z.infer<typeof ModelPresetSchema>;
@@ -50,6 +87,10 @@ export interface AdvertisedModelPreset {
    */
   usage_provider: "claude" | "codex" | null;
   usage_model_id?: string;
+  /** Advertised effort levels. Absent means this preset has no effort control. */
+  supported_efforts?: ReasoningEffort[];
+  /** Advertised default effort. Absent means the backend default applies. */
+  default_effort?: ReasoningEffort;
 }
 
 export interface ModelCatalogLogger {
@@ -104,6 +145,12 @@ export class ModelCatalog {
         usage_provider: usageProvider,
         ...(usageProvider
           ? { usage_model_id: preset.usage_model_id ?? preset.model }
+          : {}),
+        ...(preset.supported_efforts
+          ? { supported_efforts: [...preset.supported_efforts] }
+          : {}),
+        ...(preset.default_effort
+          ? { default_effort: preset.default_effort }
           : {}),
       };
     });

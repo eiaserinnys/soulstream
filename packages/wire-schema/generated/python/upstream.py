@@ -518,6 +518,7 @@ class ErrorMessage(TypedDict):
     requestId: NotRequired[str]
     request_id: NotRequired[str]
     command_type: NotRequired[str]
+    code: NotRequired[str]
 
 
 class InterveneAck(TypedDict):
@@ -762,7 +763,9 @@ class CreateSession(TypedDict):
     predecessor_session_id: NotRequired[str | None]
     notify_completion: NotRequired[bool]
     attachment_paths: NotRequired[list[str]]
-    reasoningEffort: NotRequired[Literal['minimal', 'low', 'medium', 'high', 'xhigh']]
+    reasoningEffort: NotRequired[
+        Literal['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+    ]
     pageAnchor: NotRequired[PageAnchor]
 
 

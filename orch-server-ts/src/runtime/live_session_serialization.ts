@@ -54,6 +54,8 @@ export function serializeSessionRow(
     agentId: firstDefined(row, "agent_id", "agentId") ?? null,
     modelPreset:
       firstDefined(row, "model_preset", "modelPreset") ?? null,
+    reasoningEffort:
+      firstDefined(row, "reasoning_effort", "reasoningEffort") ?? null,
     modelLabel: null,
     model: row.model ?? null,
     agentName: firstDefined(row, "agent_name", "agentName") ?? null,

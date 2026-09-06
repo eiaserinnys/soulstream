@@ -28,6 +28,7 @@ import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
 import type { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.js";
 import { sanitizeCodexEnv } from "./codex_env.js";
 import { mapThreadEvent } from "./codex_event_mapper.js";
+import { toCodexSdkEffort } from "./effort_boundary.js";
 import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
 import type {
   BackendId,
@@ -200,10 +201,18 @@ export class CodexEngineAdapter implements EnginePort {
     const model = typeof params.model === "string" && params.model.trim()
       ? params.model.trim()
       : undefined;
-    const modelReasoningEffort = resolveCodexModelReasoningEffort(
+    const resolvedEffort = resolveCodexModelReasoningEffort(
       model,
       params.reasoningEffort,
     );
+    const modelReasoningEffort = toCodexSdkEffort(resolvedEffort);
+    if (resolvedEffort && !modelReasoningEffort) {
+      this.logger.warn(
+        { model, reasoningEffort: resolvedEffort },
+        "CodexEngineAdapter: effort not expressible for the Codex SDK transport; "
+        + "using backend default (app-server transport supports the full set)",
+      );
+    }
     const threadOptions = {
       workingDirectory: this.workspaceDir,
       skipGitRepoCheck: true,

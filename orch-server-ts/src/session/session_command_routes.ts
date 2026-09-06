@@ -40,6 +40,42 @@ export const sessionCommandRouteAuthRequirements = {
   "POST /api/sessions/{session_id}/respond": true,
 } as const;
 
+/**
+ * Create-path failures that are the caller's input problem, not the node being
+ * unavailable. Anything absent from this table keeps the historical 503, so
+ * timeouts, offline nodes and unknown internal failures retain their meaning.
+ */
+const CREATE_ACK_ERROR_HTTP_STATUS: Readonly<Record<string, number>> = {
+  UNSUPPORTED_REASONING_EFFORT: 422,
+};
+
+function createAckErrorStatus(code: unknown): number | undefined {
+  return typeof code === "string"
+    ? CREATE_ACK_ERROR_HTTP_STATUS[code]
+    : undefined;
+}
+
+/**
+ * Sends a create-path node failure, preserving the node's own code and message.
+ * Input errors become 4xx; everything else stays 503.
+ */
+function sendCreateAckError(
+  reply: FastifyReply,
+  response: { code?: unknown; message?: unknown },
+): FastifyReply {
+  const statusCode = createAckErrorStatus(response.code);
+  if (statusCode === undefined) return serviceUnavailable(reply, response);
+  return reply.code(statusCode).send({
+    error: {
+      code: response.code,
+      message:
+        typeof response.message === "string"
+          ? response.message
+          : "Session creation rejected",
+    },
+  });
+}
+
 const RESPOND_ACK_ERROR_HTTP_STATUS: Readonly<Record<string, number>> = {
   SESSION_NOT_FOUND: 404,
   SESSION_NOT_RUNNING: 409,
@@ -148,7 +184,7 @@ export function registerSessionCommandRoutes(
         throw error;
       }
       if (isErrorAck(result)) {
-        return serviceUnavailable(reply, result);
+        return sendCreateAckError(reply, result);
       }
       const agentSessionId = payload.agentSessionId;
       if (
@@ -405,8 +441,10 @@ function sendMappedError(reply: FastifyReply, error: unknown): FastifyReply {
   }
 
   if (error instanceof PendingNodeCommandRejectedError) {
-    return serviceUnavailable(reply, {
-      code: "NODE_COMMAND_REJECTED",
+    // A rejection carrying a structured input-error code is the caller's
+    // problem; without one it stays an upstream failure.
+    return sendCreateAckError(reply, {
+      code: error.response?.code ?? "NODE_COMMAND_REJECTED",
       message: error.message,
     });
   }

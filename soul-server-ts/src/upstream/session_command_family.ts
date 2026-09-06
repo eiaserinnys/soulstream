@@ -21,6 +21,7 @@ import {
   UnknownAgentProfileError,
   buildSessionCreatedAck,
 } from "./task_runtime_commands.js";
+import { UnsupportedReasoningEffortError } from "../task/task_reasoning_effort.js";
 
 interface CreateSessionCmd extends CommandLike {
   type: "create_session";
@@ -196,6 +197,9 @@ async function handleCreateSession(
   } catch (err) {
     if (err instanceof UnknownAgentProfileError) {
       throw new CommandDispatchError(err.message);
+    }
+    if (err instanceof UnsupportedReasoningEffortError) {
+      throw new CommandDispatchError(err.message, err.code);
     }
     throw err;
   }

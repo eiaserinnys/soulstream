@@ -65,6 +65,7 @@ export function buildClaudeSdkOptions({
       logger,
     }),
     ...(options.model ? { model: options.model } : {}),
+    ...(options.effort ? { effort: options.effort } : {}),
     ...(systemPrompt ? { systemPrompt } : {}),
     ...(options.resumeSessionId ? { resume: options.resumeSessionId } : {}),
     ...(executablePath ? { pathToClaudeCodeExecutable: executablePath } : {}),

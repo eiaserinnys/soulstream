@@ -1358,6 +1358,10 @@ export interface ErrorMessage {
    */
   request_id?: string;
   command_type?: string;
+  /**
+   * Structured failure code. Lets orch map input errors to 4xx instead of collapsing every node error to 503.
+   */
+  code?: string;
   [k: string]: unknown;
 }
 /**
@@ -1591,9 +1595,9 @@ export interface CreateSession {
   notify_completion?: boolean;
   attachment_paths?: string[];
   /**
-   * Codex-only reasoning effort. Missing means codex adapter default xhigh.
+   * Reasoning effort accept-set. Legacy values (minimal) stay readable; new sessions are validated against the selected model preset's advertised supported_efforts. Missing means the preset default, then the backend default.
    */
-  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
   /**
    * Optional page block converted to the canonical primary session_ref before the first turn.
    */

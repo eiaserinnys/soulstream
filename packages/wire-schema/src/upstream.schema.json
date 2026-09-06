@@ -849,7 +849,11 @@
           "type": "string",
           "description": "구버전 snake_case 호환 필드."
         },
-        "command_type": { "type": "string" }
+        "command_type": { "type": "string" },
+        "code": {
+          "type": "string",
+          "description": "Structured failure code. Lets orch map input errors to 4xx instead of collapsing every node error to 503."
+        }
       }
     },
     "InterveneAck": {
@@ -1127,8 +1131,8 @@
         },
         "reasoningEffort": {
           "type": "string",
-          "enum": ["minimal", "low", "medium", "high", "xhigh"],
-          "description": "Codex-only reasoning effort. Missing means codex adapter default xhigh."
+          "enum": ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+          "description": "Reasoning effort accept-set. Legacy values (minimal) stay readable; new sessions are validated against the selected model preset's advertised supported_efforts. Missing means the preset default, then the backend default."
         },
         "pageAnchor": {
           "type": "object",

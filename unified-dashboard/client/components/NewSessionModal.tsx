@@ -20,17 +20,19 @@ import {
   SelectTrigger,
   SelectPopup,
   SelectItem,
-  DEFAULT_REASONING_EFFORT,
+  reasoningEffortLabel,
   DEFAULT_FOLDER_ID,
-  REASONING_EFFORT_OPTIONS,
   placeBoardSessionInYjs,
   type DashboardAgentConfig,
-  type ReasoningEffort,
 } from "@seosoyoung/soul-ui";
 import {
+  defaultEffortForPreset,
+  effortOptionsForPreset,
+  isEffortSupported,
   reasoningEffortForSubmit,
-  selectedAgentBackend,
 } from "../utils/reasoningEffort";
+import { useAppConfig } from "../config/AppConfigContext";
+import { useNodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
 import { createDashboardSession } from "client/lib/session-create";
 
 export function NewSessionModal() {
@@ -48,9 +50,8 @@ export function NewSessionModal() {
 
   const [selectedModalFolderId, setSelectedModalFolderId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState("");
-  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffort>(
-    DEFAULT_REASONING_EFFORT,
-  );
+  // null = follow the agent's preset default.
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<string | null>(null);
 
   // 에이전트 목록 (dashboardConfig에서)
   const agents: DashboardAgentConfig[] = dashboardConfig?.agents ?? [];
@@ -101,11 +102,30 @@ export function NewSessionModal() {
   const selectedModalFolderName =
     catalog?.folders.find((f) => f.id === selectedModalFolderId)?.name ??
     "Claude Code";
-  const selectedBackend = selectedAgentBackend(agents, selectedAgentId);
+  // This surface picks an agent, not a preset, so the effort default is looked
+  // up through the agent's default preset in the local node's model catalog.
+  const { nodeId: localNodeId } = useAppConfig();
+  const presetCatalog = useNodeModelPresetCatalog(localNodeId ?? "");
+  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
+  const agentPresetId = selectedAgent?.defaultPreset ?? null;
+  const selectedModelPresetInfo = agentPresetId
+    ? presetCatalog.presets.find((preset) => preset.id === agentPresetId) ?? null
+    : null;
+  const effortOptions = effortOptionsForPreset(selectedModelPresetInfo);
+  const presetDefaultEffort = defaultEffortForPreset(selectedModelPresetInfo);
+  const effectiveReasoningEffort = selectedReasoningEffort ?? presetDefaultEffort;
   const submitReasoningEffort = reasoningEffortForSubmit(
-    selectedBackend,
+    selectedModelPresetInfo,
     selectedReasoningEffort,
   );
+
+  // Changing agent refills that agent's preset default; an unsupported manual
+  // carry-over is dropped instead of being silently downgraded.
+  useEffect(() => {
+    if (!isEffortSupported(selectedModelPresetInfo, selectedReasoningEffort)) {
+      setSelectedReasoningEffort(null);
+    }
+  }, [selectedModelPresetInfo, selectedReasoningEffort]);
 
   // 현재 draft 복원
   const initialDraft = useMemo(() => {
@@ -148,7 +168,7 @@ export function NewSessionModal() {
       }
       closeModal();
       setSelectedAgentId("");
-      setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
+      setSelectedReasoningEffort(null);
     },
     [queryClient, selectedModalFolderId, selectedAgentId, submitReasoningEffort, agents, addOptimisticSession, clearDraft, draftKey, closeModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
   );
@@ -158,7 +178,7 @@ export function NewSessionModal() {
       if (!open) {
         closeModal();
         setSelectedAgentId("");
-        setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
+        setSelectedReasoningEffort(null);
       }
     },
     [closeModal],
@@ -208,22 +228,24 @@ export function NewSessionModal() {
     </div>
   ) : undefined;
 
-  const optionsSlot = submitReasoningEffort ? (
+  const optionsSlot = effortOptions.length > 0 ? (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">Reasoning Effort</label>
       <Select
-        value={selectedReasoningEffort}
-        onValueChange={(v) => setSelectedReasoningEffort((v || DEFAULT_REASONING_EFFORT) as ReasoningEffort)}
+        value={effectiveReasoningEffort ?? ""}
+        onValueChange={(v) => setSelectedReasoningEffort(v || null)}
       >
         <SelectTrigger>
           <span className="flex-1 truncate">
-            {REASONING_EFFORT_OPTIONS.find((option) => option.value === selectedReasoningEffort)?.label}
+            {effectiveReasoningEffort
+              ? reasoningEffortLabel(effectiveReasoningEffort)
+              : "자동 (백엔드 기본값)"}
           </span>
         </SelectTrigger>
         <SelectPopup>
-          {REASONING_EFFORT_OPTIONS.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
+          {effortOptions.map((option) => (
+            <SelectItem key={option} value={option}>
+              {reasoningEffortLabel(option)}
             </SelectItem>
           ))}
         </SelectPopup>

@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import type {
   SessionStore,
   SessionStoreFlush,
+  EffortLevel,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
@@ -27,6 +28,7 @@ import type {
   InputResponseDeliveryResult,
   ClaudePermissionMode,
   ClaudeBackgroundTaskControlResult,
+  ReasoningEffort,
   TurnOrigin,
   SSEEventPayload,
   SupportsClaudeBackgroundTasks,
@@ -45,6 +47,7 @@ import {
 import { ClaudeSdkClient } from "./claude_sdk_client.js";
 import type { ClaudeSessionClientRegistry } from "./claude_session_client_registry.js";
 import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
+import { toClaudeSdkEffort } from "./effort_boundary.js";
 import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
 
 export {
@@ -65,6 +68,8 @@ export interface ClaudeRunOptions {
   imageAttachmentPaths?: string[];
   resumeSessionId?: string;
   model?: string;
+  /** Maps to Claude SDK `Options.effort` (wire `output_config.effort`). */
+  effort?: EffortLevel;
   systemPrompt?: string;
   /** Python `agents.yaml.allowed_tools` → Claude SDK `ClaudeAgentOptions.allowedTools`. */
   allowedTools?: string[];
@@ -455,6 +460,13 @@ export class ClaudeEngineAdapter
     signal: AbortSignal,
   ): ClaudeRunOptions {
     const model = normalizeClaudeModel(params.model);
+    const claudeEffort = toClaudeSdkEffort(params.reasoningEffort);
+    if (params.reasoningEffort && !claudeEffort) {
+      this.logger.warn(
+        { model, reasoningEffort: params.reasoningEffort },
+        "ClaudeEngineAdapter: effort not expressible for Claude; using backend default",
+      );
+    }
     const env = withScratchWorkspaceEnv(
       buildClaudeEnvironment({
         processEnv: this.processEnv,
@@ -473,6 +485,7 @@ export class ClaudeEngineAdapter
         : {}),
       ...(params.resumeSessionId ? { resumeSessionId: params.resumeSessionId } : {}),
       ...(model ? { model } : {}),
+      ...(claudeEffort ? { effort: claudeEffort } : {}),
       ...(params.systemPrompt ? { systemPrompt: params.systemPrompt } : {}),
       ...(params.allowedTools !== undefined ? { allowedTools: params.allowedTools } : {}),
       ...(params.disallowedTools !== undefined ? { disallowedTools: params.disallowedTools } : {}),

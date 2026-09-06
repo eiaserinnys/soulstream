@@ -35,7 +35,39 @@ export type SSEEventPayload = SessionEventEnvelope["event"];
  */
 export type BackendId = "claude" | "codex" | "openai-agents";
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+/**
+ * Accept-set for reasoning effort (D10a): every value the wire, DB and resume
+ * paths must be able to READ. `minimal` is retained purely for legacy rows and
+ * older clients — no current model advertises it. `max`/`ultra` are advertised
+ * by real models (Claude max; Codex max/ultra) and are therefore accepted.
+ *
+ * This is deliberately NOT the set a new session may be created with. New
+ * requests are validated against the selected preset's advertised
+ * `supported_efforts` — see resolveReasoningEffortForCreate().
+ */
+export type ReasoningEffort =
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
+
+export const REASONING_EFFORT_ACCEPT_SET: readonly ReasoningEffort[] = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+];
+
+export function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return typeof value === "string"
+    && (REASONING_EFFORT_ACCEPT_SET as readonly string[]).includes(value);
+}
 
 export const CLAUDE_PERMISSION_MODES = [
   "default",
@@ -111,7 +143,12 @@ export interface EngineExecuteParams {
   /** One-shot Claude recovery: start fresh and atomically replace this durable predecessor. */
   backendSessionRolloverFrom?: string;
   model?: string | null;
-  /** Codex SDK ThreadOptions.modelReasoningEffort. Missing defaults to xhigh at adapter boundary. */
+  /**
+   * Resolved reasoning effort for this turn. Codex maps it to
+   * ThreadOptions.modelReasoningEffort / TurnStartParams.effort; Claude maps it
+   * to the SDK `Options.effort` (wire `output_config.effort`). Missing means the
+   * backend default applies.
+   */
   reasoningEffort?: ReasoningEffort;
   /**
    * 시스템 프롬프트. 백엔드별 지원 여부:

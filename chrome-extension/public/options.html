@@ -42,14 +42,11 @@
           </label>
           <label>
             Reasoning effort
+            <!-- Options are populated from the node's model catalog at load. -->
             <select id="reasoning-effort" name="reasoningEffort">
               <option value="">Server default</option>
-              <option value="minimal">Minimal</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="xhigh">X High</option>
             </select>
+            <small id="reasoning-effort-note" class="note" hidden></small>
           </label>
         </div>
 

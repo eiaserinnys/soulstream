@@ -14,6 +14,7 @@ import {
   extractClaudeBackendRolloverState,
   extractClaudePermissionModeFromMetadata,
 } from "./task_metadata.js";
+import { isReasoningEffort } from "../engine/protocol.js";
 
 const VALID_TASK_STATUSES: readonly TaskStatus[] = [
   "initializing",
@@ -170,6 +171,11 @@ export function hydrateEvictedTaskFromSessionRow(
       : {}),
     modelPreset: row.model_preset,
     model: row.model,
+    // Legacy rows predate 089 and stay undefined, which preserves their
+    // pre-existing backend-default behaviour.
+    ...(isReasoningEffort(row.reasoning_effort)
+      ? { reasoningEffort: row.reasoning_effort }
+      : {}),
     createdAt: row.created_at,
     completedAt: completedAtFromRow(row, hydratedStatus),
     lastAssistantText: row.last_assistant_text ?? undefined,

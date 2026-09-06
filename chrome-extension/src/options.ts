@@ -1,9 +1,12 @@
 import {
   DEFAULT_CONFIG,
+  buildModelPresetsEndpoint,
   buildSessionEndpoint,
+  collectAdvertisedEfforts,
   mergeConfig,
   normalizeBaseUrl,
   normalizeBodyCharLimit,
+  type AdvertisedModelPreset,
   type ExtensionConfig,
 } from "./shared/schema.js";
 import { sessionHeaders } from "./shared/soulstream.js";
@@ -23,6 +26,71 @@ testButton?.addEventListener("click", () => {
   void testConnection();
 });
 
+const EFFORT_LABELS: Record<string, string> = {
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "X High",
+  max: "Max",
+  ultra: "Ultra",
+};
+
+/**
+ * Fills the effort picker from the node's model catalog. A stored value the node
+ * no longer advertises is kept selected and flagged for re-selection — never
+ * silently rewritten to another level.
+ */
+async function populateReasoningEfforts(config: ExtensionConfig): Promise<void> {
+  const select = document.querySelector<HTMLSelectElement>("#reasoning-effort");
+  const note = document.querySelector<HTMLElement>("#reasoning-effort-note");
+  if (!select) return;
+
+  let efforts: string[] = [];
+  let loadFailed = false;
+  try {
+    const response = await fetch(buildModelPresetsEndpoint(config.baseUrl, config.nodeId), {
+      headers: config.bearerToken
+        ? { Authorization: `Bearer ${config.bearerToken}` }
+        : {},
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = (await response.json()) as { model_presets?: AdvertisedModelPreset[] };
+    efforts = collectAdvertisedEfforts(body.model_presets ?? []);
+  } catch {
+    loadFailed = true;
+  }
+
+  select.replaceChildren();
+  select.append(new Option("Server default", ""));
+  for (const effort of efforts) {
+    select.append(new Option(EFFORT_LABELS[effort] ?? effort, effort));
+  }
+
+  const stored = config.reasoningEffort;
+  const storedUnsupported = Boolean(stored) && !efforts.includes(stored);
+  if (storedUnsupported) {
+    // Keep the saved value visible so the user sees what must be re-chosen.
+    select.append(new Option(`${EFFORT_LABELS[stored] ?? stored} (unsupported)`, stored));
+  }
+  select.value = stored;
+
+  if (note) {
+    if (loadFailed) {
+      note.textContent =
+        "Could not load model presets. Set Soulstream URL, token and Node ID, then reopen.";
+      note.hidden = false;
+    } else if (storedUnsupported) {
+      note.textContent =
+        `"${stored}" is no longer offered by this node. Pick a supported effort.`;
+      note.hidden = false;
+    } else {
+      note.textContent = "";
+      note.hidden = true;
+    }
+  }
+}
+
 async function loadOptions(): Promise<void> {
   const config = await readConfig();
   setInput("base-url", config.baseUrl);
@@ -30,7 +98,7 @@ async function loadOptions(): Promise<void> {
   setInput("node-id", config.nodeId);
   setInput("profile", config.profile);
   setInput("folder-id", config.folderId);
-  setInput("reasoning-effort", config.reasoningEffort);
+  await populateReasoningEfforts(config);
   setInput("body-char-limit", String(config.bodyCharLimit));
   const includeBody = document.querySelector<HTMLInputElement>("#include-body");
   if (includeBody) includeBody.checked = config.includeBody;

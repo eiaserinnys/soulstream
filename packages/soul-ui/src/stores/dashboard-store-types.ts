@@ -40,6 +40,11 @@ export interface DashboardAgentConfig {
   hasPortrait: boolean;
   portraitUrl: string | null;
   backend?: string | null;
+  /**
+   * Agent's default model preset id. Lets an agent-only surface look the effort
+   * default up in the node model catalog instead of hardcoding one.
+   */
+  defaultPreset?: string | null;
 }
 
 export interface DashboardConfig {

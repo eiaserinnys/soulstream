@@ -115,6 +115,8 @@ export interface SessionSummary extends AgentProfile, UserProfile {
   modelLabel?: string | null;
   /** 세션 생성 시 프리셋에서 해석해 영속한 실제 모델 문자열. */
   model?: string | null;
+  /** 생성 시 확정해 영속한 reasoning effort. null이면 백엔드 기본값. */
+  reasoningEffort?: string | null;
   /** 이 세션을 띄운 발신 세션 ID (위임 세션이면 존재, 직접이면 undefined) */
   callerSessionId?: string;
 }

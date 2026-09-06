@@ -17,11 +17,9 @@ import {
   SelectItem,
   useDashboardStore,
   cn,
-  DEFAULT_REASONING_EFFORT,
   DEFAULT_FOLDER_ID,
-  REASONING_EFFORT_OPTIONS,
+  reasoningEffortLabel,
   placeBoardSessionInYjs,
-  type ReasoningEffort,
 } from "@seosoyoung/soul-ui";
 import type {
   AgentInfo,
@@ -30,8 +28,10 @@ import type {
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { useAppConfig } from "../config/AppConfigContext";
 import {
+  defaultEffortForPreset,
+  effortOptionsForPreset,
+  isEffortSupported,
   reasoningEffortForSubmit,
-  selectedAgentBackend,
 } from "../utils/reasoningEffort";
 import { createDashboardSession } from "client/lib/session-create";
 import { NodeModelPresetSelect } from "./NodeModelPresetSelect";
@@ -66,9 +66,9 @@ export function OrchestratorNewSessionModal() {
   const [modelPresetValid, setModelPresetValid] = useState(true);
   const [modelPresetError, setModelPresetError] = useState<string | null>(null);
   const modelPresetSource = useRef<"automatic" | "explicit" | "agent" | null>(null);
-  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffort>(
-    DEFAULT_REASONING_EFFORT,
-  );
+  // null = follow the preset's advertised default. A manual pick only ever
+  // applies to this one session and never mutates the preset default.
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<string | null>(null);
   const [oauthProfiles, setOauthProfiles] = useState<OAuthProfile[]>([]);
   const [selectedOAuthProfile, setSelectedOAuthProfile] = useState<string | null>(null);
 
@@ -82,12 +82,22 @@ export function OrchestratorNewSessionModal() {
   const initialDraft = useMemo(() => {
     return useDashboardStore.getState().drafts[draftKey] ?? "";
   }, [draftKey, isModalOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-  const selectedBackend = selectedModelPresetInfo?.backend
-    ?? selectedAgentBackend(agents, selectedAgentId);
+  const effortOptions = effortOptionsForPreset(selectedModelPresetInfo);
+  const presetDefaultEffort = defaultEffortForPreset(selectedModelPresetInfo);
+  const effectiveReasoningEffort = selectedReasoningEffort ?? presetDefaultEffort;
   const submitReasoningEffort = reasoningEffortForSubmit(
-    selectedBackend,
+    selectedModelPresetInfo,
     selectedReasoningEffort,
   );
+
+  // Switching node/model refills the new preset's default. A manual pick that
+  // the new preset does not advertise is dropped rather than downgraded, so a
+  // late catalog response can never leak the previous model's effort.
+  useEffect(() => {
+    if (!isEffortSupported(selectedModelPresetInfo, selectedReasoningEffort)) {
+      setSelectedReasoningEffort(null);
+    }
+  }, [selectedModelPresetInfo, selectedReasoningEffort]);
 
   const handleDraftChange = useCallback(
     (value: string) => {
@@ -241,7 +251,7 @@ export function OrchestratorNewSessionModal() {
       setModelPresetValid(true);
       setModelPresetError(null);
       modelPresetSource.current = null;
-      setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
+      setSelectedReasoningEffort(null);
       setSelectedOAuthProfile(null);
     },
     [selectedNodeId, selectedModalFolderId, selectedAgentId, selectedModelPreset, submitReasoningEffort, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
@@ -385,22 +395,24 @@ export function OrchestratorNewSessionModal() {
           {modelPresetError}
         </small>
       ) : null}
-      {submitReasoningEffort ? (
+      {effortOptions.length > 0 ? (
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground">Reasoning Effort</label>
           <Select
-            value={selectedReasoningEffort}
-            onValueChange={(v) => setSelectedReasoningEffort((v || DEFAULT_REASONING_EFFORT) as ReasoningEffort)}
+            value={effectiveReasoningEffort ?? ""}
+            onValueChange={(v) => setSelectedReasoningEffort(v || null)}
           >
             <SelectTrigger>
               <span className="flex-1 truncate">
-                {REASONING_EFFORT_OPTIONS.find((option) => option.value === selectedReasoningEffort)?.label}
+                {effectiveReasoningEffort
+                  ? reasoningEffortLabel(effectiveReasoningEffort)
+                  : "자동 (백엔드 기본값)"}
               </span>
             </SelectTrigger>
             <SelectPopup>
-              {REASONING_EFFORT_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
+              {effortOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {reasoningEffortLabel(option)}
                 </SelectItem>
               ))}
             </SelectPopup>
@@ -424,7 +436,7 @@ export function OrchestratorNewSessionModal() {
           setModelPresetValid(true);
           setModelPresetError(null);
           modelPresetSource.current = null;
-          setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
+          setSelectedReasoningEffort(null);
           setSelectedOAuthProfile(null);
         }
       }}
