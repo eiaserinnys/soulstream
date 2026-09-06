@@ -25,7 +25,7 @@ const sessions: SessionSummary[] = [
     eventCount: 2,
     prompt: "Same folder child\nDetailed delegation prompt",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "Working on the child implementation\nSecond line ignored",
       timestamp: "2026-06-01T01:10:00.000Z",
     },

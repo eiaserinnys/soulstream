@@ -108,7 +108,7 @@ export function DashboardLayout() {
   useReadPositionSync();
 
   // 브라우저 알림 (완료/에러/인터벤션)
-  useNotification(detailActive);
+  useNotification(true);
 
   // URL ↔ 스토어 동기화 (/{sessionId} 라우팅)
   useUrlSync();
@@ -279,7 +279,7 @@ export function DashboardLayout() {
             sessions={sessions}
           />
           <NewSessionModal />
-          <AskQuestionBanner enabled={detailActive} />
+          <AskQuestionBanner treeEnabled={detailActive} />
         </>
       }
     />

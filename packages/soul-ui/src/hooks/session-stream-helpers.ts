@@ -25,6 +25,7 @@ import {
   mergeSessionCreatedSummary,
 } from "./session-catalog-helpers";
 import { dedupeSessionSnapshots } from "./session-snapshot-helpers";
+import { applySessionFeedDelta } from "./session-feed-projection";
 export {
   applySessionLifecycleSnapshot,
   applySessionLifecycleSnapshotToList,
@@ -317,6 +318,25 @@ export function applySessionUpdated(
       ...page,
       sessions: page.sessions.map((s) =>
         s.agentSessionId === agentSessionId ? { ...s, ...updates } : s,
+      ),
+    })),
+  });
+}
+
+/** Applies lifecycle fields and current-dependent feed projections atomically. */
+export function applySessionUpdatedEvent(
+  data: InfiniteData<SessionPage>,
+  event: SessionUpdatedStreamEvent,
+  updates: Partial<SessionSummary>,
+): InfiniteData<SessionPage> {
+  return retainEqualValue(data, {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      sessions: page.sessions.map((session) =>
+        session.agentSessionId === event.agent_session_id
+          ? { ...session, ...updates, ...applySessionFeedDelta(session, event) }
+          : session,
       ),
     })),
   });

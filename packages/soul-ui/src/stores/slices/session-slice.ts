@@ -138,8 +138,13 @@ export const createSessionSlice: StateCreator<
   // 합성 후 full store에서 cross-slice set 가능 (Zustand 합성 패턴 표준).
   clearTree: () => {
     clearFlattenTreeCache();
+    const {
+      pendingNotifications: _keepBrowserNotices,
+      historyResetVersion: _keepHistoryResetVersion,
+      ...eventState
+    } = getEventProcessingInitialState();
     set({
-      ...getEventProcessingInitialState(),
+      ...eventState,
       selectedCardId: null,
       selectedNodeId: null,
       selectedEventNodeData: null,

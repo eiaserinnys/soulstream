@@ -45,6 +45,8 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
   const processEvents = useDashboardStore((state) => state.processEvents);
   const clearTree = useDashboardStore((state) => state.clearTree);
+  const clearTreeRef = useRef(clearTree);
+  clearTreeRef.current = clearTree;
   const processEventsRef = useRef(processEvents);
   processEventsRef.current = processEvents;
 
@@ -109,9 +111,23 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     const key = source.sessionKey;
     if (!key) return;
 
+    const resetMarkerIndex = chunk.findIndex(
+      (item) => item.event.type === "history_sync" && item.event.reset_required === true,
+    );
+    const resetMarker = resetMarkerIndex >= 0 ? chunk[resetMarkerIndex] : undefined;
+    const eventsToProcess = resetMarker
+      ? chunk.slice(resetMarkerIndex).map(({ event, eventId }) => ({ event, eventId }))
+      : chunk.map(({ event, eventId }) => ({ event, eventId }));
+    if (resetMarker) {
+      clearTreeRef.current();
+      useDashboardStore.setState((state) => ({
+        historyResetVersion: state.historyResetVersion + 1,
+      }));
+    }
+
     try {
       processEventsRef.current(
-        chunk.map(({ event, eventId }) => ({ event, eventId })),
+        eventsToProcess,
       );
     } catch (error) {
       console.error("[useSessionProvider] Failed to process detail events:", error);
@@ -245,6 +261,12 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
     const handleStatus = (nextStatus: "connecting" | "connected" | "error") => {
       if (generation !== generationRef.current) return;
+      if (nextStatus === "connecting") {
+        // Every physical connection starts with replay/snapshot. Suppress raw
+        // detail notifications until its history_sync marker; the global feed
+        // stream remains the canonical all-session notification plane.
+        useDashboardStore.getState().processingCtx.historySynced = false;
+      }
       setStatus(nextStatus);
     };
 

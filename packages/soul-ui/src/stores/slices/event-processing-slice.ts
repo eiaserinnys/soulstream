@@ -24,7 +24,7 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { SoulSSEEvent, EventTreeNode } from "@shared/types";
+import type { SessionNotice, EventTreeNode } from "@shared/types";
 import type { DashboardState, DashboardActions } from "../dashboard-store-types";
 import {
   type ProcessingContext,
@@ -37,6 +37,10 @@ import {
 import { applyClaudeRuntimeStoreEvent } from "../claude-runtime-state";
 import { flattenTree } from "../../lib/flatten-tree";
 import { groupMessages } from "../../lib/grouping";
+import {
+  appendBrowserNotices,
+  detailEventToSessionNotice,
+} from "../../shared/browser-notices";
 
 /**
  * event-processing-slice가 소유하는 필드들의 초기값을 매번 새 인스턴스로 생성한다.
@@ -54,6 +58,7 @@ export function getEventProcessingInitialState(): Pick<
   | "chatPrependedCount"
   | "chatLastPrependAtMs"
   | "lastEventId"
+  | "historyResetVersion"
   | "pendingNotifications"
   | "processingCtx"
 > {
@@ -64,7 +69,8 @@ export function getEventProcessingInitialState(): Pick<
     chatPrependedCount: 0,
     chatLastPrependAtMs: null as number | null,
     lastEventId: 0,
-    pendingNotifications: [] as SoulSSEEvent[],
+    historyResetVersion: 0,
+    pendingNotifications: [] as SessionNotice[],
     processingCtx: createProcessingContext(),
   };
 }
@@ -77,6 +83,7 @@ export type EventProcessingSlice = Pick<
   | "chatPrependedCount"
   | "chatLastPrependAtMs"
   | "lastEventId"
+  | "historyResetVersion"
   | "pendingNotifications"
   | "processingCtx"
 > &
@@ -136,6 +143,9 @@ export const createEventProcessingSlice: StateCreator<
     }
 
     if (result.updated) {
+      const notice = result.notify
+        ? detailEventToSessionNotice(event, eventId, state.activeSessionKey)
+        : null;
       set({
         tree: result.root,
         treeVersion: state.treeVersion + 1,
@@ -143,18 +153,21 @@ export const createEventProcessingSlice: StateCreator<
         ...(nextClaudeRuntime !== state.claudeRuntime
           ? { claudeRuntime: nextClaudeRuntime }
           : {}),
-        ...(result.notify
-          ? { pendingNotifications: [...state.pendingNotifications, event] }
+        ...(notice
+          ? { pendingNotifications: appendBrowserNotices(state.pendingNotifications, [notice]) }
           : {}),
       });
     } else {
+      const notice = result.notify
+        ? detailEventToSessionNotice(event, eventId, state.activeSessionKey)
+        : null;
       set({
         lastEventId: result.newLastEventId,
         ...(nextClaudeRuntime !== state.claudeRuntime
           ? { claudeRuntime: nextClaudeRuntime }
           : {}),
-        ...(result.notify
-          ? { pendingNotifications: [...state.pendingNotifications, event] }
+        ...(notice
+          ? { pendingNotifications: appendBrowserNotices(state.pendingNotifications, [notice]) }
           : {}),
       });
     }
@@ -192,6 +205,13 @@ export const createEventProcessingSlice: StateCreator<
       );
     }
 
+    const notices = result.notifications.flatMap((event) => {
+      const source = events.find((item) => item.event === event);
+      const notice = source
+        ? detailEventToSessionNotice(event, source.eventId, state.activeSessionKey)
+        : null;
+      return notice ? [notice] : [];
+    });
     set({
       ...(result.updated
         ? { tree: result.root, treeVersion: state.treeVersion + 1 }
@@ -200,8 +220,8 @@ export const createEventProcessingSlice: StateCreator<
         ? { claudeRuntime: nextClaudeRuntime }
         : {}),
       lastEventId: result.maxEventId,
-      ...(result.notifications.length > 0
-        ? { pendingNotifications: [...state.pendingNotifications, ...result.notifications] }
+      ...(notices.length > 0
+        ? { pendingNotifications: appendBrowserNotices(state.pendingNotifications, notices) }
         : {}),
     });
 

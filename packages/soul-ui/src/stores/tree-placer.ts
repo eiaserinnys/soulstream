@@ -28,12 +28,13 @@ import type {
   EventTreeNode,
   SoulSSEEvent,
   TextStartEvent,
+  TextSnapshotEvent,
   ToolStartEvent,
   InputRequestEvent,
   ToolApprovalRequestedEvent,
 } from "@shared/types";
 import type { ProcessingContext, TextTargetNode } from "./processing-context";
-import { makeNode, registerNode } from "./processing-context";
+import { ensureRoot, makeNode, registerNode } from "./processing-context";
 import { diag } from "../lib/diag";
 import { extractNodeEventId as readNodeEventId } from "../lib/event-tree-id";
 
@@ -51,8 +52,15 @@ function extractNodeEventId(node: EventTreeNode): number {
 }
 
 function textStreamKey(event: TextStartEvent): string | null {
+  if (typeof event.streamIdentity === "string" && event.streamIdentity) {
+    return event.streamIdentity;
+  }
   const toolUseId = (event as unknown as { tool_use_id?: unknown }).tool_use_id;
   return typeof toolUseId === "string" && toolUseId ? toolUseId : null;
+}
+
+function liveTextNodeKey(identity: string): string {
+  return `app-server-agent-message:${identity}`;
 }
 
 /**
@@ -185,6 +193,10 @@ export function handleTextStart(
   // ancestor 동봉으로 이미 처리된 text 노드의 재진입 방지 — silent skip.
   // 호출자(event-processor)에 false를 반환하여 activeTextTarget 변경을 막는다.
   if (ctx.nodeMap.has(nodeMapKey)) {
+    if (streamKey) {
+      const existing = ctx.nodeMap.get(liveTextNodeKey(streamKey));
+      if (existing?.type === "text") ctx.activeTextTarget = existing;
+    }
     diag("tree-placer", "→ skip text (already in nodeMap)", { eventId });
     return false;
   }
@@ -195,7 +207,7 @@ export function handleTextStart(
   const textNode = makeNode(eventId > 0 ? `text-${eventId}` : `text-${streamKey ?? eventId}`, "text", "");
   registerNode(ctx, textNode);
   ctx.nodeMap.set(nodeMapKey, textNode);
-  if (streamKey) ctx.nodeMap.set(`app-server-agent-message:${streamKey}`, textNode);
+  if (streamKey) ctx.nodeMap.set(liveTextNodeKey(streamKey), textNode);
   insertNodeInOrder(root, textNode, eventId);
   diag("tree-placer", "→ insert", {
     eventId,
@@ -205,4 +217,62 @@ export function handleTextStart(
 
   ctx.activeTextTarget = textNode as TextTargetNode;
   return true;
+}
+
+
+/** Installs a cumulative reconnect prefix without pretending truncated text was recovered. */
+export function applyLiveTextSnapshot(
+  event: TextSnapshotEvent,
+  ctx: ProcessingContext,
+  root: EventTreeNode | null,
+): { root: EventTreeNode | null; updated: boolean } {
+  ctx.liveTextThroughSeq = Math.max(ctx.liveTextThroughSeq, event.throughLiveSeq);
+  let updated = false;
+
+  for (const stream of event.streams) {
+    const identity = stream.streamIdentity;
+    if (!identity) continue;
+    ctx.liveTextLastSeqByIdentity.set(
+      identity,
+      Math.max(ctx.liveTextLastSeqByIdentity.get(identity) ?? 0, event.throughLiveSeq),
+    );
+    const mapKey = liveTextNodeKey(identity);
+    const existing = ctx.nodeMap.get(mapKey);
+    if (ctx.finalizedTextStreams.has(identity)) continue;
+
+    if (stream.resetRequired || stream.text === null) {
+      ctx.resetRequiredTextStreams.add(identity);
+      if (existing?.type === "text") {
+        if (root) root.children = root.children.filter((child) => child !== existing);
+        if (ctx.activeTextTarget === existing) ctx.activeTextTarget = null;
+        for (const [key, value] of ctx.nodeMap) {
+          if (value === existing) ctx.nodeMap.delete(key);
+        }
+        updated = true;
+      }
+      continue;
+    }
+
+    ctx.resetRequiredTextStreams.delete(identity);
+    root = ensureRoot(root, ctx);
+    if (existing?.type === "text") {
+      if (existing.content !== stream.text || existing.completed) updated = true;
+      existing.content = stream.text;
+      existing.completed = false;
+      existing.textCompleted = false;
+      ctx.activeTextTarget = existing;
+      continue;
+    }
+
+    const node = makeNode(`text-live:${identity}`, "text", stream.text, {
+      timestamp: Date.parse(stream.updatedAt) / 1000,
+    }) as TextTargetNode;
+    registerNode(ctx, node);
+    ctx.nodeMap.set(`text:${identity}`, node);
+    ctx.nodeMap.set(mapKey, node);
+    insertNodeInOrder(root, node, 0);
+    ctx.activeTextTarget = node;
+    updated = true;
+  }
+  return { root, updated };
 }

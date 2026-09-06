@@ -31,7 +31,7 @@ import {
   applyUpdate,
   applyPendingResolution,
 } from "./node-factory";
-import { placeInTree, handleTextStart } from "./tree-placer";
+import { applyLiveTextSnapshot, placeInTree, handleTextStart } from "./tree-placer";
 import { shouldNotify } from "./session-updater";
 
 /** ensureRoot가 필요한 이벤트 타입 (text_delta, text_end, tool_result, subagent_stop 제외) */
@@ -43,6 +43,34 @@ const NEEDS_ROOT = new Set([
   "guardrail_tripwire", "assistant_message", "assistant_error", "away_summary",
   "turn_summary",
 ]);
+
+/** Legacy text events remain supported; exact id=0 metadata enables dedupe. */
+export function acceptLiveTextEvent(
+  event: SoulSSEEvent,
+  eventId: number,
+  ctx: ProcessingContext,
+): boolean {
+  if (
+    eventId !== 0
+    || (event.type !== "text_start" && event.type !== "text_delta" && event.type !== "text_end")
+  ) return true;
+  const { streamIdentity, liveSeq, liveTextMode } = event;
+  if (
+    typeof streamIdentity !== "string"
+    || streamIdentity.length === 0
+    || !Number.isSafeInteger(liveSeq)
+    || (liveSeq ?? -1) < 0
+    || (liveTextMode !== "replace" && liveTextMode !== "append")
+  ) return true;
+  const sequence = liveSeq as number;
+  const prior = Math.max(
+    ctx.liveTextThroughSeq,
+    ctx.liveTextLastSeqByIdentity.get(streamIdentity) ?? 0,
+  );
+  if (sequence <= prior) return false;
+  ctx.liveTextLastSeqByIdentity.set(streamIdentity, sequence);
+  return !ctx.resetRequiredTextStreams.has(streamIdentity);
+}
 
 /**
  * 세션 루트 노드에 LLM 메타데이터를 설정한다.
@@ -133,6 +161,22 @@ export function processEventSingle(
     };
   }
 
+
+  if (event.type === "text_snapshot") {
+    const snapshot = applyLiveTextSnapshot(event, ctx, root);
+    return {
+      root: snapshot.root,
+      updated: snapshot.updated,
+      notify: false,
+      newLastEventId: lastEventId,
+      isHistorySync: false,
+    };
+  }
+
+  if (!acceptLiveTextEvent(event, eventId, ctx)) {
+    return { root, updated: false, notify: false, newLastEventId: lastEventId, isHistorySync: false };
+  }
+
   // root 보장
   if (NEEDS_ROOT.has(event.type)) {
     root = ensureRoot(root, ctx);
@@ -214,6 +258,15 @@ export function processEventsBatch(
     // 같은 배치 내 ancestor 동봉 중복은 placeInTree의 nodeMap.has 가드가 silent skip.
     if (!skipDedup && eventId > 0 && eventId <= lastEventId) continue;
     if (eventId > maxEventId) maxEventId = eventId;
+
+    if (event.type === "text_snapshot") {
+      const snapshot = applyLiveTextSnapshot(event, ctx, root);
+      root = snapshot.root;
+      updated = snapshot.updated || updated;
+      continue;
+    }
+
+    if (!acceptLiveTextEvent(event, eventId, ctx)) continue;
 
     // subtree_update / task_updated / custom_view_updated — 트리 변경 없음, dedup만 갱신.
     if (event.type === "subtree_update" || event.type === "task_updated" || event.type === "custom_view_updated") {

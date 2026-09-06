@@ -315,4 +315,39 @@ describe("useSessionProvider", () => {
     vi.useRealTimers();
   });
 
+  it("discards partial replay and requests a durable refetch on history reset", async () => {
+    vi.useFakeTimers();
+    const provider = new FakeSessionProvider();
+    let latest: ReturnType<typeof useSessionProvider> | undefined;
+    flushSync(() => {
+      root.render(createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(SessionProviderProbe, {
+          provider,
+          onValue: (value) => { latest = value; },
+        }),
+      ));
+    });
+    await Promise.resolve();
+
+    provider.emit({ type: "user_message", text: "stale replay" } as SoulSSEEvent, 32);
+    provider.emit({
+      type: "history_sync",
+      last_event_id: 40,
+      is_live: true,
+      reset_required: true,
+      reset_reason: "history_gap",
+    }, 0);
+    provider.emit({ type: "user_message", text: "fresh live" } as SoulSSEEvent, 41);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(useDashboardStore.getState().tree?.children).toHaveLength(1);
+    expect(useDashboardStore.getState().tree?.children[0]?.content).toBe("fresh live");
+    expect(useDashboardStore.getState().historyResetVersion).toBe(1);
+    expect(latest?.synchronizedSessionKey).toBe("sess-1");
+    expect(provider.detailCursorStore.get("https://dashboard.test|alice", "sess-1")).toBe(41);
+    vi.useRealTimers();
+  });
+
 });

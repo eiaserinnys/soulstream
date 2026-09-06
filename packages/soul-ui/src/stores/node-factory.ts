@@ -49,6 +49,8 @@ function meaningfulDisplayText(value: string): string {
 }
 
 function appServerStreamKey(event: SoulSSEEvent): string | null {
+  const streamIdentity = (event as unknown as { streamIdentity?: unknown }).streamIdentity;
+  if (typeof streamIdentity === "string" && streamIdentity) return streamIdentity;
   const toolUseId = (event as unknown as { tool_use_id?: unknown }).tool_use_id;
   return typeof toolUseId === "string" && toolUseId ? toolUseId : null;
 }
@@ -415,6 +417,7 @@ export function applyFinalAssistantMessageToLiveText(
   const streamKey = appServerStreamKey(event);
   if (!streamKey) return false;
   ctx.finalizedTextStreams.add(streamKey);
+  ctx.resetRequiredTextStreams.delete(streamKey);
   const target = ctx.nodeMap.get(`app-server-agent-message:${streamKey}`);
   if (!target || target.type !== "text") return false;
   const e = event as AssistantMessageEvent;

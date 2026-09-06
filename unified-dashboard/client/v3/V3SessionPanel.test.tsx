@@ -9,6 +9,12 @@ const acknowledgeSessionReview = vi.hoisted(() => vi.fn());
 
 vi.mock("@seosoyoung/soul-ui", () => ({
   acknowledgeSessionReview,
+  getSessionActivityTimestamp: (session: SessionSummary) =>
+    session.lastMessage?.timestamp ?? session.createdAt ?? session.updatedAt,
+  getSessionActivityMs: (session: SessionSummary) => {
+    const value = session.lastMessage?.timestamp ?? session.createdAt ?? session.updatedAt;
+    return value ? Date.parse(value) : Number.NEGATIVE_INFINITY;
+  },
   DashboardIconCap: ({
     children,
     label,
@@ -177,7 +183,7 @@ function session(agentSessionId: string, status: "running" | "completed"): Sessi
     createdAt: "2026-07-16T00:00:00Z",
     updatedAt: "2026-07-16T00:05:00Z",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "마지막 진행 메시지",
       timestamp: "2026-07-16T00:05:00Z",
     },

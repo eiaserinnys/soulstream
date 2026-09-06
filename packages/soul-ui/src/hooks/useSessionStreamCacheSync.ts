@@ -8,7 +8,7 @@
  * Provider 훅은 useInfiniteQuery 설정과 public API 반환에 집중한다.
  */
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import {
   useQueryClient,
   type InfiniteData,
@@ -41,7 +41,7 @@ import {
   applySessionCreated,
   mergeSessionCreatedSummary,
   applySessionDeleted,
-  applySessionUpdated,
+  applySessionUpdatedEvent,
   buildSessionUpdates,
   findSessionInPages,
   mergeCatalogSessionsDelta,
@@ -54,6 +54,13 @@ import {
   upsertSessionInCatalogSessionList,
 } from "./session-stream-helpers";
 import { useSessionStreamSSE } from "./useSessionStreamSSE";
+import {
+  applySessionFeedDelta,
+  hydrateNoticeBaseline,
+  takeLiveSessionNotices,
+  type NoticeBaseline,
+} from "./session-feed-projection";
+import { appendBrowserNotices } from "../shared/browser-notices";
 
 interface SessionPage {
   sessions: SessionSummary[];
@@ -114,6 +121,7 @@ export function useSessionStreamCacheSync(
   const setActiveSessionSummary = useDashboardStore(
     (s) => s.setActiveSessionSummary,
   );
+  const noticeBaselinesRef = useRef<Map<string, NoticeBaseline>>(new Map());
 
   const onSessionCreated = useCallback(
     (event: SessionCreatedStreamEvent) => {
@@ -121,6 +129,7 @@ export function useSessionStreamCacheSync(
       const newSession = toSessionSummary(
         event.session as unknown as Record<string, unknown>,
       );
+      hydrateNoticeBaseline(noticeBaselinesRef.current, newSession);
       // 서버가 folder_id를 함께 실어주는 경우가 있어 동적으로 읽는다.
       const eventRecord = event as unknown as Record<string, unknown>;
       const folderId = (eventRecord.folder_id ?? eventRecord.folderId) as
@@ -198,12 +207,24 @@ export function useSessionStreamCacheSync(
     (event: SessionUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
       const updates = buildSessionUpdates(event);
+      const liveNotices = takeLiveSessionNotices(noticeBaselinesRef.current, event);
+      if (liveNotices.length > 0) {
+        useDashboardStore.setState((current) => ({
+          pendingNotifications: appendBrowserNotices(
+            current.pendingNotifications,
+            liveNotices,
+          ),
+        }));
+      }
       const state = useDashboardStore.getState();
       if (state.catalog?.sessionList) {
+        const current = state.catalog.sessionList.find(
+          (session) => session.agentSessionId === event.agent_session_id,
+        );
         state.setCatalog(updateSessionInCatalogSessionList(
           state.catalog,
           event.agent_session_id,
-          updates,
+          current ? { ...updates, ...applySessionFeedDelta(current, event) } : updates,
         ));
       }
 
@@ -211,7 +232,7 @@ export function useSessionStreamCacheSync(
         { queryKey: ["sessions"], exact: false },
         (old) => {
           if (!old) return old;
-          return applySessionUpdated(old, event.agent_session_id, updates);
+          return applySessionUpdatedEvent(old, event, updates);
         },
       );
 
@@ -222,6 +243,7 @@ export function useSessionStreamCacheSync(
         setActiveSessionSummary({
           ...storeState.activeSessionSummary,
           ...updates,
+          ...applySessionFeedDelta(storeState.activeSessionSummary, event),
         });
         return;
       }
@@ -231,7 +253,11 @@ export function useSessionStreamCacheSync(
         exact: false,
       });
       const found = findSessionInPages(allQueries, event.agent_session_id);
-      if (found) setActiveSessionSummary({ ...found, ...updates });
+      if (found) setActiveSessionSummary({
+        ...found,
+        ...updates,
+        ...applySessionFeedDelta(found, event),
+      });
     },
     [queryClient, setActiveSessionSummary, onEventIdAdvance],
   );
@@ -253,6 +279,7 @@ export function useSessionStreamCacheSync(
           return applySessionDeleted(old, event.agent_session_id);
         },
       );
+      noticeBaselinesRef.current.delete(event.agent_session_id);
       onSessionDeletedOption?.(event);
     },
     [queryClient, onEventIdAdvance, onSessionDeletedOption],
@@ -343,6 +370,9 @@ export function useSessionStreamCacheSync(
         return [session.agentSessionId, session] as const;
       }),
     );
+    for (const session of lifecycleSnapshots.values()) {
+      hydrateNoticeBaseline(noticeBaselinesRef.current, session);
+    }
     const state = useDashboardStore.getState();
     if (state.catalog?.sessionList) {
       const sessionList = applySessionLifecycleSnapshotToList(

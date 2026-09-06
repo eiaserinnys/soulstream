@@ -18,6 +18,7 @@ import type {
   SessionStatus,
   SessionSummary,
 } from "./session-types";
+import type { SessionFeedDelta } from "../../../../orch-server-ts/src/session/session_feed_contract";
 
 // === Session Stream SSE Events ===
 
@@ -43,11 +44,11 @@ export interface SessionCreatedStreamEvent {
 }
 
 /** 세션 상태 업데이트 */
-export interface SessionUpdatedStreamEvent {
+export interface SessionUpdatedStreamEvent extends SessionFeedDelta {
   type: "session_updated";
   agent_session_id: string;
-  status: SessionStatus;
-  updated_at: string;
+  status?: SessionStatus;
+  updated_at?: string;
   last_message?: LastMessage;
   last_event_id?: number;
   last_read_event_id?: number;

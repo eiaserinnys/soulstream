@@ -24,9 +24,11 @@ import { getSessionSliceInitialState } from "./session-slice";
 export function getSessionResetState() {
   // session-slice 초기값에서 activeSessionSummary는 reset에 포함하지 않는다 (위 NOTE 참조).
   const { activeSessionSummary: _omit, ...sessionPartial } = getSessionSliceInitialState();
+  const { pendingNotifications: _keepBrowserNotices, ...eventPartial } =
+    getEventProcessingInitialState();
   return {
     ...sessionPartial,
-    ...getEventProcessingInitialState(),
+    ...eventPartial,
     activeRightTab: "chat" as const, // ui-slice 소유 — 세션 전환 시 항상 "chat" 리셋이 의도된 동작
     activeBoardDocumentId: null,
     pendingBoardDocumentEditId: null,

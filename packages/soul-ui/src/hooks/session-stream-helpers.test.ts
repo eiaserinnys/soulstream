@@ -603,7 +603,7 @@ describe("buildSessionUpdates — F-10C user profile extraction", () => {
         type: "tool_result",
         preview: "tool noise",
         timestamp: "2026-09-06T12:00:00Z",
-      },
+      } as unknown as SessionUpdatedStreamEvent["last_message"],
     }))).not.toHaveProperty("lastMessage");
   });
 

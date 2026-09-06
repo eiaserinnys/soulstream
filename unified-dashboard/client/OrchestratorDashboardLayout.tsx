@@ -90,7 +90,7 @@ export function OrchestratorDashboardLayout() {
   useReadPositionSync();
 
   // 브라우저 알림
-  useNotification(detailActive);
+  useNotification(true);
 
   // 대시보드 프로필 설정 로드
   useDashboardConfig();
@@ -296,7 +296,7 @@ export function OrchestratorDashboardLayout() {
             sessions={sessions}
           />
           <OrchestratorNewSessionModal />
-          <AskQuestionBanner enabled={detailActive} />
+          <AskQuestionBanner treeEnabled={detailActive} />
         </>
       }
     />

@@ -78,7 +78,7 @@ const sessions: SessionSummary[] = [
     prompt: "Session title that should wrap up to two lines inside the tile before it is clamped",
     updatedAt: "2026-06-04T00:00:00.000Z",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "A long assistant preview that should be clamped to a small number of lines inside the fixed square tile.",
       timestamp: "2026-06-04T00:00:00.000Z",
     },
@@ -104,7 +104,7 @@ const relationSessions: SessionSummary[] = [
     callerSessionId: "parent",
     prompt: "Implement the same-folder child card summary\nwith extra detail",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "Currently editing the child portal component\nsecond line ignored",
       timestamp: "2026-06-04T01:30:00.000Z",
     },
@@ -119,7 +119,7 @@ const relationSessions: SessionSummary[] = [
     callerSessionId: "parent",
     prompt: "Review cross-folder delegated work",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "Waiting for the target folder check",
       timestamp: "2026-06-04T02:30:00.000Z",
     },

@@ -11,6 +11,7 @@ import type {
   SessionSummary,
   SessionDetail,
   SoulSSEEvent,
+  SessionNotice,
   EventTreeNode,
   CatalogState,
   CatalogFolder,
@@ -163,8 +164,11 @@ export interface DashboardState {
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
   lastEventId: number;
 
-  /** 알림 대상 이벤트 큐 (complete, error, intervention_sent) */
-  pendingNotifications: SoulSSEEvent[];
+  /** history_sync reset_required가 durable timeline refetch를 요청한 횟수. */
+  historyResetVersion: number;
+
+  /** 모든 세션의 정규화된 브라우저 알림 큐. */
+  pendingNotifications: SessionNotice[];
 
   /** New Session 모달 열림 상태 */
   isNewSessionModalOpen: boolean;

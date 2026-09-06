@@ -140,6 +140,7 @@ export function useMessageHistoryBuffer(
   scrollerRef: RefObject<HTMLElement | null>,
   enabled = true,
 ): UseMessageHistoryBufferResult {
+  const historyResetVersion = useDashboardStore((state) => state.historyResetVersion);
   const [loading, setLoading] = useState(false);
   const [reachedTop, setReachedTop] = useState(false);
   const [blockedReason, setBlockedReason] =
@@ -348,7 +349,7 @@ export function useMessageHistoryBuffer(
       configuredSessionRef.current = null;
       fillRunRef.current = null;
     };
-  }, [sessionId]);
+  }, [historyResetVersion, sessionId]);
 
   useEffect(() => {
     if (!sessionId) return;

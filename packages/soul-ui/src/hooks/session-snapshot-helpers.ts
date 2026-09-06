@@ -92,6 +92,11 @@ export type SessionLifecycleSnapshot = Pick<
   | "createdAt"
   | "lastEventId"
   | "lastMessage"
+  | "pendingAttentions"
+  | "attentionRevision"
+  | "recentNotices"
+  | "notificationWatermark"
+  | "noticesTruncated"
 >;
 
 /**
@@ -149,6 +154,21 @@ export function applySessionLifecycleSnapshotToList(
         ? {}
         : { lastEventId: snapshot.lastEventId }),
       ...(lastMessageChanged ? { lastMessage } : {}),
+      ...(snapshot.pendingAttentions === undefined ? {} : {
+        pendingAttentions: snapshot.pendingAttentions,
+      }),
+      ...(snapshot.attentionRevision === undefined ? {} : {
+        attentionRevision: snapshot.attentionRevision,
+      }),
+      ...(snapshot.recentNotices === undefined ? {} : {
+        recentNotices: snapshot.recentNotices,
+      }),
+      ...(snapshot.notificationWatermark === undefined ? {} : {
+        notificationWatermark: snapshot.notificationWatermark,
+      }),
+      ...(snapshot.noticesTruncated === undefined ? {} : {
+        noticesTruncated: snapshot.noticesTruncated,
+      }),
     };
     if (Object.keys(patch).length === 0) {
       return session;

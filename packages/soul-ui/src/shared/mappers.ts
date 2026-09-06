@@ -47,6 +47,21 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
     llmUsage: toLlmUsage(raw.llm_usage ?? raw.llmUsage),
     clientId: (raw.client_id ?? raw.clientId) as string | undefined,
     lastMessage,
+    ...(Array.isArray(raw.pending_attentions ?? raw.pendingAttentions)
+      ? { pendingAttentions: (raw.pending_attentions ?? raw.pendingAttentions) as SessionSummary["pendingAttentions"] }
+      : {}),
+    ...(typeof (raw.attention_revision ?? raw.attentionRevision) === "number"
+      ? { attentionRevision: (raw.attention_revision ?? raw.attentionRevision) as number }
+      : {}),
+    ...(Array.isArray(raw.recent_notices ?? raw.recentNotices)
+      ? { recentNotices: (raw.recent_notices ?? raw.recentNotices) as SessionSummary["recentNotices"] }
+      : {}),
+    ...(typeof (raw.notification_watermark ?? raw.notificationWatermark) === "number"
+      ? { notificationWatermark: (raw.notification_watermark ?? raw.notificationWatermark) as number }
+      : {}),
+    ...((raw.notices_truncated ?? raw.noticesTruncated) !== undefined
+      ? { noticesTruncated: (raw.notices_truncated ?? raw.noticesTruncated) === true }
+      : {}),
     metadata: (raw.metadata as MetadataEntry[] | undefined) ?? [],
     folderId: (raw.folder_id ?? raw.folderId) as string | null | undefined,
     lastEventId: (raw.last_event_id ?? raw.lastEventId ?? 0) as number,
