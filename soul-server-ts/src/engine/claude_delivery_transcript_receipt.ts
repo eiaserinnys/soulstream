@@ -56,14 +56,21 @@ export class ClaudeDeliveryTranscriptReceiptReader {
   async inspectInput(
     targetSessionId: string,
     inputUuid: string,
+    expectedAssistantUuid: string,
   ): Promise<ClaudeDeliveryTranscriptReceipt> {
-    return await this.inspectTarget(targetSessionId, inputUuid, true);
+    return await this.inspectTarget(
+      targetSessionId,
+      inputUuid,
+      true,
+      expectedAssistantUuid,
+    );
   }
 
   private async inspectTarget(
     targetSessionId: string | null,
     inputUuid: string,
     preferSameNodeLocal: boolean,
+    expectedAssistantUuid?: string,
   ): Promise<ClaudeDeliveryTranscriptReceipt> {
     if (!targetSessionId) return { kind: "absent", inputUuid };
     const session = await this.deps.getSession(targetSessionId);
@@ -97,7 +104,11 @@ export class ClaudeDeliveryTranscriptReceiptReader {
       dir: profile.workspace_dir,
       sessionStore: this.deps.sessionStore,
     });
-    const sharedReceipt = findClaudeDeliveryTranscriptReceipt(shared, inputUuid);
+    const sharedReceipt = findClaudeDeliveryTranscriptReceipt(
+      shared,
+      inputUuid,
+      expectedAssistantUuid,
+    );
     if (
       sharedReceipt.kind === "completed" ||
       (!preferSameNodeLocal && sharedReceipt.kind !== "absent")
@@ -107,7 +118,11 @@ export class ClaudeDeliveryTranscriptReceiptReader {
       const local = await this.loadMessages(session.claude_session_id, {
         dir: profile.workspace_dir,
       });
-      const localReceipt = findClaudeDeliveryTranscriptReceipt(local, inputUuid);
+      const localReceipt = findClaudeDeliveryTranscriptReceipt(
+        local,
+        inputUuid,
+        expectedAssistantUuid,
+      );
       return localReceipt.kind === "absent" && sharedReceipt.kind !== "absent"
         ? sharedReceipt
         : localReceipt;
@@ -124,6 +139,7 @@ export class ClaudeDeliveryTranscriptReceiptReader {
 export function findClaudeDeliveryTranscriptReceipt(
   messages: SessionMessage[],
   inputUuid: string,
+  expectedAssistantUuid?: string,
 ): ClaudeDeliveryTranscriptReceipt {
   const inputIndex = messages.findIndex(
     (message) => message.type === "user" && message.uuid === inputUuid,
@@ -136,7 +152,10 @@ export function findClaudeDeliveryTranscriptReceipt(
   );
   const assistant = ownedTurn
     .slice(0, nextInputIndex < 0 ? undefined : nextInputIndex)
-    .find((message) => message.type === "assistant");
+    .find((message) =>
+      message.type === "assistant" &&
+      (expectedAssistantUuid === undefined || message.uuid === expectedAssistantUuid)
+    );
   return assistant
     ? {
         kind: "completed",

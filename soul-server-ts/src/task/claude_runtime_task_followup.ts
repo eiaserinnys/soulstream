@@ -345,6 +345,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         const transcript = await this.deps.transcriptReceipt.inspectInput(
           task.agentSessionId,
           candidate.inputUuid,
+          assistantUuid,
         );
         if (
           transcript.kind === "completed" &&

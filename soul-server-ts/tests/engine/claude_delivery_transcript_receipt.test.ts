@@ -23,6 +23,21 @@ function message(
   };
 }
 
+function nativeTurnPrefix(): SessionMessage[] {
+  return [
+    message("user", "native-input"),
+    message("assistant", "thinking-only"),
+    message("assistant", "tool-use-only"),
+    {
+      ...message("user", "tool-result"),
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tool-1", content: "done" }],
+      },
+    } as SessionMessage,
+  ];
+}
+
 describe("Claude delivery transcript receipt", () => {
   it("distinguishes absent, accepted, and completed stable input UUIDs", () => {
     expect(
@@ -82,6 +97,30 @@ describe("Claude delivery transcript receipt", () => {
     });
   });
 
+  it("selects the exact published assistant across intermediate SDK messages without crossing the next turn", () => {
+    expect(findClaudeDeliveryTranscriptReceipt(
+      [...nativeTurnPrefix(), message("assistant", "published-assistant")],
+      "native-input",
+      "published-assistant",
+    )).toEqual({
+      kind: "completed",
+      inputUuid: "native-input",
+      assistantMessageUuid: "published-assistant",
+    });
+  });
+
+  it("does not select the expected assistant from beyond the next turn-starting user", () => {
+    expect(findClaudeDeliveryTranscriptReceipt(
+      [
+        ...nativeTurnPrefix(),
+        message("user", "human-successor"),
+        message("assistant", "published-assistant"),
+      ],
+      "native-input",
+      "published-assistant",
+    )).toEqual({ kind: "input_pending", inputUuid: "native-input" });
+  });
+
   it("falls back to same-node JSONL when the shared transcript mirror ended at the crash", async () => {
     const deliveryId = "delivery-stable";
     const inputUuid = buildDeliveryInputUuid(deliveryId);
@@ -124,9 +163,12 @@ describe("Claude delivery transcript receipt", () => {
 
   it("reads the same-node native assistant when the live shared mirror has only its input", async () => {
     const loadMessages = vi.fn()
-      .mockResolvedValueOnce([message("user", "native-input")])
       .mockResolvedValueOnce([
         message("user", "native-input"),
+        message("assistant", "thinking-only"),
+      ])
+      .mockResolvedValueOnce([
+        ...nativeTurnPrefix(),
         message("assistant", "native-assistant"),
       ]);
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
@@ -142,7 +184,11 @@ describe("Claude delivery transcript receipt", () => {
       loadMessages,
     });
 
-    await expect(reader.inspectInput("target", "native-input")).resolves.toEqual({
+    await expect(reader.inspectInput(
+      "target",
+      "native-input",
+      "native-assistant",
+    )).resolves.toEqual({
       kind: "completed", inputUuid: "native-input",
       assistantMessageUuid: "native-assistant",
     });

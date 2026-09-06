@@ -314,7 +314,11 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     await controller.collectDetached(task, publishedAssistant);
 
     expect(inspectInput).toHaveBeenCalledTimes(3);
-    expect(inspectInput).toHaveBeenCalledWith("sess-1", "input-native");
+    expect(inspectInput).toHaveBeenCalledWith(
+      "sess-1",
+      "input-native",
+      "assistant-native",
+    );
     expect(recordRuntimeFollowupRelationConsumed).toHaveBeenCalledWith(
       task,
       { kind: "exact_generation", taskId: "task-native", initiatingToolUseId: "toolu-native" },
