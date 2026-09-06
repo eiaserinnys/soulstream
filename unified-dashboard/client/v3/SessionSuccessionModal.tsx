@@ -168,6 +168,7 @@ export function SessionSuccessionModal({
 
   const start = async () => {
     if (!selectedNodeId || !selectedAgentId || !modelPresetValid) return;
+    if (effort.unsupported) return;
     setPending(true);
     setError(null);
     try {
@@ -275,15 +276,24 @@ export function SessionSuccessionModal({
                   <select
                     id={effortSelectId}
                     aria-label="추론 강도 선택"
-                    value={effort.effective ?? ""}
+                    value={effort.unsupported ? "" : effort.effective ?? ""}
                     onChange={(event) => effort.setSelected(event.target.value || null)}
                   >
+                    {effort.unsupported ? (
+                      <option value="">선택 필요</option>
+                    ) : null}
                     {effort.options.map((option) => (
                       <option key={option} value={option}>
                         {reasoningEffortLabel(option)}
                       </option>
                     ))}
                   </select>
+                  {effort.unsupported ? (
+                    <small role="alert" data-testid="succession-effort-unsupported">
+                      이어받은 추론 강도 “{reasoningEffortLabel(effort.selected ?? "")}”를
+                      이 모델에서는 쓸 수 없습니다. 다시 선택해 주세요.
+                    </small>
+                  ) : null}
                 </>
               ) : null}
             </section>

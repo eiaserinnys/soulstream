@@ -203,6 +203,12 @@ export function OrchestratorNewSessionModal() {
   const handleSubmit = useCallback(
     async (prompt: string, attachmentPaths?: string[]) => {
       if (!selectedNodeId) throw new Error("Please select a node");
+      if (effort.unsupported) {
+        // Never submit a carried-over effort this preset cannot run; the form
+        // already shows why, and dropping it here would apply a different level
+        // than the one on screen.
+        throw new Error("이어받은 추론 강도를 이 모델에서는 쓸 수 없습니다. 다시 선택해 주세요.");
+      }
 
       const { addOptimisticSession } = useDashboardStore.getState();
       const selectedAgent = agents.find((a) => a.id === selectedAgentId);
@@ -240,7 +246,7 @@ export function OrchestratorNewSessionModal() {
       effort.reset();
       setSelectedOAuthProfile(null);
     },
-    [selectedNodeId, selectedModalFolderId, selectedAgentId, selectedModelPreset, submitReasoningEffort, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
+    [effort.unsupported, selectedNodeId, selectedModalFolderId, selectedAgentId, selectedModelPreset, submitReasoningEffort, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
   );
 
   const folderSelector = (
@@ -390,9 +396,11 @@ export function OrchestratorNewSessionModal() {
           >
             <SelectTrigger>
               <span className="flex-1 truncate">
-                {effectiveReasoningEffort
-                  ? reasoningEffortLabel(effectiveReasoningEffort)
-                  : "자동 (백엔드 기본값)"}
+                {effort.unsupported
+                  ? "선택 필요"
+                  : effectiveReasoningEffort
+                    ? reasoningEffortLabel(effectiveReasoningEffort)
+                    : "자동 (백엔드 기본값)"}
               </span>
             </SelectTrigger>
             <SelectPopup>
@@ -403,6 +411,11 @@ export function OrchestratorNewSessionModal() {
               ))}
             </SelectPopup>
           </Select>
+          {effort.unsupported ? (
+            <small role="alert" className="text-xs text-destructive">
+              이어받은 추론 강도를 이 모델에서는 쓸 수 없습니다. 다시 선택해 주세요.
+            </small>
+          ) : null}
         </div>
       ) : null}
     </div>

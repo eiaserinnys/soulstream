@@ -58,6 +58,8 @@ export interface CreateTaskParams {
   modelPresetEnv?: Record<string, string>;
   oauthToken?: string;
   reasoningEffort?: ReasoningEffort;
+  /** True when the selected preset advertised an effort contract. */
+  reasoningEffortRecorded?: boolean;
   /** 요청별 허용 도구 override. 없으면 AgentProfile.allowed_tools 사용. */
   allowedTools?: string[];
   /** 요청별 금지 도구 override. 없으면 AgentProfile.disallowed_tools 사용. */
@@ -154,8 +156,7 @@ export class TaskCreation {
       modelPresetEnv: params.modelPresetEnv,
       oauthToken: params.oauthToken,
       reasoningEffort: params.reasoningEffort,
-      // The resolver ran, so the decision is recorded even when it is "no effort".
-      reasoningEffortRecorded: true,
+      reasoningEffortRecorded: params.reasoningEffortRecorded === true,
       allowedTools: params.allowedTools,
       disallowedTools: params.disallowedTools,
       useMcp: params.useMcp,
@@ -186,7 +187,10 @@ export class TaskCreation {
       predecessorSessionId: params.predecessorSessionId ?? null,
       modelPreset: task.modelPreset ?? null,
       model: task.model ?? null,
-      reasoningEffort: toStoredReasoningEffort(task.reasoningEffort),
+      reasoningEffort: toStoredReasoningEffort(
+        task.reasoningEffort,
+        task.reasoningEffortRecorded === true,
+      ),
       notifyCompletion: task.notifyCompletion ?? true,
       reviewRequired: task.reviewRequired === true,
       reviewState: task.reviewState ?? "not_required",

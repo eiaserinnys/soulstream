@@ -53,6 +53,7 @@ function Harness({ initialEffort }: { initialEffort?: string | null }) {
     createElement("span", { "data-testid": "effective" }, effort.effective ?? ""),
     createElement("span", { "data-testid": "options" }, effort.options.join(",")),
     createElement("span", { "data-testid": "submit" }, effort.submitValue ?? ""),
+    createElement("span", { "data-testid": "unsupported" }, String(effort.unsupported)),
     createElement("button", {
       "data-testid": "load-opus",
       onClick: () => setPreset(OPUS),
@@ -167,11 +168,22 @@ describe("useReasoningEffortSelection", () => {
     expect(text("submit")).toBe("low");
   });
 
-  it("omits an unsupported carry-over instead of downgrading it", () => {
+  it("flags an unsupported carry-over instead of silently dropping it", () => {
     mount("ultra");
     click("load-opus");
-    // Opus does not advertise ultra. The value is not rewritten to xhigh; it is
-    // simply not sent, so the node applies the preset default.
+    // Opus does not advertise ultra. The value is neither rewritten to xhigh nor
+    // quietly omitted while the form still shows it: the surface must surface
+    // `unsupported` and refuse to submit.
     expect(text("submit")).toBe("");
+    expect(text("unsupported")).toBe("true");
+  });
+
+  it("clears the flag once a supported value is picked", () => {
+    mount("ultra");
+    click("load-opus");
+    expect(text("unsupported")).toBe("true");
+    click("pick-low");
+    expect(text("unsupported")).toBe("false");
+    expect(text("submit")).toBe("low");
   });
 });

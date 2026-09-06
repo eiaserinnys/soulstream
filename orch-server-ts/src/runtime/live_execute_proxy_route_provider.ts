@@ -80,7 +80,7 @@ export function createLiveExecuteProxyRouteProvider(
           command,
         });
         if (isCommandError(result)) {
-          throw routeErrorFromAck(503, result);
+          throw routeErrorFromAck(createAckStatus(result), result);
         }
         const actualSessionId = stringField(result.agentSessionId) ?? agentSessionId;
         return streamResult({
@@ -90,7 +90,7 @@ export function createLiveExecuteProxyRouteProvider(
         });
       } catch (error) {
         queue.close();
-        throw mapCommandError(error, 503);
+        throw mapCommandError(error, createErrorStatus(error));
       }
     },
     executeResume: async (payload) => {
@@ -382,4 +382,24 @@ class SessionEventQueue {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Create-path input errors are the caller's problem, not an unavailable node.
+ * Everything else keeps the historical 503 so timeouts and offline nodes stay
+ * distinguishable from a bad request. Mirrors CREATE_ACK_ERROR_HTTP_STATUS in
+ * session/session_command_routes.ts.
+ */
+const CREATE_INPUT_ERROR_CODES = new Set(["UNSUPPORTED_REASONING_EFFORT"]);
+
+function createAckStatus(result: NodeCommandResponse): number {
+  const code: unknown = (result as { code?: unknown }).code;
+  return typeof code === "string" && CREATE_INPUT_ERROR_CODES.has(code)
+    ? 422
+    : 503;
+}
+
+function createErrorStatus(error: unknown): number {
+  const code = (error as { response?: { code?: unknown } } | undefined)?.response?.code;
+  return typeof code === "string" && CREATE_INPUT_ERROR_CODES.has(code) ? 422 : 503;
 }

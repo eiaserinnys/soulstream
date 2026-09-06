@@ -32,11 +32,22 @@ export interface StoredReasoningEffort {
   readonly effort?: ReasoningEffort;
 }
 
-/** Creation: turn the resolver's decision into the column value. */
+/**
+ * Creation: turn the resolver's decision into the column value.
+ *
+ * `hasEffortContract` says whether the selected preset actually advertised an
+ * effort contract. When it did not — an operator catalogue that predates this
+ * feature, or a model with no effort control — there is no decision to record,
+ * so the column stays NULL and the session keeps whatever the backend did
+ * before. Writing `auto` there would claim a decision we never made and would
+ * silently drop Codex from its historical `xhigh`.
+ */
 export function toStoredReasoningEffort(
   resolved: ReasoningEffort | undefined,
-): string {
-  return resolved ?? REASONING_EFFORT_AUTO;
+  hasEffortContract: boolean,
+): string | null {
+  if (resolved !== undefined) return resolved;
+  return hasEffortContract ? REASONING_EFFORT_AUTO : null;
 }
 
 /**

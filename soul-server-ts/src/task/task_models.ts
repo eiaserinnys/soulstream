@@ -364,9 +364,10 @@ export interface Task {
   /** 추론 모델 effort override. Codex는 ThreadOptions.modelReasoningEffort로 전달. */
   reasoningEffort?: ReasoningEffort;
   /**
-   * Whether an effort decision was ever recorded for this session. False only
-   * for pre-089 rows, which need the old Codex behaviour replayed. See
-   * session_effort_storage.resolveTurnReasoningEffort.
+   * Whether an effort decision was recorded for this session — i.e. the selected
+   * preset advertised an effort contract. False for pre-089 rows and for nodes
+   * whose catalogue declares no efforts; both keep the pre-existing backend
+   * behaviour. See session_effort_storage.resolveTurnReasoningEffort.
    */
   reasoningEffortRecorded?: boolean;
   /** 요청별 허용 도구 override. 없으면 AgentProfile.allowed_tools를 사용. */

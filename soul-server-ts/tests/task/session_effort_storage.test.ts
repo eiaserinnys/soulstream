@@ -15,14 +15,23 @@ import {
 describe("session effort storage boundary", () => {
   describe("write", () => {
     it("stores a resolved level verbatim", () => {
-      expect(toStoredReasoningEffort("low")).toBe("low");
-      expect(toStoredReasoningEffort("xhigh")).toBe("xhigh");
+      expect(toStoredReasoningEffort("low", true)).toBe("low");
+      expect(toStoredReasoningEffort("xhigh", true)).toBe("xhigh");
+      // A level is a decision regardless of how the contract was described.
+      expect(toStoredReasoningEffort("low", false)).toBe("low");
     });
 
-    it("records 'no effort' as the auto marker, never as NULL", () => {
-      // NULL is reserved for pre-089 rows. Writing NULL here would make a new
-      // auto session indistinguishable from an untouched legacy one.
-      expect(toStoredReasoningEffort(undefined)).toBe(REASONING_EFFORT_AUTO);
+    it("records 'no effort' as the auto marker when the preset had a contract", () => {
+      // NULL is reserved for sessions where no decision was made. Writing NULL
+      // here would make a new auto session indistinguishable from a legacy one.
+      expect(toStoredReasoningEffort(undefined, true)).toBe(REASONING_EFFORT_AUTO);
+    });
+
+    it("records nothing when the preset advertised no effort contract", () => {
+      // An operator catalogue that predates this feature declares no efforts.
+      // Storing `auto` there would claim a decision we never made and would drop
+      // Codex from the xhigh it used to get.
+      expect(toStoredReasoningEffort(undefined, false)).toBeNull();
     });
   });
 
@@ -51,6 +60,18 @@ describe("session effort storage boundary", () => {
 
     it("does not replay an unreadable value", () => {
       expect(readStoredReasoningEffort("banana")).toEqual({ recorded: true });
+    });
+  });
+
+  describe("catalogue without an effort contract keeps legacy behaviour", () => {
+    it("round-trips to the pre-existing backend behaviour", () => {
+      // Deploy against an un-updated catalogue: no contract -> NULL -> unrecorded
+      // -> Codex replays xhigh, Claude still sends nothing. Exactly as before.
+      const stored = toStoredReasoningEffort(undefined, false);
+      const read = readStoredReasoningEffort(stored);
+      expect(read).toEqual({ recorded: false });
+      expect(resolveTurnReasoningEffort(read, "codex")).toBe("xhigh");
+      expect(resolveTurnReasoningEffort(read, "claude")).toBeUndefined();
     });
   });
 

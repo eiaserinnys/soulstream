@@ -245,7 +245,18 @@ export function loadModelCatalog(
 ): ModelCatalog {
   const missingAtStartup = !fs.existsSync(catalogPath);
   const catalog = new ModelCatalog(catalogPath, logger, effortCapabilities);
-  catalog.list();
+  const presets = catalog.list();
+  const withoutEffortContract = presets
+    .filter((preset) => (preset.supported_efforts?.length ?? 0) === 0)
+    .map((preset) => preset.id);
+  if (withoutEffortContract.length > 0) {
+    logger?.warn?.(
+      { presets: withoutEffortContract, catalogPath },
+      "Model presets declare no supported_efforts; sessions on them keep the "
+      + "previous backend behaviour and offer no effort selection. Add "
+      + "supported_efforts/default_effort to enable it.",
+    );
+  }
   if (missingAtStartup) {
     logger?.warn?.(
       { path: catalogPath },
