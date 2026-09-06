@@ -28,6 +28,12 @@ export function createDetachedClaudeEventBridge(
   idempotencyKey?: string,
 ) => Promise<() => Promise<void>> {
   return async (sessionId, event, idempotencyKey) => {
+    const trace = (checkpoint: string, fields: Record<string, unknown>): void => {
+      options.logger.info(
+        { temporaryTrace: "sonnet-native-delivery", checkpoint, ...fields },
+        "TEMPORARY Sonnet native delivery trace",
+      );
+    };
     const task = options.findTask(sessionId);
     const publisher = options.getPublisher();
     if (!task || !publisher) {
@@ -50,9 +56,32 @@ export function createDetachedClaudeEventBridge(
       }
       detachedPayloads.push(payload);
     }
+    trace("detached-publish-complete", {
+        sessionId,
+        eventType: event.type,
+        payloadTypes: detachedPayloads.map((payload) => payload.type),
+        payloadCount: detachedPayloads.length,
+    });
     return async () => {
-      for (const payload of detachedPayloads) {
-        await options.collectDetached(task, payload);
+      trace("post-response-collect-begin", {
+          sessionId,
+          eventType: event.type,
+          payloadCount: detachedPayloads.length,
+      });
+      try {
+        for (const [index, payload] of detachedPayloads.entries()) {
+          await options.collectDetached(task, payload);
+          trace("post-response-payload-collected", {
+              sessionId,
+              payloadType: payload.type,
+              payloadIndex: index,
+          });
+        }
+      } finally {
+        trace("post-response-collect-end", {
+            sessionId,
+            eventType: event.type,
+        });
       }
     };
   };

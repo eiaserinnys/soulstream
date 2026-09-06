@@ -112,11 +112,28 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     const sdkSessionId = task.codexThreadId;
     const eventSdkSessionId = asString(payload.session_id) ??
       readClaudeSdkSessionMetadata(event)?.sessionId;
-    if (eventSdkSessionId && eventSdkSessionId !== sdkSessionId) return;
     const durableDelivery = readClaudeBackgroundDeliveryMetadata(event);
     const initiatingToolUseId = asString(payload.tool_use_id) ??
       asString(patch.tool_use_id) ?? durableDelivery?.initiatingToolUseId ??
       runtimeTask?.toolUseId;
+    const provenance = readClaudeBackgroundProvenance(event);
+    this.trace("terminal-observed", {
+        sessionId: task.agentSessionId,
+        sdkSessionId,
+        eventSdkSessionId,
+        eventType: type,
+        taskId,
+        initiatingToolUseId,
+        runtimeToolUseId: runtimeTask?.toolUseId,
+        eventStatus: asString(payload.status) ?? asString(patch.status),
+        runtimeStatus: runtimeTask?.status,
+        runtimeIsBackgrounded: runtimeTask?.isBackgrounded === true,
+        provenance,
+        hasDurableDelivery: durableDelivery !== undefined,
+        durableInitiatingToolUseId: durableDelivery?.initiatingToolUseId,
+        durableRelationKey: durableDelivery?.relationKey,
+    });
+    if (eventSdkSessionId && eventSdkSessionId !== sdkSessionId) return;
     if (!sdkSessionId || !initiatingToolUseId) return;
     const identity = buildClaudeBackgroundGenerationIdentity({
       sourceNode: this.deps.sourceNode,
@@ -133,13 +150,13 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       exactRuntimeTask?.status;
     if (!status || !TERMINAL_RUNTIME_TASK_STATUSES.has(status)) return;
     const isBackgrounded =
-      Boolean(readClaudeBackgroundProvenance(event)) ||
+      Boolean(provenance) ||
       runtimeTask?.isBackgrounded === true ||
       patch.is_backgrounded === true;
     if (!isBackgrounded) return;
     if (
       this.deps.deliveryV2Enabled === true &&
-      readClaudeBackgroundProvenance(event) === "sdk_membership" &&
+      provenance === "sdk_membership" &&
       !durableDelivery
     ) return;
     if (durableDelivery) {
@@ -182,7 +199,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       firstSeen: previous?.firstSeen ?? this.sequence++,
     });
     if (
-      readClaudeBackgroundProvenance(event) === "sdk_membership" &&
+      provenance === "sdk_membership" &&
       durableDelivery?.initiatingToolUseId === initiatingToolUseId
     ) {
       this.nativeOwnershipByGenerationKey.set(identity.generationKey, {
@@ -191,6 +208,17 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         taskId,
         initiatingToolUseId,
         phase: "awaiting-input",
+      });
+      this.trace("native-ownership-registered", {
+          sessionId: task.agentSessionId,
+          sdkSessionId,
+          taskId,
+          initiatingToolUseId,
+          generationKey: identity.generationKey,
+          relationKey: identity.relationKey,
+          phase: "awaiting-input",
+          nativeOwnershipCount: this.nativeOwnershipByGenerationKey.size,
+          pendingCount: pending.size,
       });
     }
   }
@@ -334,6 +362,11 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     }
     if (payload.type === "assistant_message") {
       const assistantUuid = assistantUuidFromDedupeKey(asString(payload._dedupe_key));
+      this.trace("assistant-observed", {
+        sessionId: task.agentSessionId,
+        assistantUuid,
+        hasDedupeKey: asString(payload._dedupe_key) !== undefined,
+      });
       if (!assistantUuid) return;
       const sessionCandidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
         item.sessionId === task.agentSessionId
@@ -341,12 +374,22 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       const readyCandidates = sessionCandidates.filter((item) =>
         item.phase === "awaiting-assistant" || item.phase === "awaiting-result"
       );
+      const awaitingInputCandidates = sessionCandidates.filter((item) =>
+        item.phase === "awaiting-input"
+      );
+      this.trace("assistant-candidates", {
+          sessionId: task.agentSessionId,
+          assistantUuid,
+          hasTranscriptReceipt: this.deps.transcriptReceipt !== undefined,
+          sessionCandidateCount: sessionCandidates.length,
+          readyCandidateCount: readyCandidates.length,
+          awaitingInputCandidateCount: awaitingInputCandidates.length,
+          phases: sessionCandidates.map((item) => item.phase),
+          generationKeys: sessionCandidates.map((item) => item.generationKey),
+      });
       if (readyCandidates.length > 1) return;
       let candidate = readyCandidates[0];
       if (!candidate) {
-        const awaitingInputCandidates = sessionCandidates.filter((item) =>
-          item.phase === "awaiting-input"
-        );
         if (awaitingInputCandidates.length !== 1) return;
         candidate = awaitingInputCandidates[0]!;
       }
@@ -361,6 +404,16 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
               expectedAssistantUuid: assistantUuid,
             },
           );
+          this.trace("native-task-notification-proof", {
+              sessionId: task.agentSessionId,
+              taskId: candidate.taskId,
+              initiatingToolUseId: candidate.initiatingToolUseId,
+              generationKey: candidate.generationKey,
+              expectedAssistantUuid: assistantUuid,
+              proofKind: proof ? "completed" : "missing",
+              proofInputUuid: proof?.inputUuid,
+              proofAssistantUuid: proof?.assistantMessageUuid,
+          });
           if (!proof || proof.assistantMessageUuid !== assistantUuid) return;
           candidate.inputUuid = proof.inputUuid;
           candidate.phase = "awaiting-result";
@@ -380,6 +433,18 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           candidate.inputUuid,
           assistantUuid,
         );
+        this.trace("known-input-proof", {
+            sessionId: task.agentSessionId,
+            taskId: candidate.taskId,
+            initiatingToolUseId: candidate.initiatingToolUseId,
+            generationKey: candidate.generationKey,
+            inputUuid: candidate.inputUuid,
+            expectedAssistantUuid: assistantUuid,
+            proofKind: transcript.kind,
+            proofAssistantUuid: transcript.kind === "completed"
+              ? transcript.assistantMessageUuid
+              : undefined,
+        });
         if (
           transcript.kind === "completed" &&
           transcript.assistantMessageUuid === assistantUuid
@@ -449,6 +514,15 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         "Claude native task-notification consumption failed",
       );
     }
+    this.trace("consumption-recorder-result", {
+        sessionId: task.agentSessionId,
+        taskId: candidate.taskId,
+        initiatingToolUseId: candidate.initiatingToolUseId,
+        generationKey: candidate.generationKey,
+        assistantUuid,
+        recorderExists: recorder !== undefined,
+        consumed,
+    });
     if (!consumed) {
       candidate.phase = "native-visible-unsettled";
       return;
@@ -469,6 +543,13 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     this.deps.logger.warn(
       { err, sessionId: task.agentSessionId, taskId: candidate.taskId },
       "Claude native task-notification transcript receipt failed",
+    );
+  }
+
+  private trace(checkpoint: string, fields: Record<string, unknown>): void {
+    this.deps.logger.info(
+      { temporaryTrace: "sonnet-native-delivery", checkpoint, ...fields },
+      "TEMPORARY Sonnet native delivery trace",
     );
   }
 
