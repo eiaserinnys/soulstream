@@ -45,6 +45,7 @@ export interface ClaudeRuntimeTaskFollowupPort {
   collect(task: Task, event: SSEEventPayload): void;
   flush(task: Task): Promise<void>;
   collectDetached(task: Task, event: SSEEventPayload): Promise<void>;
+  reconcileTranscriptAppend(task: Task): Promise<void>;
 }
 
 export interface ClaudeRuntimeTaskFollowupDeps {
@@ -70,6 +71,7 @@ interface NativeDeliveryOwnership {
     | "awaiting-input"
     | "awaiting-assistant"
     | "awaiting-result"
+    | "awaiting-transcript"
     | "native-visible-unsettled";
   inputUuid?: string;
   assistantUuid?: string;
@@ -89,6 +91,8 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     new Map<string, ClaudeBackgroundDeliveryMetadata>();
   private readonly nativeOwnershipByGenerationKey =
     new Map<string, NativeDeliveryOwnership>();
+  private readonly nativeTranscriptTailByGenerationKey =
+    new Map<string, Promise<boolean>>();
   private sequence = 0;
 
   constructor(private readonly deps: ClaudeRuntimeTaskFollowupDeps) {}
@@ -210,6 +214,17 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     if (hasPendingClaudeBackgroundRuntimeWork(task)) return;
     await this.flushPending(task);
     await this.deps.releaseRetainedRunner(task);
+  }
+
+  async reconcileTranscriptAppend(task: Task): Promise<void> {
+    const candidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
+      item.sessionId === task.agentSessionId && item.phase === "awaiting-transcript" &&
+      item.assistantUuid
+    );
+    const consumed = await Promise.all(
+      candidates.map(async (candidate) => await this.reconcileNativeTranscript(task, candidate)),
+    );
+    if (consumed.some(Boolean)) await this.deps.releaseRetainedRunner(task);
   }
 
   private async flushPending(task: Task): Promise<void> {
@@ -352,23 +367,9 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       }
       if (candidate.phase === "awaiting-input") {
         if (!this.deps.transcriptReceipt) return;
-        try {
-          const proof = await this.deps.transcriptReceipt.inspectNativeTaskNotification(
-            task.agentSessionId,
-            {
-              taskId: candidate.taskId,
-              initiatingToolUseId: candidate.initiatingToolUseId,
-              expectedAssistantUuid: assistantUuid,
-            },
-          );
-          if (!proof || proof.assistantMessageUuid !== assistantUuid) return;
-          candidate.inputUuid = proof.inputUuid;
-          candidate.phase = "awaiting-result";
-          candidate.assistantUuid = assistantUuid;
-          await this.consumeNativeAssistant(task, candidate, assistantUuid);
-        } catch (err) {
-          this.logTranscriptReceiptFailure(err, task, candidate);
-        }
+        candidate.assistantUuid = assistantUuid;
+        candidate.phase = "awaiting-transcript";
+        await this.reconcileNativeTranscript(task, candidate);
         return;
       }
       candidate.phase = "awaiting-result";
@@ -459,6 +460,48 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     if (pending?.size === 0) this.pendingBySession.delete(task.agentSessionId);
     this.durableDeliveryByGenerationKey.delete(candidate.generationKey);
     this.flushedGenerationKeys.add(candidate.generationKey);
+  }
+
+  private async reconcileNativeTranscript(
+    task: Task,
+    candidate: NativeDeliveryOwnership,
+  ): Promise<boolean> {
+    const previous = this.nativeTranscriptTailByGenerationKey.get(candidate.generationKey) ??
+      Promise.resolve(false);
+    const current = previous.catch(() => false).then(async () => {
+      if (
+        this.nativeOwnershipByGenerationKey.get(candidate.generationKey) !== candidate ||
+        candidate.phase !== "awaiting-transcript" || !candidate.assistantUuid ||
+        !this.deps.transcriptReceipt
+      ) return false;
+      const assistantUuid = candidate.assistantUuid;
+      try {
+        const proof = await this.deps.transcriptReceipt.inspectNativeTaskNotification(
+          task.agentSessionId,
+          {
+            taskId: candidate.taskId,
+            initiatingToolUseId: candidate.initiatingToolUseId,
+            expectedAssistantUuid: assistantUuid,
+          },
+        );
+        if (!proof || proof.assistantMessageUuid !== assistantUuid) return false;
+        candidate.inputUuid = proof.inputUuid;
+        candidate.phase = "awaiting-result";
+        await this.consumeNativeAssistant(task, candidate, assistantUuid);
+        return !this.nativeOwnershipByGenerationKey.has(candidate.generationKey);
+      } catch (err) {
+        this.logTranscriptReceiptFailure(err, task, candidate);
+        return false;
+      }
+    });
+    this.nativeTranscriptTailByGenerationKey.set(candidate.generationKey, current);
+    try {
+      return await current;
+    } finally {
+      if (this.nativeTranscriptTailByGenerationKey.get(candidate.generationKey) === current) {
+        this.nativeTranscriptTailByGenerationKey.delete(candidate.generationKey);
+      }
+    }
   }
 
   private logTranscriptReceiptFailure(

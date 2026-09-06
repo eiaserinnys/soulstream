@@ -263,6 +263,7 @@ export async function composeWorkerRuntime(
     ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
+    reconcileClaudeTranscriptAppend: (task) => taskRuntime.claudeRuntimeTaskFollowup.reconcileTranscriptAppend(task),
     observeClaudeRuntime: claudeRuntime.backgroundLifecycle
       ? (sessionId, event, idempotencyKey, execution) =>
         claudeRuntime.backgroundLifecycle!.observe(

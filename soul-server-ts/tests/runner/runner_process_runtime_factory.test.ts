@@ -200,6 +200,90 @@ function runnerEnv() {
 }
 
 describe("applyRunnerHostCall", () => {
+  it("registers transcript reconciliation after append success and runs it post-response", async () => {
+    let finishAppend!: () => void;
+    const appendPending = new Promise<void>((resolve) => {
+      finishAppend = resolve;
+    });
+    const appendIdempotent = vi.fn(() => appendPending);
+    const load = vi.fn(async () => []);
+    const deleteIdempotent = vi.fn(async () => undefined);
+    const reconcileClaudeTranscriptAppend = vi.fn(async () => undefined);
+    const registerPostResponse = vi.fn();
+    const task = { agentSessionId: "session-a" } as Task;
+    const options = {
+      sessionStore: { appendIdempotent, load, deleteIdempotent },
+      reconcileClaudeTranscriptAppend,
+    } as never;
+    const call = applyRunnerHostCall(
+      {
+        service: "session_store",
+        operation: "append",
+        args: [
+          { projectKey: "project-a", sessionId: "sdk-session-a" },
+          [{ type: "assistant", uuid: "assistant-a" }],
+        ],
+        correlationId: "host:append",
+      },
+      task,
+      {
+        persistRunState: vi.fn(async () => undefined),
+        persistSessionItems: vi.fn(async () => undefined),
+      },
+      options,
+      registerPostResponse,
+    );
+
+    await Promise.resolve();
+    expect(registerPostResponse).not.toHaveBeenCalled();
+    expect(reconcileClaudeTranscriptAppend).not.toHaveBeenCalled();
+    finishAppend();
+    await call;
+    expect(registerPostResponse).toHaveBeenCalledOnce();
+    expect(reconcileClaudeTranscriptAppend).not.toHaveBeenCalled();
+
+    const continuation = registerPostResponse.mock.calls[0]?.[0];
+    await continuation();
+    expect(reconcileClaudeTranscriptAppend).toHaveBeenCalledOnce();
+    expect(reconcileClaudeTranscriptAppend).toHaveBeenCalledWith(task);
+
+    appendIdempotent.mockRejectedValueOnce(new Error("append failed"));
+    await expect(applyRunnerHostCall(
+      {
+        service: "session_store", operation: "append",
+        args: [{ projectKey: "project-a", sessionId: "sdk-session-a" }, []],
+        correlationId: "host:append-failed",
+      },
+      task,
+      {
+        persistRunState: vi.fn(async () => undefined),
+        persistSessionItems: vi.fn(async () => undefined),
+      },
+      options,
+      registerPostResponse,
+    )).rejects.toThrow("append failed");
+    expect(registerPostResponse).toHaveBeenCalledOnce();
+
+    for (const [operation, args] of [
+      ["load", [{ projectKey: "project-a", sessionId: "sdk-session-a" }]],
+      ["delete", [{ projectKey: "project-a", sessionId: "sdk-session-a" }]],
+    ] as const) {
+      await applyRunnerHostCall(
+        { service: "session_store", operation, args: [...args], correlationId: `host:${operation}` },
+        task,
+        {
+          persistRunState: vi.fn(async () => undefined),
+          persistSessionItems: vi.fn(async () => undefined),
+        },
+        options,
+        registerPostResponse,
+      );
+    }
+    expect(load).toHaveBeenCalledOnce();
+    expect(deleteIdempotent).toHaveBeenCalledOnce();
+    expect(registerPostResponse).toHaveBeenCalledOnce();
+  });
+
   it("threads correlation to all six mutating host operations", async () => {
     const sessionStore = {
       appendIdempotent: vi.fn(async () => undefined),

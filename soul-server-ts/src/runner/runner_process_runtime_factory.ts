@@ -87,6 +87,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
     event: ClaudeClientEvent,
     idempotencyKey: string,
   ): Promise<() => Promise<void>>;
+  reconcileClaudeTranscriptAppend?(task: Task): Promise<void>;
   spawner?: Pick<RunnerProcessSpawner, "adopt" | "spawn">
     & Partial<Pick<
       RunnerProcessSpawner,
@@ -299,13 +300,19 @@ export async function applyRunnerHostCall(
 ): Promise<unknown> {
   const expectedSessionId = task.agentSessionId;
   if (call.service === "session_store") {
-    return await callSessionStore(
+    const result = await callSessionStore(
       options.sessionStore,
       call.operation,
       call.args,
       call.correlationId,
       expectedSessionId,
     );
+    if (call.operation === "append" && options.reconcileClaudeTranscriptAppend) {
+      registerPostResponse(async () => {
+        await options.reconcileClaudeTranscriptAppend!(task);
+      });
+    }
+    return result;
   }
   const sessionId = asString(call.args[0], "runner host session id");
   if (sessionId !== expectedSessionId) {

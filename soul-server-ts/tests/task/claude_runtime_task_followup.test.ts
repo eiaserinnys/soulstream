@@ -57,6 +57,56 @@ function makeTask(): Task {
   };
 }
 
+function makeNativeTranscriptReconciliation(
+  inspectNativeTaskNotification: ReturnType<typeof vi.fn>,
+  recordRuntimeFollowupRelationConsumed = vi.fn(async () => true),
+) {
+  const task = makeTask();
+  task.status = "completed";
+  task.claudeRuntime!.tasks["task-native"] = {
+    taskId: "task-native", status: "completed", updatedAt: 1,
+    isBackgrounded: true, toolUseId: "toolu-native",
+  };
+  const addIntervention = vi.fn();
+  const releaseRetainedRunner = vi.fn(async () => undefined);
+  const controller = new ClaudeRuntimeTaskFollowupController({
+    taskManager: {
+      addIntervention,
+      getDeliveryConsumptionRecorder: () => ({ recordRuntimeFollowupRelationConsumed }),
+    },
+    transcriptReceipt: {
+      inspectInput: vi.fn(),
+      inspectNativeTaskNotification,
+    },
+    onResume: vi.fn(), releaseRetainedRunner,
+    logger: silentLogger, deliveryV2Enabled: true, sourceNode: "node-1",
+  } as never);
+  const identity = buildClaudeBackgroundGenerationIdentity({
+    sourceNode: "node-1", agentSessionId: "sess-1", sdkSessionId: "sdk-sess-1",
+    sdkTaskId: "task-native", initiatingToolUseId: "toolu-native",
+  });
+  const terminal = {
+    type: "claude_runtime_task_updated", task_id: "task-native",
+    session_id: "sdk-sess-1", patch: { status: "completed", is_backgrounded: true },
+  } as unknown as SSEEventPayload;
+  attachClaudeBackgroundProvenance(terminal, "sdk_membership");
+  attachClaudeBackgroundDeliveryMetadata(terminal, {
+    initiatingToolUseId: "toolu-native", deliveryId: identity.deliveryId,
+    completionId: identity.completionId, relationKey: identity.relationKey,
+    producerTerminalRevision: "1", deliveryCreatedAt: "2026-09-07T00:00:00.000Z",
+    source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+    storedPayload: { text: "done", user: "system" }, storedPayloadHash: "hash",
+  });
+  const assistant = {
+    type: "assistant_message", content: "native done",
+    _dedupe_key: "claude-sdk:assistant:assistant-native:0",
+  } as unknown as SSEEventPayload;
+  return {
+    task, controller, terminal, assistant, addIntervention,
+    recordRuntimeFollowupRelationConsumed, releaseRetainedRunner,
+  };
+}
+
 function makeController(
   deliveryV2Enabled = false,
   recordInlineConsumed?: ReturnType<typeof vi.fn>,
@@ -473,6 +523,139 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     );
     expect(addIntervention).not.toHaveBeenCalled();
   });
+
+  it("reconciles the exact published assistant after its transcript append becomes visible", async () => {
+    const proof = {
+      kind: "completed" as const,
+      inputUuid: "input-native",
+      assistantMessageUuid: "assistant-native",
+    };
+    const inspectNativeTaskNotification = vi.fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(proof);
+    const fixture = makeNativeTranscriptReconciliation(inspectNativeTaskNotification);
+
+    await fixture.controller.collectDetached(fixture.task, fixture.terminal);
+    await fixture.controller.collectDetached(fixture.task, fixture.assistant);
+    await fixture.controller.collectDetached(fixture.task, sdkResultPayload(undefined));
+    await fixture.controller.collectDetached(fixture.task, sdkResultPayload("foreign-input"));
+    expect(fixture.recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+    fixture.releaseRetainedRunner.mockClear();
+
+    await fixture.controller.reconcileTranscriptAppend(fixture.task);
+
+    expect(inspectNativeTaskNotification).toHaveBeenCalledTimes(2);
+    expect(inspectNativeTaskNotification).toHaveBeenLastCalledWith("sess-1", {
+      taskId: "task-native",
+      initiatingToolUseId: "toolu-native",
+      expectedAssistantUuid: "assistant-native",
+    });
+    expect(fixture.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledOnce();
+    expect(fixture.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledWith(
+      fixture.task,
+      { kind: "exact_generation", taskId: "task-native", initiatingToolUseId: "toolu-native" },
+      "assistant-native",
+    );
+    expect(fixture.addIntervention).not.toHaveBeenCalled();
+    expect(fixture.releaseRetainedRunner).toHaveBeenCalledOnce();
+  });
+
+  it("reserves the generation before the first transcript read and queues append reconciliation", async () => {
+    let finishFirstRead!: (value: null) => void;
+    const firstRead = new Promise<null>((resolve) => {
+      finishFirstRead = resolve;
+    });
+    const inspectNativeTaskNotification = vi.fn()
+      .mockReturnValueOnce(firstRead)
+      .mockResolvedValueOnce({
+        kind: "completed" as const,
+        inputUuid: "input-native",
+        assistantMessageUuid: "assistant-native",
+      });
+    const fixture = makeNativeTranscriptReconciliation(inspectNativeTaskNotification);
+    await fixture.controller.collectDetached(fixture.task, fixture.terminal);
+    const assistantCollection = fixture.controller.collectDetached(
+      fixture.task,
+      fixture.assistant,
+    );
+    await vi.waitFor(() => {
+      expect(inspectNativeTaskNotification).toHaveBeenCalledOnce();
+    });
+
+    let appendReconciliation: Promise<void> | undefined;
+    try {
+      appendReconciliation = fixture.controller.reconcileTranscriptAppend(fixture.task);
+      await Promise.resolve();
+      expect(inspectNativeTaskNotification).toHaveBeenCalledOnce();
+      expect(fixture.recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+    } finally {
+      finishFirstRead(null);
+      await assistantCollection;
+    }
+    await appendReconciliation;
+
+    expect(inspectNativeTaskNotification).toHaveBeenCalledTimes(2);
+    expect(fixture.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledOnce();
+    expect(fixture.addIntervention).not.toHaveBeenCalled();
+  });
+
+  it("does not run the queued append proof twice when the first proof consumes", async () => {
+    const completedProof = {
+      kind: "completed" as const,
+      inputUuid: "input-native",
+      assistantMessageUuid: "assistant-native",
+    };
+    let finishFirstRead!: (value: typeof completedProof) => void;
+    const firstRead = new Promise<typeof completedProof>((resolve) => {
+      finishFirstRead = resolve;
+    });
+    const inspectNativeTaskNotification = vi.fn().mockReturnValue(firstRead);
+    const fixture = makeNativeTranscriptReconciliation(inspectNativeTaskNotification);
+    await fixture.controller.collectDetached(fixture.task, fixture.terminal);
+    const assistantCollection = fixture.controller.collectDetached(
+      fixture.task,
+      fixture.assistant,
+    );
+    await vi.waitFor(() => expect(inspectNativeTaskNotification).toHaveBeenCalledOnce());
+    const appendReconciliation = fixture.controller.reconcileTranscriptAppend(fixture.task);
+
+    finishFirstRead(completedProof);
+    await Promise.all([assistantCollection, appendReconciliation]);
+
+    expect(inspectNativeTaskNotification).toHaveBeenCalledOnce();
+    expect(fixture.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledOnce();
+    expect(fixture.addIntervention).not.toHaveBeenCalled();
+  });
+
+  it.each(["missing", "reader-throw", "recorder-false"] as const)(
+    "keeps awaiting-transcript ownership unconsumed when reconciliation is %s",
+    async (failure) => {
+      const inspectNativeTaskNotification = failure === "reader-throw"
+        ? vi.fn().mockRejectedValue(new Error("transcript unavailable"))
+        : failure === "missing"
+          ? vi.fn().mockResolvedValue(null)
+          : vi.fn().mockResolvedValue({
+              kind: "completed" as const,
+              inputUuid: "input-native",
+              assistantMessageUuid: "assistant-native",
+            });
+      const recorder = vi.fn(async () => failure !== "recorder-false");
+      const fixture = makeNativeTranscriptReconciliation(
+        inspectNativeTaskNotification,
+        recorder,
+      );
+      await fixture.controller.collectDetached(fixture.task, fixture.terminal);
+      await fixture.controller.collectDetached(fixture.task, fixture.assistant);
+      fixture.releaseRetainedRunner.mockClear();
+
+      await fixture.controller.reconcileTranscriptAppend(fixture.task);
+      await fixture.controller.reconcileTranscriptAppend(fixture.task);
+
+      expect(recorder).toHaveBeenCalledTimes(failure === "recorder-false" ? 1 : 0);
+      expect(fixture.addIntervention).not.toHaveBeenCalled();
+      expect(fixture.releaseRetainedRunner).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([0, 2])(
     "does not infer native ownership when the published assistant has %i candidates",

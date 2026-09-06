@@ -60,7 +60,7 @@ export interface TaskRuntimeComposition {
   scheduleDispatcher: ScheduleDispatcher;
   claudeRuntimeTaskFollowup: Pick<
     ClaudeRuntimeTaskFollowupController,
-    "collectDetached"
+    "collectDetached" | "reconcileTranscriptAppend"
   >;
 }
 
