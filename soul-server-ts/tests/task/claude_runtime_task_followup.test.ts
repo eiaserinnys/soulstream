@@ -252,6 +252,77 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(addIntervention).not.toHaveBeenCalled();
   });
 
+  it("consumes a published native assistant proven by its exact transcript input receipt when the SDK Result is UUID-less", async () => {
+    const task = makeTask();
+    task.status = "completed";
+    task.claudeRuntime!.tasks["task-native"] = {
+      taskId: "task-native", status: "completed", updatedAt: 1,
+      isBackgrounded: true, toolUseId: "toolu-native",
+    };
+    const addIntervention = vi.fn();
+    const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
+    const inspectInput = vi.fn()
+      .mockRejectedValueOnce(new Error("transcript temporarily unavailable"))
+      .mockResolvedValueOnce({
+        kind: "completed" as const, inputUuid: "input-native",
+        assistantMessageUuid: "other-central-assistant",
+      })
+      .mockResolvedValue({
+        kind: "completed" as const, inputUuid: "input-native",
+        assistantMessageUuid: "assistant-native",
+      });
+    const controller = new ClaudeRuntimeTaskFollowupController({
+      taskManager: {
+        addIntervention,
+        getDeliveryConsumptionRecorder: () => ({ recordRuntimeFollowupRelationConsumed }),
+      },
+      transcriptReceipt: { inspectInput },
+      onResume: vi.fn(), releaseRetainedRunner: vi.fn(async () => undefined),
+      logger: silentLogger, deliveryV2Enabled: true, sourceNode: "node-1",
+    } as never);
+    const identity = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: "node-1", agentSessionId: "sess-1", sdkSessionId: "sdk-sess-1",
+      sdkTaskId: "task-native", initiatingToolUseId: "toolu-native",
+    });
+    const terminal = {
+      type: "claude_runtime_task_updated", task_id: "task-native",
+      session_id: "sdk-sess-1", patch: { status: "completed", is_backgrounded: true },
+    } as unknown as SSEEventPayload;
+    attachClaudeBackgroundProvenance(terminal, "sdk_membership");
+    attachClaudeBackgroundDeliveryMetadata(terminal, {
+      initiatingToolUseId: "toolu-native", deliveryId: identity.deliveryId,
+      completionId: identity.completionId, relationKey: identity.relationKey,
+      producerTerminalRevision: "1", deliveryCreatedAt: "2026-09-07T00:00:00.000Z",
+      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      storedPayload: { text: "done", user: "system" }, storedPayloadHash: "hash",
+    });
+
+    await controller.collectDetached(task, terminal);
+    await controller.collectDetached(task, {
+      type: "claude_runtime_remote_trigger", origin_kind: "task-notification",
+      trigger_id: "input-native",
+      prompt: `<task-notification><task-id>task-native</task-id><tool-use-id>toolu-native</tool-use-id><status>completed</status></task-notification>`,
+    } as SSEEventPayload);
+    const publishedAssistant = {
+      type: "assistant_message", content: "native done",
+      _dedupe_key: "claude-sdk:assistant:assistant-native:0",
+    } as unknown as SSEEventPayload;
+    await controller.collectDetached(task, publishedAssistant);
+    expect(recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+    await controller.collectDetached(task, publishedAssistant);
+    expect(recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+    await controller.collectDetached(task, publishedAssistant);
+
+    expect(inspectInput).toHaveBeenCalledTimes(3);
+    expect(inspectInput).toHaveBeenCalledWith("sess-1", "input-native");
+    expect(recordRuntimeFollowupRelationConsumed).toHaveBeenCalledWith(
+      task,
+      { kind: "exact_generation", taskId: "task-native", initiatingToolUseId: "toolu-native" },
+      "assistant-native",
+    );
+    expect(addIntervention).not.toHaveBeenCalled();
+  });
+
   it("does not consume a matching native trigger on the next unproven assistant", async () => {
     const task = makeTask();
     task.status = "completed";

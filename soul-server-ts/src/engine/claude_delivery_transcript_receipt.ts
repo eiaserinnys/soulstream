@@ -7,6 +7,8 @@ import {
 import type { AgentProfile } from "../agent_registry.js";
 import type { SessionDeliveryRow, SessionRow } from "../db/session_db_types.js";
 import { buildDeliveryInputUuid } from "../task/delivery_identity.js";
+import { isTurnStartingUserInput } from
+  "./claude_sdk_persistent_session_support.js";
 
 export type ClaudeDeliveryTranscriptReceipt =
   | { kind: "absent"; inputUuid: string }
@@ -48,7 +50,21 @@ export class ClaudeDeliveryTranscriptReceiptReader {
     delivery: SessionDeliveryRow,
   ): Promise<ClaudeDeliveryTranscriptReceipt> {
     const inputUuid = buildDeliveryInputUuid(delivery.delivery_id);
-    const targetSessionId = delivery.target_session_id;
+    return await this.inspectTarget(delivery.target_session_id, inputUuid, false);
+  }
+
+  async inspectInput(
+    targetSessionId: string,
+    inputUuid: string,
+  ): Promise<ClaudeDeliveryTranscriptReceipt> {
+    return await this.inspectTarget(targetSessionId, inputUuid, true);
+  }
+
+  private async inspectTarget(
+    targetSessionId: string | null,
+    inputUuid: string,
+    preferSameNodeLocal: boolean,
+  ): Promise<ClaudeDeliveryTranscriptReceipt> {
     if (!targetSessionId) return { kind: "absent", inputUuid };
     const session = await this.deps.getSession(targetSessionId);
     if (!session || !session.claude_session_id) {
@@ -82,14 +98,21 @@ export class ClaudeDeliveryTranscriptReceiptReader {
       sessionStore: this.deps.sessionStore,
     });
     const sharedReceipt = findClaudeDeliveryTranscriptReceipt(shared, inputUuid);
-    if (sharedReceipt.kind !== "absent") return sharedReceipt;
+    if (
+      sharedReceipt.kind === "completed" ||
+      (!preferSameNodeLocal && sharedReceipt.kind !== "absent")
+    ) return sharedReceipt;
 
     if (session.node_id === this.deps.sourceNode) {
       const local = await this.loadMessages(session.claude_session_id, {
         dir: profile.workspace_dir,
       });
-      return findClaudeDeliveryTranscriptReceipt(local, inputUuid);
+      const localReceipt = findClaudeDeliveryTranscriptReceipt(local, inputUuid);
+      return localReceipt.kind === "absent" && sharedReceipt.kind !== "absent"
+        ? sharedReceipt
+        : localReceipt;
     }
+    if (sharedReceipt.kind !== "absent") return sharedReceipt;
     return {
       kind: "unavailable",
       inputUuid,
@@ -106,8 +129,13 @@ export function findClaudeDeliveryTranscriptReceipt(
     (message) => message.type === "user" && message.uuid === inputUuid,
   );
   if (inputIndex < 0) return { kind: "absent", inputUuid };
-  const assistant = messages
-    .slice(inputIndex + 1)
+  const ownedTurn = messages.slice(inputIndex + 1);
+  const nextInputIndex = ownedTurn.findIndex((message) =>
+    message.type === "user" &&
+    isTurnStartingUserInput(message as unknown as Record<string, unknown>)
+  );
+  const assistant = ownedTurn
+    .slice(0, nextInputIndex < 0 ? undefined : nextInputIndex)
     .find((message) => message.type === "assistant");
   return assistant
     ? {

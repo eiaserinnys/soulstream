@@ -47,6 +47,7 @@ export interface ClaudeRuntimeComposition {
   backgroundLifecycle?: ClaudeBackgroundTaskLifecycle;
   childCompletionConsumption?: ChildCompletionConsumptionRecorder;
   startupRecovery?: ClaudeRuntimeStartupRecovery;
+  transcriptReceipt?: Pick<ClaudeDeliveryTranscriptReceiptReader, "inspectInput">;
 }
 
 /** Keeps the persistent runtime object graph out of explicit kill-switch mode. */
@@ -129,6 +130,7 @@ export async function composeClaudeRuntime(
   return {
     registry,
     backgroundLifecycle,
+    transcriptReceipt,
     childCompletionConsumption: new ChildCompletionConsumptionRecorder(
       deliveryRepository,
     ),

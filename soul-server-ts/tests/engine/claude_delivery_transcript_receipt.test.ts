@@ -66,6 +66,22 @@ describe("Claude delivery transcript receipt", () => {
     ).toEqual({ kind: "input_pending", inputUuid: "delivery-input" });
   });
 
+  it("does not borrow an assistant from a later user turn", () => {
+    expect(
+      findClaudeDeliveryTranscriptReceipt(
+        [
+          message("user", "native-notification-input"),
+          message("user", "human-successor-input"),
+          message("assistant", "human-successor-answer"),
+        ],
+        "native-notification-input",
+      ),
+    ).toEqual({
+      kind: "input_pending",
+      inputUuid: "native-notification-input",
+    });
+  });
+
   it("falls back to same-node JSONL when the shared transcript mirror ended at the crash", async () => {
     const deliveryId = "delivery-stable";
     const inputUuid = buildDeliveryInputUuid(deliveryId);
@@ -100,6 +116,35 @@ describe("Claude delivery transcript receipt", () => {
       kind: "completed",
       inputUuid,
       assistantMessageUuid: "assistant-after-parent-crash",
+    });
+    expect(loadMessages).toHaveBeenCalledTimes(2);
+    expect(loadMessages.mock.calls[0]?.[1]).toHaveProperty("sessionStore");
+    expect(loadMessages.mock.calls[1]?.[1]).not.toHaveProperty("sessionStore");
+  });
+
+  it("reads the same-node native assistant when the live shared mirror has only its input", async () => {
+    const loadMessages = vi.fn()
+      .mockResolvedValueOnce([message("user", "native-input")])
+      .mockResolvedValueOnce([
+        message("user", "native-input"),
+        message("assistant", "native-assistant"),
+      ]);
+    const reader = new ClaudeDeliveryTranscriptReceiptReader({
+      sourceNode: "node-a", sessionStore: {} as never,
+      getSession: async () => ({
+        session_id: "target", node_id: "node-a", agent_id: "claude-agent",
+        claude_session_id: "claude-session",
+      } as SessionRow),
+      getAgent: () => ({
+        id: "claude-agent", name: "Claude", backend: "claude",
+        workspace_dir: "/workspace",
+      }),
+      loadMessages,
+    });
+
+    await expect(reader.inspectInput("target", "native-input")).resolves.toEqual({
+      kind: "completed", inputUuid: "native-input",
+      assistantMessageUuid: "native-assistant",
     });
     expect(loadMessages).toHaveBeenCalledTimes(2);
     expect(loadMessages.mock.calls[0]?.[1]).toHaveProperty("sessionStore");

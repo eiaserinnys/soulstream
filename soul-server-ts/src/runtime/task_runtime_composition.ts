@@ -5,6 +5,8 @@ import type { Logger } from "pino";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { Env } from "../config.js";
 import type { ModelCatalog } from "../model_catalog.js";
+import type { ClaudeDeliveryTranscriptReceiptReader } from
+  "../engine/claude_delivery_transcript_receipt.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
@@ -43,6 +45,7 @@ export interface TaskRuntimeCompositionParams {
   scheduleService: SoulstreamScheduleService;
   orchProxyConfig: OrchProxyConfig;
   runnerProcessFactory?: RunnerProcessRuntimeFactory;
+  claudeTranscriptReceipt?: Pick<ClaudeDeliveryTranscriptReceiptReader, "inspectInput">;
   transientEventLogAggregator: TransientEventLogAggregator;
 }
 
@@ -126,6 +129,7 @@ export function composeTaskRuntime(
     onResume,
     releaseRetainedRunner: async (task) =>
       await taskExecutor.releaseRetainedClaudeRunner(task),
+    transcriptReceipt: params.claudeTranscriptReceipt,
     logger,
     deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     sourceNode: env.SOULSTREAM_NODE_ID,

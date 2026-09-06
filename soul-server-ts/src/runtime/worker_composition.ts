@@ -293,6 +293,9 @@ export async function composeWorkerRuntime(
     scheduleService,
     orchProxyConfig,
     transientEventLogAggregator,
+    ...(claudeRuntime.transcriptReceipt
+      ? { claudeTranscriptReceipt: claudeRuntime.transcriptReceipt }
+      : {}),
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
   });
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({

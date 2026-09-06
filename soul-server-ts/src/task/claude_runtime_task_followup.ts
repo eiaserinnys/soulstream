@@ -11,6 +11,8 @@ import { readClaudeSdkSessionMetadata } from
   "../engine/claude_sdk_session_metadata.js";
 import { readClaudeResultReceiptMetadata } from
   "../engine/claude_result_receipt_metadata.js";
+import type { ClaudeDeliveryTranscriptReceiptReader } from
+  "../engine/claude_delivery_transcript_receipt.js";
 
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskManager } from "./task_manager.js";
@@ -50,6 +52,7 @@ export interface ClaudeRuntimeTaskFollowupDeps {
     Partial<Pick<TaskManager, "getDeliveryConsumptionRecorder">>;
   onResume: StartExecutionCallback;
   releaseRetainedRunner(task: Task): Promise<void>;
+  transcriptReceipt?: Pick<ClaudeDeliveryTranscriptReceiptReader, "inspectInput">;
   logger: Logger;
   deliveryV2Enabled?: boolean;
   sourceNode: string;
@@ -334,8 +337,27 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         (item.phase === "awaiting-assistant" || item.phase === "awaiting-result")
       );
       if (candidates.length !== 1) return;
-      candidates[0]!.phase = "awaiting-result";
-      candidates[0]!.assistantUuid = assistantUuid;
+      const candidate = candidates[0]!;
+      candidate.phase = "awaiting-result";
+      candidate.assistantUuid = assistantUuid;
+      if (!candidate.inputUuid || !this.deps.transcriptReceipt) return;
+      try {
+        const transcript = await this.deps.transcriptReceipt.inspectInput(
+          task.agentSessionId,
+          candidate.inputUuid,
+        );
+        if (
+          transcript.kind === "completed" &&
+          transcript.assistantMessageUuid === assistantUuid
+        ) {
+          await this.consumeNativeAssistant(task, candidate, assistantUuid);
+        }
+      } catch (err) {
+        this.deps.logger.warn(
+          { err, sessionId: task.agentSessionId, taskId: candidate.taskId },
+          "Claude native task-notification transcript receipt failed",
+        );
+      }
       return;
     }
     if (payload.type !== "result") return;
@@ -370,6 +392,14 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       return;
     }
     const candidate = candidates[0]!;
+    await this.consumeNativeAssistant(task, candidate, candidate.assistantUuid!);
+  }
+
+  private async consumeNativeAssistant(
+    task: Task,
+    candidate: NativeDeliveryOwnership,
+    assistantUuid: string,
+  ): Promise<void> {
     const recorder = this.deps.taskManager.getDeliveryConsumptionRecorder?.();
     let consumed = false;
     try {
@@ -380,7 +410,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           taskId: candidate.taskId,
           initiatingToolUseId: candidate.initiatingToolUseId,
         },
-        candidate.assistantUuid!,
+        assistantUuid,
       ) ?? false;
     } catch (err) {
       this.deps.logger.warn(
