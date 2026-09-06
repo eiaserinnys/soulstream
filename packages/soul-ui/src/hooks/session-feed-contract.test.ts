@@ -7,6 +7,10 @@ import { toSessionSummary } from "../shared/mappers";
 import { createProcessingContext } from "../stores/processing-context";
 import { processEventsBatch } from "../stores/event-processor";
 import {
+  appendBrowserNotices,
+  detailEventToSessionNotice,
+} from "../shared/browser-notices";
+import {
   applySessionFeedDelta,
   hydrateNoticeBaseline,
   takeLiveSessionNotices,
@@ -54,6 +58,41 @@ describe("server-owned session feed v2 fixture", () => {
     const ringGap = toSessionSummary(wire.ringGapHydration.session);
     hydrateNoticeBaseline(baselines, ringGap);
     expect(takeLiveSessionNotices(baselines, delta)).toEqual([]);
+  });
+
+  it("preserves session_notification text and deduplicates raw/detail with global notice", () => {
+    const raw = detailEventToSessionNotice({
+      type: "session_notification",
+      delivery_id: "delivery-42",
+      delivery_intent: "completion_notification",
+      source: "background-agent",
+      disposition: "auto_resume",
+      text: "Background work finished",
+      timestamp: 42,
+    }, 42, "session-a");
+    expect(raw).toMatchObject({
+      id: "session-a:42",
+      sourceEventId: 42,
+      body: "Background work finished",
+    });
+
+    const global = {
+      ...raw!,
+      createdAt: "2026-09-07T00:00:42.000Z",
+    };
+    const baselines = new Map<string, NoticeBaseline>();
+    const [fromGlobal] = takeLiveSessionNotices(baselines, {
+      type: "session_updated",
+      agent_session_id: "session-a",
+      notices: [global],
+      notification_watermark: 42,
+    });
+    expect(fromGlobal).toMatchObject({
+      id: "session-a:42",
+      body: "Background work finished",
+    });
+    expect(appendBrowserNotices([raw!], [fromGlobal])).toEqual([raw]);
+    expect(appendBrowserNotices([fromGlobal], [raw!])).toEqual([fromGlobal]);
   });
 
   it("installs one cumulative text prefix and drops queued/live duplicate sequences", () => {
@@ -138,7 +177,9 @@ describe("server-owned session feed v2 fixture", () => {
 
   it("keeps snapshot text after hydrated history and accepts a reasserted lower-id final", () => {
     const ctx = createProcessingContext();
-    const streamIdentity = "codex_sdk:aXRlbS0x";
+    // A valid base64url identity may end in `-<digits>`; that suffix must not
+    // be mistaken for a durable event ID while the snapshot is transient.
+    const streamIdentity = "codex_sdk:aXRlbS0x-1";
     const snapshot = processEventsBatch(
       [{
         event: {

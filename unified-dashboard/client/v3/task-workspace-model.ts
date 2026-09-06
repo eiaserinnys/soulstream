@@ -100,7 +100,10 @@ export function isTaskWorkspaceChatVisible({
   mobileMode,
   mobileChatTab,
 }: TaskWorkspaceChatVisibility): boolean {
-  if (!hasActiveSession || (mobileMode && !mobileChatTab)) return false;
+  if (
+    !hasActiveSession
+    || (mobileMode && (!mobileChatTab || inspectorKind === "document"))
+  ) return false;
   if (!hasTask || boardOpen) return true;
   return chatOpen && inspectorKind === "chat";
 }

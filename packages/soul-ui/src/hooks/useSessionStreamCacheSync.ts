@@ -68,10 +68,16 @@ interface SessionPage {
 }
 
 const MAX_RECOVERY_EVENT_QUEUE = 10_000;
+const RECOVERY_RETRY_BASE_MS = 1_000;
+const RECOVERY_RETRY_MAX_MS = 30_000;
 
 interface StreamRecovery {
   events: SessionStreamEvent[];
   restart: boolean;
+  postInFlightRefetch: boolean;
+  inFlight: boolean;
+  retryAttempt: number;
+  retryTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface UseSessionStreamCacheSyncOptions {
@@ -134,10 +140,17 @@ export function useSessionStreamCacheSync(
   );
   const noticeBaselinesRef = useRef<Map<string, NoticeBaseline>>(new Map());
   const recoveryRef = useRef<StreamRecovery | null>(null);
+  const runRecoveryRef = useRef<(recovery: StreamRecovery) => void>(() => undefined);
 
   useEffect(() => {
-    if (!enabled) recoveryRef.current = null;
+    if (!enabled) {
+      const recovery = recoveryRef.current;
+      if (recovery?.retryTimer) clearTimeout(recovery.retryTimer);
+      recoveryRef.current = null;
+    }
     return () => {
+      const recovery = recoveryRef.current;
+      if (recovery?.retryTimer) clearTimeout(recovery.retryTimer);
       recoveryRef.current = null;
     };
   }, [enabled]);
@@ -505,32 +518,75 @@ export function useSessionStreamCacheSync(
   ]);
 
   const runRecovery = useCallback(async (recovery: StreamRecovery) => {
-    do {
-      recovery.restart = false;
-      const filters = {
-        queryKey: ["sessions"],
-        exact: false,
-        type: "all" as const,
-      };
-      const hadInitialFetchInFlight = queryClient.getQueryCache()
-        .findAll({ queryKey: ["sessions"], exact: false })
-        .some((query) => query.state.fetchStatus === "fetching");
-      await queryClient.refetchQueries({
-        ...filters,
-      }, hadInitialFetchInFlight ? { cancelRefetch: false } : undefined);
-      // A gap can arrive during first-mount hydration. TanStack Query shares
-      // that in-flight request instead of starting another one when there is
-      // no cached data yet, so take the actual post-gap baseline afterward.
-      if (
-        hadInitialFetchInFlight
-        && recoveryRef.current === recovery
-        && !recovery.restart
-      ) {
-        await queryClient.refetchQueries(filters);
-      }
-    } while (recoveryRef.current === recovery && recovery.restart);
+    if (recovery.inFlight || recoveryRef.current !== recovery) return;
+    recovery.inFlight = true;
+    try {
+      do {
+        recovery.restart = false;
+        const allSessionFilters = {
+          queryKey: ["sessions"],
+          exact: false,
+          type: "all" as const,
+        };
+        const filters = recovery.postInFlightRefetch
+          ? allSessionFilters
+          : {
+              ...allSessionFilters,
+              predicate: (query: { state: { data: unknown } }) => query.state.data === undefined,
+            };
+        const hadInitialFetchInFlight = queryClient.getQueryCache()
+          .findAll(filters)
+          .some((query) => query.state.fetchStatus === "fetching");
+        await queryClient.refetchQueries({
+          ...filters,
+        }, {
+          cancelRefetch: !hadInitialFetchInFlight,
+          throwOnError: true,
+        });
+        // A gap can arrive during first-mount hydration. TanStack Query shares
+        // that in-flight request instead of starting another one when there is
+        // no cached data yet, so take the actual post-gap baseline afterward.
+        if (
+          recovery.postInFlightRefetch
+          && hadInitialFetchInFlight
+          && recoveryRef.current === recovery
+          && !recovery.restart
+        ) {
+          await queryClient.refetchQueries(allSessionFilters, { throwOnError: true });
+        }
+        if (
+          !recovery.postInFlightRefetch
+          && queryClient.getQueryCache()
+            .findAll({ queryKey: ["sessions"], exact: false })
+            .some((query) => (
+              query.state.data === undefined
+              && query.state.fetchStatus === "fetching"
+            ))
+        ) {
+          // A view/folder switch can create another first-load query while the
+          // prior one is pending. Include it in the same initial barrier before
+          // replaying the stream tail into every cache.
+          recovery.restart = true;
+        }
+      } while (recoveryRef.current === recovery && recovery.restart);
+    } catch {
+      recovery.inFlight = false;
+      if (recoveryRef.current !== recovery) return;
+      const delay = Math.min(
+        RECOVERY_RETRY_BASE_MS * 2 ** Math.min(recovery.retryAttempt, 5),
+        RECOVERY_RETRY_MAX_MS,
+      );
+      recovery.retryAttempt += 1;
+      recovery.retryTimer = setTimeout(() => {
+        recovery.retryTimer = null;
+        if (recoveryRef.current === recovery) runRecoveryRef.current(recovery);
+      }, delay);
+      return;
+    }
 
     if (recoveryRef.current !== recovery) return;
+    recovery.inFlight = false;
+    recovery.retryAttempt = 0;
     const queued = recovery.events.splice(0);
     recoveryRef.current = null;
     for (const event of queued) {
@@ -538,6 +594,9 @@ export function useSessionStreamCacheSync(
       onStreamEvent?.(event);
     }
   }, [applyDataEvent, onStreamEvent, queryClient]);
+  runRecoveryRef.current = (recovery) => {
+    void runRecovery(recovery);
+  };
 
   const requestRecovery = useCallback(() => {
     const current = recoveryRef.current;
@@ -546,15 +605,51 @@ export function useSessionStreamCacheSync(
       // before that gap. Keep the barrier closed and take a fresh baseline.
       current.events.length = 0;
       current.restart = true;
+      current.postInFlightRefetch = true;
+      if (current.retryTimer) {
+        clearTimeout(current.retryTimer);
+        current.retryTimer = null;
+        runRecoveryRef.current(current);
+      }
       return;
     }
-    const recovery: StreamRecovery = { events: [], restart: false };
+    const recovery: StreamRecovery = {
+      events: [],
+      restart: false,
+      postInFlightRefetch: true,
+      inFlight: false,
+      retryAttempt: 0,
+      retryTimer: null,
+    };
     recoveryRef.current = recovery;
     void runRecovery(recovery);
   }, [runRecovery]);
 
   const routeDataEvent = useCallback((event: SessionStreamEvent) => {
-    const recovery = recoveryRef.current;
+    let recovery = recoveryRef.current;
+    if (!recovery) {
+      const hasUnhydratedSessionQuery = queryClient.getQueryCache()
+        .findAll({ queryKey: ["sessions"], exact: false })
+        .some((query) => (
+          query.state.data === undefined
+          && query.state.fetchStatus === "fetching"
+        ));
+      if (hasUnhydratedSessionQuery) {
+        // The EventSource may deliver its initial snapshot/tail before the
+        // first REST query commits. Queue that tail so the delayed REST value
+        // cannot overwrite newer lifecycle/feed projections.
+        recovery = {
+          events: [],
+          restart: false,
+          postInFlightRefetch: false,
+          inFlight: false,
+          retryAttempt: 0,
+          retryTimer: null,
+        };
+        recoveryRef.current = recovery;
+        runRecoveryRef.current(recovery);
+      }
+    }
     if (recovery) {
       // Cursor ownership is independent from projection visibility. Advancing
       // it now prevents a reconnect from enqueueing the same buffered tail.
@@ -566,12 +661,13 @@ export function useSessionStreamCacheSync(
         // delta tail. Drop that tail and require one more full baseline.
         recovery.events.length = 0;
         recovery.restart = true;
+        recovery.postInFlightRefetch = true;
       }
       recovery.events.push(event);
       return;
     }
     applyDataEvent(event);
-  }, [applyDataEvent, onEventIdAdvance]);
+  }, [applyDataEvent, onEventIdAdvance, queryClient]);
 
   const onStreamMeta = useCallback((event: StreamMetaStreamEvent) => {
     if (onStreamMetaOption?.(event) === true) requestRecovery();

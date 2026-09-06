@@ -81,6 +81,12 @@ describe("task workspace chat visibility", () => {
     expect(visibility({ hasTask: false, chatOpen: false })).toBe(true);
     expect(visibility({ boardOpen: true, mobileMode: true, mobileChatTab: false })).toBe(false);
     expect(visibility({ boardOpen: true, mobileMode: true, mobileChatTab: true })).toBe(true);
+    expect(visibility({
+      boardOpen: true,
+      mobileMode: true,
+      mobileChatTab: true,
+      inspectorKind: "document",
+    })).toBe(false);
   });
 });
 

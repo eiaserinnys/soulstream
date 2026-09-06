@@ -22,6 +22,6 @@ export function extractNodeEventId(
   if (node.type === "session_notification") {
     return node.eventId;
   }
-  if (node.type === "text" && node.eventId !== undefined) return node.eventId;
+  if (node.type === "text") return node.eventId;
   return extractEventId(node.id);
 }
