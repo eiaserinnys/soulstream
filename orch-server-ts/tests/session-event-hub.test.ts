@@ -248,6 +248,73 @@ describe("RuntimeSessionEventHub live text snapshots", () => {
     expect(hub.snapshotLiveText("sess-1")).toEqual({ throughLiveSeq: 2, streams: [] });
   });
 
+  it("fences partial text when the session ends before a stream final arrives", () => {
+    const hub = new RuntimeSessionEventHub();
+    const seen: RuntimeSessionEvent[] = [];
+    hub.subscribe("sess-1", (event) => seen.push(event));
+    publish(hub, {
+      type: "text_delta",
+      item_id: "item-1",
+      raw_event_type: "item.updated",
+      text: "partial",
+    });
+
+    publish(hub, { type: "session_ended", status: "interrupted" });
+
+    expect(seen.at(-1)?.data.event).toEqual({
+      type: "session_ended",
+      status: "interrupted",
+    });
+    expect(hub.snapshotLiveText("sess-1")).toEqual({
+      throughLiveSeq: 2,
+      streams: [],
+    });
+
+    publish(hub, {
+      type: "text_delta",
+      item_id: "item-2",
+      raw_event_type: "item.updated",
+      text: "next turn",
+    });
+    expect(seen.at(-1)?.data.event).toMatchObject({ liveSeq: 3 });
+  });
+
+  it("fences partial text at registry deletion and disconnect boundaries", () => {
+    const hub = new RuntimeSessionEventHub();
+    publish(hub, {
+      type: "text_delta",
+      item_id: "item-deleted",
+      raw_event_type: "item.updated",
+      text: "deleted partial",
+    }, "sess-deleted", "node-deleted");
+    publish(hub, {
+      type: "text_delta",
+      item_id: "item-disconnected",
+      raw_event_type: "item.updated",
+      text: "disconnected partial",
+    }, "sess-disconnected", "node-disconnected");
+
+    hub.dispatchNodeRegistryEvents([{
+      type: "node_session_session_deleted",
+      nodeId: "node-deleted",
+      data: { type: "session_deleted", agentSessionId: "sess-deleted" },
+    }, {
+      type: "node_unregistered",
+      nodeId: "node-disconnected",
+      connectionId: "node-disconnected:1",
+      reason: "socket_closed",
+    }]);
+
+    expect(hub.snapshotLiveText("sess-deleted")).toEqual({
+      throughLiveSeq: 2,
+      streams: [],
+    });
+    expect(hub.snapshotLiveText("sess-disconnected")).toEqual({
+      throughLiveSeq: 2,
+      streams: [],
+    });
+  });
+
   it("does not seed a live snapshot from an unproven prior final message", () => {
     const hub = new RuntimeSessionEventHub();
     publish(hub, {
@@ -285,9 +352,10 @@ function publish(
   hub: RuntimeSessionEventHub,
   payload: Record<string, unknown>,
   sessionId = "sess-1",
+  nodeId = "node-1",
 ): void {
   hub.publish({
-    nodeId: "node-1",
+    nodeId,
     data: {
       agent_session_id: sessionId,
       event: payload,
