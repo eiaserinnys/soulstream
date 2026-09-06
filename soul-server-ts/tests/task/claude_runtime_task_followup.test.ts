@@ -8,6 +8,9 @@ import { attachClaudeBackgroundDeliveryMetadata } from
   "../../src/engine/claude_background_delivery_metadata.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
+import { ClaudeSdkEventMapper } from "../../src/engine/claude_sdk_event_mapper.js";
+import { ClaudeRuntimeState } from "../../src/engine/claude_sdk_runtime_state.js";
+import { mapClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import {
   CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
@@ -18,6 +21,22 @@ import { buildClaudeBackgroundGenerationIdentity } from
   "../../src/task/claude_background_generation_identity.js";
 
 const silentLogger = pino({ level: "silent" });
+
+function sdkResultPayload(
+  inputUuid: string | undefined,
+  resultUuid = "result-native",
+): SSEEventPayload {
+  const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+  const result = mapper.mapSdkMessage({
+    type: "result", subtype: "success", is_error: false, result: "done",
+    uuid: resultUuid,
+    ...(inputUuid ? { user_message_uuid: inputUuid } : {}),
+  } as never).find((event) => event.type === "result");
+  if (!result) throw new Error("SDK Result did not map to a result event");
+  const payload = mapClaudeClientEvent(result).find((event) => event.type === "result");
+  if (!payload) throw new Error("Claude Result did not map to an SSE result");
+  return payload;
+}
 
 function makeTask(): Task {
   return {
@@ -217,10 +236,13 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       trigger_id: "input-native",
       prompt: `<task-notification><task-id>task-native</task-id><tool-use-id>toolu-native</tool-use-id><status>completed</status></task-notification>`,
     } as SSEEventPayload);
-    await controller.collectDetached(task, {
+    const nativeAssistant = {
       type: "assistant_message", content: "native done",
       _dedupe_key: "claude-sdk:assistant:assistant-native:0",
-    } as unknown as SSEEventPayload);
+    } as unknown as SSEEventPayload;
+    await controller.collectDetached(task, nativeAssistant);
+    expect(recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+    await controller.collectDetached(task, sdkResultPayload("input-native"));
 
     expect(recordRuntimeFollowupRelationConsumed).toHaveBeenCalledWith(
       task,
@@ -229,6 +251,141 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     );
     expect(addIntervention).not.toHaveBeenCalled();
   });
+
+  it("does not consume a matching native trigger on the next unproven assistant", async () => {
+    const task = makeTask();
+    task.status = "completed";
+    task.claudeRuntime!.tasks["task-native"] = {
+      taskId: "task-native", status: "completed", updatedAt: 1,
+      isBackgrounded: true, toolUseId: "toolu-native",
+    };
+    const addIntervention = vi.fn();
+    const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
+    const controller = new ClaudeRuntimeTaskFollowupController({
+      taskManager: {
+        addIntervention,
+        getDeliveryConsumptionRecorder: () => ({ recordRuntimeFollowupRelationConsumed }),
+      },
+      onResume: vi.fn(), releaseRetainedRunner: vi.fn(async () => undefined),
+      logger: silentLogger, deliveryV2Enabled: true, sourceNode: "node-1",
+    } as never);
+    const identity = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: "node-1", agentSessionId: "sess-1", sdkSessionId: "sdk-sess-1",
+      sdkTaskId: "task-native", initiatingToolUseId: "toolu-native",
+    });
+    const terminal = {
+      type: "claude_runtime_task_updated", task_id: "task-native",
+      session_id: "sdk-sess-1", patch: { status: "completed", is_backgrounded: true },
+    } as unknown as SSEEventPayload;
+    attachClaudeBackgroundProvenance(terminal, "sdk_membership");
+    attachClaudeBackgroundDeliveryMetadata(terminal, {
+      initiatingToolUseId: "toolu-native", deliveryId: identity.deliveryId,
+      completionId: identity.completionId, relationKey: identity.relationKey,
+      producerTerminalRevision: "1", deliveryCreatedAt: "2026-09-07T00:00:00.000Z",
+      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      storedPayload: { text: "done", user: "system" }, storedPayloadHash: "hash",
+    });
+
+    await controller.collectDetached(task, terminal);
+    await controller.collectDetached(task, {
+      type: "claude_runtime_remote_trigger", origin_kind: "task-notification",
+      trigger_id: "input-native",
+      prompt: `<task-notification><task-id>task-native</task-id><tool-use-id>toolu-native</tool-use-id><status>completed</status></task-notification>`,
+    } as SSEEventPayload);
+    await controller.collectDetached(task, {
+      type: "assistant_message", content: "ordinary foreground answer",
+      _dedupe_key: "claude-sdk:assistant:assistant-unrelated:0",
+    } as unknown as SSEEventPayload);
+
+    expect(recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+    expect(addIntervention).not.toHaveBeenCalled();
+
+    await controller.collectDetached(task, sdkResultPayload(
+      "input-foreground",
+      "result-foreground",
+    ));
+    expect(recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+
+    const nativeAssistant = {
+      type: "assistant_message", content: "native notification answer",
+      _dedupe_key: "claude-sdk:assistant:assistant-native:0",
+    } as unknown as SSEEventPayload;
+    await controller.collectDetached(task, nativeAssistant);
+    expect(recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+    await controller.collectDetached(task, sdkResultPayload("input-native"));
+
+    expect(recordRuntimeFollowupRelationConsumed).toHaveBeenCalledWith(
+      task,
+      { kind: "exact_generation", taskId: "task-native", initiatingToolUseId: "toolu-native" },
+      "assistant-native",
+    );
+    expect(addIntervention).not.toHaveBeenCalled();
+  });
+
+  it.each(["UUID-less Result", "assistantless exact Result"] as const)(
+    "keeps durable native pending for %s",
+    async (variant) => {
+      const task = makeTask();
+      task.status = "completed";
+      task.claudeRuntime!.tasks["task-native"] = {
+        taskId: "task-native", status: "completed", updatedAt: 1,
+        isBackgrounded: true, toolUseId: "toolu-native",
+      };
+      const addIntervention = vi.fn();
+      const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
+      const controller = new ClaudeRuntimeTaskFollowupController({
+        taskManager: {
+          addIntervention,
+          getDeliveryConsumptionRecorder: () => ({ recordRuntimeFollowupRelationConsumed }),
+        },
+        onResume: vi.fn(), releaseRetainedRunner: vi.fn(async () => undefined),
+        logger: silentLogger, deliveryV2Enabled: true, sourceNode: "node-1",
+      } as never);
+      const identity = buildClaudeBackgroundGenerationIdentity({
+        sourceNode: "node-1", agentSessionId: "sess-1", sdkSessionId: "sdk-sess-1",
+        sdkTaskId: "task-native", initiatingToolUseId: "toolu-native",
+      });
+      const terminal = {
+        type: "claude_runtime_task_updated", task_id: "task-native",
+        session_id: "sdk-sess-1", patch: { status: "completed", is_backgrounded: true },
+      } as unknown as SSEEventPayload;
+      attachClaudeBackgroundProvenance(terminal, "sdk_membership");
+      attachClaudeBackgroundDeliveryMetadata(terminal, {
+        initiatingToolUseId: "toolu-native", deliveryId: identity.deliveryId,
+        completionId: identity.completionId, relationKey: identity.relationKey,
+        producerTerminalRevision: "1", deliveryCreatedAt: "2026-09-07T00:00:00.000Z",
+        source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+        storedPayload: { text: "done", user: "system" }, storedPayloadHash: "hash",
+      });
+      await controller.collectDetached(task, terminal);
+      await controller.collectDetached(task, {
+        type: "claude_runtime_remote_trigger", origin_kind: "task-notification",
+        trigger_id: "input-native",
+        prompt: `<task-notification><task-id>task-native</task-id><tool-use-id>toolu-native</tool-use-id><status>completed</status></task-notification>`,
+      } as SSEEventPayload);
+      if (variant === "UUID-less Result") {
+        await controller.collectDetached(task, {
+          type: "assistant_message", content: "provisional native answer",
+          _dedupe_key: "claude-sdk:assistant:assistant-provisional:0",
+        } as unknown as SSEEventPayload);
+        await controller.collectDetached(task, sdkResultPayload(undefined, "result-uuidless"));
+        await controller.collectDetached(task, sdkResultPayload("input-native"));
+      } else {
+        await controller.collectDetached(task, sdkResultPayload("input-native"));
+      }
+      const runtimeClose = {
+        type: "claude_runtime_task_updated", task_id: "task-native",
+        session_id: "sdk-sess-1", patch: {
+          status: "killed", is_backgrounded: true, close_reason: "fatal",
+        },
+      } as unknown as SSEEventPayload;
+      attachClaudeBackgroundProvenance(runtimeClose, "runtime_close");
+      await controller.collectDetached(task, runtimeClose);
+
+      expect(recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+      expect(addIntervention).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps visible-unsettled native ownership through runtime close without synthetic", async () => {
     const task = makeTask();
@@ -269,10 +426,12 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       trigger_id: "input-native",
       prompt: `<task-notification><task-id>task-native</task-id><tool-use-id>toolu-native</tool-use-id><status>completed</status></task-notification>`,
     } as SSEEventPayload);
-    await controller.collectDetached(task, {
+    const nativeAssistant = {
       type: "assistant_message", content: "native done",
       _dedupe_key: "claude-sdk:assistant:assistant-native:0",
-    } as unknown as SSEEventPayload);
+    } as unknown as SSEEventPayload;
+    await controller.collectDetached(task, nativeAssistant);
+    await controller.collectDetached(task, sdkResultPayload("input-native"));
     const runtimeClose = {
       type: "claude_runtime_task_updated", task_id: "task-native",
       session_id: "sdk-sess-1", patch: {

@@ -9,6 +9,8 @@ import { readClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
 import { readClaudeSdkSessionMetadata } from
   "../engine/claude_sdk_session_metadata.js";
+import { readClaudeResultReceiptMetadata } from
+  "../engine/claude_result_receipt_metadata.js";
 
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskManager } from "./task_manager.js";
@@ -58,8 +60,13 @@ interface NativeDeliveryOwnership {
   generationKey: string;
   taskId: string;
   initiatingToolUseId: string;
-  phase: "awaiting-input" | "awaiting-assistant" | "native-visible-unsettled";
+  phase:
+    | "awaiting-input"
+    | "awaiting-assistant"
+    | "awaiting-result"
+    | "native-visible-unsettled";
   inputUuid?: string;
+  assistantUuid?: string;
 }
 
 const TERMINAL_RUNTIME_TASK_STATUSES = new Set([
@@ -319,13 +326,49 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       candidates[0]!.inputUuid = inputUuid;
       return;
     }
-    if (payload.type !== "assistant_message") return;
-    const assistantUuid = assistantUuidFromDedupeKey(asString(payload._dedupe_key));
-    if (!assistantUuid) return;
-    const candidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
-      item.sessionId === task.agentSessionId && item.phase === "awaiting-assistant"
+    if (payload.type === "assistant_message") {
+      const assistantUuid = assistantUuidFromDedupeKey(asString(payload._dedupe_key));
+      if (!assistantUuid) return;
+      const candidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
+        item.sessionId === task.agentSessionId &&
+        (item.phase === "awaiting-assistant" || item.phase === "awaiting-result")
+      );
+      if (candidates.length !== 1) return;
+      candidates[0]!.phase = "awaiting-result";
+      candidates[0]!.assistantUuid = assistantUuid;
+      return;
+    }
+    if (payload.type !== "result") return;
+    const receipt = readClaudeResultReceiptMetadata(event);
+    if (!receipt) {
+      for (const item of this.nativeOwnershipByGenerationKey.values()) {
+        if (item.sessionId !== task.agentSessionId || item.phase !== "awaiting-result") {
+          continue;
+        }
+        item.phase = "awaiting-assistant";
+        item.assistantUuid = undefined;
+      }
+      return;
+    }
+    const sessionCandidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
+      item.sessionId === task.agentSessionId && item.phase === "awaiting-result"
     );
-    if (candidates.length !== 1) return;
+    for (const item of sessionCandidates) {
+      if (item.inputUuid === receipt.inputUuid) continue;
+      item.phase = "awaiting-assistant";
+      item.assistantUuid = undefined;
+    }
+    const candidates = sessionCandidates.filter((item) =>
+      item.inputUuid === receipt.inputUuid && item.assistantUuid
+    );
+    if (candidates.length !== 1) {
+      const assistantless = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
+        item.sessionId === task.agentSessionId &&
+        item.inputUuid === receipt.inputUuid && item.phase === "awaiting-assistant"
+      );
+      for (const item of assistantless) item.phase = "native-visible-unsettled";
+      return;
+    }
     const candidate = candidates[0]!;
     const recorder = this.deps.taskManager.getDeliveryConsumptionRecorder?.();
     let consumed = false;
@@ -337,7 +380,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           taskId: candidate.taskId,
           initiatingToolUseId: candidate.initiatingToolUseId,
         },
-        assistantUuid,
+        candidate.assistantUuid!,
       ) ?? false;
     } catch (err) {
       this.deps.logger.warn(
