@@ -153,6 +153,21 @@ function toOrchestratorSessionSummary(raw: Record<string, unknown>): SessionSumm
     folderId: summary.folderId ?? null,
     displayName: summary.displayName ?? null,
     lastMessage: summary.lastMessage,
+    ...(summary.pendingAttentions === undefined
+      ? {}
+      : { pendingAttentions: summary.pendingAttentions }),
+    ...(summary.attentionRevision === undefined
+      ? {}
+      : { attentionRevision: summary.attentionRevision }),
+    ...(summary.recentNotices === undefined
+      ? {}
+      : { recentNotices: summary.recentNotices }),
+    ...(summary.notificationWatermark === undefined
+      ? {}
+      : { notificationWatermark: summary.notificationWatermark }),
+    ...(summary.noticesTruncated === undefined
+      ? {}
+      : { noticesTruncated: summary.noticesTruncated }),
     lastEventId: summary.lastEventId ?? 0,
     lastReadEventId: summary.lastReadEventId ?? 0,
     ...(summary.awaySummary == null ? {} : { awaySummary: summary.awaySummary }),

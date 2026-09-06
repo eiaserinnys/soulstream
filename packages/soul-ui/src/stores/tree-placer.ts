@@ -234,7 +234,7 @@ export function applyLiveTextSnapshot(
     if (!identity) continue;
     ctx.liveTextLastSeqByIdentity.set(
       identity,
-      Math.max(ctx.liveTextLastSeqByIdentity.get(identity) ?? 0, event.throughLiveSeq),
+      Math.max(ctx.liveTextLastSeqByIdentity.get(identity) ?? -1, event.throughLiveSeq),
     );
     const mapKey = liveTextNodeKey(identity);
     const existing = ctx.nodeMap.get(mapKey);

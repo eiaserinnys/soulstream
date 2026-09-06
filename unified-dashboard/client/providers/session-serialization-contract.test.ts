@@ -119,4 +119,54 @@ describe("OrchestratorSessionProvider session serialization contract", () => {
 
     expect(result.sessions[0]?.awaySummary).toBe("검증을 마치고 PR 준비 중입니다.");
   });
+
+  it("preserves compact attention and notice baselines from the shared mapper", async () => {
+    const attention = {
+      id: "sess-a:41",
+      sourceEventId: 41,
+      sessionId: "sess-a",
+      kind: "input_request",
+      requestedAt: "2026-09-07T00:00:00.000Z",
+      title: "질문",
+      body: "계속할까요?",
+      requiresDetail: false,
+    };
+    const notice = {
+      id: "sess-a:42",
+      sourceEventId: 42,
+      sessionId: "sess-a",
+      kind: "complete",
+      createdAt: "2026-09-07T00:00:01.000Z",
+      title: "완료",
+      body: "작업이 끝났습니다.",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          sessions: [{
+            agent_session_id: "sess-a",
+            status: "running",
+            pending_attentions: [attention],
+            attention_revision: 7,
+            recent_notices: [notice],
+            notification_watermark: 42,
+            notices_truncated: true,
+          }],
+          total: 1,
+        }),
+      }),
+    );
+
+    const result = await new OrchestratorSessionProvider().fetchSessions();
+
+    expect(result.sessions[0]).toMatchObject({
+      pendingAttentions: [attention],
+      attentionRevision: 7,
+      recentNotices: [notice],
+      notificationWatermark: 42,
+      noticesTruncated: true,
+    });
+  });
 });

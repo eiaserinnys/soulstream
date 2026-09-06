@@ -68,16 +68,28 @@ export class DetailCursorStore {
   }
 }
 
-const registeredStores = new Set<DetailCursorStore>();
+// The two production providers are module-level singletons, but tests, HMR, or
+// embedders may construct additional providers. Keep logout fan-out weak so the
+// registry follows provider lifetime instead of retaining every created store.
+const registeredStores = new Set<WeakRef<DetailCursorStore>>();
+const storeFinalizer = new FinalizationRegistry<WeakRef<DetailCursorStore>>((reference) => {
+  registeredStores.delete(reference);
+});
 
 export function createRegisteredDetailCursorStore(): DetailCursorStore {
   const store = new DetailCursorStore();
-  registeredStores.add(store);
+  const reference = new WeakRef(store);
+  registeredStores.add(reference);
+  storeFinalizer.register(store, reference, reference);
   return store;
 }
 
 export function clearAllDetailCursorStores(): void {
-  for (const store of registeredStores) store.clearAll();
+  for (const reference of registeredStores) {
+    const store = reference.deref();
+    if (store) store.clearAll();
+    else registeredStores.delete(reference);
+  }
 }
 
 function positiveLimit(value: number | undefined, fallback: number): number {

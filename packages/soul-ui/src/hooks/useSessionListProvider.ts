@@ -25,6 +25,7 @@ import type { SessionStreamEvent } from "../shared/stream-events";
 import type { SessionStorageProvider } from "../providers/types";
 import { useInitialCatalogLoad } from "./useInitialCatalogLoad";
 import { useSessionStreamCacheSync } from "./useSessionStreamCacheSync";
+import type { HydrateSessionSnapshots } from "./useSessionStreamCacheSync";
 import {
   buildCatalogStreamUrl,
   reconcileReplayGap,
@@ -89,6 +90,7 @@ export function useSessionListProvider(
   options: UseSessionListProviderOptions
 ) {
   const stableSessionsRef = useRef<SessionSummary[]>([]);
+  const hydrateSessionSnapshotsRef = useRef<HydrateSessionSnapshots>(() => undefined);
   const {
     intervalMs = 5000,
     enabled = true,
@@ -165,6 +167,7 @@ export function useSessionListProvider(
       const result = await provider.fetchSessions(
         fetchOptions,
       );
+      hydrateSessionSnapshotsRef.current(result.sessions);
 
       const store = useDashboardStore.getState();
       if (store.catalog) {
@@ -241,7 +244,7 @@ export function useSessionListProvider(
   const instanceIdRef = useRef<string | undefined>(undefined);
 
   // --- SSE 구독: 연결 + 캐시/store 동기화 ---
-  useSessionStreamCacheSync({
+  const hydrateSessionSnapshots = useSessionStreamCacheSync({
     enabled: enabled && streamEnabled && !externalProvider,
     urlBuilder: () =>
       buildCatalogStreamUrl(lastEventIdRef.current, instanceIdRef.current),
@@ -270,13 +273,17 @@ export function useSessionListProvider(
     onReplayGap: (e) => {
       const update = reconcileReplayGap(e);
       lastEventIdRef.current = update.nextLastEventId;
-      if (update.shouldRefetch) queryRefetch();
+      if (update.shouldRefetch) {
+        queryRefetch();
+        onStreamReset?.();
+      }
     },
     onTaskUpdated: handleTaskUpdated,
     onCustomViewUpdated: handleCustomViewUpdated,
     onStreamEvent,
     transformCatalogUpdate,
   });
+  hydrateSessionSnapshotsRef.current = hydrateSessionSnapshots ?? (() => undefined);
 
   return {
     sessions,

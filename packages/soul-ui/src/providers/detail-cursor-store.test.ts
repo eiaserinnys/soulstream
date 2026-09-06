@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { DetailCursorStore } from "./detail-cursor-store";
+import {
+  clearAllDetailCursorStores,
+  createRegisteredDetailCursorStore,
+  DetailCursorStore,
+} from "./detail-cursor-store";
 
 describe("DetailCursorStore", () => {
   it("isolates cursors by provider-owned store, server/user scope, and session", () => {
@@ -51,5 +55,17 @@ describe("DetailCursorStore", () => {
     store.clearScope("old|alice");
     expect(store.get("old|alice", "session-a")).toBe(0);
     expect(store.get("new|alice", "session-a")).toBe(9);
+  });
+
+  it("clears every still-live registered provider store on logout", () => {
+    const first = createRegisteredDetailCursorStore();
+    const second = createRegisteredDetailCursorStore();
+    first.commit("server|alice", "session-a", 5);
+    second.commit("server|alice", "session-b", 9);
+
+    clearAllDetailCursorStores();
+
+    expect(first.get("server|alice", "session-a")).toBe(0);
+    expect(second.get("server|alice", "session-b")).toBe(0);
   });
 });

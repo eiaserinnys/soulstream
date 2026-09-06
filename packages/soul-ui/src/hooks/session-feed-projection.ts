@@ -113,9 +113,22 @@ export function hydrateNoticeBaseline(
   baselines: Map<string, NoticeBaseline>,
   session: SessionSummary,
 ): void {
+  const current = baselines.get(session.agentSessionId);
+  const ids = new Set([
+    ...(current?.ids ?? []),
+    ...(session.recentNotices ?? []).map((notice) => notice.id),
+  ]);
+  while (ids.size > MAX_LOCAL_NOTICES * 2) {
+    const oldest = ids.values().next().value;
+    if (oldest === undefined) break;
+    ids.delete(oldest);
+  }
   storeNoticeBaseline(baselines, session.agentSessionId, {
-    watermark: finiteNonNegative(session.notificationWatermark),
-    ids: new Set((session.recentNotices ?? []).map((notice) => notice.id)),
+    watermark: Math.max(
+      current?.watermark ?? 0,
+      finiteNonNegative(session.notificationWatermark),
+    ),
+    ids,
   });
 }
 

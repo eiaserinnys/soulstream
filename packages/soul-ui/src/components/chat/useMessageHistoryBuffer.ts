@@ -366,7 +366,7 @@ export function useMessageHistoryBuffer(
     sessionTokenRef.current = Symbol("active");
     configuredSessionRef.current = sessionId;
     if (!initialPageLoadedRef.current) beginFillRun("automatic");
-  }, [beginFillRun, enabled, sessionId]);
+  }, [beginFillRun, enabled, historyResetVersion, sessionId]);
 
   return {
     loading,

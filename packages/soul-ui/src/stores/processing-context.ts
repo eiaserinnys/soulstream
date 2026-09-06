@@ -50,7 +50,9 @@ export function createProcessingContext(): ProcessingContext {
     nodeMap: new Map(),
     activeTextTarget: null,
     finalizedTextStreams: new Set(),
-    liveTextThroughSeq: 0,
+    // liveSeq is zero-based. -1 means no exact live event/snapshot boundary
+    // has been observed yet, so the first liveSeq=0 event remains eligible.
+    liveTextThroughSeq: -1,
     liveTextLastSeqByIdentity: new Map(),
     resetRequiredTextStreams: new Set(),
     pendingResolutions: new Map(),

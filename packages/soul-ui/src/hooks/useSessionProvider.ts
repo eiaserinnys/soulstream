@@ -12,6 +12,9 @@ import type { SessionStorageProvider } from "../providers/types";
 import type { DetailCursorStore } from "../providers/detail-cursor-store";
 import { BATCH_SIZE, BATCH_FLUSH_MS } from "../lib/event-batch";
 
+const PROCESSING_RETRY_BASE_MS = 1_000;
+const PROCESSING_RETRY_MAX_MS = 30_000;
+
 export interface UseSessionProviderOptions {
   sessionKey: string | null;
   /** Provider/server/user identity. Provider identity itself is isolated by its owned store. */
@@ -62,15 +65,21 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   });
   const localCommittedCursorRef = useRef(0);
   const eventQueueRef = useRef<QueuedEvent[]>([]);
+  const preSyncTextSnapshotRef = useRef<QueuedEvent | null>(null);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drainTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const processingRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const processingFailureAttemptRef = useRef(0);
 
   const clearTimersAndQueue = useCallback(() => {
     if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     if (drainTimerRef.current) clearTimeout(drainTimerRef.current);
+    if (processingRetryTimerRef.current) clearTimeout(processingRetryTimerRef.current);
     flushTimerRef.current = null;
     drainTimerRef.current = null;
+    processingRetryTimerRef.current = null;
     eventQueueRef.current.length = 0;
+    preSyncTextSnapshotRef.current = null;
   }, []);
 
   const committedCursor = useCallback((
@@ -115,8 +124,16 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       (item) => item.event.type === "history_sync" && item.event.reset_required === true,
     );
     const resetMarker = resetMarkerIndex >= 0 ? chunk[resetMarkerIndex] : undefined;
+    const preservedSnapshot = preSyncTextSnapshotRef.current?.generation === generation
+      ? preSyncTextSnapshotRef.current
+      : null;
     const eventsToProcess = resetMarker
-      ? chunk.slice(resetMarkerIndex).map(({ event, eventId }) => ({ event, eventId }))
+      ? [
+          ...(preservedSnapshot
+            ? [{ event: preservedSnapshot.event, eventId: preservedSnapshot.eventId }]
+            : []),
+          ...chunk.slice(resetMarkerIndex).map(({ event, eventId }) => ({ event, eventId })),
+        ]
       : chunk.map(({ event, eventId }) => ({ event, eventId }));
     if (resetMarker) {
       clearTreeRef.current();
@@ -131,10 +148,34 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       );
     } catch (error) {
       console.error("[useSessionProvider] Failed to process detail events:", error);
+      // processEvents mutates its tree/context before committing the Zustand
+      // projection, so a thrown chunk cannot safely share either that context
+      // or its physical stream with later events. Fence the callback now (the
+      // effect cleanup may run later), reset the durable history buffer, and
+      // reconnect from the unchanged provider-owned committed cursor.
+      generationRef.current += 1;
+      clearTimersAndQueue();
+      clearTreeRef.current();
+      useDashboardStore.setState((state) => ({
+        historyResetVersion: state.historyResetVersion + 1,
+      }));
+      setSynchronizedSessionKey(null);
       setStatus("error");
-      eventQueueRef.current.length = 0;
+      const retryGeneration = generationRef.current;
+      const retryDelay = Math.min(
+        PROCESSING_RETRY_BASE_MS
+          * 2 ** Math.min(processingFailureAttemptRef.current, 5),
+        PROCESSING_RETRY_MAX_MS,
+      );
+      processingFailureAttemptRef.current += 1;
+      processingRetryTimerRef.current = setTimeout(() => {
+        processingRetryTimerRef.current = null;
+        if (generationRef.current !== retryGeneration) return;
+        setReconnectVersion((value) => value + 1);
+      }, retryDelay);
       return;
     }
+    processingFailureAttemptRef.current = 0;
 
     const store = source.provider?.detailCursorStore;
     let maxCursor = committedCursor(store, source.cursorScope, key);
@@ -149,6 +190,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     commitCursor(store, source.cursorScope, key, maxCursor);
 
     if (sawHistorySync && generationRef.current === generation) {
+      preSyncTextSnapshotRef.current = null;
       setSynchronizedSessionKey(key);
     }
 
@@ -158,7 +200,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
         drainQueue();
       }, 0);
     }
-  }, [commitCursor, committedCursor]);
+  }, [clearTimersAndQueue, commitCursor, committedCursor]);
 
   const enqueueEvent = useCallback((
     event: SoulSSEEvent,
@@ -166,7 +208,9 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     generation: number,
   ) => {
     if (generation !== generationRef.current) return;
-    eventQueueRef.current.push({ event, eventId, generation });
+    const queued = { event, eventId, generation };
+    if (event.type === "text_snapshot") preSyncTextSnapshotRef.current = queued;
+    eventQueueRef.current.push(queued);
     if (eventQueueRef.current.length >= BATCH_SIZE) {
       drainQueue();
       return;
@@ -189,6 +233,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     clearTimersAndQueue();
 
     if (sourceChanged) {
+      processingFailureAttemptRef.current = 0;
       if (previous.cursorScope !== cursorScope) {
         previous.provider?.detailCursorStore?.clearScope(previous.cursorScope);
       }
@@ -198,6 +243,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     }
 
     if (!sessionKey || !active) {
+      processingFailureAttemptRef.current = 0;
       sourceRef.current = { sessionKey, cursorScope, provider: previous.provider };
       setStatus("disconnected");
       setSynchronizedSessionKey(null);
@@ -300,6 +346,11 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
   const reconnect = useCallback(() => {
     if (!sessionKey) return;
+    processingFailureAttemptRef.current = 0;
+    if (processingRetryTimerRef.current) {
+      clearTimeout(processingRetryTimerRef.current);
+      processingRetryTimerRef.current = null;
+    }
     setSynchronizedSessionKey(null);
     setReconnectVersion((value) => value + 1);
   }, [sessionKey]);

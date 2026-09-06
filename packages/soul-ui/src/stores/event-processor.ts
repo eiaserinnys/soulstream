@@ -65,7 +65,7 @@ export function acceptLiveTextEvent(
   const sequence = liveSeq as number;
   const prior = Math.max(
     ctx.liveTextThroughSeq,
-    ctx.liveTextLastSeqByIdentity.get(streamIdentity) ?? 0,
+    ctx.liveTextLastSeqByIdentity.get(streamIdentity) ?? -1,
   );
   if (sequence <= prior) return false;
   ctx.liveTextLastSeqByIdentity.set(streamIdentity, sequence);

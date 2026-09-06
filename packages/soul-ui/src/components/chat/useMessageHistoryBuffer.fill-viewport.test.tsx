@@ -511,6 +511,28 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("refetches the durable first page when reset_required changes the reset version while enabled", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(page([9], null))
+      .mockResolvedValueOnce(page([10], null));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-reset");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(flattenTree(useDashboardStore.getState().tree).map((message) => message.eventId)).toEqual([9]);
+
+    await act(async () => {
+      useDashboardStore.getState().clearTree();
+      useDashboardStore.setState((state) => ({
+        historyResetVersion: state.historyResetVersion + 1,
+      }));
+    });
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(flattenTree(useDashboardStore.getState().tree).map((message) => message.eventId)).toEqual([10]);
+  });
+
   it("aborts an in-flight page when the same session becomes hidden", async () => {
     let signal: AbortSignal | undefined;
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => {

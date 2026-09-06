@@ -101,9 +101,13 @@ export interface UseSessionStreamCacheSyncOptions {
   ) => CatalogState | undefined;
 }
 
+export type HydrateSessionSnapshots = (
+  sessions: readonly SessionSummary[],
+) => void;
+
 export function useSessionStreamCacheSync(
   options: UseSessionStreamCacheSyncOptions,
-): void {
+): HydrateSessionSnapshots {
   const {
     enabled,
     urlBuilder,
@@ -122,6 +126,32 @@ export function useSessionStreamCacheSync(
     (s) => s.setActiveSessionSummary,
   );
   const noticeBaselinesRef = useRef<Map<string, NoticeBaseline>>(new Map());
+
+  const hydrateSessionSnapshots = useCallback((sessions: readonly SessionSummary[]) => {
+    const snapshots = new Map(
+      sessions.map((session) => [session.agentSessionId, session] as const),
+    );
+    for (const session of snapshots.values()) {
+      hydrateNoticeBaseline(noticeBaselinesRef.current, session);
+    }
+
+    const state = useDashboardStore.getState();
+    const activeSessionKey = state.activeSessionKey;
+    if (activeSessionKey === null) return;
+    const snapshot = snapshots.get(activeSessionKey);
+    if (!snapshot) return;
+    if (!state.activeSessionSummary) {
+      setActiveSessionSummary(snapshot);
+      return;
+    }
+    const [summary] = applySessionLifecycleSnapshotToList(
+      [state.activeSessionSummary],
+      snapshots,
+    );
+    if (summary !== state.activeSessionSummary) {
+      setActiveSessionSummary(summary);
+    }
+  }, [setActiveSessionSummary]);
 
   const onSessionCreated = useCallback(
     (event: SessionCreatedStreamEvent) => {
@@ -429,4 +459,5 @@ export function useSessionStreamCacheSync(
     onReplayGap,
     onEvent: onStreamEvent,
   });
+  return hydrateSessionSnapshots;
 }
