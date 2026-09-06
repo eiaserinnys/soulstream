@@ -26,6 +26,8 @@ type ClaudeSystemMessageMapperContext = {
     agentType: string | undefined,
   ): ClaudeClientEvent[];
   makeSubagentStopEvents(agentId: string | undefined): ClaudeClientEvent[];
+  linkTaskToTool(taskId: string, toolUseId: string): void;
+  isParentTaskEligible(taskId: string): boolean;
 };
 
 export function mapClaudeSystemMessage(
@@ -75,10 +77,12 @@ export function mapClaudeSystemMessage(
     if (!taskId) return [];
     context.runtimeState.setTaskStatus(taskId, "running");
     const toolUseId = asString(message.tool_use_id);
+    if (toolUseId) context.linkTaskToTool(taskId, toolUseId);
     const isBackgroundAgent = toolUseId
       ? context.isBackgroundAgentToolUse(toolUseId)
       : false;
     if (isBackgroundAgent) context.rememberBackgroundAgentTask(taskId);
+    if (isBackgroundAgent) context.runtimeState.markBackgroundTask(taskId);
     const taskType = asString(message.task_type) ?? (isBackgroundAgent ? "agent" : undefined);
     const runtimeEvents: ClaudeClientEvent[] = [
       {
@@ -122,7 +126,7 @@ export function mapClaudeSystemMessage(
     }
     return [
       ...(isBackgroundAgent ? [] : context.makeSubagentStartEvents(taskId, taskType)),
-      ...runtimeEvents,
+      ...(context.isParentTaskEligible(taskId) ? runtimeEvents : []),
     ];
   }
   if (subtype === "task_notification") {
@@ -130,10 +134,12 @@ export function mapClaudeSystemMessage(
     const status = parseRuntimeNotificationStatus(message.status);
     if (!taskId || !status) return [];
     context.runtimeState.setTaskStatus(taskId, status);
+    const toolUseId = asString(message.tool_use_id);
+    if (toolUseId) context.linkTaskToTool(taskId, toolUseId);
     const isBackgroundAgent = context.isBackgroundAgentTask(taskId);
     return [
       ...(isBackgroundAgent ? [] : context.makeSubagentStopEvents(taskId)),
-      {
+      ...(context.isParentTaskEligible(taskId) ? [{
         type: "claude_runtime_task_notification",
         taskId,
         status,
@@ -153,7 +159,7 @@ export function mapClaudeSystemMessage(
         ...(typeof message.skip_transcript === "boolean"
           ? { skipTranscript: message.skip_transcript }
           : {}),
-      },
+      } satisfies ClaudeClientEvent] : []),
     ];
   }
   if (subtype === "task_updated") {
@@ -161,9 +167,12 @@ export function mapClaudeSystemMessage(
     const patch = asRecord(message.patch) ?? {};
     if (!taskId) return [];
     const status = parseRuntimeTaskStatus(patch.status);
+    const toolUseId = asString(patch.tool_use_id) ?? asString(message.tool_use_id);
+    if (toolUseId) context.linkTaskToTool(taskId, toolUseId);
     const existing = context.runtimeState.getTaskStatus(taskId);
     context.runtimeState.setTaskStatus(taskId, status ?? existing ?? "pending");
-    return [
+    if (patch.is_backgrounded === true) context.runtimeState.markBackgroundTask(taskId);
+    return context.isParentTaskEligible(taskId) ? [
       {
         type: "claude_runtime_task_updated",
         taskId,
@@ -172,7 +181,7 @@ export function mapClaudeSystemMessage(
           ? { sessionId: asString(message.session_id) }
           : {}),
       },
-    ];
+    ] : [];
   }
   if (subtype === "notification") {
     const text = asString(message.text) ?? "";
@@ -243,11 +252,13 @@ export function mapClaudeSystemMessage(
   if (subtype === "task_progress") {
     const taskId = asString(message.task_id);
     if (taskId) context.runtimeState.setTaskStatus(taskId, "running");
+    const toolUseId = asString(message.tool_use_id);
+    if (taskId && toolUseId) context.linkTaskToTool(taskId, toolUseId);
     const summary = asString(message.summary);
     const description = asString(message.description);
     const text = summary ?? description;
     const events: ClaudeClientEvent[] = text ? [{ type: "progress", text }] : [];
-    if (taskId) {
+    if (taskId && context.isParentTaskEligible(taskId)) {
       events.push({
         type: "claude_runtime_task_progress",
         taskId,

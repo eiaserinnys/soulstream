@@ -23,6 +23,8 @@ describe("ClaudeSdkEventMapper runner JSON contract", () => {
 
   it.each(sdkMapperFixtures)("keeps every $name mapper output inside the runner JSON contract", ({ message }) => {
     const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    mapper.mapSdkMessage(asSdkMessage({ type: "assistant", parent_tool_use_id: null,
+      message: { content: [{ type: "tool_use", id: "fixture-tool", name: "Bash", input: {} }] } }));
     const events = mapper.mapSdkMessage(asSdkMessage(message));
 
     expect(events.length).toBeGreaterThan(0);
@@ -47,7 +49,7 @@ const sdkMapperFixtures: Array<{ name: string; message: Record<string, unknown> 
     message: {
       type: "system",
       subtype: "background_tasks_changed",
-      tasks: [{ task_id: "task-bg" }],
+      tasks: [{ task_id: "task-bg", tool_use_id: "fixture-tool" }],
     },
   },
   {
@@ -68,7 +70,9 @@ const sdkMapperFixtures: Array<{ name: string; message: Record<string, unknown> 
   },
   {
     name: "system task updated",
-    message: { type: "system", subtype: "task_updated", task_id: "task-1", patch: {} },
+    message: {
+      type: "system", subtype: "task_updated", task_id: "task-1", tool_use_id: "fixture-tool", patch: {},
+    },
   },
   {
     name: "system notification",

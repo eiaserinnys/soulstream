@@ -12,6 +12,7 @@ import type { ClaudeSessionRuntime } from "./claude_session_runtime.js";
 import {
   type ActiveForeground,
   hashSdkUserMessage,
+  normalizePersistentTurnOwner,
 } from "./claude_sdk_persistent_session_support.js";
 import { ClaudeTurnInactivityWatchdog } from "./claude_turn_inactivity_watchdog.js";
 
@@ -23,6 +24,7 @@ type StartPersistentForegroundTurnOptions = {
   turnInactivityWatchdog: ClaudeTurnInactivityWatchdog;
   followupWatchdog: ClaudeRuntimeFollowupWatchdog;
   logger: Logger;
+  cachedResultForInput(uuid: string): ClaudeClientEvent | undefined;
   setActiveForeground(active: ActiveForeground): void;
 };
 
@@ -34,6 +36,7 @@ export function startPersistentForegroundTurn({
   turnInactivityWatchdog,
   followupWatchdog,
   logger,
+  cachedResultForInput,
   setActiveForeground,
 }: StartPersistentForegroundTurnOptions): AsyncIterable<ClaudeClientEvent> {
   if (!options.agentSessionId) {
@@ -58,15 +61,22 @@ export function startPersistentForegroundTurn({
       priority: runtime.snapshot().foregroundPhase === "idle" ? "now" : "next",
     },
   );
-  runtime.enqueueInput({
+  const origin = normalizePersistentTurnOwner(options.turnOrigin, uuid);
+  const admission = runtime.enqueueInput({
     uuid,
     payloadHash: hashSdkUserMessage(message),
+    turnOwner: origin,
     message,
   });
-  const origin = {
-    kind: options.turnOrigin?.kind ?? "initial_prompt",
-    id: options.turnOrigin?.id ?? uuid,
-  };
+  if (!admission.enqueued && (
+    admission.state === "submitted"
+    || admission.state === "merged"
+    || admission.state === "settled"
+  )) {
+    const cachedResult = cachedResultForInput(uuid);
+    return immediatePersistentResult(cachedResult);
+  }
+  runtime.beginForegroundTurn(uuid);
   const active = {
     uuid,
     output,
@@ -80,10 +90,15 @@ export function startPersistentForegroundTurn({
   if (origin.kind === "runtime_followup") {
     followupWatchdog.arm(uuid, origin);
   }
-  runtime.beginForegroundTurn(uuid);
   logger.info(
     { uuid, turnOriginKind: origin.kind, turnOriginId: origin.id },
     "Persistent Claude foreground turn started",
   );
   return output;
+}
+
+async function* immediatePersistentResult(
+  event: ClaudeClientEvent | undefined,
+): AsyncIterable<ClaudeClientEvent> {
+  if (event) yield event;
 }

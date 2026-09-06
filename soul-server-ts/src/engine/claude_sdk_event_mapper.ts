@@ -3,8 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
-import { attachClaudeBackgroundProvenance } from
-  "./claude_background_provenance.js";
+import { attachClaudeBackgroundProvenance } from "./claude_background_provenance.js";
 import {
   attachClaudeResultInputReceipt,
   attachClaudeRuntimeSdkSession,
@@ -13,12 +12,14 @@ import {
   fallbackClaudeSdkMessageIdentity,
   runtimeTaskId,
 } from "./claude_sdk_event_metadata.js";
-import { mapClaudeBackgroundTaskMembership } from
-  "./claude_sdk_background_membership_mapper.js";
+import {
+  ClaudeParentIngressScopeTracker,
+  mapClaudeBackgroundBashTaskFromToolResult,
+  mapClaudeBackgroundTaskMembership,
+} from "./claude_sdk_background_membership_mapper.js";
 import { mapClaudeSystemMessage } from "./claude_sdk_system_event_mapper.js";
 import {
   coerceResetsAt,
-  extractBackgroundBashOutput,
   makeContextUsageEvent,
   messageContent,
   permissionDenialsToStrings,
@@ -43,6 +44,7 @@ import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 export class ClaudeSdkEventMapper {
   private readonly runtimeState: ClaudeRuntimeState;
   private readonly toolNamesById = new Map<string, string>();
+  private readonly parentIngressScopes = new ClaudeParentIngressScopeTracker();
   private readonly emittedToolResultIds = new Set<string>();
   private readonly interceptedScheduleToolUseIds = new Set<string>();
   private readonly backgroundAgentToolUseIds = new Set<string>();
@@ -61,6 +63,7 @@ export class ClaudeSdkEventMapper {
 
   clearPerRunState(): void {
     this.toolNamesById.clear();
+    this.parentIngressScopes.clear();
     this.emittedToolResultIds.clear();
     this.emittedSubagentStartIds.clear();
     this.emittedSubagentStopIds.clear();
@@ -85,6 +88,18 @@ export class ClaudeSdkEventMapper {
 
   markInterceptedScheduleToolUse(toolUseId: string): void {
     this.interceptedScheduleToolUseIds.add(toolUseId);
+  }
+
+  recordHookToolScope(toolUseId: string | undefined, agentId: string | undefined): void {
+    this.parentIngressScopes.recordHookToolScope(toolUseId, agentId);
+  }
+
+  recordHookTaskScope(taskId: string, agentId: string | undefined): void {
+    this.parentIngressScopes.recordHookTaskScope(taskId, agentId);
+  }
+
+  isParentTaskEligible(taskId: string): boolean {
+    return this.parentIngressScopes.isParentTaskEligible(taskId);
   }
 
   mapSdkMessage(message: SDKMessage): ClaudeClientEvent[] {
@@ -120,7 +135,11 @@ export class ClaudeSdkEventMapper {
     }
     if (asString(message.subtype) === "background_tasks_changed") {
       return attachClaudeRuntimeSdkSession(
-        mapClaudeBackgroundTaskMembership(message, this.runtimeState),
+        mapClaudeBackgroundTaskMembership(message, this.runtimeState, {
+          linkTaskToTool: (taskId, toolUseId) =>
+            this.parentIngressScopes.linkTaskToTool(taskId, toolUseId),
+          isParentTaskEligible: (taskId) => this.isParentTaskEligible(taskId),
+        }),
         this.currentSdkSessionId,
       );
     }
@@ -134,6 +153,9 @@ export class ClaudeSdkEventMapper {
       makeSubagentStartEvents: (agentId, agentType) =>
         this.makeSubagentStartEvents(agentId, agentType),
       makeSubagentStopEvents: (agentId) => this.makeSubagentStopEvents(agentId),
+      linkTaskToTool: (taskId, toolUseId) =>
+        this.parentIngressScopes.linkTaskToTool(taskId, toolUseId),
+      isParentTaskEligible: (taskId) => this.isParentTaskEligible(taskId),
     });
     for (const event of events) {
       const taskId = runtimeTaskId(event);
@@ -201,6 +223,7 @@ export class ClaudeSdkEventMapper {
         const toolUseId = asString(record.id) ?? null;
         const toolName = asString(record.name) ?? "tool";
         if (toolUseId) this.toolNamesById.set(toolUseId, toolName);
+        if (toolUseId) this.parentIngressScopes.recordMessageToolScope(toolUseId, message);
         const toolInput = asRecord(record.input) ?? {};
         if (toolName === "Agent") this.rememberBackgroundAgentToolUse(toolUseId, toolInput);
         events.push({
@@ -226,6 +249,7 @@ export class ClaudeSdkEventMapper {
       if (!record || record.type !== "tool_result") continue;
 
       const toolUseId = asString(record.tool_use_id) ?? null;
+      if (toolUseId) this.parentIngressScopes.recordMessageToolScope(toolUseId, message);
       if (toolUseId && this.interceptedScheduleToolUseIds.has(toolUseId)) continue;
       if (toolUseId && this.emittedToolResultIds.has(toolUseId)) continue;
       if (toolUseId) this.emittedToolResultIds.add(toolUseId);
@@ -240,11 +264,11 @@ export class ClaudeSdkEventMapper {
       attachClaudeToolResultEnvelope(resultEvent, message);
       events.push(resultEvent);
       events.push(
-        ...this.mapBackgroundBashTaskFromToolResult({
-          toolName,
-          toolUseId,
-          content: [record.content, message.tool_use_result],
-        }),
+        ...mapClaudeBackgroundBashTaskFromToolResult(
+          { toolName, toolUseId, content: [record.content, message.tool_use_result] },
+          this.runtimeState,
+          this.parentIngressScopes,
+        ),
       );
     }
     return events;
@@ -394,52 +418,6 @@ export class ClaudeSdkEventMapper {
       ...(asString(message.priority) !== undefined ? { priority: asString(message.priority) } : {}),
       ...(prompt !== undefined ? { prompt } : {}),
     };
-  }
-
-  private mapBackgroundBashTaskFromToolResult(params: {
-    toolName?: string;
-    toolUseId: string | null;
-    content: unknown;
-  }): ClaudeClientEvent[] {
-    const background = extractBackgroundBashOutput(params.content);
-    if (!background.taskId) return [];
-    if (params.toolName && params.toolName !== "Bash" && params.toolName !== "bash") {
-      return [];
-    }
-
-    const patch: Record<string, unknown> = {
-      status: "running",
-      is_backgrounded: true,
-      task_type: "bash",
-    };
-    if (params.toolUseId) patch.tool_use_id = params.toolUseId;
-    if (background.outputFile) patch.output_file = background.outputFile;
-
-    const existing = this.runtimeState.getTaskStatus(background.taskId);
-    this.runtimeState.setTaskStatus(background.taskId, existing ?? "running");
-
-    this.runtimeState.markBackgroundTask(background.taskId);
-    const updateEvent: ClaudeClientEvent = {
-      type: "claude_runtime_task_updated",
-      taskId: background.taskId,
-      patch,
-    };
-    const events: ClaudeClientEvent[] = existing
-      ? [updateEvent]
-      : [
-          {
-            type: "claude_runtime_task_started",
-            taskId: background.taskId,
-            ...(params.toolUseId ? { toolUseId: params.toolUseId } : {}),
-            taskType: "bash",
-            description: "Background Bash task",
-          },
-          updateEvent,
-        ];
-    for (const event of events) {
-      attachClaudeBackgroundProvenance(event, "explicit_background_tool_result");
-    }
-    return events;
   }
 
   private isBackgroundAgentIdentifier(agentId: string | undefined): boolean {

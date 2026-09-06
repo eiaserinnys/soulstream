@@ -9,6 +9,8 @@ import {
 import { ClaudeSessionClientRegistry } from "../../src/engine/claude_session_client_registry.js";
 import { findClaudeDeliveryTranscriptReceipt } from
   "../../src/engine/claude_delivery_transcript_receipt.js";
+import { readClaudeResultReceiptMetadata } from
+  "../../src/engine/claude_result_receipt_metadata.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import {
   abortSignal,
@@ -27,6 +29,135 @@ import {
 const silentLogger = pino({ level: "silent" });
 
 describe("ClaudeSdkClient persistent runtime", () => {
+  it("no-ops an unproven settled retry and accepts the next distinct input", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      { query: harness.queryFn, detachedEventSink: harness.detached },
+      silentLogger,
+    );
+    const retryUuid = buildDeliveryInputUuid("delivery-no-proof");
+    const first = collect(client.runPersistent({
+      ...runOptions("foreground"),
+      inputUuid: "foreground-uuid",
+    }, abortSignal()));
+    const foregroundInput = await harness.nextInput();
+
+    expect(client.injectAtToolBoundary({
+      prompt: "runtime follow-up",
+      inputUuid: retryUuid,
+      turnOrigin: { kind: "runtime_followup", id: "delivery-no-proof" },
+    })).toBe(true);
+    const injectedInput = await harness.nextInput();
+    harness.push(injectedInput as unknown as SDKMessage);
+    harness.push(sdkResult("sdk-session", foregroundInput.uuid, "foreground done"));
+    await first;
+
+    await expect(collect(client.runPersistent({
+      ...runOptions("runtime follow-up"),
+      inputUuid: retryUuid,
+      turnOrigin: { kind: "runtime_followup", id: "delivery-no-proof" },
+    }, abortSignal()))).resolves.toEqual([]);
+
+    const successor = collect(client.runPersistent({
+      ...runOptions("distinct successor"),
+      inputUuid: "distinct-successor",
+    }, abortSignal()));
+    const successorInput = await harness.nextInput();
+    expect(successorInput.uuid).toBe("distinct-successor");
+    harness.push(sdkResult("sdk-session", successorInput.uuid, "successor done"));
+    await expect(successor).resolves.toContainEqual(
+      expect.objectContaining({ type: "complete", result: "successor done" }),
+    );
+    await client.close();
+  });
+
+  it("returns the cached exact Result receipt without starting a retry turn", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      { query: harness.queryFn, detachedEventSink: harness.detached },
+      silentLogger,
+    );
+    const inputUuid = buildDeliveryInputUuid("delivery-cached-result");
+    const options = {
+      ...runOptions("cached result follow-up"),
+      inputUuid,
+      turnOrigin: { kind: "runtime_followup" as const, id: "delivery-cached-result" },
+    };
+    const first = collect(client.runPersistent(options, abortSignal()));
+    const input = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", input.uuid, "cached result"));
+    await first;
+
+    const replay = await collect(client.runPersistent(options, abortSignal()));
+    expect(replay).toHaveLength(1);
+    expect(replay[0]).toMatchObject({ type: "result", success: true, output: "cached result" });
+    expect(readClaudeResultReceiptMetadata(replay[0]!)).toEqual({ inputUuid });
+    expect(harness.captured).toHaveLength(1);
+    await client.close();
+  });
+
+  it("uses initial_prompt plus UUID for ownerless injection and its foreground retry", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      { query: harness.queryFn, detachedEventSink: harness.detached },
+      silentLogger,
+    );
+    const inputUuid = "ownerless-injection";
+    const first = collect(client.runPersistent({
+      ...runOptions("foreground"),
+      inputUuid: "ownerless-foreground",
+    }, abortSignal()));
+    const foregroundInput = await harness.nextInput();
+    expect(client.injectAtToolBoundary({
+      prompt: "ownerless follow-up",
+      inputUuid,
+    })).toBe(true);
+    await harness.nextInput();
+    harness.push(sdkResult("sdk-session", foregroundInput.uuid, "foreground done"));
+    await first;
+
+    await expect(collect(client.runPersistent({
+      ...runOptions("ownerless follow-up"),
+      inputUuid,
+    }, abortSignal()))).resolves.toEqual([]);
+    expect(harness.captured).toHaveLength(1);
+    await client.close();
+  });
+
+  it("rejects an owner conflict before activation and accepts a distinct successor", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      { query: harness.queryFn, detachedEventSink: harness.detached },
+      silentLogger,
+    );
+    const inputUuid = "owner-conflict";
+    const first = collect(client.runPersistent({
+      ...runOptions("same payload"),
+      inputUuid,
+      turnOrigin: { kind: "runtime_followup", id: "owner-a" },
+    }, abortSignal()));
+    const firstInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+    await first;
+
+    await expect(collect(client.runPersistent({
+      ...runOptions("same payload"),
+      inputUuid,
+      turnOrigin: { kind: "runtime_followup", id: "owner-b" },
+    }, abortSignal()))).rejects.toThrow(/owner/i);
+    const successor = collect(client.runPersistent({
+      ...runOptions("successor"),
+      inputUuid: "after-owner-conflict",
+    }, abortSignal()));
+    const successorInput = await harness.nextInput();
+    expect(successorInput.uuid).toBe("after-owner-conflict");
+    harness.push(sdkResult("sdk-session", successorInput.uuid, "successor done"));
+    await expect(successor).resolves.toContainEqual(
+      expect.objectContaining({ type: "complete", result: "successor done" }),
+    );
+    await client.close();
+  });
+
   it("pushes a machine report with explicit next priority and keeps the foreground owner", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(
@@ -957,6 +1088,15 @@ describe("ClaudeSdkClient persistent runtime", () => {
     harness.push(sdkResult("sdk-session", input.uuid, "foreground done"));
     await turn;
 
+    harness.push({
+      type: "assistant",
+      message: { role: "assistant", content: [{
+        type: "tool_use", id: "tool-1", name: "Bash", input: { command: "true" },
+      }] },
+      parent_tool_use_id: null,
+      uuid: "assistant-background-tool",
+      session_id: "sdk-session",
+    } as unknown as SDKMessage);
     harness.push({
       type: "system",
       subtype: "task_notification",

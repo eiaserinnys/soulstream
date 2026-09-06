@@ -9,6 +9,7 @@ import {
   createInterventionInterruptObservation,
   hashSdkUserMessage,
   makeStaleInterruptReceiptLogger,
+  normalizePersistentTurnOwner,
   waitForInterventionEffect,
 } from "./claude_sdk_persistent_session_support.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
@@ -73,6 +74,7 @@ export function injectPersistentToolBoundary({
   runtime.enqueueForegroundContinuation({
     uuid,
     payloadHash: hashSdkUserMessage(message),
+    turnOwner: normalizePersistentTurnOwner(input.turnOrigin, uuid),
     message,
   });
   return true;

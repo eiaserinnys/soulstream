@@ -34,6 +34,18 @@ import { makeTempDirSync } from "../helpers/temp_dir.js";
 
 const silentLogger = pino({ level: "silent" });
 
+function sdkTopLevelBash(toolUseId: string, sessionId: string): SDKMessage {
+  return {
+    type: "assistant",
+    message: { role: "assistant", content: [{
+      type: "tool_use", id: toolUseId, name: "Bash", input: { command: "true" },
+    }] },
+    parent_tool_use_id: null,
+    uuid: `assistant-${toolUseId}`,
+    session_id: sessionId,
+  } as unknown as SDKMessage;
+}
+
 describe("ClaudeSdkClient", () => {
   it("SDK query options match Python Claude runner parity and map SDK messages to client events", async () => {
     const captured: ClaudeSdkQueryParams[] = [];
@@ -119,7 +131,10 @@ describe("ClaudeSdkClient", () => {
     expect(captured[0]?.options?.canUseTool).toEqual(expect.any(Function));
     expect(captured[0]?.options?.spawnClaudeCodeProcess).toEqual(expect.any(Function));
     expect(captured[0]?.options?.hooks).toMatchObject({
-      PreToolUse: [{ matcher: "Agent", hooks: [expect.any(Function)] }],
+      PreToolUse: [
+        { matcher: "Agent", hooks: [expect.any(Function)] },
+        { matcher: "Bash", hooks: [expect.any(Function)] },
+      ],
       PreCompact: [{ hooks: [expect.any(Function)] }],
       SessionStart: [{ matcher: "compact", hooks: [expect.any(Function)] }],
       SubagentStart: [{ hooks: [expect.any(Function)] }],
@@ -215,10 +230,12 @@ describe("ClaudeSdkClient", () => {
 
   it("classifies task notifications as background only after explicit SDK membership", () => {
     const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    mapper.mapSdkMessage(sdkTopLevelBash("toolu-foreground", "claude-sess-provenance"));
     const foregroundEvents = mapper.mapSdkMessage({
       type: "system",
       subtype: "task_notification",
       task_id: "foreground-agent",
+      tool_use_id: "toolu-foreground",
       status: "completed",
       session_id: "claude-sess-provenance",
       uuid: "foreground-notification",
@@ -233,12 +250,14 @@ describe("ClaudeSdkClient", () => {
       readClaudeBackgroundProvenance(mapClaudeClientEvent(foreground)[0]!),
     ).toBeUndefined();
 
+    mapper.mapSdkMessage(sdkTopLevelBash("toolu-background", "claude-sess-provenance"));
     const membership = mapper.mapSdkMessage({
       type: "system",
       subtype: "background_tasks_changed",
       tasks: [
         {
           task_id: "background-agent",
+          tool_use_id: "toolu-background",
           description: "explicit background work",
           task_type: "agent",
         },
@@ -262,6 +281,7 @@ describe("ClaudeSdkClient", () => {
       type: "system",
       subtype: "task_notification",
       task_id: "background-agent",
+      tool_use_id: "toolu-background",
       status: "completed",
       session_id: "claude-sess-provenance",
       uuid: "background-notification",
@@ -273,6 +293,275 @@ describe("ClaudeSdkClient", () => {
     const [wirePayload] = mapClaudeClientEvent(background);
     expect(readClaudeBackgroundProvenance(wirePayload!)).toBe("sdk_membership");
   });
+
+  it.each([false, true])(
+    "keeps %s Agent sidechain Bash ordinary and scopes parent provenance",
+    (runInBackground) => {
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    mapper.mapSdkMessage({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{
+          type: "tool_use",
+          id: "toolu-parent-agent",
+          name: "Agent",
+          input: {
+            prompt: "inspect code",
+            ...(runInBackground ? { run_in_background: true } : {}),
+          },
+        }],
+      },
+      parent_tool_use_id: null,
+      uuid: "assistant-parent-agent",
+      session_id: "claude-sess-sidechain",
+    } as unknown as SDKMessage);
+    mapper.mapSdkMessage({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{
+          type: "tool_use",
+          id: "toolu-child-bash",
+          name: "Bash",
+          input: { command: "sleep 1 &" },
+        }],
+      },
+      parent_tool_use_id: "toolu-parent-agent",
+      uuid: "assistant-child-bash",
+      session_id: "claude-sess-sidechain",
+    } as unknown as SDKMessage);
+
+    const events = mapper.mapSdkMessage({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: "toolu-child-bash",
+          content: JSON.stringify({
+            backgroundTaskId: "child-bash-task",
+            rawOutputPath: "/tmp/child-bash-task.out",
+          }),
+          is_error: false,
+        }],
+      },
+      parent_tool_use_id: "toolu-parent-agent",
+      uuid: "user-child-bash",
+      session_id: "claude-sess-sidechain",
+    } as unknown as SDKMessage);
+
+    expect(events.filter((event) => event.type === "tool_result")).toHaveLength(1);
+    expect(events.filter((event) => event.type.startsWith("claude_runtime_task_")))
+      .toEqual([]);
+    expect(events.some((event) => readClaudeBackgroundProvenance(event) !== undefined))
+      .toBe(false);
+
+    const parentStarted = mapper.mapSdkMessage({
+      type: "system",
+      subtype: "task_started",
+      task_id: "parent-agent-task",
+      tool_use_id: "toolu-parent-agent",
+      uuid: "started-parent-agent",
+      session_id: "claude-sess-sidechain",
+    } as unknown as SDKMessage);
+    const parentCompleted = mapper.mapSdkMessage({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "parent-agent-task",
+      tool_use_id: "toolu-parent-agent",
+      status: "completed",
+      uuid: "completed-parent-agent",
+      session_id: "claude-sess-sidechain",
+    } as unknown as SDKMessage);
+    expect(parentStarted.filter((event) => event.type === "claude_runtime_task_started"))
+      .toHaveLength(1);
+    expect(parentCompleted.filter((event) => event.type === "claude_runtime_task_notification"))
+      .toHaveLength(1);
+    expect(readClaudeBackgroundProvenance(parentCompleted.find(
+      (event) => event.type === "claude_runtime_task_notification",
+    )!)).toBe(runInBackground ? "sdk_membership" : undefined);
+    },
+  );
+
+  it("emits one parent runtime lifecycle for an explicit top-level Bash result", () => {
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    mapper.mapSdkMessage({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{
+          type: "tool_use",
+          id: "toolu-parent-bash",
+          name: "Bash",
+          input: { command: "sleep 1 &" },
+        }],
+      },
+      parent_tool_use_id: null,
+      uuid: "assistant-parent-bash",
+      session_id: "claude-sess-parent-bash",
+    } as unknown as SDKMessage);
+    const started = mapper.mapSdkMessage({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: "toolu-parent-bash",
+          content: JSON.stringify({ backgroundTaskId: "parent-bash-task" }),
+          is_error: false,
+        }],
+      },
+      parent_tool_use_id: null,
+      uuid: "user-parent-bash",
+      session_id: "claude-sess-parent-bash",
+    } as unknown as SDKMessage);
+    const terminal = mapper.mapSdkMessage({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "parent-bash-task",
+      tool_use_id: "toolu-parent-bash",
+      status: "completed",
+      summary: "done",
+      uuid: "notification-parent-bash",
+      session_id: "claude-sess-parent-bash",
+    } as unknown as SDKMessage);
+
+    expect(started.filter((event) => event.type === "claude_runtime_task_started"))
+      .toHaveLength(1);
+    expect(terminal.filter((event) => event.type === "claude_runtime_task_notification"))
+      .toHaveLength(1);
+    expect(readClaudeBackgroundProvenance(terminal.find(
+      (event) => event.type === "claude_runtime_task_notification",
+    )!)).toBeDefined();
+  });
+
+  it("abstains when parent_tool_use_id is missing", () => {
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    mapper.mapSdkMessage({
+      type: "assistant",
+      message: { role: "assistant", content: [{
+        type: "tool_use",
+        id: "toolu-unknown-bash",
+        name: "Bash",
+        input: { command: "sleep 1 &" },
+      }] },
+      uuid: "assistant-unknown-bash",
+      session_id: "claude-sess-unknown",
+    } as unknown as SDKMessage);
+    const ordinary = mapper.mapSdkMessage({
+      type: "user",
+      message: { role: "user", content: [{
+        type: "tool_result",
+        tool_use_id: "toolu-unknown-bash",
+        content: JSON.stringify({ backgroundTaskId: "unknown-bash-task" }),
+      }] },
+      uuid: "user-unknown-bash",
+      session_id: "claude-sess-unknown",
+    } as unknown as SDKMessage);
+    const terminal = mapper.mapSdkMessage({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "unknown-bash-task",
+      tool_use_id: "toolu-unknown-bash",
+      status: "completed",
+      uuid: "notification-unknown-bash",
+      session_id: "claude-sess-unknown",
+    } as unknown as SDKMessage);
+
+    expect(ordinary.filter((event) => event.type === "tool_result")).toHaveLength(1);
+    expect([...ordinary, ...terminal].filter(
+      (event) => event.type.startsWith("claude_runtime_task_"),
+    )).toEqual([]);
+    expect([...ordinary, ...terminal].some(
+      (event) => readClaudeBackgroundProvenance(event) !== undefined,
+    )).toBe(false);
+  });
+
+  it.each([undefined, "agent-parent"])(
+    "uses hook-first agent_id=%s as the missing-parent ancestry source",
+    async (agentId) => {
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) => makeQuery((async function* () {
+          const bashHook = params.options?.hooks?.PreToolUse?.[1]?.hooks[0];
+          await bashHook?.({
+            hook_event_name: "PreToolUse",
+            tool_name: "Bash",
+            tool_use_id: "toolu-hook-child-bash",
+            tool_input: { command: "sleep 1 &" },
+            ...(agentId ? { agent_id: agentId } : {}),
+          } as any, "hook-child-bash", { signal: new AbortController().signal });
+          yield {
+            type: "system",
+            subtype: "task_started",
+            task_id: "hook-child-task",
+            tool_use_id: "toolu-hook-child-bash",
+            session_id: "claude-sess-hook-child",
+          } as unknown as SDKMessage;
+          yield {
+            type: "system",
+            subtype: "background_tasks_changed",
+            tasks: [{ task_id: "hook-child-task", tool_use_id: "toolu-hook-child-bash" }],
+            session_id: "claude-sess-hook-child",
+          } as unknown as SDKMessage;
+          yield {
+            type: "assistant",
+            message: { role: "assistant", content: [{
+              type: "tool_use",
+              id: "toolu-hook-child-bash",
+              name: "Bash",
+              input: { command: "sleep 1 &" },
+            }] },
+            ...(agentId ? { parent_tool_use_id: "toolu-parent-agent" } : {}),
+            uuid: "assistant-hook-child",
+            session_id: "claude-sess-hook-child",
+          } as unknown as SDKMessage;
+          yield {
+            type: "user",
+            message: { role: "user", content: [{
+              type: "tool_result",
+              tool_use_id: "toolu-hook-child-bash",
+              content: JSON.stringify({ backgroundTaskId: "hook-child-task" }),
+            }] },
+            ...(agentId ? { parent_tool_use_id: "toolu-parent-agent" } : {}),
+            uuid: "user-hook-child",
+            session_id: "claude-sess-hook-child",
+          } as unknown as SDKMessage;
+          yield {
+            type: "system",
+            subtype: "task_notification",
+            task_id: "hook-child-task",
+            tool_use_id: "toolu-hook-child-bash",
+            status: "completed",
+            session_id: "claude-sess-hook-child",
+          } as unknown as SDKMessage;
+          yield sdkSuccessResult("claude-sess-hook-child", "done");
+        })()),
+      },
+      silentLogger,
+    );
+
+    const events = await collect(client.run(
+      { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+      new AbortController().signal,
+    ));
+    expect(events.filter((event) => event.type === "tool_start")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "tool_result")).toHaveLength(1);
+    const runtimeEvents = events.filter(
+      (event) => event.type.startsWith("claude_runtime_task_"),
+    );
+    if (agentId) {
+      expect(runtimeEvents).toEqual([]);
+    } else {
+      const terminal = runtimeEvents.filter(
+        (event) => event.type === "claude_runtime_task_notification",
+      );
+      expect(terminal).toHaveLength(1);
+      expect(readClaudeBackgroundProvenance(terminal[0]!)).toBeDefined();
+    }
+    },
+  );
 
   it("omits SDK env options when run options omit env so the SDK can default to process.env", async () => {
     const captured: ClaudeSdkQueryParams[] = [];
@@ -1494,10 +1783,12 @@ describe("ClaudeSdkClient", () => {
         query: () =>
           makeQuery(
             sdkMessages([
+              sdkTopLevelBash("toolu-progress", "claude-sess-progress"),
               {
                 type: "system",
                 subtype: "task_progress",
                 task_id: "task-1",
+                tool_use_id: "toolu-progress",
                 description: "Analyzing files",
                 usage: { total_tokens: 10, tool_uses: 1, duration_ms: 1000 },
                 session_id: "claude-sess-progress",
@@ -1528,10 +1819,12 @@ describe("ClaudeSdkClient", () => {
     );
 
     expect(events).toEqual([
+      expect.objectContaining({ type: "tool_start", toolUseId: "toolu-progress" }),
       { type: "progress", text: "Analyzing files" },
       {
         type: "claude_runtime_task_progress",
         taskId: "task-1",
+        toolUseId: "toolu-progress",
         sessionId: "claude-sess-progress",
         description: "Analyzing files",
         usage: { total_tokens: 10, tool_uses: 1, duration_ms: 1000 },
@@ -1719,6 +2012,7 @@ describe("ClaudeSdkClient", () => {
 
     expect(captured[0]?.options?.hooks?.PreToolUse).toMatchObject([
       { matcher: "Agent", hooks: [expect.any(Function)] },
+      { matcher: "Bash", hooks: [expect.any(Function)] },
     ]);
     expect(hookResult).toEqual({});
   });
@@ -2889,6 +3183,7 @@ describe("ClaudeSdkClient", () => {
                 uuid: "runtime-running",
                 session_id: "claude-sess-runtime",
               } as unknown as SDKMessage;
+              yield sdkTopLevelBash("toolu-bg", "claude-sess-runtime");
               yield {
                 type: "system",
                 subtype: "task_started",
@@ -2935,6 +3230,9 @@ describe("ClaudeSdkClient", () => {
       ),
     );
 
+    expect(events.splice(1, 1)).toEqual([
+      expect.objectContaining({ type: "tool_start", toolUseId: "toolu-bg" }),
+    ]);
     expect(events.map((event) => event.type)).toEqual([
       "claude_runtime_session_state",
       "subagent_start",
@@ -3126,6 +3424,7 @@ describe("ClaudeSdkClient", () => {
                 uuid: "runtime-running",
                 session_id: "claude-sess-timeout",
               } as unknown as SDKMessage;
+              yield sdkTopLevelBash("toolu-timeout", "claude-sess-timeout");
               yield {
                 type: "system",
                 subtype: "task_started",
@@ -3155,6 +3454,9 @@ describe("ClaudeSdkClient", () => {
       ),
     );
 
+    expect(events.splice(1, 1)).toEqual([
+      expect.objectContaining({ type: "tool_start", toolUseId: "toolu-timeout" }),
+    ]);
     expect(events.map((event) => event.type)).toEqual([
       "claude_runtime_session_state",
       "subagent_start",

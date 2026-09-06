@@ -18,6 +18,7 @@ import { ClaudeRuntimeFollowupWatchdog } from "./claude_runtime_followup_watchdo
 import { ClaudeTurnInactivityWatchdog } from "./claude_turn_inactivity_watchdog.js";
 import {
   type ActiveForeground,
+  ClaudeExactResultCache,
   type ClaudeDetachedEventSink,
   type ClaudeRuntimeEventSink,
   type ClaudeSdkPersistentSessionConfig,
@@ -66,6 +67,7 @@ export class ClaudeSdkPersistentSession {
   private readonly hookPump: Promise<void>;
   private readonly followupWatchdog: ClaudeRuntimeFollowupWatchdog;
   private readonly turnInactivityWatchdog: ClaudeTurnInactivityWatchdog;
+  private readonly exactResultCache = new ClaudeExactResultCache();
   private activeForeground: ActiveForeground | null = null;
   private interventionFence: ActiveForeground | null = null;
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
@@ -100,6 +102,7 @@ export class ClaudeSdkPersistentSession {
       turnInactivityWatchdog: this.turnInactivityWatchdog,
       followupWatchdog: this.followupWatchdog,
       logger: this.logger,
+      cachedResultForInput: (uuid) => this.exactResultCache.get(uuid),
       setActiveForeground: (active) => {
         this.activeForeground = active;
       },
@@ -139,6 +142,7 @@ export class ClaudeSdkPersistentSession {
       this.drainTimer = null;
     }
     this.runtime.close(reason);
+    this.exactResultCache.clear();
     const active = this.activeForeground;
     this.clearForegroundTimers(active);
     active?.output.close();
@@ -230,9 +234,7 @@ export class ClaudeSdkPersistentSession {
   ): Promise<void> {
     const phase = this.runtime.snapshot().foregroundPhase;
     const active = this.activeForeground;
-    const explicitUserMessageUuid =
-      asString(message.user_message_uuid)
-      ?? provableTurnResultOwner(phase, active, message, this.logger);
+    const explicitUserMessageUuid = provableTurnResultOwner(phase, active, message, this.logger);
     if (!explicitUserMessageUuid) {
       const resultOriginKind = asString(asRecord(message.origin)?.kind);
       if (
@@ -259,6 +261,7 @@ export class ClaudeSdkPersistentSession {
       );
       return;
     }
+    const terminalEvents = this.exactResultCache.mapAndRecord(message, this.eventMapper, this.runtime);
     if (
       active?.interruptedOwnerUuid
       && explicitUserMessageUuid === active.interruptedOwnerUuid
@@ -274,7 +277,6 @@ export class ClaudeSdkPersistentSession {
       if (active.origin.kind === "runtime_followup") {
         this.followupWatchdog.arm(active.uuid, active.origin);
       }
-      const terminalEvents = this.eventMapper.mapResultMessage(message);
       const expectedInterruptDiagnostic = terminalEvents.some(isExpectedInterruptDiagnostic);
       this.logger.info(
         {
@@ -312,7 +314,7 @@ export class ClaudeSdkPersistentSession {
           "Claude Result names a turn missing from the persistent input ledger",
         );
       }
-      for (const event of this.eventMapper.mapResultMessage(message)) {
+      for (const event of terminalEvents) {
         markPostResultDrainEvent(event);
         await this.emitDetached(event);
       }
@@ -332,7 +334,6 @@ export class ClaudeSdkPersistentSession {
     if (active?.timedOut) {
       active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
     } else {
-      const terminalEvents = this.eventMapper.mapResultMessage(message);
       const expectedInterruptDiagnostic =
         this.interventionFence === active
         && terminalEvents.some(isExpectedInterruptDiagnostic);
