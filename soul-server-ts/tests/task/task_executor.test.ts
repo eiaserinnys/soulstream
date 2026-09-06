@@ -151,6 +151,53 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startExecution", () => {
+  it("waits for a retained-runner release claim before direct admission", async () => {
+    const mocks = makeMocks();
+    const factory = vi.fn(() => makeFakeEngine([
+      { type: "complete", result: "new runner result", timestamp: 1 },
+    ] as SSEEventPayload[]));
+    const executor = new TaskExecutor(
+      factory,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    const oldRunner = {
+      engine: makeFakeEngine([]),
+      dispatcher: {
+        registrationId: () => "registration-old",
+      },
+      eventPersistence: "runner",
+    } as unknown as TaskRunnerRuntime;
+    const claimed = deferred<void>();
+    task.runner = oldRunner;
+    task.runnerRetainedForDetachedWork = true;
+    task.runnerReleaseClaim = {
+      runner: oldRunner,
+      registrationId: "registration-old",
+      completion: claimed.promise,
+      resolve: () => claimed.resolve(),
+    };
+
+    const execution = executor.startExecution(task, agent);
+    await Promise.resolve();
+    expect(factory).not.toHaveBeenCalled();
+    expect(task.runner).toBe(oldRunner);
+    expect(task.executionActivation).toBeUndefined();
+    expect(task.executionPromise).toBeUndefined();
+
+    task.runner = undefined;
+    task.runnerRetainedForDetachedWork = undefined;
+    task.runnerReleaseClaim = undefined;
+    claimed.resolve();
+    await execution;
+
+    expect(factory).toHaveBeenCalledOnce();
+    expect(task.status).toBe("completed");
+  });
+
   it("sends a prepare_session command frame before starting the event stream", async () => {
     const mocks = makeMocks();
     const prepareSessionRuntime = vi.fn();
@@ -2233,6 +2280,74 @@ describe("TaskExecutor.startExecution", () => {
 });
 
 describe("TaskExecutor runner process boundary", () => {
+  it.each([
+    {
+      label: "old child not_supported",
+      result: { status: "not_supported" },
+      retainedForExpiry: false,
+    },
+    {
+      label: "supported expired activity",
+      result: {
+        activeForegroundCount: 0,
+        detachedRunningCount: 0,
+        retainedTerminalResultCount: 0,
+        earliestRetainedTerminalDeadlineAtMs: null,
+      },
+      retainedForExpiry: true,
+    },
+  ])("bounds Codex recovery for $label", async ({ result, retainedForExpiry }) => {
+    const mocks = makeMocks();
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    dispatcher.invoke.mockResolvedValue(result);
+    runner.engine = new RunnerProcessEngineProxy(
+      "codex",
+      agent.workspace_dir,
+      dispatcher as never,
+    );
+    const processFactory = vi.fn() as unknown as RunnerProcessRuntimeFactory;
+    processFactory.recover = vi.fn(() => runner);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+    const recovered = makeTask();
+    recovered.status = "completed";
+    const registration = {
+      registrationId: "registration-1",
+      config: { sessionId: recovered.agentSessionId, agent, backend: "codex" },
+    } as unknown as RunnerRegistration;
+
+    await expect(executor.retainRegisteredDetachedRunner(
+      recovered,
+      registration,
+    )).resolves.toBe(false);
+
+    expect(dispatcher.invoke).toHaveBeenCalledWith(
+      "codexDetachedCommandActivity",
+      [],
+    );
+    if (retainedForExpiry) {
+      expect(recovered.runner).toBe(runner);
+      expect(recovered.runnerRetainedForDetachedWork).toBe(true);
+      expect(dispatcher.detachHost).not.toHaveBeenCalled();
+    } else {
+      expect(recovered.runner).toBeUndefined();
+      expect(recovered.runnerRetainedForDetachedWork).toBeUndefined();
+      expect(dispatcher.detachHost).toHaveBeenCalledOnce();
+    }
+  });
+
   it("adopts a terminal Claude runner as the SDK background owner without opening an execution", async () => {
     const mocks = makeMocks();
     const { runner, dispatcher } = makeRunnerProcessRuntime([]);
@@ -2277,7 +2392,7 @@ describe("TaskExecutor runner process boundary", () => {
     } as unknown as RunnerRegistration;
 
     await expect(
-      executor.retainRegisteredClaudeBackgroundRunner(recovered, registration),
+      executor.retainRegisteredDetachedRunner(recovered, registration),
     ).resolves.toBe(true);
 
     expect(processFactory.recover).toHaveBeenCalledWith(
@@ -2288,7 +2403,7 @@ describe("TaskExecutor runner process boundary", () => {
     );
     expect(detachedClaudeRuntimeActivity).toHaveBeenCalledOnce();
     expect(recovered.runner).toBe(runner);
-    expect(recovered.runnerRetainedForClaudeBackground).toBe(true);
+    expect(recovered.runnerRetainedForDetachedWork).toBe(true);
     expect(dispatcher.recoverFrames).not.toHaveBeenCalled();
     expect(dispatcher.close).not.toHaveBeenCalled();
     expect(dispatcher.detachHost).not.toHaveBeenCalled();

@@ -176,6 +176,72 @@ describe("RunnerProcessEngineProxy", () => {
     expect(proxy.detachedClaudeRuntime).toBeUndefined();
   });
 
+  it("exposes a separate validated Codex detached-command capability", async () => {
+    const dispatcher = {
+      invoke: vi.fn().mockResolvedValue({
+        activeForegroundCount: 0,
+        detachedRunningCount: 1,
+        retainedTerminalResultCount: 2,
+        earliestRetainedTerminalDeadlineAtMs: 12_345,
+      }),
+    };
+    const proxy = new RunnerProcessEngineProxy(
+      "codex",
+      "/workspace/a",
+      dispatcher as never,
+    );
+
+    expect(proxy.codexDetachedCommandRuntime).toBe(true);
+    expect(proxy.detachedClaudeRuntime).toBeUndefined();
+    await expect(proxy.codexDetachedCommandActivity()).resolves.toEqual({
+      activeForegroundCount: 0,
+      detachedRunningCount: 1,
+      retainedTerminalResultCount: 2,
+      earliestRetainedTerminalDeadlineAtMs: 12_345,
+    });
+    expect(dispatcher.invoke).toHaveBeenCalledWith(
+      "codexDetachedCommandActivity",
+      [],
+    );
+  });
+
+  it.each([
+    ["unavailable", { status: "not_supported" }, null],
+    ["invalid deadline", {
+      activeForegroundCount: 0,
+      detachedRunningCount: 0,
+      retainedTerminalResultCount: 1,
+      earliestRetainedTerminalDeadlineAtMs: "later",
+    }, "reject"],
+    ["missing retained-result deadline", {
+      activeForegroundCount: 0,
+      detachedRunningCount: 0,
+      retainedTerminalResultCount: 1,
+      earliestRetainedTerminalDeadlineAtMs: null,
+    }, "reject"],
+    ["deadline without retained result", {
+      activeForegroundCount: 0,
+      detachedRunningCount: 0,
+      retainedTerminalResultCount: 0,
+      earliestRetainedTerminalDeadlineAtMs: 12_345,
+    }, "reject"],
+  ])("validates Codex detached-command activity: %s", async (_label, result, outcome) => {
+    const dispatcher = { invoke: vi.fn().mockResolvedValue(result) };
+    const proxy = new RunnerProcessEngineProxy(
+      "codex",
+      "/workspace/a",
+      dispatcher as never,
+    );
+
+    if (outcome === null) {
+      await expect(proxy.codexDetachedCommandActivity()).resolves.toBeNull();
+    } else {
+      await expect(proxy.codexDetachedCommandActivity()).rejects.toThrow(
+        "invalid Codex detached-command activity",
+      );
+    }
+  });
+
   it("does not claim detached runtime retention for an offline Claude replay", () => {
     const proxy = new RunnerProcessEngineProxy(
       "claude",
@@ -185,5 +251,14 @@ describe("RunnerProcessEngineProxy", () => {
     );
 
     expect(proxy.detachedClaudeRuntime).toBeUndefined();
+    expect(proxy.codexDetachedCommandRuntime).toBeUndefined();
+
+    const codexProxy = new RunnerProcessEngineProxy(
+      "codex",
+      "/workspace/a",
+      {} as never,
+      { retainDetachedRuntime: false },
+    );
+    expect(codexProxy.codexDetachedCommandRuntime).toBeUndefined();
   });
 });

@@ -53,6 +53,7 @@ type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_TERMINAL_RETENTION_MS"
   | "SOUL_RUNNER_LEASE_TIMEOUT_MS"
   | "CODEX_ADAPTER_MODE"
+  | "CODEX_DETACHED_RESULT_RETENTION_MS"
   | "CLAUDE_SESSION_RUNTIME_V2_ENABLED"
   | "CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS"
   | "CLAUDE_SESSION_RUNTIME_MAX_ENTRIES"
@@ -157,6 +158,8 @@ export function createRunnerProcessRuntimeFactory(
       snapshotPath: release.runnerModuleRoot,
       codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
       codexCliPath: options.codexCliPath?.path,
+      codexDetachedResultRetentionMs:
+        options.env.CODEX_DETACHED_RESULT_RETENTION_MS,
       claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
       claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
       claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
@@ -234,6 +237,7 @@ function spawnInputFromConfig(
     snapshotPath: config.snapshotPath,
     codexAdapterMode: config.codexAdapterMode,
     ...(config.codexCliPath ? { codexCliPath: config.codexCliPath } : {}),
+    codexDetachedResultRetentionMs: config.codexDetachedResultRetentionMs,
     claudeRuntimeV2Enabled: config.claudeRuntimeV2Enabled,
     claudeRuntimeIdleTtlMs: config.claudeRuntimeIdleTtlMs,
     claudeRuntimeMaxEntries: config.claudeRuntimeMaxEntries,

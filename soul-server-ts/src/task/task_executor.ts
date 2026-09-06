@@ -243,6 +243,15 @@ export class TaskExecutor {
     agent: AgentProfile,
     transferredActivation?: ExecutionActivation,
   ): Promise<void> {
+    const releaseClaim = task.runnerReleaseClaim;
+    if (releaseClaim) {
+      return this.startExecutionAfterRunnerReleaseClaim(
+        task,
+        agent,
+        transferredActivation,
+        releaseClaim,
+      );
+    }
     return this.startExecutionWithRegistrationRecord(task, agent, transferredActivation);
   }
 
@@ -251,7 +260,30 @@ export class TaskExecutor {
     agent: AgentProfile,
     activation?: ExecutionActivation,
   ): Promise<void> {
+    const releaseClaim = task.runnerReleaseClaim;
+    if (releaseClaim) {
+      return this.startExecutionAfterRunnerReleaseClaim(
+        task,
+        agent,
+        activation,
+        releaseClaim,
+      );
+    }
     return this.startExecutionWithRegistrationRecord(task, agent, activation);
+  }
+
+  private async startExecutionAfterRunnerReleaseClaim(
+    task: Task,
+    agent: AgentProfile,
+    activation: ExecutionActivation | undefined,
+    firstClaim: NonNullable<Task["runnerReleaseClaim"]>,
+  ): Promise<void> {
+    let claim: Task["runnerReleaseClaim"] = firstClaim;
+    while (claim) {
+      await claim.completion;
+      claim = task.runnerReleaseClaim;
+    }
+    return await this.startExecutionWithRegistrationRecord(task, agent, activation);
   }
 
   private startExecutionWithRegistrationRecord(
@@ -346,7 +378,7 @@ export class TaskExecutor {
     task: Task,
     agent: AgentProfile,
   ): { backend: BackendId; retainedRunner: TaskRunnerRuntime | undefined } {
-    const retainedRunner = task.runnerRetainedForClaudeBackground === true
+    const retainedRunner = task.runnerRetainedForDetachedWork === true
       ? task.runner
       : undefined;
     if (task.runner && !retainedRunner) {
@@ -530,22 +562,52 @@ export class TaskExecutor {
     await this.executorFinalizer.releaseRetainedClaudeRunner(task);
   }
 
+  async releaseExpiredRetainedRunner(
+    task: Task,
+    registration: RunnerRegistration,
+    recordedTerminal: boolean,
+  ): Promise<import("./task_executor_finalizer.js").RetainedRunnerReleaseResult> {
+    const registrationId = registration.registrationId;
+    if (!registrationId) return "not_released";
+    return await this.executorFinalizer.releaseExpiredRetainedRunner(
+      task,
+      registrationId,
+      recordedTerminal,
+    );
+  }
+
+  completeRetainedRunnerReleaseAfterTermination(
+    task: Task,
+    registration: RunnerRegistration,
+  ): boolean {
+    const registrationId = registration.registrationId;
+    return typeof registrationId === "string"
+      && this.executorFinalizer.completeRetainedRunnerReleaseAfterTermination(
+        task,
+        registrationId,
+      );
+  }
+
   /**
    * Reattaches the host to a terminal runner only long enough to ask the SDK
    * whether that process still owns detached background work. No execution
    * admission or foreground frame replay is created here.
    */
-  async retainRegisteredClaudeBackgroundRunner(
+  async retainRegisteredDetachedRunner(
     task: Task,
     registration: RunnerRegistration,
   ): Promise<boolean> {
     if (task.executionPromise !== undefined) return false;
+    if (task.runnerReleaseClaim !== undefined) return false;
     const attached = task.runner;
     if (attached) {
       if (attached.dispatcher.registrationId() !== registration.registrationId) {
         return false;
       }
-      return await this.executorFinalizer.retainClaudeRunnerIfActive(task, attached);
+      return await this.executorFinalizer.retainRunnerIfDetachedWorkActive(
+        task,
+        attached,
+      ) === "retained";
     }
     const runner = this.runnerProcessFactory?.recover?.(
       task,
@@ -555,9 +617,14 @@ export class TaskExecutor {
     );
     if (!runner) throw new Error("runner process recovery factory unavailable");
     this.attachRunner(task, runner);
-    if (await this.executorFinalizer.retainClaudeRunnerIfActive(task, runner)) {
+    const retention = await this.executorFinalizer.retainRunnerIfDetachedWorkActive(
+      task,
+      runner,
+    );
+    if (retention === "retained") {
       return true;
     }
+    if (retention === "codex_inactive") return false;
     if (releaseTaskRunner(task, runner)) await runner.dispatcher.detachHost();
     return false;
   }

@@ -474,7 +474,9 @@ function makeTerminalCleanupCoordinator(
     },
     taskExecutor: {
       recoverRegisteredRunner: vi.fn(async () => undefined),
-      retainRegisteredClaudeBackgroundRunner: vi.fn(async () => false),
+      retainRegisteredDetachedRunner: vi.fn(async () => false),
+      releaseExpiredRetainedRunner: vi.fn(async () => "not_released" as const),
+      completeRetainedRunnerReleaseAfterTermination: vi.fn(() => false),
       restartRegisteredRunner: vi.fn(async () => undefined),
     },
     closedTailDrainer: { drain: vi.fn(async () => undefined) },

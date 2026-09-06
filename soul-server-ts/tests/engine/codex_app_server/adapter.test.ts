@@ -192,6 +192,67 @@ async function drainFailure(
 }
 
 describe("CodexAppServerEngineAdapter", () => {
+  it("observes a root command completion after the foreground subscription ends", async () => {
+    const { adapter, client } = makeAdapter();
+    const eventsPromise = drain(adapter.execute({ prompt: "yield command" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+    client.emit({
+      method: "item/started",
+      params: {
+        threadId: "thread-1", turnId: "turn-1",
+        item: {
+          type: "commandExecution", id: "command-late",
+          command: "sleep 45", status: "inProgress",
+        },
+      },
+    });
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+    await eventsPromise;
+
+    await expect(adapter.codexDetachedCommandActivity()).resolves.toMatchObject({
+      activeForegroundCount: 0,
+      detachedRunningCount: 1,
+      retainedTerminalResultCount: 0,
+    });
+
+    client.resumeThread.mockResolvedValueOnce(threadResponse("thread-1"));
+    client.startTurn.mockRejectedValueOnce(new Error("successor start failed"));
+    const failedSuccessor = await drainFailure(
+      adapter.execute({ prompt: "successor", resumeSessionId: "thread-1" }),
+    );
+    expect(failedSuccessor.error).toEqual(new Error("successor start failed"));
+    await expect(adapter.codexDetachedCommandActivity()).resolves.toMatchObject({
+      activeForegroundCount: 0,
+      detachedRunningCount: 1,
+      retainedTerminalResultCount: 0,
+    });
+
+    client.emit({
+      method: "item/completed",
+      params: {
+        threadId: "thread-1", turnId: "turn-1",
+        item: {
+          type: "commandExecution", id: "command-late",
+          command: "sleep 45", status: "completed", exitCode: 0,
+        },
+      },
+    });
+    await expect(adapter.codexDetachedCommandActivity()).resolves.toMatchObject({
+      detachedRunningCount: 0,
+      retainedTerminalResultCount: 1,
+    });
+    expect("codexDetachedCommandRuntime" in adapter).toBe(false);
+
+    await adapter.close();
+    await expect(adapter.codexDetachedCommandActivity()).resolves.toMatchObject({
+      detachedRunningCount: 0,
+      retainedTerminalResultCount: 0,
+    });
+  });
+
   it("logs each SSE MCP server excluded from the Codex backend", () => {
     const warn = vi.fn();
     const logger = { warn } as unknown as Logger;
@@ -699,6 +760,9 @@ describe("CodexAppServerEngineAdapter", () => {
       fatal: true,
     });
     expect(error).toEqual(new Error("response write failed"));
+    await expect(adapter.codexDetachedCommandActivity()).resolves.toMatchObject({
+      activeForegroundCount: 0,
+    });
   });
 
   it("yields initialization failures once, then throws them to recovery", async () => {
@@ -718,10 +782,36 @@ describe("CodexAppServerEngineAdapter", () => {
     expect(error).toEqual(new Error("initialize failed"));
   });
 
+  it("clears provisional foreground ownership when turn/start rejects", async () => {
+    const client = new FakeClient();
+    client.startTurn.mockRejectedValueOnce(new Error("turn start failed"));
+    const { adapter } = makeAdapter(client);
+
+    const { error } = await drainFailure(adapter.execute({ prompt: "hello" }));
+
+    expect(error).toEqual(new Error("turn start failed"));
+    await expect(adapter.codexDetachedCommandActivity()).resolves.toMatchObject({
+      activeForegroundCount: 0,
+      detachedRunningCount: 0,
+      retainedTerminalResultCount: 0,
+    });
+  });
+
   it("yields client transport errors once, then throws them to recovery", async () => {
     const { adapter, client } = makeAdapter();
     const executionPromise = drainFailure(adapter.execute({ prompt: "hello" }));
     await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    client.emit({
+      method: "item/started",
+      params: {
+        threadId: "thread-1", turnId: "turn-1",
+        item: {
+          type: "commandExecution", id: "command-before-error",
+          command: "sleep 45", status: "inProgress",
+        },
+      },
+    });
 
     client.fail(new Error("transport failed"));
 
@@ -732,6 +822,10 @@ describe("CodexAppServerEngineAdapter", () => {
       fatal: true,
     });
     expect(error).toEqual(new Error("transport failed"));
+    await expect(adapter.codexDetachedCommandActivity()).resolves.toMatchObject({
+      activeForegroundCount: 0,
+      detachedRunningCount: 1,
+    });
   });
 
   it("resumes existing thread without emitting a duplicate session event", async () => {
@@ -839,6 +933,17 @@ describe("CodexAppServerEngineAdapter", () => {
     const executionPromise = drainFailure(adapter.execute({ prompt: "hello" }));
     await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
 
+    client.emit({
+      method: "item/started",
+      params: {
+        threadId: "thread-1", turnId: "turn-1",
+        item: {
+          type: "commandExecution", id: "command-before-close",
+          command: "sleep 45", status: "inProgress",
+        },
+      },
+    });
+
     client.closeWith(new Error("process exited"));
 
     const { events, error } = await executionPromise;
@@ -848,6 +953,11 @@ describe("CodexAppServerEngineAdapter", () => {
       fatal: true,
     });
     expect(error).toEqual(new Error("process exited"));
+    await expect(adapter.codexDetachedCommandActivity()).resolves.toMatchObject({
+      activeForegroundCount: 0,
+      detachedRunningCount: 0,
+      retainedTerminalResultCount: 0,
+    });
 
     await adapter.close();
     await adapter.close();

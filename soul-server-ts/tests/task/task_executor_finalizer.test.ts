@@ -11,7 +11,10 @@ import {
   createTaskRunnerRuntime,
 } from "../../src/runner/task_runner_runtime.js";
 import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
-import type { Task } from "../../src/task/task_models.js";
+import {
+  createExecutionActivation,
+  type Task,
+} from "../../src/task/task_models.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -41,7 +44,211 @@ function makeEngine(close: () => Promise<void>): EnginePort {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function codexActivity(
+  overrides: Partial<{
+    activeForegroundCount: number;
+    detachedRunningCount: number;
+    retainedTerminalResultCount: number;
+    earliestRetainedTerminalDeadlineAtMs: number | null;
+  }> = {},
+) {
+  return {
+    activeForegroundCount: 0,
+    detachedRunningCount: 0,
+    retainedTerminalResultCount: 0,
+    earliestRetainedTerminalDeadlineAtMs: null,
+    ...overrides,
+  };
+}
+
+function exactCodexRunner(options: {
+  activity: () => Promise<ReturnType<typeof codexActivity> | null>;
+  close: () => Promise<void>;
+}) {
+  const engine = {
+    ...makeEngine(vi.fn(async () => undefined)),
+    codexDetachedCommandRuntime: true,
+    codexDetachedCommandActivity: options.activity,
+  } as EnginePort;
+  return createTaskRunnerRuntime(engine, {
+    close: options.close,
+    registrationId: () => "registration-a",
+    activeExecutionCommandId: () => undefined,
+    hasActiveExecution: () => false,
+  } as never);
+}
+
 describe("TaskExecutorFinalizer.finalize", () => {
+  it("retains a process Codex runner for detached running or terminal-result work", async () => {
+    const close = vi.fn(async () => undefined);
+    const activity = vi.fn(async () => codexActivity({ detachedRunningCount: 1 }));
+    const task = makeTask({ runner: exactCodexRunner({ activity, close }) });
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn().mockResolvedValue({
+        newlyFinalized: true, terminalTransitionApplied: true,
+      }) },
+      logger: makeLogger(),
+    });
+
+    await finalizer.finalize(task);
+
+    expect(activity).toHaveBeenCalledOnce();
+    expect(close).not.toHaveBeenCalled();
+    expect(task.runnerRetainedForDetachedWork).toBe(true);
+  });
+
+  it("keeps immediate close for an old Codex child that reports not_supported", async () => {
+    const close = vi.fn(async () => undefined);
+    const task = makeTask({
+      runner: exactCodexRunner({ activity: vi.fn(async () => null), close }),
+    });
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn().mockResolvedValue({
+        newlyFinalized: true, terminalTransitionApplied: true,
+      }) },
+      logger: makeLogger(),
+    });
+
+    await finalizer.finalize(task);
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(task.runner).toBeUndefined();
+    expect(task.runnerRetainedForDetachedWork).toBeUndefined();
+  });
+
+  it("fails open for an invalid or failed new Codex activity query", async () => {
+    const close = vi.fn(async () => undefined);
+    const task = makeTask({
+      runner: exactCodexRunner({
+        activity: vi.fn(async () => { throw new Error("invalid activity"); }),
+        close,
+      }),
+    });
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn().mockResolvedValue({
+        newlyFinalized: true, terminalTransitionApplied: true,
+      }) },
+      logger: makeLogger(),
+    });
+
+    await finalizer.finalize(task);
+
+    expect(close).not.toHaveBeenCalled();
+    expect(task.runnerRetainedForDetachedWork).toBe(true);
+  });
+
+  it("lets a foreground admission win a deferred expired-result inspection", async () => {
+    const observed = deferred<ReturnType<typeof codexActivity> | null>();
+    const activity = vi.fn(() => observed.promise);
+    const close = vi.fn(async () => undefined);
+    const task = makeTask({
+      runner: exactCodexRunner({ activity, close }),
+      runnerRetainedForDetachedWork: true,
+      terminationReason: "completed_ok",
+      terminationEventRecorded: true,
+      terminalEventId: 7,
+    });
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn() },
+      logger: makeLogger(),
+    });
+
+    const release = finalizer.releaseExpiredRetainedRunner(
+      task,
+      "registration-a",
+      true,
+    );
+    await vi.waitFor(() => expect(activity).toHaveBeenCalledOnce());
+    task.executionActivation = createExecutionActivation();
+    observed.resolve(codexActivity());
+
+    await expect(release).resolves.toBe("not_released");
+    expect(close).not.toHaveBeenCalled();
+    expect(task.runnerReleaseClaim).toBeUndefined();
+  });
+
+  it("installs an exact claim before close and releases only after close succeeds", async () => {
+    const closing = deferred<void>();
+    const close = vi.fn(() => closing.promise);
+    const runner = exactCodexRunner({
+      activity: vi.fn(async () => codexActivity()),
+      close,
+    });
+    const task = makeTask({
+      runner,
+      runnerRetainedForDetachedWork: true,
+      terminationReason: "completed_ok",
+      terminationEventRecorded: true,
+      terminalEventId: 7,
+    });
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn() },
+      logger: makeLogger(),
+    });
+
+    const release = finalizer.releaseExpiredRetainedRunner(
+      task,
+      "registration-a",
+      true,
+    );
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+    const claim = task.runnerReleaseClaim;
+    expect(claim).toMatchObject({ runner, registrationId: "registration-a" });
+    expect(task.runner).toBe(runner);
+    closing.resolve();
+
+    await expect(release).resolves.toBe("released");
+    await expect(claim!.completion).resolves.toBeUndefined();
+    expect(task.runner).toBeUndefined();
+    expect(task.runnerReleaseClaim).toBeUndefined();
+  });
+
+  it("keeps a failed close claimed until exact registration termination completes", async () => {
+    const runner = exactCodexRunner({
+      activity: vi.fn(async () => codexActivity()),
+      close: vi.fn(async () => { throw new Error("close failed"); }),
+    });
+    const task = makeTask({
+      runner,
+      runnerRetainedForDetachedWork: true,
+      terminationReason: "completed_ok",
+      terminationEventRecorded: true,
+      terminalEventId: 7,
+    });
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn() },
+      logger: makeLogger(),
+    });
+
+    await expect(finalizer.releaseExpiredRetainedRunner(
+      task,
+      "registration-a",
+      true,
+    )).resolves.toBe("retry_required");
+    const claim = task.runnerReleaseClaim;
+    expect(task.runner).toBe(runner);
+    expect(task.runnerRetainedForDetachedWork).toBe(true);
+    expect(claim).toBeDefined();
+
+    expect(finalizer.completeRetainedRunnerReleaseAfterTermination(
+      task,
+      "registration-a",
+    )).toBe(true);
+    await expect(claim!.completion).resolves.toBeUndefined();
+    expect(task.runner).toBeUndefined();
+    expect(task.runnerReleaseClaim).toBeUndefined();
+  });
+
   it("retains a Claude runner while an accepted native notification turn is pending", async () => {
     const close = vi.fn(async () => undefined);
     const engine = {
@@ -62,7 +269,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     await finalizer.finalize(task);
 
     expect(close).not.toHaveBeenCalled();
-    expect(task.runnerRetainedForClaudeBackground).toBe(true);
+    expect(task.runnerRetainedForDetachedWork).toBe(true);
   });
 
   it("retains the Claude runner owner while its persistent runtime has background work", async () => {
@@ -94,7 +301,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
 
     expect(close).not.toHaveBeenCalled();
     expect(task.runner?.engine).toBe(engine);
-    expect(task.runnerRetainedForClaudeBackground).toBe(true);
+    expect(task.runnerRetainedForDetachedWork).toBe(true);
   });
 
   /**
@@ -133,7 +340,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     await finalizer.finalize(task);
 
     expect(task.runner).toBeUndefined();
-    expect(task.runnerRetainedForClaudeBackground).toBeUndefined();
+    expect(task.runnerRetainedForDetachedWork).toBeUndefined();
     expect(task.runnerIsOfflineReplay).toBeUndefined();
     expect(close).toHaveBeenCalled();
   });
@@ -172,7 +379,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     await finalizer.finalize(task);
 
     expect(close).not.toHaveBeenCalled();
-    expect(task.runnerRetainedForClaudeBackground).toBe(true);
+    expect(task.runnerRetainedForDetachedWork).toBe(true);
   });
 
   it("closes a detached Claude runner immediately when the owner has no background work", async () => {
@@ -204,13 +411,13 @@ describe("TaskExecutorFinalizer.finalize", () => {
 
     expect(close).toHaveBeenCalledOnce();
     expect(task.runner).toBeUndefined();
-    expect(task.runnerRetainedForClaudeBackground).toBeUndefined();
+    expect(task.runnerRetainedForDetachedWork).toBeUndefined();
   });
 
   it.each([
     ["not_supported", { status: "not_supported" }],
     ["undefined", undefined],
-  ])("closes a pre-contract Claude runner whose activity is %s", async (_label, result) => {
+  ])("fails open for pre-contract Claude runtime activity %s", async (_label, result) => {
     const close = vi.fn(async () => undefined);
     const childDispatcher = {
       invoke: vi.fn().mockResolvedValue(result),
@@ -234,9 +441,9 @@ describe("TaskExecutorFinalizer.finalize", () => {
 
     await finalizer.finalize(task);
 
-    expect(close).toHaveBeenCalledOnce();
-    expect(task.runner).toBeUndefined();
-    expect(task.runnerRetainedForClaudeBackground).toBeUndefined();
+    expect(close).not.toHaveBeenCalled();
+    expect(task.runner).toBeDefined();
+    expect(task.runnerRetainedForDetachedWork).toBe(true);
   });
 
   it("releases a retained runner after its detached runtime becomes idle", async () => {
@@ -255,7 +462,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     } as EnginePort;
     const task = makeTask({
       runner: createInProcessTaskRunnerRuntime(engine),
-      runnerRetainedForClaudeBackground: true,
+      runnerRetainedForDetachedWork: true,
     });
     const finalizer = new TaskExecutorFinalizer({
       lifecycleTransition: {
@@ -271,7 +478,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
 
     expect(close).toHaveBeenCalledOnce();
     expect(task.runner).toBeUndefined();
-    expect(task.runnerRetainedForClaudeBackground).toBeUndefined();
+    expect(task.runnerRetainedForDetachedWork).toBeUndefined();
   });
 
   it("rejects runner configuration without a command dispatcher", () => {

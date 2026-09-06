@@ -8,8 +8,13 @@ export function releaseTaskRunner(
   runner: TaskRunnerRuntime,
 ): boolean {
   if (task.runner !== runner) return false;
+  const claim = task.runnerReleaseClaim;
   task.runner = undefined;
-  task.runnerRetainedForClaudeBackground = undefined;
+  task.runnerRetainedForDetachedWork = undefined;
   task.runnerIsOfflineReplay = undefined;
+  if (claim?.runner === runner) {
+    task.runnerReleaseClaim = undefined;
+    claim.resolve();
+  }
   return true;
 }

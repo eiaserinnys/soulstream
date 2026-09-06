@@ -301,6 +301,19 @@ export interface DetachedClaudeRuntimeActivity {
   pendingRuntimeSignalCount?: number;
 }
 
+/** Process-runner capability for Codex commands that outlive their root turn. */
+export interface SupportsCodexDetachedCommandRuntime {
+  readonly codexDetachedCommandRuntime: true;
+  codexDetachedCommandActivity(): Promise<CodexDetachedCommandRuntimeActivity | null>;
+}
+
+export interface CodexDetachedCommandRuntimeActivity {
+  activeForegroundCount: number;
+  detachedRunningCount: number;
+  retainedTerminalResultCount: number;
+  earliestRetainedTerminalDeadlineAtMs: number | null;
+}
+
 /**
  * 백엔드가 thread fork를 지원하면 구현.
  *

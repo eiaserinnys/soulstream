@@ -29,6 +29,119 @@ const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
 
+  it("retires an exact recorded-terminal registration after expired Codex work closes", async () => {
+    const terminalRegistration = registration({
+      lifecycleState: "completed",
+      pidAlive: true,
+    });
+    const recovered = task("session-a");
+    recovered.status = "completed";
+    recovered.terminationReason = "completed_ok";
+    recovered.terminationEventRecorded = true;
+    recovered.terminalEventId = 14;
+    recovered.runner = finishedRunner("registration-a").runner;
+    recovered.runnerRetainedForDetachedWork = true;
+    const releaseExpiredRetainedRunner = vi.fn(async (owned: Task) => {
+      owned.runner = undefined;
+      owned.runnerRetainedForDetachedWork = undefined;
+      return "released" as const;
+    });
+    const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
+      } as never,
+      taskExecutor: {
+        retainRegisteredDetachedRunner: vi.fn(async () => false),
+        releaseExpiredRetainedRunner,
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(releaseExpiredRetainedRunner).toHaveBeenCalledWith(
+      recovered,
+      expect.objectContaining({ registrationId: "registration-a" }),
+      true,
+    );
+    expect(subject.terminate).toHaveBeenCalledOnce();
+    expect(subject.terminate).toHaveBeenCalledWith(
+      terminalRegistration.config.paths,
+      undefined,
+      expect.objectContaining({
+        registrationId: "registration-a",
+        pid: null,
+        pidAlive: false,
+        pidStartIdentity: null,
+      }),
+      expect.any(Function),
+    );
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed-close claim and retries only the exact old registration", async () => {
+    const terminalRegistration = registration({
+      lifecycleState: "completed",
+      pidAlive: true,
+    });
+    const recovered = task("session-a");
+    recovered.status = "completed";
+    recovered.terminationReason = "completed_ok";
+    recovered.terminationEventRecorded = true;
+    recovered.terminalEventId = 14;
+    const runner = finishedRunner("registration-a").runner;
+    recovered.runner = runner;
+    recovered.runnerRetainedForDetachedWork = true;
+    let resolveClaim!: () => void;
+    const completion = new Promise<void>((resolve) => { resolveClaim = resolve; });
+    recovered.runnerReleaseClaim = {
+      runner,
+      registrationId: "registration-a",
+      completion,
+      resolve: resolveClaim,
+    };
+    const complete = vi.fn((owned: Task) => {
+      owned.runner = undefined;
+      owned.runnerRetainedForDetachedWork = undefined;
+      owned.runnerReleaseClaim = undefined;
+      resolveClaim();
+      return true;
+    });
+    const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
+      } as never,
+      taskExecutor: {
+        retainRegisteredDetachedRunner: vi.fn(async () => false),
+        releaseExpiredRetainedRunner: vi.fn(async () => "retry_required" as const),
+        completeRetainedRunnerReleaseAfterTermination: complete,
+      } as never,
+    });
+    subject.terminate.mockRejectedValueOnce(new Error("termination failed"));
+
+    await subject.coordinator.scanOnce();
+    expect(recovered.runner).toBe(runner);
+    expect(recovered.runnerReleaseClaim).toBeDefined();
+    expect(complete).not.toHaveBeenCalled();
+
+    await subject.coordinator.scanOnce();
+    await expect(completion).resolves.toBeUndefined();
+    expect(subject.terminate).toHaveBeenNthCalledWith(
+      2,
+      terminalRegistration.config.paths,
+      { pid: 4123, startIdentity: "start-4123" },
+    );
+    expect(subject.terminate).toHaveBeenNthCalledWith(
+      3,
+      terminalRegistration.config.paths,
+      undefined,
+      expect.objectContaining({ registrationId: "registration-a", pid: null }),
+      expect.any(Function),
+    );
+    expect(complete).toHaveBeenCalledOnce();
+    expect(recovered.runner).toBeUndefined();
+    expect(recovered.runnerReleaseClaim).toBeUndefined();
+  });
+
   it("keeps a retained terminal runner across repeated scans while its SDK live set is non-empty", async () => {
     const terminalRegistration = registration({
       lifecycleState: "completed",
@@ -41,21 +154,21 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     recovered.terminalEventId = 14;
     const { runner, detachHost } = finishedRunner("registration-a");
     recovered.runner = runner;
-    recovered.runnerRetainedForClaudeBackground = true;
-    const retainRegisteredClaudeBackgroundRunner = vi.fn(async () => true);
+    recovered.runnerRetainedForDetachedWork = true;
+    const retainRegisteredDetachedRunner = vi.fn(async () => true);
     const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
       } as never,
       taskExecutor: {
-        retainRegisteredClaudeBackgroundRunner,
+        retainRegisteredDetachedRunner,
       } as never,
     });
 
     await subject.coordinator.scanOnce();
     await subject.coordinator.scanOnce();
 
-    expect(retainRegisteredClaudeBackgroundRunner).toHaveBeenCalledTimes(2);
+    expect(retainRegisteredDetachedRunner).toHaveBeenCalledTimes(2);
     expect(detachHost).not.toHaveBeenCalled();
     expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
@@ -82,9 +195,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     recovered.terminationEventRecorded = true;
     recovered.terminalEventId = 14;
     const { runner } = finishedRunner("registration-a");
-    const retainRegisteredClaudeBackgroundRunner = vi.fn(async (owned: Task) => {
+    const retainRegisteredDetachedRunner = vi.fn(async (owned: Task) => {
       owned.runner = runner;
-      owned.runnerRetainedForClaudeBackground = true;
+      owned.runnerRetainedForDetachedWork = true;
       return true;
     });
     const terminalizeClaudeBackgroundTasks = vi.fn(async () => 0);
@@ -93,14 +206,14 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
       } as never,
       taskExecutor: {
-        retainRegisteredClaudeBackgroundRunner,
+        retainRegisteredDetachedRunner,
       } as never,
       terminalizeClaudeBackgroundTasks,
     } as never);
 
     await subject.coordinator.scanOnce();
 
-    expect(retainRegisteredClaudeBackgroundRunner).toHaveBeenCalledWith(
+    expect(retainRegisteredDetachedRunner).toHaveBeenCalledWith(
       recovered,
       expect.objectContaining({ registrationId: "registration-a" }),
     );
@@ -2038,7 +2151,9 @@ function makeSubject(
   const hydrateRunnerRecoveryTask = vi.fn(async (sessionId: string) =>
     tasks.get(sessionId) ?? fallbackTask);
   const recoverRegisteredRunner = vi.fn(async () => {});
-  const retainRegisteredClaudeBackgroundRunner = vi.fn(async () => false);
+  const retainRegisteredDetachedRunner = vi.fn(async () => false);
+  const releaseExpiredRetainedRunner = vi.fn(async () => "not_released" as const);
+  const completeRetainedRunnerReleaseAfterTermination = vi.fn(() => false);
   const restartRegisteredRunner = vi.fn();
   const markRunnerFailure = vi.fn(async () => {});
   const markRunnerFailureAndResume = markRunnerFailure;
@@ -2072,7 +2187,9 @@ function makeSubject(
     ...overrides,
     taskExecutor: {
       recoverRegisteredRunner,
-      retainRegisteredClaudeBackgroundRunner,
+      retainRegisteredDetachedRunner,
+      releaseExpiredRetainedRunner,
+      completeRetainedRunnerReleaseAfterTermination,
       ...({ restartRegisteredRunner } as object),
       ...overrides.taskExecutor,
     },
@@ -2086,7 +2203,9 @@ function makeSubject(
     task: tasks.get("session-a") ?? fallbackTask,
     hydrateRunnerRecoveryTask,
     recoverRegisteredRunner,
-    retainRegisteredClaudeBackgroundRunner,
+    retainRegisteredDetachedRunner,
+    releaseExpiredRetainedRunner,
+    completeRetainedRunnerReleaseAfterTermination,
     restartRegisteredRunner,
     markRunnerFailure,
     markRunnerFailureAndResume,

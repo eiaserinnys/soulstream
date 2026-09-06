@@ -93,7 +93,9 @@ export async function composeRunnerRecoveryCoordinator(options: {
   taskExecutor: Pick<
     TaskExecutor,
     | "recoverRegisteredRunner"
-    | "retainRegisteredClaudeBackgroundRunner"
+    | "retainRegisteredDetachedRunner"
+    | "releaseExpiredRetainedRunner"
+    | "completeRetainedRunnerReleaseAfterTermination"
   >;
   terminalizeClaudeBackgroundTasks?: (
     sessionId: string,

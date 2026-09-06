@@ -26,7 +26,9 @@ export interface RunnerRecoveryCoordinatorOptions {
   taskExecutor: Pick<
     TaskExecutor,
     | "recoverRegisteredRunner"
-    | "retainRegisteredClaudeBackgroundRunner"
+    | "retainRegisteredDetachedRunner"
+    | "releaseExpiredRetainedRunner"
+    | "completeRetainedRunnerReleaseAfterTermination"
   >;
   closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain">;
   logger: Pick<Logger, "error" | "info" | "warn">;
