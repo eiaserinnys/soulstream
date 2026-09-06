@@ -364,9 +364,9 @@ export interface Task {
   /** 추론 모델 effort override. Codex는 ThreadOptions.modelReasoningEffort로 전달. */
   reasoningEffort?: ReasoningEffort;
   /**
-   * Whether an effort decision was recorded for this session — i.e. the selected
-   * preset advertised an effort contract. False for pre-089 rows and for nodes
-   * whose catalogue declares no efforts; both keep the pre-existing backend
+   * Whether this session carries an effort decision at all. True for everything
+   * this build creates; false only when hydrating a row written before migration
+   * 089 (or by an older node mid-deploy), which keeps the pre-existing backend
    * behaviour. See session_effort_storage.resolveTurnReasoningEffort.
    */
   reasoningEffortRecorded?: boolean;

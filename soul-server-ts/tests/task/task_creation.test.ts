@@ -43,6 +43,35 @@ describe("TaskCreation", () => {
     expect(order).toEqual(["register", "metadata", "hook", "folder", "created"]);
   });
 
+  it("always records an effort decision on the created row", async () => {
+    // Creating a session is itself the decision. NULL is reserved for rows that
+    // predate the feature; writing it here would later hand a brand new Codex
+    // session the legacy xhigh instead of the preset default.
+    const h = makeHarness();
+    await h.creation.createTask({
+      agentSessionId: "sess-auto",
+      prompt: "no effort given",
+      profileId: "codex-default",
+      folderId: "folder-1",
+    });
+    expect(h.registerSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess-auto", reasoningEffort: "auto" }),
+      "register_session:sess-auto",
+    );
+
+    await h.creation.createTask({
+      agentSessionId: "sess-low",
+      prompt: "explicit",
+      profileId: "codex-default",
+      folderId: "folder-1",
+      reasoningEffort: "low",
+    });
+    expect(h.registerSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess-low", reasoningEffort: "low" }),
+      "register_session:sess-low",
+    );
+  });
+
   it("isolates binding hook failures and preserves session creation", async () => {
     const logger = {
       warn: vi.fn(),

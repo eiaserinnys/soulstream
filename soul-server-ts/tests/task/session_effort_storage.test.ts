@@ -15,23 +15,15 @@ import {
 describe("session effort storage boundary", () => {
   describe("write", () => {
     it("stores a resolved level verbatim", () => {
-      expect(toStoredReasoningEffort("low", true)).toBe("low");
-      expect(toStoredReasoningEffort("xhigh", true)).toBe("xhigh");
-      // A level is a decision regardless of how the contract was described.
-      expect(toStoredReasoningEffort("low", false)).toBe("low");
+      expect(toStoredReasoningEffort("low")).toBe("low");
+      expect(toStoredReasoningEffort("xhigh")).toBe("xhigh");
     });
 
-    it("records 'no effort' as the auto marker when the preset had a contract", () => {
-      // NULL is reserved for sessions where no decision was made. Writing NULL
-      // here would make a new auto session indistinguishable from a legacy one.
-      expect(toStoredReasoningEffort(undefined, true)).toBe(REASONING_EFFORT_AUTO);
-    });
-
-    it("records nothing when the preset advertised no effort contract", () => {
-      // An operator catalogue that predates this feature declares no efforts.
-      // Storing `auto` there would claim a decision we never made and would drop
-      // Codex from the xhigh it used to get.
-      expect(toStoredReasoningEffort(undefined, false)).toBeNull();
+    it("records 'no effort' as the auto marker", () => {
+      // NULL is reserved for rows that carry no decision at all. Writing NULL
+      // here would make a new auto session indistinguishable from a legacy one,
+      // and would hand it the legacy Codex xhigh on the next turn.
+      expect(toStoredReasoningEffort(undefined)).toBe(REASONING_EFFORT_AUTO);
     });
   });
 
@@ -63,15 +55,16 @@ describe("session effort storage boundary", () => {
     });
   });
 
-  describe("catalogue without an effort contract keeps legacy behaviour", () => {
-    it("round-trips to the pre-existing backend behaviour", () => {
-      // Deploy against an un-updated catalogue: no contract -> NULL -> unrecorded
-      // -> Codex replays xhigh, Claude still sends nothing. Exactly as before.
-      const stored = toStoredReasoningEffort(undefined, false);
-      const read = readStoredReasoningEffort(stored);
-      expect(read).toEqual({ recorded: false });
-      expect(resolveTurnReasoningEffort(read, "codex")).toBe("xhigh");
-      expect(resolveTurnReasoningEffort(read, "claude")).toBeUndefined();
+  describe("a session created by this build always carries a decision", () => {
+    it("never round-trips to the unrecorded state", () => {
+      // Whatever the catalogue says, creating a session is itself the decision.
+      // Landing in `recorded: false` here would hand a brand new session the
+      // legacy Codex xhigh instead of the backend default.
+      for (const resolved of [undefined, "low"] as const) {
+        const read = readStoredReasoningEffort(toStoredReasoningEffort(resolved));
+        expect(read.recorded).toBe(true);
+        expect(resolveTurnReasoningEffort(read, "codex")).toBe(resolved);
+      }
     });
   });
 

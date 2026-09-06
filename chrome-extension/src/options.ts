@@ -3,7 +3,6 @@ import {
   buildAgentsEndpoint,
   buildModelPresetsEndpoint,
   buildSessionEndpoint,
-  collectAdvertisedEfforts,
   effortsForPreset,
   resolveProfilePreset,
   mergeConfig,
@@ -41,11 +40,19 @@ const EFFORT_LABELS: Record<string, string> = {
 };
 
 /**
- * Fills the effort picker from the node's model catalog. A stored value the node
- * no longer advertises is kept selected and flagged for re-selection — never
- * silently rewritten to another level.
+ * Guards against out-of-order catalog responses: every scope field commit fires
+ * its own request, and a slow earlier node must not repaint the picker after a
+ * later one already did.
+ */
+let populateSequence = 0;
+
+/**
+ * Fills the effort picker from the model preset the configured profile actually
+ * runs with. A stored value that preset no longer advertises is kept selected and
+ * flagged for re-selection — never silently rewritten to another level.
  */
 async function populateReasoningEfforts(config: ExtensionConfig): Promise<void> {
+  const sequence = ++populateSequence;
   const select = document.querySelector<HTMLSelectElement>("#reasoning-effort");
   const note = document.querySelector<HTMLElement>("#reasoning-effort-note");
   if (!select) return;
@@ -57,6 +64,7 @@ async function populateReasoningEfforts(config: ExtensionConfig): Promise<void> 
   let presetDefault: string | undefined;
   let scope = "";
   let loadFailed = false;
+  let presetUnresolved = false;
   try {
     const [presetsResponse, agentsResponse] = await Promise.all([
       fetch(buildModelPresetsEndpoint(config.baseUrl, config.nodeId), { headers }),
@@ -71,22 +79,26 @@ async function populateReasoningEfforts(config: ExtensionConfig): Promise<void> 
       ? ((await agentsResponse.json()) as { agents?: AdvertisedAgent[] }).agents ?? []
       : [];
 
+    // Scoped to the preset this profile actually runs with, so the picker cannot
+    // offer a value that preset would reject at creation time. With no resolved
+    // preset we know nothing, so only the server default is offered — the union
+    // across the node's presets would advertise levels this profile cannot use.
     const preset = config.profile
       ? resolveProfilePreset(agents, presets, config.profile)
       : undefined;
     if (preset) {
-      // Scoped to the preset this profile actually runs with, so the picker
-      // cannot offer a value that preset would reject at creation time.
       efforts = effortsForPreset(preset);
       presetDefault = preset.default_effort;
       scope = preset.label || preset.id;
     } else {
-      efforts = collectAdvertisedEfforts(presets);
-      scope = "";
+      presetUnresolved = true;
     }
   } catch {
     loadFailed = true;
   }
+
+  // A newer scope change already repainted the picker; this response is stale.
+  if (sequence !== populateSequence) return;
 
   select.replaceChildren();
   select.append(new Option(
@@ -111,6 +123,17 @@ async function populateReasoningEfforts(config: ExtensionConfig): Promise<void> 
     if (loadFailed) {
       note.textContent =
         "Could not load model presets. Set Soulstream URL, token and Node ID, then reopen.";
+      note.hidden = false;
+    } else if (presetUnresolved) {
+      // Checked before the stored value: with no resolved preset there is
+      // nothing to "pick a supported effort" from, so naming the real problem
+      // is the only actionable message.
+      note.textContent = stored
+        ? `Could not tell which model preset this profile runs with, so "${stored}"`
+          + " cannot be confirmed and only the server default is offered."
+          + " Check the profile and Node ID."
+        : "Could not tell which model preset this profile runs with, so only the"
+          + " server default is offered. Check the profile and Node ID.";
       note.hidden = false;
     } else if (storedUnsupported) {
       note.textContent = scope

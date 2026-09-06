@@ -71,7 +71,7 @@ function node(nodeId: string): OrchestratorNode {
 let container: HTMLDivElement;
 let root: Root;
 
-function stubFetch(presets: unknown[]) {
+function stubFetch(presets: unknown[], agentDefaultPreset = "claude-opus") {
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes("model-presets")) {
@@ -79,7 +79,7 @@ function stubFetch(presets: unknown[]) {
     }
     return Promise.resolve({
       ok: true,
-      json: async () => ({ agents: [{ id: "roselin", name: "roselin", default_preset: "claude-opus" }] }),
+      json: async () => ({ agents: [{ id: "roselin", name: "roselin", default_preset: agentDefaultPreset }] }),
     } as Response);
   }));
 }
@@ -103,7 +103,7 @@ afterEach(() => {
   useOrchestratorStore.setState({ nodes: new Map(), connectionStatus: "connecting" });
 });
 
-function mountWithSession(session: Record<string, unknown> | null) {
+function mountWithSession(session: Record<string, unknown> | null, presetId = "claude-opus") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   flushSync(() => {
     root.render(createElement(
@@ -117,7 +117,7 @@ function mountWithSession(session: Record<string, unknown> | null) {
         documentOptions: [],
         contextPending: false,
         predecessorOptions: [],
-        pageDefaults: { agentId: "roselin", nodeId: "node-a", modelPreset: "claude-opus" } as never,
+        pageDefaults: { agentId: "roselin", nodeId: "node-a", modelPreset: presetId } as never,
         currentSession: session as never,
         onClose: () => {},
         onCreated: () => {},
@@ -128,6 +128,12 @@ function mountWithSession(session: Record<string, unknown> | null) {
 
 function unsupportedNotice(): Element | null {
   return document.body.querySelector('[data-testid="succession-effort-unsupported"]');
+}
+
+function useDefaultButton(): HTMLButtonElement | null {
+  return document.body.querySelector<HTMLButtonElement>(
+    '[data-testid="succession-effort-use-default"]',
+  );
 }
 
 function mount() {
@@ -204,7 +210,7 @@ describe("SessionSuccessionModal reasoning effort", () => {
   });
 
   it("offers no picker for a preset that advertises nothing", async () => {
-    stubFetch([KIMI]);
+    stubFetch([KIMI], "kimi-3");
     mount();
     await settle();
     expect(effortSelect()).toBeNull();
@@ -325,15 +331,116 @@ describe("unusable carried-over effort", () => {
     });
   });
 
-  it("still explains itself when the preset advertises nothing at all", async () => {
-    // The notice used to live inside the "has options" branch, so this state
-    // rendered a dead button with no message and no control to clear it.
-    stubFetch([KIMI]);
-    mountWithSession({ ...predecessorAtUltra, modelPreset: "kimi-3" });
+  it("shows the unusable value and clears it from the picker itself", async () => {
+    // The picker used to sit on "" with the invalid value only in state, so
+    // choosing 기본값 사용 fired no change event and the form stayed stuck.
+    stubFetch([OPUS]);
+    mountWithSession(predecessorAtUltra);
+    await settle();
+    expect(effortSelect()?.value).toBe("ultra");
+    expect(effortSelect()?.options[0]?.textContent).toContain("지원 안 함");
+
+    flushSync(() => setSelect(effortSelect()!, ""));
+    await settle();
+    expect(unsupportedNotice()).toBeNull();
+    expect(startButton()?.disabled).toBe(false);
+
+    flushSync(() => startButton()?.click());
+    await settle();
+    expect(createDashboardSession.mock.calls[0]?.[0]).not.toHaveProperty("reasoningEffort");
+  });
+
+  it("recovers on the same model by falling back to the preset default", async () => {
+    // The point of the recovery: keeping this model must stay possible. Forcing
+    // a different model would be a worse answer than "use the default".
+    stubFetch([OPUS]);
+    mountWithSession(predecessorAtUltra);
+    await settle();
+    expect(startButton()?.disabled).toBe(true);
+
+    flushSync(() => useDefaultButton()?.click());
+    await settle();
+    expect(unsupportedNotice()).toBeNull();
+    expect(startButton()?.disabled).toBe(false);
+
+    flushSync(() => startButton()?.click());
+    await settle();
+    const payload = createDashboardSession.mock.calls[0]?.[0];
+    // Omitted, so the node applies claude-opus's own default — and the model is
+    // still claude-opus.
+    expect(payload).not.toHaveProperty("reasoningEffort");
+    expect(payload).toMatchObject({ modelPreset: "claude-opus" });
+  });
+
+  it("offers the same recovery when the preset advertises nothing at all", async () => {
+    // No picker exists here, so the notice is the only way out. It used to say
+    // "pick a different model", which left the chosen model unusable.
+    stubFetch([KIMI], "kimi-3");
+    mountWithSession({ ...predecessorAtUltra, modelPreset: "kimi-3" }, "kimi-3");
     await settle();
 
     expect(effortSelect()).toBeNull();
-    expect(unsupportedNotice()).not.toBeNull();
+    expect(unsupportedNotice()?.textContent).toContain("기본값으로 시작하세요");
+    expect(unsupportedNotice()?.textContent ?? "").not.toContain("다른 모델");
     expect(startButton()?.disabled).toBe(true);
+
+    flushSync(() => useDefaultButton()?.click());
+    await settle();
+    expect(unsupportedNotice()).toBeNull();
+    expect(startButton()?.disabled).toBe(false);
+
+    flushSync(() => startButton()?.click());
+    await settle();
+    expect(createDashboardSession.mock.calls[0]?.[0]).toMatchObject({
+      modelPreset: "kimi-3",
+    });
+  });
+
+  it("stays quiet while the catalogue is still loading", async () => {
+    // Before the preset advertisement arrives we know nothing, so claiming the
+    // model has no effort control would be a lie on every succession open.
+    stubFetch([OPUS]);
+    mountWithSession(predecessorAtUltra);
+    // Only the notice is load-bearing here: the button is disabled during load
+    // anyway because the agent has not resolved yet.
+    expect(unsupportedNotice()).toBeNull();
+
+    await settle();
+    expect(unsupportedNotice()?.textContent).toContain("기본값으로 시작하세요");
+  });
+});
+
+describe("preset with efforts but no advertised default", () => {
+  const NO_DEFAULT = { ...OPUS, default_effort: undefined };
+
+  it("shows the default option rather than a level it will not send", async () => {
+    // The select would otherwise display its first option (Low) while the
+    // request omits effort entirely.
+    stubFetch([NO_DEFAULT]);
+    mount();
+    await settle();
+
+    const select = effortSelect();
+    expect(select?.value).toBe("");
+    expect(Array.from(select?.options ?? []).map((option) => option.textContent))
+      .toEqual(["기본값", "Low", "Medium", "High", "X High", "Max"]);
+
+    flushSync(() => startButton()?.click());
+    await settle();
+    expect(createDashboardSession.mock.calls[0]?.[0]).not.toHaveProperty("reasoningEffort");
+
+    // And picking a level is not a one-way door: the preset has no default of
+    // its own, so "기본값" has to stay on the list.
+    createDashboardSession.mockClear();
+    flushSync(() => setSelect(effortSelect()!, "low"));
+    await settle();
+    expect(effortSelect()?.value).toBe("low");
+    flushSync(() => setSelect(effortSelect()!, ""));
+    await settle();
+    expect(effortSelect()?.value).toBe("");
+
+    flushSync(() => startButton()?.click());
+    await settle();
+    expect(createDashboardSession.mock.calls[0]?.[0]).not.toHaveProperty("reasoningEffort");
   });
 });

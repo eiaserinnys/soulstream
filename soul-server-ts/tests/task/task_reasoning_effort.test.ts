@@ -207,7 +207,7 @@ describe("model catalog effort advertisement", () => {
     )).toBe("ultra");
   });
 
-  it("drops a default the transport cannot deliver instead of clamping it", () => {
+  it("treats a default the transport cannot deliver as a configuration error", () => {
     const yaml = `presets:
   - id: p
     label: P
@@ -219,10 +219,36 @@ describe("model catalog effort advertisement", () => {
     const path = join(mkdtempSync(join(tmpdir(), "effort-transport2-")), "c.yaml");
     writeFileSync(path, yaml, "utf-8");
     const legacySdk = new ModelCatalog(path, undefined, nodeEffortCapabilities("sdk"));
-    const [preset] = legacySdk.advertise({});
-    expect(preset?.supported_efforts).toEqual(["xhigh"]);
-    // Not silently rewritten to xhigh: the preset simply has no default now.
-    expect(preset?.default_effort).toBeUndefined();
+    // Neither clamped to xhigh nor quietly dropped to "backend default": the
+    // file asks for something this node cannot do, and says so.
+    expect(() => legacySdk.advertise({})).toThrow(/default_effort/);
+
+    // The same file is fine on a transport that can carry `max`.
+    const appServer = new ModelCatalog(path, undefined, nodeEffortCapabilities("app-server"));
+    expect(appServer.advertise({})[0]?.default_effort).toBe("max");
+  });
+
+  it("keeps serving the last good catalogue when a reload introduces one", () => {
+    // It is a config error, but the catalogue is re-read on every call: a bad
+    // edit must not take a running node dark (registration and every session
+    // creation read this list), it must fall back like any malformed file.
+    const path = join(mkdtempSync(join(tmpdir(), "effort-transport3-")), "c.yaml");
+    const good = `presets:
+  - id: p
+    label: P
+    backend: codex
+    model: gpt-5.6-sol
+    supported_efforts: [xhigh]
+    default_effort: xhigh
+`;
+    writeFileSync(path, good, "utf-8");
+    const logger = { error: () => {}, warn: () => {} };
+    const catalog = new ModelCatalog(path, logger, nodeEffortCapabilities("sdk"));
+    expect(catalog.list()[0]?.default_effort).toBe("xhigh");
+
+    writeFileSync(path, good.replace("default_effort: xhigh", "default_effort: max")
+      .replace("[xhigh]", "[xhigh, max]"), "utf-8");
+    expect(catalog.list()[0]?.default_effort).toBe("xhigh");
   });
 
   it("fails fast when default_effort is not in supported_efforts", () => {

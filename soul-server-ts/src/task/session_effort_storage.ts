@@ -2,10 +2,10 @@ import type { AgentProfile } from "../agent_registry.js";
 import { isReasoningEffort, type ReasoningEffort } from "../engine/protocol.js";
 
 /**
- * DB-internal marker meaning "the selected preset advertised an effort contract
- * and the outcome was: no effort". It exists so such a row is distinguishable
- * from one where no decision was made at all — a pre-089 row, or a node whose
- * operator catalogue declares no efforts. Those keep NULL.
+ * DB-internal marker meaning "this session decided: no explicit effort, let the
+ * backend default apply". Every session created by this build records either a
+ * level or `auto`, which is what distinguishes it from a row that predates the
+ * feature (NULL).
  *
  * It is deliberately NOT part of `ReasoningEffort`, not a wire value, not an MCP
  * input, and not selectable by any client. It is interpreted at the DB boundary
@@ -15,18 +15,18 @@ export const REASONING_EFFORT_AUTO = "auto";
 
 /**
  * The effort the Codex path applied before effort was ever persisted. It
- * reproduces the previous behaviour for any session with no recorded decision:
- * a pre-089 row, or a new session on a catalogue that declares no efforts. It is
- * deliberately not reachable once a preset advertises a contract.
+ * reproduces the previous behaviour for rows that carry no decision at all:
+ * sessions created before migration 089, and rows written by an older node
+ * during a rolling deploy. New sessions never land here.
  */
 const LEGACY_CODEX_EFFORT: ReasoningEffort = "xhigh";
 
 /** What the stored column tells us about a session's effort decision. */
 export interface StoredReasoningEffort {
   /**
-   * false when no decision was recorded: a pre-089 row, or a new session whose
-   * preset advertised no effort contract. True sessions record either a level or
-   * `auto`.
+   * false only for a row with no decision at all: written before migration 089,
+   * or by an older node mid-deploy. Sessions this build creates always record
+   * either a level or `auto`.
    */
   readonly recorded: boolean;
   /** The recorded level. Undefined for `auto` and for unrecorded rows. */
@@ -34,21 +34,15 @@ export interface StoredReasoningEffort {
 }
 
 /**
- * Creation: turn the resolver's decision into the column value.
- *
- * `hasEffortContract` says whether the selected preset actually advertised an
- * effort contract. When it did not — an operator catalogue that predates this
- * feature, or a model with no effort control — there is no decision to record,
- * so the column stays NULL and the session keeps whatever the backend did
- * before. Writing `auto` there would claim a decision we never made and would
- * silently drop Codex from its historical `xhigh`.
+ * Creation: turn the resolver's decision into the column value. Creating a
+ * session is itself the decision, so the column is never NULL here — an
+ * unspecified effort is recorded as `auto`, which is what later distinguishes it
+ * from a row that predates the feature.
  */
 export function toStoredReasoningEffort(
   resolved: ReasoningEffort | undefined,
-  hasEffortContract: boolean,
-): string | null {
-  if (resolved !== undefined) return resolved;
-  return hasEffortContract ? REASONING_EFFORT_AUTO : null;
+): string {
+  return resolved ?? REASONING_EFFORT_AUTO;
 }
 
 /**
@@ -71,10 +65,10 @@ export function readStoredReasoningEffort(
  * The single legacy-compatibility conversion, applied where the effective
  * backend is already known. Three cases stay distinguishable:
  *
- *   no recorded decision       -> Codex replays its old `xhigh`; Claude, which
+ *   no recorded decision      -> Codex replays its old `xhigh`; Claude, which
  *                                ignored effort entirely back then, gets nothing.
- *                                Covers pre-089 rows and catalogues with no
- *                                declared efforts.
+ *                                Covers pre-089 rows and rows written by an
+ *                                older node during a rolling deploy.
  *   new session resolved auto -> nothing (the backend default applies)
  *   new session with a level  -> that level
  */

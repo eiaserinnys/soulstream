@@ -5,7 +5,6 @@ import {
   buildCreateSessionRequest,
   buildModelPresetsEndpoint,
   buildSessionEndpoint,
-  collectAdvertisedEfforts,
   effortsForPreset,
   isReasoningEffort,
   mergeConfig,
@@ -65,25 +64,31 @@ describe("schema helpers", () => {
 });
 
 describe("catalog-driven reasoning effort", () => {
-  it("offers only what node presets advertise, ordered canonically", () => {
+  it("offers only what the resolved preset advertises, ordered canonically", () => {
+    const agents = [{ id: "roselin", name: "roselin", default_preset: "b" }];
+    const presets = [
+      { id: "a", label: "A", supported_efforts: ["high", "low"] as const },
+      { id: "b", label: "B", supported_efforts: ["ultra", "low", "max"] as const },
+    ];
+    // Deliberately not the union across the node: the picker must never offer a
+    // level the profile's own preset would reject at creation time.
     expect(
-      collectAdvertisedEfforts([
-        { id: "a", label: "A", supported_efforts: ["high", "low"] },
-        { id: "b", label: "B", supported_efforts: ["ultra", "low", "max"] },
-      ]),
-    ).toEqual(["low", "high", "max", "ultra"]);
+      effortsForPreset(resolveProfilePreset(agents, presets, "roselin")),
+    ).toEqual(["low", "max", "ultra"]);
   });
 
-  it("offers nothing when no preset advertises efforts (auto state)", () => {
-    expect(collectAdvertisedEfforts([{ id: "kimi-2", label: "Kimi - 2" }])).toEqual([]);
-    expect(collectAdvertisedEfforts([])).toEqual([]);
+  it("offers nothing when the preset advertises no efforts (auto state)", () => {
+    expect(effortsForPreset({ id: "kimi-2", label: "Kimi - 2" })).toEqual([]);
+    expect(effortsForPreset(undefined)).toEqual([]);
   });
 
   it("never invents minimal, which no model advertises", () => {
     expect(
-      collectAdvertisedEfforts([
-        { id: "a", label: "A", supported_efforts: ["low", "medium", "high", "xhigh"] },
-      ]),
+      effortsForPreset({
+        id: "a",
+        label: "A",
+        supported_efforts: ["low", "medium", "high", "xhigh"],
+      }),
     ).not.toContain("minimal");
   });
 

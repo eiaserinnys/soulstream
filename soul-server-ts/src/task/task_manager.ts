@@ -273,10 +273,6 @@ export class TaskManager {
     const paramsWithEffort: CreateTaskParams = {
       ...canonicalParams,
       reasoningEffort,
-      // Only a preset that actually advertises efforts gives us a decision to
-      // record. Without one the session stays on the pre-existing backend
-      // behaviour instead of being pinned to "no effort".
-      reasoningEffortRecorded: (effortPreset?.supported_efforts?.length ?? 0) > 0,
     };
 
     if (!agent || resolvedParams.modelPresetBackend || !selectedPreset) {

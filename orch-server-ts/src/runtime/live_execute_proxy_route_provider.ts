@@ -392,7 +392,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * REST create route — a second copy would drift.
  */
 function createStatusForCode(code: unknown): number {
-  return typeof code === "string"
+  return typeof code === "string" && Object.hasOwn(CREATE_ACK_ERROR_HTTP_STATUS, code)
     ? CREATE_ACK_ERROR_HTTP_STATUS[code] ?? 503
     : 503;
 }

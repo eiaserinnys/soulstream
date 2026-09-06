@@ -120,6 +120,7 @@ export function SessionSuccessionModal({
     initialEffort: resolvedDefaults.reasoningEffort,
   });
   const effortSelectId = useId();
+  const presetHasDefaultEffort = Boolean(selectedModelPresetInfo?.default_effort);
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -276,11 +277,24 @@ export function SessionSuccessionModal({
                   <select
                     id={effortSelectId}
                     aria-label="추론 강도 선택"
-                    value={effort.unsupported ? "" : effort.effective ?? ""}
+                    value={effort.effective ?? ""}
                     onChange={(event) => effort.setSelected(event.target.value || null)}
                   >
+                    {/* An unusable carry-over stays the selected value so the box
+                        shows what is actually wrong — and so choosing 기본값 사용
+                        is a real change event rather than a no-op. */}
                     {effort.unsupported ? (
-                      <option value="">선택 필요</option>
+                      <option value={effort.selected ?? ""}>
+                        {reasoningEffortLabel(effort.selected ?? "")} (지원 안 함)
+                      </option>
+                    ) : null}
+                    {/* "Send nothing, let the preset default apply". It must stay
+                        available while the preset has no default of its own,
+                        otherwise picking a level is a one-way door. */}
+                    {effort.unsupported || !presetHasDefaultEffort ? (
+                      <option value="">
+                        {effort.unsupported ? "기본값 사용" : "기본값"}
+                      </option>
                     ) : null}
                     {effort.options.map((option) => (
                       <option key={option} value={option}>
@@ -291,13 +305,19 @@ export function SessionSuccessionModal({
 
                 </>
               ) : null}
-              {effort.unsupported ? (
+              {effort.unsupported && selectedModelPresetInfo !== null ? (
                 <small role="alert" data-testid="succession-effort-unsupported">
-                  이어받은 추론 강도 “{reasoningEffortLabel(effort.selected ?? "")}”를
-                  이 모델에서는 쓸 수 없습니다.
                   {effort.options.length > 0
-                    ? " 다시 선택해 주세요."
-                    : " 이 모델은 추론 강도를 지원하지 않으니 다른 모델을 선택해 주세요."}
+                    ? `이어받은 추론 강도 “${reasoningEffortLabel(effort.selected ?? "")}”를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나 기본값으로 시작하세요.`
+                    : `이 모델이 광고한 추론 강도 목록이 없어 “${reasoningEffortLabel(effort.selected ?? "")}”를 그대로 쓸 수 없습니다. 기본값으로 시작하세요.`}
+                  {" "}
+                  <button
+                    type="button"
+                    data-testid="succession-effort-use-default"
+                    onClick={() => effort.setSelected(null)}
+                  >
+                    기본값 사용
+                  </button>
                 </small>
               ) : null}
             </section>

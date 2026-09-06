@@ -204,10 +204,12 @@ export function OrchestratorNewSessionModal() {
     async (prompt: string, attachmentPaths?: string[]) => {
       if (!selectedNodeId) throw new Error("Please select a node");
       if (effort.unsupported) {
-        // Never submit a carried-over effort this preset cannot run; the form
-        // already shows why, and dropping it here would apply a different level
-        // than the one on screen.
-        throw new Error("이어받은 추론 강도를 이 모델에서는 쓸 수 없습니다. 다시 선택해 주세요.");
+        // Never submit an effort this preset cannot run; dropping it here would
+        // apply a different level than the one on screen. The form offers both
+        // ways out, so this message names them instead of blocking the model.
+        throw new Error(
+          "선택한 추론 강도를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나 기본값으로 시작하세요.",
+        );
       }
 
       const { addOptimisticSession } = useDashboardStore.getState();
@@ -413,7 +415,16 @@ export function OrchestratorNewSessionModal() {
           </Select>
           {effort.unsupported ? (
             <small role="alert" className="text-xs text-destructive">
-              이어받은 추론 강도를 이 모델에서는 쓸 수 없습니다. 다시 선택해 주세요.
+              선택한 추론 강도를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나{" "}
+              <button
+                type="button"
+                className="underline"
+                data-testid="new-session-effort-use-default"
+                onClick={() => effort.setSelected(null)}
+              >
+                기본값 사용
+              </button>
+              을 누르세요.
             </small>
           ) : null}
         </div>

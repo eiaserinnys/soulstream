@@ -132,20 +132,11 @@ export class ModelCatalog {
   }
 
   /**
-   * Presets whose *file* declares efforts, before transport narrowing. Lets the
-   * startup warning tell "the catalogue never declared any" apart from "the
-   * active transport dropped them", which needs a different fix.
-   */
-  declaredPresetIdsWithEfforts(): string[] {
-    return this.read().presets
-      .filter((preset) => (preset.supported_efforts?.length ?? 0) > 0)
-      .map((preset) => preset.id);
-  }
-
-  /**
-   * Intersects declared efforts with what the active transport can carry. A
-   * default that falls outside is dropped rather than clamped, so the preset
-   * degrades to "auto" instead of promising a level it cannot deliver.
+   * Intersects declared efforts with what the active transport can carry, so the
+   * advertisement and the create-time validation share one list by construction.
+   *
+   * A `default_effort` outside that intersection is rejected in {@link read}, at
+   * parse time, so this only ever narrows the supported list.
    */
   private narrowEfforts(preset: ModelPreset): ModelPreset {
     const capability = this.effortCapabilities?.[preset.backend];
@@ -162,14 +153,11 @@ export class ModelCatalog {
       { presetId: preset.id, backend: preset.backend, dropped },
       "Model preset advertises efforts the active transport cannot carry",
     );
-    const { supported_efforts: _s, default_effort: _d, ...rest } = preset;
+    const { supported_efforts: _s, ...rest } = preset;
     return {
       ...rest,
       ...(supported.length > 0
         ? { supported_efforts: supported as ModelPreset["supported_efforts"] }
-        : {}),
-      ...(preset.default_effort && supported.includes(preset.default_effort)
-        ? { default_effort: preset.default_effort }
         : {}),
     };
   }
@@ -228,10 +216,32 @@ export class ModelCatalog {
     try {
       const parsed: unknown = parseYaml(raw) ?? {};
       const config = ModelCatalogSchema.parse(parsed);
+      this.assertDefaultsAreDeliverable(config);
       this.lastSuccessfulConfig = config;
       return config;
     } catch (error) {
       return this.lastSuccessfulOrThrow(error);
+    }
+  }
+
+  /**
+   * A `default_effort` the active transport cannot deliver is a configuration
+   * error, not something to paper over: dropping it silently would move every new
+   * session on that preset to the backend default while the file still claims
+   * otherwise. It is raised here, with the rest of config validation, so a bad
+   * *reload* degrades to the last good catalogue instead of taking the node down
+   * mid-flight, and a bad catalogue at startup is a hard startup failure.
+   */
+  private assertDefaultsAreDeliverable(config: ModelCatalogConfig): void {
+    for (const preset of config.presets) {
+      const capability = this.effortCapabilities?.[preset.backend];
+      if (!capability || !preset.default_effort) continue;
+      if (capability.includes(preset.default_effort)) continue;
+      throw new Error(
+        `Model preset ${preset.id}: default_effort "${preset.default_effort}" `
+        + `cannot be delivered by the active ${preset.backend} transport `
+        + `(it carries [${capability.join(", ")}])`,
+      );
     }
   }
 
@@ -256,22 +266,9 @@ export function loadModelCatalog(
 ): ModelCatalog {
   const missingAtStartup = !fs.existsSync(catalogPath);
   const catalog = new ModelCatalog(catalogPath, logger, effortCapabilities);
-  const presets = catalog.list();
-  const declared = new Set(
-    catalog.declaredPresetIdsWithEfforts(),
-  );
-  const withoutEffortContract = presets
-    .filter((preset) => (preset.supported_efforts?.length ?? 0) === 0)
-    .filter((preset) => !declared.has(preset.id))
-    .map((preset) => preset.id);
-  if (withoutEffortContract.length > 0) {
-    logger?.warn?.(
-      { presets: withoutEffortContract, catalogPath },
-      "Model presets declare no supported_efforts; sessions on them keep the "
-      + "previous backend behaviour and offer no effort selection. Add "
-      + "supported_efforts/default_effort to enable it.",
-    );
-  }
+  // Parses the file, so a malformed catalogue or an undeliverable default_effort
+  // fails here rather than on the first session.
+  catalog.list();
   if (missingAtStartup) {
     logger?.warn?.(
       { path: catalogPath },

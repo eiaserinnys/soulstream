@@ -78,21 +78,6 @@ export function buildModelPresetsEndpoint(baseUrl: string, nodeId: string): stri
   return `${normalized}/api/nodes/${encodeURIComponent(nodeId)}/model-presets`;
 }
 
-/**
- * Fallback for when no profile is configured yet: the union across the node. It
- * is only used to populate the picker before a profile is chosen; once a profile
- * exists, {@link resolveProfilePreset} narrows it to that preset.
- */
-export function collectAdvertisedEfforts(
-  presets: readonly AdvertisedModelPreset[],
-): ReasoningEffort[] {
-  const seen = new Set<string>();
-  for (const preset of presets) {
-    for (const effort of preset.supported_efforts ?? []) seen.add(effort);
-  }
-  return REASONING_EFFORT_ACCEPT_SET.filter((effort) => seen.has(effort));
-}
-
 export interface MenuActionDefinition {
   id: PageAction;
   title: string;

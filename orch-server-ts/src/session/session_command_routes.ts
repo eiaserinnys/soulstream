@@ -50,7 +50,10 @@ export const CREATE_ACK_ERROR_HTTP_STATUS: Readonly<Record<string, number>> = {
 };
 
 function createAckErrorStatus(code: unknown): number | undefined {
+  // Own-property check: the code comes from a node, and a bare index would let
+  // "toString" resolve to a function rather than falling through to 503.
   return typeof code === "string"
+    && Object.hasOwn(CREATE_ACK_ERROR_HTTP_STATUS, code)
     ? CREATE_ACK_ERROR_HTTP_STATUS[code]
     : undefined;
 }
