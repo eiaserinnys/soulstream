@@ -7,6 +7,9 @@ import {
 import type { AgentProfile } from "../agent_registry.js";
 import type { SessionDeliveryRow, SessionRow } from "../db/session_db_types.js";
 import { buildDeliveryInputUuid } from "../task/delivery_identity.js";
+import { parseClaudeNativeTaskNotification } from
+  "../task/claude_native_task_notification.js";
+import { userMessageText } from "./claude_sdk_event_mapper_helpers.js";
 import { isTurnStartingUserInput } from
   "./claude_sdk_persistent_session_support.js";
 
@@ -19,6 +22,23 @@ export type ClaudeDeliveryTranscriptReceipt =
       assistantMessageUuid: string;
     }
   | { kind: "unavailable"; inputUuid: string; reason: string };
+
+export interface ClaudeNativeTaskNotificationTranscriptQuery {
+  taskId: string;
+  initiatingToolUseId: string;
+  expectedAssistantUuid: string;
+}
+
+export interface ClaudeNativeTaskNotificationTranscriptProof {
+  kind: "completed";
+  inputUuid: string;
+  assistantMessageUuid: string;
+}
+
+type ClaudeTranscriptTarget =
+  | { kind: "ready"; session: SessionRow; profile: AgentProfile }
+  | { kind: "absent" }
+  | { kind: "unavailable"; reason: string };
 
 export interface ClaudeDeliveryTranscriptReceiptDeps {
   sourceNode: string;
@@ -66,41 +86,45 @@ export class ClaudeDeliveryTranscriptReceiptReader {
     );
   }
 
+  async inspectNativeTaskNotification(
+    targetSessionId: string,
+    query: ClaudeNativeTaskNotificationTranscriptQuery,
+  ): Promise<ClaudeNativeTaskNotificationTranscriptProof | null> {
+    const target = await this.resolveTarget(targetSessionId);
+    if (target.kind !== "ready") return null;
+    const shared = await this.loadMessages(target.session.claude_session_id!, {
+      dir: target.profile.workspace_dir,
+      sessionStore: this.deps.sessionStore,
+    });
+    const sharedProof = findNativeTaskNotificationProof(shared, query);
+    if (sharedProof) return sharedProof;
+    if (target.session.node_id !== this.deps.sourceNode) return null;
+    const local = await this.loadMessages(target.session.claude_session_id!, {
+      dir: target.profile.workspace_dir,
+    });
+    return findNativeTaskNotificationProof(local, query);
+  }
+
   private async inspectTarget(
     targetSessionId: string | null,
     inputUuid: string,
     preferSameNodeLocal: boolean,
     expectedAssistantUuid?: string,
   ): Promise<ClaudeDeliveryTranscriptReceipt> {
-    if (!targetSessionId) return { kind: "absent", inputUuid };
-    const session = await this.deps.getSession(targetSessionId);
-    if (!session || !session.claude_session_id) {
+    const target = await this.resolveTarget(targetSessionId);
+    if (target.kind === "absent") {
       return { kind: "absent", inputUuid };
     }
-    const agentId = session.agent_id;
-    const profile = agentId ? this.deps.getAgent(agentId) : undefined;
-    if (!profile) {
+    if (target.kind === "unavailable") {
       return {
         kind: "unavailable",
         inputUuid,
-        reason: "target_agent_profile_unavailable",
+        reason: target.reason,
       };
     }
-    const backend = session.model_preset
-      ? this.deps.getModelPresetBackend?.(session.model_preset)
-      : profile.backend;
-    if (!backend) {
-      return {
-        kind: "unavailable",
-        inputUuid,
-        reason: "target_model_preset_unavailable",
-      };
-    }
-    if (backend !== "claude") {
-      return { kind: "absent", inputUuid };
-    }
+    const { session, profile } = target;
 
-    const shared = await this.loadMessages(session.claude_session_id, {
+    const shared = await this.loadMessages(session.claude_session_id!, {
       dir: profile.workspace_dir,
       sessionStore: this.deps.sessionStore,
     });
@@ -115,7 +139,7 @@ export class ClaudeDeliveryTranscriptReceiptReader {
     ) return sharedReceipt;
 
     if (session.node_id === this.deps.sourceNode) {
-      const local = await this.loadMessages(session.claude_session_id, {
+      const local = await this.loadMessages(session.claude_session_id!, {
         dir: profile.workspace_dir,
       });
       const localReceipt = findClaudeDeliveryTranscriptReceipt(
@@ -133,6 +157,29 @@ export class ClaudeDeliveryTranscriptReceiptReader {
       inputUuid,
       reason: "remote_transcript_not_mirrored",
     };
+  }
+
+  private async resolveTarget(
+    targetSessionId: string | null,
+  ): Promise<ClaudeTranscriptTarget> {
+    if (!targetSessionId) return { kind: "absent" };
+    const session = await this.deps.getSession(targetSessionId);
+    if (!session?.claude_session_id) return { kind: "absent" };
+    const profile = session.agent_id
+      ? this.deps.getAgent(session.agent_id)
+      : undefined;
+    if (!profile) {
+      return { kind: "unavailable", reason: "target_agent_profile_unavailable" };
+    }
+    const backend = session.model_preset
+      ? this.deps.getModelPresetBackend?.(session.model_preset)
+      : profile.backend;
+    if (!backend) {
+      return { kind: "unavailable", reason: "target_model_preset_unavailable" };
+    }
+    return backend === "claude"
+      ? { kind: "ready", session, profile }
+      : { kind: "absent" };
   }
 }
 
@@ -163,4 +210,32 @@ export function findClaudeDeliveryTranscriptReceipt(
         assistantMessageUuid: assistant.uuid,
       }
     : { kind: "input_pending", inputUuid };
+}
+
+function findNativeTaskNotificationProof(
+  messages: SessionMessage[],
+  query: ClaudeNativeTaskNotificationTranscriptQuery,
+): ClaudeNativeTaskNotificationTranscriptProof | null {
+  const assistantIndex = messages.findIndex((message) =>
+    message.type === "assistant" && message.uuid === query.expectedAssistantUuid
+  );
+  if (assistantIndex < 0) return null;
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.type !== "user") continue;
+    const record = message as unknown as Record<string, unknown>;
+    if (!isTurnStartingUserInput(record)) continue;
+    if (!message.uuid) return null;
+    const prompt = userMessageText(record);
+    const parsed = prompt ? parseClaudeNativeTaskNotification(prompt) : undefined;
+    return parsed?.taskId === query.taskId &&
+        parsed.toolUseId === query.initiatingToolUseId
+      ? {
+          kind: "completed",
+          inputUuid: message.uuid,
+          assistantMessageUuid: query.expectedAssistantUuid,
+        }
+      : null;
+  }
+  return null;
 }

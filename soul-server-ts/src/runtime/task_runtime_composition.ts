@@ -45,7 +45,10 @@ export interface TaskRuntimeCompositionParams {
   scheduleService: SoulstreamScheduleService;
   orchProxyConfig: OrchProxyConfig;
   runnerProcessFactory?: RunnerProcessRuntimeFactory;
-  claudeTranscriptReceipt?: Pick<ClaudeDeliveryTranscriptReceiptReader, "inspectInput">;
+  claudeTranscriptReceipt?: Pick<
+    ClaudeDeliveryTranscriptReceiptReader,
+    "inspectInput" | "inspectNativeTaskNotification"
+  >;
   transientEventLogAggregator: TransientEventLogAggregator;
 }
 

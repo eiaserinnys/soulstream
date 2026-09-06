@@ -52,7 +52,10 @@ export interface ClaudeRuntimeTaskFollowupDeps {
     Partial<Pick<TaskManager, "getDeliveryConsumptionRecorder">>;
   onResume: StartExecutionCallback;
   releaseRetainedRunner(task: Task): Promise<void>;
-  transcriptReceipt?: Pick<ClaudeDeliveryTranscriptReceiptReader, "inspectInput">;
+  transcriptReceipt?: Pick<
+    ClaudeDeliveryTranscriptReceiptReader,
+    "inspectInput" | "inspectNativeTaskNotification"
+  >;
   logger: Logger;
   deliveryV2Enabled?: boolean;
   sourceNode: string;
@@ -334,10 +337,32 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       if (!assistantUuid) return;
       const candidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
         item.sessionId === task.agentSessionId &&
-        (item.phase === "awaiting-assistant" || item.phase === "awaiting-result")
+        (item.phase === "awaiting-input" || item.phase === "awaiting-assistant" ||
+          item.phase === "awaiting-result")
       );
       if (candidates.length !== 1) return;
       const candidate = candidates[0]!;
+      if (candidate.phase === "awaiting-input") {
+        if (!this.deps.transcriptReceipt) return;
+        try {
+          const proof = await this.deps.transcriptReceipt.inspectNativeTaskNotification(
+            task.agentSessionId,
+            {
+              taskId: candidate.taskId,
+              initiatingToolUseId: candidate.initiatingToolUseId,
+              expectedAssistantUuid: assistantUuid,
+            },
+          );
+          if (!proof || proof.assistantMessageUuid !== assistantUuid) return;
+          candidate.inputUuid = proof.inputUuid;
+          candidate.phase = "awaiting-result";
+          candidate.assistantUuid = assistantUuid;
+          await this.consumeNativeAssistant(task, candidate, assistantUuid);
+        } catch (err) {
+          this.logTranscriptReceiptFailure(err, task, candidate);
+        }
+        return;
+      }
       candidate.phase = "awaiting-result";
       candidate.assistantUuid = assistantUuid;
       if (!candidate.inputUuid || !this.deps.transcriptReceipt) return;
@@ -354,10 +379,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           await this.consumeNativeAssistant(task, candidate, assistantUuid);
         }
       } catch (err) {
-        this.deps.logger.warn(
-          { err, sessionId: task.agentSessionId, taskId: candidate.taskId },
-          "Claude native task-notification transcript receipt failed",
-        );
+        this.logTranscriptReceiptFailure(err, task, candidate);
       }
       return;
     }
@@ -429,6 +451,17 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     if (pending?.size === 0) this.pendingBySession.delete(task.agentSessionId);
     this.durableDeliveryByGenerationKey.delete(candidate.generationKey);
     this.flushedGenerationKeys.add(candidate.generationKey);
+  }
+
+  private logTranscriptReceiptFailure(
+    err: unknown,
+    task: Task,
+    candidate: NativeDeliveryOwnership,
+  ): void {
+    this.deps.logger.warn(
+      { err, sessionId: task.agentSessionId, taskId: candidate.taskId },
+      "Claude native task-notification transcript receipt failed",
+    );
   }
 
 }

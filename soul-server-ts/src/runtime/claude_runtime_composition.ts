@@ -47,7 +47,10 @@ export interface ClaudeRuntimeComposition {
   backgroundLifecycle?: ClaudeBackgroundTaskLifecycle;
   childCompletionConsumption?: ChildCompletionConsumptionRecorder;
   startupRecovery?: ClaudeRuntimeStartupRecovery;
-  transcriptReceipt?: Pick<ClaudeDeliveryTranscriptReceiptReader, "inspectInput">;
+  transcriptReceipt?: Pick<
+    ClaudeDeliveryTranscriptReceiptReader,
+    "inspectInput" | "inspectNativeTaskNotification"
+  >;
 }
 
 /** Keeps the persistent runtime object graph out of explicit kill-switch mode. */
