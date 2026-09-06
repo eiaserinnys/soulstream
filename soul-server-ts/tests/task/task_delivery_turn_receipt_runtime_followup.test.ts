@@ -38,7 +38,10 @@ function runtimeFollowup(): InterventionMessage {
   };
 }
 
-function makeHarness(interventions: InterventionMessage[] = []) {
+function makeHarness(
+  interventions: InterventionMessage[] = [],
+  onExplicitProofConsumed = vi.fn(),
+) {
   const recorder = {
     recordConsumed: vi.fn().mockResolvedValue(undefined),
     recordTurnStarted: vi.fn().mockResolvedValue(undefined),
@@ -52,8 +55,35 @@ function makeHarness(interventions: InterventionMessage[] = []) {
   );
   return {
     recorder,
-    receipt: new TaskDeliveryTurnReceipt(consumption, interventions),
+    receipt: new TaskDeliveryTurnReceipt(
+      consumption,
+      interventions,
+      onExplicitProofConsumed,
+    ),
+    onExplicitProofConsumed,
   };
+}
+
+async function observeTaskOutput(
+  receipt: TaskDeliveryTurnReceipt,
+  task: Task,
+  envelope: Record<string, unknown>,
+  options: { startName?: string; startId?: string; resultId?: string; error?: boolean } = {},
+): Promise<void> {
+  const startId = options.startId ?? "toolu-output";
+  await receipt.observe(task, {
+    type: "tool_start", tool_name: options.startName ?? "TaskOutput",
+    tool_use_id: startId,
+    tool_input: { task_id: "task-output", block: true, timeout: 60_000 },
+    timestamp: 1,
+  } as SSEEventPayload);
+  const result = {
+    type: "tool_result", tool_name: options.startName ?? "TaskOutput",
+    tool_use_id: options.resultId ?? startId, result: "untrusted rendered output",
+    is_error: options.error ?? false, timestamp: 2,
+  } as SSEEventPayload;
+  attachClaudeToolResultReceiptMetadata(result, { envelope });
+  await receipt.observe(task, result);
 }
 
 describe("runtime_followup consumption proof", () => {
@@ -207,6 +237,89 @@ describe("runtime_followup consumption proof", () => {
       taskId: "task-output",
     });
   });
+
+  it.each(["completed", "killed"] as const)(
+    "actual nested TaskOutput %s proof retires memory only after durable success",
+    async (status) => {
+      const { recorder, receipt, onExplicitProofConsumed } = makeHarness();
+      const task = makeTask();
+      let finishRecord!: (consumed: boolean) => void;
+      recorder.recordRuntimeFollowupRelationConsumed.mockReturnValueOnce(
+        new Promise<boolean>((resolve) => {
+          finishRecord = resolve;
+        }),
+      );
+      const observing = observeTaskOutput(receipt, task, {
+        retrieval_status: "success",
+        task: { task_id: "task-output", status, exitCode: status === "completed" ? 0 : null },
+      });
+
+      const proof = { kind: "task_output", taskId: "task-output" };
+      await vi.waitFor(() => {
+        expect(recorder.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledOnce();
+      });
+      expect(onExplicitProofConsumed).not.toHaveBeenCalled();
+      finishRecord(true);
+      await observing;
+      expect(recorder.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledOnce();
+      expect(recorder.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledWith(
+        task, proof, "event:41",
+      );
+      expect(onExplicitProofConsumed).toHaveBeenCalledOnce();
+      expect(onExplicitProofConsumed).toHaveBeenCalledWith(proof);
+    },
+  );
+
+  it.each([
+    ["TaskStop alone", { retrieval_status: "success", task: {
+      task_id: "task-output", status: "killed",
+    } }, { startName: "TaskStop" }],
+    ["wrong nested task", { retrieval_status: "success", task: {
+      task_id: "other-task", status: "completed",
+    } }, {}],
+    ["timeout", { retrieval_status: "timeout", task: {
+      task_id: "task-output", status: "completed",
+    } }, {}],
+    ["missing retrieval status", { task: {
+      task_id: "task-output", status: "completed",
+    } }, {}],
+    ["nonterminal", { retrieval_status: "success", task: {
+      task_id: "task-output", status: "running",
+    } }, {}],
+    ["error result", { retrieval_status: "success", task: {
+      task_id: "task-output", status: "completed",
+    } }, { error: true }],
+    ["wrong result id", { retrieval_status: "success", task: {
+      task_id: "task-output", status: "completed",
+    } }, { resultId: "toolu-other" }],
+  ] as const)("rejects %s as nested TaskOutput proof", async (_label, envelope, options) => {
+    const { recorder, receipt, onExplicitProofConsumed } = makeHarness();
+    await observeTaskOutput(receipt, makeTask(), envelope, options);
+
+    expect(recorder.recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+    expect(onExplicitProofConsumed).not.toHaveBeenCalled();
+  });
+
+  it.each(["false", "throw"] as const)(
+    "does not retire memory when nested TaskOutput durable recording returns %s",
+    async (failure) => {
+      const { recorder, receipt, onExplicitProofConsumed } = makeHarness();
+      if (failure === "false") {
+        recorder.recordRuntimeFollowupRelationConsumed.mockResolvedValueOnce(false);
+      } else {
+        recorder.recordRuntimeFollowupRelationConsumed.mockRejectedValueOnce(
+          new Error("ledger unavailable"),
+        );
+      }
+      await expect(observeTaskOutput(receipt, makeTask(), {
+        retrieval_status: "success",
+        task: { task_id: "task-output", status: "completed", exitCode: 0 },
+      })).resolves.toBeUndefined();
+
+      expect(recorder.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledOnce();
+      expect(onExplicitProofConsumed).not.toHaveBeenCalled();
+    },
+  );
 
   it("늦은 runtime register가 이전 generic event를 소비 증거로 재사용하지 않는다", async () => {
     const intervention = runtimeFollowup();

@@ -79,6 +79,8 @@ import {
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from "./task_delivery_turn_receipt.js";
+import type { ClaudeBackgroundConsumptionProof } from
+  "./claude_background_result_consumption.js";
 import {
   applyModelPresetRuntime,
   effectiveTaskBackend,
@@ -1155,6 +1157,8 @@ export class TaskExecutor {
     const receipt = new TaskDeliveryTurnReceipt(
       this.deliveryConsumption,
       interventions,
+      (proof: ClaudeBackgroundConsumptionProof) =>
+        this.claudeRuntimeTaskFollowup?.retireConsumedProof?.(task, proof),
     );
     task.activeDeliveryTurnReceipt = receipt;
     return receipt;
