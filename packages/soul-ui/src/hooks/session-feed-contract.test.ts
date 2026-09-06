@@ -115,6 +115,60 @@ describe("server-owned session feed v2 fixture", () => {
     expect(textNodes[0]?.content).toBe("prefix already captured then live");
   });
 
+  it("removes a preserved partial when the authoritative retired snapshot is empty", () => {
+    const ctx = createProcessingContext();
+    const identity = "codex_sdk:retired-item";
+    const partial = processEventsBatch(
+      [{
+        event: {
+          type: "text_snapshot",
+          basedOnEventId: 40,
+          throughLiveSeq: 1,
+          streams: [{
+            streamIdentity: identity,
+            text: "stale partial",
+            updatedAt: "2026-09-07T00:00:00.000Z",
+            truncated: false,
+            resetRequired: false,
+            recovery: "none",
+          }],
+        },
+        eventId: 0,
+      }],
+      ctx,
+      null,
+      "session-a",
+      null,
+      40,
+    );
+    expect(partial.root?.children).toEqual([
+      expect.objectContaining({ id: `text-live:${identity}`, content: "stale partial" }),
+    ]);
+
+    const retired = processEventsBatch(
+      [{
+        event: {
+          type: "text_snapshot",
+          basedOnEventId: 41,
+          throughLiveSeq: 2,
+          streams: [],
+        },
+        eventId: 0,
+      }],
+      ctx,
+      partial.root,
+      "session-a",
+      null,
+      41,
+    );
+
+    expect(retired.updated).toBe(true);
+    expect(retired.root?.children).toEqual([]);
+    expect(ctx.activeTextTarget).toBeNull();
+    expect(ctx.liveTextLastSeqByIdentity.has(identity)).toBe(false);
+    expect(ctx.resetRequiredTextStreams.has(identity)).toBe(false);
+  });
+
   it("clears an oversized partial and waits for the exact durable final", () => {
     const ctx = createProcessingContext();
     const first = processEventsBatch(

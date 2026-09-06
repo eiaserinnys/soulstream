@@ -63,6 +63,21 @@ function liveTextNodeKey(identity: string): string {
   return `app-server-agent-message:${identity}`;
 }
 
+function removeLiveTextNode(
+  identity: string,
+  ctx: ProcessingContext,
+  root: EventTreeNode | null,
+): boolean {
+  const existing = ctx.nodeMap.get(liveTextNodeKey(identity));
+  if (!existing || existing.type !== "text") return false;
+  if (root) root.children = root.children.filter((child) => child !== existing);
+  if (ctx.activeTextTarget === existing) ctx.activeTextTarget = null;
+  for (const [key, value] of ctx.nodeMap) {
+    if (value === existing) ctx.nodeMap.delete(key);
+  }
+  return true;
+}
+
 /**
  * 새 노드를 root.children 의 시간순(eventId ASC) 위치에 삽입한다.
  *
@@ -245,6 +260,23 @@ export function applyLiveTextSnapshot(
   ctx.liveTextThroughSeq = Math.max(ctx.liveTextThroughSeq, event.throughLiveSeq);
   let updated = false;
 
+  // A reconnect snapshot is the authoritative set of streams that are still
+  // active at throughLiveSeq. In particular, the server advances that fence
+  // and returns an empty set after terminal/deletion/disconnect retirement.
+  // Remove preserved transient nodes that are absent without touching a
+  // durable final that already replaced its stream.
+  const snapshotIdentities = new Set(
+    event.streams
+      .map((stream) => stream.streamIdentity)
+      .filter((identity): identity is string => Boolean(identity)),
+  );
+  for (const identity of [...ctx.liveTextLastSeqByIdentity.keys()]) {
+    if (snapshotIdentities.has(identity) || ctx.finalizedTextStreams.has(identity)) continue;
+    updated = removeLiveTextNode(identity, ctx, root) || updated;
+    ctx.liveTextLastSeqByIdentity.delete(identity);
+    ctx.resetRequiredTextStreams.delete(identity);
+  }
+
   for (const stream of event.streams) {
     const identity = stream.streamIdentity;
     if (!identity) continue;
@@ -258,14 +290,7 @@ export function applyLiveTextSnapshot(
 
     if (stream.resetRequired || stream.text === null) {
       ctx.resetRequiredTextStreams.add(identity);
-      if (existing?.type === "text") {
-        if (root) root.children = root.children.filter((child) => child !== existing);
-        if (ctx.activeTextTarget === existing) ctx.activeTextTarget = null;
-        for (const [key, value] of ctx.nodeMap) {
-          if (value === existing) ctx.nodeMap.delete(key);
-        }
-        updated = true;
-      }
+      updated = removeLiveTextNode(identity, ctx, root) || updated;
       continue;
     }
 
