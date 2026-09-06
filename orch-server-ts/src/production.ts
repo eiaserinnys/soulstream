@@ -35,6 +35,7 @@ import {
 } from "./node/event_ingress_repository.js";
 import { FileEventIngressDeadLetterStore } from "./node/event_ingress_dead_letter_store.js";
 import { applyEventSessionEffect } from "./node/event_session_effect_applier.js";
+import { applyEventFeedProjection } from "./node/event_feed_projection_applier.js";
 import { createSessionReconciliationSink } from "./node/session_reconciliation_sink.js";
 import { runnerInventoryCommandType } from "./node/registry_helpers.js";
 import { createSessionCacheSeedSink } from "./node/session_cache_seed_sink.js";
@@ -203,6 +204,8 @@ export async function createLiveProductionApplication(
       ".local",
       "event-ingress-dead-letter",
     )),
+    {},
+    applyEventFeedProjection,
   );
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
   const boardProjectionHost = createBoardProjectionHost(sqlResolver, boardYjsRepository);

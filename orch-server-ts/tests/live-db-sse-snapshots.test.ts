@@ -160,15 +160,8 @@ describe("live DB SSE replay snapshots", () => {
           createdAt: "2026-07-09T00:00:00.000Z",
           updatedAt: "2026-07-09T00:01:00.000Z",
           sessionType: "codex",
-          lastMessage: { text: "last" },
+          lastMessage: null,
           clientId: "client-1",
-          metadata: {
-            caller_info: {
-              source: "slack",
-              display_name: "서소영",
-              avatar_url: "/avatar.png",
-            },
-          },
           displayName: "Display",
           nodeId: "node-a",
           folderId: "folder-1",
@@ -186,6 +179,13 @@ describe("live DB SSE replay snapshots", () => {
           backend: "codex",
           userName: "서소영",
           userPortraitUrl: "/avatar.png",
+          terminationReason: null,
+          terminationDetail: null,
+          pendingAttentions: [],
+          attentionRevision: 0,
+          recentNotices: [],
+          notificationWatermark: 0,
+          noticesTruncated: false,
         },
       ],
       total: 1,
@@ -194,6 +194,10 @@ describe("live DB SSE replay snapshots", () => {
       "SELECT session_count(?::jsonb) AS count",
       "SELECT * FROM session_get_all(?::jsonb, ?, ?)",
       "SELECT session_id, page_state, legacy_state FROM session_page_bindings WHERE session_id = ANY(?::text[])",
+      "SELECT session_id, attention_revision, notification_watermark, notification_count FROM session_feed_state WHERE session_id = ANY(?::text[])",
+      "SELECT session_id, projection FROM session_pending_attentions WHERE session_id = ANY(?::text[]) ORDER BY session_id, source_event_id ASC, attention_id ASC",
+      "WITH ranked AS ( SELECT session_id, projection, ROW_NUMBER() OVER ( PARTITION BY session_id ORDER BY source_event_id DESC ) AS row_number FROM session_feed_notices WHERE session_id = ANY(?::text[]) ) SELECT session_id, projection FROM ranked WHERE row_number <= ? ORDER BY session_id, row_number ASC",
+      "SELECT id, parent_folder_id, settings FROM folders",
     ]);
   });
 
@@ -225,6 +229,61 @@ describe("live DB SSE replay snapshots", () => {
       { folder_id: "root", feed_only: true },
       { folder_id: "root", feed_only: true },
     ]);
+  });
+
+  it("hydrates a quiet folder watermark without exposing historical notices", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("session_count")) return [{ count: 1 }];
+      if (text.includes("session_get_all")) {
+        return [{
+          session_id: "quiet-session",
+          folder_id: "quiet-folder",
+          status: "idle",
+          created_at: new Date("2026-09-06T12:00:00.000Z"),
+          updated_at: new Date("2026-09-06T12:00:00.000Z"),
+        }];
+      }
+      if (text.includes("FROM session_feed_state")) {
+        return [{
+          session_id: "quiet-session",
+          attention_revision: 0,
+          notification_watermark: 9,
+          notification_count: 1,
+        }];
+      }
+      if (text.includes("FROM session_feed_notices")) {
+        return [{
+          session_id: "quiet-session",
+          projection: {
+            id: "quiet-session:9",
+            sourceEventId: 9,
+            sessionId: "quiet-session",
+            kind: "error",
+            title: "세션 오류",
+            body: "hidden",
+            createdAt: "2026-09-06T12:00:00.000Z",
+          },
+        }];
+      }
+      if (text.includes("FROM folders")) {
+        return [{
+          id: "quiet-folder",
+          parent_folder_id: null,
+          settings: { excludeFromNotification: true },
+        }];
+      }
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    const snapshot = await repository.loadSessionSnapshot();
+
+    expect(snapshot.sessions[0]).toMatchObject({
+      agentSessionId: "quiet-session",
+      recentNotices: [],
+      notificationWatermark: 9,
+      noticesTruncated: true,
+    });
   });
 
   it("returns an empty restricted session snapshot when no allowed folder exists", async () => {

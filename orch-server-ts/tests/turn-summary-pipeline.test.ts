@@ -339,30 +339,7 @@ describe("TurnSummaryPipeline", () => {
       }),
       "Turn summary stored",
     );
-    expect(appendSessionUpdate).toHaveBeenCalledTimes(1);
-    const update = appendSessionUpdate.mock.calls[0]?.[0];
-    expect(Object.keys(update ?? {}).sort()).toEqual([
-      "agent_session_id",
-      "last_event_id",
-      "last_message",
-      "last_read_event_id",
-      "status",
-      "type",
-      "updated_at",
-    ]);
-    expect(update).toEqual({
-      type: "session_updated",
-      agent_session_id: "session-a",
-      status: "running",
-      updated_at: "2026-07-31T00:00:00.000Z",
-      last_message: {
-        type: "turn_summary",
-        preview: "요약",
-        timestamp: "2026-07-31T00:00:00.000Z",
-      },
-      last_event_id: 22,
-      last_read_event_id: 20,
-    });
+    expect(appendSessionUpdate).not.toHaveBeenCalled();
     expect(foldIfNeeded).toHaveBeenCalledWith("session-a");
   });
 

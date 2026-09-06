@@ -200,25 +200,6 @@ export class TurnSummaryPipeline {
         },
       },
     });
-    const previewUpdate = persisted.previewUpdate;
-    if (previewUpdate !== undefined) {
-      try {
-        this.deps.sessionBroadcaster?.append({
-          type: "session_updated",
-          agent_session_id: job.sessionId,
-          status: previewUpdate.status,
-          updated_at: previewUpdate.updatedAt,
-          last_message: previewUpdate.lastMessage,
-          last_event_id: previewUpdate.lastEventId,
-          last_read_event_id: previewUpdate.lastReadEventId,
-        });
-      } catch (error) {
-        this.deps.logger.debug?.(
-          { error, sessionId: job.sessionId },
-          "Turn summary preview broadcast failed",
-        );
-      }
-    }
     this.deps.logger.info?.(
       {
         sessionId: job.sessionId,

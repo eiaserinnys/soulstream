@@ -131,6 +131,8 @@ export type EventCanonicalExecutionRegistrationProjection = {
 export type EventSessionEffectApplication = {
   applied: boolean;
   canonicalSession: EventCanonicalSessionProjection | null;
+  /** Internal public-feed materialization; never added to the worker ACK v1. */
+  canonicalLastMessage?: import("../session/session_feed_contract.js").LastChatMessage | null;
   canonicalExecutionRegistration?: EventCanonicalExecutionRegistrationProjection | null;
   /** One-release response compatibility for a legacy execution_acquire. */
   canonicalExecutionOwnership?: EventCanonicalExecutionOwnershipProjection | null;
@@ -150,6 +152,7 @@ export type CommittedIngressEvent = {
   eventId: number;
   duplicateReceipt: boolean;
   sessionEffectApplication?: EventSessionEffectApplication;
+  feedProjectionApplication?: import("./event_feed_projection_applier.js").EventFeedProjectionApplication;
 };
 
 export type DeadLetteredIngressEvent = {

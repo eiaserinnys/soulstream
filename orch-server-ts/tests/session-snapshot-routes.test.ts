@@ -303,7 +303,7 @@ describe("session snapshot route harness", () => {
     ).json();
     expect(
       filtered.sessions.map(
-        (session: Record<string, unknown>) => session.agent_session_id,
+        (session: Record<string, unknown>) => session.agentSessionId,
       ),
     ).toEqual(["sess-a"]);
     expect(filtered).toMatchObject({
@@ -346,6 +346,46 @@ describe("session snapshot route harness", () => {
       hasMore: false,
     });
 
+    await app.close();
+  });
+
+  it("uses session id, not raw update time, to break equal feed-activity ties", async () => {
+    let nowMs = 1_000;
+    const { app, registry } = createHarness(() => nowMs);
+    const connectionId = registerNode(registry, "node-a");
+    const lastMessage = {
+      type: "assistant_message",
+      preview: "same activity",
+      timestamp: "2026-09-06T12:00:00.000Z",
+    };
+    registry.receiveNodeMessage(
+      { nodeId: "node-a", connectionId },
+      {
+        type: "session_updated",
+        agentSessionId: "sess-z",
+        session_type: "agent",
+        last_message: lastMessage,
+      },
+    );
+    nowMs = 2_000;
+    registry.receiveNodeMessage(
+      { nodeId: "node-a", connectionId },
+      {
+        type: "session_updated",
+        agentSessionId: "sess-a",
+        session_type: "agent",
+        last_message: lastMessage,
+      },
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions?feed_only=true",
+    });
+
+    expect(response.json().sessions.map(
+      (session: Record<string, unknown>) => session.agentSessionId,
+    )).toEqual(["sess-z", "sess-a"]);
     await app.close();
   });
 

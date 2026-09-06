@@ -7,25 +7,31 @@ export function collectDirectNodeSessionEvents(params: {
   connectionId: string;
   message: Record<string, unknown>;
   nowMs: number;
+  committedIngress?: boolean;
 }): NodeRegistryEvent[] | undefined {
   if (params.message.type === "session_created") {
-    params.sessionCache.upsertFromSessionCreated(params);
+    const data = stripUncommittedSessionFeedFields(params.message);
+    params.sessionCache.upsertFromSessionCreated({ ...params, message: data });
     return [
       {
         type: "node_session_session_created",
         nodeId: params.nodeId,
-        data: params.message,
+        data,
       },
     ];
   }
 
   if (params.message.type === "session_updated") {
-    params.sessionCache.upsertFromSessionUpdated(params);
+    const data = params.committedIngress === true
+      ? params.message
+      : stripUncommittedSessionFeedFields(params.message);
+    params.sessionCache.upsertFromSessionUpdated({ ...params, message: data });
     return [
       {
         type: "node_session_session_updated",
         nodeId: params.nodeId,
-        data: params.message,
+        data,
+        ...(params.committedIngress === true ? { committedIngress: true } : {}),
       },
     ];
   }
@@ -52,4 +58,42 @@ export function collectDirectNodeSessionEvents(params: {
   }
 
   return undefined;
+}
+
+const COMMITTED_SESSION_FEED_FIELDS = new Set([
+  "last_message",
+  "lastMessage",
+  "pending_attentions",
+  "pendingAttentions",
+  "attention_revision",
+  "attentionRevision",
+  "pending_attentions_delta",
+  "pendingAttentionsDelta",
+  "recent_notices",
+  "recentNotices",
+  "notices",
+  "notification_watermark",
+  "notificationWatermark",
+  "notices_truncated",
+  "noticesTruncated",
+]);
+
+export function stripUncommittedSessionFeedFields(
+  message: Record<string, unknown>,
+): Record<string, unknown> {
+  const stripped = stripFeedFields(message);
+  if (isRecord(stripped.session)) {
+    stripped.session = stripFeedFields(stripped.session);
+  }
+  return stripped;
+}
+
+function stripFeedFields(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(
+    ([key]) => !COMMITTED_SESSION_FEED_FIELDS.has(key),
+  ));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

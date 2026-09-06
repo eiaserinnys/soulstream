@@ -6,7 +6,7 @@ import type { EventIngressEnvelope, EventSessionEffect } from "../src/node/event
 
 describe("applyEventSessionEffect", () => {
   it.each([
-    ["last_message", "session_update_last_message"],
+    ["last_message", "session_apply_last_chat_message"],
     ["set_backend_session_id", "session_set_claude_id"],
     ["rotate_backend_session_id", "session_rotate_claude_id"],
     ["running_transition", "session_apply_running_transition"],
@@ -16,16 +16,26 @@ describe("applyEventSessionEffect", () => {
     ["append_metadata", "session_apply_metadata_entry"],
   ] as const)("applies %s through its session stored procedure", async (kind, procedure) => {
     const statements: string[] = [];
-    const sql = (async (strings: TemplateStringsArray) => {
+    const sql = Object.assign(async (strings: TemplateStringsArray) => {
       const statement = strings.join("?");
       statements.push(statement);
-      return statement.includes("session_record_execution_registration")
+      return statement.includes("session_apply_last_chat_message")
+        ? [{
+            applied: true,
+            last_message: {
+              type: "assistant_message",
+              eventId: 41,
+              preview: "done",
+              timestamp: "2026-08-06T00:00:00.000Z",
+            },
+          }]
+        : statement.includes("session_record_execution_registration")
         ? [canonicalRegistrationRow(true)]
         : statement.includes("session_apply_running_transition")
           || statement.includes("session_apply_terminal_transition")
           ? [canonicalRow(true)]
           : [];
-    }) as EventIngressQuerySql;
+    }, { json: (value: unknown) => value }) as unknown as EventIngressQuerySql;
     const sessionEffect = effect(kind);
 
     await applyEventSessionEffect(sql, {
@@ -56,6 +66,53 @@ describe("applyEventSessionEffect", () => {
         registration_id: "registration-1",
         execution_command_id: "execute-1",
       },
+    });
+  });
+
+  it("does not call SQL when a legacy last_message effect came from a non-chat event", async () => {
+    const sql = Object.assign(async () => {
+      throw new Error("SQL must not be called");
+    }, { json: (value: unknown) => value }) as unknown as EventIngressQuerySql;
+    const lastMessage = effect("last_message");
+    const invalidEnvelope = {
+      ...envelope(lastMessage),
+      event_type: "thinking",
+      payload: { type: "thinking", thinking: "private chain" },
+    };
+
+    await expect(applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 41,
+      envelope: invalidEnvelope,
+      effect: lastMessage,
+    })).resolves.toEqual({
+      applied: false,
+      canonicalSession: null,
+      canonicalLastMessage: null,
+    });
+  });
+
+  it("returns the exact stored winner when the timestamp/event-id CAS rejects an older message", async () => {
+    const winner = {
+      type: "assistant_message",
+      eventId: 50,
+      preview: "newer",
+      timestamp: "2026-08-06T00:01:00.000Z",
+    };
+    const sql = Object.assign(async () => [{ applied: false, last_message: winner }], {
+      json: (value: unknown) => value,
+    }) as unknown as EventIngressQuerySql;
+    const lastMessage = effect("last_message");
+
+    await expect(applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 41,
+      envelope: envelope(lastMessage),
+      effect: lastMessage,
+    })).resolves.toEqual({
+      applied: false,
+      canonicalSession: null,
+      canonicalLastMessage: winner,
     });
   });
 

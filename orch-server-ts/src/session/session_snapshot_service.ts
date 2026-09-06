@@ -3,6 +3,10 @@ import type { CachedNodeSession } from "../node/session_cache.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import { serializeSessionRow } from "../runtime/live_session_serialization.js";
 import type { AgentProfileIdentityOverlay } from "../node/agent_profile_lookup.js";
+import {
+  projectSessionFeedSummary,
+  sessionFeedActivityMs,
+} from "./session_feed_projection.js";
 
 export type SessionSnapshotQuery = {
   session_ids?: string[];
@@ -72,10 +76,18 @@ export class SessionSnapshotService {
         snapshot: this.projectSession(session),
       }))
       .filter(({ snapshot }) => matchesQuery(snapshot, normalizedQuery))
-      .sort((left, right) => compareSessions(left.session, right.session));
+      .sort((left, right) => compareSessions(
+        left.session,
+        right.session,
+        normalizedQuery.feed_only === true,
+        left.snapshot,
+        right.snapshot,
+      ));
     const page = filtered
       .slice(offset, offset + limit)
-      .map((entry) => entry.snapshot);
+      .map((entry) => normalizedQuery.feed_only === true
+        ? projectSessionFeedSummary(entry.snapshot)
+        : entry.snapshot);
     return buildSessionSnapshotListResponse(
       page,
       filtered.length,
@@ -272,7 +284,19 @@ function fieldValue(
   return session[snakeKey] ?? session[camelKey];
 }
 
-function compareSessions(left: CachedNodeSession, right: CachedNodeSession): number {
+function compareSessions(
+  left: CachedNodeSession,
+  right: CachedNodeSession,
+  feedOnly: boolean,
+  leftSnapshot: Record<string, unknown>,
+  rightSnapshot: Record<string, unknown>,
+): number {
+  if (feedOnly) {
+    const activityDiff = sessionFeedActivityMs(rightSnapshot) -
+      sessionFeedActivityMs(leftSnapshot);
+    if (activityDiff !== 0) return activityDiff;
+    return right.agentSessionId.localeCompare(left.agentSessionId);
+  }
   const updatedDiff = right.updatedAtMs - left.updatedAtMs;
   if (updatedDiff !== 0) return updatedDiff;
   return left.agentSessionId.localeCompare(right.agentSessionId);

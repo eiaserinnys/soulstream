@@ -19,6 +19,10 @@ import { shouldPublishSessionEventSemantically } from
   "./session_event_semantic_publication.js";
 import { registerSessionTurnSummaryRoute } from
   "./session_turn_summary_routes.js";
+import type { RuntimeLiveTextSnapshot } from
+  "../runtime/session_event_hub.js";
+import type { SessionHistoryResetReason } from
+  "./session_feed_contract.js";
 
 export type SessionHistoryRouteOptions = {
   provider: SessionHistoryProvider;
@@ -34,6 +38,7 @@ export type SessionHistoryLiveEventSource = {
     sessionId: string,
     listener: (envelope: Record<string, unknown>) => void,
   ) => (() => void) | undefined;
+  snapshotLiveText?: (sessionId: string) => RuntimeLiveTextSnapshot;
 };
 
 export type SessionHistoryForegroundObservers = {
@@ -255,17 +260,47 @@ async function sendSessionEventsStream(
       liveStream?.destroy(error instanceof Error ? error : new Error(String(error)));
     }
   });
+  const liveTextSnapshot = unsubscribe === undefined
+    ? { throughLiveSeq: 0, streams: [] }
+    : options.liveEvents?.snapshotLiveText?.(sessionId) ?? {
+        throughLiveSeq: 0,
+        streams: [],
+      };
   try {
     history = await buildSessionHistoryInitialState(request, service, sessionId);
     const frames = [...history.frames];
-    if (history.afterId === 0) {
-      for (const envelope of pendingLiveEvents) {
-        const frame = liveSessionEventFrame(envelope, history);
-        if (frame !== null) frames.push(frame);
-      }
-      pendingLiveEvents = [];
+    if (liveTextSnapshot.throughLiveSeq > 0 || liveTextSnapshot.streams.length > 0) {
+      frames.push({
+        event: "text_snapshot",
+        data: JSON.stringify({
+          type: "text_snapshot",
+          basedOnEventId: history.lastStoredId,
+          throughLiveSeq: liveTextSnapshot.throughLiveSeq,
+          streams: liveTextSnapshot.streams,
+        }),
+      });
     }
-    frames.push(historySyncFrame(history.lastStoredId, unsubscribe !== undefined));
+    frames.push(historySyncFrame(
+      history.lastStoredId,
+      unsubscribe !== undefined,
+      history.resetReason,
+    ));
+    const queued = pendingLiveEvents;
+    pendingLiveEvents = [];
+    for (const envelope of queued) {
+      const queuedLiveSeq = liveSequence(envelope);
+      if (
+        queuedLiveSeq !== undefined &&
+        queuedLiveSeq <= liveTextSnapshot.throughLiveSeq
+      ) continue;
+      const frame = liveSessionEventFrame(
+        envelope,
+        history,
+        queuedLiveSeq !== undefined &&
+          queuedLiveSeq > liveTextSnapshot.throughLiveSeq,
+      );
+      if (frame !== null) frames.push(frame);
+    }
     setSseHeaders(reply);
 
     if ((options.closeAfterHistorySync ?? true) || unsubscribe === undefined) {
@@ -313,6 +348,7 @@ type SessionHistoryInitialState = {
   readonly afterId: number;
   readonly lastStoredId: number;
   lastSeenEventId: number;
+  readonly resetReason?: SessionHistoryResetReason;
 };
 
 export type SessionHistoryEventCursor = {
@@ -331,22 +367,24 @@ async function buildSessionHistoryInitialState(
     },
   ];
   const afterId = resolveSessionHistoryAfterId(request);
+  const durableWatermark = await service.readLastEventId(sessionId);
 
   if (afterId === 0) {
-    const lastEventId = await service.readLastEventId(sessionId);
     return {
       frames,
       afterId,
-      lastStoredId: lastEventId,
-      lastSeenEventId: lastEventId,
+      lastStoredId: durableWatermark,
+      lastSeenEventId: durableWatermark,
     };
   }
 
-  let lastStoredId = 0;
+  let firstStoredId: number | undefined;
+  let lastReplayedId = 0;
   const replayEvents: SessionHistoryRawEvent[] = [];
   for await (const event of service.streamEventsRaw(sessionId, afterId)) {
     if (event.eventId <= afterId) continue;
-    lastStoredId = Math.max(lastStoredId, event.eventId);
+    firstStoredId ??= event.eventId;
+    lastReplayedId = Math.max(lastReplayedId, event.eventId);
     replayEvents.push(event);
   }
 
@@ -362,17 +400,27 @@ async function buildSessionHistoryInitialState(
       data: event.payloadText,
     });
   }
+  const effectiveDurableWatermark = Math.max(durableWatermark, lastReplayedId);
+  const resetReason = afterId > effectiveDurableWatermark
+    ? "cursor_ahead" as const
+    : afterId < effectiveDurableWatermark &&
+        (firstStoredId === undefined || firstStoredId > afterId + 1)
+      ? "history_gap" as const
+      : undefined;
+  const lastStoredId = Math.max(afterId, effectiveDurableWatermark);
   return {
     frames,
     afterId,
     lastStoredId,
     lastSeenEventId: Math.max(afterId, lastStoredId),
+    ...(resetReason === undefined ? {} : { resetReason }),
   };
 }
 
 function liveSessionEventFrame(
   envelope: Record<string, unknown>,
   history: SessionHistoryInitialState | undefined,
+  forcePostSnapshotReplay = false,
 ): SessionHistorySseFrame | null {
   if (history === undefined) return null;
   const payload = isRecord(envelope.event)
@@ -381,11 +429,19 @@ function liveSessionEventFrame(
       ? envelope.payload
       : envelope;
   const eventId = liveEventId(envelope, payload);
-  if (!shouldEmitSessionHistoryEvent(history, eventId)) return null;
+  const lastSeenEventId = history.lastSeenEventId;
+  if (
+    !shouldEmitSessionHistoryEvent(history, eventId) &&
+    !forcePostSnapshotReplay
+  ) return null;
   return {
     event: typeof payload.type === "string" ? payload.type : "message",
     data: JSON.stringify(payload),
-    ...(eventId === undefined ? {} : { id: eventId }),
+    ...(
+      eventId === undefined || eventId < lastSeenEventId
+        ? {}
+        : { id: eventId }
+    ),
   };
 }
 
@@ -466,6 +522,7 @@ function headerValue(value: string | string[] | undefined): string | null {
 function historySyncFrame(
   lastEventId: number,
   isLive = false,
+  resetReason?: SessionHistoryResetReason,
 ): SessionHistorySseFrame {
   return {
     event: "history_sync",
@@ -473,8 +530,20 @@ function historySyncFrame(
       type: "history_sync",
       last_event_id: lastEventId,
       is_live: isLive,
+      reset_required: resetReason !== undefined,
+      ...(resetReason === undefined ? {} : { reset_reason: resetReason }),
     }),
   };
+}
+
+function liveSequence(envelope: Record<string, unknown>): number | undefined {
+  const payload = isRecord(envelope.event)
+    ? envelope.event
+    : isRecord(envelope.payload)
+      ? envelope.payload
+      : envelope;
+  const value = payload.liveSeq;
+  return Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

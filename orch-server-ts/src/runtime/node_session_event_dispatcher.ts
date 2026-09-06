@@ -8,6 +8,12 @@ import type {
 } from "../sse/replay_broadcaster.js";
 import { serializeSessionRow } from "./live_session_serialization.js";
 import type { AgentProfileIdentityOverlay } from "../node/agent_profile_lookup.js";
+import { stripUncommittedSessionFeedFields } from
+  "../node/session_message_events.js";
+import {
+  projectSessionFeedSummary,
+  projectSessionFeedUpdate,
+} from "../session/session_feed_projection.js";
 
 export type NodeSessionEventDispatchResult = {
   appended: number;
@@ -79,21 +85,10 @@ function sessionStreamEventFromNodeRegistryEvent(
     );
   }
   if (event.type === "node_session_session_updated") {
-    const agentSessionId = sessionIdFromPayload(event.data);
-    const session = serializeCachedSession(
-      event.nodeId,
-      agentSessionId,
-      event.data,
-      registry,
-      agentProfiles,
-    );
-    return {
-      type: "session_updated",
-      ...event.data,
-      ...session,
-      agent_session_id: agentSessionId,
-      nodeId: event.nodeId,
-    };
+    const data = event.committedIngress === true
+      ? event.data
+      : stripUncommittedSessionFeedFields(event.data);
+    return projectSessionFeedUpdate(data) ?? undefined;
   }
   if (event.type === "node_session_session_deleted") {
     const agentSessionId = sessionIdFromPayload(event.data);
@@ -115,10 +110,13 @@ function sessionCreatedStreamEvent(
   registry: InMemoryNodeRegistry | undefined,
   agentProfiles: readonly AgentProfileIdentityOverlay[],
 ): SessionStreamEvent {
-  const folderKeyPresent = "folder_id" in data || "folderId" in data;
-  const folderId = "folder_id" in data ? data.folder_id : data.folderId;
-  const rawSession = isRecord(data.session) ? data.session : data;
-  const agentSessionId = sessionIdFromPayload(data);
+  const trustedData = stripUncommittedSessionFeedFields(data);
+  const folderKeyPresent = "folder_id" in trustedData || "folderId" in trustedData;
+  const folderId = "folder_id" in trustedData
+    ? trustedData.folder_id
+    : trustedData.folderId;
+  const rawSession = isRecord(trustedData.session) ? trustedData.session : trustedData;
+  const agentSessionId = sessionIdFromPayload(trustedData);
   const session = {
     ...rawSession,
     ...serializeCachedSession(
@@ -136,7 +134,7 @@ function sessionCreatedStreamEvent(
 
   const payload: SessionStreamEvent = {
     type: "session_created",
-    session,
+    session: projectSessionFeedSummary(session),
     nodeId,
   };
   if (folderKeyPresent) {

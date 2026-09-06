@@ -29,6 +29,7 @@ import type {
   InMemoryNodeRegistryOptions,
   MutableNodeConnection,
   NodeConnectionSnapshot,
+  NodeMessageReceiptOptions,
   NodeMessageSource,
   NodeRegisteredEvent,
   NodeRegistrationPayload,
@@ -52,6 +53,7 @@ export type {
   NodeHeartbeatPingEvent,
   NodeHeartbeatPongEvent,
   NodeHeartbeatState,
+  NodeMessageReceiptOptions,
   NodeMessageSource,
   NodeRegisteredEvent,
   NodeRegistrationPayload,
@@ -312,6 +314,7 @@ export class InMemoryNodeRegistry {
   receiveNodeMessage(
     source: NodeMessageSource,
     message: Record<string, unknown>,
+    receiptOptions: NodeMessageReceiptOptions = {},
   ): NodeRegistryEvent[] {
     const { nodeId, connectionId } = normalizeMessageSource(source);
     const node = this.requireConnectedNode(nodeId);
@@ -406,6 +409,7 @@ export class InMemoryNodeRegistry {
       connectionId: node.connectionId,
       message,
       nowMs,
+      committedIngress: receiptOptions.committedIngress === true,
     });
     if (directSessionEvents !== undefined) {
       updateReportedRunnerSession(node, this.sessionCache, message);

@@ -484,4 +484,98 @@ describe("Node registry and per-node session cache primitive", () => {
     ]);
     expect(sessionCache.findSession("direct-session")).toBeUndefined();
   });
+
+  it("accepts durable feed fields only from the internal committed-ingress path", () => {
+    const { registry, sessionCache } = createRegistry();
+    const registered = registry.registerNode(
+      fixture.registration as NodeRegistrationPayload,
+    );
+    const source = {
+      nodeId: "fake-node",
+      connectionId: registered.node.connectionId,
+    };
+
+    const createdEvents = registry.receiveNodeMessage(source, {
+      type: "session_created",
+      agentSessionId: "feed-trust-session",
+      lastMessage: { type: "assistant_message", preview: "spoofed" },
+      pending_attentions: [{ id: "spoofed-top" }],
+      attentionRevision: 99,
+      recent_notices: [{ id: "spoofed-notice-top" }],
+      notificationWatermark: 99,
+      noticesTruncated: true,
+      session: {
+        agentSessionId: "feed-trust-session",
+        status: "running",
+        last_message: { type: "assistant_message", preview: "spoofed nested" },
+        pendingAttentions: [{ id: "spoofed-nested" }],
+        attention_revision: 98,
+        recentNotices: [{ id: "spoofed-notice-nested" }],
+        notification_watermark: 98,
+        notices_truncated: true,
+      },
+    });
+    const createdData = createdEvents[0]?.type === "node_session_session_created"
+      ? createdEvents[0].data
+      : {};
+    expect(createdData).not.toHaveProperty("lastMessage");
+    expect(createdData).not.toHaveProperty("pending_attentions");
+    expect(createdData.session).toEqual({
+      agentSessionId: "feed-trust-session",
+      status: "running",
+    });
+    expect(sessionCache.findSession("feed-trust-session")?.payload)
+      .not.toHaveProperty("last_message");
+
+    const untrustedEvents = registry.receiveNodeMessage(source, {
+      type: "session_updated",
+      agentSessionId: "feed-trust-session",
+      committedIngress: true,
+      last_message: { type: "assistant_message", preview: "spoofed" },
+      pendingAttentionsDelta: { spoofed: null },
+      notices: [{ id: "spoofed-notice" }],
+    });
+    expect(untrustedEvents[0]).not.toHaveProperty("committedIngress");
+    expect(untrustedEvents[0]).toMatchObject({
+      data: {
+        type: "session_updated",
+        agentSessionId: "feed-trust-session",
+        committedIngress: true,
+      },
+    });
+    expect(untrustedEvents[0]).not.toHaveProperty("data.last_message");
+    expect(untrustedEvents[0]).not.toHaveProperty("data.pendingAttentionsDelta");
+    expect(untrustedEvents[0]).not.toHaveProperty("data.notices");
+    expect(sessionCache.findSession("feed-trust-session")?.payload)
+      .not.toHaveProperty("last_message");
+
+    const canonicalLastMessage = {
+      type: "assistant_message",
+      preview: "committed",
+      timestamp: "2026-09-07T00:00:00.000Z",
+      eventId: 42,
+    };
+    const trustedEvents = registry.receiveNodeMessage(source, {
+      type: "session_updated",
+      agentSessionId: "feed-trust-session",
+      last_message: canonicalLastMessage,
+      attention_revision: 42,
+      pending_attentions_delta: { "input_request:req-1": null },
+      notices: [{ id: "feed-trust-session:42" }],
+      notification_watermark: 42,
+    }, { committedIngress: true });
+    expect(trustedEvents[0]).toMatchObject({
+      type: "node_session_session_updated",
+      committedIngress: true,
+      data: {
+        last_message: canonicalLastMessage,
+        attention_revision: 42,
+        pending_attentions_delta: { "input_request:req-1": null },
+        notices: [{ id: "feed-trust-session:42" }],
+        notification_watermark: 42,
+      },
+    });
+    expect(sessionCache.findSession("feed-trust-session")?.payload)
+      .toHaveProperty("last_message", canonicalLastMessage);
+  });
 });
