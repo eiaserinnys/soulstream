@@ -14,6 +14,7 @@ import { BATCH_SIZE, BATCH_FLUSH_MS } from "../lib/event-batch";
 
 const PROCESSING_RETRY_BASE_MS = 1_000;
 const PROCESSING_RETRY_MAX_MS = 30_000;
+const PROCESSING_RECOVERY_STABLE_MS = 30_000;
 
 export interface UseSessionProviderOptions {
   sessionKey: string | null;
@@ -36,6 +37,11 @@ interface DetailSource {
   sessionKey: string | null;
   cursorScope: string;
   provider: SessionStorageProvider | null;
+}
+
+interface ActiveDetailConnection {
+  generation: number;
+  disconnect: () => void;
 }
 
 export function useSessionProvider(options: UseSessionProviderOptions) {
@@ -69,17 +75,29 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drainTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const processingRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const processingRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const processingFailureAttemptRef = useRef(0);
+  const processingFailureBoundaryRef = useRef<number | null>(null);
+  const activeConnectionRef = useRef<ActiveDetailConnection | null>(null);
 
   const clearTimersAndQueue = useCallback(() => {
     if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     if (drainTimerRef.current) clearTimeout(drainTimerRef.current);
     if (processingRetryTimerRef.current) clearTimeout(processingRetryTimerRef.current);
+    if (processingRecoveryTimerRef.current) clearTimeout(processingRecoveryTimerRef.current);
     flushTimerRef.current = null;
     drainTimerRef.current = null;
     processingRetryTimerRef.current = null;
+    processingRecoveryTimerRef.current = null;
     eventQueueRef.current.length = 0;
     preSyncTextSnapshotRef.current = null;
+  }, []);
+
+  const disconnectActiveConnection = useCallback((generation: number) => {
+    const activeConnection = activeConnectionRef.current;
+    if (!activeConnection || activeConnection.generation !== generation) return;
+    activeConnectionRef.current = null;
+    activeConnection.disconnect();
   }, []);
 
   const committedCursor = useCallback((
@@ -153,6 +171,21 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       // or its physical stream with later events. Fence the callback now (the
       // effect cleanup may run later), reset the durable history buffer, and
       // reconnect from the unchanged provider-owned committed cursor.
+      const failedBoundary = chunk.reduce((boundary, item) => {
+        const historyBoundary = item.event.type === "history_sync"
+          ? item.event.last_event_id ?? 0
+          : 0;
+        return Math.max(boundary, item.eventId, historyBoundary);
+      }, 0);
+      processingFailureBoundaryRef.current = Math.max(
+        processingFailureBoundaryRef.current ?? 0,
+        failedBoundary,
+      );
+      if (processingRecoveryTimerRef.current) {
+        clearTimeout(processingRecoveryTimerRef.current);
+        processingRecoveryTimerRef.current = null;
+      }
+      disconnectActiveConnection(generation);
       generationRef.current += 1;
       clearTimersAndQueue();
       clearTreeRef.current();
@@ -175,8 +208,6 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       }, retryDelay);
       return;
     }
-    processingFailureAttemptRef.current = 0;
-
     const store = source.provider?.detailCursorStore;
     let maxCursor = committedCursor(store, source.cursorScope, key);
     let sawHistorySync = false;
@@ -189,6 +220,24 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     }
     commitCursor(store, source.cursorScope, key, maxCursor);
 
+    const failedBoundary = processingFailureBoundaryRef.current;
+    if (failedBoundary !== null && failedBoundary > 0 && maxCursor >= failedBoundary) {
+      processingFailureAttemptRef.current = 0;
+      processingFailureBoundaryRef.current = null;
+      if (processingRecoveryTimerRef.current) {
+        clearTimeout(processingRecoveryTimerRef.current);
+        processingRecoveryTimerRef.current = null;
+      }
+    } else if (failedBoundary === 0 && !processingRecoveryTimerRef.current) {
+      const recoveryGeneration = generationRef.current;
+      processingRecoveryTimerRef.current = setTimeout(() => {
+        processingRecoveryTimerRef.current = null;
+        if (generationRef.current !== recoveryGeneration) return;
+        processingFailureAttemptRef.current = 0;
+        processingFailureBoundaryRef.current = null;
+      }, PROCESSING_RECOVERY_STABLE_MS);
+    }
+
     if (sawHistorySync && generationRef.current === generation) {
       preSyncTextSnapshotRef.current = null;
       setSynchronizedSessionKey(key);
@@ -200,7 +249,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
         drainQueue();
       }, 0);
     }
-  }, [clearTimersAndQueue, commitCursor, committedCursor]);
+  }, [clearTimersAndQueue, commitCursor, committedCursor, disconnectActiveConnection]);
 
   const enqueueEvent = useCallback((
     event: SoulSSEEvent,
@@ -234,6 +283,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
     if (sourceChanged) {
       processingFailureAttemptRef.current = 0;
+      processingFailureBoundaryRef.current = null;
       if (previous.cursorScope !== cursorScope) {
         previous.provider?.detailCursorStore?.clearScope(previous.cursorScope);
       }
@@ -244,6 +294,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
     if (!sessionKey || !active) {
       processingFailureAttemptRef.current = 0;
+      processingFailureBoundaryRef.current = null;
       sourceRef.current = { sessionKey, cursorScope, provider: previous.provider };
       setStatus("disconnected");
       setSynchronizedSessionKey(null);
@@ -316,7 +367,21 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       setStatus(nextStatus);
     };
 
-    const unsubscribe = provider.subscribe(
+    let unsubscribe: (() => void) | null = null;
+    let disconnectRequested = false;
+    let disconnected = false;
+    const disconnect = () => {
+      if (disconnected) return;
+      disconnectRequested = true;
+      if (!unsubscribe) return;
+      disconnected = true;
+      const close = unsubscribe;
+      unsubscribe = null;
+      close();
+    };
+    activeConnectionRef.current = { generation, disconnect };
+
+    unsubscribe = provider.subscribe(
       sessionKey,
       (event, eventId) => enqueueEvent(event, eventId, generation),
       handleStatus,
@@ -325,11 +390,12 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
         getLastEventId: () => committedCursor(store, cursorScope, sessionKey),
       },
     );
+    if (disconnectRequested) disconnect();
 
     return () => {
+      disconnectActiveConnection(generation);
       generationRef.current += 1;
       clearTimersAndQueue();
-      unsubscribe();
     };
   // getSessionProvider callbacks are commonly inline. cursorScope is the explicit source identity.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -339,6 +405,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     clearTree,
     committedCursor,
     cursorScope,
+    disconnectActiveConnection,
     enqueueEvent,
     reconnectVersion,
     sessionKey,
@@ -347,9 +414,14 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   const reconnect = useCallback(() => {
     if (!sessionKey) return;
     processingFailureAttemptRef.current = 0;
+    processingFailureBoundaryRef.current = null;
     if (processingRetryTimerRef.current) {
       clearTimeout(processingRetryTimerRef.current);
       processingRetryTimerRef.current = null;
+    }
+    if (processingRecoveryTimerRef.current) {
+      clearTimeout(processingRecoveryTimerRef.current);
+      processingRecoveryTimerRef.current = null;
     }
     setSynchronizedSessionKey(null);
     setReconnectVersion((value) => value + 1);

@@ -305,9 +305,9 @@ describe("useSessionProvider", () => {
     failedConnection?.({ type: "user_message", text: "raced live" } as SoulSSEEvent, 13);
     await vi.advanceTimersByTimeAsync(50);
 
-    // Processor failures use a separate retry backoff so a deterministic
-    // poison replay cannot spin physical connections in a tight loop.
-    expect(provider.unsubscribeCount).toBe(0);
+    // Fence application and close the physical EventSource immediately. The
+    // processing backoff, not the connector, owns the next connection.
+    expect(provider.unsubscribeCount).toBe(1);
     expect(provider.subscribeCalls).toHaveLength(1);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_100);
@@ -327,6 +327,69 @@ describe("useSessionProvider", () => {
       "must replay",
       "raced live",
     ]);
+    vi.useRealTimers();
+  });
+
+  it("keeps exponential backoff across successful control chunks before a persistent poison replay", async () => {
+    reactTestEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    vi.useFakeTimers();
+    const provider = new FakeSessionProvider();
+    useDashboardStore.setState({
+      processEvents: (events) => {
+        if (events.some(({ event }) => (
+          event.type === "user_message" && event.text === "persistent poison"
+        ))) {
+          throw new Error("persistent processor failure");
+        }
+        defaultProcessEvents(events);
+      },
+    });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    flushSync(() => {
+      root.render(createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(SessionProviderProbe, { provider }),
+      ));
+    });
+    await Promise.resolve();
+
+    provider.emit({ type: "user_message", text: "committed prefix" } as SoulSSEEvent, 11);
+    await vi.advanceTimersByTimeAsync(50);
+    provider.emit({ type: "user_message", text: "persistent poison" } as SoulSSEEvent, 12);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(provider.unsubscribeCount).toBe(1);
+    expect(provider.subscribeCalls).toHaveLength(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_100);
+    });
+    expect(provider.subscribeCalls).toHaveLength(2);
+    expect(provider.subscribeCalls[1].options?.lastEventId).toBe(11);
+
+    // A successful reconnect control chunk is not proof that the poison
+    // boundary was crossed and must not reset the processing failure attempt.
+    provider.emit({
+      type: "text_snapshot",
+      basedOnEventId: 11,
+      throughLiveSeq: 0,
+      streams: [],
+    }, 0);
+    await vi.advanceTimersByTimeAsync(50);
+    provider.emit({ type: "user_message", text: "persistent poison" } as SoulSSEEvent, 12);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(provider.unsubscribeCount).toBe(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_100);
+    });
+    expect(provider.subscribeCalls).toHaveLength(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(provider.subscribeCalls).toHaveLength(3);
+    expect(provider.subscribeCalls[2].options?.lastEventId).toBe(11);
     vi.useRealTimers();
   });
 

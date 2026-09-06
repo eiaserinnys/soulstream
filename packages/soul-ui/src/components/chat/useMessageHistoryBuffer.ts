@@ -9,7 +9,7 @@
 
 import {
   useCallback,
-  useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type RefObject,
@@ -326,7 +326,7 @@ export function useMessageHistoryBuffer(
     void loadNextPage(run);
   }, [beginFillRun, isCurrentSession, loadNextPage, scrollerRef, sessionId, updateBlockedReason]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const token = Symbol("session");
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
@@ -351,7 +351,7 @@ export function useMessageHistoryBuffer(
     };
   }, [historyResetVersion, sessionId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!sessionId) return;
     if (!enabled) {
       abortControllerRef.current?.abort();

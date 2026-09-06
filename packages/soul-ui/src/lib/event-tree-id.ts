@@ -13,8 +13,8 @@ export function extractEventId(nodeId: string): number | undefined {
 /**
  * node.id가 durable event ID를 담지 않는 이벤트까지 포함해 ID를 조회한다.
  *
- * session_notification의 node.id는 exactly-once delivery_id가 정본이므로,
- * 별도 필드에 보존한 DB 이벤트 ID를 사용한다.
+ * session_notification의 delivery ID와 durable final로 승격된 transient text처럼
+ * node.id가 DB ID를 담지 않는 경우 별도 eventId 필드를 사용한다.
  */
 export function extractNodeEventId(
   node: EventTreeNode,
@@ -22,5 +22,6 @@ export function extractNodeEventId(
   if (node.type === "session_notification") {
     return node.eventId;
   }
+  if (node.type === "text" && node.eventId !== undefined) return node.eventId;
   return extractEventId(node.id);
 }

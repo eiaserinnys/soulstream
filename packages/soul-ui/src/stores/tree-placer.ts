@@ -41,14 +41,14 @@ import { extractNodeEventId as readNodeEventId } from "../lib/event-tree-id";
 /**
  * insertNodeInOrder 의 caller-local adapter.
  *
- * 비정형 nodeId 를 -Infinity 로 변환하여 어떤 양수 eventId 보다도 작게 취급한다.
- * 즉 fast-path push 로 흘려보낸다 — children 에 비정형 노드가 invariant 상 없으므로
- * dead branch 지만 안전한 폴백 의미를 코드로 표현한다.
+ * durable ID가 없는 transient node를 +Infinity로 취급한다. snapshot으로 먼저
+ * append된 live text 뒤에 과거 durable history가 hydration되더라도 positive ID는
+ * transient tail 앞에 삽입되어야 한다.
  *
  * durable 이벤트 ID 판독의 정본은 lib/event-tree-id.ts 이다.
  */
 function extractNodeEventId(node: EventTreeNode): number {
-  return readNodeEventId(node) ?? Number.NEGATIVE_INFINITY;
+  return readNodeEventId(node) ?? Number.POSITIVE_INFINITY;
 }
 
 function textStreamKey(event: TextStartEvent): string | null {
@@ -115,6 +115,17 @@ function insertNodeInOrder(
     }
   }
   children.splice(lo, 0, node);
+}
+
+/** Repositions a transient live text node after it receives its durable final ID. */
+export function repositionNodeInOrder(
+  root: EventTreeNode,
+  node: EventTreeNode,
+  eventId: number,
+): void {
+  const index = root.children.indexOf(node);
+  if (index >= 0) root.children.splice(index, 1);
+  insertNodeInOrder(root, node, eventId);
 }
 
 /**

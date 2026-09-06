@@ -266,17 +266,19 @@ export function useSessionListProvider(
       instanceIdRef.current = update.nextInstanceId;
       lastEventIdRef.current = update.nextLastEventId;
       if (update.shouldRefetch) {
-        queryRefetch();
         onStreamReset?.();
+        return true;
       }
+      return false;
     },
     onReplayGap: (e) => {
       const update = reconcileReplayGap(e);
       lastEventIdRef.current = update.nextLastEventId;
       if (update.shouldRefetch) {
-        queryRefetch();
         onStreamReset?.();
+        return true;
       }
+      return false;
     },
     onTaskUpdated: handleTaskUpdated,
     onCustomViewUpdated: handleCustomViewUpdated,

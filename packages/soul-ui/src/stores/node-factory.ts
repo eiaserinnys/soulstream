@@ -31,6 +31,7 @@ import type {
   AssistantErrorEvent,
   AwaySummaryEvent,
   TurnSummaryEvent,
+  TextNode,
 } from "@shared/types";
 import { formatRetryingErrorHistory } from "@shared/sse-events";
 import type { ProcessingContext } from "./processing-context";
@@ -408,22 +409,46 @@ export function createNodeFromEvent(
 
 export function applyFinalAssistantMessageToLiveText(
   event: SoulSSEEvent,
+  eventId: number,
   ctx: ProcessingContext,
-): boolean {
-  if (event.type !== "assistant_message") return false;
+): TextNode | null {
+  if (event.type !== "assistant_message") return null;
   if ((event as unknown as { _final_for_live_stream?: unknown })._final_for_live_stream !== true) {
-    return false;
+    return null;
   }
   const streamKey = appServerStreamKey(event);
-  if (!streamKey) return false;
+  if (!streamKey) return null;
   ctx.finalizedTextStreams.add(streamKey);
   ctx.resetRequiredTextStreams.delete(streamKey);
   const target = ctx.nodeMap.get(`app-server-agent-message:${streamKey}`);
-  if (!target || target.type !== "text") return false;
+  if (!target || target.type !== "text") return null;
   const e = event as AssistantMessageEvent;
   target.content = e.content;
   target.completed = true;
   target.textCompleted = true;
+  if (eventId > 0) {
+    target.eventId = eventId;
+    ctx.nodeMap.set(String(eventId), target);
+  }
   if (ctx.activeTextTarget === target) ctx.activeTextTarget = null;
-  return true;
+  return target;
+}
+
+/** Allows the server's durable-final reassertion to repair transient/reset state below the cursor. */
+export function canApplyReassertedLiveTextFinal(
+  event: SoulSSEEvent,
+  eventId: number,
+  lastEventId: number,
+  ctx: ProcessingContext,
+): boolean {
+  if (
+    eventId <= 0
+    || eventId > lastEventId
+    || event.type !== "assistant_message"
+    || (event as unknown as { _final_for_live_stream?: unknown })._final_for_live_stream !== true
+  ) return false;
+  const streamKey = appServerStreamKey(event);
+  if (!streamKey) return false;
+  return ctx.resetRequiredTextStreams.has(streamKey)
+    || ctx.nodeMap.get(`app-server-agent-message:${streamKey}`)?.type === "text";
 }

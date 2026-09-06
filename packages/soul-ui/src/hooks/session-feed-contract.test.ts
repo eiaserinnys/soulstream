@@ -135,4 +135,109 @@ describe("server-owned session feed v2 fixture", () => {
       .toHaveLength(1);
     expect(ctx.resetRequiredTextStreams.has(identity)).toBe(false);
   });
+
+  it("keeps snapshot text after hydrated history and accepts a reasserted lower-id final", () => {
+    const ctx = createProcessingContext();
+    const streamIdentity = "codex_sdk:aXRlbS0x";
+    const snapshot = processEventsBatch(
+      [{
+        event: {
+          type: "text_snapshot",
+          basedOnEventId: 5,
+          throughLiveSeq: 2,
+          streams: [{
+            streamIdentity,
+            text: "partial",
+            updatedAt: "2026-09-07T00:00:00.000Z",
+            truncated: false,
+            resetRequired: false,
+            recovery: "none",
+          }],
+        },
+        eventId: 0,
+      }, {
+        event: {
+          type: "history_sync",
+          last_event_id: 5,
+          is_live: true,
+          reset_required: false,
+        },
+        eventId: 0,
+      }],
+      ctx,
+      null,
+      "session-a",
+      null,
+      0,
+    );
+
+    const hydrated = processEventsBatch(
+      [{
+        event: { type: "user_message", text: "oldest" },
+        eventId: 1,
+      }, {
+        event: { type: "system_message", text: "newer durable" },
+        eventId: 5,
+      }],
+      ctx,
+      snapshot.root,
+      "session-a",
+      null,
+      5,
+      true,
+    );
+    expect(hydrated.root?.children.map((node) => node.id)).toEqual([
+      "user-msg-1",
+      "system-msg-5",
+      `text-live:${streamIdentity}`,
+    ]);
+
+    const liveTail = processEventsBatch(
+      [{
+        event: {
+          type: "text_delta",
+          text: "stale live tail",
+          streamIdentity,
+          liveSeq: 3,
+          liveTextMode: "replace",
+        },
+        eventId: 0,
+      }],
+      ctx,
+      hydrated.root,
+      "session-a",
+      null,
+      5,
+    );
+    const finalized = processEventsBatch(
+      [{
+        event: {
+          type: "assistant_message",
+          content: "durable complete",
+          streamIdentity,
+          _final_for_live_stream: true,
+        },
+        eventId: 4,
+      }],
+      ctx,
+      liveTail.root,
+      "session-a",
+      null,
+      5,
+    );
+
+    expect(finalized.maxEventId).toBe(5);
+    expect(finalized.root?.children.map((node) => node.id)).toEqual([
+      "user-msg-1",
+      `text-live:${streamIdentity}`,
+      "system-msg-5",
+    ]);
+    expect(finalized.root?.children[1]).toMatchObject({
+      type: "text",
+      content: "durable complete",
+      completed: true,
+      textCompleted: true,
+      eventId: 4,
+    });
+  });
 });

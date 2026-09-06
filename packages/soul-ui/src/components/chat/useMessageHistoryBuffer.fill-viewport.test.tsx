@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, createElement, useEffect, type RefObject } from "react";
+import { act, createElement, useEffect, useLayoutEffect, type RefObject } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -103,12 +103,17 @@ function Harness({
   sessionId,
   scrollerRef,
   enabled = true,
+  notifyInLayout = false,
 }: {
   sessionId: string;
   scrollerRef: RefObject<HTMLElement | null>;
   enabled?: boolean;
+  notifyInLayout?: boolean;
 }) {
   const result = useMessageHistoryBuffer(sessionId, scrollerRef, enabled);
+  useLayoutEffect(() => {
+    if (notifyInLayout) result.notifyViewportGeometry();
+  }, [enabled, notifyInLayout, result.notifyViewportGeometry]);
   useEffect(() => {
     latest = result;
   }, [result]);
@@ -144,10 +149,19 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
   let scroller: HTMLDivElement;
   let scrollerRef: RefObject<HTMLElement | null>;
 
-  async function renderSession(sessionId: string, enabled = true): Promise<void> {
+  async function renderSession(
+    sessionId: string,
+    enabled = true,
+    notifyInLayout = false,
+  ): Promise<void> {
     useDashboardStore.getState().setActiveSession(sessionId);
     await act(async () => {
-      root.render(createElement(Harness, { sessionId, scrollerRef, enabled }));
+      root.render(createElement(Harness, {
+        sessionId,
+        scrollerRef,
+        enabled,
+        notifyInLayout,
+      }));
     });
     await flush();
   }
@@ -509,6 +523,29 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
 
     await renderSession("sess-hidden", true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("activates the fetch token before the visible ChatView layout geometry callback", async () => {
+    const pending = deferred<Response>();
+    const fetchMock = vi.fn().mockReturnValue(pending.promise);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-layout-activation", false, true);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await renderSession("sess-layout-activation", true, true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      pending.resolve(page([1], null));
+      await pending.promise;
+    });
+    await flush();
+
+    expect(flattenTree(useDashboardStore.getState().tree).map((message) => message.eventId))
+      .toEqual([1]);
+    expect(latest?.loading).toBe(false);
+    expect(latest?.reachedTop).toBe(true);
   });
 
   it("refetches the durable first page when reset_required changes the reset version while enabled", async () => {

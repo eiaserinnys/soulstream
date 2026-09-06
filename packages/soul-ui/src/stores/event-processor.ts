@@ -28,10 +28,11 @@ import {
 import {
   createNodeFromEvent,
   applyFinalAssistantMessageToLiveText,
+  canApplyReassertedLiveTextFinal,
   applyUpdate,
   applyPendingResolution,
 } from "./node-factory";
-import { applyLiveTextSnapshot, placeInTree, handleTextStart } from "./tree-placer";
+import { applyLiveTextSnapshot, placeInTree, handleTextStart, repositionNodeInOrder } from "./tree-placer";
 import { shouldNotify } from "./session-updater";
 
 /** ensureRoot가 필요한 이벤트 타입 (text_delta, text_end, tool_result, subagent_stop 제외) */
@@ -118,7 +119,11 @@ export function processEventSingle(
   lastEventId: number,
 ): SingleEventResult {
   // Dedup
-  if (eventId > 0 && eventId <= lastEventId) {
+  if (
+    eventId > 0
+    && eventId <= lastEventId
+    && !canApplyReassertedLiveTextFinal(event, eventId, lastEventId, ctx)
+  ) {
     return { root, updated: false, notify: false, newLastEventId: lastEventId, isHistorySync: false };
   }
 
@@ -184,11 +189,12 @@ export function processEventSingle(
   }
 
   // 노드 생성/배치/업데이트
-  const replacedLiveText = applyFinalAssistantMessageToLiveText(event, ctx);
+  const replacedLiveText = applyFinalAssistantMessageToLiveText(event, eventId, ctx);
   const node = replacedLiveText ? null : createNodeFromEvent(event, eventId);
   let updated: boolean;
 
   if (replacedLiveText) {
+    if (root && eventId > 0) repositionNodeInOrder(root, replacedLiveText, eventId);
     updated = true;
   } else if (node) {
     root = ensureRoot(root, ctx);
@@ -207,7 +213,7 @@ export function processEventSingle(
     root,
     updated,
     notify,
-    newLastEventId: eventId > 0 ? eventId : lastEventId,
+    newLastEventId: eventId > 0 ? Math.max(lastEventId, eventId) : lastEventId,
     isHistorySync: false,
     clearPromptSuggestionFor:
       event.type === "text_start" && activeSessionKey ? activeSessionKey : null,
@@ -256,7 +262,12 @@ export function processEventsBatch(
   for (const { event, eventId } of events) {
     // Dedup — 라이브 SSE 배치 간 중복만 차단. skipDedup=true(history prepend)면 우회.
     // 같은 배치 내 ancestor 동봉 중복은 placeInTree의 nodeMap.has 가드가 silent skip.
-    if (!skipDedup && eventId > 0 && eventId <= lastEventId) continue;
+    if (
+      !skipDedup
+      && eventId > 0
+      && eventId <= lastEventId
+      && !canApplyReassertedLiveTextFinal(event, eventId, lastEventId, ctx)
+    ) continue;
     if (eventId > maxEventId) maxEventId = eventId;
 
     if (event.type === "text_snapshot") {
@@ -301,9 +312,10 @@ export function processEventsBatch(
     }
 
     // 노드 생성/배치/업데이트
-    const replacedLiveText = applyFinalAssistantMessageToLiveText(event, ctx);
+    const replacedLiveText = applyFinalAssistantMessageToLiveText(event, eventId, ctx);
     const node = replacedLiveText ? null : createNodeFromEvent(event, eventId);
     if (replacedLiveText) {
+      if (root && eventId > 0) repositionNodeInOrder(root, replacedLiveText, eventId);
       updated = true;
     } else if (node) {
       root = ensureRoot(root, ctx);

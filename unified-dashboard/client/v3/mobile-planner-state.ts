@@ -81,3 +81,16 @@ export function reduceMobilePlannerEscape(state: MobilePlannerState): MobilePlan
   }
   return state;
 }
+
+/** Opens the detail chat without changing the attention's selected run. */
+export function revealAttentionDetail(
+  state: MobilePlannerState,
+  mobileMode: boolean,
+): MobilePlannerState {
+  return {
+    ...state,
+    activeTab: mobileMode ? "chat" : state.activeTab,
+    workspaceOpen: true,
+    chatOpen: true,
+  };
+}

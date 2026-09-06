@@ -22,7 +22,7 @@ import { V3GlobalToolbar } from "./V3GlobalToolbar";
 import { V3Toast } from "./V3Toast";
 import { useV3PlannerActions } from "./use-v3-planner-actions";
 import { useV3Notifications } from "./use-v3-notifications";
-import { reduceMobilePlannerEscape, selectMobilePlannerTab, type MobilePlannerState, type MobilePlannerTab } from "./mobile-planner-state";
+import { reduceMobilePlannerEscape, revealAttentionDetail, selectMobilePlannerTab, type MobilePlannerState, type MobilePlannerTab } from "./mobile-planner-state";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import { useTaskStarChanges } from "./task-star-store";
 import { createPlannerDataDependencies, loadStarredPlannerTask, starredTaskPage, type PlannerTask } from "./planner-data";
@@ -497,8 +497,13 @@ function V3DashboardContent() {
       <AskQuestionBanner
         treeEnabled={detailActive}
         onOpenDetail={() => {
-          setWorkspaceOpen(true);
-          setChatOpen(true);
+          applyMobileState(revealAttentionDetail({
+            activeTab: mobileTab,
+            selectedTaskId,
+            selectedRunId: activeSessionKey,
+            workspaceOpen,
+            chatOpen,
+          }, mobileMode));
         }}
       />
       <TaskProjectMoveDialog {...taskProjectMove.dialogProps} />

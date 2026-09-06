@@ -8,7 +8,7 @@
  * Provider 훅은 useInfiniteQuery 설정과 public API 반환에 집중한다.
  */
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   useQueryClient,
   type InfiniteData,
@@ -67,6 +67,13 @@ interface SessionPage {
   total: number;
 }
 
+const MAX_RECOVERY_EVENT_QUEUE = 10_000;
+
+interface StreamRecovery {
+  events: SessionStreamEvent[];
+  restart: boolean;
+}
+
 export interface UseSessionStreamCacheSyncOptions {
   /** 구독 활성화 여부. false면 연결하지 않는다. */
   enabled: boolean;
@@ -83,9 +90,9 @@ export interface UseSessionStreamCacheSyncOptions {
    */
   onEventIdAdvance?: (lastEventId: string) => void;
   /** stream_meta 수신 시 호출 (instance_id 변경 감지용). */
-  onStreamMeta?: (event: StreamMetaStreamEvent) => void;
+  onStreamMeta?: (event: StreamMetaStreamEvent) => boolean | void;
   /** replay_gap 수신 시 호출 (풀 refetch 트리거용). */
-  onReplayGap?: (event: ReplayGapStreamEvent) => void;
+  onReplayGap?: (event: ReplayGapStreamEvent) => boolean | void;
   /** task_updated 수신 시 호출 (업무 snapshot projection 갱신용). */
   onTaskUpdated?: (event: TaskUpdatedStreamEvent) => void;
   /** session_deleted 캐시 반영 뒤 detail cursor 같은 외부 projection을 회수한다. */
@@ -113,8 +120,8 @@ export function useSessionStreamCacheSync(
     urlBuilder,
     queryKey,
     onEventIdAdvance,
-    onStreamMeta,
-    onReplayGap,
+    onStreamMeta: onStreamMetaOption,
+    onReplayGap: onReplayGapOption,
     onTaskUpdated: onTaskUpdatedOption,
     onSessionDeleted: onSessionDeletedOption,
     onCustomViewUpdated: onCustomViewUpdatedOption,
@@ -126,6 +133,14 @@ export function useSessionStreamCacheSync(
     (s) => s.setActiveSessionSummary,
   );
   const noticeBaselinesRef = useRef<Map<string, NoticeBaseline>>(new Map());
+  const recoveryRef = useRef<StreamRecovery | null>(null);
+
+  useEffect(() => {
+    if (!enabled) recoveryRef.current = null;
+    return () => {
+      recoveryRef.current = null;
+    };
+  }, [enabled]);
 
   const hydrateSessionSnapshots = useCallback((sessions: readonly SessionSummary[]) => {
     const snapshots = new Map(
@@ -443,21 +458,154 @@ export function useSessionStreamCacheSync(
     if (found) setActiveSessionSummary(found);
   }, [queryClient, setActiveSessionSummary]);
 
+  const applyDataEvent = useCallback((event: SessionStreamEvent) => {
+    switch (event.type) {
+      case "session_list":
+        onSessionList(event);
+        break;
+      case "session_created":
+        onSessionCreated(event);
+        break;
+      case "session_updated":
+        onSessionUpdated(event);
+        break;
+      case "session_deleted":
+        onSessionDeleted(event);
+        break;
+      case "catalog_updated":
+        onCatalogUpdated(event);
+        break;
+      case "metadata_updated":
+        onMetadataUpdated(event);
+        break;
+      case "task_updated":
+        onTaskUpdated(event);
+        break;
+      case "custom_view_updated":
+        onCustomViewUpdated(event);
+        break;
+      case "page_updated":
+        onPageUpdated(event);
+        break;
+      case "runbook_updated":
+      case "stream_meta":
+      case "replay_gap":
+        break;
+    }
+  }, [
+    onCatalogUpdated,
+    onCustomViewUpdated,
+    onMetadataUpdated,
+    onPageUpdated,
+    onSessionCreated,
+    onSessionDeleted,
+    onSessionList,
+    onSessionUpdated,
+    onTaskUpdated,
+  ]);
+
+  const runRecovery = useCallback(async (recovery: StreamRecovery) => {
+    do {
+      recovery.restart = false;
+      const filters = {
+        queryKey: ["sessions"],
+        exact: false,
+        type: "all" as const,
+      };
+      const hadInitialFetchInFlight = queryClient.getQueryCache()
+        .findAll({ queryKey: ["sessions"], exact: false })
+        .some((query) => query.state.fetchStatus === "fetching");
+      await queryClient.refetchQueries({
+        ...filters,
+      }, hadInitialFetchInFlight ? { cancelRefetch: false } : undefined);
+      // A gap can arrive during first-mount hydration. TanStack Query shares
+      // that in-flight request instead of starting another one when there is
+      // no cached data yet, so take the actual post-gap baseline afterward.
+      if (
+        hadInitialFetchInFlight
+        && recoveryRef.current === recovery
+        && !recovery.restart
+      ) {
+        await queryClient.refetchQueries(filters);
+      }
+    } while (recoveryRef.current === recovery && recovery.restart);
+
+    if (recoveryRef.current !== recovery) return;
+    const queued = recovery.events.splice(0);
+    recoveryRef.current = null;
+    for (const event of queued) {
+      applyDataEvent(event);
+      onStreamEvent?.(event);
+    }
+  }, [applyDataEvent, onStreamEvent, queryClient]);
+
+  const requestRecovery = useCallback(() => {
+    const current = recoveryRef.current;
+    if (current) {
+      // A later gap supersedes both the in-flight baseline and deltas queued
+      // before that gap. Keep the barrier closed and take a fresh baseline.
+      current.events.length = 0;
+      current.restart = true;
+      return;
+    }
+    const recovery: StreamRecovery = { events: [], restart: false };
+    recoveryRef.current = recovery;
+    void runRecovery(recovery);
+  }, [runRecovery]);
+
+  const routeDataEvent = useCallback((event: SessionStreamEvent) => {
+    const recovery = recoveryRef.current;
+    if (recovery) {
+      // Cursor ownership is independent from projection visibility. Advancing
+      // it now prevents a reconnect from enqueueing the same buffered tail.
+      if ("lastEventId" in event && event.lastEventId) {
+        onEventIdAdvance?.(event.lastEventId);
+      }
+      if (recovery.events.length >= MAX_RECOVERY_EVENT_QUEUE) {
+        // The current REST response can no longer be paired with a complete
+        // delta tail. Drop that tail and require one more full baseline.
+        recovery.events.length = 0;
+        recovery.restart = true;
+      }
+      recovery.events.push(event);
+      return;
+    }
+    applyDataEvent(event);
+  }, [applyDataEvent, onEventIdAdvance]);
+
+  const onStreamMeta = useCallback((event: StreamMetaStreamEvent) => {
+    if (onStreamMetaOption?.(event) === true) requestRecovery();
+  }, [onStreamMetaOption, requestRecovery]);
+
+  const onReplayGap = useCallback((event: ReplayGapStreamEvent) => {
+    if (onReplayGapOption?.(event) === true) requestRecovery();
+  }, [onReplayGapOption, requestRecovery]);
+
+  const observeStreamEvent = useCallback((event: SessionStreamEvent) => {
+    if (event.type === "stream_meta" || event.type === "replay_gap") {
+      onStreamEvent?.(event);
+      return;
+    }
+    // Type-specific dispatch queued this event while the REST barrier was
+    // active. Observation is replayed with the event after hydration.
+    if (!recoveryRef.current) onStreamEvent?.(event);
+  }, [onStreamEvent]);
+
   useSessionStreamSSE({
     enabled,
     urlBuilder,
-    onSessionList,
-    onSessionCreated,
-    onSessionUpdated,
-    onSessionDeleted,
-    onCatalogUpdated,
-    onMetadataUpdated,
-    onTaskUpdated,
-    onCustomViewUpdated,
-    onPageUpdated,
+    onSessionList: routeDataEvent,
+    onSessionCreated: routeDataEvent,
+    onSessionUpdated: routeDataEvent,
+    onSessionDeleted: routeDataEvent,
+    onCatalogUpdated: routeDataEvent,
+    onMetadataUpdated: routeDataEvent,
+    onTaskUpdated: routeDataEvent,
+    onCustomViewUpdated: routeDataEvent,
+    onPageUpdated: routeDataEvent,
     onStreamMeta,
     onReplayGap,
-    onEvent: onStreamEvent,
+    onEvent: observeStreamEvent,
   });
   return hydrateSessionSnapshots;
 }
