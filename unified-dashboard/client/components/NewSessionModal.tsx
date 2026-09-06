@@ -20,19 +20,10 @@ import {
   SelectTrigger,
   SelectPopup,
   SelectItem,
-  reasoningEffortLabel,
   DEFAULT_FOLDER_ID,
   placeBoardSessionInYjs,
   type DashboardAgentConfig,
 } from "@seosoyoung/soul-ui";
-import {
-  defaultEffortForPreset,
-  effortOptionsForPreset,
-  isEffortSupported,
-  reasoningEffortForSubmit,
-} from "../utils/reasoningEffort";
-import { useAppConfig } from "../config/AppConfigContext";
-import { useNodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
 import { createDashboardSession } from "client/lib/session-create";
 
 export function NewSessionModal() {
@@ -50,8 +41,6 @@ export function NewSessionModal() {
 
   const [selectedModalFolderId, setSelectedModalFolderId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState("");
-  // null = follow the agent's preset default.
-  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<string | null>(null);
 
   // 에이전트 목록 (dashboardConfig에서)
   const agents: DashboardAgentConfig[] = dashboardConfig?.agents ?? [];
@@ -102,30 +91,11 @@ export function NewSessionModal() {
   const selectedModalFolderName =
     catalog?.folders.find((f) => f.id === selectedModalFolderId)?.name ??
     "Claude Code";
-  // This surface picks an agent, not a preset, so the effort default is looked
-  // up through the agent's default preset in the local node's model catalog.
-  const { nodeId: localNodeId } = useAppConfig();
-  const presetCatalog = useNodeModelPresetCatalog(localNodeId ?? "");
-  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
-  const agentPresetId = selectedAgent?.defaultPreset ?? null;
-  const selectedModelPresetInfo = agentPresetId
-    ? presetCatalog.presets.find((preset) => preset.id === agentPresetId) ?? null
-    : null;
-  const effortOptions = effortOptionsForPreset(selectedModelPresetInfo);
-  const presetDefaultEffort = defaultEffortForPreset(selectedModelPresetInfo);
-  const effectiveReasoningEffort = selectedReasoningEffort ?? presetDefaultEffort;
-  const submitReasoningEffort = reasoningEffortForSubmit(
-    selectedModelPresetInfo,
-    selectedReasoningEffort,
-  );
-
-  // Changing agent refills that agent's preset default; an unsupported manual
-  // carry-over is dropped instead of being silently downgraded.
-  useEffect(() => {
-    if (!isEffortSupported(selectedModelPresetInfo, selectedReasoningEffort)) {
-      setSelectedReasoningEffort(null);
-    }
-  }, [selectedModelPresetInfo, selectedReasoningEffort]);
+  // Single-node dashboard. No node serves /api/dashboard/config or the model
+  // preset catalog for this surface, so there is no advertised preset to take an
+  // effort default or option list from. Rather than hardcode a client-side table
+  // (the exact thing the model catalog replaced), this surface offers no effort
+  // control and lets the node apply the preset default.
 
   // 현재 draft 복원
   const initialDraft = useMemo(() => {
@@ -153,7 +123,6 @@ export function NewSessionModal() {
         sourceTaskItemId: newSessionDefaults?.sourceTaskItemId ?? null,
         agentId: selectedAgentId || null,
         agent: selectedAgent ?? null,
-        reasoningEffort: submitReasoningEffort,
         boardPosition,
       });
 
@@ -168,9 +137,8 @@ export function NewSessionModal() {
       }
       closeModal();
       setSelectedAgentId("");
-      setSelectedReasoningEffort(null);
     },
-    [queryClient, selectedModalFolderId, selectedAgentId, submitReasoningEffort, agents, addOptimisticSession, clearDraft, draftKey, closeModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
+    [queryClient, selectedModalFolderId, selectedAgentId, agents, addOptimisticSession, clearDraft, draftKey, closeModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
   );
 
   const handleOpenChange = useCallback(
@@ -178,7 +146,6 @@ export function NewSessionModal() {
       if (!open) {
         closeModal();
         setSelectedAgentId("");
-        setSelectedReasoningEffort(null);
       }
     },
     [closeModal],
@@ -228,30 +195,7 @@ export function NewSessionModal() {
     </div>
   ) : undefined;
 
-  const optionsSlot = effortOptions.length > 0 ? (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-medium text-muted-foreground">Reasoning Effort</label>
-      <Select
-        value={effectiveReasoningEffort ?? ""}
-        onValueChange={(v) => setSelectedReasoningEffort(v || null)}
-      >
-        <SelectTrigger>
-          <span className="flex-1 truncate">
-            {effectiveReasoningEffort
-              ? reasoningEffortLabel(effectiveReasoningEffort)
-              : "자동 (백엔드 기본값)"}
-          </span>
-        </SelectTrigger>
-        <SelectPopup>
-          {effortOptions.map((option) => (
-            <SelectItem key={option} value={option}>
-              {reasoningEffortLabel(option)}
-            </SelectItem>
-          ))}
-        </SelectPopup>
-      </Select>
-    </div>
-  ) : undefined;
+  const optionsSlot = undefined;
 
   return (
     <NewSessionDialog

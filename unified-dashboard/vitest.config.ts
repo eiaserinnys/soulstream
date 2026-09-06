@@ -10,6 +10,13 @@ const soulUiAliases = {
   "@shared": `${PROJECT_ROOT}/packages/soul-ui/src/shared`,
   "@seosoyoung/soul-ui": `${PROJECT_ROOT}/packages/soul-ui/src`,
   zod: `${PROJECT_ROOT}/packages/soul-ui/node_modules/zod`,
+  // Mirror vite.config so components using the `client/*` specifiers can be
+  // rendered in tests. Without these, any component importing e.g.
+  // `client/lib/session-create` was simply untestable.
+  "client/lib": `${__dirname}/client/lib`,
+  "client/hooks": `${__dirname}/client/hooks`,
+  "client/components": `${__dirname}/client/components`,
+  "client/store": `${__dirname}/client/store`,
 };
 
 // vite.config.ts는 PWA plugin과 React/Tailwind plugin을 포함한다.

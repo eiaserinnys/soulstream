@@ -27,12 +27,7 @@ import type {
 } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { useAppConfig } from "../config/AppConfigContext";
-import {
-  defaultEffortForPreset,
-  effortOptionsForPreset,
-  isEffortSupported,
-  reasoningEffortForSubmit,
-} from "../utils/reasoningEffort";
+import { useReasoningEffortSelection } from "../hooks/useReasoningEffortSelection";
 import { createDashboardSession } from "client/lib/session-create";
 import { NodeModelPresetSelect } from "./NodeModelPresetSelect";
 
@@ -66,9 +61,7 @@ export function OrchestratorNewSessionModal() {
   const [modelPresetValid, setModelPresetValid] = useState(true);
   const [modelPresetError, setModelPresetError] = useState<string | null>(null);
   const modelPresetSource = useRef<"automatic" | "explicit" | "agent" | null>(null);
-  // null = follow the preset's advertised default. A manual pick only ever
-  // applies to this one session and never mutates the preset default.
-  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<string | null>(null);
+
   const [oauthProfiles, setOauthProfiles] = useState<OAuthProfile[]>([]);
   const [selectedOAuthProfile, setSelectedOAuthProfile] = useState<string | null>(null);
 
@@ -82,22 +75,15 @@ export function OrchestratorNewSessionModal() {
   const initialDraft = useMemo(() => {
     return useDashboardStore.getState().drafts[draftKey] ?? "";
   }, [draftKey, isModalOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-  const effortOptions = effortOptionsForPreset(selectedModelPresetInfo);
-  const presetDefaultEffort = defaultEffortForPreset(selectedModelPresetInfo);
-  const effectiveReasoningEffort = selectedReasoningEffort ?? presetDefaultEffort;
-  const submitReasoningEffort = reasoningEffortForSubmit(
-    selectedModelPresetInfo,
-    selectedReasoningEffort,
-  );
-
-  // Switching node/model refills the new preset's default. A manual pick that
-  // the new preset does not advertise is dropped rather than downgraded, so a
-  // late catalog response can never leak the previous model's effort.
-  useEffect(() => {
-    if (!isEffortSupported(selectedModelPresetInfo, selectedReasoningEffort)) {
-      setSelectedReasoningEffort(null);
-    }
-  }, [selectedModelPresetInfo, selectedReasoningEffort]);
+  const effort = useReasoningEffortSelection({
+    presetKey: selectedModelPreset
+      ? `${selectedNodeId}::${selectedModelPreset}`
+      : null,
+    preset: selectedModelPresetInfo,
+  });
+  const effortOptions = effort.options;
+  const effectiveReasoningEffort = effort.effective;
+  const submitReasoningEffort = effort.submitValue;
 
   const handleDraftChange = useCallback(
     (value: string) => {
@@ -251,7 +237,7 @@ export function OrchestratorNewSessionModal() {
       setModelPresetValid(true);
       setModelPresetError(null);
       modelPresetSource.current = null;
-      setSelectedReasoningEffort(null);
+      effort.reset();
       setSelectedOAuthProfile(null);
     },
     [selectedNodeId, selectedModalFolderId, selectedAgentId, selectedModelPreset, submitReasoningEffort, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
@@ -400,7 +386,7 @@ export function OrchestratorNewSessionModal() {
           <label className="text-xs font-medium text-muted-foreground">Reasoning Effort</label>
           <Select
             value={effectiveReasoningEffort ?? ""}
-            onValueChange={(v) => setSelectedReasoningEffort(v || null)}
+            onValueChange={(v) => effort.setSelected(v || null)}
           >
             <SelectTrigger>
               <span className="flex-1 truncate">
@@ -436,7 +422,7 @@ export function OrchestratorNewSessionModal() {
           setModelPresetValid(true);
           setModelPresetError(null);
           modelPresetSource.current = null;
-          setSelectedReasoningEffort(null);
+          effort.reset();
           setSelectedOAuthProfile(null);
         }
       }}

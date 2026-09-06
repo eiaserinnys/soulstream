@@ -363,6 +363,12 @@ export interface Task {
   oauthToken?: string;
   /** 추론 모델 effort override. Codex는 ThreadOptions.modelReasoningEffort로 전달. */
   reasoningEffort?: ReasoningEffort;
+  /**
+   * Whether an effort decision was ever recorded for this session. False only
+   * for pre-089 rows, which need the old Codex behaviour replayed. See
+   * session_effort_storage.resolveTurnReasoningEffort.
+   */
+  reasoningEffortRecorded?: boolean;
   /** 요청별 허용 도구 override. 없으면 AgentProfile.allowed_tools를 사용. */
   allowedTools?: string[];
   /** 요청별 금지 도구 override. 없으면 AgentProfile.disallowed_tools를 사용. */

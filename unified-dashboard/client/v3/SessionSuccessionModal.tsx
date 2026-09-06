@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useId } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   FileAttachmentPreview,
   AtomNodeSelector,
+  reasoningEffortLabel,
   Dialog,
   DialogFooter,
   DialogHeader,
@@ -32,6 +33,7 @@ import {
 } from "./task-workspace-api";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import { buildSessionContextSelection } from "./session-context-items";
+import { useReasoningEffortSelection } from "../hooks/useReasoningEffortSelection";
 
 export interface SuccessionContextItem {
   id: string;
@@ -108,6 +110,16 @@ export function SessionSuccessionModal({
   >(
     resolvedDefaults.modelPreset ? "inherited" : null,
   );
+  const effort = useReasoningEffortSelection({
+    presetKey: selectedModelPreset
+      ? `${selectedNodeId}::${selectedModelPreset}`
+      : null,
+    preset: selectedModelPresetInfo,
+    // Inherited from the predecessor. Kept while the model is unchanged; picking
+    // a different model refills that preset's default instead.
+    initialEffort: resolvedDefaults.reasoningEffort,
+  });
+  const effortSelectId = useId();
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -179,11 +191,9 @@ export function SessionSuccessionModal({
         agentId: selectedAgentId,
         agent: selectedAgent,
         modelPreset: selectedModelPreset || null,
-        // Preserve the predecessor's effort. Dropping it here would silently
-        // rerun the successor at the preset default instead.
-        ...(resolvedDefaults.reasoningEffort
-          ? { reasoningEffort: resolvedDefaults.reasoningEffort }
-          : {}),
+        // Only ever the value this form actually offers. Sending an inherited
+        // effort across a model change would 422 with no way to fix it here.
+        ...(effort.submitValue ? { reasoningEffort: effort.submitValue } : {}),
         container: { kind: "task", id: taskId },
         contextItems: contextSelection.contextItems.length > 0
           ? contextSelection.contextItems
@@ -259,6 +269,23 @@ export function SessionSuccessionModal({
                 onModelPresetValidityChange={setModelPresetValid}
                 onError={handleAssignmentError}
               />
+              {effort.options.length > 0 ? (
+                <>
+                  <label htmlFor={effortSelectId}>추론 강도</label>
+                  <select
+                    id={effortSelectId}
+                    aria-label="추론 강도 선택"
+                    value={effort.effective ?? ""}
+                    onChange={(event) => effort.setSelected(event.target.value || null)}
+                  >
+                    {effort.options.map((option) => (
+                      <option key={option} value={option}>
+                        {reasoningEffortLabel(option)}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : null}
             </section>
             <section>
               <strong>컨텍스트</strong>

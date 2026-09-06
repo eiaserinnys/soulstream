@@ -40,8 +40,6 @@ import type {
   SSEEventPayload,
 } from "./protocol.js";
 
-const DEFAULT_REASONING_EFFORT: ReasoningEffort = "xhigh";
-
 const NON_REASONING_MODEL_PATTERNS = [
   /^gpt-4o(?:$|[-_.])/i,
   /^gpt-4\.1(?:$|[-_.])/i,
@@ -53,12 +51,16 @@ export function resolveCodexModelReasoningEffort(
   model: string | null | undefined,
   requested: ReasoningEffort | undefined,
 ): ReasoningEffort | undefined {
-  const effort = requested ?? DEFAULT_REASONING_EFFORT;
-  if (!model) return effort;
+  // No fallback here on purpose. The effort a session runs with is decided once
+  // at creation and stored; a pre-089 session's legacy value is restored at the
+  // turn boundary. Injecting a default here would be a second authority and
+  // would make the UI's "auto (backend default)" a lie.
+  if (requested === undefined) return undefined;
+  if (!model) return requested;
   if (NON_REASONING_MODEL_PATTERNS.some((pattern) => pattern.test(model))) {
     return undefined;
   }
-  return effort;
+  return requested;
 }
 
 export interface CodexAdapterConfig {
@@ -223,7 +225,7 @@ export class CodexEngineAdapter implements EnginePort {
     };
     if (model && !modelReasoningEffort) {
       this.logger.warn(
-        { model, reasoningEffort: params.reasoningEffort ?? DEFAULT_REASONING_EFFORT },
+        { model, reasoningEffort: params.reasoningEffort },
         "CodexEngineAdapter: dropping reasoning effort for non-reasoning model",
       );
     }

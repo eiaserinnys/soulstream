@@ -11,9 +11,16 @@
 
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS reasoning_effort TEXT;
 
--- Arity change: the 17-argument overload must be dropped explicitly, otherwise
--- CREATE OR REPLACE leaves both signatures resolvable and callers bind to the
--- stale one.
+-- Arity change. Two things matter here:
+--
+-- 1. The 17-argument overload MUST be dropped. Keeping it alongside the new
+--    18-argument form makes a 17-argument call ambiguous — PostgreSQL raises
+--    "function ... is not unique" rather than picking one.
+-- 2. The new parameter carries DEFAULT NULL, so an *existing* 17-argument
+--    positional call still resolves against the single new function. Without
+--    that default, applying this migration ahead of the new orch build (the
+--    normal deploy order) would fail every session registration until the new
+--    binary lands.
 DROP FUNCTION IF EXISTS session_register_with_model_preset(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, BOOLEAN, BOOLEAN, TEXT, TEXT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS session_register_with_model_preset(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, BOOLEAN, BOOLEAN, TEXT, TEXT, TEXT, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION session_register_with_model_preset(
@@ -34,9 +41,9 @@ CREATE OR REPLACE FUNCTION session_register_with_model_preset(
     p_predecessor_session_id TEXT,
     p_model_preset           TEXT,
     p_model                  TEXT,
-    -- New parameters are appended last so existing positional callers keep
-    -- their argument order.
-    p_reasoning_effort       TEXT
+    -- Appended last, with a default, so pre-existing 17-argument callers keep
+    -- working during a rolling deploy.
+    p_reasoning_effort       TEXT DEFAULT NULL
 ) RETURNS void LANGUAGE sql AS $$
     INSERT INTO sessions (
         session_id, node_id, agent_id, claude_session_id,
