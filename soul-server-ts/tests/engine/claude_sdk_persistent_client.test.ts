@@ -27,6 +27,48 @@ import {
 const silentLogger = pino({ level: "silent" });
 
 describe("ClaudeSdkClient persistent runtime", () => {
+  it("no-ops an unproven settled retry and accepts the next distinct input", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      { query: harness.queryFn, detachedEventSink: harness.detached },
+      silentLogger,
+    );
+    const retryUuid = buildDeliveryInputUuid("delivery-no-proof");
+    const first = collect(client.runPersistent({
+      ...runOptions("foreground"),
+      inputUuid: "foreground-uuid",
+    }, abortSignal()));
+    const foregroundInput = await harness.nextInput();
+
+    expect(client.injectAtToolBoundary({
+      prompt: "runtime follow-up",
+      inputUuid: retryUuid,
+      turnOrigin: { kind: "runtime_followup", id: "delivery-no-proof" },
+    })).toBe(true);
+    const injectedInput = await harness.nextInput();
+    harness.push(injectedInput as unknown as SDKMessage);
+    harness.push(sdkResult("sdk-session", foregroundInput.uuid, "foreground done"));
+    await first;
+
+    await expect(collect(client.runPersistent({
+      ...runOptions("runtime follow-up"),
+      inputUuid: retryUuid,
+      turnOrigin: { kind: "runtime_followup", id: "delivery-no-proof" },
+    }, abortSignal()))).resolves.toEqual([]);
+
+    const successor = collect(client.runPersistent({
+      ...runOptions("distinct successor"),
+      inputUuid: "distinct-successor",
+    }, abortSignal()));
+    const successorInput = await harness.nextInput();
+    expect(successorInput.uuid).toBe("distinct-successor");
+    harness.push(sdkResult("sdk-session", successorInput.uuid, "successor done"));
+    await expect(successor).resolves.toContainEqual(
+      expect.objectContaining({ type: "complete", result: "successor done" }),
+    );
+    await client.close();
+  });
+
   it("pushes a machine report with explicit next priority and keeps the foreground owner", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(

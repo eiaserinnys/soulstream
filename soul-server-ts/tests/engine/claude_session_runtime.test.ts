@@ -16,6 +16,34 @@ function makeSubject(receipt: ClaudeInterruptReceipt = { still_queued: [] }) {
 }
 
 describe("ClaudeSessionRuntime", () => {
+  it("admits exact retries by state but rejects payload or owner conflicts", () => {
+    const { runtime } = makeSubject();
+    const turnOwner = { kind: "runtime_followup", id: "delivery-1" };
+    const input = {
+      uuid: "retry-1",
+      payloadHash: "canonical-payload",
+      turnOwner,
+      message: "follow-up",
+    };
+
+    expect(runtime.enqueueInput(input)).toEqual({ enqueued: true, state: "queued" });
+    expect(runtime.enqueueInput(input)).toEqual({ enqueued: false, state: "queued" });
+    runtime.beginForegroundTurn(input.uuid);
+    expect(runtime.enqueueInput(input)).toEqual({ enqueued: false, state: "submitted" });
+    runtime.observeResult({ userMessageUuid: input.uuid, interrupted: false });
+    runtime.finishForegroundResult();
+    expect(runtime.enqueueInput(input)).toEqual({ enqueued: false, state: "settled" });
+
+    expect(() => runtime.enqueueInput({
+      ...input,
+      payloadHash: "different-payload",
+    })).toThrow(/payload/i);
+    expect(() => runtime.enqueueInput({
+      ...input,
+      turnOwner: { kind: "runtime_followup", id: "delivery-2" },
+    })).toThrow(/owner/i);
+  });
+
   it("merges tool-boundary input into the active result without changing its owner", async () => {
     const { runtime, query } = makeSubject();
     runtime.enqueueInput({ uuid: "foreground", payloadHash: "hash-1", message: "first" });
