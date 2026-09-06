@@ -86,6 +86,24 @@ describe("event feed projection", () => {
     });
   });
 
+  it("preserves session notification text in the global notice projection", () => {
+    expect(sessionNotice(envelope("session_notification", {
+      delivery_id: "delivery-42",
+      delivery_intent: "completion_notification",
+      source: "background-agent",
+      disposition: "auto_resume",
+      text: "Background work finished",
+    }), 42)).toEqual({
+      id: "session-a:42",
+      sourceEventId: 42,
+      sessionId: "session-a",
+      kind: "response_wait",
+      title: "Soul Dashboard",
+      body: "Background work finished",
+      createdAt: "2026-09-06T12:00:00.000Z",
+    });
+  });
+
   it("returns a revisioned tombstone and prunes the durable notice journal", async () => {
     const statements: string[] = [];
     const sql = Object.assign(async (strings: TemplateStringsArray) => {

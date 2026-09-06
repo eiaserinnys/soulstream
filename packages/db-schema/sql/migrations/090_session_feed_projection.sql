@@ -665,6 +665,7 @@ WITH notice_candidates AS (
             WHEN e.event_type = 'session_ended' THEN '세션 완료'
             WHEN e.event_type = 'error' THEN '세션 오류'
             WHEN e.event_type = 'intervention_sent' THEN '새 메시지'
+            WHEN e.event_type = 'session_notification' THEN 'Soul Dashboard'
             WHEN e.event_type = 'claude_runtime_notification'
                 THEN COALESCE(NULLIF(btrim(e.payload->>'title'), ''), '런타임 알림')
             WHEN e.event_type = 'tool_approval_requested' THEN '도구 승인 요청'
@@ -682,6 +683,8 @@ WITH notice_candidates AS (
                 NULLIF(btrim(e.payload->>'message'), ''), '세션 오류')
             WHEN e.event_type = 'intervention_sent' THEN COALESCE(
                 NULLIF(btrim(e.payload->>'text'), ''), '새 메시지')
+            WHEN e.event_type = 'session_notification' THEN COALESCE(
+                NULLIF(btrim(e.payload->>'text'), ''), 'Soul Dashboard')
             WHEN e.event_type = 'claude_runtime_notification' THEN COALESCE(
                 NULLIF(btrim(e.payload->>'message'), ''),
                 NULLIF(btrim(e.payload->>'title'), ''), '런타임 알림')
@@ -694,7 +697,7 @@ WITH notice_candidates AS (
     WHERE jsonb_typeof(e.payload) = 'object'
       AND (
           e.event_type IN (
-              'session_ended', 'error', 'intervention_sent',
+              'session_ended', 'error', 'intervention_sent', 'session_notification',
               'claude_runtime_notification', 'input_request',
               'tool_approval_requested'
           )

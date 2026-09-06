@@ -35,6 +35,7 @@ type SessionLiveTextState = {
 type SessionLiveSequence = {
   lastSeq: number;
   throughSeq: number;
+  nodeId: string | undefined;
   readonly resetStreams: Map<string, string>;
 };
 
@@ -89,11 +90,24 @@ export class RuntimeSessionEventHub {
 
   dispatchNodeRegistryEvents(events: readonly NodeRegistryEvent[]): void {
     for (const event of events) {
-      if (event.type !== "node_session_event") continue;
-      this.publish({
-        nodeId: event.nodeId,
-        data: event.data,
-      });
+      if (event.type === "node_session_event") {
+        this.publish({
+          nodeId: event.nodeId,
+          data: event.data,
+        });
+      } else if (event.type === "node_session_session_deleted") {
+        const sessionId = sessionIdFromEnvelope(event.data);
+        if (sessionId !== undefined) {
+          this.fenceSessionLiveText(liveTextSessionKey(sessionId), event.nodeId);
+        }
+      } else if (event.type === "node_unregistered") {
+        const sessionKeys = [...this.liveSequenceBySession.entries()]
+          .filter(([, sequence]) => sequence.nodeId === event.nodeId)
+          .map(([sessionKey]) => sessionKey);
+        for (const sessionKey of sessionKeys) {
+          this.fenceSessionLiveText(sessionKey, event.nodeId);
+        }
+      }
     }
   }
 
@@ -145,6 +159,10 @@ export class RuntimeSessionEventHub {
     const payload = eventPayload(event.data);
     if (payload === null) return event;
     const eventType = typeof payload.type === "string" ? payload.type : "";
+    if (eventType === "session_ended" || eventType === "session_deleted") {
+      this.fenceSessionLiveText(liveTextSessionKey(sessionId), event.nodeId);
+      return event;
+    }
     if (!isLiveTextEvent(eventType, payload)) return event;
     const stream = liveTextIdentity(payload);
     if (stream === null) return event;
@@ -155,7 +173,7 @@ export class RuntimeSessionEventHub {
 
     if (eventType === "text_start") {
       const state = this.stateForNewStream(sessionKey, stream.id);
-      const liveSeq = this.nextLiveSequence(sessionKey);
+      const liveSeq = this.nextLiveSequence(sessionKey, event.nodeId);
       if (state === null) {
         this.markSnapshotReset(sessionKey, liveSeq, stream.id, updatedAt);
         return withLiveTextMetadata(event, {
@@ -181,7 +199,7 @@ export class RuntimeSessionEventHub {
       });
     } else if (eventType === "text_delta") {
       const state = this.stateForNewStream(sessionKey, stream.id);
-      const liveSeq = this.nextLiveSequence(sessionKey);
+      const liveSeq = this.nextLiveSequence(sessionKey, event.nodeId);
       if (state === null) {
         this.markSnapshotReset(sessionKey, liveSeq, stream.id, updatedAt);
         return withLiveTextMetadata(event, {
@@ -224,7 +242,7 @@ export class RuntimeSessionEventHub {
       });
     }
 
-    const liveSeq = this.nextLiveSequence(sessionKey);
+    const liveSeq = this.nextLiveSequence(sessionKey, event.nodeId);
     this.deleteStream(sessionKey, stream.id);
     this.markSnapshotCaptured(sessionKey, liveSeq, stream.id);
     return withLiveTextMetadata(event, {
@@ -284,9 +302,19 @@ export class RuntimeSessionEventHub {
     this.touchSequence(sessionKey, sequence);
   }
 
-  private nextLiveSequence(sessionKey: string): number {
+  private fenceSessionLiveText(sessionKey: string, nodeId: string): void {
+    const liveSeq = this.nextLiveSequence(sessionKey, nodeId);
+    this.liveTextBySession.delete(sessionKey);
+    const sequence = this.sequenceFor(sessionKey);
+    sequence.resetStreams.clear();
+    sequence.throughSeq = liveSeq;
+    this.touchSequence(sessionKey, sequence);
+  }
+
+  private nextLiveSequence(sessionKey: string, nodeId?: string): number {
     this.globalLiveEventCount += 1;
     const sequence = this.sequenceFor(sessionKey);
+    if (nodeId !== undefined) sequence.nodeId = nodeId;
     if (sequence.lastSeq === 0 && this.hasSeenSession(sessionKey)) {
       sequence.lastSeq = this.globalLiveEventCount - 1;
     }
@@ -329,6 +357,7 @@ export class RuntimeSessionEventHub {
     return this.liveSequenceBySession.get(sessionKey) ?? {
       lastSeq: 0,
       throughSeq: 0,
+      nodeId: undefined,
       resetStreams: new Map(),
     };
   }

@@ -73,7 +73,7 @@ describe("production live event fanout", () => {
     expect(drain).toHaveBeenCalledTimes(1);
   });
 
-  it("forwards last-message updates for sessions restored from a node dump", async () => {
+  it("strips uncommitted feed fields for sessions restored from a node dump", async () => {
     const database = createFakeSql();
     const sqlResolver: LiveDbSqlResolver = {
       resolveSql: vi.fn(async () => database.sql),
@@ -131,12 +131,13 @@ describe("production live event fanout", () => {
         last_read_event_id: 40,
       }));
 
-      expect((await catalog.next("session_updated", 1_000)).data).toMatchObject({
+      expect((await catalog.next("session_updated", 1_000)).data).toEqual({
+        type: "session_updated",
         agent_session_id: "restored-session",
-        last_message: {
-          type: "assistant_message",
-          preview: "restored session live message",
-        },
+        status: "running",
+        updated_at: "2026-07-10T12:50:00.000Z",
+        last_event_id: 41,
+        last_read_event_id: 40,
       });
     } finally {
       catalogController.abort();
@@ -251,39 +252,23 @@ describe("production live event fanout", () => {
       const catalogUpdated = await catalog.next("session_updated", 1_000);
       expect(catalogUpdated.raw).toContain("event: session_updated\n");
       expect(catalogUpdated.raw).toContain("\ndata: {\"type\":\"session_updated\"");
-      // The node message-update wire stays sparse, while the orchestrator adds
-      // the canonical client session fields from its updated registry cache.
-      expect(Object.keys(catalogUpdated.data)).toEqual(expect.arrayContaining([
-        "agent_session_id",
-        "agentSessionId",
-        "displayName",
-        "agentId",
-        "agentName",
-        "agentPortraitUrl",
-        "backend",
-        "userName",
-        "userPortraitUrl",
-        "last_event_id",
-        "last_message",
-        "last_read_event_id",
-        "nodeId",
-        "status",
+      // Direct node updates remain compact semantic patches. Feed-owned fields
+      // such as last_message are published only after durable event ingress.
+      expect(Object.keys(catalogUpdated.data)).toEqual([
         "type",
+        "agent_session_id",
+        "status",
         "updated_at",
-      ]));
-      expect(catalogUpdated.data).toMatchObject({
+        "last_event_id",
+        "last_read_event_id",
+      ]);
+      expect(catalogUpdated.data).toEqual({
         type: "session_updated",
         agent_session_id: "session-a",
-        agentSessionId: "session-a",
         status: "running",
         updated_at: "2026-07-10T12:00:00.000Z",
         last_event_id: 41,
         last_read_event_id: 40,
-        last_message: {
-          type: "assistant_message",
-          preview: "live catalog message",
-          timestamp: "2026-07-10T12:00:00.000Z",
-        },
       });
       expect(catalogUpdated.data).not.toHaveProperty("caller_source");
       expect(catalogUpdated.data).not.toHaveProperty("session_type");
@@ -357,9 +342,9 @@ describe("production live event fanout", () => {
       await catalog.next("session_list");
       await application.startBackground();
 
-      expect((await catalog.next("session_updated", 1_000)).data).toMatchObject({
+      expect((await catalog.next("session_updated", 1_000)).data).toEqual({
+        type: "session_updated",
         agent_session_id: "offline-session",
-        nodeId: "offline-node",
         status: "interrupted",
         termination_reason: "killed",
         termination_detail: "node_disconnect_timeout",

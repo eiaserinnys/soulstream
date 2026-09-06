@@ -120,6 +120,32 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       PRIMARY KEY (session_id, id),
       UNIQUE (session_id, dedupe_key)
     );
+    CREATE TABLE session_feed_state (
+      session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+      attention_revision INTEGER NOT NULL DEFAULT 0 CHECK (attention_revision >= 0),
+      notification_watermark INTEGER NOT NULL DEFAULT 0 CHECK (notification_watermark >= 0),
+      notification_count BIGINT NOT NULL DEFAULT 0 CHECK (notification_count >= 0),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE session_pending_attentions (
+      session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+      attention_id TEXT NOT NULL,
+      source_event_id INTEGER NOT NULL CHECK (source_event_id > 0),
+      projection JSONB NOT NULL,
+      requested_at TIMESTAMPTZ NOT NULL,
+      PRIMARY KEY (session_id, attention_id),
+      FOREIGN KEY (session_id, source_event_id)
+        REFERENCES events(session_id, id) ON DELETE CASCADE
+    );
+    CREATE TABLE session_feed_notices (
+      session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+      source_event_id INTEGER NOT NULL CHECK (source_event_id > 0),
+      projection JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      PRIMARY KEY (session_id, source_event_id),
+      FOREIGN KEY (session_id, source_event_id)
+        REFERENCES events(session_id, id) ON DELETE CASCADE
+    );
     CREATE OR REPLACE FUNCTION event_append(
       p_session_id TEXT,
       p_event_type TEXT,
