@@ -181,7 +181,7 @@ export interface CallerInfo {
 
 /** session_broadcaster.emit_session_message_updated의 last_message dict 정본. */
 export interface LastMessage {
-  type: string;
+  type: "user_message" | "assistant_message";
   preview: string;
   timestamp: string;
 }

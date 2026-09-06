@@ -1833,12 +1833,20 @@ async def test_session_append_metadata_not_found(test_db):
 async def test_session_update_last_message(test_db):
     await _create_session(test_db, "s-msg")
     now = _utc_now()
-    msg = json.dumps({"text": "hello"})
+    msg = json.dumps({
+        "type": "assistant_message",
+        "preview": " hello ",
+        "timestamp": "ignored-client-value",
+    })
     await test_db.execute(
         "SELECT session_update_last_message($1, $2, $3)", "s-msg", msg, now
     )
     row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s-msg")
-    assert _decode_jsonb(row["last_message"]) == {"text": "hello"}
+    assert _decode_jsonb(row["last_message"]) == {
+        "type": "assistant_message",
+        "preview": "hello",
+        "timestamp": now.isoformat(),
+    }
 
 
 # === 읽음 상태 ===
@@ -2601,3 +2609,115 @@ async def test_migration_verify(test_db):
     assert row["session_count"] >= 1
     assert row["event_count"] >= 1
     assert row["folder_count"] >= 0
+
+
+# === Session feed projection ===
+
+async def test_session_last_chat_message_uses_timestamp_event_tuple_cas(test_db):
+    await _create_session(test_db, "feed-last-message")
+    first = await test_db.fetchrow(
+        """
+        SELECT * FROM session_apply_last_chat_message($1, $2, $3::jsonb, $4)
+        """,
+        "feed-last-message",
+        10,
+        json.dumps({"type": "assistant_message", "preview": " first "}),
+        datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc),
+    )
+    assert first["applied"] is True
+    assert _decode_jsonb(first["last_message"]) == {
+        "type": "assistant_message",
+        "eventId": 10,
+        "preview": "first",
+        "timestamp": "2026-09-06T12:00:00+00:00",
+    }
+
+    same_time_winner = await test_db.fetchrow(
+        "SELECT * FROM session_apply_last_chat_message($1, $2, $3::jsonb, $4)",
+        "feed-last-message",
+        11,
+        json.dumps({"type": "user_message", "preview": "second"}),
+        datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc),
+    )
+    assert same_time_winner["applied"] is True
+
+    older = await test_db.fetchrow(
+        "SELECT * FROM session_apply_last_chat_message($1, $2, $3::jsonb, $4)",
+        "feed-last-message",
+        12,
+        json.dumps({"type": "assistant_message", "preview": "older"}),
+        datetime(2026, 9, 6, 11, 59, tzinfo=timezone.utc),
+    )
+    assert older["applied"] is False
+    assert _decode_jsonb(older["last_message"])["eventId"] == 11
+
+
+async def test_legacy_last_message_entrypoint_rejects_non_chat_projection(test_db):
+    await _create_session(test_db, "feed-legacy-message")
+    await test_db.execute(
+        "SELECT session_update_last_message($1, $2, $3)",
+        "feed-legacy-message",
+        json.dumps({
+            "type": "turn_summary",
+            "preview": "must not win",
+            "timestamp": "2026-09-06T12:00:00.000Z",
+        }),
+        datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc),
+    )
+    assert await test_db.fetchval(
+        "SELECT last_message FROM sessions WHERE session_id = $1",
+        "feed-legacy-message",
+    ) is None
+
+
+async def test_session_get_all_feed_order_precedes_pagination(test_db):
+    rows = [
+        (
+            "feed-a",
+            datetime(2026, 9, 6, 12, 1, tzinfo=timezone.utc),
+            datetime(2026, 9, 6, 12, 9, tzinfo=timezone.utc),
+            json.dumps({
+                "type": "assistant_message",
+                "eventId": 1,
+                "preview": "a",
+                "timestamp": "2026-09-06T12:05:00.000Z",
+            }),
+        ),
+        (
+            "feed-b",
+            datetime(2026, 9, 6, 12, 6, tzinfo=timezone.utc),
+            datetime(2026, 9, 6, 12, 7, tzinfo=timezone.utc),
+            None,
+        ),
+        (
+            "feed-c",
+            None,
+            datetime(2026, 9, 6, 12, 4, tzinfo=timezone.utc),
+            None,
+        ),
+    ]
+    for session_id, created_at, updated_at, last_message in rows:
+        await test_db.execute(
+            """
+            INSERT INTO sessions (
+                session_id, status, session_type, created_at, updated_at, last_message
+            ) VALUES ($1, 'idle', 'claude', $2, $3, $4::jsonb)
+            """,
+            session_id,
+            created_at,
+            updated_at,
+            last_message,
+        )
+
+    page = await test_db.fetch(
+        "SELECT session_id FROM session_get_all($1::jsonb, 2, 0)",
+        json.dumps({"feed_only": True}),
+    )
+    assert [row["session_id"] for row in page] == ["feed-b", "feed-a"]
+
+
+async def test_session_feed_migration_is_reapplicable_on_canonical_schema(test_db):
+    await test_db.execute(_migration_sql("090_session_feed_projection.sql"))
+    assert await test_db.fetchval(
+        "SELECT to_regclass('session_pending_attentions') IS NOT NULL"
+    ) is True

@@ -402,6 +402,101 @@ describe("NodeEventIngressController", () => {
     }]);
   });
 
+  it("does not broadcast a session patch when an older last-message CAS loses", async () => {
+    const value = batch(1);
+    value.events[0]!.event_type = "assistant_message";
+    value.events[0]!.payload = { type: "assistant_message", content: "older" };
+    value.events[0]!.session_effect = {
+      kind: "last_message",
+      last_message: {
+        type: "assistant_message",
+        preview: "older",
+        timestamp: "2026-08-06T00:00:00.000Z",
+      },
+      updated_at: "2026-08-06T00:00:00.000Z",
+    };
+    const received: Array<Record<string, unknown>> = [];
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: false,
+          sessionEffectApplication: {
+            applied: false,
+            canonicalSession: null,
+            canonicalLastMessage: {
+              type: "assistant_message",
+              eventId: 102,
+              preview: "newer",
+              timestamp: "2026-08-06T00:01:00.000Z",
+            },
+          },
+        }]),
+      },
+      receiveCommittedEvent: (message: Record<string, unknown>) => {
+        received.push(message);
+        return [];
+      },
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ type: "event", agentSessionId: "session-a" });
+  });
+
+  it("broadcasts exactly the canonical last-message materialization returned by DB", async () => {
+    const value = batch(1);
+    value.events[0]!.event_type = "assistant_message";
+    value.events[0]!.payload = { type: "assistant_message", content: "canonical" };
+    value.events[0]!.session_effect = {
+      kind: "last_message",
+      last_message: {
+        type: "assistant_message",
+        preview: "untrusted worker value",
+        timestamp: "2026-08-06T00:00:00.000Z",
+      },
+      updated_at: "2026-08-06T00:00:00.000Z",
+    };
+    const stored = {
+      type: "assistant_message" as const,
+      eventId: 101,
+      preview: "canonical",
+      timestamp: "2026-08-06T00:00:00.000Z",
+    };
+    const received: Array<Record<string, unknown>> = [];
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: false,
+          sessionEffectApplication: {
+            applied: true,
+            canonicalSession: null,
+            canonicalLastMessage: stored,
+          },
+        }]),
+      },
+      receiveCommittedEvent: (message: Record<string, unknown>) => {
+        received.push(message);
+        return [];
+      },
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(received.at(-1)).toMatchObject({
+      type: "session_updated",
+      last_message: stored,
+      updated_at: stored.timestamp,
+      last_event_id: 101,
+    });
+  });
+
   it("projects and ACKs the canonical terminal row when running receipt CAS is rejected", async () => {
     const value = batch(1);
     value.events[0]!.event_type = "metadata";

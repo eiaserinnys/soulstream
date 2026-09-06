@@ -129,6 +129,8 @@ export type NodeSessionUpdatedEvent = {
   type: "node_session_session_updated";
   nodeId: string;
   data: Record<string, unknown>;
+  /** Set only by the orchestrator after the durable ingress transaction commits. */
+  committedIngress?: true;
 };
 
 export type NodeSessionDeletedEvent = {
@@ -212,6 +214,11 @@ export type NodeMessageSource =
       nodeId: string;
       connectionId?: string;
     };
+
+export type NodeMessageReceiptOptions = {
+  /** Internal trust bit; websocket payload fields can never set it. */
+  committedIngress?: boolean;
+};
 
 export type InMemoryNodeRegistryOptions = {
   sessionCache?: PerNodeSessionCache;

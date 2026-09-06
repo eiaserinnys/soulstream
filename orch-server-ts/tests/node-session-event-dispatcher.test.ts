@@ -62,9 +62,7 @@ describe("node inbound session event dispatcher", () => {
         type: "session_created",
         session: {
           agentSessionId: "sess-1",
-          title: "Created",
           agentId: "agent-a",
-          folder_id: "folder-1",
           folderId: "folder-1",
           reviewRequired: true,
           reviewState: "not_required",
@@ -75,12 +73,10 @@ describe("node inbound session event dispatcher", () => {
       });
     expect(payloads[1]).toMatchObject({
         type: "session_updated",
-        agentSessionId: "sess-1",
         status: "running",
         agent_session_id: "sess-1",
-        nodeId: "node-1",
-        reviewRequired: true,
-        reviewState: "needs_review",
+        review_required: true,
+        review_state: "needs_review",
       });
     expect(payloads[2]).toEqual({
         type: "session_deleted",
@@ -197,6 +193,92 @@ describe("node inbound session event dispatcher", () => {
     ]);
   });
 
+  it("keeps durable feed projections behind the committed-ingress marker", () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
+      instanceId: "dispatcher-feed-trust",
+    });
+    const spoofedFeed = {
+      lastMessage: {
+        type: "assistant_message",
+        preview: "spoofed",
+        timestamp: "2026-09-07T00:00:00.000Z",
+      },
+      pendingAttentions: [{ id: "spoofed-attention" }],
+      attentionRevision: 99,
+      recentNotices: [{ id: "spoofed-notice" }],
+      notificationWatermark: 99,
+      noticesTruncated: true,
+    };
+
+    dispatchNodeRegistryEventsToSessionBroadcaster([
+      {
+        type: "node_session_session_created",
+        nodeId: "node-1",
+        data: {
+          type: "session_created",
+          agentSessionId: "sess-untrusted",
+          session: { agentSessionId: "sess-untrusted", ...spoofedFeed },
+        },
+      },
+      {
+        type: "node_session_session_updated",
+        nodeId: "node-1",
+        data: {
+          type: "session_updated",
+          agentSessionId: "sess-untrusted",
+          last_message: spoofedFeed.lastMessage,
+          attention_revision: 99,
+          pending_attentions_delta: { spoofed: null },
+          notices: [{ id: "spoofed-notice" }],
+          notification_watermark: 99,
+        },
+      },
+      {
+        type: "node_session_session_updated",
+        nodeId: "node-1",
+        committedIngress: true,
+        data: {
+          type: "session_updated",
+          agentSessionId: "sess-committed",
+          last_message: spoofedFeed.lastMessage,
+          attention_revision: 7,
+          pending_attentions_delta: { committed: null },
+          notices: [{ id: "committed-notice" }],
+          notification_watermark: 7,
+        },
+      },
+    ] satisfies NodeRegistryEvent[], broadcaster);
+
+    const payloads = broadcaster.bufferedEvents.map((event) => event.payload);
+    expect(payloads).toHaveLength(3);
+    expect(payloads[0]).toMatchObject({
+        type: "session_created",
+        session: {
+          agentSessionId: "sess-untrusted",
+          lastMessage: null,
+          pendingAttentions: [],
+          attentionRevision: 0,
+          recentNotices: [],
+          notificationWatermark: 0,
+          noticesTruncated: false,
+        },
+        nodeId: "node-1",
+      });
+    expect(payloads[1]).toEqual({
+        type: "session_updated",
+        agent_session_id: "sess-untrusted",
+      });
+    expect(payloads[2]).toEqual({
+        type: "session_updated",
+        agent_session_id: "sess-committed",
+        last_message: spoofedFeed.lastMessage,
+        attention_revision: 7,
+        pending_attentions_delta: { committed: null },
+        notices: [{ id: "committed-notice" }],
+        notification_watermark: 7,
+      });
+  });
+
   it("normalizes a production-gated runbook_updated event at the ingestion boundary", () => {
     const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
       instanceId: "dispatcher-session-stream",
@@ -255,9 +337,7 @@ describe("node inbound session event dispatcher", () => {
     expect(broadcaster.bufferedEvents.map((event) => event.payload)).toEqual([
       expect.objectContaining({
         type: "session_updated",
-        agentSessionId: "sess-1",
         agent_session_id: "sess-1",
-        nodeId: "node-1",
       }),
     ]);
   });

@@ -48,6 +48,16 @@ export type EventSessionEffectApplier = (
   },
 ) => Promise<EventSessionEffectApplication>;
 
+export type EventFeedProjectionApplier = (
+  sql: EventIngressQuerySql,
+  input: {
+    nodeId: string;
+    eventId: number;
+    envelope: EventIngressEnvelope;
+    sessionEffectApplication?: EventSessionEffectApplication;
+  },
+) => Promise<import("./event_feed_projection_applier.js").EventFeedProjectionApplication | null>;
+
 export type EventIngressRepositoryOptions = EventIngressRetryPolicyOptions;
 
 export class EventIngressProtocolConflict extends Error {
@@ -77,6 +87,7 @@ export class EventIngressRepository {
     private readonly applySessionEffect?: EventSessionEffectApplier,
     private readonly deadLetterStore?: EventIngressDeadLetterStore,
     options: EventIngressRepositoryOptions = {},
+    private readonly applyFeedProjection?: EventFeedProjectionApplier,
   ) {
     this.retryPolicy = new EventIngressRetryPolicy(options);
   }
@@ -200,6 +211,16 @@ export class EventIngressRepository {
         envelope.source_seq,
       );
     }
+    const feedProjectionApplication = !semanticReceipt && this.applyFeedProjection
+      ? await this.applyFeedProjection(transaction, {
+          nodeId,
+          eventId,
+          envelope,
+          ...(sessionEffectApplication === undefined
+            ? {}
+            : { sessionEffectApplication }),
+        })
+      : null;
     await handoffRetainedRunnerGenerations(
       transaction,
       nodeId,
@@ -229,6 +250,7 @@ export class EventIngressRepository {
       eventId,
       duplicateReceipt: semanticReceipt !== undefined,
       ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
+      ...(feedProjectionApplication ? { feedProjectionApplication } : {}),
     };
   }
 }

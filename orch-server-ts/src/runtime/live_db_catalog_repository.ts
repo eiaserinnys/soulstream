@@ -57,6 +57,15 @@ import type { SessionReviewAcknowledgeRepository } from "../session/session_revi
 import type { SessionDeletionPort } from "../session/session_deletion_service.js";
 import { createLiveAgentProfileRepository } from "./live_agent_profile_repository.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
+import {
+  projectSessionFeedSummary,
+  sessionFeedActivityMs,
+  withSessionFeedState,
+} from "../session/session_feed_projection.js";
+import {
+  loadSessionFeedStates,
+  sessionFeedStateOrEmpty,
+} from "../session/session_feed_state_repository.js";
 
 export type LiveDbCatalogRepository = {
   readonly agentProfileRepository: AgentProfileRepository;
@@ -165,6 +174,44 @@ export function createLiveDbCatalogRepository(
   });
   const sessionSnapshotLimit =
     options.sessionSnapshotLimit ?? DEFAULT_SESSION_SNAPSHOT_LIMIT;
+  async function serializeSessionRows(
+    sql: LivePostgresSql,
+    rows: readonly Record<string, unknown>[],
+    compact: boolean,
+  ): Promise<Record<string, unknown>[]> {
+    const bindingWarnings = await loadSessionBindingWarnings(sql, rows);
+    const feedStates = compact
+      ? await loadSessionFeedStates(sql, rows)
+      : new Map();
+    const folders = compact
+      ? await sessionResourceAccessRepository.listFoldersForAccess()
+      : [];
+    const agentProfiles = agentProfileRepository.snapshot();
+    return rows.map((row) => {
+      const sessionId = String(row.session_id ?? "");
+      const serialized = serializeSessionRow({
+        ...row,
+        binding_warnings: bindingWarnings.get(sessionId) ?? [],
+      }, {
+        registry: options.registry,
+        agentProfiles,
+      });
+      const state = sessionFeedStateOrEmpty(feedStates, sessionId);
+      const filteredState = folderExcludesNotifications(
+        folders,
+        stringOrNull(row.folder_id ?? row.folderId),
+      )
+        ? {
+            ...state,
+            recentNotices: [],
+            noticesTruncated: state.noticesTruncated || state.recentNotices.length > 0,
+          }
+        : state;
+      return compact
+        ? projectSessionFeedSummary(withSessionFeedState(serialized, filteredState))
+        : serialized;
+    });
+  }
   async function loadSessionPage(
     input: LoadSessionSnapshotInput & {
       readonly sessionIds?: readonly string[];
@@ -173,6 +220,7 @@ export function createLiveDbCatalogRepository(
       readonly search?: string;
       readonly nodeId?: string;
       readonly statuses?: readonly string[];
+      readonly compact?: boolean;
     },
     limit: number | null,
     offset: number | null,
@@ -222,22 +270,25 @@ export function createLiveDbCatalogRepository(
         ? targetedRows.filter((row) =>
             isBoardFolderAllowed(access, folders, stringOrNull(row.folder_id))
           )
-        : targetedRows;
+        : [...targetedRows];
+      if (feedOnly) {
+        accessibleRows.sort((left, right) => {
+          const activity = sessionFeedActivityMs(right) - sessionFeedActivityMs(left);
+          return activity !== 0
+            ? activity
+            : String(right.session_id ?? "").localeCompare(String(left.session_id ?? ""));
+        });
+      }
       const start = offset ?? 0;
       const sessionRows = accessibleRows.slice(
         start,
         limit === null ? undefined : start + limit,
       );
-      const bindingWarnings = await loadSessionBindingWarnings(sql, sessionRows);
       return {
-        sessions: sessionRows.map((row) =>
-          serializeSessionRow({
-            ...row,
-            binding_warnings: bindingWarnings.get(String(row.session_id ?? "")) ?? [],
-          }, {
-            registry: options.registry,
-            agentProfiles: agentProfileRepository.snapshot(),
-          }),
+        sessions: await serializeSessionRows(
+          sql,
+          sessionRows,
+          input.compact === true || feedOnly,
         ),
         total: accessibleRows.length,
       };
@@ -254,16 +305,11 @@ export function createLiveDbCatalogRepository(
     const sessionRows = await sql`
       SELECT * FROM session_get_all(${filtersJson}::jsonb, ${limit}, ${offset})
     `;
-    const bindingWarnings = await loadSessionBindingWarnings(sql, sessionRows);
     return {
-      sessions: sessionRows.map((row) =>
-        serializeSessionRow({
-          ...row,
-          binding_warnings: bindingWarnings.get(String(row.session_id ?? "")) ?? [],
-        }, {
-          registry: options.registry,
-          agentProfiles: agentProfileRepository.snapshot(),
-        }),
+      sessions: await serializeSessionRows(
+        sql,
+        sessionRows,
+        input.compact === true || input.feedOnly === true,
       ),
       total: numberValue(countRows[0]?.count) ?? sessionRows.length,
     };
@@ -292,7 +338,7 @@ export function createLiveDbCatalogRepository(
     sessionReviewRepository,
     userPreferencesRepository: createLiveUserPreferencesRepository({ sqlResolver }),
     async loadSessionSnapshot(input = {}) {
-      return loadSessionPage(input, sessionSnapshotLimit, null);
+      return loadSessionPage({ ...input, compact: true }, sessionSnapshotLimit, null);
     },
     async listSessionSnapshots(input) {
       const page = await loadSessionPage(
@@ -470,6 +516,19 @@ function stringOrNull(value: unknown): string | null {
 function numberValue(value: unknown): number | undefined {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function folderExcludesNotifications(
+  folders: readonly BoardAccessFolderRecord[],
+  folderId: string | null,
+): boolean {
+  if (folderId === null) return false;
+  const folder = folders.find((item) => item.id === folderId);
+  return isRecord(folder?.settings) && folder.settings.excludeFromNotification === true;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function hasOwn(object: object, key: PropertyKey): boolean {

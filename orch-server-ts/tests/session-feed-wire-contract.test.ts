@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import fixture from "./fixtures/session-feed-v2-wire.json";
+import fixture from "./fixtures/session-feed-v2-wire.json" with { type: "json" };
 import { LIVE_TEXT_SNAPSHOT_MAX_UTF8_BYTES } from
   "../src/session/session_feed_contract.js";
 
