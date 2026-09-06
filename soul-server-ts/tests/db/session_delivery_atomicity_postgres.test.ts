@@ -409,7 +409,8 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     const activationError = new Error("activation rejected after durable publish");
     const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
       RunnerProcessDispatcher & {
-        handleHostRequest(frame: ReturnType<typeof runnerRequestFrame>): Promise<void>;
+        handleHostRequest(frame: ReturnType<typeof runnerRequestFrame>):
+          Promise<(() => Promise<void>) | undefined>;
       };
     Object.assign(dispatcher, {
       options: {
@@ -453,13 +454,18 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       },
     });
 
-    await dispatcher.handleHostRequest(runnerRequestFrame("host:a2-durability", {
-      kind: "host_call",
-      service: "detached_event",
-      operation: "publish",
-      args: ["caller-old", { type: "text", text: "done", timestamp: 1 }],
-    }));
+    const postResponse = await dispatcher.handleHostRequest(runnerRequestFrame(
+      "host:a2-durability",
+      {
+        kind: "host_call",
+        service: "detached_event",
+        operation: "publish",
+        args: ["caller-old", { type: "text", text: "done", timestamp: 1 }],
+      },
+    ));
 
+    expect(order).toEqual(["durable-publish", "response"]);
+    await postResponse?.();
     expect(order).toEqual(["durable-publish", "response", "activation"]);
     expect(sent).toEqual([
       expect.objectContaining({

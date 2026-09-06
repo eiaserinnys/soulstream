@@ -31,6 +31,12 @@ vi.mock("../../../src/engine/codex_app_server/client.js", () => ({
     constructor(transport: unknown) {
       mockClientCtor(transport);
     }
+    onNotification() {
+      return () => undefined;
+    }
+    onClose() {
+      return () => undefined;
+    }
   },
 }));
 

@@ -65,6 +65,10 @@ const TERMINAL_VARIANTS: ReadonlyArray<{
   },
 ];
 
+const INLINE_SYNTHETIC_TERMINAL_VARIANTS = TERMINAL_VARIANTS.filter(
+  ({ name }) => name !== "task_notification",
+);
+
 describePostgres("Claude background delivery PostgreSQL integration", () => {
   let harness: FullSchemaPostgresHarness;
 
@@ -88,7 +92,40 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
     await harness.cleanup();
   });
 
-  it.each(TERMINAL_VARIANTS)(
+  it("keeps native task_notification durable and suppresses synthetic inline delivery", async () => {
+    const taskId = "task-inline-native-notification";
+    const event = terminal(taskId, "completed");
+    const lifecycle = makeLifecycle(harness.sql);
+    await lifecycle.observe("caller-session", started(taskId));
+    await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+    const path = makeDeliveryPath(harness.sql);
+
+    for (const payload of mapClaudeClientEvent(event)) {
+      await path.followup.collectDetached(path.task, payload);
+      await path.followup.collectDetached(path.task, payload);
+    }
+
+    expect(path.counts).toEqual({ resume: 0, wake: 0, notification: 0 });
+    await expect(harness.sql`
+      SELECT state, aggregate_state
+      FROM session_deliveries
+      WHERE producer_kind = 'claude_background_task'
+        AND producer_id = ${taskId}
+    `).resolves.toMatchObject([{ state: "pending", aggregate_state: "pending" }]);
+    await expect(harness.sql`
+      SELECT COUNT(*)::int AS count
+      FROM session_delivery_relation_consumptions
+      WHERE relation_key = (
+        SELECT relation_key
+        FROM claude_background_task_generations
+        WHERE source_node = 'node-test'
+          AND session_id = 'caller-session'
+          AND task_id = ${taskId}
+      )
+    `).resolves.toEqual([{ count: 0 }]);
+  });
+
+  it.each(INLINE_SYNTHETIC_TERMINAL_VARIANTS)(
     "replays the terminal-stored canonical payload through inline flush: $name",
     async ({ name, event: makeEvent, expectedText }) => {
       const taskId = `task-inline-${name.replaceAll(/[^a-z]+/g, "-")}`;
