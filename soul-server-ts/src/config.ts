@@ -48,6 +48,9 @@ export const EnvSchema = z
      * app-server adapter는 실험 경로라 명시 opt-in에서만 사용한다.
      */
     CODEX_ADAPTER_MODE: z.enum(["sdk", "app-server"]).default("sdk"),
+    /** Process-runner grace period for terminal results from detached Codex commands. */
+    CODEX_DETACHED_RESULT_RETENTION_MS: z.coerce
+      .number().int().positive().default(1_800_000),
     /**
      * Semantic event durable retry buffer. No code fallback: every worker node
      * must pre-seed an explicit node-local directory before this release starts.

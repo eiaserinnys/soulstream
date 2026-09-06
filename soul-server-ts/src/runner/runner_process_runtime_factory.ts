@@ -53,6 +53,7 @@ type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_TERMINAL_RETENTION_MS"
   | "SOUL_RUNNER_LEASE_TIMEOUT_MS"
   | "CODEX_ADAPTER_MODE"
+  | "CODEX_DETACHED_RESULT_RETENTION_MS"
   | "CLAUDE_SESSION_RUNTIME_V2_ENABLED"
   | "CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS"
   | "CLAUDE_SESSION_RUNTIME_MAX_ENTRIES"
@@ -86,6 +87,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
     event: ClaudeClientEvent,
     idempotencyKey: string,
   ): Promise<() => Promise<void>>;
+  reconcileClaudeTranscriptAppend?(task: Task): Promise<void>;
   spawner?: Pick<RunnerProcessSpawner, "adopt" | "spawn">
     & Partial<Pick<
       RunnerProcessSpawner,
@@ -157,6 +159,8 @@ export function createRunnerProcessRuntimeFactory(
       snapshotPath: release.runnerModuleRoot,
       codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
       codexCliPath: options.codexCliPath?.path,
+      codexDetachedResultRetentionMs:
+        options.env.CODEX_DETACHED_RESULT_RETENTION_MS,
       claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
       claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
       claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
@@ -234,6 +238,7 @@ function spawnInputFromConfig(
     snapshotPath: config.snapshotPath,
     codexAdapterMode: config.codexAdapterMode,
     ...(config.codexCliPath ? { codexCliPath: config.codexCliPath } : {}),
+    codexDetachedResultRetentionMs: config.codexDetachedResultRetentionMs,
     claudeRuntimeV2Enabled: config.claudeRuntimeV2Enabled,
     claudeRuntimeIdleTtlMs: config.claudeRuntimeIdleTtlMs,
     claudeRuntimeMaxEntries: config.claudeRuntimeMaxEntries,
@@ -295,13 +300,19 @@ export async function applyRunnerHostCall(
 ): Promise<unknown> {
   const expectedSessionId = task.agentSessionId;
   if (call.service === "session_store") {
-    return await callSessionStore(
+    const result = await callSessionStore(
       options.sessionStore,
       call.operation,
       call.args,
       call.correlationId,
       expectedSessionId,
     );
+    if (call.operation === "append" && options.reconcileClaudeTranscriptAppend) {
+      registerPostResponse(async () => {
+        await options.reconcileClaudeTranscriptAppend!(task);
+      });
+    }
+    return result;
   }
   const sessionId = asString(call.args[0], "runner host session id");
   if (sessionId !== expectedSessionId) {

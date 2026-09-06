@@ -23,6 +23,40 @@ function message(
   };
 }
 
+function nativeTaskNotification(
+  taskId = "task-native",
+  toolUseId = "toolu-native",
+): SessionMessage {
+  return {
+    ...message("user", "native-input"),
+    message: {
+      role: "user",
+      content: `<task-notification><task-id>${taskId}</task-id>` +
+        `<tool-use-id>${toolUseId}</tool-use-id><status>completed</status>` +
+        `</task-notification>`,
+    },
+    origin: { kind: "task-notification" },
+  } as SessionMessage;
+}
+
+function nativeTurnPrefix(
+  taskId = "task-native",
+  toolUseId = "toolu-native",
+): SessionMessage[] {
+  return [
+    nativeTaskNotification(taskId, toolUseId),
+    message("assistant", "thinking-only"),
+    message("assistant", "tool-use-only"),
+    {
+      ...message("user", "tool-result"),
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tool-1", content: "done" }],
+      },
+    } as SessionMessage,
+  ];
+}
+
 describe("Claude delivery transcript receipt", () => {
   it("distinguishes absent, accepted, and completed stable input UUIDs", () => {
     expect(
@@ -66,6 +100,111 @@ describe("Claude delivery transcript receipt", () => {
     ).toEqual({ kind: "input_pending", inputUuid: "delivery-input" });
   });
 
+  it("does not borrow an assistant from a later user turn", () => {
+    expect(
+      findClaudeDeliveryTranscriptReceipt(
+        [
+          message("user", "native-notification-input"),
+          message("user", "human-successor-input"),
+          message("assistant", "human-successor-answer"),
+        ],
+        "native-notification-input",
+      ),
+    ).toEqual({
+      kind: "input_pending",
+      inputUuid: "native-notification-input",
+    });
+  });
+
+  it("selects the exact published assistant across intermediate SDK messages without crossing the next turn", () => {
+    expect(findClaudeDeliveryTranscriptReceipt(
+      [...nativeTurnPrefix(), message("assistant", "published-assistant")],
+      "native-input",
+      "published-assistant",
+    )).toEqual({
+      kind: "completed",
+      inputUuid: "native-input",
+      assistantMessageUuid: "published-assistant",
+    });
+  });
+
+  it("does not select the expected assistant from beyond the next turn-starting user", () => {
+    expect(findClaudeDeliveryTranscriptReceipt(
+      [
+        ...nativeTurnPrefix(),
+        message("user", "human-successor"),
+        message("assistant", "published-assistant"),
+      ],
+      "native-input",
+      "published-assistant",
+    )).toEqual({ kind: "input_pending", inputUuid: "native-input" });
+  });
+
+  it("proves the exact native task notification that owns a published assistant", async () => {
+    const loadMessages = vi.fn().mockResolvedValue([
+      ...nativeTurnPrefix(),
+      message("assistant", "published-assistant"),
+    ]);
+    const reader = new ClaudeDeliveryTranscriptReceiptReader({
+      sourceNode: "node-a", sessionStore: {} as never,
+      getSession: async () => ({
+        session_id: "target", node_id: "node-a", agent_id: "claude-agent",
+        claude_session_id: "claude-session",
+      } as SessionRow),
+      getAgent: () => ({
+        id: "claude-agent", name: "Claude", backend: "claude",
+        workspace_dir: "/workspace",
+      }),
+      loadMessages,
+    });
+
+    await expect(reader.inspectNativeTaskNotification("target", {
+      taskId: "task-native",
+      initiatingToolUseId: "toolu-native",
+      expectedAssistantUuid: "published-assistant",
+    })).resolves.toEqual({
+      kind: "completed",
+      inputUuid: "native-input",
+      assistantMessageUuid: "published-assistant",
+    });
+  });
+
+  it.each([
+    ["wrong task", nativeTurnPrefix("task-other", "toolu-native")],
+    ["same task with wrong tool", nativeTurnPrefix("task-native", "toolu-other")],
+    ["missing input UUID", [
+      { ...nativeTaskNotification(), uuid: undefined } as unknown as SessionMessage,
+      ...nativeTurnPrefix().slice(1),
+    ]],
+    ["next turn", [
+      ...nativeTurnPrefix(),
+      message("user", "human-successor"),
+    ]],
+  ] as const)("does not prove a published assistant owned by %s", async (_label, prefix) => {
+    const loadMessages = vi.fn().mockResolvedValue([
+      ...prefix,
+      message("assistant", "published-assistant"),
+    ]);
+    const reader = new ClaudeDeliveryTranscriptReceiptReader({
+      sourceNode: "node-a", sessionStore: {} as never,
+      getSession: async () => ({
+        session_id: "target", node_id: "node-a", agent_id: "claude-agent",
+        claude_session_id: "claude-session",
+      } as SessionRow),
+      getAgent: () => ({
+        id: "claude-agent", name: "Claude", backend: "claude",
+        workspace_dir: "/workspace",
+      }),
+      loadMessages,
+    });
+
+    await expect(reader.inspectNativeTaskNotification("target", {
+      taskId: "task-native",
+      initiatingToolUseId: "toolu-native",
+      expectedAssistantUuid: "published-assistant",
+    })).resolves.toBeNull();
+  });
+
   it("falls back to same-node JSONL when the shared transcript mirror ended at the crash", async () => {
     const deliveryId = "delivery-stable";
     const inputUuid = buildDeliveryInputUuid(deliveryId);
@@ -100,6 +239,42 @@ describe("Claude delivery transcript receipt", () => {
       kind: "completed",
       inputUuid,
       assistantMessageUuid: "assistant-after-parent-crash",
+    });
+    expect(loadMessages).toHaveBeenCalledTimes(2);
+    expect(loadMessages.mock.calls[0]?.[1]).toHaveProperty("sessionStore");
+    expect(loadMessages.mock.calls[1]?.[1]).not.toHaveProperty("sessionStore");
+  });
+
+  it("reads the same-node native assistant when the live shared mirror has only its input", async () => {
+    const loadMessages = vi.fn()
+      .mockResolvedValueOnce([
+        message("user", "native-input"),
+        message("assistant", "thinking-only"),
+      ])
+      .mockResolvedValueOnce([
+        ...nativeTurnPrefix(),
+        message("assistant", "native-assistant"),
+      ]);
+    const reader = new ClaudeDeliveryTranscriptReceiptReader({
+      sourceNode: "node-a", sessionStore: {} as never,
+      getSession: async () => ({
+        session_id: "target", node_id: "node-a", agent_id: "claude-agent",
+        claude_session_id: "claude-session",
+      } as SessionRow),
+      getAgent: () => ({
+        id: "claude-agent", name: "Claude", backend: "claude",
+        workspace_dir: "/workspace",
+      }),
+      loadMessages,
+    });
+
+    await expect(reader.inspectInput(
+      "target",
+      "native-input",
+      "native-assistant",
+    )).resolves.toEqual({
+      kind: "completed", inputUuid: "native-input",
+      assistantMessageUuid: "native-assistant",
     });
     expect(loadMessages).toHaveBeenCalledTimes(2);
     expect(loadMessages.mock.calls[0]?.[1]).toHaveProperty("sessionStore");

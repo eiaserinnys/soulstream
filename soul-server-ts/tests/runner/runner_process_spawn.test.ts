@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import {
+  parseRunnerChildConfig,
   RunnerProcessSpawner,
   type SpawnedRunnerProcess,
 } from "../../src/runner/runner_process_spawn.js";
@@ -41,6 +42,38 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessSpawner", () => {
+  it("reads old configs with the default Codex retention and validates explicit values", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    const {
+      codexDetachedResultRetentionMs: _omitted,
+      stateDirectory: _stateDirectory,
+      ...serialized
+    } = params;
+    void _omitted;
+    void _stateDirectory;
+
+    expect(parseRunnerChildConfig({
+      schemaVersion: 1,
+      ...serialized,
+      paths,
+    }).codexDetachedResultRetentionMs).toBe(1_800_000);
+    expect(parseRunnerChildConfig({
+      schemaVersion: 1,
+      ...serialized,
+      paths,
+      codexDetachedResultRetentionMs: 120_000,
+    }).codexDetachedResultRetentionMs).toBe(120_000);
+    for (const value of [0, -1, 1.5]) {
+      expect(() => parseRunnerChildConfig({
+        schemaVersion: 1,
+        ...serialized,
+        paths,
+        codexDetachedResultRetentionMs: value,
+      })).toThrow();
+    }
+  });
+
   it("writes config readable by immutable v1 snapshots before executing their entry", async () => {
     const calls: string[] = [];
     const spawnProcess = vi.fn((entry: string, args: string[], options: unknown) => {
@@ -815,6 +848,7 @@ async function input() {
     claudeRuntimeIdleTtlMs: 300_000,
     claudeRuntimeMaxEntries: 16,
     claudeRuntimeTurnTimeoutMs: 1_800_000,
+    codexDetachedResultRetentionMs: 120_000,
     runnerLeaseTimeoutMs: 120_000,
     internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
     codexHome: "/home/eias/.codex",

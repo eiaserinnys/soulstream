@@ -17,6 +17,10 @@ import type { ClaudeClientEvent } from "../engine/claude_event_mapper.js";
 import { userMessageText } from "../engine/claude_sdk_event_mapper_helpers.js";
 import { buildClaudeBackgroundGenerationIdentity } from
   "./claude_background_generation_identity.js";
+import {
+  findClaudeNativeTaskNotifications,
+  type ClaudeNativeTaskNotification,
+} from "./claude_native_task_notification.js";
 import type { ClaudeBackgroundTaskLifecycle } from
   "./claude_background_task_lifecycle.js";
 
@@ -118,9 +122,7 @@ export class ClaudeBackgroundGenerationStartupRecovery {
       includeSystemMessages: true,
     });
     const candidates = uniqueNativeNotifications(messages)
-      .filter((candidate) =>
-        candidate.taskId === legacy.task_id
-        && candidate.toolUseId !== legacyToolUseId);
+      .filter((candidate) => candidate.taskId === legacy.task_id);
     const absent = [];
     for (const candidate of candidates) {
       const existing = await this.deps.repository.getGeneration(
@@ -130,7 +132,18 @@ export class ClaudeBackgroundGenerationStartupRecovery {
         candidate.taskId,
         candidate.toolUseId,
       );
-      if (!existing) absent.push(candidate);
+      if (existing) {
+        if (candidate.consumedTurnId) {
+          await this.deps.recordRelationConsumed({
+            relationKey: existing.relation_key,
+            completionId: existing.completion_id,
+            callerSessionId: legacy.session_id,
+            consumedTurnId: candidate.consumedTurnId,
+          });
+        }
+        continue;
+      }
+      if (candidate.toolUseId !== legacyToolUseId) absent.push(candidate);
     }
     if (absent.length === 0) return "skipped";
     if (absent.length !== 1) return "ambiguous";
@@ -171,7 +184,7 @@ export class ClaudeBackgroundGenerationStartupRecovery {
   }
 }
 
-interface NativeTaskNotification {
+interface NativeTaskNotification extends ClaudeNativeTaskNotification {
   uuid: string;
   taskId: string;
   toolUseId: string;
@@ -189,42 +202,27 @@ export function findNativeTaskNotifications(
     if (message.type !== "user") continue;
     const text = userMessageText(message as unknown as Record<string, unknown>);
     if (!text) continue;
-    for (const match of text.matchAll(
-      /<task-notification\b[^>]*>([\s\S]*?)<\/task-notification>/g,
-    )) {
-      const body = match[1] ?? "";
-      const fields = directXmlFields(body);
-      const taskId = fields.get("task-id");
-      const toolUseId = fields.get("tool-use-id");
-      const status = fields.get("status");
-      if (
-        !taskId
-        || !toolUseId
-        || (status !== "completed" && status !== "failed" && status !== "stopped")
-      ) {
-        continue;
-      }
-      output.push({
-        uuid: message.uuid,
-        taskId,
-        toolUseId,
-        status,
-        ...(messages.slice(index + 1).find((item) => item.type === "assistant")
-          ? {
-            consumedTurnId: messages.slice(index + 1)
-              .find((item) => item.type === "assistant")!.uuid,
-          }
-          : {}),
-        ...(fields.get("output-file")
-          ? { outputFile: fields.get("output-file") }
-          : {}),
-        ...(fields.get("summary")
-          ? { summary: fields.get("summary") }
-          : {}),
-      });
-    }
+    const parsed = findClaudeNativeTaskNotifications(text);
+    if (parsed.length !== 1) continue;
+    const assistant = firstAssistantBeforeNextUser(messages, index);
+    output.push({
+      ...parsed[0]!,
+      uuid: message.uuid,
+      ...(assistant ? { consumedTurnId: assistant.uuid } : {}),
+    });
   }
   return output;
+}
+
+function firstAssistantBeforeNextUser(
+  messages: SessionMessage[],
+  notificationIndex: number,
+): SessionMessage | undefined {
+  for (const message of messages.slice(notificationIndex + 1)) {
+    if (message.type === "user") return undefined;
+    if (message.type === "assistant") return message;
+  }
+  return undefined;
 }
 
 function uniqueNativeNotifications(
@@ -236,41 +234,4 @@ function uniqueNativeNotifications(
     if (!byIdentity.has(key)) byIdentity.set(key, candidate);
   }
   return [...byIdentity.values()];
-}
-
-function directXmlFields(body: string): Map<string, string> {
-  const fields = new Map<string, string>();
-  const stack: string[] = [];
-  let direct: { name: string; contentStart: number } | undefined;
-  const tags = /<(\/)?([A-Za-z][A-Za-z0-9-]*)(?:\s[^>]*)?(\/?)>/g;
-  for (const match of body.matchAll(tags)) {
-    const closing = match[1] === "/";
-    const name = match[2]!;
-    const selfClosing = match[3] === "/";
-    if (closing) {
-      if (stack.at(-1) !== name) continue;
-      if (stack.length === 1 && direct?.name === name) {
-        const value = body.slice(direct.contentStart, match.index).trim();
-        if (value) fields.set(name, decodeXml(value));
-        direct = undefined;
-      }
-      stack.pop();
-      continue;
-    }
-    if (selfClosing) continue;
-    if (stack.length === 0) {
-      direct = { name, contentStart: match.index + match[0].length };
-    }
-    stack.push(name);
-  }
-  return fields;
-}
-
-function decodeXml(value: string): string {
-  return value
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&#39;", "'")
-    .replaceAll("&amp;", "&");
 }

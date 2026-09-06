@@ -4,6 +4,7 @@ import { readClaudeResultReceiptMetadata } from
 
 import {
   classifyClaudeBackgroundConsumptionProof,
+  type ClaudeBackgroundConsumptionProof,
   type ClaudeToolStartObservation,
 } from "./claude_background_result_consumption.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
@@ -33,6 +34,9 @@ export class TaskDeliveryTurnReceipt {
   constructor(
     private readonly consumption: TaskDeliveryConsumption,
     interventions: readonly InterventionMessage[],
+    private readonly onExplicitProofConsumed?: (
+      proof: ClaudeBackgroundConsumptionProof,
+    ) => void,
   ) {
     for (const intervention of interventions) this.add(intervention);
   }
@@ -122,11 +126,12 @@ export class TaskDeliveryTurnReceipt {
     if (!start) return;
     const proof = classifyClaudeBackgroundConsumptionProof(start, event);
     if (!proof) return;
-    await this.consumption.recordRuntimeFollowupRelationConsumed(
+    const consumed = await this.consumption.recordRuntimeFollowupRelationConsumed(
       task,
       proof,
       turnReceiptId(task),
     );
+    if (consumed) this.onExplicitProofConsumed?.(proof);
   }
 
   private async record(

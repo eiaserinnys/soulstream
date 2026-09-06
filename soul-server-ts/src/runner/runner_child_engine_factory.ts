@@ -38,6 +38,7 @@ export function createRunnerChildEngine(
         codexPathOverride: config.codexCliPath,
         processEnv: process.env,
         internalMcpUrl: config.internalMcpUrl,
+        codexDetachedResultRetentionMs: config.codexDetachedResultRetentionMs,
         ...(config.resolvedMcpServers
           ? { resolvedMcpServers: config.resolvedMcpServers }
           : {}),

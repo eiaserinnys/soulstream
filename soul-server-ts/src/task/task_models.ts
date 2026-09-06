@@ -64,6 +64,14 @@ export interface ExecutionActivation {
   hasFailureCompensation?(): boolean;
 }
 
+/** Exact process-runner close owner shared by recovery and foreground admission. */
+export interface RunnerReleaseClaim {
+  runner: TaskRunnerRuntime;
+  registrationId: string;
+  completion: Promise<void>;
+  resolve(): void;
+}
+
 export function createExecutionActivation(): ExecutionActivation {
   let resolvePromise!: () => void;
   let rejectPromise!: (error: unknown) => void;
@@ -454,8 +462,11 @@ export interface Task {
   runnerTerminalFact?: RunnerTerminalFact;
   pendingExecutionExpectedTerminalEventId?: number | null;
 
-  /** foreground Result 뒤 Claude background runtime을 소유하여 다음 turn까지 보존된 runner. */
-  runnerRetainedForClaudeBackground?: boolean;
+  /** Foreground result 뒤 detached work를 소유하여 다음 turn까지 보존된 runner. */
+  runnerRetainedForDetachedWork?: boolean;
+
+  /** Runtime-only exact close claim; never persisted or sent over the wire. */
+  runnerReleaseClaim?: RunnerReleaseClaim;
 
   /**
    * The attached runner is an offline replay handle over durable records, not

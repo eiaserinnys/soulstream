@@ -13,6 +13,8 @@ import {
   "../../src/runner/runner_process_runtime_factory.js";
 import type { RunnerChildConfig } from
   "../../src/runner/runner_process_spawn.js";
+import { parseRunnerChildConfig } from
+  "../../src/runner/runner_process_spawn.js";
 import type { RunnerRegistration } from
   "../../src/runner/runner_process_registry.js";
 import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
@@ -79,11 +81,12 @@ describe("createRunnerProcessRuntimeFactory", () => {
       codeSha: "sha-pinned",
       releaseManifestId: "manifest-pinned",
       snapshotPath: "/release/sha-pinned/soul-server-ts",
+      codexDetachedResultRetentionMs: 120_000,
     }));
   });
 
   it("passes the existing registration to recovery adoption without spawning", async () => {
-    const config: RunnerChildConfig = {
+    const config: RunnerChildConfig = parseRunnerChildConfig({
       schemaVersion: 1,
       sessionId: "session-adopt",
       backend: "codex",
@@ -112,7 +115,8 @@ describe("createRunnerProcessRuntimeFactory", () => {
       internalMcpUrl: "http://127.0.0.1:4307/mcp/internal",
       codexHome: "/home/test/.codex",
       rolloutRoot: "/home/test/.codex/sessions",
-    };
+    });
+    expect(config.codexDetachedResultRetentionMs).toBe(1_800_000);
     const registration: RunnerRegistration = {
       config,
       pid: 6101,
@@ -160,6 +164,13 @@ describe("createRunnerProcessRuntimeFactory", () => {
       persistRunState: vi.fn(async () => undefined),
       persistSessionItems: vi.fn(async () => undefined),
     });
+    expect((runtime.dispatcher as unknown as {
+      options: {
+        spawn: { codexDetachedResultRetentionMs: number };
+      };
+    }).options.spawn).toMatchObject({
+      codexDetachedResultRetentionMs: 1_800_000,
+    });
 
     await expect(runtime.dispatcher.prepareSession("session-adopt"))
       .rejects.toThrow("stop after successful adoption");
@@ -182,12 +193,97 @@ function runnerEnv() {
     CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: 300_000,
     CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: 16,
     CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: 1_800_000,
+    CODEX_DETACHED_RESULT_RETENTION_MS: 120_000,
     MCP_INTERNAL_PORT: 4308,
     MCP_PATH: "/mcp",
   };
 }
 
 describe("applyRunnerHostCall", () => {
+  it("registers transcript reconciliation after append success and runs it post-response", async () => {
+    let finishAppend!: () => void;
+    const appendPending = new Promise<void>((resolve) => {
+      finishAppend = resolve;
+    });
+    const appendIdempotent = vi.fn(() => appendPending);
+    const load = vi.fn(async () => []);
+    const deleteIdempotent = vi.fn(async () => undefined);
+    const reconcileClaudeTranscriptAppend = vi.fn(async () => undefined);
+    const registerPostResponse = vi.fn();
+    const task = { agentSessionId: "session-a" } as Task;
+    const options = {
+      sessionStore: { appendIdempotent, load, deleteIdempotent },
+      reconcileClaudeTranscriptAppend,
+    } as never;
+    const call = applyRunnerHostCall(
+      {
+        service: "session_store",
+        operation: "append",
+        args: [
+          { projectKey: "project-a", sessionId: "sdk-session-a" },
+          [{ type: "assistant", uuid: "assistant-a" }],
+        ],
+        correlationId: "host:append",
+      },
+      task,
+      {
+        persistRunState: vi.fn(async () => undefined),
+        persistSessionItems: vi.fn(async () => undefined),
+      },
+      options,
+      registerPostResponse,
+    );
+
+    await Promise.resolve();
+    expect(registerPostResponse).not.toHaveBeenCalled();
+    expect(reconcileClaudeTranscriptAppend).not.toHaveBeenCalled();
+    finishAppend();
+    await call;
+    expect(registerPostResponse).toHaveBeenCalledOnce();
+    expect(reconcileClaudeTranscriptAppend).not.toHaveBeenCalled();
+
+    const continuation = registerPostResponse.mock.calls[0]?.[0];
+    await continuation();
+    expect(reconcileClaudeTranscriptAppend).toHaveBeenCalledOnce();
+    expect(reconcileClaudeTranscriptAppend).toHaveBeenCalledWith(task);
+
+    appendIdempotent.mockRejectedValueOnce(new Error("append failed"));
+    await expect(applyRunnerHostCall(
+      {
+        service: "session_store", operation: "append",
+        args: [{ projectKey: "project-a", sessionId: "sdk-session-a" }, []],
+        correlationId: "host:append-failed",
+      },
+      task,
+      {
+        persistRunState: vi.fn(async () => undefined),
+        persistSessionItems: vi.fn(async () => undefined),
+      },
+      options,
+      registerPostResponse,
+    )).rejects.toThrow("append failed");
+    expect(registerPostResponse).toHaveBeenCalledOnce();
+
+    for (const [operation, args] of [
+      ["load", [{ projectKey: "project-a", sessionId: "sdk-session-a" }]],
+      ["delete", [{ projectKey: "project-a", sessionId: "sdk-session-a" }]],
+    ] as const) {
+      await applyRunnerHostCall(
+        { service: "session_store", operation, args: [...args], correlationId: `host:${operation}` },
+        task,
+        {
+          persistRunState: vi.fn(async () => undefined),
+          persistSessionItems: vi.fn(async () => undefined),
+        },
+        options,
+        registerPostResponse,
+      );
+    }
+    expect(load).toHaveBeenCalledOnce();
+    expect(deleteIdempotent).toHaveBeenCalledOnce();
+    expect(registerPostResponse).toHaveBeenCalledOnce();
+  });
+
   it("threads correlation to all six mutating host operations", async () => {
     const sessionStore = {
       appendIdempotent: vi.fn(async () => undefined),

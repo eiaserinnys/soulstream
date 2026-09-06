@@ -303,6 +303,7 @@ function spawnInput(stateDirectory: string, sessionId: string): SpawnRunnerProce
     codeSha: "82bf7a0-test-fixture",
     snapshotPath: "/release/82bf7a0/soul-server-ts",
     codexAdapterMode: "sdk",
+    codexDetachedResultRetentionMs: 1_800_000,
     claudeRuntimeV2Enabled: true,
     claudeRuntimeIdleTtlMs: 300_000,
     claudeRuntimeMaxEntries: 16,

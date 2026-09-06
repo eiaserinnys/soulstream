@@ -85,6 +85,8 @@ export class AutoResumeTransition {
       afterRunningTransition?: () => Promise<void>;
     } = {},
   ): Promise<{ autoResumed: true }> {
+    const releaseClaim = task.runnerReleaseClaim;
+    if (releaseClaim) await this.awaitRunnerReleaseClaim(task, releaseClaim);
     const originalStatus = task.status;
     if (originalStatus === "running" && hasLiveExecutionEvidence(task)) {
       throw new Error(
@@ -204,9 +206,20 @@ export class AutoResumeTransition {
     }
   }
 
+  private async awaitRunnerReleaseClaim(
+    task: Task,
+    firstClaim: NonNullable<Task["runnerReleaseClaim"]>,
+  ): Promise<void> {
+    let claim: Task["runnerReleaseClaim"] = firstClaim;
+    while (claim) {
+      await claim.completion;
+      claim = task.runnerReleaseClaim;
+    }
+  }
+
   private async closeStaleEngine(task: Task): Promise<void> {
     if (!task.runner) return;
-    if (task.runnerRetainedForClaudeBackground === true) return;
+    if (task.runnerRetainedForDetachedWork === true) return;
     const runner = task.runner;
     releaseTaskRunner(task, runner);
     try {

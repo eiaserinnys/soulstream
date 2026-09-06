@@ -316,7 +316,7 @@ export class RunnerRecoveryCoordinator {
     if (
       task
       && disposition === "replay_terminal"
-      && await this.options.taskExecutor.retainRegisteredClaudeBackgroundRunner(
+      && await this.options.taskExecutor.retainRegisteredDetachedRunner(
         task,
         registration,
       )
@@ -335,6 +335,13 @@ export class RunnerRecoveryCoordinator {
       await this.terminalizeDeadClaudeBackgroundTasks(registration);
     }
     const recordedTerminal = task && hasRecordedTerminal(task);
+    if (
+      task
+      && recordedTerminal
+      && await this.releaseExpiredRetainedRunner(registration, task)
+    ) {
+      return;
+    }
     if (
       task
       && recordedTerminal
@@ -720,6 +727,53 @@ export class RunnerRecoveryCoordinator {
         terminalExecutionCommandId,
       },
       "recorded terminal runner registration retired without replay",
+    );
+    return true;
+  }
+
+  private async releaseExpiredRetainedRunner(
+    registration: RunnerRegistration,
+    task: Task,
+  ): Promise<boolean> {
+    const release = await this.options.taskExecutor.releaseExpiredRetainedRunner(
+      task,
+      registration,
+      true,
+    );
+    if (release === "not_released") return false;
+    if (release === "retry_required") {
+      await this.registrationControl.terminate(registration);
+    }
+    const claim = task.runnerReleaseClaim;
+    if (
+      !claim
+      || claim.registrationId !== registration.registrationId
+      || task.runner !== claim.runner
+      || !hasRecordedTerminal(task)
+    ) {
+      throw new Error(
+        `retained runner claim changed before retirement: ${registration.config.sessionId}`,
+      );
+    }
+    await this.registrationControl.retireTerminal({
+      ...registration,
+      pid: null,
+      pidAlive: false,
+      pidStartIdentity: null,
+    });
+    if (
+      !this.options.taskExecutor.completeRetainedRunnerReleaseAfterTermination(
+        task,
+        registration,
+      )
+    ) {
+      throw new Error(
+        `retired retained runner claim changed: ${registration.config.sessionId}`,
+      );
+    }
+    this.options.logger.info(
+      { sessionId: registration.config.sessionId },
+      "expired detached-command runner released and terminal registration retired",
     );
     return true;
   }

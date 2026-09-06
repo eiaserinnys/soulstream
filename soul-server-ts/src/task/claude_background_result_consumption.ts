@@ -52,13 +52,16 @@ export function classifyClaudeBackgroundConsumptionProof(
 
   if (start.toolName !== "TaskOutput") return undefined;
   const requestedTaskId = stringField(start.toolInput, "task_id", "taskId");
-  const returnedTaskId = stringField(envelope, "task_id", "taskId");
   const retrievalStatus = stringField(
     envelope,
     "retrieval_status",
     "retrievalStatus",
   );
-  const status = stringField(envelope, "status");
+  const nestedTask = recordField(envelope, "task");
+  if (envelope.task !== undefined && !nestedTask) return undefined;
+  const resultTask = nestedTask ?? envelope;
+  const returnedTaskId = stringField(resultTask, "task_id", "taskId");
+  const status = stringField(resultTask, "status");
   if (
     !requestedTaskId || returnedTaskId !== requestedTaskId ||
     retrievalStatus !== "success" || !status ||
@@ -67,6 +70,16 @@ export function classifyClaudeBackgroundConsumptionProof(
     return undefined;
   }
   return { kind: "task_output", taskId: requestedTaskId };
+}
+
+function recordField(
+  record: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined {
+  const value = record[key];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
 }
 
 function stringField(

@@ -1,6 +1,7 @@
 import type {
   BackendId,
   ClaudeBackgroundTaskControlResult,
+  CodexDetachedCommandRuntimeActivity,
   DetachedClaudeRuntimeActivity,
   EngineExecuteParams,
   EngineInterventionResult,
@@ -20,6 +21,7 @@ import type { RunnerProcessDispatcher } from "./runner_process_dispatcher.js";
 /** Adapts the process command dispatcher to the existing EnginePort surface. */
 export class RunnerProcessEngineProxy implements EnginePort, SupportsToolBoundaryInjection {
   readonly detachedClaudeRuntime: true | undefined;
+  readonly codexDetachedCommandRuntime: true | undefined;
 
   constructor(
     readonly backendId: BackendId,
@@ -28,6 +30,10 @@ export class RunnerProcessEngineProxy implements EnginePort, SupportsToolBoundar
     options: { retainDetachedRuntime?: boolean } = {},
   ) {
     this.detachedClaudeRuntime = backendId === "claude"
+      && options.retainDetachedRuntime !== false
+      ? true
+      : undefined;
+    this.codexDetachedCommandRuntime = backendId === "codex"
       && options.retainDetachedRuntime !== false
       ? true
       : undefined;
@@ -83,6 +89,14 @@ export class RunnerProcessEngineProxy implements EnginePort, SupportsToolBoundar
     }
     return result;
   }
+  async codexDetachedCommandActivity(): Promise<CodexDetachedCommandRuntimeActivity | null> {
+    const result = await this.dispatcher.invoke("codexDetachedCommandActivity", []);
+    if (isUnavailableDetachedClaudeRuntimeActivity(result)) return null;
+    if (!isCodexDetachedCommandRuntimeActivity(result)) {
+      throw new Error("Runner child returned invalid Codex detached-command activity");
+    }
+    return result;
+  }
   async stopClaudeRuntimeTask(taskId: string): Promise<ClaudeBackgroundTaskControlResult> {
     return await this.dispatcher.invoke(
       "stopClaudeRuntimeTask",
@@ -109,6 +123,21 @@ function isDetachedClaudeRuntimeActivity(
     && isCount(activity.pendingInputRequestCount)
     && (activity.pendingRuntimeSignalCount === undefined
       || isCount(activity.pendingRuntimeSignalCount));
+}
+
+function isCodexDetachedCommandRuntimeActivity(
+  value: unknown,
+): value is CodexDetachedCommandRuntimeActivity {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const activity = value as Record<string, unknown>;
+  const retainedTerminalResultCount = activity.retainedTerminalResultCount;
+  const deadline = activity.earliestRetainedTerminalDeadlineAtMs;
+  return isCount(activity.activeForegroundCount)
+    && isCount(activity.detachedRunningCount)
+    && isCount(retainedTerminalResultCount)
+    && (retainedTerminalResultCount === 0
+      ? deadline === null
+      : isCount(deadline));
 }
 
 function isCount(value: unknown): value is number {

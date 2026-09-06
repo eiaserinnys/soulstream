@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
+import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
 import {
   RunnerRecoveryCoordinator,
   type RunnerRecoveryCoordinatorOptions,
@@ -24,10 +26,187 @@ import {
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
 import type { Task } from "../../src/task/task_models.js";
+import { makeEventPersistenceTestDouble } from
+  "../task/event_persistence_test_double.js";
 
 const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+}
+
 describe("RunnerRecoveryCoordinator exception matrix", () => {
+
+  it("keeps auto-resume claimed until the exact old registration is retired", async () => {
+    const terminalRegistration = registration({
+      lifecycleState: "completed",
+      pidAlive: true,
+    });
+    const recovered = task("session-a");
+    recovered.status = "completed";
+    recovered.terminationReason = "completed_ok";
+    recovered.terminationEventRecorded = true;
+    recovered.terminalEventId = 14;
+    const closing = deferred<void>();
+    const retirement = deferred<void>();
+    let retirementFinished = false;
+    const oldRunner = {
+      engine: {
+        codexDetachedCommandRuntime: true,
+        codexDetachedCommandActivity: vi.fn(async () => ({
+          activeForegroundCount: 0,
+          detachedRunningCount: 0,
+          retainedTerminalResultCount: 0,
+          earliestRetainedTerminalDeadlineAtMs: null,
+        })),
+      },
+      dispatcher: {
+        close: vi.fn(() => closing.promise),
+        registrationId: () => "registration-a",
+        activeExecutionCommandId: () => undefined,
+        hasActiveExecution: () => false,
+      },
+      eventPersistence: "runner",
+    } as unknown as NonNullable<Task["runner"]>;
+    const newRunner = finishedRunner("registration-new").runner;
+    recovered.runner = oldRunner;
+    recovered.runnerRetainedForDetachedWork = true;
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn() },
+      logger: { warn: vi.fn() } as never,
+    });
+    const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
+      } as never,
+      taskExecutor: {
+        retainRegisteredDetachedRunner: vi.fn(async () => false),
+        releaseExpiredRetainedRunner: async (owned, exact, recorded) =>
+          await finalizer.releaseExpiredRetainedRunner(
+            owned,
+            exact.registrationId!,
+            recorded,
+          ),
+        completeRetainedRunnerReleaseAfterTermination: (owned, exact) =>
+          finalizer.completeRetainedRunnerReleaseAfterTermination(
+            owned,
+            exact.registrationId!,
+          ),
+      } as never,
+    });
+    subject.terminate.mockImplementation(async (...args) => {
+      if (args.length < 3) return;
+      await retirement.promise;
+      retirementFinished = true;
+    });
+    const persistence = makeEventPersistenceTestDouble();
+    const transition = new AutoResumeTransition({
+      logger: subject.logger as never,
+      persistence: persistence.persistence,
+    });
+    const message = { text: "new foreground", user: "human" };
+    const onResume = vi.fn((owned: Task) => {
+      expect(retirementFinished).toBe(true);
+      owned.runner = newRunner;
+      owned.status = "running";
+    });
+
+    const scan = subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(oldRunner.dispatcher.close).toHaveBeenCalledOnce());
+    const resumed = transition.resume(recovered, message, onResume);
+    await Promise.resolve();
+    expect(recovered.status).toBe("completed");
+    expect(recovered.runner).toBe(oldRunner);
+    expect(persistence.enqueueRunningTransitionAndWaitForApplication)
+      .not.toHaveBeenCalled();
+
+    closing.resolve();
+    await vi.waitFor(() => expect(subject.terminate).toHaveBeenCalledWith(
+      terminalRegistration.config.paths,
+      undefined,
+      expect.objectContaining({ registrationId: "registration-a", pid: null }),
+      expect.any(Function),
+    ));
+    expect(recovered.status).toBe("completed");
+    expect(recovered.runner).toBe(oldRunner);
+    expect(recovered.runnerReleaseClaim).toBeDefined();
+    expect(onResume).not.toHaveBeenCalled();
+
+    retirement.resolve();
+    await scan;
+    await resumed;
+
+    expect(recovered.runner).toBe(newRunner);
+    expect(recovered.runnerReleaseClaim).toBeUndefined();
+    expect(onResume).toHaveBeenCalledOnce();
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed-close claim and retries only the exact old registration", async () => {
+    const terminalRegistration = registration({
+      lifecycleState: "completed",
+      pidAlive: true,
+    });
+    const recovered = task("session-a");
+    recovered.status = "completed";
+    recovered.terminationReason = "completed_ok";
+    recovered.terminationEventRecorded = true;
+    recovered.terminalEventId = 14;
+    const runner = finishedRunner("registration-a").runner;
+    recovered.runner = runner;
+    recovered.runnerRetainedForDetachedWork = true;
+    let resolveClaim!: () => void;
+    const completion = new Promise<void>((resolve) => { resolveClaim = resolve; });
+    recovered.runnerReleaseClaim = {
+      runner,
+      registrationId: "registration-a",
+      completion,
+      resolve: resolveClaim,
+    };
+    const complete = vi.fn((owned: Task) => {
+      owned.runner = undefined;
+      owned.runnerRetainedForDetachedWork = undefined;
+      owned.runnerReleaseClaim = undefined;
+      resolveClaim();
+      return true;
+    });
+    const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
+      } as never,
+      taskExecutor: {
+        retainRegisteredDetachedRunner: vi.fn(async () => false),
+        releaseExpiredRetainedRunner: vi.fn(async () => "retry_required" as const),
+        completeRetainedRunnerReleaseAfterTermination: complete,
+      } as never,
+    });
+    subject.terminate.mockRejectedValueOnce(new Error("termination failed"));
+
+    await subject.coordinator.scanOnce();
+    expect(recovered.runner).toBe(runner);
+    expect(recovered.runnerReleaseClaim).toBeDefined();
+    expect(complete).not.toHaveBeenCalled();
+
+    await subject.coordinator.scanOnce();
+    await expect(completion).resolves.toBeUndefined();
+    expect(subject.terminate).toHaveBeenNthCalledWith(
+      2,
+      terminalRegistration.config.paths,
+      { pid: 4123, startIdentity: "start-4123" },
+    );
+    expect(subject.terminate).toHaveBeenNthCalledWith(
+      3,
+      terminalRegistration.config.paths,
+      undefined,
+      expect.objectContaining({ registrationId: "registration-a", pid: null }),
+      expect.any(Function),
+    );
+    expect(complete).toHaveBeenCalledOnce();
+    expect(recovered.runner).toBeUndefined();
+    expect(recovered.runnerReleaseClaim).toBeUndefined();
+  });
 
   it("keeps a retained terminal runner across repeated scans while its SDK live set is non-empty", async () => {
     const terminalRegistration = registration({
@@ -41,21 +220,21 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     recovered.terminalEventId = 14;
     const { runner, detachHost } = finishedRunner("registration-a");
     recovered.runner = runner;
-    recovered.runnerRetainedForClaudeBackground = true;
-    const retainRegisteredClaudeBackgroundRunner = vi.fn(async () => true);
+    recovered.runnerRetainedForDetachedWork = true;
+    const retainRegisteredDetachedRunner = vi.fn(async () => true);
     const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
       } as never,
       taskExecutor: {
-        retainRegisteredClaudeBackgroundRunner,
+        retainRegisteredDetachedRunner,
       } as never,
     });
 
     await subject.coordinator.scanOnce();
     await subject.coordinator.scanOnce();
 
-    expect(retainRegisteredClaudeBackgroundRunner).toHaveBeenCalledTimes(2);
+    expect(retainRegisteredDetachedRunner).toHaveBeenCalledTimes(2);
     expect(detachHost).not.toHaveBeenCalled();
     expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
@@ -82,9 +261,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     recovered.terminationEventRecorded = true;
     recovered.terminalEventId = 14;
     const { runner } = finishedRunner("registration-a");
-    const retainRegisteredClaudeBackgroundRunner = vi.fn(async (owned: Task) => {
+    const retainRegisteredDetachedRunner = vi.fn(async (owned: Task) => {
       owned.runner = runner;
-      owned.runnerRetainedForClaudeBackground = true;
+      owned.runnerRetainedForDetachedWork = true;
       return true;
     });
     const terminalizeClaudeBackgroundTasks = vi.fn(async () => 0);
@@ -93,14 +272,14 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
       } as never,
       taskExecutor: {
-        retainRegisteredClaudeBackgroundRunner,
+        retainRegisteredDetachedRunner,
       } as never,
       terminalizeClaudeBackgroundTasks,
     } as never);
 
     await subject.coordinator.scanOnce();
 
-    expect(retainRegisteredClaudeBackgroundRunner).toHaveBeenCalledWith(
+    expect(retainRegisteredDetachedRunner).toHaveBeenCalledWith(
       recovered,
       expect.objectContaining({ registrationId: "registration-a" }),
     );
@@ -2038,7 +2217,9 @@ function makeSubject(
   const hydrateRunnerRecoveryTask = vi.fn(async (sessionId: string) =>
     tasks.get(sessionId) ?? fallbackTask);
   const recoverRegisteredRunner = vi.fn(async () => {});
-  const retainRegisteredClaudeBackgroundRunner = vi.fn(async () => false);
+  const retainRegisteredDetachedRunner = vi.fn(async () => false);
+  const releaseExpiredRetainedRunner = vi.fn(async () => "not_released" as const);
+  const completeRetainedRunnerReleaseAfterTermination = vi.fn(() => false);
   const restartRegisteredRunner = vi.fn();
   const markRunnerFailure = vi.fn(async () => {});
   const markRunnerFailureAndResume = markRunnerFailure;
@@ -2072,7 +2253,9 @@ function makeSubject(
     ...overrides,
     taskExecutor: {
       recoverRegisteredRunner,
-      retainRegisteredClaudeBackgroundRunner,
+      retainRegisteredDetachedRunner,
+      releaseExpiredRetainedRunner,
+      completeRetainedRunnerReleaseAfterTermination,
       ...({ restartRegisteredRunner } as object),
       ...overrides.taskExecutor,
     },
@@ -2086,7 +2269,9 @@ function makeSubject(
     task: tasks.get("session-a") ?? fallbackTask,
     hydrateRunnerRecoveryTask,
     recoverRegisteredRunner,
-    retainRegisteredClaudeBackgroundRunner,
+    retainRegisteredDetachedRunner,
+    releaseExpiredRetainedRunner,
+    completeRetainedRunnerReleaseAfterTermination,
     restartRegisteredRunner,
     markRunnerFailure,
     markRunnerFailureAndResume,

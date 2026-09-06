@@ -8,17 +8,23 @@ import type { Logger } from "pino";
 
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import type { EventQueue } from "./claude_sdk_event_queue.js";
-import { messageContent } from "./claude_sdk_event_mapper_helpers.js";
+import { messageContent, userMessageText } from "./claude_sdk_event_mapper_helpers.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
 import type { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import type { RateLimitTerminationState } from
   "./claude_sdk_rate_limit_stop_failure.js";
 import type {
   ClaudeForegroundPhase,
+  ClaudeSessionRuntime,
   ClaudeStaleInterruptReceiptObservation,
   ClaudeTurnOwner,
 } from "./claude_session_runtime.js";
 import type { TurnOrigin } from "./protocol.js";
+import { readClaudeBackgroundDeliveryMetadata } from
+  "./claude_background_delivery_metadata.js";
+import { readClaudeBackgroundProvenance } from "./claude_background_provenance.js";
+import { parseClaudeNativeTaskNotification } from
+  "../task/claude_native_task_notification.js";
 
 export type ClaudeDetachedEventSink = (event: ClaudeClientEvent) => Promise<void>;
 export type ClaudeRuntimeEventSink = (
@@ -56,6 +62,156 @@ export type InterventionInterruptObservation = {
   observed: boolean;
   settled: boolean;
 };
+
+interface PendingNativeNotification {
+  taskId: string;
+  toolUseId: string;
+  phase: "awaiting-input" | "native-turn";
+  inputUuid?: string;
+  deadlineAt: number;
+}
+
+/** Child-owned finite activity barrier for an SDK-native task-notification turn. */
+export class ClaudePendingNativeNotificationTracker {
+  private readonly pending = new Map<string, PendingNativeNotification>();
+
+  constructor(private readonly options: { noOutputTimeoutMs: number;
+    turnInactivityTimeoutMs: number; now?: () => number }) {}
+
+  observeAcceptedTerminal(event: ClaudeClientEvent): void {
+    if (readClaudeBackgroundProvenance(event) !== "sdk_membership") return;
+    const metadata = readClaudeBackgroundDeliveryMetadata(event);
+    const taskId = nativeTerminalTaskId(event);
+    if (!metadata?.initiatingToolUseId || !taskId) return;
+    this.prune();
+    this.pending.set(metadata.relationKey, {
+      taskId,
+      toolUseId: metadata.initiatingToolUseId,
+      phase: "awaiting-input",
+      deadlineAt: this.now() + this.options.noOutputTimeoutMs,
+    });
+  }
+
+  observeSdkMessage(message: Record<string, unknown> | undefined): void {
+    if (!message) return;
+    this.prune();
+    const type = asString(message.type);
+    if (type === "user") {
+      if (asString(asRecord(message.origin)?.kind) !== "task-notification") return;
+      const uuid = asString(message.uuid);
+      const text = userMessageText(message);
+      const parsed = text ? parseClaudeNativeTaskNotification(text) : undefined;
+      if (!uuid || !parsed) return;
+      const candidates = [...this.pending.values()].filter((item) =>
+        item.phase === "awaiting-input" && item.taskId === parsed.taskId &&
+        item.toolUseId === parsed.toolUseId
+      );
+      if (candidates.length !== 1) return;
+      const candidate = candidates[0]!;
+      candidate.phase = "native-turn";
+      candidate.inputUuid = uuid;
+      candidate.deadlineAt = this.now() + this.options.turnInactivityTimeoutMs;
+      return;
+    }
+    if (type === "assistant") {
+      const candidates = [...this.pending.values()].filter((item) =>
+        item.phase === "native-turn"
+      );
+      if (candidates.length !== 1) return;
+      candidates[0]!.deadlineAt = this.now() + this.options.turnInactivityTimeoutMs;
+      return;
+    }
+    if (type !== "result") return;
+    const inputUuid = asString(message.user_message_uuid);
+    if (!inputUuid && asString(asRecord(message.origin)?.kind) !== "task-notification") {
+      return;
+    }
+    const candidates = [...this.pending.entries()].filter(([, item]) =>
+      item.phase === "native-turn" &&
+      (inputUuid ? item.inputUuid === inputUuid : true)
+    );
+    if (candidates.length !== 1) return;
+    this.pending.delete(candidates[0]![0]);
+  }
+
+  pendingCount(): number {
+    this.prune();
+    return this.pending.size;
+  }
+
+  clear(): void { this.pending.clear(); }
+
+  private prune(): void {
+    const now = this.now();
+    for (const [key, item] of this.pending) {
+      if (item.deadlineAt <= now) this.pending.delete(key);
+    }
+  }
+
+  private now(): number {
+    return this.options.now?.() ?? Date.now();
+  }
+}
+
+function nativeTerminalTaskId(event: ClaudeClientEvent): string | undefined {
+  if (
+    event.type === "claude_runtime_task_notification" ||
+    event.type === "claude_runtime_task_completed"
+  ) return event.taskId;
+  if (event.type !== "claude_runtime_task_updated") return undefined;
+  const status = event.patch.status;
+  return status === "completed" || status === "failed" || status === "stopped" ||
+      status === "killed"
+    ? event.taskId
+    : undefined;
+}
+
+export async function handlePersistentTurnInactivity(input: {
+  uuid: string;
+  getActive(): ActiveForeground | null;
+  setActive(active: ActiveForeground | null): void;
+  runtime: Pick<ClaudeSessionRuntime<SDKUserMessage>, "snapshot" | "interruptForeground">;
+  logger: Logger;
+  timeoutMs: number;
+  postResultDrainMs: number;
+  clearTimers(active: ActiveForeground): void;
+  close(): Promise<void>;
+}): Promise<void> {
+  const active = input.getActive();
+  if (!active || active.uuid !== input.uuid || active.timedOut) return;
+  active.timedOut = true;
+  input.logger.warn(
+    {
+      uuid: input.uuid,
+      turnOriginKind: active.origin.kind,
+      turnOriginId: active.origin.id,
+      inactivityTimeoutMs: input.timeoutMs,
+    },
+    "Persistent Claude foreground turn became inactive",
+  );
+  const settleWithoutResult = async () => {
+    const current = input.getActive();
+    if (!current || current.uuid !== input.uuid || !current.timedOut) return;
+    current.output.push(turnInactivityError(input.timeoutMs));
+    current.output.close();
+    input.clearTimers(current);
+    settleInterventionInterrupt(current, false);
+    input.setActive(null);
+    await input.close();
+  };
+  try {
+    if (input.runtime.snapshot().foregroundPhase === "generating") {
+      await input.runtime.interruptForeground(makeStaleInterruptReceiptLogger(input.logger));
+    }
+    active.interruptResultTimer = setTimeout(() => void settleWithoutResult(),
+      input.postResultDrainMs);
+    active.interruptResultTimer.unref?.();
+  } catch (err) {
+    input.logger.warn({ err, uuid: input.uuid },
+      "Persistent Claude turn timeout interrupt failed");
+    await settleWithoutResult();
+  }
+}
 
 export class ClaudeExactResultCache {
   private readonly byInputUuid = new Map<string, ClaudeClientEvent>();

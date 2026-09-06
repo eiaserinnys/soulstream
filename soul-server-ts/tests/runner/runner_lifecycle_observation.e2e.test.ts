@@ -283,6 +283,7 @@ function spawnInput(
     codeSha: "e2e-sha",
     snapshotPath,
     codexAdapterMode: "sdk" as const,
+    codexDetachedResultRetentionMs: 1_800_000,
     claudeRuntimeV2Enabled: true,
     claudeRuntimeIdleTtlMs: 300_000,
     claudeRuntimeMaxEntries: 16,

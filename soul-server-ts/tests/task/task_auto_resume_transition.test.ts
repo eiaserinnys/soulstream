@@ -7,13 +7,24 @@ import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import { createInProcessTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
+import { createTaskRunnerRuntime } from
+  "../../src/runner/task_runner_runtime.js";
 import type { Task } from "../../src/task/task_models.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
+import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
 const silentLogger = pino({ level: "silent" });
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 function makeTerminalTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -544,7 +555,7 @@ describe("AutoResumeTransition", () => {
     const runner = createInProcessTaskRunnerRuntime(engine);
     const task = makeTerminalTask({
       runner,
-      runnerRetainedForClaudeBackground: true,
+      runnerRetainedForDetachedWork: true,
       executionPromise: Promise.resolve(),
     });
     const transition = new AutoResumeTransition({
@@ -558,7 +569,7 @@ describe("AutoResumeTransition", () => {
       activation: NonNullable<Task["executionActivation"]>,
     ) => {
       expect(resumedTask.runner).toBe(runner);
-      expect(resumedTask.runnerRetainedForClaudeBackground).toBe(true);
+      expect(resumedTask.runnerRetainedForDetachedWork).toBe(true);
       expect(resumedTask.executionPromise).toBeUndefined();
       expect(resumedTask.executionActivation).toBe(activation);
       resumedTask.status = "running";
@@ -570,6 +581,83 @@ describe("AutoResumeTransition", () => {
 
     expect(close).not.toHaveBeenCalled();
     expect(onResume).toHaveBeenCalledWith(task, expect.any(Object));
+  });
+
+  it("lets foreground activation beat a deferred expired-result query", async () => {
+    const activity = deferred<{
+      activeForegroundCount: number;
+      detachedRunningCount: number;
+      retainedTerminalResultCount: number;
+      earliestRetainedTerminalDeadlineAtMs: null;
+    }>();
+    const query = vi.fn(() => activity.promise);
+    const close = vi.fn(async () => undefined);
+    const runner = createTaskRunnerRuntime({
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-work",
+      codexDetachedCommandRuntime: true,
+      codexDetachedCommandActivity: query,
+      async *execute(): AsyncIterable<never> {},
+      interrupt: vi.fn(async () => true),
+      close: vi.fn(async () => undefined),
+    } as EnginePort, {
+      close,
+      registrationId: () => "registration-a",
+      activeExecutionCommandId: () => undefined,
+      hasActiveExecution: () => false,
+    } as never);
+    const task = makeTerminalTask({
+      runner,
+      runnerRetainedForDetachedWork: true,
+      terminationReason: "completed_ok",
+      terminationEventRecorded: true,
+      terminalEventId: 6,
+    });
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn() },
+      logger: silentLogger,
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "execution_registration",
+    });
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
+    });
+
+    const release = finalizer.releaseExpiredRetainedRunner(
+      task,
+      "registration-a",
+      true,
+    );
+    await vi.waitFor(() => expect(query).toHaveBeenCalledOnce());
+    const resumed = transition.resume(
+      task,
+      { text: "foreground wins", user: "u" },
+      onResume,
+    );
+    expect(task.status).toBe("initializing");
+    expect(task.executionActivation).toBeDefined();
+    activity.resolve({
+      activeForegroundCount: 0,
+      detachedRunningCount: 0,
+      retainedTerminalResultCount: 0,
+      earliestRetainedTerminalDeadlineAtMs: null,
+    });
+
+    await expect(release).resolves.toBe("not_released");
+    await expect(resumed).resolves.toEqual({ autoResumed: true });
+    expect(close).not.toHaveBeenCalled();
+    expect(task.runner).toBe(runner);
+    expect(task.runnerReleaseClaim).toBeUndefined();
   });
 
   it("auto-acknowledges a needs_review result before terminal follow-up resumes", async () => {

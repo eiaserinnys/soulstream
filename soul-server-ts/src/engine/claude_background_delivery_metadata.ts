@@ -1,6 +1,7 @@
 import type { SSEEventPayload } from "./protocol.js";
 
 export interface ClaudeBackgroundDeliveryMetadata {
+  initiatingToolUseId?: string;
   deliveryId: string;
   completionId: string;
   relationKey: string;

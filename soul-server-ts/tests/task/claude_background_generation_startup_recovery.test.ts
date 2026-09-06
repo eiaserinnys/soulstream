@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ClaudeRuntimeStartupRecovery } from
   "../../src/runtime/claude_runtime_startup_recovery.js";
-import { ClaudeBackgroundGenerationStartupRecovery } from
+import {
+  ClaudeBackgroundGenerationStartupRecovery,
+  findNativeTaskNotifications,
+} from
   "../../src/task/claude_background_generation_startup_recovery.js";
 
 describe("Claude background generation upgrade recovery", () => {
@@ -201,6 +204,99 @@ describe("Claude background generation upgrade recovery", () => {
     expect(queued).toHaveBeenCalledOnce();
   });
 
+  it("retries exact native consumption for an existing generation after restart", async () => {
+    const observe = vi.fn(async () => true);
+    const recordRelationConsumed = vi.fn(async () => undefined);
+    const recovery = new ClaudeBackgroundGenerationStartupRecovery({
+      repository: {
+        terminalForNode: vi.fn(async () => [legacyTerminal("toolu-B")]),
+        getGeneration: vi.fn(async () => ({
+          relation_key: "relation-B",
+          completion_id: "completion-B",
+        })),
+      } as never,
+      lifecycle: { observe } as never,
+      recordRelationConsumed,
+      sourceNode: "node-a",
+      logger: { error: vi.fn() },
+      sessionStore: {} as never,
+      getSession: vi.fn(async () => ({
+        session_id: "caller-session",
+        claude_session_id: "sdk-session",
+        agent_id: "claude-agent",
+        model_preset: null,
+        node_id: "node-a",
+      })) as never,
+      getAgent: vi.fn(() => ({
+        id: "claude-agent",
+        backend: "claude",
+        workspace_dir: "/workspace/claude",
+      })) as never,
+      loadMessages: vi.fn(async () => [
+        nativeNotification("toolu-B"),
+        assistantMessage("assistant-after-B"),
+      ]),
+    });
+
+    await expect(recovery.recoverAfterNodeRestart()).resolves.toMatchObject({
+      recovered: 0,
+      ambiguous: 0,
+    });
+    expect(recordRelationConsumed).toHaveBeenCalledWith({
+      relationKey: "relation-B",
+      completionId: "completion-B",
+      callerSessionId: "caller-session",
+      consumedTurnId: "assistant-after-B",
+    });
+    expect(observe).not.toHaveBeenCalled();
+  });
+
+  it("does not treat an assistant from the next user turn as native consumption", async () => {
+    const recordRelationConsumed = vi.fn(async () => undefined);
+    const recovery = new ClaudeBackgroundGenerationStartupRecovery({
+      repository: {
+        terminalForNode: vi.fn(async () => [legacyTerminal("toolu-B")]),
+        getGeneration: vi.fn(async () => ({
+          relation_key: "relation-B",
+          completion_id: "completion-B",
+        })),
+      } as never,
+      lifecycle: { observe: vi.fn(async () => true) } as never,
+      recordRelationConsumed,
+      sourceNode: "node-a",
+      logger: { error: vi.fn() },
+      sessionStore: {} as never,
+      getSession: vi.fn(async () => ({
+        session_id: "caller-session",
+        claude_session_id: "sdk-session",
+        agent_id: "claude-agent",
+        model_preset: null,
+        node_id: "node-a",
+      })) as never,
+      getAgent: vi.fn(() => ({
+        id: "claude-agent",
+        backend: "claude",
+        workspace_dir: "/workspace/claude",
+      })) as never,
+      loadMessages: vi.fn(async () => [
+        nativeNotification("toolu-B"),
+        userMessage("foreground-next"),
+        assistantMessage("assistant-next"),
+      ]),
+    });
+
+    await recovery.recoverAfterNodeRestart();
+
+    expect(recordRelationConsumed).not.toHaveBeenCalled();
+  });
+
+  it("does not join one assistant to multiple notification envelopes", () => {
+    expect(findNativeTaskNotifications([
+      ambiguousNativeNotification(),
+      assistantMessage("assistant-after-ambiguous"),
+    ])).toEqual([]);
+  });
+
   it("isolates a failed legacy row so the next exact generation still recovers once", async () => {
     const failed = {
       ...legacyTerminal("toolu-old-X"),
@@ -353,6 +449,37 @@ function assistantMessageFor(uuid: string, sdkSessionId: string): SessionMessage
     parent_tool_use_id: null,
     parent_agent_id: null,
     message: { role: "assistant", content: [{ type: "text", text: "continued" }] },
+  };
+}
+
+function userMessage(uuid: string): SessionMessage {
+  return {
+    type: "user",
+    uuid,
+    session_id: "sdk-session",
+    parent_tool_use_id: null,
+    parent_agent_id: null,
+    message: { role: "user", content: [{ type: "text", text: "next" }] },
+  };
+}
+
+function ambiguousNativeNotification(): SessionMessage {
+  return {
+    ...nativeNotification("toolu-B", "native-ambiguous"),
+    message: {
+      role: "user",
+      content: [{
+        type: "text",
+        text: [
+          "<task-notification><task-id>shared-task</task-id>",
+          "<tool-use-id>toolu-B</tool-use-id><status>completed</status>",
+          "</task-notification>",
+          "<task-notification><task-id>shared-task</task-id>",
+          "<tool-use-id>toolu-C</tool-use-id><status>completed</status>",
+          "</task-notification>",
+        ].join(""),
+      }],
+    },
   };
 }
 

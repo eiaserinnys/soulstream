@@ -419,7 +419,7 @@ describe("TaskLifecycleRoute.shutdown", () => {
         dispatcher: { detachHost } as never,
         eventPersistence: "runner",
       },
-      runnerRetainedForClaudeBackground: true,
+      runnerRetainedForDetachedWork: true,
       executionPromise: new Promise<void>(() => {}),
     });
     const { route, lifecycleTransition } = makeRoute([processTask]);
@@ -429,7 +429,7 @@ describe("TaskLifecycleRoute.shutdown", () => {
     expect(detachHost).toHaveBeenCalledOnce();
     expect(processTask.status).toBe("running");
     expect(processTask.runner).toBeUndefined();
-    expect(processTask.runnerRetainedForClaudeBackground).toBeUndefined();
+    expect(processTask.runnerRetainedForDetachedWork).toBeUndefined();
     expect(processTask.executionPromise).toBeUndefined();
     expect(lifecycleTransition.markRunningTaskInterruptedForShutdown).not.toHaveBeenCalled();
     expect(lifecycleTransition.interruptForShutdown).not.toHaveBeenCalled();

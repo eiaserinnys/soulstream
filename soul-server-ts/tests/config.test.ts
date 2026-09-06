@@ -244,6 +244,20 @@ describe("parseEnv", () => {
     ).toThrow(ZodError);
   });
 
+  it("Codex detached terminal-result retention is a positive integer with a 30-minute default", () => {
+    expect(parseEnv(minimal).CODEX_DETACHED_RESULT_RETENTION_MS).toBe(1_800_000);
+    expect(parseEnv({
+      ...minimal,
+      CODEX_DETACHED_RESULT_RETENTION_MS: "120000",
+    }).CODEX_DETACHED_RESULT_RETENTION_MS).toBe(120_000);
+    for (const value of ["0", "-1", "1.5"]) {
+      expect(() => parseEnv({
+        ...minimal,
+        CODEX_DETACHED_RESULT_RETENTION_MS: value,
+      })).toThrow(ZodError);
+    }
+  });
+
   it("CODEX_CLI_PATH는 default 없이 명시된 값만 사용한다", () => {
     expect(parseEnv(minimal).CODEX_CLI_PATH).toBeUndefined();
     const env = parseEnv({

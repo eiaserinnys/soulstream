@@ -173,7 +173,9 @@ describe("RunnerProcessDispatcher", () => {
     const warn = vi.fn();
     const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
       RunnerProcessDispatcher & {
-        handleHostRequest(frame: ReturnType<typeof runnerRequestFrame>): Promise<void>;
+        handleHostRequest(
+          frame: ReturnType<typeof runnerRequestFrame>,
+        ): Promise<(() => Promise<void>) | undefined>;
       };
     Object.assign(dispatcher, {
       options: {
@@ -203,12 +205,13 @@ describe("RunnerProcessDispatcher", () => {
       },
     });
 
-    await dispatcher.handleHostRequest(runnerRequestFrame("host:a2", {
+    const continuation = await dispatcher.handleHostRequest(runnerRequestFrame("host:a2", {
       kind: "host_call",
       service: "detached_event",
       operation: "publish",
       args: ["session-a", { type: "text", text: "done", timestamp: 1 }],
     }));
+    await continuation?.();
 
     expect(order).toEqual(["publish", "response", "continuation"]);
     expect(sent).toEqual([
@@ -221,6 +224,74 @@ describe("RunnerProcessDispatcher", () => {
       expect.objectContaining({ correlationId: "host:a2" }),
       "Runner host post-response continuation failed; durable delivery remains pending",
     );
+  });
+
+  it("[A2] removes the current host handler before a continuation closes its stream owner", async () => {
+    const mux = new EventOutboxPumpMux(
+      new EventOutboxPump(emptyStore("node-stream"), vi.fn()),
+    );
+    const firstPump = new EventOutboxPump(emptyStore("runner-stream"), vi.fn());
+    const unregisterFirst = vi.fn(mux.register(firstPump));
+    const responses: string[] = [];
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher;
+    Object.assign(dispatcher, {
+      closed: false,
+      eventStreamReleased: false,
+      finishActiveRunnerObservation: undefined,
+      inFlightFrameHandlers: new Set<Promise<void>>(),
+      inFlightClaudeRuntimeObservations: new Set<Promise<void>>(),
+      recentHostResponses: new Map(),
+      requestLifetimes: new Map(),
+      pump: firstPump,
+      pumpInitialization: undefined,
+      unregisterPump: unregisterFirst,
+      outbox: { close: vi.fn() },
+      options: {
+        offlineExisting: true,
+        logger: { warn: vi.fn() },
+        handleHostCall: async (
+          _call: unknown,
+          registerPostResponse: (continuation: () => Promise<void>) => void,
+        ) => {
+          registerPostResponse(async () => await dispatcher.close());
+          return { published: true };
+        },
+      },
+      hostCallIdempotency: {
+        execute: async (
+          call: { correlationId: string },
+          apply: (idempotencyKey: string) => Promise<unknown>,
+        ) => ({ data: await apply(call.correlationId), replayed: false }),
+      },
+      connection: {
+        send: async (frame: { correlationId?: string }) => {
+          responses.push(frame.correlationId ?? "missing");
+        },
+        close: vi.fn(),
+      },
+    });
+    const tracked = dispatcher as unknown as {
+      trackFrameHandler(frame: ReturnType<typeof runnerRequestFrame>): Promise<void>;
+    };
+
+    const handling = tracked.trackFrameHandler(runnerRequestFrame("host:self-close", {
+      kind: "host_call",
+      service: "detached_event",
+      operation: "publish",
+      args: ["session-a", { type: "text", text: "done", timestamp: 1 }],
+    }));
+    const settled = await Promise.race([
+      handling.then(() => true),
+      new Promise<false>((resolve) => setImmediate(() => resolve(false))),
+    ]);
+
+    expect(responses).toEqual(["host:self-close"]);
+    expect(settled).toBe(true);
+    expect(unregisterFirst).toHaveBeenCalledTimes(1);
+    expect(() => mux.register(
+      new EventOutboxPump(emptyStore("runner-stream"), vi.fn()),
+    )).not.toThrow();
   });
 
   it("waits for an exact Claude runtime observation before detached follow-up admission", async () => {

@@ -71,6 +71,12 @@ cp .env.soul-server-ts.example .env.soul-server-ts
 | `CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS` | `300000` | Idle Query reclamation delay. |
 | `CLAUDE_SESSION_RUNTIME_MAX_ENTRIES` | `16` | Worker-local persistent Query cap. |
 | `CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS` | `1200000` | Foreground Claude turn inactivity timeout. |
+| `CODEX_DETACHED_RESULT_RETENTION_MS` | `1800000` | Process-runner grace period for a detached Codex command's terminal result. |
+
+Codex commands that outlive their root turn keep their process runner while
+running, with no running TTL. After completion, the runner is retained for the
+configured result grace period; in-process Codex sessions keep their existing
+immediate-close behavior.
 
 `DATABASE_URL` is intentionally absent from the worker `EnvSchema`. In a
 cluster, the central orchestrator deployment owns PostgreSQL credentials and

@@ -146,6 +146,7 @@ const RunnerSessionItemsSnapshotSchema = z.object({
 }).passthrough();
 
 export const RunnerClaudeBackgroundDeliveryMetadataSchema = z.object({
+  initiatingToolUseId: z.string().min(1).optional(),
   deliveryId: z.string(),
   completionId: z.string(),
   relationKey: z.string(),

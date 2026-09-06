@@ -22,7 +22,9 @@ import {
   type ClaudeDetachedEventSink,
   type ClaudeRuntimeEventSink,
   type ClaudeSdkPersistentSessionConfig,
+  ClaudePendingNativeNotificationTracker,
   describeResultProvenance,
+  handlePersistentTurnInactivity,
   isExpectedInterruptDiagnostic,
   isExpectedInterruptTerminalEvent,
   isTurnStartingUserInput,
@@ -68,6 +70,7 @@ export class ClaudeSdkPersistentSession {
   private readonly followupWatchdog: ClaudeRuntimeFollowupWatchdog;
   private readonly turnInactivityWatchdog: ClaudeTurnInactivityWatchdog;
   private readonly exactResultCache = new ClaudeExactResultCache();
+  private readonly nativeNotificationTracker: ClaudePendingNativeNotificationTracker;
   private activeForeground: ActiveForeground | null = null;
   private interventionFence: ActiveForeground | null = null;
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
@@ -79,6 +82,10 @@ export class ClaudeSdkPersistentSession {
     this.logger = config.logger;
     this.postResultDrainMs = config.postResultDrainMs;
     this.runtimeFollowupNoOutputTimeoutMs = config.runtimeFollowupNoOutputTimeoutMs;
+    this.nativeNotificationTracker = new ClaudePendingNativeNotificationTracker({
+      noOutputTimeoutMs: config.runtimeFollowupNoOutputTimeoutMs,
+      turnInactivityTimeoutMs: config.turnInactivityTimeoutMs,
+    });
     this.runtime = new ClaudeSessionRuntime((input) => config.createQuery(input));
     this.turnInactivityWatchdog = new ClaudeTurnInactivityWatchdog({
       timeoutMs: config.turnInactivityTimeoutMs,
@@ -131,6 +138,9 @@ export class ClaudeSdkPersistentSession {
   snapshot(): ClaudeSessionRuntimeSnapshot {
     return this.runtime.snapshot();
   }
+  pendingNativeNotificationCount(): number {
+    return this.nativeNotificationTracker.pendingCount();
+  }
 
   query(): ClaudeSdkQuery {
     return this.runtime.query as ClaudeSdkQuery;
@@ -143,6 +153,7 @@ export class ClaudeSdkPersistentSession {
     }
     this.runtime.close(reason);
     this.exactResultCache.clear();
+    this.nativeNotificationTracker.clear();
     const active = this.activeForeground;
     this.clearForegroundTimers(active);
     active?.output.close();
@@ -197,6 +208,7 @@ export class ClaudeSdkPersistentSession {
 
   private async handleSdkMessage(message: SDKMessage): Promise<void> {
     const raw = asRecord(message);
+    this.nativeNotificationTracker.observeSdkMessage(raw);
     const inputUuid = raw?.type === "user" ? asString(raw.uuid) : undefined;
     const inputOriginKind = asString(asRecord(raw?.origin)?.kind);
     if (raw && inputUuid && inputOriginKind && isTurnStartingUserInput(raw)) {
@@ -365,6 +377,7 @@ export class ClaudeSdkPersistentSession {
     }
     const runtimeEventAccepted =
       !this.runtimeEventSink || await this.runtimeEventSink(event) !== false;
+    if (runtimeEventAccepted) this.nativeNotificationTracker.observeAcceptedTerminal(event);
     if (runtimeEventAccepted || terminalBackground) {
       observePersistentBackgroundEvent(this.runtime, event);
     }
@@ -433,46 +446,17 @@ export class ClaudeSdkPersistentSession {
   }
 
   private async handleTurnInactivity(uuid: string): Promise<void> {
-    const active = this.activeForeground;
-    if (!active || active.uuid !== uuid || active.timedOut) return;
-    active.timedOut = true;
-    this.logger.warn(
-      {
-        uuid,
-        turnOriginKind: active.origin.kind,
-        turnOriginId: active.origin.id,
-        inactivityTimeoutMs: this.turnInactivityWatchdog.timeoutMs,
-      },
-      "Persistent Claude foreground turn became inactive",
-    );
-    try {
-      if (this.runtime.snapshot().foregroundPhase === "generating") {
-        await this.runtime.interruptForeground(makeStaleInterruptReceiptLogger(this.logger));
-      }
-      active.interruptResultTimer = setTimeout(() => {
-        void this.handleTimedOutTurnWithoutResult(uuid);
-      }, this.postResultDrainMs);
-      active.interruptResultTimer.unref?.();
-    } catch (err) {
-      this.logger.warn({ err, uuid }, "Persistent Claude turn timeout interrupt failed");
-      active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
-      active.output.close();
-      this.clearForegroundTimers(active);
-      settleInterventionInterrupt(active, false);
-      this.activeForeground = null;
-      await this.close("fatal");
-    }
-  }
-
-  private async handleTimedOutTurnWithoutResult(uuid: string): Promise<void> {
-    const active = this.activeForeground;
-    if (!active || active.uuid !== uuid || !active.timedOut) return;
-    active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
-    active.output.close();
-    this.clearForegroundTimers(active);
-    settleInterventionInterrupt(active, false);
-    this.activeForeground = null;
-    await this.close("fatal");
+    await handlePersistentTurnInactivity({
+      uuid,
+      getActive: () => this.activeForeground,
+      setActive: (active) => { this.activeForeground = active; },
+      runtime: this.runtime,
+      logger: this.logger,
+      timeoutMs: this.turnInactivityWatchdog.timeoutMs,
+      postResultDrainMs: this.postResultDrainMs,
+      clearTimers: (active) => this.clearForegroundTimers(active),
+      close: async () => await this.close("fatal"),
+    });
   }
 
   private clearForegroundTimers(active: ActiveForeground | null): void {

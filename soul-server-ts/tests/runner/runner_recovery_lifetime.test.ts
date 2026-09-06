@@ -126,7 +126,9 @@ function makeHarness(input: {
     } as never,
     taskExecutor: {
       recoverRegisteredRunner: recoverRegisteredRunner as never,
-      retainRegisteredClaudeBackgroundRunner: vi.fn(async () => false),
+      retainRegisteredDetachedRunner: vi.fn(async () => false),
+      releaseExpiredRetainedRunner: vi.fn(async () => "not_released" as const),
+      completeRetainedRunnerReleaseAfterTermination: vi.fn(() => false),
     },
     closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },

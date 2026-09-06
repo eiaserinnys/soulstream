@@ -11,12 +11,14 @@ import { sanitizeCodexEnv } from "../codex_env.js";
 import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
 import type {
   BackendId,
+  CodexDetachedCommandRuntimeActivity,
   EngineInterventionResult,
   EngineExecuteParams,
   EnginePort,
   EngineUserInput,
   SSEEventPayload,
 } from "../protocol.js";
+import { CodexDetachedCommandActivityTracker } from "./detached_command_activity.js";
 import { AppServerRpcError, CodexAppServerClient } from "./client.js";
 import {
   applyNotificationLifecycle,
@@ -88,6 +90,7 @@ export interface CodexAppServerAdapterConfig {
   processEnv?: NodeJS.ProcessEnv;
   client?: CodexAppServerClientPort;
   resolvedMcpServers?: ResolvedMcpServer[];
+  codexDetachedResultRetentionMs?: number;
 }
 
 export class CodexAppServerEngineAdapter implements EnginePort {
@@ -104,12 +107,28 @@ export class CodexAppServerEngineAdapter implements EnginePort {
   private notificationLifecycle: NotificationLifecycleState =
     createNotificationLifecycleState();
   private activeQueue: AsyncPayloadQueue<SSEEventPayload> | null = null;
+  private readonly detachedCommandActivity: CodexDetachedCommandActivityTracker;
+  private readonly unsubscribeDetachedCommandNotifications: () => void;
+  private readonly unsubscribeDetachedCommandClose: () => void;
 
   constructor(config: CodexAppServerAdapterConfig, logger: Logger) {
     this.workspaceDir = config.workspaceDir;
     this.internalMcpUrl = config.internalMcpUrl;
     this.logger = logger;
     this.client = config.client ?? this.createClient(config, logger);
+    this.detachedCommandActivity = new CodexDetachedCommandActivityTracker({
+      terminalResultRetentionMs: config.codexDetachedResultRetentionMs ?? 1_800_000,
+      onTerminalResultExpired: (event) => this.logger.info(
+        { agentId: config.agentId ?? "unknown", ...event },
+        "Codex detached command terminal-result retention expired",
+      ),
+    });
+    this.unsubscribeDetachedCommandNotifications = this.client.onNotification(
+      (notification) => this.detachedCommandActivity.observe(notification),
+    );
+    this.unsubscribeDetachedCommandClose = this.client.onClose(
+      () => this.detachedCommandActivity.clear(),
+    );
     const { supportedServers, skippedSseServers } = selectCodexMcpServers(
       config.resolvedMcpServers,
     );
@@ -174,10 +193,15 @@ export class CodexAppServerEngineAdapter implements EnginePort {
         if (!this.closed) {
           const threadId = await this.openThread(params, queue);
           if (!this.closed && threadId) {
+            this.detachedCommandActivity.beginForeground(threadId);
             const turnResponse = await this.client.startTurn(
               buildTurnStartParams(threadId, params, this.workspaceDir),
             );
             if (!this.closed) {
+              this.detachedCommandActivity.bindForegroundTurn(
+                threadId,
+                turnResponse.turn.id,
+              );
               const turnStart = recordTurnStartResponse(
                 this.notificationLifecycle,
                 threadId,
@@ -215,6 +239,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     } finally {
       for (const off of unsubscribe) off();
       this.notificationLifecycle = clearNotificationExecution(this.notificationLifecycle);
+      this.detachedCommandActivity.endForegroundExecution();
       this.activeQueue = null;
       this.executing = false;
     }
@@ -273,8 +298,15 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     if (this.closed) return;
     this.closed = true;
     this.notificationLifecycle = clearNotificationExecution(this.notificationLifecycle);
+    this.unsubscribeDetachedCommandNotifications();
+    this.unsubscribeDetachedCommandClose();
+    this.detachedCommandActivity.clear();
     this.activeQueue?.close();
     await this.client.close();
+  }
+
+  async codexDetachedCommandActivity(): Promise<CodexDetachedCommandRuntimeActivity> {
+    return this.detachedCommandActivity.snapshot();
   }
 
   private async ensureInitialized(): Promise<void> {
