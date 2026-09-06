@@ -57,16 +57,26 @@ presets:
     usage_model_id: fable
     supported_efforts: [low, medium, high, xhigh, max]
     default_effort: high
+  - id: codex-6-astra
+    label: Codex - 6 Astra
+    backend: codex
+    model: gpt-6-astra
+    supported_efforts: [low, medium, high, xhigh, max, ultra]
+    default_effort: medium
   - id: codex-5.6-sol
     label: Codex - 5.6 Sol
     backend: codex
     model: gpt-5.6-sol
     supported_efforts: [low, medium, high, xhigh, max, ultra]
     default_effort: xhigh
-  - id: codex-5.6-lunar
-    label: Codex - 5.6 Lunar
+  # 260906: 실제 노드 카탈로그의 id/model은 luna다. 예시가 lunar로 어긋나 있어
+  # 실측 대상과 맞췄다.
+  - id: codex-5.6-luna
+    label: Codex - 5.6 Luna
     backend: codex
-    model: gpt-5.6-lunar
+    model: gpt-5.6-luna
+    supported_efforts: [low, medium, high, xhigh, max]
+    default_effort: xhigh
   - id: codex-5.6-terra
     label: Codex - 5.6 Terra
     backend: codex

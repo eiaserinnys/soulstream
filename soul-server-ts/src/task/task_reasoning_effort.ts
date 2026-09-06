@@ -28,11 +28,18 @@ export class UnsupportedReasoningEffortError extends Error {
   ) {
     super(
       supported && supported.length > 0
+        // Known-bad: the preset advertises a list and this value is not in it.
         ? `Reasoning effort "${requested}" is not supported by model preset `
           + `"${presetId}". Supported: ${supported.join(", ")}.`
+        // Unverifiable: no advertised list, so we must not claim the value is
+        // unsupported — only that it cannot be confirmed for this selection.
         : presetId
-          ? `Model preset "${presetId}" does not support reasoning effort selection.`
-          : "Reasoning effort requires a model preset that advertises supported efforts.",
+          ? `Reasoning effort "${requested}" cannot be confirmed for model preset `
+            + `"${presetId}": this node advertises no supported efforts for it. `
+            + "Leave the effort on automatic, or pick a preset that advertises one."
+          : `Reasoning effort "${requested}" cannot be confirmed: no model preset `
+            + "was resolved for this session. Leave the effort on automatic, or "
+            + "select a preset that advertises supported efforts.",
     );
     this.name = "UnsupportedReasoningEffortError";
   }

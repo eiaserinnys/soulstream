@@ -347,7 +347,6 @@ export async function plannerQuery(
                  'session_type', session.session_type,
                  'status', session.status,
                  'agent_id', session.agent_id,
-                 'model_preset', session.model_preset,
                  -- "auto" is the DB-internal "resolved to no effort" marker and
                  -- must not reach a client; see
                  -- soul-server-ts/src/task/session_effort_storage.ts.

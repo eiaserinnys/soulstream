@@ -37,6 +37,40 @@ export interface AdvertisedModelPreset {
   default_effort?: string;
 }
 
+export interface AdvertisedAgent {
+  id: string;
+  default_preset?: string | null;
+}
+
+export function buildAgentsEndpoint(baseUrl: string, nodeId: string): string {
+  const normalized = normalizeBaseUrl(baseUrl);
+  if (!normalized) throw new Error("Soulstream URL is not configured");
+  if (!nodeId) throw new Error("Node ID is not configured");
+  return `${normalized}/api/nodes/${encodeURIComponent(nodeId)}/agents`;
+}
+
+/**
+ * The preset the configured profile would actually run with. Offering the union
+ * of every preset on the node would let a Claude profile pick `ultra` (which
+ * only a Codex preset advertises) and get rejected at creation time.
+ */
+export function resolveProfilePreset(
+  agents: readonly AdvertisedAgent[],
+  presets: readonly AdvertisedModelPreset[],
+  profile: string,
+): AdvertisedModelPreset | undefined {
+  const presetId = agents.find((agent) => agent.id === profile)?.default_preset;
+  if (!presetId) return undefined;
+  return presets.find((preset) => preset.id === presetId);
+}
+
+export function effortsForPreset(
+  preset: AdvertisedModelPreset | undefined,
+): ReasoningEffort[] {
+  const supported = preset?.supported_efforts ?? [];
+  return REASONING_EFFORT_ACCEPT_SET.filter((effort) => supported.includes(effort));
+}
+
 export function buildModelPresetsEndpoint(baseUrl: string, nodeId: string): string {
   const normalized = normalizeBaseUrl(baseUrl);
   if (!normalized) throw new Error("Soulstream URL is not configured");
@@ -45,9 +79,9 @@ export function buildModelPresetsEndpoint(baseUrl: string, nodeId: string): stri
 }
 
 /**
- * Every effort any preset on the node advertises. The options page has no preset
- * picker, so it offers the node-wide union and lets the node reject a value the
- * chosen agent's preset does not support.
+ * Fallback for when no profile is configured yet: the union across the node. It
+ * is only used to populate the picker before a profile is chosen; once a profile
+ * exists, {@link resolveProfilePreset} narrows it to that preset.
  */
 export function collectAdvertisedEfforts(
   presets: readonly AdvertisedModelPreset[],

@@ -5,6 +5,10 @@ import { z } from "zod";
 
 import { AgentBackendSchema } from "./agent_registry.js";
 import {
+  claudeTransportEfforts,
+  codexTransportEfforts,
+} from "./engine/effort_boundary.js";
+import {
   REASONING_EFFORT_ACCEPT_SET,
   type ReasoningEffort,
 } from "./engine/protocol.js";
@@ -105,16 +109,58 @@ export class UnknownModelPresetError extends Error {
   }
 }
 
+/**
+ * Per-backend limit on what this node can actually deliver. A preset may declare
+ * an effort the running transport cannot express; narrowing here means the
+ * advertisement and the create-time validation share one list by construction.
+ */
+export type EffortCapabilities = Partial<
+  Record<ModelPreset["backend"], readonly ReasoningEffort[]>
+>;
+
 export class ModelCatalog {
   private lastSuccessfulConfig: ModelCatalogConfig | undefined;
 
   constructor(
     private readonly catalogPath: string,
     private readonly logger?: ModelCatalogLogger,
+    private readonly effortCapabilities?: EffortCapabilities,
   ) {}
 
   list(): ModelPreset[] {
-    return this.read().presets;
+    return this.read().presets.map((preset) => this.narrowEfforts(preset));
+  }
+
+  /**
+   * Intersects declared efforts with what the active transport can carry. A
+   * default that falls outside is dropped rather than clamped, so the preset
+   * degrades to "auto" instead of promising a level it cannot deliver.
+   */
+  private narrowEfforts(preset: ModelPreset): ModelPreset {
+    const capability = this.effortCapabilities?.[preset.backend];
+    if (!capability || !preset.supported_efforts) return preset;
+    const supported = preset.supported_efforts.filter((effort) =>
+      capability.includes(effort),
+    );
+    if (supported.length === preset.supported_efforts.length) return preset;
+
+    const dropped = preset.supported_efforts.filter(
+      (effort) => !capability.includes(effort),
+    );
+    this.logger?.warn?.(
+      { presetId: preset.id, backend: preset.backend, dropped },
+      "Model preset advertises efforts the active transport cannot carry",
+    );
+    const { supported_efforts: _s, default_effort: _d, ...rest } = preset;
+    return {
+      ...rest,
+      ...(supported.length > 0
+        ? { supported_efforts: supported as ModelPreset["supported_efforts"] }
+        : {}),
+      ...(preset.default_effort && supported.includes(preset.default_effort)
+        ? { default_effort: preset.default_effort }
+        : {}),
+    };
   }
 
   resolve(presetId: string): ModelPreset {
@@ -195,9 +241,10 @@ export class ModelCatalog {
 export function loadModelCatalog(
   catalogPath: string,
   logger?: ModelCatalogLogger,
+  effortCapabilities?: EffortCapabilities,
 ): ModelCatalog {
   const missingAtStartup = !fs.existsSync(catalogPath);
-  const catalog = new ModelCatalog(catalogPath, logger);
+  const catalog = new ModelCatalog(catalogPath, logger, effortCapabilities);
   catalog.list();
   if (missingAtStartup) {
     logger?.warn?.(
@@ -212,4 +259,18 @@ function isMissingFileError(error: unknown): boolean {
   return error instanceof Error
     && "code" in error
     && (error as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+/**
+ * Effort capability of this node, derived from the transports it will actually
+ * run. Both catalogue construction sites use this so a node can never advertise
+ * an effort its own engine cannot deliver.
+ */
+export function nodeEffortCapabilities(
+  codexAdapterMode: "sdk" | "app-server",
+): EffortCapabilities {
+  return {
+    claude: claudeTransportEfforts(),
+    codex: codexTransportEfforts(codexAdapterMode),
+  };
 }

@@ -13,7 +13,10 @@ import {
 import { resolveCodexCliPath } from "./engine/codex_cli_path.js";
 import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
-import { loadModelCatalog } from "./model_catalog.js";
+import {
+  loadModelCatalog,
+  nodeEffortCapabilities,
+} from "./model_catalog.js";
 import { composeWorkerRuntime } from "./runtime/worker_composition.js";
 import { startWorkerRuntime } from "./runtime/worker_startup.js";
 import { startNodeStallMonitor } from "./runtime/node_stall_monitor.js";
@@ -64,7 +67,7 @@ async function main(): Promise<void> {
   const nodeStallMonitor = startNodeStallMonitor({ logger });
   let modelCatalog: ReturnType<typeof loadModelCatalog>;
   try {
-    modelCatalog = loadModelCatalog(env.MODEL_CATALOG_PATH, logger);
+    modelCatalog = loadModelCatalog(env.MODEL_CATALOG_PATH, logger, nodeEffortCapabilities(env.CODEX_ADAPTER_MODE));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(

@@ -191,7 +191,10 @@ function createSessionCommandPayload(params: {
   if (payload.folderId !== undefined) command.folderId = payload.folderId;
   if (payload.system_prompt !== undefined) command.systemPrompt = payload.system_prompt;
   if (payload.model !== undefined) command.model = payload.model;
-  if (backend === "codex" && payload.reasoningEffort !== undefined) {
+  if (payload.reasoningEffort !== undefined) {
+    // Forwarded for every backend. The node's TaskManager is the single
+    // validator, so gating by backend here would silently drop a Claude
+    // request's effort and re-introduce a second authority.
     command.reasoningEffort = payload.reasoningEffort;
   }
   if (payload.extra_context_items !== undefined) {

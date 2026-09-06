@@ -50,6 +50,8 @@ describe("run assignment defaults", () => {
       agentId: "project-agent",
       nodeId: "project-node",
       modelPreset: "project-preset",
+      // Page defaults carry no effort; it is inherited from the session alone.
+      reasoningEffort: null,
       source: "page-defaults",
     });
   });
@@ -68,6 +70,7 @@ describe("run assignment defaults", () => {
       agentId: "current-agent",
       nodeId: "project-node",
       modelPreset: "current-preset",
+      reasoningEffort: null,
       source: "page-defaults",
     });
     expect(resolveRunAssignmentDefaults({ pageDefaults: null, currentSession }))
@@ -75,8 +78,17 @@ describe("run assignment defaults", () => {
         agentId: "current-agent",
         nodeId: "current-node",
         modelPreset: "current-preset",
+        reasoningEffort: null,
         source: "current-session",
       });
+  });
+
+  it("inherits the predecessor session's effort", () => {
+    // A successor must not silently fall back to the preset default.
+    expect(resolveRunAssignmentDefaults({
+      pageDefaults: null,
+      currentSession: { ...currentSession, reasoningEffort: "low" },
+    }).reasoningEffort).toBe("low");
   });
 });
 

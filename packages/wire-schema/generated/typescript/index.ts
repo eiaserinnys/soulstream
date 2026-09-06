@@ -110,6 +110,19 @@ export interface NodeRegister {
      * 모델 범위 쿼터 조인용 내부 식별자.
      */
     usage_model_id?: string;
+    /**
+     * 이 preset의 모델이 광고하는 effort 목록. 노드의 활성 transport가 실어 나를 수 있는 값으로 이미 좁혀져 있다. 없으면 effort 선택이 없는 preset.
+     *
+     * @minItems 1
+     */
+    supported_efforts?: [
+      "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra",
+      ...("minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra")[]
+    ];
+    /**
+     * 생성 요청이 effort를 생략했을 때 적용. 항상 supported_efforts의 원소.
+     */
+    default_effort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
   }[];
   agents?: {
     id?: string;

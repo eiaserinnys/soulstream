@@ -122,7 +122,7 @@ describe("CodexEngineAdapter — 기본 lifecycle", () => {
 });
 
 describe("CodexEngineAdapter — reasoning effort", () => {
-  it("model 미지정이면 기본 xhigh를 startThread에 전달", async () => {
+  it("effort 미지정이면 startThread에 effort를 싣지 않는다", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
     mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
@@ -135,9 +135,11 @@ describe("CodexEngineAdapter — reasoning effort", () => {
       // drain
     }
 
-    expect(mockStartThread.mock.calls[0][0]).toMatchObject({
-      modelReasoningEffort: "xhigh",
-    });
+    // The adapter no longer injects a default. The effort a session runs with is
+    // decided once at creation and stored; a pre-089 session's legacy value is
+    // restored at the turn boundary. A default here would be a second authority
+    // and would make the UI's "auto (backend default)" a lie.
+    expect(mockStartThread.mock.calls[0][0].modelReasoningEffort).toBeUndefined();
   });
 
   it("요청 effort를 ThreadOptions.modelReasoningEffort로 전달", async () => {
@@ -363,7 +365,6 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
       skipGitRepoCheck: true,
       approvalPolicy: "never",
       sandboxMode: "danger-full-access",
-      modelReasoningEffort: "xhigh",
     });
     expect(mockResumeThread).not.toHaveBeenCalled();
     expect(sseEvents[0]).toEqual({ type: "session", session_id: "thr-1" });
@@ -512,7 +513,6 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
       approvalPolicy: "never",
       sandboxMode: "danger-full-access",
       model: "gpt-5",
-      modelReasoningEffort: "xhigh",
     });
   });
 
@@ -714,7 +714,6 @@ describe("CodexEngineAdapter.execute — 세션 resume", () => {
       skipGitRepoCheck: true,
       approvalPolicy: "never",
       sandboxMode: "danger-full-access",
-      modelReasoningEffort: "xhigh",
     });
     expect(mockStartThread).not.toHaveBeenCalled();
   });

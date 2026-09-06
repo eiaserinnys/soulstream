@@ -4,7 +4,19 @@ import type {
   DeliveryMetadataWireFields,
 } from "../session/session_action_command_payloads.js";
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+/**
+ * Accept-set, mirroring packages/wire-schema CreateSession.reasoningEffort and
+ * soul-server-ts/src/engine/protocol.ts. Whether a value is usable for a given
+ * session is decided by the node against the selected preset, not here.
+ */
+export type ReasoningEffort =
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
 
 export type ClaudePermissionMode =
   | "default"
@@ -65,6 +77,8 @@ const reasoningEfforts = new Set<ReasoningEffort>([
   "medium",
   "high",
   "xhigh",
+  "max",
+  "ultra",
 ]);
 
 const claudePermissionModes = new Set<ClaudePermissionMode>([

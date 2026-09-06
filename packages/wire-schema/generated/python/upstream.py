@@ -83,6 +83,12 @@ class ModelPreset(TypedDict, closed=True):
     reason: NotRequired[Literal['env_unresolved']]
     usage_provider: Literal['claude', 'codex'] | None
     usage_model_id: NotRequired[str]
+    supported_efforts: NotRequired[
+        list[Literal['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']]
+    ]
+    default_effort: NotRequired[
+        Literal['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+    ]
 
 
 class Alias(TypedDict, closed=True):

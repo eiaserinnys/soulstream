@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { ModelCatalog, UnknownModelPresetError } from "../../src/model_catalog.js";
+import {
+  ModelCatalog,
+  UnknownModelPresetError,
+  nodeEffortCapabilities,
+} from "../../src/model_catalog.js";
 import {
   UnsupportedReasoningEffortError,
   resolveEffortPreset,
@@ -164,6 +168,60 @@ describe("model catalog effort advertisement", () => {
 `);
     const [preset] = catalog.advertise({});
     expect(preset?.supported_efforts).toBeUndefined();
+    expect(preset?.default_effort).toBeUndefined();
+  });
+
+  it("narrows advertised efforts to what the active transport can carry", () => {
+    // The legacy Codex SDK transport cannot express max/ultra. Advertising them
+    // there would let the UI offer a value the engine then silently drops.
+    const yaml = `presets:
+  - id: codex-5.6-sol
+    label: Codex - 5.6 Sol
+    backend: codex
+    model: gpt-5.6-sol
+    supported_efforts: [low, medium, high, xhigh, max, ultra]
+    default_effort: xhigh
+`;
+    const path = join(mkdtempSync(join(tmpdir(), "effort-transport-")), "c.yaml");
+    writeFileSync(path, yaml, "utf-8");
+
+    const appServer = new ModelCatalog(path, undefined, nodeEffortCapabilities("app-server"));
+    expect(appServer.advertise({})[0]?.supported_efforts).toEqual([
+      "low", "medium", "high", "xhigh", "max", "ultra",
+    ]);
+
+    const legacySdk = new ModelCatalog(path, undefined, nodeEffortCapabilities("sdk"));
+    expect(legacySdk.advertise({})[0]?.supported_efforts).toEqual([
+      "low", "medium", "high", "xhigh",
+    ]);
+    expect(legacySdk.advertise({})[0]?.default_effort).toBe("xhigh");
+
+    // Advertisement and create-time validation read the same narrowed list.
+    expect(() => resolveReasoningEffortForCreate(
+      legacySdk.resolve("codex-5.6-sol"),
+      "ultra",
+    )).toThrow(UnsupportedReasoningEffortError);
+    expect(resolveReasoningEffortForCreate(
+      appServer.resolve("codex-5.6-sol"),
+      "ultra",
+    )).toBe("ultra");
+  });
+
+  it("drops a default the transport cannot deliver instead of clamping it", () => {
+    const yaml = `presets:
+  - id: p
+    label: P
+    backend: codex
+    model: gpt-5.6-sol
+    supported_efforts: [xhigh, max]
+    default_effort: max
+`;
+    const path = join(mkdtempSync(join(tmpdir(), "effort-transport2-")), "c.yaml");
+    writeFileSync(path, yaml, "utf-8");
+    const legacySdk = new ModelCatalog(path, undefined, nodeEffortCapabilities("sdk"));
+    const [preset] = legacySdk.advertise({});
+    expect(preset?.supported_efforts).toEqual(["xhigh"]);
+    // Not silently rewritten to xhigh: the preset simply has no default now.
     expect(preset?.default_effort).toBeUndefined();
   });
 

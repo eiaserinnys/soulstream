@@ -41,6 +41,37 @@ const CODEX_SDK_EFFORTS: readonly ModelReasoningEffort[] = [
   "xhigh",
 ];
 
+/**
+ * Efforts the *active* Codex transport can actually carry. The catalogue may
+ * legitimately advertise `max`/`ultra` for a model, but the legacy SDK
+ * transport has no way to express them, so a node running that transport must
+ * neither advertise nor accept them. Advertisement and validation share this
+ * one function so they can never disagree.
+ */
+export function codexTransportEfforts(
+  adapterMode: "sdk" | "app-server",
+): readonly ReasoningEffort[] {
+  // The app-server transport takes the effort as a free-form string advertised
+  // by the model, so it can carry everything the catalogue declares.
+  return adapterMode === "app-server"
+    ? CLAUDE_AND_CODEX_FULL_SET
+    : (CODEX_SDK_EFFORTS as readonly ReasoningEffort[]);
+}
+
+const CLAUDE_AND_CODEX_FULL_SET: readonly ReasoningEffort[] = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+];
+
+export function claudeTransportEfforts(): readonly ReasoningEffort[] {
+  return CLAUDE_SDK_EFFORTS as readonly ReasoningEffort[];
+}
+
 export function toClaudeSdkEffort(
   effort: ReasoningEffort | undefined,
 ): EffortLevel | undefined {

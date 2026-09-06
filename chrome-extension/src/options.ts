@@ -1,11 +1,15 @@
 import {
   DEFAULT_CONFIG,
+  buildAgentsEndpoint,
   buildModelPresetsEndpoint,
   buildSessionEndpoint,
   collectAdvertisedEfforts,
+  effortsForPreset,
+  resolveProfilePreset,
   mergeConfig,
   normalizeBaseUrl,
   normalizeBodyCharLimit,
+  type AdvertisedAgent,
   type AdvertisedModelPreset,
   type ExtensionConfig,
 } from "./shared/schema.js";
@@ -46,23 +50,51 @@ async function populateReasoningEfforts(config: ExtensionConfig): Promise<void> 
   const note = document.querySelector<HTMLElement>("#reasoning-effort-note");
   if (!select) return;
 
+  const headers: Record<string, string> = config.bearerToken
+    ? { Authorization: `Bearer ${config.bearerToken}` }
+    : {};
   let efforts: string[] = [];
+  let presetDefault: string | undefined;
+  let scope = "";
   let loadFailed = false;
   try {
-    const response = await fetch(buildModelPresetsEndpoint(config.baseUrl, config.nodeId), {
-      headers: config.bearerToken
-        ? { Authorization: `Bearer ${config.bearerToken}` }
-        : {},
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const body = (await response.json()) as { model_presets?: AdvertisedModelPreset[] };
-    efforts = collectAdvertisedEfforts(body.model_presets ?? []);
+    const [presetsResponse, agentsResponse] = await Promise.all([
+      fetch(buildModelPresetsEndpoint(config.baseUrl, config.nodeId), { headers }),
+      fetch(buildAgentsEndpoint(config.baseUrl, config.nodeId), { headers }),
+    ]);
+    if (!presetsResponse.ok) throw new Error(`HTTP ${presetsResponse.status}`);
+    const presetBody = (await presetsResponse.json()) as {
+      model_presets?: AdvertisedModelPreset[];
+    };
+    const presets = presetBody.model_presets ?? [];
+    const agents = agentsResponse.ok
+      ? ((await agentsResponse.json()) as { agents?: AdvertisedAgent[] }).agents ?? []
+      : [];
+
+    const preset = config.profile
+      ? resolveProfilePreset(agents, presets, config.profile)
+      : undefined;
+    if (preset) {
+      // Scoped to the preset this profile actually runs with, so the picker
+      // cannot offer a value that preset would reject at creation time.
+      efforts = effortsForPreset(preset);
+      presetDefault = preset.default_effort;
+      scope = preset.label || preset.id;
+    } else {
+      efforts = collectAdvertisedEfforts(presets);
+      scope = "";
+    }
   } catch {
     loadFailed = true;
   }
 
   select.replaceChildren();
-  select.append(new Option("Server default", ""));
+  select.append(new Option(
+    presetDefault
+      ? `Preset default (${EFFORT_LABELS[presetDefault] ?? presetDefault})`
+      : "Server default",
+    "",
+  ));
   for (const effort of efforts) {
     select.append(new Option(EFFORT_LABELS[effort] ?? effort, effort));
   }
@@ -81,13 +113,37 @@ async function populateReasoningEfforts(config: ExtensionConfig): Promise<void> 
         "Could not load model presets. Set Soulstream URL, token and Node ID, then reopen.";
       note.hidden = false;
     } else if (storedUnsupported) {
-      note.textContent =
-        `"${stored}" is no longer offered by this node. Pick a supported effort.`;
+      note.textContent = scope
+        ? `"${stored}" is not offered by ${scope}. Pick a supported effort.`
+        : `"${stored}" is no longer offered by this node. Pick a supported effort.`;
       note.hidden = false;
+    } else if (efforts.length === 0) {
+      note.textContent = scope
+        ? `${scope} has no effort control; the backend default applies.`
+        : "";
+      note.hidden = !scope;
     } else {
       note.textContent = "";
       note.hidden = true;
     }
+  }
+}
+
+/** Profile or node changes move the effort scope, so re-populate the picker. */
+function refreshOnScopeChange(): void {
+  for (const id of ["profile", "node-id", "base-url", "bearer-token"]) {
+    document.querySelector<HTMLInputElement>(`#${id}`)?.addEventListener(
+      "change",
+      () => {
+        void readConfig().then((stored) => populateReasoningEfforts({
+          ...stored,
+          nodeId: readInput("node-id"),
+          profile: readInput("profile"),
+          baseUrl: normalizeBaseUrl(readInput("base-url")),
+          bearerToken: readInput("bearer-token"),
+        }));
+      },
+    );
   }
 }
 
@@ -99,6 +155,7 @@ async function loadOptions(): Promise<void> {
   setInput("profile", config.profile);
   setInput("folder-id", config.folderId);
   await populateReasoningEfforts(config);
+  refreshOnScopeChange();
   setInput("body-char-limit", String(config.bodyCharLimit));
   const includeBody = document.querySelector<HTMLInputElement>("#include-body");
   if (includeBody) includeBody.checked = config.includeBody;

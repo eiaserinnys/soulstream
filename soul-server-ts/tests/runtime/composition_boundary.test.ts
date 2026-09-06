@@ -42,7 +42,11 @@ describe("worker composition boundary", () => {
   it("loads the model catalog at startup and warns only profiles missing default_preset", () => {
     const main = source("main.ts");
 
-    expect(main).toContain("loadModelCatalog(env.MODEL_CATALOG_PATH, logger)");
+    // Capabilities are passed so the advertisement can never promise an effort
+    // the node's active transport cannot carry.
+    expect(main).toContain(
+      "loadModelCatalog(env.MODEL_CATALOG_PATH, logger, nodeEffortCapabilities(env.CODEX_ADAPTER_MODE))",
+    );
     expect(main).toContain("Failed to load model catalog");
     expect(main).toContain("if (!profile.default_preset)");
     expect(main).not.toContain("if (profile.default_preset) {");

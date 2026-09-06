@@ -208,6 +208,20 @@
               "usage_model_id": {
                 "type": "string",
                 "description": "모델 범위 쿼터 조인용 내부 식별자."
+              },
+              "supported_efforts": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "enum": ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+                },
+                "description": "이 preset의 모델이 광고하는 effort 목록. 노드의 활성 transport가 실어 나를 수 있는 값으로 이미 좁혀져 있다. 없으면 effort 선택이 없는 preset."
+              },
+              "default_effort": {
+                "type": "string",
+                "enum": ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+                "description": "생성 요청이 effort를 생략했을 때 적용. 항상 supported_efforts의 원소."
               }
             }
           }
