@@ -37,17 +37,30 @@ export function applyUpdate(
     }
 
     case "text_delta": {
-      if (ctx.activeTextTarget) {
-        ctx.activeTextTarget.content += event.text;
+      const identity = event.streamIdentity;
+      const streamTarget = identity
+        ? ctx.nodeMap.get(`app-server-agent-message:${identity}`)
+        : undefined;
+      const target = streamTarget?.type === "text" ? streamTarget : ctx.activeTextTarget;
+      if (target) {
+        target.content = event.liveTextMode === "replace"
+          ? event.text
+          : target.content + event.text;
+        ctx.activeTextTarget = target;
         return true;
       }
       return false;
     }
 
     case "text_end": {
-      if (ctx.activeTextTarget) {
-        ctx.activeTextTarget.textCompleted = true;
-        ctx.activeTextTarget.completed = true;
+      const identity = event.streamIdentity;
+      const streamTarget = identity
+        ? ctx.nodeMap.get(`app-server-agent-message:${identity}`)
+        : undefined;
+      const target = streamTarget?.type === "text" ? streamTarget : ctx.activeTextTarget;
+      if (target) {
+        target.textCompleted = true;
+        target.completed = true;
         ctx.activeTextTarget = null;
         return true;
       }

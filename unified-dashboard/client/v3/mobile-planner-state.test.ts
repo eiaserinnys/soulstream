@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  revealAttentionDetail,
   reduceMobilePlannerEscape,
   selectMobilePlannerTab,
   type MobilePlannerState,
@@ -83,6 +84,20 @@ describe("mobile planner tab selection", () => {
       selectedRunId: "run-2",
       workspaceOpen: true,
       chatOpen: false,
+    });
+  });
+
+  it("reveals a detail-required attention on the mobile chat surface without changing its run", () => {
+    expect(revealAttentionDetail(state({
+      activeTab: "today",
+      selectedTaskId: null,
+      selectedRunId: "standalone-run",
+    }), true)).toEqual({
+      activeTab: "chat",
+      selectedTaskId: null,
+      selectedRunId: "standalone-run",
+      workspaceOpen: true,
+      chatOpen: true,
     });
   });
 });

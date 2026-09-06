@@ -65,9 +65,16 @@ describe("EventIngressRepository", () => {
       order.push("session-effect");
       return { applied: true, canonicalSession: null };
     });
+    const feedProjection = vi.fn(async () => {
+      order.push("feed-projection");
+      return null;
+    });
     const repository = new EventIngressRepository(
       { resolveSql: async () => sql },
       effect,
+      undefined,
+      {},
+      feedProjection,
     );
 
     const committed = await repository.commitBatch("node-a", batch({
@@ -86,8 +93,14 @@ describe("EventIngressRepository", () => {
       "semantic-read",
       "event-append",
       "session-effect",
+      "feed-projection",
       "receipt-insert",
     ]);
+    expect(feedProjection).toHaveBeenCalledWith(sql, expect.objectContaining({
+      nodeId: "node-a",
+      eventId: 41,
+      sessionEffectApplication: { applied: true, canonicalSession: null },
+    }));
     expect(committed).toEqual([{ envelope: batch({
       session_effect: {
         kind: "last_message",

@@ -83,6 +83,7 @@ export const SSE_EVENT_TYPES = [
   "credential_alert",
   "reconnect",
   "history_sync",
+  "text_snapshot",
   "metadata_updated",
   "subtree_update",
 ] as const satisfies readonly Exclude<SSEEventType, _SSEExcludedTypes>[];

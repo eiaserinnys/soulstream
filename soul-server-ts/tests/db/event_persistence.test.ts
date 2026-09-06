@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EVENT_DURABILITY } from "@soulstream/wire-schema";
 
 import {
+  buildEventOutboxAppendInput,
   EventPersistence,
   extractSearchableText,
   isLiveOnlyEvent,
@@ -213,6 +214,42 @@ describe("sanitizeJsonText", () => {
 });
 
 describe("EventPersistence durable ingress", () => {
+  it.each([
+    ["missing", undefined],
+    ["false", false],
+  ] as const)(
+    "does not project a %s-final realtime transcript into last_message",
+    (_label, final) => {
+      const event = {
+        type: "realtime_transcript",
+        role: "user",
+        text: "still a preview",
+        timestamp: 1,
+        ...(final === undefined ? {} : { final }),
+      } as unknown as SSEEventPayload;
+
+      expect(buildEventOutboxAppendInput("sess-1", event).session_effect).toBeNull();
+    },
+  );
+
+  it("projects only an explicitly final realtime transcript", () => {
+    const event = {
+      type: "realtime_transcript",
+      role: "assistant",
+      text: "confirmed answer",
+      final: true,
+      timestamp: 1,
+    } as unknown as SSEEventPayload;
+
+    expect(buildEventOutboxAppendInput("sess-1", event).session_effect).toMatchObject({
+      kind: "last_message",
+      last_message: {
+        type: "assistant_message",
+        preview: "confirmed answer",
+      },
+    });
+  });
+
   it("maps runner snapshot correlation to semantic dedupe without leaking it into payload", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();

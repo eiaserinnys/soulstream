@@ -96,6 +96,42 @@ function makeTurnSummaryEvent(
 }
 
 describe("processEventsBatch — dedup", () => {
+  it("accepts liveSeq=0 as the first exact live text event", () => {
+    const ctx = createProcessingContext();
+    const result = processEventsBatch(
+      [{
+        event: {
+          type: "text_start",
+          timestamp: 0,
+          streamIdentity: "stream-zero",
+          liveSeq: 0,
+          liveTextMode: "replace",
+        } as SoulSSEEvent,
+        eventId: 0,
+      }, {
+        event: {
+          type: "text_delta",
+          timestamp: 1,
+          text: "first chunk",
+          streamIdentity: "stream-zero",
+          liveSeq: 1,
+          liveTextMode: "append",
+        } as SoulSSEEvent,
+        eventId: 0,
+      }],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(result.root?.children).toEqual([
+      expect.objectContaining({ type: "text", content: "first chunk" }),
+    ]);
+    expect(ctx.liveTextLastSeqByIdentity.get("stream-zero")).toBe(1);
+  });
+
   it("context_manifest는 이벤트 ID만 전진시키고 채팅 트리는 바꾸지 않음", () => {
     const ctx = createProcessingContext();
     const event: SoulSSEEvent = {

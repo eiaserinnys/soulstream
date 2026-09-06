@@ -19,6 +19,12 @@ export { SSESessionProvider, sseSessionProvider } from "./SSESessionProvider";
 // === SSE Subscribe Utility ===
 export { createSSESubscribe } from "./sse-subscribe";
 export type { SSESubscribeOptions } from "./sse-subscribe";
+export {
+  clearAllDetailCursorStores,
+  createRegisteredDetailCursorStore,
+  DetailCursorStore,
+} from "./detail-cursor-store";
+export type { DetailCursorStoreOptions } from "./detail-cursor-store";
 
 // === Session List URL Utility ===
 export { buildFetchSessionsUrl } from "./fetch-sessions-url";

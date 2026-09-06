@@ -4,6 +4,8 @@ import {
   type AgentProfileIdentityOverlay,
 } from "../node/agent_profile_lookup.js";
 import { normalizeSessionBindingWarnings } from "@soulstream/page-model";
+import { normalizeLastChatMessage } from
+  "../session/session_feed_projection.js";
 
 export type SessionSerializationOptions = {
   readonly registry?: InMemoryNodeRegistry;
@@ -38,7 +40,9 @@ export function serializeSessionRow(
     createdAt: iso(firstDefined(row, "created_at", "createdAt")),
     updatedAt: iso(firstDefined(row, "updated_at", "updatedAt")),
     sessionType: sessionType === undefined ? "claude" : sessionType,
-    lastMessage: firstDefined(row, "last_message", "lastMessage"),
+    lastMessage: normalizeLastChatMessage(
+      firstDefined(row, "last_message", "lastMessage"),
+    ),
     clientId: firstDefined(row, "client_id", "clientId"),
     metadata: row.metadata,
     displayName: firstDefined(row, "display_name", "displayName") ?? null,
@@ -74,6 +78,10 @@ export function serializeSessionRow(
     reviewState: normalizeReviewState(
       firstDefined(row, "review_state", "reviewState"),
     ),
+    terminationReason:
+      firstDefined(row, "termination_reason", "terminationReason") ?? null,
+    terminationDetail:
+      firstDefined(row, "termination_detail", "terminationDetail") ?? null,
     bindingWarnings: normalizeSessionBindingWarnings(
       firstDefined(row, "binding_warnings", "bindingWarnings"),
     ),

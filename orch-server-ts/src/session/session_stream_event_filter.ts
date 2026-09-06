@@ -12,6 +12,10 @@ import type {
   SessionResourceAccessProvider,
   SessionResourceAccessRepository,
 } from "./session_resource_access.js";
+import {
+  projectSessionFeedSummary,
+  projectSessionFeedUpdate,
+} from "./session_feed_projection.js";
 
 export type SessionStreamEventFilterContext = {
   readonly feedOnly?: boolean;
@@ -36,14 +40,18 @@ export function createSessionStreamEventFilter(
     const access = normalizeBoardAccess(
       await options.accessProvider.resolveAccess({ request }),
     );
-    if (!access.restricted && !feedOnly) return event;
-
     if (event.type === "catalog_updated") {
       return filterCatalogUpdatedEvent(event, access, feedOnly, options.repository);
     }
 
     if (event.type === "session_created" || event.type === "session_updated") {
-      return filterSessionUpsertEvent(event, access, feedOnly, options.repository);
+      const scoped = await filterSessionUpsertEvent(
+        event,
+        access,
+        feedOnly,
+        options.repository,
+      );
+      return scoped === null ? null : projectSessionUpsertEvent(scoped);
     }
 
     if (event.type === "session_deleted") {
@@ -52,6 +60,23 @@ export function createSessionStreamEventFilter(
 
     return event;
   };
+}
+
+function projectSessionUpsertEvent(
+  event: SessionStreamEvent,
+): SessionStreamEvent | null {
+  if (event.type === "session_updated") {
+    return projectSessionFeedUpdate(event) as SessionStreamEvent | null;
+  }
+  const session = isRecord(event.session) ? event.session : event;
+  const projected: SessionStreamEvent = {
+    type: "session_created",
+    session: projectSessionFeedSummary(session),
+  };
+  for (const key of ["nodeId", "folder_id", "folderId"] as const) {
+    if (Object.hasOwn(event, key)) projected[key] = event[key];
+  }
+  return projected;
 }
 
 async function filterCatalogUpdatedEvent(
@@ -181,19 +206,28 @@ async function filterSessionUpsertEvent(
     stringOrNull(event.agentSessionId) ??
     stringOrNull(session.agent_session_id) ??
     stringOrNull(session.agentSessionId);
+  const hasNotices = carriesNotificationPayload(event);
+
+  if (!access.restricted && !feedOnly && !hasNotices) return event;
 
   if (
     sessionId !== null &&
-    ((access.restricted && folderId === null) ||
-      (feedOnly && (folderId === null || sessionType === null)))
+    (access.restricted ||
+      (feedOnly && (folderId === null || sessionType === null)) ||
+      (folderId === null && hasNotices))
   ) {
     const row = await repository.getSessionAccessRecord(sessionId);
     if (row !== null) {
       folderId = row.folderId;
       sessionType = row.sessionType ?? null;
+    } else if (access.restricted) {
+      return null;
     }
   }
 
+  if (!access.restricted && folderId === null) {
+    return feedOnly && sessionType === "llm" ? null : event;
+  }
   const folders = await repository.listFoldersForAccess();
   if (access.restricted && !isBoardFolderAllowed(access, folders, folderId)) {
     return null;
@@ -201,7 +235,31 @@ async function filterSessionUpsertEvent(
   if (feedOnly && (folderExcludesFeed(folders, folderId) || sessionType === "llm")) {
     return null;
   }
-  return event;
+  return folderExcludesNotifications(folders, folderId)
+    ? stripNotificationPayload(event)
+    : event;
+}
+
+function carriesNotificationPayload(event: SessionStreamEvent): boolean {
+  if (Array.isArray(event.notices) && event.notices.length > 0) return true;
+  const session = isRecord(event.session) ? event.session : event;
+  return Array.isArray(session.recentNotices) && session.recentNotices.length > 0;
+}
+
+function stripNotificationPayload(event: SessionStreamEvent): SessionStreamEvent {
+  const { notices: _notices, ...withoutDeltaNotices } = event;
+  if (!isRecord(event.session)) return withoutDeltaNotices;
+  const { recentNotices: _recentNotices, ...session } = event.session;
+  return {
+    ...withoutDeltaNotices,
+    session: {
+      ...session,
+      recentNotices: [],
+      noticesTruncated:
+        session.noticesTruncated === true ||
+        (Array.isArray(_recentNotices) && _recentNotices.length > 0),
+    },
+  };
 }
 
 async function filterSessionDeletedEvent(
@@ -270,6 +328,16 @@ function folderExcludesFeed(folders: readonly unknown[], folderId: string | null
   if (!isRecord(folder)) return false;
   const settings = folder.settings;
   return isRecord(settings) && settings.excludeFromFeed === true;
+}
+
+function folderExcludesNotifications(
+  folders: readonly unknown[],
+  folderId: string | null,
+): boolean {
+  if (folderId === null) return false;
+  const folder = folders.find((item) => folderIdFromRecord(item) === folderId);
+  if (!isRecord(folder)) return false;
+  return isRecord(folder.settings) && folder.settings.excludeFromNotification === true;
 }
 
 function folderAccessRecords(folders: readonly unknown[]): BoardAccessFolderRecord[] {

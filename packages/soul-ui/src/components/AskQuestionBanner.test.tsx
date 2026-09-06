@@ -224,4 +224,73 @@ describe("AskQuestionBanner", () => {
     expect(consoleError).toHaveBeenCalled();
     expect(button?.disabled).toBe(false);
   });
+
+  it("uses compact projected attention while the detail tree is suspended", () => {
+    useDashboardStore.setState({
+      activeSessionKey: "session-1",
+      activeSessionSummary: {
+        agentSessionId: "session-1",
+        status: "running",
+        eventCount: 1,
+        pendingAttentions: [{
+          id: "input_request:req-projected",
+          sourceEventId: 12,
+          sessionId: "session-1",
+          kind: "input_request",
+          requestedAt: new Date().toISOString(),
+          title: "입력 요청",
+          body: "계속할까요?",
+          requestId: "req-projected",
+          questions: [{
+            question: "계속할까요?",
+            options: [{ label: "계속", description: "진행합니다." }],
+          }],
+          requiresDetail: false,
+        }],
+      },
+      tree: null,
+    });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => root?.render(<AskQuestionBanner treeEnabled={false} />));
+
+    expect(document.body.querySelector('[data-testid="ask-question-banner"]')?.textContent)
+      .toContain("계속할까요?");
+  });
+
+  it("opens detail instead of submitting an incomplete projected payload", () => {
+    const onOpenDetail = vi.fn();
+    useDashboardStore.setState({
+      activeSessionKey: "session-1",
+      activeSessionSummary: {
+        agentSessionId: "session-1",
+        status: "running",
+        eventCount: 1,
+        pendingAttentions: [{
+          id: "permission:large",
+          sourceEventId: 13,
+          sessionId: "session-1",
+          kind: "permission",
+          requestedAt: new Date().toISOString(),
+          title: "권한 요청",
+          body: "payload가 커서 상세 확인이 필요합니다.",
+          requiresDetail: true,
+        }],
+      },
+      tree: null,
+    });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => root?.render(
+      <AskQuestionBanner treeEnabled={false} onOpenDetail={onOpenDetail} />,
+    ));
+    const button = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="attention-detail-banner"] button',
+    );
+    act(() => button?.click());
+    expect(onOpenDetail).toHaveBeenCalledOnce();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

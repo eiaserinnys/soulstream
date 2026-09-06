@@ -8,7 +8,7 @@
  * Provider 훅은 useInfiniteQuery 설정과 public API 반환에 집중한다.
  */
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   useQueryClient,
   type InfiniteData,
@@ -41,7 +41,7 @@ import {
   applySessionCreated,
   mergeSessionCreatedSummary,
   applySessionDeleted,
-  applySessionUpdated,
+  applySessionUpdatedEvent,
   buildSessionUpdates,
   findSessionInPages,
   mergeCatalogSessionsDelta,
@@ -54,10 +54,30 @@ import {
   upsertSessionInCatalogSessionList,
 } from "./session-stream-helpers";
 import { useSessionStreamSSE } from "./useSessionStreamSSE";
+import {
+  applySessionFeedDelta,
+  hydrateNoticeBaseline,
+  takeLiveSessionNotices,
+  type NoticeBaseline,
+} from "./session-feed-projection";
+import { appendBrowserNotices } from "../shared/browser-notices";
 
 interface SessionPage {
   sessions: SessionSummary[];
   total: number;
+}
+
+const MAX_RECOVERY_EVENT_QUEUE = 10_000;
+const RECOVERY_RETRY_BASE_MS = 1_000;
+const RECOVERY_RETRY_MAX_MS = 30_000;
+
+interface StreamRecovery {
+  events: SessionStreamEvent[];
+  restart: boolean;
+  postInFlightRefetch: boolean;
+  inFlight: boolean;
+  retryAttempt: number;
+  retryTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface UseSessionStreamCacheSyncOptions {
@@ -76,11 +96,13 @@ export interface UseSessionStreamCacheSyncOptions {
    */
   onEventIdAdvance?: (lastEventId: string) => void;
   /** stream_meta 수신 시 호출 (instance_id 변경 감지용). */
-  onStreamMeta?: (event: StreamMetaStreamEvent) => void;
+  onStreamMeta?: (event: StreamMetaStreamEvent) => boolean | void;
   /** replay_gap 수신 시 호출 (풀 refetch 트리거용). */
-  onReplayGap?: (event: ReplayGapStreamEvent) => void;
+  onReplayGap?: (event: ReplayGapStreamEvent) => boolean | void;
   /** task_updated 수신 시 호출 (업무 snapshot projection 갱신용). */
   onTaskUpdated?: (event: TaskUpdatedStreamEvent) => void;
+  /** session_deleted 캐시 반영 뒤 detail cursor 같은 외부 projection을 회수한다. */
+  onSessionDeleted?: (event: SessionDeletedStreamEvent) => void;
   /** custom_view_updated 수신 시 호출 (커스텀 뷰 projection 갱신용). */
   onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
   /** 모든 stream event의 타입별 캐시 처리가 끝난 뒤 호출한다. */
@@ -92,17 +114,22 @@ export interface UseSessionStreamCacheSyncOptions {
   ) => CatalogState | undefined;
 }
 
+export type HydrateSessionSnapshots = (
+  sessions: readonly SessionSummary[],
+) => void;
+
 export function useSessionStreamCacheSync(
   options: UseSessionStreamCacheSyncOptions,
-): void {
+): HydrateSessionSnapshots {
   const {
     enabled,
     urlBuilder,
     queryKey,
     onEventIdAdvance,
-    onStreamMeta,
-    onReplayGap,
+    onStreamMeta: onStreamMetaOption,
+    onReplayGap: onReplayGapOption,
     onTaskUpdated: onTaskUpdatedOption,
+    onSessionDeleted: onSessionDeletedOption,
     onCustomViewUpdated: onCustomViewUpdatedOption,
     onStreamEvent,
     transformCatalogUpdate,
@@ -111,6 +138,48 @@ export function useSessionStreamCacheSync(
   const setActiveSessionSummary = useDashboardStore(
     (s) => s.setActiveSessionSummary,
   );
+  const noticeBaselinesRef = useRef<Map<string, NoticeBaseline>>(new Map());
+  const recoveryRef = useRef<StreamRecovery | null>(null);
+  const runRecoveryRef = useRef<(recovery: StreamRecovery) => void>(() => undefined);
+
+  useEffect(() => {
+    if (!enabled) {
+      const recovery = recoveryRef.current;
+      if (recovery?.retryTimer) clearTimeout(recovery.retryTimer);
+      recoveryRef.current = null;
+    }
+    return () => {
+      const recovery = recoveryRef.current;
+      if (recovery?.retryTimer) clearTimeout(recovery.retryTimer);
+      recoveryRef.current = null;
+    };
+  }, [enabled]);
+
+  const hydrateSessionSnapshots = useCallback((sessions: readonly SessionSummary[]) => {
+    const snapshots = new Map(
+      sessions.map((session) => [session.agentSessionId, session] as const),
+    );
+    for (const session of snapshots.values()) {
+      hydrateNoticeBaseline(noticeBaselinesRef.current, session);
+    }
+
+    const state = useDashboardStore.getState();
+    const activeSessionKey = state.activeSessionKey;
+    if (activeSessionKey === null) return;
+    const snapshot = snapshots.get(activeSessionKey);
+    if (!snapshot) return;
+    if (!state.activeSessionSummary) {
+      setActiveSessionSummary(snapshot);
+      return;
+    }
+    const [summary] = applySessionLifecycleSnapshotToList(
+      [state.activeSessionSummary],
+      snapshots,
+    );
+    if (summary !== state.activeSessionSummary) {
+      setActiveSessionSummary(summary);
+    }
+  }, [setActiveSessionSummary]);
 
   const onSessionCreated = useCallback(
     (event: SessionCreatedStreamEvent) => {
@@ -118,6 +187,7 @@ export function useSessionStreamCacheSync(
       const newSession = toSessionSummary(
         event.session as unknown as Record<string, unknown>,
       );
+      hydrateNoticeBaseline(noticeBaselinesRef.current, newSession);
       // 서버가 folder_id를 함께 실어주는 경우가 있어 동적으로 읽는다.
       const eventRecord = event as unknown as Record<string, unknown>;
       const folderId = (eventRecord.folder_id ?? eventRecord.folderId) as
@@ -195,12 +265,24 @@ export function useSessionStreamCacheSync(
     (event: SessionUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
       const updates = buildSessionUpdates(event);
+      const liveNotices = takeLiveSessionNotices(noticeBaselinesRef.current, event);
+      if (liveNotices.length > 0) {
+        useDashboardStore.setState((current) => ({
+          pendingNotifications: appendBrowserNotices(
+            current.pendingNotifications,
+            liveNotices,
+          ),
+        }));
+      }
       const state = useDashboardStore.getState();
       if (state.catalog?.sessionList) {
+        const current = state.catalog.sessionList.find(
+          (session) => session.agentSessionId === event.agent_session_id,
+        );
         state.setCatalog(updateSessionInCatalogSessionList(
           state.catalog,
           event.agent_session_id,
-          updates,
+          current ? { ...updates, ...applySessionFeedDelta(current, event) } : updates,
         ));
       }
 
@@ -208,7 +290,7 @@ export function useSessionStreamCacheSync(
         { queryKey: ["sessions"], exact: false },
         (old) => {
           if (!old) return old;
-          return applySessionUpdated(old, event.agent_session_id, updates);
+          return applySessionUpdatedEvent(old, event, updates);
         },
       );
 
@@ -219,6 +301,7 @@ export function useSessionStreamCacheSync(
         setActiveSessionSummary({
           ...storeState.activeSessionSummary,
           ...updates,
+          ...applySessionFeedDelta(storeState.activeSessionSummary, event),
         });
         return;
       }
@@ -228,7 +311,11 @@ export function useSessionStreamCacheSync(
         exact: false,
       });
       const found = findSessionInPages(allQueries, event.agent_session_id);
-      if (found) setActiveSessionSummary({ ...found, ...updates });
+      if (found) setActiveSessionSummary({
+        ...found,
+        ...updates,
+        ...applySessionFeedDelta(found, event),
+      });
     },
     [queryClient, setActiveSessionSummary, onEventIdAdvance],
   );
@@ -250,8 +337,10 @@ export function useSessionStreamCacheSync(
           return applySessionDeleted(old, event.agent_session_id);
         },
       );
+      noticeBaselinesRef.current.delete(event.agent_session_id);
+      onSessionDeletedOption?.(event);
     },
-    [queryClient, onEventIdAdvance],
+    [queryClient, onEventIdAdvance, onSessionDeletedOption],
   );
 
   const onCatalogUpdated = useCallback(
@@ -339,6 +428,9 @@ export function useSessionStreamCacheSync(
         return [session.agentSessionId, session] as const;
       }),
     );
+    for (const session of lifecycleSnapshots.values()) {
+      hydrateNoticeBaseline(noticeBaselinesRef.current, session);
+    }
     const state = useDashboardStore.getState();
     if (state.catalog?.sessionList) {
       const sessionList = applySessionLifecycleSnapshotToList(
@@ -379,20 +471,237 @@ export function useSessionStreamCacheSync(
     if (found) setActiveSessionSummary(found);
   }, [queryClient, setActiveSessionSummary]);
 
+  const applyDataEvent = useCallback((event: SessionStreamEvent) => {
+    switch (event.type) {
+      case "session_list":
+        onSessionList(event);
+        break;
+      case "session_created":
+        onSessionCreated(event);
+        break;
+      case "session_updated":
+        onSessionUpdated(event);
+        break;
+      case "session_deleted":
+        onSessionDeleted(event);
+        break;
+      case "catalog_updated":
+        onCatalogUpdated(event);
+        break;
+      case "metadata_updated":
+        onMetadataUpdated(event);
+        break;
+      case "task_updated":
+        onTaskUpdated(event);
+        break;
+      case "custom_view_updated":
+        onCustomViewUpdated(event);
+        break;
+      case "page_updated":
+        onPageUpdated(event);
+        break;
+      case "runbook_updated":
+      case "stream_meta":
+      case "replay_gap":
+        break;
+    }
+  }, [
+    onCatalogUpdated,
+    onCustomViewUpdated,
+    onMetadataUpdated,
+    onPageUpdated,
+    onSessionCreated,
+    onSessionDeleted,
+    onSessionList,
+    onSessionUpdated,
+    onTaskUpdated,
+  ]);
+
+  const runRecovery = useCallback(async (recovery: StreamRecovery) => {
+    if (recovery.inFlight || recoveryRef.current !== recovery) return;
+    recovery.inFlight = true;
+    try {
+      do {
+        recovery.restart = false;
+        const allSessionFilters = {
+          queryKey: ["sessions"],
+          exact: false,
+          type: "all" as const,
+        };
+        const filters = recovery.postInFlightRefetch
+          ? allSessionFilters
+          : {
+              ...allSessionFilters,
+              predicate: (query: { state: { data: unknown } }) => query.state.data === undefined,
+            };
+        const hadInitialFetchInFlight = queryClient.getQueryCache()
+          .findAll(filters)
+          .some((query) => query.state.fetchStatus === "fetching");
+        await queryClient.refetchQueries({
+          ...filters,
+        }, {
+          cancelRefetch: !hadInitialFetchInFlight,
+          throwOnError: true,
+        });
+        // A gap can arrive during first-mount hydration. TanStack Query shares
+        // that in-flight request instead of starting another one when there is
+        // no cached data yet, so take the actual post-gap baseline afterward.
+        if (
+          recovery.postInFlightRefetch
+          && hadInitialFetchInFlight
+          && recoveryRef.current === recovery
+          && !recovery.restart
+        ) {
+          await queryClient.refetchQueries(allSessionFilters, { throwOnError: true });
+        }
+        if (
+          !recovery.postInFlightRefetch
+          && queryClient.getQueryCache()
+            .findAll({ queryKey: ["sessions"], exact: false })
+            .some((query) => (
+              query.state.data === undefined
+              && query.state.fetchStatus === "fetching"
+            ))
+        ) {
+          // A view/folder switch can create another first-load query while the
+          // prior one is pending. Include it in the same initial barrier before
+          // replaying the stream tail into every cache.
+          recovery.restart = true;
+        }
+      } while (recoveryRef.current === recovery && recovery.restart);
+    } catch {
+      recovery.inFlight = false;
+      if (recoveryRef.current !== recovery) return;
+      const delay = Math.min(
+        RECOVERY_RETRY_BASE_MS * 2 ** Math.min(recovery.retryAttempt, 5),
+        RECOVERY_RETRY_MAX_MS,
+      );
+      recovery.retryAttempt += 1;
+      recovery.retryTimer = setTimeout(() => {
+        recovery.retryTimer = null;
+        if (recoveryRef.current === recovery) runRecoveryRef.current(recovery);
+      }, delay);
+      return;
+    }
+
+    if (recoveryRef.current !== recovery) return;
+    recovery.inFlight = false;
+    recovery.retryAttempt = 0;
+    const queued = recovery.events.splice(0);
+    recoveryRef.current = null;
+    for (const event of queued) {
+      applyDataEvent(event);
+      onStreamEvent?.(event);
+    }
+  }, [applyDataEvent, onStreamEvent, queryClient]);
+  runRecoveryRef.current = (recovery) => {
+    void runRecovery(recovery);
+  };
+
+  const requestRecovery = useCallback(() => {
+    const current = recoveryRef.current;
+    if (current) {
+      // A later gap supersedes both the in-flight baseline and deltas queued
+      // before that gap. Keep the barrier closed and take a fresh baseline.
+      current.events.length = 0;
+      current.restart = true;
+      current.postInFlightRefetch = true;
+      if (current.retryTimer) {
+        clearTimeout(current.retryTimer);
+        current.retryTimer = null;
+        runRecoveryRef.current(current);
+      }
+      return;
+    }
+    const recovery: StreamRecovery = {
+      events: [],
+      restart: false,
+      postInFlightRefetch: true,
+      inFlight: false,
+      retryAttempt: 0,
+      retryTimer: null,
+    };
+    recoveryRef.current = recovery;
+    void runRecovery(recovery);
+  }, [runRecovery]);
+
+  const routeDataEvent = useCallback((event: SessionStreamEvent) => {
+    let recovery = recoveryRef.current;
+    if (!recovery) {
+      const hasUnhydratedSessionQuery = queryClient.getQueryCache()
+        .findAll({ queryKey: ["sessions"], exact: false })
+        .some((query) => (
+          query.state.data === undefined
+          && query.state.fetchStatus === "fetching"
+        ));
+      if (hasUnhydratedSessionQuery) {
+        // The EventSource may deliver its initial snapshot/tail before the
+        // first REST query commits. Queue that tail so the delayed REST value
+        // cannot overwrite newer lifecycle/feed projections.
+        recovery = {
+          events: [],
+          restart: false,
+          postInFlightRefetch: false,
+          inFlight: false,
+          retryAttempt: 0,
+          retryTimer: null,
+        };
+        recoveryRef.current = recovery;
+        runRecoveryRef.current(recovery);
+      }
+    }
+    if (recovery) {
+      // Cursor ownership is independent from projection visibility. Advancing
+      // it now prevents a reconnect from enqueueing the same buffered tail.
+      if ("lastEventId" in event && event.lastEventId) {
+        onEventIdAdvance?.(event.lastEventId);
+      }
+      if (recovery.events.length >= MAX_RECOVERY_EVENT_QUEUE) {
+        // The current REST response can no longer be paired with a complete
+        // delta tail. Drop that tail and require one more full baseline.
+        recovery.events.length = 0;
+        recovery.restart = true;
+        recovery.postInFlightRefetch = true;
+      }
+      recovery.events.push(event);
+      return;
+    }
+    applyDataEvent(event);
+  }, [applyDataEvent, onEventIdAdvance, queryClient]);
+
+  const onStreamMeta = useCallback((event: StreamMetaStreamEvent) => {
+    if (onStreamMetaOption?.(event) === true) requestRecovery();
+  }, [onStreamMetaOption, requestRecovery]);
+
+  const onReplayGap = useCallback((event: ReplayGapStreamEvent) => {
+    if (onReplayGapOption?.(event) === true) requestRecovery();
+  }, [onReplayGapOption, requestRecovery]);
+
+  const observeStreamEvent = useCallback((event: SessionStreamEvent) => {
+    if (event.type === "stream_meta" || event.type === "replay_gap") {
+      onStreamEvent?.(event);
+      return;
+    }
+    // Type-specific dispatch queued this event while the REST barrier was
+    // active. Observation is replayed with the event after hydration.
+    if (!recoveryRef.current) onStreamEvent?.(event);
+  }, [onStreamEvent]);
+
   useSessionStreamSSE({
     enabled,
     urlBuilder,
-    onSessionList,
-    onSessionCreated,
-    onSessionUpdated,
-    onSessionDeleted,
-    onCatalogUpdated,
-    onMetadataUpdated,
-    onTaskUpdated,
-    onCustomViewUpdated,
-    onPageUpdated,
+    onSessionList: routeDataEvent,
+    onSessionCreated: routeDataEvent,
+    onSessionUpdated: routeDataEvent,
+    onSessionDeleted: routeDataEvent,
+    onCatalogUpdated: routeDataEvent,
+    onMetadataUpdated: routeDataEvent,
+    onTaskUpdated: routeDataEvent,
+    onCustomViewUpdated: routeDataEvent,
+    onPageUpdated: routeDataEvent,
     onStreamMeta,
     onReplayGap,
-    onEvent: onStreamEvent,
+    onEvent: observeStreamEvent,
   });
+  return hydrateSessionSnapshots;
 }

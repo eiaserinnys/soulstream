@@ -10,6 +10,26 @@ import {
 describe("session stream event access filter", () => {
   const request = {} as FastifyRequest;
 
+  it("compacts an unrestricted ordinary update without catalog lookups", async () => {
+    const { filter, repository } = createFilterHarness({
+      access: { restricted: false },
+      folders: [],
+    });
+
+    await expect(filter(request, {
+      type: "session_updated",
+      agent_session_id: "session-a",
+      status: "running",
+      metadata: { raw: "omitted" },
+    })).resolves.toEqual({
+      type: "session_updated",
+      agent_session_id: "session-a",
+      status: "running",
+    });
+    expect(repository.getSessionAccessRecord).not.toHaveBeenCalled();
+    expect(repository.listFoldersForAccess).not.toHaveBeenCalled();
+  });
+
   it("keeps only restricted user's allowed folder and descendant session events", async () => {
     const { filter } = createFilterHarness({
       access: { restricted: true, allowedFolderIds: ["root"] },
@@ -18,6 +38,10 @@ describe("session stream event access filter", () => {
         { id: "child", parentFolderId: "root" },
         { id: "denied", parentFolderId: null },
       ],
+      sessionRows: new Map([
+        ["allowed", { sessionId: "allowed", folderId: "child", sessionType: "claude" }],
+        ["denied", { sessionId: "denied", folderId: "denied", sessionType: "claude" }],
+      ]),
     });
 
     await expect(
@@ -191,6 +215,74 @@ describe("session stream event access filter", () => {
         "asset:hidden": null,
         "asset:denied": null,
         "asset:removed": null,
+      },
+    });
+  });
+
+  it("strips browser notice payloads for excludeFromNotification without hiding attention", async () => {
+    const { filter } = createFilterHarness({
+      access: { restricted: false },
+      folders: [{
+        id: "quiet",
+        parentFolderId: null,
+        settings: { excludeFromNotification: true },
+      }],
+    });
+    const event: SessionStreamEvent = {
+      type: "session_updated",
+      agent_session_id: "session-a",
+      folderId: "quiet",
+      attention_revision: 8,
+      pending_attentions_delta: {
+        "input_request:req-1": { revision: 8, value: { id: "input_request:req-1" } },
+      },
+      notices: [{ id: "session-a:8" }],
+      notification_watermark: 8,
+    };
+
+    const filtered = await filter(request, event);
+
+    expect(filtered).toMatchObject({
+      type: "session_updated",
+      agent_session_id: "session-a",
+      attention_revision: 8,
+      pending_attentions_delta: {
+        "input_request:req-1": { revision: 8 },
+      },
+      notification_watermark: 8,
+    });
+    expect(filtered).not.toHaveProperty("notices");
+  });
+
+  it("marks a stripped session-created notice journal as truncated", async () => {
+    const { filter } = createFilterHarness({
+      access: { restricted: false },
+      folders: [{
+        id: "quiet",
+        parentFolderId: null,
+        settings: { excludeFromNotification: true },
+      }],
+    });
+
+    const filtered = await filter(request, {
+      type: "session_created",
+      session: {
+        agentSessionId: "session-a",
+        folderId: "quiet",
+        sessionType: "claude",
+        recentNotices: [{ id: "session-a:8" }],
+        notificationWatermark: 8,
+        noticesTruncated: false,
+      },
+    });
+
+    expect(filtered).toMatchObject({
+      type: "session_created",
+      session: {
+        agentSessionId: "session-a",
+        recentNotices: [],
+        notificationWatermark: 8,
+        noticesTruncated: true,
       },
     });
   });

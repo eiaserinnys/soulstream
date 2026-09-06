@@ -3,6 +3,7 @@ import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
+import { projectSessionFeedUpdate } from "./session_feed_projection.js";
 
 export type SessionReviewAcknowledgeOutcome =
   | "acknowledged"
@@ -50,11 +51,12 @@ export function createSessionReviewAcknowledgeFallback(
         // The DB stored procedure owns the durable transition. Do not repair the
         // node registry here: a revived node must hydrate the acknowledged state
         // from DB, while this event only refreshes dashboard/catalog projections.
-        options.broadcaster.append({
+        const update = projectSessionFeedUpdate({
           type: "session_updated",
           ...result.session,
           agent_session_id: sessionId,
         });
+        if (update !== null) options.broadcaster.append(update);
         return {
           type: "acknowledge_session_review_ack",
           status: "ok",

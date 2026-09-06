@@ -18,12 +18,18 @@ import type {
   SoulSSEEvent,
   SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { buildFetchSessionsUrl, createSSESubscribe, toSessionSummary } from "@seosoyoung/soul-ui";
+import {
+  buildFetchSessionsUrl,
+  createRegisteredDetailCursorStore,
+  createSSESubscribe,
+  toSessionSummary,
+} from "@seosoyoung/soul-ui";
 
 const MAX_TARGETED_SESSION_URL_LENGTH = 6_000;
 const MAX_TARGETED_SESSION_IDS = 200;
 
 export class OrchestratorSessionProvider implements SessionStorageProvider {
+  readonly detailCursorStore = createRegisteredDetailCursorStore();
   async fetchSessions(options?: FetchSessionsOptions): Promise<SessionListResult> {
     if (options?.sessionIds !== undefined) {
       const sessionIds = [...new Set(options.sessionIds)];
@@ -67,7 +73,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
     sessionKey: string,
     onEvent: (event: SoulSSEEvent, eventId: number) => void,
     onStatusChange?: (status: "connecting" | "connected" | "error") => void,
-    options?: { lastEventId?: number },
+    options?: { lastEventId?: number; getLastEventId?: () => number },
   ): () => void {
     const debugPrefix =
       import.meta.env.VITE_SSE_DEBUG === "true"
@@ -79,6 +85,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       onEvent,
       onStatusChange,
       initialLastEventId: options?.lastEventId,
+      getLastEventId: options?.getLastEventId,
       debugPrefix,
     });
   }
@@ -146,6 +153,21 @@ function toOrchestratorSessionSummary(raw: Record<string, unknown>): SessionSumm
     folderId: summary.folderId ?? null,
     displayName: summary.displayName ?? null,
     lastMessage: summary.lastMessage,
+    ...(summary.pendingAttentions === undefined
+      ? {}
+      : { pendingAttentions: summary.pendingAttentions }),
+    ...(summary.attentionRevision === undefined
+      ? {}
+      : { attentionRevision: summary.attentionRevision }),
+    ...(summary.recentNotices === undefined
+      ? {}
+      : { recentNotices: summary.recentNotices }),
+    ...(summary.notificationWatermark === undefined
+      ? {}
+      : { notificationWatermark: summary.notificationWatermark }),
+    ...(summary.noticesTruncated === undefined
+      ? {}
+      : { noticesTruncated: summary.noticesTruncated }),
     lastEventId: summary.lastEventId ?? 0,
     lastReadEventId: summary.lastReadEventId ?? 0,
     ...(summary.awaySummary == null ? {} : { awaySummary: summary.awaySummary }),

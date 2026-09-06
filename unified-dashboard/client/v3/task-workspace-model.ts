@@ -48,6 +48,16 @@ export interface WorkspaceVisibility {
 
 export type WorkspaceInspectorKind = "document" | "chat" | "empty";
 
+export interface TaskWorkspaceChatVisibility {
+  hasActiveSession: boolean;
+  hasTask: boolean;
+  boardOpen: boolean;
+  chatOpen: boolean;
+  inspectorKind: WorkspaceInspectorKind;
+  mobileMode: boolean;
+  mobileChatTab: boolean;
+}
+
 export interface DescriptionMutation {
   operations: PageStructureOperation[];
   preservedBlockIds: string[];
@@ -78,6 +88,24 @@ export function workspaceInspectorKind(
 ): WorkspaceInspectorKind {
   if (activeBoardDocumentId) return "document";
   return activeSessionKey ? "chat" : "empty";
+}
+
+/** Whether a mounted V3 ChatView is actually visible and may own detail I/O. */
+export function isTaskWorkspaceChatVisible({
+  hasActiveSession,
+  hasTask,
+  boardOpen,
+  chatOpen,
+  inspectorKind,
+  mobileMode,
+  mobileChatTab,
+}: TaskWorkspaceChatVisibility): boolean {
+  if (
+    !hasActiveSession
+    || (mobileMode && (!mobileChatTab || inspectorKind === "document"))
+  ) return false;
+  if (!hasTask || boardOpen) return true;
+  return chatOpen && inspectorKind === "chat";
 }
 
 export function buildRunTree(

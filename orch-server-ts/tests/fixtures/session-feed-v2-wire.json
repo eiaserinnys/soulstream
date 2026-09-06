@@ -1,0 +1,177 @@
+{
+  "sessionListHydration": {
+    "type": "session_list",
+    "sessions": [
+      {
+        "agentSessionId": "session-a",
+        "status": "running",
+        "createdAt": "2026-08-06T00:00:00.000Z",
+        "updatedAt": "2026-08-06T00:00:03.000Z",
+        "lastMessage": {
+          "type": "assistant_message",
+          "eventId": 998,
+          "preview": "confirmed answer",
+          "timestamp": "2026-08-06T00:00:01.000Z"
+        },
+        "pendingAttentions": [
+          {
+            "id": "input_request:req-7",
+            "sourceEventId": 1001,
+            "sessionId": "session-a",
+            "kind": "input_request",
+            "requestedAt": "2026-08-06T00:00:02.000Z",
+            "title": "입력 요청",
+            "body": "배포할까요?",
+            "requestId": "req-7",
+            "questions": [
+              {
+                "question": "배포할까요?",
+                "header": "배포",
+                "multiSelect": false,
+                "options": [
+                  { "label": "예", "description": "배포합니다." },
+                  { "label": "아니요", "description": "멈춥니다." }
+                ]
+              }
+            ],
+            "requiresDetail": false
+          }
+        ],
+        "attentionRevision": 1001,
+        "recentNotices": [
+          {
+            "id": "session-a:1000",
+            "sourceEventId": 1000,
+            "sessionId": "session-a",
+            "kind": "runtime_notification",
+            "title": "런타임 알림",
+            "body": "확인이 필요합니다.",
+            "createdAt": "2026-08-06T00:00:01.500Z"
+          }
+        ],
+        "notificationWatermark": 1000,
+        "noticesTruncated": false
+      }
+    ],
+    "total": 1
+  },
+  "attentionUpsert": {
+    "type": "session_updated",
+    "agent_session_id": "session-a",
+    "attention_revision": 1001,
+    "pending_attentions_delta": {
+      "input_request:req-7": {
+        "revision": 1001,
+        "value": {
+          "id": "input_request:req-7",
+          "sourceEventId": 1001,
+          "sessionId": "session-a",
+          "kind": "input_request",
+          "requestedAt": "2026-08-06T00:00:02.000Z",
+          "title": "입력 요청",
+          "body": "배포할까요?",
+          "requestId": "req-7",
+          "requiresDetail": true
+        }
+      }
+    }
+  },
+  "attentionTombstone": {
+    "type": "session_updated",
+    "agent_session_id": "session-a",
+    "attention_revision": 1002,
+    "pending_attentions_delta": {
+      "input_request:req-7": {
+        "revision": 1002,
+        "value": null
+      }
+    }
+  },
+  "noticeDelta": {
+    "type": "session_updated",
+    "agent_session_id": "session-a",
+    "notices": [
+      {
+        "id": "session-a:1003",
+        "sourceEventId": 1003,
+        "sessionId": "session-a",
+        "kind": "terminal",
+        "title": "세션 완료",
+        "body": "작업을 마쳤습니다.",
+        "createdAt": "2026-08-06T00:00:04.000Z"
+      }
+    ],
+    "notification_watermark": 1003
+  },
+  "ringGapHydration": {
+    "priorClientWatermark": 995,
+    "session": {
+      "agentSessionId": "session-a",
+      "recentNotices": [
+        {
+          "id": "session-a:1003",
+          "sourceEventId": 1003,
+          "sessionId": "session-a",
+          "kind": "terminal",
+          "title": "세션 완료",
+          "body": "작업을 마쳤습니다.",
+          "createdAt": "2026-08-06T00:00:04.000Z"
+        }
+      ],
+      "notificationWatermark": 1003,
+      "noticesTruncated": true
+    },
+    "policy": "replace_local_journal_without_firing_hydrated_notices"
+  },
+  "historySyncReset": {
+    "type": "history_sync",
+    "last_event_id": 1003,
+    "is_live": true,
+    "reset_required": true,
+    "reset_reason": "history_gap"
+  },
+  "textSnapshot": {
+    "type": "text_snapshot",
+    "basedOnEventId": 1003,
+    "throughLiveSeq": 41,
+    "streams": [
+      {
+        "streamIdentity": "codex_app_server:dGhyZWFkLTE:dHVybi0y:aXRlbS0z",
+        "text": "prefix already captured",
+        "updatedAt": "2026-08-06T00:00:05.000Z",
+        "truncated": false,
+        "resetRequired": false,
+        "recovery": "none"
+      }
+    ]
+  },
+  "queuedPrefixToDiscard": {
+    "type": "text_delta",
+    "text": " already captured",
+    "streamIdentity": "codex_app_server:dGhyZWFkLTE:dHVybi0y:aXRlbS0z",
+    "liveSeq": 41,
+    "liveTextMode": "append"
+  },
+  "nextLiveDelta": {
+    "type": "text_delta",
+    "text": " then live",
+    "streamIdentity": "codex_app_server:dGhyZWFkLTE:dHVybi0y:aXRlbS0z",
+    "liveSeq": 42,
+    "liveTextMode": "append"
+  },
+  "truncatedTextSnapshot": {
+    "type": "text_snapshot",
+    "basedOnEventId": 1003,
+    "throughLiveSeq": 99,
+    "streams": [
+      {
+        "streamIdentity": "codex_sdk:aXRlbS1iaWc",
+        "text": null,
+        "updatedAt": "2026-08-06T00:00:06.000Z",
+        "truncated": true,
+        "resetRequired": true,
+        "recovery": "durable_final"
+      }
+    ]
+  }
+}

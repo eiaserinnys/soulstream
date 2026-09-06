@@ -36,7 +36,7 @@ describe("TaskRunHistory", () => {
       agentName: "로젤린",
       nodeId: "eiaserinnys",
       lastMessage: {
-        type: "assistant",
+        type: "assistant_message",
         preview: "마지막 메시지 한 줄",
         timestamp: new Date().toISOString(),
       },

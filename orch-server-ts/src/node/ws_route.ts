@@ -352,7 +352,9 @@ function createEventIngressController(input: {
     isCurrentConnection: () =>
       options.registry.getConnectedNode(source.nodeId)?.connectionId === source.connectionId,
     receiveCommittedEvent: (message) =>
-      options.registry.receiveNodeMessage(source, message),
+      options.registry.receiveNodeMessage(source, message, {
+        committedIngress: true,
+      }),
     publish: (events) => emitEvents(options.eventSink, events),
     send: (frame) => socket.send(JSON.stringify(frame)),
     close: (code, reason) => closeAndFinalize(code, reason, "event_ingress_error"),

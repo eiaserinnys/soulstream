@@ -10,21 +10,46 @@ import type {
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import { discardTerminalResumeNotificationProjections } from
   "../control_plane/repositories/session_delivery_notification_projection_repository.js";
+import { normalizeLastChatMessage } from
+  "../session/session_feed_projection.js";
+import { lastChatMessageFromEnvelope } from
+  "./last_chat_message_projection.js";
 
 export const applyEventSessionEffect: EventSessionEffectApplier = async (
   sql,
   input,
 ) => {
-  const { effect, envelope } = input;
+  const { effect, envelope, eventId } = input;
   if (effect.kind === "last_message") {
-    await sql`
-      SELECT session_update_last_message(
+    const canonical = lastChatMessageFromEnvelope(envelope, eventId);
+    if (canonical === null) {
+      return {
+        applied: false,
+        canonicalSession: null,
+        canonicalLastMessage: null,
+      };
+    }
+    const rows = await sql<Array<{ applied: boolean; last_message: unknown }>>`
+      SELECT * FROM session_apply_last_chat_message(
         ${envelope.session_id},
-        ${JSON.stringify(effect.last_message)},
-        ${new Date(effect.updated_at)}
+        ${eventId},
+        ${sql.json(canonical)},
+        ${new Date(envelope.created_at)}
       )
     `;
-    return appliedWithoutCanonicalProjection();
+    const row = rows[0];
+    if (!row || rows.length !== 1 || typeof row.applied !== "boolean") {
+      throw new Error("last chat message projection did not return one application row");
+    }
+    const stored = normalizeLastChatMessage(row.last_message);
+    if (stored === null) {
+      throw new Error("last chat message projection returned an invalid materialization");
+    }
+    return {
+      applied: row.applied,
+      canonicalSession: null,
+      canonicalLastMessage: stored,
+    };
   }
   if (effect.kind === "set_backend_session_id") {
     await sql`SELECT session_set_claude_id(${envelope.session_id}, ${effect.backend_session_id})`;

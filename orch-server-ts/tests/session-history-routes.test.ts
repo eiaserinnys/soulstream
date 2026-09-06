@@ -466,7 +466,7 @@ describe("session history/read-only route harness", () => {
       'event: init\n' +
         'data: {"agentSessionId":"sess-1"}\n\n' +
         'event: history_sync\n' +
-        'data: {"type":"history_sync","last_event_id":42,"is_live":false}\n\n',
+        'data: {"type":"history_sync","last_event_id":42,"is_live":false,"reset_required":false}\n\n',
     );
     expect(provider.readLastEventId).toHaveBeenCalledWith("sess-1");
     expect(provider.streamEventsRaw).not.toHaveBeenCalled();
@@ -474,7 +474,7 @@ describe("session history/read-only route harness", () => {
     await app.close();
   });
 
-  it("subscribes before the baseline read and flushes pending live events before history_sync", async () => {
+  it("subscribes before the baseline read and flushes pending live events after history_sync", async () => {
     let liveListener: ((event: Record<string, unknown>) => void) | undefined;
     const unsubscribe = vi.fn();
     const liveEvents: SessionHistoryLiveEventSource = {
@@ -513,16 +513,227 @@ describe("session history/read-only route harness", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toBe(
+        'event: init\n' +
+        'data: {"agentSessionId":"sess-1"}\n\n' +
+        'event: history_sync\n' +
+        'data: {"type":"history_sync","last_event_id":42,"is_live":true,"reset_required":false}\n\n' +
+        'event: assistant_message\n' +
+        'id: 43\n' +
+        'data: {"_event_id":43,"type":"assistant_message","content":"arrived during baseline"}\n\n',
+    );
+    expect(liveEvents.subscribe).toHaveBeenCalledWith("sess-1", expect.any(Function));
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("discards the queued live prefix included in the text snapshot boundary", async () => {
+    let liveListener: ((event: Record<string, unknown>) => void) | undefined;
+    const liveEvents: SessionHistoryLiveEventSource = {
+      subscribe: vi.fn((_sessionId, listener) => {
+        liveListener = listener;
+        return vi.fn();
+      }),
+      snapshotLiveText: vi.fn(() => ({
+        throughLiveSeq: 2,
+        streams: [{
+          streamIdentity: "stream-1",
+          text: "snap",
+          updatedAt: "2026-09-06T12:00:00.000Z",
+          truncated: false,
+          resetRequired: false,
+          recovery: "none" as const,
+        }],
+      })),
+    };
+    const provider = createProvider({
+      readLastEventId: vi.fn(async () => {
+        liveListener?.({
+          agent_session_id: "sess-1",
+          event: {
+            type: "text_delta",
+            text: "snap",
+            streamIdentity: "stream-1",
+            liveSeq: 2,
+            liveTextMode: "replace",
+          },
+        });
+        liveListener?.({
+          agent_session_id: "sess-1",
+          event: {
+            type: "text_delta",
+            text: "shot",
+            streamIdentity: "stream-1",
+            liveSeq: 3,
+            liveTextMode: "replace",
+          },
+        });
+        return 41;
+      }),
+    });
+    const app = createApp({
+      config,
+      sessionHistoryRoutes: {
+        provider,
+        liveEvents,
+        closeAfterHistorySync: true,
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/events",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe(
+      'event: init\n' +
+        'data: {"agentSessionId":"sess-1"}\n\n' +
+        'event: text_snapshot\n' +
+        'data: {"type":"text_snapshot","basedOnEventId":41,"throughLiveSeq":2,"streams":[{"streamIdentity":"stream-1","text":"snap","updatedAt":"2026-09-06T12:00:00.000Z","truncated":false,"resetRequired":false,"recovery":"none"}]}\n\n' +
+        'event: history_sync\n' +
+        'data: {"type":"history_sync","last_event_id":41,"is_live":true,"reset_required":false}\n\n' +
+        'event: text_delta\n' +
+        'data: {"type":"text_delta","text":"shot","streamIdentity":"stream-1","liveSeq":3,"liveTextMode":"replace"}\n\n',
+    );
+    expect(response.body).not.toContain('"liveSeq":2');
+    await app.close();
+  });
+
+  it("reasserts a post-snapshot final after stale text when durable replay already emitted its event id", async () => {
+    let liveListener: ((event: Record<string, unknown>) => void) | undefined;
+    const finalPayload = {
+      _event_id: 43,
+      type: "assistant_message",
+      content: "complete",
+      item_id: "item-1",
+      _final_for_live_stream: true,
+      streamIdentity: "codex_sdk:aXRlbS0x",
+      liveSeq: 3,
+      liveTextMode: "replace",
+    };
+    const liveEvents: SessionHistoryLiveEventSource = {
+      subscribe: vi.fn((_sessionId, listener) => {
+        liveListener = listener;
+        return vi.fn();
+      }),
+      snapshotLiveText: vi.fn(() => ({
+        throughLiveSeq: 2,
+        streams: [{
+          streamIdentity: "codex_sdk:aXRlbS0x",
+          text: "partial",
+          updatedAt: "2026-09-06T12:00:00.000Z",
+          truncated: false,
+          resetRequired: false,
+          recovery: "none" as const,
+        }],
+      })),
+    };
+    const provider = createProvider({
+      readLastEventId: vi.fn(async () => 43),
+      streamEventsRaw: vi.fn(async function* () {
+        liveListener?.({
+          agent_session_id: "sess-1",
+          event: finalPayload,
+        });
+        yield {
+          eventId: 43,
+          eventType: "assistant_message",
+          payloadText: JSON.stringify(finalPayload),
+        };
+      }),
+    });
+    const app = createApp({
+      config,
+      sessionHistoryRoutes: {
+        provider,
+        liveEvents,
+        closeAfterHistorySync: true,
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/events?lastEventId=42",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe(
       'event: init\n' +
         'data: {"agentSessionId":"sess-1"}\n\n' +
         'event: assistant_message\n' +
         'id: 43\n' +
-        'data: {"_event_id":43,"type":"assistant_message","content":"arrived during baseline"}\n\n' +
+        `data: ${JSON.stringify(finalPayload)}\n\n` +
+        'event: text_snapshot\n' +
+        'data: {"type":"text_snapshot","basedOnEventId":43,"throughLiveSeq":2,"streams":[{"streamIdentity":"codex_sdk:aXRlbS0x","text":"partial","updatedAt":"2026-09-06T12:00:00.000Z","truncated":false,"resetRequired":false,"recovery":"none"}]}\n\n' +
         'event: history_sync\n' +
-        'data: {"type":"history_sync","last_event_id":42,"is_live":true}\n\n',
+        'data: {"type":"history_sync","last_event_id":43,"is_live":true,"reset_required":false}\n\n' +
+        'event: assistant_message\n' +
+        'id: 43\n' +
+        `data: ${JSON.stringify(finalPayload)}\n\n`,
     );
-    expect(liveEvents.subscribe).toHaveBeenCalledWith("sess-1", expect.any(Function));
-    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("reasserts a post-snapshot final when a zero cursor watermark already includes it", async () => {
+    let liveListener: ((event: Record<string, unknown>) => void) | undefined;
+    const finalPayload = {
+      _event_id: 43,
+      type: "assistant_message",
+      content: "complete",
+      item_id: "item-1",
+      _final_for_live_stream: true,
+      streamIdentity: "codex_sdk:aXRlbS0x",
+      liveSeq: 3,
+      liveTextMode: "replace",
+    };
+    const liveEvents: SessionHistoryLiveEventSource = {
+      subscribe: vi.fn((_sessionId, listener) => {
+        liveListener = listener;
+        return vi.fn();
+      }),
+      snapshotLiveText: vi.fn(() => ({
+        throughLiveSeq: 2,
+        streams: [{
+          streamIdentity: "codex_sdk:aXRlbS0x",
+          text: "partial",
+          updatedAt: "2026-09-06T12:00:00.000Z",
+          truncated: false,
+          resetRequired: false,
+          recovery: "none" as const,
+        }],
+      })),
+    };
+    const provider = createProvider({
+      readLastEventId: vi.fn(async () => {
+        liveListener?.({
+          agent_session_id: "sess-1",
+          event: finalPayload,
+        });
+        return 43;
+      }),
+    });
+    const app = createApp({
+      config,
+      sessionHistoryRoutes: {
+        provider,
+        liveEvents,
+        closeAfterHistorySync: true,
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/events",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain(
+      'event: history_sync\n' +
+        'data: {"type":"history_sync","last_event_id":43,"is_live":true,"reset_required":false}\n\n' +
+        'event: assistant_message\n' +
+        'id: 43\n' +
+        `data: ${JSON.stringify(finalPayload)}\n\n`,
+    );
     await app.close();
   });
 
@@ -604,15 +815,15 @@ describe("session history/read-only route harness", () => {
         'id: 7\n' +
         'data: {"type":"text_end"}\n\n' +
         'event: history_sync\n' +
-        'data: {"type":"history_sync","last_event_id":7,"is_live":false}\n\n',
+        'data: {"type":"history_sync","last_event_id":7,"is_live":false,"reset_required":false}\n\n',
     );
     expect(provider.streamEventsRaw).toHaveBeenCalledWith("sess-1", 5);
-    expect(provider.readLastEventId).not.toHaveBeenCalled();
+    expect(provider.readLastEventId).toHaveBeenCalledWith("sess-1");
 
     await app.close();
   });
 
-  it("keeps history_sync unchanged when the reconnect cursor has no newer stored events", async () => {
+  it("never regresses an ahead reconnect cursor and requires a durable reset", async () => {
     const provider = createProvider();
     const { app } = createHarness(provider);
 
@@ -624,10 +835,36 @@ describe("session history/read-only route harness", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toContain(
       'event: history_sync\n' +
-        'data: {"type":"history_sync","last_event_id":0,"is_live":false}\n\n',
+        'data: {"type":"history_sync","last_event_id":5,"is_live":false,"reset_required":true,"reset_reason":"cursor_ahead"}\n\n',
     );
     expect(provider.streamEventsRaw).toHaveBeenCalledWith("sess-1", 5);
 
+    await app.close();
+  });
+
+  it("marks a durable history gap while keeping the current DB watermark", async () => {
+    const provider = createProvider({
+      readLastEventId: vi.fn(async () => 10),
+      streamEventsRaw: vi.fn(async function* () {
+        yield {
+          eventId: 8,
+          eventType: "assistant_message",
+          payloadText: '{"type":"assistant_message","content":"after gap"}',
+        };
+      }),
+    });
+    const { app } = createHarness(provider);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/events?lastEventId=5",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain(
+      'event: history_sync\n' +
+        'data: {"type":"history_sync","last_event_id":10,"is_live":false,"reset_required":true,"reset_reason":"history_gap"}\n\n',
+    );
     await app.close();
   });
 
@@ -661,7 +898,7 @@ describe("session history/read-only route harness", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toContain(
       'event: history_sync\n' +
-        'data: {"type":"history_sync","last_event_id":9,"is_live":false}\n\n',
+        'data: {"type":"history_sync","last_event_id":9,"is_live":false,"reset_required":false}\n\n',
     );
     expect(provider.readLastEventId).toHaveBeenCalledWith("sess-1");
     expect(provider.streamEventsRaw).not.toHaveBeenCalled();

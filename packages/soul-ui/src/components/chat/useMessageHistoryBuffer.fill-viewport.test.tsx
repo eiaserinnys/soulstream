@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, createElement, useEffect, type RefObject } from "react";
+import { act, createElement, useEffect, useLayoutEffect, type RefObject } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -102,11 +102,18 @@ const reactTestEnvironment = globalThis as typeof globalThis & {
 function Harness({
   sessionId,
   scrollerRef,
+  enabled = true,
+  notifyInLayout = false,
 }: {
   sessionId: string;
   scrollerRef: RefObject<HTMLElement | null>;
+  enabled?: boolean;
+  notifyInLayout?: boolean;
 }) {
-  const result = useMessageHistoryBuffer(sessionId, scrollerRef);
+  const result = useMessageHistoryBuffer(sessionId, scrollerRef, enabled);
+  useLayoutEffect(() => {
+    if (notifyInLayout) result.notifyViewportGeometry();
+  }, [enabled, notifyInLayout, result.notifyViewportGeometry]);
   useEffect(() => {
     latest = result;
   }, [result]);
@@ -142,10 +149,19 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
   let scroller: HTMLDivElement;
   let scrollerRef: RefObject<HTMLElement | null>;
 
-  async function renderSession(sessionId: string): Promise<void> {
+  async function renderSession(
+    sessionId: string,
+    enabled = true,
+    notifyInLayout = false,
+  ): Promise<void> {
     useDashboardStore.getState().setActiveSession(sessionId);
     await act(async () => {
-      root.render(createElement(Harness, { sessionId, scrollerRef }));
+      root.render(createElement(Harness, {
+        sessionId,
+        scrollerRef,
+        enabled,
+        notifyInLayout,
+      }));
     });
     await flush();
   }
@@ -496,5 +512,80 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
 
     expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(0);
     root = createRoot(container);
+  });
+
+  it("does not fetch while disabled and starts when the same session becomes visible", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(page([1], null));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-hidden", false);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await renderSession("sess-hidden", true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("activates the fetch token before the visible ChatView layout geometry callback", async () => {
+    const pending = deferred<Response>();
+    const fetchMock = vi.fn().mockReturnValue(pending.promise);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-layout-activation", false, true);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await renderSession("sess-layout-activation", true, true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      pending.resolve(page([1], null));
+      await pending.promise;
+    });
+    await flush();
+
+    expect(flattenTree(useDashboardStore.getState().tree).map((message) => message.eventId))
+      .toEqual([1]);
+    expect(latest?.loading).toBe(false);
+    expect(latest?.reachedTop).toBe(true);
+  });
+
+  it("refetches the durable first page when reset_required changes the reset version while enabled", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(page([9], null))
+      .mockResolvedValueOnce(page([10], null));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-reset");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(flattenTree(useDashboardStore.getState().tree).map((message) => message.eventId)).toEqual([9]);
+
+    await act(async () => {
+      useDashboardStore.getState().clearTree();
+      useDashboardStore.setState((state) => ({
+        historyResetVersion: state.historyResetVersion + 1,
+      }));
+    });
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(flattenTree(useDashboardStore.getState().tree).map((message) => message.eventId)).toEqual([10]);
+  });
+
+  it("aborts an in-flight page when the same session becomes hidden", async () => {
+    let signal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-abort", true);
+    expect(latest?.loading).toBe(true);
+    await renderSession("sess-abort", false);
+
+    expect(signal?.aborted).toBe(true);
+    expect(latest?.loading).toBe(false);
+    expect(latest?.blockedReason).toBeNull();
   });
 });

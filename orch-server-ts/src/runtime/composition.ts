@@ -230,6 +230,9 @@ export function createOrchestratorRuntimeServices(
                   (event) => listener(event.data),
                 );
               },
+              snapshotLiveText(agentSessionId) {
+                return sessionEventHub.snapshotLiveText(agentSessionId);
+              },
             },
             keepaliveMs: options.sessionHistoryKeepaliveMs,
             closeAfterHistorySync: options.sessionHistoryCloseAfterHistorySync,

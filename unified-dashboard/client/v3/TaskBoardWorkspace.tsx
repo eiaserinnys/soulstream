@@ -72,6 +72,7 @@ export function TaskBoardWorkspace({
   fileUploadUrl,
   mobileMode,
   mobileTab,
+  historyEnabled,
   taskMoveTargets,
   folders,
   contextInvalidationKey,
@@ -97,6 +98,7 @@ export function TaskBoardWorkspace({
   fileUploadUrl: string | undefined;
   mobileMode: boolean;
   mobileTab: MobilePlannerTab;
+  historyEnabled: boolean;
   taskMoveTargets: readonly PlannerTask[];
   folders: readonly CatalogFolder[];
   contextInvalidationKey: number;
@@ -538,6 +540,7 @@ export function TaskBoardWorkspace({
                 chatInputDisabled={chatInputDisabled}
                 fileUploadUrl={fileUploadUrl}
                 showHeader={false}
+                historyEnabled={historyEnabled}
               />
             ) : (
               <div className="v3-chat-empty">

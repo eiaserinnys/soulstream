@@ -297,18 +297,47 @@ function buildLastMessageEffect(
   event: SSEEventPayload,
   createdAt: Date,
 ): EventOutboxSessionEffect | null {
-  const preview = extractPreviewText(event);
-  if (!preview) return null;
+  const message = feedMessageSource(event);
+  if (message === null) return null;
+  const preview = sanitizeJsonText(message.text).trim();
+  if (preview.length === 0) return null;
   const updatedAt = createdAt.toISOString();
   return {
     kind: "last_message",
     last_message: {
-      type: (event as { type: string }).type,
+      type: message.type,
       preview: truncateJsonText(preview, LAST_MESSAGE_PREVIEW_LIMIT),
       timestamp: updatedAt,
     },
     updated_at: updatedAt,
   };
+}
+
+function feedMessageSource(
+  event: SSEEventPayload,
+): { type: "user_message" | "assistant_message"; text: string } | null {
+  const payload = event as Record<string, unknown>;
+  if (payload.type === "user_message" && typeof payload.text === "string") {
+    return { type: "user_message", text: payload.text };
+  }
+  if (payload.type === "intervention_sent" && typeof payload.text === "string") {
+    return { type: "user_message", text: payload.text };
+  }
+  if (payload.type === "assistant_message" && typeof payload.content === "string") {
+    return { type: "assistant_message", text: payload.content };
+  }
+  if (
+    payload.type === "realtime_transcript" &&
+    payload.final === true &&
+    typeof payload.text === "string" &&
+    (payload.role === "user" || payload.role === "assistant")
+  ) {
+    return {
+      type: payload.role === "user" ? "user_message" : "assistant_message",
+      text: payload.text,
+    };
+  }
+  return null;
 }
 
 /**

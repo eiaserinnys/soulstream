@@ -24,11 +24,13 @@ interface RightPanelProps {
   chatInputDisabled?: boolean;
   isOtherNodeSession?: boolean;
   fileUploadUrl?: string;
+  historyEnabled?: boolean;
 }
 export function RightPanel({
   chatInputDisabled = false,
   isOtherNodeSession = false,
   fileUploadUrl,
+  historyEnabled = true,
 }: RightPanelProps = {}) {
   const activeRightTab = useDashboardStore((s) => s.activeRightTab);
   const activeBoardDocumentId = useDashboardStore((s) => s.activeBoardDocumentId);
@@ -70,6 +72,7 @@ export function RightPanel({
               chatInputDisabled={chatInputDisabled}
               isOtherNodeSession={isOtherNodeSession}
               fileUploadUrl={fileUploadUrl}
+              historyEnabled={historyEnabled}
             />
           )}
         </TabsPanel>

@@ -32,7 +32,7 @@ const CLIENT_SESSION_FIELDS = {
 } as const;
 
 describe("production session serialization parity", () => {
-  it("uses the Python client wire for REST, session_list, and session_updated", async () => {
+  it("keeps REST/session_list identity fields and emits a compact session_updated patch", async () => {
     const row = sessionRow();
     const database = createFakeSql(row);
     const sqlResolver: LiveDbSqlResolver = {
@@ -109,9 +109,14 @@ describe("production session serialization parity", () => {
         last_event_id: 42,
         last_read_event_id: 41,
       }));
-      expect((await catalog.next("session_updated")).data).toMatchObject(
-        CLIENT_SESSION_FIELDS,
-      );
+      expect((await catalog.next("session_updated")).data).toEqual({
+        type: "session_updated",
+        agent_session_id: SESSION_ID,
+        status: "running",
+        updated_at: "2026-07-10T14:20:00.000Z",
+        last_event_id: 42,
+        last_read_event_id: 41,
+      });
     } finally {
       catalogController.abort();
       ws?.terminate();

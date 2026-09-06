@@ -130,6 +130,8 @@ export interface ThinkingNode extends BaseNode {
 /** 텍스트 노드 */
 export interface TextNode extends BaseNode {
   type: "text";
+  /** Durable final event ID after a transient live node is promoted in place. */
+  eventId?: number;
   /** text_end 수신 여부 */
   textCompleted?: boolean;
 }

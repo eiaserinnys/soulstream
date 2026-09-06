@@ -1,6 +1,8 @@
 import type { InfiniteData } from "@tanstack/react-query";
 
 import type { SessionSummary } from "../shared/types";
+import { normalizeLastMessage } from "../shared/session-activity";
+import { retainEqualValue } from "../lib/structural-sharing";
 
 interface SessionPage {
   sessions: SessionSummary[];
@@ -55,6 +57,60 @@ function shouldReplaceSessionSnapshot(
   return true;
 }
 
+function nonNegativeRevision(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
+}
+
+function sessionFeedHydrationPatch(
+  current: SessionSummary,
+  snapshot: SessionLifecycleSnapshot,
+): Partial<SessionSummary> {
+  const patch: Partial<SessionSummary> = {};
+  const currentAttentionRevision = nonNegativeRevision(current.attentionRevision);
+  const incomingAttentionRevision = nonNegativeRevision(snapshot.attentionRevision);
+  if (
+    incomingAttentionRevision !== null
+    && snapshot.pendingAttentions !== undefined
+    && (currentAttentionRevision === null || incomingAttentionRevision >= currentAttentionRevision)
+  ) {
+    const pendingAttentions = retainEqualValue(
+      current.pendingAttentions,
+      snapshot.pendingAttentions,
+    );
+    if (pendingAttentions !== current.pendingAttentions) {
+      patch.pendingAttentions = pendingAttentions;
+    }
+    if (incomingAttentionRevision !== currentAttentionRevision) {
+      patch.attentionRevision = incomingAttentionRevision;
+    }
+  }
+
+  const currentNoticeWatermark = nonNegativeRevision(current.notificationWatermark);
+  const incomingNoticeWatermark = nonNegativeRevision(snapshot.notificationWatermark);
+  if (
+    incomingNoticeWatermark !== null
+    && snapshot.recentNotices !== undefined
+    && (currentNoticeWatermark === null || incomingNoticeWatermark >= currentNoticeWatermark)
+  ) {
+    const recentNotices = retainEqualValue(current.recentNotices, snapshot.recentNotices);
+    if (recentNotices !== current.recentNotices) {
+      patch.recentNotices = recentNotices;
+    }
+    if (incomingNoticeWatermark !== currentNoticeWatermark) {
+      patch.notificationWatermark = incomingNoticeWatermark;
+    }
+    if (
+      snapshot.noticesTruncated !== undefined
+      && snapshot.noticesTruncated !== current.noticesTruncated
+    ) {
+      patch.noticesTruncated = snapshot.noticesTruncated;
+    }
+  }
+  return patch;
+}
+
 /**
  * 같은 세션의 페이지/캐시 스냅샷이 잠시 겹쳐도 표시 계층에는 한 개만 넘긴다.
  * updatedAt/createdAt이 더 최신인 스냅샷을 선택한다. 시각이 동률이거나 비교 불가하면
@@ -90,6 +146,12 @@ export type SessionLifecycleSnapshot = Pick<
   | "updatedAt"
   | "createdAt"
   | "lastEventId"
+  | "lastMessage"
+  | "pendingAttentions"
+  | "attentionRevision"
+  | "recentNotices"
+  | "notificationWatermark"
+  | "noticesTruncated"
 >;
 
 /**
@@ -120,21 +182,40 @@ export function applySessionLifecycleSnapshotToList(
   let changed = false;
   const next = sessions.map((session) => {
     const snapshot = snapshots.get(session.agentSessionId);
-    if (
-      snapshot === undefined
-      || !shouldReplaceSessionSnapshot(session, snapshot)
-      || (
-        snapshot.status === session.status
-        && snapshot.reviewState === session.reviewState
-      )
-    ) {
+    if (snapshot === undefined) return session;
+    const replaceLifecycle = shouldReplaceSessionSnapshot(session, snapshot);
+    const lastMessage = normalizeLastMessage(snapshot.lastMessage);
+    const currentLastMessage = normalizeLastMessage(session.lastMessage);
+    const lastMessageChanged = replaceLifecycle && lastMessage !== undefined && (
+      currentLastMessage === undefined
+      || currentLastMessage.type !== lastMessage.type
+      || currentLastMessage.preview !== lastMessage.preview
+      || currentLastMessage.timestamp !== lastMessage.timestamp
+      || currentLastMessage.eventId !== lastMessage.eventId
+    );
+    const patch: Partial<SessionSummary> = {
+      ...(replaceLifecycle && snapshot.status !== session.status
+        ? { status: snapshot.status }
+        : {}),
+      ...(!replaceLifecycle || snapshot.reviewState === undefined || snapshot.reviewState === session.reviewState
+        ? {}
+        : { reviewState: snapshot.reviewState }),
+      ...(!replaceLifecycle || snapshot.updatedAt === undefined || snapshot.updatedAt === session.updatedAt
+        ? {}
+        : { updatedAt: snapshot.updatedAt }),
+      ...(!replaceLifecycle || snapshot.lastEventId === undefined || snapshot.lastEventId === session.lastEventId
+        ? {}
+        : { lastEventId: snapshot.lastEventId }),
+      ...(lastMessageChanged ? { lastMessage } : {}),
+      ...sessionFeedHydrationPatch(session, snapshot),
+    };
+    if (Object.keys(patch).length === 0) {
       return session;
     }
     changed = true;
     return {
       ...session,
-      status: snapshot.status,
-      reviewState: snapshot.reviewState,
+      ...patch,
     };
   });
   return changed ? next : sessions;

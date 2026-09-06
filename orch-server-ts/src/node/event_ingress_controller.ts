@@ -2,6 +2,8 @@ import type { NodeRegistryEvent } from "./registry.js";
 import { shouldPublishSessionEventSemantically } from
   "../session/session_event_semantic_publication.js";
 import type { EventIngressRepository } from "./event_ingress_repository.js";
+import type { EventFeedProjectionApplication } from
+  "./event_feed_projection_applier.js";
 import {
   EventIngressValidationError,
   parseEventAppendBatch,
@@ -128,7 +130,7 @@ export class NodeEventIngressController {
         : committedEffectSessionUpdate(item.envelope.session_effect, {
             sessionId: item.envelope.session_id,
             eventId: item.eventId,
-          }, item.sessionEffectApplication);
+          }, item.sessionEffectApplication, item.feedProjectionApplication);
       // receiveCommittedEvent updates the session cache as a side effect. Apply the
       // effect before publishing session_ended so cache-reading sinks such as
       // PushNotifier observe the committed final assistant text.
@@ -201,22 +203,25 @@ function committedEffectSessionUpdate(
   effect: EventAppendBatch["events"][number]["session_effect"],
   input: { sessionId: string; eventId: number },
   application?: EventSessionEffectApplication,
+  feedApplication?: EventFeedProjectionApplication,
 ): Record<string, unknown> | null {
-  if (!effect) return null;
+  let update: Record<string, unknown> | null = null;
   if (application?.canonicalSession) {
-    return canonicalSessionUpdate(input.sessionId, application.canonicalSession);
-  }
-  if (effect.kind === "last_message") {
-    return {
+    update = canonicalSessionUpdate(input.sessionId, application.canonicalSession);
+  } else if (
+    effect?.kind === "last_message" &&
+    application?.applied === true &&
+    application.canonicalLastMessage
+  ) {
+    update = {
       type: "session_updated",
       agentSessionId: input.sessionId,
-      last_message: effect.last_message,
-      updated_at: effect.updated_at,
+      last_message: application.canonicalLastMessage,
+      updated_at: application.canonicalLastMessage.timestamp,
       last_event_id: input.eventId,
     };
-  }
-  if (effect.kind === "running_transition") {
-    return {
+  } else if (effect?.kind === "running_transition") {
+    update = {
       type: "session_updated",
       agentSessionId: input.sessionId,
       status: "running",
@@ -226,9 +231,8 @@ function committedEffectSessionUpdate(
       updated_at: effect.updated_at,
       last_event_id: input.eventId,
     };
-  }
-  if (effect.kind === "terminal_transition") {
-    return {
+  } else if (effect?.kind === "terminal_transition") {
+    update = {
       type: "session_updated",
       agentSessionId: input.sessionId,
       status: effect.status,
@@ -240,7 +244,17 @@ function committedEffectSessionUpdate(
       last_event_id: input.eventId,
     };
   }
-  return null;
+  if (feedApplication !== undefined) {
+    update = {
+      ...feedApplication,
+      ...(update ?? {
+        type: "session_updated",
+        agentSessionId: input.sessionId,
+        last_event_id: input.eventId,
+      }),
+    };
+  }
+  return update;
 }
 
 function canonicalSessionUpdate(

@@ -559,11 +559,12 @@ describe("session action command HTTP route harness", () => {
       });
       expect(acknowledgeSessionReview).toHaveBeenCalledWith("sess-fallback");
       expect(broadcaster.bufferedEvents).toHaveLength(1);
-      expect(broadcaster.bufferedEvents[0]?.payload).toMatchObject({
+      expect(broadcaster.bufferedEvents[0]?.payload).toEqual({
         type: "session_updated",
         agent_session_id: "sess-fallback",
-        agentSessionId: "sess-fallback",
-        reviewState: "acknowledged",
+        status: "completed",
+        review_required: true,
+        review_state: "acknowledged",
       });
 
       await app.close();
@@ -592,10 +593,10 @@ describe("session action command HTTP route harness", () => {
       changed: false,
       reviewState: "acknowledged",
     });
-    expect(broadcaster.bufferedEvents[0]?.payload).toMatchObject({
+    expect(broadcaster.bufferedEvents[0]?.payload).toEqual({
       type: "session_updated",
       agent_session_id: "sess-retry",
-      reviewState: "acknowledged",
+      review_state: "acknowledged",
     });
   });
 

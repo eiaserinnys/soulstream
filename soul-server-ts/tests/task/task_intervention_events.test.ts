@@ -43,7 +43,7 @@ describe("publishInterventionSent", () => {
       expect(record.session_effect).toMatchObject({
         kind: "last_message",
         last_message: {
-          type: "intervention_sent",
+          type: "user_message",
           preview: `${"a".repeat(199)}�`,
           timestamp: expect.any(String),
         },

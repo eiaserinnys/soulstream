@@ -32,6 +32,7 @@ import {
   useSessionProvider,
   useReadPositionSync,
   useNotification,
+  useIsMobile,
   useUrlSync,
   useDashboardConfig,
   useServerStatus,
@@ -53,11 +54,23 @@ import { FeedView } from "./components/FeedView";
 import { getSessionProvider } from "./providers";
 
 export function DashboardLayout() {
+  const { user } = useAuth();
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
+  const activeTab = useDashboardStore((s) => s.activeTab);
+  const activeRightTab = useDashboardStore((s) => s.activeRightTab);
+  const activeBoardDocumentId = useDashboardStore((s) => s.activeBoardDocumentId);
+  const activeCustomViewId = useDashboardStore((s) => s.activeCustomViewId);
+  const isMobile = useIsMobile();
+  const detailActive = isMobile
+    ? activeTab === "chat"
+    : activeRightTab === "chat"
+      && activeBoardDocumentId === null
+      && activeCustomViewId === null;
+  const cursorScope = `${window.location.origin}|${user?.email ?? "anonymous"}`;
 
   // 세션 목록 구독 (SSE 모드: 실시간)
   const { folderCounts, hasMore, loadMore, sessions } = useSessionListProvider({
@@ -79,21 +92,23 @@ export function DashboardLayout() {
   });
 
   // 활성 세션 구독 (Provider 기반)
-  const { status: sseStatus } = useSessionProvider({
+  const { status: sseStatus, synchronizedSessionKey } = useSessionProvider({
     sessionKey: activeSessionKey,
     getSessionProvider,
+    active: detailActive,
+    cursorScope,
   });
+  const historyEnabled = detailActive && synchronizedSessionKey === activeSessionKey;
 
   // 테마 초기화 (localStorage → OS 설정 → dark 기본)
   useEffect(() => { initTheme(); }, []);
-  const { user } = useAuth();
   useUserPreferencesSync(user?.email ?? null);
 
   // 읽음 상태 동기화 (세션 선택 시 즉시 + 활성 세션 이벤트 도착 시 debounce)
   useReadPositionSync();
 
   // 브라우저 알림 (완료/에러/인터벤션)
-  useNotification();
+  useNotification(true);
 
   // URL ↔ 스토어 동기화 (/{sessionId} 라우팅)
   useUrlSync();
@@ -197,6 +212,7 @@ export function DashboardLayout() {
         <RightPanel
           chatInputDisabled={isOtherNode}
           fileUploadUrl={chatFileUploadUrl}
+          historyEnabled={historyEnabled}
         />
       }
       connectionStatus={sseStatus}
@@ -238,6 +254,7 @@ export function DashboardLayout() {
           chatInputDisabled={isOtherNode}
           fileUploadUrl={chatFileUploadUrl}
           showHeader={false}
+          historyEnabled={historyEnabled}
         />
       }
       mobileSettingsContent={
@@ -262,7 +279,7 @@ export function DashboardLayout() {
             sessions={sessions}
           />
           <NewSessionModal />
-          <AskQuestionBanner />
+          <AskQuestionBanner treeEnabled={detailActive} />
         </>
       }
     />

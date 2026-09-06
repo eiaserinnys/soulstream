@@ -907,6 +907,41 @@ CREATE TABLE IF NOT EXISTS event_ingress_receipts (
 CREATE INDEX IF NOT EXISTS idx_event_ingress_receipts_event
     ON event_ingress_receipts (session_id, event_id);
 
+CREATE TABLE IF NOT EXISTS session_feed_state (
+    session_id                TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+    attention_revision        INTEGER NOT NULL DEFAULT 0 CHECK (attention_revision >= 0),
+    notification_watermark    INTEGER NOT NULL DEFAULT 0 CHECK (notification_watermark >= 0),
+    notification_count        BIGINT NOT NULL DEFAULT 0 CHECK (notification_count >= 0),
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS session_pending_attentions (
+    session_id       TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+    attention_id     TEXT NOT NULL,
+    source_event_id  INTEGER NOT NULL CHECK (source_event_id > 0),
+    projection       JSONB NOT NULL,
+    requested_at     TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (session_id, attention_id),
+    FOREIGN KEY (session_id, source_event_id)
+        REFERENCES events(session_id, id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_pending_attentions_order
+    ON session_pending_attentions (session_id, source_event_id, attention_id);
+
+CREATE TABLE IF NOT EXISTS session_feed_notices (
+    session_id       TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+    source_event_id  INTEGER NOT NULL CHECK (source_event_id > 0),
+    projection       JSONB NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (session_id, source_event_id),
+    FOREIGN KEY (session_id, source_event_id)
+        REFERENCES events(session_id, id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_feed_notices_recent
+    ON session_feed_notices (session_id, source_event_id DESC);
+
 CREATE TABLE IF NOT EXISTS session_mutation_receipts (
     idempotency_key TEXT PRIMARY KEY,
     operation       TEXT NOT NULL,
@@ -1866,6 +1901,18 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION session_feed_try_timestamptz(p_value TEXT)
+RETURNS TIMESTAMPTZ LANGUAGE plpgsql STABLE AS $$
+BEGIN
+    IF p_value IS NULL OR btrim(p_value) = '' THEN
+        RETURN NULL;
+    END IF;
+    RETURN p_value::TIMESTAMPTZ;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$;
+
 -- 3. session_get_all
 CREATE OR REPLACE FUNCTION session_get_all(
     p_filters JSONB DEFAULT NULL,
@@ -1874,6 +1921,7 @@ CREATE OR REPLACE FUNCTION session_get_all(
 ) RETURNS SETOF sessions LANGUAGE plpgsql STABLE AS $$
 DECLARE
     q TEXT := 'SELECT s.* FROM sessions s LEFT JOIN folders f ON s.folder_id = f.id WHERE TRUE';
+    v_feed_only BOOLEAN := FALSE;
 BEGIN
     IF p_filters IS NOT NULL AND p_filters ? 'session_type' THEN
         q := q || ' AND session_type = ' || quote_literal(p_filters->>'session_type');
@@ -1909,11 +1957,22 @@ BEGIN
         END IF;
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'feed_only' AND (p_filters->>'feed_only')::boolean THEN
+        v_feed_only := TRUE;
         q := q || ' AND (s.folder_id IS NULL OR COALESCE(f.settings->>''excludeFromFeed'', ''false'') != ''true'')';
         q := q || ' AND COALESCE(session_type, ''claude'') != ''llm''';
     END IF;
 
-    q := q || ' ORDER BY s.updated_at DESC, s.session_id DESC';
+    IF v_feed_only THEN
+        q := q || ' ORDER BY COALESCE(' ||
+            'CASE WHEN jsonb_typeof(s.last_message) = ''object'' ' ||
+            'AND s.last_message->>''type'' IN (''user_message'', ''assistant_message'') ' ||
+            'AND jsonb_typeof(s.last_message->''preview'') = ''string'' ' ||
+            'AND btrim(s.last_message->>''preview'') <> '''' ' ||
+            'THEN session_feed_try_timestamptz(s.last_message->>''timestamp'') END, ' ||
+            's.created_at, s.updated_at) DESC, s.session_id DESC';
+    ELSE
+        q := q || ' ORDER BY s.updated_at DESC, s.session_id DESC';
+    END IF;
 
     IF p_limit IS NOT NULL THEN
         q := q || ' LIMIT ' || p_limit;
@@ -2063,14 +2122,112 @@ END;
 $$;
 
 -- 7. session_update_last_message
+CREATE OR REPLACE FUNCTION session_apply_last_chat_message(
+    p_session_id   TEXT,
+    p_event_id     INTEGER,
+    p_last_message JSONB,
+    p_created_at   TIMESTAMPTZ
+) RETURNS TABLE(applied BOOLEAN, last_message JSONB) LANGUAGE plpgsql AS $$
+DECLARE
+    v_existing JSONB;
+    v_existing_timestamp TIMESTAMPTZ;
+    v_existing_event_id INTEGER := 0;
+    v_canonical JSONB;
+BEGIN
+    IF p_event_id IS NULL OR p_event_id <= 0
+       OR p_created_at IS NULL
+       OR jsonb_typeof(p_last_message) IS DISTINCT FROM 'object'
+       OR p_last_message->>'type' NOT IN ('user_message', 'assistant_message')
+       OR jsonb_typeof(p_last_message->'preview') IS DISTINCT FROM 'string'
+       OR btrim(p_last_message->>'preview') = '' THEN
+        RAISE EXCEPTION 'invalid canonical last chat message';
+    END IF;
+
+    SELECT sessions.last_message
+      INTO v_existing
+      FROM sessions
+     WHERE session_id = p_session_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Session not found: %', p_session_id;
+    END IF;
+
+    v_existing_timestamp := session_feed_try_timestamptz(v_existing->>'timestamp');
+    IF COALESCE(v_existing->>'eventId', v_existing->>'event_id', '') ~ '^[1-9][0-9]{0,9}$' THEN
+        BEGIN
+            v_existing_event_id := COALESCE(
+                (v_existing->>'eventId')::INTEGER,
+                (v_existing->>'event_id')::INTEGER,
+                0
+            );
+        EXCEPTION WHEN numeric_value_out_of_range THEN
+            v_existing_event_id := 0;
+        END;
+    END IF;
+
+    v_canonical := jsonb_build_object(
+        'type', p_last_message->>'type',
+        'eventId', p_event_id,
+        'preview', substring(btrim(p_last_message->>'preview') FROM 1 FOR 200),
+        'timestamp', p_created_at
+    );
+
+    IF v_existing_timestamp IS NULL
+       OR (p_created_at, p_event_id) > (v_existing_timestamp, v_existing_event_id) THEN
+        UPDATE sessions
+           SET last_message = v_canonical,
+               updated_at = GREATEST(updated_at, p_created_at)
+         WHERE session_id = p_session_id;
+        RETURN QUERY SELECT TRUE, v_canonical;
+    ELSE
+        RETURN QUERY SELECT FALSE, v_existing;
+    END IF;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION session_update_last_message(
     p_session_id   TEXT,
     p_last_message TEXT,
     p_updated_at   TIMESTAMPTZ
-) RETURNS void LANGUAGE sql AS $$
+) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+    v_message JSONB;
+    v_existing_timestamp TIMESTAMPTZ;
+BEGIN
+    BEGIN
+        v_message := p_last_message::JSONB;
+    EXCEPTION WHEN OTHERS THEN
+        RETURN;
+    END;
+    IF p_updated_at IS NULL
+       OR jsonb_typeof(v_message) IS DISTINCT FROM 'object'
+       OR v_message->>'type' NOT IN ('user_message', 'assistant_message')
+       OR jsonb_typeof(v_message->'preview') IS DISTINCT FROM 'string'
+       OR btrim(v_message->>'preview') = '' THEN
+        RETURN;
+    END IF;
+
+    SELECT session_feed_try_timestamptz(last_message->>'timestamp')
+      INTO v_existing_timestamp
+      FROM sessions
+     WHERE session_id = p_session_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+    IF v_existing_timestamp IS NOT NULL AND p_updated_at <= v_existing_timestamp THEN
+        RETURN;
+    END IF;
+
     UPDATE sessions
-    SET last_message = p_last_message::jsonb, updated_at = p_updated_at
-    WHERE session_id = p_session_id;
+       SET last_message = jsonb_build_object(
+               'type', v_message->>'type',
+               'preview', substring(btrim(v_message->>'preview') FROM 1 FOR 200),
+               'timestamp', p_updated_at
+           ),
+           updated_at = GREATEST(updated_at, p_updated_at)
+     WHERE session_id = p_session_id;
+END;
 $$;
 
 -- 8. session_update_read_position

@@ -25,6 +25,7 @@ import type { SessionStreamEvent } from "../shared/stream-events";
 import type { SessionStorageProvider } from "../providers/types";
 import { useInitialCatalogLoad } from "./useInitialCatalogLoad";
 import { useSessionStreamCacheSync } from "./useSessionStreamCacheSync";
+import type { HydrateSessionSnapshots } from "./useSessionStreamCacheSync";
 import {
   buildCatalogStreamUrl,
   reconcileReplayGap,
@@ -89,6 +90,7 @@ export function useSessionListProvider(
   options: UseSessionListProviderOptions
 ) {
   const stableSessionsRef = useRef<SessionSummary[]>([]);
+  const hydrateSessionSnapshotsRef = useRef<HydrateSessionSnapshots>(() => undefined);
   const {
     intervalMs = 5000,
     enabled = true,
@@ -165,6 +167,7 @@ export function useSessionListProvider(
       const result = await provider.fetchSessions(
         fetchOptions,
       );
+      hydrateSessionSnapshotsRef.current(result.sessions);
 
       const store = useDashboardStore.getState();
       if (store.catalog) {
@@ -241,7 +244,7 @@ export function useSessionListProvider(
   const instanceIdRef = useRef<string | undefined>(undefined);
 
   // --- SSE 구독: 연결 + 캐시/store 동기화 ---
-  useSessionStreamCacheSync({
+  const hydrateSessionSnapshots = useSessionStreamCacheSync({
     enabled: enabled && streamEnabled && !externalProvider,
     urlBuilder: () =>
       buildCatalogStreamUrl(lastEventIdRef.current, instanceIdRef.current),
@@ -250,6 +253,9 @@ export function useSessionListProvider(
       // SSE id 부착 이벤트만 cache-sync 내부 가드를 통과해 도달 → e.lastEventId
       // 빈 값 자동 skip. parseInt(NaN) 오염 회피.
       lastEventIdRef.current = eid;
+    },
+    onSessionDeleted: (event) => {
+      getSessionProvider().detailCursorStore?.deleteSession(event.agent_session_id);
     },
     onStreamMeta: (e) => {
       const update = reconcileStreamMeta(e, {
@@ -260,20 +266,26 @@ export function useSessionListProvider(
       instanceIdRef.current = update.nextInstanceId;
       lastEventIdRef.current = update.nextLastEventId;
       if (update.shouldRefetch) {
-        queryRefetch();
         onStreamReset?.();
+        return true;
       }
+      return false;
     },
     onReplayGap: (e) => {
       const update = reconcileReplayGap(e);
       lastEventIdRef.current = update.nextLastEventId;
-      if (update.shouldRefetch) queryRefetch();
+      if (update.shouldRefetch) {
+        onStreamReset?.();
+        return true;
+      }
+      return false;
     },
     onTaskUpdated: handleTaskUpdated,
     onCustomViewUpdated: handleCustomViewUpdated,
     onStreamEvent,
     transformCatalogUpdate,
   });
+  hydrateSessionSnapshotsRef.current = hydrateSessionSnapshots ?? (() => undefined);
 
   return {
     sessions,

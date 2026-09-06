@@ -65,11 +65,11 @@ describe("v3 session panel model", () => {
     expect(sessionPanelTitle({
       ...session("secret-uuid", "running", "not_required", "2026-07-16T01:00:00Z"),
       displayName: "  이름 있는 세션  ",
-      lastMessage: { type: "assistant", preview: "fallback", timestamp: "2026-07-16T01:00:00Z" },
+      lastMessage: { type: "assistant_message", preview: "fallback", timestamp: "2026-07-16T01:00:00Z" },
     })).toBe("이름 있는 세션");
     expect(sessionPanelTitle({
       ...session("secret-uuid", "running", "not_required", "2026-07-16T01:00:00Z"),
-      lastMessage: { type: "assistant", preview: "  마지막\n메시지  ", timestamp: "2026-07-16T01:00:00Z" },
+      lastMessage: { type: "assistant_message", preview: "  마지막\n메시지  ", timestamp: "2026-07-16T01:00:00Z" },
     })).toBe("마지막 메시지");
     expect(sessionPanelTitle(session("secret-uuid", "running", "not_required", "2026-07-16T01:00:00Z")))
       .toBe("제목 없는 세션");
