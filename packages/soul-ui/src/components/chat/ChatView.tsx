@@ -36,7 +36,6 @@ import {
 import { useChatLogicalInsertionCoordinate } from "./useChatLogicalInsertionCoordinate";
 import { useChatViewportRetention } from "./useChatViewportRetention";
 import {
-  decideFollowOnAtBottomChange,
   resolveFollowOutput,
   shouldScrollToBottomOnTreeChange,
 } from "./ChatView.follow-helpers";
@@ -56,6 +55,36 @@ interface ChatViewProps {
   fileUploadUrl?: string;
   showHeader?: boolean;
   historyEnabled?: boolean;
+}
+
+function canNestedScrollerConsumeVerticalInput(
+  target: EventTarget | null,
+  outerScroller: HTMLElement | null,
+  deltaY: number,
+): boolean {
+  if (!(target instanceof Element) || outerScroller === null || deltaY === 0) {
+    return false;
+  }
+  let candidate: HTMLElement | null = target instanceof HTMLElement
+    ? target
+    : target.parentElement;
+  while (candidate !== null && candidate !== outerScroller) {
+    if (candidate.scrollHeight > candidate.clientHeight) {
+      const overflowY = window.getComputedStyle(candidate).overflowY;
+      const acceptsUserScroll = overflowY === "auto"
+        || overflowY === "scroll"
+        || overflowY === "overlay";
+      if (acceptsUserScroll) {
+        if (deltaY < 0 && candidate.scrollTop > 0.5) return true;
+        if (
+          deltaY > 0
+          && candidate.scrollTop + candidate.clientHeight < candidate.scrollHeight - 0.5
+        ) return true;
+      }
+    }
+    candidate = candidate.parentElement;
+  }
+  return false;
 }
 
 export function ChatView({
@@ -78,12 +107,6 @@ export function ChatView({
    * 같은 set() 안에서 tree와 함께 갱신되므로 1렌더 사이클 정합이 보장된다.
    */
   const chatPrependedCount = useDashboardStore((s) => s.chatPrependedCount);
-  /**
-   * 마지막 prepend 시각 — atBottom=true settle 가드용 (decideFollowOnAtBottomChange).
-   * processHistoryEvents의 set() 안에서 chatPrependedCount와 함께 atomic 갱신되므로
-   * 이 selector도 chatPrependedCount와 같은 렌더 사이클에 갱신된다.
-   */
-  const chatLastPrependAtMs = useDashboardStore((s) => s.chatLastPrependAtMs);
   const chatFontSize = useDashboardStore((s) => s.chatFontSize);
   const chatTypography = resolveChatTypography(chatFontSize);
   const chatTypographyStyle = {
@@ -124,7 +147,131 @@ export function ChatView({
   const prevVisibleItemsRef = useRef(timelineItems);
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
+  const handledFocusRef = useRef<number | null>(null);
+  const bottomFocusedSessionRef = useRef<string | null>(null);
+  const initialBottomFocusPendingSessionRef = useRef<string | null>(
+    activeSessionKey,
+  );
+  const prevSessionKeyForFollowRef = useRef<string | null>(activeSessionKey);
+  const olderHistoryIntentSessionRef = useRef<string | null>(null);
+  const pointerScrollStartRef = useRef<{
+    sessionKey: string;
+    scrollTop: number;
+  } | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
+  const requestOlderRef = useRef<(source?: "automatic" | "manual") => void>(
+    () => undefined,
+  );
+  if (prevSessionKeyForFollowRef.current !== activeSessionKey) {
+    prevSessionKeyForFollowRef.current = activeSessionKey;
+    bottomFocusedSessionRef.current = null;
+    initialBottomFocusPendingSessionRef.current = activeSessionKey;
+    olderHistoryIntentSessionRef.current = null;
+    pointerScrollStartRef.current = null;
+    touchStartYRef.current = null;
+    isFollowingRef.current = true;
+  }
   useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
+  const clearOlderHistoryIntent = useCallback(() => {
+    olderHistoryIntentSessionRef.current = null;
+  }, []);
+  const consumeOlderHistoryIntent = useCallback((scroller: HTMLElement | null) => {
+    if (
+      activeSessionKey === null
+      || olderHistoryIntentSessionRef.current !== activeSessionKey
+      || (scroller !== null && scroller.scrollTop > 48)
+    ) return;
+    olderHistoryIntentSessionRef.current = null;
+    requestOlderRef.current("automatic");
+  }, [activeSessionKey]);
+  const handleUserViewportInput = useCallback((event: Event) => {
+    if (activeSessionKey === null) return;
+    const scroller = event.currentTarget instanceof HTMLElement
+      ? event.currentTarget
+      : null;
+    const markOlderExploration = () => {
+      olderHistoryIntentSessionRef.current = activeSessionKey;
+      initialBottomFocusPendingSessionRef.current = null;
+      bottomFocusedSessionRef.current = activeSessionKey;
+      isFollowingRef.current = false;
+      setIsFollowing(false);
+      consumeOlderHistoryIntent(scroller);
+    };
+
+    if (event.type === "pointerdown") {
+      if (scroller === null || event.target !== scroller) {
+        pointerScrollStartRef.current = null;
+        return;
+      }
+      clearOlderHistoryIntent();
+      pointerScrollStartRef.current = {
+        sessionKey: activeSessionKey,
+        scrollTop: scroller.scrollTop,
+      };
+      return;
+    }
+    if (event.type === "pointerup" || event.type === "pointercancel") {
+      pointerScrollStartRef.current = null;
+      return;
+    }
+    if (event.type === "scroll") {
+      const pointerStart = pointerScrollStartRef.current;
+      if (
+        scroller !== null
+        && pointerStart?.sessionKey === activeSessionKey
+        && scroller.scrollTop < pointerStart.scrollTop - 0.5
+      ) {
+        pointerScrollStartRef.current = null;
+        markOlderExploration();
+      }
+      return;
+    }
+    if (event.type === "touchstart") {
+      touchStartYRef.current = (event as TouchEvent).touches[0]?.clientY ?? null;
+      return;
+    }
+    if (event.type === "touchend" || event.type === "touchcancel") {
+      touchStartYRef.current = null;
+      return;
+    }
+    if (event.type === "touchmove") {
+      const currentY = (event as TouchEvent).touches[0]?.clientY;
+      const startY = touchStartYRef.current;
+      if (currentY !== undefined && startY !== null && currentY > startY + 2) {
+        if (canNestedScrollerConsumeVerticalInput(event.target, scroller, -1)) return;
+        markOlderExploration();
+      } else if (currentY !== undefined && startY !== null && currentY < startY - 2) {
+        if (canNestedScrollerConsumeVerticalInput(event.target, scroller, 1)) return;
+        clearOlderHistoryIntent();
+      }
+      return;
+    }
+    if (event.type === "wheel") {
+      const deltaY = (event as WheelEvent).deltaY;
+      if (canNestedScrollerConsumeVerticalInput(event.target, scroller, deltaY)) return;
+      if (deltaY < 0) markOlderExploration();
+      else if (deltaY > 0) clearOlderHistoryIntent();
+      return;
+    }
+    if (event.type === "keydown") {
+      const target = event.target instanceof Element ? event.target : null;
+      if (
+        target !== null
+        && target !== scroller
+        && target.closest(
+          'a,button,input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]',
+        ) !== null
+      ) return;
+      const key = (event as KeyboardEvent).key;
+      if (["ArrowUp", "PageUp", "Home"].includes(key)) {
+        if (canNestedScrollerConsumeVerticalInput(event.target, scroller, -1)) return;
+        markOlderExploration();
+      } else if (["ArrowDown", "PageDown", "End"].includes(key)) {
+        if (canNestedScrollerConsumeVerticalInput(event.target, scroller, 1)) return;
+        clearOlderHistoryIntent();
+      }
+    }
+  }, [activeSessionKey, clearOlderHistoryIntent, consumeOlderHistoryIntent]);
   const {
     scrollerRef,
     bindScrollerElement,
@@ -135,12 +282,30 @@ export function ChatView({
     firstItemIndex,
     isFollowing,
     recordFirstVisibleKey,
+    onUserViewportInput: handleUserViewportInput,
   });
   const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef, historyEnabled);
+  requestOlderRef.current = history.requestOlder;
+  const requestOlderManually = useCallback(() => {
+    clearOlderHistoryIntent();
+    initialBottomFocusPendingSessionRef.current = null;
+    bottomFocusedSessionRef.current = activeSessionKey;
+    isFollowingRef.current = false;
+    setIsFollowing(false);
+    history.requestOlder("manual");
+  }, [activeSessionKey, clearOlderHistoryIntent, history.requestOlder]);
   const notifyHistoryViewportGeometry = history.notifyViewportGeometry;
   const bindChatScroller = useCallback((ref: HTMLElement | Window | null) => {
+    if (!(ref instanceof HTMLElement)) {
+      olderHistoryIntentSessionRef.current = null;
+      pointerScrollStartRef.current = null;
+      touchStartYRef.current = null;
+    }
     bindScrollerElement(ref);
-    notifyHistoryViewportGeometry();
+    // Descendant callback refs attach before this component's layout effects.
+    // The microtask runs after the whole commit so the hook can publish its ready
+    // generation first; the hook gate remains authoritative for stale callbacks.
+    queueMicrotask(notifyHistoryViewportGeometry);
   }, [bindScrollerElement, notifyHistoryViewportGeometry]);
   useLayoutEffect(() => {
     notifyHistoryViewportGeometry();
@@ -149,48 +314,40 @@ export function ChatView({
     () => resolveFollowOutput(isFollowingRef.current),
     [],
   );
-  /**
-   * 같은 focusEventId에 대해 `itemsRendered`가 반복 호출되어도 하이라이트 타이머가
-   * 중첩되지 않도록 1회 처리 후 여기에 기록한다. 세션 전환 시 null로 초기화.
-   */
-  const handledFocusRef = useRef<number | null>(null);
-  const bottomFocusedSessionRef = useRef<string | null>(null);
-  const initialBottomFocusPendingSessionRef = useRef<string | null>(
-    activeSessionKey,
-  );
-
-  /**
-   * 세션 전환 시점 기록 (auto-follow 가드용).
-   *
-   * `key={activeSessionKey}`는 `<Virtuoso>`에만 붙어 있어 ChatView 컴포넌트
-   * 자체는 재마운트되지 않는다. 따라서 useRef 초기값은 최초 마운트 1회만 유효.
-   * 세션 전환 시 갱신은 render 본체에서 prev/curr 비교로 즉시 수행한다 —
-   * useEffect로 미루면 Virtuoso remount 직후의 첫 atBottomStateChange(false)
-   * 콜백이 effect보다 먼저 호출되어 sessionMs가 직전 세션 시각 기준이 되고
-   * 가드가 무력화될 수 있다.
-   *
-   * decideFollowOnAtBottomChange가 이 ref 기반 sessionMs로 measure 깜빡임 윈도를
-   * 판정한다.
-   */
-  const sessionStartedAtRef = useRef<number>(performance.now());
-  const prevSessionKeyForFollowRef = useRef<string | null>(activeSessionKey);
-  if (prevSessionKeyForFollowRef.current !== activeSessionKey) {
-    prevSessionKeyForFollowRef.current = activeSessionKey;
-    sessionStartedAtRef.current = performance.now();
-    bottomFocusedSessionRef.current = null;
-    initialBottomFocusPendingSessionRef.current = activeSessionKey;
-  }
-
   const scrollToBottomWithBehavior = useCallback(
     (behavior: "auto" | "smooth") => {
       if (bottomScrollLocation === null) return;
+      const scroller = scrollerRef.current;
+      if (scroller !== null && typeof scroller.scrollTo === "function") {
+        // Virtuoso estimates unmeasured variable-height rows for scrollToIndex;
+        // on a long first page that estimate can settle in the middle. Native
+        // scrollHeight is the measured list boundary, and subsequent height
+        // changes re-enter through totalListHeightChanged until it is exact.
+        scroller.scrollTo({ top: scroller.scrollHeight, behavior });
+        return;
+      }
       virtuosoRef.current?.scrollToIndex({
         ...bottomScrollLocation,
         behavior,
       });
     },
-    [bottomScrollLocation],
+    [bottomScrollLocation, scrollerRef],
   );
+  const maintainBottomIfFollowing = useCallback(() => {
+    if (!isFollowingRef.current) return;
+    const scroller = scrollerRef.current;
+    if (
+      scroller !== null
+      && scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 1
+    ) return;
+    scrollToBottomWithBehavior("auto");
+  }, [scrollToBottomWithBehavior, scrollerRef]);
+  const handleTotalListHeightChanged = useCallback(() => {
+    notifyHistoryViewportGeometry();
+    // 행의 실제 높이는 Markdown/접힌 도구 렌더 뒤에도 바뀔 수 있다. Follow는
+    // 명시적 사용자 의도이므로 켜져 있는 동안에는 그 높이 변화도 하단에 고정한다.
+    maintainBottomIfFollowing();
+  }, [maintainBottomIfFollowing, notifyHistoryViewportGeometry]);
 
   useLayoutEffect(() => {
     if (!activeSessionKey) {
@@ -222,16 +379,15 @@ export function ChatView({
       activeSessionKey !== null &&
       initialBottomFocusPendingSessionRef.current === activeSessionKey &&
       bottomFocusedSessionRef.current !== activeSessionKey;
+    if (isInitialBottomFocusPending) return;
     if (
       bottomScrollLocation !== null &&
-      (isInitialBottomFocusPending ||
-        shouldScrollToBottomOnTreeChange(isFollowingRef.current, timelineItems.length))
+      shouldScrollToBottomOnTreeChange(isFollowingRef.current, timelineItems.length)
     ) {
       requestAnimationFrame(() => {
-        scrollToBottomWithBehavior("auto");
-        requestAnimationFrame(() => {
+        if (isFollowingRef.current) {
           scrollToBottomWithBehavior("auto");
-        });
+        }
       });
       return;
     }
@@ -251,6 +407,7 @@ export function ChatView({
   // 세션이 바뀌는 순간 focusEventId와 handledFocusRef를 모두 비운다.
   // 실제 스크롤 위치 리셋은 Virtuoso `key={activeSessionKey}` 재마운트로 처리된다.
   useEffect(() => {
+    isFollowingRef.current = true;
     setIsFollowing(true);
     setShowNewMessage(false);
     setFocusEventId(null);
@@ -263,6 +420,13 @@ export function ChatView({
     if (!focusEventId || timelineItems.length === 0) return;
     const targetIndex = findFocusIndex(timelineItems, focusEventId);
     if (targetIndex < 0) return; // 다음 treeVersion tick에서 재시도
+    // 검색 결과 이동은 사용자의 명시적 과거 탐색이다. history pagination 의도를
+    // 만들지는 않지만, follow/초기 bottom 보정과는 경쟁하지 않게 먼저 해제한다.
+    clearOlderHistoryIntent();
+    initialBottomFocusPendingSessionRef.current = null;
+    bottomFocusedSessionRef.current = activeSessionKey;
+    isFollowingRef.current = false;
+    setIsFollowing(false);
     virtuosoRef.current?.scrollToIndex({
       index: targetIndex + firstItemIndex,
       align: "center",
@@ -271,52 +435,49 @@ export function ChatView({
   }, [focusEventId, treeVersion, timelineItems, firstItemIndex]);
 
   const scrollToBottom = useCallback(() => {
+    clearOlderHistoryIntent();
+    isFollowingRef.current = true;
     scrollToBottomWithBehavior("smooth");
     setIsFollowing(true);
     setShowNewMessage(false);
-  }, [scrollToBottomWithBehavior]);
+  }, [clearOlderHistoryIntent, scrollToBottomWithBehavior]);
 
   const toggleFollow = useCallback(() => {
     setIsFollowing((prev) => {
       const next = !prev;
+      isFollowingRef.current = next;
       if (next && bottomScrollLocation !== null) {
+        clearOlderHistoryIntent();
         scrollToBottomWithBehavior("smooth");
         setShowNewMessage(false);
       }
       return next;
     });
-  }, [bottomScrollLocation, scrollToBottomWithBehavior]);
+  }, [bottomScrollLocation, clearOlderHistoryIntent, scrollToBottomWithBehavior]);
 
   const VirtuosoHeader = useCallback(
     () => (
       <ChatHistoryStatus
         loading={history.loading}
         reachedTop={history.reachedTop}
+        canLoadOlder={history.canLoadOlder}
         blockedReason={history.blockedReason}
-        onRetry={() => history.requestOlder("manual")}
+        onRetry={requestOlderManually}
         showReachedTop={timelineItems.length > 0}
       />
     ),
-    [history.blockedReason, history.loading, history.reachedTop, history.requestOlder, timelineItems.length],
-  );
-  const VirtuosoEmptyPlaceholder = useCallback(
-    () => (
-      !history.loading && history.blockedReason === null
-        ? (
-            <div className="p-5 text-center text-muted-foreground text-sm">
-              Waiting for events...
-            </div>
-          )
-        : null
-    ),
-    [history.blockedReason, history.loading],
+    [
+      history.blockedReason,
+      history.canLoadOlder,
+      history.loading,
+      history.reachedTop,
+      requestOlderManually,
+      timelineItems.length,
+    ],
   );
   const virtuosoComponents = useMemo(
-    () => ({
-      Header: VirtuosoHeader,
-      EmptyPlaceholder: VirtuosoEmptyPlaceholder,
-    }),
-    [VirtuosoEmptyPlaceholder, VirtuosoHeader],
+    () => ({ Header: VirtuosoHeader }),
+    [VirtuosoHeader],
   );
 
   if (!activeSessionKey) {
@@ -373,7 +534,25 @@ export function ChatView({
           <SessionStoryDisclosure sessionId={activeSessionKey} />
         </div>
       )}
-      <Virtuoso
+      {timelineItems.length === 0 && (
+        <>
+          <ChatHistoryStatus
+            loading={history.loading}
+            reachedTop={history.reachedTop}
+            canLoadOlder={history.canLoadOlder}
+            blockedReason={history.blockedReason}
+            onRetry={requestOlderManually}
+            showReachedTop={false}
+          />
+          {!history.loading && history.blockedReason === null && (
+            <div className="p-5 text-center text-muted-foreground text-sm">
+              Waiting for events...
+            </div>
+          )}
+        </>
+      )}
+      {timelineItems.length > 0 && (
+        <Virtuoso
         key={activeSessionKey}
         ref={virtuosoRef}
         scrollerRef={bindChatScroller}
@@ -393,35 +572,25 @@ export function ChatView({
             activeSessionKey !== null &&
             initialBottomFocusPendingSessionRef.current === activeSessionKey &&
             bottomFocusedSessionRef.current !== activeSessionKey;
-          if (isInitialBottomFocusPending) {
-            if (!atBottom) return;
+          if (isInitialBottomFocusPending && atBottom) {
             initialBottomFocusPendingSessionRef.current = null;
             bottomFocusedSessionRef.current = activeSessionKey;
             setIsFollowing(true);
             setShowNewMessage(false);
             return;
           }
-          // 두 가지 measure 깜빡임을 모두 가드한다:
-          //   - 세션 전환 직후 atBottom=false 깜빡임 (sessionMs 기반)
-          //   - prepend 직후 atBottom=true 깜빡임 (prependAgeMs 기반)
-          // 헬퍼가 null을 반환하면 isFollowing 변경하지 않음.
-          const sessionMs = performance.now() - sessionStartedAtRef.current;
-          const prependAgeMs =
-            chatLastPrependAtMs === null
-              ? null
-              : performance.now() - chatLastPrependAtMs;
-          const next = decideFollowOnAtBottomChange(atBottom, sessionMs, prependAgeMs);
-          if (next !== null) {
-            setIsFollowing(next);
+          // Follow의 off 전환은 wheel/touch/keyboard/scrollbar의 실제 위쪽 입력만
+          // 담당한다. 동적 행 측정에서 나오는 atBottom=false는 사용자 의도가 아니다.
+          if (!atBottom) {
+            maintainBottomIfFollowing();
+            return;
           }
-          // showNewMessage는 atBottom=true 보고가 신뢰 가능한지와 무관하게
-          // 사용자가 끝에 닿았다는 raw 신호로만 끄면 충분.
-          if (atBottom) setShowNewMessage(false);
+          setShowNewMessage(false);
         }}
         startReached={() => {
-          history.requestOlder("automatic");
+          consumeOlderHistoryIntent(null);
         }}
-        totalListHeightChanged={notifyHistoryViewportGeometry}
+        totalListHeightChanged={handleTotalListHeightChanged}
         /**
          * tool-group은 마지막 tool, summary-group은 anchor의 키를 유지한다.
          * turn summary가 늦게 결합되어도 가상 행의 key와 data 길이가 바뀌지 않는다.
@@ -444,6 +613,10 @@ export function ChatView({
           // 즉시 읽으면 재배치 중인 overscan 행 또는 빈 중간 프레임을 관찰할 수 있다.
           scheduleVisuallyFirstItem();
           notifyHistoryViewportGeometry();
+          // Virtuoso가 추정 높이 보정으로 초기 native bottom 이동을 되돌린 경우도
+          // 다음 실제 render range에서 재확인한다. 사용자 위쪽 입력은 ref를 먼저
+          // 끄므로 과거 탐색 중인 viewport와 경쟁하지 않는다.
+          maintainBottomIfFollowing();
           if (focusEventId == null) return;
           // 이미 이 focusEventId를 처리했다면 중복 예약 방지
           if (handledFocusRef.current === focusEventId) return;
@@ -459,8 +632,9 @@ export function ChatView({
             setFocusEventId(null);
           }, 2000);
         }}
-        className="flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"
-      />
+          className="flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"
+        />
+      )}
 
       {showNewMessage && !isFollowing && (
         <div className="relative">

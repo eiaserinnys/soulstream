@@ -10,6 +10,7 @@
 import {
   useCallback,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type RefObject,
@@ -82,15 +83,36 @@ interface TimelineResponse {
 }
 
 interface FillRun {
-  token: symbol;
+  generation: HistoryGeneration;
   pagesFetched: number;
   awaitingCommit: boolean;
-  source: HistoryRequestSource;
+  source: HistoryRequestSource | "initial";
+}
+
+interface HistoryActivationTarget {
+  token: symbol;
+  sessionId: string | null;
+  historyResetVersion: number;
+  enabled: boolean;
+}
+
+interface HistoryGeneration {
+  token: symbol;
+  sessionId: string;
+  historyResetVersion: number;
+  ready: true;
+}
+
+interface HistoryRequestOwner {
+  generation: HistoryGeneration;
+  run: FillRun;
+  abortController: AbortController;
 }
 
 export interface UseMessageHistoryBufferResult {
   loading: boolean;
   reachedTop: boolean;
+  canLoadOlder: boolean;
   blockedReason: HistoryLoadBlockReason | null;
   /** startReached/자동 채움/수동 재시도의 단일 controller 진입점. */
   requestOlder: (source?: HistoryRequestSource) => void;
@@ -146,25 +168,51 @@ export function useMessageHistoryBuffer(
   const [blockedReason, setBlockedReason] =
     useState<HistoryLoadBlockReason | null>(null);
 
-  // loadingRef가 in-flight의 유일한 동기 정본이다. state는 표시용 projection이다.
-  const loadingRef = useRef(false);
+  // activeRequestRef가 in-flight의 유일한 동기 정본이다. state는 표시용 projection이다.
   const reachedTopRef = useRef(false);
   const blockedReasonRef = useRef<HistoryLoadBlockReason | null>(null);
   const nextCursorRef = useRef<string | null>(null);
   const initialPageLoadedRef = useRef(false);
-  const sessionTokenRef = useRef<symbol>(Symbol("initial"));
-  const configuredSessionRef = useRef<string | null>(null);
+  const activeGenerationRef = useRef<HistoryGeneration | null>(null);
+  const configuredHistoryRef = useRef<{
+    sessionId: string;
+    historyResetVersion: number;
+  } | null>(null);
   const fillRunRef = useRef<FillRun | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
+  const activeRequestRef = useRef<HistoryRequestOwner | null>(null);
 
-  const isCurrentSession = useCallback((token: symbol): boolean => (
-    sessionId !== null
-    && enabledRef.current
-    && sessionTokenRef.current === token
-    && useDashboardStore.getState().activeSessionKey === sessionId
-  ), [sessionId]);
+  // render 중에는 candidate만 만든다. committed layout effect만 ready generation을 공개한다.
+  const activationTarget = useMemo<HistoryActivationTarget>(() => ({
+    token: Symbol("history activation"),
+    sessionId,
+    historyResetVersion,
+    enabled,
+  }), [enabled, historyResetVersion, sessionId]);
+
+  const isActiveGeneration = useCallback((generation: HistoryGeneration): boolean => {
+    const store = useDashboardStore.getState();
+    return generation.ready
+      && activeGenerationRef.current === generation
+      && store.activeSessionKey === generation.sessionId
+      && store.historyResetVersion === generation.historyResetVersion;
+  }, []);
+
+  const resolveCommittedGeneration = useCallback((
+    target: HistoryActivationTarget,
+  ): HistoryGeneration | null => {
+    const generation = activeGenerationRef.current;
+    if (
+      !target.enabled
+      || target.sessionId === null
+      || generation === null
+      || !generation.ready
+      || generation.token !== target.token
+      || generation.sessionId !== target.sessionId
+      || generation.historyResetVersion !== target.historyResetVersion
+      || !isActiveGeneration(generation)
+    ) return null;
+    return generation;
+  }, [isActiveGeneration]);
 
   const updateReachedTop = useCallback((value: boolean) => {
     reachedTopRef.current = value;
@@ -179,20 +227,29 @@ export function useMessageHistoryBuffer(
   const requestHistoryPage = useCallback(async (
     run: FillRun,
   ): Promise<HistoryPageOutcome> => {
-    if (!sessionId || !isCurrentSession(run.token)) return "stale";
-    if (loadingRef.current) return "busy";
+    const { generation } = run;
+    if (!isActiveGeneration(generation)) return "stale";
+    if (activeRequestRef.current !== null) return "busy";
     if (reachedTopRef.current) return "reachedTop";
 
     const before = initialPageLoadedRef.current ? nextCursorRef.current : null;
     if (initialPageLoadedRef.current && before === null) return "reachedTop";
 
-    loadingRef.current = true;
-    setLoading(true);
     const abortController = new AbortController();
-    abortControllerRef.current = abortController;
+    const requestOwner: HistoryRequestOwner = {
+      generation,
+      run,
+      abortController,
+    };
+    activeRequestRef.current = requestOwner;
+    setLoading(true);
     try {
-      const data = await fetchHistoryPage(sessionId, before, abortController.signal);
-      if (!isCurrentSession(run.token)) return "stale";
+      const data = await fetchHistoryPage(
+        generation.sessionId,
+        before,
+        abortController.signal,
+      );
+      if (!isActiveGeneration(generation)) return "stale";
 
       const messages = Array.isArray(data.messages) ? data.messages : [];
       const nextCursor = data.next_cursor ?? null;
@@ -205,12 +262,12 @@ export function useMessageHistoryBuffer(
       }
 
       // fetch와 store 반영 사이에도 session이 바뀔 수 있으므로 경계 직전 재검증한다.
-      if (!isCurrentSession(run.token)) return "stale";
+      if (!isActiveGeneration(generation)) return "stale";
       const events = [...messages].reverse().map(toSSEEvent);
       // store update가 만든 React commit부터 geometry 신호를 받을 준비를 끝낸다.
       run.awaitingCommit = true;
       const { addedCount } = useDashboardStore.getState().processHistoryEvents(events);
-      if (!isCurrentSession(run.token)) return "stale";
+      if (!isActiveGeneration(generation)) return "stale";
 
       initialPageLoadedRef.current = true;
       nextCursorRef.current = nextCursor;
@@ -218,7 +275,7 @@ export function useMessageHistoryBuffer(
       if (run.source === "manual") updateBlockedReason(null);
 
       diag("history", "viewport fill page", {
-        sessionId,
+        sessionId: generation.sessionId,
         before,
         received: messages.length,
         addedCount,
@@ -234,28 +291,30 @@ export function useMessageHistoryBuffer(
       }
 
       updateReachedTop(false);
+      if (run.source === "initial") {
+        run.awaitingCommit = false;
+        fillRunRef.current = null;
+      }
       return "fetched";
     } catch (error) {
-      if (!isCurrentSession(run.token)) return "stale";
+      if (!isActiveGeneration(generation)) return "stale";
       if (error instanceof DOMException && error.name === "AbortError") return "stale";
       fillRunRef.current = null;
       updateBlockedReason("error");
       diag("history", "viewport fill failed", {
-        sessionId,
+        sessionId: generation.sessionId,
         message: error instanceof Error ? error.message : String(error),
       });
       return "failed";
     } finally {
-      if (abortControllerRef.current === abortController) {
-        abortControllerRef.current = null;
-      }
-      // stale completion이 새 session의 in-flight projection을 덮지 않게 한다.
-      if (isCurrentSession(run.token)) {
-        loadingRef.current = false;
-        setLoading(false);
+      // exact owner만 자기 loading projection을 내릴 수 있다. 이전 generation의
+      // 늦은 finally는 새 generation/request의 owner와 일치하지 않는다.
+      if (activeRequestRef.current === requestOwner) {
+        activeRequestRef.current = null;
+        if (isActiveGeneration(generation)) setLoading(false);
       }
     }
-  }, [isCurrentSession, sessionId, updateBlockedReason, updateReachedTop]);
+  }, [isActiveGeneration, updateBlockedReason, updateReachedTop]);
 
   const loadNextPage = useCallback(async (run: FillRun): Promise<HistoryPageOutcome> => {
     const outcome = await requestHistoryPage(run);
@@ -269,35 +328,33 @@ export function useMessageHistoryBuffer(
     return outcome;
   }, [requestHistoryPage, updateBlockedReason]);
 
-  const beginFillRun = useCallback((source: HistoryRequestSource): void => {
-    if (!enabledRef.current || !sessionId || configuredSessionRef.current !== sessionId) return;
-    if (loadingRef.current || fillRunRef.current !== null) return;
+  const beginFillRun = useCallback((
+    generation: HistoryGeneration,
+    source: HistoryRequestSource | "initial",
+  ): void => {
+    if (!isActiveGeneration(generation)) return;
+    if (activeRequestRef.current !== null || fillRunRef.current !== null) return;
     if (reachedTopRef.current) return;
     if (source === "automatic" && blockedReasonRef.current !== null) return;
 
     const run: FillRun = {
-      token: sessionTokenRef.current,
+      generation,
       pagesFetched: 0,
       awaitingCommit: false,
       source,
     };
     fillRunRef.current = run;
     void loadNextPage(run);
-  }, [loadNextPage, sessionId]);
+  }, [isActiveGeneration, loadNextPage]);
 
   const requestOlder = useCallback((source: HistoryRequestSource = "automatic") => {
-    beginFillRun(source);
-  }, [beginFillRun]);
+    const generation = resolveCommittedGeneration(activationTarget);
+    if (generation !== null) beginFillRun(generation, source);
+  }, [activationTarget, beginFillRun, resolveCommittedGeneration]);
 
   const notifyViewportGeometry = useCallback(() => {
-    if (
-      !enabledRef.current
-      || !sessionId
-      || configuredSessionRef.current !== sessionId
-      || loadingRef.current
-    ) return;
-    const token = sessionTokenRef.current;
-    if (!isCurrentSession(token)) return;
+    const generation = resolveCommittedGeneration(activationTarget);
+    if (generation === null || activeRequestRef.current !== null) return;
 
     const scroller = scrollerRef.current;
     if (scroller === null) return;
@@ -312,9 +369,11 @@ export function useMessageHistoryBuffer(
     if (reachedTopRef.current || blockedReasonRef.current !== null) return;
 
     if (run === null) {
-      beginFillRun("automatic");
+      // Geometry is evidence only for a run that an explicit user action
+      // already opened. Mount-time startReached/layout must never restart one.
       return;
     }
+    if (run.generation !== generation) return;
     if (!run.awaitingCommit) return;
     if (run.pagesFetched >= MAX_VIEWPORT_FILL_PAGES) {
       fillRunRef.current = null;
@@ -324,53 +383,76 @@ export function useMessageHistoryBuffer(
 
     run.awaitingCommit = false;
     void loadNextPage(run);
-  }, [beginFillRun, isCurrentSession, loadNextPage, scrollerRef, sessionId, updateBlockedReason]);
+  }, [
+    activationTarget,
+    beginFillRun,
+    loadNextPage,
+    resolveCommittedGeneration,
+    scrollerRef,
+    updateBlockedReason,
+  ]);
 
   useLayoutEffect(() => {
-    const token = Symbol("session");
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = null;
-    sessionTokenRef.current = token;
-    configuredSessionRef.current = sessionId;
-    loadingRef.current = false;
-    reachedTopRef.current = false;
-    blockedReasonRef.current = null;
-    nextCursorRef.current = null;
-    initialPageLoadedRef.current = false;
+    // dependency 교체의 이전 cleanup과 이 setup 모두 ready gate를 먼저 닫는다.
+    // 따라서 descendant callback-ref/layout effect가 이 effect보다 먼저 실행되어도
+    // render candidate로 request를 시작할 수 없다.
+    activeGenerationRef.current = null;
+    const staleRequest = activeRequestRef.current;
+    activeRequestRef.current = null;
+    staleRequest?.abortController.abort();
     fillRunRef.current = null;
     setLoading(false);
-    setReachedTop(false);
-    setBlockedReason(null);
 
-    return () => {
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = null;
-      sessionTokenRef.current = Symbol("disposed");
-      configuredSessionRef.current = null;
-      fillRunRef.current = null;
-    };
-  }, [historyResetVersion, sessionId]);
-
-  useLayoutEffect(() => {
-    if (!sessionId) return;
-    if (!enabled) {
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = null;
-      sessionTokenRef.current = Symbol("suspended");
-      fillRunRef.current = null;
-      loadingRef.current = false;
-      setLoading(false);
-      return;
+    const configuredHistory = configuredHistoryRef.current;
+    const configurationChanged = activationTarget.sessionId === null
+      ? configuredHistory !== null
+      : configuredHistory?.sessionId !== activationTarget.sessionId
+        || configuredHistory?.historyResetVersion !== activationTarget.historyResetVersion;
+    if (configurationChanged) {
+      configuredHistoryRef.current = activationTarget.sessionId === null
+        ? null
+        : {
+            sessionId: activationTarget.sessionId,
+            historyResetVersion: activationTarget.historyResetVersion,
+          };
+      reachedTopRef.current = false;
+      blockedReasonRef.current = null;
+      nextCursorRef.current = null;
+      initialPageLoadedRef.current = false;
+      setReachedTop(false);
+      setBlockedReason(null);
     }
 
-    sessionTokenRef.current = Symbol("active");
-    configuredSessionRef.current = sessionId;
-    if (!initialPageLoadedRef.current) beginFillRun("automatic");
-  }, [beginFillRun, enabled, historyResetVersion, sessionId]);
+    if (!activationTarget.enabled || activationTarget.sessionId === null) return;
+
+    const generation: HistoryGeneration = {
+      token: activationTarget.token,
+      sessionId: activationTarget.sessionId,
+      historyResetVersion: activationTarget.historyResetVersion,
+      ready: true,
+    };
+    activeGenerationRef.current = generation;
+    if (!initialPageLoadedRef.current) beginFillRun(generation, "initial");
+
+    return () => {
+      if (activeGenerationRef.current === generation) {
+        activeGenerationRef.current = null;
+      }
+      const request = activeRequestRef.current;
+      if (request?.generation === generation) {
+        activeRequestRef.current = null;
+        request.abortController.abort();
+      }
+      if (fillRunRef.current?.generation === generation) {
+        fillRunRef.current = null;
+      }
+    };
+  }, [activationTarget, beginFillRun]);
 
   return {
     loading,
     reachedTop,
+    canLoadOlder: initialPageLoadedRef.current && nextCursorRef.current !== null,
     blockedReason,
     requestOlder,
     notifyViewportGeometry,
