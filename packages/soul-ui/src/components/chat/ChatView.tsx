@@ -286,6 +286,14 @@ export function ChatView({
   });
   const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef, historyEnabled);
   requestOlderRef.current = history.requestOlder;
+  const requestOlderManually = useCallback(() => {
+    clearOlderHistoryIntent();
+    initialBottomFocusPendingSessionRef.current = null;
+    bottomFocusedSessionRef.current = activeSessionKey;
+    isFollowingRef.current = false;
+    setIsFollowing(false);
+    history.requestOlder("manual");
+  }, [activeSessionKey, clearOlderHistoryIntent, history.requestOlder]);
   const notifyHistoryViewportGeometry = history.notifyViewportGeometry;
   const bindChatScroller = useCallback((ref: HTMLElement | Window | null) => {
     if (!(ref instanceof HTMLElement)) {
@@ -454,7 +462,7 @@ export function ChatView({
         reachedTop={history.reachedTop}
         canLoadOlder={history.canLoadOlder}
         blockedReason={history.blockedReason}
-        onRetry={() => history.requestOlder("manual")}
+        onRetry={requestOlderManually}
         showReachedTop={timelineItems.length > 0}
       />
     ),
@@ -463,7 +471,7 @@ export function ChatView({
       history.canLoadOlder,
       history.loading,
       history.reachedTop,
-      history.requestOlder,
+      requestOlderManually,
       timelineItems.length,
     ],
   );
@@ -533,7 +541,7 @@ export function ChatView({
             reachedTop={history.reachedTop}
             canLoadOlder={history.canLoadOlder}
             blockedReason={history.blockedReason}
-            onRetry={() => history.requestOlder("manual")}
+            onRetry={requestOlderManually}
             showReachedTop={false}
           />
           {!history.loading && history.blockedReason === null && (

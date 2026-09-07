@@ -767,6 +767,45 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("manual");
   });
 
+  it("follow-on short list의 수동 이전 대화는 prepend 높이 변경과 bottom 보정이 경쟁하지 않는다", async () => {
+    virtuosoMock.canLoadOlder = true;
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView());
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 800 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
+    const nativeScrollTo = vi.fn();
+    scroller.scrollTo = nativeScrollTo;
+    virtuosoMock.scrollToIndex.mockClear();
+    virtuosoMock.requestOlder.mockClear();
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.includes("이전 대화 더 불러오기"),
+    );
+
+    flushSync(() => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    flushSync(() => {
+      useDashboardStore.getState().processHistoryEvents([makeUserMessage(900)]);
+    });
+    await flushPassiveEffects();
+    (virtuosoMock.props?.itemsRendered as (() => void) | undefined)?.();
+    (virtuosoMock.props?.totalListHeightChanged as (() => void) | undefined)?.();
+
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("manual");
+    expect(
+      (virtuosoMock.props?.followOutput as (() => "auto" | false) | undefined)?.(),
+    ).toBe(false);
+    expect(nativeScrollTo).not.toHaveBeenCalled();
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
+  });
+
   it("0행에는 Virtuoso를 mount하지 않고 Waiting 상태를 표시한다", async () => {
     ({ container, root } = await renderChatView());
 
