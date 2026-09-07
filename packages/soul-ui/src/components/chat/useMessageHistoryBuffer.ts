@@ -86,7 +86,7 @@ interface FillRun {
   generation: HistoryGeneration;
   pagesFetched: number;
   awaitingCommit: boolean;
-  source: HistoryRequestSource;
+  source: HistoryRequestSource | "initial";
 }
 
 interface HistoryActivationTarget {
@@ -112,6 +112,7 @@ interface HistoryRequestOwner {
 export interface UseMessageHistoryBufferResult {
   loading: boolean;
   reachedTop: boolean;
+  canLoadOlder: boolean;
   blockedReason: HistoryLoadBlockReason | null;
   /** startReached/자동 채움/수동 재시도의 단일 controller 진입점. */
   requestOlder: (source?: HistoryRequestSource) => void;
@@ -290,6 +291,10 @@ export function useMessageHistoryBuffer(
       }
 
       updateReachedTop(false);
+      if (run.source === "initial") {
+        run.awaitingCommit = false;
+        fillRunRef.current = null;
+      }
       return "fetched";
     } catch (error) {
       if (!isActiveGeneration(generation)) return "stale";
@@ -325,7 +330,7 @@ export function useMessageHistoryBuffer(
 
   const beginFillRun = useCallback((
     generation: HistoryGeneration,
-    source: HistoryRequestSource,
+    source: HistoryRequestSource | "initial",
   ): void => {
     if (!isActiveGeneration(generation)) return;
     if (activeRequestRef.current !== null || fillRunRef.current !== null) return;
@@ -364,7 +369,8 @@ export function useMessageHistoryBuffer(
     if (reachedTopRef.current || blockedReasonRef.current !== null) return;
 
     if (run === null) {
-      beginFillRun(generation, "automatic");
+      // Geometry is evidence only for a run that an explicit user action
+      // already opened. Mount-time startReached/layout must never restart one.
       return;
     }
     if (run.generation !== generation) return;
@@ -426,7 +432,7 @@ export function useMessageHistoryBuffer(
       ready: true,
     };
     activeGenerationRef.current = generation;
-    if (!initialPageLoadedRef.current) beginFillRun(generation, "automatic");
+    if (!initialPageLoadedRef.current) beginFillRun(generation, "initial");
 
     return () => {
       if (activeGenerationRef.current === generation) {
@@ -446,6 +452,7 @@ export function useMessageHistoryBuffer(
   return {
     loading,
     reachedTop,
+    canLoadOlder: initialPageLoadedRef.current && nextCursorRef.current !== null,
     blockedReason,
     requestOlder,
     notifyViewportGeometry,

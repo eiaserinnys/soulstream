@@ -240,7 +240,7 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     reactTestEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
   });
 
-  it("연속 tool 100개가 한 화면 행으로 접혀도 commit geometry가 부족하면 다음 page를 자동 요청한다", async () => {
+  it("초기 visible page는 geometry만으로 prefill하지 않고 startReached 뒤 bounded fill을 연다", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(page(
         Array.from({ length: 100 }, (_, index) => 200 - index),
@@ -257,11 +257,14 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     expect(groupMessages(messages)).toHaveLength(1);
 
     await notifyGeometry();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await requestOlder("automatic");
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("state-only page가 0행을 만든 뒤 늦게 scroller가 bind되면 다음 page로 진행한다", async () => {
+  it("초기 state-only page 뒤에는 명시적 이전 대화 요청으로 진행한다", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(page([2], "cursor-1", "result"))
       .mockResolvedValueOnce(page([1], null));
@@ -269,14 +272,14 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     scrollerRef = { current: null };
 
     await renderSession("sess-state-only");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(0);
+    expect(latest?.canLoadOlder).toBe(true);
 
     await notifyGeometry();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    scrollerRef.current = scroller;
-    await notifyGeometry();
-
+    await requestOlder("manual");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(1);
     expect(latest?.reachedTop).toBe(true);
@@ -369,10 +372,11 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await renderSession("sess-resolution-boundary");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(flattenTree(useDashboardStore.getState().tree)).toHaveLength(0);
+    expect(latest?.canLoadOlder).toBe(true);
 
-    await notifyGeometry();
-
+    await requestOlder("manual");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const tree = useDashboardStore.getState().tree;
     const responded = tree?.children.find((node) => node.id === "input-request-1");
@@ -401,26 +405,30 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     expect(latest?.blockedReason).toBeNull();
   });
 
-  it("viewport 확대나 tool group 재접힘으로 다시 underfill되면 같은 geometry 경로가 새 run을 시작한다", async () => {
+  it("viewport가 다시 underfill되어도 새 사용자 요청 전에는 run을 재개하지 않는다", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(page([2], "cursor-1"))
-      .mockResolvedValueOnce(page([1], "cursor-2"));
+      .mockResolvedValueOnce(page([1], "cursor-2"))
+      .mockResolvedValueOnce(page([0], "cursor-3"));
     vi.stubGlobal("fetch", fetchMock);
     setGeometry(scroller, { clientHeight: 600, scrollHeight: 801 });
 
     await renderSession("sess-resized");
+    await requestOlder("automatic");
     await notifyGeometry();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     setGeometry(scroller, { clientHeight: 800, scrollHeight: 900 });
     await notifyGeometry();
-
     expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await requestOlder("automatic");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("한 run의 5 page cap에서 멈추고 수동 성공은 새 budget으로 latch를 해제한다", async () => {
     const fetchMock = vi.fn();
-    for (let pageIndex = 0; pageIndex <= MAX_VIEWPORT_FILL_PAGES; pageIndex += 1) {
+    for (let pageIndex = 0; pageIndex <= MAX_VIEWPORT_FILL_PAGES + 1; pageIndex += 1) {
       fetchMock.mockResolvedValueOnce(page(
         [100 - pageIndex],
         `cursor-${pageIndex + 1}`,
@@ -429,17 +437,18 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await renderSession("sess-cap");
+    await requestOlder("automatic");
     for (let pageIndex = 1; pageIndex < MAX_VIEWPORT_FILL_PAGES; pageIndex += 1) {
       await notifyGeometry();
     }
     await notifyGeometry();
 
-    expect(fetchMock).toHaveBeenCalledTimes(MAX_VIEWPORT_FILL_PAGES);
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_VIEWPORT_FILL_PAGES + 1);
     expect(latest?.blockedReason).toBe("cap");
 
     await requestOlder("manual");
 
-    expect(fetchMock).toHaveBeenCalledTimes(MAX_VIEWPORT_FILL_PAGES + 1);
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_VIEWPORT_FILL_PAGES + 2);
     expect(latest?.blockedReason).toBeNull();
   });
 
@@ -481,7 +490,7 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await renderSession("sess-repeat");
-    await notifyGeometry();
+    await requestOlder("automatic");
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(latest?.blockedReason).toBe("error");
@@ -508,22 +517,26 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
       await pending.promise;
     });
     await flush();
+    await notifyGeometry();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("clientHeight 0에서는 기다리고 같은 geometry 경로가 준비되면 자동 채움을 재개한다", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(page([2], "cursor-1"))
-      .mockResolvedValueOnce(page([1], "cursor-2"));
+      .mockResolvedValueOnce(page([1], "cursor-2"))
+      .mockResolvedValueOnce(page([0], "cursor-3"));
     vi.stubGlobal("fetch", fetchMock);
     setGeometry(scroller, { clientHeight: 0, scrollHeight: 0 });
 
     await renderSession("sess-not-ready");
+    await requestOlder("automatic");
     await notifyGeometry();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     setGeometry(scroller, { clientHeight: 600, scrollHeight: 100 });
     await notifyGeometry();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("세션 전환 뒤 늦게 끝난 old promise는 store·cursor·latch와 자동 루프를 건드리지 않는다", async () => {
@@ -625,7 +638,7 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
-    await notifyGeometry();
+    await requestOlder("automatic");
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(flattenTree(useDashboardStore.getState().tree).map((message) => message.eventId))
       .toEqual([29, 30]);

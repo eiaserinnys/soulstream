@@ -16,6 +16,7 @@ const virtuosoMock = vi.hoisted(() => ({
   requestOlder: vi.fn(),
   notifyViewportGeometry: vi.fn(),
   blockedReason: null as "cap" | "error" | null,
+  canLoadOlder: false,
   props: null as Record<string, unknown> | null,
 }));
 
@@ -42,7 +43,7 @@ vi.mock("react-virtuoso", async () => {
       return () => {
         setScrollerRef?.(null);
       };
-    }, [props]);
+    }, [props.scrollerRef]);
 
     const data = (props.data as any[] | undefined) ?? [];
     const components = props.components as
@@ -78,6 +79,7 @@ vi.mock("./useMessageHistoryBuffer", () => ({
   useMessageHistoryBuffer: () => ({
     loading: false,
     reachedTop: false,
+    canLoadOlder: virtuosoMock.canLoadOlder,
     blockedReason: virtuosoMock.blockedReason,
     requestOlder: virtuosoMock.requestOlder,
     notifyViewportGeometry: virtuosoMock.notifyViewportGeometry,
@@ -221,6 +223,18 @@ async function renderChatView(): Promise<{ container: HTMLDivElement; root: Root
   return { container, root };
 }
 
+function markOlderExploration(container: HTMLElement | undefined): void {
+  if (!container) throw new Error("ChatView test container가 없습니다.");
+  const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+  if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+  Object.defineProperty(scroller, "scrollTop", {
+    configurable: true,
+    writable: true,
+    value: 120,
+  });
+  scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+}
+
 describe("ChatView long-session initial bottom focus", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
@@ -240,6 +254,7 @@ describe("ChatView long-session initial bottom focus", () => {
     virtuosoMock.requestOlder.mockClear();
     virtuosoMock.notifyViewportGeometry.mockClear();
     virtuosoMock.blockedReason = null;
+    virtuosoMock.canLoadOlder = false;
     virtuosoMock.props = null;
   });
 
@@ -272,6 +287,18 @@ describe("ChatView long-session initial bottom focus", () => {
       behavior: "auto",
     });
 
+    flushSync(() => {
+      const atBottomStateChange = virtuosoMock.props?.atBottomStateChange as
+        | ((atBottom: boolean) => void)
+        | undefined;
+      atBottomStateChange?.(true);
+    });
+    await flushPassiveEffects();
+
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 800 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 400 });
     virtuosoMock.scrollToIndex.mockClear();
     now = 1000;
     flushSync(() => {
@@ -281,7 +308,13 @@ describe("ChatView long-session initial bottom focus", () => {
       atBottomStateChange?.(false);
     });
     await flushPassiveEffects();
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
 
+    virtuosoMock.scrollToIndex.mockClear();
     now = 1001;
     flushSync(() => {
       useDashboardStore.getState().processHistoryEvents([
@@ -298,6 +331,43 @@ describe("ChatView long-session initial bottom focus", () => {
     });
   });
 
+  it("빈 viewport를 먼저 mount하지 않고 첫 visible page의 최종 좌표로 시작한다", async () => {
+    ({ container, root } = await renderChatView());
+    expect(container.querySelector('[data-testid="virtuoso"]')).toBeNull();
+
+    flushSync(() => {
+      useDashboardStore.getState().processHistoryEvents([
+        makeUserMessage(1000),
+        makeUserMessage(1001),
+      ]);
+    });
+    await flushPassiveEffects();
+
+    expect(container.querySelector('[data-testid="virtuoso"]')).not.toBeNull();
+    expect(virtuosoData()).toHaveLength(2);
+    expect(virtuosoMock.props?.firstItemIndex).toBe(9_998);
+    expect(virtuosoMock.props?.initialTopMostItemIndex).toEqual({
+      index: 1,
+      align: "end",
+    });
+  });
+
+  it("초기 정착 중 명시적 위스크롤은 뒤 history commit의 bottom 이동을 취소한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView());
+    virtuosoMock.scrollToIndex.mockClear();
+
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    scroller?.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+    (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void) | undefined)?.(false);
+    flushSync(() => {
+      useDashboardStore.getState().processHistoryEvents([makeUserMessage(900)]);
+    });
+    await flushPassiveEffects();
+
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
+  });
+
   it("follow-off에서 first visible 앞의 live 과거 summary를 anchor stable row 안에 결합한다", async () => {
     useDashboardStore.getState().processHistoryEvents([
       makeAssistantMessage(1000),
@@ -311,9 +381,8 @@ describe("ChatView long-session initial bottom focus", () => {
     await flushPassiveEffects();
     virtuosoMock.scrollToIndex.mockClear();
 
-    now = 1000;
     flushSync(() => {
-      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+      markOlderExploration(container);
     });
     await flushPassiveEffects();
     const completeIndex = virtuosoData().findIndex(
@@ -347,9 +416,8 @@ describe("ChatView long-session initial bottom focus", () => {
     });
     await flushPassiveEffects();
     virtuosoMock.scrollToIndex.mockClear();
-    now = 1000;
     flushSync(() => {
-      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+      markOlderExploration(container);
     });
     await flushPassiveEffects();
     const before = setFirstVisibleDataIndex(0);
@@ -373,9 +441,8 @@ describe("ChatView long-session initial bottom focus", () => {
     });
     await flushPassiveEffects();
     virtuosoMock.scrollToIndex.mockClear();
-    now = 1000;
     flushSync(() => {
-      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+      markOlderExploration(container);
     });
     await flushPassiveEffects();
     const before = setFirstVisibleDataIndex(0);
@@ -404,9 +471,8 @@ describe("ChatView long-session initial bottom focus", () => {
     });
     await flushPassiveEffects();
     virtuosoMock.scrollToIndex.mockClear();
-    now = 1000;
     flushSync(() => {
-      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+      markOlderExploration(container);
     });
     await flushPassiveEffects();
     const before = setFirstVisibleDataIndex(0);
@@ -515,9 +581,8 @@ describe("ChatView long-session initial bottom focus", () => {
       (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
     });
     await flushPassiveEffects();
-    now = 1000;
     flushSync(() => {
-      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+      markOlderExploration(container);
     });
     await flushPassiveEffects();
     const visible = setFirstVisibleDataIndex(2);
@@ -549,9 +614,8 @@ describe("ChatView long-session initial bottom focus", () => {
       (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
     });
     await flushPassiveEffects();
-    now = 1000;
     flushSync(() => {
-      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+      markOlderExploration(container);
     });
     await flushPassiveEffects();
     const completeIndex = virtuosoData().findIndex(
@@ -589,9 +653,8 @@ describe("ChatView long-session initial bottom focus", () => {
       (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
     });
     await flushPassiveEffects();
-    now = 1000;
     flushSync(() => {
-      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+      markOlderExploration(container);
     });
     await flushPassiveEffects();
     const completeIndex = virtuosoData().findIndex(
@@ -643,9 +706,8 @@ describe("ChatView long-session initial bottom focus", () => {
       (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
     });
     await flushPassiveEffects();
-    now = 1000;
     flushSync(() => {
-      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(false);
+      markOlderExploration(container);
     });
     await flushPassiveEffects();
     setFirstVisibleDataIndex(1);
@@ -679,7 +741,9 @@ describe("ChatView long-session initial bottom focus", () => {
     }
 
     ({ container, root } = await renderChatView());
-    expect(container.querySelector('[data-testid="virtuoso"]')).not.toBeNull();
+    const virtuoso = container.querySelector('[data-testid="virtuoso"]');
+    if (withRow) expect(virtuoso).not.toBeNull();
+    else expect(virtuoso).toBeNull();
     const button = Array.from(container.querySelectorAll("button")).find(
       (candidate) => candidate.textContent?.includes("이전 대화 더 불러오기"),
     );
@@ -689,25 +753,320 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("manual");
   });
 
-  it("0행에도 scroller와 Waiting placeholder를 유지해 geometry controller를 깨운다", async () => {
+  it("0행·추가 cursor에는 명시적인 이전 대화 기본 경로를 노출한다", async () => {
+    virtuosoMock.canLoadOlder = true;
     ({ container, root } = await renderChatView());
 
-    expect(container.querySelector('[data-testid="virtuoso"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="virtuoso"]')).toBeNull();
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.includes("이전 대화 더 불러오기"),
+    );
+    expect(button).toBeDefined();
+
+    button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("manual");
+  });
+
+  it("0행에는 Virtuoso를 mount하지 않고 Waiting 상태를 표시한다", async () => {
+    ({ container, root } = await renderChatView());
+
+    expect(container.querySelector('[data-testid="virtuoso"]')).toBeNull();
     expect(container.textContent).toContain("Waiting for events...");
     expect(virtuosoMock.notifyViewportGeometry).toHaveBeenCalled();
   });
 
-  it("scroller bind·commit·height 변화와 startReached를 단일 history controller에 연결한다", async () => {
+  it("mount-time startReached·geometry는 fetch하지 않고 실제 위스크롤만 controller를 연다", async () => {
     useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
     ({ container, root } = await renderChatView());
     expect(virtuosoMock.notifyViewportGeometry).toHaveBeenCalled();
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 800 });
+    const nativeScrollTo = vi.fn();
+    scroller.scrollTo = nativeScrollTo;
 
     virtuosoMock.notifyViewportGeometry.mockClear();
+    virtuosoMock.scrollToIndex.mockClear();
     (virtuosoMock.props?.itemsRendered as (() => void) | undefined)?.();
     (virtuosoMock.props?.totalListHeightChanged as (() => void) | undefined)?.();
     expect(virtuosoMock.notifyViewportGeometry).toHaveBeenCalledTimes(2);
+    expect(nativeScrollTo).toHaveBeenCalledWith({ top: 800, behavior: "auto" });
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
 
+    (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void) | undefined)?.(true);
     (virtuosoMock.props?.startReached as (() => void) | undefined)?.();
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+
+    scroller.dispatchEvent(new Event("scroll"));
+    (virtuosoMock.props?.startReached as (() => void) | undefined)?.();
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
     expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("automatic");
+    nativeScrollTo.mockClear();
+    (virtuosoMock.props?.totalListHeightChanged as (() => void) | undefined)?.();
+    expect(nativeScrollTo).not.toHaveBeenCalled();
+  });
+
+  it("스크롤바의 실제 위쪽 이동만 탐색 의도로 인정한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    virtuosoMock.requestOlder.mockClear();
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 120,
+    });
+
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+
+    scroller.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    scroller.scrollTop = 0;
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("automatic");
+  });
+
+  it("같은 세션에서 scroller가 unmount되면 남아 있던 위쪽 탐색 의도를 버린다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView());
+    virtuosoMock.requestOlder.mockClear();
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 120,
+    });
+
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+
+    const setScrollerRef = virtuosoMock.props?.scrollerRef as
+      | ((ref: HTMLDivElement | null) => void)
+      | undefined;
+    setScrollerRef?.(null);
+    (virtuosoMock.props?.startReached as (() => void) | undefined)?.();
+
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+  });
+
+  it("Follow를 다시 켜면 남아 있던 위쪽 탐색 의도를 버린다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView());
+    virtuosoMock.requestOlder.mockClear();
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 120,
+    });
+
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+    const followButton = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.includes("Follow"),
+    );
+    flushSync(() => {
+      followButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPassiveEffects();
+
+    scroller.scrollTop = 0;
+    (virtuosoMock.props?.startReached as (() => void) | undefined)?.();
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+    expect(
+      (virtuosoMock.props?.followOutput as (() => "auto" | false) | undefined)?.(),
+    ).toBe("auto");
+  });
+
+  it("자식 control의 키와 pointer 입력을 history 탐색으로 오인하지 않는다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView());
+    virtuosoMock.requestOlder.mockClear();
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 120,
+    });
+    const button = document.createElement("button");
+    scroller.appendChild(button);
+
+    button.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      key: "Home",
+    }));
+    button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    scroller.scrollTop = 0;
+    scroller.dispatchEvent(new Event("scroll"));
+
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+    expect(
+      (virtuosoMock.props?.followOutput as (() => "auto" | false) | undefined)?.(),
+    ).toBe("auto");
+  });
+
+  it("위쪽 입력을 소비할 수 있는 중첩 scroller를 outer history 탐색으로 오인하지 않는다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView());
+    virtuosoMock.requestOlder.mockClear();
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    const nestedScroller = document.createElement("div");
+    nestedScroller.style.overflowY = "auto";
+    Object.defineProperty(nestedScroller, "scrollHeight", {
+      configurable: true,
+      value: 200,
+    });
+    Object.defineProperty(nestedScroller, "clientHeight", {
+      configurable: true,
+      value: 100,
+    });
+    Object.defineProperty(nestedScroller, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 50,
+    });
+    const nestedContent = document.createElement("div");
+    nestedScroller.appendChild(nestedContent);
+    scroller.appendChild(nestedScroller);
+
+    nestedContent.dispatchEvent(new WheelEvent("wheel", {
+      bubbles: true,
+      deltaY: -40,
+    }));
+    const touchStart = new Event("touchstart", { bubbles: true });
+    const touchMove = new Event("touchmove", { bubbles: true });
+    Object.defineProperty(touchStart, "touches", { value: [{ clientY: 100 }] });
+    Object.defineProperty(touchMove, "touches", { value: [{ clientY: 120 }] });
+    nestedContent.dispatchEvent(touchStart);
+    nestedContent.dispatchEvent(touchMove);
+
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+    expect(
+      (virtuosoMock.props?.followOutput as (() => "auto" | false) | undefined)?.(),
+    ).toBe("auto");
+
+    nestedScroller.scrollTop = 0;
+    nestedContent.dispatchEvent(new WheelEvent("wheel", {
+      bubbles: true,
+      deltaY: -40,
+    }));
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("automatic");
+  });
+
+  it.each(["ArrowUp", "PageUp", "Home"])(
+    "%s 키의 위쪽 탐색 의도로 이전 대화를 요청한다",
+    async (key) => {
+      useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+      ({ container, root } = await renderChatView());
+      virtuosoMock.requestOlder.mockClear();
+      const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+
+      scroller?.dispatchEvent(new KeyboardEvent("keydown", { key }));
+
+      expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("automatic");
+    },
+  );
+
+  it("아래로 끄는 touch 탐색 의도로 이전 대화를 요청한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView());
+    virtuosoMock.requestOlder.mockClear();
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    const touchStart = new Event("touchstart");
+    const touchMove = new Event("touchmove");
+    Object.defineProperty(touchStart, "touches", { value: [{ clientY: 100 }] });
+    Object.defineProperty(touchMove, "touches", { value: [{ clientY: 120 }] });
+
+    scroller?.dispatchEvent(touchStart);
+    scroller?.dispatchEvent(touchMove);
+
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("automatic");
+  });
+
+  it("검색 focus 이동은 follow와 bottom 보정을 끄고 과거 행에 머문다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeUserMessage(1000),
+      makeAssistantMessage(1001),
+      makeUserMessage(1002),
+    ]);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
+    });
+    await flushPassiveEffects();
+    virtuosoMock.scrollToIndex.mockClear();
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 800 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 400,
+    });
+    const nativeScrollTo = vi.fn();
+    scroller.scrollTo = nativeScrollTo;
+    const targetDataIndex = findDataIndexByKey("user-msg-1000");
+    const firstItemIndex = virtuosoMock.props?.firstItemIndex as number;
+
+    flushSync(() => {
+      useDashboardStore.getState().setFocusEventId(1000);
+    });
+    await flushPassiveEffects();
+
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(1);
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledWith({
+      index: firstItemIndex + targetDataIndex,
+      align: "center",
+    });
+    expect(
+      (virtuosoMock.props?.followOutput as (() => "auto" | false) | undefined)?.(),
+    ).toBe(false);
+
+    (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void) | undefined)?.(false);
+    (virtuosoMock.props?.itemsRendered as (() => void) | undefined)?.();
+    (virtuosoMock.props?.totalListHeightChanged as (() => void) | undefined)?.();
+
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(1);
+    expect(nativeScrollTo).not.toHaveBeenCalled();
+  });
+
+  it("검색 focus 이동은 아직 소비되지 않은 history 탐색 의도를 취소한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeUserMessage(1000),
+      makeAssistantMessage(1001),
+      makeUserMessage(1002),
+    ]);
+    ({ container, root } = await renderChatView());
+    virtuosoMock.requestOlder.mockClear();
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 120,
+    });
+
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+    flushSync(() => {
+      useDashboardStore.getState().setFocusEventId(1000);
+    });
+    await flushPassiveEffects();
+
+    scroller.scrollTop = 0;
+    (virtuosoMock.props?.startReached as (() => void) | undefined)?.();
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
   });
 });

@@ -16,7 +16,11 @@ const USER_VIEWPORT_INPUT_EVENTS = [
   "wheel",
   "touchstart",
   "touchmove",
+  "touchend",
+  "touchcancel",
   "pointerdown",
+  "pointerup",
+  "pointercancel",
   "keydown",
 ] as const;
 
@@ -26,6 +30,7 @@ interface ChatViewportRetentionOptions {
   firstItemIndex: number;
   isFollowing: boolean;
   recordFirstVisibleKey: (key: string | null) => void;
+  onUserViewportInput?: (event: Event) => void;
 }
 
 /**
@@ -39,6 +44,7 @@ export function useChatViewportRetention({
   firstItemIndex,
   isFollowing,
   recordFirstVisibleKey,
+  onUserViewportInput,
 }: ChatViewportRetentionOptions) {
   const scrollerRef = useRef<HTMLElement | null>(null);
   const firstVisibleFrameRef = useRef<number | null>(null);
@@ -53,6 +59,8 @@ export function useChatViewportRetention({
   const previousSessionKeyRef = useRef(activeSessionKey);
   const recordFirstVisibleKeyRef = useRef(recordFirstVisibleKey);
   recordFirstVisibleKeyRef.current = recordFirstVisibleKey;
+  const onUserViewportInputRef = useRef(onUserViewportInput);
+  onUserViewportInputRef.current = onUserViewportInput;
 
   const recordVisuallyFirstItem = useCallback(() => {
     if (retentionTargetRef.current !== null) return;
@@ -143,7 +151,8 @@ export function useChatViewportRetention({
     );
   }, [recordVisuallyFirstItem]);
 
-  const observeAfterScroll = useCallback(() => {
+  const observeAfterScroll = useCallback((event?: Event) => {
+    if (event !== undefined) onUserViewportInputRef.current?.(event);
     if (retentionTargetRef.current !== null) return;
     // Virtuoso는 native scroll 뒤 렌더 행을 재활용하므로 이벤트 순간 DOM은 최종 행이
     // 아닐 수 있다. 다만 다음 frame 전에 data가 바뀌면 이 순간 사용자가 실제로 본
@@ -193,7 +202,8 @@ export function useChatViewportRetention({
     scheduleVisuallyFirstItem();
   }, [beginViewportRetention, scheduleVisuallyFirstItem]);
 
-  const cancelRetentionForUserInput = useCallback(() => {
+  const cancelRetentionForUserInput = useCallback((event: Event) => {
+    onUserViewportInputRef.current?.(event);
     const shouldRetarget = retentionTargetRef.current !== null;
     if (retentionFrameRef.current !== null) {
       window.cancelAnimationFrame(retentionFrameRef.current);

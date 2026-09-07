@@ -3,6 +3,7 @@ import type { HistoryLoadBlockReason } from "./useMessageHistoryBuffer";
 interface ChatHistoryStatusProps {
   loading: boolean;
   reachedTop: boolean;
+  canLoadOlder?: boolean;
   blockedReason: HistoryLoadBlockReason | null;
   onRetry: () => void;
   showReachedTop?: boolean;
@@ -15,6 +16,7 @@ interface ChatHistoryStatusProps {
 export function ChatHistoryStatus({
   loading,
   reachedTop,
+  canLoadOlder = false,
   blockedReason,
   onRetry,
   showReachedTop = true,
@@ -46,6 +48,20 @@ export function ChatHistoryStatus({
     return (
       <div className="px-3 py-2 text-center text-muted-foreground text-sm opacity-60">
         {"\u2014"} Beginning of conversation {"\u2014"}
+      </div>
+    );
+  }
+
+  if (canLoadOlder) {
+    return (
+      <div className="flex justify-center px-3 py-2">
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-md border border-glass-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          이전 대화 더 불러오기
+        </button>
       </div>
     );
   }
