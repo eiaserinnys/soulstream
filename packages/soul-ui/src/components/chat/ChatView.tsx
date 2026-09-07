@@ -140,7 +140,10 @@ export function ChatView({
   const notifyHistoryViewportGeometry = history.notifyViewportGeometry;
   const bindChatScroller = useCallback((ref: HTMLElement | Window | null) => {
     bindScrollerElement(ref);
-    notifyHistoryViewportGeometry();
+    // Descendant callback refs attach before this component's layout effects.
+    // The microtask runs after the whole commit so the hook can publish its ready
+    // generation first; the hook gate remains authoritative for stale callbacks.
+    queueMicrotask(notifyHistoryViewportGeometry);
   }, [bindScrollerElement, notifyHistoryViewportGeometry]);
   useLayoutEffect(() => {
     notifyHistoryViewportGeometry();
