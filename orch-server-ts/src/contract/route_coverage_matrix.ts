@@ -78,4 +78,5 @@ export const routeCoverageOwners = [
 // routes must be listed explicitly instead of being backfilled into that fixture.
 export const tsOnlyRouteKeys = [
   "WEBSOCKET /ws/node/control",
+  "GET /api/nodes/{node_id}/model-presets",
 ] as const;

@@ -3,6 +3,7 @@
   "cases": [
     {
       "name": "agent_caller_claude_summary",
+      "retiredPythonOrchResponseOmissions": ["modelLabel"],
       "nodeId": "node-contract",
       "folderId": "folder-contract",
       "orchAgentProfile": {
