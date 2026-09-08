@@ -33,4 +33,20 @@ def test_orch_session_to_response_matches_shared_contract_fixture():
 
     result = _session_to_response(case["orchDbRow"], node_manager=node_manager)
 
-    assert result == case["expectedOrchResponse"]
+    expected_ts_response = case["expectedOrchResponse"]
+    retired_python_omissions = case["retiredPythonOrchResponseOmissions"]
+
+    # This is an explicit cross-runtime boundary, not a general-purpose field
+    # exclusion. The live TS orchestrator resolves modelLabel from the node's
+    # model-preset registry; the retired Python serializer never owned it.
+    assert retired_python_omissions == ["modelLabel"]
+    for field in retired_python_omissions:
+        assert field in expected_ts_response
+        assert field not in result
+
+    expected_python_response = {
+        field: value
+        for field, value in expected_ts_response.items()
+        if field not in retired_python_omissions
+    }
+    assert result == expected_python_response

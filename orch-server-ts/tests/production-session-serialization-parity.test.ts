@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -16,6 +19,23 @@ type SseFrame = {
   data: Record<string, unknown>;
 };
 
+type SessionContractCase = {
+  expectedOrchResponse: { modelLabel: string };
+  retiredPythonOrchResponseOmissions: string[];
+};
+
+const SESSION_CONTRACT_PATH = fileURLToPath(
+  new URL(
+    "../../packages/wire-schema/fixtures/session_serialization_contract.json",
+    import.meta.url,
+  ),
+);
+const SESSION_CONTRACT_CASE = (
+  JSON.parse(readFileSync(SESSION_CONTRACT_PATH, "utf8")) as {
+    cases: SessionContractCase[];
+  }
+).cases[0]!;
+
 const SESSION_ID = "90484ea9-339e-4103-bc33-c2a0faa7ffff";
 const CLIENT_SESSION_FIELDS = {
   agentSessionId: SESSION_ID,
@@ -26,7 +46,7 @@ const CLIENT_SESSION_FIELDS = {
   agentPortraitUrl: "/api/nodes/node-a/agents/seosoyoung/portrait",
   backend: "codex",
   modelPreset: "codex-5.6-sol",
-  modelLabel: "Codex - 5.6 Sol",
+  modelLabel: SESSION_CONTRACT_CASE.expectedOrchResponse.modelLabel,
   userName: "서소영",
   userPortraitUrl: "/api/nodes/node-a/user/portrait",
 } as const;
@@ -90,6 +110,12 @@ describe("production session serialization parity", () => {
         CLIENT_SESSION_FIELDS,
       );
       expect(restSession).toMatchObject(CLIENT_SESSION_FIELDS);
+      expect(SESSION_CONTRACT_CASE.retiredPythonOrchResponseOmissions).toEqual([
+        "modelLabel",
+      ]);
+      expect(restSession.modelLabel).toBe(
+        SESSION_CONTRACT_CASE.expectedOrchResponse.modelLabel,
+      );
 
       const catalog = await connectSse(
         `${application.app.listeningOrigin}/api/sessions/stream`,

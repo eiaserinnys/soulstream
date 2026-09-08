@@ -6,6 +6,7 @@ import {
   loadContractFixtures,
   nodeAgentProfileRouteAuthRequirements,
   parseOrchServerConfig,
+  tsOnlyRouteKeys,
   type NodeAgentProfileProvider,
 } from "../src/index.js";
 
@@ -168,7 +169,6 @@ describe("node agent/profile route harness", () => {
           "rollback_agents_config",
           "deprecated_node_oauth_profiles",
           "proxy_user_portrait",
-          "list_node_model_presets",
         ].includes(route.name),
       )
       .map((route) => [route.order, route.methods[0], route.path, route.authRequired]);
@@ -182,8 +182,11 @@ describe("node agent/profile route harness", () => {
       [41, "POST", "/api/nodes/{node_id}/agents/config/rollback", true],
       [42, "GET", "/api/nodes/{node_id}/oauth-profiles", true],
       [43, "GET", "/api/nodes/{node_id}/user/portrait", true],
-      [116, "GET", "/api/nodes/{node_id}/model-presets", true],
     ]);
+    expect(fixtures.routeInventory.routes.map((route) => route.path)).not.toContain(
+      "/api/nodes/{node_id}/model-presets",
+    );
+    expect(tsOnlyRouteKeys).toContain("GET /api/nodes/{node_id}/model-presets");
   });
 
   it("projects Python agent list shape and maps missing nodes to 404", async () => {
