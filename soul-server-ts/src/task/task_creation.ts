@@ -96,22 +96,37 @@ export interface TaskCreationDeps {
  * Owns new runtime task creation.
  *
  * This is the only place that assembles the initial Task shape, persistence-host
- * `register_session` payload, caller metadata timing, folder assignment, and
- * `session_created` broadcast ordering for a brand-new session.
+ * `register_session` payload, caller metadata timing, and the tracked deferred
+ * ordering of folder assignment through `session_created` for a new session.
  */
 export class TaskCreation {
+  private readonly creatingSessionIds = new Set<string>();
+  private readonly deferredEffects = new Map<string, Promise<void>>();
+
   constructor(private readonly deps: TaskCreationDeps) {}
 
   /**
-   * 새 Task 생성 + persistence host 등록 + orch broadcast.
+   * 새 Task 생성 + persistence host 등록 + 비임계 orch projection 예약.
    *
    * 같은 agentSessionId가 이미 있으면 throw — 중복 차단.
    * host register 실패 시 in-memory map에 task를 *남기지 않음* (실패 격리).
    */
   async createTask(params: CreateTaskParams): Promise<Task> {
-    if (this.deps.hasTask(params.agentSessionId)) {
+    if (
+      this.deps.hasTask(params.agentSessionId)
+      || this.creatingSessionIds.has(params.agentSessionId)
+    ) {
       throw new Error(`Task already exists: ${params.agentSessionId}`);
     }
+    this.creatingSessionIds.add(params.agentSessionId);
+    try {
+      return await this.createTaskOnce(params);
+    } finally {
+      this.creatingSessionIds.delete(params.agentSessionId);
+    }
+  }
+
+  private async createTaskOnce(params: CreateTaskParams): Promise<Task> {
     if (params.container?.containerKind === "task" && !this.deps.boardYjsService) {
       throw new Error("Board Yjs service is required for task session placement");
     }
@@ -212,9 +227,9 @@ export class TaskCreation {
       });
     }
 
+    const creationHook = this.deps.taskCreationHook ?? NOOP_TASK_CREATION_HOOK;
     try {
-      await (this.deps.taskCreationHook ?? NOOP_TASK_CREATION_HOOK)
-        .afterSessionRegistered({ task, params });
+      await creationHook.persistCreationIntent?.({ task, params });
     } catch (err) {
       appendCreationWarning(task, {
         code: "PAGE_BINDING_PENDING",
@@ -222,11 +237,75 @@ export class TaskCreation {
       });
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
-        "post-registration task creation hook failed",
+        "durable task creation intent could not be confirmed",
       );
     }
 
     this.deps.rememberTask(task);
+
+    this.trackDeferredEffects(task, params, sessionType, creationHook);
+
+    return task;
+  }
+
+  /** Wait for one session's non-critical creation projections. */
+  waitForDeferredEffects(sessionId: string): Promise<void>;
+  waitForDeferredEffects(sessionId: string, timeoutMs: number): Promise<boolean>;
+  async waitForDeferredEffects(
+    sessionId: string,
+    timeoutMs?: number,
+  ): Promise<void | boolean> {
+    const pending = this.deferredEffects.get(sessionId);
+    if (pending === undefined) return timeoutMs === undefined ? undefined : true;
+    if (timeoutMs === undefined) {
+      await pending;
+      return;
+    }
+    return await settleDeferredEffects([pending], timeoutMs);
+  }
+
+  /** Best-effort bounded drain used during worker shutdown. */
+  async drainDeferredEffects(timeoutMs = 5_000): Promise<boolean> {
+    const pending = [...this.deferredEffects.values()];
+    if (pending.length === 0) return true;
+    return await settleDeferredEffects(pending, timeoutMs);
+  }
+
+  private trackDeferredEffects(
+    task: Task,
+    params: CreateTaskParams,
+    sessionType: SessionType,
+    creationHook: TaskCreationHook,
+  ): void {
+    const sessionId = task.agentSessionId;
+    const pending = this.runDeferredEffects(task, params, sessionType, creationHook);
+    this.deferredEffects.set(sessionId, pending);
+    const forget = () => {
+      if (this.deferredEffects.get(sessionId) === pending) {
+        this.deferredEffects.delete(sessionId);
+      }
+    };
+    void pending.then(forget, forget);
+  }
+
+  private async runDeferredEffects(
+    task: Task,
+    params: CreateTaskParams,
+    sessionType: SessionType,
+    creationHook: TaskCreationHook,
+  ): Promise<void> {
+    try {
+      await creationHook.afterSessionRegistered({ task, params });
+    } catch (err) {
+      appendCreationWarning(task, {
+        code: "PAGE_BINDING_PENDING",
+        message: "The session was created, but page binding status could not be confirmed. Check the page before retrying.",
+      });
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "deferred post-registration task creation hook failed",
+      );
+    }
 
     // 폴더 배정 + catalog_updated broadcast (Python `task_manager.py:284-323`
     // `_assign_default_folder_and_broadcast` 정본). codex 세션이 dashboard 폴더 트리에서
@@ -242,7 +321,7 @@ export class TaskCreation {
       params.sourceTaskItemId ?? null,
     );
     try {
-      await this.deps.taskCreationHook?.afterLegacyProjection?.({
+      await creationHook.afterLegacyProjection?.({
         task,
         params,
         assignedFolderId: legacyProjection.assignedFolderId,
@@ -266,7 +345,6 @@ export class TaskCreation {
       );
     }
 
-    return task;
   }
 
   /**
@@ -384,4 +462,28 @@ export class TaskCreation {
     return { assignedFolderId: assigned, completed };
   }
 
+}
+
+async function settleDeferredEffects(
+  pending: readonly Promise<void>[],
+  timeoutMs: number,
+): Promise<boolean> {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 0) {
+    throw new Error(
+      `task creation effect timeoutMs must be a non-negative integer: ${timeoutMs}`,
+    );
+  }
+  if (timeoutMs === 0) return false;
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      Promise.allSettled(pending).then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+        timer.unref();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

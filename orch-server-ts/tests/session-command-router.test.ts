@@ -219,6 +219,91 @@ describe("Session command router primitive", () => {
     });
   });
 
+  it("rescues a timed-out create only when the durable execution owner matches the selected node", async () => {
+    const { registry } = createRegistry();
+    registerNode(registry, "selected-node");
+    const findRescuableSessionOwnerNodeId = vi.fn(async (agentSessionId: string) => {
+      if (agentSessionId === "registered-session") return "selected-node";
+      if (agentSessionId === "wrong-node-session") return "other-node";
+      return null;
+    });
+    const router = new SessionCommandRouter({
+      registry,
+      findRescuableSessionOwnerNodeId,
+    });
+
+    await expect(router.waitForCreatedSession(
+      "registered-session",
+      "selected-node",
+      { timeoutMs: 50 },
+    )).resolves.toBe(true);
+    await expect(router.waitForCreatedSession(
+      "wrong-node-session",
+      "selected-node",
+      { timeoutMs: 1 },
+    )).resolves.toBe(false);
+    await expect(router.waitForCreatedSession(
+      "missing-session",
+      "selected-node",
+      { timeoutMs: 1 },
+    )).resolves.toBe(false);
+    expect(findRescuableSessionOwnerNodeId.mock.calls).toEqual([
+      ["registered-session"],
+      ["wrong-node-session"],
+      ["missing-session"],
+    ]);
+  });
+
+  it("does not hide a durable owner lookup failure during timeout reconciliation", async () => {
+    const { registry } = createRegistry();
+    registerNode(registry, "selected-node");
+    const router = new SessionCommandRouter({
+      registry,
+      findRescuableSessionOwnerNodeId: async () => {
+        throw new Error("database unavailable");
+      },
+    });
+
+    await expect(router.waitForCreatedSession(
+      "unknown-session",
+      "selected-node",
+      { timeoutMs: 50 },
+    )).rejects.toThrow("database unavailable");
+  });
+
+  it("bounds a never-resolving durable lookup inside the total reconcile budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const { registry } = createRegistry();
+      registerNode(registry, "selected-node");
+      const findRescuableSessionOwnerNodeId = vi.fn(
+        async () => await new Promise<string | null>(() => undefined),
+      );
+      const router = new SessionCommandRouter({
+        registry,
+        findRescuableSessionOwnerNodeId,
+      });
+
+      let settled = false;
+      const reconciliation = router.waitForCreatedSession(
+        "stalled-lookup-session",
+        "selected-node",
+        { timeoutMs: 5_000 },
+      ).finally(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await expect(reconciliation).resolves.toBe(false);
+      expect(findRescuableSessionOwnerNodeId).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("routes an expired cache entry through the durable session owner", async () => {
     const { registry } = createRegistry();
     registerNode(registry, "durable-node");

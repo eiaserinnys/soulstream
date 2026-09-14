@@ -7,9 +7,12 @@ import {
 } from "./task_creation_harness.js";
 
 describe("TaskCreation", () => {
-  it("runs the binding hook after durable registration and metadata but before remembering or projection", async () => {
+  it("persists binding intent before remember and defers reconciliation before projection", async () => {
     const order: string[] = [];
     const taskCreationHook: TaskCreationHook = {
+      persistCreationIntent: vi.fn(async () => {
+        order.push("intent");
+      }),
       afterSessionRegistered: vi.fn(async ({ task, params }) => {
         order.push("hook");
         expect(task.agentSessionId).toBe("sess-hook-order");
@@ -32,7 +35,7 @@ describe("TaskCreation", () => {
       order.push("created");
     });
 
-    await h.creation.createTask({
+    const task = await h.creation.createTask({
       agentSessionId: "sess-hook-order",
       prompt: "hook prompt",
       profileId: "codex-default",
@@ -40,7 +43,9 @@ describe("TaskCreation", () => {
       folderId: "folder-1",
     });
 
-    expect(order).toEqual(["register", "metadata", "hook", "folder", "created"]);
+    expect(order.slice(0, 3)).toEqual(["register", "metadata", "intent"]);
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
+    expect(order).toEqual(["register", "metadata", "intent", "hook", "folder", "created"]);
   });
 
   it("always records an effort decision on the created row", async () => {
@@ -97,6 +102,7 @@ describe("TaskCreation", () => {
       "register_session:sess-central-review",
     );
     expect(task.reviewRequired).toBe(true);
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
     expect(h.emitSessionCreated).toHaveBeenCalledWith(
       expect.objectContaining({ reviewRequired: true }),
       "folder-1",
@@ -122,6 +128,7 @@ describe("TaskCreation", () => {
       profileId: "codex-default",
       folderId: "folder-1",
     });
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.tasks.get(task.agentSessionId)).toBe(task);
     expect(h.upsertSessionBoardItem).toHaveBeenCalled();
@@ -133,7 +140,7 @@ describe("TaskCreation", () => {
     }]);
     expect(logger.warn).toHaveBeenCalledWith(
       { err: hookError, sessionId: "sess-hook-failure" },
-      "post-registration task creation hook failed",
+      "deferred post-registration task creation hook failed",
     );
   });
 
@@ -152,6 +159,7 @@ describe("TaskCreation", () => {
       disallowedTools: ["Bash"],
       useMcp: false,
     });
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(task).toMatchObject({
       agentSessionId: "sess-1",
@@ -239,6 +247,7 @@ describe("TaskCreation", () => {
       container: { containerKind: "task", containerId: "rb-1" },
       sourceTaskItemId: "task-item-1",
     });
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(task).toMatchObject({
       callerSessionId: "sess-coordinator",
@@ -286,6 +295,7 @@ describe("TaskCreation", () => {
       profileId: "codex-default",
       sessionType: "llm",
     });
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.getFolderById).toHaveBeenCalledWith("llm");
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
@@ -327,12 +337,13 @@ describe("TaskCreation", () => {
       },
     ]);
 
-    await h.creation.createTask({
+    const task = await h.creation.createTask({
       agentSessionId: "sess-folder-immediate",
       prompt: "folder workflow",
       profileId: "codex-default",
       folderId: "folder-42",
     });
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
@@ -360,6 +371,7 @@ describe("TaskCreation", () => {
       prompt: "p",
       profileId: "codex-default",
     });
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
     expect(h.upsertSessionBoardItem).not.toHaveBeenCalled();
@@ -405,6 +417,7 @@ describe("TaskCreation", () => {
       container: { containerKind: "task", containerId: "rb-1" },
       sourceTaskItemId: "task-item-1",
     });
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.resolveBoardYjsContainerScope).toHaveBeenCalledWith({
       containerKind: "task",
@@ -445,7 +458,7 @@ describe("TaskCreation", () => {
       }],
     );
 
-    await h.creation.createTask({
+    const task = await h.creation.createTask({
       agentSessionId: "sess-task",
       prompt: "task workflow",
       profileId: "roselin_codex",
@@ -453,6 +466,7 @@ describe("TaskCreation", () => {
       container: { containerKind: "task", containerId: "rb-1" },
       sourceTaskItemId: "task-item-1",
     });
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "sess-task",
@@ -477,6 +491,7 @@ describe("TaskCreation", () => {
       container: { containerKind: "task", containerId: "rb-1" },
       sourceTaskItemId: "task-item-1",
     });
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.assignSessionToFolder).not.toHaveBeenCalledWith("sess-task-fallback", "root");
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, null);
@@ -517,6 +532,11 @@ describe("TaskCreation", () => {
       profileId: "codex-default",
       folderId: "folder-3",
     });
+    await Promise.all([
+      h.creation.waitForDeferredEffects(first.agentSessionId),
+      h.creation.waitForDeferredEffects(second.agentSessionId),
+      h.creation.waitForDeferredEffects(third.agentSessionId),
+    ]);
 
     expect(first.agentSessionId).toBe("sess-folder-fail");
     expect(second.agentSessionId).toBe("sess-catalog-fail");

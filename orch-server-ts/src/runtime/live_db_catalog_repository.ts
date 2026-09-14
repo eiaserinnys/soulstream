@@ -85,6 +85,9 @@ export type LiveDbCatalogRepository = {
   readonly findSessionOwnerNodeId: (
     sessionId: string,
   ) => Promise<string | null>;
+  readonly findRescuableSessionOwnerNodeId: (
+    sessionId: string,
+  ) => Promise<string | null>;
   readonly loadSessionSnapshot: (
     input?: LoadSessionSnapshotInput,
   ) => Promise<SessionStreamSnapshot>;
@@ -359,6 +362,19 @@ export function createLiveDbCatalogRepository(
         SELECT node_id
         FROM sessions
         WHERE session_id = ${sessionId}
+        LIMIT 1
+      `;
+      return stringOrNull(rows[0]?.node_id);
+    },
+    async findRescuableSessionOwnerNodeId(sessionId) {
+      const rows = await (await sqlResolver.resolveSql())`
+        SELECT node_id
+        FROM sessions
+        WHERE session_id = ${sessionId}
+          AND (
+            execution_registration_id IS NOT NULL
+            OR status IN ('completed', 'error', 'interrupted')
+          )
         LIMIT 1
       `;
       return stringOrNull(rows[0]?.node_id);

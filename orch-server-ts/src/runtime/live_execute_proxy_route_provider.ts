@@ -44,6 +44,7 @@ export type LiveExecuteProxyRouteProviderOptions = {
   readonly bridge: SessionCommandTransportBridge;
   readonly sessionEventHub: RuntimeSessionEventHub;
   readonly timeoutMs?: number;
+  readonly createSessionReconcileTimeoutMs?: number;
   readonly generateSessionId?: () => string;
 };
 
@@ -76,10 +77,33 @@ export function createLiveExecuteProxyRouteProvider(
           commandPayload,
           { timeoutMs: options.timeoutMs },
         );
-        const result = await options.bridge.sendPendingCommand({
-          node: selected.node,
-          command,
-        });
+        let result: NodeCommandResponse;
+        try {
+          result = await options.bridge.sendPendingCommand({
+            node: selected.node,
+            command,
+          });
+        } catch (error) {
+          if (error instanceof PendingNodeCommandTimeoutError) {
+            try {
+              const reconciled = await options.router.waitForCreatedSession(
+                agentSessionId,
+                selected.node.nodeId,
+                { timeoutMs: options.createSessionReconcileTimeoutMs },
+              );
+              if (reconciled) {
+                return streamResult({
+                  agentSessionId,
+                  nodeId: selected.node.nodeId,
+                  queue,
+                });
+              }
+            } catch {
+              // Preserve the command timeout when durable lookup is unavailable.
+            }
+          }
+          throw error;
+        }
         if (isCommandError(result)) {
           throw routeErrorFromAck(createAckStatus(result), result);
         }

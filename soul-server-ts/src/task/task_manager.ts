@@ -75,6 +75,8 @@ export type {
 } from "./task_intervention_route.js";
 export type { FinalizeTaskParams } from "./task_lifecycle_route.js";
 
+const TASK_CREATION_DELETE_DRAIN_TIMEOUT_MS = 5_000;
+
 export class TaskManager {
   private readonly tasks = new Map<string, Task>();
   private readonly taskCreation: TaskCreation;
@@ -240,7 +242,7 @@ export class TaskManager {
   }
 
   /**
-   * 새 Task 생성 + host 등록 + orch broadcast. 신규 task creation policy는
+   * 새 Task 생성 + host 등록 + 추적 가능한 orch projection 예약. 신규 task creation policy는
    * TaskCreation이 소유하고, TaskManager는 public collection API를 유지한다.
    */
   async createTask(params: CreateTaskParams): Promise<Task> {
@@ -418,6 +420,25 @@ export class TaskManager {
       if (!task) return false;
       this.tasks.set(sessionId, task);
     }
+    const creationEffectsDrained = await this.taskCreation.waitForDeferredEffects(
+      sessionId,
+      TASK_CREATION_DELETE_DRAIN_TIMEOUT_MS,
+    );
+    if (!creationEffectsDrained) {
+      this.logger.warn(
+        {
+          sessionId,
+          timeoutMs: TASK_CREATION_DELETE_DRAIN_TIMEOUT_MS,
+        },
+        "task creation projections did not drain before delete deadline",
+      );
+      // Projection ports are not abortable. Refuse this attempt instead of
+      // deleting underneath a live page/folder mutation that could recreate
+      // references after the session row is gone; the caller can safely retry.
+      throw new Error(
+        `task creation projections did not drain before delete deadline: ${sessionId}`,
+      );
+    }
     return await this.lifecycleRoute.deleteTask(sessionId);
   }
 
@@ -428,6 +449,12 @@ export class TaskManager {
    */
   async shutdown(): Promise<void> {
     await this.lifecycleRoute.shutdown();
+    const drained = await this.taskCreation.drainDeferredEffects();
+    if (!drained) {
+      this.logger.warn(
+        "task creation projections did not drain before the shutdown deadline; durable replay remains pending",
+      );
+    }
   }
 
   /** 내부 상태 변경 helper (task_executor용). */

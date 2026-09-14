@@ -17,6 +17,7 @@ import type {
   StartExecutionCallback,
 } from "../../src/task/task_intervention_route.js";
 import { TaskManager as ProductionTaskManager } from "../../src/task/task_manager.js";
+import type { TaskCreationHook } from "../../src/task/task_creation_hook.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -77,6 +78,13 @@ class TaskManager extends ProductionTaskManager {
       }
       return result;
     });
+  }
+
+  async waitForCreationEffects(sessionId: string): Promise<void> {
+    const manager = this as unknown as {
+      taskCreation: { waitForDeferredEffects(id: string): Promise<void> };
+    };
+    await manager.taskCreation.waitForDeferredEffects(sessionId);
   }
 }
 
@@ -400,6 +408,7 @@ describe("TaskManager.createTask", () => {
       profileId: "codex-default",
       callerInfo: { source: "slack" },
     });
+    await tm.waitForCreationEffects(task.agentSessionId);
 
     expect(task.agentSessionId).toBe("sess-1");
     expect(task.status).toBe("initializing");
@@ -594,6 +603,7 @@ describe("TaskManager.createTask", () => {
       profileId: "a",
       folderId: "folder-42",
     });
+    await tm.waitForCreationEffects("s1");
     expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "folder-42",
       container: { containerKind: "folder", containerId: "folder-42" },
@@ -1340,6 +1350,63 @@ describe("TaskManager.deleteTask", () => {
     expect(mocks.emitSessionDeleted).toHaveBeenCalledWith("evicted-delete");
     expect(tm.getTask("evicted-delete")).toBeUndefined();
   });
+
+  it("stuck creation projection은 삭제 요청을 무한 대기시키지 않고 안전하게 재시도시킨다", async () => {
+    vi.useFakeTimers();
+    try {
+      const mocks = makeMocks();
+      let releaseProjection!: () => void;
+      const taskCreationHook: TaskCreationHook = {
+        persistCreationIntent: vi.fn(async () => undefined),
+        afterSessionRegistered: vi.fn(async () => {
+          await new Promise<void>((resolve) => {
+            releaseProjection = resolve;
+          });
+        }),
+      };
+      const tm = new TaskManager(
+        "n",
+        mocks.db,
+        mocks.broadcaster,
+        silentLogger,
+        mocks.persistence,
+        undefined,
+        undefined,
+        undefined,
+        taskCreationHook,
+      );
+      await tm.createTask({
+        agentSessionId: "stuck-delete",
+        prompt: "x",
+        profileId: "p",
+      });
+
+      let settled = false;
+      const deletion = tm.deleteTask("stuck-delete").then(
+        (value) => value,
+        (error: unknown) => error,
+      );
+      void deletion.then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(settled).toBe(true);
+      await expect(deletion).resolves.toMatchObject({
+        message: "task creation projections did not drain before delete deadline: stuck-delete",
+      });
+      expect(mocks.deleteSession).not.toHaveBeenCalled();
+      expect(tm.getTask("stuck-delete")).toBeDefined();
+
+      releaseProjection();
+      await tm.waitForCreationEffects("stuck-delete");
+      await expect(tm.deleteTask("stuck-delete")).resolves.toBe(true);
+      expect(mocks.deleteSession).toHaveBeenCalledWith("stuck-delete");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("TaskManager.shutdown", () => {
@@ -1900,6 +1967,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
       profileId: "codex-default",
       folderId: "folder-explicit",
     });
+    await tm.waitForCreationEffects("s1");
     expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "folder-explicit",
       container: { containerKind: "folder", containerId: "folder-explicit" },
@@ -1919,6 +1987,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
       prompt: "x",
       profileId: "codex-default",
     });
+    await tm.waitForCreationEffects("s2");
     expect(getFolderById).toHaveBeenCalledWith("claude");
     expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "claude",
@@ -1939,6 +2008,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
       prompt: "x",
       profileId: "codex-default",
     });
+    await tm.waitForCreationEffects("s3");
     expect(upsertSessionBoardItem).not.toHaveBeenCalled();
     expect(emitSessionCreated.mock.calls[0][1]).toBeNull();
     expect(emitCatalogUpdated).not.toHaveBeenCalled();  // 폴더 배정 안 됐으면 broadcast 안 함 (Python L311 gate)
@@ -1954,6 +2024,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
       profileId: "codex-default",
       folderId: "f-x",
     });
+    await tm.waitForCreationEffects(task.agentSessionId);
     expect(task.agentSessionId).toBe("s4");  // task 생성 성공
     // 폴더 배정 실패 → emit에 null 전달, catalog broadcast 안 함
     expect(emitSessionCreated.mock.calls[0][1]).toBeNull();
@@ -1970,6 +2041,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
       profileId: "codex-default",
       folderId: "f-y",
     });
+    await tm.waitForCreationEffects(task.agentSessionId);
     expect(task.agentSessionId).toBe("s5");
     expect(emitSessionCreated.mock.calls[0][1]).toBe("f-y");  // Y.Doc 원자 배치는 성공
     expect(emitCatalogUpdated).not.toHaveBeenCalled();  // catalog 실패는 broadcast 차단
@@ -1984,6 +2056,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
       profileId: "codex-default",
       folderId: "f",
     });
+    await tm.waitForCreationEffects("s6");
     // mock 호출 순서 검증
     const catalogOrder = emitCatalogUpdated.mock.invocationCallOrder[0];
     const createdOrder = emitSessionCreated.mock.invocationCallOrder[0];
@@ -2537,6 +2610,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       prompt: "p",
       profileId: "codex-default",
     });
+    await tm.waitForCreationEffects(task.agentSessionId);
     task.status = "running";
     expect(tm.getTask("s1")).toBeDefined();
     mocks.getSession.mockClear();

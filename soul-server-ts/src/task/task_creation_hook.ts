@@ -13,6 +13,9 @@ export interface LegacyProjectionHookParams extends TaskCreationHookParams {
 
 /** Post-registration seam for durable session projections. */
 export interface TaskCreationHook {
+  /** Persist the replayable projection intent before the task becomes runnable. */
+  persistCreationIntent?(params: TaskCreationHookParams): Promise<void>;
+  /** Reconcile the persisted intent after the task is remembered. */
   afterSessionRegistered(params: TaskCreationHookParams): Promise<void>;
   afterLegacyProjection?(params: LegacyProjectionHookParams): Promise<void>;
 }

@@ -14,7 +14,7 @@
  */
 
 import pino from "pino";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
 import type { SessionMutationHost } from
@@ -32,6 +32,8 @@ import type { EventAppendAcknowledgement } from
 import { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 const silentLogger = pino({ level: "silent" });
+
+afterEach(() => vi.useRealTimers());
 
 const codexAgent: AgentProfile = {
   id: "codex-default",
@@ -329,6 +331,114 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     expect(task!.codexThreadId).toBe("thr-codex-1");
     expect(task!.lastEventId).toBe(6);
     expect(task!.lastAssistantText).toBe("Hello world");
+  });
+
+  it("registration 뒤 필수 metadata ACK 실패를 create_session error로 전달하고 실행하지 않는다", async () => {
+    vi.useFakeTimers();
+    const orchReceived: Record<string, unknown>[] = [];
+    const send = vi.fn(async (data: unknown) => {
+      orchReceived.push(data as Record<string, unknown>);
+    });
+    const { sql } = makeStoredProcMock();
+    const db = new SessionDBClass(sql);
+    const registry = new AgentRegistry([codexAgent]);
+    const broadcaster = new SessionBroadcaster(
+      send,
+      registry,
+      "node-metadata-failure",
+    );
+    const outbox = makeEventOutboxHarness();
+    outbox.waitForAcknowledgement.mockImplementationOnce(
+      async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 30_001));
+        throw new Error("metadata durability failed");
+      },
+    );
+    const persistence = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      { append: outbox.append } as never,
+      {
+        waitForAcknowledgement: outbox.waitForAcknowledgement,
+        waitForAcknowledgementResult: outbox.waitForAcknowledgementResult,
+      } as never,
+    );
+    const registerSession = vi.fn(async () => undefined);
+    const sessionMutations = {
+      registerSession,
+      transitionSession: vi.fn(async () => undefined),
+      renameSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+      acknowledgeReview: vi.fn(async () => "acknowledged" as const),
+    } satisfies SessionMutationHost;
+    const taskManager = new TaskManager(
+      "node-metadata-failure",
+      db,
+      broadcaster,
+      silentLogger,
+      persistence,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      undefined,
+      sessionMutations,
+    );
+    const factory = vi.fn(() => makeFakeEngine([]));
+    const taskExecutor = new TaskExecutor(
+      factory,
+      db,
+      persistence,
+      broadcaster,
+      silentLogger,
+    );
+    const dispatcher = new CommandDispatcher(
+      send,
+      silentLogger,
+      "node-metadata-failure",
+      registry,
+      taskManager,
+      taskExecutor,
+    );
+
+    const dispatch = dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-metadata-failure",
+      prompt: "must not execute",
+      profile: "codex-default",
+      requestId: "req-metadata-failure",
+      caller_info: { source: "execute-proxy" },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(registerSession).toHaveBeenCalledOnce();
+    expect(outbox.waitForAcknowledgement).toHaveBeenCalledOnce();
+    expect(orchReceived).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(orchReceived).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    await dispatch;
+
+    expect(orchReceived).toEqual([
+      expect.objectContaining({
+        type: "error",
+        requestId: "req-metadata-failure",
+        command_type: "create_session",
+        message: "Handler error: metadata durability failed",
+      }),
+    ]);
+    expect(registerSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "sess-metadata-failure",
+        status: "initializing",
+      }),
+      "register_session:sess-metadata-failure",
+    );
+    expect(taskManager.getTask("sess-metadata-failure")).toBeUndefined();
+    expect(factory).not.toHaveBeenCalled();
   });
 
   it("Unknown agent profile → error 응답, task·DB·broadcast 없음", async () => {

@@ -9,7 +9,17 @@ import {
 describe("live DB SSE replay snapshots", () => {
   it("loads the durable session owner node used by command routing", async () => {
     const harness = createSqlHarness((text, values) => {
-      if (text.includes("FROM sessions") && values[0] === "sess-owned") {
+      if (
+        text.includes("FROM sessions")
+        && !text.includes("execution_registration_id")
+        && values[0] === "sess-owned"
+      ) {
+        return [{ node_id: "node-a" }];
+      }
+      if (
+        text.includes("execution_registration_id")
+        && values[0] === "sess-started"
+      ) {
         return [{ node_id: "node-a" }];
       }
       return [];
@@ -22,9 +32,17 @@ describe("live DB SSE replay snapshots", () => {
     await expect(
       repository.findSessionOwnerNodeId("sess-missing"),
     ).resolves.toBeNull();
+    await expect(
+      repository.findRescuableSessionOwnerNodeId("sess-started"),
+    ).resolves.toBe("node-a");
+    await expect(
+      repository.findRescuableSessionOwnerNodeId("sess-initializing"),
+    ).resolves.toBeNull();
     expect(harness.normalizedCalls()).toEqual([
       "SELECT node_id FROM sessions WHERE session_id = ? LIMIT 1",
       "SELECT node_id FROM sessions WHERE session_id = ? LIMIT 1",
+      "SELECT node_id FROM sessions WHERE session_id = ? AND ( execution_registration_id IS NOT NULL OR status IN ('completed', 'error', 'interrupted') ) LIMIT 1",
+      "SELECT node_id FROM sessions WHERE session_id = ? AND ( execution_registration_id IS NOT NULL OR status IN ('completed', 'error', 'interrupted') ) LIMIT 1",
     ]);
   });
 
