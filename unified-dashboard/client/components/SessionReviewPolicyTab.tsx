@@ -74,7 +74,7 @@ export function SessionReviewPolicyTab() {
     const source = draft.trim().toLowerCase();
     if (!source) return;
     if (source === "browser") {
-      setError("browser는 목록이 아니라 아래 신원 조건부 정책으로 항상 처리됩니다.");
+      setError("로그인한 브라우저 요청은 항상 검수하므로 이 목록에 추가할 필요가 없습니다.");
       return;
     }
     if (!/^[a-z][a-z0-9_-]{0,63}$/.test(source)) {

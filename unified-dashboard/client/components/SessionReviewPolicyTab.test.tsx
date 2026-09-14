@@ -113,6 +113,32 @@ describe("SessionReviewPolicyTab", () => {
     expect(document.body.querySelector('[role="status"]')).toBeNull();
     expect(document.body.textContent).toContain("현재 v2");
   });
+
+  it("explains the reserved browser source without implementation terms", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(jsonResponse(policyPayload(1, ["slack"]))));
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(createElement(SessionReviewPolicyTab)));
+    await settle();
+
+    const input = document.body.querySelector<HTMLInputElement>('[aria-label="추가할 출처 ID"]')!;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    flushSync(() => {
+      setter.call(input, "browser");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    clickButton("추가");
+
+    expect(document.body.textContent)
+      .toContain("로그인한 브라우저 요청은 항상 검수하므로 이 목록에 추가할 필요가 없습니다");
+    expect(document.body.textContent).not.toContain("신원 조건부");
+  });
 });
 
 function clickButton(label: string) {
