@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   ExecuteProxyRouteError,
@@ -180,16 +180,178 @@ describe("live execute proxy provider", () => {
     ).rejects.toBeInstanceOf(ExecuteProxyRouteError);
     expect(sent).toEqual([]);
   });
+
+  it("returns the already-subscribed stream when a timed-out create is durably registered", async () => {
+    const findRescuableSessionOwnerNodeId = vi.fn(async () => "node-codex");
+    const harness = createHarness({
+      timeoutMs: 1,
+      createSessionReconcileTimeoutMs: 50,
+      findRescuableSessionOwnerNodeId,
+    });
+    const connectionId = harness.registerNode({
+      nodeId: "node-codex",
+      agents: [{ id: "codex-agent", backend: "codex" }],
+      supportedBackends: ["codex"],
+    });
+    const sent = harness.attachTransport("node-codex", connectionId);
+
+    const result = await harness.provider.executeNew({
+      prompt: "hello",
+      profile: "codex-agent",
+      caller_info: { source: "execute-proxy" },
+    });
+    expect(sent).toHaveLength(1);
+    expect(findRescuableSessionOwnerNodeId).toHaveBeenCalledWith("generated-session");
+
+    harness.receive("node-codex", connectionId, {
+      type: "event",
+      agentSessionId: "generated-session",
+      event: { type: "complete", result: "rescued", _event_id: 17 },
+    });
+    await expect(resultBody(result)).resolves.toBe(
+      'event: init\n' +
+        'data: {"type":"init","agent_session_id":"generated-session","node_id":"node-codex"}\n\n' +
+        'event: complete\n' +
+        'id: 17\n' +
+        'data: {"type":"complete","result":"rescued","_event_id":17}\n\n',
+    );
+  });
+
+  it("keeps NODE_COMMAND_TIMEOUT when durable registration is absent or on another node", async () => {
+    for (const durableOwner of [null, "other-node"] as const) {
+      const harness = createHarness({
+        timeoutMs: 1,
+        createSessionReconcileTimeoutMs: 1,
+        findRescuableSessionOwnerNodeId: async () => durableOwner,
+      });
+      const connectionId = harness.registerNode({
+        nodeId: "node-codex",
+        agents: [{ id: "codex-agent", backend: "codex" }],
+        supportedBackends: ["codex"],
+      });
+      harness.attachTransport("node-codex", connectionId);
+
+      await expect(harness.provider.executeNew({
+        prompt: "hello",
+        profile: "codex-agent",
+        caller_info: { source: "execute-proxy" },
+      })).rejects.toMatchObject({
+        statusCode: 503,
+        detail: {
+          error: { code: "NODE_COMMAND_TIMEOUT" },
+        },
+      });
+    }
+  });
+
+  it("bounds a stalled DB rescue and unsubscribes the abandoned stream", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        timeoutMs: 30_000,
+        createSessionReconcileTimeoutMs: 5_000,
+        findRescuableSessionOwnerNodeId: async () =>
+          await new Promise<string | null>(() => undefined),
+      });
+      const unsubscribe = observeUnsubscribe(harness.sessionEventHub);
+      const connectionId = harness.registerNode({
+        nodeId: "node-codex",
+        agents: [{ id: "codex-agent", backend: "codex" }],
+        supportedBackends: ["codex"],
+      });
+      harness.attachTransport("node-codex", connectionId);
+
+      const outcome = Promise.resolve(
+        harness.provider.executeNew({
+          prompt: "hello",
+          profile: "codex-agent",
+          caller_info: { source: "execute-proxy" },
+        }),
+      ).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(34_999);
+      expect(unsubscribe).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+
+      await expect(outcome).resolves.toMatchObject({
+        statusCode: 503,
+        detail: { error: { code: "NODE_COMMAND_TIMEOUT" } },
+      });
+      expect(unsubscribe).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not rescue an owner-only initializing row when metadata failure ACK is late", async () => {
+    vi.useFakeTimers();
+    try {
+      const findSessionOwnerNodeId = vi.fn(async () => "node-codex");
+      const findRescuableSessionOwnerNodeId = vi.fn(async () => null);
+      const harness = createHarness({
+        timeoutMs: 30_000,
+        createSessionReconcileTimeoutMs: 5_000,
+        findSessionOwnerNodeId,
+        findRescuableSessionOwnerNodeId,
+      });
+      const unsubscribe = observeUnsubscribe(harness.sessionEventHub);
+      const connectionId = harness.registerNode({
+        nodeId: "node-codex",
+        agents: [{ id: "codex-agent", backend: "codex" }],
+        supportedBackends: ["codex"],
+      });
+      harness.attachTransport("node-codex", connectionId, (message) => {
+        setTimeout(() => {
+          harness.receive("node-codex", connectionId, {
+            type: "error",
+            requestId: message.requestId,
+            command_type: "create_session",
+            message: "Handler error: metadata durability failed",
+          });
+        }, 30_001);
+      });
+
+      const outcome = Promise.resolve(
+        harness.provider.executeNew({
+          prompt: "hello",
+          profile: "codex-agent",
+          caller_info: { source: "execute-proxy" },
+        }),
+      ).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(35_000);
+
+      await expect(outcome).resolves.toMatchObject({
+        statusCode: 503,
+        detail: { error: { code: "NODE_COMMAND_TIMEOUT" } },
+      });
+      expect(findSessionOwnerNodeId).not.toHaveBeenCalled();
+      expect(findRescuableSessionOwnerNodeId).toHaveBeenCalledWith("generated-session");
+      expect(unsubscribe).toHaveBeenCalledOnce();
+      expect(harness.registry.getConnectedNode("node-codex")).toMatchObject({
+        pendingCommandCount: 0,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
-function createHarness() {
+function createHarness(options: {
+  timeoutMs?: number;
+  createSessionReconcileTimeoutMs?: number;
+  findSessionOwnerNodeId?: (agentSessionId: string) => Promise<string | null>;
+  findRescuableSessionOwnerNodeId?: (agentSessionId: string) => Promise<string | null>;
+} = {}) {
   const registry = new InMemoryNodeRegistry({
     nowMs: () => 1_700_000_000_000,
     requestIdGenerator: ({ sequence, commandType, nowMs }) =>
       `cmd-${commandType}-${sequence}-${nowMs}`,
   });
   const transports = new NodeCommandTransportHub();
-  const router = new SessionCommandRouter({ registry });
+  const router = new SessionCommandRouter({
+    registry,
+    findSessionOwnerNodeId: options.findSessionOwnerNodeId,
+    findRescuableSessionOwnerNodeId: options.findRescuableSessionOwnerNodeId,
+  });
   const bridge = new SessionCommandTransportBridge({ registry, transports });
   const sessionEventHub = new RuntimeSessionEventHub();
   const provider = createLiveExecuteProxyRouteProvider({
@@ -197,12 +359,15 @@ function createHarness() {
     router,
     bridge,
     sessionEventHub,
+    timeoutMs: options.timeoutMs,
+    createSessionReconcileTimeoutMs: options.createSessionReconcileTimeoutMs,
     generateSessionId: () => "generated-session",
   });
 
   return {
     registry,
     provider,
+    sessionEventHub,
     registerNode: (input: {
       nodeId: string;
       agents: unknown[];
@@ -252,6 +417,19 @@ function createHarness() {
       );
     },
   };
+}
+
+function observeUnsubscribe(sessionEventHub: RuntimeSessionEventHub) {
+  const unsubscribeObserved = vi.fn();
+  const subscribe = sessionEventHub.subscribe.bind(sessionEventHub);
+  vi.spyOn(sessionEventHub, "subscribe").mockImplementation((sessionId, listener) => {
+    const unsubscribe = subscribe(sessionId, listener);
+    return () => {
+      unsubscribeObserved();
+      unsubscribe();
+    };
+  });
+  return unsubscribeObserved;
 }
 
 async function resultBody(result: ExecuteProxyResult): Promise<string> {

@@ -22,6 +22,7 @@ import {
 export type SessionCommandRouterOptions = {
   registry: InMemoryNodeRegistry;
   findSessionOwnerNodeId?: SessionOwnerNodeIdLookup;
+  findRescuableSessionOwnerNodeId?: SessionOwnerNodeIdLookup;
   agentProfiles?: () => readonly AgentProfileRecord[];
 };
 
@@ -125,11 +126,13 @@ export class SessionRouteNodeUnavailableError extends SessionCommandRouteError {
 export class SessionCommandRouter {
   private readonly registry: InMemoryNodeRegistry;
   private readonly findSessionOwnerNodeId: SessionOwnerNodeIdLookup | undefined;
+  private readonly findRescuableSessionOwnerNodeId: SessionOwnerNodeIdLookup | undefined;
   private readonly agentProfiles: () => readonly AgentProfileRecord[];
 
   constructor(options: SessionCommandRouterOptions) {
     this.registry = options.registry;
     this.findSessionOwnerNodeId = options.findSessionOwnerNodeId;
+    this.findRescuableSessionOwnerNodeId = options.findRescuableSessionOwnerNodeId;
     this.agentProfiles = options.agentProfiles ?? (() => []);
   }
 
@@ -192,17 +195,42 @@ export class SessionCommandRouter {
     };
   }
 
-  waitForCreatedSession(
+  async waitForCreatedSession(
     agentSessionId: string,
     expectedNodeId: string,
     options: { timeoutMs?: number } = {},
   ): Promise<boolean> {
     const timeoutMs =
       options.timeoutMs ?? DEFAULT_SESSION_CREATE_RECONCILE_TIMEOUT_MS;
-    return this.registry.sessionCache.waitForSession({
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 0) {
+      throw new Error(
+        `session create reconcile timeoutMs must be a non-negative integer: ${timeoutMs}`,
+      );
+    }
+    const deadlineMs = Date.now() + timeoutMs;
+    const observed = await this.registry.sessionCache.waitForSession({
       nodeId: expectedNodeId,
       agentSessionId,
-      timeoutMs,
+      timeoutMs: 0,
+    });
+    if (observed) return true;
+    const findRescuableOwner = this.findRescuableSessionOwnerNodeId;
+    if (findRescuableOwner !== undefined) {
+      const lookupBudgetMs = remainingBudgetMs(deadlineMs);
+      if (lookupBudgetMs === 0) return false;
+      const durableOwner = await settleWithin(
+        findRescuableOwner(agentSessionId),
+        lookupBudgetMs,
+      );
+      if (!durableOwner.settled) return false;
+      if (durableOwner.value === expectedNodeId) return true;
+    }
+    const cacheBudgetMs = remainingBudgetMs(deadlineMs);
+    if (cacheBudgetMs === 0) return false;
+    return await this.registry.sessionCache.waitForSession({
+      nodeId: expectedNodeId,
+      agentSessionId,
+      timeoutMs: cacheBudgetMs,
     });
   }
 
@@ -291,4 +319,25 @@ export class SessionCommandRouter {
 
 function optionalNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function remainingBudgetMs(deadlineMs: number): number {
+  return Math.max(0, Math.ceil(deadlineMs - Date.now()));
+}
+
+async function settleWithin<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<{ settled: true; value: T } | { settled: false }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise.then((value) => ({ settled: true as const, value })),
+      new Promise<{ settled: false }>((resolve) => {
+        timer = setTimeout(() => resolve({ settled: false }), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }

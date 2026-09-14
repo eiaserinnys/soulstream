@@ -49,7 +49,7 @@ export class SessionPageBindingService implements TaskCreationHook {
 
   constructor(private readonly deps: SessionPageBindingServiceDeps) {}
 
-  async afterSessionRegistered({ task, params }: TaskCreationHookParams): Promise<void> {
+  async persistCreationIntent({ task, params }: TaskCreationHookParams): Promise<void> {
     const enrollment = decideSessionPageEnrollment({
       hasPageAnchor: params.pageAnchor !== undefined,
       containerKind: params.container?.containerKind ?? null,
@@ -69,6 +69,9 @@ export class SessionPageBindingService implements TaskCreationHook {
       legacyContainerId: params.container?.containerId ?? null,
       sourceTaskItemId: params.sourceTaskItemId ?? null,
     });
+  }
+
+  async afterSessionRegistered({ task }: TaskCreationHookParams): Promise<void> {
     await this.reconcileSession(task.agentSessionId, true);
     const binding = await this.deps.repository.get(task.agentSessionId);
     for (const warning of projectSessionBindingWarnings({

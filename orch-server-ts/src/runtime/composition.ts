@@ -65,6 +65,8 @@ export type OrchestratorRuntimeCompositionOptions = {
   nowMs?: NodeCommandClock;
   requestIdGenerator?: NodeCommandRequestIdGenerator;
   findSessionOwnerNodeId?: SessionCommandRouterOptions["findSessionOwnerNodeId"];
+  findRescuableSessionOwnerNodeId?:
+    SessionCommandRouterOptions["findRescuableSessionOwnerNodeId"];
   agentProfiles?: SessionCommandRouterOptions["agentProfiles"];
   commandTimeoutMs?: number;
   enableSessionActionCommandRoutes?: boolean;
@@ -133,6 +135,7 @@ export function createOrchestratorRuntimeServices(
   const sessionRouter = new SessionCommandRouter({
     registry,
     findSessionOwnerNodeId: options.findSessionOwnerNodeId,
+    findRescuableSessionOwnerNodeId: options.findRescuableSessionOwnerNodeId,
     agentProfiles: options.agentProfiles,
   } satisfies SessionCommandRouterOptions);
   const sessionBridge = new SessionCommandTransportBridge({

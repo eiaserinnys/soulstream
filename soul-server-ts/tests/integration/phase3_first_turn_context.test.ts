@@ -19,11 +19,12 @@ import { TaskRuntimeCommands } from "../../src/upstream/task_runtime_commands.js
 const logger = pino({ level: "silent" });
 
 describe("Phase 3 first-turn page context integration", () => {
-  it("registers, binds the primary session_ref, then resolves ancestors before execution", async () => {
+  it("persists the page anchor before execution and reconciles the session_ref asynchronously", async () => {
     const order: string[] = [];
     let row: SessionPageBindingRow | null = null;
     const repository = {
       enqueue: vi.fn(async (input: EnqueueSessionPageBinding) => {
+        order.push("intent");
         row = {
           session_id: input.sessionId,
           node_id: input.nodeId,
@@ -168,6 +169,7 @@ describe("Phase 3 first-turn page context integration", () => {
       pageAnchor: { pageId: "page-1", blockId: "block-session", expectedVersion: 7 },
     });
     await contextPromise;
+    await creation.waitForDeferredEffects("sess-first-turn");
 
     expect(registerSession).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -176,8 +178,9 @@ describe("Phase 3 first-turn page context integration", () => {
       }),
       "register_session:sess-first-turn",
     );
-    expect(order.indexOf("register")).toBeLessThan(order.indexOf("bind"));
-    expect(order.indexOf("bind")).toBeLessThan(order.indexOf("start"));
+    expect(order.indexOf("register")).toBeLessThan(order.indexOf("intent"));
+    expect(order.indexOf("intent")).toBeLessThan(order.indexOf("start"));
+    expect(order.indexOf("start")).toBeLessThan(order.indexOf("created"));
     expect(blocks[1]).toMatchObject({
       block_type: "session_ref",
       properties: { sessionId: "sess-first-turn", primary: true },

@@ -286,6 +286,8 @@ export async function createLiveProductionApplication(
     eventIngress: eventIngressRepository,
     releaseActivationReceipts: new ReleaseActivationReceiptRepository(sqlResolver),
     findSessionOwnerNodeId: dbCatalogRepository.findSessionOwnerNodeId,
+    findRescuableSessionOwnerNodeId:
+      dbCatalogRepository.findRescuableSessionOwnerNodeId,
     agentProfiles: dbCatalogRepository.agentProfileRepository.snapshot,
     enableSessionActionCommandRoutes: true,
     enableSessionBackgroundScheduleRoutes: true,

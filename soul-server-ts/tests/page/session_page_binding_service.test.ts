@@ -86,7 +86,7 @@ describe("SessionPageBindingService", () => {
 
   it("records KST intent and binds an unanchored session to the daily page", async () => {
     const h = harness();
-    await h.service.afterSessionRegistered({
+    const hookParams = {
       task: { agentSessionId: "sess-1" } as never,
       params: {
         agentSessionId: "sess-1",
@@ -94,7 +94,9 @@ describe("SessionPageBindingService", () => {
         folderId: "folder-1",
         callerInfo: { source: "browser" },
       },
-    });
+    };
+    await h.service.persistCreationIntent(hookParams);
+    await h.service.afterSessionRegistered(hookParams);
 
     expect(h.repository.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "sess-1",
@@ -162,10 +164,12 @@ describe("SessionPageBindingService", () => {
     },
   ])("keeps $name out of daily while preserving durable legacy projection", async ({ params }) => {
     const h = harness(binding({ page_state: "bound" }));
-    await h.service.afterSessionRegistered({
+    const hookParams = {
       task: { agentSessionId: "sess-1" } as never,
       params: { agentSessionId: "sess-1", prompt: "start", ...params } as never,
-    });
+    };
+    await h.service.persistCreationIntent(hookParams);
+    await h.service.afterSessionRegistered(hookParams);
 
     expect(h.repository.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "sess-1",
@@ -311,14 +315,16 @@ describe("SessionPageBindingService", () => {
     }));
     h.pageHost.batchPageOperations.mockRejectedValueOnce(new Error("page version conflict (409)"));
     const task = { agentSessionId: "sess-1" } as never;
-    await h.service.afterSessionRegistered({
+    const hookParams = {
       task,
       params: {
         agentSessionId: "sess-1",
         prompt: "start",
         pageAnchor: { pageId: "page-1", blockId: "block-1", expectedVersion: 7 },
       },
-    });
+    };
+    await h.service.persistCreationIntent(hookParams);
+    await h.service.afterSessionRegistered(hookParams);
     expect(h.repository.markFailure).toHaveBeenCalledWith(
       "sess-1", "page", "page version conflict (409)", true,
     );
@@ -351,10 +357,12 @@ describe("SessionPageBindingService", () => {
       return {};
     });
 
-    const hook = h.service.afterSessionRegistered({
+    const hookParams = {
       task: { agentSessionId: "sess-1" } as never,
       params: { agentSessionId: "sess-1", prompt: "start" },
-    });
+    };
+    await h.service.persistCreationIntent(hookParams);
+    const hook = h.service.afterSessionRegistered(hookParams);
     await vi.waitFor(() => expect(h.pageHost.batchPageOperations).toHaveBeenCalledOnce());
     const scan = h.service.reconcileDue();
     await vi.waitFor(() => expect(h.repository.listDue).toHaveBeenCalledOnce());
