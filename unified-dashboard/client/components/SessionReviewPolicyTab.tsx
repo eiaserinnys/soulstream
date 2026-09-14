@@ -70,6 +70,7 @@ export function SessionReviewPolicyTab() {
   }, []);
 
   function addSource() {
+    if (loading || saving) return;
     const source = draft.trim().toLowerCase();
     if (!source) return;
     if (source === "browser") {
@@ -87,7 +88,7 @@ export function SessionReviewPolicyTab() {
   }
 
   async function save() {
-    if (!payload || !changed) return;
+    if (!payload || !changed || loading || saving) return;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -130,13 +131,20 @@ export function SessionReviewPolicyTab() {
           <strong>브라우저</strong> <code className="text-xs">browser</code>는 허용 목록과 별개입니다.
           user_id, email, display_name 중 하나로 신원이 확인되면 항상 검수됩니다.
         </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          이 정책은 새로 시작하는 요청에만 적용됩니다. 실행 중이거나 완료된 요청은 바뀌지 않습니다.
+        </p>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-border p-4">
+      <section
+        className="space-y-3 rounded-lg border border-border p-4"
+        aria-busy={saving}
+      >
         <div>
           <h3 className="text-sm font-semibold">검수할 출처</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            이 목록은 검수 대기열 포함 여부만 정합니다. 출처 문자열을 추가해도 MCP 권한은 높아지지 않습니다.
+            선택한 출처에서 새로 시작한 요청은 실행이 끝나면 요청 검수 목록에 표시됩니다.
+            MCP 권한은 높아지지 않습니다. 도구 접근·상위 요청 연결·완료 알림도 바뀌지 않습니다.
           </p>
         </div>
 
@@ -164,6 +172,7 @@ export function SessionReviewPolicyTab() {
                   size="sm"
                   variant="ghost"
                   aria-label={`${source} 제거`}
+                  disabled={loading || saving}
                   onClick={() => setSources((current) => current.filter((item) => item !== source))}
                 >
                   제거
@@ -180,6 +189,7 @@ export function SessionReviewPolicyTab() {
             list="session-review-source-catalog"
             aria-label="추가할 출처 ID"
             placeholder="예: external-llm"
+            disabled={loading || saving}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -193,8 +203,21 @@ export function SessionReviewPolicyTab() {
               <option key={entry.source} value={entry.source}>{entry.label}</option>
             ))}
           </datalist>
-          <Button type="button" variant="outline" size="sm" onClick={addSource}>추가</Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={loading || saving}
+            onClick={addSource}
+          >
+            추가
+          </Button>
         </div>
+        {saving && (
+          <p className="text-xs text-muted-foreground" role="status">
+            정책을 저장하는 동안에는 출처를 수정할 수 없습니다.
+          </p>
+        )}
       </section>
 
       {payload && (

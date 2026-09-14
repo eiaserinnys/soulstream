@@ -57,13 +57,70 @@ describe("SessionReviewPolicyTab", () => {
     expect(document.body.textContent).toContain("Clipper");
     expect(document.body.textContent).toContain("현재 v2");
   });
+
+  it("locks every policy edit while saving and explains when the policy applies", async () => {
+    let finishSave!: (response: Response) => void;
+    const saveResponse = new Promise<Response>((resolve) => {
+      finishSave = resolve;
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(policyPayload(1, ["slack"])))
+      .mockReturnValueOnce(saveResponse);
+    vi.stubGlobal("fetch", fetchMock);
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(createElement(SessionReviewPolicyTab)));
+    await settle();
+
+    expect(document.body.textContent).toContain("새로 시작하는 요청에만 적용됩니다");
+    expect(document.body.textContent).toContain("실행 중이거나 완료된 요청은 바뀌지 않습니다");
+    expect(document.body.textContent).toContain("실행이 끝나면 요청 검수 목록에 표시됩니다");
+
+    const input = document.body.querySelector<HTMLInputElement>('[aria-label="추가할 출처 ID"]')!;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    flushSync(() => {
+      setter.call(input, "external-llm");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    clickButton("추가");
+    clickButton("정책 저장");
+    await settle();
+
+    expect(input.disabled).toBe(true);
+    expect(button("추가").disabled).toBe(true);
+    expect(button("다시 불러오기").disabled).toBe(true);
+    expect(button("저장 중...").disabled).toBe(true);
+    expect(document.body.querySelector<HTMLButtonElement>('[aria-label="slack 제거"]')?.disabled)
+      .toBe(true);
+    expect(document.body.querySelector<HTMLButtonElement>('[aria-label="external-llm 제거"]')?.disabled)
+      .toBe(true);
+    expect(document.body.querySelector('[role="status"]')?.textContent)
+      .toContain("저장하는 동안에는 출처를 수정할 수 없습니다");
+
+    finishSave(jsonResponse(policyPayload(2, ["slack", "external-llm"])));
+    await settle();
+
+    expect(input.disabled).toBe(false);
+    expect(document.body.querySelector('[role="status"]')).toBeNull();
+    expect(document.body.textContent).toContain("현재 v2");
+  });
 });
 
 function clickButton(label: string) {
-  const button = Array.from(document.body.querySelectorAll("button"))
-    .find((candidate) => candidate.textContent === label);
-  expect(button).toBeDefined();
-  flushSync(() => button!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  const target = button(label);
+  flushSync(() => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+}
+
+function button(label: string): HTMLButtonElement {
+  const target = Array.from(document.body.querySelectorAll("button"))
+    .find((candidate) => candidate.textContent?.trim() === label);
+  expect(target).toBeDefined();
+  return target!;
 }
 
 async function settle() {
