@@ -22,14 +22,35 @@ describe("admin session review policy routes", () => {
       url: "/api/admin/settings/session-review-policy",
     });
     expect(get.statusCode).toBe(200);
-    expect(get.json()).toMatchObject({
+    const body = get.json();
+    expect(body).toMatchObject({
       policy: { sourceAllowlist: ["slack"], version: 2 },
-      conditionalRules: [{ source: "browser", condition: "identified_user" }],
+      conditionalRules: [{
+        source: "browser",
+        condition: "identified_user",
+        description: "로그인한 브라우저 요청은 항상 검수합니다.",
+      }],
       sourceCatalog: expect.arrayContaining([
-        expect.objectContaining({ source: "external-llm", label: "외부 LLM" }),
-        expect.objectContaining({ source: "llm", automatic: true }),
+        expect.objectContaining({
+          source: "external-llm",
+          label: "외부 LLM",
+          description: "외부 LLM에서 직접 시작한 요청",
+        }),
+        expect.objectContaining({
+          source: "llm",
+          label: "공개 연동",
+          description: "공개 연동을 통해 시작한 요청",
+          automatic: true,
+        }),
       ]),
     });
+    const userFacingCopy = [
+      ...body.conditionalRules.map((rule: { label: string; description: string }) =>
+        `${rule.label} ${rule.description}`),
+      ...body.sourceCatalog.map((entry: { label: string; description: string }) =>
+        `${entry.label} ${entry.description}`),
+    ].join(" ");
+    expect(userFacingCopy).not.toMatch(/user_id|email|display_name|ingress|MCP|·/);
 
     const put = await app.inject({
       method: "PUT",

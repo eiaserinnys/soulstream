@@ -78,7 +78,7 @@ export function SessionReviewPolicyTab() {
       return;
     }
     if (!/^[a-z][a-z0-9_-]{0,63}$/.test(source)) {
-      setError("출처 ID는 소문자·숫자·하이픈·밑줄로 1–64자여야 합니다.");
+      setError("출처 ID는 소문자, 숫자, 하이픈, 밑줄로 1~64자여야 합니다.");
       return;
     }
     setSources((current) => current.includes(source) ? current : [...current, source]);
@@ -111,7 +111,7 @@ export function SessionReviewPolicyTab() {
       const next = body as PolicyPayload;
       setPayload(next);
       setSources(next.policy.sourceAllowlist);
-      setMessage(`정책 v${next.policy.version}을 저장했습니다. 다음 신규 세션부터 적용됩니다.`);
+      setMessage(`정책 v${next.policy.version}를 저장했습니다. 새로 만드는 세션부터 모든 노드에 적용됩니다.`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -126,13 +126,12 @@ export function SessionReviewPolicyTab() {
   return (
     <div className="space-y-4" data-testid="session-review-policy-tab">
       <section className="rounded-lg border border-border bg-muted/20 p-4">
-        <h3 className="text-sm font-semibold">신원 조건부 직접 요청</h3>
+        <h3 className="text-sm font-semibold">브라우저 요청</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          <strong>브라우저</strong> <code className="text-xs">browser</code>는 허용 목록과 별개입니다.
-          user_id, email, display_name 중 하나로 신원이 확인되면 항상 검수됩니다.
+          로그인한 브라우저 요청은 항상 검수합니다. 이 항목은 따로 설정할 필요가 없습니다.
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
-          이 정책은 새로 시작하는 요청에만 적용됩니다. 실행 중이거나 완료된 요청은 바뀌지 않습니다.
+          새로 만드는 세션부터 모든 노드에 적용됩니다. 실행 중이거나 완료된 세션은 바뀌지 않습니다.
         </p>
       </section>
 
@@ -143,15 +142,15 @@ export function SessionReviewPolicyTab() {
         <div>
           <h3 className="text-sm font-semibold">검수할 출처</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            선택한 출처에서 새로 시작한 요청은 실행이 끝나면 요청 검수 목록에 표시됩니다.
-            MCP 권한은 높아지지 않습니다. 도구 접근·상위 요청 연결·완료 알림도 바뀌지 않습니다.
+            선택한 출처에서 새로 만드는 세션은 실행이 끝나면 검수 목록에 표시됩니다.
+            이 설정은 검수 여부만 바꿉니다.
           </p>
         </div>
 
         <div className="space-y-2" data-testid="session-review-policy-sources">
           {sources.length === 0 && (
             <div className="rounded border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
-              조건부 browser 외에 검수할 출처가 없습니다.
+              로그인한 브라우저 요청 외에 검수할 출처가 없습니다.
             </div>
           )}
           {sources.map((source) => {
@@ -164,7 +163,7 @@ export function SessionReviewPolicyTab() {
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
                     {entry?.description ?? "사용자 정의 출처"}
-                    {entry?.automatic ? " · 자동화 출처일 수 있으므로 포함 전 확인이 필요합니다." : ""}
+                    {entry?.automatic ? " 자동으로 시작되는 요청이 포함될 수 있으므로 추가 전에 확인하세요." : ""}
                   </div>
                 </div>
                 <Button
@@ -222,7 +221,7 @@ export function SessionReviewPolicyTab() {
 
       {payload && (
         <div className="text-xs text-muted-foreground">
-          현재 v{payload.policy.version} · {payload.policy.updatedBy} · {formatTimestamp(payload.policy.updatedAt)}
+          현재 v{payload.policy.version}. 마지막 수정: {payload.policy.updatedBy}, {formatTimestamp(payload.policy.updatedAt)}
         </div>
       )}
       {message && <div className="rounded bg-accent-blue/10 px-3 py-2 text-sm">{message}</div>}

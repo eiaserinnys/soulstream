@@ -39,7 +39,7 @@ export const SESSION_REVIEW_POLICY_SOURCE_CATALOG: readonly SessionReviewPolicyS
   {
     source: "external-llm",
     label: "외부 LLM",
-    description: "별도 인증된 외부 LLM ingress의 직접 요청",
+    description: "외부 LLM에서 직접 시작한 요청",
     automatic: false,
   },
   {
@@ -50,32 +50,32 @@ export const SESSION_REVIEW_POLICY_SOURCE_CATALOG: readonly SessionReviewPolicyS
   },
   {
     source: "llm",
-    label: "일반 공개 MCP",
-    description: "범용 공개 MCP 호출이며 자동화가 섞일 수 있음",
+    label: "공개 연동",
+    description: "공개 연동을 통해 시작한 요청",
     automatic: true,
   },
   {
     source: "agent",
     label: "내부 에이전트",
-    description: "다른 Soulstream 에이전트의 위임",
+    description: "다른 에이전트가 시작한 요청",
     automatic: true,
   },
   {
     source: "system",
     label: "시스템",
-    description: "Soulstream 내부 시스템 작업",
+    description: "서비스가 자동으로 시작한 요청",
     automatic: true,
   },
   {
     source: "cron",
     label: "예약 작업",
-    description: "스케줄러가 시작한 자동 요청",
+    description: "예약 일정에 따라 시작한 요청",
     automatic: true,
   },
   {
     source: "channel_observer",
     label: "채널 관찰자",
-    description: "채널 감시가 시작한 자동 요청",
+    description: "채널 활동에 따라 자동으로 시작한 요청",
     automatic: true,
   },
 ] as const;
@@ -246,8 +246,8 @@ export function sessionReviewPolicyApiPayload(policy: SessionReviewPolicy) {
     policy,
     conditionalRules: [{
       source: QUALIFIED_BROWSER_SOURCE,
-      label: "브라우저 직접 요청",
-      description: "브라우저 요청은 user_id, email, display_name 중 하나로 신원이 확인될 때 항상 검수합니다.",
+      label: "로그인한 브라우저 요청",
+      description: "로그인한 브라우저 요청은 항상 검수합니다.",
       condition: "identified_user",
     }],
     sourceCatalog: SESSION_REVIEW_POLICY_SOURCE_CATALOG,

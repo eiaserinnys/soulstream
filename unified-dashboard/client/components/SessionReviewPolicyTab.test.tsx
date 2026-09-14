@@ -74,9 +74,13 @@ describe("SessionReviewPolicyTab", () => {
     flushSync(() => root!.render(createElement(SessionReviewPolicyTab)));
     await settle();
 
-    expect(document.body.textContent).toContain("새로 시작하는 요청에만 적용됩니다");
-    expect(document.body.textContent).toContain("실행 중이거나 완료된 요청은 바뀌지 않습니다");
-    expect(document.body.textContent).toContain("실행이 끝나면 요청 검수 목록에 표시됩니다");
+    expect(document.body.textContent).toContain("로그인한 브라우저 요청은 항상 검수합니다");
+    expect(document.body.textContent).toContain("새로 만드는 세션부터 모든 노드에 적용됩니다");
+    expect(document.body.textContent).toContain("실행 중이거나 완료된 세션은 바뀌지 않습니다");
+    expect(document.body.textContent).toContain("실행이 끝나면 검수 목록에 표시됩니다");
+    expect(document.body.textContent).not.toContain("user_id");
+    expect(document.body.textContent).not.toContain("MCP");
+    expect(document.body.textContent).not.toContain("·");
 
     const input = document.body.querySelector<HTMLInputElement>('[aria-label="추가할 출처 ID"]')!;
     const setter = Object.getOwnPropertyDescriptor(

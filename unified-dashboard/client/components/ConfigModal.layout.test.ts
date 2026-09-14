@@ -264,10 +264,14 @@ describe("ConfigModal layout", () => {
 
     const tab = document.body.querySelector('[data-testid="session-review-policy-tab"]');
     expect(tab).not.toBeNull();
-    expect(tab?.textContent).toContain("브라우저");
-    expect(tab?.textContent).toContain("user_id, email, display_name");
+    expect(tab?.textContent).toContain("로그인한 브라우저 요청은 항상 검수합니다");
+    expect(tab?.textContent).toContain("새로 만드는 세션부터 모든 노드에 적용됩니다");
     expect(tab?.textContent).toContain("외부 LLM");
     expect(tab?.textContent).toContain("external-llm");
-    expect(tab?.textContent).toContain("MCP 권한은 높아지지 않습니다");
+    expect(tab?.textContent).toContain("이 설정은 검수 여부만 바꿉니다");
+    expect(tab?.textContent).not.toContain("user_id");
+    expect(tab?.textContent).not.toContain("ingress");
+    expect(tab?.textContent).not.toContain("MCP");
+    expect(tab?.textContent).not.toContain("·");
   });
 });
