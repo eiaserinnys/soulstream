@@ -37,6 +37,11 @@ export type LiveAuthenticatedUserResolvers = {
   readonly resolveCallerInfo: LiveCallerInfoResolver;
 };
 
+type AuthenticatedDashboardUser = {
+  readonly payload: AuthJwtPayload;
+  readonly carrier: "cookie" | "bearer";
+};
+
 export function createLiveAuthenticatedUserResolvers(
   options: CreateLiveAuthenticatedUserResolversOptions,
 ): LiveAuthenticatedUserResolvers {
@@ -57,10 +62,23 @@ export function createLiveAuthenticatedUserResolvers(
     requestCache.set(token, verification);
     return await verification;
   };
+  const resolveAuthenticatedUser = async (
+    request: FastifyRequest,
+  ): Promise<AuthenticatedDashboardUser | null> => {
+    const cookieToken = extractDashboardJwtCookieToken(request, cookieName);
+    if (cookieToken !== undefined) {
+      const payload = await verifyToken(request, cookieToken);
+      if (payload !== null) return { payload, carrier: "cookie" };
+    }
+    const bearerToken = extractDashboardBearerToken(request);
+    if (bearerToken !== undefined && bearerToken !== cookieToken) {
+      const payload = await verifyToken(request, bearerToken);
+      if (payload !== null) return { payload, carrier: "bearer" };
+    }
+    return null;
+  };
   const resolveUser: LiveAuthenticatedUserResolver = async (request) => {
-    const token = extractDashboardJwtToken(request, cookieName);
-    if (token === undefined) return null;
-    return await verifyToken(request, token);
+    return (await resolveAuthenticatedUser(request))?.payload ?? null;
   };
 
   return {
@@ -69,20 +87,23 @@ export function createLiveAuthenticatedUserResolvers(
     async resolveEmail(request) {
       return (await resolveUser(request))?.email ?? null;
     },
-    async resolveCallerInfo(request, bodyCallerInfo, systemNodeId) {
+    async resolveCallerInfo(request, bodyCallerInfo, _systemNodeId) {
+      const authenticated = await resolveAuthenticatedUser(request);
+      if (authenticated !== null) {
+        // Credential carrier is the server-owned provenance boundary. Browser
+        // cookies can only become browser, while the dashboard JWT bearer is
+        // reserved for the native Soul app. A body source can never downgrade
+        // an identified browser request to system/llm or strip its identity.
+        const source = authenticated.carrier === "cookie" ? "browser" : "soul-app";
+        return authenticatedDirectCallerInfo(
+          request,
+          authenticated.payload,
+          source,
+        );
+      }
       if (bodyCallerInfo !== null && bodyCallerInfo !== undefined &&
         Object.keys(bodyCallerInfo).length > 0) {
         return bodyCallerInfo;
-      }
-      const user = await resolveUser(request);
-      if (user !== null && !user.name) {
-        return {
-          source: "system",
-          agent_node: systemNodeId,
-          display_name: "Soulstream",
-          user_id: null,
-          avatar_url: "/api/system/portraits/system",
-        };
       }
       const callerInfo: Record<string, unknown> = {
         source: "browser",
@@ -91,16 +112,29 @@ export function createLiveAuthenticatedUserResolvers(
         referer: headerString(request.headers.referer) ?? null,
         forwarded_for: headerString(request.headers["x-forwarded-for"]) ?? null,
       };
-      if (user !== null) {
-        if (user.name) callerInfo.display_name = user.name;
-        const userId = user.email || user.sub;
-        if (userId) callerInfo.user_id = userId;
-        if (user.picture) callerInfo.avatar_url = user.picture;
-        if (user.email) callerInfo.email = user.email;
-      }
       return callerInfo;
     },
   };
+}
+
+function authenticatedDirectCallerInfo(
+  request: FastifyRequest,
+  user: AuthJwtPayload,
+  source: "browser" | "soul-app",
+): Record<string, unknown> {
+  const callerInfo: Record<string, unknown> = {
+    source,
+    ip: request.ip ?? null,
+    user_agent: headerString(request.headers["user-agent"]) ?? null,
+    referer: headerString(request.headers.referer) ?? null,
+    forwarded_for: headerString(request.headers["x-forwarded-for"]) ?? null,
+  };
+  if (user.name) callerInfo.display_name = user.name;
+  const userId = user.email || user.sub;
+  if (userId) callerInfo.user_id = userId;
+  if (user.picture) callerInfo.avatar_url = user.picture;
+  if (user.email) callerInfo.email = user.email;
+  return callerInfo;
 }
 
 export function extractDashboardJwtToken(

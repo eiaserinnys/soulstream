@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SessionMutationRepository } from
   "../src/control_plane/repositories/session_mutation_repository.js";
+import { idempotentSessionMutationRequestHash } from
+  "../src/control_plane/repositories/idempotent_session_mutation.js";
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 
 type SqlCall = { text: string; values: unknown[] };
@@ -115,7 +117,7 @@ describe("SessionMutationRepository", () => {
       predecessorSessionId: null,
       notifyCompletion: true,
       reviewRequired: true,
-      reviewState: "not_required",
+      reviewState: "not_required" as const,
       modelPreset: "claude-opus",
       model: "claude-opus-4-6",
     });
@@ -130,6 +132,348 @@ describe("SessionMutationRepository", () => {
       // Appended last so pre-existing 17-argument callers keep resolving.
       null,
     ]);
+  });
+
+  it("centrally computes review from callerInfo and ignores legacy worker review fields", async () => {
+    const { sql, calls } = fakeSql((text) => text.includes("FROM system_settings")
+      ? [{
+          setting_key: "session_review_policy",
+          value: { source_allowlist: ["external-llm"] },
+          version: 7,
+          updated_at: new Date("2026-09-14T00:00:00.000Z"),
+          updated_by: "admin@example.com",
+        }]
+      : []);
+    const repository = new SessionMutationRepository(sql);
+    const now = new Date("2026-09-14T00:00:00.000Z");
+
+    const result = await repository.registerSession({
+      idempotencyKey: "register-central",
+      sessionId: "session-central",
+      nodeId: "node-a",
+      agentId: null,
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "inspect",
+      clientId: null,
+      status: "initializing",
+      createdAt: now,
+      updatedAt: now,
+      callerSessionId: null,
+      predecessorSessionId: null,
+      callerInfo: { source: "external-llm" },
+      reviewRequired: false,
+      reviewState: "acknowledged",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      reviewRequired: true,
+      reviewState: "not_required" as const,
+      reviewDecision: "central_policy",
+      policyVersion: 7,
+    });
+    const mutation = calls.find((call) =>
+      call.text.includes("session_register_with_model_preset"),
+    );
+    expect(mutation?.values[12]).toBe(true);
+    expect(mutation?.values[13]).toBe("not_required");
+    expect(calls.find((call) => call.text.includes("FROM system_settings"))?.text)
+      .toContain("FOR SHARE");
+  });
+
+  it("returns the first central decision on retry even after policy changes", async () => {
+    let receipt: Record<string, unknown> | undefined;
+    let policyReads = 0;
+    const { sql, calls } = fakeSql((text, values) => {
+      if (text.includes("FROM session_mutation_receipts")) return receipt ? [receipt] : [];
+      if (text.includes("FROM system_settings")) {
+        policyReads += 1;
+        return [{
+          setting_key: "session_review_policy",
+          value: { source_allowlist: policyReads === 1 ? ["external-llm"] : [] },
+          version: policyReads,
+          updated_at: new Date("2026-09-14T00:00:00.000Z"),
+          updated_by: "admin@example.com",
+        }];
+      }
+      if (text.includes("INSERT INTO session_mutation_receipts")) {
+        receipt = {
+          operation: values[1],
+          session_id: values[2],
+          request_hash: values[3],
+          result_json: values[4],
+        };
+      }
+      return [];
+    });
+    const repository = new SessionMutationRepository(sql);
+    const input = {
+      idempotencyKey: "register-policy-retry",
+      sessionId: "session-policy-retry",
+      nodeId: "node-a",
+      agentId: null,
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "inspect",
+      clientId: null,
+      status: "initializing",
+      callerSessionId: null,
+      predecessorSessionId: null,
+      callerInfo: { source: "external-llm" },
+    };
+    const first = await repository.registerSession({
+      ...input,
+      createdAt: new Date("2026-09-14T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-14T00:00:00.000Z"),
+    });
+    const retry = await repository.registerSession({
+      ...input,
+      createdAt: new Date("2026-09-14T00:00:01.000Z"),
+      updatedAt: new Date("2026-09-14T00:00:01.000Z"),
+    });
+
+    expect(first.reviewRequired).toBe(true);
+    expect(retry).toEqual(first);
+    expect(policyReads).toBe(1);
+    expect(calls.filter((call) =>
+      call.text.includes("session_register_with_model_preset"),
+    )).toHaveLength(1);
+  });
+
+  it("replays a legacy registration through a new worker without recomputing it", async () => {
+    let receipt: Record<string, unknown> | undefined;
+    let policyReads = 0;
+    const { sql, calls } = fakeSql((text, values) => {
+      if (text.includes("FROM session_mutation_receipts")) return receipt ? [receipt] : [];
+      if (text.includes("FROM system_settings")) {
+        policyReads += 1;
+        return [{
+          setting_key: "session_review_policy",
+          value: { source_allowlist: ["external-llm"] },
+          version: 9,
+          updated_at: new Date("2026-09-14T00:00:00.000Z"),
+          updated_by: "admin@example.com",
+        }];
+      }
+      if (text.includes("INSERT INTO session_mutation_receipts")) {
+        receipt = {
+          operation: values[1],
+          session_id: values[2],
+          request_hash: values[3],
+          result_json: values[4],
+        };
+      }
+      return [];
+    });
+    const repository = new SessionMutationRepository(sql);
+    const shared = {
+      idempotencyKey: "register-wire-legacy-to-central",
+      sessionId: "session-wire-legacy-to-central",
+      nodeId: "node-a",
+      agentId: null,
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "inspect",
+      clientId: null,
+      status: "initializing",
+      callerSessionId: null,
+      predecessorSessionId: null,
+      reviewRequired: false,
+      reviewState: "not_required" as const,
+    };
+    const central = {
+      ...shared,
+      callerInfo: { source: "external-llm", display_name: "External LLM" },
+    };
+    const legacy = { ...shared };
+
+    const first = await repository.registerSession({
+      ...legacy,
+      createdAt: new Date("2026-09-14T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-14T00:00:00.000Z"),
+    });
+    const retry = await repository.registerSession({
+      ...central,
+      createdAt: new Date("2026-09-14T00:00:01.000Z"),
+      updatedAt: new Date("2026-09-14T00:00:01.000Z"),
+    });
+
+    expect(retry).toEqual(first);
+    expect(policyReads).toBe(0);
+    expect(calls.filter((call) =>
+      call.text.includes("session_register_with_model_preset"),
+    )).toHaveLength(1);
+  });
+
+  it("fails closed when a legacy worker replays a centrally reviewed registration", async () => {
+    let receipt: Record<string, unknown> | undefined;
+    const { sql, calls } = fakeSql((text, values) => {
+      if (text.includes("FROM session_mutation_receipts")) return receipt ? [receipt] : [];
+      if (text.includes("FROM system_settings")) {
+        return [{
+          setting_key: "session_review_policy",
+          value: { source_allowlist: ["external-llm"] },
+          version: 9,
+          updated_at: new Date("2026-09-14T00:00:00.000Z"),
+          updated_by: "admin@example.com",
+        }];
+      }
+      if (text.includes("INSERT INTO session_mutation_receipts")) {
+        receipt = {
+          operation: values[1],
+          session_id: values[2],
+          request_hash: values[3],
+          result_json: values[4],
+        };
+      }
+      return [];
+    });
+    const repository = new SessionMutationRepository(sql);
+    const shared = {
+      idempotencyKey: "register-wire-central-to-legacy",
+      sessionId: "session-wire-central-to-legacy",
+      nodeId: "node-a",
+      agentId: null,
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "inspect",
+      clientId: null,
+      status: "initializing",
+      callerSessionId: null,
+      predecessorSessionId: null,
+      reviewRequired: false,
+      reviewState: "not_required" as const,
+    };
+
+    await repository.registerSession({
+      ...shared,
+      callerInfo: { source: "external-llm" },
+      createdAt: new Date("2026-09-14T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-14T00:00:00.000Z"),
+    });
+    await expect(repository.registerSession({
+      ...shared,
+      createdAt: new Date("2026-09-14T00:00:01.000Z"),
+      updatedAt: new Date("2026-09-14T00:00:01.000Z"),
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("cannot be replayed by a legacy worker"),
+    });
+    expect(calls.filter((call) =>
+      call.text.includes("session_register_with_model_preset"),
+    )).toHaveLength(1);
+  });
+
+  it("still rejects changed callerInfo within the same central wire contract", async () => {
+    let receipt: Record<string, unknown> | undefined;
+    const { sql, calls } = fakeSql((text, values) => {
+      if (text.includes("FROM session_mutation_receipts")) return receipt ? [receipt] : [];
+      if (text.includes("FROM system_settings")) {
+        return [{
+          setting_key: "session_review_policy",
+          value: { source_allowlist: [] },
+          version: 1,
+          updated_at: new Date("2026-09-14T00:00:00.000Z"),
+          updated_by: "admin@example.com",
+        }];
+      }
+      if (text.includes("INSERT INTO session_mutation_receipts")) {
+        receipt = {
+          operation: values[1],
+          session_id: values[2],
+          request_hash: values[3],
+          result_json: values[4],
+        };
+      }
+      return [];
+    });
+    const repository = new SessionMutationRepository(sql);
+    const base = {
+      idempotencyKey: "register-caller-conflict",
+      sessionId: "session-caller-conflict",
+      nodeId: "node-a",
+      agentId: null,
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "inspect",
+      clientId: null,
+      status: "initializing",
+      callerSessionId: null,
+      predecessorSessionId: null,
+      reviewRequired: false,
+      reviewState: "not_required" as const,
+      createdAt: new Date("2026-09-14T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-14T00:00:00.000Z"),
+    };
+    await repository.registerSession({
+      ...base,
+      callerInfo: { source: "external-llm" },
+    });
+    await expect(repository.registerSession({
+      ...base,
+      callerInfo: { source: "clipper" },
+    })).rejects.toMatchObject({ statusCode: 409 });
+    expect(calls.filter((call) =>
+      call.text.includes("session_register_with_model_preset"),
+    )).toHaveLength(1);
+  });
+
+  it("replays a new-worker receipt committed by the pre-policy host", async () => {
+    const now = new Date("2026-09-14T00:00:00.000Z");
+    const input = {
+      idempotencyKey: "register-old-host-receipt",
+      sessionId: "session-old-host-receipt",
+      nodeId: "node-a",
+      agentId: null,
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "inspect",
+      clientId: null,
+      status: "initializing",
+      createdAt: now,
+      updatedAt: now,
+      callerSessionId: null,
+      predecessorSessionId: null,
+      callerInfo: {
+        source: "external-llm",
+        display_name: "External LLM",
+        user_id: null,
+      },
+      reviewRequired: false,
+      reviewState: "not_required" as const,
+    };
+    const oldHostHash = idempotentSessionMutationRequestHash({
+      ...input,
+      callerInfo: {
+        source: "external-llm",
+        displayName: "External LLM",
+        userId: null,
+      },
+    });
+    const { sql, calls } = fakeSql((text) =>
+      text.includes("FROM session_mutation_receipts")
+        ? [{
+            operation: "register_session",
+            session_id: input.sessionId,
+            request_hash: oldHostHash,
+            result_json: { ok: true },
+          }]
+        : [],
+    );
+    const repository = new SessionMutationRepository(sql);
+
+    await expect(repository.registerSession(input)).resolves.toEqual({
+      ok: true,
+      reviewRequired: false,
+      reviewState: "not_required",
+      reviewDecision: "legacy_worker",
+      policyVersion: null,
+    });
+    expect(calls.some((call) => call.text.includes("FROM system_settings"))).toBe(false);
+    expect(calls.some((call) =>
+      call.text.includes("session_register_with_model_preset"),
+    )).toBe(false);
   });
 
   it("sanitizes only user-authored session text before PostgreSQL mutations", async () => {

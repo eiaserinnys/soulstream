@@ -301,9 +301,18 @@ export interface RegisterSessionParams {
   /** Effort resolved at creation. Null keeps the pre-089 legacy behaviour. */
   reasoningEffort?: string | null;
   notifyCompletion?: boolean | null;
+  /** Present on the central-review wire contract; omitted by legacy workers. */
+  callerInfo?: Record<string, unknown> | null;
   reviewRequired?: boolean;
   reviewState?: ReviewState;
 }
+
+export type RegisterSessionReviewResult = {
+  reviewRequired: boolean;
+  reviewState: ReviewState;
+  reviewDecision?: "central_policy" | "legacy_worker";
+  policyVersion?: number | null;
+};
 
 export type AcknowledgeReviewOutcome =
   | "acknowledged"

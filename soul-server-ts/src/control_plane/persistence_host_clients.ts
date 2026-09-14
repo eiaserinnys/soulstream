@@ -9,6 +9,7 @@ import type {
   RecordSessionDeliveryRelationConsumptionResult,
   RegisterSessionDeliveryParams,
   RegisterSessionDeliveryResult,
+  RegisterSessionReviewResult,
   SessionDeliveryNotificationOutboxRow,
   SessionDeliveryRelationConsumptionRow,
   SessionDeliveryRow,
@@ -46,7 +47,10 @@ export type SessionTransitionFields = Pick<
 >;
 
 export interface SessionMutationHost {
-  registerSession(input: RegisterSessionParams, idempotencyKey: string): Promise<void>;
+  registerSession(
+    input: RegisterSessionParams,
+    idempotencyKey: string,
+  ): Promise<RegisterSessionReviewResult | undefined>;
   transitionSession(
     sessionId: string,
     fields: SessionTransitionFields,
@@ -82,11 +86,15 @@ export class SessionMutationHostClient implements SessionMutationHost {
     this.transport = new PersistenceHostTransport(config);
   }
 
-  async registerSession(input: RegisterSessionParams, idempotencyKey: string): Promise<void> {
-    await this.transport.request("session-data", "register_session", [{
+  async registerSession(
+    input: RegisterSessionParams,
+    idempotencyKey: string,
+  ): Promise<RegisterSessionReviewResult | undefined> {
+    const result = await this.transport.request<unknown>("session-data", "register_session", [{
       ...input,
       idempotencyKey,
     }]);
+    return parseRegisterSessionReviewResult(result);
   }
 
   async transitionSession(
@@ -126,6 +134,33 @@ export class SessionMutationHostClient implements SessionMutationHost {
       updatedAt,
     }]);
   }
+}
+
+function parseRegisterSessionReviewResult(
+  value: unknown,
+): RegisterSessionReviewResult | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const result = value as Record<string, unknown>;
+  if (
+    typeof result.reviewRequired !== "boolean"
+    || !["not_required", "needs_review", "acknowledged"].includes(
+      String(result.reviewState),
+    )
+  ) {
+    // Old orchestrators return { ok: true }. Keeping this undefined preserves
+    // the worker's compatibility decision until the central host is upgraded.
+    return undefined;
+  }
+  return {
+    reviewRequired: result.reviewRequired,
+    reviewState: result.reviewState as RegisterSessionReviewResult["reviewState"],
+    ...(result.reviewDecision === "central_policy" || result.reviewDecision === "legacy_worker"
+      ? { reviewDecision: result.reviewDecision }
+      : {}),
+    ...(typeof result.policyVersion === "number" || result.policyVersion === null
+      ? { policyVersion: result.policyVersion }
+      : {}),
+  };
 }
 
 function snakeTransitionFields(fields: SessionTransitionFields): Record<string, unknown> {

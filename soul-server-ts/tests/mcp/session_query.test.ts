@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
-import { buildServer } from "../../src/server.js";
+import { buildInternalMcpServer } from "../../src/server.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
 
@@ -18,7 +18,7 @@ const DEFAULT_READABLE_SEARCH_EVENT_TYPES = [
 ];
 
 const openClients: Client[] = [];
-const openServers: Awaited<ReturnType<typeof buildServer>>[] = [];
+const openServers: Awaited<ReturnType<typeof buildInternalMcpServer>>[] = [];
 
 function createSilentLogger() {
   const noop = () => {};
@@ -68,26 +68,22 @@ async function createClient(
   runtime: McpRuntime,
   headers?: Record<string, string>,
 ): Promise<Client> {
-  const server = await buildServer({
-    host: "127.0.0.1",
-    port: 0,
-    nodeId: runtime.nodeId,
+  const server = await buildInternalMcpServer({
     logger: createSilentLogger(),
-    mcp: {
-      runtime,
-      path: "/mcp",
-      auth: {
-        requireAuth: false,
-        bearerToken: "",
-        allowedHosts: ["127.0.0.1", "localhost"],
-      },
+    runtime,
+    path: "/mcp/internal",
+    auth: {
+      requireAuth: false,
+      bearerToken: "",
+      allowedHosts: ["127.0.0.1", "localhost"],
     },
+    statelessTransport: true,
   });
   openServers.push(server);
   const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
   const client = new Client({ name: "session-query-test", version: "0.0.0" });
   await client.connect(new StreamableHTTPClientTransport(
-    new URL(`${baseUrl}/mcp`),
+    new URL(`${baseUrl}/mcp/internal`),
     headers ? { requestInit: { headers } } : undefined,
   ));
   openClients.push(client);

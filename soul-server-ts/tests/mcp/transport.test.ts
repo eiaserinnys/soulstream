@@ -105,6 +105,16 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
           bearerToken: "",
           allowedHosts: ["127.0.0.1", "localhost"],
         },
+        externalIngress: {
+          path: "/mcp/external-llm",
+          source: "external-llm",
+          displayName: "External LLM",
+          auth: {
+            requireAuth: true,
+            bearerToken: "external-secret",
+            allowedHosts: ["127.0.0.1", "localhost"],
+          },
+        },
       },
     });
     const addr = await server.listen({ host: "127.0.0.1", port: 0 });
@@ -185,14 +195,15 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
     await res.text();
   });
 
-  it("rejects unknown caller origin on initialize", async () => {
+  it("ignores caller-origin headers and keeps the public route server-fixed as external", async () => {
     const res = await initialize(baseUrl, "unknown");
-    expect(res.status).toBe(400);
-    expect(await res.text()).toContain("unsupported caller origin");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("mcp-session-id")).toBeTruthy();
+    await res.text();
   });
 
-  it("pins llm origin when later requests omit the origin header", async () => {
-    const initialized = await initialize(baseUrl, "llm");
+  it("keeps the generic public route externally restricted without an origin header", async () => {
+    const initialized = await initialize(baseUrl);
     expect(initialized.status).toBe(200);
     const sessionId = initialized.headers.get("mcp-session-id");
     expect(sessionId).toBeTruthy();
@@ -243,7 +254,7 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
     expect(deletePayload.result.isError).toBe(true);
     expect(JSON.stringify(deletePayload.result)).toContain("delete_session");
     expect(warning).toHaveBeenCalledWith(
-      { callerOrigin: "llm", toolName: "delete_session" },
+      { callerAuthority: "external", callerSource: "llm", toolName: "delete_session" },
       "Blocked destructive MCP tool for external LLM caller",
     );
 
@@ -267,12 +278,12 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
       "batch_page_operations",
     );
     expect(warning).toHaveBeenCalledWith(
-      { callerOrigin: "llm", toolName: "batch_page_operations" },
+      { callerAuthority: "external", callerSource: "llm", toolName: "batch_page_operations" },
       "Blocked destructive MCP tool for external LLM caller",
     );
   });
 
-  it("does not upgrade an existing internal session when llm is added later", async () => {
+  it("cannot downgrade a public external session by spoofing an origin header", async () => {
     const initialized = await initialize(baseUrl);
     const sessionId = initialized.headers.get("mcp-session-id");
     expect(sessionId).toBeTruthy();
@@ -292,10 +303,10 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
     const payload = await rpcPayload(listed);
     expect(
       (payload.result.tools as Array<{ name: string }>).map((tool) => tool.name),
-    ).toContain("delete_session");
+    ).not.toContain("delete_session");
   });
 
-  it("rejects unknown origin on an existing session follow-up", async () => {
+  it("ignores unknown origin on an existing session follow-up", async () => {
     const initialized = await initialize(baseUrl);
     const sessionId = initialized.headers.get("mcp-session-id");
     expect(sessionId).toBeTruthy();
@@ -307,35 +318,52 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
       { jsonrpc: "2.0", method: "tools/list", params: {}, id: 4 },
       "unknown",
     );
-    expect(res.status).toBe(400);
-    expect(await res.text()).toContain("unsupported caller origin");
+    expect(res.status).toBe(200);
+    const payload = await rpcPayload(res);
+    expect((payload.result.tools as Array<{ name: string }>).map((tool) => tool.name))
+      .not.toContain("delete_session");
   });
 
-  it("rejects unknown origin on existing-session GET and DELETE follow-ups", async () => {
-    const initialized = await initialize(baseUrl, "llm");
-    const sessionId = initialized.headers.get("mcp-session-id");
-    expect(sessionId).toBeTruthy();
-    await initialized.text();
-
-    for (const method of ["GET", "DELETE"]) {
-      const response = await fetch(`${baseUrl}/mcp`, {
-        method,
-        headers: {
-          "mcp-session-id": sessionId!,
-          "x-soulstream-caller-origin": "unknown",
-        },
-      });
-      expect(response.status).toBe(400);
-      expect(await response.text()).toContain("unsupported caller origin");
-    }
-
-    const stillOpen = await mcpPost(baseUrl, sessionId!, {
-      jsonrpc: "2.0",
-      method: "tools/list",
-      params: {},
-      id: 7,
+  it("keeps the dedicated external ingress separately authenticated and equally restricted", async () => {
+    const unauthorized = await fetch(`${baseUrl}/mcp/external-llm`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", params: {}, id: 8 }),
     });
-    expect((await rpcPayload(stillOpen)).result.tools).toBeDefined();
+    expect(unauthorized.status).toBe(401);
+
+    const blocked = await fetch(`${baseUrl}/mcp/external-llm`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        authorization: "Bearer external-secret",
+        "x-soulstream-agent-session-id": "spoofed-parent",
+        "x-soulstream-caller-origin": "internal",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          name: "delete_session",
+          arguments: { session_id: "sess-do-not-delete" },
+        },
+        id: 9,
+      }),
+    });
+    const payload = await rpcPayload(blocked);
+    expect(payload.result.isError).toBe(true);
+    expect(warning).toHaveBeenCalledWith(
+      {
+        callerAuthority: "external",
+        callerSource: "external-llm",
+        toolName: "delete_session",
+      },
+      "Blocked destructive MCP tool for external LLM caller",
+    );
   });
 });
 
@@ -399,6 +427,16 @@ describe("MCP bearer auth guard", () => {
           bearerToken: "secret-token",
           allowedHosts: ["127.0.0.1", "localhost"],
         },
+        externalIngress: {
+          path: "/mcp/external-llm",
+          source: "external-llm",
+          displayName: "External LLM",
+          auth: {
+            requireAuth: true,
+            bearerToken: "external-secret",
+            allowedHosts: ["127.0.0.1", "localhost"],
+          },
+        },
       },
     });
     const addr = await server.listen({ host: "127.0.0.1", port: 0 });
@@ -443,6 +481,28 @@ describe("MCP bearer auth guard", () => {
     });
     expect(res.status).toBe(200);
     await res.text();
+  });
+
+  it("does not accept public and dedicated ingress bearers across boundaries", async () => {
+    const body = JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 });
+    const publicWithExternal = await fetch(`${baseUrl}/mcp`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer external-secret",
+      },
+      body,
+    });
+    const externalWithPublic = await fetch(`${baseUrl}/mcp/external-llm`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer secret-token",
+      },
+      body,
+    });
+    expect(publicWithExternal.status).toBe(401);
+    expect(externalWithPublic.status).toBe(401);
   });
 });
 

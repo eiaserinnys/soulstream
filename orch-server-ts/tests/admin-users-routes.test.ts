@@ -96,6 +96,24 @@ function createProvider(overrides: Partial<AdminUsersRouteProvider> = {}) {
     async broadcastAccessChange() {
       calls.push(["broadcast"]);
     },
+    async getSessionReviewPolicy() {
+      return {
+        key: "session_review_policy",
+        sourceAllowlist: ["slack"],
+        version: 1,
+        updatedAt: "2026-09-14T00:00:00.000Z",
+        updatedBy: "migration:test",
+      };
+    },
+    async updateSessionReviewPolicy(input) {
+      return {
+        key: "session_review_policy",
+        sourceAllowlist: input.sourceAllowlist.map(String),
+        version: input.expectedVersion + 1,
+        updatedAt: "2026-09-14T00:00:01.000Z",
+        updatedBy: input.updatedBy,
+      };
+    },
     ...overrides,
   };
   return { provider, calls };
@@ -123,6 +141,8 @@ describe("admin users route harness", () => {
 
   it("registers Python auth contract rows for route inventory order 49-52", () => {
     expect(adminUsersRouteAuthRequirements).toEqual({
+      "GET /api/admin/settings/session-review-policy": true,
+      "PUT /api/admin/settings/session-review-policy": true,
       "GET /api/admin/users": true,
       "POST /api/admin/users": true,
       "PATCH /api/admin/users/:email": true,

@@ -1,11 +1,12 @@
 import {
-  getCurrentMcpCallerOrigin,
+  getCurrentMcpCallerPrincipal,
   getCurrentMcpCallerSessionId,
+  isCurrentMcpCallerExternal,
   SOULSTREAM_AGENT_SESSION_HEADER,
 } from "../request_context.js";
 import {
   buildCallerInfoFromCallerSession,
-  buildLlmCallerInfo,
+  buildExternalMcpCallerInfo,
 } from "../../caller_info.js";
 import type { CallerInfo } from "../../task/task_models.js";
 import type { McpRuntime } from "../runtime.js";
@@ -34,17 +35,17 @@ export type McpMutationActor =
   | { actorKind: "llm"; actorSessionId: null };
 
 type McpCallerIdentity =
-  | { origin: "llm"; callerSessionId: undefined }
-  | { origin: "internal"; callerSessionId: string | undefined };
+  | { authority: "external"; callerSessionId: undefined }
+  | { authority: "internal"; callerSessionId: string | undefined };
 
 function resolveMcpCallerIdentity(
   explicitCallerSessionId: string | null | undefined,
 ): McpCallerIdentity {
-  if (getCurrentMcpCallerOrigin() === "llm") {
-    return { origin: "llm", callerSessionId: undefined };
+  if (isCurrentMcpCallerExternal()) {
+    return { authority: "external", callerSessionId: undefined };
   }
   return {
-    origin: "internal",
+    authority: "internal",
     callerSessionId:
       cleanSessionId(explicitCallerSessionId) ?? getCurrentMcpCallerSessionId(),
   };
@@ -55,10 +56,15 @@ export function resolveMcpCallerAttribution(
   explicitCallerSessionId: string | null | undefined,
 ): McpCallerAttribution {
   const identity = resolveMcpCallerIdentity(explicitCallerSessionId);
-  if (identity.origin === "llm") {
+  if (identity.authority === "external") {
+    const principal = getCurrentMcpCallerPrincipal();
     return {
       callerSessionId: undefined,
-      callerInfo: buildLlmCallerInfo(runtime.nodeId),
+      callerInfo: buildExternalMcpCallerInfo(
+        runtime.nodeId,
+        principal?.source ?? "llm",
+        principal?.displayName ?? "External LLM",
+      ),
     };
   }
   const { callerSessionId } = identity;
@@ -74,7 +80,7 @@ export function resolveMcpMutationActor(
   explicitCallerSessionId: string | null | undefined,
 ): McpMutationActor | undefined {
   const identity = resolveMcpCallerIdentity(explicitCallerSessionId);
-  if (identity.origin === "llm") {
+  if (identity.authority === "external") {
     return { actorKind: "llm", actorSessionId: null };
   }
   const actorSessionId = identity.callerSessionId;
@@ -104,7 +110,7 @@ export function requireRemoteCallerAttribution(
     runtime,
     explicitCallerSessionId,
   );
-  if (attribution.callerInfo?.source === "llm") {
+  if (isCurrentMcpCallerExternal()) {
     return { ok: true, ...attribution };
   }
   if (!attribution.callerSessionId) {

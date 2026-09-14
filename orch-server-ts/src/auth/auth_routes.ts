@@ -219,9 +219,17 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     const authConfig = await options.configProvider.getConfig();
     if (!authConfig.authEnabled) return { authenticated: true, user: null };
 
-    const token = extractCookieToken(request, cookieName(authConfig));
-    if (!token) return { authenticated: false, user: null };
-    const payload = await options.jwt.verifyToken(token);
+    // Native clients use the same signed dashboard JWT as the cookie flow, but
+    // carry it as a bearer token. Service bearer tokens fail jwt.verifyToken and
+    // never gain a dashboard/admin identity.
+    const cookieToken = extractCookieToken(request, cookieName(authConfig));
+    const bearerToken = extractBearerToken(request);
+    let payload = cookieToken
+      ? await options.jwt.verifyToken(cookieToken)
+      : null;
+    if (!payload && bearerToken && bearerToken !== cookieToken) {
+      payload = await options.jwt.verifyToken(bearerToken);
+    }
     if (!payload) return { authenticated: false, user: null };
 
     const payloadExtra = await options.userPayloadExtra?.(payload);

@@ -11,7 +11,7 @@ import { SessionDB } from "../../src/db/session_db.js";
 import { SessionDeliveryRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
-import { buildServer } from "../../src/server.js";
+import { buildInternalMcpServer } from "../../src/server.js";
 import { ChildCompletionConsumptionRecorder } from
   "../../src/task/child_completion_consumption.js";
 import { CompletionDeliveryCoordinator } from
@@ -33,7 +33,7 @@ const logger = pino({ level: "silent" });
 describePostgres("child completion observation PostgreSQL integration", () => {
   let harness: FullSchemaPostgresHarness;
   let db: SessionDB;
-  let server: Awaited<ReturnType<typeof buildServer>>;
+  let server: Awaited<ReturnType<typeof buildInternalMcpServer>>;
   let client: Client;
   let consumptionRecorder: ChildCompletionConsumptionRecorder;
 
@@ -66,20 +66,16 @@ describePostgres("child completion observation PostgreSQL integration", () => {
       catalogService: {} as CatalogService,
       logger,
     };
-    server = await buildServer({
-      host: "127.0.0.1",
-      port: 0,
-      nodeId: runtime.nodeId,
+    server = await buildInternalMcpServer({
       logger,
-      mcp: {
-        runtime,
-        path: "/mcp",
-        auth: {
-          requireAuth: false,
-          bearerToken: "",
-          allowedHosts: ["127.0.0.1", "localhost"],
-        },
+      runtime,
+      path: "/mcp/internal",
+      auth: {
+        requireAuth: false,
+        bearerToken: "",
+        allowedHosts: ["127.0.0.1", "localhost"],
       },
+      statelessTransport: true,
     });
     const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
     client = new Client({
@@ -87,7 +83,7 @@ describePostgres("child completion observation PostgreSQL integration", () => {
       version: "0.0.0",
     });
     await client.connect(new StreamableHTTPClientTransport(
-      new URL(`${baseUrl}/mcp`),
+      new URL(`${baseUrl}/mcp/internal`),
       {
         requestInit: {
           headers: {

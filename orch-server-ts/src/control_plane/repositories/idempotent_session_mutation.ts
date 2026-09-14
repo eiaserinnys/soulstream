@@ -15,16 +15,12 @@ export async function runIdempotentSessionMutation<T>(
   operation: string,
   input: { idempotencyKey: string; sessionId: string },
   mutate: (transaction: SqlClient) => Promise<T>,
+  options: { additionalAcceptedRequestHashes?: readonly string[] } = {},
 ): Promise<T> {
   if (!input.idempotencyKey) throw hostError(422, "idempotencyKey is required");
   // Transport retries may reconstruct operational timestamps. The key owns the
   // original committed time; semantic fields must still match exactly.
-  const requestHash = createHash("sha256")
-    .update(JSON.stringify(input, (key, value) =>
-      key === "createdAt" || key === "updatedAt" || key === "observedAt"
-        ? undefined
-        : value))
-    .digest("hex");
+  const requestHash = idempotentSessionMutationRequestHash(input);
   const result = await sql.begin(async (transaction) => {
     const tx = transaction as unknown as SqlClient;
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${input.idempotencyKey}, 0))`;
@@ -39,7 +35,10 @@ export async function runIdempotentSessionMutation<T>(
       if (
         receipt.operation !== operation
         || receipt.session_id !== input.sessionId
-        || receipt.request_hash !== requestHash
+        || (
+          receipt.request_hash !== requestHash
+          && !options.additionalAcceptedRequestHashes?.includes(receipt.request_hash)
+        )
       ) {
         throw hostError(409, `idempotency key conflict: ${input.idempotencyKey}`);
       }
@@ -57,6 +56,15 @@ export async function runIdempotentSessionMutation<T>(
     return applied;
   });
   return result as T;
+}
+
+export function idempotentSessionMutationRequestHash(input: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(input, (key, value) =>
+      key === "createdAt" || key === "updatedAt" || key === "observedAt"
+        ? undefined
+        : value))
+    .digest("hex");
 }
 
 function hostError(statusCode: number, message: string): Error & { statusCode: number } {

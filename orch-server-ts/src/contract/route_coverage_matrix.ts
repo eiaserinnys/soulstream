@@ -79,4 +79,6 @@ export const routeCoverageOwners = [
 export const tsOnlyRouteKeys = [
   "WEBSOCKET /ws/node/control",
   "GET /api/nodes/{node_id}/model-presets",
+  "GET /api/admin/settings/session-review-policy",
+  "PUT /api/admin/settings/session-review-policy",
 ] as const;

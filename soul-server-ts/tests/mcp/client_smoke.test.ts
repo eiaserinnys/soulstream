@@ -21,7 +21,7 @@ import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import type { FolderHostClient } from "../../src/folder/folder_host_client.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
-import { buildServer } from "../../src/server.js";
+import { buildInternalMcpServer } from "../../src/server.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
@@ -415,7 +415,7 @@ async function callToolCapturingValidation(
 }
 
 describe("MCP SDK client smoke", () => {
-  let server: Awaited<ReturnType<typeof buildServer>>;
+  let server: Awaited<ReturnType<typeof buildInternalMcpServer>>;
   let client: Client;
   let url: URL;
   let tempDir: string;
@@ -472,23 +472,19 @@ describe("MCP SDK client smoke", () => {
         max_turns: 50,
       },
     ]);
-    server = await buildServer({
-      host: "127.0.0.1",
-      port: 0,
-      nodeId: "test-node",
+    server = await buildInternalMcpServer({
       logger: createSilentLogger(),
-      mcp: {
-        runtime: makeRuntime(configPath, agentRegistry),
-        path: "/mcp",
-        auth: {
-          requireAuth: false,
-          bearerToken: "",
-          allowedHosts: ["127.0.0.1", "localhost"],
-        },
+      runtime: makeRuntime(configPath, agentRegistry),
+      path: "/mcp/internal",
+      auth: {
+        requireAuth: false,
+        bearerToken: "",
+        allowedHosts: ["127.0.0.1", "localhost"],
       },
+      statelessTransport: true,
     });
     const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
-    url = new URL(`${baseUrl}/mcp`);
+    url = new URL(`${baseUrl}/mcp/internal`);
 
     client = new Client({ name: "smoke-test", version: "0.0.0" });
     const transport = new StreamableHTTPClientTransport(url);

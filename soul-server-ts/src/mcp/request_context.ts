@@ -1,13 +1,34 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export const SOULSTREAM_AGENT_SESSION_HEADER = "x-soulstream-agent-session-id";
-export const SOULSTREAM_CALLER_ORIGIN_HEADER = "x-soulstream-caller-origin";
 
-export type McpCallerOrigin = "llm" | "internal";
+export type McpCallerPrincipal =
+  | {
+      authority: "external";
+      source: string;
+      displayName: string;
+    }
+  | {
+      authority: "internal";
+      source: "internal";
+      displayName: "Soulstream internal";
+    };
+
+export const GENERIC_EXTERNAL_MCP_PRINCIPAL: McpCallerPrincipal = {
+  authority: "external",
+  source: "llm",
+  displayName: "External LLM",
+};
+
+export const INTERNAL_MCP_PRINCIPAL: McpCallerPrincipal = {
+  authority: "internal",
+  source: "internal",
+  displayName: "Soulstream internal",
+};
 
 export interface McpRequestContext {
   callerSessionId?: string;
-  callerOrigin?: McpCallerOrigin;
+  principal?: McpCallerPrincipal;
 }
 
 const storage = new AsyncLocalStorage<McpRequestContext>();
@@ -17,11 +38,11 @@ export function withMcpRequestContext<T>(
   fn: () => T,
 ): T {
   const callerSessionId = cleanSessionId(context.callerSessionId);
-  const callerOrigin = context.callerOrigin;
+  const principal = context.principal;
   return storage.run(
     {
       ...(callerSessionId ? { callerSessionId } : {}),
-      ...(callerOrigin ? { callerOrigin } : {}),
+      ...(principal ? { principal: { ...principal } } : {}),
     },
     fn,
   );
@@ -31,8 +52,12 @@ export function getCurrentMcpCallerSessionId(): string | undefined {
   return cleanSessionId(storage.getStore()?.callerSessionId);
 }
 
-export function getCurrentMcpCallerOrigin(): McpCallerOrigin | undefined {
-  return storage.getStore()?.callerOrigin;
+export function getCurrentMcpCallerPrincipal(): McpCallerPrincipal | undefined {
+  return storage.getStore()?.principal;
+}
+
+export function isCurrentMcpCallerExternal(): boolean {
+  return getCurrentMcpCallerPrincipal()?.authority === "external";
 }
 
 function cleanSessionId(value: string | null | undefined): string | undefined {

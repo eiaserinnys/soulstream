@@ -284,6 +284,87 @@ describe("parseEnv", () => {
       expect(env.MCP_PATH).toBe("/mcp");
     });
 
+    it("keeps the dedicated external ingress disabled with no required auxiliary settings", () => {
+      const env = parseEnv(minimal);
+      expect(env.MCP_EXTERNAL_INGRESS_ENABLED).toBe(false);
+      expect(env.MCP_EXTERNAL_INGRESS_PATH).toBeUndefined();
+      expect(env.MCP_EXTERNAL_INGRESS_BEARER_TOKEN).toBeUndefined();
+    });
+
+    it("requires a complete, distinct credential-bound external ingress", () => {
+      const common = {
+        ...minimal,
+        MCP_ENABLED: "true",
+        MCP_EXTERNAL_INGRESS_ENABLED: "true",
+      };
+      expect(() => parseEnv(common)).toThrow(/MCP_EXTERNAL_INGRESS_PATH/);
+      expect(parseEnv({
+        ...common,
+        AUTH_BEARER_TOKEN: "internal-token",
+        MCP_EXTERNAL_INGRESS_PATH: "/mcp/external-llm",
+        MCP_EXTERNAL_INGRESS_SOURCE: "external-llm",
+        MCP_EXTERNAL_INGRESS_DISPLAY_NAME: "External LLM",
+        MCP_EXTERNAL_INGRESS_BEARER_TOKEN: "external-token",
+      })).toMatchObject({
+        MCP_EXTERNAL_INGRESS_ENABLED: true,
+        MCP_EXTERNAL_INGRESS_PATH: "/mcp/external-llm",
+        MCP_EXTERNAL_INGRESS_SOURCE: "external-llm",
+      });
+      expect(() => parseEnv({
+        ...common,
+        AUTH_BEARER_TOKEN: "same-token",
+        MCP_EXTERNAL_INGRESS_PATH: "/mcp/external-llm",
+        MCP_EXTERNAL_INGRESS_SOURCE: "external-llm",
+        MCP_EXTERNAL_INGRESS_DISPLAY_NAME: "External LLM",
+        MCP_EXTERNAL_INGRESS_BEARER_TOKEN: "same-token",
+      })).toThrow(/must differ from AUTH_BEARER_TOKEN/);
+      expect(() => parseEnv({
+        ...common,
+        MCP_EXTERNAL_INGRESS_PATH: "/mcp/external-llm/",
+        MCP_EXTERNAL_INGRESS_SOURCE: "external-llm",
+        MCP_EXTERNAL_INGRESS_DISPLAY_NAME: "External LLM",
+        MCP_EXTERNAL_INGRESS_BEARER_TOKEN: "external-token",
+      })).toThrow(/normalized absolute HTTP path/);
+    });
+
+    it("allows a complete ingress config to be staged while the route remains disabled", () => {
+      expect(parseEnv({
+        ...minimal,
+        AUTH_BEARER_TOKEN: "same-token",
+        MCP_EXTERNAL_INGRESS_ENABLED: "false",
+        MCP_EXTERNAL_INGRESS_PATH: "/mcp",
+        MCP_EXTERNAL_INGRESS_SOURCE: "browser",
+        MCP_EXTERNAL_INGRESS_DISPLAY_NAME: "Staged",
+        MCP_EXTERNAL_INGRESS_BEARER_TOKEN: "same-token",
+      }).MCP_EXTERNAL_INGRESS_ENABLED).toBe(false);
+    });
+
+    it("rejects reserved sources and public/internal path collisions before opening ingress", () => {
+      const common = {
+        ...minimal,
+        MCP_ENABLED: "true",
+        MCP_EXTERNAL_INGRESS_ENABLED: "true",
+        MCP_EXTERNAL_INGRESS_DISPLAY_NAME: "External LLM",
+        MCP_EXTERNAL_INGRESS_BEARER_TOKEN: "external-token",
+      };
+      expect(() => parseEnv({
+        ...common,
+        MCP_EXTERNAL_INGRESS_PATH: "/mcp",
+        MCP_EXTERNAL_INGRESS_SOURCE: "external-llm",
+      })).toThrow(/must differ from the public and internal MCP paths/);
+      expect(() => parseEnv({
+        ...common,
+        MCP_EXTERNAL_INGRESS_PATH: "/mcp/external-llm",
+        MCP_EXTERNAL_INGRESS_SOURCE: "internal",
+      })).toThrow(/reserved internal or browser source/);
+      expect(() => parseEnv({
+        ...common,
+        MCP_PATH: "/",
+        MCP_EXTERNAL_INGRESS_PATH: "/internal",
+        MCP_EXTERNAL_INGRESS_SOURCE: "external-llm",
+      })).toThrow(/must differ from the public and internal MCP paths/);
+    });
+
     it("MCP_STATELESS_TRANSPORT_ENABLED defaults off and requires explicit opt-in", () => {
       expect(parseEnv(minimal).MCP_STATELESS_TRANSPORT_ENABLED).toBe(false);
       expect(parseEnv({

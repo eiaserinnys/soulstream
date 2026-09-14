@@ -1,7 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { getCurrentMcpCallerOrigin } from "./request_context.js";
+import {
+  getCurrentMcpCallerPrincipal,
+  isCurrentMcpCallerExternal,
+} from "./request_context.js";
 import { errorResult } from "./result.js";
 import type { McpRuntime } from "./runtime.js";
 
@@ -42,7 +45,7 @@ export function guardMcpToolCallRequest(
   runtime: McpRuntime,
   body: unknown,
 ): CallToolResult | undefined {
-  if (getCurrentMcpCallerOrigin() !== "llm" || !isRecord(body)) {
+  if (!isCurrentMcpCallerExternal() || !isRecord(body)) {
     return undefined;
   }
   if (body.method !== "tools/call" || !isRecord(body.params)) {
@@ -63,7 +66,7 @@ export function guardMcpToolExecution(
   args?: unknown,
   config?: unknown,
 ): CallToolResult | undefined {
-  if (getCurrentMcpCallerOrigin() === "llm") {
+  if (isCurrentMcpCallerExternal()) {
     const blocked = guardExternalLlmDestructiveOperation(
       runtime,
       toolName,
@@ -88,7 +91,7 @@ export function createGuardedMcpServer(
         const staticallyDestructive = isDestructiveMcpTool(name, config);
         recordDestructiveTool(runtime, name, staticallyDestructive);
         if (
-          getCurrentMcpCallerOrigin() === "llm"
+          isCurrentMcpCallerExternal()
           && staticallyDestructive
         ) {
           return undefined;
@@ -131,7 +134,11 @@ function guardExternalLlmDestructiveOperation(
     return undefined;
   }
   runtime.logger?.warn(
-    { callerOrigin: "llm", toolName },
+    {
+      callerAuthority: "external",
+      callerSource: getCurrentMcpCallerPrincipal()?.source,
+      toolName,
+    },
     "Blocked destructive MCP tool for external LLM caller",
   );
   return errorResult(

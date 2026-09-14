@@ -172,7 +172,7 @@ export class TaskCreation {
 
     // host 등록은 실행 시작 전에 반드시 성공해야 한다. 같은 session_id로 같은
     // idempotency key를 재시도하면 기존 결과를 반환하고, 다른 intent면 충돌한다.
-    await this.deps.sessionMutations.registerSession({
+    const registeredReview = await this.deps.sessionMutations.registerSession({
       sessionId: task.agentSessionId,
       nodeId: this.deps.nodeId,
       agentId: task.profileId ?? null,
@@ -189,9 +189,17 @@ export class TaskCreation {
       model: task.model ?? null,
       reasoningEffort: toStoredReasoningEffort(task.reasoningEffort),
       notifyCompletion: task.notifyCompletion ?? true,
+      // Presence selects the central PostgreSQL policy on new orchestrators.
+      // Legacy review fields remain in the wire payload for new-worker/old-orch
+      // rolling compatibility and are ignored by a central-capable host.
+      callerInfo: params.callerInfo ?? null,
       reviewRequired: task.reviewRequired === true,
       reviewState: task.reviewState ?? "not_required",
     }, `register_session:${task.agentSessionId}`);
+    if (registeredReview !== undefined) {
+      task.reviewRequired = registeredReview.reviewRequired;
+      task.reviewState = registeredReview.reviewState;
+    }
 
     // caller_info와 session-scoped SDK policy를 Task.metadata와 ingress effect에 동시 저장. Python TaskFactory와 같은 타이밍:
     // session_created 전에 박아 feed/folder 초기 카드가 metadata fallback을 즉시 사용할 수 있게 한다.

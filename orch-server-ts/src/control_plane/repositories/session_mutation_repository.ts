@@ -1,7 +1,14 @@
 import { sanitizePgText } from "../../node/pg_text_sanitizer.js";
 import type { SqlClient } from "../control_plane_types.js";
 import type { SessionDeletionPort } from "../../session/session_deletion_service.js";
-import { runIdempotentSessionMutation } from "./idempotent_session_mutation.js";
+import {
+  evaluateInitialSessionReview,
+  readSessionReviewPolicy,
+} from "../../system/session_review_policy.js";
+import {
+  idempotentSessionMutationRequestHash,
+  runIdempotentSessionMutation,
+} from "./idempotent_session_mutation.js";
 
 export type SessionTransitionFields = {
   status?: string;
@@ -32,9 +39,31 @@ export type RegisterSessionMutation = {
   model?: string | null;
   reasoningEffort?: string | null;
   notifyCompletion?: boolean | null;
+  /**
+   * Presence marks the central-review wire contract. Older workers omit this
+   * field and keep their already-computed review values during rolling deploys.
+   */
+  callerInfo?: Record<string, unknown> | null;
   reviewRequired?: boolean;
-  reviewState?: string;
+  reviewState?: "not_required" | "needs_review" | "acknowledged";
 };
+
+export type RegisterSessionMutationResult = {
+  ok: true;
+  reviewRequired: boolean;
+  reviewState: "not_required" | "needs_review" | "acknowledged";
+  reviewDecision: "central_policy" | "legacy_worker";
+  policyVersion: number | null;
+};
+
+type RegisterWireContract = "central_policy_v1" | "legacy_worker_v1";
+
+type StoredRegisterSessionMutationResult = RegisterSessionMutationResult & {
+  _registrationWireContract: RegisterWireContract;
+  _registrationRequestHash: string;
+};
+
+type LegacyRegisterSessionMutationResult = { ok: true };
 
 export class SessionMutationRepository {
   constructor(
@@ -42,12 +71,48 @@ export class SessionMutationRepository {
     private readonly sessionDeletion?: SessionDeletionPort,
   ) {}
 
-  registerSession(input: RegisterSessionMutation): Promise<{ ok: true }> {
+  async registerSession(
+    input: RegisterSessionMutation,
+  ): Promise<RegisterSessionMutationResult> {
     const sanitizedInput = {
       ...input,
       prompt: sanitizePgText(input.prompt),
     };
-    return this.idempotent("register_session", sanitizedInput, async (sql) => {
+    const hasCentralCallerInfo = Object.prototype.hasOwnProperty.call(
+      sanitizedInput,
+      "callerInfo",
+    );
+    const wireContract: RegisterWireContract = hasCentralCallerInfo
+      ? "central_policy_v1"
+      : "legacy_worker_v1";
+    const exactRequestHash = idempotentSessionMutationRequestHash(sanitizedInput);
+    const legacyHostRequestHash = idempotentSessionMutationRequestHash({
+      ...sanitizedInput,
+      ...(hasCentralCallerInfo
+        ? { callerInfo: legacyPersistenceHostCamelCase(sanitizedInput.callerInfo) }
+        : {}),
+    });
+    // callerInfo was added during a rolling wire upgrade. Keep the receipt key
+    // compatible in both directions while storing an exact hash in result_json
+    // so two requests from the same wire generation remain strict.
+    const compatibilityInput: RegisterSessionMutation = { ...sanitizedInput };
+    delete compatibilityInput.callerInfo;
+    const stored = await this.idempotent<
+      StoredRegisterSessionMutationResult | LegacyRegisterSessionMutationResult
+    >("register_session", compatibilityInput, async (sql) => {
+      // The idempotency receipt is checked before this callback. A retry therefore
+      // returns the original decision even when an administrator changed policy.
+      // FOR SHARE serializes this read with the admin CAS UPDATE, so the inserted
+      // session and its policy version always belong to one ordering.
+      const centralPolicy = hasCentralCallerInfo
+        ? await readSessionReviewPolicy(sql, { lock: "share" })
+        : undefined;
+      const review = centralPolicy
+        ? evaluateInitialSessionReview(sanitizedInput.callerInfo, centralPolicy)
+        : {
+            reviewRequired: sanitizedInput.reviewRequired ?? false,
+            reviewState: sanitizedInput.reviewState ?? "not_required",
+          };
       await sql`
         SELECT session_register_with_model_preset(
           ${sanitizedInput.sessionId}, ${sanitizedInput.nodeId},
@@ -56,15 +121,70 @@ export class SessionMutationRepository {
           ${sanitizedInput.clientId}, ${sanitizedInput.status},
           ${sanitizedInput.createdAt}, ${sanitizedInput.updatedAt},
           ${sanitizedInput.callerSessionId}, ${sanitizedInput.notifyCompletion ?? true},
-          ${sanitizedInput.reviewRequired ?? false},
-          ${sanitizedInput.reviewState ?? "not_required"},
+          ${review.reviewRequired},
+          ${review.reviewState},
           ${sanitizedInput.predecessorSessionId},
           ${sanitizedInput.modelPreset ?? null}, ${sanitizedInput.model ?? null},
           ${sanitizedInput.reasoningEffort ?? null}
         )
       `;
-      return { ok: true } as const;
+      return {
+        ok: true,
+        reviewRequired: review.reviewRequired,
+        reviewState: review.reviewState,
+        reviewDecision: centralPolicy ? "central_policy" : "legacy_worker",
+        policyVersion: centralPolicy?.version ?? null,
+        _registrationWireContract: wireContract,
+        _registrationRequestHash: exactRequestHash,
+      } as const;
+    }, {
+      // A new worker may have committed through the pre-policy host before the
+      // host upgrade. That host hashed callerInfo and recursively camel-cased
+      // its nested keys, so accept both representations for old {ok:true}
+      // receipts while the generation marker below keeps new receipts strict.
+      additionalAcceptedRequestHashes: [
+        exactRequestHash,
+        legacyHostRequestHash,
+      ],
     });
+    // Receipts created by the pre-policy orchestrator contain only {ok:true}.
+    // The compatible hash proves the legacy review fields match, so reconstruct
+    // the same decision for a new worker without rerunning registration.
+    if (!isStoredRegisterSessionMutationResult(stored)) {
+      return {
+        ok: true,
+        reviewRequired: sanitizedInput.reviewRequired ?? false,
+        reviewState: sanitizedInput.reviewState ?? "not_required",
+        reviewDecision: "legacy_worker",
+        policyVersion: null,
+      };
+    }
+    // A legacy worker ignores the response body and would continue from its
+    // provisional review values. Never let it replay a registration that was
+    // already committed from the central-policy wire contract: doing so could
+    // later overwrite the stored decision through legacy lifecycle effects.
+    if (
+      stored._registrationWireContract === "central_policy_v1"
+      && wireContract === "legacy_worker_v1"
+    ) {
+      throw hostError(
+        409,
+        `centrally reviewed registration cannot be replayed by a legacy worker: ${sanitizedInput.idempotencyKey}`,
+      );
+    }
+    if (
+      stored._registrationWireContract === wireContract
+      && stored._registrationRequestHash !== exactRequestHash
+    ) {
+      throw hostError(409, `idempotency key conflict: ${sanitizedInput.idempotencyKey}`);
+    }
+    return {
+      ok: true,
+      reviewRequired: stored.reviewRequired,
+      reviewState: stored.reviewState,
+      reviewDecision: stored.reviewDecision,
+      policyVersion: stored.policyVersion,
+    };
   }
 
   async transitionSession(input: {
@@ -231,8 +351,15 @@ export class SessionMutationRepository {
     operation: string,
     input: { idempotencyKey: string; sessionId: string },
     mutate: (sql: SqlClient) => Promise<T>,
+    options: { additionalAcceptedRequestHashes?: readonly string[] } = {},
   ): Promise<T> {
-    return await runIdempotentSessionMutation(this.sql, operation, input, mutate);
+    return await runIdempotentSessionMutation(
+      this.sql,
+      operation,
+      input,
+      mutate,
+      options,
+    );
   }
 }
 
@@ -296,4 +423,36 @@ function transitionColumns(fields: SessionTransitionFields): [string[], Array<st
 
 function hostError(statusCode: number, message: string): Error & { statusCode: number } {
   return Object.assign(new Error(message), { statusCode });
+}
+
+function isStoredRegisterSessionMutationResult(
+  value: StoredRegisterSessionMutationResult | LegacyRegisterSessionMutationResult,
+): value is StoredRegisterSessionMutationResult {
+  return "_registrationWireContract" in value
+    && "_registrationRequestHash" in value;
+}
+
+function legacyPersistenceHostCamelCase(value: unknown, key?: string): unknown {
+  if (Array.isArray(value)) {
+    return value.map((child) => legacyPersistenceHostCamelCase(child));
+  }
+  if (typeof value === "string" && isLegacyHostDateValue(value, key)) {
+    return new Date(value);
+  }
+  if (!value || typeof value !== "object" || value instanceof Date) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([childKey, child]) => {
+      const camelKey = childKey.replace(
+        /_([a-z])/g,
+        (_match, letter: string) => letter.toUpperCase(),
+      );
+      return [camelKey, legacyPersistenceHostCamelCase(child, camelKey)];
+    }),
+  );
+}
+
+function isLegacyHostDateValue(value: string, key?: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return false;
+  if (key === undefined) return true;
+  return /(?:At|Before|Until|ExpiresAt)$/.test(key) && key !== "timestamp";
 }

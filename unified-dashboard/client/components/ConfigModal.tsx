@@ -35,6 +35,7 @@ import { ConfigResultMessage } from "./config/ConfigResultMessage";
 import { useConfigSettings } from "../hooks/useConfigSettings";
 import { LiquidGlassTab } from "./LiquidGlassTab";
 import { ChatTypographyTab } from "./ChatTypographyTab";
+import { SessionReviewPolicyTab } from "./SessionReviewPolicyTab";
 
 const CLAUDE_AUTH_TAB_NAME = "claude_auth";
 const CLAUDE_AUTH_TAB_LABEL = "Claude Code 인증";
@@ -43,6 +44,7 @@ const CHAT_TAB_NAME = "chat";
 const NODES_TAB_NAME = "nodes";
 const USERS_TAB_NAME = "users";
 const AGENTS_TAB_NAME = "agents";
+const SESSION_REVIEW_TAB_NAME = "session_review";
 
 interface ConfigModalProps {
   open: boolean;
@@ -77,6 +79,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
         glassTab,
         { name: NODES_TAB_NAME, label: "노드" },
         ...(user?.isAdmin ? [
+          { name: SESSION_REVIEW_TAB_NAME, label: "요청 검수" },
           { name: AGENTS_TAB_NAME, label: "에이전트" },
           { name: USERS_TAB_NAME, label: "사용자" },
         ] : []),
@@ -107,6 +110,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
     selectedTab === LIQUID_GLASS_TAB_NAME ||
     selectedTab === CHAT_TAB_NAME ||
     selectedTab === NODES_TAB_NAME ||
+    selectedTab === SESSION_REVIEW_TAB_NAME ||
     selectedTab === AGENTS_TAB_NAME ||
     selectedTab === USERS_TAB_NAME;
   const hasTabs = categories.length > 0 || extraTabs.length > 0;
@@ -151,6 +155,8 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
                 <div className="h-[420px] overflow-hidden rounded border border-border">
                   <NodePanel />
                 </div>
+              ) : selectedTab === SESSION_REVIEW_TAB_NAME ? (
+                <SessionReviewPolicyTab />
               ) : selectedTab === AGENTS_TAB_NAME ? (
                 <AgentProfileEditorTab />
               ) : selectedTab === USERS_TAB_NAME ? (

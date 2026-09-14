@@ -9,7 +9,7 @@ export type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
 const REQUEST_ID_HEADER = "x-soulstream-persistence-request-id";
 const HOST_RECEIVED_AT_HEADER = "x-soulstream-host-received-at-ms";
 const HOST_RESPONDED_AT_HEADER = "x-soulstream-host-responded-at-ms";
-const OPAQUE_ARGUMENT_KEYS = new Set(["payload"]);
+const OPAQUE_ARGUMENT_KEYS = new Set(["payload", "caller_info"]);
 
 export class PersistenceHostRequestError extends Error {
   readonly retryable: boolean;

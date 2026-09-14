@@ -22,8 +22,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { checkMcpAuth, type McpAuthConfig } from "./auth.js";
 import {
   SOULSTREAM_AGENT_SESSION_HEADER,
-  SOULSTREAM_CALLER_ORIGIN_HEADER,
-  type McpCallerOrigin,
+  type McpCallerPrincipal,
   withMcpRequestContext,
 } from "./request_context.js";
 import type { McpRuntime } from "./runtime.js";
@@ -34,12 +33,11 @@ export interface McpRouteConfig {
   path: string;
   auth: McpAuthConfig;
   statelessTransport: boolean;
-  statelessCallerOrigin: McpCallerOrigin;
+  principal: McpCallerPrincipal;
 }
 
 interface SessionEntry {
   transport: StreamableHTTPServerTransport;
-  callerOrigin?: McpCallerOrigin;
 }
 
 interface StatelessEntry {
@@ -97,10 +95,10 @@ export function registerMcpRoutes(
           reply,
           statelessEntries,
           runtime,
-          config.statelessCallerOrigin,
+          config.principal,
         );
       } else {
-        await dispatchPost(req, reply, sessions, runtime);
+        await dispatchPost(req, reply, sessions, runtime, config.principal);
       }
     } catch (err) {
       runtime.logger.error(
@@ -165,14 +163,14 @@ async function dispatchStatelessPost(
   reply: FastifyReply,
   active: Set<StatelessEntry>,
   runtime: McpRuntime,
-  callerOrigin: McpCallerOrigin,
+  principal: McpCallerPrincipal,
 ): Promise<void> {
   await withMcpRequestContext(
     {
       callerSessionId: headerValue(
         req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
       ),
-      callerOrigin,
+      principal,
     },
     async () => {
       const blocked = guardMcpToolCallRequest(runtime, req.body);
@@ -230,23 +228,19 @@ async function dispatchPost(
   reply: FastifyReply,
   sessions: Map<string, SessionEntry>,
   runtime: McpRuntime,
+  principal: McpCallerPrincipal,
 ): Promise<void> {
   const sessionId = headerValue(req.headers["mcp-session-id"]);
   const body = req.body;
 
   if (sessionId && sessions.has(sessionId)) {
-    const requestedOrigin = parseCallerOriginHeader(req);
-    if (!requestedOrigin.ok) {
-      writeJsonRpcError(reply, 400, requestedOrigin.error);
-      return;
-    }
     const entry = sessions.get(sessionId)!;
     await withMcpRequestContext(
       {
         callerSessionId: headerValue(
           req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
         ),
-        callerOrigin: entry.callerOrigin,
+        principal,
       },
       async () => {
         const blocked = guardMcpToolCallRequest(runtime, body);
@@ -261,19 +255,10 @@ async function dispatchPost(
   }
 
   if (!sessionId && isInitializeRequest(body)) {
-    const requestedOrigin = parseCallerOriginHeader(req);
-    if (!requestedOrigin.ok) {
-      writeJsonRpcError(reply, 400, requestedOrigin.error);
-      return;
-    }
-    const callerOrigin = requestedOrigin.origin;
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (newId: string) => {
-        sessions.set(newId, {
-          transport,
-          ...(callerOrigin ? { callerOrigin } : {}),
-        });
+        sessions.set(newId, { transport });
       },
     });
     transport.onclose = () => {
@@ -287,7 +272,7 @@ async function dispatchPost(
         callerSessionId: headerValue(
           req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
         ),
-        ...(callerOrigin ? { callerOrigin } : {}),
+        principal,
       },
       async () => {
         const server = buildMcpServer(runtime);
@@ -306,30 +291,11 @@ async function dispatchPost(
   writeJsonRpcError(reply, 400, "missing session id and not an initialize request");
 }
 
-function parseCallerOriginHeader(
-  req: FastifyRequest,
-):
-  | { ok: true; origin?: McpCallerOrigin }
-  | { ok: false; error: string } {
-  const raw = headerValue(req.headers[SOULSTREAM_CALLER_ORIGIN_HEADER])?.trim();
-  if (!raw) return { ok: true };
-  if (raw === "llm") return { ok: true, origin: "llm" };
-  return {
-    ok: false,
-    error: `unsupported caller origin: ${raw}`,
-  };
-}
-
 async function dispatchGet(
   req: FastifyRequest,
   reply: FastifyReply,
   sessions: Map<string, SessionEntry>,
 ): Promise<void> {
-  const requestedOrigin = parseCallerOriginHeader(req);
-  if (!requestedOrigin.ok) {
-    writeJsonRpcError(reply, 400, requestedOrigin.error);
-    return;
-  }
   const sessionId = headerValue(req.headers["mcp-session-id"]);
   if (!sessionId) {
     writeJsonRpcError(reply, 400, "missing session id");
@@ -348,11 +314,6 @@ async function dispatchDelete(
   reply: FastifyReply,
   sessions: Map<string, SessionEntry>,
 ): Promise<void> {
-  const requestedOrigin = parseCallerOriginHeader(req);
-  if (!requestedOrigin.ok) {
-    writeJsonRpcError(reply, 400, requestedOrigin.error);
-    return;
-  }
   const sessionId = headerValue(req.headers["mcp-session-id"]);
   if (!sessionId) {
     writeJsonRpcError(reply, 400, "missing session id");
