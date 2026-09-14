@@ -123,10 +123,34 @@ describe("ConfigModal layout", () => {
 
   beforeEach(() => {
     vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ users: [], folders: [] }),
-    })));
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.includes("session-review-policy")
+        ? {
+            policy: {
+              key: "session_review_policy",
+              sourceAllowlist: ["slack", "external-llm"],
+              version: 1,
+              updatedAt: "2026-09-14T00:00:00.000Z",
+              updatedBy: "migration:test",
+            },
+            conditionalRules: [{
+              source: "browser",
+              label: "브라우저 직접 요청",
+              description: "identified browser",
+              condition: "identified_user",
+            }],
+            sourceCatalog: [
+              { source: "slack", label: "Slack", description: "Slack 요청", automatic: false },
+              { source: "external-llm", label: "외부 LLM", description: "외부 요청", automatic: false },
+            ],
+          }
+        : { users: [], folders: [] };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }));
   });
 
   afterEach(() => {
@@ -229,5 +253,21 @@ describe("ConfigModal layout", () => {
     expect(document.body.textContent).toContain("편집할 프로필을 선택하거나 새로 만드세요.");
     const saveButton = document.body.querySelector<HTMLButtonElement>('[data-testid="config-save-button"]');
     expect(saveButton?.disabled).toBe(true);
+  });
+
+  it("explains the identified-browser invariant separately from the editable source policy", async () => {
+    ({ container, root } = renderModal());
+    await settleConfigModal();
+
+    clickConfigTab("요청 검수");
+    await settleConfigModal();
+
+    const tab = document.body.querySelector('[data-testid="session-review-policy-tab"]');
+    expect(tab).not.toBeNull();
+    expect(tab?.textContent).toContain("브라우저");
+    expect(tab?.textContent).toContain("user_id, email, display_name");
+    expect(tab?.textContent).toContain("외부 LLM");
+    expect(tab?.textContent).toContain("external-llm");
+    expect(tab?.textContent).toContain("MCP 권한은 높아지지 않습니다");
   });
 });

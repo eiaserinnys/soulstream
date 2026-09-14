@@ -1,4 +1,5 @@
 export * from "./admin/admin_users_routes.js";
+export * from "./admin/admin_settings_routes.js";
 export * from "./app.js";
 export * from "./atom/atom_routes.js";
 export * from "./attachments/attachment_routes.js";
@@ -120,6 +121,7 @@ export * from "./sse/replay_broadcaster.js";
 export * from "./sse/sse_replay_routes.js";
 export * from "./sse/sse_stream.js";
 export * from "./system/system_config_routes.js";
+export * from "./system/session_review_policy.js";
 export * from "./system/memory_stats.js";
 export * from "./system/runtime_memory_routes.js";
 export * from "./user/user_background_routes.js";

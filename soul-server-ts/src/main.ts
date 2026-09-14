@@ -221,6 +221,10 @@ async function main(): Promise<void> {
           mcpStatelessTransportEnabled: env.MCP_ENABLED
             ? env.MCP_STATELESS_TRANSPORT_ENABLED
             : undefined,
+          mcpExternalIngressEnabled: env.MCP_EXTERNAL_INGRESS_ENABLED,
+          mcpExternalIngressPath: env.MCP_EXTERNAL_INGRESS_ENABLED
+            ? env.MCP_EXTERNAL_INGRESS_PATH
+            : undefined,
         },
         "HTTP listening",
       );

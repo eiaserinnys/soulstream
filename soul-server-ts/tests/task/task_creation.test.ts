@@ -72,6 +72,37 @@ describe("TaskCreation", () => {
     );
   });
 
+  it("applies the central register response to the runtime task before broadcast", async () => {
+    const h = makeHarness();
+    h.registerSession.mockResolvedValueOnce({
+      reviewRequired: true,
+      reviewState: "not_required",
+      reviewDecision: "central_policy",
+      policyVersion: 8,
+    });
+
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-central-review",
+      prompt: "external request",
+      callerInfo: { source: "external-llm", display_name: "External LLM" },
+      folderId: "folder-1",
+    });
+
+    expect(h.registerSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callerInfo: { source: "external-llm", display_name: "External LLM" },
+        // Provisional compatibility value is false; the host result wins.
+        reviewRequired: false,
+      }),
+      "register_session:sess-central-review",
+    );
+    expect(task.reviewRequired).toBe(true);
+    expect(h.emitSessionCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewRequired: true }),
+      "folder-1",
+    );
+  });
+
   it("isolates binding hook failures and preserves session creation", async () => {
     const logger = {
       warn: vi.fn(),

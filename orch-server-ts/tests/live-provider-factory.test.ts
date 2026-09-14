@@ -510,6 +510,20 @@ function createLiveDependencies(): LiveProviderDependencies {
         })),
         deleteUser: vi.fn(async () => undefined),
         canRemoveAdmin: vi.fn(async () => true),
+        getSessionReviewPolicy: vi.fn(async () => ({
+          key: "session_review_policy" as const,
+          sourceAllowlist: ["slack"],
+          version: 1,
+          updatedAt: "2026-09-14T00:00:00.000Z",
+          updatedBy: "migration:test",
+        })),
+        updateSessionReviewPolicy: vi.fn(async (input) => ({
+          key: "session_review_policy" as const,
+          sourceAllowlist: input.sourceAllowlist.map(String),
+          version: input.expectedVersion + 1,
+          updatedAt: "2026-09-14T00:00:01.000Z",
+          updatedBy: input.updatedBy,
+        })),
       },
       folderRouteProvider: {
         listFolders: vi.fn(async () => [{ id: "folder-a", name: "Folder A" }]),

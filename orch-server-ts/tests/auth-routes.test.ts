@@ -343,6 +343,30 @@ describe("Auth route harness", () => {
         dashboardAccess: { restricted: true },
       },
     });
+    expect((await app.inject({
+      method: "GET",
+      url: "/api/auth/status",
+      headers: { authorization: "Bearer valid-jwt" },
+    })).json()).toMatchObject({
+      authenticated: true,
+      user: { email: "user@example.com" },
+    });
+    expect((await app.inject({
+      method: "GET",
+      url: "/api/auth/status",
+      headers: {
+        cookie: `${AUTH_COOKIE_NAME}=stale-cookie`,
+        authorization: "Bearer valid-jwt",
+      },
+    })).json()).toMatchObject({
+      authenticated: true,
+      user: { email: "user@example.com" },
+    });
+    expect((await app.inject({
+      method: "GET",
+      url: "/api/auth/status",
+      headers: { authorization: "Bearer opaque-service-token" },
+    })).json()).toEqual({ authenticated: false, user: null });
     await app.close();
 
     const disabled = createApp({

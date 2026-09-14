@@ -9,6 +9,17 @@ import {
 } from "../../src/mcp/tool_access.js";
 import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 
+const genericExternal = {
+  authority: "external" as const,
+  source: "llm",
+  displayName: "External LLM",
+};
+const dedicatedExternal = {
+  authority: "external" as const,
+  source: "external-llm",
+  displayName: "External LLM",
+};
+
 function makeRuntime(): McpRuntime {
   return {} as McpRuntime;
 }
@@ -37,7 +48,7 @@ describe("외부 LLM destructive tool 경계", () => {
     } as unknown as McpRuntime;
 
     const blocked = withMcpRequestContext(
-      { callerOrigin: "llm" },
+      { principal: genericExternal },
       () => guardMcpToolExecution(runtime, "batch_page_operations", {
         operations: [{ op: "delete_block_subtree", block_id: "block-1" }],
       }),
@@ -45,7 +56,7 @@ describe("외부 LLM destructive tool 경계", () => {
 
     expect(blocked?.isError).toBe(true);
     expect(warn).toHaveBeenCalledWith(
-      { callerOrigin: "llm", toolName: "batch_page_operations" },
+      { callerAuthority: "external", callerSource: "llm", toolName: "batch_page_operations" },
       "Blocked destructive MCP tool for external LLM caller",
     );
   });
@@ -71,7 +82,7 @@ describe("외부 LLM destructive tool 경계", () => {
   it("llm origin의 tools/list 표면에서는 delete 도구 등록을 생략한다", () => {
     const registerTool = vi.fn();
 
-    withMcpRequestContext({ callerOrigin: "llm" }, () => {
+    withMcpRequestContext({ principal: genericExternal }, () => {
       const guarded = createGuardedMcpServer(
         { registerTool } as unknown as McpServer,
         makeRuntime(),
@@ -91,7 +102,7 @@ describe("외부 LLM destructive tool 경계", () => {
   it("llm origin은 비접두어 도구라도 명시적 destructiveHint면 등록하지 않는다", () => {
     const registerTool = vi.fn();
 
-    withMcpRequestContext({ callerOrigin: "llm" }, () => {
+    withMcpRequestContext({ principal: dedicatedExternal }, () => {
       const guarded = createGuardedMcpServer(
         { registerTool } as unknown as McpServer,
         makeRuntime(),
@@ -117,7 +128,7 @@ describe("외부 LLM destructive tool 경계", () => {
     } as unknown as McpRuntime;
 
     const blocked = withMcpRequestContext(
-      { callerOrigin: "llm" },
+      { principal: dedicatedExternal },
       () => guardMcpToolExecution(runtime, "delete_session"),
     );
 
@@ -126,7 +137,7 @@ describe("외부 LLM destructive tool 경계", () => {
       error: 'MCP tool "delete_session" is not available to external LLM callers',
     });
     expect(warn).toHaveBeenCalledWith(
-      { callerOrigin: "llm", toolName: "delete_session" },
+      { callerAuthority: "external", callerSource: "external-llm", toolName: "delete_session" },
       "Blocked destructive MCP tool for external LLM caller",
     );
   });

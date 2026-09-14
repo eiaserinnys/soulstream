@@ -61,6 +61,7 @@ import {
 } from "./runner_process_composition.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 import { composeWorkerUpstreamAdapter } from "./worker_upstream_composition.js";
+import { buildMcpServerOptions } from "./mcp_server_options.js";
 
 export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 export async function composeWorkerRuntime(
@@ -409,17 +410,7 @@ export async function composeWorkerRuntime(
     nodeId: env.SOULSTREAM_NODE_ID,
     logger,
     releaseActivationState: params.releaseActivationState,
-    mcp: env.MCP_ENABLED
-      ? {
-          runtime: mcpRuntime,
-          path: env.MCP_PATH, statelessTransport: env.MCP_STATELESS_TRANSPORT_ENABLED,
-          auth: {
-            requireAuth: env.MCP_REQUIRE_AUTH,
-            bearerToken: env.AUTH_BEARER_TOKEN,
-            allowedHosts: env.MCP_ALLOWED_HOSTS,
-          },
-        }
-      : undefined,
+    mcp: buildMcpServerOptions(env, mcpRuntime),
     cogito: { runtime: mcpRuntime },
     llm: llmExecutor
       ? {

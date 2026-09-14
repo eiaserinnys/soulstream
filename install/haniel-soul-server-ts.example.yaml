@@ -69,6 +69,19 @@ install:
           default: 'false'
         - key: MCP_REQUIRE_AUTH
           default: 'true'
+        - key: MCP_EXTERNAL_INGRESS_ENABLED
+          default: 'false'
+        # Connector-facing nodes only: change the flag above to true and
+        # uncomment all four entries below together. Leaving the optional keys
+        # absent keeps ordinary worker installs non-interactive and disabled.
+        # - key: MCP_EXTERNAL_INGRESS_PATH
+        #   default: /mcp/external-llm
+        # - key: MCP_EXTERNAL_INGRESS_SOURCE
+        #   default: external-llm
+        # - key: MCP_EXTERNAL_INGRESS_DISPLAY_NAME
+        #   default: External LLM
+        # - key: MCP_EXTERNAL_INGRESS_BEARER_TOKEN
+        #   prompt: "connector 전용 MCP bearer (AUTH_BEARER_TOKEN과 다른 비밀값)"
         - key: ENVIRONMENT
           default: production
         - key: LOG_LEVEL

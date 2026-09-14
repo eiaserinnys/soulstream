@@ -48,6 +48,10 @@ cp .env.soul-server-ts.example .env.soul-server-ts
 | `AUTH_BEARER_TOKEN` | `ENVIRONMENT=production` | Authenticates the node connection and protected orchestrator calls. |
 | `CLAUDE_AUTH_TOKEN_PATH` | The agent registry contains a Claude backend | Explicit worker-local Claude auth storage. The worker does not implicitly share another runtime's auth files. |
 | `MCP_REQUIRE_AUTH=true` | MCP is enabled in production | Protects the worker's Streamable HTTP MCP endpoint. |
+| `MCP_EXTERNAL_INGRESS_PATH` | `MCP_EXTERNAL_INGRESS_ENABLED=true` | Dedicated connector route; must differ from public and internal MCP paths. |
+| `MCP_EXTERNAL_INGRESS_SOURCE` | `MCP_EXTERNAL_INGRESS_ENABLED=true` | Fixed review/display attribution for the connector; cannot be `internal` or `browser`. |
+| `MCP_EXTERNAL_INGRESS_DISPLAY_NAME` | `MCP_EXTERNAL_INGRESS_ENABLED=true` | Human-readable fixed connector attribution. |
+| `MCP_EXTERNAL_INGRESS_BEARER_TOKEN` | `MCP_EXTERNAL_INGRESS_ENABLED=true` | Dedicated credential; must be non-empty and differ from `AUTH_BEARER_TOKEN`. |
 
 ### Common optional settings
 
@@ -66,6 +70,7 @@ cp .env.soul-server-ts.example .env.soul-server-ts
 | `MCP_INTERNAL_PORT` | `PORT+1` | Node-local `127.0.0.1` listener for the privileged internal route. Never publish or proxy this port through nginx. |
 | `MCP_STATELESS_TRANSPORT_ENABLED` | `false` | Makes the public LLM route sessionless; the isolated internal agent SDK route is always stateless. |
 | `MCP_REQUIRE_AUTH` | `false` | Requires bearer authentication for MCP requests. |
+| `MCP_EXTERNAL_INGRESS_ENABLED` | `false` | Enables the stateless, credential-bound external connector route only when all four conditional settings above are present. |
 | `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated Host header allowlist. |
 | `CLAUDE_SESSION_RUNTIME_V2_ENABLED` | `true` | Persistent Claude Query runtime. Set `false` only as the emergency legacy kill switch. |
 | `CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS` | `300000` | Idle Query reclamation delay. |

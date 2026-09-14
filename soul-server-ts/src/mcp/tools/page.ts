@@ -9,7 +9,7 @@ import {
 import { z } from "zod";
 
 import { PageYjsHostClient } from "../../page/page_host_client.js";
-import { getCurrentMcpCallerOrigin } from "../request_context.js";
+import { isCurrentMcpCallerExternal } from "../request_context.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import {
@@ -192,7 +192,7 @@ export function registerPageTools(server: McpServer, runtime: McpRuntime): void 
   server.registerTool("batch_page_operations", {
     description: mutationDescription("페이지 변경 묶음을 하나의 CAS transaction으로 실행한다."),
     inputSchema:
-      getCurrentMcpCallerOrigin() === "llm"
+      isCurrentMcpCallerExternal()
         ? nonDestructiveBatchInput.shape
         : batchInput.shape,
   }, async (raw) => {

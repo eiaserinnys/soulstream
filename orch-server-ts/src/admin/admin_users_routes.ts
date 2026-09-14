@@ -1,4 +1,15 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import {
+  adminSettingsRouteAuthRequirements,
+  registerAdminSettingsRoutes,
+  type AdminSettingsProvider,
+} from "./admin_settings_routes.js";
+import {
+  requireAdmin,
+  type AdminAccessProvider,
+} from "./admin_access.js";
+
+export { requireAdmin, type AdminAccessProvider } from "./admin_access.js";
 
 export type AdminDashboardUser = {
   email: string;
@@ -36,14 +47,7 @@ export type AdminUsersRouteProvider = {
   deleteUser: (email: string) => Promise<void>;
   canRemoveAdmin: (email: string) => Promise<boolean> | boolean;
   broadcastAccessChange: () => Promise<void> | void;
-};
-
-export type AdminAccessProvider = {
-  currentEmail: (
-    request: FastifyRequest,
-  ) => Promise<string | null | undefined> | string | null | undefined;
-  isAdminEmail: (email: string) => Promise<boolean> | boolean;
-};
+} & Pick<AdminSettingsProvider, "getSessionReviewPolicy" | "updateSessionReviewPolicy">;
 
 export type AdminUsersRouteOptions = {
   provider: AdminUsersRouteProvider;
@@ -73,6 +77,7 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const LAST_ADMIN_DETAIL = "At least one admin user is required";
 
 export const adminUsersRouteAuthRequirements = {
+  ...adminSettingsRouteAuthRequirements,
   "GET /api/admin/users": true,
   "POST /api/admin/users": true,
   "PATCH /api/admin/users/:email": true,
@@ -83,6 +88,7 @@ export function registerAdminUsersRoutes(
   app: FastifyInstance,
   options: AdminUsersRouteOptions,
 ): void {
+  registerAdminSettingsRoutes(app, options.provider);
   app.get("/api/admin/users", async (request, reply) => {
     const adminEmail = await requireAdmin(request, reply, options.provider);
     if (adminEmail === undefined) return reply;
@@ -170,23 +176,6 @@ export function registerAdminUsersRoutes(
       }
     },
   );
-}
-
-export async function requireAdmin(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  provider: AdminAccessProvider,
-): Promise<string | undefined> {
-  const email = normalizeEmail(await provider.currentEmail(request));
-  if (!email.ok) {
-    reply.code(401).send({ detail: "Authentication required" });
-    return undefined;
-  }
-  if (!(await provider.isAdminEmail(email.value))) {
-    reply.code(403).send({ detail: "Admin access required" });
-    return undefined;
-  }
-  return email.value;
 }
 
 function parseCreateBody(

@@ -9,7 +9,10 @@ import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime, OrchProxyConfig } from "../../src/mcp/runtime.js";
 import { UnknownModelPresetError } from "../../src/model_catalog.js";
-import { buildServer } from "../../src/server.js";
+import {
+  buildInternalMcpServer,
+  buildServer,
+} from "../../src/server.js";
 import { assertRunnerJsonValue } from "../../src/runner/frame_protocol.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import {
@@ -157,29 +160,72 @@ function makeRuntime(
 
 async function createClient(
   runtime: McpRuntime,
-  headers?: Record<string, string>,
+  options: {
+    headers?: Record<string, string>;
+    principal?: "internal" | "generic-external" | "dedicated-external";
+  } = {},
 ): Promise<Client> {
-  const server = await buildServer({
-    host: "127.0.0.1",
-    port: 0,
-    nodeId: runtime.nodeId,
-    logger: createSilentLogger(),
-    mcp: {
-      runtime,
-      path: "/mcp",
-      auth: {
-        requireAuth: false,
-        bearerToken: "",
-        allowedHosts: ["127.0.0.1", "localhost"],
-      },
+  const principal = options.principal ?? "internal";
+  const clientPath = principal === "internal"
+    ? "/mcp/internal"
+    : principal === "dedicated-external"
+      ? "/mcp/external-llm"
+      : "/mcp";
+  const commonMcp = {
+    runtime,
+    path: principal === "internal" ? clientPath : "/mcp",
+    auth: {
+      requireAuth: false,
+      bearerToken: "",
+      allowedHosts: ["127.0.0.1", "localhost"],
     },
-  });
+  } as const;
+  const server = principal === "internal"
+    ? await buildInternalMcpServer({
+        logger: createSilentLogger(),
+        ...commonMcp,
+        statelessTransport: true,
+      })
+    : await buildServer({
+        host: "127.0.0.1",
+        port: 0,
+        nodeId: runtime.nodeId,
+        logger: createSilentLogger(),
+        mcp: {
+          ...commonMcp,
+          ...(principal === "dedicated-external"
+            ? {
+                externalIngress: {
+                  path: clientPath,
+                  source: "external-llm",
+                  displayName: "External LLM",
+                  auth: {
+                    requireAuth: true,
+                    bearerToken: "external-secret",
+                    allowedHosts: ["127.0.0.1", "localhost"],
+                  },
+                },
+              }
+            : {}),
+        },
+      });
   openServers.push(server);
   const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
   const client = new Client({ name: "session-mgmt-test", version: "0.0.0" });
   await client.connect(new StreamableHTTPClientTransport(
-    new URL(`${baseUrl}/mcp`),
-    headers ? { requestInit: { headers } } : undefined,
+    new URL(`${baseUrl}${clientPath}`),
+    options.headers || principal === "dedicated-external"
+      ? {
+          requestInit: {
+            headers: {
+              ...(principal === "dedicated-external"
+                ? { authorization: "Bearer external-secret" }
+                : {}),
+              ...options.headers,
+            },
+          },
+        }
+      : undefined,
   ));
   openClients.push(client);
   return client;
@@ -256,6 +302,7 @@ afterEach(async () => {
     const server = openServers.pop();
     try {
       if (server?.closeMcp) await server.closeMcp();
+      await server?.internalMcpServer?.close();
       await server?.close();
     } catch {
       // ignore cleanup failures
@@ -572,7 +619,9 @@ describe("agent profile backend boundary", () => {
       [codexAgent, claudeAgent],
     );
     const client = await createClient(runtime, {
-      "x-soulstream-agent-session-id": "caller-sess-1",
+      headers: {
+        "x-soulstream-agent-session-id": "caller-sess-1",
+      },
     });
 
     const result = await client.callTool({
@@ -596,14 +645,14 @@ describe("agent profile backend boundary", () => {
     );
   });
 
-  it("llm origin은 부모 링크 없이 local session을 만들고 llm caller_info를 보존한다", async () => {
+  it("generic public MCP는 부모 링크 없이 local session을 만들고 llm caller_info를 보존한다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
       undefined,
       [codexAgent, claudeAgent],
     );
     const client = await createClient(runtime, {
-      "x-soulstream-caller-origin": "llm",
+      principal: "generic-external",
     });
 
     const result = await client.callTool({
@@ -621,6 +670,44 @@ describe("agent profile backend boundary", () => {
         callerSessionId: null,
         callerInfo: {
           source: "llm",
+          agent_node: "node-test",
+          display_name: "External LLM",
+          user_id: null,
+          avatar_url: null,
+        },
+      }),
+    );
+  });
+
+  it("dedicated external ingress는 HTTP route principal을 external-llm caller_info로 고정한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const client = await createClient(runtime, {
+      principal: "dedicated-external",
+      headers: {
+        "x-soulstream-agent-session-id": "spoofed-header-parent",
+        "x-soulstream-caller-origin": "internal",
+      },
+    });
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "codex-default",
+        prompt: "dedicated external delegation",
+        caller_session_id: "spoofed-explicit-parent",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callerSessionId: null,
+        callerInfo: {
+          source: "external-llm",
           agent_node: "node-test",
           display_name: "External LLM",
           user_id: null,
@@ -1019,7 +1106,9 @@ describe("create_remote_agent_session", () => {
     try {
       const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
       const client = await createClient(runtime, {
-        "x-soulstream-agent-session-id": "caller-sess-1",
+        headers: {
+          "x-soulstream-agent-session-id": "caller-sess-1",
+        },
       });
 
       const result = await client.callTool({
@@ -1073,7 +1162,9 @@ describe("create_remote_agent_session", () => {
     try {
       const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
       const client = await createClient(runtime, {
-        "x-soulstream-agent-session-id": "stale-header-sess",
+        headers: {
+          "x-soulstream-agent-session-id": "stale-header-sess",
+        },
       });
 
       const result = await client.callTool({
@@ -1243,7 +1334,7 @@ describe("create_remote_agent_session", () => {
     }
   });
 
-  it("llm origin은 부모 세션 없이 remote session을 만들고 명시 session 가장을 버린다", async () => {
+  it("dedicated external ingress는 부모 없이 remote session에 external-llm을 전달한다", async () => {
     const capture = await createOrchCapture(200, (req) => {
       if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
         return { body: { agents: [{ id: "roselin_codex", name: "로젤린", backend: "codex" }] } };
@@ -1256,7 +1347,7 @@ describe("create_remote_agent_session", () => {
     try {
       const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
       const client = await createClient(runtime, {
-        "x-soulstream-caller-origin": "llm",
+        principal: "dedicated-external",
       });
 
       const result = await client.callTool({
@@ -1273,7 +1364,7 @@ describe("create_remote_agent_session", () => {
       const body = JSON.parse(capture.requests[1]!.body);
       expect(body).not.toHaveProperty("caller_session_id");
       expect(body.caller_info).toEqual({
-        source: "llm",
+        source: "external-llm",
         agent_node: "node-test",
         display_name: "External LLM",
         user_id: null,
@@ -1692,10 +1783,10 @@ describe("send_message_to_session", () => {
     )).not.toThrow();
   });
 
-  it("llm origin은 명시 session 가장 없이 llm caller_info로 메시지를 보낸다", async () => {
+  it("generic public MCP는 명시 session 가장 없이 llm caller_info로 메시지를 보낸다", async () => {
     const runtime = makeRuntime({ queued: true, queuePosition: 1 });
     const client = await createClient(runtime, {
-      "x-soulstream-caller-origin": "llm",
+      principal: "generic-external",
     });
 
     const result = await client.callTool({

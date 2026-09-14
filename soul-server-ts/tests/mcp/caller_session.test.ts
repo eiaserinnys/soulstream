@@ -6,8 +6,20 @@ import {
   requireRemoteCallerAttribution,
   resolveEffectiveCallerSessionId,
   resolveMcpCallerAttribution,
+  resolveMcpMutationActor,
 } from "../../src/mcp/tools/caller_session.js";
 import { withMcpRequestContext } from "../../src/mcp/request_context.js";
+
+const genericExternal = {
+  authority: "external" as const,
+  source: "llm",
+  displayName: "External LLM",
+};
+const dedicatedExternal = {
+  authority: "external" as const,
+  source: "external-llm",
+  displayName: "External LLM",
+};
 
 function makeRuntime(): McpRuntime {
   return {
@@ -45,7 +57,7 @@ describe("MCP caller attribution", () => {
 
   it("llm origin은 명시 caller_session_id를 구조 부모로 가장하지 않는다", () => {
     const result = withMcpRequestContext(
-      { callerOrigin: "llm", callerSessionId: "header-session" },
+      { principal: genericExternal, callerSessionId: "header-session" },
       () => resolveMcpCallerAttribution(makeRuntime(), "caller-session"),
     );
 
@@ -63,7 +75,7 @@ describe("MCP caller attribution", () => {
 
   it("llm origin은 결과 조회의 소비 기록에도 명시 session id를 가장하지 않는다", () => {
     const result = withMcpRequestContext(
-      { callerOrigin: "llm", callerSessionId: "spoofed-session" },
+      { principal: dedicatedExternal, callerSessionId: "spoofed-session" },
       () => resolveEffectiveCallerSessionId("another-spoofed-session"),
     );
 
@@ -72,15 +84,31 @@ describe("MCP caller attribution", () => {
 
   it("llm origin은 부모 세션 없이 remote 위임 attribution을 만든다", () => {
     const result = withMcpRequestContext(
-      { callerOrigin: "llm" },
+      { principal: dedicatedExternal },
       () => requireRemoteCallerAttribution(makeRuntime(), undefined),
     );
 
     expect(result).toEqual({
       ok: true,
       callerSessionId: undefined,
-      callerInfo: expect.objectContaining({ source: "llm" }),
+      callerInfo: expect.objectContaining({ source: "external-llm" }),
     });
+  });
+
+  it("generic llm과 external-llm은 source와 무관하게 같은 외부 actor/parent 제한을 쓴다", () => {
+    for (const principal of [genericExternal, dedicatedExternal]) {
+      const result = withMcpRequestContext(
+        { principal, callerSessionId: "spoofed-parent" },
+        () => ({
+          actor: resolveMcpMutationActor("spoofed-explicit"),
+          parent: resolveEffectiveCallerSessionId("spoofed-explicit"),
+        }),
+      );
+      expect(result).toEqual({
+        actor: { actorKind: "llm", actorSessionId: null },
+        parent: undefined,
+      });
+    }
   });
 
   it("origin 없는 기존 클라이언트는 부모 세션 없이 remote 위임할 수 없다", () => {

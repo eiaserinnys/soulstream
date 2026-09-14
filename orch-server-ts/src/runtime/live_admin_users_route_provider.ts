@@ -8,10 +8,21 @@ import type {
   DashboardUserRepository,
 } from "./live_dashboard_access_provider.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
+import type { SqlClient } from "../control_plane/control_plane_types.js";
+import {
+  readSessionReviewPolicy,
+  updateSessionReviewPolicy,
+} from "../system/session_review_policy.js";
 
 export type LiveAdminUsersRepository = DashboardUserRepository & Pick<
   AdminUsersRouteProvider,
-  "listUsers" | "createUser" | "updateUser" | "deleteUser" | "canRemoveAdmin"
+  | "listUsers"
+  | "createUser"
+  | "updateUser"
+  | "deleteUser"
+  | "canRemoveAdmin"
+  | "getSessionReviewPolicy"
+  | "updateSessionReviewPolicy"
 >;
 
 export type CreateLiveAdminUsersRepositoryOptions = {
@@ -118,6 +129,17 @@ export function createLiveAdminUsersRepository(
       `;
       return numberValue(rows[0]?.count) >= 1;
     },
+    async getSessionReviewPolicy() {
+      return await readSessionReviewPolicy(
+        await options.sqlResolver.resolveSql() as unknown as SqlClient,
+      );
+    },
+    async updateSessionReviewPolicy(input) {
+      return await updateSessionReviewPolicy(
+        await options.sqlResolver.resolveSql() as unknown as SqlClient,
+        input,
+      );
+    },
   };
 }
 
@@ -133,6 +155,8 @@ export function createLiveAdminUsersRouteProvider(
     updateUser: options.repository.updateUser,
     deleteUser: options.repository.deleteUser,
     canRemoveAdmin: options.repository.canRemoveAdmin,
+    getSessionReviewPolicy: options.repository.getSessionReviewPolicy,
+    updateSessionReviewPolicy: options.repository.updateSessionReviewPolicy,
     broadcastAccessChange: options.broadcastAccessChange,
   };
 }

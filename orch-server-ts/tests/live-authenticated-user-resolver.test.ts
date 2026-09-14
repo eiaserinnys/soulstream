@@ -35,6 +35,29 @@ describe("live authenticated user resolver", () => {
     ).resolves.toEqual({ email: "native@example.com" });
   });
 
+  it("falls back to a valid bearer JWT when a stale cookie is also present", async () => {
+    const jwt = createJwtHelper({
+      "native-jwt": { email: "native@example.com" },
+    });
+    const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
+    const request = requestWithHeaders({
+      cookie: "soul_dashboard_auth=stale-cookie",
+      authorization: "Bearer native-jwt",
+    });
+
+    await expect(resolvers.resolveUser(request)).resolves.toEqual({
+      email: "native@example.com",
+    });
+    await expect(resolvers.resolveCallerInfo(
+      request,
+      { source: "system" },
+      "ignored-node",
+    )).resolves.toMatchObject({
+      source: "soul-app",
+      email: "native@example.com",
+    });
+  });
+
   it("rejects missing, malformed, and non-JWT service bearer credentials", async () => {
     const jwt = createJwtHelper({});
     const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
@@ -79,38 +102,52 @@ describe("live authenticated user resolver", () => {
     expect(jwt.verifyToken).toHaveBeenCalledTimes(1);
   });
 
-  it("preserves a truthy body caller_info before JWT classification", async () => {
+  it("does not let a browser JWT body source bypass identified-browser attribution", async () => {
     const jwt = createJwtHelper({
-      "minimal-jwt": { email: "cron@example.com" },
+      "user-jwt": { email: "user@example.com", name: "User" },
     });
     const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
-    const supplied = { source: "agent", agent_node: "node-a", agent_id: "roselin" };
 
     await expect(resolvers.resolveCallerInfo(
-      requestWithHeaders({ authorization: "Bearer minimal-jwt" }),
+      requestWithHeaders({ cookie: "soul_dashboard_auth=user-jwt" }),
+      { source: "system" },
+      "ignored-node",
+    )).resolves.toMatchObject({
+      source: "browser",
+      display_name: "User",
+      user_id: "user@example.com",
+      email: "user@example.com",
+    });
+    expect(jwt.verifyToken).toHaveBeenCalledWith("user-jwt");
+  });
+
+  it("fixes bearer dashboard JWT attribution to the native Soul app source", async () => {
+    const jwt = createJwtHelper({
+      "native-jwt": { email: "native@example.com" },
+    });
+    const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
+
+    await expect(resolvers.resolveCallerInfo(
+      requestWithHeaders({ authorization: "Bearer native-jwt" }),
+      { source: "llm" },
+      "ignored-node",
+    )).resolves.toMatchObject({
+      source: "soul-app",
+      user_id: "native@example.com",
+      email: "native@example.com",
+    });
+  });
+
+  it("preserves trusted service caller_info when no dashboard JWT verifies", async () => {
+    const jwt = createJwtHelper({});
+    const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
+    const supplied = { source: "clipper", display_name: "Clipper" };
+
+    await expect(resolvers.resolveCallerInfo(
+      requestWithHeaders({ authorization: "Bearer opaque-service-token" }),
       supplied,
       "ignored-node",
     )).resolves.toEqual(supplied);
-    expect(jwt.verifyToken).not.toHaveBeenCalled();
-  });
-
-  it("classifies a name-less JWT as system caller_info", async () => {
-    const jwt = createJwtHelper({
-      "minimal-jwt": { email: "cron@example.com" },
-    });
-    const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
-
-    await expect(resolvers.resolveCallerInfo(
-      requestWithHeaders({ authorization: "Bearer minimal-jwt" }),
-      undefined,
-      "node-a",
-    )).resolves.toEqual({
-      source: "system",
-      agent_node: "node-a",
-      display_name: "Soulstream",
-      user_id: null,
-      avatar_url: "/api/system/portraits/system",
-    });
   });
 
   it("builds browser caller_info from HTTP metadata and a named JWT", async () => {
@@ -123,7 +160,7 @@ describe("live authenticated user resolver", () => {
     });
     const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
     const request = requestWithHeaders({
-      authorization: "Bearer user-jwt",
+      cookie: "soul_dashboard_auth=user-jwt",
       "user-agent": "TestClient/1.0",
       referer: "https://dashboard.example.com",
       "x-forwarded-for": "203.0.113.8",
