@@ -6,10 +6,10 @@ Authenticated direct HTTP provenance is fixed by the server as well: a verified 
 
 ## Compatibility and order
 
-1. Apply `091_system_settings.sql` first. Its `ON CONFLICT DO NOTHING` seed never overwrites an existing policy.
-2. Deploy the new orchestrator. Old workers omit `callerInfo`, so the host preserves their legacy review values without reading the new table. This keeps the migration/code rollout non-blocking.
-3. Deploy workers. New workers send `callerInfo`, keep legacy review fields only for old-orchestrator compatibility, and replace their provisional Task values with the central host response. The intended migration → orchestrator → worker order avoids the temporary old-host policy limitation.
-4. Enable the dedicated ingress only on the connector-facing node after path, source, display name, and a distinct local bearer are present. Other nodes leave it disabled.
+1. Run one central Haniel release through `deploy/release-manifest.json`. Migration 091 is an internal phase of that release, not a manual SQL prerequisite: Haniel builds and preflights, quiesces the exact central writer set, verifies its receipt, and lets the release executor take the advisory lock and journal the ordered migration apply. Do not run `091_system_settings.sql` directly or bypass the release executor. Its `ON CONFLICT DO NOTHING` seed never overwrites an existing policy.
+2. Let the same central release start the new orchestrator before its local worker. On `eiaserinnys`, the `soulstream` repository owns both services, but `soulstream-soul-server-ts` declares `after: soulstream-orch-server`; Haniel waits for orchestrator readiness before starting the worker. Old remote workers omit `callerInfo`, so the new host preserves their legacy review values without reading the new table. This keeps the migration/code rollout non-blocking.
+3. After the central authority release and its post-start verification succeed, deploy worker-only nodes one at a time with `deploy/release-manifest-worker.json`. That manifest has no migration phase. New workers send `callerInfo`, keep legacy review fields only for old-orchestrator compatibility, and replace their provisional Task values with the central host response. The enforced central release → remote workers order avoids the temporary old-host policy limitation.
+4. Enable the dedicated ingress only on the connector-facing node after path, source, display name, and a distinct local bearer are present. Keep the existing tunnel upstream unchanged until the central and remote worker gates pass, so external traffic is cut over last. Other nodes leave the ingress disabled.
 
 Code rollback does not remove `system_settings`; old code ignores the additive table and fields. Existing sessions are never reclassified or backfilled. If the policy row is missing or corrupt, new central-wire registrations fail before insert with an actionable 503 while legacy workers remain compatible during rollout.
 
