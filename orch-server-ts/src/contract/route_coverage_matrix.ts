@@ -81,4 +81,5 @@ export const tsOnlyRouteKeys = [
   "GET /api/nodes/{node_id}/model-presets",
   "GET /api/admin/settings/session-review-policy",
   "PUT /api/admin/settings/session-review-policy",
+  "GET /api/sessions/{session_id}/conversation-context",
 ] as const;

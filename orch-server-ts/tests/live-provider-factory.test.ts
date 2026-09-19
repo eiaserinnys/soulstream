@@ -449,6 +449,13 @@ function createLiveDependencies(): LiveProviderDependencies {
   const sessionHistoryProvider = {
     readViewport: vi.fn(async () => ({})),
     readMessages: vi.fn(async () => [[], null] as [unknown[], string | null]),
+    readConversationContext: vi.fn(async (sessionId: string) => ({
+      session_id: sessionId,
+      anchor: "latest_conversation" as const,
+      match_event_id: null,
+      match_turn_number: null,
+      turns: [],
+    })),
     readTimeline: vi.fn(async () => [[], null] as [unknown[], string | null]),
     readTimelineTrace: vi.fn(async () => null),
     readStory: vi.fn(async () => ({

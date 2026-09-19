@@ -329,6 +329,108 @@ describe("live DB session history provider", () => {
     expect(timelineQueries[1]?.values).toContainEqual(["user_message"]);
   });
 
+  it("reads a matched full conversation turn plus adjacent turns without tool events consuming the window", async () => {
+    const createdAt = new Date("2026-09-20T00:00:00.000Z");
+    const harness = createSqlHarness((text) => {
+      if (text.includes("/* conversation_context_match */")) {
+        return [{ id: 42, event_type: "assistant_message", payload: { content: "matched" } }];
+      }
+      if (text.includes("/* conversation_context_anchor */")) {
+        return [{ id: 40 }];
+      }
+      if (text.includes("/* conversation_context_turn_starts */")) {
+        return [{ id: 10 }, { id: 40 }, { id: 70 }];
+      }
+      if (text.includes("/* conversation_context_next_boundary */")) {
+        return [{ id: 100 }];
+      }
+      if (text.includes("/* conversation_context_turn_numbers */")) {
+        return [
+          { turn_number: 6, turn_start_event_id: 10, final_response_event_id: 14 },
+          { turn_number: 7, turn_start_event_id: 40, final_response_event_id: 44 },
+          { turn_number: 8, turn_start_event_id: 70, final_response_event_id: 74 },
+        ];
+      }
+      if (text.includes("/* conversation_context_messages */")) {
+        return [
+          { id: 10, event_type: "user_message", payload: { text: "previous" }, created_at: createdAt },
+          { id: 14, event_type: "assistant_message", payload: { content: "previous reply" }, created_at: createdAt },
+          { id: 40, event_type: "user_message", payload: { text: "matched prompt" }, created_at: createdAt },
+          { id: 42, event_type: "assistant_message", payload: { content: "matched" }, created_at: createdAt },
+          { id: 44, event_type: "assistant_message", payload: { content: "final reply" }, created_at: createdAt },
+          { id: 70, event_type: "intervention_sent", payload: { text: "next" }, created_at: createdAt },
+          { id: 74, event_type: "assistant_message", payload: { content: "next reply" }, created_at: createdAt },
+        ];
+      }
+      return [];
+    });
+    const provider = createLiveDbCatalogRepository({ sql: harness.sql })
+      .sessionHistoryProvider;
+
+    await expect(provider.readConversationContext("sess-1", {
+      eventId: 42,
+      beforeTurns: 1,
+      afterTurns: 1,
+    })).resolves.toEqual({
+      session_id: "sess-1",
+      anchor: "match",
+      match_event_id: 42,
+      match_turn_number: 7,
+      turns: [
+        expect.objectContaining({
+          turn_number: 6,
+          turn_start_event_id: 10,
+          final_response_event_id: 14,
+          is_match: false,
+          messages: expect.arrayContaining([
+            expect.objectContaining({ event_id: 10, role: "user", text: "previous" }),
+            expect.objectContaining({ event_id: 14, role: "assistant", text: "previous reply" }),
+          ]),
+        }),
+        expect.objectContaining({
+          turn_number: 7,
+          turn_start_event_id: 40,
+          final_response_event_id: 44,
+          is_match: true,
+          messages: expect.arrayContaining([
+            expect.objectContaining({ event_id: 40, role: "user", text: "matched prompt" }),
+            expect.objectContaining({ event_id: 42, role: "assistant", text: "matched" }),
+            expect.objectContaining({ event_id: 44, role: "assistant", text: "final reply" }),
+          ]),
+        }),
+        expect.objectContaining({
+          turn_number: 8,
+          turn_start_event_id: 70,
+          final_response_event_id: 74,
+          is_match: false,
+          messages: expect.arrayContaining([
+            expect.objectContaining({ event_id: 70, role: "user", text: "next" }),
+            expect.objectContaining({ event_id: 74, role: "assistant", text: "next reply" }),
+          ]),
+        }),
+      ],
+    });
+    expect(harness.normalizedCalls().join("\n")).not.toContain("tool_start");
+    expect(harness.normalizedCalls().join("\n")).not.toContain("tool_result");
+    expect(harness.calls[0]?.values).toEqual(["sess-1", 42]);
+  });
+
+  it("returns null when the matched event does not belong to the requested session", async () => {
+    const harness = createSqlHarness((text) =>
+      text.includes("/* conversation_context_match */") ? [] : [],
+    );
+    const provider = createLiveDbCatalogRepository({ sql: harness.sql })
+      .sessionHistoryProvider;
+
+    await expect(provider.readConversationContext("sess-1", {
+      eventId: 999,
+      beforeTurns: 1,
+      afterTurns: 1,
+    })).resolves.toBeNull();
+    expect(harness.calls).toHaveLength(1);
+    expect(harness.calls[0]?.values).toEqual(["sess-1", 999]);
+  });
+
   it("replays DB raw events through the route filter for finalized app-server fragments", async () => {
     const harness = createSqlHarness((text) =>
       text.includes("event_stream_raw")

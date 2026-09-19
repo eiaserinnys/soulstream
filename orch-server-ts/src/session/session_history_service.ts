@@ -1,5 +1,9 @@
 import type { SessionStoryResponse } from "./session_story_read_service.js";
 import type {
+  SessionConversationContextQuery,
+  SessionConversationContextResponse,
+} from "./session_conversation_context.js";
+import type {
   SessionTurnSummaryQuery,
   SessionTurnSummaryResponse,
 } from "./session_turn_summary_read_service.js";
@@ -56,6 +60,10 @@ export type SessionHistoryProvider = {
     before: string | null,
     limit: number,
   ) => Promise<[unknown[], string | null]>;
+  readConversationContext: (
+    sessionId: string,
+    query: SessionConversationContextQuery,
+  ) => Promise<SessionConversationContextResponse | null>;
   readTimeline: (
     sessionId: string,
     before: string | null,
@@ -104,6 +112,13 @@ export class SessionHistoryReadService {
   ): Promise<SessionHistoryPageResponse> {
     const [messages, nextCursor] = await this.provider.readMessages(sessionId, before, limit);
     return { messages, next_cursor: nextCursor };
+  }
+
+  readConversationContext(
+    sessionId: string,
+    query: SessionConversationContextQuery,
+  ): Promise<SessionConversationContextResponse | null> {
+    return this.provider.readConversationContext(sessionId, query);
   }
 
   async readTimelinePage(
