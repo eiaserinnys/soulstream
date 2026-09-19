@@ -30,6 +30,7 @@ describe("session history/read-only route harness", () => {
     for (const url of [
       "/api/sessions/sess-1/events/viewport?y_min=1&y_max=10",
       "/api/sessions/sess-1/messages",
+      "/api/sessions/sess-1/conversation-context?event_id=2",
       "/api/sessions/sess-1/timeline",
       "/api/sessions/sess-1/timeline/tool%3A1/trace",
       "/api/sessions/sess-1/story",
@@ -84,6 +85,7 @@ describe("session history/read-only route harness", () => {
     expect(sessionHistoryRouteAuthRequirements).toEqual({
       "GET /api/sessions/:session_id/events/viewport": true,
       "GET /api/sessions/:session_id/messages": true,
+      "GET /api/sessions/:session_id/conversation-context": true,
       "GET /api/sessions/:session_id/timeline": true,
       "GET /api/sessions/:session_id/timeline/:timeline_id/trace": true,
       "GET /api/sessions/:session_id/story": true,
@@ -336,6 +338,106 @@ describe("session history/read-only route harness", () => {
     await app.close();
   });
 
+  it("returns the matched conversation turn with bounded adjacent turns", async () => {
+    const context = {
+      session_id: "sess-1",
+      anchor: "match" as const,
+      match_event_id: 42,
+      match_turn_number: 7,
+      turns: [{
+        turn_number: 7,
+        turn_start_event_id: 40,
+        final_response_event_id: 44,
+        is_match: true,
+        messages: [
+          {
+            event_id: 40,
+            event_type: "user_message",
+            role: "user" as const,
+            text: "검색 결과의 실제 대화",
+            created_at: "2026-09-20T00:00:00.000Z",
+          },
+          {
+            event_id: 44,
+            event_type: "assistant_message",
+            role: "assistant" as const,
+            text: "응답",
+            created_at: "2026-09-20T00:00:01.000Z",
+          },
+        ],
+      }],
+    };
+    const readConversationContext = vi.fn(async () => context);
+    const { app } = createHarness(createProvider({ readConversationContext }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/conversation-context?event_id=42&before_turns=2&after_turns=1",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(context);
+    expect(readConversationContext).toHaveBeenCalledWith("sess-1", {
+      eventId: 42,
+      beforeTurns: 2,
+      afterTurns: 1,
+    });
+
+    await app.close();
+  });
+
+  it("supports explicit latest-conversation context and rejects invalid turn windows", async () => {
+    const readConversationContext = vi.fn(async () => ({
+      session_id: "sess-1",
+      anchor: "latest_conversation" as const,
+      match_event_id: null,
+      match_turn_number: null,
+      turns: [],
+    }));
+    const { app } = createHarness(createProvider({ readConversationContext }));
+
+    const latest = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/conversation-context?before_turns=1&after_turns=0",
+    });
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/conversation-context?event_id=0&before_turns=3",
+    });
+
+    expect(latest.statusCode).toBe(200);
+    expect(readConversationContext).toHaveBeenCalledWith("sess-1", {
+      eventId: null,
+      beforeTurns: 1,
+      afterTurns: 0,
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(readConversationContext).toHaveBeenCalledTimes(1);
+
+    await app.close();
+  });
+
+  it("returns EVENT_NOT_FOUND without leaking an event from another session", async () => {
+    const readConversationContext = vi.fn(async () => null);
+    const { app } = createHarness(createProvider({ readConversationContext }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/conversation-context?event_id=91",
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: {
+        code: "EVENT_NOT_FOUND",
+        message: "세션에서 이벤트를 찾을 수 없습니다: 91",
+        details: {},
+      },
+    });
+
+    await app.close();
+  });
+
   it("rejects messages and timeline limits outside the 1..200 range", async () => {
     const provider = createProvider();
     const { app } = createHarness(provider);
@@ -385,6 +487,13 @@ describe("session history/read-only route harness", () => {
     const provider = createProvider({
       readViewport: vi.fn(async () => []),
       readMessages: vi.fn(async () => page([], null)),
+      readConversationContext: vi.fn(async () => ({
+        session_id: "sess-1",
+        anchor: "latest_conversation" as const,
+        match_event_id: null,
+        match_turn_number: null,
+        turns: [],
+      })),
       readTimeline: vi.fn(async () => page([], null)),
       readTimelineTrace: vi.fn(async () => ({ trace: [] })),
       readStory: vi.fn(async () => emptyStory()),
@@ -399,18 +508,20 @@ describe("session history/read-only route harness", () => {
 
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/events/viewport?y_min=1&y_max=5" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/messages" });
+    await app.inject({ method: "GET", url: "/api/sessions/sess-1/conversation-context" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/timeline" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/timeline/tool%3A1/trace" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/story" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/turn-summaries?mode=count" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/events" });
 
-    expect(accessProvider.requireSessionAccess).toHaveBeenCalledTimes(7);
+    expect(accessProvider.requireSessionAccess).toHaveBeenCalledTimes(8);
     expect(accessProvider.requireSessionAccess).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "sess-1" }),
     );
     expect(provider.readViewport).toHaveBeenCalled();
     expect(provider.readMessages).toHaveBeenCalled();
+    expect(provider.readConversationContext).toHaveBeenCalled();
     expect(provider.readTimeline).toHaveBeenCalled();
     expect(provider.readTimelineTrace).toHaveBeenCalled();
     expect(provider.readStory).toHaveBeenCalled();
@@ -996,6 +1107,13 @@ function createProvider(
   return {
     readViewport: vi.fn(async () => []),
     readMessages: vi.fn(async () => page([], null)),
+    readConversationContext: vi.fn(async (sessionId: string) => ({
+      session_id: sessionId,
+      anchor: "latest_conversation" as const,
+      match_event_id: null,
+      match_turn_number: null,
+      turns: [],
+    })),
     readTimeline: vi.fn(async () => page([], null)),
     readTimelineTrace: vi.fn(async () => null),
     readStory: vi.fn(async () => emptyStory()),

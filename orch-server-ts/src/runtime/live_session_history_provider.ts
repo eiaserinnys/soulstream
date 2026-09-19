@@ -17,6 +17,8 @@ import {
   traceToolUseId,
   toolTimelineId,
 } from "./live_timeline_serialization.js";
+import { readLiveSessionConversationContext } from
+  "./live_session_conversation_context.js";
 
 export type CreateLiveSessionHistoryProviderOptions = {
   readonly sqlResolver: LiveDbSqlResolver;
@@ -88,6 +90,13 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
     const { pageRows, nextCursor } = pageRowsAndCursor(rows, limit);
     const withAncestors = await addMissingAncestors(sql, sessionId, pageRows);
     return [serializeMessageRows(sortDesc(withAncestors)), nextCursor];
+  }
+
+  readConversationContext(
+    sessionId: string,
+    query: Parameters<SessionHistoryProvider["readConversationContext"]>[1],
+  ) {
+    return readLiveSessionConversationContext(this.sqlResolver, sessionId, query);
   }
 
   async readTimeline(

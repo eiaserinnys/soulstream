@@ -19,6 +19,8 @@ import { shouldPublishSessionEventSemantically } from
   "./session_event_semantic_publication.js";
 import { registerSessionTurnSummaryRoute } from
   "./session_turn_summary_routes.js";
+import { registerSessionConversationContextRoute } from
+  "./session_conversation_context_routes.js";
 import type { RuntimeLiveTextSnapshot } from
   "../runtime/session_event_hub.js";
 import type { SessionHistoryResetReason } from
@@ -48,6 +50,7 @@ export type SessionHistoryForegroundObservers = {
 export const sessionHistoryRouteAuthRequirements = {
   "GET /api/sessions/:session_id/events/viewport": true,
   "GET /api/sessions/:session_id/messages": true,
+  "GET /api/sessions/:session_id/conversation-context": true,
   "GET /api/sessions/:session_id/timeline": true,
   "GET /api/sessions/:session_id/timeline/:timeline_id/trace": true,
   "GET /api/sessions/:session_id/story": true,
@@ -87,6 +90,12 @@ export function registerSessionHistoryRoutes(
   const service = new SessionHistoryReadService({ provider: options.provider });
   registerSessionTurnSummaryRoute(app, {
     read: (sessionId, query) => service.readTurnSummaries(sessionId, query),
+    ensureAccess: (request, reply) =>
+      ensureSessionAccess(options, request, reply),
+  });
+  registerSessionConversationContextRoute(app, {
+    read: (sessionId, query) =>
+      service.readConversationContext(sessionId, query),
     ensureAccess: (request, reply) =>
       ensureSessionAccess(options, request, reply),
   });
