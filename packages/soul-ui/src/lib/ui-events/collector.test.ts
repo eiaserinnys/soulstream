@@ -73,6 +73,38 @@ describe("ui event collector", () => {
     expect(collector.pending()).toHaveLength(0);
   });
 
+  it("sends nothing while collection is off, even from a restored queue", async () => {
+    // 부팅 설정이 아직/영영 안 왔을 때 타이머가 영속 큐를 대신 내보내면 안 된다.
+    const stored: QueuedUiEvent = {
+      envelope: ENVELOPE,
+      event: { eventId: "old-1", seq: 1, occurredAt: "2026-09-20T10:00:00.000Z", type: "view_open" },
+    };
+    const storage = memoryStorage({ owner: OWNER, items: [stored] });
+    const { collector, sent } = harness({ storage, config: { ...ON, enabled: false } });
+
+    expect(collector.pending()).toHaveLength(1);
+    await collector.flush();
+
+    expect(sent).toHaveLength(0);
+    expect(collector.pending()).toHaveLength(1);
+  });
+
+  it("sends the restored queue once collection is switched on", async () => {
+    const stored: QueuedUiEvent = {
+      envelope: ENVELOPE,
+      event: { eventId: "old-1", seq: 1, occurredAt: "2026-09-20T10:00:00.000Z", type: "view_open" },
+    };
+    const storage = memoryStorage({ owner: OWNER, items: [stored] });
+    const { collector, sent } = harness({ storage, config: { ...ON, enabled: false } });
+
+    collector.setConfig(ON);
+    await collector.flush();
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.events[0]?.eventId).toBe("old-1");
+    expect(collector.pending()).toHaveLength(0);
+  });
+
   it("numbers events monotonically within one run", () => {
     const { collector } = harness();
     collector.track("view_open");
@@ -215,12 +247,15 @@ describe("ui event collector", () => {
     expect(collector.pending()).toHaveLength(0);
   });
 
-  it("discards unsent events when the owner changes mid-run", () => {
-    const { collector } = harness();
+  it("discards unsent events and clears storage on demand", () => {
+    // 로그아웃·사용자 전환에서 부른다. 남겨 두면 다음 사람의 화면 뒤에 남는다.
+    const { collector, storage } = harness();
     collector.track("view_open");
-    expect(collector.pending()).toHaveLength(1);
-    collector.resetOwner({ origin: OWNER.origin, userEmail: "next@example.com" });
+    collector.persist();
+    expect(storage.current()?.items).toHaveLength(1);
+    collector.discard();
     expect(collector.pending()).toHaveLength(0);
+    expect(storage.current()).toBeNull();
   });
 
   it("discards unsent events when collection is switched off", () => {

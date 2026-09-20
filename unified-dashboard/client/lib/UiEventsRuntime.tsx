@@ -16,9 +16,13 @@ import { useAuth } from "@seosoyoung/soul-ui/providers";
 
 import { subscribeNavigationUiEvents } from "./ui-events-instrumentation";
 
-/** 빌드에서 주입되는 대시보드 버전. 없으면 개발 빌드로 본다. */
+/**
+ * 대시보드 버전. `vite.config.ts` 의 define 이 package.json 버전을 빌드 타임에 박는다.
+ * vitest 처럼 define 이 없는 환경에서만 "dev" 로 떨어진다.
+ */
+declare const __DASHBOARD_VERSION__: string | undefined;
 const APP_VERSION =
-  (import.meta.env?.VITE_APP_VERSION as string | undefined) ?? "dev";
+  typeof __DASHBOARD_VERSION__ === "string" ? __DASHBOARD_VERSION__ : "dev";
 
 export function UiEventsRuntime(props: { readonly children: ReactNode }) {
   const { user } = useAuth();

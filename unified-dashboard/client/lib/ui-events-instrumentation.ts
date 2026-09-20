@@ -88,7 +88,39 @@ export function resolveNavigationTarget(
   if (next.viewMode !== null && next.viewMode !== previous.viewMode) {
     return { kind: "view", id: next.viewMode };
   }
+  // 위를 덮고 있던 문서/커스텀 뷰가 닫혔다. 화면은 그 아래 대상으로 돌아간 것이고
+  // 사용자에게는 분명한 이동이다. `setActiveSession` 이 같은 세션을 다시 고를 때
+  // 두 필드를 비우는 경로(session-slice)가 여기에 해당한다.
+  const overlayClosed =
+    (previous.activeBoardDocumentId !== null && next.activeBoardDocumentId === null) ||
+    (previous.activeCustomViewId !== null && next.activeCustomViewId === null);
+  if (overlayClosed) return underlyingTarget(next);
   return null;
+}
+
+/** 덮개가 걷힌 뒤 화면에 남는 대상. */
+function underlyingTarget(snapshot: NavigationSnapshot): NavigationTarget | null {
+  if (snapshot.activeSessionKey !== null) {
+    return { kind: "session", id: snapshot.activeSessionKey };
+  }
+  if (snapshot.activeBoardContainerId !== null) {
+    return {
+      kind: snapshot.activeBoardContainerKind === "task" ? "task" : "folder",
+      id: snapshot.activeBoardContainerId,
+    };
+  }
+  if (snapshot.selectedFolderId !== null) {
+    return { kind: "folder", id: snapshot.selectedFolderId };
+  }
+  if (snapshot.viewMode !== null) return { kind: "view", id: snapshot.viewMode };
+  return null;
+}
+
+/** 구독을 걸 때 이미 열려 있던 화면. 첫 화면이 기록에서 통째로 빠지면 안 된다. */
+export function initialNavigationTarget(
+  snapshot: NavigationSnapshot,
+): NavigationTarget | null {
+  return underlyingTarget(snapshot);
 }
 
 export type StoreSubscribable<T> = {
@@ -106,8 +138,11 @@ export function subscribeNavigationUiEvents<T extends StoreLike>(
   store: StoreSubscribable<T>,
   track: UiEventTracker,
 ): () => void {
-  let lastTarget: NavigationTarget | null = null;
   let previous = navigationSnapshot(store.getState());
+  // 구독을 걸 때 보고 있던 화면을 먼저 남긴다. 이것이 없으면 그 실행의 첫 화면이
+  // 타임라인에서 사라지고, 두 번째 전환의 `from` 도 비게 된다.
+  let lastTarget = initialNavigationTarget(previous);
+  if (lastTarget !== null) track("view_open", { target: lastTarget, entry: "url" });
 
   return store.subscribe((state) => {
     const next = navigationSnapshot(state);

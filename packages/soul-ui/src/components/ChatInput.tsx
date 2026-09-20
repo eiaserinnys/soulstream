@@ -172,6 +172,16 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
     if (!activeSessionKey || interrupting) return;
     setInterruptError(null);
     setInterrupting(true);
+    // 사용 로그: 사용자가 눌러서 시작된 비동기 조작이고, 결과가 올 때까지 기다린다.
+    // start/end 의 간격이 곧 그 기다림이다. end 가 없으면 종결을 못 본 것일 뿐이다.
+    const actionFlowId = globalThis.crypto.randomUUID();
+    const startedAt = Date.now();
+    const target = { kind: "session", id: activeSessionKey } as const;
+    trackUiEvent("action_start", {
+      flowId: actionFlowId,
+      target,
+      attrs: { action: "session_interrupt" },
+    });
     try {
       const res = await fetch(
         `/api/sessions/${encodeURIComponent(activeSessionKey)}/interrupt`,
@@ -183,12 +193,30 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
           body ? `HTTP ${res.status}: ${body.slice(0, 200)}` : `HTTP ${res.status}`,
         );
       }
+      trackUiEvent("action_end", {
+        flowId: actionFlowId,
+        target,
+        attrs: {
+          action: "session_interrupt",
+          status: "ok",
+          durationMs: Date.now() - startedAt,
+        },
+      });
     } catch (err) {
+      trackUiEvent("action_end", {
+        flowId: actionFlowId,
+        target,
+        attrs: {
+          action: "session_interrupt",
+          status: "error",
+          durationMs: Date.now() - startedAt,
+        },
+      });
       setInterruptError(err instanceof Error ? err.message : String(err));
     } finally {
       setInterrupting(false);
     }
-  }, [activeSessionKey, interrupting]);
+  }, [activeSessionKey, interrupting, trackUiEvent]);
 
   const handleChangeText = useCallback(
     (value: string) => {

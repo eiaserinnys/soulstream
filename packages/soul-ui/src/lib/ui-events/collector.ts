@@ -118,8 +118,8 @@ export type UiEventCollector = {
   readonly getConfig: () => UiEventClientConfig;
   /** 비활성 전환 시점에 대기열을 영속 저장으로 내린다. */
   readonly persist: () => void;
-  /** 임자가 바뀌었다. 보내지 않은 것은 전부 버린다. */
-  readonly resetOwner: (owner: UiEventOwner) => void;
+  /** 보내지 않은 것을 즉시 버리고 영속 저장소도 비운다. 로그아웃·사용자 전환용. */
+  readonly discard: () => void;
   readonly pending: () => readonly QueuedUiEvent[];
 };
 
@@ -131,7 +131,7 @@ export const NOOP_UI_EVENT_COLLECTOR: UiEventCollector = {
   setConfig: () => undefined,
   getConfig: () => UI_EVENT_CLIENT_CONFIG_OFF,
   persist: () => undefined,
-  resetOwner: () => undefined,
+  discard: () => undefined,
   pending: () => [],
 };
 
@@ -139,7 +139,7 @@ export function createUiEventCollector(
   options: CreateUiEventCollectorOptions,
 ): UiEventCollector {
   let config = options.config ?? UI_EVENT_CLIENT_CONFIG_OFF;
-  let owner = options.owner;
+  const owner = options.owner;
   let queue: QueuedUiEvent[] = [];
   let seq = 0;
   let flushing = false;
@@ -197,6 +197,9 @@ export function createUiEventCollector(
   }
 
   async function flush(): Promise<void> {
+    // 수집이 꺼져 있으면 보내지 않는다. track 에만 가드를 두면 영속 큐에서
+    // 복원된 이벤트가 설정 도착 전에 타이머를 타고 나간다.
+    if (!config.enabled) return;
     if (flushing) return;
     flushing = true;
     try {
@@ -254,9 +257,7 @@ export function createUiEventCollector(
     },
     getConfig: () => config,
     persist,
-    resetOwner(next) {
-      if (sameOwner(next, owner)) return;
-      owner = next;
+    discard() {
       queue = [];
       seq = 0;
       safely(() => options.storage.clear(), undefined);

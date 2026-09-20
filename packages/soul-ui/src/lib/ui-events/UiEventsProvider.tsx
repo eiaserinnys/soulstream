@@ -48,7 +48,10 @@ export function UiEventsProvider(props: UiEventsProviderProps) {
     });
     setCollector(started.collector);
     return () => {
-      started.dispose();
+      // 이 effect 는 userEmail 이 바뀔 때만 다시 돈다 — 로그아웃이거나 사용자 전환이다.
+      // 어느 쪽이든 보내지 않은 대기열을 남겨 두면 안 된다. 언로드로 끝나는 경우는
+      // pagehide 가 먼저 beacon 으로 내보낸다.
+      started.dispose({ discardPendingQueue: true });
       setCollector(NOOP_UI_EVENT_COLLECTOR);
     };
   }, [props.userEmail, props.appVersion]);

@@ -99,16 +99,68 @@ describe("navigation target", () => {
 });
 
 describe("navigation subscription", () => {
-  it("emits one view_open per move", () => {
-    const store = fakeStore({ ...BASE });
+  it("records the screen that was already open when it starts listening", () => {
+    // 이것이 없으면 그 실행의 첫 화면이 타임라인에서 통째로 빠진다.
+    const store = fakeStore({ ...BASE, activeSessionKey: "s0" });
+    const { events, track } = recorder();
+    subscribeNavigationUiEvents(store, track);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.draft?.target).toEqual({ kind: "session", id: "s0" });
+    expect(events[0]?.draft?.entry).toBe("url");
+  });
+
+  it("links the first move back to the screen it started from", () => {
+    const store = fakeStore({ ...BASE, activeSessionKey: "s0" });
     const { events, track } = recorder();
     subscribeNavigationUiEvents(store, track);
 
     store.set({ activeSessionKey: "s1" });
 
-    expect(events).toHaveLength(1);
-    expect(events[0]?.type).toBe("view_open");
-    expect(events[0]?.draft?.target).toEqual({ kind: "session", id: "s1" });
+    expect(events[1]?.draft?.from).toEqual({ kind: "session", id: "s0" });
+  });
+
+  it("records returning to the session when an open document is closed", () => {
+    // session-slice 는 같은 세션을 다시 고를 때 문서/커스텀 뷰를 비운다.
+    // 화면은 분명히 바뀌는데 바뀐 필드만 보면 아무 대상도 잡히지 않는다.
+    const store = fakeStore({
+      ...BASE, activeSessionKey: "s1", activeBoardDocumentId: "d1",
+    });
+    const { events, track } = recorder();
+    subscribeNavigationUiEvents(store, track);
+    const before = events.length;
+
+    store.set({ activeBoardDocumentId: null });
+
+    expect(events).toHaveLength(before + 1);
+    expect(events[before]?.draft?.target).toEqual({ kind: "session", id: "s1" });
+  });
+
+  it("records returning when a custom view is closed", () => {
+    const store = fakeStore({
+      ...BASE, activeSessionKey: "s1", activeCustomViewId: "v1",
+    });
+    const { events, track } = recorder();
+    subscribeNavigationUiEvents(store, track);
+    const before = events.length;
+
+    store.set({ activeCustomViewId: null });
+
+    expect(events[before]?.draft?.target).toEqual({ kind: "session", id: "s1" });
+  });
+
+  it("emits one view_open per move", () => {
+    const store = fakeStore({ ...BASE });
+    const { events, track } = recorder();
+    subscribeNavigationUiEvents(store, track);
+    // 구독 시점의 초기 화면 1건이 먼저 들어간다. 이후는 이동마다 1건.
+    const before = events.length;
+
+    store.set({ activeSessionKey: "s1" });
+
+    expect(events).toHaveLength(before + 1);
+    expect(events[before]?.type).toBe("view_open");
+    expect(events[before]?.draft?.target).toEqual({ kind: "session", id: "s1" });
   });
 
   it("stays silent while streamed data churns the store", () => {
@@ -117,12 +169,15 @@ describe("navigation subscription", () => {
     const { events, track } = recorder();
     subscribeNavigationUiEvents(store, track);
 
+    const before = events.length;
+
     store.set({ sessions: [1] });
     store.set({ sessions: [1, 2] });
     store.set({ catalog: { sessions: {} } });
     store.set({ pendingNotifications: [{ id: "n1" }] });
 
-    expect(events).toHaveLength(0);
+    // 초기 1건 외에는 아무것도 늘지 않아야 한다.
+    expect(events).toHaveLength(before);
   });
 
   it("does not repeat itself when the same screen is set again", () => {
@@ -130,10 +185,12 @@ describe("navigation subscription", () => {
     const { events, track } = recorder();
     subscribeNavigationUiEvents(store, track);
 
+    const before = events.length;
+
     store.set({ activeSessionKey: "s1" });
     store.set({ activeSessionKey: "s1" });
 
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(before + 1);
   });
 
   it("carries the previous screen as the origin of the next one", () => {
@@ -141,20 +198,24 @@ describe("navigation subscription", () => {
     const { events, track } = recorder();
     subscribeNavigationUiEvents(store, track);
 
+    const before = events.length;
+
     store.set({ activeSessionKey: "s1" });
     store.set({ activeSessionKey: "s2" });
 
-    expect(events[0]?.draft?.from).toBeUndefined();
-    expect(events[1]?.draft?.from).toEqual({ kind: "session", id: "s1" });
-    expect(events[1]?.draft?.target).toEqual({ kind: "session", id: "s2" });
+    expect(events[before]?.draft?.from).toEqual({ kind: "view", id: "feed" });
+    expect(events[before + 1]?.draft?.from).toEqual({ kind: "session", id: "s1" });
+    expect(events[before + 1]?.draft?.target).toEqual({ kind: "session", id: "s2" });
   });
 
   it("leaves entry unset so the collector can apply the click hint", () => {
     const store = fakeStore({ ...BASE });
     const { events, track } = recorder();
     subscribeNavigationUiEvents(store, track);
+    const before = events.length;
     store.set({ activeSessionKey: "s1" });
-    expect(events[0]?.draft?.entry).toBeUndefined();
+    // 초기 화면만 url 로 못 박고, 이후 이동은 수집기가 클릭 힌트를 붙이도록 비워 둔다.
+    expect(events[before]?.draft?.entry).toBeUndefined();
   });
 
   it("collapses a multi field navigation into a single event", () => {
@@ -162,22 +223,25 @@ describe("navigation subscription", () => {
     const { events, track } = recorder();
     subscribeNavigationUiEvents(store, track);
 
+    const before = events.length;
+
     store.set({
       activeBoardContainer: { kind: "task", id: "t1" },
       selectedFolderId: "f1",
       viewMode: "folder",
     });
 
-    expect(events).toHaveLength(1);
-    expect(events[0]?.draft?.target).toEqual({ kind: "task", id: "t1" });
+    expect(events).toHaveLength(before + 1);
+    expect(events[before]?.draft?.target).toEqual({ kind: "task", id: "t1" });
   });
 
   it("stops listening once disposed", () => {
     const store = fakeStore({ ...BASE });
     const { events, track } = recorder();
     const dispose = subscribeNavigationUiEvents(store, track);
+    const before = events.length;
     dispose();
     store.set({ activeSessionKey: "s1" });
-    expect(events).toHaveLength(0);
+    expect(events).toHaveLength(before);
   });
 });

@@ -22,8 +22,12 @@ const INGEST_ENDPOINT = "/api/ui-events";
 
 export type BrowserUiEventCollector = {
   readonly collector: UiEventCollector;
-  /** 리스너·타이머를 걷는다. */
-  readonly dispose: () => void;
+  /**
+   * 리스너·타이머를 걷는다.
+   * `discardPendingQueue` 는 로그아웃·사용자 전환처럼 이 대기열을 더 이상
+   * 아무에게도 보내면 안 되는 경우에 준다.
+   */
+  readonly dispose: (options?: { readonly discardPendingQueue?: boolean }) => void;
 };
 
 export type StartBrowserUiEventCollectorOptions = {
@@ -61,24 +65,36 @@ export function startBrowserUiEventCollector(
     ...(options.onWarning ? { onWarning: options.onWarning } : {}),
   });
 
-  let configLoaded = false;
+  let loadingConfig = false;
   let disposed = false;
 
+  /**
+   * 설정을 읽는다. 부팅 1회와 **활성 복귀 때마다** 부른다.
+   * 성공해도 잠그지 않는다 — 최초 응답이 `enabled:false` 였다고 해서
+   * 그 실행 내내 꺼진 채로 둘 이유가 없다. 상시 polling 은 하지 않는다.
+   */
   async function loadConfig(): Promise<void> {
-    if (disposed || configLoaded) return;
+    if (disposed || loadingConfig) return;
+    loadingConfig = true;
     try {
       const response = await fetch(CONFIG_ENDPOINT, { credentials: "same-origin" });
       if (!response.ok) return;
       const body: unknown = await response.json();
+      // 응답을 기다리는 사이에 정리됐으면 되살리지 않는다.
+      if (disposed) return;
       collector.setConfig(readConfig(body));
-      configLoaded = true;
     } catch (error) {
-      // 여기서 영구히 꺼지지 않는다. 다음 활성 복귀 때 다시 읽는다.
       options.onWarning?.("UI 사용 로그 설정 조회 실패", error);
+    } finally {
+      loadingConfig = false;
     }
   }
 
-  void loadConfig();
+  // 실행 시작도 활성 구간의 시작이다. 설정을 먼저 받은 뒤에 남겨야
+  // 수집이 켜진 상태에서 기록된다.
+  void loadConfig().then(() => {
+    if (!disposed) collector.track("app_active", { attrs: { reason: "start" } });
+  });
 
   // 서버가 정한 주기를 따라야 하므로 고정 setInterval 대신 매 회차 설정을 다시 읽는다.
   let flushTimer = 0;
@@ -97,9 +113,12 @@ export function startBrowserUiEventCollector(
       beaconFlush(collector);
       return;
     }
-    collector.track("app_active");
-    void loadConfig();
-    void collector.flush();
+    // 설정을 먼저 다시 읽는다. 꺼진 상태로 track 하면 복귀 자체가 사라진다.
+    void loadConfig().then(() => {
+      if (disposed) return;
+      collector.track("app_active", { attrs: { reason: "visible" } });
+      void collector.flush();
+    });
   };
 
   const onPageHide = (): void => {
@@ -113,12 +132,13 @@ export function startBrowserUiEventCollector(
 
   return {
     collector,
-    dispose() {
+    dispose(disposeOptions) {
       disposed = true;
       window.clearTimeout(flushTimer);
       window.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", onPageHide);
-      collector.persist();
+      if (disposeOptions?.discardPendingQueue === true) collector.discard();
+      else collector.persist();
     },
   };
 }
@@ -129,6 +149,7 @@ export function startBrowserUiEventCollector(
  */
 function beaconFlush(collector: UiEventCollector): void {
   try {
+    if (!collector.getConfig().enabled) return;
     const pending = collector.pending();
     if (pending.length === 0) return;
     const envelope = pending[0]?.envelope;
