@@ -12,6 +12,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { SoulSSEEvent } from "../shared/types";
 import { formatRetryingErrorHistory } from "../shared/sse-events";
+import { useUiEventTracker } from "../lib/ui-events";
 
 /**
  * 브라우저 알림 권한을 요청하고 이벤트 기반 알림을 관리합니다.
@@ -22,6 +23,7 @@ export function useNotification(enabled = true) {
   const pendingNotifications = useDashboardStore(
     (s) => s.pendingNotifications,
   );
+  const trackUiEvent = useUiEventTracker();
 
   // 알림 자동 닫기 타이머를 추적 (메모리 누수 방지)
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
@@ -48,7 +50,7 @@ export function useNotification(enabled = true) {
 
   /** 브라우저 알림 표시 */
   const showNotification = useCallback(
-    (title: string, body: string, tag?: string) => {
+    (title: string, body: string, tag?: string, source?: { sessionId: string }) => {
       if (!enabled) return;
       if (typeof Notification === "undefined") return;
       if (Notification.permission !== "granted") return;
@@ -66,6 +68,12 @@ export function useNotification(enabled = true) {
 
         // 알림 클릭 시 탭으로 포커스
         notification.onclick = () => {
+          // 사용 로그: 눌렀다는 사실만 남긴다. 이동 동작은 바꾸지 않는다 —
+          // 눌렀는데 아무 데도 가지 않았다는 것 자체가 봐야 할 신호다.
+          trackUiEvent("notification_open", {
+            attrs: { surface: "browser_notification", navigated: false },
+            ...(source ? { target: { kind: "session", id: source.sessionId } } : {}),
+          });
           window.focus();
           notification.close();
         };
@@ -80,7 +88,7 @@ export function useNotification(enabled = true) {
         // Notification 생성 실패 (Service Worker 환경 등)
       }
     },
-    [enabled],
+    [enabled, trackUiEvent],
   );
 
   // 새 알림 이벤트 감지 → 알림 표시 → 큐 비우기
@@ -91,7 +99,9 @@ export function useNotification(enabled = true) {
     for (const notice of pendingNotifications) {
       if (consumedNoticeIdsRef.current.has(notice.id)) continue;
       consumedNoticeIdsRef.current.add(notice.id);
-      showNotification(notice.title, notice.body, `soul-${notice.id}`);
+      showNotification(notice.title, notice.body, `soul-${notice.id}`, {
+        sessionId: notice.sessionId,
+      });
     }
     while (consumedNoticeIdsRef.current.size > 500) {
       const oldest = consumedNoticeIdsRef.current.values().next().value;

@@ -7,6 +7,7 @@
  */
 
 import { useState, useCallback, useRef } from "react";
+import { useUiEventTracker } from "@seosoyoung/soul-ui";
 import {
   DEFAULT_SEARCH_CATEGORIES,
   type SearchEventCategory,
@@ -86,6 +87,9 @@ export function buildSessionSearchUrl(
   return `/cogito/search?${params}`;
 }
 
+/** 검색이 나간 계기. 디바운스된 타건인지, 필터 변경인지, 명시적 제출인지. */
+export type SearchTrigger = "typing" | "filter" | "submit";
+
 export function useSessionSearch() {
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [navigationResults, setNavigationResults] =
@@ -93,9 +97,17 @@ export function useSessionSearch() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | undefined>(undefined);
+  // 사용 로그: 실제로 요청이 나간 검색만 센다. 타건 자체는 남기지 않는다.
+  const trackUiEvent = useUiEventTracker();
+  const searchFlowIdRef = useRef<string | null>(null);
 
   const search = useCallback(
-    async (query: string, filters: SearchFilters = DEFAULT_SEARCH_FILTERS, topK = 20) => {
+    async (
+      query: string,
+      filters: SearchFilters = DEFAULT_SEARCH_FILTERS,
+      topK = 20,
+      trigger: SearchTrigger = "typing",
+    ) => {
       if (!query.trim()) {
         setResults([]);
         setNavigationResults([]);
@@ -105,6 +117,18 @@ export function useSessionSearch() {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+
+      const flowId = globalThis.crypto.randomUUID();
+      searchFlowIdRef.current = flowId;
+      const startedAt = Date.now();
+      trackUiEvent("search_submit", {
+        flowId,
+        attrs: {
+          queryText: query,
+          trigger,
+          searchSessionId: String(filters.searchSessionId),
+        },
+      });
 
       setLoading(true);
       setError(null);
@@ -119,14 +143,33 @@ export function useSessionSearch() {
         const data = await res.json();
         setResults(data.results ?? []);
         setNavigationResults(data.navigation_results ?? []);
+        trackUiEvent("search_result", {
+          flowId,
+          attrs: {
+            status: "ok",
+            durationMs: Date.now() - startedAt,
+            resultCount: (data.results?.length ?? 0) + (data.navigation_results?.length ?? 0),
+          },
+        });
       } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") return;
+        if (e instanceof DOMException && e.name === "AbortError") {
+          // 다음 타건이 앞선 판정을 버린 경우. 버려진 검색도 사실이라 남긴다.
+          trackUiEvent("search_result", {
+            flowId,
+            attrs: { status: "aborted", durationMs: Date.now() - startedAt },
+          });
+          return;
+        }
+        trackUiEvent("search_result", {
+          flowId,
+          attrs: { status: "error", durationMs: Date.now() - startedAt },
+        });
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         setLoading(false);
       }
     },
-    [],
+    [trackUiEvent],
   );
 
   const clear = useCallback(() => {
@@ -135,5 +178,14 @@ export function useSessionSearch() {
     setError(null);
   }, []);
 
-  return { results, navigationResults, loading, error, search, clear };
+  return {
+    results,
+    navigationResults,
+    loading,
+    error,
+    search,
+    clear,
+    // 결과 선택 이벤트를 같은 검색에 묶기 위한 상관키.
+    currentSearchFlowId: () => searchFlowIdRef.current,
+  };
 }

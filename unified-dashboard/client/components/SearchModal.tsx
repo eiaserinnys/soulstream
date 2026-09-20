@@ -16,6 +16,8 @@ import {
   DialogTitle,
   DialogPanel,
   useDashboardStore,
+  useUiEventEntryMarker,
+  useUiEventTracker,
   cn,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
@@ -248,8 +250,11 @@ export function SearchModal({
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const openTaskBoard = useDashboardStore((s) => s.openTaskBoard);
-  const { results, navigationResults, loading, error, search, clear } =
+  const { results, navigationResults, loading, error, search, clear, currentSearchFlowId } =
     useSessionSearch();
+  // 사용 로그: 결과 선택과 그 뒤의 화면 전환을 같은 검색에 묶는다.
+  const trackUiEvent = useUiEventTracker();
+  const markEntry = useUiEventEntryMarker();
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTER_STATE);
   const sessionById = useMemo(() => {
@@ -296,13 +301,19 @@ export function SearchModal({
   // Effect 2: filters 변경 시 즉시 재검색 (query가 비어있지 않을 때)
   useEffect(() => {
     if (queryRef.current.trim()) {
-      search(queryRef.current, toSearchFilters(filters));
+      search(queryRef.current, toSearchFilters(filters), 20, "filter");
     }
     // queryRef로 최신 query를 읽으므로 query는 deps에서 제외
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, search]);
 
-  const handleResultClick = (result: SearchResultItem) => {
+  const handleResultClick = (result: SearchResultItem, rank: number) => {
+    trackUiEvent("search_result_open", {
+      flowId: currentSearchFlowId() ?? "unknown",
+      target: { kind: "session", id: result.session_id },
+      attrs: { rank, resultKind: result.match_source ?? "event" },
+    });
+    markEntry("search");
     const assignment = catalog?.sessions[result.session_id];
     const summary = sessionById.get(result.session_id);
     const targetSummary =
@@ -352,7 +363,15 @@ export function SearchModal({
     }
   };
 
-  const handleNavigationClick = (result: SearchNavigationResult) => {
+  const handleNavigationClick = (result: SearchNavigationResult, rank: number) => {
+    trackUiEvent("search_result_open", {
+      flowId: currentSearchFlowId() ?? "unknown",
+      target: result.kind === "folder"
+        ? { kind: "folder", id: result.folder_id }
+        : { kind: "task", id: result.id },
+      attrs: { rank, resultKind: result.kind },
+    });
+    markEntry("search");
     if (result.kind === "folder") {
       if (onOpenFolder) void onOpenFolder(result);
       else selectFolder(result.folder_id);
@@ -468,18 +487,19 @@ export function SearchModal({
               <div className="text-xs text-muted-foreground mb-2 px-1">
                 {resultCount}개 결과
               </div>
-              {navigationResults.map((result) => (
+              {navigationResults.map((result, index) => (
                 <NavigationResultRow
                   key={`${result.kind}-${result.id}`}
                   result={result}
-                  onClick={() => handleNavigationClick(result)}
+                  onClick={() => handleNavigationClick(result, index)}
                 />
               ))}
-              {results.map((result) => (
+              {results.map((result, index) => (
                 <SearchResultRow
                   key={`${result.session_id}-${result.event_id}-${result.match_source}`}
                   result={result}
-                  onClick={() => handleResultClick(result)}
+                  onClick={() =>
+                    handleResultClick(result, navigationResults.length + index)}
                 />
               ))}
             </div>
