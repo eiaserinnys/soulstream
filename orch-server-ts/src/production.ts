@@ -74,6 +74,7 @@ import {
   type LiveOrchestratorProviderBundle,
 } from "./runtime/live_provider_factory.js";
 import { createLivePushRegistrationRepository } from "./runtime/live_push_registration_repository.js";
+import { createLiveUiEventRepository } from "./runtime/live_ui_event_repository.js";
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
 import { createTaskControlPlaneServiceProvider } from "./tasks/task_control_plane_runtime.js";
 import { createScheduleRepositoryProvider } from "./schedule/schedule_host_runtime.js";
@@ -224,6 +225,7 @@ export async function createLiveProductionApplication(
     sessionMoves: sessionBoardMoveService,
   });
   const pushRepository = createLivePushRegistrationRepository({ sqlResolver });
+  const uiEventRepository = createLiveUiEventRepository({ sqlResolver });
   const foregroundObservers = new SessionForegroundObserverTracker();
   const sessionCacheSeed = createSessionCacheSeedSink({
     registry,
@@ -428,6 +430,7 @@ export async function createLiveProductionApplication(
     providers = createLiveOrchestratorProviderBundle({
       dependencies,
       runtimeServices,
+      uiEventRepository,
       usageSummaryRoutes: { service: usageSummaryService },
     });
   } catch (error) {
@@ -756,6 +759,7 @@ export function buildProductionRouteOptions(
     userBackgroundRoutes: providers.userBackgroundRoutes,
     userPreferencesRoutes: providers.userPreferencesRoutes,
     usageSummaryRoutes: providers.usageSummaryRoutes,
+    uiEventRoutes: providers.uiEventRoutes,
   };
 }
 

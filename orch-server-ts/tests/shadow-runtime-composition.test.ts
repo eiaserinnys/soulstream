@@ -190,6 +190,7 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
     userBackgroundRoutes: createInertProvider(),
     userPreferencesRoutes: createInertProvider(),
     usageSummaryRoutes: createInertProvider(),
+    uiEventRoutes: createInertProvider(),
   };
 }
 

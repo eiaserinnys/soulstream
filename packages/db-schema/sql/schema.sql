@@ -4374,3 +4374,52 @@ CREATE INDEX IF NOT EXISTS idx_node_release_activation_receipts_node_generation
 
 CREATE INDEX IF NOT EXISTS idx_node_release_activation_receipts_manifest
     ON node_release_activation_receipts(manifest_id);
+
+-- UI 사용 로그 원시 이벤트 (migration 092 미러).
+-- 대상에 FK를 걸지 않는 이유: 세션·업무가 지워져도 "그때 그것을 열었다"는 사실은 남아야 한다.
+CREATE TABLE IF NOT EXISTS ui_events (
+    event_id           UUID PRIMARY KEY,
+    schema_version     TEXT NOT NULL,
+    user_email         TEXT NOT NULL REFERENCES users(email) ON DELETE CASCADE,
+    client_kind        TEXT NOT NULL CHECK (client_kind IN ('browser', 'soul-app')),
+    install_id         TEXT NOT NULL CHECK (length(btrim(install_id)) > 0),
+    client_session_key TEXT NOT NULL CHECK (length(btrim(client_session_key)) > 0),
+    seq                BIGINT NOT NULL CHECK (seq > 0),
+    app_version        TEXT NOT NULL,
+    event_type         TEXT NOT NULL CHECK (event_type IN (
+        'view_open',
+        'search_submit', 'search_result', 'search_result_open',
+        'notification_open',
+        'compose_start', 'compose_submit', 'compose_result',
+        'compose_abandon', 'compose_resume',
+        'app_active', 'app_inactive',
+        'action_start', 'action_end'
+    )),
+    target_kind        TEXT,
+    target_id          TEXT,
+    from_kind          TEXT,
+    from_id            TEXT,
+    entry              TEXT,
+    flow_id            TEXT,
+    attrs              JSONB NOT NULL DEFAULT '{}'::JSONB,
+    occurred_at        TIMESTAMPTZ NOT NULL,
+    received_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT ui_events_attrs_object CHECK (jsonb_typeof(attrs) = 'object'),
+    CONSTRAINT ui_events_target_pair CHECK ((target_kind IS NULL) = (target_id IS NULL)),
+    CONSTRAINT ui_events_from_pair CHECK ((from_kind IS NULL) = (from_id IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ui_events_user_time
+    ON ui_events(user_email, occurred_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ui_events_received
+    ON ui_events(received_at);
+
+INSERT INTO system_settings (setting_key, value, version, updated_by)
+VALUES (
+    'ui_event_collection',
+    '{"enabled":true,"flushIntervalMs":10000,"maxBatchSize":20,"maxQueueSize":500}'::JSONB,
+    1,
+    'migration:092_ui_events'
+)
+ON CONFLICT (setting_key) DO NOTHING;
