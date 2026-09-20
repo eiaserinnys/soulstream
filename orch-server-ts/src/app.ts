@@ -152,6 +152,10 @@ import {
   registerUsageSummaryRoutes,
   type UsageSummaryRouteOptions,
 } from "./usage/usage_summary_routes.js";
+import {
+  registerUiEventRoutes,
+  type UiEventRouteOptions,
+} from "./ui-events/ui_event_routes.js";
 
 export type CreateAppOptions = {
   config: OrchServerTsConfig;
@@ -196,6 +200,7 @@ export type CreateAppOptions = {
   scheduleHostRoutes?: ScheduleHostRouteOptions;
   persistenceHostRoutes?: PersistenceHostRouteOptions;
   usageSummaryRoutes?: UsageSummaryRouteOptions;
+  uiEventRoutes?: UiEventRouteOptions;
 };
 
 export function createApp(options: CreateAppOptions): FastifyInstance {
@@ -333,6 +338,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.usageSummaryRoutes !== undefined) {
     registerUsageSummaryRoutes(app, options.usageSummaryRoutes);
+  }
+  if (options.uiEventRoutes !== undefined) {
+    registerUiEventRoutes(app, options.uiEventRoutes);
   }
 
   return app;

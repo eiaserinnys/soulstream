@@ -30,6 +30,9 @@ import type { UserPreferencesRouteOptions } from "../user/user_preferences_route
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
 import type { TaskRouteOptions } from "../tasks/task_route_types.js";
 import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js";
+import type { UiEventRepository, UiEventRouteOptions }
+  from "../ui-events/ui_event_routes.js";
+import { createLiveUiEventIdentityResolver } from "./live_ui_event_identity.js";
 import { ModelPresetAvailabilityService } from "../model/model_preset_availability.js";
 import type { NodeAgentProfileRouteOptions } from "../node/node_agent_profile_routes.js";
 import type { AgentProfileRouteOptions } from "../node/agent_profile_routes.js";
@@ -159,6 +162,7 @@ export type LiveOrchestratorProviderBundle = {
     & Pick<TaskRouteOptions, "accessProvider" | "resolveDashboardUserId">;
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
   readonly usageSummaryRoutes: UsageSummaryRouteOptions;
+  readonly uiEventRoutes: UiEventRouteOptions;
   readonly implementedProviderPaths: readonly LiveProviderPath[];
 };
 
@@ -166,6 +170,7 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly dependencies: LiveProviderDependencies;
   readonly runtimeServices: OrchestratorRuntimeServices;
   readonly usageSummaryRoutes: UsageSummaryRouteOptions;
+  readonly uiEventRepository: UiEventRepository;
   readonly inventory?: readonly LiveProviderWiringInventoryEntry[];
   readonly factoryProviderPaths?: readonly LiveProviderPath[];
 };
@@ -408,6 +413,12 @@ export function createLiveOrchestratorProviderBundle(
     },
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
     usageSummaryRoutes: options.usageSummaryRoutes,
+    uiEventRoutes: {
+      repository: options.uiEventRepository,
+      resolveIdentity: createLiveUiEventIdentityResolver({
+        resolveCallerInfo: authenticatedUserResolvers.resolveCallerInfo,
+      }),
+    },
     implementedProviderPaths: alignment.factoryProviderPaths,
   };
 }

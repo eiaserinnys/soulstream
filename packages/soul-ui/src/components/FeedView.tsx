@@ -11,6 +11,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { SessionSummary } from "../shared/types";
 import { FeedCard } from "./FeedCard";
+import { useUiEventEntryMarker } from "../lib/ui-events";
 import { FeedTopBar } from "./FeedTopBar";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { useFlipAnimation } from "../hooks/useFlipAnimation";
@@ -77,6 +78,7 @@ function FeedViewSurface({
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
+  const markEntry = useUiEventEntryMarker();
   const clearActiveSession = useDashboardStore((s) => s.clearActiveSession);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
   const feedScrollOffset = useDashboardStore((s) => s.feedScrollOffset);
@@ -123,6 +125,8 @@ function FeedViewSurface({
       if (!existsInFeed) {
         // 세션이 피드에서 사라짐 (삭제되었거나 피드 제외 폴더로 이동) → 피드 첫 세션 선택
         if (firstFeedId) {
+          // 사용자가 누른 것이 아니다. auto 로 남겨 조작으로 집계되지 않게 한다.
+          markEntry("auto");
           setActiveSession(firstFeedId);
         } else {
           clearActiveSession();
@@ -132,9 +136,10 @@ function FeedViewSurface({
     }
     // activeSessionKey가 null → 최신 세션 자동 선택
     if (firstFeedId) {
+      markEntry("auto");
       setActiveSession(firstFeedId);
     }
-  }, [placement, viewMode, activeSessionKey, firstFeedId, feedSessions, setActiveSession, clearActiveSession]);
+  }, [placement, viewMode, activeSessionKey, firstFeedId, feedSessions, setActiveSession, clearActiveSession, markEntry]);
 
   // 가상 스크롤
   const parentRef = useRef<HTMLDivElement>(null);
@@ -193,6 +198,8 @@ function FeedViewSurface({
   // 카드 클릭
   const handleCardClick = useCallback(
     (sessionId: string) => {
+      // 사용 로그: 뒤따르는 view_open 이 "피드에서 들어왔다"를 알도록 찍어 둔다.
+      markEntry("feed");
       setActiveSession(sessionId);
       const session = feedSessions.find((s) => s.agentSessionId === sessionId);
       if (session) setActiveSessionSummary(session);
@@ -204,6 +211,7 @@ function FeedViewSurface({
       setActiveTab("chat"); // 모바일에서 채팅 탭으로 전환 (데스크탑에서는 무해)
     },
     [
+      markEntry,
       catalog,
       feedSessions,
       isSidebarPlacement,

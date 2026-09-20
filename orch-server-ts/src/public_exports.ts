@@ -131,3 +131,6 @@ export * from "./user/user_background_routes.js";
 export * from "./user/user_preferences_routes.js";
 export * from "./usage/usage_summary_routes.js";
 export * from "./usage/usage_summary_service.js";
+export * from "./ui-events/ui_event_contract.js";
+export * from "./ui-events/ui_event_routes.js";
+export * from "./ui-events/ui_event_settings.js";

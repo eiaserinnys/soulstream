@@ -34,6 +34,7 @@ import type { SystemConfigRouteOptions } from "../system/system_config_routes.js
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
 import type { UserPreferencesRouteOptions } from "../user/user_preferences_routes.js";
 import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js";
+import type { UiEventRouteOptions } from "../ui-events/ui_event_routes.js";
 import {
   createOrchestratorRuntimeServices,
   type OrchestratorRuntimeCompositionOptions,
@@ -97,6 +98,7 @@ export type ShadowOrchestratorProviderBundle = {
   userBackgroundRoutes: UserBackgroundRouteOptions;
   userPreferencesRoutes: UserPreferencesRouteOptions;
   usageSummaryRoutes: UsageSummaryRouteOptions;
+  uiEventRoutes: UiEventRouteOptions;
 };
 
 export type CreateShadowOrchestratorAppOptions = {
@@ -141,6 +143,7 @@ export type ShadowOrchestratorRouteOptions = Required<
     | "userBackgroundRoutes"
     | "userPreferencesRoutes"
     | "usageSummaryRoutes"
+    | "uiEventRoutes"
   >
 >;
 
@@ -280,6 +283,10 @@ export const shadowRouteCompositionRequirements = [
     ],
   },
   { owner: "usage.summary", paths: ["usageSummaryRoutes.service"] },
+  {
+    owner: "ui.events",
+    paths: ["uiEventRoutes.repository", "uiEventRoutes.resolveIdentity"],
+  },
 ] as const satisfies readonly ShadowRouteProviderRequirement[];
 
 export const shadowRouteCompositionOwners =
@@ -415,6 +422,7 @@ function buildShadowRouteOptions(
     userBackgroundRoutes: providers.userBackgroundRoutes,
     userPreferencesRoutes: providers.userPreferencesRoutes,
     usageSummaryRoutes: providers.usageSummaryRoutes,
+    uiEventRoutes: providers.uiEventRoutes,
   };
 }
 

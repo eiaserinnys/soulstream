@@ -38,6 +38,7 @@ const searchHarness = vi.hoisted(() => ({
   >,
   search: vi.fn(),
   clear: vi.fn(),
+  currentSearchFlowId: vi.fn(() => "search-flow-1"),
 }));
 
 vi.mock("../hooks/useSessionSearch", () => ({
@@ -48,6 +49,7 @@ vi.mock("../hooks/useSessionSearch", () => ({
     error: null,
     search: searchHarness.search,
     clear: searchHarness.clear,
+    currentSearchFlowId: searchHarness.currentSearchFlowId,
   }),
 }));
 

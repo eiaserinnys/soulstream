@@ -12,6 +12,8 @@ import {
   type NodeConnectionSnapshot,
   type LiveProviderWiringInventoryEntry,
 } from "../src/index.js";
+import type { UiEventRepository } from "../src/ui-events/ui_event_routes.js";
+import { UI_EVENT_COLLECTION_DISABLED } from "../src/ui-events/ui_event_settings.js";
 
 const config = parseOrchServerConfig({
   environment: "test",
@@ -82,6 +84,7 @@ describe("live provider factory boundary", () => {
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
+      uiEventRepository: createInertUiEventRepository(),
     });
 
     expect(bundle.implementedProviderPaths).toEqual(
@@ -107,6 +110,7 @@ describe("live provider factory boundary", () => {
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
+      uiEventRepository: createInertUiEventRepository(),
       inventory: implementedOnly,
     });
 
@@ -420,6 +424,16 @@ describe("live provider factory boundary", () => {
     });
   });
 });
+
+function createInertUiEventRepository(): UiEventRepository {
+  return {
+    readConfig: async () => UI_EVENT_COLLECTION_DISABLED,
+    insertBatch: async () => [],
+    query: async () => [],
+    listInstalls: async () => [],
+    pruneExpired: async () => 0,
+  };
+}
 
 function createUsageSummaryRoutes() {
   return {

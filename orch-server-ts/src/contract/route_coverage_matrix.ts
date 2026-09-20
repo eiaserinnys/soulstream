@@ -28,6 +28,7 @@ import { systemConfigRouteAuthRequirements } from "../system/system_config_route
 import { userBackgroundRouteAuthRequirements } from "../user/user_background_routes.js";
 import { userPreferencesRouteAuthRequirements } from "../user/user_preferences_routes.js";
 import { usageSummaryRouteAuthRequirements } from "../usage/usage_summary_routes.js";
+import { uiEventRouteAuthRequirements } from "../ui-events/ui_event_routes.js";
 import { pageYjsRouteAuthRequirements } from "../page/page_yjs_route.js";
 import { pageBrowserRouteAuthRequirements } from "../page/page_browser_routes.js";
 import { plannerRouteAuthRequirements } from "../planner/planner_routes.js";
@@ -72,6 +73,7 @@ export const routeCoverageOwners = [
   { owner: "user.background", authRequirements: userBackgroundRouteAuthRequirements },
   { owner: "user.preferences", authRequirements: userPreferencesRouteAuthRequirements },
   { owner: "usage.summary", authRequirements: usageSummaryRouteAuthRequirements },
+  { owner: "ui.events", authRequirements: uiEventRouteAuthRequirements },
 ] as const satisfies readonly RouteCoverageOwner[];
 
 // The route inventory fixture describes the retired Python server. New TS-only
@@ -82,4 +84,8 @@ export const tsOnlyRouteKeys = [
   "GET /api/admin/settings/session-review-policy",
   "PUT /api/admin/settings/session-review-policy",
   "GET /api/sessions/{session_id}/conversation-context",
+  "POST /api/ui-events",
+  "GET /api/ui-events",
+  "GET /api/ui-events/config",
+  "GET /api/ui-events/installs",
 ] as const;

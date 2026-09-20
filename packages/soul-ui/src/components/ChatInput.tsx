@@ -19,6 +19,8 @@ import { resolveChatInputMode } from "./chat/chatInputMode";
 import { PaperclipButton } from "./chat/PaperclipButton";
 import { ChatInputEditor } from "./chat/ChatInputEditor";
 import { useChatInputSend } from "./chat/useChatInputSend";
+import { createComposeFlowRecorder } from "./chat/composeFlowRecorder";
+import { useUiEventTracker } from "../lib/ui-events";
 import { useTextareaAutoHeight } from "./chat/useTextareaAutoHeight";
 import { SuggestionChip } from "./SuggestionChip";
 import { Button } from "./ui/button";
@@ -68,6 +70,20 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
   );
 
   const [text, setText] = useState("");
+  // 사용 로그: 입력 구간 기록기. 초안 원문은 절대 싣지 않고 길이만 남긴다.
+  const trackUiEvent = useUiEventTracker();
+  const composeEvents = useMemo(
+    () => createComposeFlowRecorder({
+      track: trackUiEvent,
+      newId: () => globalThis.crypto.randomUUID(),
+      now: () => Date.now(),
+    }),
+    [trackUiEvent],
+  );
+  const textRef = useRef(text);
+  textRef.current = text;
+  const previousSessionKeyRef = useRef<string | null>(null);
+  const composeMode = isLlmFinished ? "llm" : isFinished ? "resume" : "intervention";
   const [interrupting, setInterrupting] = useState(false);
   const [interruptError, setInterruptError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -97,11 +113,16 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
     clearDraft,
     setActiveSession,
     onBeforeSend: () => {
+      composeEvents.submitted(activeSessionKey, textRef.current.length, composeMode);
       setText("");
       if (activeSessionKey) clearDraft(activeSessionKey);
     },
-    onAfterSend: () => setText(""),
+    onAfterSend: () => {
+      composeEvents.settled("ok");
+      setText("");
+    },
     onSendError: (failedText) => {
+      composeEvents.settled("error");
       setText(failedText);
       if (activeSessionKey) setDraft(activeSessionKey, failedText);
     },
@@ -116,6 +137,16 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
     const saved = activeSessionKey
       ? (useDashboardStore.getState().drafts[activeSessionKey] ?? "")
       : "";
+    // 사용 로그: 초안을 둔 채 떠났는지 / 초안이 있는 곳으로 돌아왔는지.
+    // 첫 마운트(previous === null)는 이탈이 아니므로 아무것도 남기지 않는다.
+    const previousKey = previousSessionKeyRef.current;
+    if (previousKey !== activeSessionKey) {
+      composeEvents.sessionChanged(
+        previousKey === null ? null : { key: previousKey, text: textRef.current },
+        activeSessionKey === null ? null : { key: activeSessionKey, draft: saved },
+      );
+      previousSessionKeyRef.current = activeSessionKey;
+    }
     setText(saved);
     resetLocal();
   }, [activeSessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -141,6 +172,16 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
     if (!activeSessionKey || interrupting) return;
     setInterruptError(null);
     setInterrupting(true);
+    // 사용 로그: 사용자가 눌러서 시작된 비동기 조작이고, 결과가 올 때까지 기다린다.
+    // start/end 의 간격이 곧 그 기다림이다. end 가 없으면 종결을 못 본 것일 뿐이다.
+    const actionFlowId = globalThis.crypto.randomUUID();
+    const startedAt = Date.now();
+    const target = { kind: "session", id: activeSessionKey } as const;
+    trackUiEvent("action_start", {
+      flowId: actionFlowId,
+      target,
+      attrs: { action: "session_interrupt" },
+    });
     try {
       const res = await fetch(
         `/api/sessions/${encodeURIComponent(activeSessionKey)}/interrupt`,
@@ -152,19 +193,39 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
           body ? `HTTP ${res.status}: ${body.slice(0, 200)}` : `HTTP ${res.status}`,
         );
       }
+      trackUiEvent("action_end", {
+        flowId: actionFlowId,
+        target,
+        attrs: {
+          action: "session_interrupt",
+          status: "ok",
+          durationMs: Date.now() - startedAt,
+        },
+      });
     } catch (err) {
+      trackUiEvent("action_end", {
+        flowId: actionFlowId,
+        target,
+        attrs: {
+          action: "session_interrupt",
+          status: "error",
+          durationMs: Date.now() - startedAt,
+        },
+      });
       setInterruptError(err instanceof Error ? err.message : String(err));
     } finally {
       setInterrupting(false);
     }
-  }, [activeSessionKey, interrupting]);
+  }, [activeSessionKey, interrupting, trackUiEvent]);
 
   const handleChangeText = useCallback(
     (value: string) => {
+      // 빈 초안에 첫 글자가 들어온 순간만 입력 시작으로 본다. 타건 자체는 남기지 않는다.
+      composeEvents.textChanged(activeSessionKey, textRef.current, value);
       setText(value);
       if (activeSessionKey) setDraft(activeSessionKey, value);
     },
-    [activeSessionKey, setDraft],
+    [activeSessionKey, setDraft, composeEvents],
   );
 
   if (!activeSessionKey) return null;
