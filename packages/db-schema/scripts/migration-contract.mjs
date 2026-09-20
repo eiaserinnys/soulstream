@@ -11,9 +11,23 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const migrationDirectory = resolve(packageRoot, "sql/migrations");
 export const migrationManifestPath = resolve(packageRoot, "migration-manifest.json");
 export const canonicalSchemaPath = resolve(packageRoot, "sql/schema.sql");
+/**
+ * 배포 설정 파일의 경로.
+ *
+ * Haniel 은 서비스의 `release_env_file` 을 0600 임시 스냅샷으로 복사한 뒤
+ * `HANIEL_SERVICE_ENV_FILE` 에 그 **경로만** 넘긴다. 값은 자식 프로세스 env 에
+ * 합쳐지지 않고, 오히려 `DATABASE_URL`·`PG*` 는 제거된다. 그래서 이 파일을 읽지
+ * 않으면 배포되는 서비스의 설정에 닿을 방법이 없다 — 마이그레이션 권한자가
+ * orch 인데도 worker 의 `.env.soul-server-ts` 를 읽던 것이 그 결과였다.
+ *
+ * 넘어오지 않으면 기존대로 서비스 cwd 의 `.env.soul-server-ts` 를 쓴다.
+ */
 export function deploymentEnvironmentPath(env = process.env, cwd = process.cwd()) {
   const serviceCwd = env.HANIEL_SERVICE_CWD?.trim();
-  return resolve(serviceCwd || cwd, ".env.soul-server-ts");
+  const base = serviceCwd || cwd;
+  const serviceEnvFile = env.HANIEL_SERVICE_ENV_FILE?.trim();
+  if (serviceEnvFile) return resolve(base, serviceEnvFile);
+  return resolve(base, ".env.soul-server-ts");
 }
 
 export function sha256(value) {

@@ -222,6 +222,28 @@ describe("versioned migration contract", () => {
     expect(text).toContain("[redacted DATABASE_URL]");
   });
 
+  it("reads the release env snapshot Haniel hands over, not the worker file", () => {
+    // Haniel 은 값을 env 로 합치지 않고 스냅샷 경로만 넘긴다. 이걸 보지 않으면
+    // 배포 서비스의 설정에 닿지 못하고 repo 안의 worker 파일을 읽게 된다.
+    expect(deploymentEnvironmentPath(
+      { HANIEL_SERVICE_ENV_FILE: "/tmp/haniel-release-env-x/service.env" },
+      "/repo-root",
+    )).toBe(resolve("/tmp/haniel-release-env-x/service.env"));
+
+    // 서비스 cwd 가 함께 와도 스냅샷이 이긴다.
+    expect(deploymentEnvironmentPath(
+      {
+        HANIEL_SERVICE_CWD: "/service-root",
+        HANIEL_SERVICE_ENV_FILE: "/tmp/haniel-release-env-x/service.env",
+      },
+      "/repo-root",
+    )).toBe(resolve("/tmp/haniel-release-env-x/service.env"));
+
+    // 넘어오지 않거나 공백뿐이면 기존 동작 그대로다.
+    expect(deploymentEnvironmentPath({ HANIEL_SERVICE_ENV_FILE: "   " }, "/repo-root"))
+      .toBe(resolve("/repo-root/.env.soul-server-ts"));
+  });
+
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {
     const migrations = await loadMigrationManifest();
 
