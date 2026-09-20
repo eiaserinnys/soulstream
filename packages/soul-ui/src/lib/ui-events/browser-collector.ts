@@ -34,6 +34,11 @@ export type StartBrowserUiEventCollectorOptions = {
   readonly userEmail: string;
   readonly appVersion: string;
   readonly onWarning?: (message: string, error: unknown) => void;
+  /**
+   * 설정이 적용될 때마다 부른다. 수집이 실제로 켜진 시점을 바깥에서 알아야
+   * 그때 현재 화면을 남길 수 있다 — 부팅 직후에는 아직 꺼져 있어 기록이 버려진다.
+   */
+  readonly onConfigApplied?: (config: UiEventClientConfig) => void;
 };
 
 /**
@@ -73,18 +78,29 @@ export function startBrowserUiEventCollector(
    * 성공해도 잠그지 않는다 — 최초 응답이 `enabled:false` 였다고 해서
    * 그 실행 내내 꺼진 채로 둘 이유가 없다. 상시 polling 은 하지 않는다.
    */
+  function applyConfig(config: UiEventClientConfig): void {
+    collector.setConfig(config);
+    options.onConfigApplied?.(config);
+  }
+
   async function loadConfig(): Promise<void> {
     if (disposed || loadingConfig) return;
     loadingConfig = true;
     try {
       const response = await fetch(CONFIG_ENDPOINT, { credentials: "same-origin" });
-      if (!response.ok) return;
-      const body: unknown = await response.json();
       // 응답을 기다리는 사이에 정리됐으면 되살리지 않는다.
       if (disposed) return;
-      collector.setConfig(readConfig(body));
+      if (!response.ok) {
+        // 허용 여부를 확인하지 못했으면 수집하지 않는다(fail-closed).
+        applyConfig(UI_EVENT_CLIENT_CONFIG_OFF);
+        return;
+      }
+      const body: unknown = await response.json();
+      if (disposed) return;
+      applyConfig(readConfig(body));
     } catch (error) {
       options.onWarning?.("UI 사용 로그 설정 조회 실패", error);
+      if (!disposed) applyConfig(UI_EVENT_CLIENT_CONFIG_OFF);
     } finally {
       loadingConfig = false;
     }

@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import {
   UiEventsProvider,
   useDashboardStore,
+  useUiEventsEnabled,
   useUiEventTracker,
 } from "@seosoyoung/soul-ui";
 import { useAuth } from "@seosoyoung/soul-ui/providers";
@@ -36,6 +37,13 @@ export function UiEventsRuntime(props: { readonly children: ReactNode }) {
 
 function NavigationUiEvents() {
   const track = useUiEventTracker();
-  useEffect(() => subscribeNavigationUiEvents(useDashboardStore, track), [track]);
+  const enabled = useUiEventsEnabled();
+  useEffect(() => {
+    // 수집이 켜진 뒤에 구독한다. 부팅 직후에 걸면 최초 view_open 이 아직 꺼진
+    // 수집기로 들어가 조용히 버려진다 — 매 실행의 첫 화면이 통째로 사라진다.
+    // enabled 가 다시 false 가 되면 cleanup 이 먼저 돌아 구독이 겹치지 않는다.
+    if (!enabled) return;
+    return subscribeNavigationUiEvents(useDashboardStore, track);
+  }, [enabled, track]);
   return null;
 }

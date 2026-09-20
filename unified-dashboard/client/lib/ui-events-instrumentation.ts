@@ -116,10 +116,21 @@ function underlyingTarget(snapshot: NavigationSnapshot): NavigationTarget | null
   return null;
 }
 
-/** 구독을 걸 때 이미 열려 있던 화면. 첫 화면이 기록에서 통째로 빠지면 안 된다. */
+/**
+ * 구독을 걸 때 이미 열려 있던 화면. 첫 화면이 기록에서 통째로 빠지면 안 된다.
+ *
+ * 덮개(문서·커스텀 뷰)가 이미 열린 채로 시작했다면 그것이 보고 있는 대상이다.
+ * `underlyingTarget` 은 덮개가 걷힌 뒤를 위한 것이라 여기서는 먼저 덮개를 본다.
+ */
 export function initialNavigationTarget(
   snapshot: NavigationSnapshot,
 ): NavigationTarget | null {
+  if (snapshot.activeBoardDocumentId !== null) {
+    return { kind: "document", id: snapshot.activeBoardDocumentId };
+  }
+  if (snapshot.activeCustomViewId !== null) {
+    return { kind: "custom_view", id: snapshot.activeCustomViewId };
+  }
   return underlyingTarget(snapshot);
 }
 

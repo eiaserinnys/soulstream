@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  initialNavigationTarget,
   navigationSnapshot,
   resolveNavigationTarget,
   subscribeNavigationUiEvents,
@@ -95,6 +96,31 @@ describe("navigation target", () => {
   it("sees no navigation when nothing that defines the screen moved", () => {
     expect(resolveNavigationTarget(snapshot({ activeSessionKey: "s1" }),
       snapshot({ activeSessionKey: "s1" }))).toBeNull();
+  });
+});
+
+describe("initial screen", () => {
+  const snapshot = (patch: State) => navigationSnapshot({ ...BASE, ...patch });
+
+  it("uses the document that was already open rather than what is under it", () => {
+    expect(initialNavigationTarget(
+      snapshot({ activeSessionKey: "s1", activeBoardDocumentId: "d1" }),
+    )).toEqual({ kind: "document", id: "d1" });
+  });
+
+  it("uses the custom view that was already open", () => {
+    expect(initialNavigationTarget(
+      snapshot({ activeSessionKey: "s1", activeCustomViewId: "v1" }),
+    )).toEqual({ kind: "custom_view", id: "v1" });
+  });
+
+  it("falls back to the session when no overlay is open", () => {
+    expect(initialNavigationTarget(snapshot({ activeSessionKey: "s1" })))
+      .toEqual({ kind: "session", id: "s1" });
+  });
+
+  it("falls back to the view mode on a bare start", () => {
+    expect(initialNavigationTarget(snapshot({}))).toEqual({ kind: "view", id: "feed" });
   });
 });
 

@@ -20,8 +20,18 @@ export type { UiEventEntryHint } from "./collector";
  */
 const UiEventsContext = createContext<UiEventCollector>(NOOP_UI_EVENT_COLLECTOR);
 
+/**
+ * 수집이 실제로 켜졌는지. 부팅 직후에는 설정이 오기 전이라 false 다.
+ * 화면 전환 구독처럼 "켜진 뒤에 한 번 해야 하는 일"은 이 값을 보고 움직인다.
+ */
+const UiEventsEnabledContext = createContext(false);
+
 export function useUiEvents(): UiEventCollector {
   return useContext(UiEventsContext);
+}
+
+export function useUiEventsEnabled(): boolean {
+  return useContext(UiEventsEnabledContext);
 }
 
 export type UiEventsProviderProps = {
@@ -33,11 +43,13 @@ export type UiEventsProviderProps = {
 
 export function UiEventsProvider(props: UiEventsProviderProps) {
   const [collector, setCollector] = useState<UiEventCollector>(NOOP_UI_EVENT_COLLECTOR);
+  const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
     if (props.userEmail === null) {
       // 로그아웃 상태에서는 수집기를 두지 않는다.
       setCollector(NOOP_UI_EVENT_COLLECTOR);
+      setEnabled(false);
       return;
     }
     if (typeof window === "undefined") return;
@@ -45,6 +57,7 @@ export function UiEventsProvider(props: UiEventsProviderProps) {
       userEmail: props.userEmail,
       appVersion: props.appVersion,
       onWarning: (message, error) => console.warn(message, error),
+      onConfigApplied: (config) => setEnabled(config.enabled),
     });
     setCollector(started.collector);
     return () => {
@@ -53,12 +66,15 @@ export function UiEventsProvider(props: UiEventsProviderProps) {
       // pagehide 가 먼저 beacon 으로 내보낸다.
       started.dispose({ discardPendingQueue: true });
       setCollector(NOOP_UI_EVENT_COLLECTOR);
+      setEnabled(false);
     };
   }, [props.userEmail, props.appVersion]);
 
   return (
     <UiEventsContext.Provider value={collector}>
-      {props.children}
+      <UiEventsEnabledContext.Provider value={enabled}>
+        {props.children}
+      </UiEventsEnabledContext.Provider>
     </UiEventsContext.Provider>
   );
 }
