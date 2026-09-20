@@ -215,7 +215,7 @@ describe("flattenTree", () => {
       { node: notification, type: "session_notification", eventId: 30 },
       { node: makeRawEventNode("intervention", 40), type: "intervention", eventId: 40 },
       { node: makeThinking("thinking-50", "thinking"), type: "thinking", eventId: 50 },
-      { node: makeText("text-60", "text"), type: "text", eventId: 60 },
+      { node: { ...makeText("text-60", "text"), eventId: 60 }, type: "text", eventId: 60 },
       { node: makeTool("tool-70", "Read"), type: "tool", eventId: 70 },
       {
         node: { ...makeTool("tool-use-80", "Bash"), type: "tool_use" },
