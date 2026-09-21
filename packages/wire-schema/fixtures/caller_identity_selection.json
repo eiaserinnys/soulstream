@@ -1,0 +1,88 @@
+{
+  "cases": [
+    {
+      "name": "agent source alone is identity-bearing",
+      "metadata": [
+        { "type": "caller_info", "value": { "source": "browser", "display_name": "Older browser" } },
+        { "type": "caller_info", "value": { "source": "agent" } }
+      ],
+      "callerInfo": { "source": "agent" },
+      "serializedUser": { "userName": null, "userPortraitUrl": null }
+    },
+    {
+      "name": "system source alone is identity-bearing",
+      "metadata": [
+        { "type": "caller_info", "value": { "source": "browser", "display_name": "Older browser" } },
+        { "type": "caller_info", "value": { "source": "system" } }
+      ],
+      "callerInfo": { "source": "system" },
+      "serializedUser": { "userName": null, "userPortraitUrl": null }
+    },
+    {
+      "name": "slack source alone is identity-bearing",
+      "metadata": [
+        { "type": "caller_info", "value": { "source": "browser", "display_name": "Older browser" } },
+        { "type": "caller_info", "value": { "source": "slack" } }
+      ],
+      "callerInfo": { "source": "slack" },
+      "serializedUser": { "userName": null, "userPortraitUrl": null }
+    },
+    {
+      "name": "soul-app source alone is identity-bearing",
+      "metadata": [
+        { "type": "caller_info", "value": { "source": "browser", "display_name": "Older browser" } },
+        { "type": "caller_info", "value": { "source": "soul-app" } }
+      ],
+      "callerInfo": { "source": "soul-app" },
+      "serializedUser": { "userName": null, "userPortraitUrl": null }
+    },
+    {
+      "name": "channel observer source alone is identity-bearing",
+      "metadata": [
+        { "type": "caller_info", "value": { "source": "browser", "display_name": "Older browser" } },
+        { "type": "caller_info", "value": { "source": "channel_observer" } }
+      ],
+      "callerInfo": { "source": "channel_observer" },
+      "serializedUser": { "userName": null, "userPortraitUrl": null }
+    },
+    {
+      "name": "trello watcher source alone is identity-bearing",
+      "metadata": [
+        { "type": "caller_info", "value": { "source": "browser", "display_name": "Older browser" } },
+        { "type": "caller_info", "value": { "source": "trello_watcher" } }
+      ],
+      "callerInfo": { "source": "trello_watcher" },
+      "serializedUser": { "userName": null, "userPortraitUrl": null }
+    },
+    {
+      "name": "llm source alone is identity-bearing",
+      "metadata": [
+        { "type": "caller_info", "value": { "source": "browser", "display_name": "Older browser" } },
+        { "type": "caller_info", "value": { "source": "llm" } }
+      ],
+      "callerInfo": { "source": "llm" },
+      "serializedUser": { "userName": null, "userPortraitUrl": null }
+    },
+    {
+      "name": "latest display name is identity-bearing for browser",
+      "metadata": [
+        { "type": "caller_info", "value": { "source": "browser", "display_name": "Older browser" } },
+        { "type": "caller_info", "value": { "source": "browser", "display_name": "Current browser" } }
+      ],
+      "callerInfo": { "source": "browser", "display_name": "Current browser" },
+      "serializedUser": { "userName": "Current browser", "userPortraitUrl": null }
+    },
+    {
+      "name": "last caller entry remains the graceful fallback",
+      "metadata": [
+        { "type": "caller_info", "value": { "source": "browser" } },
+        { "type": "caller_info", "value": { "legacy": true } }
+      ],
+      "callerInfo": { "legacy": true },
+      "serializedUser": {
+        "userName": "Node owner",
+        "userPortraitUrl": "/api/nodes/node-contract/user/portrait"
+      }
+    }
+  ]
+}

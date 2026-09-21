@@ -6,9 +6,9 @@
  */
 
 import type { SessionStatus } from "./session-types";
+import type { SSEEventTextSnapshot } from "@soulstream/wire-schema";
 import type {
   LiveTextEventMetadata,
-  LiveTextSnapshotWire,
   SessionHistoryResetReason,
 } from "../../../../orch-server-ts/src/session/session_feed_contract";
 
@@ -794,7 +794,7 @@ export interface HistorySyncEvent {
   status?: SessionStatus;
 }
 
-export type TextSnapshotEvent = LiveTextSnapshotWire;
+export type TextSnapshotEvent = SSEEventTextSnapshot;
 
 /** 사용자 입력 요청 — 질문 항목 */
 export interface InputRequestQuestion {

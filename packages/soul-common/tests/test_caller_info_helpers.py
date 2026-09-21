@@ -9,6 +9,9 @@ R-3 (2026-05-11, atom G-5): B-1 + system 통합 — 빌더가 wire에 server-rel
 build_bot_caller_info 신설 — channel_observer / trello_watcher 봇 source 정체성 조립.
 """
 
+import json
+from pathlib import Path
+
 from starlette.requests import Request
 
 from soul_common.auth.caller_info import (
@@ -24,6 +27,14 @@ from soul_common.auth.jwt import COOKIE_NAME, generate_token
 
 
 _TEST_JWT_SECRET = "test-jwt-secret-for-resolver-32b!!!"
+_CALLER_IDENTITY_SELECTION_FIXTURE = json.loads(
+    (
+        Path(__file__).parent.parent.parent
+        / "wire-schema"
+        / "fixtures"
+        / "caller_identity_selection.json"
+    ).read_text(encoding="utf-8")
+)
 
 
 def _make_request(
@@ -397,6 +408,13 @@ class TestExtractCallerInfoFromMetadata:
         result = extract_caller_info_from_metadata(metadata)
         # source=agent가 신원 박힌 것으로 취급되어 우선
         assert result == {"source": "agent"}
+
+    def test_shared_fixture_matches_all_identity_bearing_sources(self):
+        """Python/worker/orch가 같은 caller selection fixture를 소비한다."""
+        for case in _CALLER_IDENTITY_SELECTION_FIXTURE["cases"]:
+            assert extract_caller_info_from_metadata(case["metadata"]) == case["callerInfo"], (
+                case["name"]
+            )
 
 
 class TestResolveCallerInfoOrSystem:

@@ -22,6 +22,7 @@ const SECTION_7_TRANSIENT_STREAMING_TYPES = [
   "text_start",
   "text_delta",
   "text_end",
+  "text_snapshot",
 ] as const;
 
 const SECTION_7_DURABLE_ENGINE_DOMAIN_TYPES = [
@@ -671,8 +672,8 @@ describe("extractSearchableText", () => {
 });
 
 describe("EventPersistence transient boundary", () => {
-  it("§7의 SSE event 61종을 wire schema 분류와 빠짐없이 일치시킨다", () => {
-    expect(SECTION_7_ALL_EVENT_TYPES).toHaveLength(61);
+  it("§7의 SSE event 62종을 wire schema 분류와 빠짐없이 일치시킨다", () => {
+    expect(SECTION_7_ALL_EVENT_TYPES).toHaveLength(62);
 
     const transientTypes = new Set<string>(SECTION_7_TRANSIENT_STREAMING_TYPES);
     for (const eventType of SECTION_7_ALL_EVENT_TYPES) {

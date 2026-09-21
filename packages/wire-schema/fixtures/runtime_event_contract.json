@@ -1,0 +1,144 @@
+{
+  "eventAppendInputs": [
+    {
+      "session_id": "session-contract",
+      "event_type": "assistant_message",
+      "payload": {
+        "type": "assistant_message",
+        "text": "final answer"
+      },
+      "searchable_text": "final answer",
+      "created_at": "2026-09-22T00:00:00.000Z",
+      "semantic_dedupe_key": "contract:terminal",
+      "session_effect": {
+        "kind": "terminal_transition",
+        "status": "completed",
+        "termination_reason": "completed",
+        "termination_detail": null,
+        "review_state": "not_required",
+        "last_assistant_text": "final answer",
+        "updated_at": "2026-09-22T00:00:00.000Z"
+      }
+    },
+    {
+      "session_id": "session-contract",
+      "registration_id": "registration-contract",
+      "event_type": "system_message",
+      "payload": {
+        "type": "system_message",
+        "content": "execution acquired"
+      },
+      "searchable_text": null,
+      "created_at": "2026-09-22T00:00:01.000Z",
+      "semantic_dedupe_key": "contract:execution-acquire",
+      "session_effect": {
+        "kind": "execution_acquire",
+        "owner_kind": "runner_process",
+        "manifest_id": "manifest-contract",
+        "runtime_env_identity": "runtime-contract",
+        "registration_id": "registration-contract",
+        "pid": 4242,
+        "start_identity": "process-contract",
+        "execution_command_id": "command-contract",
+        "lease_expires_at": "2026-09-22T00:05:00.000Z",
+        "review_state": "not_required",
+        "expected_terminal_event_id": null,
+        "updated_at": "2026-09-22T00:00:01.000Z"
+      }
+    },
+    {
+      "session_id": "session-contract",
+      "event_type": "metadata",
+      "payload": {
+        "type": "metadata",
+        "key": "contract"
+      },
+      "searchable_text": null,
+      "created_at": "2026-09-22T00:00:02.000Z",
+      "semantic_dedupe_key": "contract:dead-letter",
+      "session_effect": {
+        "kind": "append_metadata",
+        "entry": {
+          "type": "contract_fixture",
+          "value": "kept for ACK dead-letter coverage"
+        },
+        "updated_at": "2026-09-22T00:00:02.000Z"
+      }
+    }
+  ],
+  "eventAppendAck": {
+    "type": "event_append_ack",
+    "acked_through": 3,
+    "events": [
+      {
+        "source_seq": 1,
+        "event_id": 101,
+        "effect_application": {
+          "applied": true,
+          "canonical_session": {
+            "status": "completed",
+            "termination_reason": "completed",
+            "termination_detail": null,
+            "review_state": "not_required",
+            "last_assistant_text": "final answer",
+            "termination_event_id": 101,
+            "updated_at": "2026-09-22T00:00:00.000Z",
+            "last_event_id": 101
+          }
+        }
+      },
+      {
+        "source_seq": 2,
+        "event_id": 102,
+        "effect_application": {
+          "applied": true,
+          "canonical_session": {
+            "status": "completed",
+            "termination_reason": "completed",
+            "termination_detail": null,
+            "review_state": "not_required",
+            "last_assistant_text": "final answer",
+            "termination_event_id": 101,
+            "updated_at": "2026-09-22T00:00:01.000Z",
+            "last_event_id": 102
+          },
+          "canonical_execution_ownership": {
+            "ownership_generation": 1,
+            "owner_kind": "runner_process",
+            "manifest_id": "manifest-contract",
+            "runtime_env_identity": "runtime-contract",
+            "registration_id": "registration-contract",
+            "pid": 4242,
+            "start_identity": "process-contract",
+            "execution_command_id": "command-contract",
+            "phase": "active",
+            "failure_reason": null
+          }
+        }
+      },
+      {
+        "source_seq": 3,
+        "dead_letter": {
+          "code": "contract_dead_letter",
+          "reason": "fixture covers terminal acknowledgement",
+          "rejected_at": "2026-09-22T00:00:02.000Z"
+        }
+      }
+    ]
+  },
+  "textSnapshot": {
+    "type": "text_snapshot",
+    "basedOnEventId": 102,
+    "throughLiveSeq": 7,
+    "streams": [
+      {
+        "streamIdentity": "codex_sdk:contract-stream",
+        "text": "prefix already captured",
+        "updatedAt": "2026-09-22T00:00:02.000Z",
+        "truncated": false,
+        "resetRequired": false,
+        "recovery": "none"
+      }
+    ]
+  }
+}

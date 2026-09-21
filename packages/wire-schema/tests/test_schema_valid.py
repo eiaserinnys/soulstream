@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 119개 $defs (wire 58 + SSE event 61)를 모두 포함하는지 확인한다.
+설계 명세의 wire·SSE event inventory를 모두 포함하는지 확인한다.
 """
 
 import ast
@@ -17,6 +17,9 @@ GENERATED_TS_PATH = (
     Path(__file__).parent.parent / "generated" / "typescript" / "index.ts"
 )
 GENERATED_PY_PATH = Path(__file__).parent.parent / "generated" / "python" / "upstream.py"
+RUNTIME_EVENT_CONTRACT_FIXTURE_PATH = (
+    Path(__file__).parent.parent / "fixtures" / "runtime_event_contract.json"
+)
 ORCH_CONSTANTS_PATH = (
     Path(__file__).parents[3] / "orch-server" / "src" / "soulstream_server" / "constants.py"
 )
@@ -46,6 +49,29 @@ def _event_append_batch_with_effect(effect: dict) -> dict:
                 "session_effect": effect,
                 "payload_hash": "a" * 64,
             }
+        ],
+    }
+
+
+def _load_runtime_event_contract_fixture() -> dict:
+    return json.loads(RUNTIME_EVENT_CONTRACT_FIXTURE_PATH.read_text(encoding="utf-8"))
+
+
+def _event_append_batch_from_inputs(inputs: list[dict]) -> dict:
+    stream_id = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10"
+    return {
+        "type": "event_append_batch",
+        "protocol_version": 1,
+        "stream_id": stream_id,
+        "first_seq": 1,
+        "events": [
+            {
+                **input,
+                "stream_id": stream_id,
+                "source_seq": index,
+                "payload_hash": "a" * 64,
+            }
+            for index, input in enumerate(inputs, start=1)
         ],
     }
 
@@ -157,6 +183,29 @@ def test_event_append_batch_rejects_unknown_running_transition_field() -> None:
         jsonschema.Draft202012Validator(schema).validate(frame)
 
 
+def test_runtime_event_contract_fixture_matches_schema_and_generated_types() -> None:
+    schema = _load_schema()
+    fixture = _load_runtime_event_contract_fixture()
+    validator = jsonschema.Draft202012Validator(schema)
+    batch = _event_append_batch_from_inputs(fixture["eventAppendInputs"])
+
+    validator.validate(batch)
+    validator.validate({
+        **fixture["eventAppendAck"],
+        "stream_id": batch["stream_id"],
+    })
+    validator.validate({
+        "type": "event",
+        "agentSessionId": "session-contract",
+        "event": fixture["textSnapshot"],
+    })
+
+    generated_typescript = GENERATED_TS_PATH.read_text(encoding="utf-8")
+    assert "interface SSEEventTextSnapshot" in generated_typescript
+    assert "canonical_execution_ownership" in generated_typescript
+    assert "last_assistant_text" in generated_typescript
+
+
 def test_schema_has_all_message_types() -> None:
     schema = _load_schema()
     defs = schema["$defs"]
@@ -253,6 +302,7 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventTextStart",
         "SSEEventTextDelta",
         "SSEEventTextEnd",
+        "SSEEventTextSnapshot",
         "SSEEventToolStart",
         "SSEEventToolResult",
         "SSEEventAgentUpdated",
@@ -294,8 +344,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventTurnSummary",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 61, (
-        "SSE event $defs 61종 (canonical 60종 + production-gated runbook_updated 읽기 호환)."
+    assert len(sse_types) == 62, (
+        "SSE event $defs 62종 (canonical 61종 + production-gated runbook_updated 읽기 호환)."
     )
 
     expected = wire_types | sse_types
@@ -324,7 +374,7 @@ def test_every_persisted_event_has_an_explicit_durability_class() -> None:
         if name.startswith("SSEEvent")
     }
 
-    assert len(sse_event_types) == 61
+    assert len(sse_event_types) == 62
     assert persistence_only_event_types == {"metadata", "system_message"}
     assert persistence_only_event_types.isdisjoint(sse_event_types)
     assert set(durability) == sse_event_types | persistence_only_event_types
@@ -333,7 +383,7 @@ def test_every_persisted_event_has_an_explicit_durability_class() -> None:
         event_type
         for event_type, classification in durability.items()
         if classification == "transient"
-    } == {"text_start", "text_delta", "text_end"}
+    } == {"text_start", "text_delta", "text_end", "text_snapshot"}
 
 
 def test_context_manifest_event_contract() -> None:
@@ -597,6 +647,7 @@ def test_known_sse_event_types_completeness() -> None:
         "text_start",
         "text_delta",
         "text_end",
+        "text_snapshot",
         "tool_start",
         "tool_result",
         "agent_updated",
