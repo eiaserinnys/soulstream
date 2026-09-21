@@ -118,7 +118,11 @@ describe("versioned migration contract", () => {
       new URL("../../../deploy/database-release-central.json", import.meta.url),
     ), "utf8"));
 
-    expect(worker).not.toHaveProperty("environment_service");
+    expect(worker).toMatchObject({
+      release_id: "soulstream-worker-env-bound-v2",
+      environment_service: "soulstream-server",
+      requires_service_env_file: true,
+    });
     expect(worker).not.toHaveProperty("migration");
     expect(worker.post_start_verify).toEqual([{
       name: "verify-release-health",

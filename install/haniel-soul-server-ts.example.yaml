@@ -4,7 +4,7 @@
 # `/home/eias/haniel-root/haniel.yaml`)에 아래 조각을 복사·붙여넣기하여 적용한다.
 #
 # - 본 PR 머지 + Haniel pull 후, 본 파일의 services/configs 항목을 운영 `haniel.yaml`에 추가하면
-#   `soul-server-ts` 서비스가 자동 시작·재시작된다.
+#   `soulstream-server` 서비스가 자동 시작·재시작된다.
 # - 본 파일은 soulstream 리포 내부의 *정본*으로서 향후 변경(예: 환경 변수 추가, 빌드 명령 수정)
 #   시 본 파일을 갱신하여 추적한다.
 #
@@ -25,9 +25,10 @@ repos:
 
 services:
   # 운영 `haniel.yaml`의 `services:` 섹션에 추가
-  soul-server-ts:
+  soulstream-server:
     run: node src/soulstream/soul-server-ts/dist/main.js
     cwd: ./services/soulstream
+    release_env_file: ./services/soulstream/.env.soul-server-ts
     repo: soulstream-server-src
     restart_delay: 3
     after: []  # 독립 노드로 orch에 직접 등록

@@ -157,7 +157,7 @@ describe("database release executor", () => {
     expect(files.boardWrapper).not.toContain("packages/db-schema/scripts/migrate.mjs");
     expect(files.migrate).toContain("assertDatabaseReleaseApplyGate");
     expect(files.migrate).toContain('import("./release-executor.mjs")');
-    expect(files.workflow).toContain("3d02d57eb4a78b2eca18acb69c9f099424537c6e");
+    expect(files.workflow).toContain("809798b981b9282b96dc074d77d523efa280f9ec");
   });
 
   it("classifies fresh_install only from a complete zero user-object inventory", () => {
