@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 describe("v3 icon action cap contract", () => {
-  it("uses one component for the v1 reference buttons and v3 actions", () => {
+  it("uses one component for dashboard chrome actions", () => {
     const component = read("../../../packages/soul-ui/src/components/DashboardIconCap.tsx");
     const theme = read("../../../packages/soul-ui/src/components/ThemeToggle.tsx");
     const config = read("../components/ConfigButton.tsx");
@@ -21,7 +21,6 @@ describe("v3 icon action cap contract", () => {
   it.each([
     ["../../../packages/soul-ui/src/task/TaskCard.tsx", ["업무 보드 열기"]],
     ["../../../packages/soul-ui/src/task/TaskCompletionAction.tsx", ["actionLabel"]],
-    ["./V3GlobalToolbar.tsx", ["기존 대시보드 열기"]],
     ["./PlannerTaskCard.tsx", ["별표"]],
     ["./TaskDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표", "업무 보드 열기"]],
     ["./TaskTodayToggle.tsx", ["todayPlannerMenuLabel"]],

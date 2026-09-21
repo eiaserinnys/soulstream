@@ -1,9 +1,14 @@
 import type { Browser, Page, Route } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
+const outputRoot = path.resolve(
+  process.env.PR_BQ_QA_OUTPUT ?? path.join("e2e", "screenshots", "v3-main-promotion"),
+);
 
 const result = await runPlaywrightLifecycle({
   lockName: "pr-bq-v3-main-promotion",
@@ -49,24 +54,36 @@ async function verifyEntryContract(
       assert(await page.evaluate(() => matchMedia("(display-mode: standalone)").matches), "standalone 표시 모드가 적용되지 않았습니다.");
       await page.getByTestId("v3-mobile-tab-today").waitFor({ state: "visible" });
     }
+    const screenshot = await capture(
+      page,
+      theme,
+      standaloneMobile ? "mobile-current-dashboard" : "desktop-current-dashboard",
+    );
 
-    await page.getByRole("button", { name: "기존 대시보드 열기" }).click();
-    await page.waitForURL(`${baseUrl}/v1`);
-    if (standaloneMobile) {
-      await page.getByRole("tab", { name: "설정" }).click();
-    }
-    await page.getByRole("button", { name: "v3 플래너 열기" }).waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "v3 플래너 열기" }).click();
-    await openV3(page, "/");
+    assert(
+      await page.getByRole("button", { name: "기존 대시보드 열기" }).count() === 0,
+      "퇴역한 v1 대시보드 진입 버튼이 남았습니다.",
+    );
 
-    await openV3(page, "/v3");
-    await openV3(page, "/v2");
+    const retiredRoutes = [
+      "/v1",
+      "/v1/sessions/run-alpha-1",
+      "/v1?panel=feed#/feed/run-alpha-1",
+      "/v3",
+      "/v2",
+    ];
+    for (const path of retiredRoutes) await openV3(page, path);
+
+    await page.goto(`${baseUrl}/v1-other`, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
+    assert(new URL(page.url()).pathname === "/v1-other", `/v1-other 경로가 ${page.url()}로 바뀌었습니다.`);
 
     assert(errors.length === 0, `브라우저 오류가 발생했습니다: ${errors.join(" | ")}`);
     return {
       mainRoute: "/",
-      legacyRoute: "/v1",
-      retiredRedirects: ["/v3", "/v2"],
+      retiredRedirects: retiredRoutes,
+      preservedRoute: "/v1-other",
+      screenshot,
       standaloneMobile,
       browserErrors: errors.length,
     };
@@ -77,10 +94,7 @@ async function verifyEntryContract(
 
 async function verifyLoginRoundTrips(browser: Browser) {
   const results = [];
-  for (const target of [
-    { path: "/", expected: "v3" as const },
-    { path: "/v1#/feed/run-alpha-1", expected: "v1" as const },
-  ]) {
+  for (const target of ["/", "/v1#/feed/run-alpha-1"]) {
     const context = await browser.newContext({
       colorScheme: "dark",
       reducedMotion: "reduce",
@@ -101,21 +115,15 @@ async function verifyLoginRoundTrips(browser: Browser) {
     );
 
     try {
-      await page.goto(`${baseUrl}${target.path}`, { waitUntil: "domcontentloaded" });
+      await page.goto(`${baseUrl}${target}`, { waitUntil: "domcontentloaded" });
       await page.getByTestId("login-page").waitFor({ state: "visible" });
       await page.getByTestId("google-login-button").click();
-      assert(oauthReturnTo === target.path, `OAuth return_to가 ${oauthReturnTo ?? "없음"}입니다.`);
+      assert(oauthReturnTo === target, `OAuth return_to가 ${oauthReturnTo ?? "없음"}입니다.`);
 
-      if (target.expected === "v3") {
-        await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
-        assert(new URL(page.url()).pathname === "/", `로그인 뒤 v3 경로가 ${page.url()}입니다.`);
-      } else {
-        await page.getByRole("button", { name: "v3 플래너 열기" }).waitFor({ state: "visible", timeout: 20_000 });
-        const url = new URL(page.url());
-        assert(url.pathname === "/v1", `로그인 뒤 v1 경로가 ${page.url()}입니다.`);
-      }
+      await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
+      assert(new URL(page.url()).pathname === "/", `로그인 뒤 현행 경로가 ${page.url()}입니다.`);
       assert(errors.length === 0, `로그인 왕복 브라우저 오류: ${errors.join(" | ")}`);
-      results.push({ target: target.path, rendered: target.expected, browserErrors: errors.length });
+      results.push({ target, rendered: "v3", browserErrors: errors.length });
     } finally {
       await context.close();
     }
@@ -127,7 +135,7 @@ async function openV3(page: Page, path: string) {
   await page.goto(`${baseUrl}${path}`, { waitUntil: "domcontentloaded" });
   await page.waitForURL(`${baseUrl}/`);
   try {
-    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
+    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
   } catch (error) {
     const body = (await page.content()).slice(0, 2_000);
     throw new Error(`v3 main did not render at ${page.url()}: ${body}`, { cause: error });
@@ -175,6 +183,18 @@ async function fulfillJson(route: Route, body: unknown) {
     contentType: "application/json",
     body: JSON.stringify(body),
   });
+}
+
+async function capture(
+  page: Page,
+  theme: string,
+  name: string,
+): Promise<string> {
+  const directory = path.join(outputRoot, theme);
+  mkdirSync(directory, { recursive: true });
+  const screenshotPath = path.join(directory, `${name}.png`);
+  await page.screenshot({ path: screenshotPath, animations: "disabled", fullPage: true });
+  return screenshotPath;
 }
 
 async function preparePage(

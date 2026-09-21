@@ -21,11 +21,3 @@ export { orchestratorSessionProvider };
 export function getSessionProvider(): SessionStorageProvider {
   return sseSessionProvider;
 }
-
-/**
- * orchestrator 모드용 Provider를 반환한다.
- * OrchestratorDashboardLayout에서 사용.
- */
-export function getOrchestratorSessionProvider(): SessionStorageProvider {
-  return orchestratorSessionProvider;
-}

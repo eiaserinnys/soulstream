@@ -1,14 +1,12 @@
 import { useEffect, useRef } from "react";
 import {
-  DashboardIconCap,
   ThemeToggle,
   useGlassSurface,
   useLiquidLens,
 } from "@seosoyoung/soul-ui";
-import { LayoutDashboard, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
 import { ConfigButton } from "../components/ConfigButton";
-import { LEGACY_DASHBOARD_PATH } from "../dashboard-routes";
 
 export function V3GlobalToolbar({
   onOpenConfig,
@@ -57,12 +55,6 @@ export function V3GlobalToolbar({
         <kbd>⌘K</kbd>
       </button>
       <div className="dashboard-toolbar-actions">
-        <DashboardIconCap
-          label="기존 대시보드 열기"
-          onClick={() => window.location.assign(LEGACY_DASHBOARD_PATH)}
-        >
-          <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
-        </DashboardIconCap>
         <ConfigButton variant="chrome" onClick={onOpenConfig} />
         <ThemeToggle variant="chrome" />
       </div>

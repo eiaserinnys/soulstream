@@ -206,54 +206,6 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(typeof createPayload?.pageAnchor === "object", "선택한 보드 문서용 page anchor가 없습니다.");
     assert(createPayload?.model_preset === "qa-warning", "선택한 모델 프리셋이 생성 요청에 없습니다.");
 
-    await page.goto(`${baseUrl}/v1`, { waitUntil: "domcontentloaded" });
-    await page.getByTitle("New session").first().click();
-    const boardDialog = page.getByRole("dialog", { name: "New Session", exact: true });
-    await boardDialog.waitFor({ state: "visible" });
-    await boardDialog.getByText("Select a node...", { exact: true }).click();
-    await page.locator('[data-slot="select-item"]').filter({ hasText: "eiaserinnys" }).click();
-    await boardDialog.getByText("Select an agent...", { exact: true }).click();
-    await page.locator('[data-slot="select-item"]').filter({ hasText: "로젤린" }).click();
-    const boardModelPreset = boardDialog.getByRole("combobox", { name: "모델 선택" });
-    await boardModelPreset.click();
-    const boardLimitedOption = page.locator('[data-slot="select-item"]')
-      .filter({ hasText: "QA 제한 모델 (주간 사용량 제한) · 18:20 해제" });
-    await boardLimitedOption.waitFor({ state: "visible" });
-    assert(
-      await boardLimitedOption.getAttribute("data-disabled") !== null,
-      "보드 새 세션 창에서 사용량 제한 모델이 선택 가능 상태입니다.",
-    );
-    await page.locator('[data-slot="select-item"]')
-      .filter({ hasText: "QA 사용량 확인 모델 (사용량 확인 지연)" })
-      .click();
-    await boardDialog.getByText("Reasoning Effort", { exact: true }).waitFor({ state: "visible" });
-    await boardDialog.getByText("eiaserinnys (localhost:3105)", { exact: true }).click();
-    await page.locator('[data-slot="select-item"]').filter({ hasText: "qa-node" }).click();
-    await expectTriggerText(boardModelPreset, "미지정");
-    await boardDialog.getByText("Select an agent...", { exact: true }).click();
-    await page.locator('[data-slot="select-item"]').filter({ hasText: "QA 에이전트" }).click();
-    await chooseSelectItem(
-      page,
-      boardModelPreset,
-      "QA 사용량 확인 모델 (사용량 확인 지연)",
-    );
-    await boardDialog.getByPlaceholder("What would you like to work on?").fill("보드 세션 모델 선택 확인");
-    const boardControls = await boardDialog.locator('[data-slot="select-trigger"]').all();
-    const boardControlMetrics = await waitForAlignedControls(
-      page,
-      boardControls,
-      "보드 새 세션 셀렉트",
-    );
-    assert(boardControlMetrics.length === 5, "보드 새 세션 창의 5개 셀렉트 필드를 모두 찾지 못했습니다.");
-    await capture(page, theme, "02-board-model-preset");
-    await boardDialog.getByRole("button", { name: "Start", exact: true }).click();
-    await boardDialog.waitFor({ state: "detached" });
-    const boardCreatePayload = createPayloads.at(-1);
-    assert(
-      boardCreatePayload?.model_preset === "qa-warning",
-      "보드 새 세션 창에서 선택한 모델 프리셋이 생성 요청에 없습니다.",
-    );
-
     return {
       options: optionLabels.length,
       observedMs: observationMs,
@@ -265,9 +217,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       contextItemKeys: extraContextItems.map((item) => item.key),
       nodeChangeAgentRefresh: agentRequests.at(-1),
       modelPresetRoundtrip: createPayload?.model_preset,
-      boardModelPresetRoundtrip: boardCreatePayload?.model_preset,
       assignmentControlHeights: assignmentMetrics.map((metric) => metric.height),
-      boardControlHeights: boardControlMetrics.map((metric) => metric.height),
     };
   } finally {
     await context.close();
@@ -320,24 +270,6 @@ function assertAlignedControls(metrics: ControlMetric[], label: string) {
       `${metric.name}=${metric.boxShadow} invalid:${metric.ariaInvalid} disabled:${metric.disabled} pressed:${metric.pressed} focused:${metric.focused} focusVisible:${metric.focusVisible} class:${metric.className}`
     ).join(" / ")}`,
   );
-}
-
-async function waitForAlignedControls(
-  page: Page,
-  controls: Locator[],
-  label: string,
-): Promise<ControlMetric[]> {
-  let metrics = await measureControls(controls);
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const heights = metrics.map((metric) => metric.height);
-    const aligned = Math.max(...heights) - Math.min(...heights) <= 1
-      && new Set(metrics.map((metric) => metric.boxShadow)).size === 1;
-    if (aligned) return metrics;
-    await page.waitForTimeout(100);
-    metrics = await measureControls(controls);
-  }
-  assertAlignedControls(metrics, label);
-  return metrics;
 }
 
 function assertAlignedLabels(metrics: ControlMetric[], label: string) {
