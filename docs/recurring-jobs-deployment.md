@@ -16,12 +16,12 @@ Migration 094는 additive다. 이전 코드가 새 테이블을 읽지 않아도
 
 ## 배포 순서
 
-1. 서버 PR #953의 CI 성공을 확인한 뒤 서버 PR만 머지한다. 앱 PR #153은 main 머지 시 TestFlight 자동 발행이 시작되므로 아직 머지하지 않는다.
+1. 서버 PR #953의 CI 성공을 확인한 뒤 서버 PR만 머지한다. 앱 PR #153은 recurring readiness를 확인할 때까지 머지하지 않는다. Codemagic의 main push 경로는 설정·실행 검증이 끝나지 않은 대체 경로이므로 TestFlight 자동 발행 근거로 쓰지 않는다.
 2. 중앙 writer 노드에서 Haniel의 `deploy/release-manifest.json` 릴리스를 한 번 실행한다. 이 릴리스가 writer quiescence, advisory lock, checksum ledger를 소유하며 migration 094를 적용한다. `094_recurring_jobs.sql`을 psql로 직접 실행하지 않는다.
 3. 같은 중앙 릴리스가 `soulstream-orch-server`를 먼저, 의존하는 `soulstream-soul-server-ts`를 그 다음 기동하도록 둔다. orchestrator가 새 public·host route와 scheduler를 준비한 뒤 MCP worker가 이를 호출한다.
 4. 중앙 release의 migration ledger와 cluster health가 통과한 뒤 dashboard를 배포한다.
 5. 필요한 원격 worker는 중앙 서비스가 정상인 뒤 `deploy/release-manifest-worker.json`으로 한 대씩 갱신한다. worker manifest는 DB migration을 수행하지 않는다.
-6. 서버의 실제 배포와 아래 웹 및 MCP 반복 작업 확인을 마쳐 recurring readiness를 확인한 뒤 앱 PR #153을 머지한다. main push로 TestFlight 자동 발행이 시작되며, 발행된 앱에서 반복 작업 동선을 확인한다. 서버 배포는 합의된 단일 담당자가 수행하고, 각 노드의 운영 준비 게이트를 통과한 뒤 진행한다.
+6. 서버의 실제 배포와 아래 웹 및 MCP 반복 작업 확인을 마쳐 recurring readiness를 확인한 뒤 앱 PR #153을 머지한다. 이어 운영 전환 담당자가 앱 리포에서 `eas build --platform ios --profile production --non-interactive --auto-submit --message '<묶음 설명>'`을 명시 실행한다. production profile의 remote versioning과 `autoIncrement`가 build number를 관리한다. 발행된 앱에서 반복 작업 동선을 확인한다. 서버 배포는 합의된 단일 담당자가 수행하고, 각 노드의 운영 준비 게이트를 통과한 뒤 진행한다.
 
 ## 배포 후 확인
 
