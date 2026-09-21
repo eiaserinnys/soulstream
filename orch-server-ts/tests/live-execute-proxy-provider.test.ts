@@ -258,6 +258,55 @@ describe("live execute proxy provider", () => {
     await expect(resultBody(result)).resolves.toContain('"node_id":"node-hybrid"');
   });
 
+  it.each(["", "   "])(
+    "treats blank model %j as unset before checking the profile default preset",
+    async (model) => {
+      const requireAvailable = vi.fn(() => {
+        throw new ModelPresetAvailabilityError(
+          "MODEL_PRESET_UNAVAILABLE",
+          "Model preset 'codex-5.6-sol' is unavailable on node node-hybrid: 미인증",
+        );
+      });
+      const harness = createHarness({
+        modelPresetAvailability: { requireAvailable },
+      });
+      const connectionId = harness.registerNode({
+        nodeId: "node-hybrid",
+        agents: [{
+          id: "defaulted-agent",
+          backend: "claude",
+          default_preset: "codex-5.6-sol",
+        }],
+        supportedBackends: ["claude", "codex"],
+        modelPresets: [{
+          id: "codex-5.6-sol",
+          label: "Codex - 5.6 Sol",
+          backend: "codex",
+          available: true,
+          usage_provider: "codex",
+        }],
+      });
+      const sent = harness.attachTransport("node-hybrid", connectionId);
+
+      await expect(harness.provider.executeNew({
+        prompt: "hello",
+        profile: "defaulted-agent",
+        model,
+        caller_info: { source: "execute-proxy" },
+      })).rejects.toMatchObject({
+        statusCode: 400,
+        detail: {
+          error: {
+            code: "MODEL_PRESET_UNAVAILABLE",
+            message: expect.stringContaining("미인증"),
+          },
+        },
+      });
+      expect(requireAvailable).toHaveBeenCalledWith("node-hybrid", "codex-5.6-sol");
+      expect(sent).toEqual([]);
+    },
+  );
+
   it.each([
     ["unavailable", "키 미설정"],
     ["not authenticated", "미인증"],

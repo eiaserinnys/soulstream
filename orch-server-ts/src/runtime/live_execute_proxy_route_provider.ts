@@ -73,7 +73,7 @@ export function createLiveExecuteProxyRouteProvider(
           nodeId: payload.nodeId,
           profileId: payload.profile,
           modelPresetId: payload.model_preset,
-          legacyModelSpecified: payload.model !== undefined,
+          legacyModelSpecified: (payload.model?.trim().length ?? 0) > 0,
         });
         if (selected.modelPresetId && options.modelPresetAvailability) {
           options.modelPresetAvailability.requireAvailable(
