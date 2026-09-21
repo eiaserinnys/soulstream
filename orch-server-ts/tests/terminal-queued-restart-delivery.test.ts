@@ -41,6 +41,10 @@ import {
   loadContractFixtures,
   type NodeRegistrationPayload,
 } from "../src/index.js";
+import {
+  DELIVERY_MAX_AGE_MS,
+  DELIVERY_MAX_ATTEMPTS,
+} from "../src/control_plane/repositories/session_delivery_retry_policy.js";
 import { createSessionCacheSeedSink } from
   "../src/node/session_cache_seed_sink.js";
 import { createHarnessCore } from "./session-action-command-test-helpers.js";
@@ -364,6 +368,7 @@ class RestartDeliveryLedger {
 
   constructor() {
     const body = interventionBody(DELIVERY_ID);
+    const recoverableCreatedAt = new Date(Date.now() - 1_000);
     const canonical = buildCanonicalDeliveryPayload({
       text: String(body.text),
       user: String(body.user),
@@ -381,7 +386,7 @@ class RestartDeliveryLedger {
         source: "user_message",
         payloadHash: canonical.payloadHash,
         payload: canonical.payload,
-        createdAt: new Date(String(body.created_at)),
+        createdAt: recoverableCreatedAt,
       }),
       state: "queued",
       aggregate_state: "pending",
@@ -420,13 +425,24 @@ class RestartDeliveryLedger {
     error: string,
   ) => {
     if (deliveryId !== DELIVERY_ID || this.row.attempt_token !== attemptToken) return null;
-    this.row.state = "pending";
+    const now = Date.now();
+    this.row.attempt_count += 1;
+    const retryExhausted =
+      this.row.attempt_count >= DELIVERY_MAX_ATTEMPTS
+      || this.row.created_at.getTime() <= now - DELIVERY_MAX_AGE_MS;
+    this.row.state = retryExhausted ? "uncertain" : "pending";
+    this.row.aggregate_state = retryExhausted ? "dead_letter" : "pending";
     this.row.attempt_token = null;
     this.row.attempt_expires_at = null;
     this.row.last_error = error;
-    this.row.next_attempt_at = new Date();
-    this.row.attempt_count += 1;
-    this.trace.push("pending");
+    if (retryExhausted) {
+      this.row.dead_letter_reason = error;
+      this.row.dead_lettered_at = new Date(now);
+      this.trace.push("dead_letter");
+    } else {
+      this.row.next_attempt_at = new Date(now);
+      this.trace.push("pending");
+    }
     return structuredClone(this.row);
   });
 
