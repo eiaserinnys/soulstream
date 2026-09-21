@@ -33,6 +33,7 @@ import { pageYjsRouteAuthRequirements } from "../page/page_yjs_route.js";
 import { pageBrowserRouteAuthRequirements } from "../page/page_browser_routes.js";
 import { plannerRouteAuthRequirements } from "../planner/planner_routes.js";
 import { agentProfileRouteAuthRequirements } from "../node/agent_profile_routes.js";
+import { recurringJobRouteAuthRequirements } from "../recurring-jobs/recurring_job_routes.js";
 import type { RouteCoverageOwner } from "./route_coverage.js";
 
 export const routeCoverageOwners = [
@@ -74,6 +75,7 @@ export const routeCoverageOwners = [
   { owner: "user.preferences", authRequirements: userPreferencesRouteAuthRequirements },
   { owner: "usage.summary", authRequirements: usageSummaryRouteAuthRequirements },
   { owner: "ui.events", authRequirements: uiEventRouteAuthRequirements },
+  { owner: "recurring.jobs", authRequirements: recurringJobRouteAuthRequirements },
 ] as const satisfies readonly RouteCoverageOwner[];
 
 // The route inventory fixture describes the retired Python server. New TS-only
@@ -92,4 +94,12 @@ export const tsOnlyRouteKeys = [
   "GET /api/ui-events",
   "GET /api/ui-events/config",
   "GET /api/ui-events/installs",
+  "GET /api/recurring-jobs",
+  "POST /api/recurring-jobs",
+  "POST /api/recurring-jobs/preview",
+  "GET /api/recurring-jobs/{job_id}",
+  "PATCH /api/recurring-jobs/{job_id}",
+  "POST /api/recurring-jobs/{job_id}/run",
+  "POST /api/recurring-jobs/{job_id}/archive",
+  "GET /api/recurring-jobs/{job_id}/runs",
 ] as const;

@@ -80,6 +80,12 @@ import { createTaskControlPlaneServiceProvider } from "./tasks/task_control_plan
 import { createScheduleRepositoryProvider } from "./schedule/schedule_host_runtime.js";
 import { createFolderControlPlaneServiceProvider } from "./folders/folder_control_plane_runtime.js";
 import { createPersistenceHostRepositoryProvider } from "./control_plane/persistence_host_runtime.js";
+import { SqlRecurringJobRepository } from "./recurring-jobs/repository.js";
+import { RecurringJobService } from "./recurring-jobs/service.js";
+import { RecurringJobScheduler } from "./recurring-jobs/scheduler.js";
+import { createRecurringJobTargetValidator } from "./recurring-jobs/target_validator.js";
+import { createRecurringSession } from "./session/recurring_session_creation.js";
+import type { RecurringJobActor } from "./recurring-jobs/types.js";
 import type { SessionDeliveryRepository } from
   "./control_plane/repositories/session_delivery_repository.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
@@ -195,6 +201,7 @@ export async function createLiveProductionApplication(
     sqlResolver,
     sessionDeletionService,
   );
+  const recurringJobRepository = new SqlRecurringJobRepository(sqlResolver);
   const registry = new InMemoryNodeRegistry();
   const eventIngressRepository = new EventIngressRepository(
     new LiveEventIngressSqlProvider(sqlResolver),
@@ -282,6 +289,7 @@ export async function createLiveProductionApplication(
   let taskIdentityService: TaskIdentityService | undefined;
   let folderProjectIdentityService: FolderProjectIdentityService | undefined;
   let turnSummaryPipeline: LiveTurnSummaryPipeline | undefined;
+  let recurringJobScheduler: RecurringJobScheduler | undefined;
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
@@ -300,6 +308,7 @@ export async function createLiveProductionApplication(
     additionalNodeEventSinks: [
       (events) => pushNotifier.accept(events),
       (events) => turnSummaryPipeline?.accept(events),
+      (events) => recurringJobScheduler?.accept(events),
       sessionCacheSeed,
       sessionReconciliation,
     ],
@@ -467,24 +476,87 @@ export async function createLiveProductionApplication(
       processEnv: ephemeralProcessEnv,
     }),
   };
-  const app = createApp(buildProductionRouteOptions(
-    appConfig,
-    runtimeServices,
-    providers,
-    persistenceRepositoryProvider,
-    config.cors_allowed_origins,
-    taskIdentityService,
-    folderProjectIdentityService,
-    memoryStats,
-    ephemeralLlmRoutes,
-    createTaskControlPlaneServiceProvider({
-      sqlResolver,
-      broadcaster: runtimeServices.sessionBroadcaster,
+  const recurringJobService = new RecurringJobService({
+    repository: recurringJobRepository,
+    validateTarget: createRecurringJobTargetValidator({
+      registry,
+      modelPresetAvailability: providers.modelPresetAvailability,
+      listFolders: providers.folderRoutes.provider.listFolders,
+      getTaskSnapshot: providers.taskRoutes.provider.getTaskSnapshot,
+      findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
     }),
-    createScheduleRepositoryProvider(sqlResolver),
-    createFolderControlPlaneServiceProvider(sqlResolver),
-    new LiveDatabaseSchemaProvider(sqlResolver),
-  ));
+    launcher: {
+      isNodeConnected: (nodeId) => registry.getConnectedNode(nodeId) !== undefined,
+      createRecurringSession: async ({ job, run }) => await createRecurringSession({
+        router: runtimeServices.sessionRouter,
+        bridge: runtimeServices.sessionBridge,
+        modelPresetAvailability: providers.modelPresetAvailability,
+      }, {
+        sessionId: run.sessionId,
+        prompt: job.prompt,
+        nodeId: job.nodeId,
+        agentId: job.agentId,
+        modelPreset: job.modelPreset,
+        folderId: job.folderId,
+        container: job.container,
+        callerInfo: job.executionCaller,
+      }),
+      findDurableSession: async (sessionId) => {
+        const row = await (await persistenceRepositoryProvider()).sessionReads.getSession(sessionId);
+        if (!row) return null;
+        const rawStatus = row.status;
+        return {
+          status: rawStatus === "completed" || rawStatus === "error" || rawStatus === "interrupted"
+            ? rawStatus
+            : "running",
+        };
+      },
+    },
+  });
+  recurringJobScheduler = new RecurringJobScheduler({
+    service: recurringJobService,
+    repository: recurringJobRepository,
+    onError: (error, operation) => context.warn(warningMessage(`recurring jobs ${operation}`, error)),
+  });
+  const app = createApp({
+    ...buildProductionRouteOptions(
+      appConfig,
+      runtimeServices,
+      providers,
+      persistenceRepositoryProvider,
+      config.cors_allowed_origins,
+      taskIdentityService,
+      folderProjectIdentityService,
+      memoryStats,
+      ephemeralLlmRoutes,
+      createTaskControlPlaneServiceProvider({
+        sqlResolver,
+        broadcaster: runtimeServices.sessionBroadcaster,
+      }),
+      createScheduleRepositoryProvider(sqlResolver),
+      createFolderControlPlaneServiceProvider(sqlResolver),
+      new LiveDatabaseSchemaProvider(sqlResolver),
+    ),
+    recurringJobRoutes: {
+      service: recurringJobService,
+      resolveActor: async (request): Promise<RecurringJobActor | null> => {
+        const email = await providers.authenticatedUserResolvers.resolveEmail(request);
+        if (!email?.trim()) return null;
+        const callerInfo = await providers.authenticatedUserResolvers.resolveCallerInfo(request, null, "");
+        const source = callerInfo.source === "soul-app" ? "soul-app" : "browser";
+        return {
+          ownerEmail: email,
+          actorId: email,
+          callerInfo,
+          source,
+        };
+      },
+    },
+    recurringJobHostRoutes: {
+      service: recurringJobService,
+      authBearerToken: config.auth_bearer_token,
+    },
+  });
   logPushNotification = (event) => {
     app.log.info(
       { pushNotification: event },
@@ -549,6 +621,7 @@ export async function createLiveProductionApplication(
     app,
     startBackground: async () => {
       await sessionReconciliation.start();
+      await recurringJobScheduler?.start();
       await dbCatalogRepository.agentProfileRepository.list();
       startStableSessionOrderIndexMaintenance(
         stableSessionOrderIndexMaintenance,
@@ -563,6 +636,7 @@ export async function createLiveProductionApplication(
       resourcesClosed = true;
       await maintenanceService.stop();
       await sessionReconciliation.close();
+      await recurringJobScheduler?.stop();
       await usageSummaryService.stop();
       await turnSummaryPipeline?.drain();
       await pushNotifier.close();

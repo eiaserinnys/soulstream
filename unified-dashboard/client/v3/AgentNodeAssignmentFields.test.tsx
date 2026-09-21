@@ -147,6 +147,28 @@ describe("AgentNodeAssignmentFields", () => {
     expect(container.textContent).not.toContain("실행");
   });
 
+  it("does not write an empty node over a caller-managed persisted selection", async () => {
+    const onNodeIdChange = vi.fn();
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) =>
+      String(input).includes("model-presets") ? presetResponse([]) : response([]),
+    ));
+
+    flushSync(() => {
+      root.render(createElement(AgentNodeAssignmentFields, {
+        nodeId: "",
+        agentId: "",
+        modelPreset: "",
+        presentation: "session",
+        onNodeIdChange,
+        onAgentIdChange: vi.fn(),
+        onModelPresetChange: vi.fn(),
+      }));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onNodeIdChange).not.toHaveBeenCalled();
+  });
+
   it("marks the explicit compact desktop row layout without changing field order", () => {
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) =>
       String(input).includes("model-presets") ? presetResponse([]) : response([])

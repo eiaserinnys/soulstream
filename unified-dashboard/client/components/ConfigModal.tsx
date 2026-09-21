@@ -37,6 +37,7 @@ import { LiquidGlassTab } from "./LiquidGlassTab";
 import { ChatTypographyTab } from "./ChatTypographyTab";
 import { SessionReviewPolicyTab } from "./SessionReviewPolicyTab";
 import { UsageLogTab } from "./UsageLogTab";
+import { RecurringJobsTab } from "./RecurringJobsTab";
 
 const CLAUDE_AUTH_TAB_NAME = "claude_auth";
 const CLAUDE_AUTH_TAB_LABEL = "Claude Code 인증";
@@ -47,6 +48,7 @@ const USERS_TAB_NAME = "users";
 const AGENTS_TAB_NAME = "agents";
 const SESSION_REVIEW_TAB_NAME = "session_review";
 const USAGE_LOG_TAB_NAME = "usage_log";
+const RECURRING_JOBS_TAB_NAME = "recurring_jobs";
 
 interface ConfigModalProps {
   open: boolean;
@@ -80,6 +82,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
         chatTab,
         glassTab,
         { name: NODES_TAB_NAME, label: "노드" },
+        { name: RECURRING_JOBS_TAB_NAME, label: "반복 작업" },
         { name: USAGE_LOG_TAB_NAME, label: "사용 로그" },
         ...(user?.isAdmin ? [
           { name: SESSION_REVIEW_TAB_NAME, label: "요청 검수" },
@@ -113,6 +116,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
     selectedTab === LIQUID_GLASS_TAB_NAME ||
     selectedTab === CHAT_TAB_NAME ||
     selectedTab === NODES_TAB_NAME ||
+    selectedTab === RECURRING_JOBS_TAB_NAME ||
     selectedTab === SESSION_REVIEW_TAB_NAME ||
     selectedTab === USAGE_LOG_TAB_NAME ||
     selectedTab === AGENTS_TAB_NAME ||
@@ -159,6 +163,8 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
                 <div className="h-[420px] overflow-hidden rounded border border-border">
                   <NodePanel />
                 </div>
+              ) : selectedTab === RECURRING_JOBS_TAB_NAME ? (
+                <RecurringJobsTab />
               ) : selectedTab === USAGE_LOG_TAB_NAME ? (
                 <UsageLogTab />
               ) : selectedTab === SESSION_REVIEW_TAB_NAME ? (

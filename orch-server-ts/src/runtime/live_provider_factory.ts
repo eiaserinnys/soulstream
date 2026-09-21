@@ -114,6 +114,7 @@ export type { LiveRuntimeProviderBundle } from "./live_runtime_provider_bundle.j
 
 export type LiveOrchestratorProviderBundle = {
   readonly authenticatedUserResolvers: LiveAuthenticatedUserResolvers;
+  readonly modelPresetAvailability: ModelPresetAvailabilityService;
   readonly adminUsersRoutes: AdminUsersRouteOptions;
   readonly atomRoutes: AtomRouteOptions;
   readonly attachmentRoutes: Pick<
@@ -264,6 +265,7 @@ export function createLiveOrchestratorProviderBundle(
       repository: options.dependencies.dbCatalogRepository.agentProfileRepository,
     },
     authenticatedUserResolvers,
+    modelPresetAvailability,
     adminUsersRoutes: {
       provider: createLiveAdminUsersRouteProvider({
         repository: options.dependencies.dbCatalogRepository.adminUsersRepository,

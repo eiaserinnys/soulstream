@@ -115,6 +115,21 @@ belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 | `get_session_name(session_id)` | Read the current display name |
 | `delete_session(session_id)` | Permanently delete a session and all its events |
 
+### Recurring jobs
+
+Recurring-job tools require a trusted Soulstream caller session with a verified owner email. Public and external/LLM MCP callers cannot use them. The tools delegate to the same orchestrator service and CAS validation as web and soul-app.
+
+| Tool | Description |
+|------|-------------|
+| `list_recurring_jobs(include_archived)` | List the caller's jobs |
+| `get_recurring_job(job_id)` | Read one job and its server-computed next execution |
+| `preview_recurring_schedule(timezone, schedule_expressions)` | Preview the next five occurrences |
+| `create_recurring_job(...)` | Create a job; `enabled=false` safely stages it before automatic execution |
+| `update_recurring_job(job_id, expected_version, ...)` | Change a job or pause/resume it with CAS |
+| `run_recurring_job(job_id, idempotency_key)` | Request one manual run, including while paused |
+| `archive_recurring_job(job_id, expected_version)` | Archive a job without terminating an already running session |
+| `list_recurring_job_runs(job_id, limit)` | Read run history and its linked session IDs |
+
 ### Folder management
 
 | Tool | Description |

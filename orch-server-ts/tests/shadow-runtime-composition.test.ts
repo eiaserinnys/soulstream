@@ -183,6 +183,7 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
     nodeAgentProfileRoutes: createInertProvider(),
     nodeClaudeAuthRoutes: createInertProvider(),
     publicStatusRoutes: createInertProvider(),
+    recurringJobRoutes: createInertProvider(),
     pushRoutes: createInertProvider(),
     taskRoutes: createInertProvider(),
     sessionCatalogRoutes: createInertProvider(),
