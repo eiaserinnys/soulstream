@@ -145,7 +145,7 @@ describe("ConfigModal layout", () => {
               { source: "external-llm", label: "외부 LLM", description: "외부 요청", automatic: false },
             ],
           }
-        : { users: [], folders: [] };
+        : { users: [], folders: [], jobs: [] };
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -209,6 +209,18 @@ describe("ConfigModal layout", () => {
     expect(document.body.textContent).toContain("틴트");
     const saveButton = document.body.querySelector<HTMLButtonElement>('[data-testid="config-save-button"]');
     expect(saveButton?.disabled).toBe(true);
+  });
+
+  it("opens recurring jobs from the orchestrator settings surface", async () => {
+    ({ container, root } = renderModal());
+    await settleConfigModal();
+
+    clickConfigTab("반복 작업");
+    await settleConfigModal();
+
+    expect(document.body.querySelector('[data-testid="recurring-jobs-tab"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("새 반복 작업");
+    expect(document.body.textContent).toContain("다음 5회 보기");
   });
 
   it("renders a five-step account chat font-size slider", async () => {

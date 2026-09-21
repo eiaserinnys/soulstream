@@ -14,6 +14,7 @@ import { registerClaudeRuntimeTools } from "./tools/claude_runtime.js";
 import { registerCustomViewTools } from "./tools/custom_view.js";
 import { registerMultiNodeTools } from "./tools/multi_node.js";
 import { registerPageTools } from "./tools/page.js";
+import { registerRecurringJobTools } from "./tools/recurring_jobs.js";
 import { registerReflectTools } from "./tools/reflect.js";
 import { registerTaskTools } from "./tools/task.js";
 import { registerSessionMgmtTools } from "./tools/session_mgmt.js";
@@ -37,5 +38,6 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerCustomViewTools(guardedServer, runtime);
   registerPageTools(guardedServer, runtime);
   registerWorktreeTools(guardedServer, runtime);
+  registerRecurringJobTools(guardedServer, runtime);
   return server;
 }

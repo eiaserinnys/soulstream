@@ -24,6 +24,7 @@ import type {
   NodeCommandRequestIdGenerator,
 } from "../node/pending_commands.js";
 import type { PublicStatusRouteOptions } from "../public/public_status_routes.js";
+import type { RecurringJobRouteOptions } from "../recurring-jobs/recurring_job_routes.js";
 import type { PageYjsRouteOptions } from "../page/page_yjs_route.js";
 import type { PushRouteOptions } from "../push/push_routes.js";
 import type { TaskRouteOptions } from "../tasks/task_route_types.js";
@@ -91,6 +92,7 @@ export type ShadowOrchestratorProviderBundle = {
   nodeAgentProfileRoutes: NodeAgentProfileRouteOptions;
   nodeClaudeAuthRoutes: ShadowNodeClaudeAuthRouteProviders;
   publicStatusRoutes: PublicStatusRouteOptions;
+  recurringJobRoutes: RecurringJobRouteOptions;
   pushRoutes: PushRouteOptions;
   taskRoutes: TaskRouteOptions;
   sessionCatalogRoutes: SessionCatalogRouteOptions;
@@ -130,6 +132,7 @@ export type ShadowOrchestratorRouteOptions = Required<
     | "nodeWsRoute"
     | "pageYjsRoutes"
     | "publicStatusRoutes"
+    | "recurringJobRoutes"
     | "pushRoutes"
     | "taskRoutes"
     | "sessionActionCommandRoutes"
@@ -287,6 +290,10 @@ export const shadowRouteCompositionRequirements = [
     owner: "ui.events",
     paths: ["uiEventRoutes.repository", "uiEventRoutes.resolveIdentity"],
   },
+  {
+    owner: "recurring.jobs",
+    paths: ["recurringJobRoutes.service", "recurringJobRoutes.resolveActor"],
+  },
 ] as const satisfies readonly ShadowRouteProviderRequirement[];
 
 export const shadowRouteCompositionOwners =
@@ -396,6 +403,7 @@ function buildShadowRouteOptions(
     nodeSnapshotRoutes: runtime.routeOptions.nodeSnapshotRoutes,
     nodeWsRoute: runtime.routeOptions.nodeWsRoute,
     publicStatusRoutes: providers.publicStatusRoutes,
+    recurringJobRoutes: providers.recurringJobRoutes,
     pushRoutes: providers.pushRoutes,
     taskRoutes: providers.taskRoutes,
     sessionActionCommandRoutes: requireRuntimeRouteOption(

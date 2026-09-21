@@ -199,6 +199,10 @@ function createAllOptInRouteApp() {
     },
     publicStatusRoutes: inert,
     pushRoutes: inert,
+    recurringJobRoutes: {
+      service: inert,
+      resolveActor: async () => null,
+    },
     taskRoutes: inert,
     sessionActionCommandRoutes: inert,
     sessionBackgroundScheduleRoutes: inert,

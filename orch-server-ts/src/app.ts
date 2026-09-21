@@ -63,6 +63,14 @@ import {
   type ScheduleHostRouteOptions,
 } from "./schedule/schedule_host_route.js";
 import {
+  registerRecurringJobRoutes,
+  type RecurringJobRouteOptions,
+} from "./recurring-jobs/recurring_job_routes.js";
+import {
+  registerRecurringJobHostRoutes,
+  type RecurringJobHostRouteOptions,
+} from "./recurring-jobs/recurring_job_host_routes.js";
+import {
   registerPersistenceHostRoutes,
   type PersistenceHostRouteOptions,
 } from "./control_plane/persistence_host_routes.js";
@@ -198,6 +206,8 @@ export type CreateAppOptions = {
   markdownDocumentRoutes?: MarkdownDocumentRouteOptions;
   taskRoutes?: TaskRouteOptions;
   scheduleHostRoutes?: ScheduleHostRouteOptions;
+  recurringJobRoutes?: RecurringJobRouteOptions;
+  recurringJobHostRoutes?: RecurringJobHostRouteOptions;
   persistenceHostRoutes?: PersistenceHostRouteOptions;
   usageSummaryRoutes?: UsageSummaryRouteOptions;
   uiEventRoutes?: UiEventRouteOptions;
@@ -260,6 +270,12 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
       app,
       options.sessionBackgroundScheduleRoutes,
     );
+  }
+  if (options.recurringJobRoutes !== undefined) {
+    registerRecurringJobRoutes(app, options.recurringJobRoutes);
+  }
+  if (options.recurringJobHostRoutes !== undefined) {
+    registerRecurringJobHostRoutes(app, options.recurringJobHostRoutes);
   }
   if (options.sessionCatalogRoutes !== undefined) {
     registerSessionCatalogRoutes(app, options.sessionCatalogRoutes);
