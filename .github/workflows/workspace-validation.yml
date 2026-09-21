@@ -1,0 +1,80 @@
+name: Workspace validation
+
+env:
+  PNPM_VERSION: '10.32.1'
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'unified-dashboard/**'
+      - 'soul-desktop/**'
+      - 'soul-server-ts/**'
+      - 'orch-server-ts/**'
+      - 'chrome-extension/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'packages/**'
+      - 'unified-dashboard/**'
+      - 'soul-desktop/**'
+      - 'soul-server-ts/**'
+      - 'orch-server-ts/**'
+      - 'chrome-extension/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workspace-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install workspace dependencies
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+          corepack pnpm install --frozen-lockfile --config.strict-dep-builds=false
+
+      - name: Typecheck active TypeScript packages
+        run: corepack pnpm --filter '*' --recursive --if-present typecheck
+
+      - name: Build desktop package
+        run: corepack pnpm --dir soul-desktop build
+
+      - name: Verify CI maintenance contract
+        run: >-
+          corepack pnpm --dir soul-server-ts exec vitest run
+          tests/scripts/ci_maintenance_contract.test.ts
+          --maxWorkers=2 --minWorkers=1
+
+      - name: Install Chromium for dashboard smoke
+        run: corepack pnpm --dir unified-dashboard exec playwright install --with-deps chromium
+
+      - name: Run dashboard browser smoke
+        run: corepack pnpm --dir unified-dashboard test:e2e:smoke
+
+      - name: Upload dashboard smoke failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dashboard-smoke-failure-artifacts
+          path: unified-dashboard/e2e/test-results/smoke
+          if-no-files-found: ignore
+          retention-days: 7
