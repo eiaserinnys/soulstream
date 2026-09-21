@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync, symlinkSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
 import { WorktreeGit, WorktreeGitError } from "./worktree_git.js";
@@ -475,9 +475,11 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 
   private assertWorkspaceUnused(path: string): void {
+    const projectsRoot = realpathSync(this.options.projectsRoot);
     for (const active of this.options.listActiveWorkspaceDirs()) {
       if (!existsSync(active)) continue;
       const activePath = realpathSync(active);
+      if (containsPath(activePath, projectsRoot)) continue;
       if (overlaps(path, activePath)) {
         throw new WorktreeServiceError("WORKTREE_IN_USE", path);
       }
@@ -568,10 +570,13 @@ function nodeModulesDirectories(base: string): string[] {
 }
 
 function overlaps(left: string, right: string): boolean {
-  const leftToRight = relative(left, right);
-  const rightToLeft = relative(right, left);
-  return leftToRight === "" || (!leftToRight.startsWith("..") && !isAbsolute(leftToRight))
-    || (!rightToLeft.startsWith("..") && !isAbsolute(rightToLeft));
+  return containsPath(left, right) || containsPath(right, left);
+}
+
+function containsPath(parent: string, child: string): boolean {
+  const path = relative(parent, child);
+  return path === ""
+    || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
 }
 
 function createResult(

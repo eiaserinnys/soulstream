@@ -14,6 +14,7 @@ describe("active task workspace protection", () => {
       task({
         status: "completed",
         profileId: "agent-a",
+        runnerRetainedForDetachedWork: true,
         runner: { engine: { workspaceDir: "/projects/recovered-worktree" } } as Task["runner"],
       }),
     ], () => "/projects/base-profile");
@@ -33,5 +34,29 @@ describe("active task workspace protection", () => {
     ], () => "/projects/base-profile");
 
     expect(actual).toEqual(["/projects/resolved-worktree"]);
+  });
+
+  it("drops a terminal task stale resolved cwd when no runner remains", () => {
+    const actual = listActiveTaskWorkspaceDirs([
+      task({
+        status: "completed",
+        profileId: "agent-a",
+        resolvedWorkspaceDir: "/projects/completed-worktree",
+      }),
+    ], () => "/projects/base-profile");
+
+    expect(actual).toEqual([]);
+  });
+
+  it("protects an initializing task resolved cwd before its runner attaches", () => {
+    const actual = listActiveTaskWorkspaceDirs([
+      task({
+        status: "initializing",
+        profileId: "agent-a",
+        resolvedWorkspaceDir: "/projects/resuming-worktree",
+      }),
+    ], () => "/projects/base-profile");
+
+    expect(actual).toEqual(["/projects/resuming-worktree"]);
   });
 });

@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -107,8 +107,8 @@ describe("WorktreeService", () => {
     const { projectsRoot, repo, service } = fixture(active);
     const unmanaged = join(projectsRoot, "demo--unmanaged");
     git(repo, "worktree", "add", "-b", "feature/unmanaged", unmanaged, "HEAD");
-    mkdirSync(join(unmanaged, "child"));
-    active.push(join(unmanaged, "child"));
+    mkdirSync(join(unmanaged, "..scratch"));
+    active.push(join(unmanaged, "..scratch"));
 
     await expect(service.create({
       actorSessionId: "owner",
@@ -120,6 +120,25 @@ describe("WorktreeService", () => {
       setup: "none",
       requireSetup: false,
     })).rejects.toMatchObject({ code: "WORKTREE_IN_USE" });
+  });
+
+  it("allows adoption below projects root when only a generic workspace ancestor is active", async () => {
+    const active: string[] = [];
+    const { projectsRoot, repo, service } = fixture(active);
+    active.push(dirname(projectsRoot));
+    const unmanaged = join(projectsRoot, "demo--generic-workspace");
+    git(repo, "worktree", "add", "-b", "feature/generic-workspace", unmanaged, "HEAD");
+
+    await expect(service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/generic-workspace",
+      mode: "adopt",
+      adoptPath: unmanaged,
+      expectedHead: git(unmanaged, "rev-parse", "HEAD"),
+      setup: "none",
+      requireSetup: false,
+    })).resolves.toMatchObject({ adopted: true });
   });
 
   it("serializes concurrent create calls for the same branch", async () => {
@@ -240,6 +259,30 @@ describe("WorktreeService", () => {
       actorSessionId: "owner",
       worktreeId: String(created.worktreeId),
     })).rejects.toMatchObject({ code: "WORKTREE_IN_USE" });
+    expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
+  });
+
+  it("reaches dirty classification when only a generic workspace ancestor is active", async () => {
+    const active: string[] = [];
+    const { projectsRoot, service, host } = fixture(active);
+    active.push(dirname(projectsRoot));
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/generic-workspace-dirty",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    });
+    writeFileSync(join(String(created.path), "README.md"), "dirty\n");
+
+    await expect(service.remove({
+      actorSessionId: "owner",
+      worktreeId: String(created.worktreeId),
+    })).rejects.toMatchObject({
+      code: "WORKTREE_DIRTY",
+      details: { tracked: ["README.md"] },
+    });
     expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
   });
 
