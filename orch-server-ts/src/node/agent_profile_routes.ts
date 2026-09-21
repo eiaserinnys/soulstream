@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 
+import {
+  AGENT_PROFILE_PORTRAIT_MAX_BYTES,
+  AGENT_PROFILE_PORTRAIT_UPLOAD_BODY_LIMIT_BYTES,
+} from "@soulstream/agent-profile-contract";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 export type AgentAtomContext = {
@@ -152,15 +156,19 @@ export function registerAgentProfileRoutes(
       .send(portrait.body);
   });
 
-  app.put<{ Params: AgentParams }>("/api/agent-profiles/:agent_id/portrait", async (request, reply) => {
-    const parsed = parsePortraitWrite(agentId(request), request.body);
-    if (!parsed.ok) return reply.code(422).send({ detail: parsed.error });
-    try {
-      return reply.send(projectProfile(await options.repository.putPortrait(parsed.value)));
-    } catch (error) {
-      return sendRepositoryError(reply, error);
-    }
-  });
+  app.put<{ Params: AgentParams }>(
+    "/api/agent-profiles/:agent_id/portrait",
+    { bodyLimit: AGENT_PROFILE_PORTRAIT_UPLOAD_BODY_LIMIT_BYTES },
+    async (request, reply) => {
+      const parsed = parsePortraitWrite(agentId(request), request.body);
+      if (!parsed.ok) return reply.code(422).send({ detail: parsed.error });
+      try {
+        return reply.send(projectProfile(await options.repository.putPortrait(parsed.value)));
+      } catch (error) {
+        return sendRepositoryError(reply, error);
+      }
+    },
+  );
 
   app.delete<{ Params: AgentParams }>("/api/agent-profiles/:agent_id/portrait", async (request, reply) => {
     const version = expectedVersion(request.body);
@@ -234,6 +242,9 @@ function parsePortraitWrite(agentIdValue: string, body: unknown): ParseResult<Ag
   const decoded = Buffer.from(body.data_base64, "base64");
   if (decoded.length === 0 || decoded.toString("base64").replace(/=+$/, "") !== body.data_base64.replace(/=+$/, "")) {
     return invalid("data_base64 is invalid");
+  }
+  if (decoded.length > AGENT_PROFILE_PORTRAIT_MAX_BYTES) {
+    return invalid("portrait must not exceed 5MiB");
   }
   const mime = body.mime as SupportedPortraitMime;
   if (detectPortraitMime(decoded) !== mime) return invalid("mime does not match portrait bytes");

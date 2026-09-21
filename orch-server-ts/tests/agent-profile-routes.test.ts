@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
@@ -9,6 +11,24 @@ import {
   type AgentProfileRecord,
   type AgentProfileRepository,
 } from "../src/index.js";
+
+const EXPECTED_PORTRAIT_MAX_BYTES = 5 * 1024 * 1024;
+const ROSELIN_PORTRAIT_BYTES = 2_186_900;
+
+function syntheticPng(size: number): Buffer {
+  const body = Buffer.alloc(size);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47]).copy(body);
+  return body;
+}
+
+function portraitPayload(body: Buffer) {
+  return {
+    data_base64: body.toString("base64"),
+    mime: "image/png",
+    sha256: createHash("sha256").update(body).digest("hex"),
+    expected_version: 1,
+  };
+}
 
 const profile: AgentProfileRecord = {
   agentId: "roselin",
@@ -108,6 +128,67 @@ describe("agent profile DB routes", () => {
 
     expect(response.statusCode).toBe(422);
     expect(response.json().detail).toContain("does not match");
+    await app.close();
+  });
+
+  it("accepts the observed 2,916,002-byte portrait import payload", async () => {
+    const putPortrait = vi.fn(async () => ({ ...profile, hasPortrait: true, version: 2 }));
+    const app = Fastify();
+    registerAgentProfileRoutes(app, { repository: repository({ putPortrait }) });
+    const payload = portraitPayload(syntheticPng(ROSELIN_PORTRAIT_BYTES));
+
+    expect(Buffer.byteLength(JSON.stringify(payload), "utf8")).toBe(2_916_002);
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/agent-profiles/roselin/portrait",
+      payload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(putPortrait).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({ length: ROSELIN_PORTRAIT_BYTES }),
+    }));
+    await app.close();
+  });
+
+  it("accepts a 5MiB portrait and rejects one byte over with 422", async () => {
+    const app = Fastify();
+    registerAgentProfileRoutes(app, { repository: repository() });
+
+    const atLimit = await app.inject({
+      method: "PUT",
+      url: "/api/agent-profiles/roselin/portrait",
+      payload: portraitPayload(syntheticPng(EXPECTED_PORTRAIT_MAX_BYTES)),
+    });
+    const overLimit = await app.inject({
+      method: "PUT",
+      url: "/api/agent-profiles/roselin/portrait",
+      payload: portraitPayload(syntheticPng(EXPECTED_PORTRAIT_MAX_BYTES + 1)),
+    });
+
+    expect(atLimit.statusCode).toBe(200);
+    expect(overLimit.statusCode).toBe(422);
+    expect(overLimit.json().detail).toContain("5MiB");
+    await app.close();
+  });
+
+  it("keeps the default 1MiB body limit on non-portrait profile writes", async () => {
+    const app = Fastify();
+    registerAgentProfileRoutes(app, { repository: repository() });
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/agent-profiles/roselin",
+      payload: {
+        name: "x".repeat(1024 * 1024),
+        atom_contexts: [],
+        default_preset: null,
+        aliases: [],
+        expected_version: 1,
+      },
+    });
+
+    expect(response.statusCode).toBe(413);
     await app.close();
   });
 

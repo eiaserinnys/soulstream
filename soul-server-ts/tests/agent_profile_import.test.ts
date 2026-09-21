@@ -11,6 +11,14 @@ import {
   projectAgentProfileImportDryRun,
 } from "../src/agent_profile_import.js";
 
+const EXPECTED_PORTRAIT_MAX_BYTES = 5 * 1024 * 1024;
+
+function syntheticPng(size: number): Buffer {
+  const body = Buffer.alloc(size);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47]).copy(body);
+  return body;
+}
+
 const directories: string[] = [];
 afterEach(async () => Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true }))));
 
@@ -56,5 +64,28 @@ describe("agent profile import planner", () => {
       "approved fingerprint does not match",
     );
     expect(() => assertAgentProfileImportApproval(plan, plan.fingerprint)).not.toThrow();
+  });
+
+  it("accepts a 5MiB portrait and rejects one byte over while building the plan", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-profile-import-limit-"));
+    directories.push(directory);
+    const atLimitPath = join(directory, "at-limit.png");
+    const overLimitPath = join(directory, "over-limit.png");
+    await writeFile(atLimitPath, syntheticPng(EXPECTED_PORTRAIT_MAX_BYTES));
+    await writeFile(overLimitPath, syntheticPng(EXPECTED_PORTRAIT_MAX_BYTES + 1));
+    const input = (portraitPath: string) => AgentProfileSchema.parse({
+      id: "roselin",
+      name: "로젤린",
+      backend: "codex",
+      workspace_dir: "/tmp/roselin",
+      portrait_path: portraitPath,
+      aliases: [],
+      atom_contexts: [],
+    });
+
+    await expect(buildAgentProfileImportPlan([input(atLimitPath)], [])).resolves.toMatchObject({
+      entries: [{ portrait: { size: EXPECTED_PORTRAIT_MAX_BYTES } }],
+    });
+    await expect(buildAgentProfileImportPlan([input(overLimitPath)], [])).rejects.toThrow("5MiB");
   });
 });
