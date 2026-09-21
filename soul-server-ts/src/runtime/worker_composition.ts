@@ -68,6 +68,7 @@ import { WorktreeHostClient } from "../control_plane/worktree_host_client.js";
 import { WorktreeGit } from "../worktree/worktree_git.js";
 import { RepositoryLock } from "../worktree/worktree_repository_lock.js";
 import { WorktreeService } from "../worktree/worktree_service.js";
+import { listActiveTaskWorkspaceDirs } from "./task_active_workspace_dirs.js";
 
 export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 export async function composeWorkerRuntime(
@@ -273,13 +274,10 @@ export async function composeWorkerRuntime(
           defaultTimeoutMs: 120_000,
         }),
         host: new WorktreeHostClient(orchHostClientDeps),
-        listActiveWorkspaceDirs: () => taskManager.listTasks()
-          .filter((task) => task.status === "initializing"
-            || task.status === "running"
-            || task.runner !== undefined)
-          .map((task) => task.resolvedWorkspaceDir
-            ?? (task.profileId ? agentRegistry.get(task.profileId)?.workspace_dir : undefined))
-          .filter((path): path is string => Boolean(path)),
+        listActiveWorkspaceDirs: () => listActiveTaskWorkspaceDirs(
+          taskManager.listTasks(),
+          (profileId) => agentRegistry.get(profileId)?.workspace_dir,
+        ),
       })
     : undefined;
   db.configureScheduleHost(new ScheduleHostClient(orchHostClientDeps));
