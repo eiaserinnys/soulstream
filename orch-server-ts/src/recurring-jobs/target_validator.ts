@@ -96,6 +96,9 @@ export function createRecurringJobTargetValidator(
     }
     const snapshot = await options.getTaskSnapshot(target.container.id);
     if (!snapshot) throw new RecurringJobError("NOT_FOUND", "Target task was not found.", 404);
+    if (snapshot.task?.archived === true) {
+      throw new RecurringJobError("ARCHIVED", "Target task is archived.", 409);
+    }
     if (snapshotTaskFolderId(snapshot) !== target.folderId) {
       throw new RecurringJobError(
         "VALIDATION",

@@ -103,6 +103,44 @@ export function nextRecurringOccurrences(
   throw new Error("could not find a future occurrence within three years");
 }
 
+/**
+ * Returns the most recent scheduled instant at or before `at`. Like the
+ * forward iterator, a fall-back local minute is represented once: when the
+ * clock repeats, the first absolute instant remains the scheduled one.
+ */
+export function latestRecurringOccurrenceOnOrBefore(
+  schedule: CompiledRecurringSchedule,
+  at: Date,
+): Date | null {
+  if (!Number.isFinite(at.getTime())) throw new Error("at must be a valid date");
+
+  const formatter = localMinuteFormatter(schedule.timezone);
+  let cursorMs = floorMinute(at.getTime());
+  let candidate: { readonly milliseconds: number; readonly localStamp: string } | undefined;
+  let firstCandidateMs: number | undefined;
+
+  for (let scanned = 0; scanned < MAX_SEARCH_MINUTES; scanned += 1) {
+    const local = toLocalMinute(new Date(cursorMs), formatter);
+    if (schedule.expressions.some((expression) => matches(expression, local))) {
+      if (candidate === undefined) {
+        candidate = { milliseconds: cursorMs, localStamp: local.stamp };
+        firstCandidateMs = cursorMs;
+      } else if (candidate.localStamp === local.stamp) {
+        // Reverse traversal encounters the second fall-back instant first.
+        // Keep replacing it through one local-day fence so the first instant
+        // matches nextRecurringOccurrences' forward-time policy.
+        candidate = { milliseconds: cursorMs, localStamp: local.stamp };
+      }
+    }
+    if (candidate !== undefined && firstCandidateMs !== undefined &&
+        cursorMs <= firstCandidateMs - FALLBACK_HISTORY_MS) {
+      return new Date(candidate.milliseconds);
+    }
+    cursorMs -= 60_000;
+  }
+  return candidate ? new Date(candidate.milliseconds) : null;
+}
+
 function normalizeExpression(expression: string): string {
   if (typeof expression !== "string") throw new Error("cron expression must be a string");
   const normalized = expression.trim().replace(/\s+/g, " ");

@@ -161,6 +161,8 @@ export interface RecurringJobRepository {
   claimRunForDispatch(runId: string, now: Date): Promise<RecurringJobRun | null>;
   reserveScheduledRun(input: {
     readonly job: RecurringJob;
+    /** A terminal record that compresses older missed scheduled occurrences. */
+    readonly compressedRun?: RecurringJobRun;
     readonly run: RecurringJobRun;
     readonly nextRunAt: Date | null;
     readonly now: Date;

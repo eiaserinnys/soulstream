@@ -1,11 +1,15 @@
 import {
+  PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
   type NodeCommandResponse,
 } from "../node/pending_commands.js";
 import type { CreateSessionNodeCommandPayload } from "../node/registry_types.js";
 import type { ModelPresetAvailabilityService } from "../model/model_preset_availability.js";
 import type { RecurringSessionLaunchResult } from "../recurring-jobs/types.js";
-import type { SessionCommandTransportBridge } from "./session_command_transport.js";
+import {
+  NodeCommandTransportError,
+  type SessionCommandTransportBridge,
+} from "./session_command_transport.js";
 import type { SessionCommandRouter } from "./session_command_router.js";
 
 export type RecurringSessionCreateCoreOptions = {
@@ -29,7 +33,7 @@ export type CreateRecurringSessionInput = {
 
 export class RecurringSessionCreateError extends Error {
   constructor(
-    readonly code: "INVALID_STABLE_SESSION_ID" | "SESSION_ID_MISMATCH" | "NODE_REJECTED",
+    readonly code: "INVALID_STABLE_SESSION_ID" | "NODE_REJECTED",
     message: string,
     readonly dispatchPhase: "before_send" | "after_send",
   ) {
@@ -83,11 +87,7 @@ export async function createRecurringSession(
       );
     }
     if (typeof response.agentSessionId === "string" && response.agentSessionId !== input.sessionId) {
-      throw new RecurringSessionCreateError(
-        "SESSION_ID_MISMATCH",
-        "create_session ACK changed the persisted recurring-run session ID.",
-        "after_send",
-      );
+      return await reconcileUncertainCreate(options, input.sessionId, routed.node.nodeId, routed.modelPresetId);
     }
     const observed = await options.router.waitForCreatedSession(
       input.sessionId,
@@ -100,15 +100,31 @@ export async function createRecurringSession(
     };
   } catch (error) {
     if (error instanceof RecurringSessionCreateError) throw error;
-    if (error instanceof PendingNodeCommandTimeoutError) {
-      const observed = await reconcileTimeout(options, input.sessionId, routed.node.nodeId);
-      return {
-        state: observed ? "running" : "awaiting_session",
-        resolvedModelPreset: routed.modelPresetId ?? null,
-      };
+    if (isConfirmedNodeRejection(error)) {
+      throw new RecurringSessionCreateError(
+        "NODE_REJECTED",
+        responseMessage(error.response, "Node rejected create_session."),
+        "after_send",
+      );
+    }
+    if (isUncertainCreateFailure(error)) {
+      return await reconcileUncertainCreate(options, input.sessionId, routed.node.nodeId, routed.modelPresetId);
     }
     throw error;
   }
+}
+
+async function reconcileUncertainCreate(
+  options: RecurringSessionCreateCoreOptions,
+  sessionId: string,
+  nodeId: string,
+  resolvedModelPreset: string | null | undefined,
+): Promise<RecurringSessionLaunchResult> {
+  const observed = await reconcileTimeout(options, sessionId, nodeId);
+  return {
+    state: observed ? "running" : "awaiting_session",
+    resolvedModelPreset: resolvedModelPreset ?? null,
+  };
 }
 
 async function reconcileTimeout(
@@ -129,6 +145,19 @@ async function reconcileTimeout(
 
 function isErrorAck(response: NodeCommandResponse): boolean {
   return response.type === "error" || response.status === "error";
+}
+
+function isConfirmedNodeRejection(
+  error: unknown,
+): error is PendingNodeCommandRejectedError & { readonly response: NodeCommandResponse } {
+  return error instanceof PendingNodeCommandRejectedError &&
+    error.response !== undefined && isErrorAck(error.response);
+}
+
+function isUncertainCreateFailure(error: unknown): boolean {
+  if (error instanceof PendingNodeCommandTimeoutError) return true;
+  if (error instanceof PendingNodeCommandRejectedError) return error.response === undefined;
+  return error instanceof NodeCommandTransportError && error.code === "TRANSPORT_SEND_FAILED";
 }
 
 function responseMessage(response: NodeCommandResponse, fallback: string): string {

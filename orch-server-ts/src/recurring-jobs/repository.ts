@@ -123,9 +123,9 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
         RETURNING *
       `;
       if (!rows[0]) return await this.currentOrConflictWith(transaction, jobId, ownerEmail);
-      await cancelAutomaticPendingRunsWith(transaction, jobId, {
+      await cancelPendingRunsOnArchiveWith(transaction, jobId, {
         code: "JOB_ARCHIVED",
-        message: "The recurring job was archived before this automatic run was sent.",
+        message: "The recurring job was archived before this run was sent.",
       }, now);
       return jobFromRow(rows[0]);
     });
@@ -234,10 +234,8 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
       WHERE run.run_id = ${runId}
         AND job.job_id = run.job_id
         AND run.state IN ('queued', 'waiting_for_node')
-        AND (
-          run.trigger = 'manual'
-          OR (job.enabled = TRUE AND job.archived_at IS NULL)
-        )
+        AND job.archived_at IS NULL
+        AND (run.trigger = 'manual' OR job.enabled = TRUE)
       RETURNING run.*
     `;
     return rows[0] ? runFromRow(rows[0]) : null;
@@ -245,6 +243,7 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
 
   async reserveScheduledRun(input: {
     readonly job: RecurringJob;
+    readonly compressedRun?: RecurringJobRun;
     readonly run: RecurringJobRun;
     readonly nextRunAt: Date | null;
     readonly now: Date;
@@ -260,6 +259,10 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
           RETURNING *
         `;
         if (!jobs[0]) return null;
+        if (input.compressedRun) {
+          const compressed = await insertRun(transaction, input.compressedRun);
+          if (!compressed) throw new ReservationCollision();
+        }
         const created = await insertRun(transaction, input.run);
         if (created) return { run: created, created: true };
         throw new ReservationCollision();
@@ -405,6 +408,21 @@ async function cancelAutomaticPendingRunsWith(
     SET state = 'cancelled', reason_code = ${reason.code}, reason_message = ${reason.message},
         finished_at = ${now}, updated_at = ${now}
     WHERE job_id = ${jobId} AND trigger = 'scheduled'
+      AND state IN ('queued', 'waiting_for_node')
+  `;
+}
+
+async function cancelPendingRunsOnArchiveWith(
+  sql: BoardYjsQuerySql,
+  jobId: string,
+  reason: { code: string; message: string },
+  now: Date,
+): Promise<void> {
+  await sql<Row[]>`
+    UPDATE recurring_job_runs
+    SET state = 'cancelled', reason_code = ${reason.code}, reason_message = ${reason.message},
+        finished_at = ${now}, updated_at = ${now}
+    WHERE job_id = ${jobId}
       AND state IN ('queued', 'waiting_for_node')
   `;
 }

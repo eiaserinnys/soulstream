@@ -127,6 +127,45 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
     expect(await repository.listRuns(scheduledJob.jobId, 10)).toHaveLength(1);
   });
 
+  it("atomically records compressed missed work beside the one selected eligible occurrence", async () => {
+    const scheduledJob = job({ scheduleExpressions: ["0 9,12 * * 1-5"] });
+    await repository.createJob(scheduledJob);
+    const now = new Date("2026-09-21T03:10:00.000Z");
+    const reserved = await repository.reserveScheduledRun({
+      job: scheduledJob,
+      compressedRun: run({
+        runId: "compressed-0900",
+        sessionId: "compressed-0900-session",
+        trigger: "scheduled",
+        scheduledFor: "2026-09-21T00:00:00.000Z",
+        manualIdempotencyKey: null,
+        state: "skipped_late",
+        reasonCode: "LATE_RUN_WINDOW_EXPIRED",
+        reasonMessage: "Older missed occurrences were compressed.",
+        finishedAt: now.toISOString(),
+      }),
+      run: run({
+        runId: "selected-1200",
+        sessionId: "selected-1200-session",
+        trigger: "scheduled",
+        scheduledFor: "2026-09-21T03:00:00.000Z",
+        manualIdempotencyKey: null,
+      }),
+      nextRunAt: new Date("2026-09-22T00:00:00.000Z"),
+      now,
+    });
+
+    expect(reserved).toMatchObject({ created: true, run: { runId: "selected-1200" } });
+    expect(await repository.listRuns(scheduledJob.jobId, 10)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ runId: "compressed-0900", state: "skipped_late" }),
+      expect.objectContaining({ runId: "selected-1200", state: "queued" }),
+    ]));
+    expect(await repository.getJob(scheduledJob.jobId)).toMatchObject({
+      nextRunAt: "2026-09-22T00:00:00.000Z",
+      version: 2,
+    });
+  });
+
   it("does not claim a queued automatic run after pause, while a dispatch claim survives later archive", async () => {
     const pausedJob = job();
     await repository.createJob(pausedJob);
@@ -170,6 +209,35 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
       new Date("2026-09-21T00:02:00.000Z"),
     );
     expect(await repository.getRun(active.runId)).toMatchObject({ state: "dispatching" });
+  });
+
+  it("cancels a queued manual run on archive and refuses a later claim", async () => {
+    const archivedJob = job({ jobId: "job-manual-archive", createdIdempotencyKey: "create-manual-archive" });
+    await repository.createJob(archivedJob);
+    const queuedManual = (await repository.createManualRun(run({
+      jobId: archivedJob.jobId,
+      runId: "manual-before-archive",
+      sessionId: "manual-before-archive-session",
+      manualIdempotencyKey: "manual-before-archive",
+      state: "waiting_for_node",
+    }))).run;
+
+    await repository.archiveJob(
+      archivedJob.jobId,
+      archivedJob.ownerEmail,
+      archivedJob.version,
+      "owner@example.com",
+      new Date("2026-09-21T00:01:00.000Z"),
+    );
+
+    expect(await repository.getRun(queuedManual.runId)).toMatchObject({
+      state: "cancelled",
+      reasonCode: "JOB_ARCHIVED",
+    });
+    expect(await repository.claimRunForDispatch(
+      queuedManual.runId,
+      new Date("2026-09-21T00:02:00.000Z"),
+    )).toBeNull();
   });
 });
 

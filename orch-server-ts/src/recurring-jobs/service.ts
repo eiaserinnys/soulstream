@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { compileRecurringSchedule, nextRecurringOccurrences } from "./cron.js";
+import {
+  compileRecurringSchedule,
+  latestRecurringOccurrenceOnOrBefore,
+  nextRecurringOccurrences,
+} from "./cron.js";
 import {
   assertRecurringJobActor,
   compileSchedule,
@@ -21,7 +25,14 @@ import {
   type RecurringJobUpdateInput,
   type RecurringSessionLauncher,
 } from "./types.js";
+import {
+  isConfirmedNodeReject,
+  isUnavailableTarget,
+  isUncertainLaunchFailure,
+  schedulerActorFor,
+} from "./dispatch_guards.js";
 import { jobForRun } from "./run_snapshot.js";
+import { makeRecurringRun, saveRecurringRun } from "./run_lifecycle.js";
 
 export type RecurringJobServiceOptions = {
   readonly repository: RecurringJobRepository;
@@ -169,7 +180,7 @@ export class RecurringJobService {
     if (repeated) return repeated;
     const active = await this.options.repository.findActiveRun(jobId);
     const now = this.now();
-    const run = this.makeRun(job, {
+    const run = makeRecurringRun(job, {
       trigger: "manual",
       manualIdempotencyKey: key,
       state: active ? "skipped_overlap" : "queued",
@@ -180,7 +191,7 @@ export class RecurringJobService {
           message: `Existing run ${active.runId} is still ${active.state}; no second session was created.`,
         },
       } : {}),
-    });
+    }, this.newId);
     const created = await this.options.repository.createManualRun(run);
     if (!created.created || created.run.state !== "queued") return created.run;
     return await this.dispatchRun(job, created.run);
@@ -194,12 +205,31 @@ export class RecurringJobService {
     if (!Number.isFinite(scheduledFor.getTime())) throw new Error(`invalid next_run_at: ${job.jobId}`);
     const schedule = compileRecurringSchedule(job);
     const nextRunAt = nextRecurringOccurrences(schedule, now, 1)[0] ?? null;
-    const late = now.getTime() - scheduledFor.getTime() > job.lateRunWindowSeconds * 1_000;
+    const latestOccurrence = latestRecurringOccurrenceOnOrBefore(schedule, now);
+    const latestEligible = latestOccurrence !== null &&
+      latestOccurrence.getTime() >= scheduledFor.getTime() &&
+      now.getTime() - latestOccurrence.getTime() <= job.lateRunWindowSeconds * 1_000
+      ? latestOccurrence
+      : null;
+    const selectedScheduledFor = latestEligible ?? scheduledFor;
+    const compressedRun = latestEligible && latestEligible.getTime() > scheduledFor.getTime()
+      ? makeRecurringRun(job, {
+        trigger: "scheduled",
+        scheduledFor,
+        state: "skipped_late",
+        now,
+        reason: {
+          code: "LATE_RUN_WINDOW_EXPIRED",
+          message: `Older missed occurrences beginning at ${scheduledFor.toISOString()} were compressed; ${latestEligible.toISOString()} is the latest eligible occurrence.`,
+        },
+      }, this.newId)
+      : undefined;
+    const late = latestEligible === null;
     const active = await this.options.repository.findActiveRun(job.jobId);
     const waiting = !this.options.launcher?.isNodeConnected(job.nodeId);
-    const run = this.makeRun(job, {
+    const run = makeRecurringRun(job, {
       trigger: "scheduled",
-      scheduledFor,
+      scheduledFor: selectedScheduledFor,
       state: late ? "skipped_late" : active ? "skipped_overlap" : waiting ? "waiting_for_node" : "queued",
       now,
       ...(late ? {
@@ -218,9 +248,10 @@ export class RecurringJobService {
           message: `Node ${job.nodeId} is offline; this occurrence remains eligible until its late-run window expires.`,
         },
       } : {}),
-    });
+    }, this.newId);
     const reserved = await this.options.repository.reserveScheduledRun({
       job,
+      compressedRun,
       run,
       nextRunAt,
       now,
@@ -229,11 +260,7 @@ export class RecurringJobService {
     return await this.dispatchRun(job, reserved.run);
   }
 
-  /**
-   * Sends only the fixed run session ID. A thrown launch is a pre-send failure;
-   * an awaiting result means a command may have been accepted and must only be
-   * reconciled by the same ID.
-   */
+  /** Sends only the fixed run session ID; awaiting results are rechecked by that same ID. */
   async dispatchRun(job: RecurringJob, run: RecurringJobRun): Promise<RecurringJobRun> {
     const launcher = this.options.launcher;
     if (!launcher || !isActiveRecurringRun(run.state)) return run;
@@ -242,7 +269,7 @@ export class RecurringJobService {
     try {
       frozenJob = jobForRun(job, run);
     } catch (error) {
-      return await this.saveRun(run, "error", now, {
+      return await saveRecurringRun(this.options.repository, run, "error", now, {
         code: "RUN_SNAPSHOT_INVALID",
         message: error instanceof Error ? error.message : "Recurring run snapshot is invalid.",
       });
@@ -250,29 +277,53 @@ export class RecurringJobService {
     if (run.trigger === "scheduled" && run.scheduledFor) {
       const expiresAt = Date.parse(run.scheduledFor) + frozenJob.lateRunWindowSeconds * 1_000;
       if (now.getTime() > expiresAt) {
-        return await this.saveRun(run, "skipped_late", now, {
+        return await saveRecurringRun(this.options.repository, run, "skipped_late", now, {
           code: "LATE_RUN_WINDOW_EXPIRED",
           message: "The node reconnected after this occurrence lost its execution eligibility.",
         });
       }
     }
     if (!launcher.isNodeConnected(frozenJob.nodeId)) {
-      return await this.saveRun(run, "waiting_for_node", now, {
+      return await saveRecurringRun(this.options.repository, run, "waiting_for_node", now, {
         code: "NODE_OFFLINE",
         message: `Node ${frozenJob.nodeId} is offline. No create_session command has been sent.`,
       });
     }
-    // This is the final, DB-backed pause/archive gate. A scheduled run is
-    // claimed only while its job is still enabled and unarchived; a manual
-    // run deliberately remains eligible while paused.
+    try {
+      await this.options.validateTarget?.({
+        actor: schedulerActorFor(frozenJob),
+        target: frozenJob,
+        requireAvailableTarget: true,
+      });
+    } catch (error) {
+      if (isUnavailableTarget(error)) {
+        return await saveRecurringRun(this.options.repository, run, "waiting_for_node", now, {
+          code: "NODE_OFFLINE",
+          message: `Node ${frozenJob.nodeId} became unavailable before create_session was sent.`,
+        });
+      }
+      return await saveRecurringRun(this.options.repository, run, "error", now, {
+        code: "TARGET_INVALID_AT_DISPATCH",
+        message: error instanceof Error ? error.message : "Recurring run target is no longer valid.",
+      });
+    }
+    // This is the final DB-backed pause/archive gate. A manual run remains
+    // eligible while paused, but no queued run survives archive.
     const dispatching = await this.options.repository.claimRunForDispatch(run.runId, now);
     if (!dispatching) {
       const currentRun = await this.options.repository.getRun(run.runId);
       const currentJob = await this.options.repository.getJob(run.jobId);
-      if (run.trigger === "scheduled" && currentRun && currentJob &&
-        (currentJob.archivedAt !== null || !currentJob.enabled)) {
-        return await this.saveRun(currentRun, "cancelled", now, {
-          code: currentJob?.archivedAt ? "JOB_ARCHIVED" : "JOB_PAUSED",
+      if (currentRun && currentJob && currentJob.archivedAt !== null &&
+        (currentRun.state === "queued" || currentRun.state === "waiting_for_node")) {
+        return await saveRecurringRun(this.options.repository, currentRun, "cancelled", now, {
+          code: "JOB_ARCHIVED",
+          message: "This run was cancelled before node dispatch because its job was archived.",
+        });
+      }
+      if (run.trigger === "scheduled" && currentRun && currentJob && !currentJob.enabled &&
+        (currentRun.state === "queued" || currentRun.state === "waiting_for_node")) {
+        return await saveRecurringRun(this.options.repository, currentRun, "cancelled", now, {
+          code: "JOB_PAUSED",
           message: "This automatic run was cancelled before node dispatch.",
         });
       }
@@ -287,15 +338,19 @@ export class RecurringJobService {
           resolvedModelPreset: launched.resolvedModelPreset,
         },
       };
-      return await this.saveRun(launchedRun, launched.state, this.now(), launched.state === "awaiting_session" ? {
+      return await saveRecurringRun(this.options.repository, launchedRun, launched.state, this.now(), launched.state === "awaiting_session" ? {
         code: "AWAITING_SESSION_CONFIRMATION",
         message: "The create_session request may have reached the node. Soulstream will only recheck this fixed session ID.",
       } : null);
     } catch (error) {
-      const afterSend = typeof error === "object" && error !== null &&
-        "dispatchPhase" in error && (error as { dispatchPhase?: unknown }).dispatchPhase === "after_send";
-      return await this.saveRun(dispatching, "error", this.now(), {
-        code: afterSend ? "CREATE_SESSION_REJECTED" : "CREATE_SESSION_BEFORE_SEND_FAILED",
+      if (isUncertainLaunchFailure(error)) {
+        return await saveRecurringRun(this.options.repository, dispatching, "awaiting_session", this.now(), {
+          code: "AWAITING_SESSION_CONFIRMATION",
+          message: "The create_session request may have reached the node. Soulstream will only recheck this fixed session ID.",
+        });
+      }
+      return await saveRecurringRun(this.options.repository, dispatching, "error", this.now(), {
+        code: isConfirmedNodeReject(error) ? "CREATE_SESSION_REJECTED" : "CREATE_SESSION_BEFORE_SEND_FAILED",
         message: error instanceof Error ? error.message : String(error),
       });
     }
@@ -310,26 +365,26 @@ export class RecurringJobService {
     const now = this.now();
     if (!session) {
       if (run.state === "awaiting_session") {
-        return await this.saveRun(run, "awaiting_session", now, {
+        return await saveRecurringRun(this.options.repository, run, "awaiting_session", now, {
           code: "AWAITING_SESSION_CONFIRMATION",
           message: "No durable session row is visible yet. A new session will not be created automatically.",
         });
       }
       if (run.state === "dispatching") {
-        return await this.saveRun(run, "dispatching", now, {
+        return await saveRecurringRun(this.options.repository, run, "dispatching", now, {
           code: "CREATE_SESSION_DISPATCH_UNRESOLVED",
           message: "The scheduler stopped before create_session acknowledgement. This fixed session ID will not be recreated automatically; open or restore it manually if it appears.",
         });
       }
-      return await this.saveRun(run, "error", now, {
+      return await saveRecurringRun(this.options.repository, run, "error", now, {
         code: "SESSION_DELETED",
         message: "The previously observed session was deleted. Open or restore that existing session manually; no replacement was created.",
       });
     }
     if (session.status === "completed" || session.status === "error" || session.status === "interrupted") {
-      return await this.saveRun(run, session.status, now, null);
+      return await saveRecurringRun(this.options.repository, run, session.status, now, null);
     }
-    return await this.saveRun(run, "running", now, null);
+    return await saveRecurringRun(this.options.repository, run, "running", now, null);
   }
 
   private async mergeUpdate(
@@ -422,57 +477,6 @@ export class RecurringJobService {
     return normalized;
   }
 
-  private makeRun(
-    job: RecurringJob,
-    input: {
-      trigger: RecurringJobRun["trigger"];
-      scheduledFor?: Date;
-      manualIdempotencyKey?: string;
-      state: RecurringJobRun["state"];
-      now: Date;
-      reason?: { code: string; message: string };
-    },
-  ): RecurringJobRun {
-    const terminal = !isActiveRecurringRun(input.state);
-    return {
-      runId: this.newId(), jobId: job.jobId, trigger: input.trigger,
-      scheduledFor: input.scheduledFor?.toISOString() ?? null,
-      manualIdempotencyKey: input.manualIdempotencyKey ?? null,
-      sessionId: this.newId(),
-      jobSnapshot: {
-        name: job.name, prompt: job.prompt, timezone: job.timezone,
-        scheduleExpressions: job.scheduleExpressions, nodeId: job.nodeId, agentId: job.agentId,
-        modelPreset: job.modelPreset, container: job.container, folderId: job.folderId,
-        executionCaller: job.executionCaller, lateRunWindowSeconds: job.lateRunWindowSeconds,
-      },
-      state: input.state,
-      reasonCode: input.reason?.code ?? null, reasonMessage: input.reason?.message ?? null,
-      createdAt: input.now.toISOString(),
-      startedAt: null,
-      finishedAt: terminal ? input.now.toISOString() : null,
-      updatedAt: input.now.toISOString(),
-    };
-  }
-
-  private async saveRun(
-    run: RecurringJobRun,
-    state: RecurringJobRun["state"],
-    now: Date,
-    reason: { code: string; message: string } | null,
-  ): Promise<RecurringJobRun> {
-    const terminal = !isActiveRecurringRun(state);
-    const saved = await this.options.repository.updateRun({
-      ...run,
-      state,
-      reasonCode: reason?.code ?? null,
-      reasonMessage: reason?.message ?? null,
-      startedAt: state === "running" && !run.startedAt ? now.toISOString() : run.startedAt,
-      finishedAt: terminal ? now.toISOString() : null,
-      updatedAt: now.toISOString(),
-    }, run.state);
-    return saved ?? await this.options.repository.getRun(run.runId) ?? run;
-  }
-
   private async requireJob(
     actor: RecurringJobActor,
     jobId: string,
@@ -490,9 +494,7 @@ export class RecurringJobService {
 
 function positiveVersion(value: number): boolean { return Number.isSafeInteger(value) && value > 0; }
 function positiveLateRunWindowSeconds(value: number): number {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw validation("late_run_window_seconds must be a positive integer");
-  }
+  if (!Number.isSafeInteger(value) || value < 1) throw validation("late_run_window_seconds must be a positive integer");
   return value;
 }
 function boundedLimit(value: number): number { return Number.isSafeInteger(value) ? Math.max(1, Math.min(value, 100)) : 50; }

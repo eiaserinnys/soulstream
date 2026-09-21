@@ -68,6 +68,56 @@ describe("RecurringJobService", () => {
     expect(await service.reserveAndDispatchDueJob(job)).toBeNull();
   });
 
+  it("recovers only the latest eligible occurrence and compresses older missed work", async () => {
+    const repository = memoryRepository();
+    let current = new Date("2026-09-20T15:00:00.000Z");
+    const createRecurringSession = vi.fn(async () => ({
+      state: "running" as const,
+      resolvedModelPreset: "codex-default",
+    }));
+    const service = new RecurringJobService({
+      repository,
+      now: () => current,
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        createRecurringSession,
+        findDurableSession: async () => null,
+      },
+    });
+    const created = await service.create(actor, {
+      ...createInput(),
+      scheduleExpressions: ["0 9,12 * * 1-5"],
+    });
+    const due = {
+      ...created,
+      nextRunAt: "2026-09-21T00:00:00.000Z",
+    };
+    repository.jobs.set(due.jobId, due);
+    current = new Date("2026-09-21T03:10:00.000Z");
+
+    const recovered = await service.reserveAndDispatchDueJob(due);
+
+    expect(recovered).toMatchObject({
+      trigger: "scheduled",
+      scheduledFor: "2026-09-21T03:00:00.000Z",
+      state: "running",
+    });
+    expect(createRecurringSession).toHaveBeenCalledTimes(1);
+    expect([...repository.runs.values()]).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        trigger: "scheduled",
+        scheduledFor: "2026-09-21T00:00:00.000Z",
+        state: "skipped_late",
+        reasonCode: "LATE_RUN_WINDOW_EXPIRED",
+        reasonMessage: expect.stringContaining("compressed"),
+      }),
+    ]));
+    expect(repository.jobs.get(due.jobId)).toMatchObject({
+      nextRunAt: "2026-09-22T00:00:00.000Z",
+    });
+  });
+
   it("persists a revised late-run window and rejects an invalid replacement", async () => {
     const repository = memoryRepository();
     const service = new RecurringJobService({
@@ -168,6 +218,56 @@ describe("RecurringJobService", () => {
     expect(findDurableSession).toHaveBeenCalledWith(run.sessionId);
   });
 
+  it("keeps an uncertain transport send failure awaiting instead of mislabeling it as before-send", async () => {
+    const repository = memoryRepository();
+    const service = new RecurringJobService({
+      repository,
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        createRecurringSession: async () => {
+          throw Object.assign(new Error("socket closed after send began"), {
+            code: "TRANSPORT_SEND_FAILED",
+          });
+        },
+        findDurableSession: async () => null,
+      },
+    });
+    const job = await service.create(actor, createInput());
+
+    const run = await service.runManual(actor, job.jobId, "manual-uncertain-transport");
+
+    expect(run).toMatchObject({
+      state: "awaiting_session",
+      reasonCode: "AWAITING_SESSION_CONFIRMATION",
+    });
+  });
+
+  it("records a confirmed node rejection as terminal", async () => {
+    const repository = memoryRepository();
+    const service = new RecurringJobService({
+      repository,
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        createRecurringSession: async () => {
+          throw Object.assign(new Error("node rejected create_session"), {
+            code: "NODE_REJECTED",
+            dispatchPhase: "after_send",
+          });
+        },
+        findDurableSession: async () => null,
+      },
+    });
+    const job = await service.create(actor, createInput());
+
+    const run = await service.runManual(actor, job.jobId, "manual-node-rejected");
+
+    expect(run).toMatchObject({ state: "error", reasonCode: "CREATE_SESSION_REJECTED" });
+  });
+
   it("keeps a pre-ACK dispatch distinct from an acknowledged-but-unobserved session", async () => {
     const repository = memoryRepository();
     const createRecurringSession = vi.fn(async () => ({
@@ -238,6 +338,91 @@ describe("RecurringJobService", () => {
     const manual = await service.runManual(actor, job.jobId, "manual-after-pause");
     expect(manual.state).toBe("running");
     expect(createRecurringSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels an offline manual run when the job is archived and never sends it after reconnect", async () => {
+    const repository = memoryRepository();
+    let connected = false;
+    const createRecurringSession = vi.fn(async () => ({
+      state: "running" as const,
+      resolvedModelPreset: null,
+    }));
+    const service = new RecurringJobService({
+      repository,
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => connected,
+        createRecurringSession,
+        findDurableSession: async () => null,
+      },
+    });
+    const job = await service.create(actor, createInput());
+    const queued = await service.runManual(actor, job.jobId, "manual-archive-before-send");
+    expect(queued.state).toBe("waiting_for_node");
+
+    const archived = await service.archive(actor, job.jobId, job.version);
+    expect(repository.runs.get(queued.runId)).toMatchObject({
+      state: "cancelled",
+      reasonCode: "JOB_ARCHIVED",
+    });
+    connected = true;
+
+    const afterReconnect = await service.dispatchRun(archived, queued);
+    expect(afterReconnect.state).toBe("cancelled");
+    expect(createRecurringSession).not.toHaveBeenCalled();
+  });
+
+  it("revalidates a task target immediately before dispatch", async () => {
+    const repository = memoryRepository();
+    const registry = new InMemoryNodeRegistry();
+    registry.registerNode({
+      type: "node_register",
+      node_id: "node-a",
+      agents: [{ id: "roselin", backend: "codex" }],
+      supported_backends: ["codex"],
+    });
+    let taskArchived = false;
+    const createRecurringSession = vi.fn(async () => ({
+      state: "running" as const,
+      resolvedModelPreset: null,
+    }));
+    const service = new RecurringJobService({
+      repository,
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        createRecurringSession,
+        findDurableSession: async () => null,
+      },
+      validateTarget: createRecurringJobTargetValidator({
+        registry,
+        modelPresetAvailability: { requireAvailable: vi.fn() },
+        listFolders: async () => [{ id: "folder-a" }],
+        findUserByEmail: async () => ({
+          email: actor.ownerEmail,
+          isAdmin: false,
+          allowedFolderIds: ["folder-a"],
+        }),
+        getTaskSnapshot: async () => ({
+          task: { folder_id: "folder-a", archived: taskArchived },
+        }),
+      }),
+    });
+    const job = await service.create(actor, {
+      ...createInput(),
+      container: { kind: "task", id: "task-a" },
+    });
+    taskArchived = true;
+
+    const run = await service.runManual(actor, job.jobId, "manual-archived-task");
+
+    expect(run).toMatchObject({
+      state: "error",
+      reasonCode: "TARGET_INVALID_AT_DISPATCH",
+    });
+    expect(createRecurringSession).not.toHaveBeenCalled();
   });
 
   it("does not send an automatic run when pause wins after the node check but before the dispatch claim", async () => {
@@ -396,6 +581,18 @@ function memoryRepository(): RecurringJobRepository & {
         updatedBy: actorId, updatedAt: now.toISOString(),
       };
       jobs.set(jobId, archived);
+      for (const [id, run] of runs) {
+        if (run.jobId === jobId && (run.state === "queued" || run.state === "waiting_for_node")) {
+          runs.set(id, {
+            ...run,
+            state: "cancelled",
+            reasonCode: "JOB_ARCHIVED",
+            reasonMessage: "The recurring job was archived before this run was sent.",
+            finishedAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+          });
+        }
+      }
       return archived;
     },
     async listRuns(jobId, limit) {
@@ -436,7 +633,7 @@ function memoryRepository(): RecurringJobRepository & {
       const run = runs.get(runId);
       const job = run ? jobs.get(run.jobId) : undefined;
       if (!run || !job || (run.state !== "queued" && run.state !== "waiting_for_node")) return null;
-      if (run.trigger === "scheduled" && (!job.enabled || job.archivedAt !== null)) return null;
+      if (job.archivedAt !== null || (run.trigger === "scheduled" && !job.enabled)) return null;
       const claimed = {
         ...run,
         state: "dispatching" as const,
@@ -448,10 +645,11 @@ function memoryRepository(): RecurringJobRepository & {
       runs.set(runId, claimed);
       return claimed;
     },
-    async reserveScheduledRun({ job, run }) {
+    async reserveScheduledRun({ job, compressedRun, run, nextRunAt }) {
       const current = jobs.get(job.jobId);
       if (!current || current.version !== job.version || !current.enabled || current.archivedAt) return null;
-      jobs.set(job.jobId, { ...current, version: current.version + 1 });
+      jobs.set(job.jobId, { ...current, nextRunAt: nextRunAt?.toISOString() ?? null, version: current.version + 1 });
+      if (compressedRun) runs.set(compressedRun.runId, compressedRun);
       runs.set(run.runId, run);
       return { run, created: true };
     },
