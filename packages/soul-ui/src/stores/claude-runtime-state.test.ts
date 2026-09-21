@@ -80,6 +80,42 @@ describe("applyClaudeRuntimeStoreEvent", () => {
     });
   });
 
+  it("ignores non-string task session metadata from an external event", () => {
+    const state = applyClaudeRuntimeStoreEvent(null, {
+      type: "claude_runtime_task_started",
+      task_id: "bg-invalid-metadata",
+      session_id: {},
+      tool_use_id: {},
+      timestamp: 15,
+    } as unknown as SoulSSEEvent);
+
+    expect(state).toMatchObject({
+      tasks: {
+        "bg-invalid-metadata": {
+          taskId: "bg-invalid-metadata",
+          status: "running",
+        },
+      },
+    });
+    expect(state?.runtimeSessionId).toBeUndefined();
+    expect(state?.tasks["bg-invalid-metadata"]?.sessionId).toBeUndefined();
+    expect(state?.tasks["bg-invalid-metadata"]?.toolUseId).toBeUndefined();
+  });
+
+  it("keeps empty task session metadata absent", () => {
+    const state = applyClaudeRuntimeStoreEvent(null, {
+      type: "claude_runtime_task_started",
+      task_id: "bg-empty-metadata",
+      session_id: "",
+      tool_use_id: "",
+      timestamp: 16,
+    } as unknown as SoulSSEEvent);
+
+    expect(state?.runtimeSessionId).toBeUndefined();
+    expect(state?.tasks["bg-empty-metadata"]?.sessionId).toBeUndefined();
+    expect(state?.tasks["bg-empty-metadata"]?.toolUseId).toBeUndefined();
+  });
+
   it("tracks plan and worktree mode state without creating task rows", () => {
     let state = applyClaudeRuntimeStoreEvent(null, {
       type: "claude_runtime_mode_state",

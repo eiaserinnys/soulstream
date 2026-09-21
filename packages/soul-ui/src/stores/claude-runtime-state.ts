@@ -263,11 +263,13 @@ export function applyClaudeRuntimeStoreEvent(
     updatedAt,
   };
 
-  if ("session_id" in event && event.session_id) {
+  if ("session_id" in event && typeof event.session_id === "string" && event.session_id) {
     next.runtimeSessionId = event.session_id;
     runtimeTask.sessionId = event.session_id;
   }
-  if ("tool_use_id" in event && event.tool_use_id) runtimeTask.toolUseId = event.tool_use_id;
+  if ("tool_use_id" in event && typeof event.tool_use_id === "string" && event.tool_use_id) {
+    runtimeTask.toolUseId = event.tool_use_id;
+  }
 
   switch (event.type) {
     case "claude_runtime_task_started":
