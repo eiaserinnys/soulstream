@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { AGENT_PROFILE_PORTRAIT_MAX_BYTES } from "@soulstream/agent-profile-contract";
+
 import type { AgentProfile } from "./agent_registry.js";
 import { RemoteAgentProfileSchema, type RemoteAgentProfile } from "./agent_profile_source.js";
 
@@ -129,6 +131,9 @@ function changedProfileFields(
 async function loadPortrait(path: string): Promise<ImportPortrait> {
   const absolutePath = resolve(path);
   const body = await readFile(absolutePath);
+  if (body.length > AGENT_PROFILE_PORTRAIT_MAX_BYTES) {
+    throw new Error(`Portrait must not exceed 5MiB: ${path}`);
+  }
   const mime = portraitMime(body);
   if (!mime) throw new Error(`Unsupported portrait bytes: ${path}`);
   return {

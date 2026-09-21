@@ -26,6 +26,9 @@ importers:
       '@hocuspocus/server':
         specifier: 3.4.4
         version: 3.4.4(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
+      '@soulstream/agent-profile-contract':
+        specifier: workspace:*
+        version: link:../packages/agent-profile-contract
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../packages/fractional-position
@@ -87,6 +90,8 @@ importers:
       ws:
         specifier: ^8.18.0
         version: 8.20.0
+
+  packages/agent-profile-contract: {}
 
   packages/db-schema:
     dependencies:
@@ -340,6 +345,9 @@ importers:
       '@openai/codex-sdk':
         specifier: ^0.130.0
         version: 0.130.0
+      '@soulstream/agent-profile-contract':
+        specifier: workspace:*
+        version: link:../packages/agent-profile-contract
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../packages/fractional-position
