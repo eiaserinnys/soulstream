@@ -91,6 +91,11 @@ const EXPECTED_TOOLS = [
   "apply_remote_agent_profile_update",
   "list_remote_agents_config_snapshots",
   "rollback_remote_agents_config",
+  // worktree
+  "list_worktrees",
+  "create_worktree",
+  "remove_worktree",
+  "delete_worktree_branch",
 ];
 
 interface MockSqlCall {
@@ -370,6 +375,8 @@ function createSilentLogger() {
 }
 
 let sqlCalls: MockSqlCall[] = [];
+const worktreeList = vi.fn(async (input: unknown) => [{ input }]);
+const worktreeCreate = vi.fn(async (input: unknown) => ({ input, created: true }));
 
 function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRuntime {
   const sql = createMockSql() as SqlClient & { __calls: MockSqlCall[] };
@@ -399,6 +406,12 @@ function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRunti
     agentRegistry,
     catalogService,
     logger: createSilentLogger(),
+    worktreeService: {
+      list: worktreeList,
+      create: worktreeCreate,
+      remove: vi.fn(),
+      deleteBranch: vi.fn(),
+    } as unknown as NonNullable<McpRuntime["worktreeService"]>,
   };
 }
 
@@ -524,6 +537,12 @@ describe("MCP SDK client smoke", () => {
         },
       },
     });
+    expect(result.tools.find((tool) => tool.name === "list_worktrees")?.annotations)
+      .not.toMatchObject({ destructiveHint: true });
+    for (const name of ["create_worktree", "remove_worktree", "delete_worktree_branch"]) {
+      expect(result.tools.find((tool) => tool.name === name)?.annotations)
+        .toMatchObject({ destructiveHint: true });
+    }
   });
 
   it("callTool('reflect_brief') → compact aggregate includes Level 0-3 sections", async () => {
@@ -594,6 +613,37 @@ describe("MCP SDK client smoke", () => {
     expect(structured.services[0]?.data.aggregate_sources.manifest.status).toBe(
       "not_configured",
     );
+  });
+
+  it("calls local worktree tools with the trusted caller attribution", async () => {
+    const listed = await client.callTool({
+      name: "list_worktrees",
+      arguments: { repo_id: "soulstream", caller_session_id: "session-owner" },
+    });
+    expect(listed.isError).not.toBe(true);
+    expect(worktreeList).toHaveBeenCalledWith({
+      actorSessionId: "session-owner",
+      repoId: "soulstream",
+    });
+
+    const created = await client.callTool({
+      name: "create_worktree",
+      arguments: {
+        repo_id: "soulstream",
+        branch: "feature/mcp",
+        mode: "new",
+        caller_session_id: "session-owner",
+      },
+    });
+    expect(created.isError).not.toBe(true);
+    expect(worktreeCreate).toHaveBeenCalledWith(expect.objectContaining({
+      actorSessionId: "session-owner",
+      repoId: "soulstream",
+      branch: "feature/mcp",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    }));
   });
 
   it("callTool('list_local_agents') → AgentRegistry 응답", async () => {

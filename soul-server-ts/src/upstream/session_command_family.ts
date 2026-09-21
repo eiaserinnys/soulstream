@@ -50,6 +50,8 @@ interface CreateSessionCmd extends CommandLike {
   folderId?: string | null;
   container?: { kind: BoardYjsContainerRef["containerKind"]; id: string } | null;
   sourceTaskItemId?: string | null;
+  worktree_id?: string;
+  worktree_actor_session_id?: string;
   /**
    * Python parity: upstream `systemPrompt` forwards into the session's
    * system_prompt without renaming on the wire.
@@ -189,6 +191,8 @@ async function handleCreateSession(
         ? { containerKind: cmd.container.kind, containerId: cmd.container.id }
         : null,
       sourceTaskItemId: cmd.sourceTaskItemId ?? null,
+      worktreeId: cmd.worktree_id,
+      worktreeActorSessionId: cmd.worktree_actor_session_id,
       systemPrompt: cmd.systemPrompt,
       extraContextItems: cmd.extra_context_items,
       attachmentPaths: cmd.attachment_paths,

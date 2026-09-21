@@ -148,6 +148,7 @@ export function hydrateEvictedTaskFromSessionRow(
     reviewRequired: row.review_required === true,
     reviewState: row.review_state ?? "not_required",
     hydratedFromDb: true,
+    worktreeId: row.worktree_id ?? undefined,
     profileId: row.agent_id ?? undefined,
     clientId: row.client_id,
     sessionType: row.session_type === "llm" ? "llm" : "claude",

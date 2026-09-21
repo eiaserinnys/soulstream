@@ -12,6 +12,8 @@ import { SessionPageBindingRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_page_binding_repository.js";
 import { SessionMutationRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_mutation_repository.js";
+import { WorktreeRepository } from
+  "../../../orch-server-ts/src/control_plane/repositories/worktree_repository.js";
 import { configureTestSessionDataHost } from "../helpers/session_data_test_host.js";
 
 const TEST_DB_NAME = "session_db_integration_test";
@@ -26,6 +28,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
   let harness: PostgresHarness | undefined;
   let db: SessionDB;
   let sessionMutations: SessionMutationRepository;
+  let worktrees: WorktreeRepository;
 
   beforeAll(async () => {
     harness = await createHarness();
@@ -36,11 +39,14 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       new SessionPageBindingRepository(harness.sql) as never,
     );
     sessionMutations = new SessionMutationRepository(harness.sql as never);
+    worktrees = new WorktreeRepository(harness.sql as never);
   }, 45_000);
 
   beforeEach(async () => {
     if (!harness) return;
     await harness.sql`DELETE FROM session_mutation_receipts`;
+    await harness.sql`UPDATE sessions SET worktree_id = NULL`;
+    await harness.sql`DELETE FROM worktrees`;
     await harness.sql`DELETE FROM sessions`;
   }, 15_000);
 
@@ -220,6 +226,86 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       review_required: true,
       review_state: "needs_review",
     });
+  }, 30_000);
+
+  it("binds a nullable-task worktree atomically and rejects a competing terminal resume", async () => {
+    await harness!.sql`
+      INSERT INTO sessions (session_id, node_id, session_type, status)
+      VALUES ('owner-session', 'node-worktree', 'claude', 'completed')
+    `;
+    const registered = await worktrees.register({
+      actorSessionId: "owner-session",
+      id: "worktree-db-1",
+      nodeId: "node-worktree",
+      repoId: "repo-a",
+      canonicalPath: "/tmp/repo-a--feature",
+      branch: "feature/db",
+      createdFromSha: "a".repeat(40),
+      setupMode: "none",
+      setupRequired: false,
+      setupStatus: "not_requested",
+      managedPaths: [],
+      worktreeIdentity: "worktree-db-1",
+    });
+    expect(registered).toMatchObject({
+      ownerTaskId: null,
+      createdBySessionId: "owner-session",
+      state: "ready",
+    });
+
+    const now = new Date("2026-09-22T00:00:00Z");
+    await sessionMutations.registerSessionWithWorktree({
+      idempotencyKey: "register-worktree:first",
+      sessionId: "worktree-session-1",
+      nodeId: "node-worktree",
+      agentId: "codex-default",
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "first",
+      clientId: null,
+      status: "initializing",
+      createdAt: now,
+      updatedAt: now,
+      callerSessionId: "owner-session",
+      predecessorSessionId: null,
+      callerInfo: null,
+      worktreeId: "worktree-db-1",
+      worktreeActorSessionId: "owner-session",
+      ownerTaskId: null,
+    });
+    await expect(db.getSession("worktree-session-1")).resolves.toMatchObject({
+      worktree_id: "worktree-db-1",
+    });
+
+    await harness!.sql`
+      UPDATE sessions SET status = 'completed'
+      WHERE session_id = 'worktree-session-1'
+    `;
+    await sessionMutations.registerSessionWithWorktree({
+      idempotencyKey: "register-worktree:second",
+      sessionId: "worktree-session-2",
+      nodeId: "node-worktree",
+      agentId: "codex-default",
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "second",
+      clientId: null,
+      status: "initializing",
+      createdAt: now,
+      updatedAt: now,
+      callerSessionId: "owner-session",
+      predecessorSessionId: null,
+      callerInfo: null,
+      worktreeId: "worktree-db-1",
+      worktreeActorSessionId: "owner-session",
+      ownerTaskId: null,
+    });
+    const resume = await harness!.sql<Array<{ applied: boolean }>>`
+      SELECT applied FROM session_apply_running_transition(
+        'worktree-session-1', 'not_required', NULL, TRUE, NOW()
+      )
+    `;
+    expect(resume[0]?.applied).toBe(false);
   }, 30_000);
 
   it("reprojects response-loss binding warnings from durable state after restart", async () => {

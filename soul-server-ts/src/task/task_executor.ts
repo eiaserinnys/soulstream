@@ -149,6 +149,10 @@ export interface RunnerSnapshotPersistence {
     ): Promise<void>;
 }
 
+export interface WorktreeExecutionResolver {
+  resolveExecutionWorkspace(worktreeId: string): Promise<string>;
+}
+
 export class TaskExecutor {
   private readonly engineEventPublisher: TaskEngineEventPublisher;
   private readonly engineFailureRecovery: TaskEngineFailureRecovery;
@@ -192,6 +196,7 @@ export class TaskExecutor {
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
     transientEventLogAggregator?: TransientEventLogAggregator,
     private readonly queuedTerminalResume?: (task: Task) => void | Promise<void>,
+    private readonly worktreeResolver?: WorktreeExecutionResolver,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -288,7 +293,66 @@ export class TaskExecutor {
     return await this.startExecutionWithRegistrationRecord(task, agent, activation);
   }
 
-  private startExecutionWithRegistrationRecord(
+  private async startExecutionWithRegistrationRecord(
+    task: Task,
+    agent: AgentProfile,
+    transferredActivation?: ExecutionActivation,
+  ): Promise<void> {
+    if (!task.worktreeId) {
+      task.resolvedWorkspaceDir = undefined;
+      return await this.startExecutionWithResolvedRegistrationRecord(
+        task,
+        agent,
+        transferredActivation,
+      );
+    }
+    if (!this.worktreeResolver) {
+      throw new Error(`WORKTREE_UNAVAILABLE: resolver missing for ${task.worktreeId}`);
+    }
+    let workspaceDir: string;
+    try {
+      workspaceDir = await this.worktreeResolver.resolveExecutionWorkspace(task.worktreeId);
+    } catch (error) {
+      task.resolvedWorkspaceDir = undefined;
+      const unavailable = new Error(
+        `WORKTREE_UNAVAILABLE: ${task.worktreeId}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+      const activation = transferredActivation;
+      if (activation) {
+        task.executionActivation = activation;
+        void activation.promise.catch(() => undefined);
+      }
+      const promise = (async () => {
+        const compensatesRunningTransition = activation?.hasFailureCompensation?.() === true;
+        try {
+          if (compensatesRunningTransition) {
+            await activation.reject(unavailable);
+            if (isTerminalTaskStatus(task.status)) return;
+          }
+          await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, unavailable);
+          task.completedAt = new Date();
+          await this._finalize(task);
+        } finally {
+          if (activation && task.executionActivation === activation) {
+            task.executionActivation = undefined;
+          }
+          if (activation && !compensatesRunningTransition) {
+            await activation.reject(unavailable);
+          }
+        }
+      })();
+      return this.holdExecutionSlot(task, promise);
+    }
+    task.resolvedWorkspaceDir = workspaceDir;
+    return await this.startExecutionWithResolvedRegistrationRecord(
+      task,
+      { ...agent, workspace_dir: workspaceDir },
+      transferredActivation,
+    );
+  }
+
+  private startExecutionWithResolvedRegistrationRecord(
     task: Task,
     agent: AgentProfile,
     transferredActivation?: ExecutionActivation,

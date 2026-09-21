@@ -49,6 +49,8 @@
     "MCP_EXTERNAL_INGRESS_DISPLAY_NAME": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "MCP_EXTERNAL_INGRESS_BEARER_TOKEN": { "owner": "mcp", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "MCP_ALLOWED_HOSTS": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string_array" },
+    "WORKTREE_MCP_ENABLED": { "owner": "worktree", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },
+    "WORKTREE_PROJECTS_ROOT": { "owner": "worktree", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "CLAUDE_CODE_EXECPATH": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "AGENT_COMMON_FILES_DIR": { "owner": "agent_runtime", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "GOOGLE_GENAI_USE_GCA": { "owner": "provider_usage", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },

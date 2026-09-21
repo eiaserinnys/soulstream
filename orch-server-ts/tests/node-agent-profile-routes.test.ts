@@ -156,6 +156,10 @@ describe("node agent/profile route harness", () => {
       "POST /api/nodes/:node_id/agents/config/rollback": true,
       "GET /api/nodes/:node_id/oauth-profiles": true,
       "GET /api/nodes/:node_id/user/portrait": true,
+      "POST /api/nodes/:node_id/worktrees/list": true,
+      "POST /api/nodes/:node_id/worktrees/create": true,
+      "POST /api/nodes/:node_id/worktrees/remove": true,
+      "POST /api/nodes/:node_id/worktrees/delete-branch": true,
     });
 
     const routeRows = fixtures.routeInventory.routes
@@ -229,6 +233,39 @@ describe("node agent/profile route harness", () => {
       ["listAgents", "missing-node"],
     ]);
 
+    await app.close();
+  });
+
+  it("forwards all four worktree route operations to the node provider", async () => {
+    const { provider } = createProvider();
+    const calls: Array<[string, string, Record<string, unknown>]> = [];
+    const app = createApp({
+      config,
+      nodeAgentProfileRoutes: {
+        provider,
+        worktreeProvider: {
+          async invoke(nodeId, operation, input) {
+            calls.push([nodeId, operation, input]);
+            return { operation, ok: true };
+          },
+        },
+      },
+    });
+    for (const operation of ["list", "create", "remove", "delete-branch"] as const) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/nodes/node-a/worktrees/${operation}`,
+        payload: { actorSessionId: "session-a" },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ operation, ok: true });
+    }
+    expect(calls.map((call) => call[1])).toEqual([
+      "list",
+      "create",
+      "remove",
+      "delete-branch",
+    ]);
     await app.close();
   });
 

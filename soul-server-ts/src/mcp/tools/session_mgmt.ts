@@ -84,9 +84,10 @@ export function registerSessionMgmtTools(
         folder_id: z.string().optional(),
         container: delegatedContainerSchema.optional(),
         source_task_item_id: z.string().optional(),
+        worktree_id: z.string().uuid().optional(),
       },
     },
-    async ({ agent_id, model_preset, reasoning_effort, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, container, source_task_item_id }) => {
+    async ({ agent_id, model_preset, reasoning_effort, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, container, source_task_item_id, worktree_id }) => {
       let agentResolution: AgentProfileResolution | undefined;
       let agent: AgentProfile | undefined;
       let resolvedAgentId: string;
@@ -142,6 +143,12 @@ export function registerSessionMgmtTools(
           folderId: resolvedContainer.folderId,
           container: resolvedContainer.container,
           sourceTaskItemId: source_task_item_id ?? null,
+          ...(worktree_id
+            ? {
+                worktreeId: worktree_id,
+                worktreeActorSessionId: attribution.callerSessionId,
+              }
+            : {}),
         });
         // fire-and-forget — 도구는 await 하지 않는다.
         runtime.taskExecutor.startNewExecution(task, agent);

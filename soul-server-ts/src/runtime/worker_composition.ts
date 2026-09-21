@@ -62,6 +62,12 @@ import {
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 import { composeWorkerUpstreamAdapter } from "./worker_upstream_composition.js";
 import { buildMcpServerOptions } from "./mcp_server_options.js";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { WorktreeHostClient } from "../control_plane/worktree_host_client.js";
+import { WorktreeGit } from "../worktree/worktree_git.js";
+import { RepositoryLock } from "../worktree/worktree_repository_lock.js";
+import { WorktreeService } from "../worktree/worktree_service.js";
 
 export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 export async function composeWorkerRuntime(
@@ -247,6 +253,26 @@ export async function composeWorkerRuntime(
     modelCatalog,
     sessionMutations,
   );
+  const worktreeService = env.WORKTREE_MCP_ENABLED
+    ? new WorktreeService({
+        nodeId: env.SOULSTREAM_NODE_ID,
+        projectsRoot: env.WORKTREE_PROJECTS_ROOT!,
+        git: new WorktreeGit({
+          projectsRoot: env.WORKTREE_PROJECTS_ROOT!,
+          timeoutMs: 120_000,
+        }),
+        lock: new RepositoryLock({
+          lockRoot: join(tmpdir(), "soulstream-worktree-locks"),
+          defaultTimeoutMs: 120_000,
+        }),
+        host: new WorktreeHostClient(orchHostClientDeps),
+        listActiveWorkspaceDirs: () => taskManager.listTasks()
+          .filter((task) => task.status === "initializing" || task.status === "running")
+          .map((task) => task.resolvedWorkspaceDir
+            ?? (task.profileId ? agentRegistry.get(task.profileId)?.workspace_dir : undefined))
+          .filter((path): path is string => Boolean(path)),
+      })
+    : undefined;
   db.configureScheduleHost(new ScheduleHostClient(orchHostClientDeps));
   const scheduleService = new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
   const engineFactory = createEngineFactory({
@@ -299,6 +325,7 @@ export async function composeWorkerRuntime(
       ? { claudeTranscriptReceipt: claudeRuntime.transcriptReceipt }
       : {}),
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
+    ...(worktreeService ? { worktreeResolver: worktreeService } : {}),
   });
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({
     env,
@@ -402,6 +429,7 @@ export async function composeWorkerRuntime(
     customViewService,
     logger,
     orch: orchProxyConfig,
+    ...(worktreeService ? { worktreeService } : {}),
   };
   const attachmentStore = new FileAttachmentStore(env.INCOMING_FILE_DIR, logger);
   const server = await buildServer({
@@ -456,6 +484,7 @@ export async function composeWorkerRuntime(
       eventOutboxPump: eventOutboxPumpMux,
       runnerProcess,
       runnerRecoveryCoordinator,
+      ...(worktreeService ? { worktreeService } : {}),
     });
     return upstreamAdapter;
   };

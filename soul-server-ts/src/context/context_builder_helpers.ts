@@ -63,7 +63,10 @@ export function resolveProfileRuntimeSettings(
   if (!task.profileId) return {};
   const profile = registry.get(task.profileId);
   if (!profile) return {};
-  return { workingDir: profile.workspace_dir, maxTurns: profile.max_turns };
+  return {
+    workingDir: task.resolvedWorkspaceDir ?? profile.workspace_dir,
+    maxTurns: profile.max_turns,
+  };
 }
 
 export function buildClaudeSessionIdUpdateContextItem(task: Task): ContextItem {

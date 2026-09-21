@@ -92,6 +92,16 @@ export const SELF_IDENTITY = {
         "rollback_remote_agents_config",
       ],
     },
+    {
+      name: "worktree",
+      description: "노드 로컬 Git worktree 생성·조회·안전한 제거와 branch 정리",
+      tools: [
+        "list_worktrees",
+        "create_worktree",
+        "remove_worktree",
+        "delete_worktree_branch",
+      ],
+    },
   ],
 } as const;
 

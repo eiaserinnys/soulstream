@@ -12,6 +12,7 @@ import type { TaskManager } from "../task/task_manager.js";
 import type { ClaudeRuntimeScheduleCommands } from "./claude_runtime_commands.js";
 import type { EventOutboxPumpTransport } from "./event_outbox_pump.js";
 import type { ReleaseActivationState } from "../release/release_activation_state.js";
+import type { WorktreeService } from "../worktree/worktree_service.js";
 
 export interface UpstreamConfig {
   url: string;
@@ -23,6 +24,7 @@ export interface UpstreamConfig {
   userPortraitPath: string;
   isProduction: boolean;
   runnerProcessEnabled?: boolean;
+  worktreeMcpEnabled?: boolean;
   runnerStateDir?: string;
   heartbeatIntervalMs?: number;
   heartbeatMaxMissed?: number;
@@ -47,6 +49,7 @@ export interface UpstreamDependencies {
   listLiveRunnerSessionIds?: () => Promise<string[]>;
   waitForRunnerReconciliation?: () => Promise<void>;
   reconnectPolicy?: ReconnectPolicyBoundary;
+  worktreeService?: WorktreeService;
 }
 
 export interface ReconnectPolicyBoundary {

@@ -7,7 +7,8 @@ export type ControlCommandFamily =
   | "attachment"
   | "auth/provider-usage"
   | "reflection"
-  | "agent-config";
+  | "agent-config"
+  | "worktree";
 
 export type ControlCommandPolicy =
   | "health"
@@ -60,6 +61,10 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("apply_agent_profile_update", "agent-config", "durable_mutation"),
   entry("list_agents_config_snapshots", "agent-config", "bounded_result"),
   entry("rollback_agents_config", "agent-config", "durable_mutation"),
+  entry("worktree_list", "worktree", "bounded_result"),
+  entry("worktree_create", "worktree", "bounded_result"),
+  entry("worktree_remove", "worktree", "bounded_result"),
+  entry("worktree_delete_branch", "worktree", "bounded_result"),
 ] as const satisfies readonly ControlCommandInventoryEntry[];
 
 const INVENTORY_BY_TYPE = new Map<string, ControlCommandInventoryEntry>(

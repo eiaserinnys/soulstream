@@ -12,6 +12,7 @@ export type SessionCreateNodeSelectionRequest = {
   readonly profileId?: string;
   readonly modelPresetId?: string;
   readonly legacyModelSpecified?: boolean;
+  readonly worktreeRequired?: boolean;
 };
 
 export type SessionCreateNodeSelection = {
@@ -27,7 +28,8 @@ export type SessionCreateNodeSelectionErrorCode =
   | "PROFILE_NOT_FOUND"
   | "MODEL_PRESET_NOT_FOUND"
   | "BACKEND_INCOMPATIBLE"
-  | "NO_COMPATIBLE_PROFILE";
+  | "NO_COMPATIBLE_PROFILE"
+  | "NODE_CAPABILITY_UNAVAILABLE";
 
 export class SessionCreateNodeSelectionError extends Error {
   readonly statusCode: 400 | 404 | 409 | 503;
@@ -70,7 +72,14 @@ export function selectNodeForSessionCreate(
       nodeId: request.nodeId,
     }, agentProfiles);
   }
-  return selectAutomaticNode(registry, nodes, request, agentProfiles);
+  const eligibleNodes = request.worktreeRequired
+    ? nodes.filter((node) => node.capabilities.worktree_mcp_v1 === true
+      && node.capabilities.register_session_with_worktree_v1 === true)
+    : nodes;
+  if (eligibleNodes.length === 0) {
+    throw selectionError(409, "NODE_CAPABILITY_UNAVAILABLE", "No connected node supports worktree-bound sessions");
+  }
+  return selectAutomaticNode(registry, eligibleNodes, request, agentProfiles);
 }
 
 function selectRequestedNode(
@@ -84,6 +93,20 @@ function selectRequestedNode(
     throw selectionError(404, "NODE_NOT_FOUND", `Node ${nodeId} not found`, {
       nodeId,
     });
+  }
+  if (
+    request.worktreeRequired
+    && (
+      node.capabilities.worktree_mcp_v1 !== true
+      || node.capabilities.register_session_with_worktree_v1 !== true
+    )
+  ) {
+    throw selectionError(
+      409,
+      "NODE_CAPABILITY_UNAVAILABLE",
+      `Node ${nodeId} does not support worktree-bound sessions`,
+      { nodeId },
+    );
   }
 
   const profile = request.profileId === undefined

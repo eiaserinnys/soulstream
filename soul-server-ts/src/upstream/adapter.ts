@@ -156,6 +156,7 @@ export class UpstreamAdapter {
       modelCatalog: this.deps.modelCatalog,
       controlChannelEnabled: this.controlChannelService !== undefined,
       runnerProcessEnabled: this.config.runnerProcessEnabled,
+      worktreeMcpEnabled: this.config.worktreeMcpEnabled,
       releaseActivationState: this.config.releaseActivationState,
       logger: this.logger,
     });
@@ -327,6 +328,7 @@ export class UpstreamAdapter {
           modelCatalog: this.deps.modelCatalog,
           controlChannelEnabled: this.controlChannelService !== undefined,
           runnerProcessEnabled: this.config.runnerProcessEnabled,
+          worktreeMcpEnabled: this.config.worktreeMcpEnabled,
           logger: this.logger,
           releaseActivationState: this.config.releaseActivationState,
         }),

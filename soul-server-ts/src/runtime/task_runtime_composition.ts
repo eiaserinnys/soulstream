@@ -30,6 +30,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { ScheduleDispatcher } from "../schedule/schedule_dispatcher.js";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
+import type { WorktreeExecutionResolver } from "../task/task_executor.js";
 
 export interface TaskRuntimeCompositionParams {
   env: Env;
@@ -50,6 +51,7 @@ export interface TaskRuntimeCompositionParams {
     "inspectInput" | "inspectNativeTaskNotification"
   >;
   transientEventLogAggregator: TransientEventLogAggregator;
+  worktreeResolver?: WorktreeExecutionResolver;
 }
 
 export interface TaskRuntimeComposition {
@@ -157,6 +159,7 @@ export function composeTaskRuntime(
     async (task) => {
       await taskManager.resumeQueuedAfterTerminal(task, onResume);
     },
+    params.worktreeResolver,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(

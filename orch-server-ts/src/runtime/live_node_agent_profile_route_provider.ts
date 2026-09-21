@@ -73,7 +73,7 @@ export type CreateLiveNodeAgentProfileRouteProviderOptions = {
 };
 
 export type LiveNodeAgentProfileRouteProviderBundle = {
-  readonly nodeAgentProfileRoutes: Pick<NodeAgentProfileRouteOptions, "provider">;
+  readonly nodeAgentProfileRoutes: Pick<NodeAgentProfileRouteOptions, "provider" | "worktreeProvider">;
 };
 
 export function createLiveNodeAgentProfileRouteProviders(
@@ -82,8 +82,42 @@ export function createLiveNodeAgentProfileRouteProviders(
   return {
     nodeAgentProfileRoutes: {
       provider: createLiveNodeAgentProfileProvider(options),
+      worktreeProvider: {
+        invoke: async (nodeId, operation, input) =>
+          await sendWorktreeCommand(options, nodeId, operation, input),
+      },
     },
   };
+}
+
+async function sendWorktreeCommand(
+  options: CreateLiveNodeAgentProfileRouteProviderOptions,
+  nodeId: string,
+  operation: "list" | "create" | "remove" | "delete-branch",
+  input: Record<string, unknown>,
+): Promise<unknown> {
+  const node = requireConnectedNode(options.registry, nodeId);
+  if (node.capabilities.worktree_mcp_v1 !== true) {
+    throw new NodeAgentProfileRouteError(
+      "NODE_CAPABILITY_UNAVAILABLE",
+      `Node ${nodeId} does not advertise worktree_mcp_v1`,
+      409,
+    );
+  }
+  const type = operation === "delete-branch"
+    ? "worktree_delete_branch"
+    : `worktree_${operation}`;
+  try {
+    const command = options.registry.createCommand(
+      nodeId,
+      { type, input } as RequestResponseNodeCommandPayload,
+      { timeoutMs: 130_000 },
+    );
+    const response = await options.bridge.sendPendingCommand({ node, command });
+    return response.result;
+  } catch (error) {
+    throw mapCommandError(error);
+  }
 }
 
 function createLiveNodeAgentProfileProvider(

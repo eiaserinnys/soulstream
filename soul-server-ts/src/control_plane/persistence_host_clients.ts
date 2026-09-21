@@ -15,6 +15,7 @@ import type {
   SessionDeliveryRow,
   AcknowledgeReviewOutcome,
   RegisterSessionParams,
+  RegisterSessionWithWorktreeParams,
   SessionUpdateFields,
 } from "../db/session_db_types.js";
 import {
@@ -51,6 +52,10 @@ export interface SessionMutationHost {
     input: RegisterSessionParams,
     idempotencyKey: string,
   ): Promise<RegisterSessionReviewResult | undefined>;
+  registerSessionWithWorktree(
+    input: RegisterSessionWithWorktreeParams,
+    idempotencyKey: string,
+  ): Promise<RegisterSessionReviewResult | undefined>;
   transitionSession(
     sessionId: string,
     fields: SessionTransitionFields,
@@ -72,6 +77,7 @@ export function createMissingSessionMutationHost(): SessionMutationHost {
   };
   return {
     registerSession: missing,
+    registerSessionWithWorktree: missing,
     transitionSession: missing,
     renameSession: missing,
     deleteSession: missing,
@@ -94,6 +100,18 @@ export class SessionMutationHostClient implements SessionMutationHost {
       ...input,
       idempotencyKey,
     }]);
+    return parseRegisterSessionReviewResult(result);
+  }
+
+  async registerSessionWithWorktree(
+    input: RegisterSessionWithWorktreeParams,
+    idempotencyKey: string,
+  ): Promise<RegisterSessionReviewResult | undefined> {
+    const result = await this.transport.request<unknown>(
+      "session-data",
+      "register_session_with_worktree",
+      [{ ...input, idempotencyKey }],
+    );
     return parseRegisterSessionReviewResult(result);
   }
 

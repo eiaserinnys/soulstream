@@ -69,6 +69,10 @@ export interface CreateTaskParams {
   folderId?: string | null;
   container?: BoardYjsContainerRef | null;
   sourceTaskItemId?: string | null;
+  /** Optional centrally owned worktree used as the only execution cwd. */
+  worktreeId?: string;
+  /** MCP/upstream caller that owns the worktree. Required with worktreeId. */
+  worktreeActorSessionId?: string;
   /** Optional page block converted into the canonical primary session_ref before first turn. */
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
   /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
@@ -149,7 +153,7 @@ export class TaskCreation {
     const task: Task = {
       agentSessionId: params.agentSessionId,
       prompt: params.prompt,
-      status: "initializing",
+      status: "initializing" as const,
       ...review,
       profileId: params.profileId,
       agentProfileSnapshot: params.agentProfileSnapshot,
@@ -179,6 +183,7 @@ export class TaskCreation {
       systemPrompt: params.systemPrompt,
       contextItems: params.contextItems,
       attachmentPaths: params.attachmentPaths,
+      worktreeId: params.worktreeId,
       createdAt: now,
       lastEventId: 0,
       lastReadEventId: 0,
@@ -187,7 +192,7 @@ export class TaskCreation {
 
     // host 등록은 실행 시작 전에 반드시 성공해야 한다. 같은 session_id로 같은
     // idempotency key를 재시도하면 기존 결과를 반환하고, 다른 intent면 충돌한다.
-    const registeredReview = await this.deps.sessionMutations.registerSession({
+    const registration = {
       sessionId: task.agentSessionId,
       nodeId: this.deps.nodeId,
       agentId: task.profileId ?? null,
@@ -195,7 +200,7 @@ export class TaskCreation {
       sessionType,
       prompt: task.prompt,
       clientId: task.clientId ?? null,
-      status: "initializing",
+      status: "initializing" as const,
       createdAt: task.createdAt,
       updatedAt: task.createdAt,
       callerSessionId: task.callerSessionId ?? null,
@@ -210,7 +215,20 @@ export class TaskCreation {
       callerInfo: params.callerInfo ?? null,
       reviewRequired: task.reviewRequired === true,
       reviewState: task.reviewState ?? "not_required",
-    }, `register_session:${task.agentSessionId}`);
+    };
+    const registeredReview = task.worktreeId
+      ? await this.deps.sessionMutations.registerSessionWithWorktree({
+          ...registration,
+          worktreeId: task.worktreeId,
+          worktreeActorSessionId: requireWorktreeActor(params),
+          ownerTaskId: params.container?.containerKind === "task"
+            ? params.container.containerId
+            : null,
+        }, `register_session_with_worktree:${task.agentSessionId}`)
+      : await this.deps.sessionMutations.registerSession(
+          registration,
+          `register_session:${task.agentSessionId}`,
+        );
     if (registeredReview !== undefined) {
       task.reviewRequired = registeredReview.reviewRequired;
       task.reviewState = registeredReview.reviewState;
@@ -462,6 +480,14 @@ export class TaskCreation {
     return { assignedFolderId: assigned, completed };
   }
 
+}
+
+function requireWorktreeActor(params: CreateTaskParams): string {
+  const actor = params.worktreeActorSessionId?.trim();
+  if (!actor) {
+    throw new Error("worktreeActorSessionId is required when worktreeId is set");
+  }
+  return actor;
 }
 
 async function settleDeferredEffects(

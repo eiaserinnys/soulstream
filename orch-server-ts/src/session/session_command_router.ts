@@ -163,6 +163,7 @@ export class SessionCommandRouter {
         profileId: optionalNonEmptyString(payload.profile),
         modelPresetId: optionalNonEmptyString(payload.model_preset),
         legacyModelSpecified: optionalNonEmptyString(payload.model) !== undefined,
+        worktreeRequired: optionalNonEmptyString(payload.worktree_id) !== undefined,
       });
     } catch (error) {
       if (

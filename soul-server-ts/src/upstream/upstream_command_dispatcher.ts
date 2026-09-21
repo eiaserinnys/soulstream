@@ -30,5 +30,6 @@ export function createUpstreamCommandDispatcher(input: {
     deps.modelCatalog,
     deps.agentProfileSource,
     input.listRunningSessionIds,
+    deps.worktreeService,
   );
 }

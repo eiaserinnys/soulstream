@@ -315,6 +315,10 @@ export interface Task {
   reviewState?: ReviewState;
   /** Runtime-only non-fatal projection outcomes returned by create_session ACK. */
   creationWarnings?: SessionCreationWarning[];
+  /** Durable central worktree binding. */
+  worktreeId?: string;
+  /** Runtime-only path revalidated immediately before every execution. */
+  resolvedWorkspaceDir?: string;
 
   /** Agent registry 프로필 id (sessions.agent_id 컬럼). */
   profileId?: string;
