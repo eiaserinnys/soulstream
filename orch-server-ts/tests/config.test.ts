@@ -295,6 +295,7 @@ describe("orch-server-ts config scaffold", () => {
     const response = await app.inject({ method: "GET", url: "/__orch_server_ts/health" });
 
     expect(app.initialConfig.forceCloseConnections).toBe(true);
+    expect(app.server.requestTimeout).toBe(300_000);
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       ok: true,

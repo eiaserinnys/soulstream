@@ -7,7 +7,7 @@ import {
 } from "../../src/runner/runner_host_request_client.js";
 
 describe("RunnerHostRequestClient", () => {
-  it("retries with one correlation id and returns a recovered host response", async () => {
+  it("retries with one correlation id and returns a recovered host response before its deadline", async () => {
     const send = vi.fn(async () => {});
     const request = vi.fn()
       .mockRejectedValueOnce(new Error("connection closed"))
@@ -22,7 +22,7 @@ describe("RunnerHostRequestClient", () => {
 
     await expect(client.call("session_store", "load", [{ sessionId: "s" }], {
       timeoutMs: 50,
-      attempts: 2,
+      deadlineMs: 50,
       retryDelayMs: 0,
     })).resolves.toEqual(["entry"]);
     expect(request).toHaveBeenCalledTimes(2);
@@ -82,6 +82,23 @@ describe("RunnerHostRequestClient", () => {
       vi.useRealTimers();
     }
   });
+
+  it("ends otherwise-unbounded missing-host retries at an explicit deadline", async () => {
+    const delay = vi.fn(async (_ms: number, signal?: AbortSignal) =>
+      await new Promise<void>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      }));
+    const client = new RunnerHostRequestClient(() => undefined, delay);
+
+    const request = client.call("session_store", "append", [{}, []], {
+      timeoutMs: 50,
+      deadlineMs: 10,
+      retryDelayMs: 1,
+    });
+    await expect(request).rejects.toThrow("timed out after 10ms");
+    await expect(request).rejects.toBeInstanceOf(RunnerHostUnavailableError);
+    expect(delay).toHaveBeenCalledOnce();
+  }, 200);
 
   it("bounds server-absent retries instead of blocking forever", async () => {
     const delay = vi.fn(async () => {});
