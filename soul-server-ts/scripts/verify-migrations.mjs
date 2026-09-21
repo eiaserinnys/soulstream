@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 
-import { deploymentEnvironmentPath } from "../../packages/db-schema/scripts/migration-contract.mjs";
+import { releaseServiceEnvironmentPath } from "../../packages/db-schema/scripts/migration-contract.mjs";
 
 // Mirror migrate.mjs's environment discovery: the connection string comes from
 // MIGRATION_DATABASE_URL or DATABASE_URL, in the process env or the canonical
@@ -16,7 +16,7 @@ function databaseUrlConfigured() {
   if (process.env.DATABASE_URL?.trim()) return true;
   try {
     const content = readFileSync(
-      deploymentEnvironmentPath(process.env, process.cwd()),
+      releaseServiceEnvironmentPath(process.env, process.cwd()),
       "utf8",
     );
     return /^\s*(?:MIGRATION_)?DATABASE_URL\s*=\s*\S/m.test(content);

@@ -12,22 +12,37 @@ export const migrationDirectory = resolve(packageRoot, "sql/migrations");
 export const migrationManifestPath = resolve(packageRoot, "migration-manifest.json");
 export const canonicalSchemaPath = resolve(packageRoot, "sql/schema.sql");
 /**
- * 배포 설정 파일의 경로.
+ * **워커의** 배포 설정 파일 경로 — `.env.soul-server-ts`.
  *
- * Haniel 은 서비스의 `release_env_file` 을 0600 임시 스냅샷으로 복사한 뒤
- * `HANIEL_SERVICE_ENV_FILE` 에 그 **경로만** 넘긴다. 값은 자식 프로세스 env 에
- * 합쳐지지 않고, 오히려 `DATABASE_URL`·`PG*` 는 제거된다. 그래서 이 파일을 읽지
- * 않으면 배포되는 서비스의 설정에 닿을 방법이 없다 — 마이그레이션 권한자가
- * orch 인데도 worker 의 `.env.soul-server-ts` 를 읽던 것이 그 결과였다.
- *
- * 넘어오지 않으면 기존대로 서비스 cwd 의 `.env.soul-server-ts` 를 쓴다.
+ * 여기서 `HANIEL_SERVICE_ENV_FILE` 을 보면 안 된다. 그 변수는 "지금 릴리스 중인
+ * 서비스"를 가리키는데, 워커 설정을 원하는 호출자에게 그것을 주면 orch 를
+ * 배포하는 동안 orch 의 env 를 워커 것인 양 건네게 된다. 실제로 그렇게 해서
+ * release health 가 MCP_ENABLED 를 잃고 HOST/PORT/AUTH_BEARER_TOKEN 까지
+ * orch 값으로 덮인 적이 있다. 배포 중인 서비스의 설정이 필요하면
+ * `releaseServiceEnvironmentPath` 를 쓴다.
  */
 export function deploymentEnvironmentPath(env = process.env, cwd = process.cwd()) {
   const serviceCwd = env.HANIEL_SERVICE_CWD?.trim();
-  const base = serviceCwd || cwd;
+  return resolve(serviceCwd || cwd, ".env.soul-server-ts");
+}
+
+/**
+ * **지금 릴리스 중인 서비스의** 설정 파일 경로.
+ *
+ * Haniel 은 그 서비스의 `release_env_file` 을 0600 임시 스냅샷으로 복사한 뒤
+ * `HANIEL_SERVICE_ENV_FILE` 에 **경로만** 넘긴다. 값은 자식 env 에 합쳐지지 않고
+ * `DATABASE_URL`·`PG*` 는 오히려 제거되므로, 이 파일을 읽지 않으면 배포 대상
+ * 서비스의 설정에 닿을 방법이 없다.
+ *
+ * 마이그레이션·릴리스 도구 전용이다. 넘어오지 않으면 워커 경로로 돌아간다.
+ */
+export function releaseServiceEnvironmentPath(env = process.env, cwd = process.cwd()) {
   const serviceEnvFile = env.HANIEL_SERVICE_ENV_FILE?.trim();
-  if (serviceEnvFile) return resolve(base, serviceEnvFile);
-  return resolve(base, ".env.soul-server-ts");
+  if (serviceEnvFile) {
+    const serviceCwd = env.HANIEL_SERVICE_CWD?.trim();
+    return resolve(serviceCwd || cwd, serviceEnvFile);
+  }
+  return deploymentEnvironmentPath(env, cwd);
 }
 
 export function sha256(value) {

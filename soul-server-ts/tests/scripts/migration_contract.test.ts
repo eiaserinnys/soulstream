@@ -12,6 +12,7 @@ import {
   migrationSha256,
   validateLedger,
   readDatabaseUrl,
+  releaseServiceEnvironmentPath,
 } from "../../../packages/db-schema/scripts/migration-contract.mjs";
 import {
   formatMigrationError,
@@ -222,26 +223,41 @@ describe("versioned migration contract", () => {
     expect(text).toContain("[redacted DATABASE_URL]");
   });
 
-  it("reads the release env snapshot Haniel hands over, not the worker file", () => {
-    // Haniel 은 값을 env 로 합치지 않고 스냅샷 경로만 넘긴다. 이걸 보지 않으면
-    // 배포 서비스의 설정에 닿지 못하고 repo 안의 worker 파일을 읽게 된다.
-    expect(deploymentEnvironmentPath(
-      { HANIEL_SERVICE_ENV_FILE: "/tmp/haniel-release-env-x/service.env" },
-      "/repo-root",
-    )).toBe(resolve("/tmp/haniel-release-env-x/service.env"));
+  it("reads the release env snapshot Haniel hands over for migration tooling", () => {
+    const snapshot = "/tmp/haniel-release-env-x/service.env";
+
+    expect(releaseServiceEnvironmentPath({ HANIEL_SERVICE_ENV_FILE: snapshot }, "/repo-root"))
+      .toBe(resolve(snapshot));
 
     // 서비스 cwd 가 함께 와도 스냅샷이 이긴다.
+    expect(releaseServiceEnvironmentPath(
+      { HANIEL_SERVICE_CWD: "/service-root", HANIEL_SERVICE_ENV_FILE: snapshot },
+      "/repo-root",
+    )).toBe(resolve(snapshot));
+
+    // 넘어오지 않거나 공백뿐이면 워커 경로로 돌아간다.
+    expect(releaseServiceEnvironmentPath({ HANIEL_SERVICE_ENV_FILE: "   " }, "/repo-root"))
+      .toBe(resolve("/repo-root/.env.soul-server-ts"));
+    expect(releaseServiceEnvironmentPath({ HANIEL_SERVICE_CWD: "/service-root" }, "/repo-root"))
+      .toBe(resolve("/service-root/.env.soul-server-ts"));
+  });
+
+  it("keeps the worker env path blind to whichever service is being released", () => {
+    // 회귀 가드. 이 함수가 스냅샷을 보게 되면 release health 가 orch 를 배포하는
+    // 동안 orch 의 env 를 워커 것인 양 읽어 MCP_ENABLED 를 잃고
+    // HOST/PORT/AUTH_BEARER_TOKEN 까지 orch 값으로 덮인다.
     expect(deploymentEnvironmentPath(
       {
         HANIEL_SERVICE_CWD: "/service-root",
         HANIEL_SERVICE_ENV_FILE: "/tmp/haniel-release-env-x/service.env",
       },
       "/repo-root",
-    )).toBe(resolve("/tmp/haniel-release-env-x/service.env"));
+    )).toBe(resolve("/service-root/.env.soul-server-ts"));
 
-    // 넘어오지 않거나 공백뿐이면 기존 동작 그대로다.
-    expect(deploymentEnvironmentPath({ HANIEL_SERVICE_ENV_FILE: "   " }, "/repo-root"))
-      .toBe(resolve("/repo-root/.env.soul-server-ts"));
+    expect(deploymentEnvironmentPath(
+      { HANIEL_SERVICE_ENV_FILE: "/tmp/haniel-release-env-x/service.env" },
+      "/repo-root",
+    )).toBe(resolve("/repo-root/.env.soul-server-ts"));
   });
 
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {

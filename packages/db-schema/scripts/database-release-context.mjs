@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import postgres from "postgres";
 
 import { inspectUserObjectInventory } from "./database-release-inventory.mjs";
-import { deploymentEnvironmentPath, readDatabaseUrl } from "./migration-contract.mjs";
+import { readDatabaseUrl, releaseServiceEnvironmentPath } from "./migration-contract.mjs";
 import { readMigrationPlan, runMigrations } from "./migrate.mjs";
 
 export async function resolveDatabaseReleaseContext(options, command) {
@@ -14,7 +14,7 @@ export async function resolveDatabaseReleaseContext(options, command) {
     "HANIEL_DATABASE_REQUIRED_SUBPHASES",
   ].filter((name) => env[name] !== undefined).map((name) => [name, env[name]]));
   dotenv.config({
-    path: deploymentEnvironmentPath(env, options.cwd ?? process.cwd()),
+    path: releaseServiceEnvironmentPath(env, options.cwd ?? process.cwd()),
     override: true,
     processEnv: env,
   });
