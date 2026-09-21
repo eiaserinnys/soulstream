@@ -118,7 +118,10 @@ export class SessionStoryReadRepository {
       ? await this.sql<SummaryRow[]>`
           WITH ordered_summaries AS (
             SELECT id, payload, created_at,
-              ROW_NUMBER() OVER (ORDER BY id ASC)::integer AS turn_number
+              ROW_NUMBER() OVER (
+                ORDER BY COALESCE((payload->>'turn_start_event_id')::bigint, id) ASC,
+                         id ASC
+              )::integer AS turn_number
             FROM events
             WHERE session_id = ${sessionId} AND event_type = 'turn_summary'
           )
@@ -131,7 +134,10 @@ export class SessionStoryReadRepository {
       : await this.sql<SummaryRow[]>`
           WITH ordered_summaries AS (
             SELECT id, payload, created_at,
-              ROW_NUMBER() OVER (ORDER BY id ASC)::integer AS turn_number
+              ROW_NUMBER() OVER (
+                ORDER BY COALESCE((payload->>'turn_start_event_id')::bigint, id) ASC,
+                         id ASC
+              )::integer AS turn_number
             FROM events
             WHERE session_id = ${sessionId} AND event_type = 'turn_summary'
           )
@@ -159,6 +165,11 @@ export class SessionStoryReadRepository {
     return rows.map(normalizeDigestSearchMatch);
   }
 
+  // `turn_number` is the turn's position in the conversation rather than the
+  // insert order of its summary row, so the numbers a stored narrative cites
+  // keep pointing at the same turns. Unfolded rows are still selected by row id
+  // against the digest watermark, which is what makes a late-written summary
+  // for an older turn show up as unfolded instead of being skipped.
   async getSessionStory(sessionId: string): Promise<HostSessionStoryView> {
     const digestRows = await this.sql<Array<{
       highlight: string;
@@ -176,7 +187,10 @@ export class SessionStoryReadRepository {
     const summaryRows = await this.sql<SummaryRow[]>`
       WITH ordered_summaries AS (
         SELECT id, payload, created_at,
-          ROW_NUMBER() OVER (ORDER BY id ASC)::integer AS turn_number
+          ROW_NUMBER() OVER (
+            ORDER BY COALESCE((payload->>'turn_start_event_id')::bigint, id) ASC,
+                     id ASC
+          )::integer AS turn_number
         FROM events
         WHERE session_id = ${sessionId} AND event_type = 'turn_summary'
       )

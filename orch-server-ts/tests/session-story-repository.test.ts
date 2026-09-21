@@ -67,7 +67,9 @@ describe("SessionStoryRepository", () => {
     )).resolves.toEqual([
       expect.objectContaining({ eventId: 31, turnNumber: 3 }),
     ]);
-    expect(calls[0]?.text).toContain("ROW_NUMBER() OVER (ORDER BY id ASC)");
+    expect(calls[0]?.text.replace(/\s+/g, " ")).toContain(
+      "ROW_NUMBER() OVER ( ORDER BY COALESCE((payload->>'turn_start_event_id')::bigint, id) ASC, id ASC )",
+    );
     expect(calls[0]?.text).toContain("turn_number <=");
     expect(calls[0]?.values).toEqual(["session-a", 3, 5, 4]);
   });
@@ -104,7 +106,9 @@ describe("SessionStoryRepository", () => {
       expect.objectContaining({ eventId: 31, turnNumber: 3 }),
       expect.objectContaining({ eventId: 44, turnNumber: 4 }),
     ]);
-    expect(calls[0]?.text).toContain("ROW_NUMBER() OVER (ORDER BY id ASC)");
+    expect(calls[0]?.text.replace(/\s+/g, " ")).toContain(
+      "ROW_NUMBER() OVER ( ORDER BY COALESCE((payload->>'turn_start_event_id')::bigint, id) ASC, id ASC )",
+    );
     expect(calls[0]?.text).toContain("WHERE id >");
     expect(calls[0]?.values).toEqual(["session-a", 24, 5]);
   });

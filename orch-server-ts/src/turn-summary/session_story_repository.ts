@@ -205,7 +205,10 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
               id,
               payload,
               created_at,
-              ROW_NUMBER() OVER (ORDER BY id ASC)::integer AS turn_number
+              ROW_NUMBER() OVER (
+                ORDER BY COALESCE((payload->>'turn_start_event_id')::bigint, id) ASC,
+                         id ASC
+              )::integer AS turn_number
             FROM events
             WHERE session_id = ${sessionId}
               AND event_type = 'turn_summary'
@@ -222,7 +225,10 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
               id,
               payload,
               created_at,
-              ROW_NUMBER() OVER (ORDER BY id ASC)::integer AS turn_number
+              ROW_NUMBER() OVER (
+                ORDER BY COALESCE((payload->>'turn_start_event_id')::bigint, id) ASC,
+                         id ASC
+              )::integer AS turn_number
             FROM events
             WHERE session_id = ${sessionId}
               AND event_type = 'turn_summary'
@@ -239,6 +245,17 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
       .filter((value): value is UnfoldedTurnSummary => value !== null);
   }
 
+  // Numbering and selection use different keys on purpose.
+  //
+  // `turn_number` is the turn's position in the conversation, so a marker like
+  // `[T3]` keeps meaning the same turn no matter when its summary row was
+  // written. For every session whose summaries arrived in conversation order
+  // this is identical to the row order, so existing narratives are unaffected.
+  //
+  // Selection stays on the row id: the caller commits the last row of the batch
+  // as the new watermark, so the batch must be a contiguous run of inserts.
+  // Picking by turn position instead would let a scrambled batch commit a
+  // watermark past an unprocessed row and orphan it permanently.
   async loadUnfoldedSummaries(
     sessionId: string,
     afterEventId: number | null,
@@ -251,7 +268,10 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
           id,
           payload,
           created_at,
-          ROW_NUMBER() OVER (ORDER BY id ASC)::integer AS turn_number
+          ROW_NUMBER() OVER (
+            ORDER BY COALESCE((payload->>'turn_start_event_id')::bigint, id) ASC,
+                     id ASC
+          )::integer AS turn_number
         FROM events
         WHERE session_id = ${sessionId}
           AND event_type = 'turn_summary'

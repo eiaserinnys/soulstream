@@ -86,7 +86,9 @@ describe("SessionStoryReadRepository", () => {
       foldCount: 0,
       updatedAt: null,
     });
-    expect(calls[1]?.text).toContain("ROW_NUMBER() OVER (ORDER BY id ASC)");
+    expect(calls[1]?.text.replace(/\s+/g, " ")).toContain(
+      "ROW_NUMBER() OVER ( ORDER BY COALESCE((payload->>'turn_start_event_id')::bigint, id) ASC, id ASC )",
+    );
     expect(calls[1]?.values).toContain(0);
   });
 
