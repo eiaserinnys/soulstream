@@ -26,6 +26,10 @@ import type {
   TaskManager,
 } from "../../src/task/task_manager.js";
 import type { AgentProfile } from "../../src/agent_registry.js";
+import { REMOTE_WORKTREE_HTTP_TIMEOUT_MS } from "../../src/mcp/tools/worktree.js";
+import { WORKTREE_OPERATION_TIMEOUT_MS } from "../../src/worktree/worktree_git.js";
+import { WORKTREE_NODE_COMMAND_TIMEOUT_MS } from
+  "../../../orch-server-ts/src/runtime/live_node_agent_profile_route_provider.js";
 
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildServer>>[] = [];
@@ -311,6 +315,15 @@ afterEach(async () => {
 });
 
 describe("remote worktree tools", () => {
+  it("keeps nested timeout budgets ordered through compensation and response propagation", () => {
+    expect(WORKTREE_NODE_COMMAND_TIMEOUT_MS).toBeGreaterThan(
+      WORKTREE_OPERATION_TIMEOUT_MS + 1_100 + 10_000,
+    );
+    expect(REMOTE_WORKTREE_HTTP_TIMEOUT_MS).toBeGreaterThan(
+      WORKTREE_NODE_COMMAND_TIMEOUT_MS,
+    );
+  });
+
   it("preserves dirty inventory and cleanup guidance from the remote node", async () => {
     const capture = await createOrchCapture(400, () => ({
       body: {

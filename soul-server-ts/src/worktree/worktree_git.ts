@@ -16,6 +16,7 @@ import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { GitProcessError, runBoundedProcess } from "./worktree_process.js";
 
 const IDENTITY_FILE = "soulstream-worktree-id";
+export const WORKTREE_OPERATION_TIMEOUT_MS = 120_000;
 
 export class WorktreeGitError extends Error {
   constructor(

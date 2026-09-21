@@ -473,7 +473,7 @@ export class UpstreamAdapter {
   private async listRunningSessionIds(waitForReconciliation = true): Promise<string[]> {
     if (waitForReconciliation) await this.deps.waitForRunnerReconciliation?.();
     const inMemorySessionIds = this.deps.taskManager.listTasks()
-      .filter((task) => task.status === "running")
+      .filter((task) => task.status === "initializing" || task.status === "running")
       .map((task) => task.agentSessionId);
     return this.deps.listLiveRunnerSessionIds
       ? [...new Set([

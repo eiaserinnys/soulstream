@@ -65,7 +65,10 @@ import { buildMcpServerOptions } from "./mcp_server_options.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorktreeHostClient } from "../control_plane/worktree_host_client.js";
-import { WorktreeGit } from "../worktree/worktree_git.js";
+import {
+  WorktreeGit,
+  WORKTREE_OPERATION_TIMEOUT_MS,
+} from "../worktree/worktree_git.js";
 import { RepositoryLock } from "../worktree/worktree_repository_lock.js";
 import { WorktreeService } from "../worktree/worktree_service.js";
 import { listActiveTaskWorkspaceDirs } from "./task_active_workspace_dirs.js";
@@ -267,7 +270,7 @@ export async function composeWorkerRuntime(
         projectsRoot: env.WORKTREE_PROJECTS_ROOT!,
         git: new WorktreeGit({
           projectsRoot: env.WORKTREE_PROJECTS_ROOT!,
-          timeoutMs: 120_000,
+          timeoutMs: WORKTREE_OPERATION_TIMEOUT_MS,
         }),
         lock: new RepositoryLock({
           lockRoot: join(tmpdir(), "soulstream-worktree-locks"),

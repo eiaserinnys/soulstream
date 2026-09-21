@@ -29,6 +29,10 @@ import type {
 import { LiveNodeHttpClientError } from "./live_node_http_client.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
 
+// 120s worker operation + 1.1s process-tree confirmation + 10s host
+// compensation still completes before the orchestrator rejects the command.
+export const WORKTREE_NODE_COMMAND_TIMEOUT_MS = 150_000;
+
 type AgentSnapshot = {
   readonly id: string;
   readonly name?: unknown;
@@ -111,7 +115,7 @@ async function sendWorktreeCommand(
     const command = options.registry.createCommand(
       nodeId,
       { type, input } as RequestResponseNodeCommandPayload,
-      { timeoutMs: 130_000 },
+      { timeoutMs: WORKTREE_NODE_COMMAND_TIMEOUT_MS },
     );
     const response = await options.bridge.sendPendingCommand({ node, command });
     return response.result;

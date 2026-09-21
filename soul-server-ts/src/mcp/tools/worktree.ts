@@ -7,6 +7,9 @@ import { requireMcpMutationActor } from "./caller_session.js";
 import { WorktreeServiceError } from "../../worktree/worktree_service.js";
 
 const nodeSchema = z.string().min(1).optional();
+// Leave a separate response-propagation margin beyond the orchestrator's
+// 150s pending-command contract.
+export const REMOTE_WORKTREE_HTTP_TIMEOUT_MS = 160_000;
 
 export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): void {
   server.registerTool(
@@ -148,7 +151,7 @@ async function route(
   }
   if (!runtime.orch) throw new WorktreeServiceError("ORCH_UNAVAILABLE", "Orchestrator proxy is unavailable");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 130_000);
+  const timer = setTimeout(() => controller.abort(), REMOTE_WORKTREE_HTTP_TIMEOUT_MS);
   try {
     const response = await fetch(
       `${runtime.orch.baseUrl}/api/nodes/${encodeURIComponent(targetNodeId)}/worktrees/${operation}`,

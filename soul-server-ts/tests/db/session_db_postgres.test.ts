@@ -352,6 +352,15 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       status: "initializing",
       worktree_id: "worktree-db-1",
     });
+    await expect(sessionMutations.reconcileNodeStartup(
+      "node-worktree",
+      ["worktree-session-3"],
+      new Date("2026-09-22T00:03:00Z"),
+    )).resolves.toMatchObject({ interrupted: 0, restored: 0, updates: [] });
+    await expect(db.getSession("worktree-session-3")).resolves.toMatchObject({
+      status: "initializing",
+      worktree_id: "worktree-db-1",
+    });
   }, 30_000);
 
   it("reprojects response-loss binding warnings from durable state after restart", async () => {
