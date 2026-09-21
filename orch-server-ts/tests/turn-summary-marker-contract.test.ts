@@ -57,22 +57,49 @@ describe("session story turn marker contract", () => {
     expect(intersect(markers(existing), markers(batch))).toEqual([]);
   });
 
-  // A label says where a summary was appended, not when its turn happened, so
-  // a recovered turn carries a high label while describing an early part of the
-  // conversation. The story instruction asks for chronological narration, so
-  // the turn's own position travels with it. This supplies ordering data only;
-  // it does not make the model's content correct.
-  it("passes the conversation position of a recovered turn alongside its label", () => {
+  // A label says where a summary was appended, not when its turn happened, so a
+  // recovered turn carries a high label while describing an early part of the
+  // conversation. The stored narrative holds bare markers, so the one fact the
+  // model cannot derive -- the time order of every marker in play -- is stated
+  // once. This supplies ordering data only; it does not make the model's
+  // content correct.
+  it("states the time order of narrative and batch markers as one line", () => {
     const prompt = buildSessionStoryPrompt(
       "instruction",
       FOLDED_NARRATIVE,
       [summary({ eventId: 304, turnNumber: 4, turnStart: 15 })],
+      new Map([[1, 10], [2, 20], [3, 30]]),
     );
 
+    expect(prompt).toContain("T1 < T4 < T2 < T3");
+    // Raw conversation positions are never emitted beside a marker: a bare
+    // integer there invites the model to echo it back as a marker, and the
+    // output schema only requires that some marker exists.
+    expect(prompt).not.toContain("대화 위치");
     const { batch } = sections(prompt);
-    expect(batch).toContain("(대화 위치 15)");
-    // The label stays adjacent to its content, so marker parsing is unchanged.
     expect(batch).toContain("[T4] summary-for-turn-15");
+  });
+
+  it("omits the ordering line when no position is known", () => {
+    const prompt = buildSessionStoryPrompt("instruction", null, [
+      {
+        ...summary({ eventId: 1, turnNumber: 1, turnStart: 5 }),
+        turnStartEventId: null,
+      },
+    ]);
+
+    expect(prompt).not.toContain("[마커 시간 순서]");
+  });
+
+  it("renders a recovered batch in conversation order, not label order", () => {
+    const prompt = buildSessionStoryPrompt("instruction", null, [
+      summary({ eventId: 310, turnNumber: 7, turnStart: 90 }),
+      summary({ eventId: 311, turnNumber: 8, turnStart: 12 }),
+    ]);
+
+    const { batch } = sections(prompt);
+    expect(batch.indexOf("[T8]")).toBeLessThan(batch.indexOf("[T7]"));
+    expect(prompt).toContain("T8 < T7");
   });
 });
 

@@ -158,11 +158,10 @@ try {
   };
 
   const state = loadState();
-  const plans = await buildInventory(new Set(state.finishedSessionIds));
-  const eligible = plans.filter((plan) =>
-    !state.finishedSessionIds.includes(plan.sessionId)
+  const { plans, deferred } = await buildInventory(
+    new Set(state.finishedSessionIds),
   );
-  const batch = takeTurnBudget(eligible, maxTurns);
+  const batch = takeTurnBudget(plans, maxTurns);
 
   log("inventory", {
     mode: apply ? "apply" : "dry-run",
@@ -173,12 +172,18 @@ try {
     provider: baseConfig.provider,
     concurrency,
     maxTurns,
-    sessionsTotal: plans.length,
-    turnsTotal: countTurns(plans),
-    sessionsAlreadyFinished: plans.length - eligible.length,
+    sessionsRemaining: plans.length,
+    turnsRemaining: countTurns(plans),
+    sessionsFinishedSoFar: state.finishedSessionIds.length,
     sessionsThisBatch: batch.length,
     turnsThisBatch: countTurns(batch),
-    turnsRemainingAfterBatch: countTurns(eligible) - countTurns(batch),
+    turnsRemainingAfterBatch: countTurns(plans) - countTurns(batch),
+    // Recovered turns that would land behind a newer summary. The live
+    // completion sweep folds with the deployed prompt, so until the marker
+    // ordering contract is deployed these are recorded, not written.
+    sessionsAwaitingFoldContract: deferred.length,
+    turnsAwaitingFoldContract: deferred.reduce((sum, row) => sum + row.turns, 0),
+    awaitingFoldContractDetail: deferred,
   });
 
   if (!apply) {
@@ -270,8 +275,8 @@ try {
       skipReasons: mergeCounts(results.map((row) => row.skipReasons)),
       sessionsResolved: results.filter((row) => row.complete).length,
       retiredUnresolved: unresolved,
-      sessionsRemaining: eligible.length - finished.length,
-      turnsRemaining: countTurns(eligible) - countTurns(batch),
+      sessionsRemaining: plans.length - finished.length,
+      turnsRemaining: countTurns(plans) - countTurns(batch),
       statePath,
     });
   }
@@ -281,7 +286,10 @@ try {
 
 async function buildInventory(
   alreadyFinished: ReadonlySet<string>,
-): Promise<SessionPlan[]> {
+): Promise<{
+  plans: SessionPlan[];
+  deferred: Array<{ sessionId: string; turns: number; laterSummaries: number }>;
+}> {
   const rows = onlySession === undefined
     ? await sql<CompleteRow[]>`
         SELECT e.session_id, e.id
@@ -302,19 +310,65 @@ async function buildInventory(
       `;
   const bySession = new Map<string, number[]>();
   for (const row of rows) {
+    // Filtered before the deferral scan: a session this run already backfilled
+    // holds summaries past the gap start and would otherwise be reported as a
+    // conflict with its own completed work.
     if (alreadyFinished.has(row.session_id)) continue;
     const list = bySession.get(row.session_id) ?? [];
     list.push(Number(row.id));
     bySession.set(row.session_id, list);
   }
-  return [...bySession.entries()].map(([sessionId, completeEventIds]) => ({
+  const all = [...bySession.entries()].map(([sessionId, completeEventIds]) => ({
     sessionId,
-    // Ascending complete-event order keeps each session's recovered summaries
-    // written in conversation order. Turn numbers are append labels, so a
-    // session that already holds newer summaries is safe to backfill: the
-    // recovered turns take the next free labels and nothing is renumbered.
+    // Ascending complete-event order writes each session's recovered summaries
+    // in conversation order.
     completeEventIds: completeEventIds.sort((a, b) => a - b),
   }));
+
+  // Turn numbers are append labels, so writing a recovered turn into a session
+  // that already holds newer summaries is safe for references. What is not yet
+  // safe is the fold: the live completion sweep runs on its own schedule with
+  // the deployed prompt, which carries no marker time ordering, and would
+  // narrate the recovered turns as the latest events. Those sessions are held
+  // until the ordering contract is deployed.
+  const laterSummaries = await countSummariesAfterGapStart(all);
+  const plans: SessionPlan[] = [];
+  const deferred: Array<
+    { sessionId: string; turns: number; laterSummaries: number }
+  > = [];
+  for (const plan of all) {
+    const later = laterSummaries.get(plan.sessionId) ?? 0;
+    if (later > 0) {
+      deferred.push({
+        sessionId: plan.sessionId,
+        turns: plan.completeEventIds.length,
+        laterSummaries: later,
+      });
+      continue;
+    }
+    plans.push(plan);
+  }
+  return { plans, deferred };
+}
+
+async function countSummariesAfterGapStart(
+  plans: SessionPlan[],
+): Promise<Map<string, number>> {
+  if (plans.length === 0) return new Map();
+  const rows = await sql<Array<{ session_id: string; n: number | string }>>`
+    SELECT e.session_id, COUNT(*)::integer AS n
+    FROM events e
+    JOIN (
+      SELECT UNNEST(${plans.map((plan) => plan.sessionId)}::text[]) AS session_id,
+             UNNEST(${
+    plans.map((plan) => plan.completeEventIds[0] ?? 0)
+  }::bigint[]) AS floor_id
+    ) w ON w.session_id = e.session_id
+    WHERE e.event_type = 'turn_summary'
+      AND COALESCE((e.payload->>'turn_start_event_id')::bigint, e.id) > w.floor_id
+    GROUP BY e.session_id
+  `;
+  return new Map(rows.map((row) => [row.session_id, Number(row.n)]));
 }
 
 function takeTurnBudget(plans: SessionPlan[], budget: number): SessionPlan[] {

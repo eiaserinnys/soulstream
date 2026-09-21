@@ -365,6 +365,7 @@ function fakeRepository(options: {
   summaries?: UnfoldedTurnSummary[];
   digest?: SessionStoryDigest | null;
   storeCompleted?: boolean;
+  narrativeMarkerRange?: UnfoldedTurnSummary[];
 }) {
   return {
     loadDigest: vi.fn().mockResolvedValue(options.digest ?? null),
@@ -376,6 +377,9 @@ function fakeRepository(options: {
     }),
     loadUnfoldedSummaries: vi.fn().mockResolvedValue(
       options.summaries ?? practicalSummaryFixture(),
+    ),
+    loadTurnSummaryRange: vi.fn().mockResolvedValue(
+      options.narrativeMarkerRange ?? [],
     ),
     listCompletedFoldCandidates: vi.fn().mockResolvedValue([]),
     storeDigest: vi.fn().mockResolvedValue(true),

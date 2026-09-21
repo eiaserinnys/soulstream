@@ -184,6 +184,10 @@ export class SessionStoryFoldService {
       input.config.storyInstruction,
       input.digest?.narrative ?? null,
       input.summaries,
+      await this.narrativeMarkerPositions(
+        input.sessionId,
+        input.digest?.narrative ?? null,
+      ),
     );
     const generated = await this.generateStructuredStory(
       prompt,
@@ -231,6 +235,33 @@ export class SessionStoryFoldService {
       },
       "Session story fold stored",
     );
+  }
+
+  // Where the markers already cited by the stored narrative sit in the
+  // conversation. Without this the model sees a bare `[T2]` and cannot place a
+  // recovered turn against it.
+  private async narrativeMarkerPositions(
+    sessionId: string,
+    narrative: string | null,
+  ): Promise<Map<number, number>> {
+    const positions = new Map<number, number>();
+    if (narrative === null) return positions;
+    const cited = citedMarkers(narrative);
+    const first = cited[0];
+    const last = cited[cited.length - 1];
+    if (first === undefined || last === undefined) return positions;
+    const summaries = await this.deps.repository.loadTurnSummaryRange(
+      sessionId,
+      first,
+      last,
+      last - first + 1,
+    );
+    for (const summary of summaries) {
+      if (summary.turnStartEventId !== null) {
+        positions.set(summary.turnNumber, summary.turnStartEventId);
+      }
+    }
+    return positions;
   }
 
   private async generateStructuredStory(
@@ -314,29 +345,58 @@ export function buildSessionStoryPrompt(
   instruction: string,
   existingNarrative: string | null,
   summaries: readonly UnfoldedTurnSummary[],
+  narrativeMarkerPositions: ReadonlyMap<number, number> = new Map(),
 ): string {
   const narrative = existingNarrative?.trim() || "(아직 접힌 줄거리 없음)";
-  // A turn number is an append label, so a high number can belong to an old
-  // part of the conversation -- a turn recovered by the backfill takes the next
-  // free label. The story instruction asks for chronological ordering, so the
-  // turn's own position in the session is passed alongside the label. This only
-  // supplies the ordering data; it does not make the model's content correct.
-  const turns = summaries
-    .map((summary) =>
-      summary.turnStartEventId === null
-        ? `[T${summary.turnNumber}] ${summary.content}`
-        : `(대화 위치 ${summary.turnStartEventId}) [T${summary.turnNumber}] ${summary.content}`
+  // A turn number is the label a summary was appended under, not when its turn
+  // happened: a turn recovered by the backfill carries a high label while
+  // describing an early part of the conversation. The instruction asks for
+  // chronological narration, and the narrative itself only carries bare
+  // markers, so the one fact the model cannot derive -- the time order of every
+  // marker in play -- is stated once. Raw event ids are deliberately not
+  // emitted: a bare integer beside a marker invites the model to write it back
+  // as a marker, and the output schema only requires that some marker exists.
+  const positions = new Map<number, number>(narrativeMarkerPositions);
+  for (const summary of summaries) {
+    if (summary.turnStartEventId !== null) {
+      positions.set(summary.turnNumber, summary.turnStartEventId);
+    }
+  }
+  const order = [...positions.entries()]
+    .sort(([, left], [, right]) => left - right)
+    .map(([turnNumber]) => `T${turnNumber}`)
+    .join(" < ");
+  // Sorted for presentation only. The caller takes the fold watermark from the
+  // append-ordered array it passed in; reordering that array upstream would
+  // commit a watermark past unprocessed rows.
+  const turns = [...summaries]
+    .sort((left, right) =>
+      (left.turnStartEventId ?? left.eventId) -
+      (right.turnStartEventId ?? right.eventId)
     )
+    .map((summary) => `[T${summary.turnNumber}] ${summary.content}`)
     .join("\n");
   return [
     instruction,
     "",
+    ...(order === "" ? [] : ["[마커 시간 순서]", order, ""]),
     "[기존 줄거리]",
     narrative,
     "",
     "[새 턴 요약]",
     turns,
   ].join("\n");
+}
+
+// Turn numbers cited by a stored narrative, expanding `[Ta-Tb]` ranges.
+export function citedMarkers(narrative: string): number[] {
+  const cited = new Set<number>();
+  for (const match of narrative.matchAll(MARKER_PATTERN)) {
+    const start = Number(match[1]);
+    const end = match[2] === undefined ? start : Number(match[2]);
+    for (let marker = start; marker <= end; marker += 1) cited.add(marker);
+  }
+  return [...cited].sort((left, right) => left - right);
 }
 
 type SessionStoryOutput = {
