@@ -7,18 +7,10 @@
 
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useAppConfig } from "./config/AppConfigContext";
-import {
-  redirectRetiredDashboardPathname,
-  resolveOrchestratorDashboardVersion,
-} from "./dashboard-routes";
+import { redirectRetiredDashboardPathname } from "./dashboard-routes";
 
 const DashboardLayout = lazy(() =>
   import("./DashboardLayout").then((mod) => ({ default: mod.DashboardLayout })),
-);
-const OrchestratorDashboardLayout = lazy(() =>
-  import("./OrchestratorDashboardLayout").then((mod) => ({
-    default: mod.OrchestratorDashboardLayout,
-  })),
 );
 const V3DashboardLayout = lazy(() =>
   import("./v3/V3DashboardLayout").then((mod) => ({
@@ -51,13 +43,6 @@ export function App() {
   }, [config.mode, config.nodeId]);
 
   if (config.mode === "orchestrator") {
-    if (resolveOrchestratorDashboardVersion(pathname) === "v1") {
-      return (
-        <Suspense fallback={null}>
-          <OrchestratorDashboardLayout />
-        </Suspense>
-      );
-    }
     return (
       <Suspense fallback={null}>
         <V3DashboardLayout />

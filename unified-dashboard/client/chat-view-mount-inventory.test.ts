@@ -24,7 +24,7 @@ function chatViewCallCount(source: string): number {
 }
 
 describe("ChatView product mount inventory", () => {
-  it("제품 직접 호출 여섯 곳과 TaskWorkspace 내부 두 호출을 exact inventory로 고정한다", () => {
+  it("제품 직접 호출 다섯 곳과 TaskWorkspace 내부 두 호출을 exact inventory로 고정한다", () => {
     const actual = productTsxFiles(ROOTS[0])
       .concat(productTsxFiles(ROOTS[1]))
       .map((url) => ({
@@ -37,10 +37,9 @@ describe("ChatView product mount inventory", () => {
     expect(actual).toEqual([
       { path: "packages/soul-ui/src/components/RightPanel.tsx", count: 1 },
       { path: "unified-dashboard/client/DashboardLayout.tsx", count: 1 },
-      { path: "unified-dashboard/client/OrchestratorDashboardLayout.tsx", count: 1 },
       { path: "unified-dashboard/client/v3/TaskBoardWorkspace.tsx", count: 1 },
       { path: "unified-dashboard/client/v3/TaskWorkspace.tsx", count: 2 },
     ]);
-    expect(actual.reduce((sum, entry) => sum + entry.count, 0)).toBe(6);
+    expect(actual.reduce((sum, entry) => sum + entry.count, 0)).toBe(5);
   });
 });
