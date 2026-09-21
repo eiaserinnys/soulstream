@@ -302,9 +302,22 @@ describe("terminal queued delivery across node restart", () => {
     expect(oldDispatches).toHaveLength(0);
     expect(newDispatches).toHaveLength(0);
     expect(transcriptInspect).toHaveBeenCalledOnce();
+    expect(ledger.retryDeliveryAttempt).toHaveBeenCalledWith(
+      DELIVERY_ID,
+      WORKER_ID,
+      "queued_transcript_redelivery_expired",
+      0,
+    );
+    expect(ledger.claimAttemptForTarget).toHaveBeenCalledWith(
+      DELIVERY_ID,
+      SESSION_ID,
+      expect.stringMatching(/^route:/),
+    );
     expect(ledger.trace).toEqual([
       "queued",
       "transcript_claimed",
+      "pending",
+      "redelivery_claimed",
       "dispatching",
       "queued_after_route",
       "consumed",
@@ -330,7 +343,7 @@ describe("terminal queued delivery across node restart", () => {
     expect(row).toMatchObject({
       state: "consumed",
       aggregate_state: "consumed",
-      attempt_count: 0,
+      attempt_count: 1,
       target_receipt_id: expect.stringMatching(/^event:/),
     });
     expect(task).toMatchObject({ status: "completed" });
@@ -412,6 +425,7 @@ class RestartDeliveryLedger {
     this.row.attempt_expires_at = null;
     this.row.last_error = error;
     this.row.next_attempt_at = new Date();
+    this.row.attempt_count += 1;
     this.trace.push("pending");
     return structuredClone(this.row);
   });
@@ -430,7 +444,24 @@ class RestartDeliveryLedger {
     return [structuredClone(this.row)];
   });
 
-  readonly claimAttemptForTarget = vi.fn(async () => null);
+  readonly claimAttemptForTarget = vi.fn(async (
+    deliveryId: string,
+    targetSessionId: string,
+    attemptToken: string,
+  ) => {
+    if (
+      deliveryId !== DELIVERY_ID
+      || targetSessionId !== SESSION_ID
+      || this.row.state !== "pending"
+    ) return null;
+    this.row.target_session_id = targetSessionId;
+    this.row.state = "claimed";
+    this.row.claimed_at = new Date();
+    this.row.attempt_token = attemptToken;
+    this.row.attempt_expires_at = new Date(Date.now() + 30_000);
+    this.trace.push("redelivery_claimed");
+    return structuredClone(this.row);
+  });
 
   readonly beginDispatch = vi.fn(async (
     deliveryId: string,
