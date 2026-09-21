@@ -56,6 +56,37 @@ describe("recurring job target validator", () => {
       },
     })).rejects.toMatchObject({ code: "VALIDATION" });
   });
+
+  it("retains folder authorization when an offline persisted target skips live selection", async () => {
+    const requireAvailable = vi.fn();
+    const validator = createRecurringJobTargetValidator({
+      registry: new InMemoryNodeRegistry(),
+      modelPresetAvailability: { requireAvailable },
+      listFolders: async () => [{ id: "allowed-folder" }, { id: "private-folder" }],
+      findUserByEmail: async () => ({
+        email: "member@example.com",
+        isAdmin: false,
+        allowedFolderIds: ["allowed-folder"],
+      }),
+    });
+
+    await expect(validator({
+      actor,
+      target: target("allowed-folder"),
+      requireAvailableTarget: true,
+    })).rejects.toMatchObject({ code: "NODE_UNAVAILABLE" });
+    await expect(validator({
+      actor,
+      target: target("allowed-folder"),
+      requireAvailableTarget: false,
+    })).resolves.toBeUndefined();
+    await expect(validator({
+      actor,
+      target: target("private-folder"),
+      requireAvailableTarget: false,
+    })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(requireAvailable).not.toHaveBeenCalled();
+  });
 });
 
 function registry(): InMemoryNodeRegistry {

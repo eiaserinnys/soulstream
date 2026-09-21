@@ -108,10 +108,12 @@ describe("recurring job routes", () => {
       expect(validateTarget).toHaveBeenNthCalledWith(1, {
         actor: agentActor,
         target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-a" }),
+        requireAvailableTarget: true,
       });
       expect(validateTarget).toHaveBeenNthCalledWith(2, {
         actor: agentActor,
         target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-a" }),
+        requireAvailableTarget: false,
       });
     } finally {
       await app.close();

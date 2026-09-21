@@ -31,7 +31,7 @@ export function recurringScheduleFromExpressions(
   if (!first || values.some((value) => value.day !== first.day || value.weekday !== first.weekday)) {
     return advancedSchedule(normalized);
   }
-  const times = values.map((value) => value.time);
+  const times = values.flatMap((value) => value.times);
   if (first.day === "*" && first.weekday === "*") {
     return { ...defaultRecurringSchedule(), mode: "daily", times, advancedExpressions: normalized.join("\n") };
   }
@@ -85,15 +85,24 @@ function advancedSchedule(expressions: readonly string[]): RecurringScheduleDraf
   return { ...defaultRecurringSchedule(), mode: "advanced", advancedExpressions: expressions.join("\n") };
 }
 
-type ParsedExpression = { time: string; day: string; weekday: string };
+type ParsedExpression = { times: string[]; day: string; weekday: string };
 
 function parseStructuredExpression(value: string): ParsedExpression | null {
-  const match = /^(\d{1,2})\s+(\d{1,2})\s+(\*|\d{1,2}(?:,\d{1,2})*)\s+\*\s+(\*|1-5|\d(?:,\d)*)$/.exec(value);
+  const match = /^(\d{1,2}(?:,\d{1,2})*)\s+(\d{1,2}(?:,\d{1,2})*)\s+(\*|\d{1,2}(?:,\d{1,2})*)\s+\*\s+(\*|1-5|\d(?:,\d)*)$/.exec(value);
   if (!match) return null;
-  const minute = Number(match[1]);
-  const hour = Number(match[2]);
-  if (minute > 59 || hour > 23) return null;
-  return { time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`, day: match[3]!, weekday: match[4]! };
+  const minutes = cronNumberList(match[1]!, 0, 59);
+  const hours = cronNumberList(match[2]!, 0, 23);
+  if (!minutes || !hours) return null;
+  return {
+    times: hours.flatMap((hour) => minutes.map((minute) => `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`)),
+    day: match[3]!,
+    weekday: match[4]!,
+  };
+}
+
+function cronNumberList(value: string, minimum: number, maximum: number): number[] | null {
+  const values = value.split(",").map(Number);
+  return values.every((item) => Number.isInteger(item) && item >= minimum && item <= maximum) ? values : null;
 }
 
 function normalizeTime(value: string): string {

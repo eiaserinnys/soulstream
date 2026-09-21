@@ -32,6 +32,8 @@ export type RecurringJobServiceOptions = {
   readonly validateTarget?: (input: {
     readonly actor: RecurringJobActor;
     readonly target: Pick<RecurringJob, "nodeId" | "agentId" | "modelPreset" | "container" | "folderId">;
+    /** Existing targets may be offline while a pause or metadata update is saved. */
+    readonly requireAvailableTarget: boolean;
   }) => Promise<void>;
 };
 
@@ -365,6 +367,9 @@ export class RecurringJobService {
       modelPreset,
       container: input.container === undefined ? current.container : normalizedContainer(input.container),
       folderId: input.folderId === undefined ? current.folderId : requiredText(input.folderId, "folder_id"),
+      lateRunWindowSeconds: positiveLateRunWindowSeconds(
+        input.lateRunWindowSeconds === undefined ? current.lateRunWindowSeconds : input.lateRunWindowSeconds,
+      ),
       enabled,
       nextRunAt,
       updatedAt: now.toISOString(),
@@ -372,6 +377,9 @@ export class RecurringJobService {
     await this.options.validateTarget?.({
       actor,
       target: candidate,
+      requireAvailableTarget: candidate.nodeId !== current.nodeId ||
+        candidate.agentId !== current.agentId ||
+        candidate.modelPreset !== current.modelPreset,
     });
     return candidate;
   }
@@ -403,15 +411,13 @@ export class RecurringJobService {
       modelPreset: normalizedModelPreset(input.modelPreset),
       container: normalizedContainer(input.container),
       folderId: requiredText(input.folderId, "folder_id"),
-      lateRunWindowSeconds: input.lateRunWindowSeconds ?? 1_800,
+      lateRunWindowSeconds: positiveLateRunWindowSeconds(input.lateRunWindowSeconds ?? 1_800),
       schedule,
     };
-    if (!Number.isSafeInteger(normalized.lateRunWindowSeconds) || normalized.lateRunWindowSeconds < 1) {
-      throw validation("late_run_window_seconds must be a positive integer");
-    }
     await this.options.validateTarget?.({
       actor,
       target: normalized,
+      requireAvailableTarget: true,
     });
     return normalized;
   }
@@ -483,4 +489,10 @@ export class RecurringJobService {
 }
 
 function positiveVersion(value: number): boolean { return Number.isSafeInteger(value) && value > 0; }
+function positiveLateRunWindowSeconds(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw validation("late_run_window_seconds must be a positive integer");
+  }
+  return value;
+}
 function boundedLimit(value: number): number { return Number.isSafeInteger(value) ? Math.max(1, Math.min(value, 100)) : 50; }

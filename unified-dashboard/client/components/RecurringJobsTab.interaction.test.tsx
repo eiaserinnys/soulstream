@@ -64,6 +64,7 @@ describe("RecurringJobsTab lifecycle", () => {
     container = undefined;
     shared.openSession.mockReset();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("registers, edits, pauses, resumes, refreshes, and opens the durable run session", async () => {
@@ -71,16 +72,41 @@ describe("RecurringJobsTab lifecycle", () => {
     const requests: Array<{ path: string; method: string; body?: Record<string, unknown> }> = [];
     const run = {
       run_id: "run-1", job_id: "job-1", trigger: "scheduled", scheduled_for: "2026-09-22T00:00:00.000Z",
-      session_id: "session-1", state: "succeeded", reason_code: null, reason_message: null, job_snapshot: {},
+      session_id: "session-1", state: "completed", reason_code: null, reason_message: null, job_snapshot: {},
       created_at: "2026-09-22T00:00:00.000Z", started_at: null, finished_at: null, updated_at: "2026-09-22T00:00:00.000Z",
     };
+    const skippedRun = {
+      ...run,
+      run_id: "run-skipped",
+      session_id: "reserved-but-not-created",
+      state: "skipped_late",
+      reason_code: "LATE_RUN_WINDOW_EXPIRED",
+      reason_message: "The occurrence exceeded its execution eligibility window before any session was sent.",
+    };
+    const beforeSendFailure = {
+      ...run,
+      run_id: "run-before-send",
+      session_id: "never-created",
+      state: "error",
+      reason_code: "CREATE_SESSION_BEFORE_SEND_FAILED",
+      reason_message: "The node was unavailable before the create_session command was sent.",
+    };
+    const afterSendFailure = {
+      ...run,
+      run_id: "run-after-send",
+      session_id: "possibly-created",
+      state: "error",
+      reason_code: "CREATE_SESSION_REJECTED",
+      reason_message: "The node returned an error after the request was sent; check the fixed session ID.",
+    };
     vi.stubGlobal("crypto", { randomUUID: () => "test-id" });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       const method = init?.method ?? "GET";
       const body = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : undefined;
       requests.push({ path, method, body });
-      if (path.endsWith("/runs?limit=50")) return json({ runs: job ? [run] : [] });
+      if (path.endsWith("/runs?limit=50")) return json({ runs: job ? [run, skippedRun, beforeSendFailure, afterSendFailure] : [] });
       if (path === "/api/recurring-jobs?include_archived=true") return json({ jobs: job ? [job] : [] });
       if (path === "/api/recurring-jobs" && method === "POST") {
         job = {
@@ -91,6 +117,15 @@ describe("RecurringJobsTab lifecycle", () => {
       }
       if (path === "/api/recurring-jobs/job-1" && method === "PATCH") {
         job = { ...job, ...body, version: Number(job?.version ?? 0) + 1 };
+        return json({ job });
+      }
+      if (path === "/api/recurring-jobs/job-1/archive" && method === "POST") {
+        job = {
+          ...job,
+          enabled: false,
+          archived_at: "2026-09-22T00:01:00.000Z",
+          version: Number(job?.version ?? 0) + 1,
+        };
         return json({ job });
       }
       throw new Error(`unexpected request ${method} ${path}`);
@@ -132,6 +167,20 @@ describe("RecurringJobsTab lifecycle", () => {
     await waitFor(() => expect(requests.filter((request) => request.path.endsWith("/runs?limit=50")).length).toBeGreaterThan(1));
     clickButton("세션 열기");
     expect(shared.openSession).toHaveBeenCalledWith("session-1");
+    clickButton("고정 세션 열기");
+    expect(shared.openSession).toHaveBeenCalledWith("possibly-created");
+    const unavailable = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
+      .filter((candidate) => candidate.textContent === "세션 없음");
+    expect(unavailable).toHaveLength(2);
+    expect(unavailable.every((candidate) => candidate.disabled)).toBe(true);
+    expect(document.body.textContent).toContain("before any session was sent");
+    expect(document.body.textContent).toContain("before the create_session command was sent");
+    expect(document.body.textContent).toContain("check the fixed session ID");
+    await waitFor(() => expect(button("보관")?.disabled).toBe(false));
+    clickButton("보관");
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(requests.some((request) => request.method === "POST" && request.path === "/api/recurring-jobs/job-1/archive")).toBe(true));
+    await waitFor(() => expect(document.body.textContent).toContain("보관됨"));
   });
 
   it("reloads the durable version after a save conflict without discarding the draft", async () => {

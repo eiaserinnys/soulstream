@@ -313,7 +313,30 @@ function TaskTargetSelector({
 }
 
 function RunHistory({ runs, onOpenSession }: { runs: RecurringJobRun[]; onOpenSession(sessionId: string): void }) {
-  return <section className="rounded border border-border p-3"><h4 className="mb-2 text-sm font-medium">최근 실행</h4>{runs.length === 0 ? <p className="text-sm text-muted-foreground">아직 실행 이력이 없습니다.</p> : <ul className="space-y-2">{runs.map((run) => <li key={run.run_id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2 text-sm last:border-0 last:pb-0"><div><span className="font-medium">{run.state}</span><span className="ml-2 text-xs text-muted-foreground">{displayTime(run.scheduled_for ?? run.created_at)}</span>{run.reason_message ? <p className="mt-1 text-xs text-muted-foreground">{run.reason_message}</p> : null}</div><Button type="button" size="sm" variant="outline" onClick={() => onOpenSession(run.session_id)}>세션 열기</Button></li>)}</ul>}</section>;
+  return <section className="rounded border border-border p-3"><h4 className="mb-2 text-sm font-medium">최근 실행</h4>{runs.length === 0 ? <p className="text-sm text-muted-foreground">아직 실행 이력이 없습니다.</p> : <ul className="space-y-2">{runs.map((run) => {
+    const action = sessionAction(run);
+    return <li key={run.run_id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2 text-sm last:border-0 last:pb-0"><div><span className="font-medium">{run.state}</span><span className="ml-2 text-xs text-muted-foreground">{displayTime(run.scheduled_for ?? run.created_at)}</span>{run.reason_message || action.message ? <p className="mt-1 text-xs text-muted-foreground">{run.reason_message ?? action.message}</p> : null}</div><Button type="button" size="sm" variant="outline" disabled={!action.canOpen} onClick={() => onOpenSession(run.session_id)}>{action.label}</Button></li>;
+  })}</ul>}</section>;
+}
+
+function sessionAction(run: RecurringJobRun): { label: string; canOpen: boolean; message: string | null } {
+  const noSessionState = new Set(["queued", "waiting_for_node", "skipped_overlap", "skipped_late", "cancelled"]);
+  const noSessionError = run.state === "error" && (
+    run.reason_code === "RUN_SNAPSHOT_INVALID" ||
+    run.reason_code === "SESSION_DELETED" ||
+    run.reason_code === "CREATE_SESSION_BEFORE_SEND_FAILED"
+  );
+  if (noSessionState.has(run.state) || noSessionError) {
+    return { label: "세션 없음", canOpen: false, message: "이 회차에는 열 수 있는 세션이 없습니다." };
+  }
+  if (
+    run.state === "dispatching" ||
+    run.state === "awaiting_session" ||
+    run.reason_code === "CREATE_SESSION_REJECTED"
+  ) {
+    return { label: "고정 세션 열기", canOpen: true, message: null };
+  }
+  return { label: "세션 열기", canOpen: true, message: null };
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {

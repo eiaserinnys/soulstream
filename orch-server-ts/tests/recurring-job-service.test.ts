@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { InMemoryNodeRegistry } from "../src/node/registry.js";
 import { RecurringJobService } from "../src/recurring-jobs/service.js";
+import { createRecurringJobTargetValidator } from "../src/recurring-jobs/target_validator.js";
 import type {
   RecurringJob,
   RecurringJobActor,
@@ -64,6 +66,74 @@ describe("RecurringJobService", () => {
 
     expect(job).toMatchObject({ enabled: false, nextRunAt: null });
     expect(await service.reserveAndDispatchDueJob(job)).toBeNull();
+  });
+
+  it("persists a revised late-run window and rejects an invalid replacement", async () => {
+    const repository = memoryRepository();
+    const service = new RecurringJobService({
+      repository,
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+    });
+    const job = await service.create(actor, createInput());
+
+    const updated = await service.update(actor, job.jobId, {
+      expectedVersion: job.version,
+      lateRunWindowSeconds: 900,
+    });
+
+    expect(updated.lateRunWindowSeconds).toBe(900);
+    expect(repository.jobs.get(job.jobId)?.lateRunWindowSeconds).toBe(900);
+    await expect(service.update(actor, job.jobId, {
+      expectedVersion: updated.version,
+      lateRunWindowSeconds: 0,
+    })).rejects.toMatchObject({ code: "VALIDATION" });
+  });
+
+  it("pauses and cancels waiting automatic work through the production target gate after its node disconnects", async () => {
+    const repository = memoryRepository();
+    const registry = new InMemoryNodeRegistry();
+    const registered = registry.registerNode({
+      type: "node_register",
+      node_id: "node-a",
+      agents: [{ id: "roselin", backend: "codex" }],
+      supported_backends: ["codex"],
+    });
+    let current = new Date("2026-09-21T00:00:00.000Z");
+    const service = new RecurringJobService({
+      repository,
+      now: () => current,
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => false,
+        createRecurringSession: async () => ({ state: "running", resolvedModelPreset: null }),
+        findDurableSession: async () => null,
+      },
+      validateTarget: createRecurringJobTargetValidator({
+        registry,
+        modelPresetAvailability: { requireAvailable: vi.fn() },
+        listFolders: async () => [{ id: "folder-a" }],
+        findUserByEmail: async () => ({
+          email: actor.ownerEmail,
+          isAdmin: false,
+          allowedFolderIds: ["folder-a"],
+        }),
+      }),
+    });
+    const job = await service.create(actor, createInput());
+    current = new Date(job.nextRunAt!);
+    const waiting = await service.reserveAndDispatchDueJob(job);
+    expect(waiting).toMatchObject({ state: "waiting_for_node" });
+
+    registry.disconnectNode("node-a", { connectionId: registered.node.connectionId, reason: "test disconnect" });
+    const currentJob = await service.get(actor, job.jobId);
+    const paused = await service.update(actor, job.jobId, {
+      expectedVersion: currentJob.version,
+      enabled: false,
+    });
+
+    expect(paused.enabled).toBe(false);
+    expect(repository.runs.get(waiting!.runId)).toMatchObject({ state: "cancelled", reasonCode: "JOB_PAUSED" });
   });
 
   it("keeps an uncertain sent request on its fixed session id and never recreates it", async () => {
@@ -257,10 +327,12 @@ describe("RecurringJobService", () => {
     expect(validateTarget).toHaveBeenNthCalledWith(1, {
       actor,
       target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-a" }),
+      requireAvailableTarget: true,
     });
     expect(validateTarget).toHaveBeenNthCalledWith(2, {
       actor,
       target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-b" }),
+      requireAvailableTarget: false,
     });
   });
 });

@@ -162,7 +162,8 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
   }
 
   async createManualRun(input: RecurringJobRun): Promise<RecurringRunCreation> {
-    return await createRunWithCollisionLookup(await this.resolveSql(), input);
+    const sql = await this.resolveSql();
+    return await sql.begin(async (transaction) => await createManualRunWithCollisionRecord(transaction, input));
   }
 
   async listDueJobs(now: Date, limit: number): Promise<RecurringJob[]> {
@@ -333,6 +334,46 @@ async function createRunWithCollisionLookup(
     ORDER BY created_at DESC LIMIT 1
   `;
   return { run: runFromRow(requiredRow(rows, "find recurring run collision")), created: false };
+}
+
+async function createManualRunWithCollisionRecord(
+  sql: BoardYjsQuerySql,
+  input: RecurringJobRun,
+): Promise<RecurringRunCreation> {
+  const created = await insertRun(sql, input);
+  if (created) return { run: created, created: true };
+
+  const repeated = await findManualRunByIdempotency(sql, input.jobId, input.manualIdempotencyKey);
+  if (repeated) return { run: repeated, created: false };
+
+  // The first insert lost only the active-run partial unique index. Persist a
+  // terminal row for this idempotency key so a retry cannot become a new run
+  // after the other active run finishes.
+  const overlap = await insertRun(sql, {
+    ...input,
+    state: "skipped_overlap",
+    reasonCode: "OVERLAP_ACTIVE_RUN",
+    reasonMessage: "Another active recurring run was reserved while this manual request was being created; no second session was created.",
+    finishedAt: input.updatedAt,
+  });
+  if (overlap) return { run: overlap, created: true };
+
+  const concurrent = await findManualRunByIdempotency(sql, input.jobId, input.manualIdempotencyKey);
+  if (concurrent) return { run: concurrent, created: false };
+  throw new Error(`manual recurring run collision was not recoverable: ${input.jobId}`);
+}
+
+async function findManualRunByIdempotency(
+  sql: BoardYjsQuerySql,
+  jobId: string,
+  idempotencyKey: string | null,
+): Promise<RecurringJobRun | null> {
+  const rows = await sql<Row[]>`
+    SELECT * FROM recurring_job_runs
+    WHERE job_id = ${jobId} AND trigger = 'manual' AND manual_idempotency_key = ${idempotencyKey}
+    LIMIT 1
+  `;
+  return rows[0] ? runFromRow(rows[0]) : null;
 }
 
 async function insertRun(

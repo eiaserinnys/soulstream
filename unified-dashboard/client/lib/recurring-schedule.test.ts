@@ -32,4 +32,11 @@ describe("recurring schedule selection", () => {
     expect(draft.mode).toBe("advanced");
     expect(recurringScheduleExpressions(draft)).toEqual(["0 9 */2 * *", "0 12 * * 1-5"]);
   });
+
+  it("opens legacy comma-separated times in the structured editor without changing its schedule", () => {
+    const draft = recurringScheduleFromExpressions(["0 9,12 * * 1-5"]);
+    expect(draft.mode).toBe("weekdays");
+    expect(draft.times).toEqual(["09:00", "12:00"]);
+    expect(recurringScheduleExpressions(draft)).toEqual(["0 9 * * 1-5", "0 12 * * 1-5"]);
+  });
 });

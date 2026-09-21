@@ -33,6 +33,13 @@ export type RecurringJobTargetValidatorOptions = {
   readonly findUserByEmail: DashboardUserRepository["findUserByEmail"];
 };
 
+export type RecurringJobTargetValidationInput = {
+  readonly actor: RecurringJobActor;
+  readonly target: RecurringJobTarget;
+  /** Skip only live node/model selection for a retained persisted target. */
+  readonly requireAvailableTarget?: boolean;
+};
+
 /**
  * Shared, server-side target gate for browser, soul-app, and trusted MCP host
  * calls. The actor comes from the authenticated route or verified caller
@@ -40,19 +47,21 @@ export type RecurringJobTargetValidatorOptions = {
  */
 export function createRecurringJobTargetValidator(
   options: RecurringJobTargetValidatorOptions,
-): (input: { readonly actor: RecurringJobActor; readonly target: RecurringJobTarget }) => Promise<void> {
-  return async ({ actor, target }) => {
-    try {
-      const selection = selectNodeForSessionCreate(options.registry, {
-        nodeId: target.nodeId,
-        profileId: target.agentId,
-        ...(target.modelPreset === null ? {} : { modelPresetId: target.modelPreset }),
-      });
-      if (selection.modelPresetId) {
-        options.modelPresetAvailability.requireAvailable(selection.node.nodeId, selection.modelPresetId);
+): (input: RecurringJobTargetValidationInput) => Promise<void> {
+  return async ({ actor, target, requireAvailableTarget = true }) => {
+    if (requireAvailableTarget) {
+      try {
+        const selection = selectNodeForSessionCreate(options.registry, {
+          nodeId: target.nodeId,
+          profileId: target.agentId,
+          ...(target.modelPreset === null ? {} : { modelPresetId: target.modelPreset }),
+        });
+        if (selection.modelPresetId) {
+          options.modelPresetAvailability.requireAvailable(selection.node.nodeId, selection.modelPresetId);
+        }
+      } catch (error) {
+        throw targetSelectionError(error);
       }
-    } catch (error) {
-      throw targetSelectionError(error);
     }
 
     const folders = await options.listFolders();

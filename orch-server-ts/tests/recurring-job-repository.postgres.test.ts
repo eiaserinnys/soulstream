@@ -46,7 +46,21 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
     }));
 
     expect(first).toMatchObject({ created: true, run: { runId: "run-first" } });
-    expect(second).toMatchObject({ created: false, run: { runId: "run-first" } });
+    expect(second).toMatchObject({
+      created: true,
+      run: {
+        runId: "run-second",
+        state: "skipped_overlap",
+        manualIdempotencyKey: "manual-second",
+        reasonCode: "OVERLAP_ACTIVE_RUN",
+      },
+    });
+    const retry = await repository.createManualRun(run({
+      runId: "run-second-retry",
+      sessionId: "session-second-retry",
+      manualIdempotencyKey: "manual-second",
+    }));
+    expect(retry).toMatchObject({ created: false, run: { runId: "run-second", state: "skipped_overlap" } });
     const [index] = await harness.sql<Array<{ indexdef: string }>>`
       SELECT indexdef
       FROM pg_indexes
