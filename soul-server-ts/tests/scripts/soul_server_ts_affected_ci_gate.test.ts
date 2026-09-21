@@ -56,10 +56,16 @@ describe("soul-server-ts affected CI gate", () => {
     expect(selected.map(({ name, workflow }) => ({
       name,
       jobs: Object.keys(workflow.jobs),
-    }))).toEqual([{
-      name: "soul-server-ts.yml",
-      jobs: ["soul-server-ts", "runner-kernel-lock-windows"],
-    }]);
+    }))).toEqual([
+      {
+        name: "soul-server-ts.yml",
+        jobs: ["soul-server-ts", "runner-kernel-lock-windows"],
+      },
+      {
+        name: "workspace-validation.yml",
+        jobs: ["workspace-validation"],
+      },
+    ]);
 
     const job = selected[0]?.workflow.jobs["soul-server-ts"];
     expect(job).toBeDefined();

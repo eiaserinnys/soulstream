@@ -54,7 +54,7 @@ The pnpm workspace is declared in `pnpm-workspace.yaml`. The node ↔ orchestrat
 
 The installer bootstraps a TypeScript worker installation, installs or reuses Haniel, prepares the repository and dashboard bundle, initializes an empty PostgreSQL database safely, and registers the service.
 
-Prerequisites are checked before installation: Python 3.11 or newer and Node.js 20 or newer.
+Prerequisites are checked before installation: Python 3.11 or newer and Node.js 22.5 or newer.
 
 Interactive install:
 
@@ -77,7 +77,7 @@ Haniel auto-apply is disabled by default. It detects new commits and presents th
 
 ### Run from source
 
-For local development, use Node.js 20 or newer, pnpm 10, and PostgreSQL. Run commands from the repository root.
+For local development, use Node.js 22.5 or newer, pnpm 10.32.1, and PostgreSQL. Run commands from the repository root.
 
 Install and build the active TypeScript surfaces:
 
@@ -171,6 +171,8 @@ pnpm --dir soul-server-ts test
 
 pnpm --dir unified-dashboard typecheck
 pnpm --dir unified-dashboard test
+pnpm --dir unified-dashboard exec playwright install chromium
+pnpm --dir unified-dashboard test:e2e:smoke
 
 pnpm --dir packages/soul-ui typecheck
 pnpm --dir packages/soul-ui test

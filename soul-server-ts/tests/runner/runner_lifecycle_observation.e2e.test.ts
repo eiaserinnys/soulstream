@@ -12,6 +12,7 @@ import { RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
 import { scanRunnerRegistrations } from "../../src/runner/runner_process_registry.js";
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
+import { withRunnerSqliteBusyRetry } from "../../src/runner/runner_sqlite_connection.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
 import {
@@ -55,11 +56,11 @@ describe("runner lifecycle observations", () => {
     const active = lifecycle.read();
     expect(active).toMatchObject({ execution_state: "running" });
     const activeCommandId = active!.execution_command_id;
-    lifecycle.begin({
+    await withRunnerSqliteBusyRetry(() => lifecycle.begin({
       pid: scenario.spawned.pid,
       commandId: "execute-newer",
       progressedAt: "2026-09-05T08:00:00.000Z",
-    });
+    }));
     const newerLifecycle = lifecycle.read();
     await waitFor(async () => (await readFile(scenario.spawned.paths.logPath, "utf8"))
       .includes('"observation":"liveness"'));
@@ -104,11 +105,11 @@ describe("runner lifecycle observations", () => {
     expect(runnerLog).toContain('"observation":"tool_started"');
     expect(runnerLog).toContain('"observation":"engine_progress"');
 
-    lifecycle.begin({
+    await withRunnerSqliteBusyRetry(() => lifecycle.begin({
       pid: scenario.spawned.pid,
       commandId: activeCommandId,
       progressedAt: "2026-09-05T08:00:01.000Z",
-    });
+    }));
     await writeFile(join(scenario.controlDirectory, "finish-lifecycle-observation"), "go\n");
     const frames = await withTimeout(remaining);
 

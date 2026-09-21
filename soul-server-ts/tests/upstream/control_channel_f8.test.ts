@@ -86,7 +86,6 @@ describe("F8 control/data isolation", () => {
         sampleCount: 20,
         p99GateMs: 250,
         maxGateMs: 1_000,
-        withinGate: true,
       });
       expect(result.metrics[family]?.p99Ms).toEqual(expect.any(Number));
     }

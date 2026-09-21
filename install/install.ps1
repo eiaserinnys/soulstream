@@ -4,7 +4,7 @@
 #   irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1 | iex
 #
 # What this does:
-#   1. Checks prerequisites (Python 3.11+, Node.js 20+)
+#   1. Checks prerequisites (Python 3.11+, Node.js 22.5+)
 #   2. Installs Claude Code CLI if missing
 #   3. Installs Haniel if missing
 #   4. Installs pnpm if missing
@@ -36,6 +36,7 @@ $ErrorActionPreference = "Stop"
 $TEMPLATE_URL = "https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/haniel-standalone.yaml.template"
 $HANIEL_INSTALL_URL = "https://raw.githubusercontent.com/eiaserinnys/haniel/main/install-haniel.ps1"
 $PNPM_VERSION = "10.32.1"
+$MINIMUM_NODE_VERSION = [version]"22.5.0"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -135,16 +136,21 @@ if ($null -eq $pythonCmd) {
 }
 Write-Ok "Python found ($((& $pythonCmd --version 2>&1)))"
 
-# Node.js 20+
+# Node.js 22.5+
 if (-not (Test-CommandExists "node")) {
-    Write-Fail "Node.js 20+ is required but not found."
+    Write-Fail "Node.js 22.5+ is required but not found."
     Write-Host "    Download: https://nodejs.org/" -ForegroundColor DarkGray
     exit 1
 }
 $nodeVer = (node --version) -replace "v", ""
-$nodeMajor = [int]($nodeVer -split "\.")[0]
-if ($nodeMajor -lt 20) {
-    Write-Fail "Node.js 20+ required, found v$nodeVer."
+try {
+    $nodeVersion = [version]$nodeVer
+} catch {
+    Write-Fail "Could not parse Node.js version v$nodeVer."
+    exit 1
+}
+if ($nodeVersion -lt $MINIMUM_NODE_VERSION) {
+    Write-Fail "Node.js 22.5+ required, found v$nodeVer."
     Write-Host "    Download: https://nodejs.org/" -ForegroundColor DarkGray
     exit 1
 }
