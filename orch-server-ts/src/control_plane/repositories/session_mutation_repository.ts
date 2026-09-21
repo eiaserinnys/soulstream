@@ -391,6 +391,16 @@ export class SessionMutationRepository {
         RETURNING session_id, status, termination_reason, termination_detail,
                   review_state, updated_at
       `;
+      await sql`
+        SELECT id FROM worktrees
+        WHERE id IN (
+          SELECT worktree_id FROM sessions
+          WHERE node_id = ${nodeId}
+            AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
+            AND worktree_id IS NOT NULL
+        )
+        FOR UPDATE
+      `;
       const restoredRows = await sql<Array<ReconciledSessionRow>>`
         UPDATE sessions
         SET status = 'running', was_running_at_shutdown = FALSE,
@@ -402,6 +412,23 @@ export class SessionMutationRepository {
           AND status IN ('completed', 'error', 'interrupted')
           AND termination_event_id IS NULL
           AND updated_at <= ${updatedAt}
+          AND (
+            worktree_id IS NULL
+            OR (
+              EXISTS (
+                SELECT 1 FROM worktrees
+                WHERE worktrees.id = sessions.worktree_id
+                  AND worktrees.state = 'ready'
+                  AND (NOT worktrees.setup_required OR worktrees.setup_status = 'ready')
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM sessions AS active
+                WHERE active.worktree_id = sessions.worktree_id
+                  AND active.session_id <> sessions.session_id
+                  AND active.status IN ('initializing', 'running')
+              )
+            )
+          )
         RETURNING session_id, status, termination_reason, termination_detail,
                   review_state, updated_at
       `;

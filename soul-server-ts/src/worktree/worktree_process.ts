@@ -53,8 +53,7 @@ export async function runBoundedProcess(
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let timedOut = false;
-    let killTimer: NodeJS.Timeout | undefined;
-    let windowsTreeKill: Promise<boolean> | undefined;
+    let termination: Promise<boolean> | undefined;
     let settled = false;
 
     child.stdout!.on("data", (chunk: Buffer) => stdout.push(chunk));
@@ -65,7 +64,7 @@ export async function runBoundedProcess(
       timedOut = true;
       if (child.pid === undefined) return;
       if (process.platform === "win32") {
-        windowsTreeKill = new Promise((confirm) => {
+        termination = new Promise((confirm) => {
           const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
             shell: false,
             windowsHide: true,
@@ -78,19 +77,7 @@ export async function runBoundedProcess(
           killer.once("close", (code) => confirm(code === 0));
         });
       } else {
-        try {
-          process.kill(-child.pid, "SIGTERM");
-        } catch {
-          child.kill("SIGTERM");
-        }
-        killTimer = setTimeout(() => {
-          try {
-            process.kill(-child.pid!, "SIGKILL");
-          } catch {
-            child.kill("SIGKILL");
-          }
-        }, 100);
-        killTimer.unref();
+        termination = terminatePosixProcessGroup(child.pid, child);
       }
     }, input.timeoutMs);
     timer.unref();
@@ -99,7 +86,6 @@ export async function runBoundedProcess(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
       reject(new GitProcessError(
         "PROCESS_START_FAILED",
         `${input.command} failed to start: ${error.message}`,
@@ -111,13 +97,10 @@ export async function runBoundedProcess(
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        if (killTimer) clearTimeout(killTimer);
         const out = Buffer.concat(stdout).toString("utf8");
         const err = Buffer.concat(stderr).toString("utf8");
         if (timedOut) {
-          const terminationConfirmed = process.platform === "win32"
-            ? await (windowsTreeKill ?? Promise.resolve(false))
-            : processGroupIsGone(child.pid);
+          const terminationConfirmed = await (termination ?? Promise.resolve(false));
           reject(new GitProcessError(
             "PROCESS_TIMEOUT",
             `${input.command} timed out after ${input.timeoutMs}ms`,
@@ -141,6 +124,38 @@ export async function runBoundedProcess(
       })();
     });
   });
+}
+
+async function terminatePosixProcessGroup(
+  pid: number,
+  child: ReturnType<typeof spawn>,
+): Promise<boolean> {
+  signalProcessGroup(pid, "SIGTERM", child);
+  await delay(100);
+  if (!processGroupIsGone(pid)) signalProcessGroup(pid, "SIGKILL", child);
+  const deadline = Date.now() + 1_000;
+  while (!processGroupIsGone(pid) && Date.now() < deadline) await delay(20);
+  return processGroupIsGone(pid);
+}
+
+function signalProcessGroup(
+  pid: number,
+  signal: NodeJS.Signals,
+  child: ReturnType<typeof spawn>,
+): void {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    try {
+      child.kill(signal);
+    } catch {
+      // The close path confirms whether the complete process group is gone.
+    }
+  }
+}
+
+async function delay(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function processGroupIsGone(pid: number | undefined): boolean {

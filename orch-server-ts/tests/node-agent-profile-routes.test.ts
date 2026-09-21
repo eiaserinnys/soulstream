@@ -193,6 +193,46 @@ describe("node agent/profile route harness", () => {
     expect(tsOnlyRouteKeys).toContain("GET /api/nodes/{node_id}/model-presets");
   });
 
+  it("keeps worktree node forwarding behind the internal service bearer", async () => {
+    const { provider } = createProvider();
+    const calls: Array<[string, string, Record<string, unknown>]> = [];
+    const app = createApp({
+      config,
+      nodeAgentProfileRoutes: {
+        provider,
+        worktreeProvider: {
+          async invoke(nodeId, operation, input) {
+            calls.push([nodeId, operation, input]);
+            return { ok: true };
+          },
+        },
+      },
+    });
+
+    const unauthorized = await app.inject({
+      method: "POST",
+      url: "/api/nodes/node-a/worktrees/list",
+      payload: { repo_id: "soulstream" },
+    });
+    expect(unauthorized.statusCode).toBe(401);
+    expect(unauthorized.json()).toMatchObject({
+      error: { code: "WORKTREE_INTERNAL_AUTH_REQUIRED" },
+    });
+    expect(calls).toEqual([]);
+
+    const authorized = await app.inject({
+      method: "POST",
+      url: "/api/nodes/node-a/worktrees/list",
+      headers: { authorization: `Bearer ${config.authBearerToken}` },
+      payload: { repo_id: "soulstream" },
+    });
+    expect(authorized.statusCode).toBe(200);
+    expect(authorized.json()).toEqual({ ok: true });
+    expect(calls).toEqual([["node-a", "list", { repo_id: "soulstream" }]]);
+
+    await app.close();
+  });
+
   it("projects Python agent list shape and maps missing nodes to 404", async () => {
     const { provider, calls } = createProvider();
     const app = createApp({ config, nodeAgentProfileRoutes: { provider } });
@@ -255,6 +295,7 @@ describe("node agent/profile route harness", () => {
       const response = await app.inject({
         method: "POST",
         url: `/api/nodes/node-a/worktrees/${operation}`,
+        headers: { authorization: `Bearer ${config.authBearerToken}` },
         payload: { actorSessionId: "session-a" },
       });
       expect(response.statusCode).toBe(200);

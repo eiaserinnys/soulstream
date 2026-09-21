@@ -229,7 +229,10 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerNodeClaudeAuthRoutes(app, options.nodeClaudeAuthRoutes);
   }
   if (options.nodeAgentProfileRoutes !== undefined) {
-    registerNodeAgentProfileRoutes(app, options.nodeAgentProfileRoutes);
+    registerNodeAgentProfileRoutes(app, {
+      ...options.nodeAgentProfileRoutes,
+      worktreeAuthBearerToken: options.config.authBearerToken,
+    });
   }
   if (options.agentProfileRoutes !== undefined) {
     registerAgentProfileRoutes(app, options.agentProfileRoutes);
@@ -244,7 +247,10 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerNodeSnapshotRoutes(app, options.nodeSnapshotRoutes);
   }
   if (options.sessionCommandRoutes !== undefined) {
-    registerSessionCommandRoutes(app, options.sessionCommandRoutes);
+    registerSessionCommandRoutes(app, {
+      ...options.sessionCommandRoutes,
+      worktreeAuthBearerToken: options.config.authBearerToken,
+    });
   }
   if (options.sessionActionCommandRoutes !== undefined) {
     registerSessionActionCommandRoutes(app, options.sessionActionCommandRoutes);

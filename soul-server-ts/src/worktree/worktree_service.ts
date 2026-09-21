@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, realpathSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync, symlinkSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
@@ -68,9 +68,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
         const record = byPath.get(discovered.path);
         if (input.worktreeId && record?.id !== input.worktreeId) continue;
         if (record) discoveredRecordIds.add(record.id);
-        const dirty = discovered.kind === "base"
-          ? { clean: true, tracked: [], untracked: [], ignored: [] }
-          : discovered.kind === "external"
+        const dirty = discovered.kind === "external" || discovered.kind === "missing"
             ? null
             : await this.options.git.inspectDirty(
               discovered.path,
@@ -87,7 +85,9 @@ export class WorktreeService implements WorktreeExecutionResolver {
             ? "unmanaged_adoptable"
             : discovered.kind === "external"
               ? "unmanaged_external"
-              : discovered.kind,
+              : discovered.kind === "missing"
+                ? "managed_missing"
+                : discovered.kind,
           dirty,
           dbState: record?.state ?? null,
           ownerKind: record ? (record.ownerTaskId ? "task" : "session") : null,
@@ -150,12 +150,12 @@ export class WorktreeService implements WorktreeExecutionResolver {
       if (existing.setupStatus !== "failed") return createResult(existing, true, false, []);
       const commonDirectory = await this.options.git.commonDirectory(input.repoId);
       return await this.options.lock.withLock(commonDirectory, async () => {
-        const setup = setupSharedDependencies({
+        const setup = await setupSharedDependencies({
           projectsRoot: this.options.projectsRoot,
           repoId: input.repoId,
           worktreePath: existing.canonicalPath,
           mode: existing.setupMode,
-        });
+        }, this.options.git);
         const updated = await this.options.host.updateSetup({
           actorSessionId: input.actorSessionId,
           worktreeId: existing.id,
@@ -174,6 +174,42 @@ export class WorktreeService implements WorktreeExecutionResolver {
         nodeId: this.options.nodeId,
         repoId: input.repoId,
       });
+      const lockedExisting = currentRecords.find((record) =>
+        record.branch === input.branch
+        && record.state === "ready"
+        && record.mutableByCaller === true);
+      if (lockedExisting) {
+        await this.options.git.resolveManagedWorkspace({
+          repoId: lockedExisting.repoId,
+          path: lockedExisting.canonicalPath,
+          worktreeId: lockedExisting.worktreeIdentity,
+        });
+        if (
+          lockedExisting.setupMode !== input.setup
+          || lockedExisting.setupRequired !== input.requireSetup
+        ) {
+          throw new WorktreeServiceError(
+            "WORKTREE_SETUP_CONTRACT_MISMATCH",
+            "Existing worktree setup contract differs from the request",
+          );
+        }
+        if (lockedExisting.setupStatus !== "failed") {
+          return createResult(lockedExisting, true, false, []);
+        }
+        const setup = await setupSharedDependencies({
+          projectsRoot: this.options.projectsRoot,
+          repoId: input.repoId,
+          worktreePath: lockedExisting.canonicalPath,
+          mode: lockedExisting.setupMode,
+        }, this.options.git);
+        const updated = await this.options.host.updateSetup({
+          actorSessionId: input.actorSessionId,
+          worktreeId: lockedExisting.id,
+          setupStatus: setup.status,
+          managedPaths: setup.managedPaths,
+        });
+        return createResult(updated, true, false, setup.warnings);
+      }
       const orphan = (await this.options.git.list(input.repoId)).find((entry) =>
         entry.kind === "managed"
         && entry.branch === input.branch
@@ -190,12 +226,12 @@ export class WorktreeService implements WorktreeExecutionResolver {
             );
           }
         }
-        const setup = setupSharedDependencies({
+        const setup = await setupSharedDependencies({
           projectsRoot: this.options.projectsRoot,
           repoId: input.repoId,
           worktreePath: orphan.path,
           mode: input.setup,
-        });
+        }, this.options.git);
         const recovered = await this.options.host.register({
           actorSessionId: input.actorSessionId,
           id: orphan.identity!,
@@ -221,12 +257,12 @@ export class WorktreeService implements WorktreeExecutionResolver {
             worktreeId,
             ...(input.startPoint ? { startPoint: input.startPoint } : {}),
           });
-      const setup = setupSharedDependencies({
+      const setup = await setupSharedDependencies({
         projectsRoot: this.options.projectsRoot,
         repoId: input.repoId,
         worktreePath: created.path,
         mode: input.setup,
-      });
+      }, this.options.git);
       const record = await this.options.host.register({
         actorSessionId: input.actorSessionId,
         id: worktreeId,
@@ -246,13 +282,40 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 
   async remove(input: { actorSessionId: string; worktreeId: string }): Promise<Record<string, unknown>> {
-    const record = await this.options.host.beginRemove(input);
-    if (record.state === "removed") return { worktreeId: record.id, removed: true, reused: true };
-    const commonDirectory = await this.options.git.commonDirectory(record.repoId);
+    const [initialRecord] = await this.options.host.list({
+      actorSessionId: input.actorSessionId,
+      nodeId: this.options.nodeId,
+      worktreeId: input.worktreeId,
+    });
+    if (!initialRecord || !initialRecord.mutableByCaller) {
+      throw new WorktreeServiceError("WORKTREE_NOT_OWNED", input.worktreeId);
+    }
+    if (initialRecord.state === "removed") {
+      return { worktreeId: initialRecord.id, removed: true, reused: true };
+    }
+    const commonDirectory = await this.options.git.commonDirectory(initialRecord.repoId);
+    let record = initialRecord;
     try {
       await this.options.lock.withLock(commonDirectory, async () => {
-        if (!existsSync(record.canonicalPath)) return;
-        await this.options.git.assertIdentity(record.canonicalPath, record.worktreeIdentity);
+        if (!existsSync(record.canonicalPath)) {
+          if (!record.branchDeleteExpectedSha) {
+            throw new WorktreeServiceError(
+              "WORKTREE_REMOVAL_HEAD_UNRECORDED",
+              "The worktree path disappeared before its branch HEAD was durably recorded",
+            );
+          }
+          record = await this.options.host.beginRemove({
+            ...input,
+            expectedSha: record.branchDeleteExpectedSha,
+          });
+          await this.options.git.pruneMissingWorktree({
+            repoId: record.repoId,
+            path: record.canonicalPath,
+            worktreeId: record.worktreeIdentity,
+          });
+          return;
+        }
+        this.assertWorkspaceUnused(record.canonicalPath);
         const dirty = await this.options.git.inspectDirty(
           record.canonicalPath,
           record.managedPaths.map((managed) => managed.path),
@@ -267,6 +330,13 @@ export class WorktreeService implements WorktreeExecutionResolver {
             },
           );
         }
+        const expectedSha = await this.options.git.removalHead({
+          repoId: record.repoId,
+          path: record.canonicalPath,
+          worktreeId: record.worktreeIdentity,
+          branch: record.branch,
+        });
+        record = await this.options.host.beginRemove({ ...input, expectedSha });
         await this.options.git.remove({
           repoId: record.repoId,
           path: record.canonicalPath,
@@ -280,6 +350,13 @@ export class WorktreeService implements WorktreeExecutionResolver {
         errorCode: errorCode(error),
         errorMessage: error instanceof Error ? error.message : String(error),
       });
+      if (error instanceof WorktreeGitError && error.code === "MANAGED_LINK_RESTORE_FAILED") {
+        await this.options.host.updateSetup({
+          ...input,
+          setupStatus: "failed",
+          managedPaths: record.managedPaths,
+        });
+      }
       throw error;
     }
     const removed = await this.options.host.finishRemove(input);
@@ -287,20 +364,34 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 
   async deleteBranch(input: { actorSessionId: string; worktreeId: string }) {
-    const [record] = await this.options.host.list({
+    const [initialRecord] = await this.options.host.list({
       actorSessionId: input.actorSessionId,
       nodeId: this.options.nodeId,
       worktreeId: input.worktreeId,
     });
-    if (!record || !record.mutableByCaller) {
+    if (!initialRecord || !initialRecord.mutableByCaller) {
       throw new WorktreeServiceError("WORKTREE_NOT_OWNED", input.worktreeId);
     }
-    if (record.state !== "removed") {
+    if (initialRecord.state !== "removed") {
       throw new WorktreeServiceError("WORKTREE_NOT_REMOVED", input.worktreeId);
     }
-    if (record.branchDeletedAt) return { worktreeId: record.id, deleted: true, reused: true };
-    const commonDirectory = await this.options.git.commonDirectory(record.repoId);
+    if (initialRecord.branchDeletedAt) return { worktreeId: initialRecord.id, deleted: true, reused: true };
+    const commonDirectory = await this.options.git.commonDirectory(initialRecord.repoId);
     return await this.options.lock.withLock(commonDirectory, async () => {
+      const [record] = await this.options.host.list({
+        actorSessionId: input.actorSessionId,
+        nodeId: this.options.nodeId,
+        worktreeId: input.worktreeId,
+      });
+      if (!record || !record.mutableByCaller) {
+        throw new WorktreeServiceError("WORKTREE_NOT_OWNED", input.worktreeId);
+      }
+      if (record.state !== "removed") {
+        throw new WorktreeServiceError("WORKTREE_NOT_REMOVED", input.worktreeId);
+      }
+      if (record.branchDeletedAt) {
+        return { worktreeId: record.id, deleted: true, reused: true };
+      }
       const expectedSha = record.branchDeleteExpectedSha
         ?? await this.options.git.branchHead(record.repoId, record.branch);
       if (!expectedSha) {
@@ -338,22 +429,34 @@ export class WorktreeService implements WorktreeExecutionResolver {
 
   private async adopt(input: CreateWorktreeInput, worktreeId: string) {
     const path = realpathSync(input.adoptPath!);
+    this.assertWorkspaceUnused(path);
+    return await this.options.git.adopt({
+      repoId: input.repoId,
+      path,
+      branch: input.branch,
+      expectedHead: input.expectedHead!,
+      worktreeId,
+    });
+  }
+
+  private assertWorkspaceUnused(path: string): void {
     for (const active of this.options.listActiveWorkspaceDirs()) {
+      if (!existsSync(active)) continue;
       const activePath = realpathSync(active);
       if (overlaps(path, activePath)) {
         throw new WorktreeServiceError("WORKTREE_IN_USE", path);
       }
     }
-    return await this.options.git.adopt({
-      repoId: input.repoId,
-      path,
-      expectedHead: input.expectedHead!,
-      worktreeId,
-    });
   }
 }
 
 function validateCreateInput(input: CreateWorktreeInput): void {
+  if (input.requireSetup && input.setup === "none") {
+    throw new WorktreeServiceError(
+      "INVALID_REQUEST",
+      "require_setup=true requires a setup mode other than none",
+    );
+  }
   if (input.mode !== "new" && input.startPoint) {
     throw new WorktreeServiceError("INVALID_REQUEST", "start_point is new-mode only");
   }
@@ -362,40 +465,70 @@ function validateCreateInput(input: CreateWorktreeInput): void {
   }
 }
 
-function setupSharedDependencies(input: {
+async function setupSharedDependencies(input: {
   projectsRoot: string;
   repoId: string;
   worktreePath: string;
   mode: WorktreeSetupMode;
-}): { status: "not_requested" | "ready" | "failed"; managedPaths: ManagedWorktreePath[]; warnings: string[] } {
+}, git: WorktreeGit): Promise<{
+  status: "not_requested" | "ready" | "failed";
+  managedPaths: ManagedWorktreePath[];
+  warnings: string[];
+}> {
   if (input.mode === "none") {
     return { status: "not_requested", managedPaths: [], warnings: [] };
   }
-  const target = join(input.projectsRoot, input.repoId, "node_modules");
-  const link = join(input.worktreePath, "node_modules");
-  if (existsSync(target) && existsSync(link)) {
-    const stat = lstatSync(link);
-    if (stat.isSymbolicLink() && realpathSync(link) === realpathSync(target)) {
-      return {
-        status: "ready",
-        managedPaths: [{ path: "node_modules", target: realpathSync(target) }],
-        warnings: [],
-      };
+  const base = join(input.projectsRoot, input.repoId);
+  const managedPaths: ManagedWorktreePath[] = [];
+  const warnings: string[] = [];
+  for (const source of nodeModulesDirectories(base)) {
+    const relativePath = relative(base, source).replaceAll("\\", "/");
+    const link = join(input.worktreePath, relativePath);
+    const parent = join(link, "..");
+    if (!existsSync(parent)) continue;
+    try {
+      if (!await git.isIgnored(input.worktreePath, `${relativePath}/`)) continue;
+      const target = realpathSync(source);
+      if (existsSync(link)) {
+        const stat = lstatSync(link);
+        if (stat.isSymbolicLink() && realpathSync(link) === target) {
+          managedPaths.push({ path: relativePath, target });
+          continue;
+        }
+        warnings.push(`${relativePath}: destination already exists and is not the managed link`);
+        continue;
+      }
+      symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
+      managedPaths.push({ path: relativePath, target });
+    } catch (error) {
+      warnings.push(`${relativePath}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  if (!existsSync(target) || existsSync(link)) {
-    return {
-      status: "failed",
-      managedPaths: [],
-      warnings: ["shared node_modules setup failed; the worktree was preserved"],
-    };
+  if (managedPaths.length === 0) {
+    warnings.push("shared node_modules setup found no linkable ignored dependency directory; the worktree was preserved");
   }
-  symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
   return {
-    status: "ready",
-    managedPaths: [{ path: "node_modules", target: realpathSync(target) }],
-    warnings: [],
+    status: warnings.length === 0 ? "ready" : "failed",
+    managedPaths,
+    warnings,
   };
+}
+
+function nodeModulesDirectories(base: string): string[] {
+  const found: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.name === ".git") continue;
+      const path = join(directory, entry.name);
+      if (entry.name === "node_modules") {
+        if (entry.isDirectory() || entry.isSymbolicLink()) found.push(path);
+        continue;
+      }
+      if (entry.isDirectory()) visit(path);
+    }
+  };
+  visit(base);
+  return found.sort();
 }
 
 function overlaps(left: string, right: string): boolean {

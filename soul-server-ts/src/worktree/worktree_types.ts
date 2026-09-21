@@ -64,7 +64,10 @@ export interface WorktreeHost {
     setupStatus: WorktreeSetupStatus;
     managedPaths: ManagedWorktreePath[];
   }): Promise<WorktreeRecord>;
-  beginRemove(input: WorktreeMutationActor & { worktreeId: string }): Promise<WorktreeRecord>;
+  beginRemove(input: WorktreeMutationActor & {
+    worktreeId: string;
+    expectedSha: string;
+  }): Promise<WorktreeRecord>;
   restoreReady(input: WorktreeMutationActor & {
     worktreeId: string;
     errorCode: string;

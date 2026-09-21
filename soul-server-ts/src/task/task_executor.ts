@@ -293,14 +293,14 @@ export class TaskExecutor {
     return await this.startExecutionWithRegistrationRecord(task, agent, activation);
   }
 
-  private async startExecutionWithRegistrationRecord(
+  private startExecutionWithRegistrationRecord(
     task: Task,
     agent: AgentProfile,
     transferredActivation?: ExecutionActivation,
   ): Promise<void> {
     if (!task.worktreeId) {
       task.resolvedWorkspaceDir = undefined;
-      return await this.startExecutionWithResolvedRegistrationRecord(
+      return this.startExecutionWithResolvedRegistrationRecord(
         task,
         agent,
         transferredActivation,
@@ -309,13 +309,38 @@ export class TaskExecutor {
     if (!this.worktreeResolver) {
       throw new Error(`WORKTREE_UNAVAILABLE: resolver missing for ${task.worktreeId}`);
     }
+    if (
+      task.executionPromise
+      || (task.executionActivation && task.executionActivation !== transferredActivation)
+    ) {
+      throw new Error(
+        `Task ${task.agentSessionId} already has an execution admission in flight`,
+      );
+    }
+    const promise = this.resolveWorktreeAndStartExecution(
+      task,
+      agent,
+      task.worktreeId,
+      this.worktreeResolver,
+      transferredActivation,
+    );
+    return this.holdExecutionSlot(task, promise);
+  }
+
+  private async resolveWorktreeAndStartExecution(
+    task: Task,
+    agent: AgentProfile,
+    worktreeId: string,
+    worktreeResolver: WorktreeExecutionResolver,
+    transferredActivation?: ExecutionActivation,
+  ): Promise<void> {
     let workspaceDir: string;
     try {
-      workspaceDir = await this.worktreeResolver.resolveExecutionWorkspace(task.worktreeId);
+      workspaceDir = await worktreeResolver.resolveExecutionWorkspace(worktreeId);
     } catch (error) {
       task.resolvedWorkspaceDir = undefined;
       const unavailable = new Error(
-        `WORKTREE_UNAVAILABLE: ${task.worktreeId}: ${error instanceof Error ? error.message : String(error)}`,
+        `WORKTREE_UNAVAILABLE: ${worktreeId}: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error },
       );
       const activation = transferredActivation;
@@ -323,7 +348,7 @@ export class TaskExecutor {
         task.executionActivation = activation;
         void activation.promise.catch(() => undefined);
       }
-      const promise = (async () => {
+      await (async () => {
         const compensatesRunningTransition = activation?.hasFailureCompensation?.() === true;
         try {
           if (compensatesRunningTransition) {
@@ -342,13 +367,14 @@ export class TaskExecutor {
           }
         }
       })();
-      return this.holdExecutionSlot(task, promise);
+      return;
     }
     task.resolvedWorkspaceDir = workspaceDir;
     return await this.startExecutionWithResolvedRegistrationRecord(
       task,
       { ...agent, workspace_dir: workspaceDir },
       transferredActivation,
+      true,
     );
   }
 
@@ -356,9 +382,10 @@ export class TaskExecutor {
     task: Task,
     agent: AgentProfile,
     transferredActivation?: ExecutionActivation,
+    executionSlotHeld = false,
   ): Promise<void> {
     if (
-      task.executionPromise
+      (!executionSlotHeld && task.executionPromise)
       || (task.executionActivation && task.executionActivation !== transferredActivation)
     ) {
       throw new Error(
@@ -392,7 +419,7 @@ export class TaskExecutor {
           }
         }
       })();
-      return this.holdExecutionSlot(task, promise);
+      return executionSlotHeld ? promise : this.holdExecutionSlot(task, promise);
     }
     const { backend, retainedRunner } = prepared;
     if (!this.supportsExecutionRegistration()) {
@@ -402,6 +429,7 @@ export class TaskExecutor {
         backend,
         retainedRunner,
         transferredActivation,
+        executionSlotHeld,
       );
     }
 
@@ -437,7 +465,7 @@ export class TaskExecutor {
         await this._finalize(task);
       },
     );
-    return this.holdExecutionSlot(task, promise);
+    return executionSlotHeld ? promise : this.holdExecutionSlot(task, promise);
   }
 
   private prepareExecution(
@@ -474,6 +502,7 @@ export class TaskExecutor {
     backend: BackendId,
     retainedRunner: TaskRunnerRuntime | undefined,
     activation?: ExecutionActivation,
+    executionSlotHeld = false,
   ): Promise<void> {
     const runner = retainedRunner ?? (this.runnerProcessFactory
       ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
@@ -485,8 +514,7 @@ export class TaskExecutor {
     if (retainedRunner) {
       releaseTaskRunner(task, retainedRunner);
     }
-    this.startExecutionWithRunner(task, agent, runner, activation);
-    return task.executionPromise!;
+    return this.startExecutionWithRunner(task, agent, runner, activation, executionSlotHeld);
   }
 
   /**
@@ -700,7 +728,8 @@ export class TaskExecutor {
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
     activation?: ExecutionActivation,
-  ): void {
+    executionSlotHeld = false,
+  ): Promise<void> {
     if (task.runner) {
       throw new Error(
         `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,
@@ -748,7 +777,7 @@ export class TaskExecutor {
         }
       },
     );
-    this.holdExecutionSlot(task, promise);
+    return executionSlotHeld ? promise : this.holdExecutionSlot(task, promise);
   }
 
   /** Reattaches host-side consumption to an execution already owned by a runner child. */

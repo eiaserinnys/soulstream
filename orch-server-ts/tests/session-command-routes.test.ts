@@ -126,6 +126,47 @@ describe("session command HTTP route harness", () => {
     ).toMatchObject({ statusCode: 404 });
   });
 
+  it("accepts worktree actor attribution only through the internal service bearer", async () => {
+    const { router, bridge } = createHarness();
+    const app = createApp({
+      config,
+      sessionCommandRoutes: { router, bridge },
+    });
+
+    const unauthorized = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: {
+        prompt: "hello",
+        worktree_id: "worktree-1",
+        worktree_actor_session_id: "caller-1",
+      },
+    });
+    expect(unauthorized.statusCode).toBe(401);
+    expect(unauthorized.json()).toMatchObject({
+      error: { code: "WORKTREE_INTERNAL_AUTH_REQUIRED" },
+    });
+
+    const missingActor = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      headers: { authorization: `Bearer ${config.authBearerToken}` },
+      payload: {
+        prompt: "hello",
+        worktree_id: "worktree-1",
+      },
+    });
+    expect(missingActor.statusCode).toBe(400);
+    expect(missingActor.json()).toMatchObject({
+      error: {
+        code: "INVALID_REQUEST",
+        message: "worktree_actor_session_id is required for worktree-bound sessions",
+      },
+    });
+
+    await app.close();
+  });
+
   it("preserves legacy whitespace-only prompts but rejects them for page-anchored creates", async () => {
     const { registry, transports, router, bridge } = createHarness();
     const connectionId = registerNode(registry);

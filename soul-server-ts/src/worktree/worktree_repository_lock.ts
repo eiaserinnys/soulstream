@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { GitProcessError } from "./worktree_process.js";
@@ -28,6 +28,7 @@ export class RepositoryLock {
         break;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        if (reclaimDeadLock(lockPath, key)) continue;
         if (Date.now() >= deadline) {
           throw new RepositoryLockError(`Repository lock timed out for ${key}`);
         }
@@ -46,10 +47,47 @@ export class RepositoryLock {
     } catch (error) {
       if (error instanceof GitProcessError && !error.terminationConfirmed) {
         release = false;
+        writeFileSync(join(lockPath, "owner.json"), JSON.stringify({
+          pid: process.pid,
+          acquiredAt: new Date().toISOString(),
+          key,
+          unconfirmedChild: true,
+        }));
       }
       throw error;
     } finally {
       if (release) rmSync(lockPath, { recursive: true, force: true });
     }
+  }
+}
+
+function reclaimDeadLock(lockPath: string, key: string): boolean {
+  try {
+    const owner = JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")) as {
+      pid?: unknown;
+      key?: unknown;
+      unconfirmedChild?: unknown;
+    };
+    if (
+      owner.key !== key
+      || typeof owner.pid !== "number"
+      || !Number.isSafeInteger(owner.pid)
+      || owner.pid <= 0
+      || owner.unconfirmedChild === true
+      || processIsAlive(owner.pid)
+    ) return false;
+    rmSync(lockPath, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
   }
 }

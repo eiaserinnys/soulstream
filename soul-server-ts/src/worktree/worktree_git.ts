@@ -6,12 +6,13 @@ import {
   readFileSync,
   realpathSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
-import { runBoundedProcess } from "./worktree_process.js";
+import { GitProcessError, runBoundedProcess } from "./worktree_process.js";
 
 const IDENTITY_FILE = "soulstream-worktree-id";
 
@@ -26,7 +27,7 @@ export interface WorktreeListEntry {
   path: string;
   head: string;
   branch?: string;
-  kind: "base" | "managed" | "unmanaged" | "external";
+  kind: "base" | "managed" | "unmanaged" | "external" | "missing";
   identity?: string;
 }
 
@@ -118,9 +119,12 @@ export class WorktreeGit {
   async adopt(input: {
     repoId: string;
     path: string;
+    branch: string;
     expectedHead: string;
     worktreeId: string;
   }): Promise<WorktreeListEntry> {
+    const repo = this.resolveRepository(input.repoId);
+    await this.validateBranch(repo, input.branch);
     const candidate = realpathSync(input.path);
     this.assertPathInsideProjectsRoot(candidate);
     const entries = await this.list(input.repoId);
@@ -130,6 +134,12 @@ export class WorktreeGit {
     }
     if (entry.head !== input.expectedHead) {
       throw new WorktreeGitError("WORKTREE_HEAD_CHANGED", `${entry.head} != ${input.expectedHead}`);
+    }
+    if (entry.branch !== input.branch) {
+      throw new WorktreeGitError(
+        "WORKTREE_BRANCH_MISMATCH",
+        `${entry.branch ?? "detached"} != ${input.branch}`,
+      );
     }
     const gitDir = await this.privateGitDirectory(candidate);
     writeFileSync(join(gitDir, IDENTITY_FILE), `${input.worktreeId}\n`, { flag: "wx" });
@@ -145,6 +155,7 @@ export class WorktreeGit {
     const repo = this.resolveRepository(input.repoId);
     const path = realpathSync(input.path);
     await this.assertIdentity(path, input.worktreeId);
+    const links: Array<{ path: string; target: string }> = [];
     for (const managed of input.managedPaths) {
       const managedPath = safeManagedPath(path, managed.path);
       if (!existsSync(managedPath)) continue;
@@ -156,10 +167,72 @@ export class WorktreeGit {
       if (target !== realpathSync(managed.target)) {
         throw new WorktreeGitError("MANAGED_PATH_CHANGED", managed.path);
       }
-      rmSync(managedPath, { force: true });
+      links.push({ path: managedPath, target });
     }
-    await this.git(repo, ["worktree", "remove", path]);
-    await this.git(repo, ["worktree", "prune"]);
+    for (const link of links) rmSync(link.path, { force: true });
+    try {
+      await this.git(repo, ["worktree", "remove", path]);
+      await this.git(repo, ["worktree", "prune"]);
+    } catch (error) {
+      try {
+        for (const link of links) {
+          if (!existsSync(link.path)) {
+            symlinkSync(link.target, link.path, process.platform === "win32" ? "junction" : "dir");
+          }
+        }
+      } catch (restoreError) {
+        throw new WorktreeGitError(
+          "MANAGED_LINK_RESTORE_FAILED",
+          `Git removal failed and shared dependency links could not be restored: ${String(restoreError)}`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async pruneMissingWorktree(input: {
+    repoId: string;
+    path: string;
+    worktreeId: string;
+  }): Promise<void> {
+    const repo = this.resolveRepository(input.repoId);
+    const path = resolve(input.path);
+    this.assertPathInsideProjectsRoot(path);
+    if (existsSync(path)) {
+      throw new WorktreeGitError("WORKTREE_PATH_REAPPEARED", path);
+    }
+    const commonDirectory = await this.commonDirectory(input.repoId);
+    const adminRoot = join(commonDirectory, "worktrees");
+    let matched = false;
+    if (existsSync(adminRoot)) {
+      for (const admin of readdirSync(adminRoot, { withFileTypes: true })) {
+        if (!admin.isDirectory()) continue;
+        const adminPath = join(adminRoot, admin.name);
+        const gitdirFile = join(adminPath, "gitdir");
+        if (!existsSync(gitdirFile)) continue;
+        const worktreeGitFile = readFileSync(gitdirFile, "utf8").trim();
+        const registeredPath = resolve(worktreeGitFile, "..");
+        if (!samePath(registeredPath, path)) continue;
+        matched = true;
+        const marker = join(adminPath, IDENTITY_FILE);
+        const identity = existsSync(marker) ? readFileSync(marker, "utf8").trim() : "";
+        if (identity !== input.worktreeId) {
+          throw new WorktreeGitError(
+            "WORKTREE_IDENTITY_CHANGED",
+            `Expected worktree ${input.worktreeId}, found ${identity || "unmanaged"}`,
+          );
+        }
+      }
+    }
+    const listed = (await this.list(input.repoId)).some((entry) => samePath(entry.path, path));
+    if (!matched && !listed) return;
+    if (!matched) {
+      throw new WorktreeGitError("WORKTREE_IDENTITY_CHANGED", `Missing identity for ${path}`);
+    }
+    await this.git(repo, ["worktree", "prune", "--expire", "now"]);
+    if ((await this.list(input.repoId)).some((entry) => samePath(entry.path, path))) {
+      throw new WorktreeGitError("WORKTREE_PRUNE_FAILED", path);
+    }
   }
 
   async branchHead(repoId: string, branch: string): Promise<string | null> {
@@ -172,6 +245,34 @@ export class WorktreeGit {
     }
   }
 
+  async removalHead(input: {
+    repoId: string;
+    path: string;
+    worktreeId: string;
+    branch: string;
+  }): Promise<string> {
+    const path = realpathSync(input.path);
+    await this.assertIdentity(path, input.worktreeId);
+    const entry = (await this.list(input.repoId)).find((candidate) => candidate.path === path);
+    if (!entry || entry.identity !== input.worktreeId) {
+      throw new WorktreeGitError("WORKTREE_UNAVAILABLE", path);
+    }
+    if (entry.branch !== input.branch) {
+      throw new WorktreeGitError(
+        "WORKTREE_BRANCH_MISMATCH",
+        `${entry.branch ?? "detached"} != ${input.branch}`,
+      );
+    }
+    const branchHead = await this.branchHead(input.repoId, input.branch);
+    if (branchHead !== entry.head) {
+      throw new WorktreeGitError(
+        "WORKTREE_HEAD_CHANGED",
+        `${branchHead ?? "missing"} != ${entry.head}`,
+      );
+    }
+    return entry.head;
+  }
+
   async deleteBranch(input: {
     repoId: string;
     branch: string;
@@ -179,6 +280,7 @@ export class WorktreeGit {
     markerRef: string;
   }): Promise<"deleted" | "already_deleted"> {
     const repo = this.resolveRepository(input.repoId);
+    await this.validateBranch(repo, input.branch);
     try {
       await this.git(repo, ["fetch", "--prune", "origin"]);
     } catch {
@@ -238,15 +340,18 @@ export class WorktreeGit {
       const rawPath = fields.get("worktree");
       const head = fields.get("HEAD");
       if (!rawPath || !head) continue;
-      const path = realpathSync(rawPath);
+      const pathExists = existsSync(rawPath);
+      const path = pathExists ? realpathSync(rawPath) : resolve(rawPath);
       const branchRef = fields.get("branch");
-      const identity = await this.readIdentity(path);
+      const identity = pathExists ? await this.readIdentity(path) : undefined;
       const insideProjectsRoot = isPathInside(this.projectsRoot, path);
       entries.push({
         path,
         head,
         ...(branchRef ? { branch: branchRef.replace(/^refs\/heads\//, "") } : {}),
-        kind: path === base
+        kind: !pathExists
+          ? "missing"
+          : path === base
           ? "base"
           : !insideProjectsRoot
             ? "external"
@@ -265,7 +370,7 @@ export class WorktreeGit {
       "status",
       "--porcelain=v1",
       "-z",
-      "--untracked-files=all",
+      "--untracked-files=normal",
     ])).stdout.split("\0").filter(Boolean);
     const tracked: string[] = [];
     const untracked: string[] = [];
@@ -280,6 +385,8 @@ export class WorktreeGit {
       "--others",
       "--ignored",
       "--exclude-standard",
+      "--directory",
+      "--no-empty-directory",
       "-z",
     ])).stdout.split("\0").filter(Boolean);
     const unmanagedTracked = tracked.filter((entry) => !isManagedEntry(entry, managedPaths));
@@ -293,6 +400,17 @@ export class WorktreeGit {
       untracked: unmanagedUntracked,
       ignored: unmanagedIgnored,
     };
+  }
+
+  async isIgnored(path: string, relativePath: string): Promise<boolean> {
+    this.assertPathInsideProjectsRoot(path);
+    try {
+      await this.git(path, ["check-ignore", "-q", "--", relativePath]);
+      return true;
+    } catch (error) {
+      if (error instanceof GitProcessError && error.exitCode === 1) return false;
+      throw error;
+    }
   }
 
   async assertIdentity(path: string, expected: string): Promise<void> {
@@ -405,6 +523,12 @@ export class WorktreeGit {
 function isPathInside(root: string, candidate: string): boolean {
   const rel = relative(root, candidate);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function samePath(left: string, right: string): boolean {
+  return process.platform === "win32"
+    ? resolve(left).toLowerCase() === resolve(right).toLowerCase()
+    : resolve(left) === resolve(right);
 }
 
 function isManagedEntry(entry: string, managedPaths: string[]): boolean {

@@ -57,6 +57,126 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_sessions_active_worktree
     WHERE worktree_id IS NOT NULL AND status IN ('initializing', 'running');
 
 
+-- The worker starts real execution through this registration transition. Keep
+-- its worktree fence identical to the legacy running transition below.
+CREATE OR REPLACE FUNCTION session_record_execution_registration(
+    p_session_id                 TEXT,
+    p_registration_id            TEXT,
+    p_execution_command_id       TEXT,
+    p_review_state               TEXT,
+    p_expected_terminal_event_id INTEGER,
+    p_terminal_resume            BOOLEAN,
+    p_recorded_at                TIMESTAMPTZ
+) RETURNS TABLE (
+    applied BOOLEAN, execution_registration_id TEXT, execution_command_id TEXT,
+    status TEXT, termination_reason TEXT, termination_detail TEXT,
+    review_state TEXT, last_assistant_text TEXT, termination_event_id INTEGER,
+    updated_at TIMESTAMPTZ, last_event_id INTEGER
+) LANGUAGE plpgsql AS $$
+DECLARE
+    v_row_count INTEGER := 0;
+    v_worktree_id TEXT;
+    v_worktree_state TEXT;
+    v_setup_required BOOLEAN;
+    v_setup_status TEXT;
+BEGIN
+    IF p_registration_id IS NULL OR p_registration_id = ''
+       OR p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
+        RAISE EXCEPTION 'complete execution registration required';
+    END IF;
+    IF p_review_state NOT IN ('not_required', 'needs_review', 'acknowledged') THEN
+        RAISE EXCEPTION 'unsupported review state: %', p_review_state;
+    END IF;
+
+    SELECT session.worktree_id INTO v_worktree_id
+      FROM sessions AS session
+     WHERE session.session_id = p_session_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'session not found: %', p_session_id;
+    END IF;
+
+    IF v_worktree_id IS NOT NULL THEN
+        SELECT worktree.state, worktree.setup_required, worktree.setup_status
+          INTO v_worktree_state, v_setup_required, v_setup_status
+          FROM worktrees AS worktree
+         WHERE worktree.id = v_worktree_id
+         FOR UPDATE;
+        IF NOT FOUND
+           OR v_worktree_state <> 'ready'
+           OR (v_setup_required AND v_setup_status <> 'ready')
+           OR EXISTS (
+             SELECT 1 FROM sessions AS active
+              WHERE active.worktree_id = v_worktree_id
+                AND active.session_id <> p_session_id
+                AND active.status IN ('initializing', 'running')
+           ) THEN
+            RETURN QUERY
+            SELECT FALSE, session.execution_registration_id,
+                   session.execution_command_id, session.status,
+                   session.termination_reason, session.termination_detail,
+                   session.review_state, session.last_assistant_text,
+                   session.termination_event_id, session.updated_at,
+                   session.last_event_id
+              FROM sessions AS session
+             WHERE session.session_id = p_session_id;
+            RETURN;
+        END IF;
+    END IF;
+
+    IF p_terminal_resume THEN
+        UPDATE sessions AS session
+           SET status = 'running', termination_reason = NULL,
+               termination_detail = NULL, termination_event_id = NULL,
+               last_assistant_text = NULL, review_state = p_review_state,
+               execution_registration_id = p_registration_id,
+               execution_command_id = p_execution_command_id,
+               updated_at = p_recorded_at
+         WHERE session.session_id = p_session_id
+           AND session.status IN ('completed', 'error', 'interrupted')
+           AND session.termination_event_id IS NOT DISTINCT FROM p_expected_terminal_event_id;
+    ELSE
+        UPDATE sessions AS session
+           SET status = 'running', termination_reason = NULL,
+               termination_detail = NULL, review_state = p_review_state,
+               execution_registration_id = p_registration_id,
+               execution_command_id = p_execution_command_id,
+               updated_at = p_recorded_at
+         WHERE session.session_id = p_session_id
+           AND session.status NOT IN ('completed', 'error', 'interrupted');
+    END IF;
+    GET DIAGNOSTICS v_row_count = ROW_COUNT;
+
+    IF v_row_count = 1 AND p_terminal_resume THEN
+        UPDATE session_deliveries
+           SET state = 'superseded', aggregate_state = 'consumed',
+               consumed_at = p_recorded_at,
+               consumed_reason = 'superseded by terminal resume',
+               superseded_at = p_recorded_at,
+               superseded_terminal_revision = p_expected_terminal_event_id::text,
+               attempt_token = NULL, attempt_expires_at = NULL,
+               updated_at = p_recorded_at
+         WHERE source_session_id = p_session_id
+           AND intent = 'completion_notification'
+           AND source = 'completion_notifier'
+           AND producer_kind = 'child_session'
+           AND producer_terminal_revision = p_expected_terminal_event_id::text
+           AND state IN ('pending', 'claimed', 'dispatching', 'queued');
+    END IF;
+
+    RETURN QUERY
+    SELECT v_row_count = 1, session.execution_registration_id,
+           session.execution_command_id, session.status,
+           session.termination_reason, session.termination_detail,
+           session.review_state, session.last_assistant_text,
+           session.termination_event_id, session.updated_at,
+           session.last_event_id
+      FROM sessions AS session
+     WHERE session.session_id = p_session_id;
+END;
+$$;
+
+
 -- Replaces the existing function at the same signature. Worktree validation is
 -- serialized on the worktree row; rejected resume preserves the historical
 -- applied=false return contract.

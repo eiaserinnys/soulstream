@@ -99,9 +99,9 @@ describe("control command inventory", () => {
       { type: "list_agents_config_snapshots", family: "agent-config", policy: "bounded_result" },
       { type: "rollback_agents_config", family: "agent-config", policy: "durable_mutation" },
       { type: "worktree_list", family: "worktree", policy: "bounded_result" },
-      { type: "worktree_create", family: "worktree", policy: "bounded_result" },
-      { type: "worktree_remove", family: "worktree", policy: "bounded_result" },
-      { type: "worktree_delete_branch", family: "worktree", policy: "bounded_result" },
+      { type: "worktree_create", family: "worktree", policy: "durable_mutation" },
+      { type: "worktree_remove", family: "worktree", policy: "durable_mutation" },
+      { type: "worktree_delete_branch", family: "worktree", policy: "durable_mutation" },
     ]);
   });
 

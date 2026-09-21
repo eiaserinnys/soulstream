@@ -209,6 +209,7 @@ export async function composeWorkerRuntime(
       })
     : undefined;
   let taskRuntime!: TaskRuntimeComposition, taskManager!: TaskManager;
+  let worktreeService: WorktreeService | undefined;
   const publishDetachedClaudeEvent = createDetachedClaudeEventBridge({
     logger,
     findTask: (sessionId) => taskManager.getTask(sessionId),
@@ -228,6 +229,12 @@ export async function composeWorkerRuntime(
         maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
         turnInactivityTimeoutMs: env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
         logger,
+        resolveWorktreeWorkspace: async (worktreeId) => {
+          if (!worktreeService) {
+            throw new Error(`WORKTREE_UNAVAILABLE: resolver missing for ${worktreeId}`);
+          }
+          return await worktreeService.resolveExecutionWorkspace(worktreeId);
+        },
         redeliverContent: (row) => redeliverStoredDeliveryContent(
           row, taskManager, taskRuntime.onResume,
         ),
@@ -253,7 +260,7 @@ export async function composeWorkerRuntime(
     modelCatalog,
     sessionMutations,
   );
-  const worktreeService = env.WORKTREE_MCP_ENABLED
+  worktreeService = env.WORKTREE_MCP_ENABLED
     ? new WorktreeService({
         nodeId: env.SOULSTREAM_NODE_ID,
         projectsRoot: env.WORKTREE_PROJECTS_ROOT!,
@@ -267,7 +274,9 @@ export async function composeWorkerRuntime(
         }),
         host: new WorktreeHostClient(orchHostClientDeps),
         listActiveWorkspaceDirs: () => taskManager.listTasks()
-          .filter((task) => task.status === "initializing" || task.status === "running")
+          .filter((task) => task.status === "initializing"
+            || task.status === "running"
+            || task.runner !== undefined)
           .map((task) => task.resolvedWorkspaceDir
             ?? (task.profileId ? agentRegistry.get(task.profileId)?.workspace_dir : undefined))
           .filter((path): path is string => Boolean(path)),

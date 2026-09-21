@@ -30,6 +30,8 @@ function fixture(active: string[] = []) {
   git(repo, "config", "user.name", "Test");
   writeFileSync(join(repo, ".gitignore"), "dist/\nnode_modules/\n");
   writeFileSync(join(repo, "README.md"), "base\n");
+  mkdirSync(join(repo, "packages", "ui"), { recursive: true });
+  writeFileSync(join(repo, "packages", "ui", "package.json"), "{}\n");
   git(repo, "add", ".");
   git(repo, "commit", "-m", "base");
   const host = new MemoryWorktreeHost();
@@ -80,7 +82,7 @@ describe("WorktreeService", () => {
       worktreeId: String(created.worktreeId),
     })).rejects.toMatchObject({
       code: "WORKTREE_DIRTY",
-      details: { ignored: ["dist/bundle.js"] },
+      details: { ignored: ["dist/"] },
     });
     expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
 
@@ -120,8 +122,72 @@ describe("WorktreeService", () => {
     })).rejects.toMatchObject({ code: "WORKTREE_IN_USE" });
   });
 
-  it("retries a required shared-dependency setup without deleting real node_modules", async () => {
+  it("serializes concurrent create calls for the same branch", async () => {
+    const { service, host } = fixture();
+    const request = {
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/concurrent",
+      mode: "new" as const,
+      setup: "none" as const,
+      requireSetup: false,
+    };
+
+    const [first, second] = await Promise.all([
+      service.create(request),
+      service.create(request),
+    ]);
+
+    expect(first.worktreeId).toBe(second.worktreeId);
+    expect([first.reused, second.reused].sort()).toEqual([false, true]);
+    expect(host.records.size).toBe(1);
+  });
+
+  it("rejects a required setup contract that requests no setup", async () => {
+    const { service } = fixture();
+
+    await expect(service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/invalid-setup",
+      mode: "new",
+      setup: "none",
+      requireSetup: true,
+    })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+  });
+
+  it("reports actual dirty state for the base checkout", async () => {
     const { repo, service } = fixture();
+    writeFileSync(join(repo, "README.md"), "changed\n");
+
+    await expect(service.list({ actorSessionId: "owner", repoId: "demo" }))
+      .resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          discoveryKind: "base",
+          dirty: expect.objectContaining({ clean: false, tracked: ["README.md"] }),
+        }),
+      ]));
+  });
+
+  it("rejects adoption when the requested branch differs from the discovered branch", async () => {
+    const { projectsRoot, repo, service } = fixture();
+    const unmanaged = join(projectsRoot, "demo--branch-mismatch");
+    git(repo, "worktree", "add", "-b", "feature/actual", unmanaged, "HEAD");
+
+    await expect(service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/requested",
+      mode: "adopt",
+      adoptPath: unmanaged,
+      expectedHead: git(unmanaged, "rev-parse", "HEAD"),
+      setup: "none",
+      requireSetup: false,
+    })).rejects.toMatchObject({ code: "WORKTREE_BRANCH_MISMATCH" });
+  });
+
+  it("retries a required shared-dependency setup without deleting real node_modules", async () => {
+    const { repo, service, host } = fixture();
     const created = await service.create({
       actorSessionId: "owner",
       repoId: "demo",
@@ -134,6 +200,8 @@ describe("WorktreeService", () => {
 
     mkdirSync(join(repo, "node_modules"));
     writeFileSync(join(repo, "node_modules", "base-only.txt"), "preserve");
+    mkdirSync(join(repo, "packages", "ui", "node_modules"));
+    writeFileSync(join(repo, "packages", "ui", "node_modules", "ui-only.txt"), "preserve");
     const retried = await service.create({
       actorSessionId: "owner",
       repoId: "demo",
@@ -142,13 +210,62 @@ describe("WorktreeService", () => {
       setup: "shared_dependencies",
       requireSetup: true,
     });
+    expect(retried.warnings).toEqual([]);
     expect(retried).toMatchObject({ reused: true, setupStatus: "ready" });
+    expect(host.records.get(String(created.worktreeId))?.managedPaths.map(({ path }) => path))
+      .toEqual(["node_modules", "packages/ui/node_modules"]);
 
     await expect(service.remove({
       actorSessionId: "owner",
       worktreeId: String(created.worktreeId),
     })).resolves.toMatchObject({ removed: true });
     expect(existsSync(join(repo, "node_modules", "base-only.txt"))).toBe(true);
+    expect(existsSync(join(repo, "packages", "ui", "node_modules", "ui-only.txt"))).toBe(true);
+  });
+
+  it("refuses removal while an attached or retained runner still owns the cwd", async () => {
+    const active: string[] = [];
+    const { service, host } = fixture(active);
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/retained-runner",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    });
+    active.push(String(created.path));
+
+    await expect(service.remove({
+      actorSessionId: "owner",
+      worktreeId: String(created.worktreeId),
+    })).rejects.toMatchObject({ code: "WORKTREE_IN_USE" });
+    expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
+  });
+
+  it("prunes an identity-verified stale registration when the path is already missing", async () => {
+    const { repo, service, host } = fixture();
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/missing-path",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    });
+    rmSync(String(created.path), { recursive: true, force: true });
+    const record = host.records.get(String(created.worktreeId))!;
+    host.records.set(record.id, {
+      ...record,
+      branchDeleteExpectedSha: String(created.head),
+    });
+
+    await expect(service.remove({
+      actorSessionId: "owner",
+      worktreeId: String(created.worktreeId),
+    })).resolves.toMatchObject({ removed: true });
+    expect(git(repo, "worktree", "list", "--porcelain")).not.toContain(String(created.path));
+    expect(host.records.get(String(created.worktreeId))?.state).toBe("removed");
   });
 
   it("recovers an identified worktree when Git succeeded before DB registration failed", async () => {
@@ -274,7 +391,15 @@ class MemoryWorktreeHost implements WorktreeHost {
   }
 
   async beginRemove(input: Parameters<WorktreeHost["beginRemove"]>[0]) {
-    return this.update(input.worktreeId, { state: "removing" });
+    const current = this.records.get(input.worktreeId);
+    if (
+      current?.branchDeleteExpectedSha
+      && current.branchDeleteExpectedSha !== input.expectedSha
+    ) throw new Error("WORKTREE_REMOVAL_HEAD_CHANGED");
+    return this.update(input.worktreeId, {
+      state: "removing",
+      branchDeleteExpectedSha: current?.branchDeleteExpectedSha ?? input.expectedSha,
+    });
   }
   async restoreReady(input: Parameters<WorktreeHost["restoreReady"]>[0]) {
     return this.update(input.worktreeId, {

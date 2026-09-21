@@ -1685,6 +1685,10 @@ CREATE OR REPLACE FUNCTION session_record_execution_registration(
 ) LANGUAGE plpgsql AS $$
 DECLARE
     v_row_count INTEGER := 0;
+    v_worktree_id TEXT;
+    v_worktree_state TEXT;
+    v_setup_required BOOLEAN;
+    v_setup_status TEXT;
 BEGIN
     IF p_registration_id IS NULL OR p_registration_id = ''
        OR p_execution_command_id IS NULL OR p_execution_command_id = '' THEN
@@ -1694,9 +1698,45 @@ BEGIN
         RAISE EXCEPTION 'unsupported review state: %', p_review_state;
     END IF;
 
-    PERFORM 1 FROM sessions WHERE session_id = p_session_id FOR UPDATE;
+    SELECT session.worktree_id INTO v_worktree_id
+      FROM sessions AS session
+     WHERE session.session_id = p_session_id
+     FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'session not found: %', p_session_id;
+    END IF;
+
+    IF v_worktree_id IS NOT NULL THEN
+        SELECT worktree.state, worktree.setup_required, worktree.setup_status
+          INTO v_worktree_state, v_setup_required, v_setup_status
+          FROM worktrees AS worktree
+         WHERE worktree.id = v_worktree_id
+         FOR UPDATE;
+        IF NOT FOUND
+           OR v_worktree_state <> 'ready'
+           OR (v_setup_required AND v_setup_status <> 'ready')
+           OR EXISTS (
+             SELECT 1 FROM sessions AS active
+              WHERE active.worktree_id = v_worktree_id
+                AND active.session_id <> p_session_id
+                AND active.status IN ('initializing', 'running')
+           ) THEN
+            RETURN QUERY
+            SELECT FALSE,
+                   session.execution_registration_id,
+                   session.execution_command_id,
+                   session.status,
+                   session.termination_reason,
+                   session.termination_detail,
+                   session.review_state,
+                   session.last_assistant_text,
+                   session.termination_event_id,
+                   session.updated_at,
+                   session.last_event_id
+              FROM sessions AS session
+             WHERE session.session_id = p_session_id;
+            RETURN;
+        END IF;
     END IF;
 
     IF p_terminal_resume THEN

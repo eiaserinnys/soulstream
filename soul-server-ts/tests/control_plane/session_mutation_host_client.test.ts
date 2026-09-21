@@ -166,7 +166,10 @@ describe("SessionMutationHostClient", () => {
 
   it("surfaces host rejection without a detached promise", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({ detail: { error: { message: "idempotency key conflict" } } }),
+      JSON.stringify({ detail: { error: {
+        code: "IDEMPOTENCY_CONFLICT",
+        message: "idempotency key conflict",
+      } } }),
       { status: 409 },
     )));
     const client = new SessionMutationHostClient({
@@ -175,6 +178,9 @@ describe("SessionMutationHostClient", () => {
     });
 
     await expect(client.deleteSession("session-a", "delete-session-a"))
-      .rejects.toThrow("idempotency key conflict");
+      .rejects.toMatchObject({
+        code: "IDEMPOTENCY_CONFLICT",
+        message: expect.stringContaining("idempotency key conflict"),
+      });
   });
 });

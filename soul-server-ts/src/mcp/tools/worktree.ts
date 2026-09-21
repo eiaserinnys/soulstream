@@ -161,12 +161,26 @@ async function route(
     );
     const result = await response.json() as unknown;
     if (!response.ok) {
-      throw new WorktreeServiceError("REMOTE_WORKTREE_FAILED", JSON.stringify(result));
+      const remote = remoteError(result);
+      throw new WorktreeServiceError(
+        remote?.code ?? "REMOTE_WORKTREE_FAILED",
+        remote?.message ?? JSON.stringify(result),
+      );
     }
     return result;
   } finally {
     clearTimeout(timer);
   }
+}
+
+function remoteError(value: unknown): { code: string; message: string } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const error = (value as { error?: unknown }).error;
+  if (!error || typeof error !== "object") return undefined;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  return typeof code === "string" && typeof message === "string"
+    ? { code, message }
+    : undefined;
 }
 
 function worktreeError(error: unknown) {

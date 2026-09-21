@@ -95,6 +95,6 @@
     { "id": "090_session_feed_projection.sql", "sha256": "fcf10f71ecd596831818bbc99aea78f5055b7a223539aacd63accda76fb30840" },
     { "id": "091_system_settings.sql", "sha256": "aa04f3d34dbe3e5411eb8e7c1b5e60c7a8122ebd8776282bb7e91bc27b03d917" },
     { "id": "092_ui_events.sql", "sha256": "e305fb17cc0c4a51636117ddc5ea47f4379bcd873dfe5110d9f7eaeab21b78e6" },
-    { "id": "093_worktrees.sql", "sha256": "d2f4a8e949219ed2d0c5d86931ef5df7bb86ee4ba84f89966c87191edc0d73d7" }
+    { "id": "093_worktrees.sql", "sha256": "4dea5bdde181d10049748a52cdcc4746adaa494c7135a66522d6c78641626bee" }
   ]
 }

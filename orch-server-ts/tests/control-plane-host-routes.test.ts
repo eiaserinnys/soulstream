@@ -703,6 +703,35 @@ describe("control-plane host routes", () => {
     });
   });
 
+  it("preserves a repository domain code across the persistence host boundary", async () => {
+    const beginRemove = vi.fn(async () => {
+      throw Object.assign(new Error("WORKTREE_IN_USE: session-live"), {
+        statusCode: 409,
+        code: "WORKTREE_IN_USE",
+      });
+    });
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        worktrees: { beginRemove },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/worktrees/host/begin_remove",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { args: [{ actor_session_id: "session-a", worktree_id: "worktree-a" }] },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      detail: { error: { code: "WORKTREE_IN_USE" } },
+    });
+  });
+
   it("rejects persistence operations outside the explicit whitelist", async () => {
     const app = Fastify();
     apps.push(app);

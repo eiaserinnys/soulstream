@@ -128,10 +128,18 @@ describe("Session command router primitive", () => {
     });
     const router = new SessionCommandRouter({ registry });
 
-    const routed = router.createSession({
+    expect(() => router.createSession({
       type: "create_session",
       agentSessionId: "worktree-session",
       prompt: "pwd",
+      worktree_id: "worktree-1",
+    })).toThrowError(/nodeId is required/);
+
+    const routed = router.createSession({
+      type: "create_session",
+      agentSessionId: "worktree-session-explicit",
+      prompt: "pwd",
+      nodeId: "worktree-node",
       worktree_id: "worktree-1",
     });
     expect(routed.node.nodeId).toBe("worktree-node");

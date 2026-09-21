@@ -13,16 +13,18 @@ const OPAQUE_ARGUMENT_KEYS = new Set(["payload", "caller_info"]);
 
 export class PersistenceHostRequestError extends Error {
   readonly retryable: boolean;
+  readonly code: string;
 
   constructor(
     readonly domain: string,
     readonly operation: string,
     message: string,
     readonly status?: number,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; code?: string },
   ) {
     super(message, options);
     this.name = "PersistenceHostRequestError";
+    this.code = options?.code ?? "HOST_OPERATION_FAILED";
     this.retryable = status === undefined || status === 408 || status === 429 || status >= 500;
   }
 }
@@ -97,6 +99,7 @@ export class PersistenceHostTransport {
       totalDurationMs: nodeResponseReadAtMs - nodeRequestedAtMs,
     };
     if (!response.ok) {
+      const hostError = parseHostError(responseBody);
       this.config.logger.warn(
         { ...timing, message: responseBody },
         "persistence host request failed",
@@ -104,12 +107,26 @@ export class PersistenceHostTransport {
       throw new PersistenceHostRequestError(
         domain,
         operation,
-        `${domain} host ${operation} failed: ${responseBody || response.statusText}`,
+        `${domain} host ${operation} failed: ${(hostError?.message ?? responseBody) || response.statusText}`,
         response.status,
+        { code: hostError?.code },
       );
     }
     this.config.logger.info(timing, "persistence host request completed");
     return reviveDates(JSON.parse(responseBody)) as T;
+  }
+}
+
+function parseHostError(body: string): { code: string; message: string } | undefined {
+  try {
+    const parsed = JSON.parse(body) as {
+      detail?: { error?: { code?: unknown; message?: unknown } };
+    };
+    const error = parsed.detail?.error;
+    if (typeof error?.code !== "string" || typeof error.message !== "string") return undefined;
+    return { code: error.code, message: error.message };
+  } catch {
+    return undefined;
   }
 }
 

@@ -62,9 +62,9 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("list_agents_config_snapshots", "agent-config", "bounded_result"),
   entry("rollback_agents_config", "agent-config", "durable_mutation"),
   entry("worktree_list", "worktree", "bounded_result"),
-  entry("worktree_create", "worktree", "bounded_result"),
-  entry("worktree_remove", "worktree", "bounded_result"),
-  entry("worktree_delete_branch", "worktree", "bounded_result"),
+  entry("worktree_create", "worktree", "durable_mutation"),
+  entry("worktree_remove", "worktree", "durable_mutation"),
+  entry("worktree_delete_branch", "worktree", "durable_mutation"),
 ] as const satisfies readonly ControlCommandInventoryEntry[];
 
 const INVENTORY_BY_TYPE = new Map<string, ControlCommandInventoryEntry>(
@@ -79,6 +79,10 @@ export function controlCommandPolicy(commandType: string): ControlCommandInvento
     );
   }
   return inventory;
+}
+
+export function boundedResultTimeoutMs(commandType: string, fallbackMs: number): number {
+  return commandType === "worktree_list" ? 130_000 : fallbackMs;
 }
 
 function entry(

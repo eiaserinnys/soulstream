@@ -1,7 +1,9 @@
 import {
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -73,8 +75,8 @@ describe("WorktreeGit", () => {
 
     const dirty = await worktrees.inspectDirty(created.path, []);
     expect(dirty.ignored).toEqual(expect.arrayContaining([
-      "dist/bundle.js",
-      "node_modules/local.txt",
+      "dist/",
+      "node_modules/",
     ]));
     expect(dirty.clean).toBe(false);
   });
@@ -156,6 +158,9 @@ describe("WorktreeGit", () => {
       worktreeId: "worktree-delete-once",
       startPoint: "refs/remotes/origin/main",
     });
+    writeFileSync(join(created.path, "feature.txt"), "feature\n");
+    git(created.path, "add", "feature.txt");
+    git(created.path, "commit", "-m", "feature commit");
     git(repo, "push", "origin", "feature/delete-once");
     await worktrees.remove({
       repoId: "demo",
@@ -179,6 +184,81 @@ describe("WorktreeGit", () => {
       expectedSha,
       markerRef,
     })).resolves.toBe("already_deleted");
-    expect(git(repo, "rev-parse", "refs/heads/feature/delete-once")).toBe(expectedSha);
+    expect(git(repo, "rev-parse", "refs/heads/feature/delete-once")).not.toBe(expectedSha);
+  });
+
+  it("refuses a same-name branch replaced before the first deletion attempt", async () => {
+    const { projectsRoot, repo } = makeRepository();
+    const remote = join(projectsRoot, "replacement-remote.git");
+    mkdirSync(remote);
+    git(remote, "init", "--bare");
+    git(repo, "remote", "add", "origin", remote);
+    git(repo, "push", "-u", "origin", "main");
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const created = await worktrees.create({
+      repoId: "demo",
+      branch: "feature/reused-before-delete",
+      mode: "new",
+      worktreeId: "worktree-reused-before-delete",
+      startPoint: "refs/remotes/origin/main",
+    });
+    writeFileSync(join(created.path, "feature.txt"), "feature\n");
+    git(created.path, "add", "feature.txt");
+    git(created.path, "commit", "-m", "feature commit");
+    git(repo, "push", "origin", "feature/reused-before-delete");
+    const expectedSha = git(created.path, "rev-parse", "HEAD");
+    await worktrees.remove({
+      repoId: "demo",
+      path: created.path,
+      worktreeId: "worktree-reused-before-delete",
+      managedPaths: [],
+    });
+    git(repo, "branch", "-D", "feature/reused-before-delete");
+    git(repo, "branch", "feature/reused-before-delete", "main");
+
+    await expect(worktrees.deleteBranch({
+      repoId: "demo",
+      branch: "feature/reused-before-delete",
+      expectedSha,
+      markerRef: "refs/soulstream/worktree-deletions/worktree-reused-before-delete",
+    })).rejects.toMatchObject({ code: "REF_REUSED" });
+    expect(git(repo, "rev-parse", "refs/heads/feature/reused-before-delete"))
+      .toBe(git(repo, "rev-parse", "main"));
+  });
+
+  it("restores managed dependency links when Git removal refuses the worktree", async () => {
+    const { projectsRoot, repo } = makeRepository();
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const created = await worktrees.create({
+      repoId: "demo",
+      branch: "feature/remove-failure",
+      mode: "new",
+      worktreeId: "worktree-remove-failure",
+    });
+    const target = join(repo, "node_modules");
+    mkdirSync(target);
+    const link = join(created.path, "node_modules");
+    symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
+    writeFileSync(join(created.path, "README.md"), "modified\n");
+
+    await expect(worktrees.remove({
+      repoId: "demo",
+      path: created.path,
+      worktreeId: "worktree-remove-failure",
+      managedPaths: [{ path: "node_modules", target }],
+    })).rejects.toMatchObject({ code: "PROCESS_FAILED" });
+    expect(realpathSync(link)).toBe(realpathSync(target));
+  });
+
+  it("validates branch names before feeding update-ref stdin", async () => {
+    const { projectsRoot } = makeRepository();
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+
+    await expect(worktrees.deleteBranch({
+      repoId: "demo",
+      branch: "feature/ok\ndelete refs/heads/main",
+      expectedSha: "a".repeat(40),
+      markerRef: "refs/soulstream/worktree-deletions/test",
+    })).rejects.toMatchObject({ code: "INVALID_BRANCH" });
   });
 });

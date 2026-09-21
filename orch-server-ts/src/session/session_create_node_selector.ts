@@ -29,6 +29,7 @@ export type SessionCreateNodeSelectionErrorCode =
   | "MODEL_PRESET_NOT_FOUND"
   | "BACKEND_INCOMPATIBLE"
   | "NO_COMPATIBLE_PROFILE"
+  | "WORKTREE_NODE_REQUIRED"
   | "NODE_CAPABILITY_UNAVAILABLE";
 
 export class SessionCreateNodeSelectionError extends Error {
@@ -66,20 +67,21 @@ export function selectNodeForSessionCreate(
     throw selectionError(503, "NO_AVAILABLE_NODE", "No nodes available");
   }
 
+  if (request.worktreeRequired && request.nodeId === undefined) {
+    throw selectionError(
+      400,
+      "WORKTREE_NODE_REQUIRED",
+      "nodeId is required for a worktree-bound session",
+    );
+  }
+
   if (request.nodeId !== undefined) {
     return selectRequestedNode(registry, {
       ...request,
       nodeId: request.nodeId,
     }, agentProfiles);
   }
-  const eligibleNodes = request.worktreeRequired
-    ? nodes.filter((node) => node.capabilities.worktree_mcp_v1 === true
-      && node.capabilities.register_session_with_worktree_v1 === true)
-    : nodes;
-  if (eligibleNodes.length === 0) {
-    throw selectionError(409, "NODE_CAPABILITY_UNAVAILABLE", "No connected node supports worktree-bound sessions");
-  }
-  return selectAutomaticNode(registry, eligibleNodes, request, agentProfiles);
+  return selectAutomaticNode(registry, nodes, request, agentProfiles);
 }
 
 function selectRequestedNode(

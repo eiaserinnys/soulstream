@@ -113,13 +113,24 @@ export class WorktreeRepository {
     });
   }
 
-  async beginRemove(input: { actorSessionId: string; worktreeId: string }) {
+  async beginRemove(input: {
+    actorSessionId: string;
+    worktreeId: string;
+    expectedSha: string;
+  }) {
     return await this.mutateLocked(input, async (tx, row) => {
       if (row.state === "removed") return row;
+      if (
+        row.branch_delete_expected_sha !== null
+        && row.branch_delete_expected_sha !== input.expectedSha
+      ) {
+        throw hostError(409, "WORKTREE_REMOVAL_HEAD_CHANGED");
+      }
       const active = await activeSessionId(tx, row.id);
       if (active) throw hostError(409, `WORKTREE_IN_USE: ${active}`);
       const rows = await tx<WorktreeRow[]>`
         UPDATE worktrees SET state = 'removing', updated_at = NOW(),
+          branch_delete_expected_sha = COALESCE(branch_delete_expected_sha, ${input.expectedSha}),
           last_error_code = NULL, last_error_message = NULL
         WHERE id = ${row.id} RETURNING *
       `;
@@ -242,7 +253,7 @@ export async function lockWorktreeForSessionBinding(
   if (row.setup_required && row.setup_status !== "ready") {
     throw hostError(409, "WORKTREE_SETUP_REQUIRED");
   }
-  if (row.owner_task_id !== input.ownerTaskId) {
+  if (row.owner_task_id !== null && row.owner_task_id !== input.ownerTaskId) {
     throw hostError(403, "WORKTREE_TASK_MISMATCH");
   }
   if (!await actorOwns(sql, row, input.actorSessionId)) {
@@ -327,6 +338,12 @@ function project(row: WorktreeRow): Record<string, unknown> {
   };
 }
 
-function hostError(statusCode: number, message: string): Error & { statusCode: number } {
-  return Object.assign(new Error(message), { statusCode });
+function hostError(
+  statusCode: number,
+  message: string,
+): Error & { statusCode: number; code: string } {
+  return Object.assign(new Error(message), {
+    statusCode,
+    code: message.split(":", 1)[0]!,
+  });
 }

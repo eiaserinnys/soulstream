@@ -178,11 +178,12 @@ function registerDomain(
         request.log.error({ err: error, domain, operation: request.params.operation }, "Persistence host operation failed");
         const statusCode = (error as { statusCode?: unknown } | undefined)?.statusCode;
         const status = typeof statusCode === "number" ? statusCode : 500;
+        const domainCode = (error as { code?: unknown } | undefined)?.code;
         return sendTimed(request, reply, timing, status, () =>
           errorReply(
             reply,
             status,
-            "HOST_OPERATION_FAILED",
+            typeof domainCode === "string" ? domainCode : "HOST_OPERATION_FAILED",
             error instanceof Error ? error.message : "Persistence host operation failed",
           ));
       }

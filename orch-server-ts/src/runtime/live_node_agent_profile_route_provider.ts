@@ -427,8 +427,11 @@ function mapCommandError(error: unknown): NodeAgentProfileRouteError {
     );
   }
   if (error instanceof PendingNodeCommandRejectedError) {
+    const responseCode = error.response?.code;
     return new NodeAgentProfileRouteError(
-      "NODE_AGENT_PROFILE_COMMAND_REJECTED",
+      typeof responseCode === "string"
+        ? responseCode
+        : "NODE_AGENT_PROFILE_COMMAND_REJECTED",
       error.message,
       400,
     );

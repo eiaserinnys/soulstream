@@ -1976,6 +1976,42 @@ describe("TaskExecutor.startExecution", () => {
     expect(() => executor.startExecution(task, agent)).toThrow(/admission in flight/);
   });
 
+  it("worktree 해석을 기다리는 동안에도 실행 slot을 즉시 점유한다", async () => {
+    const mocks = makeMocks();
+    const resolution = deferred<string>();
+    const resolver = {
+      resolveExecutionWorkspace: vi.fn(() => resolution.promise),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      resolver,
+    );
+    const task = makeTask();
+    task.worktreeId = "worktree-1";
+
+    const execution = executor.startExecution(task, agent);
+    expect(task.executionPromise).toBe(execution);
+    expect(() => executor.startExecution(task, agent)).toThrow(/admission in flight/);
+
+    resolution.resolve("/tmp/demo--feature");
+    await execution;
+    expect(resolver.resolveExecutionWorkspace).toHaveBeenCalledOnce();
+    expect(task.executionPromise).toBeUndefined();
+  });
+
   it("정상 turn 종료가 진행 중인 interrupt ACK를 기다려 completed로 덮지 않는다", async () => {
     const mocks = makeMocks();
     const turnStarted = deferred<void>();

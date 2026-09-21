@@ -271,6 +271,22 @@ describe("live node agent profile route provider", () => {
         code: "NODE_CAPABILITY_UNAVAILABLE",
         statusCode: 409,
       });
+
+    const rejected = createFixture({
+      bridgeError: new PendingNodeCommandRejectedError({
+        commandType: "worktree_create",
+        requestId: "req-1-worktree_create",
+        message: "branch was reused",
+        response: {
+          type: "error",
+          requestId: "req-1-worktree_create",
+          code: "REF_REUSED",
+          message: "branch was reused",
+        },
+      }),
+    });
+    await expect(rejected.worktreeProvider!.invoke("node-a", "create", {}))
+      .rejects.toMatchObject({ code: "REF_REUSED", statusCode: 400 });
   });
 
   it("maps missing nodes and command failures to route status semantics", async () => {

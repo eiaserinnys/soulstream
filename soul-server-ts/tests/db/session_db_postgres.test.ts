@@ -271,7 +271,7 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       callerInfo: null,
       worktreeId: "worktree-db-1",
       worktreeActorSessionId: "owner-session",
-      ownerTaskId: null,
+      ownerTaskId: "task-attached-after-creation",
     });
     await expect(db.getSession("worktree-session-1")).resolves.toMatchObject({
       worktree_id: "worktree-db-1",
@@ -306,6 +306,13 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       )
     `;
     expect(resume[0]?.applied).toBe(false);
+    const executionRegistration = await harness!.sql<Array<{ applied: boolean }>>`
+      SELECT applied FROM session_record_execution_registration(
+        'worktree-session-1', 'registration-1', 'command-1',
+        'not_required', NULL, TRUE, NOW()
+      )
+    `;
+    expect(executionRegistration[0]?.applied).toBe(false);
   }, 30_000);
 
   it("reprojects response-loss binding warnings from durable state after restart", async () => {

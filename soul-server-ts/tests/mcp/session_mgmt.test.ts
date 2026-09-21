@@ -542,6 +542,31 @@ describe("agent profile backend boundary", () => {
     );
   });
 
+  it("create_agent_session은 worktree와 검증할 caller session을 함께 전달한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "codex-default",
+        prompt: "child work",
+        caller_session_id: "caller-sess-1",
+        worktree_id: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      worktreeId: "11111111-1111-4111-8111-111111111111",
+      worktreeActorSessionId: "caller-sess-1",
+    }));
+  });
+
   it("create_agent_session은 notify_completion=false에서도 caller provenance를 유지한다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
@@ -892,6 +917,38 @@ describe("list_node_model_presets", () => {
 });
 
 describe("create_remote_agent_session", () => {
+  it("원격 세션에 worktree와 소유권 검증 caller를 함께 전달한다", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return { body: { agentSessionId: "sess-child", nodeId: "node-remote" } };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          prompt: "delegate",
+          caller_session_id: "caller-sess-1",
+          worktree_id: "22222222-2222-4222-8222-222222222222",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(JSON.parse(capture.requests[0]!.body)).toMatchObject({
+        nodeId: "node-remote",
+        worktree_id: "22222222-2222-4222-8222-222222222222",
+        worktree_actor_session_id: "caller-sess-1",
+      });
+    } finally {
+      await capture.close();
+    }
+  });
+
   it("목록에 없는 agent_id의 판정은 alias를 아는 세션 생성 정본에 맡긴다", async () => {
     const capture = await createOrchCapture(200, (req) => {
       if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {

@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type {
   ModelPresetAvailability,
   ModelPresetAvailabilityService,
@@ -90,6 +91,7 @@ export type NodeAgentProfileRouteOptions = {
   worktreeProvider?: {
     invoke(nodeId: string, operation: "list" | "create" | "remove" | "delete-branch", input: Record<string, unknown>): Promise<unknown>;
   };
+  worktreeAuthBearerToken?: string;
 };
 
 export class NodeAgentProfileRouteError extends Error {
@@ -142,6 +144,18 @@ export function registerNodeAgentProfileRoutes(
       app.post<{ Params: NodeParams }>(
         `/api/nodes/:node_id/worktrees/${operation}`,
         async (request, reply) => {
+          const authorization = verifyServiceBearerAuthorization(
+            request.headers.authorization,
+            options.worktreeAuthBearerToken ?? "",
+          );
+          if (!authorization.ok) {
+            return reply.code(401).send({
+              error: {
+                code: "WORKTREE_INTERNAL_AUTH_REQUIRED",
+                message: `service bearer is ${authorization.reason}`,
+              },
+            });
+          }
           const body = parseObjectBody(request.body);
           if (!body.ok) return validationError(reply, body);
           try {
