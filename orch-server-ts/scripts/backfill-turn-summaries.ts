@@ -79,6 +79,14 @@ interface RunState {
     written: number;
     attempts: number;
   }>;
+  // Sessions whose remaining past turns cannot be written without inverting
+  // conversation order, because a newer turn is already summarised.
+  heldBack: Array<{
+    sessionId: string;
+    turns: number;
+    written: number;
+    notAttempted: number;
+  }>;
 }
 
 const apply = process.argv.includes("--apply");
@@ -103,6 +111,26 @@ const sqlResolver: LiveDbSqlResolver = {
 // errors so `drain()` always resolves; without this the state file would mark a
 // failed session finished and hide the failure forever.
 const erroredSessionIds = new Set<string>();
+
+// Turns are handed to the pipeline one at a time, so the last signal the
+// pipeline logged unambiguously belongs to the turn just drained. This is how a
+// stored summary is told apart from a by-design skip and from a real failure --
+// an ineligible turn must never be counted as a success.
+type TurnSignal =
+  | { kind: "written" }
+  | { kind: "skipped"; reason: string }
+  | { kind: "error"; detail: Record<string, unknown> };
+let lastTurnSignal: TurnSignal | undefined;
+
+interface SessionOutcome {
+  written: number;
+  alreadySummarized: number;
+  ineligible: number;
+  errors: number;
+  notAttempted: number;
+  abortedByLiveTurn: boolean;
+  skipReasons: Record<string, number>;
+}
 
 try {
   // Same relative location the orchestrator resolves at runtime
@@ -176,30 +204,63 @@ try {
     // ones and not summaries the live orchestrator writes during the run.
     const watermark = await maxSummaryEventId(sessionIds);
     const pipeline = await createPipeline(configService);
-    await runBatch(pipeline, batch);
+    const outcomes = await runBatch(pipeline, batch);
+    // Independent oracle: the pipeline's own log lines say what it believed it
+    // did, this re-read says what the database actually holds.
     const written = await countSummariesWritten(batch, watermark);
 
     const results = batch.map((plan) => {
       const turns = plan.completeEventIds.length;
+      const outcome = outcomes.get(plan.sessionId);
       const rows = written.get(plan.sessionId) ?? 0;
       const attempts = (state.attempts[plan.sessionId] ?? 0) + 1;
+      const accountedFor = (outcome?.written ?? 0) +
+        (outcome?.alreadySummarized ?? 0) + (outcome?.ineligible ?? 0);
       return {
         sessionId: plan.sessionId,
         turns,
         written: rows,
+        reportedWritten: outcome?.written ?? 0,
+        alreadySummarized: outcome?.alreadySummarized ?? 0,
+        ineligible: outcome?.ineligible ?? 0,
+        errors: outcome?.errors ?? 0,
+        notAttempted: outcome?.notAttempted ?? 0,
+        abortedByLiveTurn: outcome?.abortedByLiveTurn ?? false,
+        skipReasons: outcome?.skipReasons ?? {},
         attempts,
-        errored: erroredSessionIds.has(plan.sessionId),
-        complete: rows >= turns,
+        errored: erroredSessionIds.has(plan.sessionId) ||
+          (outcome?.errors ?? 0) > 0,
+        // "Complete" means every planned turn reached a terminal decision --
+        // stored, already present, or excluded by design. Ineligible turns are
+        // resolved, not successful, so they are not added to the written count.
+        complete: accountedFor >= turns && (outcome?.errors ?? 0) === 0 &&
+          !(outcome?.abortedByLiveTurn ?? false),
+        // A disagreement between the pipeline's log and the database re-read is
+        // itself a defect signal, so it is surfaced rather than reconciled.
+        countMismatch: rows !== (outcome?.written ?? 0),
       };
     });
 
     const nextAttempts = { ...state.attempts };
     const finished: string[] = [];
     const unresolved: RunState["unresolved"] = [];
+    const heldBack: RunState["heldBack"] = [];
     for (const result of results) {
       nextAttempts[result.sessionId] = result.attempts;
       if (result.complete && !result.errored) {
         finished.push(result.sessionId);
+        continue;
+      }
+      if (result.abortedByLiveTurn) {
+        // Retrying cannot help: the newer summary is permanent, so the held
+        // back past turns need the logical-order fix, not another attempt.
+        finished.push(result.sessionId);
+        heldBack.push({
+          sessionId: result.sessionId,
+          turns: result.turns,
+          written: result.written,
+          notAttempted: result.notAttempted,
+        });
         continue;
       }
       if (result.attempts >= MAX_SESSION_ATTEMPTS) {
@@ -219,19 +280,30 @@ try {
       finishedSessionIds: [...state.finishedSessionIds, ...finished],
       attempts: nextAttempts,
       unresolved: [...state.unresolved, ...unresolved],
+      heldBack: [...state.heldBack, ...heldBack],
     });
 
+    const sum = (pick: (row: (typeof results)[number]) => number): number =>
+      results.reduce((total, row) => total + pick(row), 0);
     log("batch_complete", {
       sessions: batch.length,
       turns: countTurns(batch),
-      summariesWritten: results.reduce((sum, row) => sum + row.written, 0),
-      sessionsFullyWritten: results.filter((row) => row.complete).length,
-      sessionsWithPipelineErrors: results.filter((row) => row.errored).length,
-      // Not an error on its own: eligibility legitimately skips agent-origin
-      // turns, excluded folders and non-summarizable sessions.
-      sessionsWithFewerSummariesThanTurns:
-        results.filter((row) => !row.complete).length,
+      summariesWrittenInDatabase: sum((row) => row.written),
+      summariesReportedByPipeline: sum((row) => row.reportedWritten),
+      turnsAlreadySummarized: sum((row) => row.alreadySummarized),
+      // By-design exclusions (agent origin, excluded folder, non-summarizable
+      // session, ...). Resolved, but not successes.
+      turnsIneligible: sum((row) => row.ineligible),
+      turnsErrored: sum((row) => row.errors),
+      turnsNotAttempted: sum((row) => row.notAttempted),
+      sessionsAbortedByLiveTurn:
+        results.filter((row) => row.abortedByLiveTurn).length,
+      sessionsWithCountMismatch:
+        results.filter((row) => row.countMismatch).map((row) => row.sessionId),
+      skipReasons: mergeCounts(results.map((row) => row.skipReasons)),
+      sessionsResolved: results.filter((row) => row.complete).length,
       retiredUnresolved: unresolved,
+      heldBackForOrderingFix: heldBack,
       sessionsRemaining: eligible.length - finished.length,
       turnsRemaining: countTurns(eligible) - countTurns(batch),
       statePath,
@@ -358,12 +430,25 @@ async function createPipeline(
     eventHub: { publish: () => undefined },
     // No storyFolder: folding stays with the running orchestrator's sweep.
     logger: {
-      debug: (...args: unknown[]) => log("pipeline_debug", describe(args)),
-      info: (...args: unknown[]) => log("pipeline_info", describe(args)),
+      debug: (...args: unknown[]) => {
+        const fields = describe(args);
+        if (typeof fields.reason === "string") {
+          lastTurnSignal = { kind: "skipped", reason: fields.reason };
+        }
+        log("pipeline_debug", fields);
+      },
+      info: (...args: unknown[]) => {
+        const fields = describe(args);
+        if (fields.message === "Turn summary stored") {
+          lastTurnSignal = { kind: "written" };
+        }
+        log("pipeline_info", fields);
+      },
       warn: (...args: unknown[]) => {
         const fields = describe(args);
         const sessionId = fields.sessionId;
         if (typeof sessionId === "string") erroredSessionIds.add(sessionId);
+        lastTurnSignal = { kind: "error", detail: fields };
         log("pipeline_warning", fields);
       },
     },
@@ -373,23 +458,102 @@ async function createPipeline(
 async function runBatch(
   pipeline: TurnSummaryPipeline,
   plans: SessionPlan[],
-): Promise<void> {
-  // The pipeline serialises jobs per session through its own tail chain, and
-  // the Codex spawn limiter bounds real parallelism, so sessions are handed
-  // over `concurrency` at a time to keep queued work proportional.
-  for (let index = 0; index < plans.length; index += concurrency) {
-    const slice = plans.slice(index, index + concurrency);
-    for (const plan of slice) {
-      pipeline.accept(plan.completeEventIds.map((completeEventId) =>
-        completeEvent(plan.sessionId, completeEventId)
-      ));
+): Promise<Map<string, SessionOutcome>> {
+  const outcomes = new Map<string, SessionOutcome>();
+  let sessionsDone = 0;
+  for (const plan of plans) {
+    const outcome: SessionOutcome = {
+      written: 0,
+      alreadySummarized: 0,
+      ineligible: 0,
+      errors: 0,
+      notAttempted: 0,
+      abortedByLiveTurn: false,
+      skipReasons: {},
+    };
+    outcomes.set(plan.sessionId, outcome);
+
+    for (const [index, completeEventId] of plan.completeEventIds.entries()) {
+      // Re-checked immediately before every turn, not once at inventory time.
+      // Sessions stay live during the run, and a summary written for a newer
+      // turn means anything we append now would sit behind it: `event_append`
+      // allocates MAX(id)+1, and both `turn_number` and the fold order read
+      // event id order. Observed in production on 2026-09-21, where a session
+      // was resumed four seconds after its backfill.
+      if (await hasSummaryAfterTurn(plan.sessionId, completeEventId)) {
+        outcome.abortedByLiveTurn = true;
+        outcome.notAttempted = plan.completeEventIds.length - index;
+        log("session_aborted_live_turn", {
+          sessionId: plan.sessionId,
+          atCompleteEventId: completeEventId,
+          turnsNotAttempted: outcome.notAttempted,
+          note: "a newer turn is already summarised; remaining past turns held back",
+        });
+        break;
+      }
+
+      lastTurnSignal = undefined;
+      pipeline.accept([completeEvent(plan.sessionId, completeEventId)]);
+      await pipeline.drain();
+      recordSignal(outcome, lastTurnSignal);
     }
-    await pipeline.drain();
+
+    sessionsDone += 1;
     log("progress", {
-      sessionsDone: Math.min(index + concurrency, plans.length),
+      sessionsDone,
       sessionsInBatch: plans.length,
+      sessionId: plan.sessionId,
+      ...outcome,
     });
   }
+  return outcomes;
+}
+
+function recordSignal(
+  outcome: SessionOutcome,
+  signal: TurnSignal | undefined,
+): void {
+  if (signal === undefined) {
+    // No log line at all is the TurnSummaryProviderUnavailableError path, which
+    // the pipeline returns on silently. Treat it as a failure, never a success.
+    outcome.errors += 1;
+    outcome.skipReasons.no_signal = (outcome.skipReasons.no_signal ?? 0) + 1;
+    return;
+  }
+  if (signal.kind === "written") {
+    outcome.written += 1;
+    return;
+  }
+  if (signal.kind === "error") {
+    outcome.errors += 1;
+    return;
+  }
+  outcome.skipReasons[signal.reason] =
+    (outcome.skipReasons[signal.reason] ?? 0) + 1;
+  if (signal.reason === "already_summarized") {
+    outcome.alreadySummarized += 1;
+    return;
+  }
+  // agent_origin / excluded_folder / system_notification / internal_summary /
+  // session_not_summarizable / delegated_* are by-design exclusions. They are
+  // neither successes nor failures and must not be reported as either.
+  outcome.ineligible += 1;
+}
+
+async function hasSummaryAfterTurn(
+  sessionId: string,
+  completeEventId: number,
+): Promise<boolean> {
+  const rows = await sql<Array<{ exists: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1 FROM events
+      WHERE session_id = ${sessionId}
+        AND event_type = 'turn_summary'
+        AND COALESCE((payload->>'turn_start_event_id')::bigint, id)
+            > ${completeEventId}
+    ) AS exists
+  `;
+  return rows[0]?.exists === true;
 }
 
 function completeEvent(
@@ -501,13 +665,32 @@ function loadAgentNames(): Map<string, string> {
   return names;
 }
 
+function mergeCounts(
+  buckets: Array<Record<string, number>>,
+): Record<string, number> {
+  const merged: Record<string, number> = {};
+  for (const bucket of buckets) {
+    for (const [key, value] of Object.entries(bucket)) {
+      merged[key] = (merged[key] ?? 0) + value;
+    }
+  }
+  return merged;
+}
+
 function countTurns(plans: SessionPlan[]): number {
   return plans.reduce((sum, plan) => sum + plan.completeEventIds.length, 0);
 }
 
 function loadState(): RunState {
   if (!existsSync(statePath)) {
-    return { from, to, finishedSessionIds: [], attempts: {}, unresolved: [] };
+    return {
+      from,
+      to,
+      finishedSessionIds: [],
+      attempts: {},
+      unresolved: [],
+      heldBack: [],
+    };
   }
   const parsed = JSON.parse(readFileSync(statePath, "utf8")) as RunState;
   if (parsed.from !== from || parsed.to !== to) {
@@ -520,6 +703,7 @@ function loadState(): RunState {
     ...parsed,
     attempts: parsed.attempts ?? {},
     unresolved: parsed.unresolved ?? [],
+    heldBack: parsed.heldBack ?? [],
   };
 }
 
