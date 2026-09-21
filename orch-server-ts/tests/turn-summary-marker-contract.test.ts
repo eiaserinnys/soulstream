@@ -56,6 +56,24 @@ describe("session story turn marker contract", () => {
     expect(markers(batch)).toEqual([4, 5, 6]);
     expect(intersect(markers(existing), markers(batch))).toEqual([]);
   });
+
+  // A label says where a summary was appended, not when its turn happened, so
+  // a recovered turn carries a high label while describing an early part of the
+  // conversation. The story instruction asks for chronological narration, so
+  // the turn's own position travels with it. This supplies ordering data only;
+  // it does not make the model's content correct.
+  it("passes the conversation position of a recovered turn alongside its label", () => {
+    const prompt = buildSessionStoryPrompt(
+      "instruction",
+      FOLDED_NARRATIVE,
+      [summary({ eventId: 304, turnNumber: 4, turnStart: 15 })],
+    );
+
+    const { batch } = sections(prompt);
+    expect(batch).toContain("(대화 위치 15)");
+    // The label stays adjacent to its content, so marker parsing is unchanged.
+    expect(batch).toContain("[T4] summary-for-turn-15");
+  });
 });
 
 function summary(

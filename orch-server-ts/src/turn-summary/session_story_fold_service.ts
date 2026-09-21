@@ -316,8 +316,17 @@ export function buildSessionStoryPrompt(
   summaries: readonly UnfoldedTurnSummary[],
 ): string {
   const narrative = existingNarrative?.trim() || "(아직 접힌 줄거리 없음)";
+  // A turn number is an append label, so a high number can belong to an old
+  // part of the conversation -- a turn recovered by the backfill takes the next
+  // free label. The story instruction asks for chronological ordering, so the
+  // turn's own position in the session is passed alongside the label. This only
+  // supplies the ordering data; it does not make the model's content correct.
   const turns = summaries
-    .map((summary) => `[T${summary.turnNumber}] ${summary.content}`)
+    .map((summary) =>
+      summary.turnStartEventId === null
+        ? `[T${summary.turnNumber}] ${summary.content}`
+        : `(대화 위치 ${summary.turnStartEventId}) [T${summary.turnNumber}] ${summary.content}`
+    )
     .join("\n");
   return [
     instruction,

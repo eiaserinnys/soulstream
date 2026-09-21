@@ -79,18 +79,9 @@ interface RunState {
     written: number;
     attempts: number;
   }>;
-  // Sessions whose remaining past turns cannot be written without inverting
-  // conversation order, because a newer turn is already summarised.
-  heldBack: Array<{
-    sessionId: string;
-    turns: number;
-    written: number;
-    notAttempted: number;
-  }>;
 }
 
 const apply = process.argv.includes("--apply");
-const includeOutOfOrder = process.argv.includes("--include-out-of-order");
 const onlySession = readOption("--session");
 const from = readOption("--from") ?? DEFAULT_FROM;
 const to = readOption("--to") ?? DEFAULT_TO;
@@ -127,8 +118,6 @@ interface SessionOutcome {
   alreadySummarized: number;
   ineligible: number;
   errors: number;
-  notAttempted: number;
-  abortedByLiveTurn: boolean;
   skipReasons: Record<string, number>;
 }
 
@@ -169,12 +158,7 @@ try {
   };
 
   const state = loadState();
-  // Sessions this run already backfilled hold summaries whose turn positions sit
-  // past the gap start, so scanning them again reports the run's own completed
-  // work as a conflict. They are excluded before the scan.
-  const { plans, outOfOrder } = await buildInventory(
-    new Set(state.finishedSessionIds),
-  );
+  const plans = await buildInventory(new Set(state.finishedSessionIds));
   const eligible = plans.filter((plan) =>
     !state.finishedSessionIds.includes(plan.sessionId)
   );
@@ -195,8 +179,6 @@ try {
     sessionsThisBatch: batch.length,
     turnsThisBatch: countTurns(batch),
     turnsRemainingAfterBatch: countTurns(eligible) - countTurns(batch),
-    outOfOrderSessionsDeferred: outOfOrder.length,
-    outOfOrderDetail: outOfOrder,
   });
 
   if (!apply) {
@@ -229,8 +211,6 @@ try {
         alreadySummarized: outcome?.alreadySummarized ?? 0,
         ineligible: outcome?.ineligible ?? 0,
         errors: outcome?.errors ?? 0,
-        notAttempted: outcome?.notAttempted ?? 0,
-        abortedByLiveTurn: outcome?.abortedByLiveTurn ?? false,
         skipReasons: outcome?.skipReasons ?? {},
         attempts,
         errored: erroredSessionIds.has(plan.sessionId) ||
@@ -238,8 +218,7 @@ try {
         // "Complete" means every planned turn reached a terminal decision --
         // stored, already present, or excluded by design. Ineligible turns are
         // resolved, not successful, so they are not added to the written count.
-        complete: accountedFor >= turns && (outcome?.errors ?? 0) === 0 &&
-          !(outcome?.abortedByLiveTurn ?? false),
+        complete: accountedFor >= turns && (outcome?.errors ?? 0) === 0,
         // A disagreement between the pipeline's log and the database re-read is
         // itself a defect signal, so it is surfaced rather than reconciled.
         countMismatch: rows !== (outcome?.written ?? 0),
@@ -249,23 +228,10 @@ try {
     const nextAttempts = { ...state.attempts };
     const finished: string[] = [];
     const unresolved: RunState["unresolved"] = [];
-    const heldBack: RunState["heldBack"] = [];
     for (const result of results) {
       nextAttempts[result.sessionId] = result.attempts;
       if (result.complete && !result.errored) {
         finished.push(result.sessionId);
-        continue;
-      }
-      if (result.abortedByLiveTurn) {
-        // Retrying cannot help: the newer summary is permanent, so the held
-        // back past turns need the logical-order fix, not another attempt.
-        finished.push(result.sessionId);
-        heldBack.push({
-          sessionId: result.sessionId,
-          turns: result.turns,
-          written: result.written,
-          notAttempted: result.notAttempted,
-        });
         continue;
       }
       if (result.attempts >= MAX_SESSION_ATTEMPTS) {
@@ -285,7 +251,6 @@ try {
       finishedSessionIds: [...state.finishedSessionIds, ...finished],
       attempts: nextAttempts,
       unresolved: [...state.unresolved, ...unresolved],
-      heldBack: [...state.heldBack, ...heldBack],
     });
 
     const sum = (pick: (row: (typeof results)[number]) => number): number =>
@@ -300,15 +265,11 @@ try {
       // session, ...). Resolved, but not successes.
       turnsIneligible: sum((row) => row.ineligible),
       turnsErrored: sum((row) => row.errors),
-      turnsNotAttempted: sum((row) => row.notAttempted),
-      sessionsAbortedByLiveTurn:
-        results.filter((row) => row.abortedByLiveTurn).length,
       sessionsWithCountMismatch:
         results.filter((row) => row.countMismatch).map((row) => row.sessionId),
       skipReasons: mergeCounts(results.map((row) => row.skipReasons)),
       sessionsResolved: results.filter((row) => row.complete).length,
       retiredUnresolved: unresolved,
-      heldBackForOrderingFix: heldBack,
       sessionsRemaining: eligible.length - finished.length,
       turnsRemaining: countTurns(eligible) - countTurns(batch),
       statePath,
@@ -318,10 +279,9 @@ try {
   await sqlResolver.close();
 }
 
-async function buildInventory(alreadyFinished: ReadonlySet<string>): Promise<{
-  plans: SessionPlan[];
-  outOfOrder: Array<{ sessionId: string; turns: number; reason: string }>;
-}> {
+async function buildInventory(
+  alreadyFinished: ReadonlySet<string>,
+): Promise<SessionPlan[]> {
   const rows = onlySession === undefined
     ? await sql<CompleteRow[]>`
         SELECT e.session_id, e.id
@@ -342,48 +302,19 @@ async function buildInventory(alreadyFinished: ReadonlySet<string>): Promise<{
       `;
   const bySession = new Map<string, number[]>();
   for (const row of rows) {
+    if (alreadyFinished.has(row.session_id)) continue;
     const list = bySession.get(row.session_id) ?? [];
     list.push(Number(row.id));
     bySession.set(row.session_id, list);
   }
-  const all = [...bySession.entries()].map(([sessionId, completeEventIds]) => ({
+  return [...bySession.entries()].map(([sessionId, completeEventIds]) => ({
     sessionId,
-    // Ascending complete-event order keeps each session's summaries written in
-    // conversation order, so both the summary event ids and the history window
-    // stay monotonic.
+    // Ascending complete-event order keeps each session's recovered summaries
+    // written in conversation order. Turn numbers are append labels, so a
+    // session that already holds newer summaries is safe to backfill: the
+    // recovered turns take the next free labels and nothing is renumbered.
     completeEventIds: completeEventIds.sort((a, b) => a - b),
   }));
-
-  // `event_append` allocates MAX(id)+1 per session, so a backfilled summary
-  // always lands at the session tail. If a session already holds a summary
-  // positioned after the gap started, backfilling it would interleave older
-  // turns behind newer ones, and `turn_number` (ROW_NUMBER over id ASC) plus
-  // the fold order would narrate the session out of sequence. Those sessions
-  // are deferred for a deliberate decision rather than silently scrambled.
-  const existing = await summariesAtOrAfter(
-    all.map((plan) => ({
-      sessionId: plan.sessionId,
-      minCompleteEventId: plan.completeEventIds[0] ?? 0,
-    })),
-  );
-  const outOfOrder: Array<{ sessionId: string; turns: number; reason: string }> = [];
-  const plans: SessionPlan[] = [];
-  for (const plan of all) {
-    if (alreadyFinished.has(plan.sessionId)) continue;
-    const laterSummaries = existing.get(plan.sessionId) ?? 0;
-    if (laterSummaries > 0 && !includeOutOfOrder) {
-      outOfOrder.push({
-        sessionId: plan.sessionId,
-        turns: plan.completeEventIds.length,
-        reason:
-          `${laterSummaries} summary row(s) already sit after the gap; ` +
-          "backfilling would interleave older turns behind newer ones",
-      });
-      continue;
-    }
-    plans.push(plan);
-  }
-  return { plans, outOfOrder };
 }
 
 function takeTurnBudget(plans: SessionPlan[], budget: number): SessionPlan[] {
@@ -473,31 +404,11 @@ async function runBatch(
       alreadySummarized: 0,
       ineligible: 0,
       errors: 0,
-      notAttempted: 0,
-      abortedByLiveTurn: false,
       skipReasons: {},
     };
     outcomes.set(plan.sessionId, outcome);
 
-    for (const [index, completeEventId] of plan.completeEventIds.entries()) {
-      // Re-checked immediately before every turn, not once at inventory time.
-      // Sessions stay live during the run, and a summary written for a newer
-      // turn means anything we append now would sit behind it: `event_append`
-      // allocates MAX(id)+1, and both `turn_number` and the fold order read
-      // event id order. Observed in production on 2026-09-21, where a session
-      // was resumed four seconds after its backfill.
-      if (await hasSummaryAfterTurn(plan.sessionId, completeEventId)) {
-        outcome.abortedByLiveTurn = true;
-        outcome.notAttempted = plan.completeEventIds.length - index;
-        log("session_aborted_live_turn", {
-          sessionId: plan.sessionId,
-          atCompleteEventId: completeEventId,
-          turnsNotAttempted: outcome.notAttempted,
-          note: "a newer turn is already summarised; remaining past turns held back",
-        });
-        break;
-      }
-
+    for (const completeEventId of plan.completeEventIds) {
       lastTurnSignal = undefined;
       pipeline.accept([completeEvent(plan.sessionId, completeEventId)]);
       await pipeline.drain();
@@ -546,21 +457,6 @@ function recordSignal(
   outcome.ineligible += 1;
 }
 
-async function hasSummaryAfterTurn(
-  sessionId: string,
-  completeEventId: number,
-): Promise<boolean> {
-  const rows = await sql<Array<{ exists: boolean }>>`
-    SELECT EXISTS (
-      SELECT 1 FROM events
-      WHERE session_id = ${sessionId}
-        AND event_type = 'turn_summary'
-        AND COALESCE((payload->>'turn_start_event_id')::bigint, id)
-            > ${completeEventId}
-    ) AS exists
-  `;
-  return rows[0]?.exists === true;
-}
 
 function completeEvent(
   sessionId: string,
@@ -629,26 +525,6 @@ async function countSummariesWritten(
   return new Map(rows.map((row) => [row.session_id, Number(row.n)]));
 }
 
-async function summariesAtOrAfter(
-  bounds: Array<{ sessionId: string; minCompleteEventId: number }>,
-): Promise<Map<string, number>> {
-  if (bounds.length === 0) return new Map();
-  const rows = await sql<Array<{ session_id: string; n: number | string }>>`
-    SELECT e.session_id, COUNT(*)::integer AS n
-    FROM events e
-    JOIN (
-      SELECT UNNEST(${bounds.map((bound) => bound.sessionId)}::text[]) AS session_id,
-             UNNEST(${bounds.map((bound) => bound.minCompleteEventId)}::bigint[]) AS floor_id
-    ) w ON w.session_id = e.session_id
-    WHERE e.event_type = 'turn_summary'
-      -- Judged by the turn a summary describes, not by the row's own event id.
-      -- Every backfilled row lands at the session tail, so an id test would
-      -- flag a session against its own completed backfill.
-      AND COALESCE((e.payload->>'turn_start_event_id')::bigint, e.id) > w.floor_id
-    GROUP BY e.session_id
-  `;
-  return new Map(rows.map((row) => [row.session_id, Number(row.n)]));
-}
 
 function loadAgentNames(): Map<string, string> {
   const names = new Map<string, string>();
@@ -695,7 +571,6 @@ function loadState(): RunState {
       finishedSessionIds: [],
       attempts: {},
       unresolved: [],
-      heldBack: [],
     };
   }
   const parsed = JSON.parse(readFileSync(statePath, "utf8")) as RunState;
@@ -709,7 +584,6 @@ function loadState(): RunState {
     ...parsed,
     attempts: parsed.attempts ?? {},
     unresolved: parsed.unresolved ?? [],
-    heldBack: parsed.heldBack ?? [],
   };
 }
 
