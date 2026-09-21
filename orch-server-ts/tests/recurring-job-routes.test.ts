@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createApp, parseOrchServerConfig } from "../src/index.js";
 import { RecurringJobService } from "../src/recurring-jobs/service.js";
-import type { RecurringJob, RecurringJobActor } from "../src/recurring-jobs/types.js";
+import type { RecurringJob, RecurringJobActor, RecurringJobRepository } from "../src/recurring-jobs/types.js";
 
 const config = parseOrchServerConfig({
   environment: "test",
@@ -65,6 +65,59 @@ describe("recurring job routes", () => {
     }
   });
 
+  it("persists a verified agent caller through the host route and shared target gate", async () => {
+    const { service, validateTarget } = persistedService();
+    const app = createApp({
+      config,
+      recurringJobHostRoutes: { service, authBearerToken: "service-token" },
+    });
+    try {
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/recurring-jobs/host/create",
+        headers: { authorization: "Bearer service-token" },
+        payload: { ...createBody("trusted-agent-create"), actor: agentActor },
+      });
+      expect(created.statusCode).toBe(200);
+      expect(created.json()).toMatchObject({
+        job: {
+          owner_email: agentActor.ownerEmail,
+          node_id: "node-a",
+          agent_id: "roselin",
+          version: 1,
+        },
+      });
+
+      const jobId = created.json<{ job: { job_id: string } }>().job.job_id;
+      const updated = await app.inject({
+        method: "POST",
+        url: "/api/recurring-jobs/host/update",
+        headers: { authorization: "Bearer service-token" },
+        payload: { job_id: jobId, expected_version: 1, enabled: false, actor: agentActor },
+      });
+      const listed = await app.inject({
+        method: "POST",
+        url: "/api/recurring-jobs/host/list",
+        headers: { authorization: "Bearer service-token" },
+        payload: { actor: agentActor },
+      });
+
+      expect(updated.statusCode).toBe(200);
+      expect(updated.json()).toMatchObject({ job: { enabled: false, version: 2 } });
+      expect(listed.json()).toMatchObject({ jobs: [{ job_id: jobId, enabled: false }] });
+      expect(validateTarget).toHaveBeenNthCalledWith(1, {
+        actor: agentActor,
+        target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-a" }),
+      });
+      expect(validateTarget).toHaveBeenNthCalledWith(2, {
+        actor: agentActor,
+        target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-a" }),
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("does not let an unauthenticated browser request select an owner", async () => {
     const service = fakeService();
     const app = createApp({
@@ -119,6 +172,43 @@ function fakeService() {
   };
 }
 
+function persistedService() {
+  const jobs = new Map<string, RecurringJob>();
+  const repository = failingRepository() as unknown as RecurringJobRepository;
+  repository.findJobByCreateIdempotency = async (ownerEmail, idempotencyKey) =>
+    [...jobs.values()].find((candidate) =>
+      candidate.ownerEmail === ownerEmail && candidate.createdIdempotencyKey === idempotencyKey,
+    ) ?? null;
+  repository.createJob = async (input) => {
+    jobs.set(input.jobId, input);
+    return input;
+  };
+  repository.findJobForOwner = async (jobId, ownerEmail, includeArchived = false) => {
+    const candidate = jobs.get(jobId);
+    return candidate?.ownerEmail === ownerEmail && (includeArchived || candidate.archivedAt === null)
+      ? candidate
+      : null;
+  };
+  repository.listJobsForOwner = async (ownerEmail, includeArchived = false) =>
+    [...jobs.values()].filter((candidate) =>
+      candidate.ownerEmail === ownerEmail && (includeArchived || candidate.archivedAt === null),
+    );
+  repository.updateJob = async (candidate, expectedVersion) => {
+    const current = jobs.get(candidate.jobId);
+    if (!current || current.version !== expectedVersion) {
+      return { code: "VERSION_CONFLICT" as const, job: current ?? candidate };
+    }
+    const updated = { ...candidate, version: expectedVersion + 1 };
+    jobs.set(updated.jobId, updated);
+    return updated;
+  };
+  const validateTarget = vi.fn(async () => undefined);
+  return {
+    service: new RecurringJobService({ repository, validateTarget }),
+    validateTarget,
+  };
+}
+
 function failingRepository() {
   return {
     findJobForOwner: async () => null,
@@ -137,6 +227,7 @@ function failingRepository() {
     getRun: async () => null,
     getRunBySessionId: async () => null,
     updateRun: async () => { throw new Error("unused"); },
+    claimRunForDispatch: async () => null,
     reserveScheduledRun: async () => null,
     cancelAutomaticPendingRuns: async () => undefined,
     createScheduledRun: async () => { throw new Error("unused"); },

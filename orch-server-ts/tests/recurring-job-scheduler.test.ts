@@ -58,6 +58,7 @@ function repository(): RecurringJobRepository {
     getRun: async () => null,
     getRunBySessionId: async () => null,
     updateRun: async () => { throw new Error("unused"); },
+    claimRunForDispatch: async () => null,
     reserveScheduledRun: async () => null,
     cancelAutomaticPendingRuns: async () => undefined,
     createScheduledRun: async () => { throw new Error("unused"); },

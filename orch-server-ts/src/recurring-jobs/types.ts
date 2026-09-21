@@ -145,7 +145,20 @@ export interface RecurringJobRepository {
   getJob(jobId: string): Promise<RecurringJob | null>;
   getRun(runId: string): Promise<RecurringJobRun | null>;
   getRunBySessionId(sessionId: string): Promise<RecurringJobRun | null>;
-  updateRun(run: RecurringJobRun): Promise<RecurringJobRun>;
+  /**
+   * Persist a run transition only when it still has the expected state.  A
+   * cancelled automatic run must not be revived by a stale scheduler tick.
+   */
+  updateRun(
+    run: RecurringJobRun,
+    expectedState?: RecurringJobRunState,
+  ): Promise<RecurringJobRun | null>;
+  /**
+   * The sole transition that permits an outbound create_session command.
+   * For scheduled work this atomically observes the current job state, so a
+   * pause/archive which wins the race leaves the run unsent.
+   */
+  claimRunForDispatch(runId: string, now: Date): Promise<RecurringJobRun | null>;
   reserveScheduledRun(input: {
     readonly job: RecurringJob;
     readonly run: RecurringJobRun;

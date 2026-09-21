@@ -83,6 +83,7 @@ import { createPersistenceHostRepositoryProvider } from "./control_plane/persist
 import { SqlRecurringJobRepository } from "./recurring-jobs/repository.js";
 import { RecurringJobService } from "./recurring-jobs/service.js";
 import { RecurringJobScheduler } from "./recurring-jobs/scheduler.js";
+import { createRecurringJobTargetValidator } from "./recurring-jobs/target_validator.js";
 import { createRecurringSession } from "./session/recurring_session_creation.js";
 import type { RecurringJobActor } from "./recurring-jobs/types.js";
 import type { SessionDeliveryRepository } from
@@ -477,6 +478,13 @@ export async function createLiveProductionApplication(
   };
   const recurringJobService = new RecurringJobService({
     repository: recurringJobRepository,
+    validateTarget: createRecurringJobTargetValidator({
+      registry,
+      modelPresetAvailability: providers.modelPresetAvailability,
+      listFolders: providers.folderRoutes.provider.listFolders,
+      getTaskSnapshot: providers.taskRoutes.provider.getTaskSnapshot,
+      findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
+    }),
     launcher: {
       isNodeConnected: (nodeId) => registry.getConnectedNode(nodeId) !== undefined,
       createRecurringSession: async ({ job, run }) => await createRecurringSession({

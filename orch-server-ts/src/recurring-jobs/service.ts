@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
 
+import { compileRecurringSchedule, nextRecurringOccurrences } from "./cron.js";
 import {
-  compileRecurringSchedule,
-  nextRecurringOccurrences,
-} from "./cron.js";
+  assertRecurringJobActor,
+  compileSchedule,
+  normalizedContainer,
+  normalizedModelPreset,
+  requiredText,
+  validation,
+  versionConflict,
+} from "./input_validation.js";
 import {
   isActiveRecurringRun,
   RecurringJobError,
@@ -15,18 +21,17 @@ import {
   type RecurringJobUpdateInput,
   type RecurringSessionLauncher,
 } from "./types.js";
+import { jobForRun } from "./run_snapshot.js";
 
 export type RecurringJobServiceOptions = {
   readonly repository: RecurringJobRepository;
   readonly launcher?: RecurringSessionLauncher;
   readonly now?: () => Date;
   readonly newId?: () => string;
+  /** Shared UI/MCP target and folder-access gate. */
   readonly validateTarget?: (input: {
-    readonly nodeId: string;
-    readonly agentId: string;
-    readonly modelPreset: string | null;
-    readonly container: RecurringJob["container"];
-    readonly folderId: string;
+    readonly actor: RecurringJobActor;
+    readonly target: Pick<RecurringJob, "nodeId" | "agentId" | "modelPreset" | "container" | "folderId">;
   }) => Promise<void>;
 };
 
@@ -40,7 +45,7 @@ export class RecurringJobService {
   }
 
   async list(actor: RecurringJobActor, includeArchived = false): Promise<RecurringJob[]> {
-    assertActor(actor);
+    assertRecurringJobActor(actor);
     return await this.options.repository.listJobsForOwner(actor.ownerEmail, includeArchived);
   }
 
@@ -63,14 +68,14 @@ export class RecurringJobService {
   }
 
   async create(actor: RecurringJobActor, raw: RecurringJobCreateInput): Promise<RecurringJob> {
-    assertActor(actor);
+    assertRecurringJobActor(actor);
     const idempotencyKey = requiredText(raw.idempotencyKey, "idempotency key");
     const existing = await this.options.repository.findJobByCreateIdempotency(
       actor.ownerEmail,
       idempotencyKey,
     );
     if (existing) return existing;
-    const normalized = await this.normalizeCreateOrUpdate(raw);
+    const normalized = await this.normalizeCreateOrUpdate(actor, raw);
     const { schedule: _schedule, ...jobFields } = normalized;
     const now = this.now();
     const firstRun = nextRecurringOccurrences(normalized.schedule, now, 1)[0];
@@ -112,11 +117,11 @@ export class RecurringJobService {
     if (!positiveVersion(input.expectedVersion)) throw validation("expected_version is required");
     const now = this.now();
     const candidate = {
-      ...await this.mergeUpdate(current, input, now),
+      ...await this.mergeUpdate(actor, current, input, now),
       updatedBy: actor.actorId,
     };
     const updated = await this.options.repository.updateJob(candidate, input.expectedVersion);
-    if ("code" in updated) throw conflict(updated.job);
+    if ("code" in updated) throw versionConflict(updated.job);
     if (!updated.enabled) {
       await this.options.repository.cancelAutomaticPendingRuns(updated.jobId, {
         code: "JOB_PAUSED",
@@ -131,7 +136,7 @@ export class RecurringJobService {
     jobId: string,
     expectedVersion: number,
   ): Promise<RecurringJob> {
-    assertActor(actor);
+    assertRecurringJobActor(actor);
     if (!positiveVersion(expectedVersion)) throw validation("expected_version is required");
     const now = this.now();
     const archived = await this.options.repository.archiveJob(
@@ -142,7 +147,7 @@ export class RecurringJobService {
       now,
     );
     if (!archived) throw new RecurringJobError("NOT_FOUND", "Recurring job was not found", 404);
-    if ("code" in archived) throw conflict(archived.job);
+    if ("code" in archived) throw versionConflict(archived.job);
     return archived;
   }
 
@@ -230,16 +235,18 @@ export class RecurringJobService {
   async dispatchRun(job: RecurringJob, run: RecurringJobRun): Promise<RecurringJobRun> {
     const launcher = this.options.launcher;
     if (!launcher || !isActiveRecurringRun(run.state)) return run;
-    const currentJob = await this.options.repository.getJob(job.jobId) ?? job;
     const now = this.now();
-    if (run.trigger === "scheduled" && (!currentJob.enabled || currentJob.archivedAt !== null)) {
-      return await this.saveRun(run, "cancelled", now, {
-        code: currentJob.archivedAt ? "JOB_ARCHIVED" : "JOB_PAUSED",
-        message: "This automatic run was cancelled before node dispatch.",
+    let frozenJob: RecurringJob;
+    try {
+      frozenJob = jobForRun(job, run);
+    } catch (error) {
+      return await this.saveRun(run, "error", now, {
+        code: "RUN_SNAPSHOT_INVALID",
+        message: error instanceof Error ? error.message : "Recurring run snapshot is invalid.",
       });
     }
     if (run.trigger === "scheduled" && run.scheduledFor) {
-      const expiresAt = Date.parse(run.scheduledFor) + currentJob.lateRunWindowSeconds * 1_000;
+      const expiresAt = Date.parse(run.scheduledFor) + frozenJob.lateRunWindowSeconds * 1_000;
       if (now.getTime() > expiresAt) {
         return await this.saveRun(run, "skipped_late", now, {
           code: "LATE_RUN_WINDOW_EXPIRED",
@@ -247,15 +254,30 @@ export class RecurringJobService {
         });
       }
     }
-    if (!launcher.isNodeConnected(currentJob.nodeId)) {
+    if (!launcher.isNodeConnected(frozenJob.nodeId)) {
       return await this.saveRun(run, "waiting_for_node", now, {
         code: "NODE_OFFLINE",
-        message: `Node ${currentJob.nodeId} is offline. No create_session command has been sent.`,
+        message: `Node ${frozenJob.nodeId} is offline. No create_session command has been sent.`,
       });
     }
-    const dispatching = await this.saveRun(run, "dispatching", now, null);
+    // This is the final, DB-backed pause/archive gate. A scheduled run is
+    // claimed only while its job is still enabled and unarchived; a manual
+    // run deliberately remains eligible while paused.
+    const dispatching = await this.options.repository.claimRunForDispatch(run.runId, now);
+    if (!dispatching) {
+      const currentRun = await this.options.repository.getRun(run.runId);
+      const currentJob = await this.options.repository.getJob(run.jobId);
+      if (run.trigger === "scheduled" && currentRun && currentJob &&
+        (currentJob.archivedAt !== null || !currentJob.enabled)) {
+        return await this.saveRun(currentRun, "cancelled", now, {
+          code: currentJob?.archivedAt ? "JOB_ARCHIVED" : "JOB_PAUSED",
+          message: "This automatic run was cancelled before node dispatch.",
+        });
+      }
+      return currentRun ?? run;
+    }
     try {
-      const launched = await launcher.createRecurringSession({ job: currentJob, run: dispatching });
+      const launched = await launcher.createRecurringSession({ job: frozenJob, run: dispatching });
       const launchedRun = {
         ...dispatching,
         jobSnapshot: {
@@ -309,6 +331,7 @@ export class RecurringJobService {
   }
 
   private async mergeUpdate(
+    actor: RecurringJobActor,
     current: RecurringJob,
     input: RecurringJobUpdateInput,
     now: Date,
@@ -346,11 +369,17 @@ export class RecurringJobService {
       nextRunAt,
       updatedAt: now.toISOString(),
     } satisfies RecurringJob;
-    await this.options.validateTarget?.(candidate);
+    await this.options.validateTarget?.({
+      actor,
+      target: candidate,
+    });
     return candidate;
   }
 
-  private async normalizeCreateOrUpdate(input: RecurringJobCreateInput): Promise<{
+  private async normalizeCreateOrUpdate(
+    actor: RecurringJobActor,
+    input: RecurringJobCreateInput,
+  ): Promise<{
     name: string;
     prompt: string;
     scheduleExpressions: readonly string[];
@@ -380,7 +409,10 @@ export class RecurringJobService {
     if (!Number.isSafeInteger(normalized.lateRunWindowSeconds) || normalized.lateRunWindowSeconds < 1) {
       throw validation("late_run_window_seconds must be a positive integer");
     }
-    await this.options.validateTarget?.(normalized);
+    await this.options.validateTarget?.({
+      actor,
+      target: normalized,
+    });
     return normalized;
   }
 
@@ -405,7 +437,7 @@ export class RecurringJobService {
         name: job.name, prompt: job.prompt, timezone: job.timezone,
         scheduleExpressions: job.scheduleExpressions, nodeId: job.nodeId, agentId: job.agentId,
         modelPreset: job.modelPreset, container: job.container, folderId: job.folderId,
-        executionCaller: job.executionCaller,
+        executionCaller: job.executionCaller, lateRunWindowSeconds: job.lateRunWindowSeconds,
       },
       state: input.state,
       reasonCode: input.reason?.code ?? null, reasonMessage: input.reason?.message ?? null,
@@ -423,7 +455,7 @@ export class RecurringJobService {
     reason: { code: string; message: string } | null,
   ): Promise<RecurringJobRun> {
     const terminal = !isActiveRecurringRun(state);
-    return await this.options.repository.updateRun({
+    const saved = await this.options.repository.updateRun({
       ...run,
       state,
       reasonCode: reason?.code ?? null,
@@ -431,7 +463,8 @@ export class RecurringJobService {
       startedAt: state === "running" && !run.startedAt ? now.toISOString() : run.startedAt,
       finishedAt: terminal ? now.toISOString() : null,
       updatedAt: now.toISOString(),
-    });
+    }, run.state);
+    return saved ?? await this.options.repository.getRun(run.runId) ?? run;
   }
 
   private async requireJob(
@@ -439,7 +472,7 @@ export class RecurringJobService {
     jobId: string,
     includeArchived = false,
   ): Promise<RecurringJob> {
-    assertActor(actor);
+    assertRecurringJobActor(actor);
     const job = await this.options.repository.findJobForOwner(jobId, actor.ownerEmail, includeArchived);
     if (!job) throw new RecurringJobError("NOT_FOUND", "Recurring job was not found", 404);
     if (!includeArchived && job.archivedAt !== null) {
@@ -449,33 +482,5 @@ export class RecurringJobService {
   }
 }
 
-function assertActor(actor: RecurringJobActor): void {
-  if (!actor || !actor.ownerEmail.trim() || !actor.actorId.trim()) {
-    throw new RecurringJobError("FORBIDDEN", "A verified recurring-job actor is required", 403);
-  }
-}
-function requiredText(value: string, label: string): string {
-  if (typeof value !== "string" || !value.trim()) throw validation(`${label} is required`);
-  return value.trim();
-}
-function normalizedModelPreset(value: string | null): string | null {
-  if (value === null) return null;
-  return requiredText(value, "model_preset");
-}
-function normalizedContainer(value: RecurringJob["container"]): RecurringJob["container"] {
-  if (!value || (value.kind !== "folder" && value.kind !== "task")) throw validation("container.kind is invalid");
-  return { kind: value.kind, id: requiredText(value.id, "container.id") };
-}
 function positiveVersion(value: number): boolean { return Number.isSafeInteger(value) && value > 0; }
 function boundedLimit(value: number): number { return Number.isSafeInteger(value) ? Math.max(1, Math.min(value, 100)) : 50; }
-function validation(message: string): RecurringJobError { return new RecurringJobError("VALIDATION", message, 422); }
-function compileSchedule(input: { timezone: string; scheduleExpressions: readonly string[] }): ReturnType<typeof compileRecurringSchedule> {
-  try {
-    return compileRecurringSchedule(input);
-  } catch (error) {
-    throw validation(error instanceof Error ? error.message : "invalid recurring schedule");
-  }
-}
-function conflict(job: RecurringJob): RecurringJobError {
-  return new RecurringJobError("VERSION_CONFLICT", "Recurring job changed. Reload before saving.", 409, job);
-}

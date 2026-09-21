@@ -58,11 +58,15 @@ export function AgentNodeAssignmentFields({
   onErrorRef.current = onError;
 
   useEffect(() => {
-    if (nodeId && (aliveNodes.some((node) => node.nodeId === nodeId) || !fallbackToAvailable)) return;
+    // A caller that deliberately manages the selection must never have an
+    // older empty render write back over a persisted node choice.
+    if (!fallbackToAvailable) return;
+    if (nodeId && aliveNodes.some((node) => node.nodeId === nodeId)) return;
     const preferred = preferredNodeId
       ? aliveNodes.find((node) => node.nodeId === preferredNodeId)
       : null;
-    onNodeIdChange(preferred?.nodeId ?? (fallbackToAvailable ? aliveNodes[0]?.nodeId ?? "" : ""));
+    const nextNodeId = preferred?.nodeId ?? aliveNodes[0]?.nodeId ?? "";
+    if (nextNodeId !== nodeId) onNodeIdChange(nextNodeId);
   }, [aliveNodes, fallbackToAvailable, nodeId, onNodeIdChange, preferredNodeId]);
 
   useEffect(() => {

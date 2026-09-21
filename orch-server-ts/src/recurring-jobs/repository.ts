@@ -206,16 +206,40 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
     return rows[0] ? runFromRow(rows[0]) : null;
   }
 
-  async updateRun(run: RecurringJobRun): Promise<RecurringJobRun> {
+  async updateRun(
+    run: RecurringJobRun,
+    expectedState?: RecurringJobRun["state"],
+  ): Promise<RecurringJobRun | null> {
     const sql = await this.resolveSql();
     const rows = await sql<Row[]>`
       UPDATE recurring_job_runs
       SET job_snapshot = ${sql.json(run.jobSnapshot)}, state = ${run.state},
           reason_code = ${run.reasonCode}, reason_message = ${run.reasonMessage},
           started_at = ${run.startedAt}, finished_at = ${run.finishedAt}, updated_at = ${run.updatedAt}
-      WHERE run_id = ${run.runId} RETURNING *
+      WHERE run_id = ${run.runId}
+        AND (${expectedState === undefined} OR state = ${expectedState})
+      RETURNING *
     `;
-    return runFromRow(requiredRow(rows, "update recurring run"));
+    return rows[0] ? runFromRow(rows[0]) : null;
+  }
+
+  async claimRunForDispatch(runId: string, now: Date): Promise<RecurringJobRun | null> {
+    const sql = await this.resolveSql();
+    const rows = await sql<Row[]>`
+      UPDATE recurring_job_runs AS run
+      SET state = 'dispatching', reason_code = NULL, reason_message = NULL,
+          finished_at = NULL, updated_at = ${now}
+      FROM recurring_jobs AS job
+      WHERE run.run_id = ${runId}
+        AND job.job_id = run.job_id
+        AND run.state IN ('queued', 'waiting_for_node')
+        AND (
+          run.trigger = 'manual'
+          OR (job.enabled = TRUE AND job.archived_at IS NULL)
+        )
+      RETURNING run.*
+    `;
+    return rows[0] ? runFromRow(rows[0]) : null;
   }
 
   async reserveScheduledRun(input: {
@@ -301,7 +325,8 @@ async function createRunWithCollisionLookup(
   const rows = await sql<Row[]>`
     SELECT * FROM recurring_job_runs WHERE job_id = ${input.jobId}
       AND (
-        (trigger = ${input.trigger} AND scheduled_for IS NOT DISTINCT FROM ${input.scheduledFor})
+        (trigger = 'scheduled' AND ${input.trigger} = 'scheduled'
+          AND scheduled_for IS NOT DISTINCT FROM ${input.scheduledFor})
         OR (trigger = 'manual' AND manual_idempotency_key IS NOT DISTINCT FROM ${input.manualIdempotencyKey})
         OR state IN ('queued', 'waiting_for_node', 'dispatching', 'awaiting_session', 'running')
       )

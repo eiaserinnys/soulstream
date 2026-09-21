@@ -170,6 +170,39 @@ describe("RecurringJobService", () => {
     expect(createRecurringSession).toHaveBeenCalledTimes(1);
   });
 
+  it("does not send an automatic run when pause wins after the node check but before the dispatch claim", async () => {
+    const repository = memoryRepository();
+    const createRecurringSession = vi.fn(async () => ({
+      state: "running" as const,
+      resolvedModelPreset: null,
+    }));
+    const service = new RecurringJobService({
+      repository,
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        createRecurringSession,
+        findDurableSession: async () => null,
+      },
+    });
+    const job = await service.create(actor, createInput());
+    const run = {
+      ...await service.runManual(actor, job.jobId, "make-a-run"),
+      trigger: "scheduled" as const,
+      state: "queued" as const,
+      scheduledFor: "2026-09-21T00:00:00.000Z",
+    };
+    repository.runs.set(run.runId, run);
+    repository.jobs.set(job.jobId, { ...job, enabled: false, nextRunAt: null, version: 2 });
+    createRecurringSession.mockClear();
+
+    const result = await service.dispatchRun(job, run);
+
+    expect(result).toMatchObject({ state: "cancelled", reasonCode: "JOB_PAUSED" });
+    expect(createRecurringSession).not.toHaveBeenCalled();
+  });
+
   it("reports a deleted observed session instead of replacing it", async () => {
     const repository = memoryRepository();
     const service = new RecurringJobService({
@@ -206,6 +239,28 @@ describe("RecurringJobService", () => {
     })).rejects.toMatchObject({
       code: "VERSION_CONFLICT",
       currentJob: expect.objectContaining({ jobId: job.jobId, version: job.version }),
+    });
+  });
+
+  it("passes the verified actor and resolved target through the shared target gate", async () => {
+    const validateTarget = vi.fn(async () => undefined);
+    const service = new RecurringJobService({
+      repository: memoryRepository(),
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+      validateTarget,
+    });
+
+    const job = await service.create(actor, createInput());
+    await service.update(actor, job.jobId, { expectedVersion: job.version, folderId: "folder-b", container: { kind: "folder", id: "folder-b" } });
+
+    expect(validateTarget).toHaveBeenNthCalledWith(1, {
+      actor,
+      target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-a" }),
+    });
+    expect(validateTarget).toHaveBeenNthCalledWith(2, {
+      actor,
+      target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-b" }),
     });
   });
 });
@@ -299,7 +354,28 @@ function memoryRepository(): RecurringJobRepository & {
     async getRunBySessionId(sessionId) {
       return [...runs.values()].find((run) => run.sessionId === sessionId) ?? null;
     },
-    async updateRun(run) { runs.set(run.runId, run); return run; },
+    async updateRun(run, expectedState) {
+      const current = runs.get(run.runId);
+      if (!current || (expectedState !== undefined && current.state !== expectedState)) return null;
+      runs.set(run.runId, run);
+      return run;
+    },
+    async claimRunForDispatch(runId, now) {
+      const run = runs.get(runId);
+      const job = run ? jobs.get(run.jobId) : undefined;
+      if (!run || !job || (run.state !== "queued" && run.state !== "waiting_for_node")) return null;
+      if (run.trigger === "scheduled" && (!job.enabled || job.archivedAt !== null)) return null;
+      const claimed = {
+        ...run,
+        state: "dispatching" as const,
+        reasonCode: null,
+        reasonMessage: null,
+        finishedAt: null,
+        updatedAt: now.toISOString(),
+      };
+      runs.set(runId, claimed);
+      return claimed;
+    },
     async reserveScheduledRun({ job, run }) {
       const current = jobs.get(job.jobId);
       if (!current || current.version !== job.version || !current.enabled || current.archivedAt) return null;
