@@ -82,14 +82,19 @@ interface RunState {
 }
 
 const apply = process.argv.includes("--apply");
+// Release valve for the sessions held back until the marker ordering
+// contract is deployed. Without it those turns are unreachable.
+const includeDeferred = process.argv.includes("--include-deferred");
 const onlySession = readOption("--session");
 const from = readOption("--from") ?? DEFAULT_FROM;
 const to = readOption("--to") ?? DEFAULT_TO;
 const maxTurns = readIntOption("--max-turns") ?? DEFAULT_MAX_TURNS;
 const concurrency = readIntOption("--concurrency") ?? DEFAULT_CONCURRENCY;
 const agentsPath = readOption("--agents");
-const statePath = resolve(
-  readOption("--state") ?? ".local/turn-summary-backfill-state.json",
+// Resolved against the repository, not the shell's working directory: a run
+// started from a different checkout must not silently begin from empty state.
+const statePath = readOption("--state") ?? fileURLToPath(
+  new URL("../../.local/turn-summary-backfill-state.json", import.meta.url),
 );
 
 const databaseUrl = requiredEnv("DATABASE_URL");
@@ -160,6 +165,7 @@ try {
   const state = loadState();
   const { plans, deferred } = await buildInventory(
     new Set(state.finishedSessionIds),
+    new Set(Object.keys(state.attempts)),
   );
   const batch = takeTurnBudget(plans, maxTurns);
 
@@ -189,7 +195,12 @@ try {
   if (!apply) {
     log("dry_run_complete", { note: "re-run with --apply to write summaries" });
   } else if (batch.length === 0) {
-    log("nothing_to_do", { note: "every session in range is finished" });
+    log("nothing_to_do", {
+      note: deferred.length === 0
+        ? "every session in range is finished"
+        : "no runnable session left; deferred turns still need --include-deferred",
+      turnsAwaitingFoldContract: deferred.reduce((sum, r) => sum + r.turns, 0),
+    });
   } else {
     const sessionIds = batch.map((plan) => plan.sessionId);
     // Watermark per session so newly written rows are counted, not pre-existing
@@ -286,6 +297,7 @@ try {
 
 async function buildInventory(
   alreadyFinished: ReadonlySet<string>,
+  alreadyAttempted: ReadonlySet<string>,
 ): Promise<{
   plans: SessionPlan[];
   deferred: Array<{ sessionId: string; turns: number; laterSummaries: number }>;
@@ -331,14 +343,19 @@ async function buildInventory(
   // the deployed prompt, which carries no marker time ordering, and would
   // narrate the recovered turns as the latest events. Those sessions are held
   // until the ordering contract is deployed.
-  const laterSummaries = await countSummariesAfterGapStart(all);
+  // Only sessions this effort has never written to are scanned. A session it
+  // already attempted holds its own recovered rows, which sit past the gap
+  // start and would otherwise reclassify it as deferred -- silently stranding a
+  // session whose first pass was interrupted or partially failed.
+  const untouched = all.filter((plan) => !alreadyAttempted.has(plan.sessionId));
+  const laterSummaries = await countSummariesAfterGapStart(untouched);
   const plans: SessionPlan[] = [];
   const deferred: Array<
     { sessionId: string; turns: number; laterSummaries: number }
   > = [];
   for (const plan of all) {
     const later = laterSummaries.get(plan.sessionId) ?? 0;
-    if (later > 0) {
+    if (later > 0 && !includeDeferred) {
       deferred.push({
         sessionId: plan.sessionId,
         turns: plan.completeEventIds.length,

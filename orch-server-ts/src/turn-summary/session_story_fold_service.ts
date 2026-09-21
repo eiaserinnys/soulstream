@@ -256,8 +256,12 @@ export class SessionStoryFoldService {
       last,
       last - first + 1,
     );
+    const wanted = new Set(cited);
     for (const summary of summaries) {
-      if (summary.turnStartEventId !== null) {
+      // The range load spans first..last, so it also returns turns the
+      // narrative never cites. Listing those would put markers in the ordering
+      // line that appear nowhere else in the prompt.
+      if (summary.turnStartEventId !== null && wanted.has(summary.turnNumber)) {
         positions.set(summary.turnNumber, summary.turnStartEventId);
       }
     }
@@ -389,11 +393,18 @@ export function buildSessionStoryPrompt(
 }
 
 // Turn numbers cited by a stored narrative, expanding `[Ta-Tb]` ranges.
-export function citedMarkers(narrative: string): number[] {
+export function citedMarkers(narrative: string, maxSpan = 1_000): number[] {
   const cited = new Set<number>();
   for (const match of narrative.matchAll(MARKER_PATTERN)) {
     const start = Number(match[1]);
     const end = match[2] === undefined ? start : Number(match[2]);
+    // A stored narrative is model output, so a range is not trusted to be
+    // small or even ascending. An unbounded expansion would spin on a
+    // hallucinated `[T1-T9999999]`.
+    if (end < start || end - start > maxSpan) {
+      cited.add(start);
+      continue;
+    }
     for (let marker = start; marker <= end; marker += 1) cited.add(marker);
   }
   return [...cited].sort((left, right) => left - right);

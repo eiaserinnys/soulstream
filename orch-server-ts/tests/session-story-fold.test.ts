@@ -332,6 +332,69 @@ describe("SessionStoryFoldService", () => {
   });
 });
 
+describe("session story fold with recovered turns", () => {
+  // Both assertions here failed to exist before: deleting the whole marker
+  // position wiring, or moving the conversation sort upstream of the watermark,
+  // passed the entire suite.
+  it("merges narrative marker positions into the prompt and keeps the append watermark", async () => {
+    const digest: SessionStoryDigest = {
+      sessionId: "session-r",
+      narrative: "[T1] a [T2] b",
+      highlight: "h",
+      narrativeThroughEventId: 20,
+      foldCount: 1,
+      version: 1,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    };
+    // Recovered turns: append order (eventId) ascending, conversation order
+    // (turnStartEventId) descending -- the shape that tells the two apart.
+    const recovered = [
+      summary(101, 3, "복구 A", 900, 901),
+      summary(102, 4, "복구 B", 300, 301),
+      summary(103, 5, "복구 C", 150, 151),
+      summary(104, 6, "복구 D", 120, 121),
+      summary(105, 7, "복구 E", 110, 111),
+    ];
+    const repository = fakeRepository({
+      // At the fold threshold so a batch is actually loaded.
+      count: 10,
+      totalCount: 12,
+      digest,
+      summaries: recovered,
+      // Positions of the markers the stored narrative cites.
+      narrativeMarkerRange: [
+        summary(10, 1, "옛 요청", 100, 101),
+        summary(20, 2, "옛 결정", 200, 201),
+      ],
+    });
+    const generator = fakeGenerator({
+      narrative: "[T1] a [T2] b [T7] c",
+      highlight: "h",
+    });
+    const service = new SessionStoryFoldService({
+      repository,
+      configService: { read: () => CONFIG },
+      generator,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    });
+
+    await service.foldIfNeeded("session-r");
+
+    const prompt = generator.generate.mock.calls[0]?.[0] as string;
+    // T1(100) < T7(110) < T6(120) < T5(150) < T2(200) < T4(300) < T3(900)
+    expect(prompt).toContain("T1 < T7 < T6 < T5 < T2 < T4 < T3");
+    // The batch is narrated oldest-first, which is not its label order.
+    expect(prompt.indexOf("[T7]")).toBeLessThan(prompt.indexOf("[T3]"));
+
+    // The watermark is the last row in APPEND order. Taking it from the
+    // conversation-sorted array would commit 101 and strand 102-105.
+    expect(repository.storeDigest).toHaveBeenCalledWith(
+      expect.objectContaining({ narrativeThroughEventId: 105 }),
+    );
+  });
+});
+
 function practicalSummaryFixture(): UnfoldedTurnSummary[] {
   return [
     summary(12, 1, "첫 요청", 2, 10),
