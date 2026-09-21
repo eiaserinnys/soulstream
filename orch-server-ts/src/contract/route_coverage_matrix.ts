@@ -81,6 +81,10 @@ export const routeCoverageOwners = [
 export const tsOnlyRouteKeys = [
   "WEBSOCKET /ws/node/control",
   "GET /api/nodes/{node_id}/model-presets",
+  "POST /api/nodes/{node_id}/worktrees/list",
+  "POST /api/nodes/{node_id}/worktrees/create",
+  "POST /api/nodes/{node_id}/worktrees/remove",
+  "POST /api/nodes/{node_id}/worktrees/delete-branch",
   "GET /api/admin/settings/session-review-policy",
   "PUT /api/admin/settings/session-review-policy",
   "GET /api/sessions/{session_id}/conversation-context",
