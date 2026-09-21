@@ -99,6 +99,7 @@ KNOWN_SSE_EVENT_TYPES = frozenset({
     "assistant_message", "input_request", "input_request_expired",
     "input_request_responded", "debug", "complete", "error",
     "credential_alert", "session_ended", "thinking", "text_start", "text_delta", "text_end",
+    "text_snapshot",
     "tool_start", "tool_result", "result", "turn_summary", "prompt_suggestion",
     "agent_updated", "handoff_requested", "handoff_occurred",
     "tool_approval_requested", "tool_approval_resolved",

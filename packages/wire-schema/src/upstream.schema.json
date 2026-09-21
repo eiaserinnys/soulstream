@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 135개 $defs (top-level wire 66 + supporting/SSE 69). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 137개 $defs (top-level wire 66 + supporting/SSE 71). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-persistence-only-event-types": [
     "metadata",
     "system_message"
@@ -30,6 +30,7 @@
     "text_start": "transient",
     "text_delta": "transient",
     "text_end": "transient",
+    "text_snapshot": "transient",
     "tool_start": "durable",
     "tool_result": "durable",
     "agent_updated": "durable",
@@ -499,6 +500,7 @@
             { "$ref": "#/$defs/SSEEventTextStart" },
             { "$ref": "#/$defs/SSEEventTextDelta" },
             { "$ref": "#/$defs/SSEEventTextEnd" },
+            { "$ref": "#/$defs/SSEEventTextSnapshot" },
             { "$ref": "#/$defs/SSEEventToolStart" },
             { "$ref": "#/$defs/SSEEventToolResult" },
             { "$ref": "#/$defs/SSEEventAgentUpdated" },
@@ -647,6 +649,34 @@
                   },
                   {
                     "type": "object",
+                    "required": [
+                      "kind", "owner_kind", "manifest_id", "runtime_env_identity",
+                      "registration_id", "pid", "start_identity", "execution_command_id",
+                      "lease_expires_at", "review_state", "updated_at"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "execution_acquire" },
+                      "owner_kind": {
+                        "enum": ["runner_process", "adopted_runner", "in_process"]
+                      },
+                      "manifest_id": { "type": "string", "minLength": 1 },
+                      "runtime_env_identity": { "type": "string", "minLength": 1 },
+                      "registration_id": { "type": "string", "minLength": 1 },
+                      "pid": { "type": "integer", "minimum": 1 },
+                      "start_identity": { "type": "string", "minLength": 1 },
+                      "execution_command_id": { "type": "string", "minLength": 1 },
+                      "lease_expires_at": { "type": "string", "format": "date-time" },
+                      "review_state": { "type": "string", "minLength": 1 },
+                      "expected_terminal_event_id": {
+                        "type": ["integer", "null"],
+                        "minimum": 1
+                      },
+                      "updated_at": { "type": "string", "format": "date-time" }
+                    }
+                  },
+                  {
+                    "type": "object",
                     "required": ["kind", "status", "termination_reason", "termination_detail", "review_state", "updated_at"],
                     "additionalProperties": false,
                     "properties": {
@@ -655,6 +685,7 @@
                       "termination_reason": { "type": "string", "minLength": 1 },
                       "termination_detail": { "type": ["string", "null"] },
                       "review_state": { "type": "string", "minLength": 1 },
+                      "last_assistant_text": { "type": ["string", "null"] },
                       "updated_at": { "type": "string", "format": "date-time" }
                     }
                   },
@@ -704,6 +735,33 @@
         "execution_command_id": { "type": "string", "minLength": 1 }
       }
     },
+    "EventCanonicalExecutionOwnershipProjection": {
+      "type": "object",
+      "required": [
+        "ownership_generation", "owner_kind", "manifest_id", "registration_id",
+        "pid", "start_identity", "execution_command_id", "phase", "failure_reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ownership_generation": { "type": "integer", "minimum": 1 },
+        "owner_kind": {
+          "enum": ["runner_process", "adopted_runner", "in_process"]
+        },
+        "manifest_id": { "type": "string", "minLength": 1 },
+        "runtime_env_identity": { "type": "string", "minLength": 1 },
+        "registration_id": { "type": ["string", "null"], "minLength": 1 },
+        "pid": { "type": ["integer", "null"], "minimum": 1 },
+        "start_identity": { "type": ["string", "null"], "minLength": 1 },
+        "execution_command_id": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "phase": {
+          "enum": ["reserved", "identity_proven", "active", "terminal", "failed"]
+        },
+        "failure_reason": { "type": ["string", "null"] }
+      }
+    },
     "EventSessionEffectApplication": {
       "type": "object",
       "required": ["applied", "canonical_session"],
@@ -716,6 +774,12 @@
         "canonical_execution_registration": {
           "oneOf": [
             { "$ref": "#/$defs/EventCanonicalExecutionRegistrationProjection" },
+            { "type": "null" }
+          ]
+        },
+        "canonical_execution_ownership": {
+          "oneOf": [
+            { "$ref": "#/$defs/EventCanonicalExecutionOwnershipProjection" },
             { "type": "null" }
           ]
         }
@@ -735,16 +799,38 @@
           "minItems": 1,
           "maxItems": 64,
           "items": {
-            "type": "object",
-            "required": ["source_seq", "event_id"],
-            "additionalProperties": false,
-            "properties": {
-              "source_seq": { "type": "integer", "minimum": 1 },
-              "event_id": { "type": "integer", "minimum": 1 },
-              "effect_application": {
-                "$ref": "#/$defs/EventSessionEffectApplication"
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["source_seq", "event_id"],
+                "additionalProperties": false,
+                "properties": {
+                  "source_seq": { "type": "integer", "minimum": 1 },
+                  "event_id": { "type": "integer", "minimum": 1 },
+                  "effect_application": {
+                    "$ref": "#/$defs/EventSessionEffectApplication"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["source_seq", "dead_letter"],
+                "additionalProperties": false,
+                "properties": {
+                  "source_seq": { "type": "integer", "minimum": 1 },
+                  "dead_letter": {
+                    "type": "object",
+                    "required": ["code", "reason", "rejected_at"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": { "type": "string", "minLength": 1 },
+                      "reason": { "type": "string", "minLength": 1 },
+                      "rejected_at": { "type": "string", "format": "date-time" }
+                    }
+                  }
+                }
               }
-            }
+            ]
           }
         }
       }
@@ -2098,6 +2184,54 @@
       "required": ["type"],
       "additionalProperties": true,
       "properties": { "type": { "const": "text_end" } }
+    },
+    "SSEEventTextSnapshot": {
+      "type": "object",
+      "description": "SSE: 재연결 시 현재 live text stream의 누적 snapshot.",
+      "required": ["type", "basedOnEventId", "throughLiveSeq", "streams"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "text_snapshot" },
+        "basedOnEventId": { "type": "integer", "minimum": 0 },
+        "throughLiveSeq": { "type": "integer", "minimum": 0 },
+        "streams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "streamIdentity", "text", "updatedAt", "truncated",
+              "resetRequired", "recovery"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "streamIdentity": { "type": "string", "minLength": 1 },
+              "text": { "type": ["string", "null"] },
+              "updatedAt": { "type": "string", "format": "date-time" },
+              "truncated": { "type": "boolean" },
+              "resetRequired": { "type": "boolean" },
+              "recovery": { "enum": ["none", "durable_final"] }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "text": { "type": "string" },
+                  "truncated": { "const": false },
+                  "resetRequired": { "const": false },
+                  "recovery": { "const": "none" }
+                }
+              },
+              {
+                "properties": {
+                  "text": { "type": "null" },
+                  "truncated": { "const": true },
+                  "resetRequired": { "const": true },
+                  "recovery": { "const": "durable_final" }
+                }
+              }
+            ]
+          }
+        }
+      }
     },
     "SSEEventToolStart": {
       "type": "object",

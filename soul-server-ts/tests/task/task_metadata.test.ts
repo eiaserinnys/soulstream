@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,6 +8,22 @@ import {
   extractAgentsSessionItemsFromMetadata,
   extractCallerInfoFromMetadata,
 } from "../../src/task/task_metadata.js";
+
+const callerIdentityFixture = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../../packages/wire-schema/fixtures/caller_identity_selection.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+) as {
+  cases: Array<{
+    name: string;
+    metadata: unknown;
+    callerInfo: unknown;
+  }>;
+};
 
 describe("task metadata helpers", () => {
   it("builds caller_info metadata only for non-empty caller info", () => {
@@ -47,6 +65,13 @@ describe("task metadata helpers", () => {
       { type: "caller_info", value: { source: "browser" } },
       { type: "caller_info", value: { legacy: true } },
     ])).toEqual({ legacy: true });
+  });
+
+  it("matches the shared caller identity selection fixture", () => {
+    for (const testCase of callerIdentityFixture.cases) {
+      expect(extractCallerInfoFromMetadata(testCase.metadata), testCase.name)
+        .toEqual(testCase.callerInfo);
+    }
   });
 
   it("extracts latest OpenAI Agents run state and session items", () => {

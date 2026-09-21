@@ -1,7 +1,25 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { serializeSessionRow } from "../src/runtime/live_session_serialization.js";
 import { InMemoryNodeRegistry } from "../src/node/registry.js";
+
+const callerIdentityFixture = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../packages/wire-schema/fixtures/caller_identity_selection.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+) as {
+  cases: Array<{
+    name: string;
+    metadata: unknown;
+    serializedUser: Record<string, unknown>;
+  }>;
+};
 
 describe("serializeSessionRow predecessor contract", () => {
   it("exposes the additive predecessorSessionId field", () => {
@@ -113,5 +131,24 @@ describe("serializeSessionRow predecessor contract", () => {
       agentPortraitUrl: "/api/nodes/node-a/agents/agent-a/portrait",
       backend: "codex",
     });
+  });
+
+  it("matches the shared caller identity selection fixture at the serialized boundary", () => {
+    const registry = new InMemoryNodeRegistry();
+    registry.registerNode({
+      type: "node_register",
+      node_id: "node-contract",
+      user: { name: "Node owner", hasPortrait: true },
+    });
+
+    for (const testCase of callerIdentityFixture.cases) {
+      expect(serializeSessionRow({
+        session_id: "session-" + testCase.name,
+        node_id: "node-contract",
+        metadata: testCase.metadata,
+        created_at: new Date("2026-09-22T00:00:00.000Z"),
+        updated_at: new Date("2026-09-22T00:00:00.000Z"),
+      }, { registry }), testCase.name).toMatchObject(testCase.serializedUser);
+    }
   });
 });

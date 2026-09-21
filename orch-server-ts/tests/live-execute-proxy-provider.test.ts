@@ -211,6 +211,44 @@ describe("live execute proxy provider", () => {
     await expect(resultBody(result)).resolves.toContain('"node_id":"node-hybrid"');
   });
 
+  it("closes a new execute stream when a session error update arrives", async () => {
+    const harness = createHarness();
+    const connectionId = harness.registerNode({
+      nodeId: "node-codex",
+      agents: [{ id: "codex-agent", backend: "codex" }],
+      supportedBackends: ["codex"],
+    });
+    harness.attachTransport("node-codex", connectionId, (message) => {
+      harness.receive("node-codex", connectionId, {
+        type: "session_created",
+        requestId: message.requestId,
+        agentSessionId: message.agentSessionId,
+      });
+      harness.receive("node-codex", connectionId, {
+        type: "session_updated",
+        session: {
+          agent_session_id: "generated-session",
+          status: "error",
+          terminationReason: "error_aborted",
+          terminationDetail: "Codex app-server request timed out after 30000ms: initialize",
+        },
+      });
+    });
+
+    const result = await harness.provider.executeNew({
+      prompt: "hello",
+      profile: "codex-agent",
+      caller_info: { source: "execute-proxy" },
+    });
+
+    await expect(resultBody(result)).resolves.toBe(
+      'event: init\n' +
+        'data: {"type":"init","agent_session_id":"generated-session","node_id":"node-codex"}\n\n' +
+        'event: error\n' +
+        'data: {"type":"error","code":"error_aborted","message":"Codex app-server request timed out after 30000ms: initialize"}\n\n',
+    );
+  });
+
   it("keeps a legacy model override from selecting the profile default preset", async () => {
     const requireAvailable = vi.fn();
     const harness = createHarness({

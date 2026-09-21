@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 
 import type { NodeRegistryEvent } from "../node/registry.js";
 import {
+  nestedSession,
+  sessionIdFromPayload,
+  sessionStatusFromPayload,
+} from "../node/session_cache_payload.js";
+import {
   LIVE_TEXT_SNAPSHOT_MAX_UTF8_BYTES,
   type LiveTextEventMetadata,
   type LiveTextSnapshotStream,
@@ -95,6 +100,9 @@ export class RuntimeSessionEventHub {
           nodeId: event.nodeId,
           data: event.data,
         });
+      } else if (event.type === "node_session_session_updated") {
+        const terminalError = terminalErrorEventFromSessionUpdate(event);
+        if (terminalError !== undefined) this.publish(terminalError);
       } else if (event.type === "node_session_session_deleted") {
         const sessionId = sessionIdFromEnvelope(event.data);
         if (sessionId !== undefined) {
@@ -403,6 +411,50 @@ export class RuntimeSessionEventHub {
     state.streams.delete(streamIdentity);
     if (state.streams.size === 0) this.liveTextBySession.delete(sessionKey);
   }
+}
+
+function terminalErrorEventFromSessionUpdate(
+  event: Extract<NodeRegistryEvent, { type: "node_session_session_updated" }>,
+): RuntimeSessionEvent | undefined {
+  if (sessionStatusFromPayload(event.data) !== "error") return undefined;
+
+  const agentSessionId = sessionIdFromPayload(event.data);
+  if (agentSessionId === undefined) return undefined;
+
+  const session = nestedSession(event.data);
+  const code = terminalString(event.data, session, "terminationReason", "termination_reason")
+    ?? "execution_failed";
+  const message = terminalString(
+    event.data,
+    session,
+    "terminationDetail",
+    "termination_detail",
+  ) ?? "Session execution failed";
+
+  return {
+    nodeId: event.nodeId,
+    data: {
+      agentSessionId,
+      event: { type: "error", code, message },
+    },
+  };
+}
+
+function terminalString(
+  outer: Record<string, unknown>,
+  session: Record<string, unknown>,
+  camelCaseKey: string,
+  snakeCaseKey: string,
+): string | undefined {
+  for (const value of [
+    session[camelCaseKey],
+    session[snakeCaseKey],
+    outer[camelCaseKey],
+    outer[snakeCaseKey],
+  ]) {
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
 }
 
 function textBytes(stream: MutableLiveTextStream | undefined): number {

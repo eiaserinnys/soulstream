@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 135개 $defs (top-level wire 66 + supporting/SSE 69). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 137개 $defs (top-level wire 66 + supporting/SSE 71). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -382,6 +382,7 @@ export interface SessionEventEnvelope {
     | SSEEventTextStart
     | SSEEventTextDelta
     | SSEEventTextEnd
+    | SSEEventTextSnapshot
     | SSEEventToolStart
     | SSEEventToolResult
     | SSEEventAgentUpdated
@@ -617,6 +618,37 @@ export interface SSEEventTextDelta {
  */
 export interface SSEEventTextEnd {
   type: "text_end";
+  [k: string]: unknown;
+}
+/**
+ * SSE: 재연결 시 현재 live text stream의 누적 snapshot.
+ */
+export interface SSEEventTextSnapshot {
+  type: "text_snapshot";
+  basedOnEventId: number;
+  throughLiveSeq: number;
+  streams: ((
+    | {
+        text?: string;
+        truncated?: false;
+        resetRequired?: false;
+        recovery?: "none";
+      }
+    | {
+        text?: null;
+        truncated?: true;
+        resetRequired?: true;
+        recovery?: "durable_final";
+      }
+  ) & {
+    streamIdentity: string;
+    text: string | null;
+    updatedAt: string;
+    truncated: boolean;
+    resetRequired: boolean;
+    recovery: "none" | "durable_final";
+    [k: string]: unknown;
+  })[];
   [k: string]: unknown;
 }
 /**
@@ -1171,11 +1203,26 @@ export interface EventAppendBatch {
             updated_at: string;
           }
         | {
+            kind: "execution_acquire";
+            owner_kind: "runner_process" | "adopted_runner" | "in_process";
+            manifest_id: string;
+            runtime_env_identity: string;
+            registration_id: string;
+            pid: number;
+            start_identity: string;
+            execution_command_id: string;
+            lease_expires_at: string;
+            review_state: string;
+            expected_terminal_event_id?: number | null;
+            updated_at: string;
+          }
+        | {
             kind: "terminal_transition";
             status: string;
             termination_reason: string;
             termination_detail: string | null;
             review_state: string;
+            last_assistant_text?: string | null;
             updated_at: string;
           }
         | {
@@ -1233,11 +1280,26 @@ export interface EventAppendBatch {
             updated_at: string;
           }
         | {
+            kind: "execution_acquire";
+            owner_kind: "runner_process" | "adopted_runner" | "in_process";
+            manifest_id: string;
+            runtime_env_identity: string;
+            registration_id: string;
+            pid: number;
+            start_identity: string;
+            execution_command_id: string;
+            lease_expires_at: string;
+            review_state: string;
+            expected_terminal_event_id?: number | null;
+            updated_at: string;
+          }
+        | {
             kind: "terminal_transition";
             status: string;
             termination_reason: string;
             termination_detail: string | null;
             review_state: string;
+            last_assistant_text?: string | null;
             updated_at: string;
           }
         | {
@@ -1263,16 +1325,36 @@ export interface EventAppendAck {
    * @maxItems 64
    */
   events: [
-    {
-      source_seq: number;
-      event_id: number;
-      effect_application?: EventSessionEffectApplication;
-    },
-    ...{
-      source_seq: number;
-      event_id: number;
-      effect_application?: EventSessionEffectApplication;
-    }[]
+    (
+      | {
+          source_seq: number;
+          event_id: number;
+          effect_application?: EventSessionEffectApplication;
+        }
+      | {
+          source_seq: number;
+          dead_letter: {
+            code: string;
+            reason: string;
+            rejected_at: string;
+          };
+        }
+    ),
+    ...(
+      | {
+          source_seq: number;
+          event_id: number;
+          effect_application?: EventSessionEffectApplication;
+        }
+      | {
+          source_seq: number;
+          dead_letter: {
+            code: string;
+            reason: string;
+            rejected_at: string;
+          };
+        }
+    )[]
   ];
   [k: string]: unknown;
 }
@@ -1280,6 +1362,7 @@ export interface EventSessionEffectApplication {
   applied: boolean;
   canonical_session: EventCanonicalSessionProjection;
   canonical_execution_registration?: EventCanonicalExecutionRegistrationProjection | null;
+  canonical_execution_ownership?: EventCanonicalExecutionOwnershipProjection | null;
 }
 export interface EventCanonicalSessionProjection {
   status: string;
@@ -1294,6 +1377,18 @@ export interface EventCanonicalSessionProjection {
 export interface EventCanonicalExecutionRegistrationProjection {
   registration_id: string;
   execution_command_id: string;
+}
+export interface EventCanonicalExecutionOwnershipProjection {
+  ownership_generation: number;
+  owner_kind: "runner_process" | "adopted_runner" | "in_process";
+  manifest_id: string;
+  runtime_env_identity?: string;
+  registration_id: string | null;
+  pid: number | null;
+  start_identity: string | null;
+  execution_command_id: string | null;
+  phase: "reserved" | "identity_proven" | "active" | "terminal" | "failed";
+  failure_reason: string | null;
 }
 /**
  * 노드→orch: 전체 세션 목록 dump. soul-server-ts/src/upstream/session_list_commands.ts.
@@ -2326,6 +2421,7 @@ export const EVENT_DURABILITY = {
   "text_start": "transient",
   "text_delta": "transient",
   "text_end": "transient",
+  "text_snapshot": "transient",
   "tool_start": "durable",
   "tool_result": "durable",
   "agent_updated": "durable",
