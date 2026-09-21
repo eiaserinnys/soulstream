@@ -11,20 +11,22 @@
  * SQL function and the `dedupe_key` unique index. There is no direct INSERT.
  *
  * Usage (from orch-server-ts/):
- *   DATABASE_URL=... npx tsx scripts/backfill-turn-summaries.ts            # dry-run inventory
+ *   DATABASE_URL=... npx tsx scripts/backfill-turn-summaries.ts
  *   DATABASE_URL=... npx tsx scripts/backfill-turn-summaries.ts --apply --session <id>
- *   DATABASE_URL=... npx tsx scripts/backfill-turn-summaries.ts --apply --batch 25
+ *   DATABASE_URL=... npx tsx scripts/backfill-turn-summaries.ts --apply --max-turns 60
  *
- * The run is foreground and bounded: it processes at most `--batch` sessions
- * per invocation and records finished sessions in a state file so the next
- * invocation resumes. Re-running is always safe -- `hasSummary` plus the
- * dedupe key make every job idempotent.
+ * The run is foreground and bounded: it stops once `--max-turns` turns have
+ * been handed to the pipeline, and records per-session progress in a state file
+ * so the next invocation resumes. Re-running is always safe -- `hasSummary`
+ * plus the dedupe key make every job idempotent, and an interrupted run simply
+ * leaves its sessions pending.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import postgres from "postgres";
+import { parse as parseYaml } from "yaml";
 
 import { CodexExecTurnSummarizer } from
   "../src/turn-summary/codex_exec_turn_summarizer.js";
@@ -48,8 +50,13 @@ import type {
 //   hi = the moment the restored overlay took effect (live coverage resumes)
 const DEFAULT_FROM = "2026-09-15T14:24:10.388Z";
 const DEFAULT_TO = "2026-09-21T00:30:00.000Z";
-const DEFAULT_BATCH_SESSIONS = 25;
+const DEFAULT_MAX_TURNS = 60;
 const DEFAULT_CONCURRENCY = 1;
+// A session that still has unwritten turns after this many invocations is
+// reported instead of retried forever. Turns are legitimately skipped for
+// agent-origin, excluded folders and non-summarizable sessions, so "fewer
+// summaries than turns" is not by itself a failure.
+const MAX_SESSION_ATTEMPTS = 2;
 
 interface CompleteRow {
   session_id: string;
@@ -65,14 +72,23 @@ interface RunState {
   from: string;
   to: string;
   finishedSessionIds: string[];
+  attempts: Record<string, number>;
+  unresolved: Array<{
+    sessionId: string;
+    turns: number;
+    written: number;
+    attempts: number;
+  }>;
 }
 
 const apply = process.argv.includes("--apply");
+const includeOutOfOrder = process.argv.includes("--include-out-of-order");
 const onlySession = readOption("--session");
 const from = readOption("--from") ?? DEFAULT_FROM;
 const to = readOption("--to") ?? DEFAULT_TO;
-const batchSessions = readIntOption("--batch") ?? DEFAULT_BATCH_SESSIONS;
+const maxTurns = readIntOption("--max-turns") ?? DEFAULT_MAX_TURNS;
 const concurrency = readIntOption("--concurrency") ?? DEFAULT_CONCURRENCY;
+const agentsPath = readOption("--agents");
 const statePath = resolve(
   readOption("--state") ?? ".local/turn-summary-backfill-state.json",
 );
@@ -83,6 +99,10 @@ const sqlResolver: LiveDbSqlResolver = {
   resolveSql: async () => sql as unknown as LivePostgresSql,
   close: async () => await sql.end({ timeout: 5 }),
 };
+// Sessions whose jobs raised inside the pipeline. The pipeline swallows job
+// errors so `drain()` always resolves; without this the state file would mark a
+// failed session finished and hide the failure forever.
+const erroredSessionIds = new Set<string>();
 
 try {
   // Same relative location the orchestrator resolves at runtime
@@ -103,6 +123,14 @@ try {
       "turn summary pipeline is disabled by config; refusing to backfill",
     );
   }
+  if (baseConfig.provider !== "codex") {
+    // The non-codex provider needs an API key this process does not load, and
+    // the resulting failure is returned without a log line, which would look
+    // like a successful zero-output run.
+    throw new Error(
+      `backfill supports the codex provider only; config says ${baseConfig.provider}`,
+    );
+  }
   // The CLI runs its own Codex spawn limiter, so it must not claim the whole
   // live budget on top of the orchestrator's.
   const configService = {
@@ -112,12 +140,12 @@ try {
     }),
   };
 
-  const plans = await buildInventory();
+  const { plans, outOfOrder } = await buildInventory();
   const state = loadState();
-  const pending = plans.filter(
-    (plan) => !state.finishedSessionIds.includes(plan.sessionId),
+  const eligible = plans.filter((plan) =>
+    !state.finishedSessionIds.includes(plan.sessionId)
   );
-  const batch = pending.slice(0, batchSessions);
+  const batch = takeTurnBudget(eligible, maxTurns);
 
   log("inventory", {
     mode: apply ? "apply" : "dry-run",
@@ -125,70 +153,87 @@ try {
     to,
     ...(onlySession === undefined ? {} : { session: onlySession }),
     model: baseConfig.model,
+    provider: baseConfig.provider,
     concurrency,
+    maxTurns,
     sessionsTotal: plans.length,
-    completeEventsTotal: plans.reduce(
-      (sum, plan) => sum + plan.completeEventIds.length,
-      0,
-    ),
-    sessionsAlreadyFinished: plans.length - pending.length,
+    turnsTotal: countTurns(plans),
+    sessionsAlreadyFinished: plans.length - eligible.length,
     sessionsThisBatch: batch.length,
-    completeEventsThisBatch: batch.reduce(
-      (sum, plan) => sum + plan.completeEventIds.length,
-      0,
-    ),
+    turnsThisBatch: countTurns(batch),
+    turnsRemainingAfterBatch: countTurns(eligible) - countTurns(batch),
+    outOfOrderSessionsDeferred: outOfOrder.length,
+    outOfOrderDetail: outOfOrder,
   });
 
   if (!apply) {
-    log("dry_run_complete", {
-      note: "re-run with --apply to write summaries",
-    });
+    log("dry_run_complete", { note: "re-run with --apply to write summaries" });
   } else if (batch.length === 0) {
     log("nothing_to_do", { note: "every session in range is finished" });
   } else {
-    const before = await countSummaries(batch.map((plan) => plan.sessionId));
+    const sessionIds = batch.map((plan) => plan.sessionId);
+    // Watermark per session so newly written rows are counted, not pre-existing
+    // ones and not summaries the live orchestrator writes during the run.
+    const watermark = await maxSummaryEventId(sessionIds);
     const pipeline = await createPipeline(configService);
     await runBatch(pipeline, batch);
-    // Success is measured by re-reading the database, not by counting jobs we
-    // believe we enqueued.
-    const after = await countSummaries(batch.map((plan) => plan.sessionId));
-    const perSession = batch.map((plan) => ({
-      sessionId: plan.sessionId,
-      completeEvents: plan.completeEventIds.length,
-      summariesBefore: before.get(plan.sessionId) ?? 0,
-      summariesAfter: after.get(plan.sessionId) ?? 0,
-      written:
-        (after.get(plan.sessionId) ?? 0) - (before.get(plan.sessionId) ?? 0),
-    }));
-    const written = perSession.reduce((sum, row) => sum + row.written, 0);
-    const unwritten = perSession
-      .filter((row) => row.written < row.completeEvents)
-      .map((row) => ({
-        sessionId: row.sessionId,
-        completeEvents: row.completeEvents,
-        written: row.written,
-      }));
+    const written = await countSummariesWritten(batch, watermark);
+
+    const results = batch.map((plan) => {
+      const turns = plan.completeEventIds.length;
+      const rows = written.get(plan.sessionId) ?? 0;
+      const attempts = (state.attempts[plan.sessionId] ?? 0) + 1;
+      return {
+        sessionId: plan.sessionId,
+        turns,
+        written: rows,
+        attempts,
+        errored: erroredSessionIds.has(plan.sessionId),
+        complete: rows >= turns,
+      };
+    });
+
+    const nextAttempts = { ...state.attempts };
+    const finished: string[] = [];
+    const unresolved: RunState["unresolved"] = [];
+    for (const result of results) {
+      nextAttempts[result.sessionId] = result.attempts;
+      if (result.complete && !result.errored) {
+        finished.push(result.sessionId);
+        continue;
+      }
+      if (result.attempts >= MAX_SESSION_ATTEMPTS) {
+        finished.push(result.sessionId);
+        unresolved.push({
+          sessionId: result.sessionId,
+          turns: result.turns,
+          written: result.written,
+          attempts: result.attempts,
+        });
+      }
+    }
 
     saveState({
-      ...state,
-      finishedSessionIds: [
-        ...state.finishedSessionIds,
-        ...batch.map((plan) => plan.sessionId),
-      ],
+      from,
+      to,
+      finishedSessionIds: [...state.finishedSessionIds, ...finished],
+      attempts: nextAttempts,
+      unresolved: [...state.unresolved, ...unresolved],
     });
 
     log("batch_complete", {
       sessions: batch.length,
-      completeEvents: batch.reduce(
-        (sum, plan) => sum + plan.completeEventIds.length,
-        0,
-      ),
-      summariesWritten: written,
+      turns: countTurns(batch),
+      summariesWritten: results.reduce((sum, row) => sum + row.written, 0),
+      sessionsFullyWritten: results.filter((row) => row.complete).length,
+      sessionsWithPipelineErrors: results.filter((row) => row.errored).length,
       // Not an error on its own: eligibility legitimately skips agent-origin
       // turns, excluded folders and non-summarizable sessions.
-      sessionsWithFewerSummariesThanTurns: unwritten.length,
-      detail: unwritten.slice(0, 20),
-      sessionsRemaining: pending.length - batch.length,
+      sessionsWithFewerSummariesThanTurns:
+        results.filter((row) => !row.complete).length,
+      retiredUnresolved: unresolved,
+      sessionsRemaining: eligible.length - finished.length,
+      turnsRemaining: countTurns(eligible) - countTurns(batch),
       statePath,
     });
   }
@@ -196,7 +241,10 @@ try {
   await sqlResolver.close();
 }
 
-async function buildInventory(): Promise<SessionPlan[]> {
+async function buildInventory(): Promise<{
+  plans: SessionPlan[];
+  outOfOrder: Array<{ sessionId: string; turns: number; reason: string }>;
+}> {
   const rows = onlySession === undefined
     ? await sql<CompleteRow[]>`
         SELECT e.session_id, e.id
@@ -221,13 +269,57 @@ async function buildInventory(): Promise<SessionPlan[]> {
     list.push(Number(row.id));
     bySession.set(row.session_id, list);
   }
-  return [...bySession.entries()].map(([sessionId, completeEventIds]) => ({
+  const all = [...bySession.entries()].map(([sessionId, completeEventIds]) => ({
     sessionId,
     // Ascending complete-event order keeps each session's summaries written in
     // conversation order, so both the summary event ids and the history window
     // stay monotonic.
     completeEventIds: completeEventIds.sort((a, b) => a - b),
   }));
+
+  // `event_append` allocates MAX(id)+1 per session, so a backfilled summary
+  // always lands at the session tail. If a session already holds a summary
+  // positioned after the gap started, backfilling it would interleave older
+  // turns behind newer ones, and `turn_number` (ROW_NUMBER over id ASC) plus
+  // the fold order would narrate the session out of sequence. Those sessions
+  // are deferred for a deliberate decision rather than silently scrambled.
+  const existing = await summariesAtOrAfter(
+    all.map((plan) => ({
+      sessionId: plan.sessionId,
+      minCompleteEventId: plan.completeEventIds[0] ?? 0,
+    })),
+  );
+  const outOfOrder: Array<{ sessionId: string; turns: number; reason: string }> = [];
+  const plans: SessionPlan[] = [];
+  for (const plan of all) {
+    const laterSummaries = existing.get(plan.sessionId) ?? 0;
+    if (laterSummaries > 0 && !includeOutOfOrder) {
+      outOfOrder.push({
+        sessionId: plan.sessionId,
+        turns: plan.completeEventIds.length,
+        reason:
+          `${laterSummaries} summary row(s) already sit after the gap; ` +
+          "backfilling would interleave older turns behind newer ones",
+      });
+      continue;
+    }
+    plans.push(plan);
+  }
+  return { plans, outOfOrder };
+}
+
+function takeTurnBudget(plans: SessionPlan[], budget: number): SessionPlan[] {
+  const batch: SessionPlan[] = [];
+  let turns = 0;
+  for (const plan of plans) {
+    // Always admit the first session so a session larger than the budget still
+    // makes progress instead of stalling the run forever.
+    if (batch.length > 0 && turns + plan.completeEventIds.length > budget) break;
+    batch.push(plan);
+    turns += plan.completeEventIds.length;
+    if (turns >= budget) break;
+  }
+  return batch;
 }
 
 async function createPipeline(
@@ -247,7 +339,14 @@ async function createPipeline(
     codex: codexSummarizer,
     info: (message) => log("provider", { message }),
   });
-  const agentNames = await loadAgentNames();
+  const agentNames = loadAgentNames();
+  if (agentNames.size === 0) {
+    log("agent_names_unavailable", {
+      note:
+        "delegated-turn speakers fall back to the raw agent id; pass --agents " +
+        "<agents.yaml> to match the live orchestrator's labels",
+    });
+  }
   return new TurnSummaryPipeline({
     repository: new TurnSummaryRepository(sqlResolver, {
       resolveAgentName: ({ agentId }) => agentNames.get(agentId),
@@ -259,7 +358,14 @@ async function createPipeline(
     eventHub: { publish: () => undefined },
     // No storyFolder: folding stays with the running orchestrator's sweep.
     logger: {
-      warn: (...args: unknown[]) => log("pipeline_warning", { args }),
+      debug: (...args: unknown[]) => log("pipeline_debug", describe(args)),
+      info: (...args: unknown[]) => log("pipeline_info", describe(args)),
+      warn: (...args: unknown[]) => {
+        const fields = describe(args);
+        const sessionId = fields.sessionId;
+        if (typeof sessionId === "string") erroredSessionIds.add(sessionId);
+        log("pipeline_warning", fields);
+      },
     },
   });
 }
@@ -301,34 +407,107 @@ function completeEvent(
   } as unknown as NodeRegistryEvent;
 }
 
-async function countSummaries(
+async function maxSummaryEventId(
   sessionIds: string[],
 ): Promise<Map<string, number>> {
   if (sessionIds.length === 0) return new Map();
-  const rows = await sql<Array<{ session_id: string; n: number | string }>>`
-    SELECT session_id, COUNT(*)::integer AS n
+  const rows = await sql<Array<{ session_id: string; max_id: number | string }>>`
+    SELECT session_id, MAX(id)::bigint AS max_id
     FROM events
     WHERE event_type = 'turn_summary'
       AND session_id = ANY(${sessionIds}::text[])
     GROUP BY session_id
   `;
+  const watermark = new Map<string, number>(
+    sessionIds.map((sessionId) => [sessionId, 0]),
+  );
+  for (const row of rows) watermark.set(row.session_id, Number(row.max_id));
+  return watermark;
+}
+
+// Counts only rows this run is responsible for. A session can be resumed while
+// the backfill is running -- observed in production on 2026-09-21, where the
+// live orchestrator summarised a brand new turn in the same session seconds
+// after the backfill wrote its own. Rows are therefore bounded twice: above the
+// pre-run summary watermark (excludes rows that already existed) and at or
+// below the last planned turn (excludes concurrent live turns, whose events sit
+// past the end of the gap window).
+async function countSummariesWritten(
+  plans: SessionPlan[],
+  watermark: Map<string, number>,
+): Promise<Map<string, number>> {
+  if (plans.length === 0) return new Map();
+  const sessionIds = plans.map((plan) => plan.sessionId);
+  const floors = plans.map((plan) => watermark.get(plan.sessionId) ?? 0);
+  const ceilings = plans.map((plan) =>
+    plan.completeEventIds[plan.completeEventIds.length - 1] ?? 0
+  );
+  const rows = await sql<Array<{ session_id: string; n: number | string }>>`
+    SELECT e.session_id, COUNT(*)::integer AS n
+    FROM events e
+    JOIN (
+      SELECT UNNEST(${sessionIds}::text[]) AS session_id,
+             UNNEST(${floors}::bigint[]) AS floor_id,
+             UNNEST(${ceilings}::bigint[]) AS ceiling_event_id
+    ) w ON w.session_id = e.session_id
+    WHERE e.event_type = 'turn_summary'
+      AND e.id > w.floor_id
+      AND COALESCE((e.payload->>'final_response_event_id')::bigint, e.id)
+          <= w.ceiling_event_id
+    GROUP BY e.session_id
+  `;
   return new Map(rows.map((row) => [row.session_id, Number(row.n)]));
 }
 
-async function loadAgentNames(): Promise<Map<string, string>> {
-  const rows = await sql<Array<{ agent_id: string; name: string }>>`
-    SELECT agent_id, name FROM agent_profiles
+async function summariesAtOrAfter(
+  bounds: Array<{ sessionId: string; minCompleteEventId: number }>,
+): Promise<Map<string, number>> {
+  if (bounds.length === 0) return new Map();
+  const rows = await sql<Array<{ session_id: string; n: number | string }>>`
+    SELECT e.session_id, COUNT(*)::integer AS n
+    FROM events e
+    JOIN (
+      SELECT UNNEST(${bounds.map((bound) => bound.sessionId)}::text[]) AS session_id,
+             UNNEST(${bounds.map((bound) => bound.minCompleteEventId)}::bigint[]) AS floor_id
+    ) w ON w.session_id = e.session_id
+    WHERE e.event_type = 'turn_summary'
+      -- Judged by the turn a summary describes, not by the row's own event id.
+      -- Every backfilled row lands at the session tail, so an id test would
+      -- flag a session against its own completed backfill.
+      AND COALESCE((e.payload->>'turn_start_event_id')::bigint, e.id) > w.floor_id
+    GROUP BY e.session_id
   `;
-  return new Map(
-    rows
-      .filter((row) => typeof row.name === "string" && row.name.trim() !== "")
-      .map((row) => [row.agent_id, row.name.trim()]),
-  );
+  return new Map(rows.map((row) => [row.session_id, Number(row.n)]));
+}
+
+function loadAgentNames(): Map<string, string> {
+  const names = new Map<string, string>();
+  if (agentsPath === undefined || !existsSync(agentsPath)) return names;
+  const parsed = parseYaml(readFileSync(agentsPath, "utf8")) as {
+    agents?: Array<{
+      id?: unknown;
+      name?: unknown;
+      aliases?: Array<{ id?: unknown }>;
+    }>;
+  };
+  for (const agent of parsed.agents ?? []) {
+    const name = typeof agent.name === "string" ? agent.name.trim() : "";
+    if (name === "") continue;
+    if (typeof agent.id === "string") names.set(agent.id, name);
+    for (const alias of agent.aliases ?? []) {
+      if (typeof alias.id === "string") names.set(alias.id, name);
+    }
+  }
+  return names;
+}
+
+function countTurns(plans: SessionPlan[]): number {
+  return plans.reduce((sum, plan) => sum + plan.completeEventIds.length, 0);
 }
 
 function loadState(): RunState {
   if (!existsSync(statePath)) {
-    return { from, to, finishedSessionIds: [] };
+    return { from, to, finishedSessionIds: [], attempts: {}, unresolved: [] };
   }
   const parsed = JSON.parse(readFileSync(statePath, "utf8")) as RunState;
   if (parsed.from !== from || parsed.to !== to) {
@@ -337,12 +516,36 @@ function loadState(): RunState {
         "pass --state with a fresh path or reuse the original window",
     );
   }
-  return parsed;
+  return {
+    ...parsed,
+    attempts: parsed.attempts ?? {},
+    unresolved: parsed.unresolved ?? [],
+  };
 }
 
 function saveState(state: RunState): void {
   mkdirSync(dirname(statePath), { recursive: true });
   writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
+// pino-style loggers are called as (fields, message). Errors are carried on
+// `err` and their message/stack are non-enumerable, so JSON.stringify would
+// render them as `{}`.
+function describe(args: unknown[]): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  for (const arg of args) {
+    if (typeof arg === "string") {
+      fields.message = arg;
+      continue;
+    }
+    if (arg === null || typeof arg !== "object") continue;
+    for (const [key, value] of Object.entries(arg)) {
+      fields[key] = value instanceof Error
+        ? { name: value.name, message: value.message, stack: value.stack }
+        : value;
+    }
+  }
+  return fields;
 }
 
 function log(event: string, fields: Record<string, unknown>): void {

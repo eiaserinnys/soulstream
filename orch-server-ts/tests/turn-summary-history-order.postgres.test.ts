@@ -72,6 +72,35 @@ describePostgres("turn summary history ordering after backfill", () => {
       repository.loadPreviousSummaries(SESSION, 5, 10),
     ).resolves.toEqual([]);
   });
+
+  it("falls back to the event id for a legacy summary without a turn marker", async () => {
+    // Pre-contract rows carry no turn_start_event_id. They must still sort and
+    // filter, using their own event id as the turn position.
+    await sql`
+      INSERT INTO events (session_id, id, event_type, payload, created_at)
+      VALUES (
+        ${SESSION}, 25, 'turn_summary',
+        ${sql.json({ type: "turn_summary", content: "legacy-25" })}::jsonb,
+        NOW()
+      )
+    `;
+    try {
+      await expect(
+        repository.loadPreviousSummaries(SESSION, 10, Number.MAX_SAFE_INTEGER),
+      ).resolves.toEqual([
+        "turn-10",
+        "turn-20",
+        "legacy-25",
+        "turn-30",
+        "turn-40-live",
+      ]);
+      await expect(
+        repository.loadPreviousSummaries(SESSION, 10, 25),
+      ).resolves.toEqual(["turn-10", "turn-20"]);
+    } finally {
+      await sql`DELETE FROM events WHERE session_id = ${SESSION} AND id = 25`;
+    }
+  });
 });
 
 async function seed(sql: ReturnType<typeof postgres>): Promise<void> {
