@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
-import type { BoardContainerRef, CatalogBoardItem, CatalogState, SessionSummary } from "../shared/types";
+import type { BoardContainerRef, CatalogBoardItem, SessionSummary } from "../shared/types";
 import { useTaskStore, type TaskSnapshot } from "../stores/task-store";
 import { FolderDialog } from "../components/FolderDialog";
 import { runGuardedLoadMore } from "../components/load-more-guard";
@@ -35,6 +35,10 @@ import {
 } from "./board-frames";
 import { isBoardTileTarget } from "./board-workspace-dom";
 import { getFolderBreadcrumbs } from "./board-workspace-helpers";
+import {
+  folderBoardContainer,
+  resolveEffectiveBoardCatalog,
+} from "./board-catalog-resolution";
 import { BoardWorkspaceHeader } from "./BoardWorkspaceHeader";
 import { declutterBoardItems } from "./board-declutter";
 import {
@@ -63,19 +67,6 @@ const EMPTY_SESSIONS: SessionSummary[] = [];
 
 function boardContainerKey(container: BoardContainerRef | null): string | null {
   return container ? `${container.kind}:${container.id}` : null;
-}
-
-function folderBoardContainer(folderId: string | null): BoardContainerRef | null {
-  return folderId ? { kind: "folder", id: folderId } : null;
-}
-
-function boardItemBelongsToContainer(
-  item: CatalogBoardItem,
-  container: BoardContainerRef,
-): boolean {
-  const itemContainerKind = item.containerKind ?? "folder";
-  const itemContainerId = item.containerId ?? item.folderId;
-  return itemContainerKind === container.kind && itemContainerId === container.id;
 }
 
 function boardItemsUrl(container: BoardContainerRef): string {
@@ -110,61 +101,6 @@ function createBoardMoveIdempotencyKey(
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `board-item-move:${boardItemId}:${target.kind}:${target.id}:${randomPart}`;
-}
-
-export function resolveEffectiveBoardCatalog(params: {
-  catalog: CatalogState | null;
-  selectedFolderId: string | null;
-  boardContainer?: BoardContainerRef | null;
-  yjsBoardItemsForSelectedFolder: CatalogBoardItem[] | null;
-  isYjsLoading: boolean;
-  hasYjsSynced: boolean;
-  assetSignedUrls: Record<string, string>;
-}): CatalogState | null {
-  const {
-    catalog,
-    selectedFolderId,
-    boardContainer = folderBoardContainer(selectedFolderId),
-    yjsBoardItemsForSelectedFolder,
-    isYjsLoading,
-    hasYjsSynced,
-    assetSignedUrls,
-  } = params;
-  if (!catalog || !yjsBoardItemsForSelectedFolder || isYjsLoading || !hasYjsSynced) {
-    if (!catalog?.boardItems || !boardContainer || boardContainer.kind === "folder") return catalog;
-    return {
-      ...catalog,
-      boardItems: filterTaskBoardSpatialItems(
-        catalog.boardItems.filter((item) => boardItemBelongsToContainer(item, boardContainer)),
-      ),
-    };
-  }
-  const resolvedYjsBoardItems = (
-    boardContainer?.kind === "task"
-      ? filterTaskBoardSpatialItems(yjsBoardItemsForSelectedFolder)
-      : yjsBoardItemsForSelectedFolder
-  ).map((item) => {
-    if (item.itemType !== "asset") return item;
-    const signedUrl = assetSignedUrls[item.id];
-    if (!signedUrl) return item;
-    return {
-      ...item,
-      metadata: {
-        ...(item.metadata ?? {}),
-        signedUrl,
-      },
-    };
-  });
-  if (boardContainer?.kind === "task") {
-    return { ...catalog, boardItems: resolvedYjsBoardItems };
-  }
-  const otherFolderBoardItems = (catalog.boardItems ?? []).filter((item) =>
-    boardContainer ? !boardItemBelongsToContainer(item, boardContainer) : item.folderId !== selectedFolderId
-  );
-  return {
-    ...catalog,
-    boardItems: [...otherFolderBoardItems, ...resolvedYjsBoardItems],
-  };
 }
 
 function boardWorkspaceItemToCatalogBoardItem(
