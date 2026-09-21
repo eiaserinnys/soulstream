@@ -14,7 +14,6 @@ const READ_COMPATIBILITY_BOUNDARIES = [
   "orch-server-ts/src/board-yjs/board_container_kind_compat.ts",
   "orch-server-ts/src/board-yjs/board_yjs_document.ts",
   "soul-server-ts/src/collaboration/board_container_kind_compat.ts",
-  "soul-server-ts/src/collaboration/board_yjs_model.ts",
   "packages/db-schema/sql/migrations/042_runbook_to_task.sql",
   "packages/db-schema/sql/schema.sql",
 ] as const;

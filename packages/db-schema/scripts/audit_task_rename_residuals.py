@@ -43,9 +43,6 @@ PROTECTED_READ_COMPATIBILITY_FILES = {
     "soul-server-ts/src/collaboration/board_container_kind_compat.ts": {
         'value === "runbook"',
     },
-    "soul-server-ts/src/collaboration/board_yjs_model.ts": {
-        'item_type: BoardYjsItemValue["item_type"] | "runbook"',
-    },
     "packages/db-schema/sql/migrations/042_runbook_to_task.sql": {
         "CREATE OR REPLACE VIEW runbooks",
         "CREATE OR REPLACE VIEW runbook_operations",
@@ -136,8 +133,6 @@ ALLOWLIST = {
     "orch-server-ts/src/board-yjs/board_yjs_host_operations.ts": "legacy host payload reader",
     "orch-server-ts/tests/board-yjs-model-parity.test.ts": "legacy Y.Doc reader test",
     "soul-server-ts/src/collaboration/board_container_kind_compat.ts": "legacy container reader",
-    "soul-server-ts/src/collaboration/board_yjs_model.ts": "legacy Y.Doc item reader",
-    "soul-server-ts/tests/collaboration/board_yjs_model.test.ts": "legacy Y.Doc reader test",
 }
 
 
