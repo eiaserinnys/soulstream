@@ -215,7 +215,10 @@ export class TaskInterventionRoute {
         && !request.targetContentReceiptAbsent;
       let result: AddInterventionResult;
       if (isRunning) {
-        result = heldHumanRetry
+        // A runtime follow-up needs a turn-starting user input bearing its
+        // delivery UUID. Tool-boundary injection instead becomes an SDK
+        // attachment, which leaves the durable row without a transcript receipt.
+        result = heldHumanRetry || message.deliveryIntent === "runtime_followup"
           ? await this.deps.runningInterventionTransition.queueOnly(task, message)
           : await this.deps.runningInterventionTransition.deliver(task, message, {
               queueIfUndelivered: request.queueIfRunning ?? true,

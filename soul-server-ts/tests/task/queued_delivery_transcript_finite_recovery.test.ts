@@ -55,6 +55,79 @@ describe("queued transcript finite restart recovery", () => {
     await harness.startup.stop();
   });
 
+  it("dead-letters every expired absent follow-up before redelivery and skips them after restart", async () => {
+    const deliveryIds = ["delivery-expired-a", "delivery-expired-b"];
+    const rows = new Map(deliveryIds.map((deliveryId) => [deliveryId, {
+      delivery_id: deliveryId,
+      state: "claimed",
+      aggregate_state: "pending",
+      attempt_token: "startup-worker",
+      caller_turn_id: null,
+      target_receipt_id: null,
+      delivered_at: null,
+    } as SessionDeliveryRow]));
+    const claimQueuedAfterNodeRestart = vi.fn()
+      .mockResolvedValueOnce([...rows.values()])
+      .mockResolvedValueOnce([]);
+    const retryDeliveryAttempt = vi.fn(async (deliveryId: string) => {
+      const row = rows.get(deliveryId)!;
+      const terminal = {
+        ...row,
+        state: "uncertain",
+        aggregate_state: "dead_letter",
+        attempt_token: null,
+      } as SessionDeliveryRow;
+      rows.set(deliveryId, terminal);
+      return terminal;
+    });
+    const redeliverContent = vi.fn(async () => undefined);
+    const recovery = new QueuedDeliveryTranscriptRecovery({
+      deliveryRepository: {
+        get: vi.fn(async (deliveryId: string) => rows.get(deliveryId) ?? null),
+        markConsumed: vi.fn(async () => null),
+        markUncertain: vi.fn(async () => null),
+        retryDeliveryAttempt,
+      },
+      recoveryRepository: {
+        claimQueuedAfterNodeRestart,
+        markDeliveredFromTranscript: vi.fn(async () => null),
+      },
+      transcriptReceipt: {
+        inspect: vi.fn(async (row: SessionDeliveryRow) => ({
+          kind: "absent" as const,
+          inputUuid: buildDeliveryInputUuid(row.delivery_id),
+        })),
+      },
+      redeliverContent,
+      logger: { warn: vi.fn() },
+    }, "startup-worker");
+
+    await expect(recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 2,
+      settled: 2,
+    });
+    await expect(recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 0,
+      settled: 0,
+    });
+
+    expect(retryDeliveryAttempt).toHaveBeenNthCalledWith(
+      1,
+      "delivery-expired-a",
+      "startup-worker",
+      "queued_transcript_redelivery_expired",
+      0,
+    );
+    expect(retryDeliveryAttempt).toHaveBeenNthCalledWith(
+      2,
+      "delivery-expired-b",
+      "startup-worker",
+      "queued_transcript_redelivery_expired",
+      0,
+    );
+    expect(redeliverContent).not.toHaveBeenCalled();
+  });
+
   it("does not replay a live-consumed delivery when restart lands before turn terminal", async () => {
     const deliveryId = "delivery-live-consumed";
     let state: "queued" | "claimed" | "consumed" = "queued";

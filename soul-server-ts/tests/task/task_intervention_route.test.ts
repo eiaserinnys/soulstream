@@ -838,7 +838,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
   });
 
-  it("generating 중 완료도 running deliver로 즉시 전달한다", async () => {
+  it("running runtime follow-up keeps its durable next-turn boundary", async () => {
     const deliveryId = "55555555-5555-4555-8555-555555555555";
     const admission = admitted(deliveryId, "runtime_followup");
     const gate = {
@@ -881,15 +881,18 @@ describe("TaskInterventionRoute.addIntervention", () => {
       "queued",
     );
     expect(
-      vi.mocked(runningInterventionTransition.deliver).mock.invocationCallOrder[0],
+      vi.mocked(runningInterventionTransition.queueOnly).mock.invocationCallOrder[0],
     ).toBeLessThan(
       vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
     );
     expect(vi.mocked(gate.recordResult).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
     );
-    expect(runningInterventionTransition.deliver).toHaveBeenCalledTimes(1);
-    expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(runningInterventionTransition.queueOnly).toHaveBeenCalledWith(
+      task,
+      expect.objectContaining({ deliveryId, deliveryIntent: "runtime_followup" }),
+    );
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 
@@ -955,7 +958,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       runningInterventionTransition,
       sessionNotificationPublisher,
     } = makeSubject([task], gate);
-    vi.mocked(runningInterventionTransition.deliver).mockRejectedValueOnce(
+    vi.mocked(runningInterventionTransition.queueOnly).mockRejectedValueOnce(
       new Error("queue unavailable"),
     );
 
