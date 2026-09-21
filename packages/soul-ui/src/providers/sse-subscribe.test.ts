@@ -26,6 +26,7 @@ import {
  * 외부에서 해당 인스턴스의 onerror / listener를 직접 호출해야 한다.
  */
 const instances: MockEventSource[] = [];
+let onlineEvents: EventTarget;
 
 class MockEventSource {
   url: string;
@@ -82,13 +83,16 @@ class MockEventSource {
 
 beforeEach(() => {
   instances.length = 0;
+  onlineEvents = new EventTarget();
   (globalThis as unknown as { EventSource: typeof MockEventSource }).EventSource =
     MockEventSource;
+  vi.stubGlobal("window", onlineEvents);
   vi.useFakeTimers();
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 // EventSource mock이 먼저 적용된 뒤 로드되도록 동적 import를 사용한다.
@@ -344,6 +348,30 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
     expect(instances).toHaveLength(2); // 아직 생성 안됨
     vi.advanceTimersByTime(1);
     expect(instances).toHaveLength(3); // 6000ms 경과 → 생성
+
+    unsubscribe();
+  });
+
+  it("20회 재연결 예산 소진 뒤 online 전환은 연결 하나만 다시 연다", async () => {
+    const createSSESubscribe = await loadModule();
+    const unsubscribe = createSSESubscribe({
+      baseUrl: "/api/sessions/abc/events",
+      onEvent: vi.fn(),
+    });
+
+    for (let attempt = 0; attempt <= 20; attempt += 1) {
+      instances.at(-1)?.emitError();
+      if (attempt < 20) vi.advanceTimersByTime(30000);
+    }
+
+    expect(instances).toHaveLength(21);
+    expect(instances[20].closed).toBe(true);
+
+    onlineEvents.dispatchEvent(new Event("online"));
+    onlineEvents.dispatchEvent(new Event("online"));
+
+    expect(instances).toHaveLength(22);
+    expect(instances[21].closed).toBe(false);
 
     unsubscribe();
   });

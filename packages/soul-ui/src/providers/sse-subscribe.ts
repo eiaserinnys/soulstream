@@ -68,6 +68,9 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
   let eventSource: EventSource | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectAttempt = 0;
+  let disposed = false;
+  let waitingForOnline = false;
+  const onlineTarget = typeof window === "undefined" ? undefined : window;
 
   const maxReconnectAttempts = 20;
   const reconnectIntervalMs = 3000;
@@ -77,7 +80,21 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
     ? (...args: unknown[]) => console.log(debugPrefix, ...args)
     : () => {};
 
+  const stopWaitingForOnline = () => {
+    if (!waitingForOnline) return;
+    waitingForOnline = false;
+    onlineTarget?.removeEventListener("online", resumeAfterOnline);
+  };
+
+  const resumeAfterOnline = () => {
+    if (disposed || !waitingForOnline) return;
+    stopWaitingForOnline();
+    reconnectAttempt = 0;
+    connect();
+  };
+
   const connect = () => {
+    if (disposed || eventSource || reconnectTimer) return;
     onStatusChange?.("connecting");
 
     const params = new URLSearchParams();
@@ -124,6 +141,7 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
         log("server 'error' event (MessageEvent):", e.data);
         return;
       }
+      if (eventSource !== es) return;
 
       log(`connection error → closing. attempt=${reconnectAttempt}/${maxReconnectAttempts}`);
       es.close();
@@ -143,6 +161,10 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
         }, delay);
       } else {
         log("max reconnect attempts reached — giving up");
+        if (!waitingForOnline && onlineTarget) {
+          waitingForOnline = true;
+          onlineTarget.addEventListener("online", resumeAfterOnline);
+        }
       }
     };
   };
@@ -150,6 +172,8 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
   connect();
 
   return () => {
+    disposed = true;
+    stopWaitingForOnline();
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
