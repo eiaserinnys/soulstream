@@ -82,12 +82,17 @@ Common optional new-session fields are:
 | `folder_id` | string | Place the new session in a dashboard folder. |
 | `system_prompt` | string | Add a session system prompt. |
 | `model` | string | Explicit model override accepted by the execution proxy. |
+| `model_preset` | string | Select the new session's model, backend, and environment preset. |
 | `reasoningEffort` | string | Codex reasoning effort: `minimal`, `low`, `medium`, `high`, or `xhigh`. |
 | `caller_info` | object | Structured caller metadata. The proxy derives basic metadata when omitted. |
 | `context_items` | object array | Additional structured context items. |
 
 If neither `profile` nor `agentId` is supplied, the orchestrator returns `422`
 with `AGENT_PROFILE_REQUIRED`.
+
+When `model` and `model_preset` are both present, the explicit preset selects
+the model, backend, and environment; the worker ignores the literal `model`.
+A literal `model` by itself suppresses the profile's default preset.
 
 ### Resume through the execute stream
 
@@ -104,7 +109,8 @@ a new SSE response stream:
 
 Resume requests also accept `caller_info`, `context_items`, and the camelCase
 alias `attachmentPaths`. New-session profile fields are not required when
-`agent_session_id` is present.
+`agent_session_id` is present. `model_preset` is not reapplied to an existing
+session.
 
 ### SSE response
 

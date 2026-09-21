@@ -35,6 +35,10 @@ import type {
   RuntimeSessionEventHub,
 } from "./session_event_hub.js";
 import { CREATE_ACK_ERROR_HTTP_STATUS } from "../session/session_command_routes.js";
+import {
+  ModelPresetAvailabilityError,
+  type ModelPresetAvailabilityService,
+} from "../model/model_preset_availability.js";
 
 const EXECUTE_PROXY_KEEPALIVE_MS = 30_000;
 
@@ -46,6 +50,10 @@ export type LiveExecuteProxyRouteProviderOptions = {
   readonly timeoutMs?: number;
   readonly createSessionReconcileTimeoutMs?: number;
   readonly generateSessionId?: () => string;
+  readonly modelPresetAvailability?: Pick<
+    ModelPresetAvailabilityService,
+    "requireAvailable"
+  >;
 };
 
 export function createLiveExecuteProxyRouteProvider(
@@ -64,7 +72,15 @@ export function createLiveExecuteProxyRouteProvider(
         const selected = options.router.selectNodeForCreate({
           nodeId: payload.nodeId,
           profileId: payload.profile,
+          modelPresetId: payload.model_preset,
+          legacyModelSpecified: (payload.model?.trim().length ?? 0) > 0,
         });
+        if (selected.modelPresetId && options.modelPresetAvailability) {
+          options.modelPresetAvailability.requireAvailable(
+            selected.node.nodeId,
+            selected.modelPresetId,
+          );
+        }
         const commandPayload = createSessionCommandPayload({
           payload,
           agentSessionId,
@@ -269,6 +285,14 @@ function interveneCommandPayload(
 
 function mapCommandError(error: unknown, ackErrorStatus: number): ExecuteProxyRouteError {
   if (error instanceof ExecuteProxyRouteError) return error;
+  if (error instanceof ModelPresetAvailabilityError) {
+    return new ExecuteProxyRouteError(error.statusCode, {
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    });
+  }
   if (error instanceof SessionCreateNodeSelectionError) {
     return new ExecuteProxyRouteError(error.statusCode, error.message);
   }

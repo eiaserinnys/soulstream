@@ -40,6 +40,7 @@ export type ExecuteProxyNewProviderRequest = {
   folderId?: string;
   system_prompt?: string;
   model?: string;
+  model_preset?: string;
   reasoningEffort?: ReasoningEffort;
   caller_info: ExecuteProxyCallerInfo;
   extra_context_items?: ExecuteProxyContextItem[];
@@ -158,6 +159,9 @@ export function parseExecuteProxyPayload(
     newValue.system_prompt = optionalFields.value.system_prompt;
   }
   if (optionalFields.value.model !== undefined) newValue.model = optionalFields.value.model;
+  if (optionalFields.value.model_preset !== undefined) {
+    newValue.model_preset = optionalFields.value.model_preset;
+  }
   if (optionalFields.value.reasoningEffort !== undefined) {
     newValue.reasoningEffort = optionalFields.value.reasoningEffort;
   }
@@ -239,6 +243,8 @@ function parseNewExecuteOptionalFields(
   if (!systemPrompt.ok) return systemPrompt;
   const model = optionalString(body, "model");
   if (!model.ok) return model;
+  const modelPreset = optionalNonBlankString(body, "model_preset");
+  if (!modelPreset.ok) return modelPreset;
   const reasoningEffort = optionalReasoningEffort(body, "reasoningEffort");
   if (!reasoningEffort.ok) return reasoningEffort;
 
@@ -253,6 +259,7 @@ function parseNewExecuteOptionalFields(
       folderId: folderId.value,
       system_prompt: systemPrompt.value,
       model: model.value,
+      model_preset: modelPreset.value,
       reasoningEffort: reasoningEffort.value,
     },
   };
@@ -292,6 +299,20 @@ function optionalString(
   if (value === undefined || value === null) return { ok: true };
   if (typeof value === "string") return { ok: true, value };
   return { ok: false, statusCode: 422, detail: `${key} must be a string` };
+}
+
+function optionalNonBlankString(
+  object: JsonObject,
+  key: string,
+): { ok: true; value?: string } | { ok: false; statusCode: number; detail: string } {
+  const value = optionalString(object, key);
+  if (!value.ok || value.value === undefined) return value;
+  if (value.value.trim().length > 0) return value;
+  return {
+    ok: false,
+    statusCode: 422,
+    detail: `${key} must be a non-empty string or null`,
+  };
 }
 
 function optionalStringAlias(

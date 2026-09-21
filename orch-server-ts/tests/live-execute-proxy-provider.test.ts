@@ -10,6 +10,10 @@ import {
   createLiveExecuteProxyRouteProvider,
   type ExecuteProxyResult,
 } from "../src/index.js";
+import {
+  ModelPresetAvailabilityError,
+  type ModelPresetAvailabilityService,
+} from "../src/model/model_preset_availability.js";
 
 describe("live execute proxy provider", () => {
   it("creates new execute sessions over the websocket command bridge and streams raw events", async () => {
@@ -147,6 +151,205 @@ describe("live execute proxy provider", () => {
         'id: 11\n' +
         'data: {"type":"complete","result":"resumed"}\n\n',
     );
+  });
+
+  it("selects a Codex preset for a base Claude profile and forwards both explicit fields", async () => {
+    const requireAvailable = vi.fn(() => ({
+      id: "codex-5.6-sol",
+      label: "Codex - 5.6 Sol",
+      backend: "codex" as const,
+      available: true,
+      reason: null,
+      reason_label: null,
+      resets_at: null,
+      usage_warning: false,
+    }));
+    const harness = createHarness({
+      modelPresetAvailability: { requireAvailable },
+    });
+    const connectionId = harness.registerNode({
+      nodeId: "node-hybrid",
+      agents: [{ id: "base-agent", backend: "claude" }],
+      supportedBackends: ["claude", "codex"],
+      modelPresets: [{
+        id: "codex-5.6-sol",
+        label: "Codex - 5.6 Sol",
+        backend: "codex",
+        available: true,
+        usage_provider: "codex",
+      }],
+    });
+    const sent = harness.attachTransport("node-hybrid", connectionId, (message) => {
+      harness.receive("node-hybrid", connectionId, {
+        type: "session_created",
+        requestId: message.requestId,
+        agentSessionId: message.agentSessionId,
+      });
+      harness.receive("node-hybrid", connectionId, {
+        type: "event",
+        agentSessionId: message.agentSessionId,
+        event: { type: "complete", result: "done", _event_id: 12 },
+      });
+    });
+
+    const result = await harness.provider.executeNew({
+      prompt: "hello",
+      profile: "base-agent",
+      model: "literal-model-is-worker-fallback-only",
+      model_preset: "codex-5.6-sol",
+      caller_info: { source: "execute-proxy" },
+    });
+
+    expect(requireAvailable).toHaveBeenCalledWith("node-hybrid", "codex-5.6-sol");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      type: "create_session",
+      profile: "base-agent",
+      model: "literal-model-is-worker-fallback-only",
+      model_preset: "codex-5.6-sol",
+    });
+    await expect(resultBody(result)).resolves.toContain('"node_id":"node-hybrid"');
+  });
+
+  it("keeps a legacy model override from selecting the profile default preset", async () => {
+    const requireAvailable = vi.fn();
+    const harness = createHarness({
+      modelPresetAvailability: { requireAvailable },
+    });
+    const connectionId = harness.registerNode({
+      nodeId: "node-hybrid",
+      agents: [{
+        id: "defaulted-agent",
+        backend: "claude",
+        default_preset: "codex-5.6-sol",
+      }],
+      supportedBackends: ["claude", "codex"],
+      modelPresets: [{
+        id: "codex-5.6-sol",
+        label: "Codex - 5.6 Sol",
+        backend: "codex",
+        available: true,
+        usage_provider: "codex",
+      }],
+    });
+    const sent = harness.attachTransport("node-hybrid", connectionId, (message) => {
+      harness.receive("node-hybrid", connectionId, {
+        type: "session_created",
+        requestId: message.requestId,
+        agentSessionId: message.agentSessionId,
+      });
+      harness.receive("node-hybrid", connectionId, {
+        type: "event",
+        agentSessionId: message.agentSessionId,
+        event: { type: "complete", result: "done", _event_id: 13 },
+      });
+    });
+
+    const result = await harness.provider.executeNew({
+      prompt: "hello",
+      profile: "defaulted-agent",
+      model: "legacy-model",
+      caller_info: { source: "execute-proxy" },
+    });
+
+    expect(requireAvailable).not.toHaveBeenCalled();
+    expect(sent[0]).toMatchObject({ model: "legacy-model" });
+    expect(sent[0]).not.toHaveProperty("model_preset");
+    await expect(resultBody(result)).resolves.toContain('"node_id":"node-hybrid"');
+  });
+
+  it.each(["", "   "])(
+    "treats blank model %j as unset before checking the profile default preset",
+    async (model) => {
+      const requireAvailable = vi.fn(() => {
+        throw new ModelPresetAvailabilityError(
+          "MODEL_PRESET_UNAVAILABLE",
+          "Model preset 'codex-5.6-sol' is unavailable on node node-hybrid: 미인증",
+        );
+      });
+      const harness = createHarness({
+        modelPresetAvailability: { requireAvailable },
+      });
+      const connectionId = harness.registerNode({
+        nodeId: "node-hybrid",
+        agents: [{
+          id: "defaulted-agent",
+          backend: "claude",
+          default_preset: "codex-5.6-sol",
+        }],
+        supportedBackends: ["claude", "codex"],
+        modelPresets: [{
+          id: "codex-5.6-sol",
+          label: "Codex - 5.6 Sol",
+          backend: "codex",
+          available: true,
+          usage_provider: "codex",
+        }],
+      });
+      const sent = harness.attachTransport("node-hybrid", connectionId);
+
+      await expect(harness.provider.executeNew({
+        prompt: "hello",
+        profile: "defaulted-agent",
+        model,
+        caller_info: { source: "execute-proxy" },
+      })).rejects.toMatchObject({
+        statusCode: 400,
+        detail: {
+          error: {
+            code: "MODEL_PRESET_UNAVAILABLE",
+            message: expect.stringContaining("미인증"),
+          },
+        },
+      });
+      expect(requireAvailable).toHaveBeenCalledWith("node-hybrid", "codex-5.6-sol");
+      expect(sent).toEqual([]);
+    },
+  );
+
+  it.each([
+    ["unavailable", "키 미설정"],
+    ["not authenticated", "미인증"],
+    ["quota exhausted", "7일 사용량 제한"],
+  ])("blocks %s presets before sending a command", async (_case, reason) => {
+    const requireAvailable = vi.fn(() => {
+      throw new ModelPresetAvailabilityError(
+        "MODEL_PRESET_UNAVAILABLE",
+        `Model preset 'codex-5.6-sol' is unavailable on node node-hybrid: ${reason}`,
+      );
+    });
+    const harness = createHarness({
+      modelPresetAvailability: { requireAvailable },
+    });
+    const connectionId = harness.registerNode({
+      nodeId: "node-hybrid",
+      agents: [{ id: "base-agent", backend: "claude" }],
+      supportedBackends: ["claude", "codex"],
+      modelPresets: [{
+        id: "codex-5.6-sol",
+        label: "Codex - 5.6 Sol",
+        backend: "codex",
+        available: true,
+        usage_provider: "codex",
+      }],
+    });
+    const sent = harness.attachTransport("node-hybrid", connectionId);
+
+    await expect(harness.provider.executeNew({
+      prompt: "hello",
+      profile: "base-agent",
+      model_preset: "codex-5.6-sol",
+      caller_info: { source: "execute-proxy" },
+    })).rejects.toMatchObject({
+      statusCode: 400,
+      detail: {
+        error: {
+          code: "MODEL_PRESET_UNAVAILABLE",
+          message: expect.stringContaining(reason),
+        },
+      },
+    });
+    expect(sent).toEqual([]);
   });
 
   it("maps unavailable execute targets to route errors before sending commands", async () => {
@@ -340,6 +543,7 @@ function createHarness(options: {
   createSessionReconcileTimeoutMs?: number;
   findSessionOwnerNodeId?: (agentSessionId: string) => Promise<string | null>;
   findRescuableSessionOwnerNodeId?: (agentSessionId: string) => Promise<string | null>;
+  modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">;
 } = {}) {
   const registry = new InMemoryNodeRegistry({
     nowMs: () => 1_700_000_000_000,
@@ -362,6 +566,7 @@ function createHarness(options: {
     timeoutMs: options.timeoutMs,
     createSessionReconcileTimeoutMs: options.createSessionReconcileTimeoutMs,
     generateSessionId: () => "generated-session",
+    modelPresetAvailability: options.modelPresetAvailability,
   });
 
   return {
@@ -372,6 +577,7 @@ function createHarness(options: {
       nodeId: string;
       agents: unknown[];
       supportedBackends: string[];
+      modelPresets?: unknown[];
     }) => {
       const connectionId = registry.registerNode({
         type: "node_register",
@@ -381,6 +587,7 @@ function createHarness(options: {
         agents: input.agents,
         capabilities: { max_concurrent: 8, runner_inventory_v1: true },
         supported_backends: input.supportedBackends,
+        model_presets: input.modelPresets,
       }).node.connectionId;
       registry.receiveNodeMessage(input.nodeId, {
         type: "runner_inventory",
