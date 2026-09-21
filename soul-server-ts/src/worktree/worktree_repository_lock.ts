@@ -1,0 +1,106 @@
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { GitProcessError } from "./worktree_process.js";
+
+export class RepositoryLockError extends Error {
+  readonly code = "REPOSITORY_LOCK_TIMEOUT";
+}
+
+export class RepositoryLock {
+  constructor(private readonly options: {
+    lockRoot: string;
+    defaultTimeoutMs: number;
+  }) {
+    mkdirSync(options.lockRoot, { recursive: true });
+  }
+
+  async withLock<T>(key: string, action: () => Promise<T>): Promise<T> {
+    const lockPath = join(
+      this.options.lockRoot,
+      `${createHash("sha256").update(key).digest("hex")}.lock`,
+    );
+    const deadline = Date.now() + this.options.defaultTimeoutMs;
+    while (true) {
+      try {
+        mkdirSync(lockPath);
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        if (reclaimDeadLock(lockPath, key)) continue;
+        if (Date.now() >= deadline) {
+          throw new RepositoryLockError(`Repository lock timed out for ${key}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({
+      pid: process.pid,
+      acquiredAt: new Date().toISOString(),
+      key,
+    }));
+
+    let release = true;
+    try {
+      return await action();
+    } catch (error) {
+      if (hasUnconfirmedProcess(error)) {
+        release = false;
+        writeFileSync(join(lockPath, "owner.json"), JSON.stringify({
+          pid: process.pid,
+          acquiredAt: new Date().toISOString(),
+          key,
+          unconfirmedChild: true,
+        }));
+      }
+      throw error;
+    } finally {
+      if (release) rmSync(lockPath, { recursive: true, force: true });
+    }
+  }
+}
+
+function hasUnconfirmedProcess(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current = error;
+  while (current !== undefined && current !== null && !seen.has(current)) {
+    seen.add(current);
+    if (current instanceof GitProcessError && !current.terminationConfirmed) return true;
+    current = typeof current === "object" && "cause" in current
+      ? (current as { cause?: unknown }).cause
+      : undefined;
+  }
+  return false;
+}
+
+function reclaimDeadLock(lockPath: string, key: string): boolean {
+  try {
+    const owner = JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")) as {
+      pid?: unknown;
+      key?: unknown;
+      unconfirmedChild?: unknown;
+    };
+    if (
+      owner.key !== key
+      || typeof owner.pid !== "number"
+      || !Number.isSafeInteger(owner.pid)
+      || owner.pid <= 0
+      || owner.unconfirmedChild === true
+      || processIsAlive(owner.pid)
+    ) return false;
+    rmSync(lockPath, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}

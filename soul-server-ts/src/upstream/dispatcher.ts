@@ -57,6 +57,8 @@ import { SessionListCommands } from "./session_list_commands.js";
 import { createSessionCommandFamily } from "./session_command_family.js";
 import { TaskRuntimeCommands } from "./task_runtime_commands.js";
 import { summarizePayloadForLog } from "./log_payload_summary.js";
+import { createWorktreeCommandFamily } from "./worktree_command_family.js";
+import type { WorktreeService } from "../worktree/worktree_service.js";
 
 export type { SendFn } from "./command_family.js";
 
@@ -101,6 +103,7 @@ export class CommandDispatcher {
     modelCatalog?: Pick<ModelCatalog, "resolve" | "list">,
     agentProfileSource?: NewSessionAgentProfileSource,
     listRunningSessionIds?: () => Promise<string[]>,
+    worktreeService?: WorktreeService,
   ) {
     const taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
@@ -160,6 +163,7 @@ export class CommandDispatcher {
       }),
       ...createReflectionCommandFamily({ send, reflectionCommands }),
       ...createAgentConfigCommandFamily({ send, agentConfigCommands }),
+      ...createWorktreeCommandFamily({ send, service: worktreeService }),
     };
   }
 
@@ -175,7 +179,7 @@ export class CommandDispatcher {
         await handler(cmd);
       } catch (err) {
         if (err instanceof CommandDispatchError) {
-          await this.sendError(cmd, err.message, err.code);
+          await this.sendError(cmd, err.message, err.code, err.details);
           return;
         }
         if (err instanceof RealtimeCommandDispatchError) {
@@ -209,6 +213,7 @@ export class CommandDispatcher {
     cmd: CommandLike,
     message: string,
     code?: string,
+    details?: Record<string, unknown>,
   ): Promise<void> {
     await this.send({
       type: "error",
@@ -216,6 +221,7 @@ export class CommandDispatcher {
       requestId: cmd.requestId ?? cmd.request_id ?? "",
       command_type: cmd.type ?? "",
       ...(code ? { code } : {}),
+      ...(details ? { details } : {}),
     });
     this.logger.warn(
       { ...summarizePayloadForLog(cmd), message },

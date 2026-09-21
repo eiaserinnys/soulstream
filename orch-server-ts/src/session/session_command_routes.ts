@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 
 import {
   PendingNodeCommandRejectedError,
@@ -33,6 +34,7 @@ export type SessionCommandRouteOptions = {
   createSessionReconcileTimeoutMs?: number;
   createSessionLifecycle?: SessionCreateLifecycle;
   modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">;
+  worktreeAuthBearerToken?: string;
 };
 
 export const sessionCommandRouteAuthRequirements = {
@@ -103,6 +105,29 @@ export function registerSessionCommandRoutes(
     const body = parseObjectBody(request.body);
     if (body === undefined) {
       return badRequest(reply, "Request body must be a JSON object");
+    }
+    if (body.worktree_id !== undefined) {
+      const authorization = verifyServiceBearerAuthorization(
+        request.headers.authorization,
+        options.worktreeAuthBearerToken ?? "",
+      );
+      if (!authorization.ok) {
+        return reply.code(401).send({
+          error: {
+            code: "WORKTREE_INTERNAL_AUTH_REQUIRED",
+            message: `service bearer is ${authorization.reason}`,
+          },
+        });
+      }
+      if (
+        typeof body.worktree_actor_session_id !== "string"
+        || body.worktree_actor_session_id.length === 0
+      ) {
+        return badRequest(
+          reply,
+          "worktree_actor_session_id is required for worktree-bound sessions",
+        );
+      }
     }
     const resolvedPrompt = resolveCreateSessionPrompt(body);
     if ("error" in resolvedPrompt) return badRequest(reply, resolvedPrompt.error);

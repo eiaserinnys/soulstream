@@ -156,6 +156,10 @@ describe("node agent/profile route harness", () => {
       "POST /api/nodes/:node_id/agents/config/rollback": true,
       "GET /api/nodes/:node_id/oauth-profiles": true,
       "GET /api/nodes/:node_id/user/portrait": true,
+      "POST /api/nodes/:node_id/worktrees/list": true,
+      "POST /api/nodes/:node_id/worktrees/create": true,
+      "POST /api/nodes/:node_id/worktrees/remove": true,
+      "POST /api/nodes/:node_id/worktrees/delete-branch": true,
     });
 
     const routeRows = fixtures.routeInventory.routes
@@ -187,6 +191,69 @@ describe("node agent/profile route harness", () => {
       "/api/nodes/{node_id}/model-presets",
     );
     expect(tsOnlyRouteKeys).toContain("GET /api/nodes/{node_id}/model-presets");
+  });
+
+  it("keeps worktree node forwarding behind the internal service bearer", async () => {
+    const { provider } = createProvider();
+    const calls: Array<[string, string, Record<string, unknown>]> = [];
+    const app = createApp({
+      config,
+      nodeAgentProfileRoutes: {
+        provider,
+        worktreeProvider: {
+          async invoke(nodeId, operation, input) {
+            calls.push([nodeId, operation, input]);
+            if (operation === "remove") {
+              throw new NodeAgentProfileRouteError(
+                "WORKTREE_DIRTY",
+                "clean the worktree and retry",
+                400,
+                { ignored: ["dist/"], cleanup: "Remove only the listed paths" },
+              );
+            }
+            return { ok: true };
+          },
+        },
+      },
+    });
+
+    const unauthorized = await app.inject({
+      method: "POST",
+      url: "/api/nodes/node-a/worktrees/list",
+      payload: { repo_id: "soulstream" },
+    });
+    expect(unauthorized.statusCode).toBe(401);
+    expect(unauthorized.json()).toMatchObject({
+      error: { code: "WORKTREE_INTERNAL_AUTH_REQUIRED" },
+    });
+    expect(calls).toEqual([]);
+
+    const authorized = await app.inject({
+      method: "POST",
+      url: "/api/nodes/node-a/worktrees/list",
+      headers: { authorization: `Bearer ${config.authBearerToken}` },
+      payload: { repo_id: "soulstream" },
+    });
+    expect(authorized.statusCode).toBe(200);
+    expect(authorized.json()).toEqual({ ok: true });
+    expect(calls).toEqual([["node-a", "list", { repo_id: "soulstream" }]]);
+
+    const dirty = await app.inject({
+      method: "POST",
+      url: "/api/nodes/node-a/worktrees/remove",
+      headers: { authorization: `Bearer ${config.authBearerToken}` },
+      payload: { worktreeId: "worktree-1" },
+    });
+    expect(dirty.statusCode).toBe(400);
+    expect(dirty.json()).toEqual({
+      error: {
+        code: "WORKTREE_DIRTY",
+        message: "clean the worktree and retry",
+        details: { ignored: ["dist/"], cleanup: "Remove only the listed paths" },
+      },
+    });
+
+    await app.close();
   });
 
   it("projects Python agent list shape and maps missing nodes to 404", async () => {
@@ -229,6 +296,40 @@ describe("node agent/profile route harness", () => {
       ["listAgents", "missing-node"],
     ]);
 
+    await app.close();
+  });
+
+  it("forwards all four worktree route operations to the node provider", async () => {
+    const { provider } = createProvider();
+    const calls: Array<[string, string, Record<string, unknown>]> = [];
+    const app = createApp({
+      config,
+      nodeAgentProfileRoutes: {
+        provider,
+        worktreeProvider: {
+          async invoke(nodeId, operation, input) {
+            calls.push([nodeId, operation, input]);
+            return { operation, ok: true };
+          },
+        },
+      },
+    });
+    for (const operation of ["list", "create", "remove", "delete-branch"] as const) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/nodes/node-a/worktrees/${operation}`,
+        headers: { authorization: `Bearer ${config.authBearerToken}` },
+        payload: { actorSessionId: "session-a" },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ operation, ok: true });
+    }
+    expect(calls.map((call) => call[1])).toEqual([
+      "list",
+      "create",
+      "remove",
+      "delete-branch",
+    ]);
     await app.close();
   });
 

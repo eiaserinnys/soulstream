@@ -113,6 +113,32 @@ describe("parseEnv", () => {
     expect(parseEnv(minimal)).not.toHaveProperty("DATABASE_URL");
   });
 
+  it("worktree MCP는 disabled가 기본이며 projects root 없이 기존 worker를 시작한다", () => {
+    const env = parseEnv(minimal);
+    expect(env.WORKTREE_MCP_ENABLED).toBe(false);
+    expect(env).not.toHaveProperty("WORKTREE_PROJECTS_ROOT");
+  });
+
+  it("worktree MCP를 켤 때만 존재하는 절대 projects root를 요구한다", () => {
+    expect(() => parseEnv({
+      ...minimal,
+      WORKTREE_MCP_ENABLED: "true",
+    })).toThrow(/WORKTREE_PROJECTS_ROOT is required/);
+    expect(() => parseEnv({
+      ...minimal,
+      WORKTREE_MCP_ENABLED: "true",
+      WORKTREE_PROJECTS_ROOT: "relative/projects",
+    })).toThrow(/absolute existing directory/);
+    expect(parseEnv({
+      ...minimal,
+      WORKTREE_MCP_ENABLED: "true",
+      WORKTREE_PROJECTS_ROOT: process.cwd(),
+    })).toMatchObject({
+      WORKTREE_MCP_ENABLED: true,
+      WORKTREE_PROJECTS_ROOT: process.cwd(),
+    });
+  });
+
   it("EVENT_OUTBOX_DIR는 fallback 없이 필수다", () => {
     const { EVENT_OUTBOX_DIR: _, ...rest } = minimal;
     void _;

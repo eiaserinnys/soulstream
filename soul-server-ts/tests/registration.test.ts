@@ -90,6 +90,31 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     });
   });
 
+  it("advertises worktree commands and fail-closed session binding only when enabled", () => {
+    const disabled = buildRegistrationMsg({
+      nodeId: "node-a",
+      host: "127.0.0.1",
+      port: 4205,
+      userName: "",
+      agentRegistry: new AgentRegistry([codexAgent]),
+      worktreeMcpEnabled: false,
+    });
+    expect(disabled.capabilities).not.toHaveProperty("worktree_mcp_v1");
+
+    const enabled = buildRegistrationMsg({
+      nodeId: "node-a",
+      host: "127.0.0.1",
+      port: 4205,
+      userName: "",
+      agentRegistry: new AgentRegistry([codexAgent]),
+      worktreeMcpEnabled: true,
+    });
+    expect(enabled.capabilities).toMatchObject({
+      worktree_mcp_v1: true,
+      register_session_with_worktree_v1: true,
+    });
+  });
+
   it("advertises the control lane only when the durable inbox is configured", () => {
     const msg = buildRegistrationMsg({
       nodeId: "control-node",

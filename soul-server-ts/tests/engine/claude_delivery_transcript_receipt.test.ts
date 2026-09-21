@@ -214,6 +214,7 @@ describe("Claude delivery transcript receipt", () => {
         message("user", inputUuid),
         message("assistant", "assistant-after-parent-crash"),
       ]);
+    const resolveWorktreeWorkspace = vi.fn(async () => "/workspace/worktree");
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
       sourceNode: "node-a",
       sessionStore: {} as never,
@@ -222,6 +223,7 @@ describe("Claude delivery transcript receipt", () => {
         node_id: "node-a",
         agent_id: "claude-agent",
         claude_session_id: "claude-session",
+        worktree_id: "worktree-1",
       } as SessionRow),
       getAgent: () => ({
         id: "claude-agent",
@@ -229,6 +231,7 @@ describe("Claude delivery transcript receipt", () => {
         backend: "claude",
         workspace_dir: "/workspace",
       }),
+      resolveWorktreeWorkspace,
       loadMessages,
     });
 
@@ -241,8 +244,45 @@ describe("Claude delivery transcript receipt", () => {
       assistantMessageUuid: "assistant-after-parent-crash",
     });
     expect(loadMessages).toHaveBeenCalledTimes(2);
-    expect(loadMessages.mock.calls[0]?.[1]).toHaveProperty("sessionStore");
+    expect(loadMessages.mock.calls[0]?.[1]).toMatchObject({
+      dir: "/workspace/worktree",
+      sessionStore: expect.anything(),
+    });
+    expect(loadMessages.mock.calls[1]?.[1]).toMatchObject({ dir: "/workspace/worktree" });
     expect(loadMessages.mock.calls[1]?.[1]).not.toHaveProperty("sessionStore");
+    expect(resolveWorktreeWorkspace).toHaveBeenCalledWith("worktree-1");
+  });
+
+  it("does not fall back to the profile cwd when a bound worktree is unavailable", async () => {
+    const loadMessages = vi.fn();
+    const reader = new ClaudeDeliveryTranscriptReceiptReader({
+      sourceNode: "node-a",
+      sessionStore: {} as never,
+      getSession: async () => ({
+        session_id: "target",
+        node_id: "node-a",
+        agent_id: "claude-agent",
+        claude_session_id: "claude-session",
+        worktree_id: "worktree-missing",
+      } as SessionRow),
+      getAgent: () => ({
+        id: "claude-agent",
+        name: "Claude",
+        backend: "claude",
+        workspace_dir: "/workspace/profile",
+      }),
+      resolveWorktreeWorkspace: async () => { throw new Error("missing"); },
+      loadMessages,
+    });
+
+    await expect(reader.inspect({
+      delivery_id: "delivery-worktree-missing",
+      target_session_id: "target",
+    } as SessionDeliveryRow)).resolves.toMatchObject({
+      kind: "unavailable",
+      reason: "target_worktree_unavailable",
+    });
+    expect(loadMessages).not.toHaveBeenCalled();
   });
 
   it("reads the same-node native assistant when the live shared mirror has only its input", async () => {

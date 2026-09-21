@@ -12,6 +12,8 @@ import {
 describe("Claude background generation upgrade recovery", () => {
   it("uses the real startup owner to recover one exact native B notification once", async () => {
     const observe = vi.fn(async () => true);
+    const loadMessages = vi.fn(async () => [nativeNotification("toolu-B")]);
+    const resolveWorktreeWorkspace = vi.fn(async () => "/workspace/worktree");
     const generationRecovery = new ClaudeBackgroundGenerationStartupRecovery({
       repository: {
         terminalForNode: vi.fn(async () => [legacyTerminal("toolu-A")]),
@@ -28,13 +30,15 @@ describe("Claude background generation upgrade recovery", () => {
         agent_id: "claude-agent",
         model_preset: null,
         node_id: "node-a",
+        worktree_id: "worktree-1",
       })) as never,
       getAgent: vi.fn(() => ({
         id: "claude-agent",
         backend: "claude",
         workspace_dir: "/workspace/claude",
       })) as never,
-      loadMessages: vi.fn(async () => [nativeNotification("toolu-B")]),
+      resolveWorktreeWorkspace,
+      loadMessages,
     });
     const queued = vi.fn(async () => ({ claimed: 0, settled: 0 }));
     const startup = new ClaudeRuntimeStartupRecovery({
@@ -48,6 +52,11 @@ describe("Claude background generation upgrade recovery", () => {
     await startup.afterRunnerRecovery();
 
     expect(observe).toHaveBeenCalledOnce();
+    expect(loadMessages).toHaveBeenCalledWith("sdk-session", expect.objectContaining({
+      dir: "/workspace/worktree",
+      sessionStore: expect.anything(),
+    }));
+    expect(resolveWorktreeWorkspace).toHaveBeenCalledWith("worktree-1");
     expect(observe).toHaveBeenCalledWith(
       "caller-session",
       expect.objectContaining({
@@ -98,6 +107,45 @@ describe("Claude background generation upgrade recovery", () => {
       });
       expect(observe).not.toHaveBeenCalled();
     }
+  });
+
+  it("does not read the profile cwd when a bound recovery worktree is unavailable", async () => {
+    const loadMessages = vi.fn();
+    const logger = { error: vi.fn() };
+    const recovery = new ClaudeBackgroundGenerationStartupRecovery({
+      repository: {
+        terminalForNode: vi.fn(async () => [legacyTerminal("toolu-A")]),
+        getGeneration: vi.fn(async () => null),
+      } as never,
+      lifecycle: { observe: vi.fn() } as never,
+      recordRelationConsumed: vi.fn(async () => undefined),
+      sourceNode: "node-a",
+      logger,
+      sessionStore: {} as never,
+      getSession: vi.fn(async () => ({
+        session_id: "caller-session",
+        claude_session_id: "sdk-session",
+        agent_id: "claude-agent",
+        model_preset: null,
+        node_id: "node-a",
+        worktree_id: "worktree-missing",
+      })) as never,
+      getAgent: vi.fn(() => ({
+        id: "claude-agent",
+        backend: "claude",
+        workspace_dir: "/workspace/profile",
+      })) as never,
+      resolveWorktreeWorkspace: async () => { throw new Error("missing"); },
+      loadMessages,
+    });
+
+    await expect(recovery.recoverAfterNodeRestart()).resolves.toEqual({
+      examined: 1,
+      recovered: 0,
+      ambiguous: 0,
+    });
+    expect(loadMessages).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledOnce();
   });
 
   it("uses the first terminal envelope per exact task/tool identity and ignores nested output status", async () => {

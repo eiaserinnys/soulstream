@@ -36,7 +36,7 @@ export interface ClaudeNativeTaskNotificationTranscriptProof {
 }
 
 type ClaudeTranscriptTarget =
-  | { kind: "ready"; session: SessionRow; profile: AgentProfile }
+  | { kind: "ready"; session: SessionRow; profile: AgentProfile; workspaceDir: string }
   | { kind: "absent" }
   | { kind: "unavailable"; reason: string };
 
@@ -49,6 +49,7 @@ export interface ClaudeDeliveryTranscriptReceiptDeps {
     presetId: string,
   ): AgentProfile["backend"] | undefined;
   loadMessages?: typeof getSessionMessages;
+  resolveWorktreeWorkspace?(worktreeId: string): Promise<string>;
 }
 
 /**
@@ -93,14 +94,14 @@ export class ClaudeDeliveryTranscriptReceiptReader {
     const target = await this.resolveTarget(targetSessionId);
     if (target.kind !== "ready") return null;
     const shared = await this.loadMessages(target.session.claude_session_id!, {
-      dir: target.profile.workspace_dir,
+      dir: target.workspaceDir,
       sessionStore: this.deps.sessionStore,
     });
     const sharedProof = findNativeTaskNotificationProof(shared, query);
     if (sharedProof) return sharedProof;
     if (target.session.node_id !== this.deps.sourceNode) return null;
     const local = await this.loadMessages(target.session.claude_session_id!, {
-      dir: target.profile.workspace_dir,
+      dir: target.workspaceDir,
     });
     return findNativeTaskNotificationProof(local, query);
   }
@@ -122,10 +123,10 @@ export class ClaudeDeliveryTranscriptReceiptReader {
         reason: target.reason,
       };
     }
-    const { session, profile } = target;
+    const { session, workspaceDir } = target;
 
     const shared = await this.loadMessages(session.claude_session_id!, {
-      dir: profile.workspace_dir,
+      dir: workspaceDir,
       sessionStore: this.deps.sessionStore,
     });
     const sharedReceipt = findClaudeDeliveryTranscriptReceipt(
@@ -140,7 +141,7 @@ export class ClaudeDeliveryTranscriptReceiptReader {
 
     if (session.node_id === this.deps.sourceNode) {
       const local = await this.loadMessages(session.claude_session_id!, {
-        dir: profile.workspace_dir,
+        dir: workspaceDir,
       });
       const localReceipt = findClaudeDeliveryTranscriptReceipt(
         local,
@@ -177,9 +178,19 @@ export class ClaudeDeliveryTranscriptReceiptReader {
     if (!backend) {
       return { kind: "unavailable", reason: "target_model_preset_unavailable" };
     }
-    return backend === "claude"
-      ? { kind: "ready", session, profile }
-      : { kind: "absent" };
+    if (backend !== "claude") return { kind: "absent" };
+    if (!session.worktree_id) {
+      return { kind: "ready", session, profile, workspaceDir: profile.workspace_dir };
+    }
+    if (!this.deps.resolveWorktreeWorkspace) {
+      return { kind: "unavailable", reason: "target_worktree_resolver_unavailable" };
+    }
+    try {
+      const workspaceDir = await this.deps.resolveWorktreeWorkspace(session.worktree_id);
+      return { kind: "ready", session, profile, workspaceDir };
+    } catch {
+      return { kind: "unavailable", reason: "target_worktree_unavailable" };
+    }
   }
 }
 

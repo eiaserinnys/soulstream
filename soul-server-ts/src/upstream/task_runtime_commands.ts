@@ -50,6 +50,8 @@ export interface CreateSessionRuntimeParams {
   folderId?: string | null;
   container?: BoardYjsContainerRef | null;
   sourceTaskItemId?: string | null;
+  worktreeId?: string;
+  worktreeActorSessionId?: string;
   systemPrompt?: string;
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
 }
@@ -201,6 +203,8 @@ export class TaskRuntimeCommands {
       folderId: params.folderId ?? null,
       container: params.container ?? null,
       sourceTaskItemId: params.sourceTaskItemId ?? null,
+      worktreeId: params.worktreeId,
+      worktreeActorSessionId: params.worktreeActorSessionId,
       systemPrompt: params.systemPrompt,
       contextItems: params.extraContextItems,
       attachmentPaths: params.attachmentPaths,

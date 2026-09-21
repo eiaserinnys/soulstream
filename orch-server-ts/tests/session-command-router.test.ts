@@ -110,6 +110,49 @@ describe("Session command router primitive", () => {
     });
   });
 
+  it("fails closed or selects only nodes advertising both worktree session capabilities", () => {
+    const { registry } = createRegistry();
+    registerNode(registry, "legacy-node");
+    registry.registerNode({
+      ...(reconnect.registration as NodeRegistrationPayload),
+      node_id: "worktree-node",
+      capabilities: {
+        ...((reconnect.registration as NodeRegistrationPayload).capabilities ?? {}),
+        worktree_mcp_v1: true,
+        register_session_with_worktree_v1: true,
+      },
+    });
+    registry.receiveNodeMessage("worktree-node", {
+      type: "runner_inventory",
+      running_session_ids: [],
+    });
+    const router = new SessionCommandRouter({ registry });
+
+    expect(() => router.createSession({
+      type: "create_session",
+      agentSessionId: "worktree-session",
+      prompt: "pwd",
+      worktree_id: "worktree-1",
+    })).toThrowError(/nodeId is required/);
+
+    const routed = router.createSession({
+      type: "create_session",
+      agentSessionId: "worktree-session-explicit",
+      prompt: "pwd",
+      nodeId: "worktree-node",
+      worktree_id: "worktree-1",
+    });
+    expect(routed.node.nodeId).toBe("worktree-node");
+
+    expect(() => router.createSession({
+      type: "create_session",
+      agentSessionId: "legacy-worktree-session",
+      prompt: "pwd",
+      nodeId: "legacy-node",
+      worktree_id: "worktree-1",
+    })).toThrowError(/does not support worktree-bound sessions/);
+  });
+
   it("uses DB aliases and default presets over the node YAML registration", () => {
     const { registry } = createRegistry();
     registry.registerNode({
@@ -240,12 +283,12 @@ describe("Session command router primitive", () => {
     await expect(router.waitForCreatedSession(
       "wrong-node-session",
       "selected-node",
-      { timeoutMs: 1 },
+      { timeoutMs: 20 },
     )).resolves.toBe(false);
     await expect(router.waitForCreatedSession(
       "missing-session",
       "selected-node",
-      { timeoutMs: 1 },
+      { timeoutMs: 20 },
     )).resolves.toBe(false);
     expect(findRescuableSessionOwnerNodeId.mock.calls).toEqual([
       ["registered-session"],

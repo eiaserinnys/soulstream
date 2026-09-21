@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 
 import {
+  boundedResultTimeoutMs,
   controlCommandPolicy,
   type ControlCommandFamily,
 } from "./control_command_inventory.js";
@@ -236,7 +237,10 @@ export class ControlInboxRuntime {
         message: `${commandType} did not produce a result within the bounded deadline`,
         status: "degraded",
       });
-    }, this.options.boundedResultTimeoutMs ?? DEFAULT_BOUNDED_RESULT_TIMEOUT_MS);
+    }, boundedResultTimeoutMs(
+      commandType,
+      this.options.boundedResultTimeoutMs ?? DEFAULT_BOUNDED_RESULT_TIMEOUT_MS,
+    ));
     this.activeWork.set(workId, runtimeWork);
     try {
       this.options.postWork(runtimeWork.dispatch);

@@ -43,6 +43,15 @@ export function buildConfigReflection(runtime: McpRuntime): ConfigReflectionEntr
       defaultValue: "true",
     }),
     envEntry("MCP_ENABLED", { required: false, sensitive: false, defaultValue: "false" }),
+    envEntry("WORKTREE_MCP_ENABLED", {
+      required: false,
+      sensitive: false,
+      defaultValue: "false",
+    }),
+    envEntry("WORKTREE_PROJECTS_ROOT", {
+      required: false,
+      sensitive: false,
+    }),
     envEntry("MCP_PATH", { required: false, sensitive: false, defaultValue: "/mcp" }),
     envEntry("MCP_INTERNAL_PORT", {
       required: false,

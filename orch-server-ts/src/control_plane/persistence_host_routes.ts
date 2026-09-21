@@ -89,6 +89,7 @@ const pageBindingOperations = {
 
 const sessionDataOperations = {
   register_session: ["sessionMutations", null, "registerSession"],
+  register_session_with_worktree: ["sessionMutations", null, "registerSessionWithWorktree"],
   transition_session: ["sessionMutations", null, "transitionSession"],
   rename_session: ["sessionMutations", null, "renameSession"],
   delete_session: ["sessionMutations", null, "deleteSession"],
@@ -112,6 +113,18 @@ const sessionDataOperations = {
   resume_context: ["sessionReadComposites", null, "getResumeContext"],
 } as const satisfies Record<string, OperationTarget>;
 
+const worktreeOperations = {
+  list: ["worktrees", null, "list"],
+  register: ["worktrees", null, "register"],
+  update_setup: ["worktrees", null, "updateSetup"],
+  begin_remove: ["worktrees", null, "beginRemove"],
+  restore_ready: ["worktrees", null, "restoreReady"],
+  finish_remove: ["worktrees", null, "finishRemove"],
+  begin_branch_delete: ["worktrees", null, "beginBranchDelete"],
+  finish_branch_delete: ["worktrees", null, "finishBranchDelete"],
+  resolve_execution: ["worktrees", null, "resolveExecution"],
+} as const satisfies Record<string, OperationTarget>;
+
 export function registerPersistenceHostRoutes(
   app: FastifyInstance,
   options: PersistenceHostRouteOptions,
@@ -120,6 +133,7 @@ export function registerPersistenceHostRoutes(
   registerDomain(app, options, "claude-runtime", claudeRuntimeOperations);
   registerDomain(app, options, "session-page-bindings", pageBindingOperations);
   registerDomain(app, options, "session-data", sessionDataOperations);
+  registerDomain(app, options, "worktrees", worktreeOperations);
 }
 
 function registerDomain(
@@ -164,11 +178,12 @@ function registerDomain(
         request.log.error({ err: error, domain, operation: request.params.operation }, "Persistence host operation failed");
         const statusCode = (error as { statusCode?: unknown } | undefined)?.statusCode;
         const status = typeof statusCode === "number" ? statusCode : 500;
+        const domainCode = (error as { code?: unknown } | undefined)?.code;
         return sendTimed(request, reply, timing, status, () =>
           errorReply(
             reply,
             status,
-            "HOST_OPERATION_FAILED",
+            typeof domainCode === "string" ? domainCode : "HOST_OPERATION_FAILED",
             error instanceof Error ? error.message : "Persistence host operation failed",
           ));
       }

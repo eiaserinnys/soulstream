@@ -17,6 +17,7 @@ export interface RegistrationParams {
   agentRegistry: AgentRegistry;
   modelCatalog?: Pick<ModelCatalog, "advertise">;
   runnerProcessEnabled?: boolean;
+  worktreeMcpEnabled?: boolean;
   controlChannelEnabled?: boolean;
   releaseActivationState?: ReleaseActivationState;
   /**
@@ -113,6 +114,12 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
       ...(params.runnerProcessEnabled === undefined
         ? {}
         : { runner_process_v1: params.runnerProcessEnabled }),
+      ...(params.worktreeMcpEnabled
+        ? {
+            worktree_mcp_v1: true,
+            register_session_with_worktree_v1: true,
+          }
+        : {}),
     },
     supported_backends: supportedBackends,
     ...(modelPresets ? { model_presets: modelPresets } : {}),

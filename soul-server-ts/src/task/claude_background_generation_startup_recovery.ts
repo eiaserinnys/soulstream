@@ -48,6 +48,7 @@ interface ClaudeBackgroundGenerationStartupRecoveryDeps {
   getAgent(agentId: string): AgentProfile | undefined;
   logger: Pick<Logger, "error">;
   getModelPresetBackend?(presetId: string): AgentProfile["backend"] | undefined;
+  resolveWorktreeWorkspace?(worktreeId: string): Promise<string>;
   loadMessages?(
     sessionId: string,
     options: {
@@ -116,8 +117,11 @@ export class ClaudeBackgroundGenerationStartupRecovery {
       ? this.deps.getModelPresetBackend?.(session.model_preset)
       : profile.backend;
     if (backend !== "claude") return "skipped";
+    const workspaceDir = session.worktree_id
+      ? await this.resolveWorktreeWorkspace(session.worktree_id)
+      : profile.workspace_dir;
     const messages = await this.loadMessages(sdkSessionId, {
-      dir: profile.workspace_dir,
+      dir: workspaceDir,
       sessionStore: this.deps.sessionStore,
       includeSystemMessages: true,
     });
@@ -181,6 +185,13 @@ export class ClaudeBackgroundGenerationStartupRecovery {
       return "recovered";
     }
     return "skipped";
+  }
+
+  private async resolveWorktreeWorkspace(worktreeId: string): Promise<string> {
+    if (!this.deps.resolveWorktreeWorkspace) {
+      throw new Error(`WORKTREE_UNAVAILABLE: resolver missing for ${worktreeId}`);
+    }
+    return await this.deps.resolveWorktreeWorkspace(worktreeId);
   }
 }
 

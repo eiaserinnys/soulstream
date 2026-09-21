@@ -40,6 +40,7 @@ interface ComposeClaudeRuntimeParams {
     event: ClaudeClientEvent,
   ): Promise<void>;
   redeliverContent(row: SessionDeliveryRow): Promise<void>;
+  resolveWorktreeWorkspace?(worktreeId: string): Promise<string>;
 }
 
 export interface ClaudeRuntimeComposition {
@@ -64,6 +65,9 @@ export async function composeClaudeRuntime(
     sessionStore: params.sessionStore,
     getSession: (sessionId) => params.db.getSession(sessionId),
     getAgent: (agentId) => params.agentRegistry.get(agentId),
+    ...(params.resolveWorktreeWorkspace
+      ? { resolveWorktreeWorkspace: params.resolveWorktreeWorkspace }
+      : {}),
     getModelPresetBackend: (presetId) => {
       try {
         return params.modelCatalog.resolve(presetId).backend;
@@ -96,6 +100,9 @@ export async function composeClaudeRuntime(
     sessionStore: params.sessionStore,
     getSession: (sessionId) => params.db.getSession(sessionId),
     getAgent: (agentId) => params.agentRegistry.get(agentId),
+    ...(params.resolveWorktreeWorkspace
+      ? { resolveWorktreeWorkspace: params.resolveWorktreeWorkspace }
+      : {}),
     getModelPresetBackend: (presetId) => {
       try {
         return params.modelCatalog.resolve(presetId).backend;

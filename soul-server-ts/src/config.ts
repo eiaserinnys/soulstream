@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { statSync } from "node:fs";
+import { isAbsolute } from "node:path";
 
 import {
   assertRunnerStateDirectoryCompatible,
@@ -198,6 +200,19 @@ export const EnvSchema = z
           .map((s) => s.trim())
           .filter(Boolean),
       ),
+    /**
+     * Node-local Git worktree MCP. Disabled by default so older deployments can
+     * consume the release before their projects root is configured.
+     */
+    WORKTREE_MCP_ENABLED: z
+      .union([z.literal("true"), z.literal("false")])
+      .default("false")
+      .transform((v) => v === "true"),
+    /** Absolute node-local parent of the registered base repositories. */
+    WORKTREE_PROJECTS_ROOT: z.preprocess(
+      (value) => value === "" ? undefined : value,
+      z.string().min(1).optional(),
+    ),
   })
   .superRefine((env, ctx) => {
     const internalMcpPort = env.MCP_INTERNAL_PORT ?? env.PORT + 1;
@@ -364,6 +379,29 @@ export const EnvSchema = z
         message:
           "MCP_STATELESS_TRANSPORT_ENABLED must be true when runner process mode and MCP are enabled",
       });
+    }
+    if (env.WORKTREE_MCP_ENABLED) {
+      if (!env.WORKTREE_PROJECTS_ROOT) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["WORKTREE_PROJECTS_ROOT"],
+          message: "WORKTREE_PROJECTS_ROOT is required when WORKTREE_MCP_ENABLED=true",
+        });
+      } else {
+        let existingDirectory = false;
+        try {
+          existingDirectory = statSync(env.WORKTREE_PROJECTS_ROOT).isDirectory();
+        } catch {
+          existingDirectory = false;
+        }
+        if (!isAbsolute(env.WORKTREE_PROJECTS_ROOT) || !existingDirectory) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["WORKTREE_PROJECTS_ROOT"],
+            message: "WORKTREE_PROJECTS_ROOT must be an absolute existing directory",
+          });
+        }
+      }
     }
   })
   .transform((env) => ({

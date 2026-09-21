@@ -26,6 +26,10 @@ import type {
   TaskManager,
 } from "../../src/task/task_manager.js";
 import type { AgentProfile } from "../../src/agent_registry.js";
+import { REMOTE_WORKTREE_HTTP_TIMEOUT_MS } from "../../src/mcp/tools/worktree.js";
+import { WORKTREE_OPERATION_TIMEOUT_MS } from "../../src/worktree/worktree_git.js";
+import { WORKTREE_NODE_COMMAND_TIMEOUT_MS } from
+  "../../../orch-server-ts/src/runtime/live_node_agent_profile_route_provider.js";
 
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildServer>>[] = [];
@@ -310,6 +314,61 @@ afterEach(async () => {
   }
 });
 
+describe("remote worktree tools", () => {
+  it("keeps nested timeout budgets ordered through compensation and response propagation", () => {
+    expect(WORKTREE_NODE_COMMAND_TIMEOUT_MS).toBeGreaterThan(
+      WORKTREE_OPERATION_TIMEOUT_MS + 1_100 + 10_000,
+    );
+    expect(REMOTE_WORKTREE_HTTP_TIMEOUT_MS).toBeGreaterThan(
+      WORKTREE_NODE_COMMAND_TIMEOUT_MS,
+    );
+  });
+
+  it("preserves dirty inventory and cleanup guidance from the remote node", async () => {
+    const capture = await createOrchCapture(400, () => ({
+      body: {
+        error: {
+          code: "WORKTREE_DIRTY",
+          message: "clean the worktree and retry",
+          details: {
+            tracked: ["README.md"],
+            untracked: [],
+            ignored: ["dist/"],
+            cleanup: "Commit, stash, or remove only the listed paths",
+          },
+        },
+      },
+    }));
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "remove_worktree",
+        arguments: {
+          node_id: "node-remote",
+          worktree_id: "worktree-1",
+          caller_session_id: "caller-sess-1",
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual({
+        code: "WORKTREE_DIRTY",
+        message: "clean the worktree and retry",
+        details: {
+          tracked: ["README.md"],
+          untracked: [],
+          ignored: ["dist/"],
+          cleanup: "Commit, stash, or remove only the listed paths",
+        },
+      });
+    } finally {
+      await capture.close();
+    }
+  });
+});
+
 describe("agent profile backend boundary", () => {
   const codexAgent: AgentProfile = {
     id: "codex-default",
@@ -540,6 +599,31 @@ describe("agent profile backend boundary", () => {
         }),
       }),
     );
+  });
+
+  it("create_agent_session은 worktree와 검증할 caller session을 함께 전달한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "codex-default",
+        prompt: "child work",
+        caller_session_id: "caller-sess-1",
+        worktree_id: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      worktreeId: "11111111-1111-4111-8111-111111111111",
+      worktreeActorSessionId: "caller-sess-1",
+    }));
   });
 
   it("create_agent_session은 notify_completion=false에서도 caller provenance를 유지한다", async () => {
@@ -892,6 +976,38 @@ describe("list_node_model_presets", () => {
 });
 
 describe("create_remote_agent_session", () => {
+  it("원격 세션에 worktree와 소유권 검증 caller를 함께 전달한다", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return { body: { agentSessionId: "sess-child", nodeId: "node-remote" } };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          prompt: "delegate",
+          caller_session_id: "caller-sess-1",
+          worktree_id: "22222222-2222-4222-8222-222222222222",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(JSON.parse(capture.requests[0]!.body)).toMatchObject({
+        nodeId: "node-remote",
+        worktree_id: "22222222-2222-4222-8222-222222222222",
+        worktree_actor_session_id: "caller-sess-1",
+      });
+    } finally {
+      await capture.close();
+    }
+  });
+
   it("목록에 없는 agent_id의 판정은 alias를 아는 세션 생성 정본에 맡긴다", async () => {
     const capture = await createOrchCapture(200, (req) => {
       if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {

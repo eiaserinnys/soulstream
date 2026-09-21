@@ -9,6 +9,7 @@ import {
   idempotentSessionMutationRequestHash,
   runIdempotentSessionMutation,
 } from "./idempotent_session_mutation.js";
+import { lockWorktreeForSessionBinding } from "./worktree_repository.js";
 
 export type SessionTransitionFields = {
   status?: string;
@@ -54,6 +55,12 @@ export type RegisterSessionMutationResult = {
   reviewState: "not_required" | "needs_review" | "acknowledged";
   reviewDecision: "central_policy" | "legacy_worker";
   policyVersion: number | null;
+};
+
+export type RegisterSessionWithWorktreeMutation = RegisterSessionMutation & {
+  worktreeId: string;
+  worktreeActorSessionId: string;
+  ownerTaskId: string | null;
 };
 
 type RegisterWireContract = "central_policy_v1" | "legacy_worker_v1";
@@ -185,6 +192,65 @@ export class SessionMutationRepository {
       reviewDecision: stored.reviewDecision,
       policyVersion: stored.policyVersion,
     };
+  }
+
+  /**
+   * New, fail-closed wire operation. It is deliberately separate from
+   * registerSession so an old orchestrator returns 404 instead of silently
+   * running a worktree-bound session from the profile base directory.
+   */
+  async registerSessionWithWorktree(
+    input: RegisterSessionWithWorktreeMutation,
+  ): Promise<RegisterSessionMutationResult> {
+    if (!input.worktreeId || !input.worktreeActorSessionId) {
+      throw hostError(422, "worktreeId and worktreeActorSessionId are required");
+    }
+    const sanitizedInput = {
+      ...input,
+      prompt: sanitizePgText(input.prompt),
+    };
+    return await this.idempotent(
+      "register_session_with_worktree",
+      sanitizedInput,
+      async (sql) => {
+        await lockWorktreeForSessionBinding(sql, {
+          worktreeId: sanitizedInput.worktreeId,
+          nodeId: sanitizedInput.nodeId,
+          actorSessionId: sanitizedInput.worktreeActorSessionId,
+          ownerTaskId: sanitizedInput.ownerTaskId,
+        });
+        const centralPolicy = await readSessionReviewPolicy(sql, { lock: "share" });
+        const review = evaluateInitialSessionReview(
+          sanitizedInput.callerInfo ?? null,
+          centralPolicy,
+        );
+        await sql`
+          SELECT session_register_with_model_preset(
+            ${sanitizedInput.sessionId}, ${sanitizedInput.nodeId},
+            ${sanitizedInput.agentId}, ${sanitizedInput.claudeSessionId},
+            ${sanitizedInput.sessionType}, ${sanitizedInput.prompt},
+            ${sanitizedInput.clientId}, ${sanitizedInput.status},
+            ${sanitizedInput.createdAt}, ${sanitizedInput.updatedAt},
+            ${sanitizedInput.callerSessionId}, ${sanitizedInput.notifyCompletion ?? true},
+            ${review.reviewRequired}, ${review.reviewState},
+            ${sanitizedInput.predecessorSessionId},
+            ${sanitizedInput.modelPreset ?? null}, ${sanitizedInput.model ?? null},
+            ${sanitizedInput.reasoningEffort ?? null}
+          )
+        `;
+        await sql`
+          UPDATE sessions SET worktree_id = ${sanitizedInput.worktreeId}
+          WHERE session_id = ${sanitizedInput.sessionId}
+        `;
+        return {
+          ok: true,
+          reviewRequired: review.reviewRequired,
+          reviewState: review.reviewState,
+          reviewDecision: "central_policy",
+          policyVersion: centralPolicy.version,
+        } as const;
+      },
+    );
   }
 
   async transitionSession(input: {
@@ -319,11 +385,28 @@ export class SessionMutationRepository {
               ELSE 'acknowledged'
             END,
             updated_at = ${updatedAt}
-      WHERE node_id = ${nodeId} AND status = 'running'
+      WHERE node_id = ${nodeId}
           AND updated_at <= ${updatedAt}
           AND NOT (session_id = ANY(${sql.array(runningSessionIds)}::text[]))
+          AND (
+            status = 'running'
+            OR (
+              status = 'initializing'
+              AND execution_registration_id IS NULL
+            )
+          )
         RETURNING session_id, status, termination_reason, termination_detail,
                   review_state, updated_at
+      `;
+      await sql`
+        SELECT id FROM worktrees
+        WHERE id IN (
+          SELECT worktree_id FROM sessions
+          WHERE node_id = ${nodeId}
+            AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
+            AND worktree_id IS NOT NULL
+        )
+        FOR UPDATE
       `;
       const restoredRows = await sql<Array<ReconciledSessionRow>>`
         UPDATE sessions
@@ -336,6 +419,23 @@ export class SessionMutationRepository {
           AND status IN ('completed', 'error', 'interrupted')
           AND termination_event_id IS NULL
           AND updated_at <= ${updatedAt}
+          AND (
+            worktree_id IS NULL
+            OR (
+              EXISTS (
+                SELECT 1 FROM worktrees
+                WHERE worktrees.id = sessions.worktree_id
+                  AND worktrees.state = 'ready'
+                  AND (NOT worktrees.setup_required OR worktrees.setup_status = 'ready')
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM sessions AS active
+                WHERE active.worktree_id = sessions.worktree_id
+                  AND active.session_id <> sessions.session_id
+                  AND active.status IN ('initializing', 'running')
+              )
+            )
+          )
         RETURNING session_id, status, termination_reason, termination_detail,
                   review_state, updated_at
       `;

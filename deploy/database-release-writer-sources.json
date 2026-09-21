@@ -11,7 +11,7 @@
     },
     "standalone": {
       "path": "install/haniel-standalone.yaml.template",
-      "sha256": "28d8bf5ab6ad593f4217f22fe9a7615c86d0fb2d0228490c36722f8a5576c592"
+      "sha256": "dffca1711cf5fb9c33c944c55e3bc5c7e9fa0ebd1f23aeed92d359452894341b"
     }
   }
 }

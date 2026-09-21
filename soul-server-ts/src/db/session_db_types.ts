@@ -238,6 +238,7 @@ export interface SessionRow {
   review_state?: ReviewState;
   execution_registration_id?: string | null;
   execution_command_id?: string | null;
+  worktree_id?: string | null;
 }
 
 export interface RunningSessionSummaryRow {
@@ -305,6 +306,14 @@ export interface RegisterSessionParams {
   callerInfo?: Record<string, unknown> | null;
   reviewRequired?: boolean;
   reviewState?: ReviewState;
+}
+
+export interface RegisterSessionWithWorktreeParams extends RegisterSessionParams {
+  worktreeId: string;
+  /** Trusted MCP/upstream caller used for central ownership verification. */
+  worktreeActorSessionId: string;
+  /** Primary task container selected for the new session, or null. */
+  ownerTaskId: string | null;
 }
 
 export type RegisterSessionReviewResult = {

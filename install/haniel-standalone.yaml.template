@@ -74,6 +74,11 @@ install:
           default: "false"
         - key: MCP_REQUIRE_AUTH
           default: "false"
+        - key: WORKTREE_MCP_ENABLED
+          default: "false"
+        - key: WORKTREE_PROJECTS_ROOT
+          prompt: "워크트리 기능을 켤 때 사용할 projects 절대 경로 (disabled면 공백)"
+          default: ""
         - key: ENVIRONMENT
           default: development
         - key: LOG_LEVEL

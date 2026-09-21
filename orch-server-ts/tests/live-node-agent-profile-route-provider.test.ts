@@ -250,6 +250,50 @@ describe("live node agent profile route provider", () => {
     ]);
   });
 
+  it("routes worktree commands only to capable nodes with the canonical command shape", async () => {
+    const { worktreeProvider, sentMessages } = createFixture();
+    await expect(worktreeProvider!.invoke("node-a", "create", {
+      actorSessionId: "session-a",
+      repoId: "soulstream",
+    })).resolves.toEqual({ ok: true });
+    expect(sentMessages).toContainEqual({
+      type: "worktree_create",
+      input: {
+        actorSessionId: "session-a",
+        repoId: "soulstream",
+      },
+      requestId: "req-1-worktree_create",
+    });
+
+    const unavailable = createFixture({ worktreeCapability: false });
+    await expect(unavailable.worktreeProvider!.invoke("node-a", "list", {}))
+      .rejects.toMatchObject({
+        code: "NODE_CAPABILITY_UNAVAILABLE",
+        statusCode: 409,
+      });
+
+    const rejected = createFixture({
+      bridgeError: new PendingNodeCommandRejectedError({
+        commandType: "worktree_create",
+        requestId: "req-1-worktree_create",
+        message: "branch was reused",
+        response: {
+          type: "error",
+          requestId: "req-1-worktree_create",
+          code: "REF_REUSED",
+          message: "branch was reused",
+          details: { expectedSha: "old", actualSha: "new" },
+        },
+      }),
+    });
+    await expect(rejected.worktreeProvider!.invoke("node-a", "create", {}))
+      .rejects.toMatchObject({
+        code: "REF_REUSED",
+        statusCode: 400,
+        details: { expectedSha: "old", actualSha: "new" },
+      });
+  });
+
   it("maps missing nodes and command failures to route status semantics", async () => {
     const missingNode = createFixture();
     await expect(
@@ -287,6 +331,7 @@ function createFixture(input: {
   agents?: unknown[];
   requestNode?: ProviderOptions["nodeHttpClient"]["requestNode"];
   bridgeError?: unknown;
+  worktreeCapability?: boolean;
   agentProfileRepository?: ProviderOptions["agentProfileRepository"];
 } = {}) {
   const registry = new InMemoryNodeRegistry({
@@ -300,6 +345,9 @@ function createFixture(input: {
     host: "127.0.0.1",
     port: 4105,
     agents: input.agents ?? [{ id: "agent-a" }],
+    capabilities: input.worktreeCapability === false
+      ? {}
+      : { worktree_mcp_v1: true, register_session_with_worktree_v1: true },
   });
 
   const sentMessages: Record<string, unknown>[] = [];
@@ -322,7 +370,8 @@ function createFixture(input: {
       return {
         type: `${routed.command.commandType}_result`,
         requestId: routed.command.requestId,
-      } as TResponse;
+        result: { ok: true },
+      } as unknown as TResponse;
     },
   };
 
@@ -337,6 +386,7 @@ function createFixture(input: {
   });
   return {
     provider: bundle.nodeAgentProfileRoutes.provider,
+    worktreeProvider: bundle.nodeAgentProfileRoutes.worktreeProvider,
     requestNode,
     sentMessages,
   };

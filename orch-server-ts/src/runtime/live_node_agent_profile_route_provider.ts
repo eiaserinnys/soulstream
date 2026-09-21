@@ -29,6 +29,10 @@ import type {
 import { LiveNodeHttpClientError } from "./live_node_http_client.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
 
+// 120s worker operation + 1.1s process-tree confirmation + 10s host
+// compensation still completes before the orchestrator rejects the command.
+export const WORKTREE_NODE_COMMAND_TIMEOUT_MS = 150_000;
+
 type AgentSnapshot = {
   readonly id: string;
   readonly name?: unknown;
@@ -73,7 +77,7 @@ export type CreateLiveNodeAgentProfileRouteProviderOptions = {
 };
 
 export type LiveNodeAgentProfileRouteProviderBundle = {
-  readonly nodeAgentProfileRoutes: Pick<NodeAgentProfileRouteOptions, "provider">;
+  readonly nodeAgentProfileRoutes: Pick<NodeAgentProfileRouteOptions, "provider" | "worktreeProvider">;
 };
 
 export function createLiveNodeAgentProfileRouteProviders(
@@ -82,8 +86,42 @@ export function createLiveNodeAgentProfileRouteProviders(
   return {
     nodeAgentProfileRoutes: {
       provider: createLiveNodeAgentProfileProvider(options),
+      worktreeProvider: {
+        invoke: async (nodeId, operation, input) =>
+          await sendWorktreeCommand(options, nodeId, operation, input),
+      },
     },
   };
+}
+
+async function sendWorktreeCommand(
+  options: CreateLiveNodeAgentProfileRouteProviderOptions,
+  nodeId: string,
+  operation: "list" | "create" | "remove" | "delete-branch",
+  input: Record<string, unknown>,
+): Promise<unknown> {
+  const node = requireConnectedNode(options.registry, nodeId);
+  if (node.capabilities.worktree_mcp_v1 !== true) {
+    throw new NodeAgentProfileRouteError(
+      "NODE_CAPABILITY_UNAVAILABLE",
+      `Node ${nodeId} does not advertise worktree_mcp_v1`,
+      409,
+    );
+  }
+  const type = operation === "delete-branch"
+    ? "worktree_delete_branch"
+    : `worktree_${operation}`;
+  try {
+    const command = options.registry.createCommand(
+      nodeId,
+      { type, input } as RequestResponseNodeCommandPayload,
+      { timeoutMs: WORKTREE_NODE_COMMAND_TIMEOUT_MS },
+    );
+    const response = await options.bridge.sendPendingCommand({ node, command });
+    return response.result;
+  } catch (error) {
+    throw mapCommandError(error);
+  }
 }
 
 function createLiveNodeAgentProfileProvider(
@@ -393,10 +431,14 @@ function mapCommandError(error: unknown): NodeAgentProfileRouteError {
     );
   }
   if (error instanceof PendingNodeCommandRejectedError) {
+    const responseCode = error.response?.code;
     return new NodeAgentProfileRouteError(
-      "NODE_AGENT_PROFILE_COMMAND_REJECTED",
+      typeof responseCode === "string"
+        ? responseCode
+        : "NODE_AGENT_PROFILE_COMMAND_REJECTED",
       error.message,
       400,
+      isRecord(error.response?.details) ? error.response.details : undefined,
     );
   }
   return new NodeAgentProfileRouteError(
@@ -404,6 +446,10 @@ function mapCommandError(error: unknown): NodeAgentProfileRouteError {
     error instanceof Error ? error.message : String(error),
     400,
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isDisconnectedCommandError(error: unknown): error is Error {

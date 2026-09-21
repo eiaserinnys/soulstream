@@ -460,9 +460,12 @@ describe("MCP stateless restart recovery", () => {
     expect(
       internalNames.filter((name: string) => !publicNames.includes(name)).sort(),
     ).toEqual([
+      "create_worktree",
       "delete_folder",
       "delete_markdown_document",
       "delete_session",
+      "delete_worktree_branch",
+      "remove_worktree",
     ]);
     expect(
       publicNames.filter((name: string) => !internalNames.includes(name)),

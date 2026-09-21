@@ -30,6 +30,7 @@ import type { EventOutboxRecord } from "../../src/upstream/event_outbox.js";
 import type { EventAppendAcknowledgement } from
   "../../src/upstream/event_outbox_pump.js";
 import { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+import { resolveProfileRuntimeSettings } from "../../src/context/context_builder_helpers.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -439,6 +440,120 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     );
     expect(taskManager.getTask("sess-metadata-failure")).toBeUndefined();
     expect(factory).not.toHaveBeenCalled();
+  });
+
+  it("resolves a bound worktree before engine/context creation and never falls back to profile cwd", async () => {
+    const send = vi.fn(async () => undefined);
+    const { sql } = makeStoredProcMock();
+    const db = new SessionDBClass(sql);
+    const registry = new AgentRegistry([codexAgent]);
+    const broadcaster = new SessionBroadcaster(send, registry, "node-worktree");
+    const outbox = makeEventOutboxHarness();
+    const persistence = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      { append: outbox.append } as never,
+      {
+        waitForAcknowledgement: outbox.waitForAcknowledgement,
+        waitForAcknowledgementResult: outbox.waitForAcknowledgementResult,
+      } as never,
+    );
+    const sessionMutations = {
+      registerSession: vi.fn(async () => undefined),
+      registerSessionWithWorktree: vi.fn(async () => undefined),
+      transitionSession: vi.fn(async () => undefined),
+      renameSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+      acknowledgeReview: vi.fn(async () => "acknowledged" as const),
+    } satisfies SessionMutationHost;
+    const taskManager = new TaskManager(
+      "node-worktree",
+      db,
+      broadcaster,
+      silentLogger,
+      persistence,
+      undefined,
+      registry,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      undefined,
+      sessionMutations,
+    );
+    const engineWorkspaces: string[] = [];
+    const factory = vi.fn((agent: AgentProfile) => {
+      engineWorkspaces.push(agent.workspace_dir);
+      return makeFakeEngine([{ type: "complete", timestamp: 1 } as SSEEventPayload]);
+    });
+    const resolver = {
+      resolveExecutionWorkspace: vi.fn(async () => "/tmp/managed-worktree"),
+    };
+    const executor = new TaskExecutor(
+      factory,
+      db,
+      persistence,
+      broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      resolver,
+    );
+    const task = await taskManager.createTask({
+      agentSessionId: "sess-worktree-cwd",
+      prompt: "pwd",
+      profileId: codexAgent.id,
+      callerSessionId: "owner-session",
+      worktreeId: "worktree-1",
+      worktreeActorSessionId: "owner-session",
+    });
+
+    await executor.startNewExecution(task, codexAgent);
+
+    expect(resolver.resolveExecutionWorkspace).toHaveBeenCalledWith("worktree-1");
+    expect(engineWorkspaces).toEqual(["/tmp/managed-worktree"]);
+    expect(resolveProfileRuntimeSettings(task, registry).workingDir)
+      .toBe("/tmp/managed-worktree");
+
+    const unavailableFactory = vi.fn(() => makeFakeEngine([]));
+    const unavailable = new TaskExecutor(
+      unavailableFactory,
+      db,
+      persistence,
+      broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { resolveExecutionWorkspace: async () => { throw new Error("missing marker"); } },
+    );
+    const unavailableTask = {
+      ...task,
+      agentSessionId: "sess-worktree-unavailable",
+      worktreeId: "worktree-missing",
+      executionPromise: undefined,
+      status: "initializing" as const,
+    };
+    await unavailable.startNewExecution(unavailableTask, codexAgent);
+    expect(unavailableFactory).not.toHaveBeenCalled();
+    expect(unavailableTask).toMatchObject({
+      status: "error",
+      error: expect.stringMatching(/WORKTREE_UNAVAILABLE/),
+    });
   });
 
   it("Unknown agent profile → error 응답, task·DB·broadcast 없음", async () => {

@@ -24,6 +24,7 @@ import type {
 import type { ChildCompletionConsumptionRecorder } from
   "../task/child_completion_consumption.js";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
+import type { WorktreeService } from "../worktree/worktree_service.js";
 
 export interface OrchProxyConfig {
   /** http[s]://host[:port] base. ws→http 변환 후. */
@@ -59,4 +60,6 @@ export interface McpRuntime {
   logger: Logger;
   /** 미설정 시 multi-node 도구는 등록되되 호출 시 `{error: ...}` 반환. */
   orch?: OrchProxyConfig;
+  /** Present only when WORKTREE_MCP_ENABLED and startup validation succeeded. */
+  worktreeService?: WorktreeService;
 }

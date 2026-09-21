@@ -42,6 +42,7 @@ function makeDeps(
   opts: {
     agents?: AgentProfile[];
     runningSessionIds?: string[];
+    initializingSessionIds?: string[];
     listLiveRunnerSessionIds?: () => Promise<string[]>;
     waitForRunnerReconciliation?: () => Promise<void>;
     sessionDb?: SessionDB;
@@ -54,10 +55,16 @@ function makeDeps(
   const agentRegistry = new AgentRegistry(opts.agents ?? [codexAgent]);
   const taskManager = opts.taskManager ?? ({
     listTasks: () =>
-      (opts.runningSessionIds ?? []).map((agentSessionId) => ({
-        agentSessionId,
-        status: "running" as const,
-      })),
+      [
+        ...(opts.runningSessionIds ?? []).map((agentSessionId) => ({
+          agentSessionId,
+          status: "running" as const,
+        })),
+        ...(opts.initializingSessionIds ?? []).map((agentSessionId) => ({
+          agentSessionId,
+          status: "initializing" as const,
+        })),
+      ],
     createTask: async () => {
       throw new Error("createTask not stubbed in this test");
     },
@@ -668,6 +675,7 @@ describe("UpstreamAdapter", () => {
       makeDeps({
         sessionDb,
         runningSessionIds: ["sess-memory", "sess-shared"],
+        initializingSessionIds: ["sess-initializing"],
         waitForRunnerReconciliation: async () => {
           reconciliationOrder.push("drained");
         },
@@ -690,7 +698,12 @@ describe("UpstreamAdapter", () => {
       (msg) => (msg as Record<string, unknown>).type === "runner_inventory",
     )).toMatchObject({
       type: "runner_inventory",
-      running_session_ids: ["sess-memory", "sess-shared", "sess-runner"],
+      running_session_ids: [
+        "sess-memory",
+        "sess-shared",
+        "sess-initializing",
+        "sess-runner",
+      ],
     });
     expect(reconciliationOrder).toEqual(["drained", "scanned"]);
 

@@ -11,6 +11,7 @@ import { EventReadRepository } from "./repositories/event_read_repository.js";
 import { SessionStoryReadRepository } from "./repositories/session_story_read_repository.js";
 import { SessionReadCompositeRepository } from "./repositories/session_read_composite.js";
 import type { SessionDeletionPort } from "../session/session_deletion_service.js";
+import { WorktreeRepository } from "./repositories/worktree_repository.js";
 
 export interface PersistenceHostRepositories {
   deliveries: SessionDeliveryRepository;
@@ -22,6 +23,7 @@ export interface PersistenceHostRepositories {
   eventReads: EventReadRepository;
   storyReads: SessionStoryReadRepository;
   sessionReadComposites: SessionReadCompositeRepository;
+  worktrees: WorktreeRepository;
 }
 
 export function createPersistenceHostRepositoryProvider(
@@ -42,6 +44,7 @@ export function createPersistenceHostRepositoryProvider(
       claudeTranscripts: new ClaudeTranscriptRepository(sql),
       sessionPageBindings: new SessionPageBindingRepository(sql),
       sessionMutations: new SessionMutationRepository(sql, sessionDeletion),
+      worktrees: new WorktreeRepository(sql),
       sessionReads,
       eventReads,
       storyReads,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createAgentConfigCommandFamily } from "../../src/upstream/agent_config_command_family.js";
 import { createAttachmentCommandFamily } from "../../src/upstream/attachment_command_family.js";
@@ -13,6 +13,8 @@ import { createInterventionCommandFamily } from "../../src/upstream/intervention
 import { createRealtimeCommandFamily } from "../../src/upstream/realtime_command_family.js";
 import { createReflectionCommandFamily } from "../../src/upstream/reflection_command_family.js";
 import { createSessionCommandFamily } from "../../src/upstream/session_command_family.js";
+import { createWorktreeCommandFamily } from "../../src/upstream/worktree_command_family.js";
+import { WorktreeServiceError } from "../../src/worktree/worktree_service.js";
 
 describe("control command inventory", () => {
   it("covers every dispatcher command type exactly once", () => {
@@ -26,15 +28,16 @@ describe("control command inventory", () => {
       ...createAuthCommandFamily({} as never),
       ...createReflectionCommandFamily({} as never),
       ...createAgentConfigCommandFamily({} as never),
+      ...createWorktreeCommandFamily({} as never),
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(38);
+    expect(inventoryTypes).toHaveLength(42);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
   });
 
-  it("has the nine approved families and only one fire-and-forget command", () => {
+  it("has the ten approved families and only one fire-and-forget command", () => {
     expect(new Set(CONTROL_COMMAND_INVENTORY.map(({ family }) => family))).toEqual(
       new Set([
         "health",
@@ -46,6 +49,7 @@ describe("control command inventory", () => {
         "auth/provider-usage",
         "reflection",
         "agent-config",
+        "worktree",
       ]),
     );
     expect(
@@ -55,7 +59,7 @@ describe("control command inventory", () => {
     ]);
   });
 
-  it("locks the full nine-family policy decision table", () => {
+  it("locks the full ten-family policy decision table", () => {
     expect(CONTROL_COMMAND_INVENTORY).toEqual([
       { type: "health_check", family: "health", policy: "health" },
       { type: "create_session", family: "session", policy: "durable_mutation" },
@@ -95,7 +99,57 @@ describe("control command inventory", () => {
       { type: "apply_agent_profile_update", family: "agent-config", policy: "durable_mutation" },
       { type: "list_agents_config_snapshots", family: "agent-config", policy: "bounded_result" },
       { type: "rollback_agents_config", family: "agent-config", policy: "durable_mutation" },
+      { type: "worktree_list", family: "worktree", policy: "bounded_result" },
+      { type: "worktree_create", family: "worktree", policy: "durable_mutation" },
+      { type: "worktree_remove", family: "worktree", policy: "durable_mutation" },
+      { type: "worktree_delete_branch", family: "worktree", policy: "durable_mutation" },
     ]);
+  });
+
+  it("returns the synchronous worktree service result over the control channel", async () => {
+    const send = vi.fn(async () => undefined);
+    const create = vi.fn(async () => ({ worktreeId: "worktree-1", path: "/repo--branch" }));
+    const handlers = createWorktreeCommandFamily({
+      send,
+      service: { create } as never,
+    });
+
+    await handlers.worktree_create!({
+      type: "worktree_create",
+      requestId: "request-1",
+      input: { actorSessionId: "session-1", repoId: "repo" },
+    });
+
+    expect(create).toHaveBeenCalledWith({ actorSessionId: "session-1", repoId: "repo" });
+    expect(send).toHaveBeenCalledWith({
+      type: "worktree_result",
+      requestId: "request-1",
+      result: { worktreeId: "worktree-1", path: "/repo--branch" },
+    });
+  });
+
+  it("preserves worktree recovery details in command dispatch failures", async () => {
+    const handlers = createWorktreeCommandFamily({
+      send: vi.fn(async () => undefined),
+      service: {
+        remove: vi.fn(async () => {
+          throw new WorktreeServiceError(
+            "WORKTREE_DIRTY",
+            "clean the worktree and retry",
+            { tracked: ["README.md"], cleanup: "Commit or stash the listed path" },
+          );
+        }),
+      } as never,
+    });
+
+    await expect(handlers.worktree_remove!({
+      type: "worktree_remove",
+      requestId: "request-dirty",
+      input: { actorSessionId: "session-1", worktreeId: "worktree-1" },
+    })).rejects.toMatchObject({
+      code: "WORKTREE_DIRTY",
+      details: { tracked: ["README.md"], cleanup: "Commit or stash the listed path" },
+    });
   });
 
   it("rejects command types that are absent from the decision table", () => {

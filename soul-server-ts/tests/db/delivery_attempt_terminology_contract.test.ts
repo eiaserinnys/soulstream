@@ -33,6 +33,10 @@ const LOCK_ORDER_MIGRATION_PATH = join(
   REPOSITORY_ROOT,
   "packages/db-schema/sql/migrations/087_delivery_notification_lock_order.sql",
 );
+const WORKTREE_MIGRATION_PATH = join(
+  REPOSITORY_ROOT,
+  "packages/db-schema/sql/migrations/093_worktrees.sql",
+);
 const SCHEMA_PATH = join(REPOSITORY_ROOT, "packages/db-schema/sql/schema.sql");
 
 const DELIVERY_SOURCE_FILES = [
@@ -241,6 +245,8 @@ describeWithPostgres.sequential("086 delivery attempt terminology migration", ()
       attempt: { attempt_token: "attempt-token" },
     });
     await sql.unsafe(readFileSync(LOCK_ORDER_MIGRATION_PATH, "utf8"));
+    await sql.unsafe("CREATE TABLE tasks (id TEXT PRIMARY KEY)");
+    await sql.unsafe(readFileSync(WORKTREE_MIGRATION_PATH, "utf8"));
 
     await sql.unsafe("CREATE SCHEMA fresh; SET search_path TO fresh");
     await sql.unsafe(readFileSync(SCHEMA_PATH, "utf8"));
