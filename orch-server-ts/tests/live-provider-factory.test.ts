@@ -423,6 +423,56 @@ describe("live provider factory boundary", () => {
       },
     });
   });
+
+  it("injects the shared preset availability service into the execute provider", async () => {
+    const dependencies = createLiveDependencies();
+    const runtimeServices = createRuntimeServices(dependencies);
+    const bundle = createLiveOrchestratorProviderBundle({
+      dependencies,
+      runtimeServices,
+      usageSummaryRoutes: createUsageSummaryRoutes(),
+      uiEventRepository: createInertUiEventRepository(),
+    });
+    runtimeServices.registry.registerNode({
+      type: "node_register",
+      node_id: "node-hybrid",
+      host: "127.0.0.1",
+      port: 4105,
+      agents: [{ id: "base-agent", backend: "claude" }],
+      capabilities: { max_concurrent: 8, runner_inventory_v1: true },
+      supported_backends: ["claude", "codex"],
+      model_presets: [{
+        id: "codex-5.6-sol",
+        label: "Codex - 5.6 Sol",
+        backend: "codex",
+        available: false,
+        reason: "env_unresolved",
+        usage_provider: "codex",
+      }],
+    });
+    runtimeServices.registry.receiveNodeMessage("node-hybrid", {
+      type: "runner_inventory",
+      running_session_ids: [],
+    });
+
+    await expect(bundle.executeProxyRoutes.provider.executeNew({
+      prompt: "hello",
+      profile: "base-agent",
+      model_preset: "codex-5.6-sol",
+      caller_info: { source: "execute-proxy" },
+    })).rejects.toMatchObject({
+      statusCode: 400,
+      detail: {
+        error: {
+          code: "MODEL_PRESET_UNAVAILABLE",
+          message: expect.stringContaining("키 미설정"),
+        },
+      },
+    });
+    expect(runtimeServices.registry.getConnectedNode("node-hybrid")).toMatchObject({
+      pendingCommandCount: 0,
+    });
+  });
 });
 
 function createInertUiEventRepository(): UiEventRepository {

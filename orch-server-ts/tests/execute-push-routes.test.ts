@@ -141,6 +141,7 @@ describe("Execute proxy and push route harnesses", () => {
         folder_id: "folder-a",
         system_prompt: "system",
         model: "gpt-5",
+        model_preset: "codex-5.6-sol",
         reasoningEffort: "high",
         caller_info: callerInfo,
         context_items: contextItems,
@@ -170,12 +171,62 @@ describe("Execute proxy and push route harnesses", () => {
       folderId: "folder-a",
       system_prompt: "system",
       model: "gpt-5",
+      model_preset: "codex-5.6-sol",
       reasoningEffort: "high",
       caller_info: callerInfo,
       extra_context_items: contextItems,
     });
     expect(provider.executeResume).not.toHaveBeenCalled();
 
+    await app.close();
+  });
+
+  it.each(["", "   ", 123, { id: "codex-5.6-sol" }])(
+    "rejects invalid new-session model_preset %#",
+    async (modelPreset) => {
+      const provider = createExecuteProvider();
+      const app = createApp({
+        config,
+        executeProxyRoutes: { provider },
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/execute",
+        payload: {
+          prompt: "hello",
+          profile: "codex-agent",
+          model_preset: modelPreset,
+        },
+      });
+
+      expect(response.statusCode).toBe(422);
+      expect(provider.executeNew).not.toHaveBeenCalled();
+      await app.close();
+    },
+  );
+
+  it("treats null model_preset as unset for a new session", async () => {
+    const provider = createExecuteProvider();
+    const app = createApp({
+      config,
+      executeProxyRoutes: { provider },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/execute",
+      payload: {
+        prompt: "hello",
+        profile: "codex-agent",
+        model_preset: null,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(provider.executeNew).toHaveBeenCalledWith(expect.not.objectContaining({
+      model_preset: expect.anything(),
+    }));
     await app.close();
   });
 
@@ -287,6 +338,7 @@ describe("Execute proxy and push route harnesses", () => {
         source: "claude_runtime_followup",
         relation_key: "runtime_task:task-1:done",
         delivery_attempt_token: "runtime:node-a",
+        model_preset: "codex-5.6-sol",
       },
     });
 

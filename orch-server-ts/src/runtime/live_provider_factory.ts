@@ -399,6 +399,7 @@ export function createLiveOrchestratorProviderBundle(
         router: options.runtimeServices.sessionRouter,
         bridge: options.runtimeServices.sessionBridge,
         sessionEventHub: options.runtimeServices.sessionEventHub,
+        modelPresetAvailability,
       }),
     },
     nodeAgentProfileRoutes: {

@@ -309,6 +309,7 @@ describe("TaskRuntimeCommands.createSession", () => {
       prompt: "inspect",
       profileId: codexAgent.id,
       modelPreset: "kimi-2",
+      model: "literal-model-is-ignored",
       oauthToken: "claude-token",
     });
 
