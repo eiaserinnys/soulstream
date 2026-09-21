@@ -42,9 +42,7 @@ describe("SessionStoryReadRepository turn summary queries", () => {
     )).resolves.toEqual([
       expect.objectContaining({ eventId: 24, turnNumber: 2 }),
     ]);
-    expect(calls[0]?.text.replace(/\s+/g, " ")).toContain(
-      "ROW_NUMBER() OVER ( ORDER BY COALESCE((payload->>'turn_start_event_id')::bigint, id) ASC, id ASC )",
-    );
+    expect(calls[0]?.text).toContain("ROW_NUMBER() OVER (ORDER BY id ASC)");
     expect(calls[0]?.text).toContain("turn_number >=");
     expect(calls[0]?.text).toContain("turn_number <=");
     expect(calls[0]?.values).toEqual(["sess-1", 2, 4, 3]);

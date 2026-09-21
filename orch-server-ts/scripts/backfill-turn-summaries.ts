@@ -168,8 +168,13 @@ try {
     }),
   };
 
-  const { plans, outOfOrder } = await buildInventory();
   const state = loadState();
+  // Sessions this run already backfilled hold summaries whose turn positions sit
+  // past the gap start, so scanning them again reports the run's own completed
+  // work as a conflict. They are excluded before the scan.
+  const { plans, outOfOrder } = await buildInventory(
+    new Set(state.finishedSessionIds),
+  );
   const eligible = plans.filter((plan) =>
     !state.finishedSessionIds.includes(plan.sessionId)
   );
@@ -313,7 +318,7 @@ try {
   await sqlResolver.close();
 }
 
-async function buildInventory(): Promise<{
+async function buildInventory(alreadyFinished: ReadonlySet<string>): Promise<{
   plans: SessionPlan[];
   outOfOrder: Array<{ sessionId: string; turns: number; reason: string }>;
 }> {
@@ -364,6 +369,7 @@ async function buildInventory(): Promise<{
   const outOfOrder: Array<{ sessionId: string; turns: number; reason: string }> = [];
   const plans: SessionPlan[] = [];
   for (const plan of all) {
+    if (alreadyFinished.has(plan.sessionId)) continue;
     const laterSummaries = existing.get(plan.sessionId) ?? 0;
     if (laterSummaries > 0 && !includeOutOfOrder) {
       outOfOrder.push({

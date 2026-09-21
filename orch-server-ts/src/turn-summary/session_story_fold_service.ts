@@ -306,7 +306,11 @@ export function markerOrderStats(narrative: string): {
   return { markerCount: starts.length, inversionPairs };
 }
 
-function buildSessionStoryPrompt(
+// A marker may not appear in both the existing narrative and the new batch, or
+// the fold hands the model two different turns under the same `[Tn]` and the
+// ambiguity is written into the stored narrative. Exported so that invariant
+// can be asserted directly on the prompt, before any model call.
+export function buildSessionStoryPrompt(
   instruction: string,
   existingNarrative: string | null,
   summaries: readonly UnfoldedTurnSummary[],

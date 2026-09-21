@@ -106,9 +106,9 @@ describePostgres("turn summary fold ordering and watermark", () => {
     });
   });
 
-  // A turn's number is its position in the conversation, so it must not depend
-  // on whether the session has been folded yet.
-  it("numbers a turn by conversation position, unchanged by folding", async () => {
+  // A turn number is the label a narrative cites, so it must survive folding
+  // and any later append, whatever conversation position that append carries.
+  it("keeps every existing turn number stable across folds and later appends", async () => {
     await seedSession("stable");
     await insertSummary("stable", { rowId: 401, turnStart: 10 });
     await insertSummary("stable", { rowId: 402, turnStart: 20 });
@@ -149,21 +149,62 @@ describePostgres("turn summary fold ordering and watermark", () => {
     ]);
   });
 
-  // Why sessions holding a newer summary are excluded from the backfill: a
-  // logically earlier insert renumbers everything after it, which would change
-  // what the markers already written into a narrative refer to.
-  it("renumbers later turns when an earlier turn is inserted late", async () => {
-    await seedSession("renumber");
-    await insertSummary("renumber", { rowId: 501, turnStart: 10 });
-    await insertSummary("renumber", { rowId: 502, turnStart: 30 });
-    await expect(
-      repository.loadTurnSummaryRange("renumber", 1, null, 10).then(numbering),
-    ).resolves.toEqual([[501, 1], [502, 2]]);
+  // The contract, stated directly: a turn number is the label a stored
+  // narrative cites, so appending a summary must never change what an existing
+  // `[Tn]` resolves to -- whatever conversation position the new summary has.
+  it("keeps stored narrative markers resolving to the turns they were written for", async () => {
+    await seedSession("markers");
+    await insertSummary("markers", { rowId: 601, turnStart: 10 });
+    await insertSummary("markers", { rowId: 602, turnStart: 20 });
+    await insertSummary("markers", { rowId: 603, turnStart: 30 });
+    await sql`
+      INSERT INTO session_digests (
+        session_id, narrative, highlight, narrative_through_event_id,
+        fold_count, version, created_at, updated_at
+      ) VALUES ('markers', '[T1] a [T2] b [T3] c', 'h', 603, 1, 1, NOW(), NOW())
+    `;
+    const atFoldTime = await repository.loadTurnSummaryRange("markers", 1, null, 10);
+    expect(resolveMarker(atFoldTime, 2)).toBe(20);
 
-    await insertSummary("renumber", { rowId: 503, turnStart: 20 });
+    // Backfilled for a turn that sits between 10 and 20.
+    await insertSummary("markers", { rowId: 604, turnStart: 15 });
+
+    const afterBackfill = await repository.loadTurnSummaryRange("markers", 1, null, 10);
+    expect(resolveMarker(afterBackfill, 2)).toBe(20);
+    expect(resolveMarker(afterBackfill, 3)).toBe(30);
+    // The recovered turn takes the next free label rather than displacing one.
+    expect(resolveMarker(afterBackfill, 4)).toBe(15);
+  });
+
+  it("gives a late past summary the next unused label", async () => {
+    await seedSession("label");
+    await insertSummary("label", { rowId: 701, turnStart: 10 });
+    await insertSummary("label", { rowId: 702, turnStart: 20 });
+    await insertSummary("label", { rowId: 703, turnStart: 30 });
+    await insertSummary("label", { rowId: 704, turnStart: 15 });
+
     await expect(
-      repository.loadTurnSummaryRange("renumber", 1, null, 10).then(numbering),
-    ).resolves.toEqual([[501, 1], [503, 2], [502, 3]]);
+      repository.loadUnfoldedSummaries("label", 703, 10),
+    ).resolves.toMatchObject([{ eventId: 704, turnNumber: 4 }]);
+  });
+
+  // Arbitrary append positions, one snapshot: no existing pair may move.
+  it("never renumbers an existing summary, whatever arrives later", async () => {
+    await seedSession("permutations");
+    for (const [index, turnStart] of [10, 20, 30].entries()) {
+      await insertSummary("permutations", { rowId: 801 + index, turnStart });
+    }
+    const snapshot = numbering(
+      await repository.loadTurnSummaryRange("permutations", 1, null, 50),
+    );
+
+    for (const [index, turnStart] of [5, 25, 30, 99].entries()) {
+      await insertSummary("permutations", { rowId: 900 + index, turnStart });
+      const current = numbering(
+        await repository.loadTurnSummaryRange("permutations", 1, null, 50),
+      );
+      expect(current.slice(0, snapshot.length)).toEqual(snapshot);
+    }
   });
 
   async function seedSession(sessionId: string): Promise<void> {
@@ -192,6 +233,16 @@ describePostgres("turn summary fold ordering and watermark", () => {
     `;
   }
 });
+
+// What turn does the `[Tn]` marker in a stored narrative point at right now?
+function resolveMarker(
+  summaries: ReadonlyArray<{ turnNumber: number; content: string }>,
+  marker: number,
+): number | undefined {
+  const match = summaries.find((summary) => summary.turnNumber === marker);
+  const parsed = /summary-for-turn-(\d+)/.exec(match?.content ?? "");
+  return parsed === null ? undefined : Number(parsed[1]);
+}
 
 function numbering(
   summaries: ReadonlyArray<{ eventId: number; turnNumber: number }>,
