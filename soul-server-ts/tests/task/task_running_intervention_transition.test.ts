@@ -6,6 +6,8 @@ import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine
 import { createInProcessTaskRunnerRuntime, createTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
+import { TaskDeliveryConsumption } from "../../src/task/task_delivery_consumption.js";
+import { TaskDeliveryTurnReceipt } from "../../src/task/task_delivery_turn_receipt.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -103,6 +105,64 @@ describe("RunningInterventionTransition", () => {
     }));
     expect(register).toHaveBeenCalledOnce();
     expect(register).toHaveBeenCalledWith(message);
+  });
+
+  it("consumes a delivered runtime follow-up only after its tool-boundary turn receipt", async () => {
+    const message = {
+      text: "background task completed",
+      user: "system",
+      callerInfo: { source: "system" },
+      source: "claude_runtime_task_followup",
+      deliveryId: "delivery-runtime-receipt",
+      deliveryIntent: "runtime_followup" as const,
+    };
+    const recorder = {
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+      recordTurnStarted: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(false),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(false),
+    };
+    const receipt = new TaskDeliveryTurnReceipt(
+      new TaskDeliveryConsumption(recorder, silentLogger),
+      [],
+    );
+    const injectAtToolBoundary = vi.fn().mockResolvedValue({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    const task = makeRunningTask({
+      activeDeliveryTurnReceipt: receipt,
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene: vi.fn(),
+        injectAtToolBoundary,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+
+    await expect(transition.deliver(task, message)).resolves.toEqual({ delivered: true });
+    expect(injectAtToolBoundary).toHaveBeenCalledOnce();
+    expect(recorder.recordTurnStarted).not.toHaveBeenCalled();
+    expect(recorder.recordConsumed).not.toHaveBeenCalled();
+
+    await receipt.observe(task, {
+      type: "assistant_message",
+      content: "turn continued after delivery",
+      timestamp: 1,
+    });
+
+    expect(recorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
+    expect(recorder.recordConsumed).toHaveBeenCalledWith(message, task, "event:7");
+    expect(receipt.hasConsumptionReceipt(message)).toBe(true);
   });
 
   it.each(["slack", "browser", "soul-app"])(

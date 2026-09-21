@@ -104,6 +104,41 @@ describe("runtime_followup consumption proof", () => {
     expect(receipt.hasConsumptionReceipt(intervention)).toBe(false);
   });
 
+  it("active delivery register 뒤의 turn receipt로 runtime_followup을 한 번 소비한다", async () => {
+    const intervention = runtimeFollowup();
+    const { recorder, receipt } = makeHarness();
+    const task = makeTask();
+
+    await receipt.observe(task, {
+      type: "assistant_message",
+      content: "before tool-boundary delivery",
+      timestamp: 1,
+    } as SSEEventPayload);
+    await receipt.register(intervention);
+    await receipt.consume(task);
+
+    expect(recorder.recordTurnStarted).not.toHaveBeenCalled();
+    expect(recorder.recordConsumed).not.toHaveBeenCalled();
+
+    await receipt.observe(task, {
+      type: "assistant_message",
+      content: "after tool-boundary delivery",
+      timestamp: 2,
+    } as SSEEventPayload);
+    expect(recorder.recordTurnStarted).toHaveBeenCalledOnce();
+    expect(recorder.recordConsumed).toHaveBeenCalledOnce();
+
+    const exact = { type: "result", success: true, output: "done" } as SSEEventPayload;
+    attachClaudeResultReceiptMetadata(exact, {
+      inputUuid: buildDeliveryInputUuid(intervention.deliveryId!),
+    });
+    await receipt.observe(task, exact);
+
+    expect(recorder.recordTurnStarted).toHaveBeenCalledOnce();
+    expect(recorder.recordConsumed).toHaveBeenCalledOnce();
+    expect(receipt.hasConsumptionReceipt(intervention)).toBe(true);
+  });
+
   it.each([
     "human_live_steer",
     "durable_next_turn",

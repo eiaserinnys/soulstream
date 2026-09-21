@@ -13,6 +13,8 @@ import type { InterventionMessage, Task } from "./task_models.js";
 
 interface DeliveryReceipt {
   intervention: InterventionMessage;
+  /** Set only after an active runner acknowledged delivery through register(). */
+  activeDelivery: boolean;
   recorded: boolean;
   consumed: boolean;
   consumedTurnId?: string;
@@ -43,7 +45,7 @@ export class TaskDeliveryTurnReceipt {
 
   async register(intervention: InterventionMessage): Promise<void> {
     const receipt = this.add(intervention);
-    if (!receipt) return;
+    receipt.activeDelivery = true;
     if (
       isRuntimeFollowup(intervention) &&
       intervention.deliveryId &&
@@ -61,13 +63,14 @@ export class TaskDeliveryTurnReceipt {
     }
   }
 
-  private add(intervention: InterventionMessage): DeliveryReceipt | undefined {
-    const duplicate = this.receipts.some((receipt) =>
+  private add(intervention: InterventionMessage): DeliveryReceipt {
+    const duplicate = this.receipts.find((receipt) =>
       matchesIntervention(receipt.intervention, intervention)
     );
-    if (duplicate) return undefined;
+    if (duplicate) return duplicate;
     const receipt: DeliveryReceipt = {
       intervention,
+      activeDelivery: false,
       recorded: false,
       consumed: false,
     };
@@ -91,12 +94,15 @@ export class TaskDeliveryTurnReceipt {
     if (resultReceipt) this.exactResultInputUuids.add(resultReceipt.inputUuid);
     for (const receipt of this.receipts) {
       if (isRuntimeFollowup(receipt.intervention)) {
-        if (
-          resultReceipt &&
+        const hasExactInputReceipt = resultReceipt &&
           receipt.intervention.deliveryId &&
           resultReceipt.inputUuid ===
-            buildDeliveryInputUuid(receipt.intervention.deliveryId)
-        ) {
+            buildDeliveryInputUuid(receipt.intervention.deliveryId);
+        // A running delivery is acknowledged only after the active engine
+        // accepted it and a later turn event arrives. Queued runtime follow-ups
+        // retain the exact input UUID path, so the two receipt owners do not
+        // consume the same delivery.
+        if (receipt.activeDelivery || hasExactInputReceipt) {
           await this.record(task, receipt, consumedTurnId);
         }
         continue;

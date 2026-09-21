@@ -16,7 +16,7 @@ export interface DeliveryInterventionTarget {
 /** Rebuilds an intervention exclusively from its canonical durable row. */
 export function deliveryRowToInterventionParams(
   row: SessionDeliveryRow,
-  attemptToken: string,
+  attemptToken?: string,
 ): AddInterventionParams {
   const message = readCanonicalDeliveryPayload(row.payload);
   return {
@@ -38,7 +38,7 @@ export function deliveryRowToInterventionParams(
     followupAttempt: message.followupAttempt,
     followupTaskIds: message.followupTaskIds,
     deliveryCreatedAt: row.created_at.toISOString(),
-    deliveryAttemptToken: attemptToken,
+    ...(attemptToken ? { deliveryAttemptToken: attemptToken } : {}),
     storedDeliveryPayload: row.payload,
     storedDeliveryPayloadHash: row.payload_hash,
   };
@@ -52,7 +52,7 @@ export async function redeliverStoredDeliveryContent(
 ): Promise<void> {
   const result = await target.addIntervention(
     {
-      ...deliveryRowToInterventionParams(row, requiredAttemptToken(row)),
+      ...deliveryRowToInterventionParams(row, row.attempt_token ?? undefined),
       targetContentReceiptAbsent:
         row.caller_turn_id === null
         && row.target_receipt_id === null
@@ -72,11 +72,4 @@ function requiredTarget(row: SessionDeliveryRow): string {
     throw new Error(`Delivery ${row.delivery_id} has no resolved target`);
   }
   return row.target_session_id;
-}
-
-function requiredAttemptToken(row: SessionDeliveryRow): string {
-  if (!row.attempt_token) {
-    throw new Error(`Delivery ${row.delivery_id} has no attempt token`);
-  }
-  return row.attempt_token;
 }

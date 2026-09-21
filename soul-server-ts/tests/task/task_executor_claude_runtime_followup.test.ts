@@ -12,6 +12,7 @@ import {
   ClaudeRuntimeTaskFollowupController,
   type ClaudeRuntimeTaskFollowupPort,
 } from "../../src/task/claude_runtime_task_followup.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -390,7 +391,9 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     await task.executionPromise;
 
     expect(turnCount).toBe(2);
-    expect(deliveredInputUuids[0]).toBeDefined();
+    expect(deliveredInputUuids[0]).toBe(
+      buildDeliveryInputUuid(parent.deliveryId),
+    );
     expect(deliveredInputUuids[1]).toBe(deliveredInputUuids[0]);
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledTimes(1);

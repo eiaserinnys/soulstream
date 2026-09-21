@@ -41,7 +41,8 @@ export interface QueuedDeliveryTranscriptRecoveryPass {
  * transcript therefore settles the ledger directly. An accepted input that is
  * still pending returns to reconnect admission. An absent stable identity is
  * conclusive proof that the target has not seen the content, so a current node
- * re-enters the ordinary durable intervention route with the original row.
+ * spends the ordinary retry budget before it re-enters durable intervention.
+ * An exhausted row becomes dead-lettered without waking its target again.
  * Older nodes without that capability retain the R18 dead-letter fallback.
  */
 /**
@@ -144,7 +145,27 @@ export class QueuedDeliveryTranscriptRecovery {
               settled += 1;
               continue;
             }
-            await this.deps.redeliverContent(row);
+            const retry = await this.deps.deliveryRepository.retryDeliveryAttempt(
+              row.delivery_id,
+              this.workerId,
+              "queued_transcript_redelivery_expired",
+              0,
+            );
+            if (!retry) {
+              const settledRow = await this.deps.deliveryRepository.get(row.delivery_id);
+              if (hasConsumptionReceipt(settledRow)) {
+                settled += 1;
+                continue;
+              }
+              throw new Error(
+                `Transcript-absent delivery ${row.delivery_id} lost its retry-state CAS`,
+              );
+            }
+            if (retry.aggregate_state === "dead_letter") {
+              settled += 1;
+              continue;
+            }
+            await this.deps.redeliverContent(retry);
             settled += 1;
             continue;
           }

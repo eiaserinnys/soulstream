@@ -838,7 +838,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
   });
 
-  it("generating 중 완료도 running deliver로 즉시 전달한다", async () => {
+  it("running runtime follow-up keeps the shared live-delivery route", async () => {
     const deliveryId = "55555555-5555-4555-8555-555555555555";
     const admission = admitted(deliveryId, "runtime_followup");
     const gate = {
@@ -857,6 +857,9 @@ describe("TaskInterventionRoute.addIntervention", () => {
       runningInterventionTransition,
       sessionNotificationPublisher,
     } = makeSubject([task], gate);
+    vi.mocked(runningInterventionTransition.deliver).mockResolvedValueOnce({
+      delivered: true,
+    });
 
     await expect(route.addIntervention({
       agentSessionId: task.agentSessionId,
@@ -867,29 +870,16 @@ describe("TaskInterventionRoute.addIntervention", () => {
       completionId: "completion-2",
       relationKey: "runtime_task:task-1:99",
       source: "runtime_followup",
-    }, vi.fn())).resolves.toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
-      reason: "queue_only_policy",
-    });
+    }, vi.fn())).resolves.toEqual({ delivered: true });
 
-    expect(sessionNotificationPublisher.publish).toHaveBeenCalledWith(
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledWith(
       task,
-      expect.objectContaining({ deliveryId }),
-      "queued",
+      expect.objectContaining({ deliveryId, deliveryIntent: "runtime_followup" }),
+      { queueIfUndelivered: true },
     );
-    expect(
-      vi.mocked(runningInterventionTransition.deliver).mock.invocationCallOrder[0],
-    ).toBeLessThan(
-      vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
-    );
-    expect(vi.mocked(gate.recordResult).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(sessionNotificationPublisher.publish).mock.invocationCallOrder[0]!,
-    );
-    expect(runningInterventionTransition.deliver).toHaveBeenCalledTimes(1);
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
+    expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
+    expect(gate.recordResult).toHaveBeenCalledWith(admission, { delivered: true });
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 
@@ -938,7 +928,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(gate.recordResult).not.toHaveBeenCalled();
   });
 
-  it("does not publish completion UI when queueing the delivery fails", async () => {
+  it("does not publish completion UI when running delivery fails", async () => {
     const deliveryId = "77777777-7777-4777-8777-777777777777";
     const gate = {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId, "runtime_followup")),

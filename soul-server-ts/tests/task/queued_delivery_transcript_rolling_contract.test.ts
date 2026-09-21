@@ -49,6 +49,40 @@ describe("queued transcript recovery rolling contract", () => {
     );
   });
 
+  it("routes a budgeted pending redelivery without its stale claim token", async () => {
+    const addIntervention = vi.fn(async () => ({ queued: true }));
+    const row = {
+      delivery_id: "delivery-pending-redelivery",
+      target_session_id: "session-pending-redelivery",
+      attempt_token: null,
+      source: "claude_runtime_task_followup",
+      intent: "runtime_followup",
+      payload: { text: "follow up", user: "system" },
+      created_at: new Date("2026-09-01T00:00:00Z"),
+      caller_turn_id: null,
+      target_receipt_id: null,
+      delivered_at: null,
+      state: "pending",
+      aggregate_state: "pending",
+    } as SessionDeliveryRow;
+
+    await redeliverStoredDeliveryContent(
+      row,
+      { addIntervention } as never,
+      vi.fn(),
+    );
+
+    expect(addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryId: row.delivery_id,
+        targetContentReceiptAbsent: true,
+      }),
+      expect.any(Function),
+    );
+    expect(vi.mocked(addIntervention).mock.calls[0]?.[0]?.deliveryAttemptToken)
+      .toBeUndefined();
+  });
+
   it("new soul converges with an old orch through the legacy delivered action", async () => {
     const harness = makeHarness("old_orch");
 
@@ -96,15 +130,94 @@ describe("queued transcript recovery rolling contract", () => {
 
       await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves
         .toEqual({ claimed: 1, settled: 1 });
+      expect(harness.retryDeliveryAttempt).toHaveBeenCalledWith(
+        "delivery-deferred",
+        "rolling-worker",
+        "queued_transcript_redelivery_expired",
+        0,
+      );
       expect(redeliverContent).toHaveBeenCalledOnce();
       expect(redeliverContent).toHaveBeenCalledWith(expect.objectContaining({
         delivery_id: "delivery-deferred",
         intent,
+        state: "pending",
+        attempt_token: null,
       }));
       expect(harness.markUncertain).not.toHaveBeenCalled();
-      expect(harness.retryDeliveryAttempt).not.toHaveBeenCalled();
     },
   );
+
+  it("spends one bounded redelivery admission for every absent row on each restart", async () => {
+    const deliveryIds = ["delivery-a", "delivery-b"];
+    const state = new Map(deliveryIds.map((deliveryId) => [deliveryId, "queued"]));
+    const attempts = new Map(deliveryIds.map((deliveryId) => [deliveryId, 0]));
+    const row = (deliveryId: string): SessionDeliveryRow => ({
+      delivery_id: deliveryId,
+      target_session_id: "session-batch",
+      intent: "runtime_followup",
+      source: "claude_runtime_task_followup",
+      state: state.get(deliveryId),
+      aggregate_state: "pending",
+      attempt_token: state.get(deliveryId) === "claimed" ? "rolling-worker" : null,
+      attempt_count: attempts.get(deliveryId),
+      caller_turn_id: null,
+      target_receipt_id: null,
+      delivered_at: null,
+    }) as SessionDeliveryRow;
+    const claimQueuedAfterNodeRestart = vi.fn(async () => {
+      const claimed = deliveryIds
+        .filter((deliveryId) => state.get(deliveryId) === "queued")
+        .map((deliveryId) => {
+          state.set(deliveryId, "claimed");
+          return row(deliveryId);
+        });
+      return claimed;
+    });
+    const retryDeliveryAttempt = vi.fn(async (deliveryId: string) => {
+      expect(state.get(deliveryId)).toBe("claimed");
+      attempts.set(deliveryId, (attempts.get(deliveryId) ?? 0) + 1);
+      state.set(deliveryId, "pending");
+      return row(deliveryId);
+    });
+    const redeliverContent = vi.fn(async (pending: SessionDeliveryRow) => {
+      expect(pending.state).toBe("pending");
+      expect(pending.attempt_token).toBeNull();
+      state.set(pending.delivery_id, "queued");
+    });
+    const recovery = new QueuedDeliveryTranscriptRecovery({
+      deliveryRepository: {
+        get: vi.fn(async (deliveryId: string) => row(deliveryId)),
+        markConsumed: vi.fn(async () => null),
+        markUncertain: vi.fn(async () => null),
+        retryDeliveryAttempt,
+      },
+      recoveryRepository: {
+        claimQueuedAfterNodeRestart,
+        markDeliveredFromTranscript: vi.fn(async () => null),
+      },
+      transcriptReceipt: {
+        inspect: vi.fn(async (claimed: SessionDeliveryRow) => ({
+          kind: "absent" as const,
+          inputUuid: `delivery:${claimed.delivery_id}`,
+        })),
+      },
+      redeliverContent,
+      logger: { warn: vi.fn() },
+    }, "rolling-worker");
+
+    await expect(recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 2,
+      settled: 2,
+    });
+    await expect(recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 2,
+      settled: 2,
+    });
+
+    expect(redeliverContent).toHaveBeenCalledTimes(4);
+    expect(retryDeliveryAttempt).toHaveBeenCalledTimes(4);
+    expect([...attempts.values()]).toEqual([2, 2]);
+  });
 
   it("R34 skips transcript-absent replay when the live turn consumed the claimed delivery", async () => {
     const claimedRow = {

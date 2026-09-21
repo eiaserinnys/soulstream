@@ -1132,14 +1132,22 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       }),
       async (row) => {
         redelivered.push(row.delivery_id);
+        const claimed = await repository.claimAttemptForTarget(
+          row.delivery_id,
+          "caller-session",
+          `r27-redelivery:${row.delivery_id}`,
+        );
+        if (!claimed?.attempt_token) {
+          throw new Error(`cannot reclaim ${row.delivery_id}`);
+        }
         const dispatching = await repository.beginDispatch(
           row.delivery_id,
-          row.attempt_token ?? undefined,
+          claimed.attempt_token,
         );
         if (!dispatching) throw new Error(`cannot dispatch ${row.delivery_id}`);
         const queued = await repository.markQueued(
           row.delivery_id,
-          row.attempt_token ?? undefined,
+          claimed.attempt_token,
         );
         if (!queued) throw new Error(`cannot queue ${row.delivery_id}`);
         const consumed = await repository.markConsumed(
@@ -1237,14 +1245,22 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       },
       async (row) => {
         redelivered.push(row.delivery_id);
+        const claimed = await repository.claimAttemptForTarget(
+          row.delivery_id,
+          "caller-session",
+          `orphan-redelivery:${row.delivery_id}`,
+        );
+        if (!claimed?.attempt_token) {
+          throw new Error(`cannot reclaim ${row.delivery_id}`);
+        }
         const dispatching = await repository.beginDispatch(
           row.delivery_id,
-          row.attempt_token ?? undefined,
+          claimed.attempt_token,
         );
         if (!dispatching) throw new Error(`cannot dispatch ${row.delivery_id}`);
         const queued = await repository.markQueued(
           row.delivery_id,
-          row.attempt_token ?? undefined,
+          claimed.attempt_token,
         );
         if (!queued) throw new Error(`cannot queue ${row.delivery_id}`);
       },
@@ -1427,6 +1443,73 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       "node-test",
       "node-ready-worker",
     )).resolves.toEqual([]);
+  });
+
+  it("dead-letters aged absent runtime follow-ups before redelivery", async () => {
+    const deliveryIds = ["aged-runtime-a", "aged-runtime-b"];
+    for (const [index, deliveryId] of deliveryIds.entries()) {
+      await repository.register({
+        deliveryId,
+        targetSessionId: "caller-session",
+        relationKey: `runtime:caller-session:aged-task-${index}`,
+        completionId: `runtime-followup:aged-task-${index}`,
+        intent: "runtime_followup",
+        source: "claude_runtime_task_followup",
+        producerKind: "claude_background_task",
+        producerId: `aged-task-${index}`,
+        producerTerminalRevision: `aged-task-${index}@1`,
+        payloadHash: `hash-${deliveryId}`,
+        payload: {
+          text: `follow up ${index}`,
+          user: "system",
+          source: "claude_runtime_task_followup",
+          followup_key: `caller-session:aged-task-${index}`,
+          followup_attempt: 1,
+        },
+      });
+      const worker = `crashed:${deliveryId}`;
+      await repository.claimAttemptForTarget(deliveryId, "caller-session", worker);
+      await repository.beginDispatch(deliveryId, worker);
+      await repository.markQueued(deliveryId, worker);
+      await harness.sql`
+        UPDATE session_deliveries
+        SET created_at = NOW() - INTERVAL '25 hours'
+        WHERE delivery_id = ${deliveryId}
+      `;
+    }
+
+    const redeliverContent = vi.fn(async () => undefined);
+    const queuedRecovery = makeQueuedRecovery(
+      "aged-runtime-worker",
+      async (row) => ({
+        kind: "absent" as const,
+        inputUuid: buildDeliveryInputUuid(row.delivery_id),
+      }),
+      redeliverContent,
+    );
+
+    await expect(queuedRecovery.recoverAfterNodeRestart("node-test"))
+      .resolves.toEqual({ claimed: 2, settled: 2 });
+    await expect(queuedRecovery.recoverAfterNodeRestart("node-test"))
+      .resolves.toEqual({ claimed: 0, settled: 0 });
+    expect(redeliverContent).not.toHaveBeenCalled();
+    await expect(Promise.all(deliveryIds.map((deliveryId) => repository.get(deliveryId))))
+      .resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          delivery_id: "aged-runtime-a",
+          state: "uncertain",
+          aggregate_state: "dead_letter",
+          attempt_count: 1,
+          dead_letter_reason: "queued_transcript_redelivery_expired",
+        }),
+        expect.objectContaining({
+          delivery_id: "aged-runtime-b",
+          state: "uncertain",
+          aggregate_state: "dead_letter",
+          attempt_count: 1,
+          dead_letter_reason: "queued_transcript_redelivery_expired",
+        }),
+      ]));
   });
 
   it("rolls ledger and notification outbox forward atomically", async () => {
