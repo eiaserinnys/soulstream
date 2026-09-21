@@ -90,7 +90,7 @@ jobs:
         shell: bash
         run: >-
           python -m pip install --force-reinstall
-          git+https://github.com/eiaserinnys/Haniel.git@3d02d57eb4a78b2eca18acb69c9f099424537c6e
+          git+https://github.com/eiaserinnys/Haniel.git@809798b981b9282b96dc074d77d523efa280f9ec
 
       - name: Run cross-platform database release contracts
         shell: bash
@@ -202,7 +202,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --force-reinstall `
-            git+https://github.com/eiaserinnys/Haniel.git@3d02d57eb4a78b2eca18acb69c9f099424537c6e
+            git+https://github.com/eiaserinnys/Haniel.git@809798b981b9282b96dc074d77d523efa280f9ec
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v7

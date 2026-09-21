@@ -800,14 +800,20 @@ describe("apply-schema.mjs", () => {
   it("keeps worker Haniel config free of database startup gates", () => {
     const yaml = readFileSync(YAML_PATH, "utf8");
     const parsed = parseYaml(yaml) as HanielSoulServerTsExample;
-    const service = parsed.services["soul-server-ts"];
+    const service = parsed.services["soulstream-server"];
     const envConfig = parsed.install.configs["soul-server-ts-env"];
 
     expect(parsed.repos["soulstream-server-src"].release_manifest).toBe(
       "deploy/release-manifest-worker.json",
     );
+    expect(service.release_env_file).toBe(
+      "./services/soulstream/.env.soul-server-ts",
+    );
     expect(service.hooks).not.toHaveProperty("pre_start");
     expect(service.hooks.post_pull).not.toContain("apply-schema.mjs");
+    expect(service.hooks.post_pull).toContain(
+      'build_with_release_env.mjs --env-file "{root}/services/soulstream/.env.soul-server-ts"',
+    );
     expect(envConfig.keys.map((entry) => entry.key)).not.toContain("DATABASE_URL");
     expect(envConfig.keys.map((entry) => entry.key)).toContain("EVENT_OUTBOX_DIR");
   });
@@ -877,7 +883,8 @@ interface HanielSoulServerTsExample {
     };
   };
   services: {
-    "soul-server-ts": {
+    "soulstream-server": {
+      release_env_file: string;
       hooks: {
         post_pull: string;
         pre_start?: string;

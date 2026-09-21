@@ -1,6 +1,8 @@
 {
   "schema_version": "haniel.release.v1",
-  "release_id": "soulstream-worker-database-free-v1",
+  "release_id": "soulstream-worker-env-bound-v2",
+  "environment_service": "soulstream-server",
+  "requires_service_env_file": true,
   "post_start_verify": [
     {
       "name": "verify-release-health",
