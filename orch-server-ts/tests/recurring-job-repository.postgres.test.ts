@@ -17,7 +17,7 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
   beforeAll(async () => {
     harness = await createPagePostgresHarness();
     const migration = await readFile(
-      new URL("../../packages/db-schema/sql/migrations/093_recurring_jobs.sql", import.meta.url),
+      new URL("../../packages/db-schema/sql/migrations/094_recurring_jobs.sql", import.meta.url),
       "utf8",
     );
     await harness.sql.unsafe(migration);
