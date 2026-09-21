@@ -200,6 +200,24 @@ describe("WorktreeService", () => {
     })).resolves.toMatchObject({ removed: true });
     expect(host.records.get(String(created.worktreeId))?.state).toBe("removed");
   });
+
+  it("lists an out-of-root Git worktree as external without trying to mutate or inspect it", async () => {
+    const { repo, service } = fixture();
+    const externalRoot = mkdtempSync(join(tmpdir(), "worktree-service-external-"));
+    roots.push(externalRoot);
+    const external = join(externalRoot, "external");
+    git(repo, "worktree", "add", "-b", "feature/external-service", external, "HEAD");
+
+    await expect(service.list({ actorSessionId: "owner", repoId: "demo" }))
+      .resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          path: external,
+          discoveryKind: "unmanaged_external",
+          dirty: null,
+          adoptionAllowed: false,
+        }),
+      ]));
+  });
 });
 
 class MemoryWorktreeHost implements WorktreeHost {

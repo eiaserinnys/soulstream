@@ -70,7 +70,9 @@ export class WorktreeService implements WorktreeExecutionResolver {
         if (record) discoveredRecordIds.add(record.id);
         const dirty = discovered.kind === "base"
           ? { clean: true, tracked: [], untracked: [], ignored: [] }
-          : await this.options.git.inspectDirty(
+          : discovered.kind === "external"
+            ? null
+            : await this.options.git.inspectDirty(
               discovered.path,
               record?.managedPaths.map((managed) => managed.path) ?? [],
             );
