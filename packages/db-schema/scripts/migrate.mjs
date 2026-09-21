@@ -286,10 +286,24 @@ export async function runMigrations(
   }
 }
 
+/**
+ * 실패 메시지에서 접속 문자열을 가린다.
+ *
+ * 마이그레이션 자격증명은 런타임보다 권한이 높을 수 있으므로 `DATABASE_URL`만
+ * 가리면 부족하다. 긴 쪽부터 지워 한 값이 다른 값의 부분 문자열이어도
+ * 절반만 남는 일이 없게 한다.
+ */
 export function formatMigrationError(error, env = process.env) {
   let text = error instanceof Error ? error.stack ?? error.message : String(error);
-  const databaseUrl = env.DATABASE_URL?.trim();
-  if (databaseUrl) text = text.split(databaseUrl).join("[redacted DATABASE_URL]");
+  const candidates = [
+    ["MIGRATION_DATABASE_URL", env.MIGRATION_DATABASE_URL?.trim()],
+    ["DATABASE_URL", env.DATABASE_URL?.trim()],
+  ]
+    .filter(([, value]) => Boolean(value))
+    .sort(([, a], [, b]) => b.length - a.length);
+  for (const [name, value] of candidates) {
+    text = text.split(value).join(`[redacted ${name}]`);
+  }
   return text;
 }
 

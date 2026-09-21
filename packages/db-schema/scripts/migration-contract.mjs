@@ -11,9 +11,23 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const migrationDirectory = resolve(packageRoot, "sql/migrations");
 export const migrationManifestPath = resolve(packageRoot, "migration-manifest.json");
 export const canonicalSchemaPath = resolve(packageRoot, "sql/schema.sql");
+/**
+ * 배포 설정 파일의 경로.
+ *
+ * Haniel 은 서비스의 `release_env_file` 을 0600 임시 스냅샷으로 복사한 뒤
+ * `HANIEL_SERVICE_ENV_FILE` 에 그 **경로만** 넘긴다. 값은 자식 프로세스 env 에
+ * 합쳐지지 않고, 오히려 `DATABASE_URL`·`PG*` 는 제거된다. 그래서 이 파일을 읽지
+ * 않으면 배포되는 서비스의 설정에 닿을 방법이 없다 — 마이그레이션 권한자가
+ * orch 인데도 worker 의 `.env.soul-server-ts` 를 읽던 것이 그 결과였다.
+ *
+ * 넘어오지 않으면 기존대로 서비스 cwd 의 `.env.soul-server-ts` 를 쓴다.
+ */
 export function deploymentEnvironmentPath(env = process.env, cwd = process.cwd()) {
   const serviceCwd = env.HANIEL_SERVICE_CWD?.trim();
-  return resolve(serviceCwd || cwd, ".env.soul-server-ts");
+  const base = serviceCwd || cwd;
+  const serviceEnvFile = env.HANIEL_SERVICE_ENV_FILE?.trim();
+  if (serviceEnvFile) return resolve(base, serviceEnvFile);
+  return resolve(base, ".env.soul-server-ts");
 }
 
 export function sha256(value) {
@@ -24,8 +38,18 @@ export function migrationSha256(sql) {
   return sha256(sql.replace(/\r\n?/g, "\n"));
 }
 
+/**
+ * 마이그레이션·릴리스 도구가 쓸 데이터베이스 접속 문자열.
+ *
+ * `MIGRATION_DATABASE_URL`이 있으면 그것을 먼저 쓴다. 런타임 역할과 DDL 역할을
+ * 분리한 배포에서 쓰라고 있는 자리다 — 런타임 역할에 CREATE 권한을 주지 않고도
+ * 마이그레이션만 별도 자격증명으로 돌릴 수 있다. 없으면 기존대로 `DATABASE_URL`.
+ *
+ * 비어 있거나 공백뿐이면 "주지 않은 것"으로 본다. 아래 검증이 이미 그 규칙이라
+ * 두 변수에 같은 규칙을 적용한다.
+ */
 export function readDatabaseUrl(env = process.env) {
-  const value = env.DATABASE_URL?.trim();
+  const value = env.MIGRATION_DATABASE_URL?.trim() || env.DATABASE_URL?.trim();
   if (!value) throw new Error("DATABASE_URL is required");
   if (!value.startsWith("postgres://") && !value.startsWith("postgresql://")) {
     throw new Error("DATABASE_URL must be postgres:// or postgresql://");

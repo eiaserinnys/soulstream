@@ -11,7 +11,11 @@ import {
   loadMigrationManifest,
   migrationSha256,
   validateLedger,
+  readDatabaseUrl,
 } from "../../../packages/db-schema/scripts/migration-contract.mjs";
+import {
+  formatMigrationError,
+} from "../../../packages/db-schema/scripts/migrate.mjs";
 
 const empty = {
   sessions: null,
@@ -179,6 +183,65 @@ describe("versioned migration contract", () => {
     expect(deploymentEnvironmentPath({}, "/repo-root")).toBe(
       resolve("/repo-root/.env.soul-server-ts"),
     );
+  });
+
+  it("prefers the migration credential so runtime roles need no DDL grant", () => {
+    const runtime = "postgres://runtime@127.0.0.1:5432/soulstream";
+    const migration = "postgres://admin@127.0.0.1:5432/soulstream?options=-c%20role%3Downer";
+
+    expect(readDatabaseUrl({ DATABASE_URL: runtime })).toBe(runtime);
+    expect(readDatabaseUrl({
+      DATABASE_URL: runtime,
+      MIGRATION_DATABASE_URL: migration,
+    })).toBe(migration);
+    // 비어 있거나 공백뿐이면 주지 않은 것으로 본다 — 기존 trim 규칙 그대로다.
+    expect(readDatabaseUrl({ DATABASE_URL: runtime, MIGRATION_DATABASE_URL: "" })).toBe(runtime);
+    expect(readDatabaseUrl({ DATABASE_URL: runtime, MIGRATION_DATABASE_URL: "   " }))
+      .toBe(runtime);
+    expect(() => readDatabaseUrl({})).toThrow("DATABASE_URL is required");
+    expect(() => readDatabaseUrl({ MIGRATION_DATABASE_URL: "not-a-url" }))
+      .toThrow("must be postgres:// or postgresql://");
+  });
+
+  it("hides both connection strings from a failed migration report", () => {
+    // 마이그레이션 자격증명은 런타임보다 권한이 높을 수 있다. 실패 로그에
+    // 평문으로 남으면 그 한 번으로 새어 나간다.
+    const runtime = "postgres://runtime:pw@127.0.0.1:5432/soulstream";
+    const migration = "postgres://admin:secret@127.0.0.1:5432/soulstream?options=-c%20role%3Downer";
+    const env = { DATABASE_URL: runtime, MIGRATION_DATABASE_URL: migration };
+
+    const text = formatMigrationError(
+      new Error(`connect failed for ${migration} falling back to ${runtime}`),
+      env,
+    );
+
+    expect(text).not.toContain("secret");
+    expect(text).not.toContain(migration);
+    expect(text).not.toContain(runtime);
+    expect(text).toContain("[redacted MIGRATION_DATABASE_URL]");
+    expect(text).toContain("[redacted DATABASE_URL]");
+  });
+
+  it("reads the release env snapshot Haniel hands over, not the worker file", () => {
+    // Haniel 은 값을 env 로 합치지 않고 스냅샷 경로만 넘긴다. 이걸 보지 않으면
+    // 배포 서비스의 설정에 닿지 못하고 repo 안의 worker 파일을 읽게 된다.
+    expect(deploymentEnvironmentPath(
+      { HANIEL_SERVICE_ENV_FILE: "/tmp/haniel-release-env-x/service.env" },
+      "/repo-root",
+    )).toBe(resolve("/tmp/haniel-release-env-x/service.env"));
+
+    // 서비스 cwd 가 함께 와도 스냅샷이 이긴다.
+    expect(deploymentEnvironmentPath(
+      {
+        HANIEL_SERVICE_CWD: "/service-root",
+        HANIEL_SERVICE_ENV_FILE: "/tmp/haniel-release-env-x/service.env",
+      },
+      "/repo-root",
+    )).toBe(resolve("/tmp/haniel-release-env-x/service.env"));
+
+    // 넘어오지 않거나 공백뿐이면 기존 동작 그대로다.
+    expect(deploymentEnvironmentPath({ HANIEL_SERVICE_ENV_FILE: "   " }, "/repo-root"))
+      .toBe(resolve("/repo-root/.env.soul-server-ts"));
   });
 
   it("loads the full-filename manifest in deterministic order with verified checksums", async () => {

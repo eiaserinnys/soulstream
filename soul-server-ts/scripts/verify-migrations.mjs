@@ -3,17 +3,23 @@ import { readFileSync } from "node:fs";
 
 import { deploymentEnvironmentPath } from "../../packages/db-schema/scripts/migration-contract.mjs";
 
-// Mirror migrate.mjs's environment discovery: DATABASE_URL comes from the
-// process env or the canonical deployment env file. dotenv is not resolvable
-// from this package under pnpm isolation, so probe the file directly.
+// Mirror migrate.mjs's environment discovery: the connection string comes from
+// MIGRATION_DATABASE_URL or DATABASE_URL, in the process env or the canonical
+// deployment env file. dotenv is not resolvable from this package under pnpm
+// isolation, so probe the file directly.
+//
+// Both names must be probed. A deployment that separates the DDL role can carry
+// only MIGRATION_DATABASE_URL, and missing it here would silently downgrade the
+// schema gate to "worker-db-free" on a node that does hold a credential.
 function databaseUrlConfigured() {
+  if (process.env.MIGRATION_DATABASE_URL?.trim()) return true;
   if (process.env.DATABASE_URL?.trim()) return true;
   try {
     const content = readFileSync(
       deploymentEnvironmentPath(process.env, process.cwd()),
       "utf8",
     );
-    return /^\s*DATABASE_URL\s*=\s*\S/m.test(content);
+    return /^\s*(?:MIGRATION_)?DATABASE_URL\s*=\s*\S/m.test(content);
   } catch {
     return false;
   }
@@ -29,7 +35,7 @@ if (!databaseUrlConfigured()) {
   console.log(JSON.stringify({
     status: "skipped",
     mode: "verify",
-    reason: "worker-db-free: DATABASE_URL is not configured; schema verification is owned by the central deployment",
+    reason: "worker-db-free: no database credential is configured; schema verification is owned by the central deployment",
   }));
   process.exit(0);
 }
