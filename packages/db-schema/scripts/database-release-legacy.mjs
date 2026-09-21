@@ -5,14 +5,14 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
 import { applyManifestContract } from "./database-release-cli.mjs";
-import { deploymentEnvironmentPath } from "./migration-contract.mjs";
+import { releaseServiceEnvironmentPath } from "./migration-contract.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 export async function prepareLegacyInitializeEnvironment(options) {
   const env = options.env ?? process.env;
   dotenv.config({
-    path: deploymentEnvironmentPath(env, options.cwd ?? process.cwd()),
+    path: releaseServiceEnvironmentPath(env, options.cwd ?? process.cwd()),
     override: true,
     processEnv: env,
   });

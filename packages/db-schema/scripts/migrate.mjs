@@ -10,7 +10,7 @@ import {
   MIGRATION_LOCK_NAMESPACE,
   buildMigrationPlan,
   canonicalSchemaPath,
-  deploymentEnvironmentPath,
+  releaseServiceEnvironmentPath,
   loadMigrationManifest,
   readDatabaseUrl,
   readReleaseId,
@@ -237,7 +237,7 @@ export async function runMigrations(
 ) {
   if (!MODES.has(mode)) throw new Error(`unknown migration mode: ${mode}`);
   dotenv.config({
-    path: deploymentEnvironmentPath(env, cwd),
+    path: releaseServiceEnvironmentPath(env, cwd),
     override: true,
     processEnv: env,
   });
