@@ -217,6 +217,94 @@ describe("queued transcript finite restart recovery", () => {
     await receipt.consume(task);
     expect(recordConsumed).toHaveBeenCalledOnce();
   });
+
+  it("does not replay a runtime follow-up consumed after active delivery", async () => {
+    const deliveryId = "delivery-live-runtime-followup";
+    let state: "queued" | "claimed" | "consumed" = "queued";
+    let targetReceiptId: string | null = null;
+    const row = (): SessionDeliveryRow => ({
+      delivery_id: deliveryId,
+      state,
+      aggregate_state: state === "consumed" ? "consumed" : "pending",
+      attempt_token: state === "claimed" ? "startup-worker" : null,
+      target_receipt_id: targetReceiptId,
+    }) as SessionDeliveryRow;
+    const message: InterventionMessage = {
+      text: "runtime follow-up already seen by the agent",
+      user: "system",
+      source: "claude_runtime_task_followup",
+      deliveryId,
+      deliveryIntent: "runtime_followup",
+      completionId: `runtime:${deliveryId}`,
+      relationKey: `runtime_task:sess-live:${deliveryId}`,
+    };
+    const task: Task = {
+      agentSessionId: "sess-live",
+      prompt: "active turn",
+      status: "running",
+      createdAt: new Date("2026-09-02T00:00:00.000Z"),
+      lastEventId: 8250,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    };
+    const recordConsumed = vi.fn(async (
+      _message: InterventionMessage,
+      _task: Task,
+      consumedTurnId?: string,
+    ) => {
+      state = "consumed";
+      targetReceiptId = consumedTurnId ?? null;
+    });
+    const receipt = new TaskDeliveryTurnReceipt(
+      new TaskDeliveryConsumption({
+        recordTurnStarted: vi.fn(async () => undefined),
+        recordConsumed,
+        discardIfConsumed: vi.fn(async () => false),
+      }, { warn: vi.fn() } as unknown as Logger),
+      [],
+    );
+
+    await receipt.register(message);
+    await receipt.observe(task, {
+      type: "assistant_message",
+      content: "tool-boundary delivery was observed",
+    } as SSEEventPayload);
+
+    const claimQueuedAfterNodeRestart = vi.fn(async () => {
+      if (state !== "queued") return [];
+      state = "claimed";
+      return [row()];
+    });
+    const inspect = vi.fn(async () => ({
+      kind: "absent" as const,
+      inputUuid: buildDeliveryInputUuid(deliveryId),
+    }));
+    const redeliverContent = vi.fn(async () => undefined);
+    const recovery = new QueuedDeliveryTranscriptRecovery({
+      deliveryRepository: {
+        get: vi.fn(async () => row()),
+        markConsumed: vi.fn(),
+        retryDeliveryAttempt: vi.fn(),
+      },
+      recoveryRepository: {
+        claimQueuedAfterNodeRestart,
+        markDeliveredFromTranscript: vi.fn(),
+      },
+      transcriptReceipt: { inspect },
+      redeliverContent,
+      logger: { warn: vi.fn() },
+    }, "startup-worker");
+
+    await expect(recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 0,
+      settled: 0,
+    });
+    expect(state).toBe("consumed");
+    expect(targetReceiptId).toBe("event:8250");
+    expect(recordConsumed).toHaveBeenCalledOnce();
+    expect(inspect).not.toHaveBeenCalled();
+    expect(redeliverContent).not.toHaveBeenCalled();
+  });
 });
 
 function makeHarness(receiptKind: "input_pending" | "completed") {
