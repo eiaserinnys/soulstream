@@ -317,6 +317,11 @@ describe("terminal queued delivery across node restart", () => {
       SESSION_ID,
       expect.stringMatching(/^route:/),
     );
+    expect(ledger.claimPendingImmediateIntentsForNode).toHaveBeenCalledOnce();
+    expect(ledger.claimPendingImmediateIntentsForNode).toHaveBeenCalledWith(
+      NODE_ID,
+      ATTEMPT_TOKEN,
+    );
     expect(ledger.trace).toEqual([
       "queued",
       "transcript_claimed",
