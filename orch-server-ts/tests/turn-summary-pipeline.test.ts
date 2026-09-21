@@ -301,6 +301,13 @@ describe("TurnSummaryPipeline", () => {
       }),
       "turn_summary:10:19",
     );
+    // History is scoped to the turn being summarised, so a backfilled turn can
+    // never read a later turn's summary as its own context.
+    expect(repository.loadPreviousSummaries).toHaveBeenCalledWith(
+      "session-a",
+      expect.any(Number),
+      10,
+    );
     expect(summarizer.summarize).toHaveBeenCalledWith(
       expect.objectContaining({
         speaker: {

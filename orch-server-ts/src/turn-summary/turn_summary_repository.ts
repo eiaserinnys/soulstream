@@ -60,7 +60,11 @@ export interface TurnSummaryRepositoryPort {
     turnStartEventId: number,
     finalResponseEventId: number,
   ): Promise<boolean>;
-  loadPreviousSummaries(sessionId: string, limit: number): Promise<string[]>;
+  loadPreviousSummaries(
+    sessionId: string,
+    limit: number,
+    beforeTurnStartEventId: number,
+  ): Promise<string[]>;
   isSessionSummarizable(sessionId: string): Promise<boolean>;
   appendSummary(
     sessionId: string,
@@ -185,15 +189,24 @@ export class TurnSummaryRepository implements TurnSummaryRepositoryPort {
   async loadPreviousSummaries(
     sessionId: string,
     limit: number,
+    beforeTurnStartEventId: number,
   ): Promise<string[]> {
     if (limit === 0) return [];
     const sql = await this.sqlResolver.resolveSql();
+    // Summaries are ordered by the turn they describe, not by the event id of
+    // the summary row. Backfilled summaries are appended at the session tail,
+    // so their event ids run ahead of older live summaries; ordering by id
+    // would report the newest turn as the oldest history entry and silently
+    // drop it from the window.
     const rows = await sql`
       SELECT payload
       FROM events
       WHERE session_id = ${sessionId}
         AND event_type = 'turn_summary'
-      ORDER BY id DESC
+        AND COALESCE((payload->>'turn_start_event_id')::bigint, id)
+            < ${beforeTurnStartEventId}
+      ORDER BY COALESCE((payload->>'turn_start_event_id')::bigint, id) DESC,
+               id DESC
       LIMIT ${limit}
     `;
     return rows
