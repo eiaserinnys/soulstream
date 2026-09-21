@@ -112,11 +112,16 @@ BEGIN
                 AND active.status IN ('initializing', 'running')
            ) THEN
             RETURN QUERY
-            SELECT FALSE, session.execution_registration_id,
-                   session.execution_command_id, session.status,
-                   session.termination_reason, session.termination_detail,
-                   session.review_state, session.last_assistant_text,
-                   session.termination_event_id, session.updated_at,
+            SELECT FALSE,
+                   session.execution_registration_id,
+                   session.execution_command_id,
+                   session.status,
+                   session.termination_reason,
+                   session.termination_detail,
+                   session.review_state,
+                   session.last_assistant_text,
+                   session.termination_event_id,
+                   session.updated_at,
                    session.last_event_id
               FROM sessions AS session
              WHERE session.session_id = p_session_id;
@@ -126,9 +131,12 @@ BEGIN
 
     IF p_terminal_resume THEN
         UPDATE sessions AS session
-           SET status = 'running', termination_reason = NULL,
-               termination_detail = NULL, termination_event_id = NULL,
-               last_assistant_text = NULL, review_state = p_review_state,
+           SET status = 'running',
+               termination_reason = NULL,
+               termination_detail = NULL,
+               termination_event_id = NULL,
+               last_assistant_text = NULL,
+               review_state = p_review_state,
                execution_registration_id = p_registration_id,
                execution_command_id = p_execution_command_id,
                updated_at = p_recorded_at
@@ -137,8 +145,10 @@ BEGIN
            AND session.termination_event_id IS NOT DISTINCT FROM p_expected_terminal_event_id;
     ELSE
         UPDATE sessions AS session
-           SET status = 'running', termination_reason = NULL,
-               termination_detail = NULL, review_state = p_review_state,
+           SET status = 'running',
+               termination_reason = NULL,
+               termination_detail = NULL,
+               review_state = p_review_state,
                execution_registration_id = p_registration_id,
                execution_command_id = p_execution_command_id,
                updated_at = p_recorded_at
@@ -149,12 +159,14 @@ BEGIN
 
     IF v_row_count = 1 AND p_terminal_resume THEN
         UPDATE session_deliveries
-           SET state = 'superseded', aggregate_state = 'consumed',
+           SET state = 'superseded',
+               aggregate_state = 'consumed',
                consumed_at = p_recorded_at,
                consumed_reason = 'superseded by terminal resume',
                superseded_at = p_recorded_at,
                superseded_terminal_revision = p_expected_terminal_event_id::text,
-               attempt_token = NULL, attempt_expires_at = NULL,
+               attempt_token = NULL,
+               attempt_expires_at = NULL,
                updated_at = p_recorded_at
          WHERE source_session_id = p_session_id
            AND intent = 'completion_notification'
@@ -165,11 +177,16 @@ BEGIN
     END IF;
 
     RETURN QUERY
-    SELECT v_row_count = 1, session.execution_registration_id,
-           session.execution_command_id, session.status,
-           session.termination_reason, session.termination_detail,
-           session.review_state, session.last_assistant_text,
-           session.termination_event_id, session.updated_at,
+    SELECT v_row_count = 1,
+           session.execution_registration_id,
+           session.execution_command_id,
+           session.status,
+           session.termination_reason,
+           session.termination_detail,
+           session.review_state,
+           session.last_assistant_text,
+           session.termination_event_id,
+           session.updated_at,
            session.last_event_id
       FROM sessions AS session
      WHERE session.session_id = p_session_id;

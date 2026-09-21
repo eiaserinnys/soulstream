@@ -12,9 +12,10 @@ describe("TaskCreationHook production seam", () => {
   it("keeps durable session registration behind the single TaskCreation boundary", () => {
     const directRegistrationOwners = [
       "task/task_creation.ts",
+      "task/task_creation_registration.ts",
       "db/session_db.ts",
     ].filter((path) => source(path).includes(".registerSession("));
-    expect(directRegistrationOwners).toEqual(["task/task_creation.ts"]);
+    expect(directRegistrationOwners).toEqual(["task/task_creation_registration.ts"]);
     expect(source("task/task_manager.ts").match(/new TaskCreation\(/g)).toHaveLength(1);
   });
 

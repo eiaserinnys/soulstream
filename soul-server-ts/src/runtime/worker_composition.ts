@@ -62,17 +62,8 @@ import {
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 import { composeWorkerUpstreamAdapter } from "./worker_upstream_composition.js";
 import { buildMcpServerOptions } from "./mcp_server_options.js";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { WorktreeHostClient } from "../control_plane/worktree_host_client.js";
-import {
-  WorktreeGit,
-  WORKTREE_OPERATION_TIMEOUT_MS,
-} from "../worktree/worktree_git.js";
-import { RepositoryLock } from "../worktree/worktree_repository_lock.js";
-import { WorktreeService } from "../worktree/worktree_service.js";
+import { composeWorktreeService, resolveWorktreeWorkspace } from "./worktree_runtime_composition.js";
 import { listActiveTaskWorkspaceDirs } from "./task_active_workspace_dirs.js";
-
 export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
@@ -213,7 +204,7 @@ export async function composeWorkerRuntime(
       })
     : undefined;
   let taskRuntime!: TaskRuntimeComposition, taskManager!: TaskManager;
-  let worktreeService: WorktreeService | undefined;
+  let worktreeService: ReturnType<typeof composeWorktreeService>;
   const publishDetachedClaudeEvent = createDetachedClaudeEventBridge({
     logger,
     findTask: (sessionId) => taskManager.getTask(sessionId),
@@ -233,12 +224,7 @@ export async function composeWorkerRuntime(
         maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
         turnInactivityTimeoutMs: env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
         logger,
-        resolveWorktreeWorkspace: async (worktreeId) => {
-          if (!worktreeService) {
-            throw new Error(`WORKTREE_UNAVAILABLE: resolver missing for ${worktreeId}`);
-          }
-          return await worktreeService.resolveExecutionWorkspace(worktreeId);
-        },
+        resolveWorktreeWorkspace: (worktreeId) => resolveWorktreeWorkspace(worktreeService, worktreeId),
         redeliverContent: (row) => redeliverStoredDeliveryContent(
           row, taskManager, taskRuntime.onResume,
         ),
@@ -264,25 +250,9 @@ export async function composeWorkerRuntime(
     modelCatalog,
     sessionMutations,
   );
-  worktreeService = env.WORKTREE_MCP_ENABLED
-    ? new WorktreeService({
-        nodeId: env.SOULSTREAM_NODE_ID,
-        projectsRoot: env.WORKTREE_PROJECTS_ROOT!,
-        git: new WorktreeGit({
-          projectsRoot: env.WORKTREE_PROJECTS_ROOT!,
-          timeoutMs: WORKTREE_OPERATION_TIMEOUT_MS,
-        }),
-        lock: new RepositoryLock({
-          lockRoot: join(tmpdir(), "soulstream-worktree-locks"),
-          defaultTimeoutMs: 120_000,
-        }),
-        host: new WorktreeHostClient(orchHostClientDeps),
-        listActiveWorkspaceDirs: () => listActiveTaskWorkspaceDirs(
-          taskManager.listTasks(),
-          (profileId) => agentRegistry.get(profileId)?.workspace_dir,
-        ),
-      })
-    : undefined;
+  worktreeService = composeWorktreeService(env, orchHostClientDeps, () =>
+    listActiveTaskWorkspaceDirs(taskManager.listTasks(),
+      (profileId) => agentRegistry.get(profileId)?.workspace_dir));
   db.configureScheduleHost(new ScheduleHostClient(orchHostClientDeps));
   const scheduleService = new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
   const engineFactory = createEngineFactory({

@@ -36,6 +36,7 @@ import {
 import { resolveStructuralCallerSessionId } from "./delegation_relationship.js";
 import type { AgentProfile } from "../agent_registry.js";
 import { toStoredReasoningEffort } from "./session_effort_storage.js";
+import { registerTaskSession } from "./task_creation_registration.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -216,19 +217,11 @@ export class TaskCreation {
       reviewRequired: task.reviewRequired === true,
       reviewState: task.reviewState ?? "not_required",
     };
-    const registeredReview = task.worktreeId
-      ? await this.deps.sessionMutations.registerSessionWithWorktree({
-          ...registration,
-          worktreeId: task.worktreeId,
-          worktreeActorSessionId: requireWorktreeActor(params),
-          ownerTaskId: params.container?.containerKind === "task"
-            ? params.container.containerId
-            : null,
-        }, `register_session_with_worktree:${task.agentSessionId}`)
-      : await this.deps.sessionMutations.registerSession(
-          registration,
-          `register_session:${task.agentSessionId}`,
-        );
+    const registeredReview = await registerTaskSession(this.deps.sessionMutations, registration, {
+      worktreeId: task.worktreeId,
+      actorSessionId: params.worktreeActorSessionId,
+      ownerTaskId: params.container?.containerKind === "task" ? params.container.containerId : null,
+    });
     if (registeredReview !== undefined) {
       task.reviewRequired = registeredReview.reviewRequired;
       task.reviewState = registeredReview.reviewState;
@@ -481,15 +474,6 @@ export class TaskCreation {
   }
 
 }
-
-function requireWorktreeActor(params: CreateTaskParams): string {
-  const actor = params.worktreeActorSessionId?.trim();
-  if (!actor) {
-    throw new Error("worktreeActorSessionId is required when worktreeId is set");
-  }
-  return actor;
-}
-
 async function settleDeferredEffects(
   pending: readonly Promise<void>[],
   timeoutMs: number,
