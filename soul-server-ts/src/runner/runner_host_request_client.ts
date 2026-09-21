@@ -17,6 +17,12 @@ export type RunnerHostService =
 export interface RunnerHostRequestOptions {
   signal?: AbortSignal;
   timeoutMs: number;
+  /**
+   * Total lifetime for retries. When omitted, bounded-attempt callers retain
+   * timeoutMs as their overall deadline and unbounded callers retry until
+   * their signal aborts.
+   */
+  deadlineMs?: number;
   attempts?: number;
   retryDelayMs?: number;
 }
@@ -29,7 +35,8 @@ export class RunnerHostUnavailableError extends Error {
  * Runner-side proxy for host-owned state. Retries retain the same correlation
  * id so a replacement host can retry the same durable-owner mutation without
  * committing its side effect twice. Omitting attempts keeps retrying until an
- * explicit abort while preserving timeoutMs as the per-attempt wait bound.
+ * explicit abort or deadline while preserving timeoutMs as the per-attempt
+ * wait bound.
  */
 export class RunnerHostRequestClient {
   constructor(
@@ -52,20 +59,27 @@ export class RunnerHostRequestClient {
     ) {
       throw new Error("Runner host request attempts must be positive");
     }
+    if (
+      options.deadlineMs !== undefined
+      && (!Number.isFinite(options.deadlineMs) || options.deadlineMs <= 0)
+    ) {
+      throw new Error("Runner host request deadline must be positive");
+    }
     const frame = runnerRequestFrame(correlationId, {
       kind: "host_call",
       service,
       operation,
       args,
     }, { timeoutMs: options.timeoutMs });
-    const overallTimeoutMs = maxAttempts === undefined ? undefined : options.timeoutMs;
+    const overallTimeoutMs = options.deadlineMs
+      ?? (maxAttempts === undefined ? undefined : options.timeoutMs);
     const lifetime = createRequestLifetime(
       options.signal,
       overallTimeoutMs,
-      maxAttempts === undefined
+      overallTimeoutMs === undefined
         ? undefined
         : new RunnerHostUnavailableError(
-          `Runner host request ${service}.${operation} timed out after ${options.timeoutMs}ms`,
+          `Runner host request ${service}.${operation} timed out after ${overallTimeoutMs}ms`,
         ),
     );
     const deadline = overallTimeoutMs === undefined ? undefined : Date.now() + overallTimeoutMs;

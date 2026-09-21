@@ -46,16 +46,19 @@ const REDACTED_LOG_PATHS = [
   "*.turn_summary_openai_key",
 ] as const;
 
+const HTTP_REQUEST_RECEIVE_TIMEOUT_MS = 300_000;
+
 export function createOperationalFastifyOptions(
   config: OrchServerTsConfig,
   destination?: ProductionLogDestination,
 ): Pick<
   FastifyServerOptions,
-  "disableRequestLogging" | "logger" | "trustProxy"
+  "disableRequestLogging" | "logger" | "requestTimeout" | "trustProxy"
 > {
   const production = isProductionEnvironment(config.environment);
   return {
     disableRequestLogging: production,
+    requestTimeout: HTTP_REQUEST_RECEIVE_TIMEOUT_MS,
     logger: production
       ? {
           level: "info",
