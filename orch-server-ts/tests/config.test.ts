@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
+  ORCH_SERVER_ENVIRONMENT_VARIABLES,
   createApp,
   createEnvironmentConfigProvider,
   loadOrchServerEnvironment,
@@ -207,6 +210,38 @@ describe("orch-server-ts config scaffold", () => {
       ...minimalEnvironment(),
       ENVIRONMENT: "production",
     })).toThrow(/CORS_ALLOWED_ORIGINS/);
+  });
+
+  it("requires a production bearer while preserving explicit development unauthenticated mode", () => {
+    expect(() => loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      ENVIRONMENT: "production",
+      CORS_ALLOWED_ORIGINS: "https://dashboard.example",
+    })).toThrow(/AUTH_BEARER_TOKEN/);
+
+    expect(loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      ENVIRONMENT: "development",
+    }).auth_bearer_token).toBe("");
+
+    expect(loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      ENVIRONMENT: "production",
+      CORS_ALLOWED_ORIGINS: "https://dashboard.example",
+      AUTH_BEARER_TOKEN: "service-token",
+    }).auth_bearer_token).toBe("service-token");
+  });
+
+  it("keeps the checked-in environment reference complete and value-free", () => {
+    const entries = readFileSync(new URL("../.env.example", import.meta.url), "utf8")
+      .split(/\r?\n/)
+      .map((line) => /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(line))
+      .filter((match): match is RegExpExecArray => match !== null);
+
+    expect(entries.map((match) => match[1]).sort()).toEqual(
+      [...ORCH_SERVER_ENVIRONMENT_VARIABLES].sort(),
+    );
+    expect(entries.every((match) => match[2] === "")).toBe(true);
   });
 
   it("applies allowed-origin and preflight CORS semantics at the app boundary", async () => {

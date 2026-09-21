@@ -154,7 +154,7 @@ The worker's required runtime settings are:
 
 `AUTH_BEARER_TOKEN` is required for workers in production. If MCP is enabled in production, `MCP_REQUIRE_AUTH=true` is also required. `HOST` defaults to `127.0.0.1`, the worker `PORT` defaults to `4205`, and the orchestrator `PORT` defaults to `5200`.
 
-The orchestrator requires `ENVIRONMENT`, `HOST`, `DATABASE_URL`, `CLAUDE_OAUTH_CLIENT_ID`, and `CLAUDE_OAUTH_CALLBACK_URL`. Production additionally requires an explicit CORS origin policy. Set `DASHBOARD_DIR` to the built `unified-dashboard/dist` directory to serve the UI from the orchestrator.
+The complete current key reference is [orch-server-ts/.env.example](orch-server-ts/.env.example); every assignment is deliberately value-free. The orchestrator requires `ENVIRONMENT`, `HOST`, `DATABASE_URL`, `CLAUDE_OAUTH_CLIENT_ID`, and `CLAUDE_OAUTH_CALLBACK_URL`. Production additionally requires a non-empty `AUTH_BEARER_TOKEN` and an explicit CORS origin policy. Development may deliberately leave the bearer empty. Set `DASHBOARD_DIR` to the built `unified-dashboard/dist` directory to serve the UI from the orchestrator.
 
 Keep credentials in environment files or the process manager's secret configuration. Do not commit service tokens, OAuth secrets, database credentials, or provider credentials.
 
