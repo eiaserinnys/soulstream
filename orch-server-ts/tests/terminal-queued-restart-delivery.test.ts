@@ -41,6 +41,10 @@ import {
   loadContractFixtures,
   type NodeRegistrationPayload,
 } from "../src/index.js";
+import {
+  DELIVERY_MAX_AGE_MS,
+  DELIVERY_MAX_ATTEMPTS,
+} from "../src/control_plane/repositories/session_delivery_retry_policy.js";
 import { createSessionCacheSeedSink } from
   "../src/node/session_cache_seed_sink.js";
 import { createHarnessCore } from "./session-action-command-test-helpers.js";
@@ -302,9 +306,27 @@ describe("terminal queued delivery across node restart", () => {
     expect(oldDispatches).toHaveLength(0);
     expect(newDispatches).toHaveLength(0);
     expect(transcriptInspect).toHaveBeenCalledOnce();
+    expect(ledger.retryDeliveryAttempt).toHaveBeenCalledWith(
+      DELIVERY_ID,
+      WORKER_ID,
+      "queued_transcript_redelivery_expired",
+      0,
+    );
+    expect(ledger.claimAttemptForTarget).toHaveBeenCalledWith(
+      DELIVERY_ID,
+      SESSION_ID,
+      expect.stringMatching(/^route:/),
+    );
+    expect(ledger.claimPendingImmediateIntentsForNode).toHaveBeenCalledOnce();
+    expect(ledger.claimPendingImmediateIntentsForNode).toHaveBeenCalledWith(
+      NODE_ID,
+      ATTEMPT_TOKEN,
+    );
     expect(ledger.trace).toEqual([
       "queued",
       "transcript_claimed",
+      "pending",
+      "redelivery_claimed",
       "dispatching",
       "queued_after_route",
       "consumed",
@@ -330,7 +352,7 @@ describe("terminal queued delivery across node restart", () => {
     expect(row).toMatchObject({
       state: "consumed",
       aggregate_state: "consumed",
-      attempt_count: 0,
+      attempt_count: 1,
       target_receipt_id: expect.stringMatching(/^event:/),
     });
     expect(task).toMatchObject({ status: "completed" });
@@ -351,6 +373,7 @@ class RestartDeliveryLedger {
 
   constructor() {
     const body = interventionBody(DELIVERY_ID);
+    const recoverableCreatedAt = new Date(Date.now() - 1_000);
     const canonical = buildCanonicalDeliveryPayload({
       text: String(body.text),
       user: String(body.user),
@@ -368,7 +391,7 @@ class RestartDeliveryLedger {
         source: "user_message",
         payloadHash: canonical.payloadHash,
         payload: canonical.payload,
-        createdAt: new Date(String(body.created_at)),
+        createdAt: recoverableCreatedAt,
       }),
       state: "queued",
       aggregate_state: "pending",
@@ -407,12 +430,24 @@ class RestartDeliveryLedger {
     error: string,
   ) => {
     if (deliveryId !== DELIVERY_ID || this.row.attempt_token !== attemptToken) return null;
-    this.row.state = "pending";
+    const now = Date.now();
+    this.row.attempt_count += 1;
+    const retryExhausted =
+      this.row.attempt_count >= DELIVERY_MAX_ATTEMPTS
+      || this.row.created_at.getTime() <= now - DELIVERY_MAX_AGE_MS;
+    this.row.state = retryExhausted ? "uncertain" : "pending";
+    this.row.aggregate_state = retryExhausted ? "dead_letter" : "pending";
     this.row.attempt_token = null;
     this.row.attempt_expires_at = null;
     this.row.last_error = error;
-    this.row.next_attempt_at = new Date();
-    this.trace.push("pending");
+    if (retryExhausted) {
+      this.row.dead_letter_reason = error;
+      this.row.dead_lettered_at = new Date(now);
+      this.trace.push("dead_letter");
+    } else {
+      this.row.next_attempt_at = new Date(now);
+      this.trace.push("pending");
+    }
     return structuredClone(this.row);
   });
 
@@ -430,7 +465,24 @@ class RestartDeliveryLedger {
     return [structuredClone(this.row)];
   });
 
-  readonly claimAttemptForTarget = vi.fn(async () => null);
+  readonly claimAttemptForTarget = vi.fn(async (
+    deliveryId: string,
+    targetSessionId: string,
+    attemptToken: string,
+  ) => {
+    if (
+      deliveryId !== DELIVERY_ID
+      || targetSessionId !== SESSION_ID
+      || this.row.state !== "pending"
+    ) return null;
+    this.row.target_session_id = targetSessionId;
+    this.row.state = "claimed";
+    this.row.claimed_at = new Date();
+    this.row.attempt_token = attemptToken;
+    this.row.attempt_expires_at = new Date(Date.now() + 30_000);
+    this.trace.push("redelivery_claimed");
+    return structuredClone(this.row);
+  });
 
   readonly beginDispatch = vi.fn(async (
     deliveryId: string,
