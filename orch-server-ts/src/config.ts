@@ -60,7 +60,44 @@ export type OrchServerEnvironmentConfig = {
   readonly soul_runner_lease_timeout_ms: number;
 };
 
-export type EnvironmentSource = Readonly<Record<string, string | undefined>>;
+export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
+  "ENVIRONMENT",
+  "CORS_ALLOWED_ORIGINS",
+  "NODE_NAME",
+  "HOST",
+  "PORT",
+  "DATABASE_URL",
+  "DASHBOARD_DIR",
+  "DASHBOARD_USER_FOLDER_ACCESS",
+  "R2_BOARD_ASSETS_ACCESS_KEY_ID",
+  "R2_BOARD_ASSETS_SECRET_ACCESS_KEY",
+  "R2_BOARD_ASSETS_BUCKET",
+  "R2_BOARD_ASSETS_ENDPOINT",
+  "ATOM_ENABLED",
+  "ATOM_SERVER_URL",
+  "ATOM_API_KEY",
+  "ATOM_ROOT_NODE_ID",
+  "AUTH_BEARER_TOKEN",
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
+  "GOOGLE_CALLBACK_URL",
+  "GOOGLE_IOS_CLIENT_ID",
+  "ALLOWED_EMAIL",
+  "JWT_SECRET",
+  "CLAUDE_OAUTH_CLIENT_ID",
+  "CLAUDE_OAUTH_CALLBACK_URL",
+  "TURN_SUMMARY_OPENAI_KEY",
+  "USAGE_SUMMARY_POLL_INTERVAL_SECONDS",
+  "SOUL_RUNNER_PROCESS_ENABLED",
+  "SOUL_RUNNER_LEASE_TIMEOUT_MS",
+] as const;
+
+export type OrchServerEnvironmentVariable =
+  (typeof ORCH_SERVER_ENVIRONMENT_VARIABLES)[number];
+
+export type EnvironmentSource = Readonly<
+  Partial<Record<OrchServerEnvironmentVariable, string>>
+>;
 
 export type EnvironmentConfigProvider = {
   readonly getConfig: () => Readonly<Record<string, unknown>>;
@@ -80,9 +117,14 @@ export function loadOrchServerEnvironment(
   env: EnvironmentSource = process.env,
 ): OrchServerEnvironmentConfig {
   const environment = requiredString(env, "ENVIRONMENT");
+  const isProduction = environment.toLowerCase() === "production";
   const corsAllowedOrigins = parseCorsOrigins(env.CORS_ALLOWED_ORIGINS);
-  if (environment.toLowerCase() === "production" && corsAllowedOrigins.length === 0) {
+  if (isProduction && corsAllowedOrigins.length === 0) {
     throw new Error("CORS_ALLOWED_ORIGINS must be set in production");
+  }
+  const authBearerToken = env.AUTH_BEARER_TOKEN ?? "";
+  if (isProduction && authBearerToken.trim().length === 0) {
+    throw new Error("AUTH_BEARER_TOKEN must be set in production");
   }
   return {
     node_name: optionalString(env.NODE_NAME),
@@ -102,7 +144,7 @@ export function loadOrchServerEnvironment(
     atom_server_url: env.ATOM_SERVER_URL ?? "",
     atom_api_key: env.ATOM_API_KEY ?? "",
     atom_root_node_id: optionalString(env.ATOM_ROOT_NODE_ID),
-    auth_bearer_token: env.AUTH_BEARER_TOKEN ?? "",
+    auth_bearer_token: authBearerToken,
     cors_allowed_origins: corsAllowedOrigins,
     google_client_id: env.GOOGLE_CLIENT_ID ?? "",
     google_client_secret: env.GOOGLE_CLIENT_SECRET ?? "",
@@ -165,7 +207,7 @@ export function createEnvironmentConfigProvider(
   };
 }
 
-function requiredString(env: EnvironmentSource, key: string): string {
+function requiredString(env: EnvironmentSource, key: OrchServerEnvironmentVariable): string {
   const value = env[key];
   if (value === undefined || value.trim().length === 0) {
     throw new Error(`${key} is required`);
@@ -189,7 +231,7 @@ function parsePort(value: string | undefined): number {
 
 function parsePositiveInteger(
   value: string | undefined,
-  key: string,
+  key: OrchServerEnvironmentVariable,
   defaultValue: number,
 ): number {
   if (value === undefined || value.trim().length === 0) return defaultValue;
@@ -203,7 +245,7 @@ function parsePositiveInteger(
 
 function parseBoolean(
   value: string | undefined,
-  key: string,
+  key: OrchServerEnvironmentVariable,
   defaultValue: boolean,
 ): boolean {
   if (value === undefined || value.trim().length === 0) return defaultValue;
