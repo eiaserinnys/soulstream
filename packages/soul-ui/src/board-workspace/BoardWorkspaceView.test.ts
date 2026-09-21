@@ -11,7 +11,8 @@ import type { CatalogState, SessionSummary } from "../shared/types";
 import { mergeCatalogSessionsDelta } from "../hooks/session-stream-helpers";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useTaskStore } from "../stores/task-store";
-import { BoardWorkspaceView, resolveEffectiveBoardCatalog } from "./BoardWorkspaceView";
+import { BoardWorkspaceView } from "./BoardWorkspaceView";
+import { resolveEffectiveBoardCatalog } from "./board-catalog-resolution";
 import { FolderWorkspaceView } from "./FolderWorkspaceView";
 import { writeFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
