@@ -23,11 +23,13 @@ export class CommandDispatchError extends Error {
    * a 4xx instead of the generic "node unavailable" 503.
    */
   readonly code: string | undefined;
+  readonly details: Record<string, unknown> | undefined;
 
-  constructor(message: string, code?: string) {
+  constructor(message: string, code?: string, details?: Record<string, unknown>) {
     super(message);
     this.name = "CommandDispatchError";
     this.code = code;
+    this.details = details;
   }
 }
 

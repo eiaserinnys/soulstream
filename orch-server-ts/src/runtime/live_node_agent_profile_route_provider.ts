@@ -434,6 +434,7 @@ function mapCommandError(error: unknown): NodeAgentProfileRouteError {
         : "NODE_AGENT_PROFILE_COMMAND_REJECTED",
       error.message,
       400,
+      isRecord(error.response?.details) ? error.response.details : undefined,
     );
   }
   return new NodeAgentProfileRouteError(
@@ -441,6 +442,10 @@ function mapCommandError(error: unknown): NodeAgentProfileRouteError {
     error instanceof Error ? error.message : String(error),
     400,
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isDisconnectedCommandError(error: unknown): error is Error {

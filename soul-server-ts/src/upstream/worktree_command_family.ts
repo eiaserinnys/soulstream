@@ -33,9 +33,13 @@ export function createWorktreeCommandFamily(input: {
       const code = typeof (error as { code?: unknown })?.code === "string"
         ? (error as { code: string }).code
         : "WORKTREE_FAILED";
+      const details = isRecord((error as { details?: unknown })?.details)
+        ? (error as { details: Record<string, unknown> }).details
+        : undefined;
       throw new CommandDispatchError(
         error instanceof Error ? error.message : String(error),
         code,
+        details,
       );
     }
   };
@@ -45,4 +49,8 @@ export function createWorktreeCommandFamily(input: {
     worktree_remove: handle("remove"),
     worktree_delete_branch: handle("deleteBranch"),
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

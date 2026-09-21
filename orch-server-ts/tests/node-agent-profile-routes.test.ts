@@ -203,6 +203,14 @@ describe("node agent/profile route harness", () => {
         worktreeProvider: {
           async invoke(nodeId, operation, input) {
             calls.push([nodeId, operation, input]);
+            if (operation === "remove") {
+              throw new NodeAgentProfileRouteError(
+                "WORKTREE_DIRTY",
+                "clean the worktree and retry",
+                400,
+                { ignored: ["dist/"], cleanup: "Remove only the listed paths" },
+              );
+            }
             return { ok: true };
           },
         },
@@ -229,6 +237,21 @@ describe("node agent/profile route harness", () => {
     expect(authorized.statusCode).toBe(200);
     expect(authorized.json()).toEqual({ ok: true });
     expect(calls).toEqual([["node-a", "list", { repo_id: "soulstream" }]]);
+
+    const dirty = await app.inject({
+      method: "POST",
+      url: "/api/nodes/node-a/worktrees/remove",
+      headers: { authorization: `Bearer ${config.authBearerToken}` },
+      payload: { worktreeId: "worktree-1" },
+    });
+    expect(dirty.statusCode).toBe(400);
+    expect(dirty.json()).toEqual({
+      error: {
+        code: "WORKTREE_DIRTY",
+        message: "clean the worktree and retry",
+        details: { ignored: ["dist/"], cleanup: "Remove only the listed paths" },
+      },
+    });
 
     await app.close();
   });

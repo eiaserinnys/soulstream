@@ -313,6 +313,45 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       )
     `;
     expect(executionRegistration[0]?.applied).toBe(false);
+
+    const reconciled = await sessionMutations.reconcileNodeStartup(
+      "node-worktree",
+      [],
+      new Date("2026-09-22T00:01:00Z"),
+    );
+    expect(reconciled).toMatchObject({
+      interrupted: 1,
+      updates: [
+        expect.objectContaining({
+          sessionId: "worktree-session-2",
+          status: "interrupted",
+          terminationDetail: "startup_reconciliation",
+        }),
+      ],
+    });
+    await sessionMutations.registerSessionWithWorktree({
+      idempotencyKey: "register-worktree:after-startup-recovery",
+      sessionId: "worktree-session-3",
+      nodeId: "node-worktree",
+      agentId: "codex-default",
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "after startup recovery",
+      clientId: null,
+      status: "initializing",
+      createdAt: new Date("2026-09-22T00:02:00Z"),
+      updatedAt: new Date("2026-09-22T00:02:00Z"),
+      callerSessionId: "owner-session",
+      predecessorSessionId: null,
+      callerInfo: null,
+      worktreeId: "worktree-db-1",
+      worktreeActorSessionId: "owner-session",
+      ownerTaskId: null,
+    });
+    await expect(db.getSession("worktree-session-3")).resolves.toMatchObject({
+      status: "initializing",
+      worktree_id: "worktree-db-1",
+    });
   }, 30_000);
 
   it("reprojects response-loss binding warnings from durable state after restart", async () => {

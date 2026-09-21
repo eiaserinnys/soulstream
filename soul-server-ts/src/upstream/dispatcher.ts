@@ -179,7 +179,7 @@ export class CommandDispatcher {
         await handler(cmd);
       } catch (err) {
         if (err instanceof CommandDispatchError) {
-          await this.sendError(cmd, err.message, err.code);
+          await this.sendError(cmd, err.message, err.code, err.details);
           return;
         }
         if (err instanceof RealtimeCommandDispatchError) {
@@ -213,6 +213,7 @@ export class CommandDispatcher {
     cmd: CommandLike,
     message: string,
     code?: string,
+    details?: Record<string, unknown>,
   ): Promise<void> {
     await this.send({
       type: "error",
@@ -220,6 +221,7 @@ export class CommandDispatcher {
       requestId: cmd.requestId ?? cmd.request_id ?? "",
       command_type: cmd.type ?? "",
       ...(code ? { code } : {}),
+      ...(details ? { details } : {}),
     });
     this.logger.warn(
       { ...summarizePayloadForLog(cmd), message },

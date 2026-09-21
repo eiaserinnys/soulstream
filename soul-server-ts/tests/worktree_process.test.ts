@@ -10,6 +10,7 @@ import {
   runBoundedProcess,
 } from "../src/worktree/worktree_process.js";
 import { RepositoryLock } from "../src/worktree/worktree_repository_lock.js";
+import { WorktreeGitError } from "../src/worktree/worktree_git.js";
 
 const roots: string[] = [];
 
@@ -46,6 +47,28 @@ describe("bounded worktree processes", () => {
       expect(existsSync(marker)).toBe(false);
   });
 
+  it("kills the process tree when the shared operation deadline aborts it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worktree-abort-"));
+    roots.push(root);
+    const marker = join(root, "abort-late-marker");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 40);
+    try {
+      await expect(runBoundedProcess({
+        command: process.execPath,
+        args: ["-e", `setTimeout(()=>require('fs').writeFileSync(${JSON.stringify(marker)},'late'),250);setInterval(()=>{},1000)`],
+        cwd: root,
+        timeoutMs: 1_000,
+        signal: controller.signal,
+      })).rejects.toMatchObject({ code: "PROCESS_TIMEOUT", terminationConfirmed: true });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(existsSync(marker)).toBe(false);
+  });
+
   it("releases the repository lock only after confirmed process termination", async () => {
     const root = mkdtempSync(join(tmpdir(), "worktree-lock-"));
     roots.push(root);
@@ -68,6 +91,22 @@ describe("bounded worktree processes", () => {
       throw new GitProcessError("PROCESS_TIMEOUT", "unconfirmed", false);
     })).rejects.toMatchObject({ terminationConfirmed: false });
     await expect(lock.withLock("repo-b", async () => "must not run"))
+      .rejects.toMatchObject({ code: "REPOSITORY_LOCK_TIMEOUT" });
+  });
+
+  it("preserves lock evidence through a wrapped link-restore failure", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worktree-wrapped-lock-"));
+    roots.push(root);
+    const lock = new RepositoryLock({ lockRoot: root, defaultTimeoutMs: 60 });
+
+    await expect(lock.withLock("repo-wrapped", async () => {
+      throw new WorktreeGitError(
+        "MANAGED_LINK_RESTORE_FAILED",
+        "link restore failed",
+        new GitProcessError("PROCESS_TIMEOUT", "unconfirmed child", false),
+      );
+    })).rejects.toMatchObject({ code: "MANAGED_LINK_RESTORE_FAILED" });
+    await expect(lock.withLock("repo-wrapped", async () => "must not run"))
       .rejects.toMatchObject({ code: "REPOSITORY_LOCK_TIMEOUT" });
   });
 

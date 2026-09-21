@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
 import { GitProcessError, runBoundedProcess } from "./worktree_process.js";
@@ -17,7 +18,11 @@ import { GitProcessError, runBoundedProcess } from "./worktree_process.js";
 const IDENTITY_FILE = "soulstream-worktree-id";
 
 export class WorktreeGitError extends Error {
-  constructor(public readonly code: string, message: string) {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly cause?: unknown,
+  ) {
     super(message);
     this.name = "WorktreeGitError";
   }
@@ -40,12 +45,26 @@ export interface WorktreeDirtyState {
 
 export class WorktreeGit {
   private readonly projectsRoot: string;
+  private readonly operationSignal = new AsyncLocalStorage<AbortSignal>();
 
   constructor(private readonly options: {
     projectsRoot: string;
     timeoutMs: number;
+    processRunner?: typeof runBoundedProcess;
   }) {
     this.projectsRoot = realpathSync(options.projectsRoot);
+  }
+
+  async withOperationDeadline<T>(action: () => Promise<T>): Promise<T> {
+    if (this.operationSignal.getStore()) return await action();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.options.timeoutMs);
+    timer.unref();
+    try {
+      return await this.operationSignal.run(controller.signal, action);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async create(input: {
@@ -184,6 +203,7 @@ export class WorktreeGit {
         throw new WorktreeGitError(
           "MANAGED_LINK_RESTORE_FAILED",
           `Git removal failed and shared dependency links could not be restored: ${String(restoreError)}`,
+          error,
         );
       }
       throw error;
@@ -240,7 +260,8 @@ export class WorktreeGit {
     try {
       return (await this.git(repo, ["rev-parse", "--verify", `refs/heads/${branch}^{commit}`]))
         .stdout.trim();
-    } catch {
+    } catch (error) {
+      rethrowProcessTimeout(error);
       return null;
     }
   }
@@ -283,7 +304,8 @@ export class WorktreeGit {
     await this.validateBranch(repo, input.branch);
     try {
       await this.git(repo, ["fetch", "--prune", "origin"]);
-    } catch {
+    } catch (error) {
+      rethrowProcessTimeout(error);
       throw new WorktreeGitError("REMOTE_FETCH_FAILED", input.repoId);
     }
     const markerSha = await this.refSha(repo, input.markerRef);
@@ -370,6 +392,7 @@ export class WorktreeGit {
       "status",
       "--porcelain=v1",
       "-z",
+      "--no-renames",
       "--untracked-files=normal",
     ])).stdout.split("\0").filter(Boolean);
     const tracked: string[] = [];
@@ -459,34 +482,38 @@ export class WorktreeGit {
       const gitDir = await this.privateGitDirectory(worktree);
       const marker = join(gitDir, IDENTITY_FILE);
       return existsSync(marker) ? readFileSync(marker, "utf8").trim() || undefined : undefined;
-    } catch {
+    } catch (error) {
+      rethrowProcessTimeout(error);
       return undefined;
     }
   }
 
   private async git(cwd: string, args: string[]) {
-    return await runBoundedProcess({
+    return await (this.options.processRunner ?? runBoundedProcess)({
       command: "git",
       args,
       cwd,
       timeoutMs: this.options.timeoutMs,
+      signal: this.operationSignal.getStore(),
     });
   }
 
   private async gitWithInput(cwd: string, args: string[], input: string) {
-    return await runBoundedProcess({
+    return await (this.options.processRunner ?? runBoundedProcess)({
       command: "git",
       args,
       cwd,
       timeoutMs: this.options.timeoutMs,
       stdin: input,
+      signal: this.operationSignal.getStore(),
     });
   }
 
   private async refSha(repo: string, ref: string): Promise<string | null> {
     try {
       return (await this.git(repo, ["rev-parse", "--verify", `${ref}^{commit}`])).stdout.trim();
-    } catch {
+    } catch (error) {
+      rethrowProcessTimeout(error);
       return null;
     }
   }
@@ -495,7 +522,8 @@ export class WorktreeGit {
     try {
       await this.git(repo, ["remote", "get-url", remote]);
       return true;
-    } catch {
+    } catch (error) {
+      rethrowProcessTimeout(error);
       return false;
     }
   }
@@ -503,7 +531,8 @@ export class WorktreeGit {
   private async validateBranch(repo: string, branch: string): Promise<void> {
     try {
       await this.git(repo, ["check-ref-format", "--branch", branch]);
-    } catch {
+    } catch (error) {
+      rethrowProcessTimeout(error);
       throw new WorktreeGitError("INVALID_BRANCH", branch);
     }
   }
@@ -514,10 +543,15 @@ export class WorktreeGit {
     try {
       await this.git(repo, ["merge-base", "--is-ancestor", sha, "refs/remotes/origin/HEAD"]);
       return true;
-    } catch {
+    } catch (error) {
+      rethrowProcessTimeout(error);
       return false;
     }
   }
+}
+
+function rethrowProcessTimeout(error: unknown): void {
+  if (error instanceof GitProcessError && error.code === "PROCESS_TIMEOUT") throw error;
 }
 
 function isPathInside(root: string, candidate: string): boolean {

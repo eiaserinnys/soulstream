@@ -282,11 +282,16 @@ describe("live node agent profile route provider", () => {
           requestId: "req-1-worktree_create",
           code: "REF_REUSED",
           message: "branch was reused",
+          details: { expectedSha: "old", actualSha: "new" },
         },
       }),
     });
     await expect(rejected.worktreeProvider!.invoke("node-a", "create", {}))
-      .rejects.toMatchObject({ code: "REF_REUSED", statusCode: 400 });
+      .rejects.toMatchObject({
+        code: "REF_REUSED",
+        statusCode: 400,
+        details: { expectedSha: "old", actualSha: "new" },
+      });
   });
 
   it("maps missing nodes and command failures to route status semantics", async () => {

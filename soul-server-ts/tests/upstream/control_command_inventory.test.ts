@@ -14,6 +14,7 @@ import { createRealtimeCommandFamily } from "../../src/upstream/realtime_command
 import { createReflectionCommandFamily } from "../../src/upstream/reflection_command_family.js";
 import { createSessionCommandFamily } from "../../src/upstream/session_command_family.js";
 import { createWorktreeCommandFamily } from "../../src/upstream/worktree_command_family.js";
+import { WorktreeServiceError } from "../../src/worktree/worktree_service.js";
 
 describe("control command inventory", () => {
   it("covers every dispatcher command type exactly once", () => {
@@ -124,6 +125,30 @@ describe("control command inventory", () => {
       type: "worktree_result",
       requestId: "request-1",
       result: { worktreeId: "worktree-1", path: "/repo--branch" },
+    });
+  });
+
+  it("preserves worktree recovery details in command dispatch failures", async () => {
+    const handlers = createWorktreeCommandFamily({
+      send: vi.fn(async () => undefined),
+      service: {
+        remove: vi.fn(async () => {
+          throw new WorktreeServiceError(
+            "WORKTREE_DIRTY",
+            "clean the worktree and retry",
+            { tracked: ["README.md"], cleanup: "Commit or stash the listed path" },
+          );
+        }),
+      } as never,
+    });
+
+    await expect(handlers.worktree_remove!({
+      type: "worktree_remove",
+      requestId: "request-dirty",
+      input: { actorSessionId: "session-1", worktreeId: "worktree-1" },
+    })).rejects.toMatchObject({
+      code: "WORKTREE_DIRTY",
+      details: { tracked: ["README.md"], cleanup: "Commit or stash the listed path" },
     });
   });
 

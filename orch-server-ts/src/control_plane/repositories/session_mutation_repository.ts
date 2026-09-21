@@ -385,9 +385,16 @@ export class SessionMutationRepository {
               ELSE 'acknowledged'
             END,
             updated_at = ${updatedAt}
-      WHERE node_id = ${nodeId} AND status = 'running'
+      WHERE node_id = ${nodeId}
           AND updated_at <= ${updatedAt}
           AND NOT (session_id = ANY(${sql.array(runningSessionIds)}::text[]))
+          AND (
+            status = 'running'
+            OR (
+              status = 'initializing'
+              AND execution_registration_id IS NULL
+            )
+          )
         RETURNING session_id, status, termination_reason, termination_detail,
                   review_state, updated_at
       `;

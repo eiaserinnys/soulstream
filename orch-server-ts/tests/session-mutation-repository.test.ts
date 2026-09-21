@@ -647,6 +647,8 @@ describe("SessionMutationRepository", () => {
     expect(statements).toContain("WHEN review_required THEN 'needs_review'");
     expect(statements).toContain("review_state = 'not_required'");
     expect(statements).toContain("status = 'interrupted'");
+    expect(statements).toContain("status = 'initializing'");
+    expect(statements).toContain("execution_registration_id IS NULL");
     expect(statements).toContain("status IN ('completed', 'error', 'interrupted')");
     expect(statements).toContain("termination_event_id IS NULL");
     expect(statements.match(/updated_at <=/g)).toHaveLength(2);

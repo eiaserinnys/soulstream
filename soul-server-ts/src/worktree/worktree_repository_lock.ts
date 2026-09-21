@@ -45,7 +45,7 @@ export class RepositoryLock {
     try {
       return await action();
     } catch (error) {
-      if (error instanceof GitProcessError && !error.terminationConfirmed) {
+      if (hasUnconfirmedProcess(error)) {
         release = false;
         writeFileSync(join(lockPath, "owner.json"), JSON.stringify({
           pid: process.pid,
@@ -59,6 +59,19 @@ export class RepositoryLock {
       if (release) rmSync(lockPath, { recursive: true, force: true });
     }
   }
+}
+
+function hasUnconfirmedProcess(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current = error;
+  while (current !== undefined && current !== null && !seen.has(current)) {
+    seen.add(current);
+    if (current instanceof GitProcessError && !current.terminationConfirmed) return true;
+    current = typeof current === "object" && "cause" in current
+      ? (current as { cause?: unknown }).cause
+      : undefined;
+  }
+  return false;
 }
 
 function reclaimDeadLock(lockPath: string, key: string): boolean {

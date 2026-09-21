@@ -97,12 +97,19 @@ export type NodeAgentProfileRouteOptions = {
 export class NodeAgentProfileRouteError extends Error {
   readonly code: string;
   readonly statusCode: number;
+  readonly details: Record<string, unknown> | undefined;
 
-  constructor(code: string, message: string, statusCode: number) {
+  constructor(
+    code: string,
+    message: string,
+    statusCode: number,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "NodeAgentProfileRouteError";
     this.code = code;
     this.statusCode = statusCode;
+    this.details = details;
   }
 }
 
@@ -561,6 +568,7 @@ function sendConfigProviderError(reply: FastifyReply, error: unknown): FastifyRe
       error: {
         code: error.code,
         message: error.message,
+        ...(error.details ? { details: error.details } : {}),
       },
     });
   }

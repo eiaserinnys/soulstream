@@ -25,6 +25,7 @@ export interface BoundedProcessInput {
   timeoutMs: number;
   env?: NodeJS.ProcessEnv;
   stdin?: string;
+  signal?: AbortSignal;
 }
 
 export interface BoundedProcessResult {
@@ -56,11 +57,8 @@ export async function runBoundedProcess(
     let termination: Promise<boolean> | undefined;
     let settled = false;
 
-    child.stdout!.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr!.on("data", (chunk: Buffer) => stderr.push(chunk));
-    if (input.stdin !== undefined) child.stdin!.end(input.stdin);
-
-    const timer = setTimeout(() => {
+    const terminate = () => {
+      if (timedOut || settled) return;
       timedOut = true;
       if (child.pid === undefined) return;
       if (process.platform === "win32") {
@@ -79,13 +77,23 @@ export async function runBoundedProcess(
       } else {
         termination = terminatePosixProcessGroup(child.pid, child);
       }
-    }, input.timeoutMs);
+    };
+
+    child.stdout!.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr!.on("data", (chunk: Buffer) => stderr.push(chunk));
+    if (input.stdin !== undefined) child.stdin!.end(input.stdin);
+
+    const timer = setTimeout(terminate, input.timeoutMs);
     timer.unref();
+    const abort = () => terminate();
+    input.signal?.addEventListener("abort", abort, { once: true });
+    if (input.signal?.aborted) terminate();
 
     child.once("error", (error) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      input.signal?.removeEventListener("abort", abort);
       reject(new GitProcessError(
         "PROCESS_START_FAILED",
         `${input.command} failed to start: ${error.message}`,
@@ -97,6 +105,7 @@ export async function runBoundedProcess(
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        input.signal?.removeEventListener("abort", abort);
         const out = Buffer.concat(stdout).toString("utf8");
         const err = Buffer.concat(stderr).toString("utf8");
         if (timedOut) {

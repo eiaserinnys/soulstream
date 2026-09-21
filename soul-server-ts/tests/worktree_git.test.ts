@@ -13,6 +13,7 @@ import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { WorktreeGit } from "../src/worktree/worktree_git.js";
+import { runBoundedProcess } from "../src/worktree/worktree_process.js";
 
 const roots: string[] = [];
 
@@ -78,6 +79,23 @@ describe("WorktreeGit", () => {
       "dist/",
       "node_modules/",
     ]));
+    expect(dirty.clean).toBe(false);
+  });
+
+  it("reports both paths of a tracked rename without corrupting either name", async () => {
+    const { projectsRoot } = makeRepository();
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const created = await worktrees.create({
+      repoId: "demo",
+      branch: "feature/rename-dirty",
+      mode: "new",
+      worktreeId: "worktree-rename-dirty",
+    });
+    git(created.path, "mv", "README.md", "RENAMED.md");
+
+    const dirty = await worktrees.inspectDirty(created.path, []);
+
+    expect(dirty.tracked.sort()).toEqual(["README.md", "RENAMED.md"]);
     expect(dirty.clean).toBe(false);
   });
 
@@ -260,5 +278,43 @@ describe("WorktreeGit", () => {
       expectedSha: "a".repeat(40),
       markerRef: "refs/soulstream/worktree-deletions/test",
     })).rejects.toMatchObject({ code: "INVALID_BRANCH" });
+  });
+
+  it("shares one deadline across sequential Git child processes", async () => {
+    const { projectsRoot } = makeRepository();
+    const calls: string[][] = [];
+    const worktrees = new WorktreeGit({
+      projectsRoot,
+      timeoutMs: 300,
+      processRunner: async (input) => {
+        calls.push(input.args);
+        if (input.args[0] === "remote" || input.args[0] === "fetch") {
+          await runBoundedProcess({
+            command: process.execPath,
+            args: ["-e", "setTimeout(()=>{},180)"],
+            cwd: input.cwd,
+            timeoutMs: input.timeoutMs,
+            signal: input.signal,
+          });
+        }
+        return {
+          stdout: input.args[0] === "remote" ? "git@example.invalid:demo.git\n" : "",
+          stderr: "",
+          exitCode: 0,
+        };
+      },
+    });
+
+    await expect(worktrees.withOperationDeadline(async () => await worktrees.create({
+      repoId: "demo",
+      branch: "feature/shared-deadline",
+      mode: "new",
+      worktreeId: "worktree-shared-deadline",
+    }))).rejects.toMatchObject({ code: "PROCESS_TIMEOUT", terminationConfirmed: true });
+    expect(calls.map((args) => args[0])).toEqual([
+      "check-ref-format",
+      "remote",
+      "fetch",
+    ]);
   });
 });

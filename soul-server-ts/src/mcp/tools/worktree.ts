@@ -165,6 +165,7 @@ async function route(
       throw new WorktreeServiceError(
         remote?.code ?? "REMOTE_WORKTREE_FAILED",
         remote?.message ?? JSON.stringify(result),
+        remote?.details,
       );
     }
     return result;
@@ -173,13 +174,27 @@ async function route(
   }
 }
 
-function remoteError(value: unknown): { code: string; message: string } | undefined {
+function remoteError(value: unknown): {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+} | undefined {
   if (!value || typeof value !== "object") return undefined;
   const error = (value as { error?: unknown }).error;
   if (!error || typeof error !== "object") return undefined;
-  const { code, message } = error as { code?: unknown; message?: unknown };
+  const { code, message, details } = error as {
+    code?: unknown;
+    message?: unknown;
+    details?: unknown;
+  };
   return typeof code === "string" && typeof message === "string"
-    ? { code, message }
+    ? {
+        code,
+        message,
+        ...(details !== null && typeof details === "object" && !Array.isArray(details)
+          ? { details: details as Record<string, unknown> }
+          : {}),
+      }
     : undefined;
 }
 

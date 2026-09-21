@@ -4,6 +4,7 @@ import { isAbsolute, join, relative } from "node:path";
 
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
 import { WorktreeGit, WorktreeGitError } from "./worktree_git.js";
+import { GitProcessError } from "./worktree_process.js";
 import { RepositoryLock } from "./worktree_repository_lock.js";
 import type {
   ManagedWorktreePath,
@@ -46,6 +47,16 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }) {}
 
   async list(input: {
+    actorSessionId: string;
+    repoId?: string;
+    worktreeId?: string;
+  }): Promise<Array<Record<string, unknown>>> {
+    return await this.options.git.withOperationDeadline(
+      async () => await this.listWithinDeadline(input),
+    );
+  }
+
+  private async listWithinDeadline(input: {
     actorSessionId: string;
     repoId?: string;
     worktreeId?: string;
@@ -125,6 +136,12 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 
   async create(input: CreateWorktreeInput): Promise<Record<string, unknown>> {
+    return await this.options.git.withOperationDeadline(
+      async () => await this.createWithinDeadline(input),
+    );
+  }
+
+  private async createWithinDeadline(input: CreateWorktreeInput): Promise<Record<string, unknown>> {
     validateCreateInput(input);
     const knownRecords = await this.options.host.list({
       actorSessionId: input.actorSessionId,
@@ -282,6 +299,14 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 
   async remove(input: { actorSessionId: string; worktreeId: string }): Promise<Record<string, unknown>> {
+    return await this.options.git.withOperationDeadline(
+      async () => await this.removeWithinDeadline(input),
+    );
+  }
+
+  private async removeWithinDeadline(
+    input: { actorSessionId: string; worktreeId: string },
+  ): Promise<Record<string, unknown>> {
     const [initialRecord] = await this.options.host.list({
       actorSessionId: input.actorSessionId,
       nodeId: this.options.nodeId,
@@ -364,6 +389,14 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 
   async deleteBranch(input: { actorSessionId: string; worktreeId: string }) {
+    return await this.options.git.withOperationDeadline(
+      async () => await this.deleteBranchWithinDeadline(input),
+    );
+  }
+
+  private async deleteBranchWithinDeadline(
+    input: { actorSessionId: string; worktreeId: string },
+  ) {
     const [initialRecord] = await this.options.host.list({
       actorSessionId: input.actorSessionId,
       nodeId: this.options.nodeId,
@@ -416,14 +449,16 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 
   async resolveExecutionWorkspace(worktreeId: string): Promise<string> {
-    const record = await this.options.host.resolveExecution({
-      worktreeId,
-      nodeId: this.options.nodeId,
-    });
-    return await this.options.git.resolveManagedWorkspace({
-      repoId: record.repoId,
-      path: record.canonicalPath,
-      worktreeId: record.worktreeIdentity,
+    return await this.options.git.withOperationDeadline(async () => {
+      const record = await this.options.host.resolveExecution({
+        worktreeId,
+        nodeId: this.options.nodeId,
+      });
+      return await this.options.git.resolveManagedWorkspace({
+        repoId: record.repoId,
+        path: record.canonicalPath,
+        worktreeId: record.worktreeIdentity,
+      });
     });
   }
 
@@ -501,6 +536,7 @@ async function setupSharedDependencies(input: {
       symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
       managedPaths.push({ path: relativePath, target });
     } catch (error) {
+      if (error instanceof GitProcessError && error.code === "PROCESS_TIMEOUT") throw error;
       warnings.push(`${relativePath}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }

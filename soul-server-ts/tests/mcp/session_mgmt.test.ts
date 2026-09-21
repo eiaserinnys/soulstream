@@ -310,6 +310,52 @@ afterEach(async () => {
   }
 });
 
+describe("remote worktree tools", () => {
+  it("preserves dirty inventory and cleanup guidance from the remote node", async () => {
+    const capture = await createOrchCapture(400, () => ({
+      body: {
+        error: {
+          code: "WORKTREE_DIRTY",
+          message: "clean the worktree and retry",
+          details: {
+            tracked: ["README.md"],
+            untracked: [],
+            ignored: ["dist/"],
+            cleanup: "Commit, stash, or remove only the listed paths",
+          },
+        },
+      },
+    }));
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "remove_worktree",
+        arguments: {
+          node_id: "node-remote",
+          worktree_id: "worktree-1",
+          caller_session_id: "caller-sess-1",
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual({
+        code: "WORKTREE_DIRTY",
+        message: "clean the worktree and retry",
+        details: {
+          tracked: ["README.md"],
+          untracked: [],
+          ignored: ["dist/"],
+          cleanup: "Commit, stash, or remove only the listed paths",
+        },
+      });
+    } finally {
+      await capture.close();
+    }
+  });
+});
+
 describe("agent profile backend boundary", () => {
   const codexAgent: AgentProfile = {
     id: "codex-default",
