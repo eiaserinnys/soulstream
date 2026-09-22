@@ -1,22 +1,21 @@
-import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
+import { runReleaseBuild } from "./run_release_build.mjs";
 import { verifyCentralSchemaPrerequisite } from
   "./verify-central-schema-prerequisite.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const envFile = optionValue(process.argv.slice(2), "--env-file");
-const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const result = spawnSync(command, ["run", "build"], {
+const result = runReleaseBuild({
+  platform: process.platform,
   cwd: packageRoot,
   env: {
     ...process.env,
     SOULSTREAM_RELEASE_ENV_FILE: resolve(envFile),
   },
-  stdio: "inherit",
 });
 
 if (result.error) throw result.error;
