@@ -4,22 +4,20 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
+import { releaseBuildSpawnPlan } from "./release_build_spawn_plan.mjs";
 import { verifyCentralSchemaPrerequisite } from
   "./verify-central-schema-prerequisite.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const envFile = optionValue(process.argv.slice(2), "--env-file");
-const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const result = spawnSync(command, ["run", "build"], {
+const plan = releaseBuildSpawnPlan(process.platform, {
   cwd: packageRoot,
-  // Node 22 refuses to spawn .cmd/.bat shims without a shell (EINVAL).
-  shell: process.platform === "win32",
   env: {
     ...process.env,
     SOULSTREAM_RELEASE_ENV_FILE: resolve(envFile),
   },
-  stdio: "inherit",
 });
+const result = spawnSync(plan.command, plan.args, plan.options);
 
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
