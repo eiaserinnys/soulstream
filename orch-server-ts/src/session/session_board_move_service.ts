@@ -30,19 +30,26 @@ export class SessionBoardMoveService {
   constructor(private readonly config: {
     board: SessionBoardMoveBoardPort;
     repository: SessionBoardMoveRepositoryPort;
+    /** Board/Yjs path only. REST catalog mutations emit through their route wrapper. */
+    onBoardMoveCommitted?: (move: {
+      sessionId: string;
+      folderId: string | null;
+    }) => Promise<void>;
   }) {}
 
   async moveSessionToFolder(
     sessionId: string,
     folderId: string | null,
   ): Promise<CatalogBoardItemRow | null> {
-    return await this.moveSessionBoardItem({
+    // REST catalog routes wrap their provider with withSessionCatalogMutationBroadcasts.
+    // Do not emit here too, or the same committed move produces two catalog deltas.
+    return await this.moveSessionBoardItemInternal({
       sessionId,
       targetScope: folderId === null
         ? null
         : { folderId, containerKind: "folder", containerId: folderId },
       sourceTaskItemId: null,
-    });
+    }, false);
   }
 
   async moveSessionBoardItem(input: {
@@ -51,9 +58,21 @@ export class SessionBoardMoveService {
     position?: { x: number; y: number };
     sourceTaskItemId?: string | null;
   }): Promise<CatalogBoardItemRow | null> {
+    return await this.moveSessionBoardItemInternal(input, true);
+  }
+
+  private async moveSessionBoardItemInternal(
+    input: {
+      sessionId: string;
+      targetScope: BoardYjsContainerScope | null;
+      position?: { x: number; y: number };
+      sourceTaskItemId?: string | null;
+    },
+    emitBoardCatalogDelta: boolean,
+  ): Promise<CatalogBoardItemRow | null> {
     return await this.withSessionLock(input.sessionId, async () => {
       const boardItems = await this.config.repository.listSessionBoardItems(input.sessionId);
-      return await this.config.board.withSessionBoardMoveApplications(
+      const moved = await this.config.board.withSessionBoardMoveApplications(
         {
           sessionId: input.sessionId,
           boardItems,
@@ -70,6 +89,15 @@ export class SessionBoardMoveService {
           return movedBoardItem;
         },
       );
+      // withSessionBoardMoveApplications returns only after BoardYjsMoveRepository's transaction
+      // (Yjs application + session_assign_folder) and the live Yjs update both succeed.
+      if (emitBoardCatalogDelta) {
+        await this.config.onBoardMoveCommitted?.({
+          sessionId: input.sessionId,
+          folderId: input.targetScope?.folderId ?? null,
+        });
+      }
+      return moved;
     });
   }
 

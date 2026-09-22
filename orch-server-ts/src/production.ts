@@ -63,6 +63,8 @@ import {
 } from "./runtime/stable_session_order_index_maintenance.js";
 import { createLiveDbCatalogRepository } from "./runtime/live_db_catalog_repository.js";
 import { broadcastCatalogSnapshot } from "./runtime/live_folder_mutation_broadcaster.js";
+import { broadcastTargetedSessionCatalogDelta } from
+  "./runtime/live_session_catalog_mutation_broadcaster.js";
 import { deletedBoardItemsDelta } from "./runtime/catalog_delta_broadcaster.js";
 import {
   createLiveDbSqlResolver,
@@ -178,6 +180,9 @@ export async function createLiveProductionApplication(
   const sqlResolver = overrides.sqlResolver ??
     createLiveDbSqlResolver({ databaseUrl: config.database_url });
   let boardYjsService: BoardYjsService | undefined;
+  let emitBoardYjsSessionCatalogDelta:
+    | ((sessionId: string) => Promise<void>)
+    | undefined;
   const boardYjsMoveRepository = new BoardYjsMoveRepository(sqlResolver);
   const sessionBoardMoveService = new SessionBoardMoveService({
     board: {
@@ -187,6 +192,14 @@ export async function createLiveProductionApplication(
       },
     },
     repository: boardYjsMoveRepository,
+    // Board/Yjs owns this post-commit emission. REST calls moveSessionToFolder instead,
+    // whose route wrapper remains its single catalog-delta owner.
+    onBoardMoveCommitted: async ({ sessionId }) => {
+      if (!emitBoardYjsSessionCatalogDelta) {
+        throw new Error("Board/Yjs catalog delta emitter is not initialized");
+      }
+      await emitBoardYjsSessionCatalogDelta(sessionId);
+    },
   });
   const sessionDeletionService = new SessionDeletionService({
     board: {
@@ -365,6 +378,12 @@ export async function createLiveProductionApplication(
       }),
     },
   });
+  emitBoardYjsSessionCatalogDelta = async (sessionId) =>
+    await broadcastTargetedSessionCatalogDelta(
+      dbCatalogRepository.folderRouteProvider,
+      runtimeServices.sessionBroadcaster,
+      [sessionId],
+    );
   publishReconciledSessionUpdate = (update) => {
     const message = {
       type: "session_updated",

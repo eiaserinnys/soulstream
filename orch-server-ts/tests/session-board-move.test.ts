@@ -63,6 +63,7 @@ describe("SessionBoardMoveService", () => {
     const sourceItems = [sessionItem("folder-old")];
     const applicationRows = [application("folder-old", [])];
     const commitSessionMove = vi.fn(async () => undefined);
+    const onBoardMoveCommitted = vi.fn(async () => undefined);
     const service = new SessionBoardMoveService({
       board: {
         async withSessionBoardMoveApplications(input, persist) {
@@ -75,6 +76,7 @@ describe("SessionBoardMoveService", () => {
         listSessionBoardItems: vi.fn(async () => sourceItems),
         commitSessionMove,
       },
+      onBoardMoveCommitted,
     });
 
     await expect(service.moveSessionToFolder("session-a", null)).resolves.toBeNull();
@@ -83,6 +85,65 @@ describe("SessionBoardMoveService", () => {
       folderId: null,
       boardApplications: applicationRows,
     });
+    // REST catalog move는 wrapper가 한 번만 delta를 발행한다. Board/Yjs 전용 hook을 타지 않는다.
+    expect(onBoardMoveCommitted).not.toHaveBeenCalled();
+  });
+
+  it("emits one Board/Yjs callback only after its authoritative assignment commit", async () => {
+    const order: string[] = [];
+    const moved = sessionItem("folder-target");
+    const commitSessionMove = vi.fn(async () => { order.push("commit"); });
+    const onBoardMoveCommitted = vi.fn(async () => { order.push("broadcast"); });
+    const service = new SessionBoardMoveService({
+      board: {
+        async withSessionBoardMoveApplications(_input, persist) {
+          await persist({ movedBoardItem: moved, boardApplications: [] });
+          return moved;
+        },
+      },
+      repository: {
+        listSessionBoardItems: vi.fn(async () => [sessionItem("folder-old")]),
+        commitSessionMove,
+      },
+      onBoardMoveCommitted,
+    });
+
+    await service.moveSessionBoardItem({
+      sessionId: "session-a",
+      targetScope: { folderId: "folder-target", containerKind: "folder", containerId: "folder-target" },
+    });
+
+    expect(commitSessionMove).toHaveBeenCalledTimes(1);
+    expect(onBoardMoveCommitted).toHaveBeenCalledTimes(1);
+    expect(onBoardMoveCommitted).toHaveBeenCalledWith({
+      sessionId: "session-a",
+      folderId: "folder-target",
+    });
+    expect(order).toEqual(["commit", "broadcast"]);
+  });
+
+  it("does not emit a Board/Yjs callback when the move transaction rejects", async () => {
+    const onBoardMoveCommitted = vi.fn(async () => undefined);
+    const service = new SessionBoardMoveService({
+      board: {
+        async withSessionBoardMoveApplications(_input, persist) {
+          await persist({ movedBoardItem: sessionItem("folder-target"), boardApplications: [] });
+          return sessionItem("folder-target");
+        },
+      },
+      repository: {
+        listSessionBoardItems: vi.fn(async () => [sessionItem("folder-old")]),
+        commitSessionMove: vi.fn(async () => { throw new Error("transaction rolled back"); }),
+      },
+      onBoardMoveCommitted,
+    });
+
+    await expect(service.moveSessionBoardItem({
+      sessionId: "session-a",
+      targetScope: { folderId: "folder-target", containerKind: "folder", containerId: "folder-target" },
+    })).rejects.toThrow("transaction rolled back");
+
+    expect(onBoardMoveCommitted).not.toHaveBeenCalled();
   });
 
   it("serializes inventory reads so a concurrent move sees the preceding destination", async () => {

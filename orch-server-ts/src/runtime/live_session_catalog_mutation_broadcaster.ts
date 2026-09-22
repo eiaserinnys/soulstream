@@ -12,10 +12,8 @@ export function withSessionCatalogMutationBroadcasts(
   folderProvider: LiveFolderProvider,
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
 ): SessionCatalogProvider {
-  const broadcastSessions = async (sessionIds: readonly string[]) => {
-    const sessionsDelta = await folderProvider.listSessionAssignmentsByIds(sessionIds);
-    await broadcastCatalogSnapshot(folderProvider, broadcaster, { sessionsDelta });
-  };
+  const broadcastSessions = async (sessionIds: readonly string[]) =>
+    await broadcastTargetedSessionCatalogDelta(folderProvider, broadcaster, sessionIds);
   return {
     ...provider,
     async renameSession(sessionId, displayName, callerInfo) {
@@ -41,4 +39,17 @@ export function withSessionCatalogMutationBroadcasts(
       });
     },
   };
+}
+
+/**
+ * Builds the delta from the committed assignment owner instead of trusting a caller's target.
+ * Both REST and Board/Yjs paths use this construction; each path owns exactly one invocation.
+ */
+export async function broadcastTargetedSessionCatalogDelta(
+  folderProvider: Pick<LiveFolderProvider, "listFolders" | "listSessionAssignmentsByIds">,
+  broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
+  sessionIds: readonly string[],
+): Promise<void> {
+  const sessionsDelta = await folderProvider.listSessionAssignmentsByIds(sessionIds);
+  await broadcastCatalogSnapshot(folderProvider, broadcaster, { sessionsDelta });
 }
