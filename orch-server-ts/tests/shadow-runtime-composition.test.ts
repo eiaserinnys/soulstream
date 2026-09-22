@@ -180,7 +180,14 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
     folderRoutes: createInertProvider(),
     markdownDocumentRoutes: createInertProvider(),
     agentProfileRoutes: createInertProvider(),
-    nodeAgentProfileRoutes: createInertProvider(),
+    // These option keys are conditionally registered after app.ts spreads the
+    // route options. A Proxy-only placeholder has no own keys to spread, so it
+    // silently drops the model-preset and worktree route inventory.
+    nodeAgentProfileRoutes: {
+      provider: createInertProvider(),
+      modelPresetProvider: { listForNode: () => [] },
+      worktreeProvider: { invoke: async () => ({}) },
+    },
     nodeClaudeAuthRoutes: createInertProvider(),
     publicStatusRoutes: createInertProvider(),
     recurringJobRoutes: createInertProvider(),
