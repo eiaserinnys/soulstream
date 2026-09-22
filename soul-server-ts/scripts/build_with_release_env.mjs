@@ -12,6 +12,8 @@ const envFile = optionValue(process.argv.slice(2), "--env-file");
 const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const result = spawnSync(command, ["run", "build"], {
   cwd: packageRoot,
+  // Node 22 refuses to spawn .cmd/.bat shims without a shell (EINVAL).
+  shell: process.platform === "win32",
   env: {
     ...process.env,
     SOULSTREAM_RELEASE_ENV_FILE: resolve(envFile),
