@@ -51,6 +51,11 @@ export function applySessionFeedDelta(
   if (current.agentSessionId !== event.agent_session_id) return {};
 
   const patch: Partial<SessionSummary> = {};
+  if (Object.hasOwn(event, "feed_last_event_id")) {
+    Object.assign(patch, feedLastEventIdPatch(current, {
+      feedLastEventId: event.feed_last_event_id,
+    }));
+  }
   const currentGlobalRevision = finiteNonNegative(current.attentionRevision);
   const incomingGlobalRevision = finiteNonNegative(event.attention_revision);
   const delta = event.pending_attentions_delta;
@@ -101,6 +106,27 @@ export function applySessionFeedDelta(
   }
 
   return patch;
+}
+
+/**
+ * Keeps the durable feed watermark monotonic across a snapshot/delta replay.
+ * `null` is an explicit legacy-unknown value and cannot overwrite a known
+ * value. `0` is a real coordinate and must not fall through to raw state.
+ */
+export function feedLastEventIdPatch(
+  current: SessionSummary,
+  incoming: Pick<SessionSummary, "feedLastEventId">,
+): Partial<SessionSummary> {
+  if (!Object.hasOwn(incoming, "feedLastEventId")) return {};
+  const next = incoming.feedLastEventId;
+  if (next === undefined) return {};
+  const previous = current.feedLastEventId;
+  if (next === null) {
+    return previous === undefined ? { feedLastEventId: null } : {};
+  }
+  if (!Number.isSafeInteger(next) || next < 0) return {};
+  if (typeof previous === "number" && next <= previous) return {};
+  return previous === next ? {} : { feedLastEventId: next };
 }
 
 export interface NoticeBaseline {

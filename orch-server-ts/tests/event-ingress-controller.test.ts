@@ -497,6 +497,53 @@ describe("NodeEventIngressController", () => {
     });
   });
 
+  it("publishes the feed watermark with the semantic session patch", async () => {
+    const value = batch(1);
+    value.events[0]!.session_effect = {
+      kind: "last_message",
+      last_message: {
+        type: "assistant_message",
+        preview: "canonical",
+        timestamp: "2026-08-06T00:00:00.000Z",
+      },
+      updated_at: "2026-08-06T00:00:00.000Z",
+    };
+    const received: Array<Record<string, unknown>> = [];
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: false,
+          feedLastEventId: 101,
+          sessionEffectApplication: {
+            applied: true,
+            canonicalSession: null,
+            canonicalLastMessage: {
+              type: "assistant_message" as const,
+              preview: "canonical",
+              timestamp: "2026-08-06T00:00:00.000Z",
+            },
+          },
+        }]),
+      },
+      receiveCommittedEvent: (message: Record<string, unknown>) => {
+        received.push(message);
+        return [];
+      },
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(received.at(-1)).toMatchObject({
+      type: "session_updated",
+      agentSessionId: "session-a",
+      last_event_id: 101,
+      feed_last_event_id: 101,
+    });
+  });
+
   it("projects and ACKs the canonical terminal row when running receipt CAS is rejected", async () => {
     const value = batch(1);
     value.events[0]!.event_type = "metadata";

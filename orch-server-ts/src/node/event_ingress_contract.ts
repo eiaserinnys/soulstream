@@ -153,6 +153,8 @@ export type CommittedIngressEvent = {
   duplicateReceipt: boolean;
   sessionEffectApplication?: EventSessionEffectApplication;
   feedProjectionApplication?: import("./event_feed_projection_applier.js").EventFeedProjectionApplication;
+  /** Durable raw-coordinate watermark for actual public-feed changes only. */
+  feedLastEventId?: number;
 };
 
 export type DeadLetteredIngressEvent = {

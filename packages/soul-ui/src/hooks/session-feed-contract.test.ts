@@ -43,6 +43,50 @@ describe("server-owned session feed v2 fixture", () => {
     expect(stale.attentionRevision).toBe(1002);
   });
 
+  it("preserves the feed watermark's null/0 distinction and rejects replay regression", () => {
+    const current = toSessionSummary({
+      agentSessionId: "session-a",
+      status: "running",
+      feedLastEventId: 70,
+    });
+    const advanced = {
+      ...current,
+      ...applySessionFeedDelta(current, {
+        type: "session_updated",
+        agent_session_id: "session-a",
+        feed_last_event_id: 71,
+      }),
+    };
+    const replayed = {
+      ...advanced,
+      ...applySessionFeedDelta(advanced, {
+        type: "session_updated",
+        agent_session_id: "session-a",
+        feed_last_event_id: 70,
+      }),
+    };
+    const legacy = {
+      ...replayed,
+      ...applySessionFeedDelta(replayed, {
+        type: "session_updated",
+        agent_session_id: "session-a",
+        feed_last_event_id: null,
+      }),
+    };
+    const zero = toSessionSummary({
+      agentSessionId: "zero",
+      status: "running",
+      feedLastEventId: 0,
+    });
+
+    expect(advanced.feedLastEventId).toBe(71);
+    expect(replayed.feedLastEventId).toBe(71);
+    expect(legacy.feedLastEventId).toBe(71);
+    expect(zero.feedLastEventId).toBe(0);
+    expect(toSessionSummary({ agentSessionId: "old", status: "running" }))
+      .not.toHaveProperty("feedLastEventId");
+  });
+
   it("never fires hydrated notices and deduplicates a live notice delta", () => {
     const baselines = new Map<string, NoticeBaseline>();
     const hydrated = toSessionSummary(wire.sessionListHydration.sessions[0]);

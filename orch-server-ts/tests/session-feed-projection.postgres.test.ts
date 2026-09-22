@@ -7,6 +7,13 @@ import postgres from "postgres";
 
 import { startPostgresTestContainer } from
   "../../packages/db-schema/scripts/postgres-test-container.mjs";
+import { advanceSessionFeedLastEventId } from
+  "../src/node/event_feed_semantic_watermark.js";
+import type { EventIngressQuerySql } from
+  "../src/node/event_ingress_repository.js";
+import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
+import { loadSessionFeedStates } from
+  "../src/session/session_feed_state_repository.js";
 
 const hasDocker = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
 const describePostgres = hasDocker ? describe : describe.skip;
@@ -14,9 +21,10 @@ const describePostgres = hasDocker ? describe : describe.skip;
 describePostgres("session feed PostgreSQL projection", () => {
   let sql: ReturnType<typeof postgres>;
   let cleanup: () => Promise<void>;
+  let openFreshClient: () => ReturnType<typeof postgres>;
 
   beforeAll(async () => {
-    ({ sql, cleanup } = await createHarness());
+    ({ sql, cleanup, openFreshClient } = await createHarness());
   }, 60_000);
 
   afterAll(async () => {
@@ -283,11 +291,65 @@ describePostgres("session feed PostgreSQL projection", () => {
     `;
     expect(noticeCounts[0]).toEqual({ stored_count: 7, notification_count: "7" });
   });
+
+  it("leaves legacy raw positions unknown, then keeps a semantic watermark monotonic after rehydration", async () => {
+    await sql`
+      INSERT INTO sessions (session_id, status, last_event_id)
+      VALUES ('watermark-legacy', 'running', 900)
+    `;
+    await sql`
+      INSERT INTO session_feed_state (session_id, updated_at)
+      VALUES ('watermark-legacy', '2026-09-22T00:00:00Z')
+    `;
+    const migration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/095_feed_last_event_id.sql",
+      import.meta.url,
+    )), "utf8");
+    await sql.unsafe(migration);
+    await sql.unsafe(migration);
+
+    const before = await loadSessionFeedStates(
+      sql as unknown as LivePostgresSql,
+      [{ session_id: "watermark-legacy" }],
+    );
+    expect(before.get("watermark-legacy")?.feedLastEventId).toBeNull();
+
+    await expect(advanceSessionFeedLastEventId(
+      sql as unknown as EventIngressQuerySql,
+      {
+        sessionId: "watermark-legacy",
+        eventId: 901,
+        createdAt: "2026-09-22T00:00:01Z",
+      },
+    )).resolves.toBe(901);
+    await expect(advanceSessionFeedLastEventId(
+      sql as unknown as EventIngressQuerySql,
+      {
+        sessionId: "watermark-legacy",
+        eventId: 900,
+        createdAt: "2026-09-22T00:00:00Z",
+      },
+    )).resolves.toBe(901);
+
+    // A fresh server-side SQL client models process restart/reconnect: state is
+    // reloaded from the DB rather than retained in the previous client object.
+    const restartedSql = openFreshClient();
+    try {
+      const afterRestart = await loadSessionFeedStates(
+        restartedSql as unknown as LivePostgresSql,
+        [{ session_id: "watermark-legacy" }],
+      );
+      expect(afterRestart.get("watermark-legacy")?.feedLastEventId).toBe(901);
+    } finally {
+      await restartedSql.end({ timeout: 2 });
+    }
+  });
 });
 
 async function createHarness(): Promise<{
   sql: ReturnType<typeof postgres>;
   cleanup: () => Promise<void>;
+  openFreshClient: () => ReturnType<typeof postgres>;
 }> {
   const container = startPostgresTestContainer({
     user: "session_feed_test",
@@ -310,6 +372,7 @@ async function createHarness(): Promise<{
   }
   return {
     sql: bootstrap,
+    openFreshClient: () => postgres(url, { max: 1, onnotice: () => {} }),
     cleanup: async () => {
       await bootstrap.end({ timeout: 2 });
       container.stop();

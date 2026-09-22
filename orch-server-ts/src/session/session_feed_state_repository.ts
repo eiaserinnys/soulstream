@@ -23,6 +23,7 @@ export async function loadSessionFeedStates(
   const [stateRows, attentionRows, noticeRows] = await Promise.all([
     sql`
       SELECT session_id, attention_revision, notification_watermark,
+             feed_last_event_id,
              notification_count
       FROM session_feed_state
       WHERE session_id = ANY(${uniqueIds}::text[])
@@ -58,6 +59,7 @@ export async function loadSessionFeedStates(
     const state = mutable.get(sessionId) ?? emptyMutableState();
     state.attentionRevision = nonNegativeInteger(row.attention_revision);
     state.notificationWatermark = nonNegativeInteger(row.notification_watermark);
+    state.feedLastEventId = nullablePositiveInteger(row.feed_last_event_id);
     state.notificationCount = nonNegativeInteger(row.notification_count);
     mutable.set(sessionId, state);
   }
@@ -88,6 +90,7 @@ export async function loadSessionFeedStates(
     recentNotices: state.recentNotices,
     notificationWatermark: state.notificationWatermark,
     noticesTruncated: state.notificationCount > state.recentNotices.length,
+    feedLastEventId: state.feedLastEventId,
   }]));
 }
 
@@ -104,6 +107,7 @@ type MutableFeedState = {
   recentNotices: SessionNotice[];
   notificationWatermark: number;
   notificationCount: number;
+  feedLastEventId: number | null;
 };
 
 function emptyMutableState(): MutableFeedState {
@@ -113,6 +117,7 @@ function emptyMutableState(): MutableFeedState {
     recentNotices: [],
     notificationWatermark: 0,
     notificationCount: 0,
+    feedLastEventId: null,
   };
 }
 
@@ -171,6 +176,10 @@ function nonEmptyString(value: unknown): string | null {
 function positiveInteger(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function nullablePositiveInteger(value: unknown): number | null {
+  return value === null || value === undefined ? null : positiveInteger(value);
 }
 
 function nonNegativeInteger(value: unknown): number {

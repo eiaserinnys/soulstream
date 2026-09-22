@@ -58,7 +58,18 @@ export type {
 
 /** 세션이 읽지 않은 상태인지 판단한다 */
 export function isSessionUnread(session: SessionSummary): boolean {
-  return (session.lastEventId ?? 0) > (session.lastReadEventId ?? 0);
+  return (session.feedLastEventId ?? session.lastEventId ?? 0)
+    > getRawReadAcknowledgementEventId(session);
+}
+
+/** Detail read acknowledgement always advances on the raw event timeline. */
+export function getRawReadAcknowledgementEventId(session: SessionSummary): number {
+  return session.lastReadEventId ?? 0;
+}
+
+/** Raw detail position deliberately remains independent of feed unread. */
+export function getRawDetailEventId(session: SessionSummary): number {
+  return session.lastEventId ?? 0;
 }
 
 // === Store ===

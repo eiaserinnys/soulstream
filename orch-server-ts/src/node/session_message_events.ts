@@ -76,6 +76,8 @@ const COMMITTED_SESSION_FEED_FIELDS = new Set([
   "notificationWatermark",
   "notices_truncated",
   "noticesTruncated",
+  "feed_last_event_id",
+  "feedLastEventId",
 ]);
 
 export function stripUncommittedSessionFeedFields(

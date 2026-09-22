@@ -3,6 +3,7 @@ import type { InfiniteData } from "@tanstack/react-query";
 import type { SessionSummary } from "../shared/types";
 import { normalizeLastMessage } from "../shared/session-activity";
 import { retainEqualValue } from "../lib/structural-sharing";
+import { feedLastEventIdPatch } from "./session-feed-projection";
 
 interface SessionPage {
   sessions: SessionSummary[];
@@ -146,6 +147,7 @@ export type SessionLifecycleSnapshot = Pick<
   | "updatedAt"
   | "createdAt"
   | "lastEventId"
+  | "feedLastEventId"
   | "lastMessage"
   | "pendingAttentions"
   | "attentionRevision"
@@ -206,6 +208,7 @@ export function applySessionLifecycleSnapshotToList(
       ...(!replaceLifecycle || snapshot.lastEventId === undefined || snapshot.lastEventId === session.lastEventId
         ? {}
         : { lastEventId: snapshot.lastEventId }),
+      ...feedLastEventIdPatch(session, snapshot),
       ...(lastMessageChanged ? { lastMessage } : {}),
       ...sessionFeedHydrationPatch(session, snapshot),
     };

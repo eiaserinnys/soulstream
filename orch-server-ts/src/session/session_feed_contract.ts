@@ -73,6 +73,11 @@ export type SessionFeedState = {
   /** Greatest durable notice event id, including notices outside recentNotices. */
   readonly notificationWatermark: number;
   readonly noticesTruncated: boolean;
+  /**
+   * Raw event-id coordinate of the newest feed-semantic change. NULL means
+   * legacy unknown, never an inferred historical raw event id.
+   */
+  readonly feedLastEventId: number | null;
 };
 
 /**
@@ -84,6 +89,8 @@ export type SessionFeedState = {
 export type SessionFeedHydration = SessionFeedState;
 
 export type SessionFeedDelta = {
+  /** Same coordinate as raw last_event_id; absent is old-server wire, null is legacy unknown. */
+  readonly feed_last_event_id?: number | null;
   readonly attention_revision?: number;
   readonly pending_attentions_delta?: Readonly<
     Record<string, {
@@ -159,4 +166,5 @@ export const EMPTY_SESSION_FEED_STATE: SessionFeedState = Object.freeze({
   recentNotices: [],
   notificationWatermark: 0,
   noticesTruncated: false,
+  feedLastEventId: null,
 });
