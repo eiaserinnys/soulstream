@@ -8,7 +8,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
-import { useDashboardStore } from "./dashboard-store";
+import {
+  getRawDetailEventId,
+  getRawReadAcknowledgementEventId,
+  isSessionUnread,
+  useDashboardStore,
+} from "./dashboard-store";
 
 /**
  * 평탄화 후(Phase 2-A §11.1 옵션 C) tree-utils.ts가 폐기되어 본 테스트는
@@ -25,6 +30,25 @@ function findTreeNode(root: EventTreeNode | null, id: string): EventTreeNode | n
   }
   return null;
 }
+
+describe("feed unread coordinate", () => {
+  it("uses the semantic watermark when known, preserves 0, and keeps read ACK raw", () => {
+    const base = {
+      agentSessionId: "session-a",
+      status: "running",
+      eventCount: 0,
+      lastEventId: 80,
+      lastReadEventId: 70,
+    } as import("../shared/types").SessionSummary;
+
+    expect(isSessionUnread({ ...base, feedLastEventId: null })).toBe(true);
+    expect(isSessionUnread({ ...base, feedLastEventId: 70 })).toBe(false);
+    expect(isSessionUnread({ ...base, feedLastEventId: 71 })).toBe(true);
+    expect(isSessionUnread({ ...base, feedLastEventId: 0, lastReadEventId: 0 })).toBe(false);
+    expect(getRawDetailEventId({ ...base, feedLastEventId: 70 })).toBe(80);
+    expect(getRawReadAcknowledgementEventId({ ...base, feedLastEventId: 70 })).toBe(70);
+  });
+});
 import { filterSessionsInFolder, type SessionPage } from "../hooks/session-stream-helpers";
 import type {
   TextStartEvent,

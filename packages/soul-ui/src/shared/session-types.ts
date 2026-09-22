@@ -111,6 +111,12 @@ export interface SessionSummary extends AgentProfile, UserProfile {
   metadata?: MetadataEntry[];
   /** 마지막 이벤트 ID (읽음 상태 비교용) */
   lastEventId?: number;
+  /**
+   * Feed-visible change watermark in the same raw event-id coordinate.
+   * undefined is an old server omission; null is an explicit legacy-unknown.
+   * Both cases use lastEventId as the conservative unread fallback.
+   */
+  feedLastEventId?: number | null;
   /** 마지막으로 읽은 이벤트 ID */
   lastReadEventId?: number;
   /** away_summary (세션 복귀 시 요약) */

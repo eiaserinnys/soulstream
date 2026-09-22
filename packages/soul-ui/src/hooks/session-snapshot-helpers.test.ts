@@ -63,6 +63,46 @@ describe("applySessionLifecycleSnapshotToList", () => {
     expect(result[0]).toBe(current);
   });
 
+  it("keeps feedLastEventId monotonic through legacy snapshots and replay", () => {
+    const current = session({
+      updatedAt: "2026-09-03T00:00:00Z",
+      lastEventId: 80,
+      feedLastEventId: 70,
+    });
+    const legacySnapshot = session({
+      updatedAt: "2026-09-04T00:00:00Z",
+      lastEventId: 81,
+      feedLastEventId: null,
+    });
+    const replayedOlderWatermark = session({
+      updatedAt: "2026-09-05T00:00:00Z",
+      lastEventId: 82,
+      feedLastEventId: 69,
+    });
+    const advanced = session({
+      updatedAt: "2026-09-06T00:00:00Z",
+      lastEventId: 83,
+      feedLastEventId: 72,
+    });
+
+    const [afterLegacy] = applySessionLifecycleSnapshotToList(
+      [current],
+      new Map([[current.agentSessionId, legacySnapshot]]),
+    );
+    const [afterReplay] = applySessionLifecycleSnapshotToList(
+      [afterLegacy],
+      new Map([[current.agentSessionId, replayedOlderWatermark]]),
+    );
+    const [afterAdvance] = applySessionLifecycleSnapshotToList(
+      [afterReplay],
+      new Map([[current.agentSessionId, advanced]]),
+    );
+
+    expect(afterLegacy.feedLastEventId).toBe(70);
+    expect(afterReplay.feedLastEventId).toBe(70);
+    expect(afterAdvance.feedLastEventId).toBe(72);
+  });
+
   it("does not erase optional REST fields when a newer lifecycle snapshot omits them", () => {
     const current = session({
       reviewState: "needs_review",

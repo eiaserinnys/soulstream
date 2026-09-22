@@ -184,6 +184,7 @@ describe("live DB SSE replay snapshots", () => {
           nodeId: "node-a",
           folderId: "folder-1",
           lastEventId: 7,
+          feedLastEventId: null,
           lastReadEventId: 5,
           callerSessionId: "caller-1",
           predecessorSessionId: null,
@@ -212,7 +213,7 @@ describe("live DB SSE replay snapshots", () => {
       "SELECT session_count(?::jsonb) AS count",
       "SELECT * FROM session_get_all(?::jsonb, ?, ?)",
       "SELECT session_id, page_state, legacy_state FROM session_page_bindings WHERE session_id = ANY(?::text[])",
-      "SELECT session_id, attention_revision, notification_watermark, notification_count FROM session_feed_state WHERE session_id = ANY(?::text[])",
+      "SELECT session_id, attention_revision, notification_watermark, feed_last_event_id, notification_count FROM session_feed_state WHERE session_id = ANY(?::text[])",
       "SELECT session_id, projection FROM session_pending_attentions WHERE session_id = ANY(?::text[]) ORDER BY session_id, source_event_id ASC, attention_id ASC",
       "WITH ranked AS ( SELECT session_id, projection, ROW_NUMBER() OVER ( PARTITION BY session_id ORDER BY source_event_id DESC ) AS row_number FROM session_feed_notices WHERE session_id = ANY(?::text[]) ) SELECT session_id, projection FROM ranked WHERE row_number <= ? ORDER BY session_id, row_number ASC",
       "SELECT id, parent_folder_id, settings FROM folders",
@@ -266,6 +267,7 @@ describe("live DB SSE replay snapshots", () => {
           session_id: "quiet-session",
           attention_revision: 0,
           notification_watermark: 9,
+          feed_last_event_id: null,
           notification_count: 1,
         }];
       }

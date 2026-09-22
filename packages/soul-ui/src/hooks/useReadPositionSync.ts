@@ -6,7 +6,11 @@
  * - 활성 세션의 lastEventId 변경 시: debounce 후 읽음 처리
  */
 
-import { useDashboardStore } from "../stores/dashboard-store";
+import {
+  getRawDetailEventId,
+  getRawReadAcknowledgementEventId,
+  useDashboardStore,
+} from "../stores/dashboard-store";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useRef, useEffect, useCallback } from "react";
 import { applySessionUpdated, type SessionPage } from "./session-stream-helpers";
@@ -50,14 +54,19 @@ export function useReadPositionSync() {
   // 세션 선택 시 즉시 읽음 처리
   useEffect(() => {
     if (!activeSessionKey || !activeSessionSummary) return;
-    if ((activeSessionSummary.lastEventId ?? 0) > (activeSessionSummary.lastReadEventId ?? 0)) {
-      markAsRead(activeSessionKey, activeSessionSummary.lastEventId ?? 0);
+    const rawDetailEventId = getRawDetailEventId(activeSessionSummary);
+    if (rawDetailEventId > getRawReadAcknowledgementEventId(activeSessionSummary)) {
+      markAsRead(activeSessionKey, rawDetailEventId);
     }
   }, [activeSessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 활성 세션의 lastEventId 변경 시 debounce로 읽음 처리
-  const activeLastEventId = activeSessionSummary?.lastEventId ?? 0;
-  const activeLastReadEventId = activeSessionSummary?.lastReadEventId ?? 0;
+  const activeLastEventId = activeSessionSummary
+    ? getRawDetailEventId(activeSessionSummary)
+    : 0;
+  const activeLastReadEventId = activeSessionSummary
+    ? getRawReadAcknowledgementEventId(activeSessionSummary)
+    : 0;
 
   useEffect(() => {
     if (!activeSessionKey || activeLastEventId === 0) return;

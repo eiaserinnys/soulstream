@@ -111,6 +111,88 @@ describe("EventIngressRepository", () => {
     sessionEffectApplication: { applied: true, canonicalSession: null } }]);
   });
 
+  it("returns a raw-coordinate watermark only after an actual feed semantic projection", async () => {
+    const order: string[] = [];
+    const sql = fakeSql(async (text) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_registration_id: null, execution_command_id: null }];
+      }
+      if (text.includes("pg_advisory_xact_lock")) return [];
+      if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
+      if (text.includes("SELECT event_append")) return [{ event_id: 41 }];
+      if (text.includes("INSERT INTO session_feed_state")) {
+        order.push("feed-watermark");
+        return [{ feed_last_event_id: 41 }];
+      }
+      if (text.includes("INSERT INTO event_ingress_receipts")) {
+        order.push("receipt");
+        return [];
+      }
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      async () => ({
+        applied: true,
+        canonicalSession: null,
+        canonicalLastMessage: {
+          type: "assistant_message",
+          preview: "done",
+          timestamp: "2026-08-06T00:00:00.000Z",
+        },
+      }),
+      undefined,
+      {},
+      async () => null,
+    );
+    const input = batch({
+      session_effect: {
+        kind: "last_message",
+        last_message: {
+          type: "assistant_message",
+          preview: "done",
+          timestamp: "2026-08-06T00:00:00.000Z",
+        },
+        updated_at: "2026-08-06T00:00:00.000Z",
+      },
+    });
+
+    await expect(repository.commitBatch("node-a", input)).resolves.toMatchObject([{
+      eventId: 41,
+      feedLastEventId: 41,
+    }]);
+    expect(order).toEqual(["feed-watermark", "receipt"]);
+  });
+
+  it("does not manufacture a feed watermark for a no-op cleanup", async () => {
+    const statements: string[] = [];
+    const sql = fakeSql(async (text) => {
+      statements.push(text);
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_registration_id: null, execution_command_id: null }];
+      }
+      if (text.includes("SELECT event_append")) return [{ event_id: 42 }];
+      if (text.includes("INSERT INTO event_ingress_receipts")) return [];
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      undefined,
+      undefined,
+      {},
+      async () => null,
+    );
+
+    await expect(repository.commitBatch("node-a", batch({
+      event_type: "tool_result",
+      semantic_dedupe_key: null,
+      session_effect: null,
+    }))).resolves.toMatchObject([{ eventId: 42 }]);
+    expect(statements.some((statement) => statement.includes("session_feed_state"))).toBe(false);
+  });
+
   it("atomically hands active generations from an ownerless terminal turn to the next command", async () => {
     const order: string[] = [];
     const sql = fakeSql(async (text, values) => {
@@ -371,6 +453,9 @@ describe("EventIngressRepository", () => {
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
       if (text.includes("SELECT event_append")) return [{ event_id: 41 }];
+      if (text.includes("INSERT INTO session_feed_state")) {
+        return [{ feed_last_event_id: 41 }];
+      }
       if (text.includes("INSERT INTO event_ingress_receipts")) {
         receiptStatement = text;
         receiptValues = values;

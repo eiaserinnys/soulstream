@@ -130,7 +130,7 @@ export class NodeEventIngressController {
         : committedEffectSessionUpdate(item.envelope.session_effect, {
             sessionId: item.envelope.session_id,
             eventId: item.eventId,
-          }, item.sessionEffectApplication, item.feedProjectionApplication);
+          }, item.sessionEffectApplication, item.feedProjectionApplication, item.feedLastEventId);
       // receiveCommittedEvent updates the session cache as a side effect. Apply the
       // effect before publishing session_ended so cache-reading sinks such as
       // PushNotifier observe the committed final assistant text.
@@ -204,6 +204,7 @@ function committedEffectSessionUpdate(
   input: { sessionId: string; eventId: number },
   application?: EventSessionEffectApplication,
   feedApplication?: EventFeedProjectionApplication,
+  feedLastEventId?: number,
 ): Record<string, unknown> | null {
   let update: Record<string, unknown> | null = null;
   if (application?.canonicalSession) {
@@ -252,6 +253,16 @@ function committedEffectSessionUpdate(
         agentSessionId: input.sessionId,
         last_event_id: input.eventId,
       }),
+    };
+  }
+  if (feedLastEventId !== undefined) {
+    update = {
+      ...(update ?? {
+        type: "session_updated",
+        agentSessionId: input.sessionId,
+        last_event_id: input.eventId,
+      }),
+      feed_last_event_id: feedLastEventId,
     };
   }
   return update;

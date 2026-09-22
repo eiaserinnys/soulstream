@@ -112,6 +112,9 @@ describe("event feed projection", () => {
       if (statement.includes("INSERT INTO session_feed_notices")) {
         return [{ source_event_id: 40 }];
       }
+      if (statement.includes("INSERT INTO session_pending_attentions")) {
+        return [{ attention_id: "input_request:request-40" }];
+      }
       return [];
     }, { json: (value: unknown) => value }) as unknown as EventIngressQuerySql;
 
@@ -138,6 +141,78 @@ describe("event feed projection", () => {
     expect(statements.some((statement) =>
       statement.includes("DELETE FROM session_feed_notices") && statement.includes("LIMIT"),
     )).toBe(true);
+  });
+
+  it("drops a tool cleanup that deletes no attention without touching feed state or sessions", async () => {
+    const statements: string[] = [];
+    const sql = Object.assign(async (strings: TemplateStringsArray) => {
+      const statement = strings.join("?");
+      statements.push(statement);
+      return [];
+    }, { json: (value: unknown) => value }) as unknown as EventIngressQuerySql;
+
+    await expect(applyEventFeedProjection(sql, {
+      nodeId: "node-a",
+      eventId: 42,
+      envelope: envelope("tool_result", {
+        tool_use_id: "tool-a",
+        tool_name: "shell",
+      }),
+    })).resolves.toBeNull();
+
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toContain("DELETE FROM session_pending_attentions");
+  });
+
+  it("keeps a real cleanup tombstone and its feed revision", async () => {
+    const statements: string[] = [];
+    const sql = Object.assign(async (strings: TemplateStringsArray) => {
+      const statement = strings.join("?");
+      statements.push(statement);
+      if (statement.includes("DELETE FROM session_pending_attentions")) {
+        return [{ attention_id: "permission:tool-a" }];
+      }
+      return [];
+    }, { json: (value: unknown) => value }) as unknown as EventIngressQuerySql;
+
+    await expect(applyEventFeedProjection(sql, {
+      nodeId: "node-a",
+      eventId: 42,
+      envelope: envelope("tool_result", {
+        tool_use_id: "tool-a",
+        tool_name: "shell",
+      }),
+    })).resolves.toMatchObject({
+      attention_revision: 42,
+      pending_attentions_delta: {
+        "permission:tool-a": { revision: 42, value: null },
+      },
+    });
+    expect(statements.some((statement) => statement.includes("session_feed_state"))).toBe(true);
+    expect(statements.some((statement) => statement.includes("UPDATE sessions"))).toBe(true);
+  });
+
+  it("keeps a terminal notice when no attention remains to clear", async () => {
+    const sql = Object.assign(async (strings: TemplateStringsArray) => {
+      const statement = strings.join("?");
+      if (statement.includes("INSERT INTO session_feed_notices")) {
+        return [{ source_event_id: 43 }];
+      }
+      return [];
+    }, { json: (value: unknown) => value }) as unknown as EventIngressQuerySql;
+
+    const result = await applyEventFeedProjection(sql, {
+      nodeId: "node-a",
+      eventId: 43,
+      envelope: envelope("session_ended", { status: "completed" }),
+      sessionEffectApplication: { applied: true, canonicalSession: null },
+    });
+
+    expect(result).toMatchObject({
+      notification_watermark: 43,
+      notices: [expect.objectContaining({ kind: "terminal" })],
+    });
+    expect(result).not.toHaveProperty("pending_attentions_delta");
   });
 
   it("does not clear attention or notify for a rejected terminal transition", async () => {

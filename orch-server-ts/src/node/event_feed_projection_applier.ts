@@ -36,16 +36,15 @@ export const applyEventFeedProjection: EventFeedProjectionApplier = async (
   const notice = sessionNotice(input.envelope, input.eventId, attention);
   if (attention.kind === "none" && notice === null) return null;
 
-  const pendingDelta = await applyAttentionMutation(
+  const attentionApplication = await applyAttentionMutation(
     sql,
     input.envelope.session_id,
     input.eventId,
     input.envelope.created_at,
     attention,
   );
-  if (notice !== null) {
-    await appendNotice(sql, notice);
-  }
+  const noticeInserted = notice === null ? false : await appendNotice(sql, notice);
+  if (!attentionApplication.changed && !noticeInserted) return null;
   await sql`
     UPDATE sessions
     SET updated_at = GREATEST(updated_at, ${new Date(input.envelope.created_at)})
@@ -54,13 +53,13 @@ export const applyEventFeedProjection: EventFeedProjectionApplier = async (
 
   return {
     updated_at: new Date(input.envelope.created_at).toISOString(),
-    ...(attention.kind === "none"
+    ...(!attentionApplication.changed
       ? {}
       : {
           attention_revision: input.eventId,
-          pending_attentions_delta: pendingDelta,
+          pending_attentions_delta: attentionApplication.delta,
         }),
-    ...(notice === null
+    ...(!noticeInserted || notice === null
       ? {}
       : {
           notices: [notice],
@@ -297,17 +296,20 @@ async function applyAttentionMutation(
   eventId: number,
   createdAt: string,
   mutation: AttentionMutation,
-): Promise<Record<
-  string,
-  { revision: number; value: PendingAttention | null }
->> {
-  if (mutation.kind === "none") return {};
+): Promise<{
+  readonly changed: boolean;
+  readonly delta: Record<string, {
+    revision: number;
+    value: PendingAttention | null;
+  }>;
+}> {
+  if (mutation.kind === "none") return { changed: false, delta: {} };
   const delta: Record<
     string,
     { revision: number; value: PendingAttention | null }
   > = {};
   if (mutation.kind === "upsert") {
-    await sql`
+    const rows = await sql<Array<{ attention_id: string }>>`
       INSERT INTO session_pending_attentions (
         session_id, attention_id, source_event_id, projection, requested_at
       ) VALUES (
@@ -319,18 +321,24 @@ async function applyAttentionMutation(
           projection = EXCLUDED.projection,
           requested_at = EXCLUDED.requested_at
       WHERE session_pending_attentions.source_event_id < EXCLUDED.source_event_id
+      RETURNING attention_id
     `;
-    delta[mutation.attention.id] = {
-      revision: eventId,
-      value: mutation.attention,
-    };
+    if (rows.length > 0) {
+      delta[mutation.attention.id] = {
+        revision: eventId,
+        value: mutation.attention,
+      };
+    }
   } else if (mutation.kind === "remove") {
-    await sql`
+    const rows = await sql<Array<{ attention_id: string }>>`
       DELETE FROM session_pending_attentions
       WHERE session_id = ${sessionId}
         AND attention_id = ${mutation.attentionId}
+      RETURNING attention_id
     `;
-    delta[mutation.attentionId] = { revision: eventId, value: null };
+    if (rows.length > 0) {
+      delta[mutation.attentionId] = { revision: eventId, value: null };
+    }
   } else {
     const rows = await sql<Array<{ attention_id: string }>>`
       DELETE FROM session_pending_attentions
@@ -341,6 +349,7 @@ async function applyAttentionMutation(
       delta[row.attention_id] = { revision: eventId, value: null };
     }
   }
+  if (Object.keys(delta).length === 0) return { changed: false, delta };
   await sql`
     INSERT INTO session_feed_state (session_id, attention_revision, updated_at)
     VALUES (${sessionId}, ${eventId}, ${new Date(createdAt)})
@@ -351,13 +360,13 @@ async function applyAttentionMutation(
         ),
         updated_at = GREATEST(session_feed_state.updated_at, EXCLUDED.updated_at)
   `;
-  return delta;
+  return { changed: true, delta };
 }
 
 async function appendNotice(
   sql: EventIngressQuerySql,
   notice: SessionNotice,
-): Promise<void> {
+): Promise<boolean> {
   const inserted = await sql<Array<{ source_event_id: number }>>`
     INSERT INTO session_feed_notices (
       session_id, source_event_id, projection, created_at
@@ -368,7 +377,7 @@ async function appendNotice(
     ON CONFLICT (session_id, source_event_id) DO NOTHING
     RETURNING source_event_id
   `;
-  if (inserted.length === 0) return;
+  if (inserted.length === 0) return false;
   await sql`
     INSERT INTO session_feed_state (
       session_id, notification_watermark, notification_count, updated_at
@@ -394,6 +403,7 @@ async function appendNotice(
         LIMIT ${STORED_NOTICE_LIMIT}
       )
   `;
+  return true;
 }
 
 function attentionId(kind: PendingAttention["kind"], identity: string): string {

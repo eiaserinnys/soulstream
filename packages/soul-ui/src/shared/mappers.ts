@@ -28,6 +28,11 @@ function toLlmUsage(raw: unknown): LlmUsage | undefined {
  */
 export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
   const lastMessage = normalizeLastMessage(raw.last_message ?? raw.lastMessage);
+  const feedLastEventId = nullableEventIdField(
+    raw,
+    "feed_last_event_id",
+    "feedLastEventId",
+  );
   return {
     agentSessionId: (raw.agent_session_id ?? raw.agentSessionId) as string,
     status: normalizeSessionStatus(raw.status as SessionStatus | undefined),
@@ -65,6 +70,7 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
     metadata: (raw.metadata as MetadataEntry[] | undefined) ?? [],
     folderId: (raw.folder_id ?? raw.folderId) as string | null | undefined,
     lastEventId: (raw.last_event_id ?? raw.lastEventId ?? 0) as number,
+    ...(feedLastEventId === undefined ? {} : { feedLastEventId }),
     lastReadEventId: (raw.last_read_event_id ?? raw.lastReadEventId ?? 0) as number,
     displayName: (raw.display_name ?? raw.displayName) as string | undefined,
     awaySummary: (raw.away_summary ?? raw.awaySummary) as string | null | undefined,
@@ -90,4 +96,22 @@ function normalizeReviewState(value: unknown): ReviewState {
   return value === "needs_review" || value === "acknowledged"
     ? value
     : "not_required";
+}
+
+function nullableEventIdField(
+  raw: Record<string, unknown>,
+  ...keys: string[]
+): number | null | undefined {
+  for (const key of keys) {
+    if (!Object.hasOwn(raw, key)) continue;
+    const value = raw[key];
+    if (value === null) return null;
+    const parsed = typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : NaN;
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
+  }
+  return undefined;
 }

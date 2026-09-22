@@ -21,6 +21,7 @@ const FEED_SUMMARY_KEYS = [
   "nodeId",
   "folderId",
   "lastEventId",
+  "feedLastEventId",
   "lastReadEventId",
   "callerSessionId",
   "predecessorSessionId",
@@ -49,6 +50,7 @@ const FEED_UPDATE_FIELDS = [
   ["updated_at", "updated_at", "updatedAt"],
   ["last_message", "last_message", "lastMessage"],
   ["last_event_id", "last_event_id", "lastEventId"],
+  ["feed_last_event_id", "feed_last_event_id", "feedLastEventId"],
   ["last_read_event_id", "last_read_event_id", "lastReadEventId"],
   ["review_required", "review_required", "reviewRequired"],
   ["review_state", "review_state", "reviewState"],
@@ -157,6 +159,7 @@ export function withSessionFeedState(
     recentNotices: [...state.recentNotices],
     notificationWatermark: state.notificationWatermark,
     noticesTruncated: state.noticesTruncated,
+    feedLastEventId: state.feedLastEventId,
   };
 }
 

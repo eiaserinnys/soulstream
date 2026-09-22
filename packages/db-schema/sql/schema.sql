@@ -912,6 +912,7 @@ CREATE TABLE IF NOT EXISTS session_feed_state (
     attention_revision        INTEGER NOT NULL DEFAULT 0 CHECK (attention_revision >= 0),
     notification_watermark    INTEGER NOT NULL DEFAULT 0 CHECK (notification_watermark >= 0),
     notification_count        BIGINT NOT NULL DEFAULT 0 CHECK (notification_count >= 0),
+    feed_last_event_id        INTEGER CHECK (feed_last_event_id IS NULL OR feed_last_event_id > 0),
     updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

@@ -16,6 +16,10 @@ import {
   EventIngressRetryPolicy,
   type EventIngressRetryPolicyOptions,
 } from "./event_ingress_retry_policy.js";
+import {
+  advanceSessionFeedLastEventId,
+  hasFeedSemanticIngressChange,
+} from "./event_feed_semantic_watermark.js";
 
 type QueryRows = readonly Record<string, unknown>[];
 
@@ -221,6 +225,19 @@ export class EventIngressRepository {
             : { sessionEffectApplication }),
         })
       : null;
+    const feedLastEventId = !semanticReceipt && hasFeedSemanticIngressChange({
+      effect: envelope.session_effect,
+      ...(sessionEffectApplication === undefined
+        ? {}
+        : { sessionEffectApplication }),
+      feedProjectionApplication,
+    })
+      ? await advanceSessionFeedLastEventId(transaction, {
+          sessionId: envelope.session_id,
+          eventId,
+          createdAt: envelope.created_at,
+        })
+      : undefined;
     await handoffRetainedRunnerGenerations(
       transaction,
       nodeId,
@@ -251,6 +268,7 @@ export class EventIngressRepository {
       duplicateReceipt: semanticReceipt !== undefined,
       ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
       ...(feedProjectionApplication ? { feedProjectionApplication } : {}),
+      ...(feedLastEventId === undefined ? {} : { feedLastEventId }),
     };
   }
 }

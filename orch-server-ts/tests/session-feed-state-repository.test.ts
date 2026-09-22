@@ -15,6 +15,7 @@ describe("session feed state repository", () => {
           session_id: "session-a",
           attention_revision: 12,
           notification_watermark: 21,
+          feed_last_event_id: 44,
           notification_count: 9,
         }];
       }
@@ -59,6 +60,7 @@ describe("session feed state repository", () => {
       attentionRevision: 12,
       pendingAttentions: [{ id: "input_request:req-1" }],
       notificationWatermark: 21,
+      feedLastEventId: 44,
       recentNotices: [{ id: "session-a:21" }],
       noticesTruncated: true,
     });
@@ -68,6 +70,7 @@ describe("session feed state repository", () => {
       recentNotices: [],
       notificationWatermark: 0,
       noticesTruncated: false,
+      feedLastEventId: null,
     });
   });
 });
