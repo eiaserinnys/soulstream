@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   InMemorySseReplayBroadcaster,
+  broadcastTargetedSessionCatalogDelta,
   withSessionCatalogMutationBroadcasts,
   type LiveFolderProvider,
   type SessionCatalogProvider,
@@ -9,6 +10,21 @@ import {
 } from "../src/index.js";
 
 describe("withSessionCatalogMutationBroadcasts", () => {
+  it("builds one targeted delta from the committed assignment owner", async () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>();
+    const folderProvider = createFolderProvider();
+
+    await broadcastTargetedSessionCatalogDelta(folderProvider, broadcaster, ["sess-a"]);
+
+    expect(folderProvider.listSessionAssignmentsByIds).toHaveBeenCalledTimes(1);
+    expect(folderProvider.listSessionAssignmentsByIds).toHaveBeenCalledWith(["sess-a"]);
+    expect(broadcaster.bufferedEvents.map((event) => event.payload)).toEqual([
+      catalogUpdatedPayload({
+        "sess-a": { folderId: "folder-b", displayName: "Renamed" },
+      }),
+    ]);
+  });
+
   it("emits targeted upserts for rename/move/update and null only for deletion", async () => {
     const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>();
     const provider = createSessionProvider();
