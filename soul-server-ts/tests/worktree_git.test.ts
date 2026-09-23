@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -13,7 +14,7 @@ import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { WorktreeGit } from "../src/worktree/worktree_git.js";
-import { runBoundedProcess } from "../src/worktree/worktree_process.js";
+import { GitProcessError, runBoundedProcess } from "../src/worktree/worktree_process.js";
 
 const roots: string[] = [];
 
@@ -47,6 +48,7 @@ describe("WorktreeGit", () => {
     const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
 
     const created = await worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/한글-worktree",
       mode: "new",
@@ -64,6 +66,7 @@ describe("WorktreeGit", () => {
     const { projectsRoot } = makeRepository();
     const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
     const created = await worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/dirty",
       mode: "new",
@@ -86,6 +89,7 @@ describe("WorktreeGit", () => {
     const { projectsRoot } = makeRepository();
     const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
     const created = await worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/rename-dirty",
       mode: "new",
@@ -103,6 +107,7 @@ describe("WorktreeGit", () => {
     const { projectsRoot } = makeRepository();
     const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
     const created = await worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/identity",
       mode: "new",
@@ -120,6 +125,7 @@ describe("WorktreeGit", () => {
     const existingHead = git(repo, "rev-parse", "refs/heads/feature/existing");
 
     const existing = await worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/existing",
       mode: "existing",
@@ -129,12 +135,14 @@ describe("WorktreeGit", () => {
     expect(git(repo, "rev-parse", "refs/heads/feature/existing")).toBe(existingHead);
 
     await expect(worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/existing",
       mode: "new",
       worktreeId: "worktree-duplicate",
     })).rejects.toMatchObject({ code: "BRANCH_ALREADY_EXISTS" });
     await expect(worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/invalid branch",
       mode: "new",
@@ -150,6 +158,7 @@ describe("WorktreeGit", () => {
     git(repo, "worktree", "add", "-b", "feature/external", external, "HEAD");
     const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
     await worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/managed",
       mode: "new",
@@ -170,6 +179,7 @@ describe("WorktreeGit", () => {
     git(repo, "push", "-u", "origin", "main");
     const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
     const created = await worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/delete-once",
       mode: "new",
@@ -214,6 +224,7 @@ describe("WorktreeGit", () => {
     git(repo, "push", "-u", "origin", "main");
     const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
     const created = await worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/reused-before-delete",
       mode: "new",
@@ -248,6 +259,7 @@ describe("WorktreeGit", () => {
     const { projectsRoot, repo } = makeRepository();
     const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
     const created = await worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/remove-failure",
       mode: "new",
@@ -306,6 +318,7 @@ describe("WorktreeGit", () => {
     });
 
     await expect(worktrees.withOperationDeadline(async () => await worktrees.create({
+      actorSessionId: "owner",
       repoId: "demo",
       branch: "feature/shared-deadline",
       mode: "new",
@@ -316,5 +329,286 @@ describe("WorktreeGit", () => {
       "remote",
       "fetch",
     ]);
+  });
+
+  it("uses the extended child timeout only for worktree add", async () => {
+    const { projectsRoot } = makeRepository();
+    const calls: Array<{ args: string[]; timeoutMs: number }> = [];
+    const worktrees = new WorktreeGit({
+      projectsRoot,
+      timeoutMs: 120_000,
+      createTimeoutMs: 1_800_000,
+      processRunner: async (input) => {
+        calls.push({ args: input.args, timeoutMs: input.timeoutMs });
+        return await runBoundedProcess(input);
+      },
+    });
+
+    await worktrees.withOperationDeadline(async () => await worktrees.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/long-create",
+      mode: "new",
+      worktreeId: "worktree-long-create",
+    }), 1_800_000);
+
+    expect(calls.find(({ args }) => args[0] === "worktree" && args[1] === "add")?.timeoutMs)
+      .toBe(1_800_000);
+    expect(calls.filter(({ args }) => !(args[0] === "worktree" && args[1] === "add")))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ timeoutMs: 120_000 }),
+      ]));
+  });
+
+  it("preserves a timed-out initializing worktree and safely recreates it on the same actor retry", async () => {
+    const { projectsRoot, repo } = makeRepository();
+    let firstAdd = true;
+    const processRunner: typeof runBoundedProcess = async (input) => {
+      if (firstAdd && input.args[0] === "worktree" && input.args[1] === "add") {
+        firstAdd = false;
+        await runBoundedProcess(input);
+        const path = input.args.at(-2)!;
+        git(repo, "worktree", "lock", "--reason", "initializing", path);
+        throw new GitProcessError("PROCESS_TIMEOUT", "simulated timeout", true);
+      }
+      return await runBoundedProcess(input);
+    };
+    const worktrees = new WorktreeGit({
+      projectsRoot,
+      timeoutMs: 5_000,
+      createTimeoutMs: 5_000,
+      processRunner,
+    });
+    const request = {
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/timeout-retry",
+      mode: "new" as const,
+    };
+
+    await expect(worktrees.create({ ...request, worktreeId: "attempt-1" }))
+      .rejects.toMatchObject({ code: "PROCESS_TIMEOUT", terminationConfirmed: true });
+    const partial = (await worktrees.list("demo")).find(
+      (entry) => entry.branch === request.branch,
+    );
+    expect(partial).toMatchObject({ kind: "unmanaged", lockedReason: "initializing" });
+
+    await expect(worktrees.create({ ...request, worktreeId: "attempt-2" }))
+      .resolves.toMatchObject({ kind: "managed", identity: "attempt-2" });
+    expect(git(repo, "branch", "--list", request.branch)).toContain(request.branch);
+  });
+
+  it("re-locks an initializing worktree when unlock applies before its process times out", async () => {
+    const { projectsRoot, repo } = makeRepository();
+    let firstAdd = true;
+    let firstUnlock = true;
+    let firstRelock = true;
+    const processRunner: typeof runBoundedProcess = async (input) => {
+      if (firstAdd && input.args[0] === "worktree" && input.args[1] === "add") {
+        firstAdd = false;
+        await runBoundedProcess(input);
+        const path = input.args.at(-2)!;
+        git(repo, "worktree", "lock", "--reason", "initializing", path);
+        throw new GitProcessError("PROCESS_TIMEOUT", "simulated add timeout", true);
+      }
+      if (firstUnlock && input.args[0] === "worktree" && input.args[1] === "unlock") {
+        firstUnlock = false;
+        await runBoundedProcess(input);
+        throw new GitProcessError("PROCESS_TIMEOUT", "simulated unlock timeout", true);
+      }
+      if (firstRelock && input.args[0] === "worktree" && input.args[1] === "lock") {
+        firstRelock = false;
+        throw new GitProcessError("PROCESS_TIMEOUT", "simulated relock timeout before effect", true);
+      }
+      return await runBoundedProcess(input);
+    };
+    const worktrees = new WorktreeGit({
+      projectsRoot,
+      timeoutMs: 5_000,
+      createTimeoutMs: 5_000,
+      processRunner,
+    });
+    const request = {
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/unlock-timeout",
+      mode: "new" as const,
+    };
+
+    await expect(worktrees.create({ ...request, worktreeId: "unlock-timeout-1" }))
+      .rejects.toMatchObject({ code: "PROCESS_TIMEOUT" });
+    await expect(worktrees.create({ ...request, worktreeId: "unlock-timeout-2" }))
+      .rejects.toMatchObject({ code: "PROCESS_TIMEOUT" });
+
+    const preserved = (await worktrees.list("demo")).find(
+      (entry) => entry.branch === request.branch,
+    );
+    expect(preserved).toMatchObject({ lockedReason: "initializing" });
+    await expect(worktrees.adopt({
+      repoId: "demo",
+      path: preserved!.path,
+      branch: request.branch,
+      expectedHead: preserved!.head,
+      worktreeId: "must-not-adopt",
+    })).rejects.toMatchObject({ code: "WORKTREE_LOCKED" });
+
+    await expect(worktrees.create({ ...request, worktreeId: "unlock-timeout-3" }))
+      .resolves.toMatchObject({ kind: "managed", identity: "unlock-timeout-3" });
+  });
+
+  it("accepts a confirmed initializing lock when re-lock applies before its process times out", async () => {
+    const { projectsRoot, repo } = makeRepository();
+    let firstAdd = true;
+    let statusCalls = 0;
+    let firstRelock = true;
+    const processRunner: typeof runBoundedProcess = async (input) => {
+      if (firstAdd && input.args[0] === "worktree" && input.args[1] === "add") {
+        firstAdd = false;
+        await runBoundedProcess(input);
+        const path = input.args.at(-2)!;
+        git(repo, "worktree", "lock", "--reason", "initializing", path);
+        throw new GitProcessError("PROCESS_TIMEOUT", "simulated add timeout", true);
+      }
+      if (input.args[0] === "status") {
+        statusCalls += 1;
+        if (statusCalls === 2) {
+          throw new GitProcessError("PROCESS_TIMEOUT", "simulated dirty recheck timeout", true);
+        }
+      }
+      if (firstRelock && input.args[0] === "worktree" && input.args[1] === "lock") {
+        firstRelock = false;
+        await runBoundedProcess(input);
+        throw new GitProcessError("PROCESS_TIMEOUT", "simulated relock timeout after effect", true);
+      }
+      return await runBoundedProcess(input);
+    };
+    const worktrees = new WorktreeGit({
+      projectsRoot,
+      timeoutMs: 5_000,
+      createTimeoutMs: 5_000,
+      processRunner,
+    });
+    const request = {
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/relock-timeout",
+      mode: "new" as const,
+    };
+
+    await expect(worktrees.create({ ...request, worktreeId: "relock-timeout-1" }))
+      .rejects.toMatchObject({ code: "PROCESS_TIMEOUT" });
+    await expect(worktrees.create({ ...request, worktreeId: "relock-timeout-2" }))
+      .rejects.toMatchObject({ code: "PROCESS_TIMEOUT" });
+    expect((await worktrees.list("demo")).find((entry) => entry.branch === request.branch))
+      .toMatchObject({ lockedReason: "initializing" });
+
+    await expect(worktrees.create({ ...request, worktreeId: "relock-timeout-3" }))
+      .resolves.toMatchObject({ kind: "managed", identity: "relock-timeout-3" });
+  });
+
+  it("never adopts or cleans a locked partial without an exact owned marker", async () => {
+    const { projectsRoot, repo } = makeRepository();
+    const path = join(projectsRoot, "demo--foreign-initializing");
+    git(repo, "worktree", "add", "-b", "feature/foreign-initializing", path, "HEAD");
+    git(repo, "worktree", "lock", "--reason", "initializing", path);
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const head = git(path, "rev-parse", "HEAD");
+
+    await expect(worktrees.adopt({
+      repoId: "demo",
+      path,
+      branch: "feature/foreign-initializing",
+      expectedHead: head,
+      worktreeId: "must-not-adopt",
+    })).rejects.toMatchObject({ code: "WORKTREE_LOCKED" });
+    expect((await worktrees.list("demo")).find((entry) => entry.path === realpathSync(path)))
+      .toMatchObject({ kind: "unmanaged", lockedReason: "initializing" });
+  });
+
+  it("preserves dirty timeout residue on retry instead of forcing cleanup", async () => {
+    const { projectsRoot, repo } = makeRepository();
+    let firstAdd = true;
+    const processRunner: typeof runBoundedProcess = async (input) => {
+      if (firstAdd && input.args[0] === "worktree" && input.args[1] === "add") {
+        firstAdd = false;
+        await runBoundedProcess(input);
+        const path = input.args.at(-2)!;
+        writeFileSync(join(path, "user-file.txt"), "preserve\n");
+        git(repo, "worktree", "lock", "--reason", "initializing", path);
+        throw new GitProcessError("PROCESS_TIMEOUT", "simulated timeout", true);
+      }
+      return await runBoundedProcess(input);
+    };
+    const worktrees = new WorktreeGit({
+      projectsRoot,
+      timeoutMs: 5_000,
+      createTimeoutMs: 5_000,
+      processRunner,
+    });
+    const request = {
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/dirty-timeout",
+      mode: "new" as const,
+    };
+
+    await expect(worktrees.create({ ...request, worktreeId: "dirty-attempt-1" }))
+      .rejects.toMatchObject({ code: "PROCESS_TIMEOUT" });
+    await expect(worktrees.create({
+      ...request,
+      actorSessionId: "different-actor",
+      worktreeId: "dirty-intruder",
+    })).rejects.toMatchObject({ code: "WORKTREE_PARTIAL_PRESERVED" });
+    await expect(worktrees.create({ ...request, worktreeId: "dirty-attempt-2" }))
+      .rejects.toMatchObject({ code: "WORKTREE_PARTIAL_PRESERVED" });
+    const partial = (await worktrees.list("demo")).find(
+      (entry) => entry.branch === request.branch,
+    );
+    expect(partial).toMatchObject({ lockedReason: "initializing" });
+    expect(existsSync(join(partial!.path, "user-file.txt"))).toBe(true);
+  });
+
+  it("preserves a branch reused after partial removal instead of deleting the new ref", async () => {
+    const { projectsRoot, repo } = makeRepository();
+    const alternate = git(repo, "commit-tree", "HEAD^{tree}", "-m", "alternate");
+    let firstAdd = true;
+    let replaceBeforeDelete = true;
+    const processRunner: typeof runBoundedProcess = async (input) => {
+      if (firstAdd && input.args[0] === "worktree" && input.args[1] === "add") {
+        firstAdd = false;
+        await runBoundedProcess(input);
+        const path = input.args.at(-2)!;
+        git(repo, "worktree", "lock", "--reason", "initializing", path);
+        throw new GitProcessError("PROCESS_TIMEOUT", "simulated timeout", true);
+      }
+      if (replaceBeforeDelete && input.args[0] === "update-ref" && input.stdin) {
+        replaceBeforeDelete = false;
+        git(repo, "update-ref", "refs/heads/feature/ref-race", alternate);
+      }
+      return await runBoundedProcess(input);
+    };
+    const worktrees = new WorktreeGit({
+      projectsRoot,
+      timeoutMs: 5_000,
+      createTimeoutMs: 5_000,
+      processRunner,
+    });
+    const request = {
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/ref-race",
+      mode: "new" as const,
+    };
+
+    await expect(worktrees.create({ ...request, worktreeId: "ref-race-1" }))
+      .rejects.toMatchObject({ code: "PROCESS_TIMEOUT" });
+    const partialPath = (await worktrees.list("demo")).find(
+      (entry) => entry.branch === request.branch,
+    )!.path;
+    await expect(worktrees.create({ ...request, worktreeId: "ref-race-2" }))
+      .rejects.toMatchObject({ code: "WORKTREE_PARTIAL_BRANCH_PRESERVED" });
+
+    expect(existsSync(partialPath)).toBe(false);
+    expect(git(repo, "rev-parse", `refs/heads/${request.branch}`)).toBe(alternate);
   });
 });

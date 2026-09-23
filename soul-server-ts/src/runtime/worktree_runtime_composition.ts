@@ -4,7 +4,8 @@ import { join } from "node:path";
 import type { Env } from "../config.js";
 import { WorktreeHostClient } from "../control_plane/worktree_host_client.js";
 import type { HostClientConfig } from "../control_plane/persistence_host_transport.js";
-import { WorktreeGit, WORKTREE_OPERATION_TIMEOUT_MS } from "../worktree/worktree_git.js";
+import { WorktreeGit } from "../worktree/worktree_git.js";
+import { WORKTREE_OPERATION_TIMEOUT_MS } from "../worktree/worktree_timeouts.js";
 import { RepositoryLock } from "../worktree/worktree_repository_lock.js";
 import { WorktreeService } from "../worktree/worktree_service.js";
 
@@ -21,7 +22,12 @@ export function composeWorktreeService(
   return new WorktreeService({
     nodeId: env.SOULSTREAM_NODE_ID,
     projectsRoot,
-    git: new WorktreeGit({ projectsRoot, timeoutMs: WORKTREE_OPERATION_TIMEOUT_MS }),
+    git: new WorktreeGit({
+      projectsRoot,
+      timeoutMs: WORKTREE_OPERATION_TIMEOUT_MS,
+      createTimeoutMs: env.WORKTREE_CREATE_TIMEOUT_MS,
+    }),
+    createTimeoutMs: env.WORKTREE_CREATE_TIMEOUT_MS,
     lock: new RepositoryLock({
       lockRoot: join(tmpdir(), "soulstream-worktree-locks"),
       defaultTimeoutMs: 120_000,

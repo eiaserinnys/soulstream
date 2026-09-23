@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -39,6 +39,7 @@ function fixture(active: string[] = []) {
     nodeId: "node-a",
     projectsRoot,
     git: new WorktreeGit({ projectsRoot, timeoutMs: 5_000 }),
+    createTimeoutMs: 5_000,
     lock: new RepositoryLock({ lockRoot: join(projectsRoot, ".locks"), defaultTimeoutMs: 2_000 }),
     host,
     listActiveWorkspaceDirs: () => active,
@@ -139,6 +140,23 @@ describe("WorktreeService", () => {
       setup: "none",
       requireSetup: false,
     })).resolves.toMatchObject({ adopted: true });
+  });
+
+  it("lists locked initializing worktrees but never offers adoption", async () => {
+    const { projectsRoot, repo, service } = fixture();
+    const unmanaged = join(projectsRoot, "demo--locked-initializing");
+    git(repo, "worktree", "add", "-b", "feature/locked-initializing", unmanaged, "HEAD");
+    git(repo, "worktree", "lock", "--reason", "initializing", unmanaged);
+
+    await expect(service.list({ actorSessionId: "owner", repoId: "demo" }))
+      .resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          path: realpathSync(unmanaged),
+          discoveryKind: "unmanaged_adoptable",
+          adoptionAllowed: false,
+          lockReason: "initializing",
+        }),
+      ]));
   });
 
   it("serializes concurrent create calls for the same branch", async () => {

@@ -26,9 +26,20 @@ import type {
   TaskManager,
 } from "../../src/task/task_manager.js";
 import type { AgentProfile } from "../../src/agent_registry.js";
-import { REMOTE_WORKTREE_HTTP_TIMEOUT_MS } from "../../src/mcp/tools/worktree.js";
-import { WORKTREE_OPERATION_TIMEOUT_MS } from "../../src/worktree/worktree_git.js";
-import { WORKTREE_NODE_COMMAND_TIMEOUT_MS } from
+import {
+  REMOTE_WORKTREE_CREATE_HTTP_TIMEOUT_MS,
+  REMOTE_WORKTREE_HTTP_TIMEOUT_MS,
+  remoteWorktreeHttpTimeoutMs,
+} from "../../src/mcp/tools/worktree.js";
+import {
+  WORKTREE_CREATE_TIMEOUT_MAX_MS,
+  WORKTREE_OPERATION_TIMEOUT_MS,
+} from "../../src/worktree/worktree_timeouts.js";
+import {
+  WORKTREE_NODE_COMMAND_TIMEOUT_MS,
+  WORKTREE_NODE_CREATE_COMMAND_TIMEOUT_MS,
+  worktreeNodeCommandTimeoutMs,
+} from
   "../../../orch-server-ts/src/runtime/live_node_agent_profile_route_provider.js";
 
 const openClients: Client[] = [];
@@ -322,6 +333,20 @@ describe("remote worktree tools", () => {
     expect(REMOTE_WORKTREE_HTTP_TIMEOUT_MS).toBeGreaterThan(
       WORKTREE_NODE_COMMAND_TIMEOUT_MS,
     );
+    expect(WORKTREE_NODE_CREATE_COMMAND_TIMEOUT_MS).toBeGreaterThan(
+      WORKTREE_CREATE_TIMEOUT_MAX_MS + 1_100 + 10_000,
+    );
+    expect(REMOTE_WORKTREE_CREATE_HTTP_TIMEOUT_MS).toBeGreaterThan(
+      WORKTREE_NODE_CREATE_COMMAND_TIMEOUT_MS,
+    );
+    expect(worktreeNodeCommandTimeoutMs("create")).toBe(
+      WORKTREE_NODE_CREATE_COMMAND_TIMEOUT_MS,
+    );
+    expect(worktreeNodeCommandTimeoutMs("list")).toBe(WORKTREE_NODE_COMMAND_TIMEOUT_MS);
+    expect(remoteWorktreeHttpTimeoutMs("create")).toBe(
+      REMOTE_WORKTREE_CREATE_HTTP_TIMEOUT_MS,
+    );
+    expect(remoteWorktreeHttpTimeoutMs("remove")).toBe(REMOTE_WORKTREE_HTTP_TIMEOUT_MS);
   });
 
   it("preserves dirty inventory and cleanup guidance from the remote node", async () => {
