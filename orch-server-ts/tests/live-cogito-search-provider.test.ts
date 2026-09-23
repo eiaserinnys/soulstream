@@ -9,6 +9,38 @@ import type { SearchQueryExpander } from "../src/search/search_query_expander.js
 type SqlCall = { text: string; values: unknown[] };
 
 describe("live Cogito search provider", () => {
+  it("reports semantic SQL and projection timing without changing the public payload", async () => {
+    const harness = createSqlHarness(() => []);
+    const observations: Array<Record<string, unknown>> = [];
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(harness.sql),
+      queryExpander: {
+        expand: async () => ({ queries: ["expanded semantic query"], latencyMs: 8, skipped: false }),
+      },
+      onSearchTiming: (timing: Record<string, unknown>) => observations.push(timing),
+    } as never);
+
+    const response = await provider.search({
+      q: "의역 질의",
+      top_k: 5,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      include_session_results: true,
+      session_search_mode: "expanded",
+    });
+
+    expect(response).not.toHaveProperty("timing");
+    expect(observations).toHaveLength(1);
+    expect(observations[0]).toEqual(expect.objectContaining({
+      lexicalSqlMs: expect.any(Number),
+      semanticSqlMs: expect.any(Number),
+      projectionMs: expect.any(Number),
+      totalMs: expect.any(Number),
+    }));
+  });
+
   it("queries shared PostgreSQL once, deduplicates event/session matches, and returns navigation", async () => {
     const harness = createSqlHarness((text) => {
       if (text.includes("event_search")) {

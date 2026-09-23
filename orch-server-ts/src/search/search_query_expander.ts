@@ -1,5 +1,6 @@
 import {
   CodexEphemeralExecutionError,
+  type CodexReasoningEffort,
   type CodexEphemeralExecutor,
 } from "../llm/codex_ephemeral_executor.js";
 import type {
@@ -27,6 +28,17 @@ export type ExpandedSearchQueries = {
   readonly skipped: boolean;
 };
 
+export type SearchQueryExpansionTiming = {
+  readonly model?: string;
+  readonly reasoningEffort?: CodexReasoningEffort;
+  readonly modelResolutionMs: number;
+  readonly executorWallMs: number;
+  readonly queryParseMs: number;
+  readonly totalMs: number;
+  readonly status: "completed" | "failed" | "skipped";
+  readonly errorCode?: string;
+};
+
 export type SearchQueryExpander = {
   readonly expand: (
     query: string,
@@ -41,6 +53,7 @@ export type CreateSearchQueryExpanderOptions = {
   readonly concurrencyLimit?: number;
   readonly nowMs?: () => number;
   readonly onExpansionError?: (error: unknown) => void;
+  readonly onExpansionTiming?: (timing: SearchQueryExpansionTiming) => void;
 };
 
 export function createSearchQueryExpander(
@@ -50,43 +63,90 @@ export function createSearchQueryExpander(
   return {
     async expand(query, timeoutMs, signal) {
       const startedAt = nowMs();
-      if (shouldSkipExpansion(query)) {
-        return {
-          queries: [],
-          latencyMs: Math.max(0, nowMs() - startedAt),
-          skipped: true,
-        };
-      }
-      if (signal?.aborted) throw cancelledExpansionError();
-
-      const model = options.modelResolver.resolve();
+      let model: ReturnType<SearchQueryModelResolver["resolve"]> | undefined;
+      let modelResolutionMs = 0;
+      let executorWallMs = 0;
+      let queryParseMs = 0;
+      let status: SearchQueryExpansionTiming["status"] = "failed";
+      let errorCode: string | undefined;
+      let cancelledBeforeStart = false;
       try {
-        const result = await options.executor.generate({
-          prompt: buildQueryExpansionPrompt(query),
-          model: model.model,
-          reasoningEffort: model.reasoningEffort,
-          outputSchema: queryExpansionOutputSchema,
-          timeoutMs,
-          maxAttempts: 1,
-          concurrencyLimit: options.concurrencyLimit ?? 2,
-          signal,
-          disabledFeatures: [
-            "shell_tool",
-            "apps",
-            "multi_agent",
-            "goals",
-            "remote_plugin",
-          ],
-          disableWebSearch: true,
-        });
+        if (shouldSkipExpansion(query)) {
+          status = "skipped";
+          return {
+            queries: [],
+            latencyMs: Math.max(0, nowMs() - startedAt),
+            skipped: true,
+          };
+        }
+        if (signal?.aborted) {
+          cancelledBeforeStart = true;
+          throw cancelledExpansionError();
+        }
+
+        const resolutionStartedAt = nowMs();
+        model = options.modelResolver.resolve();
+        modelResolutionMs = Math.max(0, nowMs() - resolutionStartedAt);
+        const executorStartedAt = nowMs();
+        let result: Awaited<ReturnType<CodexEphemeralExecutor["generate"]>>;
+        try {
+          result = await options.executor.generate({
+            prompt: buildQueryExpansionPrompt(query),
+            model: model.model,
+            reasoningEffort: model.reasoningEffort,
+            outputSchema: queryExpansionOutputSchema,
+            timeoutMs,
+            maxAttempts: 1,
+            concurrencyLimit: options.concurrencyLimit ?? 2,
+            signal,
+            disabledFeatures: [
+              "shell_tool",
+              "apps",
+              "multi_agent",
+              "goals",
+              "remote_plugin",
+            ],
+            disableWebSearch: true,
+          });
+        } finally {
+          executorWallMs = Math.max(0, nowMs() - executorStartedAt);
+        }
+        const queryParseStartedAt = nowMs();
+        let queries: string[];
+        try {
+          queries = parseExpandedQueries(result.content, query);
+        } finally {
+          queryParseMs = Math.max(0, nowMs() - queryParseStartedAt);
+        }
+        status = "completed";
         return {
-          queries: parseExpandedQueries(result.content, query),
+          queries,
           latencyMs: Math.max(0, nowMs() - startedAt),
           skipped: false,
         };
       } catch (error) {
-        options.onExpansionError?.(error);
+        errorCode = error instanceof CodexEphemeralExecutionError
+          ? error.code
+          : "MODEL_ERROR";
+        if (!cancelledBeforeStart) options.onExpansionError?.(error);
         throw error;
+      } finally {
+        try {
+          options.onExpansionTiming?.({
+            ...(model === undefined ? {} : {
+              model: model.model,
+              reasoningEffort: model.reasoningEffort,
+            }),
+            modelResolutionMs,
+            executorWallMs,
+            queryParseMs,
+            totalMs: Math.max(0, nowMs() - startedAt),
+            status,
+            ...(errorCode === undefined ? {} : { errorCode }),
+          });
+        } catch {
+          // Measurement callbacks must not affect query execution.
+        }
       }
     },
   };

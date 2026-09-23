@@ -19,6 +19,33 @@ afterEach(async () => {
 });
 
 describe("Codex ephemeral query-only execution", () => {
+  it("observes child spawn-to-first-output and spawn-to-close timings", async () => {
+    const observations: Array<Record<string, unknown>> = [];
+    const processPort = new NodeCodexExecProcess({
+      onProcessTiming: (timing: Record<string, unknown>) => observations.push(timing),
+    } as never);
+    const script = 'setTimeout(() => process.stdout.write("ready"), 40); setTimeout(() => process.exit(0), 100)';
+
+    await expect(processPort.execute({
+      command: process.execPath,
+      args: ["-e", script],
+      env: process.env as Record<string, string>,
+      cwd: tmpdir(),
+    }, "", 1_000)).resolves.toMatchObject({ stdout: "ready" });
+
+    expect(observations).toHaveLength(1);
+    expect(observations[0]).toEqual(expect.objectContaining({
+      spawnToFirstStdoutMs: expect.any(Number),
+      spawnToCloseMs: expect.any(Number),
+      timedOut: false,
+      cancelled: false,
+    }));
+    expect(observations[0]?.spawnToFirstStdoutMs).toBeGreaterThan(0);
+    expect(observations[0]?.spawnToCloseMs).toBeGreaterThanOrEqual(
+      observations[0]?.spawnToFirstStdoutMs as number,
+    );
+  });
+
   it("passes a resolved model, max effort, and explicit no-tools flags", () => {
     const invocation = buildCodexExecInvocation({
       codexPath: "/usr/local/bin/codex",

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { performance } from "node:perf_hooks";
 import { join } from "node:path";
 
 import { sanitizeChildProcessEnv } from "../runtime/child_process_env.js";
@@ -46,6 +47,14 @@ export interface CodexExecProcessPort {
   ): Promise<{ readonly stdout: string; readonly stderr: string }>;
 }
 
+export interface CodexExecProcessTiming {
+  readonly spawnToFirstStdoutMs: number | null;
+  readonly spawnToCloseMs: number;
+  readonly timedOut: boolean;
+  readonly cancelled: boolean;
+  readonly exitCode: number | null;
+}
+
 export interface CodexExecGenerateRequest {
   readonly prompt: string;
   readonly model: string;
@@ -74,6 +83,8 @@ export interface CodexEphemeralExecutorOptions {
   readonly processPort?: CodexExecProcessPort;
   readonly processEnv?: NodeJS.ProcessEnv | Readonly<Record<string, string | undefined>>;
   readonly nowMs?: () => number;
+  readonly onProcessTiming?: (timing: CodexExecProcessTiming) => void;
+  readonly onOutputParseTiming?: (durationMs: number) => void;
 }
 
 type ExecutionMetrics = {
@@ -192,6 +203,12 @@ export function parseCodexJsonl(
 }
 
 export class NodeCodexExecProcess implements CodexExecProcessPort {
+  constructor(
+    private readonly options: {
+      readonly onProcessTiming?: (timing: CodexExecProcessTiming) => void;
+    } = {},
+  ) {}
+
   execute(
     invocation: CodexExecInvocation,
     prompt: string,
@@ -210,6 +227,10 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
         detached: process.platform !== "win32",
         windowsHide: true,
       });
+      const executeStartedAt = performance.now();
+      let spawnedAt: number | undefined;
+      let firstStdoutAt: number | undefined;
+      let timingReported = false;
       let stdout = "";
       let stderr = "";
       let timedOut = false;
@@ -229,6 +250,23 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
         }
         child.kill("SIGKILL");
       };
+      const reportTiming = (exitCode: number | null) => {
+        if (timingReported) return;
+        timingReported = true;
+        try {
+          this.options.onProcessTiming?.({
+            spawnToFirstStdoutMs: spawnedAt === undefined || firstStdoutAt === undefined
+              ? null
+              : Math.max(0, firstStdoutAt - spawnedAt),
+            spawnToCloseMs: Math.max(0, performance.now() - (spawnedAt ?? executeStartedAt)),
+            timedOut,
+            cancelled,
+            exitCode,
+          });
+        } catch {
+          // An optional observer must not affect child cleanup or search results.
+        }
+      };
       const timer = setTimeout(() => {
         timedOut = true;
         killProcessTree();
@@ -247,6 +285,7 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
+        firstStdoutAt ??= performance.now();
         stdout += chunk;
       });
       child.stderr.on("data", (chunk: string) => {
@@ -254,6 +293,7 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
       });
       child.once("error", (error) => {
         cleanup();
+        reportTiming(null);
         const unavailable = (error as NodeJS.ErrnoException).code === "ENOENT";
         reject(new CodexAttemptError(
           unavailable ? "CODEX_UNAVAILABLE" : "CODEX_EXEC_FAILED",
@@ -265,6 +305,7 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
       });
       child.once("close", (code) => {
         cleanup();
+        reportTiming(code);
         if (cancelled) {
           reject(cancelledAttemptError());
         } else if (timedOut) {
@@ -281,6 +322,9 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
           resolve({ stdout, stderr });
         }
       });
+      child.once("spawn", () => {
+        spawnedAt = performance.now();
+      });
       child.stdin.end(prompt, "utf8");
     });
   }
@@ -292,7 +336,9 @@ export class CodexEphemeralExecutor {
   private readonly spawnLimiter = new CodexSpawnLimiter();
 
   constructor(private readonly options: CodexEphemeralExecutorOptions) {
-    this.processPort = options.processPort ?? new NodeCodexExecProcess();
+    this.processPort = options.processPort ?? new NodeCodexExecProcess({
+      onProcessTiming: options.onProcessTiming,
+    });
     this.nowMs = options.nowMs ?? Date.now;
   }
 
@@ -365,7 +411,18 @@ export class CodexEphemeralExecutor {
             request.timeoutMs,
             request.signal,
           );
-          parsed = parseCodexJsonl(result.stdout);
+          const parseStartedAt = this.nowMs();
+          try {
+            parsed = parseCodexJsonl(result.stdout);
+          } finally {
+            try {
+              this.options.onOutputParseTiming?.(
+                Math.max(0, this.nowMs() - parseStartedAt),
+              );
+            } catch {
+              // Measurement callbacks must not change query execution.
+            }
+          }
         } catch (error) {
           lastError = error;
         } finally {

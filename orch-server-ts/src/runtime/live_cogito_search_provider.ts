@@ -48,8 +48,18 @@ const QUERY_EXPANSION_TIMEOUT_MS = 4_500;
 export type CreateLiveCogitoSearchProviderOptions = {
   readonly searchDbConnectionFactory: LiveSearchDbConnectionFactory;
   readonly queryExpander?: SearchQueryExpander;
+  readonly queryExpansionTimeoutMs?: number;
   readonly sessionBackendCatalog?: () => readonly SessionBackendCatalogEntry[];
   readonly onCancelError?: (error: unknown) => void;
+  readonly onSearchTiming?: (timing: {
+    readonly connectionOpenMs: number;
+    readonly lexicalSqlMs: number;
+    readonly expansionWaitMs: number;
+    readonly semanticSqlMs: number;
+    readonly navigationSqlMs: number;
+    readonly projectionMs: number;
+    readonly totalMs: number;
+  }) => void;
 };
 
 export function createLiveCogitoSearchProvider(
@@ -111,6 +121,11 @@ export function createLiveCogitoSearchProvider(
         | undefined;
       const searchRows: SessionSearchCandidateRow[] = [];
       let navigationRows: readonly Record<string, unknown>[] = [];
+      let connectionOpenMs = 0;
+      let lexicalSqlMs = 0;
+      let expansionWaitMs = 0;
+      let semanticSqlMs = 0;
+      let navigationSqlMs = 0;
       const discardConnection = () => {
         if (discardPromise === undefined && connection?.discard !== undefined) {
           discardPromise = connection.discard();
@@ -153,7 +168,9 @@ export function createLiveCogitoSearchProvider(
         if (remainingBudgetMs < 1_000) {
           throw new SearchDeadlineError("search request deadline is too near for a database connection");
         }
+        const connectionStartedAt = Date.now();
         connection = await options.searchDbConnectionFactory.open(remainingBudgetMs);
+        connectionOpenMs = Math.max(0, Date.now() - connectionStartedAt);
         assertSearchMayContinue(signal, deadlineAt);
         const baseVariants = buildQueryVariants(params.q, [], isProductSearch);
         if (shouldExpand) {
@@ -163,9 +180,11 @@ export function createLiveCogitoSearchProvider(
             params.q,
             deadlineAt,
             expansionController.signal,
+            options.queryExpansionTimeoutMs ?? QUERY_EXPANSION_TIMEOUT_MS,
           ).finally(() => { expansionPending = false; });
         }
 
+        const lexicalStartedAt = Date.now();
         searchRows.push(...await loadCandidateRows({
           sql: connection.sql,
           variants: baseVariants,
@@ -177,9 +196,12 @@ export function createLiveCogitoSearchProvider(
           includeSessionMetadataSearch: isProductSearch,
           backendCatalog,
         }));
+        lexicalSqlMs = Math.max(0, Date.now() - lexicalStartedAt);
         searchStage = "semantic";
         if (expansionPromise) {
+          const expansionWaitStartedAt = Date.now();
           const expansion = await expansionPromise;
+          expansionWaitMs = Math.max(0, Date.now() - expansionWaitStartedAt);
           const expansionReason = deadlineExpired ? "timeout" : expansion.reason;
           queryExpansion = {
             status: deadlineExpired ? "partial" : expansion.status,
@@ -198,6 +220,7 @@ export function createLiveCogitoSearchProvider(
             }
           } else {
             assertSearchMayContinue(signal, deadlineAt);
+            const semanticStartedAt = Date.now();
             searchRows.push(...await loadCandidateRows({
               sql: connection.sql,
               variants: semanticVariants,
@@ -209,12 +232,14 @@ export function createLiveCogitoSearchProvider(
               includeSessionMetadataSearch: true,
               backendCatalog,
             }));
+            semanticSqlMs = Math.max(0, Date.now() - semanticStartedAt);
             semanticSearchCompleted = true;
           }
         }
 
         searchStage = "navigation";
         assertSearchMayContinue(signal, deadlineAt);
+        const navigationStartedAt = Date.now();
         navigationRows = await runSearchQuery(activeQuery, () => connection!.sql`
           SELECT *
           FROM (
@@ -255,6 +280,7 @@ export function createLiveCogitoSearchProvider(
           ORDER BY title ASC, id ASC
           LIMIT ${Math.min(500, candidateLimit)}
         `, signal, deadlineAt, connection.sql);
+        navigationSqlMs = Math.max(0, Date.now() - navigationStartedAt);
       } catch (error) {
         if (expansionPending) {
           if (!expansionController.signal.aborted) expansionController.abort(error);
@@ -312,6 +338,7 @@ export function createLiveCogitoSearchProvider(
       }
 
       const eventRows = searchRows.filter((row) => row.query_kind === "original");
+      const projectionStartedAt = Date.now();
       const response: CogitoSearchResponse = {
         results: serializeEventRows(eventRows, params.q, candidateLimit),
         navigation_results: navigationRows.map(serializeNavigationRow),
@@ -335,6 +362,20 @@ export function createLiveCogitoSearchProvider(
           }
           : {}),
       };
+      const projectionMs = Math.max(0, Date.now() - projectionStartedAt);
+      try {
+        options.onSearchTiming?.({
+          connectionOpenMs,
+          lexicalSqlMs,
+          expansionWaitMs,
+          semanticSqlMs,
+          navigationSqlMs,
+          projectionMs,
+          totalMs: Math.max(0, Date.now() - startedAt),
+        });
+      } catch {
+        // Measurement callbacks must not affect query results.
+      }
       return response;
     },
   };
@@ -361,6 +402,7 @@ function startExpansion(
   query: string,
   deadlineAt: number,
   signal: AbortSignal | undefined,
+  maxExpansionTimeoutMs: number,
 ): Promise<ExpansionOutcome> {
   if (!queryExpander) {
     return Promise.resolve({
@@ -372,7 +414,7 @@ function startExpansion(
   }
   const startedAt = Date.now();
   const timeoutMs = Math.max(1, Math.min(
-    QUERY_EXPANSION_TIMEOUT_MS,
+    maxExpansionTimeoutMs,
     deadlineAt - startedAt,
   ));
   return queryExpander.expand(query, timeoutMs, signal).then((result): ExpansionOutcome => ({
