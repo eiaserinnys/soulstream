@@ -45,6 +45,13 @@ export function isStarredTaskBoundaryCurrent(input: {
     && input.expectedPageIds.every((pageId, index) => pageId === input.currentPageIds[index]);
 }
 
+export function isStarredTaskRefreshCurrent(
+  loadedRefreshKey: number | null,
+  currentRefreshKey: number,
+): boolean {
+  return loadedRefreshKey === currentRefreshKey;
+}
+
 export function disableStarredTaskPaginationAfterRefreshFailure<T extends { nextCursor: string | null }>(
   page: T,
 ): T {

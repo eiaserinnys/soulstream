@@ -30,6 +30,7 @@ import {
   isStarredPlannerPageCurrent,
   mergeStarredPlannerTasks,
 } from "./starred-planner-collection";
+import { isStarredTaskRefreshCurrent } from "./starred-task-order";
 import {
   movePlannerSession,
   removePlannerSessions,
@@ -86,6 +87,7 @@ export function usePlannerCollections({
   useEffect(() => {
     let active = true;
     const refreshKey = refreshKeys.starred;
+    starredLoadedRefreshKeyRef.current = null;
     const previous = starredTaskIndexRef.current.data;
     setStarredTaskIndex((current) => {
       const loading = beginPlannerLoad(current);
@@ -271,7 +273,12 @@ export function usePlannerCollections({
   const loadMoreStarredTasks = useCallback(async () => {
     const page = starredTaskIndex.data;
     const cursor = page?.nextCursor;
-    if (!page || !cursor || starredTasksLoadingMore) return;
+    if (
+      !page
+      || !cursor
+      || starredTasksLoadingMore
+      || !isStarredTaskRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current)
+    ) return;
     const expectedPageIds = page.items.map((task) => starredTaskPage(task).id);
     const refreshKey = starredRefreshKeyRef.current;
     setStarredTasksLoadingMore(true);
@@ -344,8 +351,10 @@ export function usePlannerCollections({
     projects,
     selectedProject,
     starredTasks,
-    starredTasksHasMore: Boolean(starredTaskIndex.data?.nextCursor),
-    starredTasksLoading: starredTaskIndex.status === "loading" && !starredTaskIndex.data,
+    starredTasksHasMore: Boolean(starredTaskIndex.data?.nextCursor)
+      && isStarredTaskRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current),
+    starredTasksLoading: (starredTaskIndex.status === "loading" && !starredTaskIndex.data)
+      || !isStarredTaskRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current),
     starredTasksLoadingMore,
     starredTasksReordering,
     projectTasksLoadingMore,

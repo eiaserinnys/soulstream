@@ -17,6 +17,7 @@ import {
 import {
   disableStarredTaskPaginationAfterRefreshFailure,
   isStarredTaskBoundaryCurrent,
+  isStarredTaskRefreshCurrent,
   reconcileStarredTaskOrderReloadFailure,
   resolveStarredTaskBeforePageId,
   saveStarredTaskOrderAndReload,
@@ -51,6 +52,10 @@ export function useStarredTaskReorder({
     movedPageId: string,
     orderedPageIds: readonly string[],
   ) => {
+    if (!isStarredTaskRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current)) {
+      notify("별표 업무 목록을 새로고침하는 중이라 순서 변경을 잠시 기다려 주세요.");
+      return;
+    }
     const original = starredTaskIndexRef.current;
     const data = original.data;
     const refreshKey = starredRefreshKeyRef.current;
@@ -66,17 +71,12 @@ export function useStarredTaskReorder({
       || new Set(orderedPageIds).size !== visibleIds.length
       || orderedPageIds.some((pageId) => !visibleIds.includes(pageId))
     ) {
-      try {
-        const fresh = await loadStarredTasks(dependencies, {});
-        setStarredTaskIndex((current) => completePlannerLoad(current, fresh));
-      } catch {
-        setStarredTaskIndex((current) => current.data
-          ? {
-            ...current,
-            data: disableStarredTaskPaginationAfterRefreshFailure(current.data),
-          }
-          : current);
-      }
+      await reloadFirstStarredPageIfCurrent({
+        dependencies,
+        starredLoadedRefreshKeyRef,
+        starredRefreshKeyRef,
+        setStarredTaskIndex,
+      });
       notify("별표 목록이 갱신 중이라 순서를 바꾸지 못했습니다. 목록을 새로 불러왔습니다.");
       return;
     }
@@ -113,17 +113,12 @@ export function useStarredTaskReorder({
         },
       });
     } catch (error) {
-      try {
-        const fresh = await loadStarredTasks(dependencies, {});
-        setStarredTaskIndex((current) => completePlannerLoad(current, fresh));
-      } catch {
-        setStarredTaskIndex((current) => current.data
-          ? {
-            ...current,
-            data: disableStarredTaskPaginationAfterRefreshFailure(current.data),
-          }
-          : current);
-      }
+      await reloadFirstStarredPageIfCurrent({
+        dependencies,
+        starredLoadedRefreshKeyRef,
+        starredRefreshKeyRef,
+        setStarredTaskIndex,
+      });
       notify(`별표 목록의 다음 페이지를 확인하지 못해 순서를 취소했습니다 · ${errorText(error)}`);
       setStarredTasksReordering(false);
       return;
@@ -141,17 +136,12 @@ export function useStarredTaskReorder({
         currentPageIds: latestData.items.map((task) => starredTaskPage(task).id),
       })
     ) {
-      try {
-        const fresh = await loadStarredTasks(dependencies, {});
-        setStarredTaskIndex((current) => completePlannerLoad(current, fresh));
-      } catch {
-        setStarredTaskIndex((current) => current.data
-          ? {
-            ...current,
-            data: disableStarredTaskPaginationAfterRefreshFailure(current.data),
-          }
-          : current);
-      }
+      await reloadFirstStarredPageIfCurrent({
+        dependencies,
+        starredLoadedRefreshKeyRef,
+        starredRefreshKeyRef,
+        setStarredTaskIndex,
+      });
       notify("별표 목록이 이동 중 갱신되어 순서를 취소했습니다. 목록을 다시 불러왔습니다.");
       setStarredTasksReordering(false);
       return;
@@ -201,6 +191,38 @@ export function useStarredTaskReorder({
 function samePageIds(first: readonly string[], second: readonly string[]): boolean {
   return first.length === second.length
     && first.every((pageId, index) => pageId === second[index]);
+}
+
+async function reloadFirstStarredPageIfCurrent({
+  dependencies,
+  starredLoadedRefreshKeyRef,
+  starredRefreshKeyRef,
+  setStarredTaskIndex,
+}: {
+  dependencies: PlannerDataDependencies;
+  starredLoadedRefreshKeyRef: CurrentRef<number | null>;
+  starredRefreshKeyRef: CurrentRef<number>;
+  setStarredTaskIndex: Dispatch<SetStateAction<StarredTaskIndex>>;
+}): Promise<void> {
+  const refreshKey = starredRefreshKeyRef.current;
+  starredLoadedRefreshKeyRef.current = null;
+  try {
+    const fresh = await loadStarredTasks(dependencies, {});
+    if (!isStarredTaskRefreshCurrent(refreshKey, starredRefreshKeyRef.current)) return;
+    starredLoadedRefreshKeyRef.current = refreshKey;
+    setStarredTaskIndex((current) => isStarredTaskRefreshCurrent(refreshKey, starredRefreshKeyRef.current)
+      ? completePlannerLoad(current, fresh)
+      : current);
+  } catch {
+    if (!isStarredTaskRefreshCurrent(refreshKey, starredRefreshKeyRef.current)) return;
+    starredLoadedRefreshKeyRef.current = null;
+    setStarredTaskIndex((current) => current.data
+      ? {
+        ...current,
+        data: disableStarredTaskPaginationAfterRefreshFailure(current.data),
+      }
+      : current);
+  }
 }
 
 function errorText(error: unknown): string {

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   disableStarredTaskPaginationAfterRefreshFailure,
   isStarredTaskBoundaryCurrent,
+  isStarredTaskRefreshCurrent,
   reconcileStarredTaskOrderReloadFailure,
   resolveStarredTaskBoundaryPageId,
   resolveStarredTaskBeforePageId,
@@ -58,6 +59,12 @@ describe("starred task order boundaries", () => {
       expectedPageIds: ["a", "b"],
       currentPageIds: ["a", "b"],
     })).toBe(false);
+  });
+
+  it("keeps stale starred snapshots from enabling reorder or pagination", () => {
+    expect(isStarredTaskRefreshCurrent(null, 5)).toBe(false);
+    expect(isStarredTaskRefreshCurrent(4, 5)).toBe(false);
+    expect(isStarredTaskRefreshCurrent(5, 5)).toBe(true);
   });
 
   it("reloads the first page after a failed save so optimistic order can roll back", async () => {
