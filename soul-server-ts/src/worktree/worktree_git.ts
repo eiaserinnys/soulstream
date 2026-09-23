@@ -9,14 +9,24 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+
+// This module intentionally exceeds 500 lines: it is the single Git mutation
+// boundary whose identity, ref-CAS, and non-force removal invariants must stay
+// visible together. Timeout-partial recovery is split into its own tested module.
 import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
 import { GitProcessError, runBoundedProcess } from "./worktree_process.js";
+import {
+  beginWorktreeCreationAttempt,
+  finishWorktreeCreationAttempt,
+  markWorktreeCreationTerminated,
+  recoverPriorWorktreeCreationAttempt,
+} from "./worktree_create_recovery.js";
+export { WORKTREE_OPERATION_TIMEOUT_MS } from "./worktree_timeouts.js";
 
 const IDENTITY_FILE = "soulstream-worktree-id";
-export const WORKTREE_OPERATION_TIMEOUT_MS = 120_000;
 
 export class WorktreeGitError extends Error {
   constructor(
@@ -35,6 +45,7 @@ export interface WorktreeListEntry {
   branch?: string;
   kind: "base" | "managed" | "unmanaged" | "external" | "missing";
   identity?: string;
+  lockedReason?: string;
 }
 
 export interface WorktreeDirtyState {
@@ -51,15 +62,19 @@ export class WorktreeGit {
   constructor(private readonly options: {
     projectsRoot: string;
     timeoutMs: number;
+    createTimeoutMs?: number;
     processRunner?: typeof runBoundedProcess;
   }) {
     this.projectsRoot = realpathSync(options.projectsRoot);
   }
 
-  async withOperationDeadline<T>(action: () => Promise<T>): Promise<T> {
+  async withOperationDeadline<T>(
+    action: () => Promise<T>,
+    timeoutMs = this.options.timeoutMs,
+  ): Promise<T> {
     if (this.operationSignal.getStore()) return await action();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.options.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     timer.unref();
     try {
       return await this.operationSignal.run(controller.signal, action);
@@ -69,6 +84,7 @@ export class WorktreeGit {
   }
 
   async create(input: {
+    actorSessionId: string;
     repoId: string;
     branch: string;
     mode: "new" | "existing";
@@ -87,36 +103,83 @@ export class WorktreeGit {
     const hasOrigin = await this.hasRemote(repo, "origin");
     if (hasOrigin) await this.git(repo, ["fetch", "--prune", "origin"]);
     let args: string[];
+    let expectedHead: string;
     if (input.mode === "new") {
+      const startPoint = input.startPoint
+        ?? (hasOrigin ? "refs/remotes/origin/HEAD" : "HEAD");
+      expectedHead = (await this.git(
+        repo,
+        ["rev-parse", "--verify", `${startPoint}^{commit}`],
+      )).stdout.trim();
+      await recoverPriorWorktreeCreationAttempt({
+        ...input,
+        repoPath: repo,
+        path,
+        expectedHead,
+        processRunner: this.options.processRunner,
+      });
       if (
         await this.refSha(repo, `refs/heads/${input.branch}`)
         || await this.refSha(repo, `refs/remotes/origin/${input.branch}`)
       ) {
         throw new WorktreeGitError("BRANCH_ALREADY_EXISTS", input.branch);
       }
-      const startPoint = input.startPoint
-        ?? (hasOrigin ? "refs/remotes/origin/HEAD" : "HEAD");
-      await this.git(repo, ["rev-parse", "--verify", `${startPoint}^{commit}`]);
-      args = ["worktree", "add", "-b", input.branch, path, startPoint];
-    } else if (await this.refSha(repo, `refs/heads/${input.branch}`)) {
-      args = ["worktree", "add", path, input.branch];
-    } else if (await this.refSha(repo, `refs/remotes/origin/${input.branch}`)) {
-      args = [
-        "worktree", "add", "--track", "-b", input.branch,
-        path, `refs/remotes/origin/${input.branch}`,
-      ];
+      args = ["worktree", "add", "-b", input.branch, path, expectedHead];
     } else {
-      throw new WorktreeGitError("BRANCH_NOT_FOUND", input.branch);
+      const localHead = await this.refSha(repo, `refs/heads/${input.branch}`);
+      const remoteHead = localHead === null
+        ? await this.refSha(repo, `refs/remotes/origin/${input.branch}`)
+        : null;
+      expectedHead = localHead ?? remoteHead ?? "";
+      if (!expectedHead) throw new WorktreeGitError("BRANCH_NOT_FOUND", input.branch);
+      await recoverPriorWorktreeCreationAttempt({
+        ...input,
+        repoPath: repo,
+        path,
+        expectedHead,
+        processRunner: this.options.processRunner,
+      });
+      if (await this.refSha(repo, `refs/heads/${input.branch}`)) {
+        args = ["worktree", "add", path, input.branch];
+      } else if (await this.refSha(repo, `refs/remotes/origin/${input.branch}`)) {
+        args = [
+          "worktree", "add", "--track", "-b", input.branch,
+          path, `refs/remotes/origin/${input.branch}`,
+        ];
+      } else {
+        throw new WorktreeGitError("BRANCH_NOT_FOUND", input.branch);
+      }
     }
     if (existsSync(path)) {
       throw new WorktreeGitError("WORKTREE_PATH_EXISTS", `Worktree path already exists: ${path}`);
     }
-    await this.git(repo, args);
-    const gitDir = await this.privateGitDirectory(path);
-    writeFileSync(join(gitDir, IDENTITY_FILE), `${input.worktreeId}\n`, { flag: "wx" });
-    const entry = (await this.list(input.repoId)).find((candidate) => candidate.path === realpathSync(path));
-    if (!entry) throw new WorktreeGitError("WORKTREE_CREATE_UNDISCOVERABLE", path);
-    return entry;
+    const attempt = beginWorktreeCreationAttempt({
+      ...input,
+      repoPath: repo,
+      path,
+      expectedHead,
+      processRunner: this.options.processRunner,
+    });
+    try {
+      await this.git(repo, args, this.options.createTimeoutMs ?? this.options.timeoutMs);
+      markWorktreeCreationTerminated(attempt, "checkout_complete");
+      const gitDir = await this.privateGitDirectory(path);
+      writeFileSync(join(gitDir, IDENTITY_FILE), `${input.worktreeId}\n`, { flag: "wx" });
+      const entry = (await this.list(input.repoId)).find(
+        (candidate) => candidate.path === realpathSync(path),
+      );
+      if (!entry) throw new WorktreeGitError("WORKTREE_CREATE_UNDISCOVERABLE", path);
+      finishWorktreeCreationAttempt(attempt);
+      return entry;
+    } catch (error) {
+      if (error instanceof GitProcessError && error.terminationConfirmed) {
+        markWorktreeCreationTerminated(
+          attempt,
+          error.code === "PROCESS_TIMEOUT" ? "timeout" : "process_failed",
+        );
+      }
+      throw error;
+    }
   }
 
   async commonDirectory(repoId: string): Promise<string> {
@@ -151,6 +214,9 @@ export class WorktreeGit {
     const entry = entries.find((item) => item.path === candidate);
     if (!entry || entry.kind !== "unmanaged") {
       throw new WorktreeGitError("WORKTREE_NOT_ADOPTABLE", candidate);
+    }
+    if (entry.lockedReason !== undefined) {
+      throw new WorktreeGitError("WORKTREE_LOCKED", candidate);
     }
     if (entry.head !== input.expectedHead) {
       throw new WorktreeGitError("WORKTREE_HEAD_CHANGED", `${entry.head} != ${input.expectedHead}`);
@@ -366,6 +432,7 @@ export class WorktreeGit {
       const pathExists = existsSync(rawPath);
       const path = pathExists ? realpathSync(rawPath) : resolve(rawPath);
       const branchRef = fields.get("branch");
+      const lockedReason = fields.has("locked") ? fields.get("locked") ?? "" : undefined;
       const identity = pathExists ? await this.readIdentity(path) : undefined;
       const insideProjectsRoot = isPathInside(this.projectsRoot, path);
       entries.push({
@@ -382,6 +449,7 @@ export class WorktreeGit {
               ? "managed"
               : "unmanaged",
         ...(identity ? { identity } : {}),
+        ...(lockedReason !== undefined ? { lockedReason } : {}),
       });
     }
     return entries;
@@ -489,12 +557,12 @@ export class WorktreeGit {
     }
   }
 
-  private async git(cwd: string, args: string[]) {
+  private async git(cwd: string, args: string[], timeoutMs = this.options.timeoutMs) {
     return await (this.options.processRunner ?? runBoundedProcess)({
       command: "git",
       args,
       cwd,
-      timeoutMs: this.options.timeoutMs,
+      timeoutMs,
       signal: this.operationSignal.getStore(),
     });
   }

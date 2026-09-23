@@ -41,6 +41,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
     nodeId: string;
     projectsRoot: string;
     git: WorktreeGit;
+    createTimeoutMs: number;
     lock: RepositoryLock;
     host: WorktreeHost;
     listActiveWorkspaceDirs: () => string[];
@@ -104,7 +105,8 @@ export class WorktreeService implements WorktreeExecutionResolver {
           ownerKind: record ? (record.ownerTaskId ? "task" : "session") : null,
           ownerId: record?.ownerTaskId ?? record?.createdBySessionId ?? null,
           mutableByCaller: record?.mutableByCaller ?? false,
-          adoptionAllowed: discovered.kind === "unmanaged",
+          adoptionAllowed: discovered.kind === "unmanaged" && discovered.lockedReason === undefined,
+          lockReason: discovered.lockedReason ?? null,
           activeSessionId: record?.activeSessionId ?? null,
           remoteStatus: "unknown",
           observedAt,
@@ -138,6 +140,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
   async create(input: CreateWorktreeInput): Promise<Record<string, unknown>> {
     return await this.options.git.withOperationDeadline(
       async () => await this.createWithinDeadline(input),
+      this.options.createTimeoutMs,
     );
   }
 
@@ -268,6 +271,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
       const created = input.mode === "adopt"
         ? await this.adopt(input, worktreeId)
         : await this.options.git.create({
+            actorSessionId: input.actorSessionId,
             repoId: input.repoId,
             branch: input.branch,
             mode: input.mode,

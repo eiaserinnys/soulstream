@@ -251,7 +251,7 @@ describe("live node agent profile route provider", () => {
   });
 
   it("routes worktree commands only to capable nodes with the canonical command shape", async () => {
-    const { worktreeProvider, sentMessages } = createFixture();
+    const { worktreeProvider, sentMessages, sentTimeouts } = createFixture();
     await expect(worktreeProvider!.invoke("node-a", "create", {
       actorSessionId: "session-a",
       repoId: "soulstream",
@@ -264,6 +264,10 @@ describe("live node agent profile route provider", () => {
       },
       requestId: "req-1-worktree_create",
     });
+    expect(sentTimeouts).toEqual([1_820_000]);
+
+    await expect(worktreeProvider!.invoke("node-a", "list", {})).resolves.toEqual({ ok: true });
+    expect(sentTimeouts).toEqual([1_820_000, 150_000]);
 
     const unavailable = createFixture({ worktreeCapability: false });
     await expect(unavailable.worktreeProvider!.invoke("node-a", "list", {}))
@@ -351,6 +355,7 @@ function createFixture(input: {
   });
 
   const sentMessages: Record<string, unknown>[] = [];
+  const sentTimeouts: number[] = [];
   const requestNode =
     input.requestNode ??
     vi.fn(async () => ({
@@ -366,6 +371,7 @@ function createFixture(input: {
       routed: RoutedPendingSessionCommand<TPayload, TResponse>,
     ): Promise<TResponse> => {
       sentMessages.push(routed.command.message);
+      sentTimeouts.push(routed.command.timeoutMs);
       if (input.bridgeError !== undefined) throw input.bridgeError;
       return {
         type: `${routed.command.commandType}_result`,
@@ -389,6 +395,7 @@ function createFixture(input: {
     worktreeProvider: bundle.nodeAgentProfileRoutes.worktreeProvider,
     requestNode,
     sentMessages,
+    sentTimeouts,
   };
 }
 

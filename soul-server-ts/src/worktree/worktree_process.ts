@@ -1,5 +1,10 @@
 import { spawn } from "node:child_process";
 
+import {
+  WORKTREE_PROCESS_CLOSE_CONFIRM_TIMEOUT_MS,
+  WORKTREE_WINDOWS_TASKKILL_TIMEOUT_MS,
+} from "./worktree_timeouts.js";
+
 export type WorktreeProcessErrorCode =
   | "PROCESS_START_FAILED"
   | "PROCESS_FAILED"
@@ -54,29 +59,44 @@ export async function runBoundedProcess(
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let timedOut = false;
-    let termination: Promise<boolean> | undefined;
     let settled = false;
+    let closed = false;
+    let closeWaiter: (() => void) | undefined;
+    const closePromise = new Promise<void>((done) => {
+      closeWaiter = done;
+    });
 
+    const cleanup = () => {
+      clearTimeout(timer);
+      input.signal?.removeEventListener("abort", abort);
+    };
+    const timeoutError = (terminationConfirmed: boolean, code?: number | null) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new GitProcessError(
+        "PROCESS_TIMEOUT",
+        `${input.command} timed out after ${input.timeoutMs}ms`,
+        terminationConfirmed,
+        code,
+        Buffer.concat(stderr).toString("utf8"),
+      ));
+    };
     const terminate = () => {
       if (timedOut || settled) return;
       timedOut = true;
-      if (child.pid === undefined) return;
-      if (process.platform === "win32") {
-        termination = new Promise((confirm) => {
-          const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-            shell: false,
-            windowsHide: true,
-            stdio: "ignore",
-          });
-          killer.once("error", () => {
-            child.kill("SIGKILL");
-            confirm(false);
-          });
-          killer.once("close", (code) => confirm(code === 0));
-        });
-      } else {
-        termination = terminatePosixProcessGroup(child.pid, child);
-      }
+      void (async () => {
+        const terminationConfirmed = child.pid === undefined
+          ? false
+          : process.platform === "win32"
+            ? await terminateWindowsProcessTree(child.pid, child)
+            : await terminatePosixProcessGroup(child.pid, child);
+        const closeConfirmed = closed || await Promise.race([
+          closePromise.then(() => true),
+          delay(WORKTREE_PROCESS_CLOSE_CONFIRM_TIMEOUT_MS).then(() => false),
+        ]);
+        timeoutError(terminationConfirmed && closeConfirmed, child.exitCode);
+      })();
     };
 
     child.stdout!.on("data", (chunk: Buffer) => stdout.push(chunk));
@@ -90,10 +110,9 @@ export async function runBoundedProcess(
     if (input.signal?.aborted) terminate();
 
     child.once("error", (error) => {
-      if (settled) return;
+      if (settled || timedOut) return;
       settled = true;
-      clearTimeout(timer);
-      input.signal?.removeEventListener("abort", abort);
+      cleanup();
       reject(new GitProcessError(
         "PROCESS_START_FAILED",
         `${input.command} failed to start: ${error.message}`,
@@ -101,37 +120,56 @@ export async function runBoundedProcess(
       ));
     });
     child.once("close", (code, signal) => {
-      void (async () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        input.signal?.removeEventListener("abort", abort);
-        const out = Buffer.concat(stdout).toString("utf8");
-        const err = Buffer.concat(stderr).toString("utf8");
-        if (timedOut) {
-          const terminationConfirmed = await (termination ?? Promise.resolve(false));
-          reject(new GitProcessError(
-            "PROCESS_TIMEOUT",
-            `${input.command} timed out after ${input.timeoutMs}ms`,
-            terminationConfirmed,
-            code,
-            err,
-          ));
-          return;
-        }
-        if (code !== 0) {
-          reject(new GitProcessError(
-            "PROCESS_FAILED",
-            `${input.command} exited with ${code ?? signal ?? "unknown"}: ${err.trim()}`,
-            true,
-            code,
-            err,
-          ));
-          return;
-        }
-        resolve({ stdout: out, stderr: err, exitCode: code });
-      })();
+      closed = true;
+      closeWaiter?.();
+      if (settled || timedOut) return;
+      settled = true;
+      cleanup();
+      const out = Buffer.concat(stdout).toString("utf8");
+      const err = Buffer.concat(stderr).toString("utf8");
+      if (code !== 0) {
+        reject(new GitProcessError(
+          "PROCESS_FAILED",
+          `${input.command} exited with ${code ?? signal ?? "unknown"}: ${err.trim()}`,
+          true,
+          code,
+          err,
+        ));
+        return;
+      }
+      resolve({ stdout: out, stderr: err, exitCode: code });
     });
+  });
+}
+
+async function terminateWindowsProcessTree(
+  pid: number,
+  child: ReturnType<typeof spawn>,
+): Promise<boolean> {
+  return await new Promise((confirm) => {
+    const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      shell: false,
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    let finished = false;
+    const finish = (confirmed: boolean) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      confirm(confirmed);
+    };
+    const timer = setTimeout(() => {
+      killer.kill("SIGKILL");
+      child.kill("SIGKILL");
+      finish(false);
+    }, WORKTREE_WINDOWS_TASKKILL_TIMEOUT_MS);
+    timer.unref();
+    killer.once("error", () => {
+      child.kill("SIGKILL");
+      finish(false);
+    });
+    killer.once("close", (code) => finish(code === 0));
   });
 }
 

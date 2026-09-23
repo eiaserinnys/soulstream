@@ -10,6 +10,10 @@ import {
   DEFAULT_APP_SERVER_REQUEST_TIMEOUT_MS,
   DEFAULT_APP_SERVER_STARTUP_TIMEOUT_MS,
 } from "./engine/codex_app_server/transport.js";
+import {
+  WORKTREE_CREATE_TIMEOUT_DEFAULT_MS,
+  WORKTREE_CREATE_TIMEOUT_MAX_MS,
+} from "./worktree/worktree_timeouts.js";
 
 /**
  * 환경 변수 스키마. design-principles §4(명시적 실패) — 필수 키 default 없음.
@@ -218,6 +222,10 @@ export const EnvSchema = z
       .union([z.literal("true"), z.literal("false")])
       .default("false")
       .transform((v) => v === "true"),
+    /** Overall create deadline and the worktree-add child deadline only. */
+    WORKTREE_CREATE_TIMEOUT_MS: z.coerce.number().int().positive()
+      .max(WORKTREE_CREATE_TIMEOUT_MAX_MS)
+      .default(WORKTREE_CREATE_TIMEOUT_DEFAULT_MS),
     /** Absolute node-local parent of the registered base repositories. */
     WORKTREE_PROJECTS_ROOT: z.preprocess(
       (value) => value === "" ? undefined : value,

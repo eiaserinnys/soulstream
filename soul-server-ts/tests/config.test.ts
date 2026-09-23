@@ -116,7 +116,19 @@ describe("parseEnv", () => {
   it("worktree MCP는 disabled가 기본이며 projects root 없이 기존 worker를 시작한다", () => {
     const env = parseEnv(minimal);
     expect(env.WORKTREE_MCP_ENABLED).toBe(false);
+    expect(env.WORKTREE_CREATE_TIMEOUT_MS).toBe(120_000);
     expect(env).not.toHaveProperty("WORKTREE_PROJECTS_ROOT");
+  });
+
+  it("worktree create timeout은 기존 기본값을 보존하고 Windows 운영 상한까지만 허용한다", () => {
+    expect(parseEnv({
+      ...minimal,
+      WORKTREE_CREATE_TIMEOUT_MS: "1800000",
+    }).WORKTREE_CREATE_TIMEOUT_MS).toBe(1_800_000);
+    expect(() => parseEnv({
+      ...minimal,
+      WORKTREE_CREATE_TIMEOUT_MS: "1800001",
+    })).toThrow(/WORKTREE_CREATE_TIMEOUT_MS/);
   });
 
   it("worktree MCP를 켤 때만 존재하는 절대 projects root를 요구한다", () => {

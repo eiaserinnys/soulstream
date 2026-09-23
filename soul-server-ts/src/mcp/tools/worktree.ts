@@ -10,6 +10,15 @@ const nodeSchema = z.string().min(1).optional();
 // Leave a separate response-propagation margin beyond the orchestrator's
 // 150s pending-command contract.
 export const REMOTE_WORKTREE_HTTP_TIMEOUT_MS = 160_000;
+export const REMOTE_WORKTREE_CREATE_HTTP_TIMEOUT_MS = 1_830_000;
+
+type WorktreeOperation = "list" | "create" | "remove" | "delete-branch";
+
+export function remoteWorktreeHttpTimeoutMs(operation: WorktreeOperation): number {
+  return operation === "create"
+    ? REMOTE_WORKTREE_CREATE_HTTP_TIMEOUT_MS
+    : REMOTE_WORKTREE_HTTP_TIMEOUT_MS;
+}
 
 export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): void {
   server.registerTool(
@@ -136,7 +145,7 @@ function requireAgentActor(callerSessionId: string | undefined, operation: strin
 async function route(
   runtime: McpRuntime,
   nodeId: string | undefined,
-  operation: "list" | "create" | "remove" | "delete-branch",
+  operation: WorktreeOperation,
   body: Record<string, unknown>,
 ): Promise<unknown> {
   const targetNodeId = nodeId ?? runtime.nodeId;
@@ -151,7 +160,7 @@ async function route(
   }
   if (!runtime.orch) throw new WorktreeServiceError("ORCH_UNAVAILABLE", "Orchestrator proxy is unavailable");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REMOTE_WORKTREE_HTTP_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), remoteWorktreeHttpTimeoutMs(operation));
   try {
     const response = await fetch(
       `${runtime.orch.baseUrl}/api/nodes/${encodeURIComponent(targetNodeId)}/worktrees/${operation}`,

@@ -48,6 +48,11 @@ export function buildConfigReflection(runtime: McpRuntime): ConfigReflectionEntr
       sensitive: false,
       defaultValue: "false",
     }),
+    envEntry("WORKTREE_CREATE_TIMEOUT_MS", {
+      required: false,
+      sensitive: false,
+      defaultValue: "120000",
+    }),
     envEntry("WORKTREE_PROJECTS_ROOT", {
       required: false,
       sensitive: false,

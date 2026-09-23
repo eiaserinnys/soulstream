@@ -36,12 +36,14 @@ describe("bounded worktree processes", () => {
         "setInterval(()=>{}, 1000)",
       ].join(";");
 
+      const startedAt = Date.now();
       await expect(runBoundedProcess({
         command: process.execPath,
         args: ["-e", parent],
         cwd: root,
         timeoutMs: 40,
       })).rejects.toMatchObject({ code: "PROCESS_TIMEOUT", terminationConfirmed: true });
+      expect(Date.now() - startedAt).toBeLessThan(2_500);
 
       await new Promise((resolve) => setTimeout(resolve, 350));
       expect(existsSync(marker)).toBe(false);
