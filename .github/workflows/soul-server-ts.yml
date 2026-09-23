@@ -52,7 +52,22 @@ jobs:
         run: corepack pnpm --dir soul-server-ts typecheck
 
       - name: Test soul-server-ts
-        run: corepack pnpm --dir soul-server-ts test -- --minWorkers=1 --maxWorkers=2
+        run: >-
+          corepack pnpm --dir soul-server-ts exec vitest run
+          --minWorkers=1 --maxWorkers=2
+          --exclude 'tests/runner/*_full_slice_postgres.test.ts'
+
+      - name: Test PostgreSQL full slices sequentially
+        run: >-
+          corepack pnpm --dir soul-server-ts exec vitest run
+          tests/runner/p0r2_resume_writer_lock_full_slice_postgres.test.ts
+          tests/runner/r16_terminal_status_full_slice_postgres.test.ts
+          tests/runner/r25b_ghost_running_full_slice_postgres.test.ts
+          tests/runner/r25c_startup_recovery_full_slice_postgres.test.ts
+          tests/runner/r26_resumed_terminal_wiring_full_slice_postgres.test.ts
+          tests/runner/s1_s2_restart_resume_full_slice_postgres.test.ts
+          tests/runner/s4_new_session_full_slice_postgres.test.ts
+          --minWorkers=1 --maxWorkers=1 --no-file-parallelism
 
   runner-kernel-lock-windows:
     name: runner kernel lock (Windows)
