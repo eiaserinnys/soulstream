@@ -297,7 +297,7 @@ describe("live Cogito search provider", () => {
     expect(harness.calls[0]?.text).toContain("candidate.folder_id = ANY");
     expect(harness.calls[0]?.text).toContain("primary_session_item.container_kind = 'task'");
     expect(harness.calls[0]?.text).toContain("primary_session_item.membership_kind = 'primary'");
-    expect(harness.calls[0]?.text.match(/event_search\(/g)).toHaveLength(2);
+    expect(harness.calls[0]?.text.match(/event_search\(/g)).toHaveLength(1);
     expect(harness.calls[0]?.values).toContain(1);
     expect(harness.calls[0]?.values).toContain(25);
     expect(harness.calls[0]?.values).toContainEqual(["visible-root", "visible-child"]);

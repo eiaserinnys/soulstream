@@ -99,8 +99,8 @@ export async function loadCandidateRows(
             ${candidateLimit},
             ${eventTypes}::text[],
             ${allowedFolderIds}::text[],
-            NULL,
-            0,
+            ${includeSessionMetadataSearch ? 1 : null},
+            ${includeSessionMetadataSearch ? candidateLimit : 0},
             ${sessionFilters?.node_id ?? null}::text,
             ${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[],
             ${sessionFilters?.updated_after ?? null}::timestamptz,
@@ -121,7 +121,7 @@ export async function loadCandidateRows(
         FROM session_id_search(
           query.query,
           ${eventTypes}::text[],
-          ${candidateLimit},
+          ${candidateLimit}::integer,
           ${allowedFolderIds}::text[],
           ${sessionFilters?.node_id ?? null}::text,
           ${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[],
@@ -256,47 +256,6 @@ export async function loadCandidateRows(
           candidate.session_id ASC
         LIMIT ${candidateLimit}
       ) session ON ${includeSessionMetadataSearch}
-      UNION ALL
-      SELECT
-        query.query,
-        'session_candidate_' || query.query_kind,
-        query.query_order,
-        candidate.id,
-        candidate.session_id,
-        candidate.event_type,
-        candidate.searchable_text,
-        candidate.created_at,
-        candidate.score,
-        CASE WHEN candidate.event_type = 'turn_summary'
-          THEN 'turn_summary'::text ELSE 'message'::text END AS match_source,
-        CASE
-          WHEN candidate.event_type = 'turn_summary' THEN 'turn_summary'::text
-          WHEN candidate.event_type = 'user_message' AND NOT EXISTS (
-            SELECT 1 FROM events earlier_user
-            WHERE earlier_user.session_id = candidate.session_id
-              AND earlier_user.event_type = 'user_message'
-              AND earlier_user.id < candidate.id
-          ) THEN 'initial_request'::text
-          WHEN candidate.event_type = 'user_message' THEN 'user_message'::text
-          WHEN candidate.event_type = 'assistant_message' THEN 'assistant_message'::text
-          ELSE 'message'::text
-        END AS relevance_source
-      FROM query_variants query
-      CROSS JOIN LATERAL event_search(
-        query.query,
-        NULL,
-        ${candidateLimit},
-        ${eventTypes}::text[],
-        ${params.allowedFolderIds ?? null}::text[],
-        ${1},
-        ${candidateLimit},
-        ${sessionFilters?.node_id ?? null}::text,
-        ${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[],
-        ${sessionFilters?.updated_after ?? null}::timestamptz,
-        ${backendFilters}::text[],
-        ${backendCatalogJson}::text::jsonb
-      ) candidate
-      WHERE ${includeSessionMetadataSearch}
     )
     SELECT
       hit.query,

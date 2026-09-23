@@ -2662,12 +2662,66 @@ CREATE OR REPLACE FUNCTION event_search(
         FROM event_search_corpus_stats
         WHERE id = TRUE
     ),
-    -- The event_search_terms primary key guarantees one posting per document/term.
-    matching_postings AS (
+    scoped_events AS MATERIALIZED (
+        SELECT e.id, e.session_id, e.event_type, e.created_at
+        FROM events e
+        JOIN sessions scoped_session ON scoped_session.session_id = e.session_id
+        WHERE p_session_ids IS NOT NULL
+          AND e.session_id = ANY(p_session_ids)
+          AND (p_event_types IS NULL OR e.event_type = ANY(p_event_types))
+          AND (p_allowed_folder_ids IS NULL
+               OR scoped_session.folder_id = ANY(p_allowed_folder_ids))
+          AND (p_node_id IS NULL OR scoped_session.node_id = p_node_id)
+          AND (p_statuses IS NULL OR scoped_session.status = ANY(p_statuses))
+          AND (p_updated_after IS NULL OR scoped_session.updated_at >= p_updated_after)
+          AND (p_backends IS NULL OR COALESCE(
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(p_backend_catalog) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'preset'
+               AND mapping.value->>'node_id' = scoped_session.node_id
+               AND mapping.value->>'model_preset' = scoped_session.model_preset
+             LIMIT 1),
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(p_backend_catalog) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'agent'
+               AND mapping.value->>'node_id' = scoped_session.node_id
+               AND mapping.value->>'agent_id' = scoped_session.agent_id
+             LIMIT 1)
+          ) = ANY(p_backends))
+    ),
+    scoped_term_document_frequency AS MATERIALIZED (
+        SELECT t.term, COUNT(*)::FLOAT AS doc_count
+        FROM event_search_terms t
+        WHERE p_session_ids IS NOT NULL
+          AND t.term = ANY(ARRAY(SELECT term FROM query_terms))
+        GROUP BY t.term
+    ),
+    -- A session-scoped query uses the (session_id, event_id, term) primary key
+    -- for candidate postings. Global document frequencies remain exact, but
+    -- only their term keys are read before the scope is applied.
+    scoped_matching_postings AS (
+        SELECT q.term, t.session_id, t.event_id, t.term_freq, t.doc_len,
+               df.doc_count
+        FROM scoped_events e
+        JOIN event_search_terms t
+          ON t.session_id = e.session_id
+         AND t.event_id = e.id
+        JOIN query_terms q ON q.term = t.term
+        JOIN scoped_term_document_frequency df ON df.term = q.term
+    ),
+    -- Unscoped searches keep the term-first path, which avoids scanning every
+    -- event when the caller supplied no session IDs.
+    global_matching_postings AS (
         SELECT q.term, t.session_id, t.event_id, t.term_freq, t.doc_len,
                COUNT(*) OVER (PARTITION BY q.term)::FLOAT AS doc_count
         FROM query_terms q
         JOIN event_search_terms t ON t.term = q.term
+        WHERE p_session_ids IS NULL
+    ),
+    matching_postings AS (
+        SELECT * FROM scoped_matching_postings
+        UNION ALL
+        SELECT * FROM global_matching_postings
     ),
     -- Reuse only the exact top-k identities when deciding whether prefix fallback is needed.
     scored_exact AS (
@@ -2735,7 +2789,39 @@ CREATE OR REPLACE FUNCTION event_search(
     exact_count AS (
         SELECT COUNT(*) AS count FROM scored_candidates
     ),
-    prefix_scored AS (
+    scoped_prefix_scored AS (
+        SELECT
+            e.id,
+            e.session_id,
+            e.event_type,
+            e.created_at,
+            MAX(
+                0.000001 +
+                LEAST(
+                    length(q.term)::FLOAT /
+                    GREATEST(length(t.term), 1)::FLOAT,
+                    1.0
+                ) * 0.000001
+            )::FLOAT AS score
+        FROM scoped_events e
+        JOIN event_search_terms t
+          ON t.session_id = e.session_id
+         AND t.event_id = e.id
+        JOIN korean_prefix_terms q
+          ON t.term >= q.prefix
+         AND t.term < q.prefix || U&'\FFFF'
+        WHERE t.term ~ '[가-힣]'
+          AND (p_prefix_limit > 0 OR p_limit IS NULL
+               OR (SELECT count FROM exact_count) < p_limit)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM scored_candidates s
+              WHERE s.session_id = e.session_id
+                AND s.id = e.id
+          )
+        GROUP BY e.id, e.session_id, e.event_type, e.created_at
+    ),
+    global_prefix_scored AS (
         SELECT
             e.id,
             e.session_id,
@@ -2779,6 +2865,7 @@ CREATE OR REPLACE FUNCTION event_search(
                AND mapping.value->>'agent_id' = scoped_session.agent_id
              LIMIT 1)
           ) = ANY(p_backends))
+          AND p_session_ids IS NULL
           AND (p_prefix_limit > 0 OR p_limit IS NULL
                OR (SELECT count FROM exact_count) < p_limit)
           AND NOT EXISTS (
@@ -2788,6 +2875,11 @@ CREATE OR REPLACE FUNCTION event_search(
                 AND s.id = e.id
           )
         GROUP BY e.id, e.session_id, e.event_type, e.created_at
+    ),
+    prefix_scored AS (
+        SELECT * FROM scoped_prefix_scored
+        UNION ALL
+        SELECT * FROM global_prefix_scored
     ),
     prefix_candidates AS MATERIALIZED (
         SELECT id, session_id, event_type, created_at, score
