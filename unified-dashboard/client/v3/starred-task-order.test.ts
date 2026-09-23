@@ -71,6 +71,22 @@ describe("starred task order boundaries", () => {
     expect(reload).toHaveBeenCalledOnce();
   });
 
+  it("discards a reload superseded by a newer starred invalidation", async () => {
+    let refreshKey = 4;
+    let resolveReload: ((page: { items: string[] }) => void) | undefined;
+    const pending = saveStarredTaskOrderAndReload({
+      save: async () => undefined,
+      reload: async () => await new Promise((resolve) => { resolveReload = resolve; }),
+      isReloadCurrent: () => refreshKey === 4,
+    });
+    await vi.waitFor(() => expect(resolveReload).toBeTypeOf("function"));
+
+    refreshKey += 1;
+    resolveReload!({ items: ["outdated-order"] });
+
+    await expect(pending).resolves.toMatchObject({ saved: true, reloadSuperseded: true });
+  });
+
   it("invalidates the old cursor when the saved order cannot be reloaded", () => {
     expect(disableStarredTaskPaginationAfterRefreshFailure({
       items: ["a", "b"],

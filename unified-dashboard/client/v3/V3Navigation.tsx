@@ -367,6 +367,7 @@ function StarredTaskNavigationRow({
         }}
         {...drag.attributes}
         {...drag.listeners}
+        onContextMenu={onContextMenu}
       >
         <GripVertical className="h-4 w-4" aria-hidden="true" />
       </button>

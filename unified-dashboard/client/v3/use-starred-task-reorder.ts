@@ -158,15 +158,20 @@ export function useStarredTaskReorder({
       ? { ...current, data: { ...current.data, items: reorderedTasks } }
       : current);
 
+    let reloadRefreshKey: number | null = null;
     const result = await saveStarredTaskOrderAndReload({
       save: async () => await saveOrder(movedPageId, beforePageId),
-      reload: async () => await loadStarredTasks(dependencies, {}),
+      reload: async () => {
+        reloadRefreshKey = starredRefreshKeyRef.current;
+        return await loadStarredTasks(dependencies, {});
+      },
+      isReloadCurrent: () => reloadRefreshKey === starredRefreshKeyRef.current,
     });
     if (result.reloaded) {
       setStarredTaskIndex((current) => completePlannerLoad(current, result.reloaded!));
     }
     if (!result.saved) {
-      if (!result.reloaded) {
+      if (!result.reloaded && !result.reloadSuperseded) {
         setStarredTaskIndex(original.data
           ? {
             ...original,

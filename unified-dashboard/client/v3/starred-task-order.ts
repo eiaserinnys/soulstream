@@ -81,24 +81,34 @@ export async function resolveStarredTaskBeforePageId(input: {
 export async function saveStarredTaskOrderAndReload<T>(input: {
   save(): Promise<void>;
   reload(): Promise<T>;
+  isReloadCurrent?(): boolean;
 }): Promise<{
   saved: boolean;
   reloaded?: T;
   saveError?: unknown;
   reloadError?: unknown;
+  reloadSuperseded?: boolean;
 }> {
+  const reloadFreshSnapshot = async (): Promise<{
+    reloaded?: T;
+    reloadError?: unknown;
+    reloadSuperseded?: boolean;
+  }> => {
+    try {
+      const reloaded = await input.reload();
+      return input.isReloadCurrent && !input.isReloadCurrent()
+        ? { reloadSuperseded: true }
+        : { reloaded };
+    } catch (reloadError) {
+      return input.isReloadCurrent && !input.isReloadCurrent()
+        ? { reloadSuperseded: true }
+        : { reloadError };
+    }
+  };
   try {
     await input.save();
   } catch (saveError) {
-    try {
-      return { saved: false, reloaded: await input.reload(), saveError };
-    } catch (reloadError) {
-      return { saved: false, saveError, reloadError };
-    }
+    return { saved: false, saveError, ...await reloadFreshSnapshot() };
   }
-  try {
-    return { saved: true, reloaded: await input.reload() };
-  } catch (reloadError) {
-    return { saved: true, reloadError };
-  }
+  return { saved: true, ...await reloadFreshSnapshot() };
 }
