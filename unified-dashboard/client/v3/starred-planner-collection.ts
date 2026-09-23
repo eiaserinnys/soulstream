@@ -11,6 +11,17 @@ export function mergeStarredPlannerTasks(
   return [...new Map([...first, ...second].map((task) => [taskPageId(task), task])).values()];
 }
 
+export function isStarredPlannerPageCurrent(
+  current: { items: readonly StarredPlannerTask[]; nextCursor: string | null } | null,
+  expectedPageIds: readonly string[],
+  expectedCursor: string,
+): boolean {
+  return current !== null
+    && current.nextCursor === expectedCursor
+    && current.items.length === expectedPageIds.length
+    && current.items.every((task, index) => taskPageId(task) === expectedPageIds[index]);
+}
+
 export function applyStarredPlannerTaskChanges(
   tasks: readonly StarredPlannerTask[],
   changes: readonly TaskStarChange[],

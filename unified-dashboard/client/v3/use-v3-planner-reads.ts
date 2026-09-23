@@ -17,6 +17,7 @@ import {
   loadProjectPlanner,
   loadProjectTaskPage,
   loadTaskRunHistory,
+  starredTaskPage,
   type DailyPlannerData,
   type PlannerDataDependencies,
   type PlannerPage,
@@ -26,6 +27,7 @@ import {
 } from "./planner-data";
 import {
   applyStarredPlannerTaskChanges,
+  isStarredPlannerPageCurrent,
   mergeStarredPlannerTasks,
 } from "./starred-planner-collection";
 import {
@@ -72,11 +74,13 @@ export function usePlannerCollections({
   const dailyRef = useRef(daily);
   const projectRef = useRef(project);
   const starredTaskIndexRef = useRef(starredTaskIndex);
+  const starredRefreshKeyRef = useRef(refreshKeys.starred);
   const stableProjectsRef = useRef<PageDto[]>([]);
   const stableStarredTasksRef = useRef<StarredPlannerTask[]>([]);
   dailyRef.current = daily;
   projectRef.current = project;
   starredTaskIndexRef.current = starredTaskIndex;
+  starredRefreshKeyRef.current = refreshKeys.starred;
 
   useEffect(() => {
     let active = true;
@@ -248,23 +252,31 @@ export function usePlannerCollections({
   }, []);
 
   const loadMoreStarredTasks = useCallback(async () => {
-    const cursor = starredTaskIndex.data?.nextCursor;
-    if (!cursor || starredTasksLoadingMore) return;
+    const page = starredTaskIndex.data;
+    const cursor = page?.nextCursor;
+    if (!page || !cursor || starredTasksLoadingMore) return;
+    const expectedPageIds = page.items.map((task) => starredTaskPage(task).id);
+    const refreshKey = starredRefreshKeyRef.current;
     setStarredTasksLoadingMore(true);
     try {
       const next = await loadStarredTasks(dependencies, { cursor });
-      setStarredTaskIndex((current) => current.data
-        ? completePlannerLoad(current, {
-          items: mergeStarredPlannerTasks(current.data.items, next.items),
+      if (refreshKey !== starredRefreshKeyRef.current) return;
+      setStarredTaskIndex((current) => {
+        const currentPage = current.data;
+        if (!isStarredPlannerPageCurrent(currentPage, expectedPageIds, cursor) || !currentPage) {
+          return current;
+        }
+        return completePlannerLoad(current, {
+          items: mergeStarredPlannerTasks(currentPage.items, next.items),
           nextCursor: next.nextCursor,
-        })
-        : current);
+        });
+      });
     } catch (error) {
       notify(`별표 업무 더 보기 실패 · ${errorText(error)}`);
     } finally {
       setStarredTasksLoadingMore(false);
     }
-  }, [dependencies, notify, starredTaskIndex.data?.nextCursor, starredTasksLoadingMore]);
+  }, [dependencies, notify, starredTaskIndex.data, starredTasksLoadingMore]);
 
   const loadMoreProjectTasks = useCallback(async () => {
     const data = project.data;
