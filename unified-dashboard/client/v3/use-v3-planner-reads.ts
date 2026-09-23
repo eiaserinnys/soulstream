@@ -75,6 +75,7 @@ export function usePlannerCollections({
   const projectRef = useRef(project);
   const starredTaskIndexRef = useRef(starredTaskIndex);
   const starredRefreshKeyRef = useRef(refreshKeys.starred);
+  const starredLoadedRefreshKeyRef = useRef<number | null>(null);
   const stableProjectsRef = useRef<PageDto[]>([]);
   const stableStarredTasksRef = useRef<StarredPlannerTask[]>([]);
   dailyRef.current = daily;
@@ -84,18 +85,32 @@ export function usePlannerCollections({
 
   useEffect(() => {
     let active = true;
+    const refreshKey = refreshKeys.starred;
     const previous = starredTaskIndexRef.current.data;
-    setStarredTaskIndex(beginPlannerLoad);
+    setStarredTaskIndex((current) => {
+      const loading = beginPlannerLoad(current);
+      return loading.data
+        ? { ...loading, data: { ...loading.data, nextCursor: null } }
+        : loading;
+    });
     void loadConfirmedResult({
       previous,
       load: () => loadStarredTasks(dependencies, {}),
       clearsVisibleContent: (current, next) => current.items.length > 0 && next.items.length === 0,
     }).then((data) => {
-      if (active) setStarredTaskIndex((current) => completePlannerLoad(current, data));
+      if (active) {
+        starredLoadedRefreshKeyRef.current = refreshKey;
+        setStarredTaskIndex((current) => completePlannerLoad(current, data));
+      }
     }).catch((error: unknown) => {
       if (active) {
         const message = errorText(error);
-        setStarredTaskIndex((current) => failPlannerLoad(current, message));
+        setStarredTaskIndex((current) => {
+          const failed = failPlannerLoad(current, message);
+          return failed.data
+            ? { ...failed, data: { ...failed.data, nextCursor: null } }
+            : failed;
+        });
         notify(`별표 업무 조회 실패 · ${message}`);
       }
     });
@@ -229,6 +244,7 @@ export function usePlannerCollections({
     dependencies,
     notify,
     starredTaskIndexRef,
+    starredLoadedRefreshKeyRef,
     starredRefreshKeyRef,
     stableStarredTasksRef,
     setStarredTaskIndex,

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   disableStarredTaskPaginationAfterRefreshFailure,
   isStarredTaskBoundaryCurrent,
+  reconcileStarredTaskOrderReloadFailure,
   resolveStarredTaskBoundaryPageId,
   resolveStarredTaskBeforePageId,
   resolveStarredTaskDropBoundary,
@@ -95,5 +96,27 @@ describe("starred task order boundaries", () => {
       items: ["a", "b"],
       nextCursor: null,
     });
+  });
+
+  it("rolls back a failed reorder and disables its cursor when the newer refresh has not loaded", () => {
+    expect(reconcileStarredTaskOrderReloadFailure({
+      currentPage: { items: ["optimistic"], nextCursor: "old-cursor" },
+      originalPage: { items: ["original"], nextCursor: "old-cursor" },
+      saved: false,
+      reloadSuperseded: true,
+      loadedRefreshKey: 4,
+      currentRefreshKey: 5,
+    })).toEqual({ items: ["original"], nextCursor: null });
+  });
+
+  it("preserves a concurrently completed refresh instead of restoring stale reorder data", () => {
+    expect(reconcileStarredTaskOrderReloadFailure({
+      currentPage: { items: ["fresh"], nextCursor: "fresh-cursor" },
+      originalPage: { items: ["original"], nextCursor: "old-cursor" },
+      saved: false,
+      reloadSuperseded: true,
+      loadedRefreshKey: 5,
+      currentRefreshKey: 5,
+    })).toBeNull();
   });
 });

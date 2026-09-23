@@ -17,6 +17,7 @@ import {
 import {
   disableStarredTaskPaginationAfterRefreshFailure,
   isStarredTaskBoundaryCurrent,
+  reconcileStarredTaskOrderReloadFailure,
   resolveStarredTaskBeforePageId,
   saveStarredTaskOrderAndReload,
 } from "./starred-task-order";
@@ -31,6 +32,7 @@ export function useStarredTaskReorder({
   dependencies,
   notify,
   starredTaskIndexRef,
+  starredLoadedRefreshKeyRef,
   starredRefreshKeyRef,
   stableStarredTasksRef,
   setStarredTaskIndex,
@@ -38,6 +40,7 @@ export function useStarredTaskReorder({
   dependencies: PlannerDataDependencies;
   notify(message: string): void;
   starredTaskIndexRef: CurrentRef<StarredTaskIndex>;
+  starredLoadedRefreshKeyRef: CurrentRef<number | null>;
   starredRefreshKeyRef: CurrentRef<number>;
   stableStarredTasksRef: CurrentRef<StarredPlannerTask[]>;
   setStarredTaskIndex: Dispatch<SetStateAction<StarredTaskIndex>>;
@@ -170,27 +173,27 @@ export function useStarredTaskReorder({
     if (result.reloaded) {
       setStarredTaskIndex((current) => completePlannerLoad(current, result.reloaded!));
     }
+    if (!result.reloaded && (result.reloadError || result.reloadSuperseded)) {
+      setStarredTaskIndex((current) => {
+        const recoveredPage = reconcileStarredTaskOrderReloadFailure({
+          currentPage: current.data,
+          originalPage: original.data,
+          saved: result.saved,
+          reloadSuperseded: Boolean(result.reloadSuperseded),
+          loadedRefreshKey: starredLoadedRefreshKeyRef.current,
+          currentRefreshKey: starredRefreshKeyRef.current,
+        });
+        if (!recoveredPage) return current;
+        return { ...(result.saved ? current : original), data: recoveredPage };
+      });
+    }
     if (!result.saved) {
-      if (!result.reloaded && !result.reloadSuperseded) {
-        setStarredTaskIndex(original.data
-          ? {
-            ...original,
-            data: disableStarredTaskPaginationAfterRefreshFailure(original.data),
-          }
-          : original);
-      }
       notify(`별표 순서 저장 실패 · ${errorText(result.saveError)}`);
     } else if (result.reloadError) {
-      setStarredTaskIndex((current) => current.data
-        ? {
-          ...current,
-          data: disableStarredTaskPaginationAfterRefreshFailure(current.data),
-        }
-        : current);
       notify(`별표 순서는 저장됐지만 목록을 새로 불러오지 못했습니다 · ${errorText(result.reloadError)}`);
     }
     setStarredTasksReordering(false);
-  }, [dependencies, notify, setStarredTaskIndex, stableStarredTasksRef, starredRefreshKeyRef, starredTaskIndexRef]);
+  }, [dependencies, notify, setStarredTaskIndex, stableStarredTasksRef, starredLoadedRefreshKeyRef, starredRefreshKeyRef, starredTaskIndexRef]);
 
   return { starredTasksReordering, reorderStarredTasks };
 }

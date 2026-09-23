@@ -51,6 +51,19 @@ export function disableStarredTaskPaginationAfterRefreshFailure<T extends { next
   return { ...page, nextCursor: null };
 }
 
+export function reconcileStarredTaskOrderReloadFailure<T extends { nextCursor: string | null }>(input: {
+  currentPage: T | null;
+  originalPage: T | null;
+  saved: boolean;
+  reloadSuperseded: boolean;
+  loadedRefreshKey: number | null;
+  currentRefreshKey: number;
+}): T | null {
+  if (input.reloadSuperseded && input.loadedRefreshKey === input.currentRefreshKey) return null;
+  const page = input.saved ? input.currentPage : input.originalPage;
+  return page ? disableStarredTaskPaginationAfterRefreshFailure(page) : null;
+}
+
 export async function resolveStarredTaskBeforePageId(input: {
   orderedPageIds: readonly string[];
   movedPageId: string;
