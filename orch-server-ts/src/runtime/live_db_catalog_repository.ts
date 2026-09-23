@@ -48,7 +48,11 @@ import type { TaskRouteProvider } from "../tasks/task_route_types.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
 import { createLiveCogitoSearchProvider } from "./live_cogito_search_provider.js";
 import type { SearchQueryExpander } from "../search/search_query_expander.js";
-import { serializeSessionRow } from "./live_session_serialization.js";
+import {
+  buildSessionBackendCatalog,
+  serializeSessionRow,
+  type SessionBackendCatalogEntry,
+} from "./live_session_serialization.js";
 import { createLiveUserPreferencesRepository } from "./live_user_preferences_repository.js";
 import type { UserBackgroundRepository } from "../user/user_background_routes.js";
 import {
@@ -112,6 +116,8 @@ export type ListSessionSnapshotsInput = LoadSessionSnapshotInput & {
   readonly search?: string;
   readonly nodeId?: string;
   readonly statuses?: readonly string[];
+  readonly backends?: readonly string[];
+  readonly updatedAfter?: string;
   readonly offset: number;
   readonly limit: number;
 };
@@ -159,13 +165,17 @@ export function createLiveDbCatalogRepository(
       databaseUrl: options.databaseUrl,
       configProvider: options.configProvider,
     });
+  const adminUsersRepository = createLiveAdminUsersRepository({ sqlResolver });
+  const agentProfileRepository = createLiveAgentProfileRepository(sqlResolver);
   const cogitoSearchProvider = createLiveCogitoSearchProvider({
     searchDbConnectionFactory,
     queryExpander: options.searchQueryExpander,
+    sessionBackendCatalog: () => buildSessionBackendCatalog(
+      options.registry,
+      agentProfileRepository.snapshot(),
+    ),
     onCancelError: options.onSearchCancelError,
   });
-  const adminUsersRepository = createLiveAdminUsersRepository({ sqlResolver });
-  const agentProfileRepository = createLiveAgentProfileRepository(sqlResolver);
   const folderProvider = createLiveFolderProvider(sqlResolver);
   const boardItemProvider = createLiveBoardItemRouteProvider(
     sqlResolver,
@@ -314,6 +324,7 @@ export function createLiveDbCatalogRepository(
     const filters = await sessionSnapshotFilters(
       input,
       sessionResourceAccessRepository,
+      buildSessionBackendCatalog(options.registry, agentProfileRepository.snapshot()),
     );
     if (filters === null) return { sessions: [], total: 0 };
     const filtersJson = sql.json(filters);
@@ -468,8 +479,11 @@ async function sessionSnapshotFilters(
     readonly search?: string;
     readonly nodeId?: string;
     readonly statuses?: readonly string[];
+    readonly backends?: readonly string[];
+    readonly updatedAfter?: string;
   },
   repository: SessionResourceAccessRepository,
+  backendCatalog: readonly SessionBackendCatalogEntry[],
 ): Promise<Record<string, unknown> | null> {
   const filters: Record<string, unknown> = {};
   if (input.feedOnly === true) filters.feed_only = true;
@@ -478,6 +492,11 @@ async function sessionSnapshotFilters(
   if (input.search !== undefined) filters.search = input.search;
   if (input.nodeId !== undefined) filters.node_id = input.nodeId;
   if (input.statuses !== undefined) filters.status = [...input.statuses];
+  if (input.backends !== undefined && input.backends.length > 0) {
+    filters.backends = [...input.backends];
+    filters.backend_catalog = backendCatalog;
+  }
+  if (input.updatedAfter !== undefined) filters.updated_after = input.updatedAfter;
   if (input.access === undefined || input.folderId !== undefined) return filters;
 
   const access = normalizeBoardAccess(input.access);

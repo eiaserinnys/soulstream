@@ -107,6 +107,70 @@ describe("cogito route harness", () => {
       .toMatchObject({ statusCode: 422 });
     expect(searchProvider.search).not.toHaveBeenCalled();
 
+    expect(await app.inject({
+      method: "GET",
+      url: "/cogito/search?q=x&include_session_results=true&session_search_mode=other",
+    })).toMatchObject({ statusCode: 422 });
+
+    await app.close();
+  });
+
+  it("forwards lexical and expanded product session search modes", async () => {
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => ({ results: [], navigation_results: [], session_results: [] })),
+    };
+    const { app } = createHarness({ searchProvider });
+
+    for (const mode of ["lexical", "expanded"] as const) {
+      const response = await app.inject({
+        method: "GET",
+        url: `/cogito/search?q=needle&include_session_results=true&session_search_mode=${mode}`,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(searchProvider.search).toHaveBeenLastCalledWith(expect.objectContaining({
+        q: "needle",
+        include_session_results: true,
+        session_search_mode: mode,
+      }));
+    }
+
+    await app.close();
+  });
+
+  it("forwards typed product session filters without changing MCP event filters", async () => {
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => ({ results: [], navigation_results: [], session_results: [] })),
+    };
+    const { app } = createHarness({ searchProvider });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/cogito/search?q=needle&top_k=7&event_categories=messages,responses"
+        + "&include_session_results=true&session_search_mode=lexical"
+        + "&session_folder_id=folder-a&session_node_id=node-a"
+        + "&session_statuses=completed,idle&session_backends=codex"
+        + "&session_updated_after=2026-08-01T00%3A00%3A00.000Z",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
+      top_k: 7,
+      event_categories: "messages,responses",
+      session_search_mode: "lexical",
+      session_filters: {
+        folder_id: "folder-a",
+        node_id: "node-a",
+        statuses: ["completed", "idle"],
+        backends: ["codex"],
+        updated_after: "2026-08-01T00:00:00.000Z",
+      },
+    }));
+
+    const invalidDate = await app.inject({
+      method: "GET",
+      url: "/cogito/search?q=needle&session_updated_after=not-a-date",
+    });
+    expect(invalidDate.statusCode).toBe(422);
     await app.close();
   });
 

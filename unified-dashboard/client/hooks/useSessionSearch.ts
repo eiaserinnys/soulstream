@@ -6,7 +6,7 @@
  * orch의 /cogito/search가 공유 PostgreSQL을 직접 조회합니다.
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useUiEventTracker } from "@seosoyoung/soul-ui";
 import {
   DEFAULT_SEARCH_CATEGORIES,
@@ -72,6 +72,8 @@ export interface SearchFilters {
   includeStory: boolean;
 }
 
+export type SessionSearchMode = "lexical" | "expanded";
+
 export const DEFAULT_SEARCH_FILTERS: SearchFilters = {
   searchSessionId: true,
   eventCategories: [...DEFAULT_SEARCH_CATEGORIES],
@@ -102,6 +104,7 @@ export function buildSessionSearchUrl(
   query: string,
   filters: SearchFilters,
   topK: number,
+  mode: SessionSearchMode = "expanded",
 ): string {
   const params = new URLSearchParams({
     q: query,
@@ -109,6 +112,7 @@ export function buildSessionSearchUrl(
     search_session_id: String(filters.searchSessionId),
   });
   params.set("include_session_results", "true");
+  params.set("session_search_mode", mode);
   if (filters.eventCategories !== null) {
     params.set("event_categories", filters.eventCategories.join(","));
   }
@@ -124,6 +128,37 @@ export function buildSessionSearchUrl(
   return `/cogito/search?${params}`;
 }
 
+export function hasExactNormalizedSessionTitle(
+  query: string,
+  results: readonly Pick<SearchSessionResult, "title">[],
+): boolean {
+  const normalizedQuery = normalizeExactTitle(query);
+  return normalizedQuery.length > 0 && results.some(
+    (result) => normalizeExactTitle(result.title) === normalizedQuery,
+  );
+}
+
+function preserveSessionAnchors(
+  lexical: readonly SearchSessionResult[],
+  expanded: readonly SearchSessionResult[],
+): SearchSessionResult[] {
+  const lexicalById = new Map(lexical.map((session) => [session.session_id, session]));
+  return expanded.map((session) => {
+    const initial = lexicalById.get(session.session_id);
+    return initial === undefined
+      ? session
+      : {
+          ...session,
+          best_match: initial.best_match,
+          session_url: initial.session_url,
+        };
+  });
+}
+
+function normalizeExactTitle(value: string): string {
+  return value.normalize("NFKC").toLocaleLowerCase().replace(/[\p{P}\p{S}\s]+/gu, "");
+}
+
 /** 검색이 나간 계기. 디바운스된 타건인지, 필터 변경인지, 명시적 제출인지. */
 export type SearchTrigger = "typing" | "filter" | "submit";
 
@@ -134,12 +169,19 @@ export function useSessionSearch() {
   const [sessionResults, setSessionResults] = useState<SearchSessionResult[]>([]);
   const [searchStatus, setSearchStatus] = useState<SearchStatus | null>(null);
   const [loading, setLoading] = useState(false);
+  const [expansionPending, setExpansionPending] = useState(false);
+  const [expansionFailed, setExpansionFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | undefined>(undefined);
   const searchSequence = useRef(0);
   // 사용 로그: 실제로 요청이 나간 검색만 센다. 타건 자체는 남기지 않는다.
   const trackUiEvent = useUiEventTracker();
   const searchFlowIdRef = useRef<string | null>(null);
+
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    searchSequence.current += 1;
+  }, []);
 
   const search = useCallback(
     async (
@@ -156,6 +198,9 @@ export function useSessionSearch() {
         setSessionResults([]);
         setSearchStatus(null);
         setLoading(false);
+        setExpansionPending(false);
+        setExpansionFailed(false);
+        setError(null);
         return;
       }
       // 진행 중인 이전 요청 취소
@@ -177,9 +222,12 @@ export function useSessionSearch() {
       });
 
       setLoading(true);
+      setExpansionPending(false);
+      setExpansionFailed(false);
       setError(null);
+      let lexicalPublished = false;
       try {
-        const res = await fetch(buildSessionSearchUrl(query, filters, topK), {
+        const res = await fetch(buildSessionSearchUrl(query, filters, topK, "lexical"), {
           signal: controller.signal,
         });
         if (!res.ok) {
@@ -190,16 +238,63 @@ export function useSessionSearch() {
         if (sequence !== searchSequence.current) return;
         setResults(data.results ?? []);
         setNavigationResults(data.navigation_results ?? []);
-        setSessionResults(data.session_results ?? []);
+        const lexicalSessions = data.session_results ?? [];
+        lexicalPublished = true;
+        setSessionResults(lexicalSessions);
         setSearchStatus(data.search_status ?? null);
+        setLoading(false);
+        if (hasExactNormalizedSessionTitle(query, lexicalSessions)) {
+          trackUiEvent("search_result", {
+            flowId,
+            attrs: {
+              status: "ok",
+              durationMs: Date.now() - startedAt,
+              resultCount: (data.results?.length ?? 0)
+                + (data.navigation_results?.length ?? 0)
+                + lexicalSessions.length,
+            },
+          });
+          return;
+        }
+        setExpansionPending(true);
+        const expandedRes = await fetch(buildSessionSearchUrl(query, filters, topK, "expanded"), {
+          signal: controller.signal,
+        });
+        if (!expandedRes.ok) throw new Error(`Expanded search failed: ${expandedRes.status}`);
+        const expanded = await expandedRes.json();
+        if (sequence !== searchSequence.current) return;
+        if (
+          expanded.search_status?.query_expansion?.status === "partial"
+          || expanded.search_status?.search?.status === "partial"
+        ) {
+          setExpansionFailed(true);
+          trackUiEvent("search_result", {
+            flowId,
+            attrs: {
+              status: "partial",
+              durationMs: Date.now() - startedAt,
+              resultCount: (data.results?.length ?? 0)
+                + (data.navigation_results?.length ?? 0)
+                + lexicalSessions.length,
+            },
+          });
+          return;
+        }
+        setResults(expanded.results ?? []);
+        setNavigationResults(expanded.navigation_results ?? []);
+        setSessionResults(preserveSessionAnchors(
+          lexicalSessions,
+          expanded.session_results ?? [],
+        ));
+        setSearchStatus(expanded.search_status ?? null);
         trackUiEvent("search_result", {
           flowId,
           attrs: {
             status: "ok",
             durationMs: Date.now() - startedAt,
-            resultCount: (data.results?.length ?? 0)
-              + (data.navigation_results?.length ?? 0)
-              + (data.session_results?.length ?? 0),
+              resultCount: (expanded.results?.length ?? 0)
+                + (expanded.navigation_results?.length ?? 0)
+                + (expanded.session_results?.length ?? 0),
           },
         });
       } catch (e) {
@@ -212,17 +307,31 @@ export function useSessionSearch() {
           return;
         }
         if (sequence !== searchSequence.current) return;
-        trackUiEvent("search_result", {
-          flowId,
-          attrs: { status: "error", durationMs: Date.now() - startedAt },
-        });
-        setError(e instanceof Error ? e.message : String(e));
+        if (lexicalPublished) {
+          setExpansionFailed(true);
+        } else {
+          trackUiEvent("search_result", {
+            flowId,
+            attrs: { status: "error", durationMs: Date.now() - startedAt },
+          });
+          setError(e instanceof Error ? e.message : String(e));
+        }
       } finally {
-        if (sequence === searchSequence.current) setLoading(false);
+        if (sequence === searchSequence.current) {
+          setLoading(false);
+          setExpansionPending(false);
+        }
       }
     },
     [trackUiEvent],
   );
+
+  const invalidate = useCallback(() => {
+    abortRef.current?.abort();
+    searchSequence.current += 1;
+    setLoading(false);
+    setExpansionPending(false);
+  }, []);
 
   const clear = useCallback(() => {
     setResults([]);
@@ -230,10 +339,9 @@ export function useSessionSearch() {
     setSessionResults([]);
     setSearchStatus(null);
     setError(null);
-    setLoading(false);
-    abortRef.current?.abort();
-    searchSequence.current += 1;
-  }, []);
+    setExpansionFailed(false);
+    invalidate();
+  }, [invalidate]);
 
   return {
     results,
@@ -241,8 +349,11 @@ export function useSessionSearch() {
     sessionResults,
     searchStatus,
     loading,
+    expansionPending,
+    expansionFailed,
     error,
     search,
+    invalidate,
     clear,
     // 결과 선택 이벤트를 같은 검색에 묶기 위한 상관키.
     currentSearchFlowId: () => searchFlowIdRef.current,

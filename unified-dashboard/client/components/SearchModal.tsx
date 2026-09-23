@@ -290,7 +290,7 @@ export function SearchModal({
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const openTaskBoard = useDashboardStore((s) => s.openTaskBoard);
-  const { results, navigationResults, sessionResults, searchStatus, loading, error, search, clear, currentSearchFlowId } =
+  const { results, navigationResults, sessionResults, searchStatus, loading, expansionPending, expansionFailed, error, search, invalidate, clear, currentSearchFlowId } =
     useSessionSearch();
   // 사용 로그: 결과 선택과 그 뒤의 화면 전환을 같은 검색에 묶는다.
   const trackUiEvent = useUiEventTracker();
@@ -458,9 +458,12 @@ export function SearchModal({
   );
   const remainingEventResults = results.filter((result) => !sessionResultIds.has(result.session_id));
   const resultCount = sessionResults.length + remainingEventResults.length + navigationResults.length;
-  const searchIncomplete = searchStatus?.search?.status === "partial"
+  const searchIncomplete = expansionFailed
+    || searchStatus?.search?.status === "partial"
     || searchStatus?.query_expansion?.status === "partial";
-  const partialSearchMessage = searchStatus?.search?.status === "partial"
+  const partialSearchMessage = expansionFailed
+    ? "추가 검색을 마치지 못했습니다. 현재 결과를 유지합니다."
+    : searchStatus?.search?.status === "partial"
     ? resultCount === 0
       ? "검색을 완료하지 못했습니다. 다시 검색해 주세요."
       : searchStatus.search.stage === "lexical"
@@ -494,7 +497,10 @@ export function SearchModal({
               type="text"
               placeholder="검색어를 입력하세요..."
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                if (e.target.value !== query) clear();
+                setQuery(e.target.value);
+              }}
               className={cn(
                 "w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-base",
                 "focus:outline-none focus:ring-1 focus:ring-ring",
@@ -513,9 +519,10 @@ export function SearchModal({
                 <input
                   type="checkbox"
                   checked={filters[key]}
-                  onChange={(e) =>
-                    setFilters((prev) => ({ ...prev, [key]: e.target.checked }))
-                  }
+                  onChange={(e) => {
+                    invalidate();
+                    setFilters((prev) => ({ ...prev, [key]: e.target.checked }));
+                  }}
                   className="w-3.5 h-3.5 rounded accent-primary"
                 />
                 <span className="text-xs text-muted-foreground">{label}</span>
@@ -539,9 +546,10 @@ export function SearchModal({
                 <input
                   type="checkbox"
                   checked={filters[key]}
-                  onChange={(e) =>
-                    setFilters((prev) => ({ ...prev, [key]: e.target.checked }))
-                  }
+                  onChange={(e) => {
+                    invalidate();
+                    setFilters((prev) => ({ ...prev, [key]: e.target.checked }));
+                  }}
                   className="w-3.5 h-3.5 rounded accent-primary"
                 />
                 <span className="text-xs text-muted-foreground">{label}</span>
@@ -569,9 +577,17 @@ export function SearchModal({
             </div>
           )}
 
+          {expansionPending && !loading && (
+            <div role="status" className="mb-2 px-1 text-xs text-muted-foreground">
+              추가 검색 중…
+            </div>
+          )}
+
           {!loading && !error && resultCount === 0 && query.trim() && (
             <div className="py-6 text-center text-sm text-muted-foreground">
-              {searchIncomplete
+              {expansionPending
+                ? "추가 검색 중…"
+                : searchIncomplete
                 ? "검색을 완료하지 못했습니다. 다시 검색해 주세요."
                 : "검색 결과가 없습니다"}
             </div>

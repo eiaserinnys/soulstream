@@ -38,6 +38,7 @@ import type {
   LiveSearchPendingQuery,
   LiveSearchSql,
 } from "./live_db_sql.js";
+import type { SessionBackendCatalogEntry } from "./live_session_serialization.js";
 import { cancelLiveSearchQuerySafely } from "./live_db_sql.js";
 
 const SEARCH_DB_CONCURRENCY_LIMIT = 2;
@@ -47,6 +48,7 @@ const QUERY_EXPANSION_TIMEOUT_MS = 4_500;
 export type CreateLiveCogitoSearchProviderOptions = {
   readonly searchDbConnectionFactory: LiveSearchDbConnectionFactory;
   readonly queryExpander?: SearchQueryExpander;
+  readonly sessionBackendCatalog?: () => readonly SessionBackendCatalogEntry[];
   readonly onCancelError?: (error: unknown) => void;
 };
 
@@ -72,8 +74,18 @@ export function createLiveCogitoSearchProvider(
       const forwardExpansionAbort = () => expansionController.abort(signal.reason);
       if (signal.aborted) forwardExpansionAbort();
       else signal.addEventListener("abort", forwardExpansionAbort, { once: true });
-      const searchParams = { ...params, signal };
       const isProductSearch = params.include_session_results === true;
+      const searchParams = {
+        ...params,
+        ...(isProductSearch
+          ? { allowedFolderIds: resolveProductFolderScope(params) }
+          : {}),
+        signal,
+      };
+      const backendCatalog = isProductSearch
+        ? options.sessionBackendCatalog?.() ?? []
+        : [];
+      const shouldExpand = isProductSearch && params.session_search_mode !== "lexical";
       const candidateLimit = Math.min(100, params.top_k * CANDIDATE_MULTIPLIER);
       const eventTypes = resolveEventTypes(params);
       const allowedFolderIds = params.allowedFolderIds ?? null;
@@ -89,6 +101,9 @@ export function createLiveCogitoSearchProvider(
       let queryExpansion:
         | NonNullable<CogitoSearchResponse["search_status"]>["query_expansion"]
         | undefined;
+      if (isProductSearch && !shouldExpand) {
+        queryExpansion = { status: "skipped", latency_ms: 0 };
+      }
       let semanticSearchCompleted = false;
       let searchStage: "lexical" | "semantic" | "navigation" = "lexical";
       let incompleteSearch:
@@ -141,7 +156,7 @@ export function createLiveCogitoSearchProvider(
         connection = await options.searchDbConnectionFactory.open(remainingBudgetMs);
         assertSearchMayContinue(signal, deadlineAt);
         const baseVariants = buildQueryVariants(params.q, [], isProductSearch);
-        if (isProductSearch) {
+        if (shouldExpand) {
           expansionPending = true;
           expansionPromise = startExpansion(
             options.queryExpander,
@@ -160,6 +175,7 @@ export function createLiveCogitoSearchProvider(
           activeQuery,
           deadlineAt,
           includeSessionMetadataSearch: isProductSearch,
+          backendCatalog,
         }));
         searchStage = "semantic";
         if (expansionPromise) {
@@ -191,6 +207,7 @@ export function createLiveCogitoSearchProvider(
               activeQuery,
               deadlineAt,
               includeSessionMetadataSearch: true,
+              backendCatalog,
             }));
             semanticSearchCompleted = true;
           }
@@ -321,6 +338,15 @@ export function createLiveCogitoSearchProvider(
       return response;
     },
   };
+}
+
+function resolveProductFolderScope(
+  params: CogitoSearchParams,
+): readonly string[] | undefined {
+  const selectedFolderId = params.session_filters?.folder_id;
+  if (selectedFolderId === undefined) return params.allowedFolderIds;
+  if (params.allowedFolderIds === undefined) return [selectedFolderId];
+  return params.allowedFolderIds.filter((folderId) => folderId === selectedFolderId);
 }
 
 type ExpansionOutcome = {

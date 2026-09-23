@@ -23,11 +23,21 @@ export type CogitoSearchParams = {
   include_highlight: boolean;
   include_story: boolean;
   include_session_results?: boolean;
+  session_search_mode?: "lexical" | "expanded";
+  session_filters?: CogitoSessionSearchFilters;
   readonly allowedFolderIds?: readonly string[];
   event_types?: string;
   event_categories?: string;
   readonly signal?: AbortSignal;
   readonly deadlineAt?: number;
+};
+
+export type CogitoSessionSearchFilters = {
+  readonly folder_id?: string;
+  readonly node_id?: string;
+  readonly statuses?: readonly string[];
+  readonly backends?: readonly string[];
+  readonly updated_after?: string;
 };
 
 export type CogitoSearchResult = Record<string, unknown>;
@@ -250,9 +260,6 @@ function stripInternalSessionFolderIds(
   return {
     ...response,
     results: response.results.map(stripFolderId),
-    ...(response.session_results === undefined
-      ? {}
-      : { session_results: response.session_results.map(stripFolderId) }),
   };
 }
 
@@ -387,6 +394,12 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
   const includeHighlight = booleanQuery(query, "include_highlight", false);
   const includeStory = booleanQuery(query, "include_story", false);
   const includeSessionResults = booleanQuery(query, "include_session_results", false);
+  const searchModeValue = stringQuery(query, "session_search_mode", { allowEmpty: false });
+  const searchModePresent = queryValue(query, "session_search_mode") !== undefined;
+  const sessionSearchMode: CogitoSearchParams["session_search_mode"] =
+    searchModeValue === "lexical" || searchModeValue === "expanded"
+      ? searchModeValue
+      : undefined;
   if (includeTurnSummaries === undefined) {
     return {
       ok: false,
@@ -415,8 +428,37 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
       detail: "include_session_results must be a boolean",
     };
   }
+  if (searchModePresent && sessionSearchMode === undefined) {
+    return {
+      ok: false,
+      statusCode: 422,
+      detail: "session_search_mode must be lexical or expanded",
+    };
+  }
   const eventTypes = stringQuery(query, "event_types", { allowEmpty: true });
   const eventCategories = stringQuery(query, "event_categories", { allowEmpty: true });
+  const sessionFolderId = optionalNonEmptyStringQuery(query, "session_folder_id");
+  const sessionNodeId = optionalNonEmptyStringQuery(query, "session_node_id");
+  const sessionStatuses = sessionStringArrayQuery(query, "session_statuses");
+  const sessionBackends = sessionStringArrayQuery(query, "session_backends");
+  const updatedAfterValue = optionalNonEmptyStringQuery(query, "session_updated_after");
+  const updatedAfter = updatedAfterValue === undefined
+    ? undefined
+    : validTimestamp(updatedAfterValue);
+  if (
+    invalidNonEmptyStringQuery(query, "session_folder_id")
+    || invalidNonEmptyStringQuery(query, "session_node_id")
+    || invalidNonEmptyStringQuery(query, "session_updated_after")
+    || sessionStatuses === null
+    || sessionBackends === null
+    || (updatedAfterValue !== undefined && updatedAfter === null)
+  ) {
+    return {
+      ok: false,
+      statusCode: 422,
+      detail: "session filters contain an invalid value",
+    };
+  }
   return {
     ok: true,
     value: {
@@ -427,6 +469,24 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
       include_highlight: includeHighlight,
       include_story: includeStory,
       include_session_results: includeSessionResults,
+      ...(sessionSearchMode !== undefined ? { session_search_mode: sessionSearchMode } : {}),
+      ...(sessionFolderId !== undefined
+        || sessionNodeId !== undefined
+        || (sessionStatuses?.length ?? 0) > 0
+        || (sessionBackends?.length ?? 0) > 0
+        || (updatedAfter !== undefined && updatedAfter !== null)
+        ? {
+          session_filters: {
+            ...(sessionFolderId === undefined ? {} : { folder_id: sessionFolderId }),
+            ...(sessionNodeId === undefined ? {} : { node_id: sessionNodeId }),
+            ...(sessionStatuses?.length ? { statuses: sessionStatuses } : {}),
+            ...(sessionBackends?.length ? { backends: sessionBackends } : {}),
+            ...(updatedAfter === undefined || updatedAfter === null
+              ? {}
+              : { updated_after: updatedAfter }),
+          },
+        }
+        : {}),
       ...(eventTypes !== undefined ? { event_types: eventTypes } : {}),
       ...(eventCategories !== undefined ? { event_categories: eventCategories } : {}),
     },
@@ -540,6 +600,34 @@ function numberQuery(query: unknown, key: string, fallback: number): number {
   return Number(value);
 }
 
+function optionalNonEmptyStringQuery(query: unknown, key: string): string | undefined {
+  const value = queryValue(query, key);
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function invalidNonEmptyStringQuery(query: unknown, key: string): boolean {
+  const raw = rawQueryValue(query, key);
+  if (raw === undefined) return false;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value !== "string" || value.length === 0;
+}
+
+function sessionStringArrayQuery(query: unknown, key: string): string[] | null | undefined {
+  const raw = rawQueryValue(query, key);
+  if (raw === undefined) return undefined;
+  const values = Array.isArray(raw) ? raw : [raw];
+  if (values.some((value) => typeof value !== "string")) return null;
+  return [...new Set((values as string[])
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0))];
+}
+
+function validTimestamp(value: string): string | null {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
 function booleanQuery(query: unknown, key: string, fallback: boolean): boolean | undefined {
   const value = queryValue(query, key);
   if (value === undefined) return fallback;
@@ -554,6 +642,13 @@ function queryValue(query: unknown, key: string): unknown {
   if (!isRecord(query) || !(key in query)) return undefined;
   const value = query[key];
   return Array.isArray(value) ? value[0] : value;
+}
+
+function rawQueryValue(query: unknown, key: string): unknown {
+  if (typeof query !== "object" || query === null || !(key in query)) {
+    return undefined;
+  }
+  return (query as Record<string, unknown>)[key];
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | undefined {

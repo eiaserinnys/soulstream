@@ -9,6 +9,11 @@ export type SessionSearchCandidateRow = Record<string, unknown>;
 export type SessionSearchResult = {
   readonly session_id: string;
   readonly folder_id: string | null;
+  readonly node_id: string | null;
+  readonly status: string | null;
+  readonly backend: string | null;
+  readonly agent_name: string | null;
+  readonly review_required: boolean;
   readonly title: string;
   readonly excerpt: string;
   readonly updated_at: string | null;
@@ -126,6 +131,11 @@ export function projectSessionSearchResults(
       return {
         session_id: sessionId,
         folder_id: stringValue(row.folder_id),
+        node_id: stringValue(row.node_id),
+        status: stringValue(row.status),
+        backend: stringValue(row.backend),
+        agent_name: stringValue(row.agent_name),
+        review_required: row.review_required === true,
         title,
         excerpt,
         updated_at: stringValue(row.session_updated_at),

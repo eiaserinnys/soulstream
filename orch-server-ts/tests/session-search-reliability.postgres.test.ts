@@ -219,6 +219,158 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       .toContain("distinct-session");
   });
 
+  it("applies every session filter before source limits and preserves the inclusive date boundary", async () => {
+    const cutoff = new Date("2026-08-01T00:00:00.000Z");
+    await sql`
+      INSERT INTO sessions (
+        session_id, folder_id, display_name, prompt, node_id, status,
+        agent_id, model_preset, updated_at, session_type
+      ) VALUES (
+        'filter-target', 'folder-allowed', 'FilterPhrase target', 'FilterPhrase initial request',
+        'filter-node', 'completed', 'agent-codex', 'codex-preset', ${cutoff}, 'claude'
+      )
+    `;
+    const filterFailures: Array<{
+      sessionId: string;
+      folder_id?: string;
+      node_id?: string;
+      status?: string;
+      model_preset?: string;
+      updated_at?: Date | null;
+    }> = [
+      { sessionId: "filter-wrong-status", status: "idle" },
+      { sessionId: "filter-wrong-node", node_id: "other-node" },
+      { sessionId: "filter-wrong-backend", model_preset: "claude-preset" },
+      { sessionId: "filter-wrong-folder", folder_id: "folder-denied" },
+      { sessionId: "filter-before-cutoff", updated_at: new Date("2026-07-31T23:59:59.999Z") },
+      { sessionId: "filter-null-updated", updated_at: null },
+    ];
+    for (const { sessionId, ...overrides } of filterFailures) {
+      await sql`
+        INSERT INTO sessions (
+          session_id, folder_id, display_name, prompt, node_id, status,
+          agent_id, model_preset, updated_at, session_type
+        ) VALUES (
+          ${sessionId},
+          ${overrides.folder_id ?? "folder-allowed"},
+          'FilterPhrase target', 'FilterPhrase initial request',
+          ${overrides.node_id ?? "filter-node"},
+          ${overrides.status ?? "completed"},
+          'agent-codex',
+          ${overrides.model_preset ?? "codex-preset"},
+          ${overrides.updated_at === undefined ? cutoff : overrides.updated_at},
+          'claude'
+        )
+      `;
+    }
+
+    for (const sessionId of [
+      "filter-target",
+      "filter-wrong-status",
+      "filter-wrong-node",
+      "filter-wrong-backend",
+      "filter-wrong-folder",
+      "filter-before-cutoff",
+      "filter-null-updated",
+    ]) {
+      await sql`
+        INSERT INTO events (session_id, id, event_type, searchable_text, created_at)
+        VALUES (
+          ${sessionId}, 1, 'user_message',
+          ${sessionId === "filter-target"
+            ? "FilterPhrase was the initial request"
+            : "FilterPhrase filterphrase filterphrase filterphrase filterphrase filterphrase"},
+          ${cutoff}
+        )
+      `;
+      await sql`
+        INSERT INTO session_digests (
+          session_id, narrative, highlight, narrative_through_event_id
+        ) VALUES (
+          ${sessionId}, 'FilterPhrase narrative', 'FilterPhrase highlight', 1
+        )
+      `;
+    }
+
+    const unfilteredEventIds = await sql`
+      SELECT session_id FROM event_search(
+        ${"filterphrase"}, NULL, 5, ARRAY['user_message']::text[],
+        ARRAY['folder-allowed', 'folder-denied']::text[]
+      )
+    `;
+    expect(unfilteredEventIds.map((row) => row.session_id)).not.toContain("filter-target");
+
+    const backendCatalog = [
+      { kind: "preset", node_id: "filter-node", model_preset: "codex-preset", backend: "codex" },
+      { kind: "preset", node_id: "filter-node", model_preset: "claude-preset", backend: "claude" },
+      { kind: "agent", node_id: "filter-node", agent_id: "agent-codex", backend: "claude" },
+    ] as const;
+    const catalogKind = await sql`
+      SELECT jsonb_typeof(${JSON.stringify(backendCatalog)}::text::jsonb) AS kind
+    `;
+    expect(catalogKind[0]?.kind).toBe("array");
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
+      sessionBackendCatalog: () => backendCatalog,
+    });
+    const response = await provider.search({
+      q: "filterphrase",
+      top_k: 1,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: true,
+      include_story: true,
+      include_session_results: true,
+      session_search_mode: "lexical",
+      allowedFolderIds: ["folder-allowed", "folder-denied"],
+      session_filters: {
+        folder_id: "folder-allowed",
+        node_id: "filter-node",
+        statuses: ["completed"],
+        backends: ["codex"],
+        updated_after: cutoff.toISOString(),
+      },
+    });
+
+    expect(response.session_results?.map((result) => result.session_id)).toEqual(["filter-target"]);
+    expect(response.session_results?.[0]).toMatchObject({
+      session_id: "filter-target",
+      folder_id: "folder-allowed",
+      node_id: "filter-node",
+      status: "completed",
+      backend: "codex",
+    });
+
+    const emptyIntersection = await provider.search({
+      q: "filterphrase",
+      top_k: 1,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: true,
+      include_story: true,
+      include_session_results: true,
+      session_search_mode: "lexical",
+      allowedFolderIds: ["folder-allowed"],
+      session_filters: { folder_id: "folder-denied" },
+    });
+    expect(emptyIntersection.session_results).toEqual([]);
+
+    const metadataFilters = sql.json({
+      folder_id: "folder-allowed",
+      node_id: "filter-node",
+      status: ["completed"],
+      updated_after: cutoff.toISOString(),
+      backends: ["codex"],
+      backend_catalog: backendCatalog,
+    });
+    const metadataMatches = await sql`
+      SELECT session_id FROM session_get_all(${metadataFilters}::jsonb, 50, 0)
+      WHERE session_id LIKE 'filter-%'
+      ORDER BY session_id
+    `;
+    expect(metadataMatches.map((row) => row.session_id)).toEqual(["filter-target"]);
+  });
+
   it("cancels only the owned active search connection and closes completed requests safely", async () => {
     const admin = postgres(databaseUrl, { max: 1, onnotice: () => {} });
     const factory = createLiveSearchDbConnectionFactory({ databaseUrl });

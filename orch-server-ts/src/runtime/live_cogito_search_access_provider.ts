@@ -35,12 +35,16 @@ export function createLiveCogitoSearchAccessProvider(
       // The live search provider selects folder_id from its joined session row and
       // applies this same allow-list in every candidate SQL source. Rechecking
       // session ownership with one query per hit would run unbounded post-search work.
-      const filterSessionResult = (result: CogitoSearchResult): CogitoSearchResult | null => {
+      const filterSessionResult = (
+        result: CogitoSearchResult,
+        includeFolderId = false,
+      ): CogitoSearchResult | null => {
         const sessionId = resultSessionId(result);
         const folderId = resultFolderId(result);
         if (sessionId === null || folderId === null || !allowedFolderIds.has(folderId)) {
           return null;
         }
+        if (includeFolderId) return result;
         const { folder_id: _folderId, folderId: _folderIdAlias, ...publicResult } = result;
         return publicResult;
       };
@@ -54,7 +58,7 @@ export function createLiveCogitoSearchAccessProvider(
           ? {}
           : {
             session_results: response.session_results.flatMap((result) => {
-              const filtered = filterSessionResult(result);
+              const filtered = filterSessionResult(result, true);
               return filtered === null ? [] : [filtered];
             }),
           }),

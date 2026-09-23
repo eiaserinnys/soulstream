@@ -389,7 +389,7 @@ describe("session snapshot route harness", () => {
     await app.close();
   });
 
-  it("forwards metadata search, node, and status filters as one snapshot query", async () => {
+  it("forwards metadata search, node, status, backend, and date filters as one snapshot query", async () => {
     let captured: Record<string, unknown> | undefined;
     const app = createApp({
       config,
@@ -412,7 +412,8 @@ describe("session snapshot route harness", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/sessions?search=%20Alpha%20&node_id=node-a&status=running,waiting",
+      url: "/api/sessions?search=%20Alpha%20&node_id=node-a&status=running,waiting"
+        + "&backend=codex,claude&updated_after=2026-08-01T00%3A00%3A00.000Z",
     });
 
     expect(response.statusCode).toBe(200);
@@ -420,7 +421,13 @@ describe("session snapshot route harness", () => {
       search: "Alpha",
       node_id: "node-a",
       status: ["running", "waiting"],
+      backend: ["codex", "claude"],
+      updated_after: "2026-08-01T00:00:00.000Z",
     });
+    expect((await app.inject({
+      method: "GET",
+      url: "/api/sessions?updated_after=not-a-date",
+    })).statusCode).toBe(422);
     await app.close();
   });
 

@@ -5,6 +5,7 @@ import {
 
 import type { CogitoSearchParams } from "../cogito/cogito_routes.js";
 import type { SessionSearchCandidateRow } from "../search/session_search_projection.js";
+import type { SessionBackendCatalogEntry } from "./live_session_serialization.js";
 import type {
   LiveSearchPendingQuery,
   LiveSearchSql,
@@ -26,6 +27,7 @@ export type CandidateQueryInput = {
   };
   readonly deadlineAt: number;
   readonly includeSessionMetadataSearch: boolean;
+  readonly backendCatalog: readonly SessionBackendCatalogEntry[];
 };
 
 export async function loadCandidateRows(
@@ -40,8 +42,12 @@ export async function loadCandidateRows(
     activeQuery,
     deadlineAt,
     includeSessionMetadataSearch,
+    backendCatalog,
   } = input;
   const allowedFolderIds = params.allowedFolderIds ?? null;
+  const sessionFilters = params.session_filters;
+  const backendFilters = sessionFilters?.backends?.length ? sessionFilters.backends : null;
+  const backendCatalogJson = JSON.stringify(backendCatalog);
   if (variants.length === 0) return [];
   return await runSearchQuery(activeQuery, () => sql`
     WITH query_variants AS (
@@ -92,7 +98,14 @@ export async function loadCandidateRows(
             NULL,
             ${candidateLimit},
             ${eventTypes}::text[],
-            ${params.allowedFolderIds ?? null}::text[]
+            ${allowedFolderIds}::text[],
+            NULL,
+            0,
+            ${sessionFilters?.node_id ?? null}::text,
+            ${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[],
+            ${sessionFilters?.updated_after ?? null}::timestamptz,
+            ${backendFilters}::text[],
+            ${backendCatalogJson}::text::jsonb
           )
         ) event
         UNION ALL
@@ -109,7 +122,12 @@ export async function loadCandidateRows(
           query.query,
           ${eventTypes}::text[],
           ${candidateLimit},
-          ${params.allowedFolderIds ?? null}::text[]
+          ${allowedFolderIds}::text[],
+          ${sessionFilters?.node_id ?? null}::text,
+          ${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[],
+          ${sessionFilters?.updated_after ?? null}::timestamptz,
+          ${backendFilters}::text[],
+          ${backendCatalogJson}::text::jsonb
         ) session_match
         WHERE ${params.search_session_id}
         UNION ALL
@@ -142,6 +160,26 @@ export async function loadCandidateRows(
         WHERE matches.position > 0
           AND (${allowedFolderIds}::text[] IS NULL
             OR digest_session.folder_id = ANY(${allowedFolderIds}::text[]))
+          AND (${sessionFilters?.node_id ?? null}::text IS NULL
+            OR digest_session.node_id = ${sessionFilters?.node_id ?? null}::text)
+          AND (${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[] IS NULL
+            OR digest_session.status = ANY(${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[]))
+          AND (${sessionFilters?.updated_after ?? null}::timestamptz IS NULL
+            OR digest_session.updated_at >= ${sessionFilters?.updated_after ?? null}::timestamptz)
+          AND (${backendFilters}::text[] IS NULL OR COALESCE(
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(${backendCatalogJson}::text::jsonb) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'preset'
+               AND mapping.value->>'node_id' = digest_session.node_id
+               AND mapping.value->>'model_preset' = digest_session.model_preset
+             LIMIT 1),
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(${backendCatalogJson}::text::jsonb) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'agent'
+               AND mapping.value->>'node_id' = digest_session.node_id
+               AND mapping.value->>'agent_id' = digest_session.agent_id
+             LIMIT 1)
+          ) = ANY(${backendFilters}::text[]))
         ORDER BY score DESC, created_at DESC, session_id ASC
         LIMIT ${candidateLimit}
       ) hit
@@ -182,6 +220,26 @@ export async function loadCandidateRows(
         WHERE session_search_compact(query.query) <> ''
           AND (${allowedFolderIds}::text[] IS NULL
             OR candidate.folder_id = ANY(${allowedFolderIds}::text[]))
+          AND (${sessionFilters?.node_id ?? null}::text IS NULL
+            OR candidate.node_id = ${sessionFilters?.node_id ?? null}::text)
+          AND (${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[] IS NULL
+            OR candidate.status = ANY(${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[]))
+          AND (${sessionFilters?.updated_after ?? null}::timestamptz IS NULL
+            OR candidate.updated_at >= ${sessionFilters?.updated_after ?? null}::timestamptz)
+          AND (${backendFilters}::text[] IS NULL OR COALESCE(
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(${backendCatalogJson}::text::jsonb) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'preset'
+               AND mapping.value->>'node_id' = candidate.node_id
+               AND mapping.value->>'model_preset' = candidate.model_preset
+             LIMIT 1),
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(${backendCatalogJson}::text::jsonb) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'agent'
+               AND mapping.value->>'node_id' = candidate.node_id
+               AND mapping.value->>'agent_id' = candidate.agent_id
+             LIMIT 1)
+          ) = ANY(${backendFilters}::text[]))
           AND (candidate.display_name_search_key LIKE session_search_compact(query.query) || '%'
            OR candidate.prompt_search_key LIKE session_search_compact(query.query) || '%'
           )
@@ -225,7 +283,12 @@ export async function loadCandidateRows(
         ${eventTypes}::text[],
         ${params.allowedFolderIds ?? null}::text[],
         ${1},
-        ${candidateLimit}
+        ${candidateLimit},
+        ${sessionFilters?.node_id ?? null}::text,
+        ${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[],
+        ${sessionFilters?.updated_after ?? null}::timestamptz,
+        ${backendFilters}::text[],
+        ${backendCatalogJson}::text::jsonb
       ) candidate
       WHERE ${includeSessionMetadataSearch}
     )
@@ -243,7 +306,30 @@ export async function loadCandidateRows(
       hit.relevance_source,
       session.display_name,
       session.prompt AS session_prompt,
+      (SELECT mapping.value->>'agent_name'
+       FROM jsonb_array_elements(${backendCatalogJson}::text::jsonb) AS mapping(value)
+       WHERE mapping.value->>'kind' = 'agent'
+         AND mapping.value->>'node_id' = session.node_id
+         AND mapping.value->>'agent_id' = session.agent_id
+       LIMIT 1) AS agent_name,
+      session.review_required,
       session.folder_id,
+      session.node_id,
+      session.status,
+      COALESCE(
+        (SELECT mapping.value->>'backend'
+         FROM jsonb_array_elements(${backendCatalogJson}::text::jsonb) AS mapping(value)
+         WHERE mapping.value->>'kind' = 'preset'
+           AND mapping.value->>'node_id' = session.node_id
+           AND mapping.value->>'model_preset' = session.model_preset
+         LIMIT 1),
+        (SELECT mapping.value->>'backend'
+         FROM jsonb_array_elements(${backendCatalogJson}::text::jsonb) AS mapping(value)
+         WHERE mapping.value->>'kind' = 'agent'
+           AND mapping.value->>'node_id' = session.node_id
+           AND mapping.value->>'agent_id' = session.agent_id
+         LIMIT 1)
+      ) AS backend,
       session.caller_session_id AS parent_session_id,
       session.updated_at AS session_updated_at,
       linked_task.id AS task_id,

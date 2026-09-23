@@ -1999,6 +1999,21 @@ BEGIN
     IF p_filters IS NOT NULL AND p_filters ? 'review_state' THEN
         q := q || ' AND s.review_state = ' || quote_literal(p_filters->>'review_state');
     END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'updated_after' THEN
+        q := q || ' AND s.updated_at >= ($1->>''updated_after'')::timestamptz';
+    END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'backends' THEN
+        q := q || ' AND COALESCE(' ||
+            '(SELECT mapping.value->>''backend'' FROM jsonb_array_elements($1->''backend_catalog'') AS mapping(value) ' ||
+            'WHERE mapping.value->>''kind'' = ''preset'' ' ||
+            'AND mapping.value->>''node_id'' = s.node_id ' ||
+            'AND mapping.value->>''model_preset'' = s.model_preset LIMIT 1), ' ||
+            '(SELECT mapping.value->>''backend'' FROM jsonb_array_elements($1->''backend_catalog'') AS mapping(value) ' ||
+            'WHERE mapping.value->>''kind'' = ''agent'' ' ||
+            'AND mapping.value->>''node_id'' = s.node_id ' ||
+            'AND mapping.value->>''agent_id'' = s.agent_id LIMIT 1)' ||
+            ') IN (SELECT requested.backend FROM jsonb_array_elements_text($1->''backends'') AS requested(backend))';
+    END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'search' THEN
         q := q || ' AND (' ||
             'COALESCE(s.display_name, '''') ILIKE ' ||
@@ -2045,7 +2060,11 @@ BEGIN
         q := q || ' OFFSET ' || p_offset;
     END IF;
 
-    RETURN QUERY EXECUTE q;
+    IF p_filters IS NOT NULL AND (p_filters ? 'updated_after' OR p_filters ? 'backends') THEN
+        RETURN QUERY EXECUTE q USING p_filters;
+    ELSE
+        RETURN QUERY EXECUTE q;
+    END IF;
 END;
 $$;
 
@@ -2068,6 +2087,21 @@ BEGIN
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'review_state' THEN
         q := q || ' AND s.review_state = ' || quote_literal(p_filters->>'review_state');
+    END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'updated_after' THEN
+        q := q || ' AND s.updated_at >= ($1->>''updated_after'')::timestamptz';
+    END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'backends' THEN
+        q := q || ' AND COALESCE(' ||
+            '(SELECT mapping.value->>''backend'' FROM jsonb_array_elements($1->''backend_catalog'') AS mapping(value) ' ||
+            'WHERE mapping.value->>''kind'' = ''preset'' ' ||
+            'AND mapping.value->>''node_id'' = s.node_id ' ||
+            'AND mapping.value->>''model_preset'' = s.model_preset LIMIT 1), ' ||
+            '(SELECT mapping.value->>''backend'' FROM jsonb_array_elements($1->''backend_catalog'') AS mapping(value) ' ||
+            'WHERE mapping.value->>''kind'' = ''agent'' ' ||
+            'AND mapping.value->>''node_id'' = s.node_id ' ||
+            'AND mapping.value->>''agent_id'' = s.agent_id LIMIT 1)' ||
+            ') IN (SELECT requested.backend FROM jsonb_array_elements_text($1->''backends'') AS requested(backend))';
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'search' THEN
         q := q || ' AND (' ||
@@ -2095,7 +2129,11 @@ BEGIN
         q := q || ' AND COALESCE(session_type, ''claude'') != ''llm''';
     END IF;
 
-    EXECUTE q INTO result;
+    IF p_filters IS NOT NULL AND (p_filters ? 'updated_after' OR p_filters ? 'backends') THEN
+        EXECUTE q INTO result USING p_filters;
+    ELSE
+        EXECUTE q INTO result;
+    END IF;
     RETURN result;
 END;
 $$;
@@ -2577,6 +2615,7 @@ DROP FUNCTION IF EXISTS event_search(TEXT, TEXT[], INTEGER, TEXT[]);
 DROP FUNCTION IF EXISTS event_search(TEXT, TEXT[], INTEGER, TEXT[], TEXT[]);
 DROP FUNCTION IF EXISTS event_search(TEXT, TEXT[], INTEGER, TEXT[], TEXT[], INTEGER);
 DROP FUNCTION IF EXISTS event_search(TEXT, TEXT[], INTEGER, TEXT[], TEXT[], INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS event_search(TEXT, TEXT[], INTEGER, TEXT[], TEXT[], INTEGER, INTEGER, TEXT, TEXT[], TIMESTAMPTZ, TEXT[], JSONB);
 CREATE OR REPLACE FUNCTION event_search(
     p_query       TEXT,
     p_session_ids TEXT[] DEFAULT NULL,
@@ -2584,7 +2623,12 @@ CREATE OR REPLACE FUNCTION event_search(
     p_event_types TEXT[] DEFAULT NULL,
     p_allowed_folder_ids TEXT[] DEFAULT NULL,
     p_per_session_limit INTEGER DEFAULT NULL,
-    p_prefix_limit INTEGER DEFAULT 0
+    p_prefix_limit INTEGER DEFAULT 0,
+    p_node_id TEXT DEFAULT NULL,
+    p_statuses TEXT[] DEFAULT NULL,
+    p_updated_after TIMESTAMPTZ DEFAULT NULL,
+    p_backends TEXT[] DEFAULT NULL,
+    p_backend_catalog JSONB DEFAULT '[]'::jsonb
 ) RETURNS TABLE(
     id              INTEGER,
     session_id      TEXT,
@@ -2651,6 +2695,23 @@ CREATE OR REPLACE FUNCTION event_search(
           AND (p_event_types IS NULL OR e.event_type = ANY(p_event_types))
           AND (p_allowed_folder_ids IS NULL
                OR scoped_session.folder_id = ANY(p_allowed_folder_ids))
+          AND (p_node_id IS NULL OR scoped_session.node_id = p_node_id)
+          AND (p_statuses IS NULL OR scoped_session.status = ANY(p_statuses))
+          AND (p_updated_after IS NULL OR scoped_session.updated_at >= p_updated_after)
+          AND (p_backends IS NULL OR COALESCE(
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(p_backend_catalog) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'preset'
+               AND mapping.value->>'node_id' = scoped_session.node_id
+               AND mapping.value->>'model_preset' = scoped_session.model_preset
+             LIMIT 1),
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(p_backend_catalog) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'agent'
+               AND mapping.value->>'node_id' = scoped_session.node_id
+               AND mapping.value->>'agent_id' = scoped_session.agent_id
+             LIMIT 1)
+          ) = ANY(p_backends))
         GROUP BY e.id, e.session_id, e.event_type, e.created_at
     ),
     scored_candidates AS MATERIALIZED (
@@ -2697,6 +2758,23 @@ CREATE OR REPLACE FUNCTION event_search(
           AND (p_event_types IS NULL OR e.event_type = ANY(p_event_types))
           AND (p_allowed_folder_ids IS NULL
                OR scoped_session.folder_id = ANY(p_allowed_folder_ids))
+          AND (p_node_id IS NULL OR scoped_session.node_id = p_node_id)
+          AND (p_statuses IS NULL OR scoped_session.status = ANY(p_statuses))
+          AND (p_updated_after IS NULL OR scoped_session.updated_at >= p_updated_after)
+          AND (p_backends IS NULL OR COALESCE(
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(p_backend_catalog) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'preset'
+               AND mapping.value->>'node_id' = scoped_session.node_id
+               AND mapping.value->>'model_preset' = scoped_session.model_preset
+             LIMIT 1),
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(p_backend_catalog) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'agent'
+               AND mapping.value->>'node_id' = scoped_session.node_id
+               AND mapping.value->>'agent_id' = scoped_session.agent_id
+             LIMIT 1)
+          ) = ANY(p_backends))
           AND (p_prefix_limit > 0 OR p_limit IS NULL
                OR (SELECT count FROM exact_count) < p_limit)
           AND NOT EXISTS (
@@ -2739,11 +2817,17 @@ $$;
 
 DROP FUNCTION IF EXISTS session_id_search(TEXT, TEXT[], INTEGER);
 DROP FUNCTION IF EXISTS session_id_search(TEXT, TEXT[], INTEGER, TEXT[]);
+DROP FUNCTION IF EXISTS session_id_search(TEXT, TEXT[], INTEGER, TEXT[], TEXT, TEXT[], TIMESTAMPTZ, TEXT[], JSONB);
 CREATE OR REPLACE FUNCTION session_id_search(
     p_query       TEXT,
     p_event_types TEXT[] DEFAULT NULL,
     p_limit       INTEGER DEFAULT 50,
-    p_allowed_folder_ids TEXT[] DEFAULT NULL
+    p_allowed_folder_ids TEXT[] DEFAULT NULL,
+    p_node_id TEXT DEFAULT NULL,
+    p_statuses TEXT[] DEFAULT NULL,
+    p_updated_after TIMESTAMPTZ DEFAULT NULL,
+    p_backends TEXT[] DEFAULT NULL,
+    p_backend_catalog JSONB DEFAULT '[]'::jsonb
 ) RETURNS TABLE(
     id              INTEGER,
     session_id      TEXT,
@@ -2759,6 +2843,23 @@ CREATE OR REPLACE FUNCTION session_id_search(
         WHERE s.session_id ILIKE '%' || p_query || '%'
           AND (p_allowed_folder_ids IS NULL
                OR s.folder_id = ANY(p_allowed_folder_ids))
+          AND (p_node_id IS NULL OR s.node_id = p_node_id)
+          AND (p_statuses IS NULL OR s.status = ANY(p_statuses))
+          AND (p_updated_after IS NULL OR s.updated_at >= p_updated_after)
+          AND (p_backends IS NULL OR COALESCE(
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(p_backend_catalog) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'preset'
+               AND mapping.value->>'node_id' = s.node_id
+               AND mapping.value->>'model_preset' = s.model_preset
+             LIMIT 1),
+            (SELECT mapping.value->>'backend'
+             FROM jsonb_array_elements(p_backend_catalog) AS mapping(value)
+             WHERE mapping.value->>'kind' = 'agent'
+               AND mapping.value->>'node_id' = s.node_id
+               AND mapping.value->>'agent_id' = s.agent_id
+             LIMIT 1)
+          ) = ANY(p_backends))
         ORDER BY s.updated_at DESC
         LIMIT p_limit
     )

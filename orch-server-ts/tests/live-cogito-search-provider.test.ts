@@ -148,6 +148,48 @@ describe("live Cogito search provider", () => {
     }]);
   });
 
+  it("returns the lexical session projection without starting query expansion", async () => {
+    const harness = createSqlHarness((text) => text.includes("'session_metadata'::text AS event_type")
+      ? [{
+        id: null,
+        session_id: "lexical-session",
+        event_type: "session_metadata",
+        searchable_text: "검색 제목",
+        created_at: "2026-09-23T00:00:00.000Z",
+        score: 2,
+        match_source: "title",
+        display_name: "검색 제목",
+        session_prompt: "",
+        folder_id: "folder-a",
+        predecessor_session_id: null,
+        session_updated_at: "2026-09-23T00:00:00.000Z",
+        task_id: null,
+        task_title: null,
+      }]
+      : []);
+    const queryExpander = { expand: vi.fn() } as unknown as SearchQueryExpander;
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(harness.sql),
+      queryExpander,
+    });
+
+    const response = await provider.search({
+      q: "검색 제목",
+      top_k: 20,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      include_session_results: true,
+      session_search_mode: "lexical",
+    });
+
+    expect(response.session_results?.map((row) => row.session_id)).toEqual(["lexical-session"]);
+    expect(response.search_status?.query_expansion).toEqual({ status: "skipped", latency_ms: 0 });
+    expect(queryExpander.expand).not.toHaveBeenCalled();
+    expect(harness.calls.filter((call) => call.text.includes("event_search(")).length).toBe(1);
+  });
+
   it("does not query session ids when the option is disabled and keeps tools opt-in", async () => {
     const harness = createSqlHarness(() => []);
     const provider = createLiveCogitoSearchProvider({

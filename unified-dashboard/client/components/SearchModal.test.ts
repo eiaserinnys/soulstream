@@ -42,8 +42,11 @@ const searchHarness = vi.hoisted(() => ({
     search?: { status: "partial"; stage: "lexical" | "semantic" | "navigation"; reason: "timeout" | "cancelled" };
     query_expansion?: { status: "expanded" | "skipped" | "partial"; reason?: string; latency_ms: number };
   },
+  expansionPending: false,
+  expansionFailed: false,
   search: vi.fn(),
   clear: vi.fn(),
+  invalidate: vi.fn(),
   currentSearchFlowId: vi.fn(() => "search-flow-1"),
 }));
 
@@ -54,9 +57,12 @@ vi.mock("../hooks/useSessionSearch", () => ({
     sessionResults: searchHarness.sessionResults,
     searchStatus: searchHarness.searchStatus,
     loading: false,
+    expansionPending: searchHarness.expansionPending,
+    expansionFailed: searchHarness.expansionFailed,
     error: null,
     search: searchHarness.search,
     clear: searchHarness.clear,
+    invalidate: searchHarness.invalidate,
     currentSearchFlowId: searchHarness.currentSearchFlowId,
   }),
 }));
@@ -160,8 +166,11 @@ describe("SearchModal", () => {
     searchHarness.navigationResults = [];
     searchHarness.sessionResults = [];
     searchHarness.searchStatus = null;
+    searchHarness.expansionPending = false;
+    searchHarness.expansionFailed = false;
     searchHarness.search.mockReset();
     searchHarness.clear.mockReset();
+    searchHarness.invalidate.mockReset();
   });
 
   afterEach(() => {
@@ -322,6 +331,49 @@ describe("SearchModal", () => {
 
     expect(document.body.textContent).toContain("검색을 완료하지 못했습니다. 다시 검색해 주세요.");
     expect(document.body.textContent).not.toContain("검색 결과가 없습니다");
+  });
+
+  it("keeps lexical session results clickable while expanded search is pending", () => {
+    searchHarness.expansionPending = true;
+    searchHarness.sessionResults = [{
+      session_id: "lexical-session",
+      title: "Lexical hit",
+      excerpt: "First response",
+      updated_at: null,
+      task_id: null,
+      task_title: null,
+      parent_session_id: null,
+      best_match: { event_id: 12, match_source: "session_title", excerpt: "First response" },
+      evidence: [],
+      session_url: "/?session=lexical-session",
+    }];
+    const onOpenSession = vi.fn().mockResolvedValue(true);
+    ({ container, root } = renderSearchModal({ onOpenSession }));
+
+    expect(document.body.textContent).toContain("추가 검색 중…");
+    clickResult("First response");
+    expect(onOpenSession).toHaveBeenCalledWith("lexical-session", 12, undefined);
+  });
+
+  it("retains lexical rows and reports only the failed follow-up", () => {
+    searchHarness.expansionFailed = true;
+    searchHarness.sessionResults = [{
+      session_id: "lexical-session",
+      title: "Lexical hit",
+      excerpt: "First response",
+      updated_at: null,
+      task_id: null,
+      task_title: null,
+      parent_session_id: null,
+      best_match: { event_id: null, match_source: "session_title", excerpt: "First response" },
+      evidence: [],
+      session_url: "/?session=lexical-session",
+    }];
+    ({ container, root } = renderSearchModal());
+
+    expect(document.body.textContent).toContain("추가 검색을 마치지 못했습니다");
+    expect(document.body.textContent).toContain("Lexical hit");
+    expect(document.body.querySelectorAll('[data-testid="session-search-result"]')).toHaveLength(1);
   });
 
   it("query expansion 부분 실패도 완료된 0건으로 표시하지 않는다", () => {

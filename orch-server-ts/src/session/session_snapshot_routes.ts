@@ -27,6 +27,9 @@ export function registerSessionSnapshotRoutes(
   options: SessionSnapshotRouteOptions,
 ): void {
   app.get("/api/sessions", async (request, reply) => {
+    if (hasInvalidTimestamp(request.query, "updated_after")) {
+      return reply.code(422).send({ detail: "updated_after must be a valid timestamp" });
+    }
     const query = parseSessionSnapshotQuery(request.query);
     if ((query.session_ids?.length ?? 0) > SESSION_SNAPSHOT_MAX_TARGET_IDS) {
       return reply.code(422).send({
@@ -52,6 +55,8 @@ function parseSessionSnapshotQuery(query: unknown): SessionSnapshotQuery {
     search: trimmedStringQuery(query, "search"),
     node_id: stringQuery(query, "node_id"),
     status: stringArrayQuery(query, "status"),
+    backend: stringArrayQuery(query, "backend"),
+    updated_after: stringQuery(query, "updated_after"),
     feed_only: booleanQuery(query, "feed_only"),
     offset: numberQuery(query, "offset"),
     limit: numberQuery(query, "limit"),
@@ -96,10 +101,24 @@ function booleanQuery(query: unknown, key: string): boolean | undefined {
   return ["1", "true", "yes", "on"].includes(value.toLowerCase());
 }
 
+function hasInvalidTimestamp(query: unknown, key: string): boolean {
+  const raw = rawQueryValue(query, key);
+  if (raw === undefined) return false;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value !== "string" || value.length === 0 || !Number.isFinite(Date.parse(value));
+}
+
 function queryValue(query: unknown, key: string): unknown {
   if (typeof query !== "object" || query === null || !(key in query)) {
     return undefined;
   }
   const value = (query as Record<string, unknown>)[key];
   return Array.isArray(value) ? value[0] : value;
+}
+
+function rawQueryValue(query: unknown, key: string): unknown {
+  if (typeof query !== "object" || query === null || !(key in query)) {
+    return undefined;
+  }
+  return (query as Record<string, unknown>)[key];
 }
