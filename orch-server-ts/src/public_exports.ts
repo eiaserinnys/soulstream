@@ -55,6 +55,7 @@ export * from "./recurring-jobs/types.js";
 export * from "./recurring-jobs/repository.js";
 export * from "./recurring-jobs/service.js";
 export * from "./recurring-jobs/scheduler.js";
+export * from "./recurring-jobs/production_wiring.js";
 export * from "./recurring-jobs/recurring_job_routes.js";
 export * from "./recurring-jobs/recurring_job_host_routes.js";
 export * from "./tasks/task_routes.js";

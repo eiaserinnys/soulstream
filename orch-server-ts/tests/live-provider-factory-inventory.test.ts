@@ -42,6 +42,20 @@ describe("live provider factory inventory", () => {
     expect(result.extraFactoryProviderPaths).toEqual([extraPath]);
   });
 
+  it("rejects production-composition paths when claimed by the live factory", () => {
+    const productionPath = {
+      owner: "recurring.jobs",
+      path: "recurringJobRoutes.service",
+    };
+    const result = validateLiveProviderFactoryInventoryAlignment({
+      inventory: liveProviderWiringInventory,
+      factoryProviderPaths: [...liveFactoryImplementedProviderPaths, productionPath],
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.extraFactoryProviderPaths).toEqual([productionPath]);
+  });
+
   it("fails when inventory regresses a factory-provided path to blocked", () => {
     const blockedPath = { owner: "attachments", path: "attachmentRoutes.transport" };
     const regressedInventory = liveProviderWiringInventory.map((entry) =>
