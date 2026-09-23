@@ -326,6 +326,7 @@ describe("apply-schema.mjs", () => {
         ALTER TABLE tasks DROP CONSTRAINT tasks_task_page_id_fkey;
         ALTER TABLE folders DROP CONSTRAINT folders_project_page_id_fkey;
         DROP TABLE checklist_task_projection_outbox;
+        DROP TABLE IF EXISTS planner_starred_task_order;
         DROP TABLE block_links;
         DROP TABLE block_operations;
         DROP TABLE blocks;
