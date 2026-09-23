@@ -10,6 +10,15 @@ import type {
 
 export type AppServerJsonMessage = { [key: string]: unknown };
 
+export const DEFAULT_APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
+export const DEFAULT_APP_SERVER_STARTUP_TIMEOUT_MS = 120_000;
+
+const STARTUP_REQUEST_METHODS = new Set<CodexAppServerMethod>([
+  "initialize",
+  "thread/start",
+  "thread/resume",
+]);
+
 export interface AppServerTransport {
   send(message: AppServerJsonMessage): Promise<void>;
   onMessage(handler: (message: AppServerJsonMessage) => void): () => void;
@@ -20,6 +29,7 @@ export interface AppServerTransport {
 
 export interface JsonRpcAppServerClientOptions {
   requestTimeoutMs?: number;
+  startupRequestTimeoutMs?: number;
   idFactory?: () => AppServerRequestId;
 }
 
@@ -54,6 +64,7 @@ export class JsonRpcAppServerClient {
   private readonly errorHandlers = new Set<(error: Error) => void>();
   private readonly closeHandlers = new Set<(error?: Error) => void>();
   private readonly requestTimeoutMs: number;
+  private readonly startupRequestTimeoutMs: number;
   private readonly idFactory: () => AppServerRequestId;
   private closed = false;
   private nextId = 0;
@@ -62,7 +73,9 @@ export class JsonRpcAppServerClient {
     private readonly transport: AppServerTransport,
     options: JsonRpcAppServerClientOptions = {},
   ) {
-    this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_APP_SERVER_REQUEST_TIMEOUT_MS;
+    this.startupRequestTimeoutMs =
+      options.startupRequestTimeoutMs ?? DEFAULT_APP_SERVER_STARTUP_TIMEOUT_MS;
     this.idFactory = options.idFactory ?? (() => ++this.nextId);
     this.transport.onMessage((message) => this.handleMessage(message));
     this.transport.onError((error) => this.emitError(error));
@@ -89,16 +102,19 @@ export class JsonRpcAppServerClient {
 
     const id = this.idFactory();
     const payload: CodexAppServerRequest<M> = { id, method, params };
+    const timeoutMs = STARTUP_REQUEST_METHODS.has(method)
+      ? this.startupRequestTimeoutMs
+      : this.requestTimeoutMs;
     const promise = new Promise<CodexAppServerMethodMap[M]["result"]>(
       (resolve, reject) => {
         const timeout = setTimeout(() => {
           this.pending.delete(id);
           reject(
             new Error(
-              `Codex app-server request timed out after ${this.requestTimeoutMs}ms: ${method}`,
+              `Codex app-server request timed out after ${timeoutMs}ms: ${method}`,
             ),
           );
-        }, this.requestTimeoutMs);
+        }, timeoutMs);
         timeout.unref?.();
         this.pending.set(id, {
           resolve: resolve as (value: unknown) => void,

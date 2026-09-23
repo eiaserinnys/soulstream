@@ -91,6 +91,8 @@ export interface CodexAppServerAdapterConfig {
   client?: CodexAppServerClientPort;
   resolvedMcpServers?: ResolvedMcpServer[];
   codexDetachedResultRetentionMs?: number;
+  requestTimeoutMs?: number;
+  startupRequestTimeoutMs?: number;
 }
 
 export class CodexAppServerEngineAdapter implements EnginePort {
@@ -150,14 +152,12 @@ export class CodexAppServerEngineAdapter implements EnginePort {
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
     yield* sseEventsFromRunnerFrames(this.executeFrames(params));
   }
-
   async executeToFrameChannel(
     params: EngineExecuteParams,
     channel: InProcessRunnerFrameChannel,
   ): Promise<void> {
     for await (const frame of this.executeFrames(params)) await channel.emit(frame);
   }
-
   async *executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
     if (this.closed) {
       throw new Error("CodexAppServerEngineAdapter.execute called after close()");
@@ -427,7 +427,6 @@ export class CodexAppServerEngineAdapter implements EnginePort {
         queue.close();
       });
   }
-
   private createClient(
     config: CodexAppServerAdapterConfig,
     logger: Logger,
@@ -445,7 +444,10 @@ export class CodexAppServerEngineAdapter implements EnginePort {
       env,
       logger: logger as AppServerTransportLogger,
     });
-    return new CodexAppServerClient(transport);
+    return new CodexAppServerClient(transport, {
+      requestTimeoutMs: config.requestTimeoutMs,
+      startupRequestTimeoutMs: config.startupRequestTimeoutMs,
+    });
   }
 }
 
@@ -457,13 +459,11 @@ function fatalErrorPayload(error: Error): SSEEventPayload {
     timestamp: Date.now() / 1000,
   } as SSEEventPayload;
 }
-
 function isNoRolloutFoundResumeError(error: unknown): boolean {
   if (!(error instanceof AppServerRpcError)) return false;
   if (error.code !== -32600) return false;
   return error.message.toLowerCase().includes("no rollout found");
 }
-
 function mapSteerError(error: unknown): EngineInterventionResult {
   const message = error instanceof Error ? error.message : String(error);
   if (error instanceof AppServerRpcError && error.code === -32601) {

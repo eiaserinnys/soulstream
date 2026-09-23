@@ -232,6 +232,94 @@ describe("CodexAppServerClient typed methods", () => {
   });
 });
 
+describe("CodexAppServerClient request timeouts", () => {
+  const startupRequests: Array<{
+    method: string;
+    invoke: (client: CodexAppServerClient) => Promise<unknown>;
+  }> = [
+    {
+      method: "initialize",
+      invoke: (client) => client.initialize({
+        clientInfo: { name: "soul-server-ts", version: "0.0.1" },
+        capabilities: null,
+      }),
+    },
+    {
+      method: "thread/start",
+      invoke: (client) => client.startThread({
+        cwd: "/work",
+        runtimeWorkspaceRoots: ["/work"],
+        experimentalRawEvents: false,
+        persistExtendedHistory: false,
+      }),
+    },
+    {
+      method: "thread/resume",
+      invoke: (client) => client.resumeThread({
+        threadId: "thread-1",
+        persistExtendedHistory: false,
+      }),
+    },
+  ];
+
+  it.each(startupRequests)("uses the startup timeout for $method", async ({ method, invoke }) => {
+    vi.useFakeTimers();
+    try {
+      const transport = new FakeTransport();
+      const client = new CodexAppServerClient(transport, {
+        requestTimeoutMs: 30,
+        startupRequestTimeoutMs: 120,
+      });
+      const resultPromise = invoke(client);
+      const outcome = resultPromise.then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+      await vi.advanceTimersByTimeAsync(119);
+      expect(client.pendingRequestCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await expect(outcome).resolves.toMatchObject({
+        message: `Codex app-server request timed out after 120ms: ${method}`,
+      });
+      expect(client.pendingRequestCount).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the general request timeout for non-startup methods", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = new FakeTransport();
+      const client = new CodexAppServerClient(transport, {
+        requestTimeoutMs: 30,
+        startupRequestTimeoutMs: 120,
+      });
+      const resultPromise = client.startTurn({
+        threadId: "thread-1",
+        input: [{ type: "text", text: "hello", text_elements: [] }],
+      });
+      const outcome = resultPromise.then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+      await vi.advanceTimersByTimeAsync(29);
+      expect(client.pendingRequestCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await expect(outcome).resolves.toMatchObject({
+        message: "Codex app-server request timed out after 30ms: turn/start",
+      });
+      expect(client.pendingRequestCount).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("CodexAppServerClient inbound dispatch", () => {
   it("dispatches notifications and server-initiated requests", () => {
     const { client, transport } = createClient();

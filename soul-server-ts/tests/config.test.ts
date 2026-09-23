@@ -284,6 +284,31 @@ describe("parseEnv", () => {
     }
   });
 
+  it("Codex app-server timeouts have separate defaults and accept env overrides", () => {
+    expect(parseEnv(minimal)).toMatchObject({
+      CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: 30_000,
+      CODEX_APP_SERVER_STARTUP_TIMEOUT_MS: 120_000,
+    });
+    expect(parseEnv({
+      ...minimal,
+      CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: "45000",
+      CODEX_APP_SERVER_STARTUP_TIMEOUT_MS: "135000",
+    })).toMatchObject({
+      CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: 45_000,
+      CODEX_APP_SERVER_STARTUP_TIMEOUT_MS: 135_000,
+    });
+    for (const value of ["0", "-1", "1.5"]) {
+      expect(() => parseEnv({
+        ...minimal,
+        CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: value,
+      })).toThrow(ZodError);
+      expect(() => parseEnv({
+        ...minimal,
+        CODEX_APP_SERVER_STARTUP_TIMEOUT_MS: value,
+      })).toThrow(ZodError);
+    }
+  });
+
   it("CODEX_CLI_PATH는 default 없이 명시된 값만 사용한다", () => {
     expect(parseEnv(minimal).CODEX_CLI_PATH).toBeUndefined();
     const env = parseEnv({

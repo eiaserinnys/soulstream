@@ -6,6 +6,10 @@ import {
   assertRunnerStateDirectoryCompatible,
 } from "./runner/runner_process_paths.js";
 import { internalMcpPath } from "./mcp/endpoint_paths.js";
+import {
+  DEFAULT_APP_SERVER_REQUEST_TIMEOUT_MS,
+  DEFAULT_APP_SERVER_STARTUP_TIMEOUT_MS,
+} from "./engine/codex_app_server/transport.js";
 
 /**
  * 환경 변수 스키마. design-principles §4(명시적 실패) — 필수 키 default 없음.
@@ -51,6 +55,12 @@ export const EnvSchema = z
      * app-server adapter는 실험 경로라 명시 opt-in에서만 사용한다.
      */
     CODEX_ADAPTER_MODE: z.enum(["sdk", "app-server"]).default("sdk"),
+    /** JSON-RPC deadline for ordinary Codex app-server requests. */
+    CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive()
+      .default(DEFAULT_APP_SERVER_REQUEST_TIMEOUT_MS),
+    /** Longer JSON-RPC deadline for initialize, thread/start, and thread/resume. */
+    CODEX_APP_SERVER_STARTUP_TIMEOUT_MS: z.coerce.number().int().positive()
+      .default(DEFAULT_APP_SERVER_STARTUP_TIMEOUT_MS),
     /** Process-runner grace period for terminal results from detached Codex commands. */
     CODEX_DETACHED_RESULT_RETENTION_MS: z.coerce
       .number().int().positive().default(1_800_000),

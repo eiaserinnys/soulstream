@@ -21,6 +21,8 @@ const sessionStore: SessionStore = {
 };
 const factoryEnv = {
   CODEX_ADAPTER_MODE: "sdk" as const,
+  CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: 30_000,
+  CODEX_APP_SERVER_STARTUP_TIMEOUT_MS: 120_000,
   CLAUDE_SESSION_RUNTIME_V2_ENABLED: false,
   MCP_INTERNAL_PORT: 4206,
   MCP_PATH: "/mcp",

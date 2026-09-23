@@ -28,8 +28,8 @@ vi.mock("../../../src/engine/codex_app_server/client.js", () => ({
     }
   },
   CodexAppServerClient: class MockCodexAppServerClient {
-    constructor(transport: unknown) {
-      mockClientCtor(transport);
+    constructor(transport: unknown, options: unknown) {
+      mockClientCtor(transport, options);
     }
     onNotification() {
       return () => undefined;
@@ -80,6 +80,8 @@ describe("CodexAppServerEngineAdapter env", () => {
             [SOULSTREAM_AGENT_ID_ENV]: "wrong-agent",
             [AGENT_COMMON_FILES_DIR_ENV]: "/tmp/wrong-common",
           },
+          requestTimeoutMs: 45_000,
+          startupRequestTimeoutMs: 135_000,
         },
         pino({ level: "silent" }),
       );
@@ -93,7 +95,10 @@ describe("CodexAppServerEngineAdapter env", () => {
       expect(options.env[SCRATCH_WORKSPACE_DIR_ENV]).toBe("/tmp/right-app-server-work");
       expect(options.env[SOULSTREAM_AGENT_ID_ENV]).toBe("app-server-agent");
       expect(options.env[AGENT_COMMON_FILES_DIR_ENV]).toBe("/srv/agent-common");
-      expect(mockClientCtor).toHaveBeenCalledWith({ kind: "mock-transport" });
+      expect(mockClientCtor).toHaveBeenCalledWith(
+        { kind: "mock-transport" },
+        { requestTimeoutMs: 45_000, startupRequestTimeoutMs: 135_000 },
+      );
     });
   });
 });

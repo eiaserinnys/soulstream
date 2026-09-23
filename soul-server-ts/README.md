@@ -76,6 +76,8 @@ cp .env.soul-server-ts.example .env.soul-server-ts
 | `CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS` | `300000` | Idle Query reclamation delay. |
 | `CLAUDE_SESSION_RUNTIME_MAX_ENTRIES` | `16` | Worker-local persistent Query cap. |
 | `CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS` | `1200000` | Foreground Claude turn inactivity timeout. |
+| `CODEX_APP_SERVER_REQUEST_TIMEOUT_MS` | `30000` | JSON-RPC timeout for ordinary Codex app-server requests. |
+| `CODEX_APP_SERVER_STARTUP_TIMEOUT_MS` | `120000` | JSON-RPC timeout for Codex app-server initialize, thread/start, and thread/resume. |
 | `CODEX_DETACHED_RESULT_RETENTION_MS` | `1800000` | Process-runner grace period for a detached Codex command's terminal result. |
 
 Codex commands that outlive their root turn keep their process runner while
