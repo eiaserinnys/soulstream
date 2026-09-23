@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,21 +5,14 @@ import dotenv from "dotenv";
 
 import { verifyCentralSchemaPrerequisite } from
   "./verify-central-schema-prerequisite.mjs";
+import { runReleaseBuild } from "./release-build-child.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const envFile = optionValue(process.argv.slice(2), "--env-file");
-const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const result = spawnSync(command, ["run", "build"], {
-  cwd: packageRoot,
-  env: {
-    ...process.env,
-    SOULSTREAM_RELEASE_ENV_FILE: resolve(envFile),
-  },
-  stdio: "inherit",
+runReleaseBuild({
+  packageRoot,
+  envFile,
 });
-
-if (result.error) throw result.error;
-if (result.status !== 0) process.exit(result.status ?? 1);
 
 const declaredEnv = dotenv.parse(await readFile(resolve(envFile), "utf8"));
 const upstreamUrl = declaredEnv.SOULSTREAM_UPSTREAM_URL;
