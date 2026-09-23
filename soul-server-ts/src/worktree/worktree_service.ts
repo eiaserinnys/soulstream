@@ -326,25 +326,42 @@ export class WorktreeService implements WorktreeExecutionResolver {
     let record = initialRecord;
     try {
       await this.options.lock.withLock(commonDirectory, async () => {
-        if (!existsSync(record.canonicalPath)) {
-          if (!record.branchDeleteExpectedSha) {
+        this.assertWorkspaceUnused(record.canonicalPath);
+        const workspaceState = await this.options.git.removalWorkspaceState({
+          repoId: record.repoId,
+          path: record.canonicalPath,
+          worktreeId: record.worktreeIdentity,
+          branch: record.branch,
+          expectedSha: record.branchDeleteExpectedSha,
+        });
+        if (workspaceState !== "registered") {
+          const expectedSha = record.branchDeleteExpectedSha;
+          if (!expectedSha) {
             throw new WorktreeServiceError(
               "WORKTREE_REMOVAL_HEAD_UNRECORDED",
-              "The worktree path disappeared before its branch HEAD was durably recorded",
+              "The worktree registration disappeared before its branch HEAD was durably recorded",
             );
           }
           record = await this.options.host.beginRemove({
             ...input,
-            expectedSha: record.branchDeleteExpectedSha,
+            expectedSha,
           });
-          await this.options.git.pruneMissingWorktree({
-            repoId: record.repoId,
-            path: record.canonicalPath,
-            worktreeId: record.worktreeIdentity,
-          });
+          if (workspaceState === "registered_missing") {
+            await this.options.git.pruneMissingWorktree({
+              repoId: record.repoId,
+              path: record.canonicalPath,
+              worktreeId: record.worktreeIdentity,
+            });
+          } else {
+            await this.options.git.finishPartialRemoval({
+              repoId: record.repoId,
+              path: record.canonicalPath,
+              branch: record.branch,
+              expectedSha,
+            });
+          }
           return;
         }
-        this.assertWorkspaceUnused(record.canonicalPath);
         const dirty = await this.options.git.inspectDirty(
           record.canonicalPath,
           record.managedPaths.map((managed) => managed.path),

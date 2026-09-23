@@ -5,8 +5,10 @@ import {
   rmSync,
   readFileSync,
   realpathSync,
+  rmdirSync,
   statSync,
   symlinkSync,
+  type Stats,
   writeFileSync,
 } from "node:fs";
 
@@ -54,6 +56,12 @@ export interface WorktreeDirtyState {
   untracked: string[];
   ignored: string[];
 }
+
+export type WorktreeRemovalWorkspaceState =
+  | "registered"
+  | "registered_missing"
+  | "unregistered_missing"
+  | "unregistered_empty";
 
 export class WorktreeGit {
   private readonly projectsRoot: string;
@@ -277,6 +285,112 @@ export class WorktreeGit {
     }
   }
 
+  async removalWorkspaceState(input: {
+    repoId: string;
+    path: string;
+    worktreeId: string;
+    branch: string;
+    expectedSha: string | null;
+  }): Promise<WorktreeRemovalWorkspaceState> {
+    const repo = this.resolveRepository(input.repoId);
+    const path = resolve(input.path);
+    this.assertPathInsideProjectsRoot(path);
+    const registration = await this.rawRegistration(repo, path);
+    const pathStat = lstatIfPresent(path);
+    if (registration) {
+      const admin = await this.registrationAdmin(input.repoId, path);
+      if (admin?.identity !== input.worktreeId) {
+        throw new WorktreeGitError(
+          "WORKTREE_IDENTITY_CHANGED",
+          `Expected worktree ${input.worktreeId}, found ${admin?.identity || "unmanaged"}`,
+        );
+      }
+      if (!pathStat) {
+        this.assertRecordedRemovalHead(input.expectedSha);
+        if (registration.branch !== input.branch) {
+          throw new WorktreeGitError(
+            "WORKTREE_BRANCH_MISMATCH",
+            `${registration.branch ?? "detached"} != ${input.branch}`,
+          );
+        }
+        if (registration.head !== input.expectedSha) {
+          throw new WorktreeGitError(
+            "WORKTREE_HEAD_CHANGED",
+            `${registration.head} != ${input.expectedSha}`,
+          );
+        }
+        await this.assertBranchHead(input.repoId, input.branch, input.expectedSha);
+        return "registered_missing";
+      }
+      if (!pathStat.isDirectory() || pathStat.isSymbolicLink()) {
+        throw new WorktreeGitError(
+          "WORKTREE_UNAVAILABLE",
+          `Registered worktree path is not a directory: ${path}`,
+        );
+      }
+      const privateGitDirectory = await this.privateGitDirectory(path);
+      if (!samePath(privateGitDirectory, admin.path)) {
+        throw new WorktreeGitError(
+          "WORKTREE_IDENTITY_CHANGED",
+          `Registered worktree metadata changed for ${path}`,
+        );
+      }
+      return "registered";
+    }
+    this.assertRecordedRemovalHead(input.expectedSha);
+    await this.assertBranchHead(input.repoId, input.branch, input.expectedSha);
+    if (!pathStat) return "unregistered_missing";
+    this.assertEmptyRemovalResidue(path, pathStat);
+    return "unregistered_empty";
+  }
+
+  async finishPartialRemoval(input: {
+    repoId: string;
+    path: string;
+    branch: string;
+    expectedSha: string;
+  }): Promise<void> {
+    const repo = this.resolveRepository(input.repoId);
+    const path = resolve(input.path);
+    this.assertPathInsideProjectsRoot(path);
+    if (await this.rawRegistration(repo, path)) {
+      throw new WorktreeGitError(
+        "WORKTREE_REGISTRATION_CHANGED",
+        `Worktree registration reappeared for ${path}`,
+      );
+    }
+    await this.assertBranchHead(input.repoId, input.branch, input.expectedSha);
+    const before = lstatIfPresent(path);
+    if (!before) return;
+    this.assertEmptyRemovalResidue(path, before);
+
+    // Recheck all mutable identities immediately before removing only the empty leaf directory.
+    if (await this.rawRegistration(repo, path)) {
+      throw new WorktreeGitError(
+        "WORKTREE_REGISTRATION_CHANGED",
+        `Worktree registration reappeared for ${path}`,
+      );
+    }
+    await this.assertBranchHead(input.repoId, input.branch, input.expectedSha);
+    const current = lstatIfPresent(path);
+    if (!current || current.dev !== before.dev || current.ino !== before.ino) {
+      throw new WorktreeGitError(
+        "WORKTREE_PARTIAL_REMOVE_RESIDUE",
+        `Worktree residue changed during removal: ${path}`,
+      );
+    }
+    this.assertEmptyRemovalResidue(path, current);
+    try {
+      rmdirSync(path);
+    } catch (error) {
+      throw new WorktreeGitError(
+        "WORKTREE_PARTIAL_REMOVE_CLEANUP_FAILED",
+        `Could not remove the verified empty worktree residue: ${path}`,
+        error,
+      );
+    }
+  }
+
   async pruneMissingWorktree(input: {
     repoId: string;
     path: string;
@@ -457,7 +571,10 @@ export class WorktreeGit {
 
   async inspectDirty(path: string, managedPaths: string[]): Promise<WorktreeDirtyState> {
     this.assertPathInsideProjectsRoot(path);
+    const privateGitDirectory = await this.privateGitDirectory(path);
+    const exactWorktree = ["--git-dir", privateGitDirectory, "--work-tree", resolve(path)];
     const status = (await this.git(path, [
+      ...exactWorktree,
       "status",
       "--porcelain=v1",
       "-z",
@@ -473,6 +590,7 @@ export class WorktreeGit {
       else tracked.push(file);
     }
     const ignored = (await this.git(path, [
+      ...exactWorktree,
       "ls-files",
       "--others",
       "--ignored",
@@ -542,8 +660,107 @@ export class WorktreeGit {
   }
 
   private async privateGitDirectory(worktree: string): Promise<string> {
-    const raw = (await this.git(worktree, ["rev-parse", "--git-dir"])).stdout.trim();
+    const dotGit = join(worktree, ".git");
+    const stat = lstatIfPresent(dotGit);
+    if (!stat || stat.isSymbolicLink()) {
+      throw new WorktreeGitError("WORKTREE_UNAVAILABLE", `Missing .git metadata: ${worktree}`);
+    }
+    if (stat.isDirectory()) return realpathSync(dotGit);
+    if (!stat.isFile()) {
+      throw new WorktreeGitError("WORKTREE_UNAVAILABLE", `Invalid .git metadata: ${worktree}`);
+    }
+    const match = /^gitdir:\s*(.+)\s*$/u.exec(readFileSync(dotGit, "utf8").trim());
+    if (!match) {
+      throw new WorktreeGitError("WORKTREE_UNAVAILABLE", `Invalid .git metadata: ${worktree}`);
+    }
+    const raw = match[1]!;
     return realpathSync(isAbsolute(raw) ? raw : resolve(worktree, raw));
+  }
+
+  private async rawRegistration(repo: string, path: string): Promise<{
+    head: string;
+    branch?: string;
+  } | undefined> {
+    const output = (await this.git(repo, ["worktree", "list", "--porcelain"])).stdout;
+    const matches = output.trim().split(/\n\n+/).filter(Boolean).flatMap((block) => {
+      const fields = new Map<string, string>();
+      for (const line of block.split("\n")) {
+        const space = line.indexOf(" ");
+        fields.set(space < 0 ? line : line.slice(0, space), space < 0 ? "" : line.slice(space + 1));
+      }
+      const rawPath = fields.get("worktree");
+      const head = fields.get("HEAD");
+      if (!rawPath || !head || !samePath(rawPath, path)) return [];
+      const branchRef = fields.get("branch");
+      return [{
+        head,
+        ...(branchRef ? { branch: branchRef.replace(/^refs\/heads\//, "") } : {}),
+      }];
+    });
+    if (matches.length > 1) {
+      throw new WorktreeGitError("WORKTREE_REGISTRATION_CHANGED", `Duplicate registration: ${path}`);
+    }
+    return matches[0];
+  }
+
+  private async registrationAdmin(repoId: string, path: string): Promise<{
+    path: string;
+    identity?: string;
+  } | undefined> {
+    const commonDirectory = await this.commonDirectory(repoId);
+    const adminRoot = join(commonDirectory, "worktrees");
+    if (!existsSync(adminRoot)) return undefined;
+    const matches: Array<{ path: string; identity?: string }> = [];
+    for (const admin of readdirSync(adminRoot, { withFileTypes: true })) {
+      if (!admin.isDirectory()) continue;
+      const adminPath = join(adminRoot, admin.name);
+      const gitdirFile = join(adminPath, "gitdir");
+      if (!existsSync(gitdirFile)) continue;
+      const registeredPath = resolve(readFileSync(gitdirFile, "utf8").trim(), "..");
+      if (!samePath(registeredPath, path)) continue;
+      const marker = join(adminPath, IDENTITY_FILE);
+      matches.push({
+        path: adminPath,
+        ...(existsSync(marker)
+          ? { identity: readFileSync(marker, "utf8").trim() || undefined }
+          : {}),
+      });
+    }
+    if (matches.length > 1) {
+      throw new WorktreeGitError("WORKTREE_REGISTRATION_CHANGED", `Duplicate admin entry: ${path}`);
+    }
+    return matches[0];
+  }
+
+  private assertRecordedRemovalHead(expectedSha: string | null): asserts expectedSha is string {
+    if (!expectedSha) {
+      throw new WorktreeGitError(
+        "WORKTREE_REMOVAL_HEAD_UNRECORDED",
+        "The worktree registration disappeared before its branch HEAD was durably recorded",
+      );
+    }
+  }
+
+  private async assertBranchHead(repoId: string, branch: string, expectedSha: string): Promise<void> {
+    const branchHead = await this.branchHead(repoId, branch);
+    if (branchHead !== expectedSha) {
+      throw new WorktreeGitError(
+        "WORKTREE_HEAD_CHANGED",
+        `${branchHead ?? "missing"} != ${expectedSha}`,
+      );
+    }
+  }
+
+  private assertEmptyRemovalResidue(
+    path: string,
+    stat: Stats,
+  ): void {
+    if (stat.isSymbolicLink() || !stat.isDirectory() || readdirSync(path).length !== 0) {
+      throw new WorktreeGitError(
+        "WORKTREE_PARTIAL_REMOVE_RESIDUE",
+        `Partial worktree removal left files or a non-directory at ${path}; preserve it and retry after manual inspection`,
+      );
+    }
   }
 
   private async readIdentity(worktree: string): Promise<string | undefined> {
@@ -621,6 +838,15 @@ export class WorktreeGit {
 
 function rethrowProcessTimeout(error: unknown): void {
   if (error instanceof GitProcessError && error.code === "PROCESS_TIMEOUT") throw error;
+}
+
+function lstatIfPresent(path: string): Stats | undefined {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
 }
 
 function isPathInside(root: string, candidate: string): boolean {

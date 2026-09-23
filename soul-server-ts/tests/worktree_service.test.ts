@@ -1,7 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -329,6 +338,40 @@ describe("WorktreeService", () => {
     expect(host.records.get(String(created.worktreeId))?.state).toBe("removed");
   });
 
+  it("preserves a stale registration when its branch ref changed", async () => {
+    const { repo, service, host } = fixture();
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/missing-path-ref-changed",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    });
+    rmSync(String(created.path), { recursive: true, force: true });
+    const record = host.records.get(String(created.worktreeId))!;
+    host.records.set(record.id, {
+      ...record,
+      branchDeleteExpectedSha: String(created.head),
+    });
+    writeFileSync(join(repo, "new-head.txt"), "new head\n");
+    git(repo, "add", "new-head.txt");
+    git(repo, "commit", "-m", "advance base for stale registration");
+    git(
+      repo,
+      "update-ref",
+      "refs/heads/feature/missing-path-ref-changed",
+      git(repo, "rev-parse", "HEAD"),
+    );
+
+    await expect(service.remove({
+      actorSessionId: "owner",
+      worktreeId: String(created.worktreeId),
+    })).rejects.toMatchObject({ code: "WORKTREE_HEAD_CHANGED" });
+    expect(git(repo, "worktree", "list", "--porcelain")).toContain(String(created.path));
+    expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
+  });
+
   it("recovers an identified worktree when Git succeeded before DB registration failed", async () => {
     const { service, host } = fixture();
     host.registerFailuresRemaining = 1;
@@ -377,6 +420,152 @@ describe("WorktreeService", () => {
       worktreeId: String(created.worktreeId),
     })).resolves.toMatchObject({ removed: true });
     expect(host.records.get(String(created.worktreeId))?.state).toBe("removed");
+  });
+
+  it("finishes a partial removal without falling back to an ancestor repository", async () => {
+    const { projectsRoot, repo, service, host } = fixture();
+    git(projectsRoot, "init", "-b", "outer");
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/partial-remove-empty",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    });
+    const path = String(created.path);
+    git(repo, "worktree", "remove", path);
+    mkdirSync(path);
+    const record = host.records.get(String(created.worktreeId))!;
+    host.records.set(record.id, {
+      ...record,
+      branchDeleteExpectedSha: String(created.head),
+    });
+
+    await expect(service.remove({
+      actorSessionId: "owner",
+      worktreeId: String(created.worktreeId),
+    })).resolves.toMatchObject({ removed: true });
+    expect(existsSync(path)).toBe(false);
+    expect(host.records.get(String(created.worktreeId))?.state).toBe("removed");
+    expect(git(repo, "rev-parse", "refs/heads/feature/partial-remove-empty"))
+      .toBe(created.head);
+  });
+
+  it("preserves nonempty and dangling-symlink partial removal residues", async () => {
+    for (const residue of ["nonempty", "dangling-symlink"] as const) {
+      const { projectsRoot, repo, service, host } = fixture();
+      const created = await service.create({
+        actorSessionId: "owner",
+        repoId: "demo",
+        branch: `feature/partial-remove-${residue}`,
+        mode: "new",
+        setup: "none",
+        requireSetup: false,
+      });
+      const path = String(created.path);
+      git(repo, "worktree", "remove", path);
+      if (residue === "nonempty") {
+        mkdirSync(path);
+        writeFileSync(join(path, "preserve.txt"), "user data\n");
+      } else {
+        symlinkSync(join(projectsRoot, "missing-target"), path);
+      }
+      const record = host.records.get(String(created.worktreeId))!;
+      host.records.set(record.id, {
+        ...record,
+        branchDeleteExpectedSha: String(created.head),
+      });
+
+      await expect(service.remove({
+        actorSessionId: "owner",
+        worktreeId: String(created.worktreeId),
+      })).rejects.toMatchObject({ code: "WORKTREE_PARTIAL_REMOVE_RESIDUE" });
+      expect(lstatSync(path)).toBeDefined();
+      if (residue === "nonempty") {
+        expect(existsSync(join(path, "preserve.txt"))).toBe(true);
+      } else {
+        expect(lstatSync(path).isSymbolicLink()).toBe(true);
+      }
+      expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
+    }
+  });
+
+  it("preserves an unregistered residue without a durable removal HEAD", async () => {
+    const { repo, service, host } = fixture();
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/partial-remove-unrecorded",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    });
+    const path = String(created.path);
+    git(repo, "worktree", "remove", path);
+    mkdirSync(path);
+
+    await expect(service.remove({
+      actorSessionId: "owner",
+      worktreeId: String(created.worktreeId),
+    })).rejects.toMatchObject({ code: "WORKTREE_REMOVAL_HEAD_UNRECORDED" });
+    expect(existsSync(path)).toBe(true);
+    expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
+  });
+
+  it("preserves an unregistered residue when the branch ref was reused", async () => {
+    const { repo, service, host } = fixture();
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/partial-remove-ref-reused",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    });
+    const path = String(created.path);
+    git(repo, "worktree", "remove", path);
+    mkdirSync(path);
+    writeFileSync(join(repo, "after.txt"), "new base head\n");
+    git(repo, "add", "after.txt");
+    git(repo, "commit", "-m", "advance base");
+    git(repo, "branch", "-f", "feature/partial-remove-ref-reused", "HEAD");
+    const record = host.records.get(String(created.worktreeId))!;
+    host.records.set(record.id, {
+      ...record,
+      branchDeleteExpectedSha: String(created.head),
+    });
+
+    await expect(service.remove({
+      actorSessionId: "owner",
+      worktreeId: String(created.worktreeId),
+    })).rejects.toMatchObject({ code: "WORKTREE_HEAD_CHANGED" });
+    expect(existsSync(path)).toBe(true);
+    expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
+  });
+
+  it("preserves a registered worktree whose durable identity changed", async () => {
+    const { repo, service, host } = fixture();
+    const created = await service.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/remove-identity-changed",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    });
+    const privateGitDirectory = resolve(
+      String(created.path),
+      git(String(created.path), "rev-parse", "--git-dir"),
+    );
+    writeFileSync(join(privateGitDirectory, "soulstream-worktree-id"), "different-id\n");
+
+    await expect(service.remove({
+      actorSessionId: "owner",
+      worktreeId: String(created.worktreeId),
+    })).rejects.toMatchObject({ code: "WORKTREE_IDENTITY_CHANGED" });
+    expect(existsSync(String(created.path))).toBe(true);
+    expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
   });
 
   it("lists an out-of-root Git worktree as external without trying to mutate or inspect it", async () => {
