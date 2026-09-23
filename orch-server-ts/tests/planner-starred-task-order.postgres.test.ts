@@ -147,10 +147,15 @@ describe("starred task ordering PostgreSQL contract", () => {
     malformedIdentity.blocks[0]!.type = "runbook_ref";
     delete malformedIdentity.blocks[0]!.properties.taskId;
     malformedIdentity.blocks[0]!.properties.runbookId = 123;
+    const malformedWhitespaceIdentity = makeReplica("malformed-whitespace-identity", true);
+    malformedWhitespaceIdentity.blocks[0]!.type = "runbook_ref";
+    delete malformedWhitespaceIdentity.blocks[0]!.properties.taskId;
+    malformedWhitespaceIdentity.blocks[0]!.properties.runbookId = "\t";
     for (const [id, replica] of [
       ["malformed-primary", malformedPrimary],
       ["malformed-starred", malformedStarred],
       ["malformed-identity", malformedIdentity],
+      ["malformed-whitespace-identity", malformedWhitespaceIdentity],
     ] as const) {
       await repository.storePageYjsState({
         documentName: `page:${id}`,
@@ -168,7 +173,8 @@ describe("starred task ordering PostgreSQL contract", () => {
 
     await harness.sql`
       INSERT INTO planner_starred_task_order (page_id, position)
-      VALUES ('malformed-primary', 0), ('malformed-starred', 1), ('malformed-identity', 2)
+      VALUES ('malformed-primary', 0), ('malformed-starred', 1), ('malformed-identity', 2),
+        ('malformed-whitespace-identity', 3)
     `;
     await expect(listStarredTasks(harness.liveSql, { limit: 10 }))
       .resolves.toMatchObject({ items: [] });
@@ -176,7 +182,12 @@ describe("starred task ordering PostgreSQL contract", () => {
       .resolves.toMatchObject({ items: [] });
 
     const planner = new PlannerRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
-    for (const id of ["malformed-primary", "malformed-starred", "malformed-identity"]) {
+    for (const id of [
+      "malformed-primary",
+      "malformed-starred",
+      "malformed-identity",
+      "malformed-whitespace-identity",
+    ]) {
       await expect(planner.moveStarredTask({ pageId: id, beforePageId: null }))
         .rejects.toBeInstanceOf(PlannerStarredTaskMembershipConflictError);
     }

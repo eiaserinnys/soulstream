@@ -66,10 +66,10 @@ export async function listStarredTasks(
             WHEN 'task_ref' THEN b.properties->'taskId'
             WHEN 'runbook_ref' THEN b.properties->'runbookId'
           END) = 'string'
-          AND NULLIF(BTRIM(CASE b.block_type
+          AND planner_starred_task_identity_trim(CASE b.block_type
             WHEN 'task_ref' THEN b.properties->>'taskId'
             WHEN 'runbook_ref' THEN b.properties->>'runbookId'
-          END), '') IS NOT NULL
+          END) IS NOT NULL
       )
       AND (
         ${cursorPosition}::text IS NULL

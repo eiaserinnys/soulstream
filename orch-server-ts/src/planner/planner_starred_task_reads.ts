@@ -29,8 +29,8 @@ export async function listFullStarredTasks(
       JOIN pages page ON page.id = ordering.page_id
       JOIN LATERAL (
         SELECT CASE block.block_type
-                 WHEN 'task_ref' THEN NULLIF(BTRIM(block.properties->>'taskId'), '')
-                 WHEN 'runbook_ref' THEN NULLIF(BTRIM(block.properties->>'runbookId'), '')
+                 WHEN 'task_ref' THEN planner_starred_task_identity_trim(block.properties->>'taskId')
+                 WHEN 'runbook_ref' THEN planner_starred_task_identity_trim(block.properties->>'runbookId')
                END AS task_id
         FROM blocks block
         WHERE block.page_id = page.id
@@ -40,10 +40,10 @@ export async function listFullStarredTasks(
             WHEN 'task_ref' THEN block.properties->'taskId'
             WHEN 'runbook_ref' THEN block.properties->'runbookId'
           END) = 'string'
-          AND NULLIF(BTRIM(CASE block.block_type
+          AND planner_starred_task_identity_trim(CASE block.block_type
             WHEN 'task_ref' THEN block.properties->>'taskId'
             WHEN 'runbook_ref' THEN block.properties->>'runbookId'
-          END), '') IS NOT NULL
+          END) IS NOT NULL
         ORDER BY CASE block.block_type WHEN 'task_ref' THEN 0 ELSE 1 END,
                  block.position_key,
                  block.id

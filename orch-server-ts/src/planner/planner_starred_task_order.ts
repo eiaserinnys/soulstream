@@ -99,10 +99,10 @@ export async function moveStarredTaskOrder(
               WHEN 'task_ref' THEN block.properties->'taskId'
               WHEN 'runbook_ref' THEN block.properties->'runbookId'
             END) = 'string'
-            AND NULLIF(BTRIM(CASE block.block_type
+            AND planner_starred_task_identity_trim(CASE block.block_type
               WHEN 'task_ref' THEN block.properties->>'taskId'
               WHEN 'runbook_ref' THEN block.properties->>'runbookId'
-            END), '') IS NOT NULL
+            END) IS NOT NULL
         )
     `;
     const source = activeRows.find((row) => row.page_id === input.pageId);
@@ -128,10 +128,10 @@ export async function moveStarredTaskOrder(
               WHEN 'task_ref' THEN block.properties->'taskId'
               WHEN 'runbook_ref' THEN block.properties->'runbookId'
             END) = 'string'
-            AND NULLIF(BTRIM(CASE block.block_type
+            AND planner_starred_task_identity_trim(CASE block.block_type
               WHEN 'task_ref' THEN block.properties->>'taskId'
               WHEN 'runbook_ref' THEN block.properties->>'runbookId'
-            END), '') IS NOT NULL
+            END) IS NOT NULL
         )
       ORDER BY ordering.position, ordering.page_id
     `;
