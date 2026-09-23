@@ -30,7 +30,11 @@ import {
   isStarredPlannerPageCurrent,
   mergeStarredPlannerTasks,
 } from "./starred-planner-collection";
-import { isStarredTaskRefreshCurrent, isStarredTaskRequestCurrent } from "./starred-task-order";
+import {
+  isStarredTaskRefreshCurrent,
+  isStarredTaskRequestCurrent,
+  isStarredTaskSnapshotCurrent,
+} from "./starred-task-order";
 import {
   movePlannerSession,
   removePlannerSessions,
@@ -90,15 +94,17 @@ export function usePlannerCollections({
     let active = true;
     const refreshKey = refreshKeys.starred;
     const orderRevision = starredOrderRevisionRef.current;
+    const hadCurrentSnapshot = isStarredTaskSnapshotCurrent({
+      loadedRefreshKey: starredLoadedRefreshKeyRef.current,
+      expectedRefreshKey: refreshKey,
+      currentRefreshKey: starredRefreshKeyRef.current,
+      expectedOrderRevision: orderRevision,
+      currentOrderRevision: starredOrderRevisionRef.current,
+    });
     starredLoadedRefreshKeyRef.current = null;
     setStarredLoadedRefreshKey(null);
     const previous = starredTaskIndexRef.current.data;
-    setStarredTaskIndex((current) => {
-      const loading = beginPlannerLoad(current);
-      return loading.data
-        ? { ...loading, data: { ...loading.data, nextCursor: null } }
-        : loading;
-    });
+    setStarredTaskIndex(beginPlannerLoad);
     void loadConfirmedResult({
       previous,
       load: () => loadStarredTasks(dependencies, {}),
@@ -126,6 +132,20 @@ export function usePlannerCollections({
         expectedOrderRevision: orderRevision,
         currentOrderRevision: starredOrderRevisionRef.current,
       })) {
+        if (hadCurrentSnapshot || isStarredTaskSnapshotCurrent({
+          loadedRefreshKey: starredLoadedRefreshKeyRef.current,
+          expectedRefreshKey: refreshKey,
+          currentRefreshKey: starredRefreshKeyRef.current,
+          expectedOrderRevision: orderRevision,
+          currentOrderRevision: starredOrderRevisionRef.current,
+        })) {
+          starredLoadedRefreshKeyRef.current = refreshKey;
+          setStarredLoadedRefreshKey(refreshKey);
+          setStarredTaskIndex((current) => current.data
+            ? completePlannerLoad(current, current.data)
+            : current);
+          return;
+        }
         starredLoadedRefreshKeyRef.current = null;
         setStarredLoadedRefreshKey(null);
         const message = errorText(error);

@@ -57,6 +57,17 @@ export function isStarredTaskRequestCurrent(input: {
     && input.expectedOrderRevision === input.currentOrderRevision;
 }
 
+export function isStarredTaskSnapshotCurrent(input: {
+  loadedRefreshKey: number | null;
+  expectedRefreshKey: number;
+  currentRefreshKey: number;
+  expectedOrderRevision: number;
+  currentOrderRevision: number;
+}): boolean {
+  return isStarredTaskRefreshCurrent(input.loadedRefreshKey, input.currentRefreshKey)
+    && isStarredTaskRequestCurrent(input);
+}
+
 export function isStarredTaskRefreshCurrent(
   loadedRefreshKey: number | null,
   currentRefreshKey: number,

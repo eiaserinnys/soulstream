@@ -5,6 +5,7 @@ import {
   isStarredTaskBoundaryCurrent,
   isStarredTaskRequestCurrent,
   isStarredTaskRefreshCurrent,
+  isStarredTaskSnapshotCurrent,
   reconcileStarredTaskOrderReloadFailure,
   resolveStarredTaskBoundaryPageId,
   resolveStarredTaskBeforePageId,
@@ -92,6 +93,20 @@ describe("starred task order boundaries", () => {
     expect(isStarredTaskRefreshCurrent(null, 5)).toBe(false);
     expect(isStarredTaskRefreshCurrent(4, 5)).toBe(false);
     expect(isStarredTaskRefreshCurrent(5, 5)).toBe(true);
+  });
+
+  it("preserves a loaded snapshot after a failed retry only within its refresh and order revision", () => {
+    const current = {
+      loadedRefreshKey: 7,
+      expectedRefreshKey: 7,
+      currentRefreshKey: 7,
+      expectedOrderRevision: 3,
+      currentOrderRevision: 3,
+    };
+    expect(isStarredTaskSnapshotCurrent(current)).toBe(true);
+    expect(isStarredTaskSnapshotCurrent({ ...current, loadedRefreshKey: null })).toBe(false);
+    expect(isStarredTaskSnapshotCurrent({ ...current, currentRefreshKey: 8 })).toBe(false);
+    expect(isStarredTaskSnapshotCurrent({ ...current, currentOrderRevision: 4 })).toBe(false);
   });
 
   it("reloads the first page after a failed save so optimistic order can roll back", async () => {
