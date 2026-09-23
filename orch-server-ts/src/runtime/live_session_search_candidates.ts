@@ -240,8 +240,14 @@ export async function loadCandidateRows(
                AND mapping.value->>'agent_id' = candidate.agent_id
              LIMIT 1)
           ) = ANY(${backendFilters}::text[]))
-          AND (candidate.display_name_search_key LIKE session_search_compact(query.query) || '%'
-           OR candidate.prompt_search_key LIKE session_search_compact(query.query) || '%'
+          AND (
+            (session_search_index_prefix(candidate.display_name_search_key)
+              LIKE session_search_index_prefix(session_search_compact(query.query)) || '%'
+             AND candidate.display_name_search_key LIKE session_search_compact(query.query) || '%')
+            OR
+            (session_search_index_prefix(candidate.prompt_search_key)
+              LIKE session_search_index_prefix(session_search_compact(query.query)) || '%'
+             AND candidate.prompt_search_key LIKE session_search_compact(query.query) || '%')
           )
         ORDER BY
           (candidate.display_name_search_key = session_search_compact(query.query)
