@@ -16,10 +16,17 @@ describe("useNodes source policy", () => {
 
   it("marks node state ready only after the first snapshot, not when the socket opens", () => {
     const source = readFileSync(SOURCE_PATH, "utf8");
-    const onOpen = source.match(/es\.onopen = \(\) => \{([\s\S]*?)\n      \};/)?.[1] ?? "";
+    const onOpen = source.match(/connection\.onopen = \(\) => \{([\s\S]*?)\n      \};/)?.[1] ?? "";
     const snapshot = source.match(/addEventListener\("snapshot", \(e\) => \{([\s\S]*?)\n      \}\);/)?.[1] ?? "";
 
     expect(onOpen).not.toContain('setConnectionStatus("connected")');
     expect(snapshot).toContain('setConnectionStatus("connected")');
+  });
+
+  it("ignores named server error messages when checking stream authentication", () => {
+    const source = readFileSync(SOURCE_PATH, "utf8");
+    const onError = source.match(/connection\.onerror = \((.*?)\) => \{([\s\S]*?)\n      \};/);
+    expect(onError).not.toBeNull();
+    expect(onError?.[2]).toContain(`${onError?.[1]} instanceof MessageEvent`);
   });
 });

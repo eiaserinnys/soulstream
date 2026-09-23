@@ -20,9 +20,9 @@ interface LoginProps {
 }
 
 export function buildGoogleAuthUrl(
-  location: Pick<Location, "pathname" | "hash">,
+  location: Pick<Location, "pathname" | "search" | "hash">,
 ): string {
-  const returnTo = `${location.pathname}${location.hash}`;
+  const returnTo = `${location.pathname}${location.search}${location.hash}`;
   return returnTo && returnTo !== "/"
     ? `/api/auth/google?return_to=${encodeURIComponent(returnTo)}`
     : "/api/auth/google";

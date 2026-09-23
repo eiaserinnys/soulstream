@@ -29,4 +29,15 @@ describe("v3 session request policy", () => {
     );
     expect(layoutSource).toMatch(/reviewCount=\{reviewSessions\.length\}/);
   });
+
+  it("passes the auth status recheck to the V3 catalog stream", () => {
+    const layoutSource = readFileSync(LAYOUT_PATH, "utf8");
+    const planeSource = readFileSync(LIVE_PLANE_PATH, "utf8");
+
+    expect(planeSource).toMatch(/onConnectionError\??:/);
+    expect(planeSource).toMatch(/useSessionListProvider\s*\(\{[\s\S]*?onConnectionError,/);
+    expect(layoutSource).toMatch(
+      /useV3LiveDataPlane\s*\(\{[\s\S]*?onConnectionError:\s*handleStreamConnectionError/,
+    );
+  });
 });

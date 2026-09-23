@@ -79,6 +79,8 @@ export interface UseSessionListProviderOptions {
   onStreamEvent?: (event: SessionStreamEvent) => void;
   /** stream 불연속으로 query refetch가 필요할 때 상위 plane도 재검증한다. */
   onStreamReset?: () => void;
+  /** 실제 catalog stream 연결 오류에서 인증 상태를 다시 확인한다. */
+  onConnectionError?: () => void;
   /** 현재 surface가 scoped catalog를 소유할 때만 projection을 반환한다. */
   transformCatalogUpdate?: (
     incoming: CatalogState,
@@ -104,6 +106,7 @@ export function useSessionListProvider(
     sessionIds,
     onStreamEvent,
     onStreamReset,
+    onConnectionError,
     transformCatalogUpdate,
   } = options;
 
@@ -257,6 +260,7 @@ export function useSessionListProvider(
     onSessionDeleted: (event) => {
       getSessionProvider().detailCursorStore?.deleteSession(event.agent_session_id);
     },
+    onConnectionError,
     onStreamMeta: (e) => {
       const update = reconcileStreamMeta(e, {
         instanceId: instanceIdRef.current,

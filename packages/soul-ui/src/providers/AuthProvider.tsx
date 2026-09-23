@@ -4,7 +4,7 @@
  * /api/auth/config에서 authEnabled, devModeEnabled를 확인합니다.
  * - authEnabled: false → 인증 없이 접근 허용 (isAuthenticated: true)
  * - authEnabled: true → /api/auth/status로 인증 상태 확인
- * 서버 통신 실패 시 폴백으로 isAuthenticated: true (접근 허용)
+ * 서버 통신 실패 시 인증을 거부해 로그인 화면으로 보냅니다.
  *
  * 쿠키는 same-origin 요청에서 자동으로 전송되므로,
  * 별도의 Authorization 헤더 없이 인증이 동작합니다.
@@ -16,6 +16,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react";
 import { clearAllDetailCursorStores } from "./detail-cursor-store";
@@ -54,6 +55,38 @@ export interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function shouldRecheckAuth(input: RequestInfo | URL): boolean {
+  if (typeof window === "undefined") return false;
+
+  let url: URL;
+  try {
+    const requestUrl = typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input.url;
+    url = new URL(requestUrl, window.location.origin);
+  } catch {
+    return false;
+  }
+
+  return url.origin === window.location.origin
+    && url.pathname.startsWith("/api/")
+    && url.pathname !== "/api/auth/config"
+    && url.pathname !== "/api/auth/status";
+}
+
+function readAuthenticatedStatus(status: unknown): boolean {
+  if (typeof status !== "object" || status === null) {
+    throw new Error("Invalid auth status response");
+  }
+  const authenticated = (status as { authenticated?: unknown }).authenticated;
+  if (typeof authenticated !== "boolean") {
+    throw new Error("Invalid auth status response");
+  }
+  return authenticated;
+}
+
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
@@ -70,13 +103,38 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [devModeEnabled, setDevModeEnabled] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const isAuthenticatedRef = useRef(false);
+  const authRejectedRef = useRef(false);
+  const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const lifecycleGenerationRef = useRef(0);
+  const isProviderMountedRef = useRef(false);
 
-  const refreshAuthStatus = useCallback(async () => {
-    const res = await fetch("/api/auth/status", { credentials: "same-origin" });
-    if (!res.ok) throw new Error(`Auth status check failed: ${res.status}`);
-    const status = await res.json();
-    setIsAuthenticated(status.authenticated);
-    setUser(status.user ?? null);
+  const refreshAuthStatus = useCallback(() => {
+    if (!isProviderMountedRef.current) return Promise.resolve();
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+    const generation = lifecycleGenerationRef.current;
+
+    const request = (async () => {
+      const res = await fetch("/api/auth/status", { credentials: "same-origin" });
+      if (!res.ok) throw new Error(`Auth status check failed: ${res.status}`);
+      const status = await res.json();
+      if (!isProviderMountedRef.current || lifecycleGenerationRef.current !== generation) return;
+      const authenticated = readAuthenticatedStatus(status);
+
+      if (!authenticated && isAuthenticatedRef.current) {
+        clearAllDetailCursorStores();
+      }
+      isAuthenticatedRef.current = authenticated;
+      authRejectedRef.current = !authenticated;
+      setIsAuthenticated(authenticated);
+      setUser(status.user ?? null);
+    })();
+
+    const promise = request.finally(() => {
+      if (refreshPromiseRef.current === promise) refreshPromiseRef.current = null;
+    });
+    refreshPromiseRef.current = promise;
+    return promise;
   }, []);
 
   const logout = useCallback(async () => {
@@ -86,6 +144,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     });
     if (!res.ok) throw new Error(`Logout failed: ${res.status}`);
     clearAllDetailCursorStores();
+    isAuthenticatedRef.current = false;
+    authRejectedRef.current = true;
     setIsAuthenticated(false);
     setUser(null);
   }, []);
@@ -109,6 +169,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     let isMounted = true;
+    const generation = ++lifecycleGenerationRef.current;
+    isProviderMountedRef.current = true;
+    const originalFetch = globalThis.fetch;
+    const observedFetch: typeof fetch = async (input, init) => {
+      const response = await originalFetch.call(globalThis, input, init);
+      if (isMounted && response.status === 401 && !authRejectedRef.current && shouldRecheckAuth(input)) {
+        // A transient failure in the status check must not log the user out.
+        void refreshAuthStatus().catch(() => undefined);
+      }
+      return response;
+    };
+    globalThis.fetch = observedFetch;
 
     async function initialize() {
       try {
@@ -133,10 +205,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
           const status = await statusRes.json();
 
           if (!isMounted) return;
-          setIsAuthenticated(status.authenticated);
+          const authenticated = readAuthenticatedStatus(status);
+          isAuthenticatedRef.current = authenticated;
+          authRejectedRef.current = !isAuthenticatedRef.current;
+          setIsAuthenticated(authenticated);
           setUser(status.user ?? null);
         } else {
           // 인증 비활성 → 바이패스 (로그인 없이 접근)
+          isAuthenticatedRef.current = true;
+          authRejectedRef.current = false;
           setIsAuthenticated(true);
           setUser(null);
         }
@@ -144,6 +221,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // 통신 실패 시 폴백: 접근 거부 (fail-closed)
         console.error("Auth initialization failed:", err);
         if (isMounted) {
+          isAuthenticatedRef.current = false;
+          authRejectedRef.current = true;
           setIsAuthenticated(false);
         }
       } finally {
@@ -157,8 +236,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     return () => {
       isMounted = false;
+      isProviderMountedRef.current = false;
+      if (lifecycleGenerationRef.current === generation) lifecycleGenerationRef.current += 1;
+      refreshPromiseRef.current = null;
+      if (globalThis.fetch === observedFetch) globalThis.fetch = originalFetch;
     };
-  }, []);
+  }, [refreshAuthStatus]);
 
   return (
     <AuthContext.Provider

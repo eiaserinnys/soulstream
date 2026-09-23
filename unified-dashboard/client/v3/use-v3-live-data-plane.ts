@@ -23,9 +23,11 @@ import {
 export function useV3LiveDataPlane({
   sessionIds,
   pageIds,
+  onConnectionError,
 }: {
   sessionIds: readonly string[];
   pageIds: readonly (string | null | undefined)[];
+  onConnectionError?: () => void;
 }) {
   const catalog = useDashboardStore((state) => state.catalog);
   const pendingSessionList = useRef<SessionListStreamEvent | null>(null);
@@ -78,6 +80,7 @@ export function useV3LiveDataPlane({
     streamEnabled: true,
     initialCatalogLoadEnabled: false,
     folderCountsEnabled: false,
+    onConnectionError,
     onStreamEvent: (event) => {
       acceptV3SessionStreamEvent(event);
       if (event.type === "stream_meta") {

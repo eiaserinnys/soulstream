@@ -86,12 +86,15 @@ function V3DashboardContent() {
   }, []);
   useEffect(() => { initTheme(); }, []);
   const { user, refreshAuthStatus } = useAuth();
+  const handleStreamConnectionError = useCallback(() => {
+    void refreshAuthStatus().catch(() => undefined);
+  }, [refreshAuthStatus]);
   const { toast, notify, notifyWriteFailure } = useV3Notifications(refreshAuthStatus);
   useUserPreferencesSync(user?.email ?? null);
   useInitialCatalogLoad(true);
   useReadPositionSync();
   useNotification(true);
-  useNodes();
+  useNodes(handleStreamConnectionError);
   const mobileMode = useMobilePlannerMode();
   const catalog = useDashboardStore((state) => state.catalog);
   const catalogSessions = catalog?.sessionList ?? [];
@@ -215,6 +218,7 @@ function V3DashboardContent() {
   } = useV3LiveDataPlane({
     sessionIds: plannerSessionIds,
     pageIds: [daily.data?.daily.page.id, selectedProjectId, ...currentTasks.map((task) => task.page.id), ...starredTasks.map((task) => starredTaskPage(task).id)],
+    onConnectionError: handleStreamConnectionError,
   });
   const runSessionResolution = useMemo(() => resolveRunSessions({
     sessionIds: plannerSessionIds,
@@ -230,6 +234,7 @@ function V3DashboardContent() {
     getSessionProvider: () => orchestratorSessionProvider,
     active: detailActive,
     cursorScope,
+    onConnectionError: handleStreamConnectionError,
   });
   const historyEnabled = detailActive && synchronizedSessionKey === activeSessionKey;
   const mobileTaskOptions = useMemo(

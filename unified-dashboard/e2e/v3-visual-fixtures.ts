@@ -561,6 +561,7 @@ export async function installV3VisualQaRoutes(
     const path = url.pathname;
 
     if (path === "/api/auth/config") return fulfillJson(route, { authEnabled: false, devModeEnabled: false });
+    if (path === "/api/auth/status") return fulfillJson(route, { authenticated: true, user: null });
     if (path === "/api/config") return fulfillJson(route, {
       mode: "orchestrator",
       nodeId: null,

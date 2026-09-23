@@ -107,6 +107,8 @@ export interface UseSessionStreamCacheSyncOptions {
   onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
   /** 모든 stream event의 타입별 캐시 처리가 끝난 뒤 호출한다. */
   onStreamEvent?: (event: SessionStreamEvent) => void;
+  /** 실제 catalog stream 연결 오류에서 인증 상태를 다시 확인한다. */
+  onConnectionError?: () => void;
   /** scoped surface가 catalog projection을 제한할 때만 결과를 반환한다. */
   transformCatalogUpdate?: (
     incoming: CatalogState,
@@ -132,6 +134,7 @@ export function useSessionStreamCacheSync(
     onSessionDeleted: onSessionDeletedOption,
     onCustomViewUpdated: onCustomViewUpdatedOption,
     onStreamEvent,
+    onConnectionError,
     transformCatalogUpdate,
   } = options;
   const queryClient = useQueryClient();
@@ -702,6 +705,7 @@ export function useSessionStreamCacheSync(
     onStreamMeta,
     onReplayGap,
     onEvent: observeStreamEvent,
+    onConnectionError,
   });
   return hydrateSessionSnapshots;
 }

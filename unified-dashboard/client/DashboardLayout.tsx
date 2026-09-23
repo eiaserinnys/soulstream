@@ -54,7 +54,10 @@ import { FeedView } from "./components/FeedView";
 import { getSessionProvider } from "./providers";
 
 export function DashboardLayout() {
-  const { user } = useAuth();
+  const { user, refreshAuthStatus } = useAuth();
+  const handleStreamConnectionError = useCallback(() => {
+    void refreshAuthStatus().catch(() => undefined);
+  }, [refreshAuthStatus]);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
@@ -76,6 +79,7 @@ export function DashboardLayout() {
   const { folderCounts, hasMore, loadMore, sessions } = useSessionListProvider({
     intervalMs: 5000,
     getSessionProvider,
+    onConnectionError: handleStreamConnectionError,
   });
   const {
     hasMore: feedHasMore,
@@ -97,6 +101,7 @@ export function DashboardLayout() {
     getSessionProvider,
     active: detailActive,
     cursorScope,
+    onConnectionError: handleStreamConnectionError,
   });
   const historyEnabled = detailActive && synchronizedSessionKey === activeSessionKey;
 

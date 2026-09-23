@@ -9,7 +9,7 @@ import { useEffect, useRef } from "react";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import type { OrchestratorNode } from "../store/orchestrator-store";
 
-export function useNodes() {
+export function useNodes(onConnectionError?: () => void) {
   const { setNode, removeNode, setNodes, setConnectionStatus } =
     useOrchestratorStore();
   const retryRef = useRef(0);
@@ -20,35 +20,42 @@ export function useNodes() {
 
     function connect() {
       if (disposed) return;
-      es = new EventSource("/api/nodes/stream");
+      const connection = new EventSource("/api/nodes/stream");
+      es = connection;
 
-      es.onopen = () => {
+      connection.onopen = () => {
         retryRef.current = 0;
       };
 
-      es.addEventListener("snapshot", (e) => {
+      connection.addEventListener("snapshot", (e) => {
         const nodes: OrchestratorNode[] = JSON.parse(e.data);
         setNodes(nodes);
         setConnectionStatus("connected");
       });
 
-      es.addEventListener("node_connected", (e) => {
+      connection.addEventListener("node_connected", (e) => {
         const node: OrchestratorNode = JSON.parse(e.data);
         setNode(node);
       });
 
-      es.addEventListener("node_disconnected", (e) => {
+      connection.addEventListener("node_disconnected", (e) => {
         const { nodeId } = JSON.parse(e.data);
         removeNode(nodeId);
       });
 
-      es.addEventListener("node_updated", (e) => {
+      connection.addEventListener("node_updated", (e) => {
         const node: OrchestratorNode = JSON.parse(e.data);
         setNode(node);
       });
 
-      es.onerror = () => {
-        es?.close();
+      connection.onerror = (event) => {
+        if (disposed || es !== connection || event instanceof MessageEvent) return;
+        try {
+          onConnectionError?.();
+        } catch (error) {
+          console.error("[Nodes SSE] Connection error callback failed:", error);
+        }
+        connection.close();
         setConnectionStatus("error");
         // Exponential backoff reconnect
         const delay = Math.min(1000 * 2 ** retryRef.current, 30000);
@@ -63,5 +70,5 @@ export function useNodes() {
       disposed = true;
       es?.close();
     };
-  }, [setNode, removeNode, setNodes, setConnectionStatus]);
+  }, [onConnectionError, setNode, removeNode, setNodes, setConnectionStatus]);
 }
