@@ -55,13 +55,17 @@ export async function listStarredTasks(
     JOIN pages p ON p.id = ordering.page_id
     WHERE p.archived = FALSE
       AND p.daily_date IS NULL
-      AND COALESCE((p.metadata->>'starred')::boolean, FALSE)
+      AND p.metadata->'starred' = 'true'::jsonb
       AND EXISTS (
         SELECT 1
         FROM blocks b
         WHERE b.page_id = p.id
           AND b.block_type IN ('task_ref', 'runbook_ref')
-          AND COALESCE((b.properties->>'primary')::boolean, FALSE)
+          AND b.properties->'primary' = 'true'::jsonb
+          AND jsonb_typeof(CASE b.block_type
+            WHEN 'task_ref' THEN b.properties->'taskId'
+            WHEN 'runbook_ref' THEN b.properties->'runbookId'
+          END) = 'string'
           AND NULLIF(BTRIM(CASE b.block_type
             WHEN 'task_ref' THEN b.properties->>'taskId'
             WHEN 'runbook_ref' THEN b.properties->>'runbookId'

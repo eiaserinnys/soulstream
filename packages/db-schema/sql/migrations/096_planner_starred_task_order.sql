@@ -14,13 +14,17 @@ FROM (
     FROM pages page
     WHERE page.archived = FALSE
       AND page.daily_date IS NULL
-      AND COALESCE((page.metadata->>'starred')::boolean, FALSE)
+      AND page.metadata->'starred' = 'true'::jsonb
       AND EXISTS (
         SELECT 1
         FROM blocks block
         WHERE block.page_id = page.id
           AND block.block_type IN ('task_ref', 'runbook_ref')
-          AND COALESCE((block.properties->>'primary')::boolean, FALSE)
+          AND block.properties->'primary' = 'true'::jsonb
+          AND jsonb_typeof(CASE block.block_type
+            WHEN 'task_ref' THEN block.properties->'taskId'
+            WHEN 'runbook_ref' THEN block.properties->'runbookId'
+          END) = 'string'
           AND NULLIF(BTRIM(CASE block.block_type
             WHEN 'task_ref' THEN block.properties->>'taskId'
             WHEN 'runbook_ref' THEN block.properties->>'runbookId'

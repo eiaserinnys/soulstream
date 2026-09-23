@@ -10,6 +10,7 @@ import {
   PlannerStarredTaskMembershipConflictError,
 } from "../src/planner/planner_starred_task_order.js";
 import { PageRepository } from "../src/page/page_repository.js";
+import type { PageYjsReplica } from "../src/page/page_yjs_model.js";
 import {
   createPagePostgresHarness,
   type PagePostgresHarness,
@@ -134,6 +135,51 @@ describe("starred task ordering PostgreSQL contract", () => {
       replica: makeReplica("member-b", true),
     });
     await expect(orderedPageIds()).resolves.toEqual(["member-a", "member-b"]);
+  });
+
+  it("keeps invalid JSON membership types out of backfill, reads, and moves", async () => {
+    await resetDatabase();
+    const malformedPrimary = makeReplica("malformed-primary", true);
+    malformedPrimary.blocks[0]!.properties.primary = "true";
+    const malformedStarred = makeReplica("malformed-starred", true);
+    malformedStarred.page.metadata.starred = "true";
+    const malformedIdentity = makeReplica("malformed-identity", true);
+    malformedIdentity.blocks[0]!.type = "runbook_ref";
+    delete malformedIdentity.blocks[0]!.properties.taskId;
+    malformedIdentity.blocks[0]!.properties.runbookId = 123;
+    for (const [id, replica] of [
+      ["malformed-primary", malformedPrimary],
+      ["malformed-starred", malformedStarred],
+      ["malformed-identity", malformedIdentity],
+    ] as const) {
+      await repository.storePageYjsState({
+        documentName: `page:${id}`,
+        snapshot: new Uint8Array([id.length]),
+        replica,
+      });
+    }
+
+    const migration = await readFile(
+      new URL("../../packages/db-schema/sql/migrations/096_planner_starred_task_order.sql", import.meta.url),
+      "utf8",
+    );
+    await harness.sql.unsafe(migration);
+    await expect(orderedPageIds()).resolves.toEqual([]);
+
+    await harness.sql`
+      INSERT INTO planner_starred_task_order (page_id, position)
+      VALUES ('malformed-primary', 0), ('malformed-starred', 1), ('malformed-identity', 2)
+    `;
+    await expect(listStarredTasks(harness.liveSql, { limit: 10 }))
+      .resolves.toMatchObject({ items: [] });
+    await expect(listFullStarredTasks(harness.liveSql, { limit: 10 }))
+      .resolves.toMatchObject({ items: [] });
+
+    const planner = new PlannerRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
+    for (const id of ["malformed-primary", "malformed-starred", "malformed-identity"]) {
+      await expect(planner.moveStarredTask({ pageId: id, beforePageId: null }))
+        .rejects.toBeInstanceOf(PlannerStarredTaskMembershipConflictError);
+    }
   });
 
   it("rolls back snapshot, page, block, and order projection together", async () => {
@@ -282,7 +328,7 @@ function makeReplica(
   id: string,
   starred: boolean,
   options: { archived?: boolean; title?: string; blockId?: string } = {},
-) {
+): PageYjsReplica {
   return {
     page: {
       id,
