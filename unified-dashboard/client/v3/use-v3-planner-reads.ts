@@ -30,7 +30,7 @@ import {
   isStarredPlannerPageCurrent,
   mergeStarredPlannerTasks,
 } from "./starred-planner-collection";
-import { isStarredTaskRefreshCurrent } from "./starred-task-order";
+import { isStarredTaskRefreshCurrent, isStarredTaskRequestCurrent } from "./starred-task-order";
 import {
   movePlannerSession,
   removePlannerSessions,
@@ -78,6 +78,7 @@ export function usePlannerCollections({
   const starredTaskIndexRef = useRef(starredTaskIndex);
   const starredRefreshKeyRef = useRef(refreshKeys.starred);
   const starredLoadedRefreshKeyRef = useRef<number | null>(null);
+  const starredOrderRevisionRef = useRef(0);
   const stableProjectsRef = useRef<PageDto[]>([]);
   const stableStarredTasksRef = useRef<StarredPlannerTask[]>([]);
   dailyRef.current = daily;
@@ -88,6 +89,7 @@ export function usePlannerCollections({
   useEffect(() => {
     let active = true;
     const refreshKey = refreshKeys.starred;
+    const orderRevision = starredOrderRevisionRef.current;
     starredLoadedRefreshKeyRef.current = null;
     setStarredLoadedRefreshKey(null);
     const previous = starredTaskIndexRef.current.data;
@@ -102,13 +104,28 @@ export function usePlannerCollections({
       load: () => loadStarredTasks(dependencies, {}),
       clearsVisibleContent: (current, next) => current.items.length > 0 && next.items.length === 0,
     }).then((data) => {
-      if (active) {
+      if (active && isStarredTaskRequestCurrent({
+        expectedRefreshKey: refreshKey,
+        currentRefreshKey: starredRefreshKeyRef.current,
+        expectedOrderRevision: orderRevision,
+        currentOrderRevision: starredOrderRevisionRef.current,
+      })) {
         starredLoadedRefreshKeyRef.current = refreshKey;
         setStarredLoadedRefreshKey(refreshKey);
-        setStarredTaskIndex((current) => completePlannerLoad(current, data));
+        setStarredTaskIndex((current) => isStarredTaskRequestCurrent({
+          expectedRefreshKey: refreshKey,
+          currentRefreshKey: starredRefreshKeyRef.current,
+          expectedOrderRevision: orderRevision,
+          currentOrderRevision: starredOrderRevisionRef.current,
+        }) ? completePlannerLoad(current, data) : current);
       }
     }).catch((error: unknown) => {
-      if (active) {
+      if (active && isStarredTaskRequestCurrent({
+        expectedRefreshKey: refreshKey,
+        currentRefreshKey: starredRefreshKeyRef.current,
+        expectedOrderRevision: orderRevision,
+        currentOrderRevision: starredOrderRevisionRef.current,
+      })) {
         starredLoadedRefreshKeyRef.current = null;
         setStarredLoadedRefreshKey(null);
         const message = errorText(error);
@@ -252,6 +269,7 @@ export function usePlannerCollections({
     notify,
     starredTaskIndexRef,
     starredLoadedRefreshKeyRef,
+    starredOrderRevisionRef,
     setStarredLoadedRefreshKey,
     starredRefreshKeyRef,
     stableStarredTasksRef,
@@ -287,11 +305,23 @@ export function usePlannerCollections({
     ) return;
     const expectedPageIds = page.items.map((task) => starredTaskPage(task).id);
     const refreshKey = starredRefreshKeyRef.current;
+    const orderRevision = starredOrderRevisionRef.current;
     setStarredTasksLoadingMore(true);
     try {
       const next = await loadStarredTasks(dependencies, { cursor });
-      if (refreshKey !== starredRefreshKeyRef.current) return;
+      if (!isStarredTaskRequestCurrent({
+        expectedRefreshKey: refreshKey,
+        currentRefreshKey: starredRefreshKeyRef.current,
+        expectedOrderRevision: orderRevision,
+        currentOrderRevision: starredOrderRevisionRef.current,
+      })) return;
       setStarredTaskIndex((current) => {
+        if (!isStarredTaskRequestCurrent({
+          expectedRefreshKey: refreshKey,
+          currentRefreshKey: starredRefreshKeyRef.current,
+          expectedOrderRevision: orderRevision,
+          currentOrderRevision: starredOrderRevisionRef.current,
+        })) return current;
         const currentPage = current.data;
         if (!isStarredPlannerPageCurrent(currentPage, expectedPageIds, cursor) || !currentPage) {
           return current;

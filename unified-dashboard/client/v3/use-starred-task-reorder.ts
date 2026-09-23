@@ -17,6 +17,7 @@ import {
 import {
   disableStarredTaskPaginationAfterRefreshFailure,
   isStarredTaskBoundaryCurrent,
+  isStarredTaskRequestCurrent,
   isStarredTaskRefreshCurrent,
   reconcileStarredTaskOrderReloadFailure,
   resolveStarredTaskBeforePageId,
@@ -34,6 +35,7 @@ export function useStarredTaskReorder({
   notify,
   starredTaskIndexRef,
   starredLoadedRefreshKeyRef,
+  starredOrderRevisionRef,
   setStarredLoadedRefreshKey,
   starredRefreshKeyRef,
   stableStarredTasksRef,
@@ -43,6 +45,7 @@ export function useStarredTaskReorder({
   notify(message: string): void;
   starredTaskIndexRef: CurrentRef<StarredTaskIndex>;
   starredLoadedRefreshKeyRef: CurrentRef<number | null>;
+  starredOrderRevisionRef: CurrentRef<number>;
   setStarredLoadedRefreshKey: Dispatch<SetStateAction<number | null>>;
   starredRefreshKeyRef: CurrentRef<number>;
   stableStarredTasksRef: CurrentRef<StarredPlannerTask[]>;
@@ -61,6 +64,7 @@ export function useStarredTaskReorder({
     const original = starredTaskIndexRef.current;
     const data = original.data;
     const refreshKey = starredRefreshKeyRef.current;
+    const orderRevision = starredOrderRevisionRef.current;
     const visibleTasks = stableStarredTasksRef.current;
     const visibleIds = visibleTasks.map((task) => starredTaskPage(task).id);
     const baseIds = data?.items.map((task) => starredTaskPage(task).id) ?? [];
@@ -76,6 +80,7 @@ export function useStarredTaskReorder({
       await reloadFirstStarredPageIfCurrent({
         dependencies,
         starredLoadedRefreshKeyRef,
+        starredOrderRevisionRef,
         setStarredLoadedRefreshKey,
         starredRefreshKeyRef,
         setStarredTaskIndex,
@@ -103,6 +108,8 @@ export function useStarredTaskReorder({
             || !isStarredTaskBoundaryCurrent({
               expectedRefreshKey: refreshKey,
               currentRefreshKey: starredRefreshKeyRef.current,
+              expectedOrderRevision: orderRevision,
+              currentOrderRevision: starredOrderRevisionRef.current,
               expectedCursor: data.nextCursor,
               currentCursor: latestData.nextCursor,
               expectedPageIds: visibleIds,
@@ -119,6 +126,7 @@ export function useStarredTaskReorder({
       await reloadFirstStarredPageIfCurrent({
         dependencies,
         starredLoadedRefreshKeyRef,
+        starredOrderRevisionRef,
         setStarredLoadedRefreshKey,
         starredRefreshKeyRef,
         setStarredTaskIndex,
@@ -134,6 +142,8 @@ export function useStarredTaskReorder({
       || !isStarredTaskBoundaryCurrent({
         expectedRefreshKey: refreshKey,
         currentRefreshKey: starredRefreshKeyRef.current,
+        expectedOrderRevision: orderRevision,
+        currentOrderRevision: starredOrderRevisionRef.current,
         expectedCursor: data.nextCursor,
         currentCursor: latestData.nextCursor,
         expectedPageIds: visibleIds,
@@ -143,6 +153,7 @@ export function useStarredTaskReorder({
       await reloadFirstStarredPageIfCurrent({
         dependencies,
         starredLoadedRefreshKeyRef,
+        starredOrderRevisionRef,
         setStarredLoadedRefreshKey,
         starredRefreshKeyRef,
         setStarredTaskIndex,
@@ -157,25 +168,66 @@ export function useStarredTaskReorder({
       : current);
 
     let reloadRefreshKey: number | null = null;
+    let reloadOrderRevision: number | null = null;
     const result = await saveStarredTaskOrderAndReload({
-      save: async () => await saveOrder(movedPageId, beforePageId),
+      save: async () => {
+        starredOrderRevisionRef.current += 1;
+        starredLoadedRefreshKeyRef.current = null;
+        setStarredLoadedRefreshKey(null);
+        try {
+          await saveOrder(movedPageId, beforePageId);
+        } finally {
+          starredOrderRevisionRef.current += 1;
+          starredLoadedRefreshKeyRef.current = null;
+          setStarredLoadedRefreshKey(null);
+        }
+      },
       reload: async () => {
         reloadRefreshKey = starredRefreshKeyRef.current;
+        reloadOrderRevision = starredOrderRevisionRef.current;
         return await loadStarredTasks(dependencies, {});
       },
-      isReloadCurrent: () => reloadRefreshKey === starredRefreshKeyRef.current,
+      isReloadCurrent: () => reloadRefreshKey !== null
+        && reloadOrderRevision !== null
+        && isStarredTaskRequestCurrent({
+          expectedRefreshKey: reloadRefreshKey,
+          currentRefreshKey: starredRefreshKeyRef.current,
+          expectedOrderRevision: reloadOrderRevision,
+          currentOrderRevision: starredOrderRevisionRef.current,
+        }),
     });
     const reloadRecovery = result.reloadError
       ? await reloadFirstStarredPageIfCurrent({
         dependencies,
         starredLoadedRefreshKeyRef,
+        starredOrderRevisionRef,
         setStarredLoadedRefreshKey,
         starredRefreshKeyRef,
         setStarredTaskIndex,
       })
       : null;
-    if (result.reloaded) {
-      setStarredTaskIndex((current) => completePlannerLoad(current, result.reloaded!));
+    const reloadedPage = result.reloaded;
+    const completedRefreshKey = reloadRefreshKey;
+    const completedOrderRevision = reloadOrderRevision;
+    if (
+      reloadedPage
+      && completedRefreshKey !== null
+      && completedOrderRevision !== null
+      && isStarredTaskRequestCurrent({
+        expectedRefreshKey: completedRefreshKey,
+        currentRefreshKey: starredRefreshKeyRef.current,
+        expectedOrderRevision: completedOrderRevision,
+        currentOrderRevision: starredOrderRevisionRef.current,
+      })
+    ) {
+      starredLoadedRefreshKeyRef.current = completedRefreshKey;
+      setStarredLoadedRefreshKey(completedRefreshKey);
+      setStarredTaskIndex((current) => isStarredTaskRequestCurrent({
+        expectedRefreshKey: completedRefreshKey,
+        currentRefreshKey: starredRefreshKeyRef.current,
+        expectedOrderRevision: completedOrderRevision,
+        currentOrderRevision: starredOrderRevisionRef.current,
+      }) ? completePlannerLoad(current, reloadedPage) : current);
     }
     if (
       !result.reloaded
@@ -200,7 +252,7 @@ export function useStarredTaskReorder({
       notify(`별표 순서는 저장됐지만 목록을 새로 불러오지 못했습니다 · ${errorText(result.reloadError)}`);
     }
     setStarredTasksReordering(false);
-  }, [dependencies, notify, setStarredTaskIndex, stableStarredTasksRef, starredLoadedRefreshKeyRef, starredRefreshKeyRef, starredTaskIndexRef]);
+  }, [dependencies, notify, setStarredTaskIndex, setStarredLoadedRefreshKey, stableStarredTasksRef, starredLoadedRefreshKeyRef, starredOrderRevisionRef, starredRefreshKeyRef, starredTaskIndexRef]);
 
   return { starredTasksReordering, reorderStarredTasks };
 }
@@ -213,30 +265,52 @@ function samePageIds(first: readonly string[], second: readonly string[]): boole
 async function reloadFirstStarredPageIfCurrent({
   dependencies,
   starredLoadedRefreshKeyRef,
+  starredOrderRevisionRef,
   setStarredLoadedRefreshKey,
   starredRefreshKeyRef,
   setStarredTaskIndex,
 }: {
   dependencies: PlannerDataDependencies;
   starredLoadedRefreshKeyRef: CurrentRef<number | null>;
+  starredOrderRevisionRef: CurrentRef<number>;
   setStarredLoadedRefreshKey: Dispatch<SetStateAction<number | null>>;
   starredRefreshKeyRef: CurrentRef<number>;
   setStarredTaskIndex: Dispatch<SetStateAction<StarredTaskIndex>>;
 }): Promise<"loaded" | "superseded" | "failed"> {
   const refreshKey = starredRefreshKeyRef.current;
+  const orderRevision = starredOrderRevisionRef.current;
   starredLoadedRefreshKeyRef.current = null;
   setStarredLoadedRefreshKey(null);
   try {
     const fresh = await loadStarredTasks(dependencies, {});
-    if (!isStarredTaskRefreshCurrent(refreshKey, starredRefreshKeyRef.current)) return "superseded";
+    if (!isStarredTaskRequestCurrent({
+      expectedRefreshKey: refreshKey,
+      currentRefreshKey: starredRefreshKeyRef.current,
+      expectedOrderRevision: orderRevision,
+      currentOrderRevision: starredOrderRevisionRef.current,
+    })) return "superseded";
     starredLoadedRefreshKeyRef.current = refreshKey;
     setStarredLoadedRefreshKey(refreshKey);
-    setStarredTaskIndex((current) => isStarredTaskRefreshCurrent(refreshKey, starredRefreshKeyRef.current)
+    setStarredTaskIndex((current) => isStarredTaskRequestCurrent({
+      expectedRefreshKey: refreshKey,
+      currentRefreshKey: starredRefreshKeyRef.current,
+      expectedOrderRevision: orderRevision,
+      currentOrderRevision: starredOrderRevisionRef.current,
+    })
       ? completePlannerLoad(current, fresh)
       : current);
     return "loaded";
   } catch {
-    if (!isStarredTaskRefreshCurrent(refreshKey, starredRefreshKeyRef.current)) return "superseded";
+    if (!isStarredTaskRequestCurrent({
+      expectedRefreshKey: refreshKey,
+      currentRefreshKey: starredRefreshKeyRef.current,
+      expectedOrderRevision: orderRevision,
+      currentOrderRevision: starredOrderRevisionRef.current,
+    })) return "superseded";
+    if (
+      isStarredTaskRefreshCurrent(starredLoadedRefreshKeyRef.current, refreshKey)
+      && starredOrderRevisionRef.current === orderRevision
+    ) return "loaded";
     starredLoadedRefreshKeyRef.current = null;
     setStarredLoadedRefreshKey(null);
     setStarredTaskIndex((current) => current.data

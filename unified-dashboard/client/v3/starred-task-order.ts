@@ -34,15 +34,27 @@ export function resolveStarredTaskBoundaryPageId(
 export function isStarredTaskBoundaryCurrent(input: {
   expectedRefreshKey: number;
   currentRefreshKey: number;
+  expectedOrderRevision: number;
+  currentOrderRevision: number;
   expectedCursor: string | null;
   currentCursor: string | null;
   expectedPageIds: readonly string[];
   currentPageIds: readonly string[];
 }): boolean {
-  return input.expectedRefreshKey === input.currentRefreshKey
+  return isStarredTaskRequestCurrent(input)
     && input.expectedCursor === input.currentCursor
     && input.expectedPageIds.length === input.currentPageIds.length
     && input.expectedPageIds.every((pageId, index) => pageId === input.currentPageIds[index]);
+}
+
+export function isStarredTaskRequestCurrent(input: {
+  expectedRefreshKey: number;
+  currentRefreshKey: number;
+  expectedOrderRevision: number;
+  currentOrderRevision: number;
+}): boolean {
+  return input.expectedRefreshKey === input.currentRefreshKey
+    && input.expectedOrderRevision === input.currentOrderRevision;
 }
 
 export function isStarredTaskRefreshCurrent(

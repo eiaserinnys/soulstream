@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   disableStarredTaskPaginationAfterRefreshFailure,
   isStarredTaskBoundaryCurrent,
+  isStarredTaskRequestCurrent,
   isStarredTaskRefreshCurrent,
   reconcileStarredTaskOrderReloadFailure,
   resolveStarredTaskBoundaryPageId,
@@ -54,11 +55,37 @@ describe("starred task order boundaries", () => {
     expect(isStarredTaskBoundaryCurrent({
       expectedRefreshKey: 4,
       currentRefreshKey: 5,
+      expectedOrderRevision: 1,
+      currentOrderRevision: 1,
       expectedCursor: "cursor-first-page",
       currentCursor: "cursor-first-page",
       expectedPageIds: ["a", "b"],
       currentPageIds: ["a", "b"],
     })).toBe(false);
+  });
+
+  it("rejects a first-page response started before a starred order mutation", () => {
+    const orderBeforeMutation = 8;
+    const orderDuringMutation = orderBeforeMutation + 1;
+    const orderAfterMutation = orderDuringMutation + 1;
+    expect(isStarredTaskRequestCurrent({
+      expectedRefreshKey: 5,
+      currentRefreshKey: 5,
+      expectedOrderRevision: orderBeforeMutation,
+      currentOrderRevision: orderAfterMutation,
+    })).toBe(false);
+    expect(isStarredTaskRequestCurrent({
+      expectedRefreshKey: 5,
+      currentRefreshKey: 5,
+      expectedOrderRevision: orderDuringMutation,
+      currentOrderRevision: orderAfterMutation,
+    })).toBe(false);
+    expect(isStarredTaskRequestCurrent({
+      expectedRefreshKey: 5,
+      currentRefreshKey: 5,
+      expectedOrderRevision: orderAfterMutation,
+      currentOrderRevision: orderAfterMutation,
+    })).toBe(true);
   });
 
   it("keeps stale starred snapshots from enabling reorder or pagination", () => {
