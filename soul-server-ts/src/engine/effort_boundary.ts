@@ -12,7 +12,7 @@ import type { ReasoningEffort } from "./protocol.js";
  *
  *   internal : minimal low medium high xhigh max ultra
  *   Claude   :         low medium high xhigh max          (no minimal/ultra)
- *   Codex SDK: minimal low medium high xhigh              (no max/ultra)
+ *   Codex SDK policy allow-list: minimal low medium high xhigh max (excludes ultra)
  *   Codex app-server: free-form string advertised by the model (accepts all)
  *
  * These converters make the narrowing explicit instead of casting. They only
@@ -39,14 +39,14 @@ const CODEX_SDK_EFFORTS: readonly ModelReasoningEffort[] = [
   "medium",
   "high",
   "xhigh",
+  "max",
 ];
 
 /**
- * Efforts the *active* Codex transport can actually carry. The catalogue may
- * legitimately advertise `max`/`ultra` for a model, but the legacy SDK
- * transport has no way to express them, so a node running that transport must
- * neither advertise nor accept them. Advertisement and validation share this
- * one function so they can never disagree.
+ * Efforts Soulstream permits the active Codex transport to carry. The SDK type
+ * includes `ultra`, but this transport allow-list keeps that newer value out of
+ * session creation until it is requested and validated separately. The
+ * catalogue and request validation share this function so they cannot disagree.
  */
 export function codexTransportEfforts(
   adapterMode: "sdk" | "app-server",

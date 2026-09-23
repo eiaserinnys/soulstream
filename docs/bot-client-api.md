@@ -12,6 +12,8 @@ The implementation contracts are:
 
 - [`orch-server-ts/src/execute/execute_proxy_routes.ts`](../orch-server-ts/src/execute/execute_proxy_routes.ts)
 - [`orch-server-ts/src/execute/execute_proxy_payloads.ts`](../orch-server-ts/src/execute/execute_proxy_payloads.ts)
+- [`orch-server-ts/src/llm/ephemeral_llm_routes.ts`](../orch-server-ts/src/llm/ephemeral_llm_routes.ts)
+- [`orch-server-ts/src/llm/codex_ephemeral_executor.ts`](../orch-server-ts/src/llm/codex_ephemeral_executor.ts)
 - [`orch-server-ts/src/session/session_history_routes.ts`](../orch-server-ts/src/session/session_history_routes.ts)
 - [`orch-server-ts/src/session/session_action_command_routes.ts`](../orch-server-ts/src/session/session_action_command_routes.ts)
 - [`orch-server-ts/src/session/session_command_routes.ts`](../orch-server-ts/src/session/session_command_routes.ts)
@@ -83,7 +85,7 @@ Common optional new-session fields are:
 | `system_prompt` | string | Add a session system prompt. |
 | `model` | string | Explicit model override accepted by the execution proxy. |
 | `model_preset` | string | Select the new session's model, backend, and environment preset. |
-| `reasoningEffort` | string | Codex reasoning effort: `minimal`, `low`, `medium`, `high`, or `xhigh`. |
+| `reasoningEffort` | string | Codex reasoning effort: `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. |
 | `caller_info` | object | Structured caller metadata. The proxy derives basic metadata when omitted. |
 | `context_items` | object array | Additional structured context items. |
 
@@ -143,6 +145,37 @@ curl --no-buffer \
   --data '{"prompt":"Hello","profile":"codex-default"}' \
   "$SOULSTREAM_URL/api/execute"
 ```
+
+## POST /api/llm/ephemeral
+
+Runs one Codex request without creating a durable Soulstream session. The
+orchestrator uses a temporary working directory for the CLI call and removes it
+when execution finishes. Send a service bearer token in `Authorization`.
+
+```json
+{
+  "prompt": "Translate this message.",
+  "model": "gpt-6-luna",
+  "reasoning_effort": "max",
+  "output_schema": {
+    "type": "object",
+    "properties": { "translation": { "type": "string" } },
+    "required": ["translation"]
+  },
+  "timeout_ms": 120000,
+  "max_attempts": 1,
+  "purpose": "translation"
+}
+```
+
+`reasoning_effort` accepts `minimal`, `low`, `medium`, `high`, `xhigh`, or
+`max`; it defaults to `medium`. `timeout_ms` defaults to 120000 and cannot
+exceed 120000. `max_attempts` defaults to 1 and cannot exceed 3. `output_schema`
+and `purpose` are optional.
+
+The successful response contains `content`, `model`, `latency_ms`, `attempts`,
+and optional `usage`. Invalid requests return `422`; missing or rejected
+service credentials return `401`.
 
 ## GET /api/sessions/{agent_session_id}/events
 

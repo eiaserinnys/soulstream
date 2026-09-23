@@ -1,5 +1,5 @@
 /**
- * Codex EnginePort 구현 — `@openai/codex-sdk@^0.130.0` SDK 모드 단독.
+ * Codex EnginePort 구현 — `@openai/codex-sdk@^0.155.1` SDK 모드 단독.
  *
  * 옵션 D 비대칭 모델 단계 1 (Phase B-2). SDK 채택 정당성: 4차 캐시 §3.2 — "각 백엔드를
  * 그 SDK의 정본 언어에서". subprocess fallback 없음 — TS 정본 우월성 유지.
@@ -165,7 +165,7 @@ export class CodexEngineAdapter implements EnginePort {
     }
 
     if (params.systemPrompt) {
-      // Codex SDK 0.130.0 ThreadOptions에 systemPrompt 표면 없음 — CodexOptions.config.base_instructions로
+      // Codex SDK 0.155.1 ThreadOptions에 systemPrompt 표면 없음 — CodexOptions.config.base_instructions로
       // 주입해야 하나 본 어댑터 인스턴스 단위 config는 constructor에서 받음. turn-level systemPrompt 주입은
       // B-3에서 task_executor가 호출자 책임으로 prompt에 prepend하거나, 본 어댑터를 재생성하는 패턴.
       // design-principles §4 (명시적 실패) — debug 대신 warn으로 격상하여 호출자 가시화 (P2-2).
@@ -281,7 +281,7 @@ export class CodexEngineAdapter implements EnginePort {
     }
 
     // F3 (PR fix/soul-server-ts-chat-sse-python-parity): turn 단위 lastAgentText 추적.
-    // codex SDK 0.130.0 `Turn.finalResponse: string` 필드(`dist/index.d.ts:176`)와 의미 등가 —
+    // Codex SDK 0.155.1 `Turn.finalResponse: string` 필드(`dist/index.d.ts:179`)와 의미 등가 —
     // streamed 모드에서는 events generator만 제공되므로 adapter가 직접 추적.
     // turn.completed 이벤트의 SDK docstring: "Emitted when a turn is completed. Typically right
     // after the assistant's response." (`dist/index.d.ts:129-133`) → agent_message item.completed
@@ -354,7 +354,7 @@ export class CodexEngineAdapter implements EnginePort {
       this.currentTurn.abort();
       this.currentTurn = null;
     }
-    // Codex SDK 0.130.0은 명시 close 없음 — flag로만 lifecycle 표시.
+    // Codex SDK 0.155.1은 명시 close 없음 — flag로만 lifecycle 표시.
   }
 }
 
