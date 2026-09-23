@@ -10,6 +10,7 @@ const workflowsDirectory = fileURLToPath(new URL(
   import.meta.url,
 ));
 const packagePath = fileURLToPath(new URL("../../package.json", import.meta.url));
+const runnerTestsDirectory = fileURLToPath(new URL("../runner/", import.meta.url));
 const vitestConfigPath = fileURLToPath(new URL("../../vitest.config.ts", import.meta.url));
 
 const laneQChangedPaths = [
@@ -73,9 +74,36 @@ describe("soul-server-ts affected CI gate", () => {
       .map((step: { run?: string }) => step.run ?? "")
       .join("\n");
     expect(commands).toContain("corepack pnpm --dir soul-server-ts typecheck");
-    expect(commands).toContain(
-      "corepack pnpm --dir soul-server-ts test -- --minWorkers=1 --maxWorkers=2",
+
+    const generalTestsStep = job.steps.find(
+      (step: { name?: string }) => step.name === "Test soul-server-ts",
     );
+    expect(generalTestsStep?.run).toContain(
+      "corepack pnpm --dir soul-server-ts exec vitest run --minWorkers=1 --maxWorkers=2",
+    );
+    expect(generalTestsStep?.run).toContain(
+      "--exclude 'tests/runner/*_full_slice_postgres.test.ts'",
+    );
+
+    const fullSliceStep = job.steps.find(
+      (step: { name?: string }) => step.name === "Test PostgreSQL full slices sequentially",
+    );
+    expect(fullSliceStep?.run).toContain(
+      "corepack pnpm --dir soul-server-ts exec vitest run",
+    );
+    expect(fullSliceStep?.run).toContain(
+      "--minWorkers=1 --maxWorkers=1 --no-file-parallelism",
+    );
+
+    const expectedFullSliceFiles = readdirSync(runnerTestsDirectory)
+      .filter((name) => name.endsWith("_full_slice_postgres.test.ts"))
+      .map((name) => `tests/runner/${name}`)
+      .sort();
+    const selectedFullSliceFiles = Array.from(
+      fullSliceStep?.run?.matchAll(/tests\/runner\/[\w-]+_full_slice_postgres\.test\.ts/g) ?? [],
+      ([path]) => path,
+    ).sort();
+    expect(selectedFullSliceFiles).toEqual(expectedFullSliceFiles);
 
     const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
     expect(packageJson.scripts.typecheck).toBe("tsc --noEmit");

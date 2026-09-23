@@ -72,6 +72,68 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     expect(denied).toHaveLength(0);
   });
 
+  it("preserves global BM25 scores when session IDs scope candidate postings", async () => {
+    const query = "unique execution phrase";
+    const all = await sql`
+      SELECT id, session_id, score FROM event_search(
+        ${query}, NULL, 100, ARRAY['assistant_message']::text[]
+      ) ORDER BY session_id, id
+    `;
+    const scoped = await sql`
+      SELECT id, session_id, score FROM event_search(
+        ${query}, ARRAY['actual-work-session']::text[], 100,
+        ARRAY['assistant_message']::text[]
+      ) ORDER BY session_id, id
+    `;
+
+    expect(scoped).toEqual(all.filter((row) => row.session_id === "actual-work-session"));
+
+    const excludedType = await sql`
+      SELECT id, session_id FROM event_search(
+        ${query}, ARRAY['actual-work-session']::text[], 100,
+        ARRAY['user_message']::text[]
+      )
+    `;
+    expect(excludedType).toHaveLength(0);
+  });
+
+  it("serves the observed MCP scoped query through history_search with filters intact", async () => {
+    const query = "cn-characters cn-followups cn-support cn-synopsis glossary-zh-fill glossary-mirror-from-shay retire-glossary-gsheet-sync cn-term-alignment";
+    await sql`
+      INSERT INTO events (session_id, id, event_type, searchable_text, created_at)
+      VALUES (
+        'actual-work-session', 50, 'tool_result', ${query}, NOW()
+      )
+    `;
+    await sql`
+      INSERT INTO events (session_id, id, event_type, searchable_text, created_at)
+      VALUES (
+        'diagnostic-session', 50, 'text_delta', ${query}, NOW()
+      )
+    `;
+    const repository = new SessionHistorySearchRepository(
+      createLiveSearchDbConnectionFactory({ databaseUrl }),
+      new EventReadRepository(sql as unknown as SqlClient),
+      new SessionStoryReadRepository(sql as unknown as SqlClient),
+    );
+
+    const result = await repository.search({
+      query,
+      sessionIds: ["actual-work-session", "diagnostic-session"],
+      limit: 10,
+      eventTypes: ["tool_start", "tool_result", "assistant_message", "user_message"],
+      searchSessionId: false,
+      includeHighlight: false,
+      includeStory: false,
+    }, new AbortController().signal);
+
+    expect(result.events.map((row) => [row.session_id, row.event_type])).toEqual([
+      ["actual-work-session", "tool_result"],
+    ]);
+    expect(result.sessionIdEvents).toEqual([]);
+    expect(result.digests).toEqual([]);
+  });
+
   it("does not convert a non-product provider deadline into empty search success", async () => {
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: {
@@ -778,8 +840,13 @@ async function createHarness(): Promise<{
       "../../packages/db-schema/sql/migrations/097_session_search_reliability.sql",
       import.meta.url,
     )), "utf8");
+    const scopedSearchMigration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/098_event_search_scoped_postings.sql",
+      import.meta.url,
+    )), "utf8");
     await bootstrap.unsafe(schema);
     await bootstrap.unsafe(migration);
+    await bootstrap.unsafe(scopedSearchMigration);
   } catch (error) {
     await bootstrap.end({ timeout: 2 }).catch(() => undefined);
     container.stop();
