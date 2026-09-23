@@ -16,7 +16,7 @@ export class PlannerCursorError extends Error {
 
 interface StarredTaskRow extends Record<string, unknown> {
   id: string;
-  updated_at_cursor: string;
+  position_cursor: string;
   payload: PlannerPageDto;
 }
 
@@ -35,13 +35,12 @@ export async function listStarredTasks(
   sql: LivePostgresSql,
   input: { cursor?: string; limit: number },
 ): Promise<PlannerPageSlice<PlannerPageDto>> {
-  const cursor = input.cursor ? decodeCursor(input.cursor, "starred-task") : null;
-  const updatedAt = cursor?.first ?? null;
+  const cursor = decodeStarredTaskCursor(input.cursor);
+  const cursorPosition = cursor?.position ?? null;
   const cursorId = cursor?.second ?? "";
   const rows = await sql`
     SELECT p.id,
-           to_char(p.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
-             AS updated_at_cursor,
+           ordering.position::text AS position_cursor,
            jsonb_build_object(
              'id', p.id,
              'title', p.title,
@@ -52,26 +51,31 @@ export async function listStarredTasks(
              'created_at', p.created_at,
              'updated_at', p.updated_at
            ) AS payload
-    FROM pages p
+    FROM planner_starred_task_order ordering
+    JOIN pages p ON p.id = ordering.page_id
     WHERE p.archived = FALSE
       AND p.daily_date IS NULL
-      AND COALESCE((p.metadata->>'starred')::boolean, FALSE)
+      AND p.metadata->'starred' = 'true'::jsonb
       AND EXISTS (
         SELECT 1
         FROM blocks b
         WHERE b.page_id = p.id
           AND b.block_type IN ('task_ref', 'runbook_ref')
-          AND COALESCE((b.properties->>'primary')::boolean, FALSE)
-          AND NULLIF(BTRIM(CASE b.block_type
+          AND b.properties->'primary' = 'true'::jsonb
+          AND jsonb_typeof(CASE b.block_type
+            WHEN 'task_ref' THEN b.properties->'taskId'
+            WHEN 'runbook_ref' THEN b.properties->'runbookId'
+          END) = 'string'
+          AND planner_starred_task_identity_trim(CASE b.block_type
             WHEN 'task_ref' THEN b.properties->>'taskId'
             WHEN 'runbook_ref' THEN b.properties->>'runbookId'
-          END), '') IS NOT NULL
+          END) IS NOT NULL
       )
       AND (
-        ${updatedAt}::text IS NULL
-        OR (p.updated_at, p.id) < (${updatedAt}::timestamptz, ${cursorId})
+        ${cursorPosition}::text IS NULL
+        OR (ordering.position, p.id) > (${cursorPosition}::bigint, ${cursorId}::text)
       )
-    ORDER BY p.updated_at DESC, p.id DESC
+    ORDER BY ordering.position, p.id
     LIMIT ${input.limit + 1}
   ` as readonly StarredTaskRow[];
   const visible = rows.slice(0, input.limit);
@@ -79,9 +83,20 @@ export async function listStarredTasks(
   return {
     items: visible.map((row) => row.payload),
     next_cursor: rows.length > input.limit && last
-      ? encodeCursor("starred-task", last.updated_at_cursor, last.id)
+      ? encodeCursor("starred-task", last.position_cursor, last.id)
       : null,
   };
+}
+
+export function decodeStarredTaskCursor(
+  value: string | undefined,
+): { position: string; second: string } | null {
+  if (!value) return null;
+  const cursor = decodeCursor(value, "starred-task");
+  if (!/^(0|[1-9]\d*)$/.test(cursor.first)) {
+    throw new PlannerCursorError("invalid planner cursor");
+  }
+  return { position: cursor.first, second: cursor.second };
 }
 
 export async function listDailyHistory(

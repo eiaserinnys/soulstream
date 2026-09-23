@@ -6,7 +6,12 @@ import type { LivePostgresSql } from "../../src/runtime/live_db_sql.js";
 
 export interface PagePostgresHarness {
   sql: ReturnType<typeof postgres>;
+  peerSql: ReturnType<typeof postgres>;
+  concurrentSql: ReturnType<typeof postgres>;
+  lockSql: ReturnType<typeof postgres>;
   liveSql: LivePostgresSql;
+  peerLiveSql: LivePostgresSql;
+  concurrentLiveSql: LivePostgresSql;
   cleanup(): Promise<void>;
 }
 
@@ -58,19 +63,53 @@ async function connect(url: string, stopContainer?: () => void): Promise<PagePos
     onnotice: () => {},
     connection: { search_path: schema },
   });
+  const peerSql = postgres(url, {
+    max: 1,
+    idle_timeout: 1,
+    onnotice: () => {},
+    connection: { search_path: schema },
+  });
+  const concurrentSql = postgres(url, {
+    max: 1,
+    idle_timeout: 1,
+    onnotice: () => {},
+    connection: { search_path: schema },
+  });
+  const lockSql = postgres(url, {
+    max: 1,
+    idle_timeout: 1,
+    onnotice: () => {},
+    connection: { search_path: schema },
+  });
   try {
     await waitForPostgres(sql);
+    await waitForPostgres(peerSql);
+    await waitForPostgres(concurrentSql);
+    await waitForPostgres(lockSql);
   } catch (error) {
     await sql.end({ timeout: 2 });
+    await peerSql.end({ timeout: 2 });
+    await concurrentSql.end({ timeout: 2 });
+    await lockSql.end({ timeout: 2 });
     await dropSchema(url, schema);
     throw error;
   }
   return {
     sql,
+    peerSql,
+    concurrentSql,
+    lockSql,
     liveSql: sql as unknown as LivePostgresSql,
+    peerLiveSql: peerSql as unknown as LivePostgresSql,
+    concurrentLiveSql: concurrentSql as unknown as LivePostgresSql,
     async cleanup() {
       try {
-        await sql.end({ timeout: 2 });
+        await Promise.all([
+          sql.end({ timeout: 2 }),
+          peerSql.end({ timeout: 2 }),
+          concurrentSql.end({ timeout: 2 }),
+          lockSql.end({ timeout: 2 }),
+        ]);
       } finally {
         try {
           await dropSchema(url, schema);
@@ -216,6 +255,27 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       FOREIGN KEY (updated_session_id, updated_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL
     );
+    CREATE OR REPLACE FUNCTION planner_starred_task_identity_trim(identity_value TEXT)
+    RETURNS TEXT
+    LANGUAGE sql
+    IMMUTABLE
+    PARALLEL SAFE
+    AS $$
+      SELECT NULLIF(BTRIM(
+        identity_value,
+        chr(9) || chr(10) || chr(11) || chr(12) || chr(13) || chr(32) ||
+        chr(160) || chr(5760) || chr(8192) || chr(8193) || chr(8194) ||
+        chr(8195) || chr(8196) || chr(8197) || chr(8198) || chr(8199) ||
+        chr(8200) || chr(8201) || chr(8202) || chr(8232) || chr(8233) ||
+        chr(8239) || chr(8287) || chr(12288) || chr(65279)
+      ), '')
+    $$;
+    CREATE TABLE planner_starred_task_order (
+      page_id TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE,
+      position BIGINT NOT NULL CHECK (position >= 0)
+    );
+    CREATE INDEX idx_planner_starred_task_order_position
+      ON planner_starred_task_order(position, page_id);
     CREATE TABLE blocks (
       id TEXT PRIMARY KEY,
       page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,

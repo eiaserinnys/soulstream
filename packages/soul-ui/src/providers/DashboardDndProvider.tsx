@@ -1,13 +1,15 @@
 /**
  * DashboardDndProvider - @dnd-kit DndContext 래퍼
  *
- * 대시보드의 두 가지 DnD 시나리오를 단일 DndContext에서 처리한다:
+ * 대시보드의 DnD 시나리오를 단일 DndContext에서 처리한다:
  *  1. 세션 드래그 → 폴더 드롭: onMoveSessions 콜백 호출
  *  2. 폴더 드래그 → 폴더 드롭: onReorderFolders 콜백 호출 (custom 정렬 모드)
+ *  3. 별표 업무 드래그 → 별표 업무: onReorderStarredTasks 콜백 호출
  *
  * active.data.current.type 으로 시나리오를 구분한다:
  *  - type === "session": 세션 이동 (sessionIds 포함)
- *  - type === "folder":  폴더 재정렬 (currentOrder 포함)
+ *  - type === "folder": 폴더 재정렬
+ *  - type === "starred-task": 중요 작업 재정렬
  */
 
 import { useCallback, type ReactNode } from "react";
@@ -29,12 +31,15 @@ import {
   type FolderDragData,
   type FolderRootDropData,
 } from "./folder-dnd";
+import { reorderStarredTaskIds, type StarredTaskDragData } from "./starred-task-dnd";
 
 export interface DashboardDndProviderProps {
   /** 세션을 다른 폴더로 이동하는 콜백 */
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => void;
   /** 폴더 부모/순서 변경 콜백 */
   onReorderFolders?: (items: CatalogFolderReorderItem[]) => Promise<void>;
+  /** 중요 작업 별표 순서 변경 콜백 */
+  onReorderStarredTasks?: (movedPageId: string, pageIds: string[]) => void;
   /** 화면별 충돌 판정. v1 기본값은 기존 closestCenter를 유지한다. */
   collisionDetection?: CollisionDetection;
   children: ReactNode;
@@ -48,10 +53,12 @@ export const pointerFirstCollisionDetection: CollisionDetection = (args) => {
 export function DashboardDndProvider({
   onMoveSessions,
   onReorderFolders,
+  onReorderStarredTasks,
   collisionDetection = closestCenter,
   children,
 }: DashboardDndProviderProps) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 8 } });
+  const sensors = useSensors(pointerSensor);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -61,6 +68,7 @@ export function DashboardDndProvider({
       const activeData = active.data.current as
         | { type: "session"; sessionIds: string[] }
         | FolderDragData
+        | StarredTaskDragData
         | undefined;
 
       if (!activeData) return;
@@ -71,6 +79,12 @@ export function DashboardDndProvider({
         const targetFolderId =
           over.id === "null-folder" ? null : (over.id as string);
         onMoveSessions?.(activeData.sessionIds, targetFolderId);
+      } else if (activeData.type === "starred-task") {
+        const overData = over.data.current as StarredTaskDragData | undefined;
+        if (overData?.type !== "starred-task") return;
+        const activeId = active.id as string;
+        const pageIds = reorderStarredTaskIds(activeData.pageIds, activeId, over.id as string);
+        if (pageIds) onReorderStarredTasks?.(activeId, pageIds);
       } else if (activeData.type === "folder") {
         // 폴더 → 폴더 드롭: 같은 부모면 재정렬, 다른 부모면 target folder의 자식으로 이동
         const activeId = active.id as string;
@@ -102,7 +116,7 @@ export function DashboardDndProvider({
         onReorderFolders?.(items);
       }
     },
-    [onMoveSessions, onReorderFolders],
+    [onMoveSessions, onReorderFolders, onReorderStarredTasks],
   );
 
   return (

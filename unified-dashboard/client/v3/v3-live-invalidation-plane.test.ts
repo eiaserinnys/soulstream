@@ -77,7 +77,7 @@ describe("v3 live invalidation plane", () => {
     expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual({
       daily: 1,
       project: 1,
-      starred: 0,
+      starred: 1,
       runHistory: 1,
       pageDetail: 0,
     });
@@ -90,17 +90,26 @@ describe("v3 live invalidation plane", () => {
     expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual({
       daily: 2,
       project: 2,
-      starred: 0,
+      starred: 2,
       runHistory: 1,
+      pageDetail: 0,
+    });
+
+    acceptV3SessionStreamEvent({ type: "session_deleted", agent_session_id: "session-b" });
+    expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual({
+      daily: 3,
+      project: 3,
+      starred: 3,
+      runHistory: 2,
       pageDetail: 0,
     });
 
     acceptV3SessionStreamEvent({ type: "page_updated", page_id: "page-a", version: 8 });
     expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual({
-      daily: 3,
-      project: 3,
-      starred: 1,
-      runHistory: 1,
+      daily: 4,
+      project: 4,
+      starred: 4,
+      runHistory: 2,
       pageDetail: 1,
     });
   });

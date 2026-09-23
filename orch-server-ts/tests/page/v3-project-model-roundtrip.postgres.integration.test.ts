@@ -56,8 +56,11 @@ describe("v3 project model local-stack PostgreSQL round-trip", () => {
     app = Fastify({ logger: false });
     const resolveUser = async () => ({ email: "pr-t@example.com" });
     registerPageBrowserRoutes(app, { service, reads: repository, resolveUser });
+    const plannerRepository = new PlannerRepository(resolver);
     registerPlannerRoutes(app, {
-      provider: new PlannerRepository(resolver),
+      provider: plannerRepository,
+      starredTaskOrder: plannerRepository,
+      onPageUpdated: () => undefined,
       dailyPages: service,
       resolveUser,
     });
