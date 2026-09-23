@@ -165,6 +165,29 @@ describe("CodexEngineAdapter — reasoning effort", () => {
     });
   });
 
+  it("Codex 6 Luna max를 SDK ThreadOptions까지 전달", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    for await (const _ of engine.execute({
+      prompt: "x",
+      model: "gpt-6-luna",
+      reasoningEffort: "max",
+    })) {
+      // drain
+    }
+
+    expect(mockStartThread.mock.calls[0][0]).toMatchObject({
+      model: "gpt-6-luna",
+      modelReasoningEffort: "max",
+    });
+  });
+
   it("명백한 비추론 모델이면 reasoning effort를 drop하고 warn 로그를 남긴다", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });

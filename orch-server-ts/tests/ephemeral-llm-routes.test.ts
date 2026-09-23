@@ -63,60 +63,63 @@ describe("ephemeral LLM routes", () => {
     await app.close();
   });
 
-  it("passes the complete request contract to the isolated external executor", async () => {
-    const generate = vi.fn(async (_request: CodexExecGenerateRequest) => ({
-      content: '{"translations":[]}',
-      model: "gpt-5.6-luna",
-      latencyMs: 321,
-      attempts: 1,
-      spawnDurationMs: 300,
-      peakConcurrentSpawns: 1,
-      usage: { input_tokens: 11, output_tokens: 7 },
-    }));
-    const app = createApp({
-      config,
-      ephemeralLlmRoutes: { authBearerToken: "service-token", generator: { generate } },
-    });
-    const outputSchema = {
-      type: "object",
-      properties: { translations: { type: "array" } },
-      required: ["translations"],
-    };
+  it.each(["xhigh", "max"] as const)(
+    "passes %s through the complete request contract to the isolated external executor",
+    async (reasoningEffort) => {
+      const generate = vi.fn(async (_request: CodexExecGenerateRequest) => ({
+        content: '{"translations":[]}',
+        model: "gpt-6-luna",
+        latencyMs: 321,
+        attempts: 1,
+        spawnDurationMs: 300,
+        peakConcurrentSpawns: 1,
+        usage: { input_tokens: 11, output_tokens: 7 },
+      }));
+      const app = createApp({
+        config,
+        ephemeralLlmRoutes: { authBearerToken: "service-token", generator: { generate } },
+      });
+      const outputSchema = {
+        type: "object",
+        properties: { translations: { type: "array" } },
+        required: ["translations"],
+      };
 
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/llm/ephemeral",
-      headers: { authorization: "Bearer service-token" },
-      payload: {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/llm/ephemeral",
+        headers: { authorization: "Bearer service-token" },
+        payload: {
+          prompt: "translate",
+          model: "gpt-6-luna",
+          reasoning_effort: reasoningEffort,
+          output_schema: outputSchema,
+          timeout_ms: 90_000,
+          max_attempts: 2,
+          purpose: "inbox_translation",
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        content: '{"translations":[]}',
+        model: "gpt-6-luna",
+        latency_ms: 321,
+        attempts: 1,
+        usage: { input_tokens: 11, output_tokens: 7 },
+      });
+      expect(generate).toHaveBeenCalledWith({
         prompt: "translate",
-        model: "gpt-5.6-luna",
-        reasoning_effort: "xhigh",
-        output_schema: outputSchema,
-        timeout_ms: 90_000,
-        max_attempts: 2,
-        purpose: "inbox_translation",
-      },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      content: '{"translations":[]}',
-      model: "gpt-5.6-luna",
-      latency_ms: 321,
-      attempts: 1,
-      usage: { input_tokens: 11, output_tokens: 7 },
-    });
-    expect(generate).toHaveBeenCalledWith({
-      prompt: "translate",
-      model: "gpt-5.6-luna",
-      reasoningEffort: "xhigh",
-      outputSchema,
-      timeoutMs: 90_000,
-      maxAttempts: 2,
-      concurrencyLimit: 1,
-    });
-    await app.close();
-  });
+        model: "gpt-6-luna",
+        reasoningEffort,
+        outputSchema,
+        timeoutMs: 90_000,
+        maxAttempts: 2,
+        concurrencyLimit: 1,
+      });
+      await app.close();
+    },
+  );
 
   it.each([
     ["CODEX_UNAVAILABLE", 503],

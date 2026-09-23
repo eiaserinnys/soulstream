@@ -161,6 +161,49 @@ class TestListSessions:
 class TestCreateSession:
     """POST /api/sessions tests."""
 
+    async def test_create_session_accepts_max_effort_and_forwards_to_codex_node(
+        self, client, node_manager
+    ):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(
+            ws,
+            {
+                "node_id": "api-codex-node",
+                "supported_backends": ["codex"],
+                "agents": [{"id": "cody", "name": "Cody", "backend": "codex"}],
+            },
+        )
+
+        async def resolve_on_send(data):
+            req_id = data.get("requestId")
+            if req_id and req_id in node._pending:
+                node._pending[req_id].set_result({"agentSessionId": "codex-max-session"})
+
+        ws.send_json.side_effect = resolve_on_send
+
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "test max",
+                "nodeId": "api-codex-node",
+                "profile": "cody",
+                "reasoningEffort": "max",
+            },
+        )
+
+        assert resp.status_code == 201
+        assert _sent_create_payload(ws)["reasoningEffort"] == "max"
+
+    async def test_create_session_rejects_effort_outside_the_api_contract(self, client):
+        resp = await client.post(
+            "/api/sessions",
+            json={"prompt": "invalid effort", "reasoningEffort": "ultra"},
+        )
+
+        assert resp.status_code == 422
+
     async def test_creates_session_returns_201(self, client, mock_db, node_manager):
         """Creates a session and returns 201 with session/node IDs."""
         # Register a node so routing works

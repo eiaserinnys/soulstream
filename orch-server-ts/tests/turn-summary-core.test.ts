@@ -408,6 +408,20 @@ describe("Codex turn summary provider", () => {
     expect(invocation.env.TURN_SUMMARY_OPENAI_KEY).toBeUndefined();
   });
 
+  it("passes max to the Codex CLI as the model reasoning effort", () => {
+    const invocation = buildCodexExecInvocation({
+      codexPath: "codex",
+      workspaceDir: "/tmp/ephemeral-max",
+      model: "gpt-6-luna",
+      reasoningEffort: "max",
+      processEnv: { HOME: "/oauth-home" },
+    });
+
+    expect(invocation.args).toContain("gpt-6-luna");
+    expect(invocation.args).toContain('model_reasoning_effort="max"');
+    expect(invocation.args).toContain("--ephemeral");
+  });
+
   it("parses the last assistant item and only available usage fields", () => {
     expect(parseCodexJsonl([
       JSON.stringify({

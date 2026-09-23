@@ -72,7 +72,8 @@ async def test_profile_matches_backend():
     assert nid == "n1"
 
 
-async def test_reasoning_effort_only_forwarded_for_codex_backend():
+@pytest.mark.parametrize("reasoning_effort", ["medium", "max"])
+async def test_reasoning_effort_only_forwarded_for_codex_backend(reasoning_effort):
     """reasoningEffort는 codex backend일 때만 노드 wire로 넘긴다."""
     codex_node = _make_node(
         "codex-node",
@@ -81,9 +82,9 @@ async def test_reasoning_effort_only_forwarded_for_codex_backend():
     )
     codex_router = SessionRouter(_make_node_manager([codex_node]))
     await codex_router.route_create_session(
-        {"prompt": "hi", "profile": "cody", "reasoningEffort": "medium"}
+        {"prompt": "hi", "profile": "cody", "reasoningEffort": reasoning_effort}
     )
-    assert codex_node.send_create_session.call_args.kwargs["reasoning_effort"] == "medium"
+    assert codex_node.send_create_session.call_args.kwargs["reasoning_effort"] == reasoning_effort
 
     claude_node = _make_node(
         "claude-node",
@@ -92,7 +93,7 @@ async def test_reasoning_effort_only_forwarded_for_codex_backend():
     )
     claude_router = SessionRouter(_make_node_manager([claude_node]))
     await claude_router.route_create_session(
-        {"prompt": "hi", "profile": "roselin", "reasoningEffort": "medium"}
+        {"prompt": "hi", "profile": "roselin", "reasoningEffort": reasoning_effort}
     )
     assert claude_node.send_create_session.call_args.kwargs["reasoning_effort"] is None
 

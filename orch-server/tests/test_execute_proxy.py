@@ -170,8 +170,9 @@ class TestNewMode:
         assert init_data["agent_session_id"] == "sess-123"
         assert init_data["node_id"] == "test-node-1"
 
+    @pytest.mark.parametrize("reasoning_effort", ["high", "max"])
     async def test_new_session_calls_route_create_session(
-        self, exec_client, mock_session_router, mock_node_manager, mock_node
+        self, exec_client, mock_session_router, mock_node_manager, mock_node, reasoning_effort
     ):
         """New mode: calls session_router.route_create_session with correct params."""
         async def fake_subscribe(session_id, callback):
@@ -187,7 +188,7 @@ class TestNewMode:
             "prompt": "hello",
             "profile": "test-agent",
             "model": "claude-sonnet",
-            "reasoningEffort": "high",
+            "reasoningEffort": reasoning_effort,
             "claudePermissionMode": "default",
         })
 
@@ -196,7 +197,7 @@ class TestNewMode:
         assert call_args["prompt"] == "hello"
         assert call_args["profile"] == "test-agent"
         assert call_args["model"] == "claude-sonnet"
-        assert call_args["reasoningEffort"] == "high"
+        assert call_args["reasoningEffort"] == reasoning_effort
         assert call_args["claude_permission_mode"] == "default"
 
     async def test_new_session_broadcasts_catalog(
