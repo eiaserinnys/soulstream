@@ -68,6 +68,7 @@ export function usePlannerCollections({
   const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const [project, setProject] = useState<PlannerLoadState<ProjectPlannerData>>({ status: "loading", data: null, message: null });
   const [starredTaskIndex, setStarredTaskIndex] = useState<PlannerLoadState<PlannerPage<StarredPlannerTask>>>({ status: "loading", data: null, message: null });
+  const [starredLoadedRefreshKey, setStarredLoadedRefreshKey] = useState<number | null>(null);
   const [starredTasksLoadingMore, setStarredTasksLoadingMore] = useState(false);
   const [projectTasksLoadingMore, setProjectTasksLoadingMore] = useState(false);
   const [projectDocumentsLoadingMore, setProjectDocumentsLoadingMore] = useState(false);
@@ -88,6 +89,7 @@ export function usePlannerCollections({
     let active = true;
     const refreshKey = refreshKeys.starred;
     starredLoadedRefreshKeyRef.current = null;
+    setStarredLoadedRefreshKey(null);
     const previous = starredTaskIndexRef.current.data;
     setStarredTaskIndex((current) => {
       const loading = beginPlannerLoad(current);
@@ -102,10 +104,13 @@ export function usePlannerCollections({
     }).then((data) => {
       if (active) {
         starredLoadedRefreshKeyRef.current = refreshKey;
+        setStarredLoadedRefreshKey(refreshKey);
         setStarredTaskIndex((current) => completePlannerLoad(current, data));
       }
     }).catch((error: unknown) => {
       if (active) {
+        starredLoadedRefreshKeyRef.current = null;
+        setStarredLoadedRefreshKey(null);
         const message = errorText(error);
         setStarredTaskIndex((current) => {
           const failed = failPlannerLoad(current, message);
@@ -247,6 +252,7 @@ export function usePlannerCollections({
     notify,
     starredTaskIndexRef,
     starredLoadedRefreshKeyRef,
+    setStarredLoadedRefreshKey,
     starredRefreshKeyRef,
     stableStarredTasksRef,
     setStarredTaskIndex,
@@ -352,9 +358,9 @@ export function usePlannerCollections({
     selectedProject,
     starredTasks,
     starredTasksHasMore: Boolean(starredTaskIndex.data?.nextCursor)
-      && isStarredTaskRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current),
+      && isStarredTaskRefreshCurrent(starredLoadedRefreshKey, refreshKeys.starred),
     starredTasksLoading: (starredTaskIndex.status === "loading" && !starredTaskIndex.data)
-      || !isStarredTaskRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current),
+      || !isStarredTaskRefreshCurrent(starredLoadedRefreshKey, refreshKeys.starred),
     starredTasksLoadingMore,
     starredTasksReordering,
     projectTasksLoadingMore,

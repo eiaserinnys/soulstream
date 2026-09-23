@@ -34,6 +34,7 @@ export function useStarredTaskReorder({
   notify,
   starredTaskIndexRef,
   starredLoadedRefreshKeyRef,
+  setStarredLoadedRefreshKey,
   starredRefreshKeyRef,
   stableStarredTasksRef,
   setStarredTaskIndex,
@@ -42,6 +43,7 @@ export function useStarredTaskReorder({
   notify(message: string): void;
   starredTaskIndexRef: CurrentRef<StarredTaskIndex>;
   starredLoadedRefreshKeyRef: CurrentRef<number | null>;
+  setStarredLoadedRefreshKey: Dispatch<SetStateAction<number | null>>;
   starredRefreshKeyRef: CurrentRef<number>;
   stableStarredTasksRef: CurrentRef<StarredPlannerTask[]>;
   setStarredTaskIndex: Dispatch<SetStateAction<StarredTaskIndex>>;
@@ -74,6 +76,7 @@ export function useStarredTaskReorder({
       await reloadFirstStarredPageIfCurrent({
         dependencies,
         starredLoadedRefreshKeyRef,
+        setStarredLoadedRefreshKey,
         starredRefreshKeyRef,
         setStarredTaskIndex,
       });
@@ -116,6 +119,7 @@ export function useStarredTaskReorder({
       await reloadFirstStarredPageIfCurrent({
         dependencies,
         starredLoadedRefreshKeyRef,
+        setStarredLoadedRefreshKey,
         starredRefreshKeyRef,
         setStarredTaskIndex,
       });
@@ -139,6 +143,7 @@ export function useStarredTaskReorder({
       await reloadFirstStarredPageIfCurrent({
         dependencies,
         starredLoadedRefreshKeyRef,
+        setStarredLoadedRefreshKey,
         starredRefreshKeyRef,
         setStarredTaskIndex,
       });
@@ -196,26 +201,31 @@ function samePageIds(first: readonly string[], second: readonly string[]): boole
 async function reloadFirstStarredPageIfCurrent({
   dependencies,
   starredLoadedRefreshKeyRef,
+  setStarredLoadedRefreshKey,
   starredRefreshKeyRef,
   setStarredTaskIndex,
 }: {
   dependencies: PlannerDataDependencies;
   starredLoadedRefreshKeyRef: CurrentRef<number | null>;
+  setStarredLoadedRefreshKey: Dispatch<SetStateAction<number | null>>;
   starredRefreshKeyRef: CurrentRef<number>;
   setStarredTaskIndex: Dispatch<SetStateAction<StarredTaskIndex>>;
 }): Promise<void> {
   const refreshKey = starredRefreshKeyRef.current;
   starredLoadedRefreshKeyRef.current = null;
+  setStarredLoadedRefreshKey(null);
   try {
     const fresh = await loadStarredTasks(dependencies, {});
     if (!isStarredTaskRefreshCurrent(refreshKey, starredRefreshKeyRef.current)) return;
     starredLoadedRefreshKeyRef.current = refreshKey;
+    setStarredLoadedRefreshKey(refreshKey);
     setStarredTaskIndex((current) => isStarredTaskRefreshCurrent(refreshKey, starredRefreshKeyRef.current)
       ? completePlannerLoad(current, fresh)
       : current);
   } catch {
     if (!isStarredTaskRefreshCurrent(refreshKey, starredRefreshKeyRef.current)) return;
     starredLoadedRefreshKeyRef.current = null;
+    setStarredLoadedRefreshKey(null);
     setStarredTaskIndex((current) => current.data
       ? {
         ...current,
