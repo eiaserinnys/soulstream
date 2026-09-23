@@ -19,6 +19,23 @@ import {
 } from "./planner-data";
 
 describe("planner BFF data", () => {
+  it("saves starred order with the shared page boundary API contract", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    const dependencies = createPlannerDataDependencies(fetcher as typeof fetch);
+
+    await dependencies.saveStarredTaskOrder?.("task-a", "task-b");
+
+    expect(fetcher).toHaveBeenCalledWith("/api/planner/starred-tasks/order", {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ page_id: "task-a", before_page_id: "task-b" }),
+    });
+  });
+
   it("loads today in one request without calling the page API fanout", async () => {
     const api = pageApiThatMustStayIdle();
     const fetchPlanner = vi.fn(async () => ({

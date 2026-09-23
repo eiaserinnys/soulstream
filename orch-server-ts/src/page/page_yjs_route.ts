@@ -7,6 +7,7 @@ import {
 } from "./page_browser_routes.js";
 import { registerPageYjsHostOperationRoutes } from "./page_host_operations.js";
 import type { PageYjsService } from "./page_service.js";
+import type { PageUpdatedObserver } from "./page_update_notifications.js";
 import {
   registerPlannerRoutes,
   type PlannerRouteOptions,
@@ -24,6 +25,8 @@ export interface PageYjsRouteOptions {
   browserReads?: PageBrowserRouteOptions["reads"];
   resolveAgentId?: PageBrowserRouteOptions["resolveAgentId"];
   plannerReads?: PlannerRouteOptions["provider"];
+  starredTaskOrder?: PlannerRouteOptions["starredTaskOrder"];
+  onPageUpdated?: PageUpdatedObserver;
 }
 
 export function registerPageYjsRoutes(
@@ -47,8 +50,13 @@ export function registerPageYjsRoutes(
       resolveAgentId: options.resolveAgentId,
     });
     if (options.plannerReads) {
+      if (!options.starredTaskOrder || !options.onPageUpdated) {
+        throw new Error("Planner writes and page update notifications are not configured");
+      }
       registerPlannerRoutes(app, {
         provider: options.plannerReads,
+        starredTaskOrder: options.starredTaskOrder,
+        onPageUpdated: options.onPageUpdated,
         dailyPages: service,
         resolveUser: options.resolveBrowserUser,
       });

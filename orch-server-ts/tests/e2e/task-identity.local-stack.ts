@@ -69,8 +69,11 @@ try {
     resolveDashboardUserId: () => "local@example.com",
     taskIdentityService: identity,
   });
+  const plannerRepository = new PlannerRepository(resolver);
   registerPlannerRoutes(app, {
-    provider: new PlannerRepository(resolver),
+    provider: plannerRepository,
+    starredTaskOrder: plannerRepository,
+    onPageUpdated: () => undefined,
     dailyPages: pages,
     resolveUser: async () => ({ email: "local@example.com" }),
   });

@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 
+import { syncStarredTaskOrderProjection } from "../planner/planner_starred_task_order.js";
 import type { PostgresQuerySql } from "../runtime/postgres_query_adapter.js";
 import type { PageYjsReplica } from "./page_yjs_model.js";
 
@@ -56,6 +57,7 @@ export async function upsertPageProjection(
     `;
     const row = rows[0];
     if (!row) throw new Error("page upsert returned no row");
+    await syncStarredTaskOrderProjection(sql, replica);
     return row;
   }
   const rows = await sql<readonly { created_at: Date; updated_at: Date }[]>`
@@ -77,6 +79,7 @@ export async function upsertPageProjection(
       (EXCLUDED.title, EXCLUDED.daily_date, EXCLUDED.version, EXCLUDED.archived, EXCLUDED.metadata)
     RETURNING created_at, updated_at
   `;
+  await syncStarredTaskOrderProjection(sql, replica);
   return rows[0] ?? { created_at: new Date(0), updated_at: new Date(0) };
 }
 

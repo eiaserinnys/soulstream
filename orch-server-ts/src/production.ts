@@ -351,6 +351,14 @@ export async function createLiveProductionApplication(
       authBearerToken: config.auth_bearer_token,
       browserReads: pageRepository,
       plannerReads: plannerRepository,
+      starredTaskOrder: plannerRepository,
+      onPageUpdated: ({ pageId, version }) => {
+        runtimeServices.sessionBroadcaster.append({
+          type: "page_updated",
+          page_id: pageId,
+          version,
+        });
+      },
       resolveAgentId: (nodeId, agentId) =>
         resolveRegisteredAgentId(
           registry,

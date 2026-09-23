@@ -76,6 +76,7 @@ export interface TaskRunHistoryPage {
 
 export interface PlannerDataDependencies {
   fetchPlanner(path: string): Promise<unknown>;
+  saveStarredTaskOrder?(pageId: string, beforePageId: string | null): Promise<void>;
 }
 
 export function createPlannerDataDependencies(
@@ -95,6 +96,26 @@ export function createPlannerDataDependencies(
         ].filter(Boolean).join("\n"));
       }
       return await response.json();
+    },
+    saveStarredTaskOrder: async (pageId, beforePageId) => {
+      const response = await fetchImplementation("/api/planner/starred-tasks/order", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ page_id: pageId, before_page_id: beforePageId }),
+      });
+      if (!response.ok) {
+        const detail = await plannerResponseDetail(response);
+        throw new Error([
+          `별표 순서 저장 실패 (${response.status})`,
+          detail,
+        ].filter(Boolean).join("\n"));
+      }
+      const payload = await response.json() as { ok?: unknown };
+      if (payload?.ok !== true) throw new Error("별표 순서 저장 응답이 올바르지 않습니다.");
     },
   };
 }

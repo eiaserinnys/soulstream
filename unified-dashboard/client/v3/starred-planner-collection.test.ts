@@ -5,6 +5,7 @@ import type { PageDto } from "@seosoyoung/soul-ui/page";
 import type { PlannerTask } from "./planner-data";
 import {
   applyStarredPlannerTaskChanges,
+  isStarredPlannerPageCurrent,
   mergeStarredPlannerTasks,
 } from "./starred-planner-collection";
 
@@ -30,6 +31,16 @@ describe("starred planner collection", () => {
 
     expect(applyStarredPlannerTaskChanges([], [{ page: added, starred: true }])).toEqual([added]);
     expect(applyStarredPlannerTaskChanges([added], [{ page: added, starred: false }])).toEqual([]);
+  });
+
+  it("rejects a load-more response after the first-page cursor or order changes", () => {
+    const first = plannerTask("task-a", "업무 A");
+    const second = plannerTask("task-b", "업무 B");
+    const current = { items: [first, second], nextCursor: "cursor-new" };
+
+    expect(isStarredPlannerPageCurrent(current, ["task-a", "task-b"], "cursor-new")).toBe(true);
+    expect(isStarredPlannerPageCurrent(current, ["task-a", "task-b"], "cursor-old")).toBe(false);
+    expect(isStarredPlannerPageCurrent(current, ["task-b", "task-a"], "cursor-new")).toBe(false);
   });
 });
 

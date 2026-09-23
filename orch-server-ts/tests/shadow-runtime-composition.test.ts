@@ -221,6 +221,10 @@ function createInertPageYjsRoutes() {
       getProjectLegacySessions: vi.fn(async () => ({ items: [], next_cursor: null })),
       getTaskRuns: vi.fn(async () => null),
     },
+    starredTaskOrder: {
+      moveStarredTask: vi.fn(async () => ({ pageVersion: 1, changed: false })),
+    },
+    onPageUpdated: vi.fn(),
     createService: () => ({
       handleConnection: vi.fn(),
       assertWebsocketAuthConfigured: vi.fn(),

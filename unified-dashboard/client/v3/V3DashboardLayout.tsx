@@ -117,9 +117,11 @@ function V3DashboardContent() {
     starredTasksHasMore,
     starredTasksLoading,
     starredTasksLoadingMore,
+    starredTasksReordering,
     projectTasksLoadingMore,
     projectDocumentsLoadingMore,
     loadMoreStarredTasks,
+    reorderStarredTasks,
     loadMoreProjectTasks,
     loadMoreProjectDocuments,
     patchTask: patchLoadedTask,
@@ -423,9 +425,10 @@ function V3DashboardContent() {
       />
       <V3Navigation
         dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} selectedFolderId={selectedFolderId}
-        starredTasks={starredTasks} starredTasksHasMore={starredTasksHasMore} starredTasksLoading={starredTasksLoading || starredTasksLoadingMore} todayTaskIds={todayTaskIds}
+        starredTasks={starredTasks} starredTasksHasMore={starredTasksHasMore} starredTasksLoading={starredTasksLoading || starredTasksLoadingMore || starredTasksReordering} todayTaskIds={todayTaskIds}
         completedTaskIds={new Set(currentTasks.filter((task) => task.status === "completed").map((task) => task.page.id))}
         onLoadMoreStarredTasks={() => { void loadMoreStarredTasks(); }}
+        onReorderStarredTasks={reorderStarredTasks}
         onSelectDate={(date) => { clearProject(); setSelectedDate(date); }} onSelectFolder={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); setNewDocumentOpen(false); }}
         onSelectTask={(task) => { void openStarredTask(task); }} onCompleteTask={plannerActions.completeStarredTask} onToggleTaskToday={plannerActions.toggleStarredTaskToday}
         onMoveTaskToProject={(task) => { void taskProjectMove.openPage(task); }} {...projectNavigationMutations}

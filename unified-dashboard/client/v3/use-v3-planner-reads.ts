@@ -17,6 +17,7 @@ import {
   loadProjectPlanner,
   loadProjectTaskPage,
   loadTaskRunHistory,
+  starredTaskPage,
   type DailyPlannerData,
   type PlannerDataDependencies,
   type PlannerPage,
@@ -26,14 +27,21 @@ import {
 } from "./planner-data";
 import {
   applyStarredPlannerTaskChanges,
+  isStarredPlannerPageCurrent,
   mergeStarredPlannerTasks,
 } from "./starred-planner-collection";
+import {
+  isStarredTaskRefreshCurrent,
+  isStarredTaskRequestCurrent,
+  isStarredTaskSnapshotCurrent,
+} from "./starred-task-order";
 import {
   movePlannerSession,
   removePlannerSessions,
   replacePlannerTask,
 } from "./planner-mutation-projection";
 import { usePlannerProjectMoveProjection } from "./use-planner-project-move-projection";
+import { useStarredTaskReorder } from "./use-starred-task-reorder";
 
 const EMPTY_SESSION_IDS: string[] = [];
 
@@ -64,6 +72,7 @@ export function usePlannerCollections({
   const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const [project, setProject] = useState<PlannerLoadState<ProjectPlannerData>>({ status: "loading", data: null, message: null });
   const [starredTaskIndex, setStarredTaskIndex] = useState<PlannerLoadState<PlannerPage<StarredPlannerTask>>>({ status: "loading", data: null, message: null });
+  const [starredLoadedRefreshKey, setStarredLoadedRefreshKey] = useState<number | null>(null);
   const [starredTasksLoadingMore, setStarredTasksLoadingMore] = useState(false);
   const [projectTasksLoadingMore, setProjectTasksLoadingMore] = useState(false);
   const [projectDocumentsLoadingMore, setProjectDocumentsLoadingMore] = useState(false);
@@ -71,14 +80,29 @@ export function usePlannerCollections({
   const dailyRef = useRef(daily);
   const projectRef = useRef(project);
   const starredTaskIndexRef = useRef(starredTaskIndex);
+  const starredRefreshKeyRef = useRef(refreshKeys.starred);
+  const starredLoadedRefreshKeyRef = useRef<number | null>(null);
+  const starredOrderRevisionRef = useRef(0);
   const stableProjectsRef = useRef<PageDto[]>([]);
   const stableStarredTasksRef = useRef<StarredPlannerTask[]>([]);
   dailyRef.current = daily;
   projectRef.current = project;
   starredTaskIndexRef.current = starredTaskIndex;
+  starredRefreshKeyRef.current = refreshKeys.starred;
 
   useEffect(() => {
     let active = true;
+    const refreshKey = refreshKeys.starred;
+    const orderRevision = starredOrderRevisionRef.current;
+    const hadCurrentSnapshot = isStarredTaskSnapshotCurrent({
+      loadedRefreshKey: starredLoadedRefreshKeyRef.current,
+      expectedRefreshKey: refreshKey,
+      currentRefreshKey: starredRefreshKeyRef.current,
+      expectedOrderRevision: orderRevision,
+      currentOrderRevision: starredOrderRevisionRef.current,
+    });
+    starredLoadedRefreshKeyRef.current = null;
+    setStarredLoadedRefreshKey(null);
     const previous = starredTaskIndexRef.current.data;
     setStarredTaskIndex(beginPlannerLoad);
     void loadConfirmedResult({
@@ -86,11 +110,51 @@ export function usePlannerCollections({
       load: () => loadStarredTasks(dependencies, {}),
       clearsVisibleContent: (current, next) => current.items.length > 0 && next.items.length === 0,
     }).then((data) => {
-      if (active) setStarredTaskIndex((current) => completePlannerLoad(current, data));
+      if (active && isStarredTaskRequestCurrent({
+        expectedRefreshKey: refreshKey,
+        currentRefreshKey: starredRefreshKeyRef.current,
+        expectedOrderRevision: orderRevision,
+        currentOrderRevision: starredOrderRevisionRef.current,
+      })) {
+        starredLoadedRefreshKeyRef.current = refreshKey;
+        setStarredLoadedRefreshKey(refreshKey);
+        setStarredTaskIndex((current) => isStarredTaskRequestCurrent({
+          expectedRefreshKey: refreshKey,
+          currentRefreshKey: starredRefreshKeyRef.current,
+          expectedOrderRevision: orderRevision,
+          currentOrderRevision: starredOrderRevisionRef.current,
+        }) ? completePlannerLoad(current, data) : current);
+      }
     }).catch((error: unknown) => {
-      if (active) {
+      if (active && isStarredTaskRequestCurrent({
+        expectedRefreshKey: refreshKey,
+        currentRefreshKey: starredRefreshKeyRef.current,
+        expectedOrderRevision: orderRevision,
+        currentOrderRevision: starredOrderRevisionRef.current,
+      })) {
+        if (hadCurrentSnapshot || isStarredTaskSnapshotCurrent({
+          loadedRefreshKey: starredLoadedRefreshKeyRef.current,
+          expectedRefreshKey: refreshKey,
+          currentRefreshKey: starredRefreshKeyRef.current,
+          expectedOrderRevision: orderRevision,
+          currentOrderRevision: starredOrderRevisionRef.current,
+        })) {
+          starredLoadedRefreshKeyRef.current = refreshKey;
+          setStarredLoadedRefreshKey(refreshKey);
+          setStarredTaskIndex((current) => current.data
+            ? completePlannerLoad(current, current.data)
+            : current);
+          return;
+        }
+        starredLoadedRefreshKeyRef.current = null;
+        setStarredLoadedRefreshKey(null);
         const message = errorText(error);
-        setStarredTaskIndex((current) => failPlannerLoad(current, message));
+        setStarredTaskIndex((current) => {
+          const failed = failPlannerLoad(current, message);
+          return failed.data
+            ? { ...failed, data: { ...failed.data, nextCursor: null } }
+            : failed;
+        });
         notify(`별표 업무 조회 실패 · ${message}`);
       }
     });
@@ -220,6 +284,17 @@ export function usePlannerCollections({
   }, [updateLoadedTasks]);
 
   const moveTaskProject = usePlannerProjectMoveProjection(setDaily, setProject);
+  const { starredTasksReordering, reorderStarredTasks } = useStarredTaskReorder({
+    dependencies,
+    notify,
+    starredTaskIndexRef,
+    starredLoadedRefreshKeyRef,
+    starredOrderRevisionRef,
+    setStarredLoadedRefreshKey,
+    starredRefreshKeyRef,
+    stableStarredTasksRef,
+    setStarredTaskIndex,
+  });
 
   const refreshDaily = useCallback(() => {
     setMutationRefresh((current) => ({ ...current, daily: current.daily + 1 }));
@@ -240,23 +315,48 @@ export function usePlannerCollections({
   }, []);
 
   const loadMoreStarredTasks = useCallback(async () => {
-    const cursor = starredTaskIndex.data?.nextCursor;
-    if (!cursor || starredTasksLoadingMore) return;
+    const page = starredTaskIndex.data;
+    const cursor = page?.nextCursor;
+    if (
+      !page
+      || !cursor
+      || starredTasksLoadingMore
+      || !isStarredTaskRefreshCurrent(starredLoadedRefreshKeyRef.current, starredRefreshKeyRef.current)
+    ) return;
+    const expectedPageIds = page.items.map((task) => starredTaskPage(task).id);
+    const refreshKey = starredRefreshKeyRef.current;
+    const orderRevision = starredOrderRevisionRef.current;
     setStarredTasksLoadingMore(true);
     try {
       const next = await loadStarredTasks(dependencies, { cursor });
-      setStarredTaskIndex((current) => current.data
-        ? completePlannerLoad(current, {
-          items: mergeStarredPlannerTasks(current.data.items, next.items),
+      if (!isStarredTaskRequestCurrent({
+        expectedRefreshKey: refreshKey,
+        currentRefreshKey: starredRefreshKeyRef.current,
+        expectedOrderRevision: orderRevision,
+        currentOrderRevision: starredOrderRevisionRef.current,
+      })) return;
+      setStarredTaskIndex((current) => {
+        if (!isStarredTaskRequestCurrent({
+          expectedRefreshKey: refreshKey,
+          currentRefreshKey: starredRefreshKeyRef.current,
+          expectedOrderRevision: orderRevision,
+          currentOrderRevision: starredOrderRevisionRef.current,
+        })) return current;
+        const currentPage = current.data;
+        if (!isStarredPlannerPageCurrent(currentPage, expectedPageIds, cursor) || !currentPage) {
+          return current;
+        }
+        return completePlannerLoad(current, {
+          items: mergeStarredPlannerTasks(currentPage.items, next.items),
           nextCursor: next.nextCursor,
-        })
-        : current);
+        });
+      });
     } catch (error) {
       notify(`별표 업무 더 보기 실패 · ${errorText(error)}`);
     } finally {
       setStarredTasksLoadingMore(false);
     }
-  }, [dependencies, notify, starredTaskIndex.data?.nextCursor, starredTasksLoadingMore]);
+  }, [dependencies, notify, starredTaskIndex.data, starredTasksLoadingMore]);
 
   const loadMoreProjectTasks = useCallback(async () => {
     const data = project.data;
@@ -307,12 +407,16 @@ export function usePlannerCollections({
     projects,
     selectedProject,
     starredTasks,
-    starredTasksHasMore: Boolean(starredTaskIndex.data?.nextCursor),
-    starredTasksLoading: starredTaskIndex.status === "loading" && !starredTaskIndex.data,
+    starredTasksHasMore: Boolean(starredTaskIndex.data?.nextCursor)
+      && isStarredTaskRefreshCurrent(starredLoadedRefreshKey, refreshKeys.starred),
+    starredTasksLoading: (starredTaskIndex.status === "loading" && !starredTaskIndex.data)
+      || !isStarredTaskRefreshCurrent(starredLoadedRefreshKey, refreshKeys.starred),
     starredTasksLoadingMore,
+    starredTasksReordering,
     projectTasksLoadingMore,
     projectDocumentsLoadingMore,
     loadMoreStarredTasks,
+    reorderStarredTasks,
     loadMoreProjectTasks,
     loadMoreProjectDocuments,
     patchTask,

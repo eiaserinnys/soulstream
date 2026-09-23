@@ -239,6 +239,13 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
     family: "page_yjs",
   },
   {
+    methods: ["PATCH"],
+    path: "/api/planner/starred-tasks/order",
+    name: "move_planner_starred_task",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
     methods: ["GET"],
     path: "/api/planner/daily-history",
     name: "list_planner_daily_history",
