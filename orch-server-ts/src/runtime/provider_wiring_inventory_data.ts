@@ -1,6 +1,7 @@
 import type {
   LiveProviderCutoverRisk,
   LiveProviderDependency,
+  LiveProviderWiringCompositionOwner,
   LiveProviderWiringInventoryEntry,
   LiveProviderWiringStatus,
 } from "./provider_wiring_inventory.js";
@@ -46,8 +47,8 @@ export const liveProviderWiringInventory = [
   e("node.ws", "runtime", "implemented", "TS createOrchestratorRuntimeServices builds node WS registry, transport hub, and isolated ride-along event sinks.", ["runtime", "websocket"], "low", "Production injects PushNotifier as an additional sink; accept() is synchronous and non-throwing while closeResources() drains pending sends before the shared DB closes."),
   e("public.status", "publicStatusRoutes.configProvider", "implemented", "TS live config adapter src/runtime/live_config_route_providers.ts maps Python node_name/google_client_id/atom_enabled settings for src/public/public_status_routes.ts.", ["env"], "low", "Reads only the explicit LiveConfigProviderBoundary and preserves Python is_auth_enabled = bool(google_client_id)."),
   e("public.status", "publicStatusRoutes.folderCountsProvider", "implemented", "TS live folder DB adapter src/runtime/live_folder_route_provider.ts maps Python get_folder_counts(node_id=None) for src/public/public_status_routes.ts.", ["db"], "medium", "Returns raw sessions GROUP BY folder_id counts and reuses the same folder serialization as folderRoutes.provider; route-level restricted descendant filtering uses the shared live dashboard access provider. Python orch-server/5200 proxy/fallback is not involved."),
-  e("recurring.jobs", "recurringJobRoutes.service", "implemented", "TS production src/production.ts constructs RecurringJobService from the live recurring-job repository and runtime execution boundary for src/recurring-jobs/recurring_job_routes.ts.", ["db", "runtime", "session_registry", "websocket"], "high", "One production-owned service is shared by the HTTP routes and scheduler. It persists job/run state through the repository and dispatches scheduled work through the existing runtime command boundary; routes do not create a second service or scheduler."),
-  e("recurring.jobs", "recurringJobRoutes.resolveActor", "implemented", "TS production src/production.ts resolves the route actor through the shared authenticated-user resolver for src/recurring-jobs/recurring_job_routes.ts.", ["auth", "jwt"], "high", "The resolver derives ownerEmail, actorId, callerInfo, and browser versus soul-app source from authenticated credentials. Request bodies cannot supply an actor identity."),
+  e("recurring.jobs", "recurringJobRoutes.service", "implemented", "TS production composition src/production.ts creates one RecurringJobService and src/recurring-jobs/production_wiring.ts shares it with the HTTP routes, host routes, and scheduler.", ["db", "runtime", "session_registry", "websocket"], "high", "The production-owned service persists job/run state through the repository and dispatches scheduled work through the existing runtime command boundary; routes do not create a second service or scheduler.", "production-composition"),
+  e("recurring.jobs", "recurringJobRoutes.resolveActor", "implemented", "TS production composition src/recurring-jobs/production_wiring.ts resolves route actors through the shared authenticated-user resolver.", ["auth", "jwt"], "high", "The resolver derives ownerEmail, actorId, callerInfo, and browser versus soul-app source from verified credentials. Production passes no body identity to the resolver.", "production-composition"),
   e("push", "pushRoutes.repository", "implemented", "TS live push repository src/runtime/live_push_registration_repository.ts maps the Python push_tokens upsert/list/delete contract for routes and PushNotifier.", ["db"], "medium", "The same injected LiveDbSqlResolver repository instance preserves the user_email + device_id conflict key, lists every device for notifier fan-out, and deletes DeviceNotRegistered rows."),
   e("push", "pushRoutes.resolveJwtUser", "implemented", "TS shared authenticated user resolver src/runtime/live_authenticated_user_resolver.ts reuses the live auth JWT helper for src/push/push_routes.ts.", ["auth", "jwt"], "high", "Cookie-first dashboard JWT and Bearer JWT extraction share one boundary; static service bearer values fail JWT verification. The same resolver bundle exposes authenticated email for later user preferences/background wiring."),
   e("tasks", "taskRoutes.provider", "implemented", "TS live task DB/runtime adapter src/runtime/live_task_route_provider.ts maps Python task overview/snapshot reads and mutation node discovery for src/tasks/task_routes.ts.", ["db", "session_registry"], "medium", "Uses i69 folder serialization via the shared live folder provider, reads Python-shaped overview/snapshot projections from Postgres, and resolves mutation targets from the TS runtime registry. Status mutations remain on taskRoutes.httpClient direct node transport; Python orch-server/5200 proxy/fallback is not involved."),
@@ -80,6 +81,7 @@ function e(
   dependencies: readonly LiveProviderDependency[],
   cutoverRisk: LiveProviderCutoverRisk,
   notes: string,
+  compositionOwner: LiveProviderWiringCompositionOwner = "live-provider-factory",
 ): LiveProviderWiringInventoryEntry {
-  return { owner, path, status, source, dependencies, cutoverRisk, notes };
+  return { owner, path, compositionOwner, status, source, dependencies, cutoverRisk, notes };
 }

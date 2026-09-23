@@ -8,6 +8,23 @@ import {
 } from "../src/index.js";
 
 describe("live provider wiring inventory", () => {
+  it("marks recurring job routes as production-composition owned", () => {
+    expect(
+      liveProviderWiringInventory
+        .filter((entry) => entry.owner === "recurring.jobs")
+        .map((entry) => ({ path: entry.path, compositionOwner: entry.compositionOwner })),
+    ).toEqual([
+      {
+        path: "recurringJobRoutes.service",
+        compositionOwner: "production-composition",
+      },
+      {
+        path: "recurringJobRoutes.resolveActor",
+        compositionOwner: "production-composition",
+      },
+    ]);
+  });
+
   it("covers every shadow route provider requirement exactly once", () => {
     const result = validateLiveProviderWiringInventory({
       requirements: shadowRouteCompositionRequirements,
@@ -44,6 +61,7 @@ describe("live provider wiring inventory", () => {
         {
           owner: "unknown.owner",
           path: "unknown.provider",
+          compositionOwner: "live-provider-factory",
           status: "stub",
           source: "No matching shadow composition requirement.",
           dependencies: [],
