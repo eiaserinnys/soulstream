@@ -12,6 +12,12 @@ export {
   useFolderRootDropSurface,
 } from "./FolderDragSurface";
 export type { FolderDragData, FolderRootDropData } from "./folder-dnd";
+export {
+  StarredTaskSortableContext,
+  reorderStarredTaskIds,
+  useStarredTaskDragSurface,
+} from "./starred-task-dnd";
+export type { StarredTaskDragData } from "./starred-task-dnd";
 
 // === SSE Session Provider ===
 export { SSESessionProvider, sseSessionProvider } from "./SSESessionProvider";

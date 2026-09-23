@@ -106,7 +106,13 @@ export function selectV3PlannerInvalidationKeys(
   return {
     daily: pageCollections,
     project: pageCollections,
-    starred: selectV3InvalidationKey(current, ["page", "replay"]),
+    starred: selectV3InvalidationKey(current, [
+      "session_created",
+      "session_deleted",
+      "task",
+      "page",
+      "replay",
+    ]),
     runHistory: selectV3InvalidationKey(current, [
       "session_created",
       "session_deleted",

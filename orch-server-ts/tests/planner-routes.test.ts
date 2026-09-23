@@ -7,15 +7,95 @@ import {
   registerPlannerRoutes,
   type PlannerReadProvider,
 } from "../src/index.js";
+import { PlannerStarredTaskMembershipConflictError } from "../src/planner/planner_starred_task_order.js";
 
 const browserCookie = "soul_dashboard_auth=dashboard-token";
 
 describe("planner routes", () => {
+  it("moves a starred task before a member outside the first page and notifies after commit", async () => {
+    const provider = providerDouble();
+    const eventOrder: string[] = [];
+    const starredTaskOrder = {
+      moveStarredTask: vi.fn(async () => {
+        eventOrder.push("transaction committed");
+        return { pageVersion: 2, changed: true };
+      }),
+    };
+    const onPageUpdated = vi.fn(() => eventOrder.push("page_updated"));
+    const app = Fastify({ logger: false });
+    registerPlannerRoutes(app, {
+      provider,
+      starredTaskOrder,
+      onPageUpdated,
+      dailyPages: dailyPageServiceDouble(),
+      resolveUser: cookieUserResolver(),
+    });
+    try {
+      const response = await app.inject({
+        method: "PATCH",
+        url: "/api/planner/starred-tasks/order",
+        headers: { cookie: browserCookie },
+        payload: { page_id: "source", before_page_id: "unloaded-target" },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ ok: true });
+      expect(starredTaskOrder.moveStarredTask).toHaveBeenCalledWith({
+        pageId: "source",
+        beforePageId: "unloaded-target",
+      });
+      expect(onPageUpdated).toHaveBeenCalledWith({ pageId: "source", version: 2 });
+      expect(eventOrder).toEqual(["transaction committed", "page_updated"]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects invalid ordering requests with 400 and stale members with 409", async () => {
+    const provider = providerDouble();
+    const starredTaskOrder = starredTaskOrderDouble();
+    starredTaskOrder.moveStarredTask.mockRejectedValueOnce(
+      new PlannerStarredTaskMembershipConflictError("source is not an active starred task"),
+    );
+    const app = Fastify({ logger: false });
+    registerPlannerRoutes(app, {
+      provider,
+      starredTaskOrder,
+      onPageUpdated: vi.fn(),
+      dailyPages: dailyPageServiceDouble(),
+      resolveUser: cookieUserResolver(),
+    });
+    try {
+      const headers = { cookie: browserCookie };
+      const sameId = await app.inject({
+        method: "PATCH",
+        url: "/api/planner/starred-tasks/order",
+        headers,
+        payload: { page_id: "same", before_page_id: "same" },
+      });
+      expect(sameId.statusCode).toBe(400);
+      expect(starredTaskOrder.moveStarredTask).not.toHaveBeenCalled();
+
+      const inactive = await app.inject({
+        method: "PATCH",
+        url: "/api/planner/starred-tasks/order",
+        headers,
+        payload: { page_id: "gone", before_page_id: null },
+      });
+      expect(inactive.statusCode).toBe(409);
+      expect(inactive.json()).toMatchObject({ detail: { error: { code: "PLANNER_STARRED_TASK_NOT_ACTIVE" } } });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("requires browser authentication and validates the requested date", async () => {
     const provider = providerDouble();
     const app = Fastify({ logger: false });
     registerPlannerRoutes(app, {
       provider,
+      starredTaskOrder: starredTaskOrderDouble(),
+      onPageUpdated: vi.fn(),
       dailyPages: dailyPageServiceDouble(),
       resolveUser: cookieUserResolver(),
     });
@@ -51,6 +131,8 @@ describe("planner routes", () => {
     const app = Fastify({ logger: false });
     registerPlannerRoutes(app, {
       provider,
+      starredTaskOrder: starredTaskOrderDouble(),
+      onPageUpdated: vi.fn(),
       dailyPages: dailyPageServiceDouble(),
       resolveUser: cookieUserResolver(),
     });
@@ -93,6 +175,8 @@ describe("planner routes", () => {
     const app = Fastify({ logger: false });
     registerPlannerRoutes(app, {
       provider,
+      starredTaskOrder: starredTaskOrderDouble(),
+      onPageUpdated: vi.fn(),
       dailyPages,
       resolveUser: cookieUserResolver(),
     });
@@ -130,6 +214,8 @@ describe("planner routes", () => {
     const app = Fastify({ logger: false });
     registerPlannerRoutes(app, {
       provider,
+      starredTaskOrder: starredTaskOrderDouble(),
+      onPageUpdated: vi.fn(),
       dailyPages: dailyPageServiceDouble(),
       resolveUser: cookieUserResolver(),
     });
@@ -184,6 +270,8 @@ describe("planner routes", () => {
     const app = Fastify({ logger: false });
     registerPlannerRoutes(app, {
       provider,
+      starredTaskOrder: starredTaskOrderDouble(),
+      onPageUpdated: vi.fn(),
       dailyPages: dailyPageServiceDouble(),
       resolveUser: cookieUserResolver(),
     });
@@ -236,6 +324,8 @@ describe("planner routes", () => {
     const app = Fastify({ logger: false });
     registerPlannerRoutes(app, {
       provider,
+      starredTaskOrder: starredTaskOrderDouble(),
+      onPageUpdated: vi.fn(),
       dailyPages: dailyPageServiceDouble(),
       resolveUser: cookieUserResolver(),
     });
@@ -350,6 +440,8 @@ describe("planner routes", () => {
     const app = Fastify({ logger: false });
     registerPlannerRoutes(app, {
       provider,
+      starredTaskOrder: starredTaskOrderDouble(),
+      onPageUpdated: vi.fn(),
       dailyPages: dailyPageServiceDouble(),
       resolveUser: cookieUserResolver(),
     });
@@ -375,6 +467,7 @@ describe("planner routes", () => {
     expect(plannerRouteAuthRequirements).toEqual({
       "GET /api/planner/today": true,
       "GET /api/planner/starred-tasks": true,
+      "PATCH /api/planner/starred-tasks/order": true,
       "GET /api/planner/daily-history": true,
       "GET /api/planner/projects/{pageId}": true,
       "GET /api/planner/projects/{pageId}/tasks": true,
@@ -404,6 +497,12 @@ function providerDouble(): PlannerReadProvider & {
     getProjectDocuments: vi.fn(async () => null),
     getProjectLegacySessions: vi.fn(async () => ({ items: [], next_cursor: null })),
     getTaskRuns: vi.fn(async () => null),
+  };
+}
+
+function starredTaskOrderDouble() {
+  return {
+    moveStarredTask: vi.fn(async () => ({ pageVersion: 2, changed: true })),
   };
 }
 

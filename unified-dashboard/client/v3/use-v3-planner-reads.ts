@@ -34,6 +34,7 @@ import {
   replacePlannerTask,
 } from "./planner-mutation-projection";
 import { usePlannerProjectMoveProjection } from "./use-planner-project-move-projection";
+import { useStarredTaskReorder } from "./use-starred-task-reorder";
 
 const EMPTY_SESSION_IDS: string[] = [];
 
@@ -220,6 +221,13 @@ export function usePlannerCollections({
   }, [updateLoadedTasks]);
 
   const moveTaskProject = usePlannerProjectMoveProjection(setDaily, setProject);
+  const { starredTasksReordering, reorderStarredTasks } = useStarredTaskReorder({
+    dependencies,
+    notify,
+    starredTaskIndexRef,
+    stableStarredTasksRef,
+    setStarredTaskIndex,
+  });
 
   const refreshDaily = useCallback(() => {
     setMutationRefresh((current) => ({ ...current, daily: current.daily + 1 }));
@@ -310,9 +318,11 @@ export function usePlannerCollections({
     starredTasksHasMore: Boolean(starredTaskIndex.data?.nextCursor),
     starredTasksLoading: starredTaskIndex.status === "loading" && !starredTaskIndex.data,
     starredTasksLoadingMore,
+    starredTasksReordering,
     projectTasksLoadingMore,
     projectDocumentsLoadingMore,
     loadMoreStarredTasks,
+    reorderStarredTasks,
     loadMoreProjectTasks,
     loadMoreProjectDocuments,
     patchTask,

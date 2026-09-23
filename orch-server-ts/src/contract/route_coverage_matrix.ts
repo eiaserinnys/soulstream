@@ -102,4 +102,5 @@ export const tsOnlyRouteKeys = [
   "POST /api/recurring-jobs/{job_id}/run",
   "POST /api/recurring-jobs/{job_id}/archive",
   "GET /api/recurring-jobs/{job_id}/runs",
+  "PATCH /api/planner/starred-tasks/order",
 ] as const;

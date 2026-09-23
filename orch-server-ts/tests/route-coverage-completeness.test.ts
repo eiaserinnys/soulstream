@@ -35,6 +35,7 @@ describe("route coverage completeness gate", () => {
     "PATCH /api/pages/{pageId}/starred",
     "GET /api/planner/today",
     "GET /api/planner/starred-tasks",
+    "PATCH /api/planner/starred-tasks/order",
     "GET /api/planner/daily-history",
     "GET /api/planner/projects/{pageId}",
     "GET /api/planner/projects/{pageId}/tasks",
@@ -189,6 +190,8 @@ function createAllOptInRouteApp() {
         getToday: async () => null,
         getProject: async () => null,
       },
+      starredTaskOrder: { moveStarredTask: async () => ({ pageVersion: 1, changed: false }) },
+      onPageUpdated: () => undefined,
       createService: () => ({
         handleConnection: () => undefined,
         assertWebsocketAuthConfigured: () => undefined,

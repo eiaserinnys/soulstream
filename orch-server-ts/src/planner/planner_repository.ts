@@ -16,6 +16,7 @@ import {
   type PlannerMountCursor,
 } from "./planner_repository_reads.js";
 import { listFullStarredTasks } from "./planner_starred_task_reads.js";
+import { moveStarredTaskOrder } from "./planner_starred_task_order.js";
 import {
   plannerQuery,
 } from "./planner_aggregate_query.js";
@@ -29,6 +30,10 @@ import type {
 
 export class PlannerRepository implements PlannerReadProvider {
   constructor(private readonly resolver: LiveDbSqlResolver) {}
+
+  async moveStarredTask(input: { pageId: string; beforePageId: string | null }) {
+    return await moveStarredTaskOrder(this.resolver, input);
+  }
 
   async getStarredTasks(input: { cursor?: string; limit: number; detail?: "full" }) {
     const sql = await this.resolver.resolveSql();

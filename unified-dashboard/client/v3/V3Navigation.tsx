@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   Button,
+  DashboardDndProvider,
   DashboardIconCap,
   Dialog,
   DialogDescription,
@@ -9,12 +10,16 @@ import {
   DialogPopup,
   DialogTitle,
   readFolderTreeExpandedState,
+  reorderStarredTaskIds,
+  StarredTaskSortableContext,
+  pointerFirstCollisionDetection,
+  useStarredTaskDragSurface,
   useGlassSurface,
   writeFolderTreeExpandedState,
   type CatalogFolder,
   type CatalogFolderReorderItem,
 } from "@seosoyoung/soul-ui";
-import { ChevronsDown, FolderPlus } from "lucide-react";
+import { ChevronsDown, FolderPlus, GripVertical } from "lucide-react";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { ProjectDialog, type ProjectDialogTarget } from "./ProjectDialog";
@@ -54,6 +59,7 @@ export function V3Navigation({
   todayTaskIds,
   completedTaskIds,
   onLoadMoreStarredTasks,
+  onReorderStarredTasks,
   onSelectDate,
   onSelectFolder,
   onSelectTask,
@@ -77,6 +83,7 @@ export function V3Navigation({
   todayTaskIds: ReadonlySet<string>;
   completedTaskIds: ReadonlySet<string>;
   onLoadMoreStarredTasks(): void;
+  onReorderStarredTasks(movedPageId: string, orderedPageIds: readonly string[]): Promise<void>;
   onSelectDate(date: string): void;
   onSelectFolder(folder: CatalogFolder): void;
   onSelectTask(task: StarredPlannerTask): void;
@@ -100,6 +107,10 @@ export function V3Navigation({
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<MenuState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const starredTaskIds = useMemo(
+    () => starredTasks.map((task) => starredTaskPage(task).id),
+    [starredTasks],
+  );
 
   const storage = typeof window === "undefined" ? undefined : window.localStorage;
   const isProjectExpanded = useCallback((folderId: string) => (
@@ -171,37 +182,45 @@ export function V3Navigation({
       </div>
 
       <h2>중요 작업</h2>
-      <div className="v3-nav-list" data-testid="v3-starred-tasks">
-        {starredTasks.map((task) => {
-          const page = starredTaskPage(task);
-          return (
-            <button
-              type="button"
-              key={page.id}
-              className="v3-starred-task-link"
-              disabled={pendingTaskId === page.id}
-              onClick={() => onSelectTask(task)}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                setContextMenu({ target: { x: event.clientX, y: event.clientY }, kind: "task", task });
-              }}
+      <DashboardDndProvider
+        collisionDetection={pointerFirstCollisionDetection}
+        onReorderStarredTasks={(movedPageId, orderedPageIds) => {
+          void onReorderStarredTasks(movedPageId, orderedPageIds);
+        }}
+      >
+        <div className="v3-nav-list" data-testid="v3-starred-tasks">
+          <StarredTaskSortableContext ids={starredTaskIds}>
+            {starredTasks.map((task) => {
+              const page = starredTaskPage(task);
+              return (
+                <StarredTaskNavigationRow
+                  key={page.id}
+                  task={task}
+                  pageIds={starredTaskIds}
+                  onReorderByKeyboard={onReorderStarredTasks}
+                  disabled={starredTasksLoading || pendingTaskId === page.id}
+                  onSelect={() => onSelectTask(task)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setContextMenu({ target: { x: event.clientX, y: event.clientY }, kind: "task", task });
+                  }}
+                />
+              );
+            })}
+          </StarredTaskSortableContext>
+          {starredTasks.length === 0 ? <p>{starredTasksLoading ? "업무를 불러오는 중…" : "별표 업무가 없습니다."}</p> : null}
+          {starredTasksHasMore ? (
+            <DashboardIconCap
+              label="별표 업무 더 보기"
+              data-testid="v3-load-more-starred-tasks"
+              disabled={starredTasksLoading}
+              onClick={onLoadMoreStarredTasks}
             >
-              <span aria-hidden="true">★</span><span>{page.title}</span>
-            </button>
-          );
-        })}
-        {starredTasks.length === 0 ? <p>{starredTasksLoading ? "업무를 불러오는 중…" : "별표 업무가 없습니다."}</p> : null}
-        {starredTasksHasMore ? (
-          <DashboardIconCap
-            label="별표 업무 더 보기"
-            data-testid="v3-load-more-starred-tasks"
-            disabled={starredTasksLoading}
-            onClick={onLoadMoreStarredTasks}
-          >
-            <ChevronsDown className="h-4 w-4" aria-hidden="true" />
-          </DashboardIconCap>
-        ) : null}
-      </div>
+              <ChevronsDown className="h-4 w-4" aria-hidden="true" />
+            </DashboardIconCap>
+          ) : null}
+        </div>
+      </DashboardDndProvider>
 
       <h2>전체 프로젝트</h2>
       <div className="v3-nav-list" data-testid="v3-all-projects">
@@ -287,6 +306,72 @@ export function V3Navigation({
         <div><kbd>C</kbd> 새 업무 · <kbd>Esc</kbd> 닫기</div>
       </div>
     </nav>
+  );
+}
+
+function StarredTaskNavigationRow({
+  task,
+  pageIds,
+  onReorderByKeyboard,
+  disabled,
+  onSelect,
+  onContextMenu,
+}: {
+  task: StarredPlannerTask;
+  pageIds: string[];
+  onReorderByKeyboard(movedPageId: string, orderedPageIds: readonly string[]): Promise<void>;
+  disabled: boolean;
+  onSelect(): void;
+  onContextMenu(event: MouseEvent<HTMLButtonElement>): void;
+}) {
+  const page = starredTaskPage(task);
+  const drag = useStarredTaskDragSurface({ id: page.id, pageIds, disabled });
+  const [keyboardAnnouncement, setKeyboardAnnouncement] = useState("");
+  return (
+    <div
+      ref={drag.setNodeRef}
+      className={`v3-starred-task-row${drag.isDragging ? " is-dragging" : ""}${drag.isOver ? " is-drop-target" : ""}`}
+      style={drag.style}
+      data-testid={`v3-starred-task-row-${page.id}`}
+    >
+      <button
+        type="button"
+        className="v3-starred-task-link"
+        disabled={disabled}
+        onClick={onSelect}
+        onContextMenu={onContextMenu}
+      >
+        <span aria-hidden="true">★</span><span>{page.title}</span>
+      </button>
+      <button
+        type="button"
+        className="v3-starred-task-drag-handle"
+        ref={drag.setActivatorNodeRef}
+        aria-label={`중요 작업 ${page.title} 순서 변경`}
+        aria-keyshortcuts="ArrowUp ArrowDown"
+        title="위·아래 화살표 키로 순서를 바꿉니다"
+        disabled={disabled}
+        onKeyDownCapture={(event) => {
+          if (event.altKey || event.ctrlKey || event.metaKey) return;
+          const offset = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+          if (!offset) return;
+          const currentIndex = pageIds.indexOf(page.id);
+          const targetPageId = pageIds[currentIndex + offset];
+          if (currentIndex < 0 || !targetPageId) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const orderedPageIds = reorderStarredTaskIds(pageIds, page.id, targetPageId);
+          if (!orderedPageIds) return;
+          setKeyboardAnnouncement(`${page.title}, ${orderedPageIds.indexOf(page.id) + 1}번째로 이동합니다.`);
+          void onReorderByKeyboard(page.id, orderedPageIds);
+        }}
+        {...drag.attributes}
+        {...drag.listeners}
+      >
+        <GripVertical className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <span className="sr-only" aria-live="polite" aria-atomic="true">{keyboardAnnouncement}</span>
+    </div>
   );
 }
 

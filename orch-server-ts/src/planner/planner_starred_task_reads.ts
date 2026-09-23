@@ -1,10 +1,10 @@
 import type { LivePostgresSql } from "../runtime/live_db_sql.js";
 import type { PlannerPageSlice, PlannerTaskDto } from "./planner_contract.js";
-import { decodeCursor, encodeCursor } from "./planner_repository_reads.js";
+import { decodeStarredTaskCursor, encodeCursor } from "./planner_repository_reads.js";
 
 interface FullStarredTaskRow extends Record<string, unknown> {
   id: string;
-  updated_at_cursor: string;
+  position_cursor: string;
   has_more: boolean;
   payload: PlannerTaskDto;
 }
@@ -14,18 +14,19 @@ export async function listFullStarredTasks(
   sql: LivePostgresSql,
   input: { cursor?: string; limit: number },
 ): Promise<PlannerPageSlice<PlannerTaskDto>> {
-  const cursor = input.cursor ? decodeCursor(input.cursor, "starred-task") : null;
-  const updatedAt = cursor?.first ?? null;
+  const cursor = decodeStarredTaskCursor(input.cursor);
+  const cursorPosition = cursor?.position ?? null;
   const cursorId = cursor?.second ?? "";
   const rows = await sql`
     WITH starred_rows AS (
       SELECT page.id AS page_id,
+             ordering.position,
              page.updated_at,
-             to_char(page.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
-               AS updated_at_cursor,
+             ordering.position::text AS position_cursor,
              identity.task_id,
              project_mount.project_page_id
-      FROM pages page
+      FROM planner_starred_task_order ordering
+      JOIN pages page ON page.id = ordering.page_id
       JOIN LATERAL (
         SELECT CASE block.block_type
                  WHEN 'task_ref' THEN NULLIF(BTRIM(block.properties->>'taskId'), '')
@@ -68,15 +69,15 @@ export async function listFullStarredTasks(
         AND page.daily_date IS NULL
         AND COALESCE((page.metadata->>'starred')::boolean, FALSE)
         AND (
-          ${updatedAt}::text IS NULL
-          OR (page.updated_at, page.id) < (${updatedAt}::timestamptz, ${cursorId})
+          ${cursorPosition}::text IS NULL
+          OR (ordering.position, page.id) > (${cursorPosition}::bigint, ${cursorId}::text)
         )
-      ORDER BY page.updated_at DESC, page.id DESC
+      ORDER BY ordering.position, page.id
       LIMIT ${input.limit + 1}
     ),
     visible_rows AS (
       SELECT * FROM starred_rows
-      ORDER BY updated_at DESC, page_id DESC
+      ORDER BY position, page_id
       LIMIT ${input.limit}
     ),
     mounted_document_rows AS (
@@ -240,7 +241,7 @@ export async function listFullStarredTasks(
       GROUP BY document.page_id
     )
     SELECT task.page_id AS id,
-           task.updated_at_cursor,
+           task.position_cursor,
            (SELECT count(*) FROM starred_rows) > ${input.limit} AS has_more,
            jsonb_build_object(
              'page', page.payload,
@@ -257,13 +258,13 @@ export async function listFullStarredTasks(
     LEFT JOIN task_summaries summary ON summary.id = task.task_id
     LEFT JOIN task_sessions sessions ON sessions.task_id = task.task_id
     LEFT JOIN mounted_documents documents ON documents.page_id = task.page_id
-    ORDER BY task.updated_at DESC, task.page_id DESC
+    ORDER BY task.position, task.page_id
   ` as readonly FullStarredTaskRow[];
   const last = rows.at(-1);
   return {
     items: rows.map((row) => row.payload),
     next_cursor: rows[0]?.has_more && last
-      ? encodeCursor("starred-task", last.updated_at_cursor, last.id)
+      ? encodeCursor("starred-task", last.position_cursor, last.id)
       : null,
   };
 }

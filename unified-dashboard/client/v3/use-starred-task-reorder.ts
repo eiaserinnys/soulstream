@@ -1,0 +1,189 @@
+import {
+  useCallback,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+
+import type { PlannerLoadState } from "./PlannerViews";
+import { completePlannerLoad } from "./planner-query-state";
+import {
+  loadStarredTasks,
+  starredTaskPage,
+  type PlannerDataDependencies,
+  type PlannerPage,
+  type StarredPlannerTask,
+} from "./planner-data";
+import {
+  disableStarredTaskPaginationAfterRefreshFailure,
+  resolveStarredTaskBeforePageId,
+  saveStarredTaskOrderAndReload,
+} from "./starred-task-order";
+
+type StarredTaskIndex = PlannerLoadState<PlannerPage<StarredPlannerTask>>;
+
+interface CurrentRef<T> {
+  current: T;
+}
+
+export function useStarredTaskReorder({
+  dependencies,
+  notify,
+  starredTaskIndexRef,
+  stableStarredTasksRef,
+  setStarredTaskIndex,
+}: {
+  dependencies: PlannerDataDependencies;
+  notify(message: string): void;
+  starredTaskIndexRef: CurrentRef<StarredTaskIndex>;
+  stableStarredTasksRef: CurrentRef<StarredPlannerTask[]>;
+  setStarredTaskIndex: Dispatch<SetStateAction<StarredTaskIndex>>;
+}) {
+  const [starredTasksReordering, setStarredTasksReordering] = useState(false);
+
+  const reorderStarredTasks = useCallback(async (
+    movedPageId: string,
+    orderedPageIds: readonly string[],
+  ) => {
+    const original = starredTaskIndexRef.current;
+    const data = original.data;
+    const visibleTasks = stableStarredTasksRef.current;
+    const visibleIds = visibleTasks.map((task) => starredTaskPage(task).id);
+    const baseIds = data?.items.map((task) => starredTaskPage(task).id) ?? [];
+    const saveOrder = dependencies.saveStarredTaskOrder;
+    if (
+      !data
+      || !saveOrder
+      || !samePageIds(visibleIds, baseIds)
+      || orderedPageIds.length !== visibleIds.length
+      || new Set(orderedPageIds).size !== visibleIds.length
+      || orderedPageIds.some((pageId) => !visibleIds.includes(pageId))
+    ) {
+      try {
+        const fresh = await loadStarredTasks(dependencies, {});
+        setStarredTaskIndex((current) => completePlannerLoad(current, fresh));
+      } catch {
+        setStarredTaskIndex((current) => current.data
+          ? {
+            ...current,
+            data: disableStarredTaskPaginationAfterRefreshFailure(current.data),
+          }
+          : current);
+      }
+      notify("별표 목록이 갱신 중이라 순서를 바꾸지 못했습니다. 목록을 새로 불러왔습니다.");
+      return;
+    }
+    if (samePageIds(visibleIds, orderedPageIds)) return;
+
+    const tasksById = new Map(visibleTasks.map((task) => [starredTaskPage(task).id, task]));
+    const reorderedTasks = orderedPageIds.map((pageId) => tasksById.get(pageId)!);
+    setStarredTasksReordering(true);
+
+    let beforePageId: string | null;
+    try {
+      beforePageId = await resolveStarredTaskBeforePageId({
+        orderedPageIds,
+        movedPageId,
+        nextCursor: data.nextCursor,
+        fetchBoundaryPage: async (cursor) => {
+          const next = await loadStarredTasks(dependencies, { cursor });
+          const latestData = starredTaskIndexRef.current.data;
+          if (
+            latestData?.nextCursor !== cursor
+            || !samePageIds(
+              latestData.items.map((task) => starredTaskPage(task).id),
+              visibleIds,
+            )
+          ) throw new Error("별표 목록 경계가 변경되었습니다.");
+          return {
+            pageIds: next.items.map((task) => starredTaskPage(task).id),
+            nextCursor: next.nextCursor,
+          };
+        },
+      });
+    } catch (error) {
+      try {
+        const fresh = await loadStarredTasks(dependencies, {});
+        setStarredTaskIndex((current) => completePlannerLoad(current, fresh));
+      } catch {
+        setStarredTaskIndex((current) => current.data
+          ? {
+            ...current,
+            data: disableStarredTaskPaginationAfterRefreshFailure(current.data),
+          }
+          : current);
+      }
+      notify(`별표 목록의 다음 페이지를 확인하지 못해 순서를 취소했습니다 · ${errorText(error)}`);
+      setStarredTasksReordering(false);
+      return;
+    }
+
+    const latestData = starredTaskIndexRef.current.data;
+    if (
+      !latestData
+      || latestData.nextCursor !== data.nextCursor
+      || !samePageIds(
+        latestData.items.map((task) => starredTaskPage(task).id),
+        visibleIds,
+      )
+    ) {
+      try {
+        const fresh = await loadStarredTasks(dependencies, {});
+        setStarredTaskIndex((current) => completePlannerLoad(current, fresh));
+      } catch {
+        setStarredTaskIndex((current) => current.data
+          ? {
+            ...current,
+            data: disableStarredTaskPaginationAfterRefreshFailure(current.data),
+          }
+          : current);
+      }
+      notify("별표 목록이 이동 중 갱신되어 순서를 취소했습니다. 목록을 다시 불러왔습니다.");
+      setStarredTasksReordering(false);
+      return;
+    }
+
+    setStarredTaskIndex((current) => current.data
+      ? { ...current, data: { ...current.data, items: reorderedTasks } }
+      : current);
+
+    const result = await saveStarredTaskOrderAndReload({
+      save: async () => await saveOrder(movedPageId, beforePageId),
+      reload: async () => await loadStarredTasks(dependencies, {}),
+    });
+    if (result.reloaded) {
+      setStarredTaskIndex((current) => completePlannerLoad(current, result.reloaded!));
+    }
+    if (!result.saved) {
+      if (!result.reloaded) {
+        setStarredTaskIndex(original.data
+          ? {
+            ...original,
+            data: disableStarredTaskPaginationAfterRefreshFailure(original.data),
+          }
+          : original);
+      }
+      notify(`별표 순서 저장 실패 · ${errorText(result.saveError)}`);
+    } else if (result.reloadError) {
+      setStarredTaskIndex((current) => current.data
+        ? {
+          ...current,
+          data: disableStarredTaskPaginationAfterRefreshFailure(current.data),
+        }
+        : current);
+      notify(`별표 순서는 저장됐지만 목록을 새로 불러오지 못했습니다 · ${errorText(result.reloadError)}`);
+    }
+    setStarredTasksReordering(false);
+  }, [dependencies, notify, setStarredTaskIndex, stableStarredTasksRef, starredTaskIndexRef]);
+
+  return { starredTasksReordering, reorderStarredTasks };
+}
+
+function samePageIds(first: readonly string[], second: readonly string[]): boolean {
+  return first.length === second.length
+    && first.every((pageId, index) => pageId === second[index]);
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error);
+}

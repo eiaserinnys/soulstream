@@ -6,15 +6,21 @@ import {
   type PageBrowserUser,
 } from "../page/page_browser_routes.js";
 import type { PageYjsService } from "../page/page_service.js";
+import { notifyPageUpdates, type PageUpdatedObserver } from "../page/page_update_notifications.js";
 import {
   PLANNER_READ_PAGE_LIMITS,
   type PlannerReadProvider,
 } from "./planner_contract.js";
 import { PlannerCursorError } from "./planner_repository_reads.js";
+import {
+  PlannerStarredTaskMembershipConflictError,
+  type PlannerStarredTaskOrderWriter,
+} from "./planner_starred_task_order.js";
 
 export const plannerRouteAuthRequirements = {
   "GET /api/planner/today": true,
   "GET /api/planner/starred-tasks": true,
+  "PATCH /api/planner/starred-tasks/order": true,
   "GET /api/planner/daily-history": true,
   "GET /api/planner/projects/{pageId}": true,
   "GET /api/planner/projects/{pageId}/tasks": true,
@@ -25,6 +31,8 @@ export const plannerRouteAuthRequirements = {
 
 export interface PlannerRouteOptions {
   provider: PlannerReadProvider;
+  starredTaskOrder: PlannerStarredTaskOrderWriter;
+  onPageUpdated: PageUpdatedObserver;
   dailyPages: Pick<PageYjsService, "getDailyPage">;
   resolveUser: (request: FastifyRequest) => Promise<PageBrowserUser | null>;
 }
@@ -37,6 +45,10 @@ const starredTasksQuery = z.object({
   limit: pageLimit(PLANNER_READ_PAGE_LIMITS.starredTasks),
   detail: z.enum(["full"]).optional(),
 });
+const starredTaskOrderBody = z.object({
+  page_id: id,
+  before_page_id: id.nullable(),
+}).strict();
 const dailyHistoryQuery = z.object({
   before: date,
   limit: pageLimit(PLANNER_READ_PAGE_LIMITS.dailyHistory),
@@ -87,6 +99,43 @@ export function registerPlannerRoutes(
       return failed(request, reply, error, "starred-tasks");
     }
   });
+
+  app.patch<{ Body: { page_id: string; before_page_id: string | null } }>(
+    "/api/planner/starred-tasks/order",
+    async (request, reply) => {
+      if (!await options.resolveUser(request)) return unauthorized(reply);
+      const parsed = starredTaskOrderBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({
+        detail: { error: { code: "INVALID_PLANNER_STARRED_TASK_ORDER", message: parsed.error.message } },
+      });
+      if (parsed.data.page_id === parsed.data.before_page_id) return reply.code(400).send({
+        detail: { error: { code: "INVALID_PLANNER_STARRED_TASK_ORDER", message: "source and target must differ" } },
+      });
+      try {
+        const result = await options.starredTaskOrder.moveStarredTask({
+          pageId: parsed.data.page_id,
+          beforePageId: parsed.data.before_page_id,
+        });
+        notifyPageUpdates(
+          [{ page: { id: parsed.data.page_id, version: result.pageVersion } }],
+          options.onPageUpdated,
+          request.log,
+        );
+        return reply.send({ ok: true });
+      } catch (error) {
+        if (error instanceof PlannerStarredTaskMembershipConflictError) {
+          return reply.code(409).send({
+            detail: { error: { code: error.code, message: error.message } },
+          });
+        }
+        request.log.error({ err: error, operation: "starred-task-order" }, "planner mutation failed");
+        return reply.code(500).send({
+          code: "PLANNER_MUTATION_FAILED",
+          detail: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  );
 
   app.get("/api/planner/daily-history", async (request, reply) => {
     if (!await options.resolveUser(request)) return unauthorized(reply);
