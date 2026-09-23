@@ -4,6 +4,9 @@ import {
   CogitoBriefTimeoutError,
   CogitoBriefUnavailableError,
   createApp,
+  COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS,
+  COGITO_SEARCH_DEADLINE_MS,
+  cogitoSearchDeadlineMs,
   cogitoRouteAuthRequirements,
   filterCogitoSearchResultsByAccess,
   loadContractFixtures,
@@ -135,6 +138,23 @@ describe("cogito route harness", () => {
     }
 
     await app.close();
+  });
+
+  it("gives only expanded product requests the measured longer request budget", () => {
+    expect(cogitoSearchDeadlineMs({
+      include_session_results: true,
+      session_search_mode: "expanded",
+    })).toBe(COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS);
+    expect(cogitoSearchDeadlineMs({
+      include_session_results: true,
+      session_search_mode: "lexical",
+    })).toBe(COGITO_SEARCH_DEADLINE_MS);
+    expect(cogitoSearchDeadlineMs({
+      include_session_results: false,
+    })).toBe(COGITO_SEARCH_DEADLINE_MS);
+    expect(cogitoSearchDeadlineMs({
+      include_session_results: true,
+    })).toBe(COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS);
   });
 
   it("forwards typed product session filters without changing MCP event filters", async () => {

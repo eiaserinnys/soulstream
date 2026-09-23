@@ -9,6 +9,33 @@ import type { SearchQueryExpander } from "../src/search/search_query_expander.js
 type SqlCall = { text: string; values: unknown[] };
 
 describe("live Cogito search provider", () => {
+  it("caps product expansion at eight seconds under its separate ten-second request deadline", async () => {
+    const harness = createSqlHarness(() => []);
+    const expansionTimeouts: number[] = [];
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(harness.sql),
+      queryExpander: {
+        expand: async (_query, timeoutMs) => {
+          expansionTimeouts.push(timeoutMs);
+          return { queries: ["semantic variant"], latencyMs: 1, skipped: false };
+        },
+      },
+    });
+
+    await provider.search({
+      q: "paraphrased query",
+      top_k: 5,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      include_session_results: true,
+      session_search_mode: "expanded",
+    });
+
+    expect(expansionTimeouts).toEqual([8_000]);
+  });
+
   it("reports semantic SQL and projection timing without changing the public payload", async () => {
     const harness = createSqlHarness(() => []);
     const observations: Array<Record<string, unknown>> = [];

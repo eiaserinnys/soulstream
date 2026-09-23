@@ -93,6 +93,24 @@ describe("product session search projection", () => {
     expect(results[1]?.evidence).toHaveLength(1);
   });
 
+  it("keeps an exact title match ahead of a higher-scale event score at a one-result limit", () => {
+    const results = projectSessionSearchResults([
+      {
+        ...candidate("exact-title-session", null, "original", 2, "exact title"),
+        match_source: "title",
+        display_name: "검색 결과에서 연결 업무를 다시 여는 기능",
+      },
+      {
+        ...candidate("high-bm25-event-session", 12, "original", 6, "검색 결과의 연결 업무를 논의"),
+        match_source: "message",
+        event_type: "user_message",
+      },
+    ], "검색 결과에서 연결 업무를 다시 여는 기능", 1);
+
+    expect(results.map((result) => result.session_id)).toEqual(["exact-title-session"]);
+    expect(results[0]?.best_match).toMatchObject({ event_id: null, match_source: "title" });
+  });
+
   it("uses verified completion evidence to break a relevance tie with a diagnostic re-quotation", () => {
     const results = projectSessionSearchResults([
       {
@@ -134,6 +152,33 @@ describe("product session search projection", () => {
     ], "피드검색", 10);
 
     expect(result?.session_id).toBe("initial-request-session");
+  });
+
+  it("ranks a strong semantic match above tied one-token initial-request noise", () => {
+    const results = projectSessionSearchResults([
+      {
+        ...candidate("performed-session", 1, "semantic_2", 18.160247489075633, "기존 대화를 이어서 여는 기능을 구현했습니다."),
+        relevance_source: "assistant_message",
+        task_evidence_kind: "task_item_completed",
+        task_evidence_title: "검색 결과 업무 재개 완료",
+      },
+      ...Array.from({ length: 60 }, (_, index) => ({
+        ...candidate(
+          `unrelated-session-${index}`,
+          index + 1,
+          "semantic_2",
+          0.0005502758629895976,
+          `일반 개발 회의 ${index} 작업 일정 메모`,
+        ),
+        event_type: "user_message",
+        relevance_source: "initial_request",
+      })),
+    ], "그때 하던 일을 계속 진행하고 싶어", 50);
+
+    expect(results[0]?.session_id).toBe("performed-session");
+    expect(results[0]?.evidence).toContainEqual(expect.objectContaining({
+      source: "task_item_completed",
+    }));
   });
 
   it("keeps the primary task for workspace resumption without turning it into work evidence", () => {

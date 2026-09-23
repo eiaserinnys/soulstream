@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 export const AGGREGATE_SCHEMA_VERSION = "soulstream.reflect.aggregate.v1";
 export const DEFAULT_BRIEF_TIMEOUT_SECONDS = 5;
 export const COGITO_SEARCH_DEADLINE_MS = 4_700;
+export const COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS = 10_000;
 
 export type CogitoNode = {
   id: string;
@@ -31,6 +32,14 @@ export type CogitoSearchParams = {
   readonly signal?: AbortSignal;
   readonly deadlineAt?: number;
 };
+
+export function cogitoSearchDeadlineMs(
+  params: Pick<CogitoSearchParams, "include_session_results" | "session_search_mode">,
+): number {
+  return params.include_session_results === true && params.session_search_mode !== "lexical"
+    ? COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS
+    : COGITO_SEARCH_DEADLINE_MS;
+}
 
 export type CogitoSessionSearchFilters = {
   readonly folder_id?: string;
@@ -148,13 +157,14 @@ export function registerCogitoRoutes(
     const query = parseSearchQuery(request.query);
     if (!query.ok) return routeError(reply, query.statusCode, query.detail);
 
-    const deadlineAt = Date.now() + COGITO_SEARCH_DEADLINE_MS;
+    const deadlineMs = cogitoSearchDeadlineMs(query.value);
+    const deadlineAt = Date.now() + deadlineMs;
     const controller = new AbortController();
     const onRequestAborted = () => controller.abort();
     const onResponseClosed = () => {
       if (!reply.raw.writableFinished) controller.abort();
     };
-    const deadlineTimer = setTimeout(() => controller.abort(), COGITO_SEARCH_DEADLINE_MS);
+    const deadlineTimer = setTimeout(() => controller.abort(), deadlineMs);
     request.raw.once("aborted", onRequestAborted);
     reply.raw.once("close", onResponseClosed);
     try {

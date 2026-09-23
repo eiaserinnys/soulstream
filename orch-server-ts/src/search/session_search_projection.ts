@@ -50,58 +50,28 @@ export function projectSessionSearchResults(
   const sourceBuckets = new Map<string, SessionSearchCandidateRow[]>();
   for (const row of rows) {
     if (!stringValue(row.session_id)) continue;
-    const queryKind = stringValue(row.query_kind) ?? "original";
-    const matchSource = stringValue(row.match_source) ?? "message";
-    const relevanceSource = stringValue(row.relevance_source) ?? matchSource;
-    const bucketKey = `${queryKind}:${relevanceSource}`;
-    const bucket = sourceBuckets.get(bucketKey) ?? [];
+    const queryKind = baseQueryKind(stringValue(row.query_kind) ?? "original");
+    const bucket = sourceBuckets.get(queryKind) ?? [];
     bucket.push(row);
-    sourceBuckets.set(bucketKey, bucket);
+    sourceBuckets.set(queryKind, bucket);
   }
 
   const bestPerSessionAndFamily = new Map<string, ScoredCandidate>();
-  for (const [bucketKey, bucket] of sourceBuckets) {
-    const queryKind = baseQueryKind(bucketKey.slice(0, bucketKey.indexOf(":")));
-    const baseQueryFamily = isSemanticQuery(queryKind) ? "semantic" : "lexical";
-    const weight = queryWeight(queryKind) * relevanceSourceWeight(
-      bucketKey.slice(bucketKey.indexOf(":") + 1),
-    );
-    const orderedRows = bucket.sort((left, right) =>
-      numberValue(right.score) - numberValue(left.score)
-      || (stringValue(right.session_updated_at) ?? "")
-        .localeCompare(stringValue(left.session_updated_at) ?? "")
-      || (stringValue(left.session_id) ?? "").localeCompare(stringValue(right.session_id) ?? "")
-      || numberValue(left.id) - numberValue(right.id));
-    const seenSessions = new Set<string>();
-    let queryRank = 0;
-    let previousRawScore: number | undefined;
-    for (const row of orderedRows) {
-      const sessionId = stringValue(row.session_id);
-      if (!sessionId || seenSessions.has(sessionId)) continue;
-      seenSessions.add(sessionId);
-      const rawScore = numberValue(row.score);
-      if (previousRawScore === undefined || rawScore < previousRawScore) queryRank += 1;
-      previousRawScore = rawScore;
-      const rawExcerpt = stringValue(row.searchable_text)
-        ?? stringValue(row.display_name)
-        ?? stringValue(row.session_prompt)
-        ?? "";
-      const matchSource = stringValue(row.match_source) ?? "message";
-    const isEventAnchor = matchSource === "message" || matchSource === "turn_summary";
-    const evidence: SessionSearchResult["evidence"][number] = {
-      source: matchSource,
-        event_id: isEventAnchor ? numberValueOrNull(row.id) : null,
-        excerpt: buildSearchPreview(rawExcerpt, originalQuery),
-      };
-      keepBestCandidate(bestPerSessionAndFamily, {
-        sessionId,
-        score: weight / (60 + queryRank),
-        queryFamily: baseQueryFamily,
-        queryRank,
-        evidence,
-        row,
-      });
+  for (const [queryKind, bucket] of sourceBuckets) {
+    const metadataRows: SessionSearchCandidateRow[] = [];
+    const contentRows: SessionSearchCandidateRow[] = [];
+    for (const row of bucket) {
+      if (isTitleOrPromptMatch(row)) metadataRows.push(row);
+      else contentRows.push(row);
     }
+
+    // Event and message source categories share one relevance scale. Weak
+    // initial-request tokens therefore cannot outrank a stronger event hit.
+    addRankedCandidates(contentRows, queryKind, originalQuery, bestPerSessionAndFamily);
+    // SQL metadata scores are fixed exact/prefix tiers, unlike event BM25.
+    // Rank that tier separately and preserve its exact-match advantage.
+    addRankedCandidates(metadataRows, queryKind, originalQuery, bestPerSessionAndFamily, (row) =>
+      numberValue(row.score) >= 2 ? 2 : 1);
   }
 
   addPrimaryTaskTitleMatches(bestPerSessionAndFamily, rows, originalQuery);
@@ -166,6 +136,58 @@ export function projectSessionSearchResults(
       || left.session_id.localeCompare(right.session_id))
     .slice(0, candidateLimit)
     .map(({ relevance: _relevance, workEvidenceRank: _workEvidenceRank, ...result }) => result);
+}
+
+function addRankedCandidates(
+  rows: readonly SessionSearchCandidateRow[],
+  queryKind: string,
+  originalQuery: string,
+  candidates: Map<string, ScoredCandidate>,
+  sourceTier: (row: SessionSearchCandidateRow) => number = () => 1,
+): void {
+  const queryFamily = isSemanticQuery(queryKind) ? "semantic" : "lexical";
+  const weight = queryWeight(queryKind);
+  const orderedRows = [...rows].sort((left, right) =>
+    numberValue(right.score) - numberValue(left.score)
+    || (stringValue(right.session_updated_at) ?? "")
+      .localeCompare(stringValue(left.session_updated_at) ?? "")
+    || (stringValue(left.session_id) ?? "").localeCompare(stringValue(right.session_id) ?? "")
+    || numberValue(left.id) - numberValue(right.id));
+  const seenSessions = new Set<string>();
+  let queryRank = 0;
+  let previousRawScore: number | undefined;
+  for (const row of orderedRows) {
+    const sessionId = stringValue(row.session_id);
+    if (!sessionId || seenSessions.has(sessionId)) continue;
+    seenSessions.add(sessionId);
+    const rawScore = numberValue(row.score);
+    if (previousRawScore === undefined || rawScore < previousRawScore) queryRank += 1;
+    previousRawScore = rawScore;
+    const rawExcerpt = stringValue(row.searchable_text)
+      ?? stringValue(row.display_name)
+      ?? stringValue(row.session_prompt)
+      ?? "";
+    const matchSource = stringValue(row.match_source) ?? "message";
+    const isEventAnchor = matchSource === "message" || matchSource === "turn_summary";
+    const evidence: SessionSearchResult["evidence"][number] = {
+      source: matchSource,
+      event_id: isEventAnchor ? numberValueOrNull(row.id) : null,
+      excerpt: buildSearchPreview(rawExcerpt, originalQuery),
+    };
+    keepBestCandidate(candidates, {
+      sessionId,
+      score: weight * sourceTier(row) / (60 + queryRank),
+      queryFamily,
+      queryRank,
+      evidence,
+      row,
+    });
+  }
+}
+
+function isTitleOrPromptMatch(row: SessionSearchCandidateRow): boolean {
+  const source = stringValue(row.match_source);
+  return source === "title" || source === "prompt";
 }
 
 function keepBestCandidate(
@@ -257,18 +279,6 @@ function queryWeight(queryKind: string): number {
   if (queryKind === "normalized" || queryKind === "compact") return 1.5;
   if (isSemanticQuery(queryKind)) return 1;
   return 1.5;
-}
-
-function relevanceSourceWeight(source: string): number {
-  switch (source) {
-    case "title": return 1.75;
-    case "initial_request": return 1.5;
-    case "prompt": return 1.35;
-    case "session_id": return 1.25;
-    case "user_message": return 0.9;
-    case "assistant_message": return 0.65;
-    default: return 1;
-  }
 }
 
 function uniqueEvidence(

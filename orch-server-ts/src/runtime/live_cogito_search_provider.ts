@@ -6,7 +6,7 @@ import {
 } from "@soulstream/search-contract";
 
 import {
-  COGITO_SEARCH_DEADLINE_MS,
+  cogitoSearchDeadlineMs,
   type CogitoNavigationSearchResult,
   type CogitoSearchParams,
   type CogitoSearchProvider,
@@ -43,7 +43,7 @@ import { cancelLiveSearchQuerySafely } from "./live_db_sql.js";
 
 const SEARCH_DB_CONCURRENCY_LIMIT = 2;
 const CANDIDATE_MULTIPLIER = 5;
-const QUERY_EXPANSION_TIMEOUT_MS = 4_500;
+const QUERY_EXPANSION_TIMEOUT_MS = 8_000;
 
 export type CreateLiveCogitoSearchProviderOptions = {
   readonly searchDbConnectionFactory: LiveSearchDbConnectionFactory;
@@ -69,7 +69,7 @@ export function createLiveCogitoSearchProvider(
   return {
     async search(params) {
       const startedAt = Date.now();
-      const deadlineAt = params.deadlineAt ?? startedAt + COGITO_SEARCH_DEADLINE_MS;
+      const deadlineAt = params.deadlineAt ?? startedAt + cogitoSearchDeadlineMs(params);
       const searchController = new AbortController();
       let deadlineExpired = false;
       const deadlineTimer = setTimeout(() => {
