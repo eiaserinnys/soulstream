@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { SessionHistorySearchParams } from "../../src/control_plane/session_data_host_client.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildServer, type ServerInstance } from "../../src/server.js";
@@ -26,13 +27,43 @@ function makeRuntime(params: {
   searchEventsBySessionId?: ReturnType<typeof vi.fn>;
   searchSessionDigests?: ReturnType<typeof vi.fn>;
 }): McpRuntime {
+  const searchEvents = params.searchEvents ?? vi.fn(async () => []);
+  const searchEventsBySessionId = params.searchEventsBySessionId ?? vi.fn(async () => []);
+  const searchSessionDigests = params.searchSessionDigests ?? vi.fn(async () => []);
   return {
     nodeId: "node-test",
     agentsConfigPath: "/tmp/agents.yaml",
     db: {
-      searchEvents: params.searchEvents ?? vi.fn(async () => []),
-      searchEventsBySessionId: params.searchEventsBySessionId ?? vi.fn(async () => []),
-      searchSessionDigests: params.searchSessionDigests ?? vi.fn(async () => []),
+      searchEvents,
+      searchEventsBySessionId,
+      searchSessionDigests,
+      searchSessionHistory: async (searchParams: SessionHistorySearchParams, signal?: AbortSignal) => ({
+        events: await searchEvents(
+          searchParams.query,
+          searchParams.sessionIds,
+          searchParams.limit,
+          searchParams.eventTypes,
+          signal,
+        ),
+        sessionIdEvents: searchParams.searchSessionId
+          ? await searchEventsBySessionId(
+              searchParams.query,
+              searchParams.eventTypes,
+              searchParams.limit,
+              signal,
+            )
+          : [],
+        digests: searchParams.includeHighlight || searchParams.includeStory
+          ? await searchSessionDigests(
+              searchParams.query,
+              searchParams.sessionIds,
+              searchParams.limit,
+              searchParams.includeHighlight,
+              searchParams.includeStory,
+              signal,
+            )
+          : [],
+      }),
     } as unknown as SessionDB,
     taskManager: {} as TaskManager,
     taskExecutor: {} as TaskExecutor,
@@ -86,6 +117,7 @@ describe("GET /cogito/search", () => {
       null,
       5,
       ["user_message", "intervention_sent", "assistant_message", "result", "complete"],
+      expect.any(AbortSignal),
     );
     expect(response.json()).toEqual({
       results: [
@@ -121,8 +153,8 @@ describe("GET /cogito/search", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(searchEvents).toHaveBeenCalledWith("special", null, 3, ["user_message"]);
-    expect(searchEventsBySessionId).toHaveBeenCalledWith("special", ["user_message"], 3);
+    expect(searchEvents).toHaveBeenCalledWith("special", null, 3, ["user_message"], expect.any(AbortSignal));
+    expect(searchEventsBySessionId).toHaveBeenCalledWith("special", ["user_message"], 3, expect.any(AbortSignal));
     expect(response.json().results).toHaveLength(1);
   });
 
@@ -142,6 +174,23 @@ describe("GET /cogito/search", () => {
       null,
       10,
       ["thinking", "tool_start", "tool_result"],
+      expect.any(AbortSignal),
     );
+  });
+
+  it("returns a timeout error instead of successful empty results", async () => {
+    const searchEvents = vi.fn(async () => {
+      throw Object.assign(new Error("database timeout"), { statusCode: 504 });
+    });
+    const server = await createServer(makeRuntime({ searchEvents }));
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/cogito/search?q=deadline",
+    });
+
+    expect(response.statusCode).toBe(504);
+    expect(response.json()).toEqual({ detail: "search deadline exceeded" });
+    expect(response.json()).not.toEqual({ results: [] });
   });
 });

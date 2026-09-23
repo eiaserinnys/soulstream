@@ -27,7 +27,8 @@ describe("product session search projection", () => {
         display_name: "피드 검색 자동 선택",
         session_prompt: "",
         session_updated_at: "2026-09-22T00:00:00.000Z",
-        predecessor_session_id: "parent-session",
+        caller_session_id: "caller-parent-session",
+        predecessor_session_id: "predecessor-session",
         task_id: "task-a",
         task_title: "검색 개선",
         score: 2,
@@ -41,7 +42,8 @@ describe("product session search projection", () => {
         display_name: "피드 검색 자동 선택",
         session_prompt: "",
         session_updated_at: "2026-09-22T00:00:00.000Z",
-        predecessor_session_id: "parent-session",
+        caller_session_id: "caller-parent-session",
+        predecessor_session_id: "predecessor-session",
         task_id: "task-a",
         task_title: "검색 개선",
         score: 0.8,
@@ -51,7 +53,7 @@ describe("product session search projection", () => {
     expect(result).toMatchObject({
       session_id: "session-title",
       task_id: "task-a",
-      parent_session_id: "parent-session",
+      parent_session_id: "caller-parent-session",
       best_match: { event_id: null, match_source: "title" },
       session_url: "/?session=session-title",
     });
@@ -84,50 +86,98 @@ describe("product session search projection", () => {
     ], "피드 검색", 10);
 
     expect(results.map((result) => result.session_id)).toEqual([
-      "actual-session",
       "title-scale-session",
+      "actual-session",
       "diagnostic-session",
     ]);
     expect(results[1]?.evidence).toHaveLength(1);
   });
 
-  it("ranks semantic execution evidence above a literal user-message re-quotation", () => {
+  it("uses verified completion evidence to break a relevance tie with a diagnostic re-quotation", () => {
     const results = projectSessionSearchResults([
       {
-        ...candidate("real-work-session", 21, "semantic_1", 0.00001, "수정 후 검색 결과를 확인했다"),
+        ...candidate("zz-actual-work-session", 21, "original", 1, "피드 검색 결과를 확인했다"),
         event_type: "assistant_message",
+        task_evidence_kind: "task_item_completed",
+        task_evidence_title: "피드 검색 결과 검증",
       },
       {
-        ...candidate("diagnostic-session", 31, "original", 100, "사용자가 피드 검색 문제를 다시 인용했다"),
+        ...candidate("aa-diagnostic-session", 31, "original", 1, "피드 검색 결과를 확인했다"),
         event_type: "user_message",
       },
-    ], "피드 검색 결과가 이상해", 10);
+    ], "피드 검색 결과를 확인했다", 10);
 
     expect(results.map((result) => result.session_id)).toEqual([
-      "real-work-session",
-      "diagnostic-session",
+      "zz-actual-work-session",
+      "aa-diagnostic-session",
     ]);
+    expect(results[0]?.evidence).toContainEqual(expect.objectContaining({
+      source: "task_item_completed",
+      excerpt: "피드 검색 결과 검증",
+    }));
+    expect(results[1]?.evidence.some((item) => item.source.includes("task"))).toBe(false);
   });
 
-  it("uses a matching linked task title as lexical evidence", () => {
+  it("does not apply a blanket user-message relevance penalty", () => {
     const [result] = projectSessionSearchResults([
       {
-        ...candidate("task-linked-session", 4, "semantic_1", 0.8, "관련 대화"),
-        task_id: "task-search",
-        task_title: "피드 검색 자동 선택 개선",
+        ...candidate("initial-request-session", 4, "original", 1, "피드 검색 자동 선택 개선을 찾아줘"),
+        event_type: "user_message",
+        relevance_source: "initial_request",
+        session_updated_at: "2026-09-23T00:00:00.000Z",
       },
       {
-        ...candidate("unrelated-session", 5, "semantic_1", 0.9, "다른 작업"),
-        task_id: "task-other",
-        task_title: "다른 검색 영역 개선",
+        ...candidate("assistant-session", 5, "original", 1, "피드 검색 자동 선택 개선을 찾아줘"),
+        event_type: "assistant_message",
+        relevance_source: "assistant_message",
       },
     ], "피드검색", 10);
 
+    expect(result?.session_id).toBe("initial-request-session");
+  });
+
+  it("keeps the primary task for workspace resumption without turning it into work evidence", () => {
+    const [result] = projectSessionSearchResults([
+      {
+        ...candidate("participant-session", 4, "original", 1, "Search task result was discussed"),
+        task_id: "task-search",
+        task_title: "Search task result",
+      },
+    ], "Search task result", 10);
+
     expect(result).toMatchObject({
-      session_id: "task-linked-session",
+      session_id: "participant-session",
       task_id: "task-search",
-      task_title: "피드 검색 자동 선택 개선",
+      task_title: "Search task result",
     });
+    expect(result?.evidence.some((item) => [
+      "task_item_completed",
+      "task_completed",
+      "source_task_item",
+      "task_item_assigned",
+    ].includes(item.source))).toBe(false);
+  });
+
+  it("exposes source task item evidence without treating it as verified completion", () => {
+    const results = projectSessionSearchResults([
+      candidate("aa-diagnostic-session", 3, "original", 1, "needle is discussed"),
+      {
+        ...candidate("zz-source-session", 4, "original", 1, "needle is discussed"),
+        task_id: "task-search",
+        task_title: "unrelated task title",
+        task_evidence_kind: "source_task_item",
+        task_evidence_title: "source item output",
+      },
+    ], "needle", 10);
+
+    expect(results.map((result) => result.session_id)).toEqual([
+      "aa-diagnostic-session",
+      "zz-source-session",
+    ]);
+    expect(results[1]?.evidence).toContainEqual(expect.objectContaining({
+      source: "source_task_item",
+      excerpt: "source item output",
+    }));
   });
 });
 
@@ -148,6 +198,7 @@ function candidate(
     display_name: sessionId,
     session_prompt: "",
     session_updated_at: "2026-09-22T00:00:00.000Z",
+    caller_session_id: null,
     predecessor_session_id: null,
     task_id: null,
     task_title: null,

@@ -28,6 +28,7 @@ export const SESSION_DATA_READ_OPERATIONS = [
   "event_raw_page",
   "event_search",
   "event_session_id_search",
+  "history_search",
   "story_search_metadata",
   "turn_summary_count",
   "turn_summary_range",
@@ -52,6 +53,22 @@ export interface SessionEventDetailRow extends SessionEventRow {
 
 export interface SessionEventSearchRow extends SessionEventRow {
   score: number;
+}
+
+export interface SessionHistorySearchParams {
+  query: string;
+  sessionIds: string[] | null;
+  limit: number;
+  eventTypes: string[] | null;
+  searchSessionId: boolean;
+  includeHighlight: boolean;
+  includeStory: boolean;
+}
+
+export interface SessionHistorySearchResult {
+  events: SessionEventSearchRow[];
+  sessionIdEvents: SessionEventSearchRow[];
+  digests: SessionDigestSearchMatch[];
 }
 
 export interface SessionTurnExcerptItem {
@@ -99,12 +116,13 @@ export interface SessionDataHost {
   readEvents(sessionId: string, afterId: number, limit: number, eventTypes?: string[]): Promise<SessionEventRow[]>;
   readOneEvent(sessionId: string, eventId: number): Promise<SessionEventDetailRow | null>;
   streamEventsRaw(sessionId: string, afterId?: number): Promise<Array<{ id: number; event_type: string; payload_text: string }>>;
-  searchEvents(query: string, sessionIds: string[] | null, limit: number, eventTypes?: string[] | null): Promise<SessionEventSearchRow[]>;
-  searchEventsBySessionId(query: string, eventTypes: string[] | null, limit: number): Promise<SessionEventSearchRow[]>;
+  searchEvents(query: string, sessionIds: string[] | null, limit: number, eventTypes?: string[] | null, signal?: AbortSignal): Promise<SessionEventSearchRow[]>;
+  searchEventsBySessionId(query: string, eventTypes: string[] | null, limit: number, signal?: AbortSignal): Promise<SessionEventSearchRow[]>;
+  searchSessionHistory(params: SessionHistorySearchParams, signal?: AbortSignal): Promise<SessionHistorySearchResult>;
   getSessionSearchMetadata(sessionIds: string[]): Promise<Map<string, SessionSearchMetadata>>;
   countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts>;
   loadTurnSummaryRange(sessionId: string, fromTurnNumber: number, toTurnNumber: number | null, limit: number): Promise<SessionStoryTurnSummary[]>;
-  searchSessionDigests(query: string, sessionIds: string[] | null, limit: number, includeHighlight: boolean, includeStory: boolean): Promise<SessionDigestSearchMatch[]>;
+  searchSessionDigests(query: string, sessionIds: string[] | null, limit: number, includeHighlight: boolean, includeStory: boolean, signal?: AbortSignal): Promise<SessionDigestSearchMatch[]>;
   getSessionStory(sessionId: string): Promise<SessionStoryView>;
   getTurnExcerpt(sessionId: string, maxResponseChars?: number): Promise<SessionTurnExcerptResult>;
   getResumeContext(sessionId: string, limit: number): Promise<SessionResumeContext>;
@@ -170,12 +188,16 @@ export class SessionDataHostClient implements SessionDataHost {
     return this.interactive("event_raw_page", [sessionId, afterId]);
   }
 
-  searchEvents(query: string, sessionIds: string[] | null, limit: number, eventTypes?: string[] | null): Promise<SessionEventSearchRow[]> {
-    return this.interactive("event_search", [query, sessionIds, limit, eventTypes]);
+  searchEvents(query: string, sessionIds: string[] | null, limit: number, eventTypes?: string[] | null, signal?: AbortSignal): Promise<SessionEventSearchRow[]> {
+    return this.interactive("event_search", [query, sessionIds, limit, eventTypes], signal);
   }
 
-  searchEventsBySessionId(query: string, eventTypes: string[] | null, limit: number): Promise<SessionEventSearchRow[]> {
-    return this.interactive("event_session_id_search", [query, eventTypes, limit]);
+  searchEventsBySessionId(query: string, eventTypes: string[] | null, limit: number, signal?: AbortSignal): Promise<SessionEventSearchRow[]> {
+    return this.interactive("event_session_id_search", [query, eventTypes, limit], signal);
+  }
+
+  searchSessionHistory(params: SessionHistorySearchParams, signal?: AbortSignal): Promise<SessionHistorySearchResult> {
+    return this.interactive("history_search", [params], signal);
   }
 
   async getSessionSearchMetadata(sessionIds: string[]): Promise<Map<string, SessionSearchMetadata>> {
@@ -194,8 +216,11 @@ export class SessionDataHostClient implements SessionDataHost {
     return this.background("turn_summary_range", [sessionId, fromTurnNumber, toTurnNumber, limit]);
   }
 
-  searchSessionDigests(query: string, sessionIds: string[] | null, limit: number, includeHighlight: boolean, includeStory: boolean): Promise<SessionDigestSearchMatch[]> {
-    return this.background("digest_search", [query, sessionIds, limit, includeHighlight, includeStory]);
+  searchSessionDigests(query: string, sessionIds: string[] | null, limit: number, includeHighlight: boolean, includeStory: boolean, signal?: AbortSignal): Promise<SessionDigestSearchMatch[]> {
+    const args = [query, sessionIds, limit, includeHighlight, includeStory];
+    return signal === undefined
+      ? this.background("digest_search", args)
+      : this.interactive("digest_search", args, signal);
   }
 
   getSessionStory(sessionId: string): Promise<SessionStoryView> {
@@ -210,8 +235,8 @@ export class SessionDataHostClient implements SessionDataHost {
     return this.turnCritical("resume_context", [sessionId, limit]);
   }
 
-  private interactive<T>(operation: string, args: unknown[]): Promise<T> {
-    return this.request(operation, args, 5_000, 1);
+  private interactive<T>(operation: string, args: unknown[], signal?: AbortSignal): Promise<T> {
+    return this.request(operation, args, 5_000, 1, signal);
   }
 
   private background<T>(operation: string, args: unknown[]): Promise<T> {
@@ -222,14 +247,17 @@ export class SessionDataHostClient implements SessionDataHost {
     return this.request(operation, args, 1_500, 2);
   }
 
-  private async request<T>(operation: string, args: unknown[], timeoutMs: number, attempts: number): Promise<T> {
+  private async request<T>(operation: string, args: unknown[], timeoutMs: number, attempts: number, signal?: AbortSignal): Promise<T> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        return await this.transport.request<T>("session-data", operation, args, { timeoutMs });
+        return await this.transport.request<T>("session-data", operation, args, { timeoutMs, signal });
       } catch (error) {
         lastError = error;
-        if (!(error instanceof PersistenceHostRequestError) || !error.retryable || attempt === attempts) {
+        if (signal?.aborted
+          || !(error instanceof PersistenceHostRequestError)
+          || !error.retryable
+          || attempt === attempts) {
           break;
         }
       }

@@ -21,6 +21,118 @@ afterEach(async () => {
 });
 
 describe("control-plane host routes", () => {
+  it("passes an HTTP disconnect through as the event-search cancellation signal", async () => {
+    let searchSignal: AbortSignal | undefined;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const searchEvents = vi.fn((_query: string, _ids: unknown, _limit: number, _types: unknown, signal: AbortSignal) => {
+      searchSignal = signal;
+      markStarted();
+      return new Promise<never>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("caller disconnected")), { once: true });
+      });
+    });
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({ eventReads: { searchEvents } }) as unknown as PersistenceHostRepositories,
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const controller = new AbortController();
+    const request = fetch(`${address}/api/session-data/host/event_search`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ args: ["query", null, 10, null] }),
+      signal: controller.signal,
+    });
+    await started;
+    controller.abort();
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+    await waitFor(() => searchSignal?.aborted === true);
+    expect(searchSignal?.aborted).toBe(true);
+  });
+
+  it("passes an HTTP disconnect through as the digest-search cancellation signal", async () => {
+    let searchSignal: AbortSignal | undefined;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const searchSessionDigests = vi.fn((
+      _query: string,
+      _ids: unknown,
+      _limit: number,
+      _highlight: boolean,
+      _story: boolean,
+      signal: AbortSignal,
+    ) => {
+      searchSignal = signal;
+      markStarted();
+      return new Promise<never>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("caller disconnected")), { once: true });
+      });
+    });
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({ storyReads: { searchSessionDigests } }) as unknown as PersistenceHostRepositories,
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const controller = new AbortController();
+    const request = fetch(`${address}/api/session-data/host/digest_search`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ args: ["needle", null, 10, true, true] }),
+      signal: controller.signal,
+    });
+    await started;
+    controller.abort();
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+    await waitFor(() => searchSignal?.aborted === true);
+    expect(searchSignal?.aborted).toBe(true);
+  });
+
+  it("passes an HTTP disconnect through the combined history-search request", async () => {
+    let searchSignal: AbortSignal | undefined;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const searchHistory = vi.fn((_params: unknown, signal: AbortSignal) => {
+      searchSignal = signal;
+      markStarted();
+      return new Promise<never>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("caller disconnected")), { once: true });
+      });
+    });
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({ historySearch: { search: searchHistory } }) as unknown as PersistenceHostRepositories,
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const controller = new AbortController();
+    const request = fetch(`${address}/api/session-data/host/history_search`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ args: [{ query: "needle" }] }),
+      signal: controller.signal,
+    });
+    await started;
+    controller.abort();
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+    await waitFor(() => searchSignal?.aborted === true);
+    expect(searchSignal?.aborted).toBe(true);
+  });
+
   it("echoes persistence timing metadata without changing the response body", async () => {
     const app = Fastify();
     apps.push(app);
@@ -593,6 +705,7 @@ describe("control-plane host routes", () => {
       streamEventsRaw: vi.fn(async () => []),
       searchEvents: vi.fn(async () => []),
       searchEventsBySessionId: vi.fn(async () => []),
+      search: vi.fn(async () => ({ events: [], sessionIdEvents: [], digests: [] })),
       getSessionSearchMetadata: vi.fn(async () => []),
       countTurnSummaries: vi.fn(async () => ({ totalCount: 0, digestedCount: 0, undigestedCount: 0 })),
       loadTurnSummaryRange: vi.fn(async () => []),
@@ -617,6 +730,7 @@ describe("control-plane host routes", () => {
       sessionReads: targets,
       eventReads: targets,
       storyReads: targets,
+      historySearch: targets,
       sessionReadComposites: targets,
     } as unknown as PersistenceHostRepositories;
     const app = Fastify();
@@ -636,6 +750,7 @@ describe("control-plane host routes", () => {
       ["event_raw_page", "streamEventsRaw"],
       ["event_search", "searchEvents"],
       ["event_session_id_search", "searchEventsBySessionId"],
+      ["history_search", "search"],
       ["story_search_metadata", "getSessionSearchMetadata"],
       ["turn_summary_count", "countTurnSummaries"],
       ["turn_summary_range", "loadTurnSummaryRange"],
@@ -751,3 +866,12 @@ describe("control-plane host routes", () => {
     expect(response.json().detail.error.code).toBe("HOST_OPERATION_NOT_FOUND");
   });
 });
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("condition did not become true before the test deadline");
+}

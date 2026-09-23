@@ -10,8 +10,10 @@ export const DEFAULT_READABLE_SEARCH_EVENT_TYPES =
 
 type SearchDb = Pick<
   SessionDB,
-  "searchEvents" | "searchEventsBySessionId" | "searchSessionDigests"
+  "searchSessionHistory"
 >;
+
+const SESSION_HISTORY_SEARCH_DEADLINE_MS = 4_500;
 
 interface SearchMatch {
   id: number;
@@ -37,6 +39,16 @@ export interface SearchSessionEventsParams {
   includeHighlight?: boolean;
   includeStory?: boolean;
   limit?: number;
+  signal?: AbortSignal;
+}
+
+export class SessionHistorySearchDeadlineError extends Error {
+  readonly statusCode = 504;
+
+  constructor() {
+    super("session history search exceeded its request deadline");
+    this.name = "SessionHistorySearchDeadlineError";
+  }
 }
 
 export interface SearchResultItem {
@@ -52,6 +64,23 @@ export async function searchSessionEvents(
   db: SearchDb,
   params: SearchSessionEventsParams,
 ): Promise<SearchResultItem[]> {
+  const controller = new AbortController();
+  const parentSignal = params.signal;
+  let deadlineExpired = false;
+  const onParentAbort = () => controller.abort(parentSignal?.reason);
+  if (parentSignal?.aborted) onParentAbort();
+  else parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+  const deadlineTimer = setTimeout(() => {
+    deadlineExpired = true;
+    controller.abort(new SessionHistorySearchDeadlineError());
+  }, SESSION_HISTORY_SEARCH_DEADLINE_MS);
+  const signal = controller.signal;
+  const checkSearchActive = () => {
+    if (signal.aborted) {
+      if (deadlineExpired) throw new SessionHistorySearchDeadlineError();
+      throw signal.reason instanceof Error ? signal.reason : new Error("session history search was cancelled");
+    }
+  };
   const query = params.query;
   const limit = params.limit ?? 10;
   const types = resolveSearchEventTypes(
@@ -61,22 +90,20 @@ export async function searchSessionEvents(
   const matches: SearchMatch[] = [];
   const seen = new Set<string>();
 
-  for (const match of await db.searchEvents(
-    query,
-    params.sessionIds ?? null,
-    limit,
-    types,
-  )) {
-    addReadableMatch(matches, seen, {
-      ...match,
-      match_source: match.event_type === "turn_summary"
-        ? "turn_summary"
-        : "message",
-    }, types);
-  }
+  try {
+    checkSearchActive();
+    const results = await db.searchSessionHistory({
+      query,
+      sessionIds: params.sessionIds ?? null,
+      limit,
+      eventTypes: types,
+      searchSessionId: params.searchSessionId ?? false,
+      includeHighlight: params.includeHighlight ?? false,
+      includeStory: params.includeStory ?? false,
+    }, signal);
+    checkSearchActive();
 
-  if (params.searchSessionId) {
-    for (const match of await db.searchEventsBySessionId(query, types, limit)) {
+    for (const match of results.events) {
       addReadableMatch(matches, seen, {
         ...match,
         match_source: match.event_type === "turn_summary"
@@ -84,21 +111,28 @@ export async function searchSessionEvents(
           : "message",
       }, types);
     }
-  }
 
-  if (params.includeHighlight || params.includeStory) {
-    for (const match of await db.searchSessionDigests(
-      query,
-      params.sessionIds ?? null,
-      limit,
-      params.includeHighlight ?? false,
-      params.includeStory ?? false,
-    )) {
+    for (const match of results.sessionIdEvents) {
+      addReadableMatch(matches, seen, {
+        ...match,
+        match_source: match.event_type === "turn_summary"
+          ? "turn_summary"
+          : "message",
+      }, types);
+    }
+
+    for (const match of results.digests) {
       addReadableMatch(matches, seen, match, [
         "session_highlight",
         "session_story",
       ]);
     }
+  } catch (error) {
+    if (deadlineExpired) throw new SessionHistorySearchDeadlineError();
+    throw error;
+  } finally {
+    clearTimeout(deadlineTimer);
+    parentSignal?.removeEventListener("abort", onParentAbort);
   }
 
   matches.sort((a, b) => b.score - a.score);

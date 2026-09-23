@@ -340,8 +340,12 @@ export function registerSessionQueryTools(
       include_highlight,
       include_story,
       top_k,
-    }) => {
+    }, extra) => {
       try {
+        const requestSignal = AbortSignal.any([
+          extra.signal,
+          AbortSignal.timeout(4_800),
+        ]);
         const results = await searchSessionEvents(runtime.db, {
           query,
           sessionIds: session_ids ?? null,
@@ -351,9 +355,12 @@ export function registerSessionQueryTools(
           includeHighlight: include_highlight,
           includeStory: include_story,
           limit: top_k ?? 10,
+          signal: requestSignal,
         });
+        assertRequestActive(requestSignal);
         const sessionIds = [...new Set(results.map((result) => result.session_id))];
         const metadata = await runtime.db.getSessionSearchMetadata(sessionIds);
+        assertRequestActive(requestSignal);
         const enrichedResults = results.map((result) => {
           const sessionMetadata = metadata.get(result.session_id) ?? {
             turnCount: 0,
@@ -372,6 +379,7 @@ export function registerSessionQueryTools(
         const observations = consumptionBoundary.enabled
           ? await buildSearchObservations(runtime, results)
           : [];
+        assertRequestActive(requestSignal);
         return consumptionBoundary.commit(
           "search_session_history",
           jsonResult({ results: enrichedResults }),
@@ -421,6 +429,14 @@ export function registerSessionQueryTools(
       );
     },
   );
+}
+
+function assertRequestActive(signal: AbortSignal): void {
+  if (signal.aborted) {
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new Error("session history search request was cancelled");
+  }
 }
 
 function sessionStorySource(

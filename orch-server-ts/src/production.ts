@@ -69,6 +69,7 @@ import { broadcastTargetedSessionCatalogDelta } from
   "./runtime/live_session_catalog_mutation_broadcaster.js";
 import { deletedBoardItemsDelta } from "./runtime/catalog_delta_broadcaster.js";
 import {
+  createLiveSearchDbConnectionFactory,
   createLiveDbSqlResolver,
   type LiveDbSqlResolver,
 } from "./runtime/live_db_sql.js";
@@ -181,6 +182,12 @@ export async function createLiveProductionApplication(
   const configProvider = createEnvironmentConfigProvider(config);
   const sqlResolver = overrides.sqlResolver ??
     createLiveDbSqlResolver({ databaseUrl: config.database_url });
+  const searchDbConnectionFactory = createLiveSearchDbConnectionFactory({
+    databaseUrl: config.database_url,
+  });
+  const reportSearchCancelError = (error: unknown) => {
+    context.warn(`Search database cancellation failed; closing request-owned connection: ${String(error)}`);
+  };
   let boardYjsService: BoardYjsService | undefined;
   let emitBoardYjsSessionCatalogDelta:
     | ((sessionId: string) => Promise<void>)
@@ -215,6 +222,8 @@ export async function createLiveProductionApplication(
   const persistenceRepositoryProvider = createPersistenceHostRepositoryProvider(
     sqlResolver,
     sessionDeletionService,
+    searchDbConnectionFactory,
+    reportSearchCancelError,
   );
   const recurringJobRepository = new SqlRecurringJobRepository(sqlResolver);
   const registry = new InMemoryNodeRegistry();
@@ -260,13 +269,12 @@ export async function createLiveProductionApplication(
   });
   const dbCatalogRepository = createLiveDbCatalogRepository({
     sqlResolver,
+    searchDbConnectionFactory,
     databaseUrl: config.database_url,
     configProvider,
     registry,
     searchQueryExpander,
-    onSearchCancelError: (error) => {
-      context.warn(`Search database cancellation failed; closing request-owned connection: ${String(error)}`);
-    },
+    onSearchCancelError: reportSearchCancelError,
     boardAssetStorage,
     sessionDeletion: sessionDeletionService,
     sessionMoves: sessionBoardMoveService,

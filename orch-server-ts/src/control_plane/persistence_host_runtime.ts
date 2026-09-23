@@ -1,5 +1,6 @@
 import { BoardYjsSqlResolver } from "../board-yjs/board_yjs_sql.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
+import type { LiveSearchDbConnectionFactory } from "../runtime/live_db_sql.js";
 import type { SqlClient } from "./control_plane_types.js";
 import { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
 import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
@@ -9,6 +10,7 @@ import { SessionMutationRepository } from "./repositories/session_mutation_repos
 import { SessionReadRepository } from "./repositories/session_read_repository.js";
 import { EventReadRepository } from "./repositories/event_read_repository.js";
 import { SessionStoryReadRepository } from "./repositories/session_story_read_repository.js";
+import { SessionHistorySearchRepository } from "./repositories/session_history_search_repository.js";
 import { SessionReadCompositeRepository } from "./repositories/session_read_composite.js";
 import type { SessionDeletionPort } from "../session/session_deletion_service.js";
 import { WorktreeRepository } from "./repositories/worktree_repository.js";
@@ -22,6 +24,7 @@ export interface PersistenceHostRepositories {
   sessionReads: SessionReadRepository;
   eventReads: EventReadRepository;
   storyReads: SessionStoryReadRepository;
+  historySearch: SessionHistorySearchRepository;
   sessionReadComposites: SessionReadCompositeRepository;
   worktrees: WorktreeRepository;
 }
@@ -29,6 +32,8 @@ export interface PersistenceHostRepositories {
 export function createPersistenceHostRepositoryProvider(
   sqlResolver: LiveDbSqlResolver,
   sessionDeletion: SessionDeletionPort,
+  searchConnectionFactory: LiveSearchDbConnectionFactory,
+  onSearchCancelError?: (error: unknown) => void,
 ): () => Promise<PersistenceHostRepositories> {
   const resolver = new BoardYjsSqlResolver(sqlResolver);
   let repositories: PersistenceHostRepositories | undefined;
@@ -36,8 +41,12 @@ export function createPersistenceHostRepositoryProvider(
     if (repositories) return repositories;
     const sql = await resolver.resolveSql() as unknown as SqlClient;
     const sessionReads = new SessionReadRepository(sql);
-    const eventReads = new EventReadRepository(sql);
-    const storyReads = new SessionStoryReadRepository(sql);
+    const eventReads = new EventReadRepository(sql, searchConnectionFactory, onSearchCancelError);
+    const storyReads = new SessionStoryReadRepository(
+      sql,
+      searchConnectionFactory,
+      onSearchCancelError,
+    );
     repositories = {
       deliveries: new SessionDeliveryRepository(sql),
       claudeBackgroundTasks: new ClaudeBackgroundTaskRepository(sql),
@@ -48,6 +57,12 @@ export function createPersistenceHostRepositoryProvider(
       sessionReads,
       eventReads,
       storyReads,
+      historySearch: new SessionHistorySearchRepository(
+        searchConnectionFactory,
+        eventReads,
+        storyReads,
+        onSearchCancelError,
+      ),
       sessionReadComposites: new SessionReadCompositeRepository(
         sessionReads,
         eventReads,

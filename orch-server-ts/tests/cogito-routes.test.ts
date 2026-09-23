@@ -294,6 +294,22 @@ describe("cogito route harness", () => {
     }
   });
 
+  it("returns an explicit 504 when a non-product search provider reaches its deadline", async () => {
+    const deadlineError = Object.assign(new Error("search request deadline exceeded"), {
+      statusCode: 504,
+    });
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => { throw deadlineError; }),
+    };
+    const { app } = createHarness({ searchProvider });
+
+    const response = await app.inject({ method: "GET", url: "/cogito/search?q=hello" });
+
+    expect(response.statusCode).toBe(504);
+    expect(response.json()).toEqual({ detail: "Search request deadline exceeded" });
+    await app.close();
+  });
+
   it("fails explicitly when restricted access has no result filter", async () => {
     const { app } = createHarness({
       accessProvider: {

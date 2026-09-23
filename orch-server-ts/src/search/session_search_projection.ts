@@ -31,7 +31,7 @@ export type SessionSearchResult = {
 type ScoredCandidate = {
   readonly sessionId: string;
   readonly score: number;
-  readonly queryFamily: "lexical" | "semantic" | "user_message";
+  readonly queryFamily: "lexical" | "semantic";
   readonly queryRank: number;
   readonly evidence: SessionSearchResult["evidence"][number];
   readonly row: SessionSearchCandidateRow;
@@ -47,8 +47,8 @@ export function projectSessionSearchResults(
     if (!stringValue(row.session_id)) continue;
     const queryKind = stringValue(row.query_kind) ?? "original";
     const matchSource = stringValue(row.match_source) ?? "message";
-    const eventType = stringValue(row.event_type) ?? "";
-    const bucketKey = `${queryKind}:${matchSource}:${eventType}`;
+    const relevanceSource = stringValue(row.relevance_source) ?? matchSource;
+    const bucketKey = `${queryKind}:${relevanceSource}`;
     const bucket = sourceBuckets.get(bucketKey) ?? [];
     bucket.push(row);
     sourceBuckets.set(bucketKey, bucket);
@@ -58,10 +58,9 @@ export function projectSessionSearchResults(
   for (const [bucketKey, bucket] of sourceBuckets) {
     const queryKind = baseQueryKind(bucketKey.slice(0, bucketKey.indexOf(":")));
     const baseQueryFamily = isSemanticQuery(queryKind) ? "semantic" : "lexical";
-    const queryFamilyForRows = stringValue(bucket[0]?.event_type) === "user_message"
-      ? "user_message"
-      : baseQueryFamily;
-    const weight = queryFamilyForRows === "user_message" ? 0.5 : queryWeight(queryKind);
+    const weight = queryWeight(queryKind) * relevanceSourceWeight(
+      bucketKey.slice(bucketKey.indexOf(":") + 1),
+    );
     const orderedRows = bucket.sort((left, right) =>
       numberValue(right.score) - numberValue(left.score)
       || (stringValue(right.session_updated_at) ?? "")
@@ -70,11 +69,14 @@ export function projectSessionSearchResults(
       || numberValue(left.id) - numberValue(right.id));
     const seenSessions = new Set<string>();
     let queryRank = 0;
+    let previousRawScore: number | undefined;
     for (const row of orderedRows) {
       const sessionId = stringValue(row.session_id);
       if (!sessionId || seenSessions.has(sessionId)) continue;
       seenSessions.add(sessionId);
-      queryRank += 1;
+      const rawScore = numberValue(row.score);
+      if (previousRawScore === undefined || rawScore < previousRawScore) queryRank += 1;
+      previousRawScore = rawScore;
       const rawExcerpt = stringValue(row.searchable_text)
         ?? stringValue(row.display_name)
         ?? stringValue(row.session_prompt)
@@ -89,7 +91,7 @@ export function projectSessionSearchResults(
       keepBestCandidate(bestPerSessionAndFamily, {
         sessionId,
         score: weight / (60 + queryRank),
-        queryFamily: queryFamilyForRows,
+        queryFamily: baseQueryFamily,
         queryRank,
         evidence,
         row,
@@ -97,7 +99,7 @@ export function projectSessionSearchResults(
     }
   }
 
-  addLinkedTaskEvidence(bestPerSessionAndFamily, rows, originalQuery);
+  addPrimaryTaskTitleMatches(bestPerSessionAndFamily, rows, originalQuery);
 
   const bySession = new Map<string, ScoredCandidate[]>();
   for (const candidate of bestPerSessionAndFamily.values()) {
@@ -115,7 +117,11 @@ export function projectSessionSearchResults(
       const prompt = stringValue(row.session_prompt)?.trim();
       const title = displayName || firstLine(prompt ?? null) || "제목 없음";
       const excerpt = best.evidence.excerpt || buildSearchPreview(prompt ?? "", originalQuery);
-      const evidence = uniqueEvidence(group.map((candidate) => candidate.evidence));
+      const explicitTaskEvidence = taskEvidenceForSession(rows, sessionId, originalQuery);
+      const evidence = uniqueEvidence([
+        ...group.map((candidate) => candidate.evidence),
+        ...explicitTaskEvidence,
+      ]);
       const eventId = best.evidence.event_id;
       return {
         session_id: sessionId,
@@ -125,7 +131,8 @@ export function projectSessionSearchResults(
         updated_at: stringValue(row.session_updated_at),
         task_id: stringValue(row.task_id),
         task_title: stringValue(row.task_title),
-        parent_session_id: stringValue(row.predecessor_session_id),
+        parent_session_id: stringValue(row.parent_session_id)
+          ?? stringValue(row.caller_session_id),
         best_match: {
           event_id: eventId,
           match_source: best.evidence.source,
@@ -137,13 +144,18 @@ export function projectSessionSearchResults(
           ...(eventId === null ? {} : { eventId: String(eventId) }),
         }),
         relevance: group.reduce((sum, candidate) => sum + candidate.score, 0),
+        workEvidenceRank: explicitTaskEvidence.reduce(
+          (rank, item) => Math.max(rank, taskEvidenceRank(item.source)),
+          0,
+        ),
       };
     })
     .sort((left, right) => right.relevance - left.relevance
+      || right.workEvidenceRank - left.workEvidenceRank
       || (right.updated_at ?? "").localeCompare(left.updated_at ?? "")
       || left.session_id.localeCompare(right.session_id))
     .slice(0, candidateLimit)
-    .map(({ relevance: _relevance, ...result }) => result);
+    .map(({ relevance: _relevance, workEvidenceRank: _workEvidenceRank, ...result }) => result);
 }
 
 function keepBestCandidate(
@@ -155,56 +167,69 @@ function keepBestCandidate(
   if (!current || candidate.score > current.score) candidates.set(key, candidate);
 }
 
-function addLinkedTaskEvidence(
+function addPrimaryTaskTitleMatches(
   candidates: Map<string, ScoredCandidate>,
   rows: readonly SessionSearchCandidateRow[],
   originalQuery: string,
 ): void {
   const compactQuery = compactSearchQuery(originalQuery);
   if (!compactQuery) return;
-  const bestTaskBySession = new Map<string, SessionSearchCandidateRow>();
+  const bestBySession = new Map<string, SessionSearchCandidateRow>();
   for (const row of rows) {
     const sessionId = stringValue(row.session_id);
-    const taskTitle = stringValue(row.task_title)?.trim();
-    if (!sessionId || !stringValue(row.task_id) || !taskTitle) continue;
-    const compactTitle = compactSearchQuery(taskTitle);
-    if (!compactTitle.includes(compactQuery)) continue;
-    const previous = bestTaskBySession.get(sessionId);
-    if (!previous || taskTitleMatchRank(taskTitle, originalQuery)
-      < taskTitleMatchRank(stringValue(previous.task_title) ?? "", originalQuery)) {
-      bestTaskBySession.set(sessionId, row);
-    }
+    const taskId = stringValue(row.task_id);
+    const title = stringValue(row.task_title)?.trim();
+    if (!sessionId || !taskId || !title || !compactSearchQuery(title).includes(compactQuery)) continue;
+    if (!bestBySession.has(sessionId)) bestBySession.set(sessionId, row);
   }
-
-  const orderedTasks = [...bestTaskBySession.entries()].sort((left, right) =>
-    taskTitleMatchRank(stringValue(left[1].task_title) ?? "", originalQuery)
-      - taskTitleMatchRank(stringValue(right[1].task_title) ?? "", originalQuery)
-    || (stringValue(right[1].session_updated_at) ?? "")
-      .localeCompare(stringValue(left[1].session_updated_at) ?? "")
-    || left[0].localeCompare(right[0]));
-  for (const [queryRank, [sessionId, row]] of orderedTasks.entries()) {
-    const taskTitle = stringValue(row.task_title) ?? "";
+  for (const [queryRank, [sessionId, row]] of [...bestBySession.entries()].entries()) {
+    const title = stringValue(row.task_title) ?? "";
     keepBestCandidate(candidates, {
       sessionId,
       score: 1.5 / (60 + queryRank + 1),
       queryFamily: "lexical",
       queryRank: queryRank + 1,
       evidence: {
-        source: "task",
+        source: "task_title",
         event_id: null,
-        excerpt: buildSearchPreview(taskTitle, originalQuery),
+        excerpt: buildSearchPreview(title, originalQuery),
       },
       row,
     });
   }
 }
 
-function taskTitleMatchRank(taskTitle: string, originalQuery: string): number {
-  const title = compactSearchQuery(taskTitle);
-  const query = compactSearchQuery(originalQuery);
-  if (title === query) return 0;
-  if (title.startsWith(query)) return 1;
-  return 2;
+function taskEvidenceForSession(
+  rows: readonly SessionSearchCandidateRow[],
+  sessionId: string,
+  originalQuery: string,
+): SessionSearchResult["evidence"] {
+  const evidenceByKind = new Map<string, SessionSearchCandidateRow>();
+  for (const row of rows) {
+    if (stringValue(row.session_id) !== sessionId) continue;
+    const kind = stringValue(row.task_evidence_kind);
+    const title = stringValue(row.task_evidence_title)?.trim();
+    if (!kind || !title || !isTaskEvidenceKind(kind)) continue;
+    if (!evidenceByKind.has(kind)) evidenceByKind.set(kind, row);
+  }
+  return [...evidenceByKind.entries()]
+    .sort(([left], [right]) => taskEvidenceRank(right) - taskEvidenceRank(left))
+    .map(([kind, row]) => ({
+      source: kind,
+      event_id: null,
+      excerpt: buildSearchPreview(stringValue(row.task_evidence_title) ?? "", originalQuery),
+    }));
+}
+
+function isTaskEvidenceKind(kind: string): boolean {
+  return kind === "source_task_item"
+    || kind === "task_item_completed"
+    || kind === "task_completed"
+    || kind === "task_item_assigned";
+}
+
+function taskEvidenceRank(kind: string): number {
+  return kind === "task_item_completed" || kind === "task_completed" ? 2 : 0;
 }
 
 function isSemanticQuery(queryKind: string): boolean {
@@ -222,6 +247,18 @@ function queryWeight(queryKind: string): number {
   if (queryKind === "normalized" || queryKind === "compact") return 1.5;
   if (isSemanticQuery(queryKind)) return 1;
   return 1.5;
+}
+
+function relevanceSourceWeight(source: string): number {
+  switch (source) {
+    case "title": return 1.75;
+    case "initial_request": return 1.5;
+    case "prompt": return 1.35;
+    case "session_id": return 1.25;
+    case "user_message": return 0.9;
+    case "assistant_message": return 0.65;
+    default: return 1;
+  }
 }
 
 function uniqueEvidence(

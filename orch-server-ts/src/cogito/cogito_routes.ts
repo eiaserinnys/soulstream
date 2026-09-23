@@ -181,6 +181,9 @@ export function registerCogitoRoutes(
         && !reply.raw.destroyed) {
         return routeError(reply, 504, "Search access scope exceeded its database time limit");
       }
+      if (hasHttpStatus(error, 504) && !request.raw.aborted && !reply.raw.destroyed) {
+        return routeError(reply, 504, "Search request deadline exceeded");
+      }
       if (!controller.signal.aborted) throw error;
       if (!request.raw.aborted && !reply.raw.destroyed && Date.now() >= deadlineAt) {
         return routeError(reply, 504, "Search access exceeded the request deadline");
@@ -210,6 +213,13 @@ function isPostgresStatementTimeout(error: unknown): boolean {
     && error !== null
     && "code" in error
     && error.code === "57014";
+}
+
+function hasHttpStatus(error: unknown, statusCode: number): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "statusCode" in error
+    && error.statusCode === statusCode;
 }
 
 function waitForCogitoSearchStep<T>(

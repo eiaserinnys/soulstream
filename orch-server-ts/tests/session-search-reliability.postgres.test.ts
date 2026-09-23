@@ -7,12 +7,17 @@ import postgres from "postgres";
 
 import { startPostgresTestContainer } from
   "../../packages/db-schema/scripts/postgres-test-container.mjs";
+import type { SqlClient } from "../src/control_plane/control_plane_types.js";
+import { EventReadRepository } from "../src/control_plane/repositories/event_read_repository.js";
+import { SessionHistorySearchRepository } from "../src/control_plane/repositories/session_history_search_repository.js";
+import { SessionStoryReadRepository } from "../src/control_plane/repositories/session_story_read_repository.js";
 import { createLiveCogitoSearchProvider } from
   "../src/runtime/live_cogito_search_provider.js";
 import {
   cancelLiveSearchQuerySafely,
   createLiveSearchDbConnectionFactory,
   type LiveSearchPendingQuery,
+  type LiveSearchSql,
 } from
   "../src/runtime/live_db_sql.js";
 
@@ -67,6 +72,25 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     expect(denied).toHaveLength(0);
   });
 
+  it("does not convert a non-product provider deadline into empty search success", async () => {
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: {
+        open: async () => { throw new Error("an expired request must not open a connection"); },
+      },
+    });
+
+    await expect(provider.search({
+      q: "deadline query",
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      deadlineAt: Date.now() - 100,
+    })).rejects.toMatchObject({ statusCode: 504 });
+  });
+
   it("projects the authorized primary task membership for a real session search", async () => {
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
@@ -91,6 +115,70 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       }),
     ]));
     expect(response.session_results?.map((row) => row.session_id)).not.toContain("denied-session");
+    expect(response.session_results?.find((row) => row.session_id === "task-session"))
+      .toMatchObject({ parent_session_id: "caller-parent" });
+  });
+
+  it("uses caller plus primary task membership and ranks verified work over an equal re-quote", async () => {
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
+    });
+    const execution = await provider.search({
+      q: "unique execution phrase",
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      allowedFolderIds: ["folder-allowed"],
+    });
+
+    expect(execution.session_results?.slice(0, 2).map((row) => row.session_id)).toEqual([
+      "actual-work-session",
+      "diagnostic-session",
+    ]);
+    expect(execution.session_results?.[0]).toMatchObject({
+      task_id: "task-primary",
+      parent_session_id: "caller-parent",
+    });
+    expect(execution.session_results?.[0]?.evidence).toContainEqual(expect.objectContaining({
+      source: "task_item_completed",
+      excerpt: "Unique execution verification",
+    }));
+    expect(execution.session_results?.[1]?.parent_session_id).toBeNull();
+    expect(execution.session_results?.[1]?.task_id).toBeNull();
+
+    const taskTitleSearch = await provider.search({
+      q: "task result",
+      top_k: 20,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      allowedFolderIds: ["folder-allowed"],
+    });
+    for (const sessionId of ["referenced-session", "metadata-only-session"]) {
+      expect(taskTitleSearch.session_results?.find((row) => row.session_id === sessionId)?.task_id)
+        .toBeNull();
+    }
+
+    const outputSearch = await provider.search({
+      q: "output artifact marker",
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      allowedFolderIds: ["folder-allowed"],
+    });
+    expect(outputSearch.session_results?.find((row) => row.session_id === "source-item-session")?.evidence)
+      .toContainEqual(expect.objectContaining({ source: "source_task_item" }));
   });
 
   it("keeps per-session product candidates when global top events repeat one session", async () => {
@@ -178,6 +266,93 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     }
   }, 15_000);
 
+  it("cancels an event_search request and leaves no database query after caller abort", async () => {
+    const admin = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+    const factory = createLiveSearchDbConnectionFactory({
+      databaseUrl,
+      postgresFactory: (url, options) => {
+        const client = postgres(url, { ...options, onnotice: () => {} });
+        const instrumented = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+          if (strings.join("").includes("FROM event_search(")) {
+            return client`SELECT pg_sleep(10) /* SEARCH_HOST_EVENT_CANCEL_TEST */`;
+          }
+          const query = strings.reduce((text, part, index) =>
+            `${text}${index === 0 ? "" : `$${index}`}${part}`, "");
+          return client.unsafe(query, values as never[]);
+        }) as unknown as LiveSearchSql;
+        Object.assign(instrumented, {
+          end: (closeOptions?: { readonly timeout?: number }) => client.end(closeOptions),
+        });
+        return instrumented;
+      },
+    });
+    const repository = new EventReadRepository(admin as unknown as SqlClient, factory);
+    const controller = new AbortController();
+    try {
+      const pending = repository.searchEvents(
+        "slow host search",
+        null,
+        10,
+        null,
+        controller.signal,
+      );
+      const pid = await waitForActiveSearch(admin, "SEARCH_HOST_EVENT_CANCEL_TEST");
+      controller.abort(new Error("MCP caller timed out"));
+      await expect(pending).rejects.toThrow("MCP caller timed out");
+      await expectNoBackend(admin, pid);
+      await expect(admin`SELECT 1 AS value`).resolves.toEqual([{ value: 1 }]);
+    } finally {
+      await admin.end({ timeout: 2 });
+    }
+  }, 12_000);
+
+  it("cancels the combined MCP history-search request and leaves no database backend", async () => {
+    const admin = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+    const factory = createLiveSearchDbConnectionFactory({
+      databaseUrl,
+      postgresFactory: (url, options) => {
+        const client = postgres(url, { ...options, onnotice: () => {} });
+        const instrumented = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+          if (strings.join("").includes("FROM event_search(")) {
+            return client`SELECT pg_sleep(10) /* HISTORY_SEARCH_CANCEL_TEST */`;
+          }
+          const query = strings.reduce((text, part, index) =>
+            `${text}${index === 0 ? "" : `$${index}`}${part}`, "");
+          return client.unsafe(query, values as never[]);
+        }) as unknown as LiveSearchSql;
+        Object.assign(instrumented, {
+          end: (closeOptions?: { readonly timeout?: number }) => client.end(closeOptions),
+        });
+        return instrumented;
+      },
+    });
+    const repository = new SessionHistorySearchRepository(
+      factory,
+      new EventReadRepository(admin as unknown as SqlClient),
+      new SessionStoryReadRepository(admin as unknown as SqlClient),
+    );
+    const controller = new AbortController();
+    try {
+      const pending = repository.search({
+        query: "slow history search",
+        sessionIds: null,
+        limit: 10,
+        eventTypes: null,
+        searchSessionId: true,
+        includeHighlight: true,
+        includeStory: true,
+      }, controller.signal);
+      const pid = await waitForActiveSearch(admin, "HISTORY_SEARCH_CANCEL_TEST");
+      controller.abort(new Error("MCP session-data caller timed out"));
+
+      await expect(pending).rejects.toThrow("MCP session-data caller timed out");
+      await expectNoBackend(admin, pid);
+      await expect(admin`SELECT 1 AS value`).resolves.toEqual([{ value: 1 }]);
+    } finally {
+      await admin.end({ timeout: 2 });
+    }
+  }, 12_000);
+
   it("applies a remaining-deadline statement timeout and discards a hung owned connection", async () => {
     const admin = postgres(databaseUrl, { max: 1, onnotice: () => {} });
     const factory = createLiveSearchDbConnectionFactory({ databaseUrl });
@@ -209,6 +384,89 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     } finally {
       await admin.end({ timeout: 2 });
     }
+  }, 15_000);
+
+  it("cancels request-owned digest search after caller abort", async () => {
+    const admin = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+    const factory = createLiveSearchDbConnectionFactory({
+      databaseUrl,
+      postgresFactory: (url, options) => {
+        const client = postgres(url, { ...options, onnotice: () => {} });
+        const instrumented = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+          if (strings.join("").includes("FROM session_digests d")) {
+            return client`SELECT pg_sleep(10) /* SEARCH_HOST_DIGEST_CANCEL_TEST */`;
+          }
+          const query = strings.reduce((text, part, index) =>
+            `${text}${index === 0 ? "" : `$${index}`}${part}`, "");
+          return client.unsafe(query, values as never[]);
+        }) as unknown as LiveSearchSql;
+        Object.assign(instrumented, {
+          end: (closeOptions?: { readonly timeout?: number }) => client.end(closeOptions),
+        });
+        return instrumented;
+      },
+    });
+    const repository = new SessionStoryReadRepository(admin as unknown as SqlClient, factory);
+    const controller = new AbortController();
+    try {
+      const pending = repository.searchSessionDigests(
+        "needle",
+        null,
+        10,
+        true,
+        true,
+        controller.signal,
+      );
+      const pid = await waitForActiveSearch(admin, "SEARCH_HOST_DIGEST_CANCEL_TEST");
+      await expect(admin`SELECT 1 AS value`).resolves.toEqual([{ value: 1 }]);
+      controller.abort(new Error("caller disconnected"));
+      await settleWithin(pending, 2_500);
+      await expectNoBackend(admin, pid);
+      await expect(admin`SELECT 2 AS value`).resolves.toEqual([{ value: 2 }]);
+    } finally {
+      await admin.end({ timeout: 2 });
+    }
+  }, 15_000);
+
+  it("uses one owned connection for event, session-id, and digest sources", async () => {
+    let connectionCount = 0;
+    const queryTexts: string[] = [];
+    const factory = createLiveSearchDbConnectionFactory({
+      databaseUrl,
+      postgresFactory: (url, options) => {
+        connectionCount += 1;
+        const client = postgres(url, { ...options, onnotice: () => {} });
+        const instrumented = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+          queryTexts.push(strings.join(""));
+          return client(strings, ...values as never[]);
+        }) as unknown as LiveSearchSql;
+        Object.assign(instrumented, {
+          end: (closeOptions?: { readonly timeout?: number }) => client.end(closeOptions),
+        });
+        return instrumented;
+      },
+    });
+    const repository = new SessionHistorySearchRepository(
+      factory,
+      new EventReadRepository(sql as unknown as SqlClient),
+      new SessionStoryReadRepository(sql as unknown as SqlClient),
+    );
+
+    const result = await repository.search({
+      query: "needle",
+      sessionIds: null,
+      limit: 10,
+      eventTypes: ["assistant_message"],
+      searchSessionId: true,
+      includeHighlight: true,
+      includeStory: true,
+    }, new AbortController().signal);
+
+    expect(result).toMatchObject({ events: [], sessionIdEvents: [], digests: [] });
+    expect(connectionCount).toBe(1);
+    expect(queryTexts.some((text) => text.includes("FROM event_search("))).toBe(true);
+    expect(queryTexts.some((text) => text.includes("FROM session_id_search("))).toBe(true);
+    expect(queryTexts.some((text) => text.includes("FROM session_digests d"))).toBe(true);
   }, 15_000);
 });
 
@@ -277,6 +535,13 @@ async function seedSearchFixtures(sql: ReturnType<typeof postgres>): Promise<voi
     "prefix-fill-b",
     "prefix-target",
     "task-session",
+    "caller-parent",
+    "predecessor-only",
+    "referenced-session",
+    "metadata-only-session",
+    "actual-work-session",
+    "diagnostic-session",
+    "source-item-session",
     "denied-session",
   ];
   for (const sessionId of sessions) {
@@ -300,7 +565,21 @@ async function seedSearchFixtures(sql: ReturnType<typeof postgres>): Promise<voi
   await insertEvent(sql, "prefix-fill-b", 1, "업무 업무 업무 설계 진행");
   await insertEvent(sql, "prefix-target", 1, "업무 검색어자동화 결과 확인");
   await insertEvent(sql, "task-session", 1, "task result confirmation from session");
+  await insertEvent(sql, "referenced-session", 1, "task result discussion only");
+  await insertEvent(sql, "metadata-only-session", 1, "task result edit history only");
+  await insertEvent(sql, "actual-work-session", 1, "unique execution phrase");
+  await insertEvent(sql, "diagnostic-session", 1, "unique execution phrase");
+  await insertEvent(sql, "source-item-session", 1, "output artifact marker");
   await insertEvent(sql, "denied-session", 1, "secretphrase restricted result");
+  await sql`
+    UPDATE sessions
+    SET caller_session_id = 'caller-parent', predecessor_session_id = 'predecessor-only'
+    WHERE session_id IN ('task-session', 'actual-work-session')
+  `;
+  await sql`
+    UPDATE sessions SET updated_at = ${new Date(Date.now() + 86_400_000)}
+    WHERE session_id = 'diagnostic-session'
+  `;
 
   await sql`
     INSERT INTO board_items (
@@ -321,6 +600,60 @@ async function seedSearchFixtures(sql: ReturnType<typeof postgres>): Promise<voi
       'task-session-membership', 'folder-allowed', 'task', 'task-primary',
       'primary', 'session', 'task-session'
     )
+  `;
+  await sql`
+    INSERT INTO task_sections (id, task_id, position_key, title, updated_session_id)
+    VALUES ('search-section', 'task-primary', 'a', 'Search work', 'metadata-only-session')
+  `;
+  await sql`
+    INSERT INTO task_items (
+      id, section_id, position_key, title, status, completed_session_id
+    ) VALUES (
+      'execution-item', 'search-section', 'a', 'Unique execution verification',
+      'completed', 'actual-work-session'
+    )
+  `;
+  await sql`
+    INSERT INTO task_items (
+      id, section_id, position_key, title, updated_session_id
+    ) VALUES (
+      'source-item', 'search-section', 'b', 'Output artifact marker', 'metadata-only-session'
+    )
+  `;
+  await sql`
+    INSERT INTO task_items (
+      id, section_id, position_key, title, updated_session_id
+    ) VALUES (
+      'history-item', 'search-section', 'c', 'Edit history only', 'metadata-only-session'
+    )
+  `;
+  await sql`
+    INSERT INTO task_operations (
+      id, task_id, target_kind, target_id, operation_type, actor_session_id
+    ) VALUES (
+      'history-operation', 'task-primary', 'task', 'task-primary', 'updated', 'metadata-only-session'
+    )
+  `;
+  await sql`
+    INSERT INTO board_items (
+      id, folder_id, container_kind, container_id, membership_kind, item_type, item_id
+    ) VALUES (
+      'actual-work-membership', 'folder-allowed', 'task', 'task-primary',
+      'primary', 'session', 'actual-work-session'
+    ), (
+      'source-item-membership', 'folder-allowed', 'task', 'task-primary',
+      'primary', 'session', 'source-item-session'
+    ), (
+      'referenced-folder-membership', 'folder-allowed', 'folder', 'folder-allowed',
+      'primary', 'session', 'referenced-session'
+    ), (
+      'referenced-task-membership', 'folder-allowed', 'task', 'task-primary',
+      'reference', 'session', 'referenced-session'
+    )
+  `;
+  await sql`
+    UPDATE board_items SET source_task_item_id = 'source-item'
+    WHERE id = 'source-item-membership'
   `;
 }
 
@@ -352,6 +685,24 @@ async function waitForActiveQuery(
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error(`PostgreSQL did not report backend ${pid} active`);
+}
+
+async function waitForActiveSearch(
+  sql: ReturnType<typeof postgres>,
+  queryMarker: string,
+): Promise<number> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const active = await sql`
+      SELECT pid FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND state = 'active'
+        AND query LIKE ${`%${queryMarker}%`}
+    `;
+    if (active.length > 0) return Number(active[0]?.pid);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`PostgreSQL did not report active search query ${queryMarker}`);
 }
 
 async function expectNoBackend(

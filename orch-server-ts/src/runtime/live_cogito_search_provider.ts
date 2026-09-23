@@ -42,7 +42,7 @@ import { cancelLiveSearchQuerySafely } from "./live_db_sql.js";
 
 const SEARCH_DB_CONCURRENCY_LIMIT = 2;
 const CANDIDATE_MULTIPLIER = 5;
-const QUERY_EXPANSION_TIMEOUT_MS = 4_200;
+const QUERY_EXPANSION_TIMEOUT_MS = 4_500;
 
 export type CreateLiveCogitoSearchProviderOptions = {
   readonly searchDbConnectionFactory: LiveSearchDbConnectionFactory;
@@ -248,6 +248,9 @@ export function createLiveCogitoSearchProvider(
           searchController.abort(error);
         }
         if (!isSearchStopped(error, signal)) throw error;
+        if (!isProductSearch && (deadlineExpired || Date.now() >= deadlineAt)) {
+          throw new SearchDeadlineError("search request deadline exceeded");
+        }
         if (isProductSearch) {
           const stopReason = deadlineExpired || Date.now() >= deadlineAt
             ? "timeout"

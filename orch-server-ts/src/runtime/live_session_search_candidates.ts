@@ -61,7 +61,8 @@ export async function loadCandidateRows(
         hit.searchable_text,
         hit.created_at,
         hit.score,
-        hit.match_source
+        hit.match_source,
+        hit.relevance_source
       FROM query_variants query
       CROSS JOIN LATERAL (
         SELECT
@@ -72,7 +73,19 @@ export async function loadCandidateRows(
           event.created_at,
           event.score,
           CASE WHEN event.event_type = 'turn_summary'
-            THEN 'turn_summary'::text ELSE 'message'::text END AS match_source
+            THEN 'turn_summary'::text ELSE 'message'::text END AS match_source,
+          CASE
+            WHEN event.event_type = 'turn_summary' THEN 'turn_summary'::text
+            WHEN event.event_type = 'user_message' AND NOT EXISTS (
+              SELECT 1 FROM events earlier_user
+              WHERE earlier_user.session_id = event.session_id
+                AND earlier_user.event_type = 'user_message'
+                AND earlier_user.id < event.id
+            ) THEN 'initial_request'::text
+            WHEN event.event_type = 'user_message' THEN 'user_message'::text
+            WHEN event.event_type = 'assistant_message' THEN 'assistant_message'::text
+            ELSE 'message'::text
+          END AS relevance_source
         FROM (
           SELECT * FROM event_search(
             query.query,
@@ -90,7 +103,8 @@ export async function loadCandidateRows(
           session_match.searchable_text,
           session_match.created_at,
           session_match.score,
-          'session_id'::text AS match_source
+          'session_id'::text AS match_source,
+          'session_id'::text AS relevance_source
         FROM session_id_search(
           query.query,
           ${eventTypes}::text[],
@@ -106,7 +120,8 @@ export async function loadCandidateRows(
           matches.searchable_text,
           digest.updated_at AS created_at,
           1.0 / matches.position AS score,
-          matches.match_source
+          matches.match_source,
+          matches.match_source AS relevance_source
         FROM session_digests digest
         JOIN sessions digest_session ON digest_session.session_id = digest.session_id
         CROSS JOIN LATERAL (
@@ -154,7 +169,12 @@ export async function loadCandidateRows(
           WHEN session.display_name_search_key LIKE session_search_compact(query.query) || '%'
             THEN 'title'::text
           ELSE 'prompt'::text
-        END AS match_source
+        END AS match_source,
+        CASE
+          WHEN session.display_name_search_key LIKE session_search_compact(query.query) || '%'
+            THEN 'title'::text
+          ELSE 'prompt'::text
+        END AS relevance_source
       FROM query_variants query
       JOIN LATERAL (
         SELECT candidate.*
@@ -184,7 +204,19 @@ export async function loadCandidateRows(
         candidate.created_at,
         candidate.score,
         CASE WHEN candidate.event_type = 'turn_summary'
-          THEN 'turn_summary'::text ELSE 'message'::text END AS match_source
+          THEN 'turn_summary'::text ELSE 'message'::text END AS match_source,
+        CASE
+          WHEN candidate.event_type = 'turn_summary' THEN 'turn_summary'::text
+          WHEN candidate.event_type = 'user_message' AND NOT EXISTS (
+            SELECT 1 FROM events earlier_user
+            WHERE earlier_user.session_id = candidate.session_id
+              AND earlier_user.event_type = 'user_message'
+              AND earlier_user.id < candidate.id
+          ) THEN 'initial_request'::text
+          WHEN candidate.event_type = 'user_message' THEN 'user_message'::text
+          WHEN candidate.event_type = 'assistant_message' THEN 'assistant_message'::text
+          ELSE 'message'::text
+        END AS relevance_source
       FROM query_variants query
       CROSS JOIN LATERAL event_search(
         query.query,
@@ -208,71 +240,82 @@ export async function loadCandidateRows(
       hit.created_at,
       hit.score,
       hit.match_source,
+      hit.relevance_source,
       session.display_name,
       session.prompt AS session_prompt,
       session.folder_id,
-      session.predecessor_session_id,
+      session.caller_session_id AS parent_session_id,
       session.updated_at AS session_updated_at,
       linked_task.id AS task_id,
-      linked_task.title AS task_title
+      linked_task.title AS task_title,
+      linked_task.task_evidence_kind,
+      linked_task.task_evidence_title
     FROM raw_hits hit
     JOIN sessions session ON session.session_id = hit.session_id
     LEFT JOIN LATERAL (
-        SELECT task.id, task.title
-        FROM tasks task
-        JOIN board_items item ON item.id = task.board_item_id
-        WHERE task.archived = FALSE
-          AND session.folder_id IS NOT NULL
-          AND item.folder_id = session.folder_id
-        AND (
-          task.created_session_id = session.session_id
-          OR task.completed_session_id = session.session_id
-          OR EXISTS (
-            SELECT 1 FROM board_items primary_session_item
-            WHERE primary_session_item.container_kind = 'task'
-              AND primary_session_item.container_id = task.id
-              AND primary_session_item.folder_id = session.folder_id
-              AND primary_session_item.item_type = 'session'
-              AND primary_session_item.item_id = session.session_id
-              AND primary_session_item.membership_kind = 'primary'
-          )
-          OR EXISTS (
-            SELECT 1 FROM task_sections section
-            WHERE section.task_id = task.id
-              AND section.assignee_session_id = session.session_id
-          )
-          OR EXISTS (
-            SELECT 1 FROM task_items task_item
-            JOIN task_sections section ON section.id = task_item.section_id
-            WHERE section.task_id = task.id
-              AND (
-                task_item.created_session_id = session.session_id
-                OR task_item.updated_session_id = session.session_id
-                OR task_item.completed_session_id = session.session_id
-                OR task_item.assignee_session_id = session.session_id
-                OR section.created_session_id = session.session_id
-                OR section.updated_session_id = session.session_id
-              )
-          )
-          OR EXISTS (
-            SELECT 1 FROM task_operations operation
-            WHERE operation.task_id = task.id
-              AND operation.actor_session_id = session.session_id
-          )
-      )
+      SELECT
+        task.id,
+        task.title,
+        CASE
+          WHEN task.completed_session_id = session.session_id THEN 'task_completed'
+          WHEN completed_item.id IS NOT NULL THEN 'task_item_completed'
+          WHEN primary_session_item.source_task_item_id IS NOT NULL THEN 'source_task_item'
+          WHEN assigned_item.id IS NOT NULL THEN 'task_item_assigned'
+          ELSE NULL
+        END AS task_evidence_kind,
+        CASE
+          WHEN task.completed_session_id = session.session_id THEN task.title
+          WHEN completed_item.id IS NOT NULL THEN completed_item.title
+          WHEN primary_session_item.source_task_item_id IS NOT NULL THEN source_item.title
+          WHEN assigned_item.id IS NOT NULL THEN assigned_item.title
+          ELSE NULL
+        END AS task_evidence_title
+      FROM board_items primary_session_item
+      JOIN tasks task ON task.id = primary_session_item.container_id
+      JOIN board_items task_board_item ON task_board_item.id = task.board_item_id
+      LEFT JOIN task_items source_item
+        ON source_item.id = primary_session_item.source_task_item_id
+       AND EXISTS (
+         SELECT 1 FROM task_sections source_section
+         WHERE source_section.id = source_item.section_id
+           AND source_section.task_id = task.id
+       )
+      LEFT JOIN LATERAL (
+        SELECT task_item.id, task_item.title
+        FROM task_items task_item
+        JOIN task_sections section ON section.id = task_item.section_id
+        WHERE section.task_id = task.id
+          AND section.archived = FALSE
+          AND task_item.archived = FALSE
+          AND task_item.completed_session_id = session.session_id
+        ORDER BY task_item.completed_at DESC NULLS LAST, task_item.id
+        LIMIT 1
+      ) completed_item ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT task_item.id, task_item.title
+        FROM task_items task_item
+        JOIN task_sections section ON section.id = task_item.section_id
+        WHERE section.task_id = task.id
+          AND section.archived = FALSE
+          AND task_item.archived = FALSE
+          AND task_item.assignee_session_id = session.session_id
+        ORDER BY task_item.updated_at DESC, task_item.id
+        LIMIT 1
+      ) assigned_item ON TRUE
+      WHERE primary_session_item.container_kind = 'task'
+        AND primary_session_item.container_id = task.id
+        AND primary_session_item.folder_id = session.folder_id
+        AND primary_session_item.item_type = 'session'
+        AND primary_session_item.item_id = session.session_id
+        AND primary_session_item.membership_kind = 'primary'
+        AND task.archived = FALSE
+        AND task_board_item.folder_id = session.folder_id
+        AND session.folder_id IS NOT NULL
       ORDER BY
-        (EXISTS (
-          SELECT 1 FROM board_items primary_session_item
-          WHERE primary_session_item.container_kind = 'task'
-            AND primary_session_item.container_id = task.id
-            AND primary_session_item.folder_id = session.folder_id
-            AND primary_session_item.item_type = 'session'
-            AND primary_session_item.item_id = session.session_id
-            AND primary_session_item.membership_kind = 'primary'
-        )) DESC,
         ((task.completed_session_id = session.session_id) IS TRUE) DESC,
-        ((task.created_session_id = session.session_id) IS TRUE) DESC,
-        task.updated_at DESC,
+        (completed_item.id IS NOT NULL) DESC,
+        (primary_session_item.source_task_item_id IS NOT NULL) DESC,
+        (assigned_item.id IS NOT NULL) DESC,
         task.id ASC
       LIMIT 1
     ) linked_task ON TRUE
@@ -390,7 +433,9 @@ export function assertSearchMayContinue(
   }
 }
 
-export class SearchDeadlineError extends Error {}
+export class SearchDeadlineError extends Error {
+  readonly statusCode = 504;
+}
 
 export function isSearchStopped(error: unknown, signal: AbortSignal | undefined): boolean {
   return signal?.aborted || error instanceof SearchDeadlineError;

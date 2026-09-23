@@ -36,7 +36,7 @@ export class PersistenceHostTransport {
     domain: string,
     operation: string,
     args: unknown[],
-    options: { timeoutMs?: number } = {},
+    options: { timeoutMs?: number; signal?: AbortSignal } = {},
   ): Promise<T> {
     const requestId = randomUUID();
     const nodeRequestedAtMs = Date.now();
@@ -53,7 +53,12 @@ export class PersistenceHostTransport {
             [REQUEST_ID_HEADER]: requestId,
           },
           body: JSON.stringify({ args: snakeCase(args) }),
-          signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
+          signal: options.signal === undefined
+            ? AbortSignal.timeout(options.timeoutMs ?? 10_000)
+            : AbortSignal.any([
+              options.signal,
+              AbortSignal.timeout(options.timeoutMs ?? 10_000),
+            ]),
         },
       );
       responseBody = await response.text();
