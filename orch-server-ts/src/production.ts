@@ -85,9 +85,9 @@ import { createPersistenceHostRepositoryProvider } from "./control_plane/persist
 import { SqlRecurringJobRepository } from "./recurring-jobs/repository.js";
 import { RecurringJobService } from "./recurring-jobs/service.js";
 import { RecurringJobScheduler } from "./recurring-jobs/scheduler.js";
+import { createProductionRecurringJobWiring } from "./recurring-jobs/production_wiring.js";
 import { createRecurringJobTargetValidator } from "./recurring-jobs/target_validator.js";
 import { createRecurringSession } from "./session/recurring_session_creation.js";
-import type { RecurringJobActor } from "./recurring-jobs/types.js";
 import type { SessionDeliveryRepository } from
   "./control_plane/repositories/session_delivery_repository.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
@@ -532,11 +532,14 @@ export async function createLiveProductionApplication(
       },
     },
   });
-  recurringJobScheduler = new RecurringJobScheduler({
+  const recurringJobWiring = createProductionRecurringJobWiring({
     service: recurringJobService,
     repository: recurringJobRepository,
+    authenticatedUserResolvers: providers.authenticatedUserResolvers,
+    authBearerToken: config.auth_bearer_token,
     onError: (error, operation) => context.warn(warningMessage(`recurring jobs ${operation}`, error)),
   });
+  recurringJobScheduler = recurringJobWiring.scheduler;
   const app = createApp({
     ...buildProductionRouteOptions(
       appConfig,
@@ -556,25 +559,8 @@ export async function createLiveProductionApplication(
       createFolderControlPlaneServiceProvider(sqlResolver),
       new LiveDatabaseSchemaProvider(sqlResolver),
     ),
-    recurringJobRoutes: {
-      service: recurringJobService,
-      resolveActor: async (request): Promise<RecurringJobActor | null> => {
-        const email = await providers.authenticatedUserResolvers.resolveEmail(request);
-        if (!email?.trim()) return null;
-        const callerInfo = await providers.authenticatedUserResolvers.resolveCallerInfo(request, null, "");
-        const source = callerInfo.source === "soul-app" ? "soul-app" : "browser";
-        return {
-          ownerEmail: email,
-          actorId: email,
-          callerInfo,
-          source,
-        };
-      },
-    },
-    recurringJobHostRoutes: {
-      service: recurringJobService,
-      authBearerToken: config.auth_bearer_token,
-    },
+    recurringJobRoutes: recurringJobWiring.routes,
+    recurringJobHostRoutes: recurringJobWiring.hostRoutes,
   });
   logPushNotification = (event) => {
     app.log.info(

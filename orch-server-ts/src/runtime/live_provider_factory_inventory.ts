@@ -119,10 +119,15 @@ export function validateLiveProviderFactoryInventoryAlignment(
   const factoryProviderPaths = sortedProviderPaths(
     input.factoryProviderPaths ?? liveFactoryImplementedProviderPaths,
   );
+  const factoryOwnedInventory = inventory.filter(
+    (entry) => entry.compositionOwner === "live-provider-factory",
+  );
   const factoryKeys = new Set(factoryProviderPaths.map(providerKey));
-  const inventoryByKey = new Map(inventory.map((entry) => [providerKey(entry), entry]));
+  const inventoryByKey = new Map(
+    factoryOwnedInventory.map((entry) => [providerKey(entry), entry]),
+  );
   const implementedInventoryProviderPaths = sortedProviderPaths(
-    inventory
+    factoryOwnedInventory
       .filter((entry) => entry.status === "implemented")
       .map((entry) => ({ owner: entry.owner, path: entry.path })),
   );
@@ -137,7 +142,7 @@ export function validateLiveProviderFactoryInventoryAlignment(
     const entry = inventoryByKey.get(providerKey(path));
     return entry !== undefined && entry.status !== "implemented" ? [entry] : [];
   });
-  const unresolvedProviderPaths = inventory
+  const unresolvedProviderPaths = factoryOwnedInventory
     .filter((entry) => entry.status !== "implemented")
     .sort(compareProviderPath);
 
@@ -172,12 +177,7 @@ export function liveProviderFactoryFailures(
       ),
     ),
     ...alignment.extraFactoryProviderPaths.map((path) =>
-      failureForPath(
-        path,
-        undefined,
-        "factory_extra",
-        "Factory exposes a provider path that is not present in the live provider inventory.",
-      ),
+      extraFactoryFailure(path, inventory),
     ),
     ...alignment.blockedFactoryProviderPaths.map((entry) =>
       failureForEntry(entry, "Factory tried to provide a path that is not marked implemented."),
@@ -190,6 +190,23 @@ export function liveProviderFactoryFailures(
     ),
   ];
   return dedupeFailures(failures).sort(compareProviderPath);
+}
+
+function extraFactoryFailure(
+  path: LiveProviderPath,
+  inventory: readonly LiveProviderWiringInventoryEntry[],
+): LiveProviderFactoryFailure {
+  const entry = inventory.find(
+    (candidate) => providerKey(candidate) === providerKey(path),
+  );
+  return failureForPath(
+    path,
+    entry,
+    "factory_extra",
+    entry === undefined
+      ? "Factory exposes a provider path that is not present in the live provider inventory."
+      : "Factory exposes a provider path owned by production composition.",
+  );
 }
 
 function failureForPath(
