@@ -1,4 +1,11 @@
 import type { SqlClient } from "../control_plane_types.js";
+import { withLiveSearchDbConnection } from "../../runtime/live_db_sql.js";
+import type {
+  LiveSearchDbConnectionFactory,
+  LiveSearchPendingQuery,
+  LiveSearchQueryRunner,
+  LiveSearchSql,
+} from "../../runtime/live_db_sql.js";
 
 export interface HostSessionStoryTurnSummary {
   readonly eventId: number;
@@ -32,7 +39,11 @@ export interface HostSessionSearchMetadata {
 }
 
 export class SessionStoryReadRepository {
-  constructor(private readonly sql: SqlClient) {}
+  constructor(
+    private readonly sql: SqlClient,
+    private readonly searchConnectionFactory?: LiveSearchDbConnectionFactory,
+    private readonly onSearchCancelError?: (error: unknown) => void,
+  ) {}
 
   async getSessionSearchMetadata(
     sessionIds: string[],
@@ -151,11 +162,37 @@ export class SessionStoryReadRepository {
     limit: number,
     includeHighlight: boolean,
     includeStory: boolean,
+    signal?: AbortSignal,
   ): Promise<Array<Record<string, unknown>>> {
     if (!includeHighlight && !includeStory) return [];
-    const rows = sessionIds === null
-      ? await this.searchAll(query, limit, includeHighlight, includeStory)
-      : await this.searchSelected(query, sessionIds, limit, includeHighlight, includeStory);
+    const createQuery = (sql: LiveSearchSql) => sessionIds === null
+      ? this.searchAll(sql, query, limit, includeHighlight, includeStory)
+      : this.searchSelected(sql, query, sessionIds, limit, includeHighlight, includeStory);
+    let rows: readonly DigestSearchRow[];
+    if (signal === undefined) {
+      rows = await createQuery(this.sql as unknown as LiveSearchSql);
+    } else {
+      if (!this.searchConnectionFactory) {
+        throw new Error("digest search cancellation requires a request-owned search connection");
+      }
+      rows = await this.runOwnedSearch(signal, (runQuery) => runQuery(createQuery));
+    }
+    return rows.map(normalizeDigestSearchMatch);
+  }
+
+  async searchSessionDigestsOnConnection(
+    query: string,
+    sessionIds: string[] | null,
+    limit: number,
+    includeHighlight: boolean,
+    includeStory: boolean,
+    runQuery: LiveSearchQueryRunner,
+  ): Promise<Array<Record<string, unknown>>> {
+    if (!includeHighlight && !includeStory) return [];
+    const createQuery = (sql: LiveSearchSql) => sessionIds === null
+      ? this.searchAll(sql, query, limit, includeHighlight, includeStory)
+      : this.searchSelected(sql, query, sessionIds, limit, includeHighlight, includeStory);
+    const rows = await runQuery(createQuery);
     return rows.map(normalizeDigestSearchMatch);
   }
 
@@ -196,8 +233,8 @@ export class SessionStoryReadRepository {
     };
   }
 
-  private searchAll(query: string, limit: number, includeHighlight: boolean, includeStory: boolean): Promise<DigestSearchRow[]> {
-    return this.sql<DigestSearchRow[]>`
+  private searchAll(sql: LiveSearchSql, query: string, limit: number, includeHighlight: boolean, includeStory: boolean): LiveSearchPendingQuery<readonly DigestSearchRow[]> {
+    return sql<readonly DigestSearchRow[]>`
       SELECT d.narrative_through_event_id AS id, d.session_id,
         matches.event_type, matches.searchable_text,
         1.0 / matches.position AS score, matches.match_source
@@ -218,8 +255,8 @@ export class SessionStoryReadRepository {
     `;
   }
 
-  private searchSelected(query: string, sessionIds: string[], limit: number, includeHighlight: boolean, includeStory: boolean): Promise<DigestSearchRow[]> {
-    return this.sql<DigestSearchRow[]>`
+  private searchSelected(sql: LiveSearchSql, query: string, sessionIds: string[], limit: number, includeHighlight: boolean, includeStory: boolean): LiveSearchPendingQuery<readonly DigestSearchRow[]> {
+    return sql<readonly DigestSearchRow[]>`
       SELECT d.narrative_through_event_id AS id, d.session_id,
         matches.event_type, matches.searchable_text,
         1.0 / matches.position AS score, matches.match_source
@@ -240,6 +277,53 @@ export class SessionStoryReadRepository {
       LIMIT ${limit}
     `;
   }
+
+  private async runOwnedSearch<T extends readonly Record<string, unknown>[]>(
+    signal: AbortSignal,
+    runQuery: (query: LiveSearchQueryRunner) => Promise<T>,
+  ): Promise<T> {
+    if (!this.searchConnectionFactory) {
+      throw new Error("digest search cancellation requires a request-owned search connection");
+    }
+    try {
+      return await withLiveSearchDbConnection(
+        this.searchConnectionFactory,
+        signal,
+        (error) => this.reportSearchCancelError(error),
+        runQuery,
+      );
+    } catch (error) {
+      if (signal.aborted) {
+        throw signal.reason ?? new Error("digest search was cancelled");
+      }
+      if (isPostgresStatementTimeout(error)) throw new SessionDigestSearchDeadlineError();
+      throw error;
+    }
+  }
+
+  private reportSearchCancelError(error: unknown): void {
+    try {
+      this.onSearchCancelError?.(error);
+    } catch {
+      // Cancellation reporting must not hide the caller's cancellation error.
+    }
+  }
+}
+
+export class SessionDigestSearchDeadlineError extends Error {
+  readonly statusCode = 504;
+
+  constructor() {
+    super("session digest search exceeded its database time limit");
+    this.name = "SessionDigestSearchDeadlineError";
+  }
+}
+
+function isPostgresStatementTimeout(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && error.code === "57014";
 }
 
 type SummaryRow = { id: number; payload: unknown; created_at: Date; turn_number: number };

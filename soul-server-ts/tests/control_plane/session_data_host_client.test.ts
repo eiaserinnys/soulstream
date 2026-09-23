@@ -26,6 +26,7 @@ describe("SessionDataHostClient", () => {
       "event_raw_page",
       "event_search",
       "event_session_id_search",
+      "history_search",
       "story_search_metadata",
       "turn_summary_count",
       "turn_summary_range",
@@ -50,6 +51,7 @@ describe("SessionDataHostClient", () => {
         event_raw_page: [],
         event_search: [],
         event_session_id_search: [],
+        history_search: { events: [], sessionIdEvents: [], digests: [] },
         story_search_metadata: [],
         turn_summary_count: { totalCount: 0, digestedCount: 0, undigestedCount: 0 },
         turn_summary_range: [],
@@ -88,6 +90,15 @@ describe("SessionDataHostClient", () => {
       () => client.streamEventsRaw("s1"),
       () => client.searchEvents("q", null, 1),
       () => client.searchEventsBySessionId("s", null, 1),
+      () => client.searchSessionHistory({
+        query: "q",
+        sessionIds: null,
+        limit: 1,
+        eventTypes: null,
+        searchSessionId: true,
+        includeHighlight: true,
+        includeStory: true,
+      }),
       () => client.getSessionSearchMetadata(["s1"]),
       () => client.countTurnSummaries("s1"),
       () => client.loadTurnSummaryRange("s1", 1, null, 1),
@@ -123,6 +134,60 @@ describe("SessionDataHostClient", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://orchestrator.test/api/session-data/host/resume_context");
     expect(JSON.parse(String(init.body))).toEqual({ args: ["session-a", 20] });
+  });
+
+  it("makes digest search an abortable single host request", async () => {
+    let requestSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+      requestSignal = init?.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener("abort", () => reject(new Error("request aborted")), { once: true });
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDataHostClient({
+      orch: { baseUrl: "http://orchestrator.test", headers: {} },
+      logger,
+    });
+    const controller = new AbortController();
+    const request = client.searchSessionDigests("needle", null, 10, true, true, controller.signal);
+    controller.abort();
+
+    await expect(request).rejects.toBeInstanceOf(SessionDataHostError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it("makes event and digest history search one abortable host request", async () => {
+    let requestSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+      requestSignal = init?.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener("abort", () => reject(new Error("request aborted")), { once: true });
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDataHostClient({
+      orch: { baseUrl: "http://orchestrator.test", headers: {} },
+      logger,
+    });
+    const controller = new AbortController();
+    const request = client.searchSessionHistory({
+      query: "needle",
+      sessionIds: null,
+      limit: 10,
+      eventTypes: ["user_message"],
+      searchSessionId: true,
+      includeHighlight: true,
+      includeStory: true,
+    }, controller.signal);
+    controller.abort();
+
+    await expect(request).rejects.toBeInstanceOf(SessionDataHostError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(requestSignal?.aborted).toBe(true);
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe("http://orchestrator.test/api/session-data/host/history_search");
   });
 
   it("marks exhausted turn-critical failures as explicit session-data errors", async () => {

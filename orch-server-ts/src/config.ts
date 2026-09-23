@@ -54,6 +54,9 @@ export type OrchServerEnvironmentConfig = {
   readonly environment: string;
   readonly claude_oauth_client_id: string;
   readonly claude_oauth_callback_url: string;
+  readonly model_catalog_path: string | null;
+  readonly search_query_expansion_preset_id: string | null;
+  readonly search_query_expansion_effort: string | null;
   readonly turn_summary_openai_key: string;
   readonly usage_summary_poll_interval_seconds: number;
   readonly soul_runner_process_enabled: boolean;
@@ -86,6 +89,9 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "JWT_SECRET",
   "CLAUDE_OAUTH_CLIENT_ID",
   "CLAUDE_OAUTH_CALLBACK_URL",
+  "MODEL_CATALOG_PATH",
+  "SEARCH_QUERY_EXPANSION_PRESET_ID",
+  "SEARCH_QUERY_EXPANSION_EFFORT",
   "TURN_SUMMARY_OPENAI_KEY",
   "USAGE_SUMMARY_POLL_INTERVAL_SECONDS",
   "SOUL_RUNNER_PROCESS_ENABLED",
@@ -155,6 +161,13 @@ export function loadOrchServerEnvironment(
     environment,
     claude_oauth_client_id: requiredString(env, "CLAUDE_OAUTH_CLIENT_ID"),
     claude_oauth_callback_url: requiredString(env, "CLAUDE_OAUTH_CALLBACK_URL"),
+    model_catalog_path: optionalString(env.MODEL_CATALOG_PATH),
+    search_query_expansion_preset_id: optionalString(
+      env.SEARCH_QUERY_EXPANSION_PRESET_ID,
+    ),
+    search_query_expansion_effort: optionalString(
+      env.SEARCH_QUERY_EXPANSION_EFFORT,
+    ),
     turn_summary_openai_key: env.TURN_SUMMARY_OPENAI_KEY ?? "",
     usage_summary_poll_interval_seconds: parsePositiveInteger(
       env.USAGE_SUMMARY_POLL_INTERVAL_SECONDS,

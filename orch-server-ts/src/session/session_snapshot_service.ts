@@ -16,6 +16,8 @@ export type SessionSnapshotQuery = {
   search?: string;
   node_id?: string;
   status?: string[];
+  backend?: string[];
+  updated_after?: string;
   feed_only?: boolean;
   offset?: number;
   limit?: number;
@@ -244,6 +246,19 @@ function matchesQuery(
     !query.status.includes(String(fieldValue(session, "status", "status") ?? ""))
   ) {
     return false;
+  }
+  if (
+    query.backend !== undefined &&
+    !query.backend.includes(String(fieldValue(session, "backend", "backend") ?? ""))
+  ) {
+    return false;
+  }
+  if (query.updated_after !== undefined) {
+    const updatedAt = Date.parse(String(fieldValue(session, "updated_at", "updatedAt") ?? ""));
+    const updatedAfter = Date.parse(query.updated_after);
+    if (!Number.isFinite(updatedAt) || !Number.isFinite(updatedAfter) || updatedAt < updatedAfter) {
+      return false;
+    }
   }
   if (
     query.feed_only === true &&

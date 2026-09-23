@@ -1,65 +1,38 @@
 import fs from "node:fs";
 
-import { parse as parseYaml } from "yaml";
-import { z } from "zod";
+import {
+  ModelCatalogSchema,
+  parseModelCatalogYaml,
+  resolveModelPreset,
+  UnknownModelPresetError,
+  type ModelCatalogConfig,
+  type ModelPreset,
+} from "@soulstream/model-catalog";
+import type { AgentBackend } from "@soulstream/model-catalog";
+import type { ReasoningEffort } from "@soulstream/model-catalog";
 
-import { AgentBackendSchema } from "./agent_registry.js";
 import {
   claudeTransportEfforts,
   codexTransportEfforts,
 } from "./engine/effort_boundary.js";
 import {
-  REASONING_EFFORT_ACCEPT_SET,
-  type ReasoningEffort,
-} from "./engine/protocol.js";
-import {
   ANTHROPIC_API_KEY_ENV,
   isModelPresetEnvResolvable,
 } from "./model_preset_env.js";
 
-const ReasoningEffortSchema = z.enum(
-  REASONING_EFFORT_ACCEPT_SET as unknown as [ReasoningEffort, ...ReasoningEffort[]],
-);
-
-export const ModelPresetSchema = z.object({
-  id: z.string().trim().min(1, "model preset id required"),
-  label: z.string().trim().min(1, "model preset label required"),
-  backend: AgentBackendSchema,
-  model: z.string().trim().min(1, "model preset model required"),
-  env: z.record(z.string(), z.string()).optional(),
-  usage_model_id: z.string().trim().min(1).optional(),
-  /**
-   * Effort levels this preset's model actually advertises. Canonical source for
-   * what a client may offer and what a create request may ask for. Omit when the
-   * model does not support effort at all — clients then show "auto (backend
-   * default)" instead of inventing a list.
-   */
-  supported_efforts: z.array(ReasoningEffortSchema).nonempty().optional(),
-  /** Effort applied when a create request does not specify one. */
-  default_effort: ReasoningEffortSchema.optional(),
-}).superRefine((preset, ctx) => {
-  if (preset.default_effort === undefined) return;
-  if (preset.supported_efforts === undefined) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["default_effort"],
-      message:
-        `Model preset ${preset.id}: default_effort requires supported_efforts`,
-    });
-    return;
-  }
-  if (!preset.supported_efforts.includes(preset.default_effort)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["default_effort"],
-      message:
-        `Model preset ${preset.id}: default_effort "${preset.default_effort}" `
-        + `is not in supported_efforts [${preset.supported_efforts.join(", ")}]`,
-    });
-  }
-});
-
-export type ModelPreset = z.infer<typeof ModelPresetSchema>;
+export {
+  ModelCatalogSchema,
+  ModelPresetSchema,
+  parseModelCatalogYaml,
+  resolveModelPreset,
+  UnknownModelPresetError,
+} from "@soulstream/model-catalog";
+export type {
+  AgentBackend,
+  ModelCatalogConfig,
+  ModelPreset,
+  ReasoningEffort,
+} from "@soulstream/model-catalog";
 
 /**
  * A non-empty list of efforts, spelled the way the wire contract states it
@@ -80,24 +53,6 @@ function toAdvertisedEfforts(
   const [head, ...tail] = efforts;
   return head === undefined ? undefined : [head, ...tail];
 }
-
-export const ModelCatalogSchema = z.object({
-  presets: z.array(ModelPresetSchema).default([]),
-}).superRefine((catalog, ctx) => {
-  const seen = new Set<string>();
-  for (const [index, preset] of catalog.presets.entries()) {
-    if (seen.has(preset.id)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["presets", index, "id"],
-        message: `Duplicate model preset id: ${preset.id}`,
-      });
-    }
-    seen.add(preset.id);
-  }
-});
-
-export type ModelCatalogConfig = z.infer<typeof ModelCatalogSchema>;
 
 export interface AdvertisedModelPreset {
   id: string;
@@ -124,13 +79,6 @@ export interface AdvertisedModelPreset {
 export interface ModelCatalogLogger {
   error(bindings: Record<string, unknown>, message: string): void;
   warn?(bindings: Record<string, unknown>, message: string): void;
-}
-
-export class UnknownModelPresetError extends Error {
-  constructor(readonly presetId: string) {
-    super(`Unknown model preset: ${presetId}`);
-    this.name = "UnknownModelPresetError";
-  }
 }
 
 /**
@@ -186,11 +134,7 @@ export class ModelCatalog {
   }
 
   resolve(presetId: string): ModelPreset {
-    const preset = this.list().find((entry) => entry.id === presetId);
-    if (!preset) {
-      throw new UnknownModelPresetError(presetId);
-    }
-    return preset;
+    return this.narrowEfforts(resolveModelPreset(this.read(), presetId));
   }
 
   advertise(
@@ -236,8 +180,7 @@ export class ModelCatalog {
       return this.lastSuccessfulOrThrow(error);
     }
     try {
-      const parsed: unknown = parseYaml(raw) ?? {};
-      const config = ModelCatalogSchema.parse(parsed);
+      const config = parseModelCatalogYaml(raw);
       this.assertDefaultsAreDeliverable(config);
       this.lastSuccessfulConfig = config;
       return config;

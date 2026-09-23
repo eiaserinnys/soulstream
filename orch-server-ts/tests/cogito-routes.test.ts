@@ -4,6 +4,9 @@ import {
   CogitoBriefTimeoutError,
   CogitoBriefUnavailableError,
   createApp,
+  COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS,
+  COGITO_SEARCH_DEADLINE_MS,
+  cogitoSearchDeadlineMs,
   cogitoRouteAuthRequirements,
   filterCogitoSearchResultsByAccess,
   loadContractFixtures,
@@ -107,6 +110,87 @@ describe("cogito route harness", () => {
       .toMatchObject({ statusCode: 422 });
     expect(searchProvider.search).not.toHaveBeenCalled();
 
+    expect(await app.inject({
+      method: "GET",
+      url: "/cogito/search?q=x&include_session_results=true&session_search_mode=other",
+    })).toMatchObject({ statusCode: 422 });
+
+    await app.close();
+  });
+
+  it("forwards lexical and expanded product session search modes", async () => {
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => ({ results: [], navigation_results: [], session_results: [] })),
+    };
+    const { app } = createHarness({ searchProvider });
+
+    for (const mode of ["lexical", "expanded"] as const) {
+      const response = await app.inject({
+        method: "GET",
+        url: `/cogito/search?q=needle&include_session_results=true&session_search_mode=${mode}`,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(searchProvider.search).toHaveBeenLastCalledWith(expect.objectContaining({
+        q: "needle",
+        include_session_results: true,
+        session_search_mode: mode,
+      }));
+    }
+
+    await app.close();
+  });
+
+  it("gives only expanded product requests the measured longer request budget", () => {
+    expect(cogitoSearchDeadlineMs({
+      include_session_results: true,
+      session_search_mode: "expanded",
+    })).toBe(COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS);
+    expect(cogitoSearchDeadlineMs({
+      include_session_results: true,
+      session_search_mode: "lexical",
+    })).toBe(COGITO_SEARCH_DEADLINE_MS);
+    expect(cogitoSearchDeadlineMs({
+      include_session_results: false,
+    })).toBe(COGITO_SEARCH_DEADLINE_MS);
+    expect(cogitoSearchDeadlineMs({
+      include_session_results: true,
+    })).toBe(COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS);
+  });
+
+  it("forwards typed product session filters without changing MCP event filters", async () => {
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => ({ results: [], navigation_results: [], session_results: [] })),
+    };
+    const { app } = createHarness({ searchProvider });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/cogito/search?q=needle&top_k=7&event_categories=messages,responses"
+        + "&include_session_results=true&session_search_mode=lexical"
+        + "&session_folder_id=folder-a&session_node_id=node-a"
+        + "&session_statuses=completed,idle&session_backends=codex"
+        + "&session_updated_after=2026-08-01T00%3A00%3A00.000Z",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
+      top_k: 7,
+      event_categories: "messages,responses",
+      session_search_mode: "lexical",
+      session_filters: {
+        folder_id: "folder-a",
+        node_id: "node-a",
+        statuses: ["completed", "idle"],
+        backends: ["codex"],
+        updated_after: "2026-08-01T00:00:00.000Z",
+      },
+    }));
+
+    const invalidDate = await app.inject({
+      method: "GET",
+      url: "/cogito/search?q=needle&session_updated_after=not-a-date",
+    });
+    expect(invalidDate.statusCode).toBe(422);
     await app.close();
   });
 
@@ -154,7 +238,7 @@ describe("cogito route harness", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(searchProvider.search).toHaveBeenCalledWith({
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
       q: "hello",
       top_k: 7,
       search_session_id: true,
@@ -162,7 +246,11 @@ describe("cogito route harness", () => {
       include_highlight: false,
       include_story: false,
       event_categories: "thinking,tools",
-    });
+    }));
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      deadlineAt: expect.any(Number),
+    }));
     await app.close();
   });
 
@@ -182,14 +270,18 @@ describe("cogito route harness", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(searchProvider.search).toHaveBeenCalledWith({
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
       q: "needle",
       top_k: 10,
       search_session_id: false,
       include_turn_summaries: true,
       include_highlight: true,
       include_story: true,
-    });
+    }));
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      deadlineAt: expect.any(Number),
+    }));
     expect(invalid.statusCode).toBe(422);
     expect(searchProvider.search).toHaveBeenCalledTimes(1);
     await app.close();
@@ -233,7 +325,10 @@ describe("cogito route harness", () => {
     const restricted = createHarness({
       searchProvider,
       accessProvider: {
-        resolveAccess: () => ({ restricted: true }),
+        resolveAccess: () => ({
+          restricted: true,
+          allowedFolderIds: ["allowed-folder"],
+        }),
         filterResults: restrictedFilter,
       },
     });
@@ -246,8 +341,57 @@ describe("cogito route harness", () => {
     expect(restrictedResponse.json().results).toEqual([
       { session_id: "allowed", score: 0.1 },
     ]);
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
+      allowedFolderIds: ["allowed-folder"],
+    }));
+    expect(restrictedFilter).toHaveBeenCalledWith(expect.objectContaining({
+      access: { restricted: true, allowedFolderIds: ["allowed-folder"] },
+    }));
     expect(restrictedFilter).toHaveBeenCalledOnce();
     await restricted.app.close();
+  });
+
+  it("bounds access-scope resolution by the single search deadline", async () => {
+    vi.useFakeTimers();
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => ({ results: [], navigation_results: [] })),
+    };
+    const { app } = createHarness({
+      searchProvider,
+      accessProvider: {
+        resolveAccess: () => new Promise<never>(() => {}),
+      },
+    });
+    try {
+      const responsePromise = app.inject({
+        method: "GET",
+        url: "/cogito/search?q=hello",
+      });
+      await vi.advanceTimersByTimeAsync(4_700);
+      const response = await responsePromise;
+
+      expect(response.statusCode).toBe(504);
+      expect(searchProvider.search).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns an explicit 504 when a non-product search provider reaches its deadline", async () => {
+    const deadlineError = Object.assign(new Error("search request deadline exceeded"), {
+      statusCode: 504,
+    });
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => { throw deadlineError; }),
+    };
+    const { app } = createHarness({ searchProvider });
+
+    const response = await app.inject({ method: "GET", url: "/cogito/search?q=hello" });
+
+    expect(response.statusCode).toBe(504);
+    expect(response.json()).toEqual({ detail: "Search request deadline exceeded" });
+    await app.close();
   });
 
   it("fails explicitly when restricted access has no result filter", async () => {

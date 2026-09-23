@@ -14,6 +14,76 @@ export const DEFAULT_SEARCH_CATEGORIES = [
   "responses",
 ] as const satisfies readonly SearchEventCategory[];
 
+export type SessionSearchIntent = {
+  readonly sessionId: string;
+  readonly eventId?: string;
+};
+
+export function normalizeSearchQuery(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s\p{P}]+/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export function compactSearchQuery(value: string): string {
+  return normalizeSearchQuery(value).replace(/\s+/g, "");
+}
+
+export function buildSessionSearchUrl(intent: SessionSearchIntent): string {
+  const params = new URLSearchParams();
+  params.set("session", intent.sessionId);
+  if (intent.eventId !== undefined && intent.eventId.length > 0) {
+    params.set("event", intent.eventId);
+  }
+  return `/?${params.toString()}`;
+}
+
+export function parseSessionSearchIntent(
+  value: string | URL,
+): SessionSearchIntent | null {
+  const url = value instanceof URL
+    ? value
+    : new URL(value, "https://session-intent.invalid");
+  const sessionId = url.searchParams.get("session");
+  if (sessionId) {
+    const eventId = url.searchParams.get("event") ?? undefined;
+    return { sessionId, ...(eventId === undefined ? {} : { eventId }) };
+  }
+
+  const legacy = url.hash.match(/^#\/feed\/([^/?#]+)(?:\?event=([^&#]+))?$/);
+  if (!legacy?.[1]) return null;
+  try {
+    const legacySessionId = decodeURIComponent(legacy[1]);
+    const legacyEventId = legacy[2] === undefined
+      ? undefined
+      : decodeURIComponent(legacy[2]);
+    return {
+      sessionId: legacySessionId,
+      ...(legacyEventId === undefined ? {} : { eventId: legacyEventId }),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function removeSessionSearchIntent(value: string | URL): string {
+  const url = value instanceof URL
+    ? new URL(value.toString())
+    : new URL(value, "https://session-intent.invalid");
+  const hasQueryIntent = url.searchParams.has("session");
+  const wasLegacyIntent = url.searchParams.get("session") === null
+    && /^#\/feed\/[^/?#]+(?:\?event=[^&#]+)?$/.test(url.hash);
+  if (hasQueryIntent) {
+    url.searchParams.delete("session");
+    url.searchParams.delete("event");
+  }
+  if (wasLegacyIntent) url.hash = "";
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 export function isSearchEventCategory(value: string): value is SearchEventCategory {
   return Object.hasOwn(SEARCH_EVENT_TYPES_BY_CATEGORY, value);
 }

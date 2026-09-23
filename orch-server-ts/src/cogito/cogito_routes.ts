@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 export const AGGREGATE_SCHEMA_VERSION = "soulstream.reflect.aggregate.v1";
 export const DEFAULT_BRIEF_TIMEOUT_SECONDS = 5;
+export const COGITO_SEARCH_DEADLINE_MS = 4_700;
+export const COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS = 10_000;
 
 export type CogitoNode = {
   id: string;
@@ -21,8 +23,30 @@ export type CogitoSearchParams = {
   include_turn_summaries: boolean;
   include_highlight: boolean;
   include_story: boolean;
+  include_session_results?: boolean;
+  session_search_mode?: "lexical" | "expanded";
+  session_filters?: CogitoSessionSearchFilters;
+  readonly allowedFolderIds?: readonly string[];
   event_types?: string;
   event_categories?: string;
+  readonly signal?: AbortSignal;
+  readonly deadlineAt?: number;
+};
+
+export function cogitoSearchDeadlineMs(
+  params: Pick<CogitoSearchParams, "include_session_results" | "session_search_mode">,
+): number {
+  return params.include_session_results === true && params.session_search_mode !== "lexical"
+    ? COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS
+    : COGITO_SEARCH_DEADLINE_MS;
+}
+
+export type CogitoSessionSearchFilters = {
+  readonly folder_id?: string;
+  readonly node_id?: string;
+  readonly statuses?: readonly string[];
+  readonly backends?: readonly string[];
+  readonly updated_after?: string;
 };
 
 export type CogitoSearchResult = Record<string, unknown>;
@@ -31,6 +55,21 @@ export type CogitoNavigationSearchResult = Record<string, unknown>;
 export type CogitoSearchResponse = {
   results: CogitoSearchResult[];
   navigation_results: CogitoNavigationSearchResult[];
+  session_results?: CogitoSearchResult[];
+  search_status?: {
+    search?: {
+      status: "partial";
+      stage: "lexical" | "semantic" | "navigation";
+      reason: "timeout" | "cancelled";
+    };
+    query_expansion: {
+      status: "expanded" | "skipped" | "partial";
+      reason?: "configuration" | "timeout" | "cancelled" | "model_error";
+      latency_ms: number;
+    };
+    search_latency_ms?: number;
+    db_cancel?: "failed";
+  };
 };
 
 export type CogitoSearchProvider = {
@@ -51,6 +90,7 @@ export type CogitoSearchAccessFilter = {
 
 export type CogitoSearchAccess = {
   restricted: boolean;
+  allowedFolderIds?: readonly string[];
 };
 
 export type CogitoSearchAccessProvider = {
@@ -58,6 +98,7 @@ export type CogitoSearchAccessProvider = {
   filterResults?: (input: {
     request: FastifyRequest;
     response: CogitoSearchResponse;
+    access: CogitoSearchAccess;
   }) => CogitoSearchResponse | Promise<CogitoSearchResponse>;
 };
 
@@ -116,11 +157,63 @@ export function registerCogitoRoutes(
     const query = parseSearchQuery(request.query);
     if (!query.ok) return routeError(reply, query.statusCode, query.detail);
 
-    const response = await options.searchProvider.search(query.value);
-    const access = await resolveSearchAccess(options, request);
-    return access.restricted
-      ? await filterRestrictedResults(options, request, response)
-      : response;
+    const deadlineMs = cogitoSearchDeadlineMs(query.value);
+    const deadlineAt = Date.now() + deadlineMs;
+    const controller = new AbortController();
+    const onRequestAborted = () => controller.abort();
+    const onResponseClosed = () => {
+      if (!reply.raw.writableFinished) controller.abort();
+    };
+    const deadlineTimer = setTimeout(() => controller.abort(), deadlineMs);
+    request.raw.once("aborted", onRequestAborted);
+    reply.raw.once("close", onResponseClosed);
+    try {
+      const access = await waitForCogitoSearchStep(
+        resolveSearchAccess(options, request),
+        controller.signal,
+      );
+      const response = await options.searchProvider.search({
+        ...query.value,
+        signal: controller.signal,
+        deadlineAt,
+        ...(access.restricted
+          ? { allowedFolderIds: access.allowedFolderIds ?? [] }
+          : {}),
+      });
+      const filtered = access.restricted
+        ? await waitForCogitoSearchStep(
+          filterRestrictedResults(options, request, response, access),
+          controller.signal,
+        )
+        : response;
+      const publicResponse = stripInternalSessionFolderIds(filtered);
+      return {
+        ...publicResponse,
+        results: publicResponse.results.slice(0, query.value.top_k),
+        navigation_results: publicResponse.navigation_results.slice(0, query.value.top_k),
+        ...(publicResponse.session_results === undefined
+          ? {}
+          : { session_results: publicResponse.session_results.slice(0, query.value.top_k) }),
+      };
+    } catch (error) {
+      if (isPostgresStatementTimeout(error)
+        && !request.raw.aborted
+        && !reply.raw.destroyed) {
+        return routeError(reply, 504, "Search access scope exceeded its database time limit");
+      }
+      if (hasHttpStatus(error, 504) && !request.raw.aborted && !reply.raw.destroyed) {
+        return routeError(reply, 504, "Search request deadline exceeded");
+      }
+      if (!controller.signal.aborted) throw error;
+      if (!request.raw.aborted && !reply.raw.destroyed && Date.now() >= deadlineAt) {
+        return routeError(reply, 504, "Search access exceeded the request deadline");
+      }
+      return reply;
+    } finally {
+      clearTimeout(deadlineTimer);
+      request.raw.removeListener("aborted", onRequestAborted);
+      reply.raw.removeListener("close", onResponseClosed);
+    }
   });
 
   app.get("/cogito/briefs", async (request, reply) => {
@@ -133,6 +226,51 @@ export function registerCogitoRoutes(
       nowIso: options.nowIso ?? nowIso,
     });
   });
+}
+
+function isPostgresStatementTimeout(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && error.code === "57014";
+}
+
+function hasHttpStatus(error: unknown, statusCode: number): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "statusCode" in error
+    && error.statusCode === statusCode;
+}
+
+function waitForCogitoSearchStep<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(new Error("Cogito search request was cancelled"));
+  }
+  let rejectOnAbort!: (error: Error) => void;
+  const aborted = new Promise<never>((_resolve, reject) => { rejectOnAbort = reject; });
+  const onAbort = () => rejectOnAbort(new Error("Cogito search request was cancelled"));
+  signal.addEventListener("abort", onAbort, { once: true });
+  return Promise.race([operation, aborted]).finally(() => {
+    signal.removeEventListener("abort", onAbort);
+  });
+}
+
+function stripInternalSessionFolderIds(
+  response: CogitoSearchResponse,
+): CogitoSearchResponse {
+  const stripFolderId = (result: CogitoSearchResult): CogitoSearchResult => {
+    const publicResult = { ...result };
+    delete publicResult.folder_id;
+    delete publicResult.folderId;
+    return publicResult;
+  };
+  return {
+    ...response,
+    results: response.results.map(stripFolderId),
+  };
 }
 
 export async function collectCogitoBriefs(
@@ -265,6 +403,13 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
   );
   const includeHighlight = booleanQuery(query, "include_highlight", false);
   const includeStory = booleanQuery(query, "include_story", false);
+  const includeSessionResults = booleanQuery(query, "include_session_results", false);
+  const searchModeValue = stringQuery(query, "session_search_mode", { allowEmpty: false });
+  const searchModePresent = queryValue(query, "session_search_mode") !== undefined;
+  const sessionSearchMode: CogitoSearchParams["session_search_mode"] =
+    searchModeValue === "lexical" || searchModeValue === "expanded"
+      ? searchModeValue
+      : undefined;
   if (includeTurnSummaries === undefined) {
     return {
       ok: false,
@@ -286,8 +431,44 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
       detail: "include_story must be a boolean",
     };
   }
+  if (includeSessionResults === undefined) {
+    return {
+      ok: false,
+      statusCode: 422,
+      detail: "include_session_results must be a boolean",
+    };
+  }
+  if (searchModePresent && sessionSearchMode === undefined) {
+    return {
+      ok: false,
+      statusCode: 422,
+      detail: "session_search_mode must be lexical or expanded",
+    };
+  }
   const eventTypes = stringQuery(query, "event_types", { allowEmpty: true });
   const eventCategories = stringQuery(query, "event_categories", { allowEmpty: true });
+  const sessionFolderId = optionalNonEmptyStringQuery(query, "session_folder_id");
+  const sessionNodeId = optionalNonEmptyStringQuery(query, "session_node_id");
+  const sessionStatuses = sessionStringArrayQuery(query, "session_statuses");
+  const sessionBackends = sessionStringArrayQuery(query, "session_backends");
+  const updatedAfterValue = optionalNonEmptyStringQuery(query, "session_updated_after");
+  const updatedAfter = updatedAfterValue === undefined
+    ? undefined
+    : validTimestamp(updatedAfterValue);
+  if (
+    invalidNonEmptyStringQuery(query, "session_folder_id")
+    || invalidNonEmptyStringQuery(query, "session_node_id")
+    || invalidNonEmptyStringQuery(query, "session_updated_after")
+    || sessionStatuses === null
+    || sessionBackends === null
+    || (updatedAfterValue !== undefined && updatedAfter === null)
+  ) {
+    return {
+      ok: false,
+      statusCode: 422,
+      detail: "session filters contain an invalid value",
+    };
+  }
   return {
     ok: true,
     value: {
@@ -297,6 +478,25 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
       include_turn_summaries: includeTurnSummaries,
       include_highlight: includeHighlight,
       include_story: includeStory,
+      include_session_results: includeSessionResults,
+      ...(sessionSearchMode !== undefined ? { session_search_mode: sessionSearchMode } : {}),
+      ...(sessionFolderId !== undefined
+        || sessionNodeId !== undefined
+        || (sessionStatuses?.length ?? 0) > 0
+        || (sessionBackends?.length ?? 0) > 0
+        || (updatedAfter !== undefined && updatedAfter !== null)
+        ? {
+          session_filters: {
+            ...(sessionFolderId === undefined ? {} : { folder_id: sessionFolderId }),
+            ...(sessionNodeId === undefined ? {} : { node_id: sessionNodeId }),
+            ...(sessionStatuses?.length ? { statuses: sessionStatuses } : {}),
+            ...(sessionBackends?.length ? { backends: sessionBackends } : {}),
+            ...(updatedAfter === undefined || updatedAfter === null
+              ? {}
+              : { updated_after: updatedAfter }),
+          },
+        }
+        : {}),
       ...(eventTypes !== undefined ? { event_types: eventTypes } : {}),
       ...(eventCategories !== undefined ? { event_categories: eventCategories } : {}),
     },
@@ -327,11 +527,12 @@ async function filterRestrictedResults(
   options: CogitoRouteOptions,
   request: FastifyRequest,
   response: CogitoSearchResponse,
+  access: CogitoSearchAccess,
 ): Promise<CogitoSearchResponse> {
   if (options.accessProvider?.filterResults === undefined) {
     throw new Error("Restricted Cogito search requires an access result filter");
   }
-  return options.accessProvider.filterResults({ request, response });
+  return options.accessProvider.filterResults({ request, response, access });
 }
 
 function errorNodeEntry(
@@ -409,6 +610,34 @@ function numberQuery(query: unknown, key: string, fallback: number): number {
   return Number(value);
 }
 
+function optionalNonEmptyStringQuery(query: unknown, key: string): string | undefined {
+  const value = queryValue(query, key);
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function invalidNonEmptyStringQuery(query: unknown, key: string): boolean {
+  const raw = rawQueryValue(query, key);
+  if (raw === undefined) return false;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value !== "string" || value.length === 0;
+}
+
+function sessionStringArrayQuery(query: unknown, key: string): string[] | null | undefined {
+  const raw = rawQueryValue(query, key);
+  if (raw === undefined) return undefined;
+  const values = Array.isArray(raw) ? raw : [raw];
+  if (values.some((value) => typeof value !== "string")) return null;
+  return [...new Set((values as string[])
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0))];
+}
+
+function validTimestamp(value: string): string | null {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
 function booleanQuery(query: unknown, key: string, fallback: boolean): boolean | undefined {
   const value = queryValue(query, key);
   if (value === undefined) return fallback;
@@ -423,6 +652,13 @@ function queryValue(query: unknown, key: string): unknown {
   if (!isRecord(query) || !(key in query)) return undefined;
   const value = query[key];
   return Array.isArray(value) ? value[0] : value;
+}
+
+function rawQueryValue(query: unknown, key: string): unknown {
+  if (typeof query !== "object" || query === null || !(key in query)) {
+    return undefined;
+  }
+  return (query as Record<string, unknown>)[key];
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | undefined {

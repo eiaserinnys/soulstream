@@ -104,6 +104,7 @@ const sessionDataOperations = {
   event_raw_page: ["eventReads", null, "streamEventsRaw"],
   event_search: ["eventReads", null, "searchEvents"],
   event_session_id_search: ["eventReads", null, "searchEventsBySessionId"],
+  history_search: ["historySearch", null, "search"],
   story_search_metadata: ["storyReads", null, "getSessionSearchMetadata"],
   turn_summary_count: ["storyReads", null, "countTurnSummaries"],
   turn_summary_range: ["storyReads", null, "loadTurnSummaryRange"],
@@ -169,12 +170,28 @@ function registerDomain(
         return sendTimed(request, reply, timing, 422, () =>
           errorReply(reply, 422, "INVALID_HOST_REQUEST", "retry delay must be a duration or absolute instant"));
       }
+      const isSearchOperation = domain === "session-data"
+        && ["event_search", "event_session_id_search", "digest_search", "history_search"]
+          .includes(request.params.operation);
+      const searchAbortController = isSearchOperation ? new AbortController() : undefined;
+      const onRequestAborted = () => searchAbortController?.abort();
+      const onResponseClosed = () => {
+        if (!reply.raw.writableFinished) searchAbortController?.abort();
+      };
+      if (searchAbortController) {
+        request.raw.once("aborted", onRequestAborted);
+        reply.raw.once("close", onResponseClosed);
+      }
       try {
         const repositories = await options.repositoryProvider();
-        const result = await invoke(repositories, target, args);
+        const invokeArgs = searchAbortController
+          ? [...args, searchAbortController.signal]
+          : args;
+        const result = await invoke(repositories, target, invokeArgs);
         return sendTimed(request, reply, timing, 200, () =>
           reply.type("application/json").send(JSON.stringify(result ?? null)));
       } catch (error) {
+        if (request.raw.aborted || reply.raw.destroyed) return reply;
         request.log.error({ err: error, domain, operation: request.params.operation }, "Persistence host operation failed");
         const statusCode = (error as { statusCode?: unknown } | undefined)?.statusCode;
         const status = typeof statusCode === "number" ? statusCode : 500;
@@ -186,6 +203,11 @@ function registerDomain(
             typeof domainCode === "string" ? domainCode : "HOST_OPERATION_FAILED",
             error instanceof Error ? error.message : "Persistence host operation failed",
           ));
+      } finally {
+        if (searchAbortController) {
+          request.raw.removeListener("aborted", onRequestAborted);
+          reply.raw.removeListener("close", onResponseClosed);
+        }
       }
     },
   );

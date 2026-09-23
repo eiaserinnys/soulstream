@@ -1,8 +1,10 @@
 import type { InMemoryNodeRegistry } from "../node/registry.js";
 import {
+  findNodeAgentProfile,
   findRegisteredAgentProfile,
   type AgentProfileIdentityOverlay,
 } from "../node/agent_profile_lookup.js";
+import type { NodeConnectionSnapshot } from "../node/registry_types.js";
 import { normalizeSessionBindingWarnings } from "@soulstream/page-model";
 import { normalizeLastChatMessage } from
   "../session/session_feed_projection.js";
@@ -11,6 +13,76 @@ export type SessionSerializationOptions = {
   readonly registry?: InMemoryNodeRegistry;
   readonly agentProfiles?: readonly AgentProfileIdentityOverlay[];
 };
+
+export type SessionBackendCatalogEntry = {
+  readonly kind: "agent" | "preset";
+  readonly node_id: string;
+  readonly agent_id?: string;
+  readonly agent_name?: string;
+  readonly model_preset?: string;
+  readonly backend: string;
+};
+
+export function buildSessionBackendCatalog(
+  registry: InMemoryNodeRegistry | undefined,
+  agentProfiles: readonly AgentProfileIdentityOverlay[] = [],
+): SessionBackendCatalogEntry[] {
+  if (registry === undefined) return [];
+  const entries: SessionBackendCatalogEntry[] = [];
+  for (const node of registry.listConnectedNodes()) {
+    for (const agentId of registeredAgentIds(node, agentProfiles)) {
+      const profile = findNodeAgentProfile(node, agentId, agentProfiles);
+      if (profile === undefined) continue;
+      entries.push({
+        kind: "agent",
+        node_id: node.nodeId,
+        agent_id: agentId,
+        ...(typeof profile.agent.name === "string" && profile.agent.name.length > 0
+          ? { agent_name: profile.agent.name }
+          : {}),
+        backend: profile.backend,
+      });
+    }
+    for (const value of node.modelPresets ?? []) {
+      const preset = asRecord(value);
+      const id = typeof preset?.id === "string" ? preset.id : undefined;
+      const backend = typeof preset?.backend === "string" ? preset.backend : undefined;
+      if (!id || !backend) continue;
+      entries.push({
+        kind: "preset",
+        node_id: node.nodeId,
+        model_preset: id,
+        backend,
+      });
+    }
+  }
+  return entries;
+}
+
+function registeredAgentIds(
+  node: NodeConnectionSnapshot,
+  agentProfiles: readonly AgentProfileIdentityOverlay[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const value of node.agents) {
+    const agent = asRecord(value);
+    const id = typeof agent?.id === "string" ? agent.id : undefined;
+    if (id) ids.add(id);
+    const overlay = id ? agentProfiles.find((profile) => profile.agentId === id) : undefined;
+    const aliases = overlay?.aliases ?? agent?.aliases;
+    if (!Array.isArray(aliases)) continue;
+    for (const alias of aliases) {
+      if (typeof alias === "string" && alias.length > 0) ids.add(alias);
+      else {
+        const aliasRecord = asRecord(alias);
+        if (typeof aliasRecord?.id === "string" && aliasRecord.id.length > 0) {
+          ids.add(aliasRecord.id);
+        }
+      }
+    }
+  }
+  return ids;
+}
 
 const IDENTITY_BEARING_SOURCES = new Set([
   "agent",

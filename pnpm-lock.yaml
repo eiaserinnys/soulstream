@@ -34,6 +34,9 @@ importers:
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../packages/fractional-position
+      '@soulstream/model-catalog':
+        specifier: workspace:*
+        version: link:../packages/model-catalog
       '@soulstream/page-model':
         specifier: workspace:*
         version: link:../packages/page-model
@@ -105,6 +108,15 @@ importers:
         version: 3.4.9
 
   packages/fractional-position: {}
+
+  packages/model-catalog:
+    dependencies:
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
 
   packages/page-model:
     dependencies:
@@ -353,6 +365,9 @@ importers:
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../packages/fractional-position
+      '@soulstream/model-catalog':
+        specifier: workspace:*
+        version: link:../packages/model-catalog
       '@soulstream/page-model':
         specifier: workspace:*
         version: link:../packages/page-model

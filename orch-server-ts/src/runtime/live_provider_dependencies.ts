@@ -52,6 +52,8 @@ export type LiveDbCatalogRepositoryBoundary = {
     readonly search?: string;
     readonly nodeId?: string;
     readonly statuses?: readonly string[];
+    readonly backends?: readonly string[];
+    readonly updatedAfter?: string;
     readonly offset: number;
     readonly limit: number;
   }) => Promise<SessionSnapshotListResponse>;

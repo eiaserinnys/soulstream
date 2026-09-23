@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
+import type { LiveSearchSql } from "../src/runtime/live_db_sql.js";
 import { EventReadRepository } from "../src/control_plane/repositories/event_read_repository.js";
 import { SessionReadRepository } from "../src/control_plane/repositories/session_read_repository.js";
 
@@ -89,7 +90,14 @@ describe("session-data read repositories", () => {
       if (text.includes("event_read(")) return [event];
       return [];
     });
-    const repository = new EventReadRepository(sql);
+    const searchConnection = {
+      sql: sql as unknown as LiveSearchSql,
+      close: vi.fn(async () => undefined),
+      discard: vi.fn(async () => undefined),
+    };
+    const repository = new EventReadRepository(sql, {
+      open: vi.fn(async () => searchConnection),
+    });
 
     await expect(repository.countEvents("s1")).resolves.toBe(8);
     await expect(repository.readEvents("s1", 0, 50, ["user_message"]))
@@ -114,6 +122,44 @@ describe("session-data read repositories", () => {
       expect.stringContaining("event_search("),
       expect.stringContaining("session_id_search("),
     ]));
+    expect(searchConnection.close).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels and discards its owned event search connection on request abort", async () => {
+    let rejectPending!: (error: Error) => void;
+    let resolveDispatched!: () => void;
+    const dispatched = new Promise<void>((resolve) => { resolveDispatched = resolve; });
+    const cancel = vi.fn(() => rejectPending(new Error("cancelled")));
+    const pending = new Promise<readonly Record<string, unknown>[]>((_resolve, reject) => {
+      rejectPending = reject;
+    }) as Promise<readonly Record<string, unknown>[]> & {
+      cancel: () => void;
+      canceller: (query: unknown) => void;
+    };
+    pending.cancel = cancel;
+    pending.canceller = () => cancel();
+    const searchSql = vi.fn(() => {
+      resolveDispatched();
+      return pending;
+    }) as unknown as LiveSearchSql;
+    const connection = {
+      sql: searchSql,
+      close: vi.fn(async () => undefined),
+      discard: vi.fn(async () => undefined),
+    };
+    const repository = new EventReadRepository(
+      vi.fn() as unknown as SqlClient,
+      { open: vi.fn(async () => connection) },
+    );
+    const controller = new AbortController();
+    const result = repository.searchEvents("slow query", null, 10, null, controller.signal);
+    await dispatched;
+    controller.abort(new Error("caller disconnected"));
+
+    await expect(result).rejects.toThrow("caller disconnected");
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(connection.discard).toHaveBeenCalled();
+    expect(connection.close).not.toHaveBeenCalled();
   });
 });
 

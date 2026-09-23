@@ -200,6 +200,12 @@ export interface DashboardState {
   /** 검색 결과 클릭 시 스크롤할 이벤트 ID (ChatView가 감지하여 해당 메시지로 스크롤) */
   focusEventId: number | null;
 
+  /** focusEventId의 소유 세션. 다른 세션의 같은 이벤트 번호에 포커스하지 않도록 구분한다. */
+  focusEventSessionId: string | null;
+
+  /** 같은 이벤트를 다시 선택한 요청과 이전 highlight timer를 구분한다. 세션 데이터로 저장하지 않는다. */
+  focusEventRequestId: number;
+
   /** 세션 다중 선택 ID 집합 */
   selectedSessionIds: Set<string>;
 
@@ -386,7 +392,7 @@ export interface DashboardActions {
   clearPromptSuggestion: (sessionId: string) => void;
 
   // 검색 포커스 이벤트 ID
-  setFocusEventId: (eventId: number | null) => void;
+  setFocusEventId: (eventId: number | null, sessionId?: string) => void;
 
   // 뷰 모드 (URL 동기화 전용)
   setViewMode: (mode: DashboardViewMode) => void;

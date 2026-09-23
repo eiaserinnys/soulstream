@@ -98,6 +98,7 @@
     { "id": "093_worktrees.sql", "sha256": "57def22fc3300ff442dd50deb7447a1d28a16e403c30a87baffe232879bb02f6" },
     { "id": "094_recurring_jobs.sql", "sha256": "ab0d3e4a123abb37a4b2dff7fe69d0c93ac1b91ffebf10265768fa34e758df2b" },
     { "id": "095_feed_last_event_id.sql", "sha256": "26a0a4181182880e343338304e65154f3383c3844259cc202105b7350fbed870" },
-    { "id": "096_planner_starred_task_order.sql", "sha256": "0e04d1c788189add762d6781a77ad0bbff8efd33a3967093f4053301ce378d06" }
+    { "id": "096_planner_starred_task_order.sql", "sha256": "0e04d1c788189add762d6781a77ad0bbff8efd33a3967093f4053301ce378d06" },
+    { "id": "097_session_search_reliability.sql", "sha256": "3d2b0e23b8c0dd4c1a7d2e26314c7f9da2e19e0409f1e7430dd81e56e615a860" }
   ]
 }

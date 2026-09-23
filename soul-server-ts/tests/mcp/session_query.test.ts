@@ -3,6 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
+import type { SessionHistorySearchParams } from "../../src/control_plane/session_data_host_client.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildInternalMcpServer } from "../../src/server.js";
@@ -42,13 +43,43 @@ function makeRuntime(params: {
   db?: Record<string, unknown>;
   childCompletionConsumption?: McpRuntime["childCompletionConsumption"];
 }): McpRuntime {
+  const searchEvents = params.searchEvents ?? vi.fn(async () => []);
+  const searchEventsBySessionId = params.searchEventsBySessionId ?? vi.fn(async () => []);
+  const searchSessionDigests = params.searchSessionDigests ?? vi.fn(async () => []);
   return {
     nodeId: "node-test",
     agentsConfigPath: "/tmp/agents.yaml",
     db: {
-      searchEvents: params.searchEvents ?? vi.fn(async () => []),
-      searchEventsBySessionId: params.searchEventsBySessionId ?? vi.fn(async () => []),
-      searchSessionDigests: params.searchSessionDigests ?? vi.fn(async () => []),
+      searchEvents,
+      searchEventsBySessionId,
+      searchSessionDigests,
+      searchSessionHistory: async (searchParams: SessionHistorySearchParams, signal?: AbortSignal) => ({
+        events: await searchEvents(
+          searchParams.query,
+          searchParams.sessionIds,
+          searchParams.limit,
+          searchParams.eventTypes,
+          signal,
+        ),
+        sessionIdEvents: searchParams.searchSessionId
+          ? await searchEventsBySessionId(
+              searchParams.query,
+              searchParams.eventTypes,
+              searchParams.limit,
+              signal,
+            )
+          : [],
+        digests: searchParams.includeHighlight || searchParams.includeStory
+          ? await searchSessionDigests(
+              searchParams.query,
+              searchParams.sessionIds,
+              searchParams.limit,
+              searchParams.includeHighlight,
+              searchParams.includeStory,
+              signal,
+            )
+          : [],
+      }),
       getSessionSearchMetadata: vi.fn(async () => new Map()),
       ...params.db,
     } as unknown as SessionDB,
@@ -636,6 +667,7 @@ describe("search_session_history", () => {
       null,
       10,
       DEFAULT_READABLE_SEARCH_EVENT_TYPES,
+      expect.any(AbortSignal),
     );
     expect(result.structuredContent).toEqual({
       results: [
@@ -652,6 +684,27 @@ describe("search_session_history", () => {
           has_highlight: false,
         },
       ],
+    });
+  });
+
+  it("returns a tool error when the session-data host search times out", async () => {
+    const searchEvents = vi.fn(async () => {
+      throw Object.assign(new Error("event search exceeded its database time limit"), {
+        statusCode: 504,
+      });
+    });
+    const client = await createClient(makeRuntime({ searchEvents }));
+
+    const result = await client.callTool({
+      name: "search_session_history",
+      arguments: { query: "deadline" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).not.toEqual({ results: [] });
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("database time limit"),
     });
   });
 
@@ -673,6 +726,7 @@ describe("search_session_history", () => {
       null,
       10,
       ["tool_start", "tool_result"],
+      expect.any(AbortSignal),
     );
   });
 
@@ -707,11 +761,13 @@ describe("search_session_history", () => {
       null,
       10,
       DEFAULT_READABLE_SEARCH_EVENT_TYPES,
+      expect.any(AbortSignal),
     );
     expect(searchEventsBySessionId).toHaveBeenCalledWith(
       "hello",
       DEFAULT_READABLE_SEARCH_EVENT_TYPES,
       10,
+      expect.any(AbortSignal),
     );
     expect(result.structuredContent).toEqual({
       results: [
@@ -756,6 +812,7 @@ describe("search_session_history", () => {
       10,
       true,
       true,
+      expect.any(AbortSignal),
     );
   });
 

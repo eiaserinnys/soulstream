@@ -46,6 +46,7 @@ export function useV3SessionPanelController({
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const focusRequestSequence = useRef(0);
+  const openRequestSequence = useRef(0);
   const [panelWidth, setPanelWidth] = useState(() => readV3SessionPanelWidth());
   const [focusRequest, setFocusRequest] = useState<TaskSectionFocusRequest | null>(null);
   const [workspaceTaskError, setWorkspaceTaskError] = useState<string | null>(null);
@@ -72,8 +73,10 @@ export function useV3SessionPanelController({
     setFocusRequest((current) => current?.requestId === requestId ? null : current);
   }, []);
 
-  const openSession = useCallback(async (session: SessionSummary) => {
-    activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
+  const openSessionForRequest = useCallback(async (
+    session: SessionSummary,
+    requestSequence: number,
+  ): Promise<boolean> => {
     try {
       const resolved = await resolveSessionTaskWorkspace({
         session,
@@ -81,6 +84,9 @@ export function useV3SessionPanelController({
         currentTasks,
         loadTaskByTaskId: (taskId) => loadPlannerTaskByTaskId(api, taskId),
       });
+      if (requestSequence !== openRequestSequence.current) return false;
+
+      activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
       setWorkspaceTaskError(null);
       if (resolved.task) {
         setSelectedTaskId(resolved.task.page.id);
@@ -96,10 +102,11 @@ export function useV3SessionPanelController({
         setSelectedTaskSnapshot(null);
         setFocusRequest(null);
       }
+      setWorkspaceOpen(true);
+      setChatOpen(true);
+      return true;
     } catch (error) {
-      setSelectedTaskId(null);
-      setSelectedTaskSnapshot(null);
-      setFocusRequest(null);
+      if (requestSequence !== openRequestSequence.current) return false;
       const message = error instanceof SessionWorkspaceResolutionError
         ? error.message
         : "세션의 업무를 열지 못했습니다.";
@@ -108,34 +115,42 @@ export function useV3SessionPanelController({
         : errorText(error);
       setWorkspaceTaskError(message);
       notify(`세션의 업무 열기 실패 · ${message} · ${detail}`);
+      return false;
     }
-    setWorkspaceOpen(true);
-    setChatOpen(true);
   }, [api, catalog?.boardItems, currentTasks, notify, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen, setSelectedTaskId, setSelectedTaskSnapshot, setWorkspaceOpen]);
+
+  const openSession = useCallback(async (session: SessionSummary) => {
+    const requestSequence = ++openRequestSequence.current;
+    return openSessionForRequest(session, requestSequence);
+  }, [openSessionForRequest]);
 
   const openSessionById = useCallback(async (
     sessionId: string,
     focusEventId: number | null,
     knownSession?: SessionSummary,
   ) => {
+    const requestSequence = ++openRequestSequence.current;
     try {
       const session = await resolveSessionForOpen({
         sessionId,
         knownSession,
         fetchSessions: (options) => orchestratorSessionProvider.fetchSessions(options),
       });
+      if (requestSequence !== openRequestSequence.current) return false;
       if (!session) {
         notify("선택한 세션을 찾을 수 없습니다");
         return false;
       }
-      await openSession(session);
-      setFocusEventId(focusEventId);
+      const opened = await openSessionForRequest(session, requestSequence);
+      if (!opened || requestSequence !== openRequestSequence.current) return false;
+      setFocusEventId(focusEventId, sessionId);
       return true;
     } catch (error) {
+      if (requestSequence !== openRequestSequence.current) return false;
       notify(`세션 열기 실패 · ${errorText(error)}`);
       return false;
     }
-  }, [notify, openSession, setFocusEventId]);
+  }, [notify, openSessionForRequest, setFocusEventId]);
 
   return {
     panelRef,

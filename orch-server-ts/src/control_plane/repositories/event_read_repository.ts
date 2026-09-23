@@ -1,4 +1,11 @@
 import type { SqlClient } from "../control_plane_types.js";
+import {
+  type LiveSearchDbConnectionFactory,
+  type LiveSearchPendingQuery,
+  type LiveSearchQueryRunner,
+  type LiveSearchSql,
+  withLiveSearchDbConnection,
+} from "../../runtime/live_db_sql.js";
 
 export interface HostEventRow {
   id: number;
@@ -13,8 +20,21 @@ export interface HostEventSearchRow extends HostEventRow {
   score: number;
 }
 
+export class EventSearchDeadlineError extends Error {
+  readonly statusCode = 504;
+
+  constructor() {
+    super("event search exceeded its database time limit");
+    this.name = "EventSearchDeadlineError";
+  }
+}
+
 export class EventReadRepository {
-  constructor(private readonly sql: SqlClient) {}
+  constructor(
+    private readonly sql: SqlClient,
+    private readonly searchConnectionFactory?: LiveSearchDbConnectionFactory,
+    private readonly onSearchCancelError?: (error: unknown) => void,
+  ) {}
 
   async countEvents(sessionId: string): Promise<number> {
     const rows = await this.sql<Array<{ event_count: string | number }>>`
@@ -89,17 +109,26 @@ export class EventReadRepository {
     sessionIds: string[] | null,
     limit: number,
     eventTypes?: string[] | null,
+    signal?: AbortSignal,
   ): Promise<HostEventSearchRow[]> {
     const ids = sessionIds && sessionIds.length > 0 ? sessionIds : null;
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
-    const rows = await this.sql<Array<Omit<HostEventSearchRow, "payload"> & { payload: unknown }>>`
-      SELECT * FROM event_search(
-        ${query},
-        ${ids as unknown as string[] | null},
-        ${limit},
-        ${types as unknown as string[] | null}
-      )
-    `;
+    const rows = await this.runSearch(signal, (searchSql) =>
+      this.createEventSearchQuery(searchSql, query, ids, limit, types));
+    return rows.map((row) => ({ ...normalizeEvent(row), score: Number(row.score) }));
+  }
+
+  async searchEventsOnConnection(
+    query: string,
+    sessionIds: string[] | null,
+    limit: number,
+    eventTypes: string[] | null,
+    runQuery: LiveSearchQueryRunner,
+  ): Promise<HostEventSearchRow[]> {
+    const ids = sessionIds && sessionIds.length > 0 ? sessionIds : null;
+    const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
+    const rows = await runQuery((searchSql) =>
+      this.createEventSearchQuery(searchSql, query, ids, limit, types));
     return rows.map((row) => ({ ...normalizeEvent(row), score: Number(row.score) }));
   }
 
@@ -107,17 +136,113 @@ export class EventReadRepository {
     query: string,
     eventTypes: string[] | null,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<HostEventSearchRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
-    const rows = await this.sql<Array<Omit<HostEventSearchRow, "payload"> & { payload: unknown }>>`
+    const rows = await this.runSearch(signal, (searchSql) =>
+      this.createSessionIdSearchQuery(searchSql, query, types, limit));
+    return rows.map((row) => ({ ...normalizeEvent(row), score: Number(row.score) }));
+  }
+
+  async searchEventsBySessionIdOnConnection(
+    query: string,
+    eventTypes: string[] | null,
+    limit: number,
+    runQuery: LiveSearchQueryRunner,
+  ): Promise<HostEventSearchRow[]> {
+    const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
+    const rows = await runQuery((searchSql) =>
+      this.createSessionIdSearchQuery(searchSql, query, types, limit));
+    return rows.map((row) => ({ ...normalizeEvent(row), score: Number(row.score) }));
+  }
+
+  private async runOwnedSearch<T extends readonly Record<string, unknown>[]>(
+    signal: AbortSignal | undefined,
+    createQuery: (sql: LiveSearchSql) => LiveSearchPendingQuery<T>,
+  ): Promise<T> {
+    if (!this.searchConnectionFactory) {
+      throw new Error("event search cancellation requires a request-owned search connection");
+    }
+    try {
+      return await withLiveSearchDbConnection(
+        this.searchConnectionFactory,
+        signal,
+        (error) => this.reportSearchCancelError(error),
+        (runQuery) => runQuery(createQuery),
+      );
+    } catch (error) {
+      if (signal?.aborted) {
+        throw signal.reason ?? new Error("event search was cancelled");
+      }
+      if (isPostgresStatementTimeout(error)) throw new EventSearchDeadlineError();
+      throw error;
+    }
+  }
+
+  private createEventSearchQuery(
+    sql: LiveSearchSql,
+    query: string,
+    sessionIds: string[] | null,
+    limit: number,
+    eventTypes: string[] | null,
+  ): LiveSearchPendingQuery<readonly EventSearchRecord[]> {
+    return sql<readonly EventSearchRecord[]>`
+      SELECT * FROM event_search(
+        ${query},
+        ${sessionIds as unknown as string[] | null},
+        ${limit},
+        ${eventTypes as unknown as string[] | null}
+      )
+    `;
+  }
+
+  private createSessionIdSearchQuery(
+    sql: LiveSearchSql,
+    query: string,
+    eventTypes: string[] | null,
+    limit: number,
+  ): LiveSearchPendingQuery<readonly EventSearchRecord[]> {
+    return sql<readonly EventSearchRecord[]>`
       SELECT * FROM session_id_search(
         ${query},
-        ${types as unknown as string[] | null},
+        ${eventTypes as unknown as string[] | null},
         ${limit}
       )
     `;
-    return rows.map((row) => ({ ...normalizeEvent(row), score: Number(row.score) }));
   }
+
+  private runSearch<T extends readonly Record<string, unknown>[]>(
+    signal: AbortSignal | undefined,
+    createQuery: (sql: SqlClient) => Promise<T>,
+  ): Promise<T> {
+    if (this.searchConnectionFactory) {
+      return this.runOwnedSearch(signal, (sql) =>
+        createQuery(sql as unknown as SqlClient) as LiveSearchPendingQuery<T>);
+    }
+    if (signal !== undefined) {
+      return Promise.reject(new Error(
+        "event search cancellation requires a request-owned search connection",
+      ));
+    }
+    return createQuery(this.sql);
+  }
+
+  private reportSearchCancelError(error: unknown): void {
+    try {
+      this.onSearchCancelError?.(error);
+    } catch {
+      // Cancellation reporting must not hide the caller's cancellation error.
+    }
+  }
+}
+
+type EventSearchRecord = Omit<HostEventSearchRow, "payload"> & { payload: unknown };
+
+function isPostgresStatementTimeout(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && error.code === "57014";
 }
 
 function normalizeEvent(

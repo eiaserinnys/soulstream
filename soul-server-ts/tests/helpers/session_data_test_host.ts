@@ -6,7 +6,7 @@ import { SessionReadRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_read_repository.js";
 import { SessionStoryReadRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_story_read_repository.js";
-import type { SessionDataHost } from
+import type { SessionDataHost, SessionHistorySearchParams } from
   "../../src/control_plane/session_data_host_client.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 
@@ -46,6 +46,30 @@ export function configureTestSessionDataHost(
       events.searchEvents(query, sessionIds, limit, eventTypes),
     searchEventsBySessionId: (query, eventTypes, limit) =>
       events.searchEventsBySessionId(query, eventTypes, limit),
+    searchSessionHistory: async (params: SessionHistorySearchParams) => ({
+      events: await events.searchEvents(
+        params.query,
+        params.sessionIds,
+        params.limit,
+        params.eventTypes,
+      ),
+      sessionIdEvents: params.searchSessionId
+        ? await events.searchEventsBySessionId(
+            params.query,
+            params.eventTypes,
+            params.limit,
+          )
+        : [],
+      digests: params.includeHighlight || params.includeStory
+        ? await stories.searchSessionDigests(
+            params.query,
+            params.sessionIds,
+            params.limit,
+            params.includeHighlight,
+            params.includeStory,
+          )
+        : [],
+    }),
     getSessionSearchMetadata: async (sessionIds) =>
       new Map(await stories.getSessionSearchMetadata(sessionIds)),
     countTurnSummaries: (sessionId) =>

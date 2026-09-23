@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { performance } from "node:perf_hooks";
 import { join } from "node:path";
 
 import { sanitizeChildProcessEnv } from "../runtime/child_process_env.js";
@@ -19,6 +20,7 @@ export type CodexReasoningEffort = (typeof CODEX_REASONING_EFFORTS)[number];
 export type CodexEphemeralErrorCode =
   | "CODEX_UNAVAILABLE"
   | "CODEX_TIMEOUT"
+  | "CODEX_CANCELLED"
   | "CODEX_INVALID_OUTPUT"
   | "CODEX_EXEC_FAILED";
 
@@ -41,7 +43,16 @@ export interface CodexExecProcessPort {
     invocation: CodexExecInvocation,
     prompt: string,
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<{ readonly stdout: string; readonly stderr: string }>;
+}
+
+export interface CodexExecProcessTiming {
+  readonly spawnToFirstStdoutMs: number | null;
+  readonly spawnToCloseMs: number;
+  readonly timedOut: boolean;
+  readonly cancelled: boolean;
+  readonly exitCode: number | null;
 }
 
 export interface CodexExecGenerateRequest {
@@ -52,6 +63,9 @@ export interface CodexExecGenerateRequest {
   readonly timeoutMs: number;
   readonly maxAttempts: number;
   readonly concurrencyLimit: number;
+  readonly signal?: AbortSignal;
+  readonly disabledFeatures?: readonly string[];
+  readonly disableWebSearch?: boolean;
 }
 
 export interface CodexExecGenerateResult {
@@ -69,6 +83,8 @@ export interface CodexEphemeralExecutorOptions {
   readonly processPort?: CodexExecProcessPort;
   readonly processEnv?: NodeJS.ProcessEnv | Readonly<Record<string, string | undefined>>;
   readonly nowMs?: () => number;
+  readonly onProcessTiming?: (timing: CodexExecProcessTiming) => void;
+  readonly onOutputParseTiming?: (durationMs: number) => void;
 }
 
 type ExecutionMetrics = {
@@ -110,6 +126,8 @@ export function buildCodexExecInvocation(params: {
     | NodeJS.ProcessEnv
     | Readonly<Record<string, string | undefined>>;
   readonly outputSchemaPath?: string;
+  readonly disabledFeatures?: readonly string[];
+  readonly disableWebSearch?: boolean;
 }): CodexExecInvocation {
   return {
     command: params.codexPath,
@@ -131,6 +149,13 @@ export function buildCodexExecInvocation(params: {
       ...(params.outputSchemaPath === undefined
         ? []
         : ["--output-schema", params.outputSchemaPath]),
+      ...(params.disabledFeatures ?? []).flatMap((feature) => [
+        "--disable",
+        feature,
+      ]),
+      ...(params.disableWebSearch
+        ? ["--config", 'web_search="disabled"']
+        : []),
       "-",
     ],
     env: sanitizeChildProcessEnv(params.processEnv),
@@ -178,36 +203,97 @@ export function parseCodexJsonl(
 }
 
 export class NodeCodexExecProcess implements CodexExecProcessPort {
+  constructor(
+    private readonly options: {
+      readonly onProcessTiming?: (timing: CodexExecProcessTiming) => void;
+    } = {},
+  ) {}
+
   execute(
     invocation: CodexExecInvocation,
     prompt: string,
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<{ stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(cancelledAttemptError());
+        return;
+      }
       const child = spawn(invocation.command, invocation.args, {
         cwd: invocation.cwd,
         env: invocation.env,
         stdio: ["pipe", "pipe", "pipe"],
+        detached: process.platform !== "win32",
         windowsHide: true,
       });
+      const executeStartedAt = performance.now();
+      let spawnedAt: number | undefined;
+      let firstStdoutAt: number | undefined;
+      let timingReported = false;
       let stdout = "";
       let stderr = "";
       let timedOut = false;
+      let cancelled = false;
+      const killProcessTree = () => {
+        const pid = child.pid;
+        if (process.platform !== "win32" && pid !== undefined) {
+          try {
+            process.kill(-pid, "SIGKILL");
+            return;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+              child.kill("SIGKILL");
+              return;
+            }
+          }
+        }
+        child.kill("SIGKILL");
+      };
+      const reportTiming = (exitCode: number | null) => {
+        if (timingReported) return;
+        timingReported = true;
+        try {
+          this.options.onProcessTiming?.({
+            spawnToFirstStdoutMs: spawnedAt === undefined || firstStdoutAt === undefined
+              ? null
+              : Math.max(0, firstStdoutAt - spawnedAt),
+            spawnToCloseMs: Math.max(0, performance.now() - (spawnedAt ?? executeStartedAt)),
+            timedOut,
+            cancelled,
+            exitCode,
+          });
+        } catch {
+          // An optional observer must not affect child cleanup or search results.
+        }
+      };
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill("SIGKILL");
+        killProcessTree();
       }, timeoutMs);
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      };
+      const onAbort = () => {
+        cancelled = true;
+        killProcessTree();
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) onAbort();
 
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
+        firstStdoutAt ??= performance.now();
         stdout += chunk;
       });
       child.stderr.on("data", (chunk: string) => {
         stderr += chunk;
       });
       child.once("error", (error) => {
-        clearTimeout(timer);
+        cleanup();
+        reportTiming(null);
         const unavailable = (error as NodeJS.ErrnoException).code === "ENOENT";
         reject(new CodexAttemptError(
           unavailable ? "CODEX_UNAVAILABLE" : "CODEX_EXEC_FAILED",
@@ -218,8 +304,11 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
         ));
       });
       child.once("close", (code) => {
-        clearTimeout(timer);
-        if (timedOut) {
+        cleanup();
+        reportTiming(code);
+        if (cancelled) {
+          reject(cancelledAttemptError());
+        } else if (timedOut) {
           reject(new CodexAttemptError(
             "CODEX_TIMEOUT",
             `codex exec timed out after ${timeoutMs}ms`,
@@ -233,6 +322,9 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
           resolve({ stdout, stderr });
         }
       });
+      child.once("spawn", () => {
+        spawnedAt = performance.now();
+      });
       child.stdin.end(prompt, "utf8");
     });
   }
@@ -244,7 +336,9 @@ export class CodexEphemeralExecutor {
   private readonly spawnLimiter = new CodexSpawnLimiter();
 
   constructor(private readonly options: CodexEphemeralExecutorOptions) {
-    this.processPort = options.processPort ?? new NodeCodexExecProcess();
+    this.processPort = options.processPort ?? new NodeCodexExecProcess({
+      onProcessTiming: options.onProcessTiming,
+    });
     this.nowMs = options.nowMs ?? Date.now;
   }
 
@@ -267,6 +361,10 @@ export class CodexEphemeralExecutor {
     let spawnDurationMs = 0;
     let peakConcurrentSpawns = 0;
     for (let attempt = 1; attempt <= request.maxAttempts; attempt += 1) {
+      if (request.signal?.aborted) {
+        lastError = cancelledAttemptError();
+        break;
+      }
       const workspaceDir = await mkdtemp(
         join(tmpdir(), "soulstream-codex-ephemeral-"),
       );
@@ -281,7 +379,10 @@ export class CodexEphemeralExecutor {
             "utf8",
           );
         }
-        const permit = await this.spawnLimiter.acquire(request.concurrencyLimit);
+        const permit = await this.spawnLimiter.acquire(
+          request.concurrencyLimit,
+          request.signal,
+        );
         peakConcurrentSpawns = Math.max(
           peakConcurrentSpawns,
           permit.concurrentSpawns,
@@ -296,14 +397,32 @@ export class CodexEphemeralExecutor {
               model: request.model,
               reasoningEffort: request.reasoningEffort,
               processEnv: this.options.processEnv ?? process.env,
+              ...(request.disabledFeatures === undefined
+                ? {}
+                : { disabledFeatures: request.disabledFeatures }),
+              ...(request.disableWebSearch === undefined
+                ? {}
+                : { disableWebSearch: request.disableWebSearch }),
               ...(outputSchemaPath === undefined
                 ? {}
                 : { outputSchemaPath }),
             }),
             request.prompt,
             request.timeoutMs,
+            request.signal,
           );
-          parsed = parseCodexJsonl(result.stdout);
+          const parseStartedAt = this.nowMs();
+          try {
+            parsed = parseCodexJsonl(result.stdout);
+          } finally {
+            try {
+              this.options.onOutputParseTiming?.(
+                Math.max(0, this.nowMs() - parseStartedAt),
+              );
+            } catch {
+              // Measurement callbacks must not change query execution.
+            }
+          }
         } catch (error) {
           lastError = error;
         } finally {
@@ -348,19 +467,47 @@ type CodexSpawnPermit = {
   readonly release: () => void;
 };
 
+type CodexSpawnWaiter = {
+  readonly limit: number;
+  readonly resolve: (permit: CodexSpawnPermit) => void;
+  readonly reject: (error: Error) => void;
+  readonly signal?: AbortSignal;
+  readonly onAbort?: () => void;
+};
+
 class CodexSpawnLimiter {
   private activeSpawns = 0;
-  private readonly waiters: Array<{
-    readonly limit: number;
-    readonly resolve: (permit: CodexSpawnPermit) => void;
-  }> = [];
+  private readonly waiters: CodexSpawnWaiter[] = [];
 
-  async acquire(limit: number): Promise<CodexSpawnPermit> {
+  async acquire(limit: number, signal?: AbortSignal): Promise<CodexSpawnPermit> {
+    if (signal?.aborted) throw cancelledAttemptError();
     if (this.waiters.length === 0 && this.activeSpawns < limit) {
       return this.grant();
     }
-    return await new Promise<CodexSpawnPermit>((resolve) => {
-      this.waiters.push({ limit, resolve });
+    return await new Promise<CodexSpawnPermit>((resolve, reject) => {
+      const waiter: CodexSpawnWaiter = {
+        limit,
+        resolve,
+        reject,
+        ...(signal === undefined ? {} : { signal }),
+        ...(signal === undefined
+          ? {}
+          : {
+              onAbort: () => {
+                const index = this.waiters.indexOf(waiter);
+                if (index >= 0) this.waiters.splice(index, 1);
+                signal.removeEventListener("abort", waiter.onAbort!);
+                reject(cancelledAttemptError());
+                this.flush();
+              },
+            }),
+      };
+      signal?.addEventListener("abort", waiter.onAbort!, { once: true });
+      if (signal?.aborted) {
+        waiter.onAbort?.();
+        return;
+      }
+      this.waiters.push(waiter);
       this.flush();
     });
   }
@@ -385,9 +532,21 @@ class CodexSpawnLimiter {
       const next = this.waiters[0];
       if (next === undefined || this.activeSpawns >= next.limit) return;
       this.waiters.shift();
+      if (next.onAbort) next.signal?.removeEventListener("abort", next.onAbort);
+      if (next.signal?.aborted) {
+        next.reject(cancelledAttemptError());
+        continue;
+      }
       next.resolve(this.grant());
     }
   }
+}
+
+function cancelledAttemptError(): CodexAttemptError {
+  return new CodexAttemptError(
+    "CODEX_CANCELLED",
+    "codex exec was cancelled before completion",
+  );
 }
 
 function classifyAttemptError(error: unknown): {

@@ -11,6 +11,8 @@ import type {
   SessionEventDetailRow,
   SessionEventRow,
   SessionEventSearchRow,
+  SessionHistorySearchParams,
+  SessionHistorySearchResult,
   SessionResumeContext,
   SessionTurnExcerptResult,
 } from "../control_plane/session_data_host_client.js";
@@ -165,6 +167,7 @@ export class SessionDB {
     limit: number,
     includeHighlight: boolean,
     includeStory: boolean,
+    signal?: AbortSignal,
   ): Promise<SessionDigestSearchMatch[]> {
     return await this.requireSessionDataHost().searchSessionDigests(
       query,
@@ -172,6 +175,7 @@ export class SessionDB {
       limit,
       includeHighlight,
       includeStory,
+      signal,
     );
   }
 
@@ -350,16 +354,25 @@ export class SessionDB {
     sessionIds: string[] | null,
     limit: number,
     eventTypes?: string[] | null,
+    signal?: AbortSignal,
   ): Promise<SessionEventSearchRow[]> {
-    return await this.requireSessionDataHost().searchEvents(query, sessionIds, limit, eventTypes);
+    return await this.requireSessionDataHost().searchEvents(query, sessionIds, limit, eventTypes, signal);
   }
 
   async searchEventsBySessionId(
     query: string,
     eventTypes: string[] | null,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<SessionEventSearchRow[]> {
-    return await this.requireSessionDataHost().searchEventsBySessionId(query, eventTypes, limit);
+    return await this.requireSessionDataHost().searchEventsBySessionId(query, eventTypes, limit, signal);
+  }
+
+  async searchSessionHistory(
+    params: SessionHistorySearchParams,
+    signal?: AbortSignal,
+  ): Promise<SessionHistorySearchResult> {
+    return await this.requireSessionDataHost().searchSessionHistory(params, signal);
   }
 
   async getTurnExcerpt(
