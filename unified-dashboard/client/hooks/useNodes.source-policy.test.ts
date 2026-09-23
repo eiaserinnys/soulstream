@@ -22,4 +22,11 @@ describe("useNodes source policy", () => {
     expect(onOpen).not.toContain('setConnectionStatus("connected")');
     expect(snapshot).toContain('setConnectionStatus("connected")');
   });
+
+  it("ignores named server error messages when checking stream authentication", () => {
+    const source = readFileSync(SOURCE_PATH, "utf8");
+    const onError = source.match(/connection\.onerror = \((.*?)\) => \{([\s\S]*?)\n      \};/);
+    expect(onError).not.toBeNull();
+    expect(onError?.[2]).toContain(`${onError?.[1]} instanceof MessageEvent`);
+  });
 });

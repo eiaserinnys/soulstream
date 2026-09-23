@@ -76,6 +76,17 @@ function shouldRecheckAuth(input: RequestInfo | URL): boolean {
     && url.pathname !== "/api/auth/status";
 }
 
+function readAuthenticatedStatus(status: unknown): boolean {
+  if (typeof status !== "object" || status === null) {
+    throw new Error("Invalid auth status response");
+  }
+  const authenticated = (status as { authenticated?: unknown }).authenticated;
+  if (typeof authenticated !== "boolean") {
+    throw new Error("Invalid auth status response");
+  }
+  return authenticated;
+}
+
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
@@ -108,7 +119,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (!res.ok) throw new Error(`Auth status check failed: ${res.status}`);
       const status = await res.json();
       if (!isProviderMountedRef.current || lifecycleGenerationRef.current !== generation) return;
-      const authenticated = status.authenticated === true;
+      const authenticated = readAuthenticatedStatus(status);
 
       if (!authenticated && isAuthenticatedRef.current) {
         clearAllDetailCursorStores();
@@ -194,9 +205,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
           const status = await statusRes.json();
 
           if (!isMounted) return;
-          isAuthenticatedRef.current = status.authenticated === true;
+          const authenticated = readAuthenticatedStatus(status);
+          isAuthenticatedRef.current = authenticated;
           authRejectedRef.current = !isAuthenticatedRef.current;
-          setIsAuthenticated(status.authenticated);
+          setIsAuthenticated(authenticated);
           setUser(status.user ?? null);
         } else {
           // 인증 비활성 → 바이패스 (로그인 없이 접근)

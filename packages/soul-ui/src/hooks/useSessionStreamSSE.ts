@@ -134,7 +134,10 @@ export function useSessionStreamSSE(options: UseSessionStreamSSEOptions): void {
       });
     }
 
-    eventSource.onerror = () => {
+    eventSource.onerror = (event) => {
+      // 서버의 named `event: error`도 onerror에 MessageEvent로 전달된다.
+      // 연결 상태 오류가 아니므로 인증 상태를 재확인하지 않는다.
+      if (event instanceof MessageEvent) return;
       if (eventSourceRef.current !== eventSource) return;
       try {
         optionsRef.current.onConnectionError?.();

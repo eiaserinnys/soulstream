@@ -32,6 +32,13 @@ class FakeEventSource {
   emitConnectionError(): void {
     this.onerror?.call(this as unknown as EventSource, new Event("error"));
   }
+
+  emitNamedErrorMessage(): void {
+    this.onerror?.call(
+      this as unknown as EventSource,
+      new MessageEvent("error", { data: "server-side stream error" }),
+    );
+  }
 }
 
 function AuthProbe() {
@@ -385,10 +392,45 @@ describe("AuthProvider refresh boundary", () => {
     },
   );
 
+  it("does not recheck auth status for a named server error message", async () => {
+    let statusReads = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/auth/config") {
+        return Response.json({ authEnabled: true, devModeEnabled: false });
+      }
+      if (url === "/api/auth/status") {
+        statusReads += 1;
+        return authStatusResponse(true);
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    flushSync(() => {
+      root.render(createElement(AuthProvider, null,
+        createElement(AuthGate, {
+          loginTitle: "Soul Dashboard",
+          children: createElement(SessionStreamProbe, { streamType: "catalog" }),
+        }),
+      ));
+    });
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-testid=dashboard]")).not.toBeNull();
+      expect(FakeEventSource.instances).toHaveLength(1);
+    });
+
+    FakeEventSource.instances[0].emitNamedErrorMessage();
+
+    expect(statusReads).toBe(1);
+    expect(container.querySelector("[data-testid=dashboard]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=google-login-button]")).toBeNull();
+  });
+
   it.each([
     ["status 503", "503"],
     ["status network failure", "network"],
     ["authenticated status", "authenticated"],
+    ["malformed 200 response", "malformed"],
   ])("keeps the dashboard when session stream auth status is %s", async (_label, result) => {
     let statusReads = 0;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -402,6 +444,7 @@ describe("AuthProvider refresh boundary", () => {
           return authStatusResponse(true);
         }
         if (result === "503") return Response.json({ detail: "Unavailable" }, { status: 503 });
+        if (result === "malformed") return Response.json({ ok: true });
         throw new TypeError("offline");
       }
       throw new Error(`Unexpected request: ${url}`);
@@ -424,6 +467,7 @@ describe("AuthProvider refresh boundary", () => {
     eventSource.emitConnectionError();
 
     await vi.waitFor(() => expect(statusReads).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(container.querySelector("[data-testid=dashboard]")).not.toBeNull();
     expect(container.querySelector("[data-testid=google-login-button]")).toBeNull();
     expect(eventSource.close).toHaveBeenCalledOnce();

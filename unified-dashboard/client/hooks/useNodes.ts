@@ -48,8 +48,8 @@ export function useNodes(onConnectionError?: () => void) {
         setNode(node);
       });
 
-      connection.onerror = () => {
-        if (disposed || es !== connection) return;
+      connection.onerror = (event) => {
+        if (disposed || es !== connection || event instanceof MessageEvent) return;
         try {
           onConnectionError?.();
         } catch (error) {
