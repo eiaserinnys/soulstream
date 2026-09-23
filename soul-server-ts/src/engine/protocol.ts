@@ -13,6 +13,7 @@
  */
 
 import type { SessionEventEnvelope } from "@soulstream/wire-schema";
+import { MODEL_REASONING_EFFORTS } from "@soulstream/model-catalog";
 
 import type {
   RunnerControlFrame,
@@ -45,24 +46,10 @@ export type BackendId = "claude" | "codex" | "openai-agents";
  * requests are validated against the selected preset's advertised
  * `supported_efforts` — see resolveReasoningEffortForCreate().
  */
-export type ReasoningEffort =
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "ultra";
+export type ReasoningEffort = (typeof MODEL_REASONING_EFFORTS)[number];
 
-export const REASONING_EFFORT_ACCEPT_SET: readonly ReasoningEffort[] = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-  "ultra",
-];
+export const REASONING_EFFORT_ACCEPT_SET: readonly ReasoningEffort[] =
+  MODEL_REASONING_EFFORTS;
 
 export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return typeof value === "string"

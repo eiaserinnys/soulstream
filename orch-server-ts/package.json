@@ -21,6 +21,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@soulstream/model-catalog": "workspace:*",
     "@soulstream/agent-profile-contract": "workspace:*",
     "@soulstream/fractional-position": "workspace:*",
     "@soulstream/page-model": "workspace:*",

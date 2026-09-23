@@ -29,6 +29,7 @@ interface ChatViewportRetentionOptions {
   grouped: ChatTimelineItem[];
   firstItemIndex: number;
   isFollowing: boolean;
+  isExplicitEventFocus: boolean;
   recordFirstVisibleKey: (key: string | null) => void;
   onUserViewportInput?: (event: Event) => void;
 }
@@ -43,6 +44,7 @@ export function useChatViewportRetention({
   grouped,
   firstItemIndex,
   isFollowing,
+  isExplicitEventFocus,
   recordFirstVisibleKey,
   onUserViewportInput,
 }: ChatViewportRetentionOptions) {
@@ -220,6 +222,22 @@ export function useChatViewportRetention({
     scheduleVisuallyFirstItem();
   }, [scheduleVisuallyFirstItem]);
 
+  const cancelPendingRetention = useCallback(() => {
+    if (retentionFrameRef.current !== null) {
+      window.cancelAnimationFrame(retentionFrameRef.current);
+      retentionFrameRef.current = null;
+    }
+    retentionTargetRef.current = null;
+    scrollObservationPendingRef.current = false;
+    pendingScrollAnchorRef.current = null;
+    retargetAfterUserScrollRef.current = false;
+    const scroller = scrollerRef.current;
+    if (scroller !== null) {
+      scroller.dataset.chatViewportRetentionPending = "false";
+      scroller.dataset.chatViewportRetentionCorrection = "0";
+    }
+  }, []);
+
   const bindScrollerElement = useCallback((ref: HTMLElement | Window | null) => {
     const previous = scrollerRef.current;
     previous?.removeEventListener("scroll", observeAfterScroll);
@@ -295,7 +313,7 @@ export function useChatViewportRetention({
         isFollowing,
       );
     }
-    if (!isSameSession || isFollowing) {
+    if (!isSameSession || isFollowing || isExplicitEventFocus) {
       if (retentionFrameRef.current !== null) {
         window.cancelAnimationFrame(retentionFrameRef.current);
         retentionFrameRef.current = null;
@@ -329,6 +347,7 @@ export function useChatViewportRetention({
     firstItemIndex,
     grouped,
     isFollowing,
+    isExplicitEventFocus,
     recordVisuallyFirstItem,
     scheduleVisuallyFirstItem,
   ]);
@@ -337,5 +356,6 @@ export function useChatViewportRetention({
     scrollerRef,
     bindScrollerElement,
     scheduleVisuallyFirstItem,
+    cancelPendingRetention,
   };
 }

@@ -29,7 +29,12 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    redirectRetiredDashboardPathname(pathname, window.history, setPathname);
+    redirectRetiredDashboardPathname(
+      pathname,
+      window.history,
+      setPathname,
+      window.location.href,
+    );
   }, [pathname]);
 
   useEffect(() => {

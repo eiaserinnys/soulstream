@@ -36,6 +36,8 @@ describe("v3 right session panel policy", () => {
     const controller = read("./use-v3-session-panel-controller.ts");
 
     expect(layout).toContain("onOpenSession={sessionPanel.openSessionById}");
-    expect(controller).toContain("await openSession(session)");
+    expect(controller).toContain("const openSessionForRequest = useCallback");
+    expect(controller).toContain("return openSessionForRequest(session, requestSequence)");
+    expect(controller).toContain("const opened = await openSessionForRequest(session, requestSequence)");
   });
 });

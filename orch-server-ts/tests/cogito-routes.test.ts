@@ -154,7 +154,7 @@ describe("cogito route harness", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(searchProvider.search).toHaveBeenCalledWith({
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
       q: "hello",
       top_k: 7,
       search_session_id: true,
@@ -162,7 +162,11 @@ describe("cogito route harness", () => {
       include_highlight: false,
       include_story: false,
       event_categories: "thinking,tools",
-    });
+    }));
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      deadlineAt: expect.any(Number),
+    }));
     await app.close();
   });
 
@@ -182,14 +186,18 @@ describe("cogito route harness", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(searchProvider.search).toHaveBeenCalledWith({
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
       q: "needle",
       top_k: 10,
       search_session_id: false,
       include_turn_summaries: true,
       include_highlight: true,
       include_story: true,
-    });
+    }));
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      deadlineAt: expect.any(Number),
+    }));
     expect(invalid.statusCode).toBe(422);
     expect(searchProvider.search).toHaveBeenCalledTimes(1);
     await app.close();
@@ -233,7 +241,10 @@ describe("cogito route harness", () => {
     const restricted = createHarness({
       searchProvider,
       accessProvider: {
-        resolveAccess: () => ({ restricted: true }),
+        resolveAccess: () => ({
+          restricted: true,
+          allowedFolderIds: ["allowed-folder"],
+        }),
         filterResults: restrictedFilter,
       },
     });
@@ -246,8 +257,41 @@ describe("cogito route harness", () => {
     expect(restrictedResponse.json().results).toEqual([
       { session_id: "allowed", score: 0.1 },
     ]);
+    expect(searchProvider.search).toHaveBeenCalledWith(expect.objectContaining({
+      allowedFolderIds: ["allowed-folder"],
+    }));
+    expect(restrictedFilter).toHaveBeenCalledWith(expect.objectContaining({
+      access: { restricted: true, allowedFolderIds: ["allowed-folder"] },
+    }));
     expect(restrictedFilter).toHaveBeenCalledOnce();
     await restricted.app.close();
+  });
+
+  it("bounds access-scope resolution by the single search deadline", async () => {
+    vi.useFakeTimers();
+    const searchProvider: CogitoSearchProvider = {
+      search: vi.fn(async () => ({ results: [], navigation_results: [] })),
+    };
+    const { app } = createHarness({
+      searchProvider,
+      accessProvider: {
+        resolveAccess: () => new Promise<never>(() => {}),
+      },
+    });
+    try {
+      const responsePromise = app.inject({
+        method: "GET",
+        url: "/cogito/search?q=hello",
+      });
+      await vi.advanceTimersByTimeAsync(4_700);
+      const response = await responsePromise;
+
+      expect(response.statusCode).toBe(504);
+      expect(searchProvider.search).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+      vi.useRealTimers();
+    }
   });
 
   it("fails explicitly when restricted access has no result filter", async () => {

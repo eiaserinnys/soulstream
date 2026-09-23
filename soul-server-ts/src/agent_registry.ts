@@ -12,7 +12,14 @@ import fs from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
+import {
+  AgentBackendSchema,
+  type AgentBackend,
+} from "@soulstream/model-catalog";
 import { CLAUDE_PERMISSION_MODES } from "./engine/protocol.js";
+
+export { AgentBackendSchema } from "@soulstream/model-catalog";
+export type { AgentBackend } from "@soulstream/model-catalog";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -205,14 +212,6 @@ export const AgentAtomContextSchema = z.object({
 });
 
 export type AgentAtomContext = z.infer<typeof AgentAtomContextSchema>;
-
-export const AgentBackendSchema = z.enum([
-  "claude",
-  "codex",
-  "openai-agents",
-]);
-
-export type AgentBackend = z.infer<typeof AgentBackendSchema>;
 
 const AgentAliasSchema = z.union([
   z

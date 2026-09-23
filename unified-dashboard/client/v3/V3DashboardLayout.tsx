@@ -33,6 +33,10 @@ import { usePlannerCollections, useTaskRunHistory } from "./use-v3-planner-reads
 import { useProjectFolderController } from "./use-project-folder-controller";
 import { useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
 import { useTaskProjectMoveController } from "./use-task-project-move-controller";
+import {
+  parseSessionSearchIntent,
+  removeSessionSearchIntent,
+} from "@soulstream/search-contract";
 import { useV3LiveDataPlane } from "./use-v3-live-data-plane";
 import { openDocumentInV3 } from "./v3-inspector-model";
 import { useV3DashboardMutations } from "./use-v3-dashboard-mutations";
@@ -85,7 +89,7 @@ function V3DashboardContent() {
     });
   }, []);
   useEffect(() => { initTheme(); }, []);
-  const { user, refreshAuthStatus } = useAuth();
+  const { user, refreshAuthStatus, isLoading: authLoading, isAuthenticated } = useAuth();
   const handleStreamConnectionError = useCallback(() => {
     void refreshAuthStatus().catch(() => undefined);
   }, [refreshAuthStatus]);
@@ -158,6 +162,46 @@ function V3DashboardContent() {
     setChatOpen,
     notify,
   });
+  const attemptedSessionIntent = useRef<string | null>(null);
+  useEffect(() => {
+    const currentUrl = new URL(window.location.href);
+    const hasQueryIntent = currentUrl.searchParams.has("session");
+    const hasLegacyIntent = /^#\/feed\//.test(currentUrl.hash);
+    if (!hasQueryIntent && !hasLegacyIntent) {
+      attemptedSessionIntent.current = null;
+      return;
+    }
+    if (authLoading || !isAuthenticated) return;
+
+    const identity = currentUrl.toString();
+    if (attemptedSessionIntent.current === identity) return;
+    attemptedSessionIntent.current = identity;
+
+    const intent = parseSessionSearchIntent(currentUrl);
+    if (!intent) {
+      notify("세션 링크 형식이 잘못되었습니다. URL을 확인한 뒤 다시 시도하세요.");
+      return;
+    }
+    let focusEventId: number | null = null;
+    if (intent.eventId !== undefined) {
+      if (!/^\d+$/.test(intent.eventId) || Number(intent.eventId) < 1
+        || !Number.isSafeInteger(Number(intent.eventId))) {
+        notify("세션 링크의 이벤트 ID가 잘못되었습니다. URL을 확인한 뒤 다시 시도하세요.");
+        return;
+      }
+      focusEventId = Number(intent.eventId);
+    }
+
+    void sessionPanel.openSessionById(intent.sessionId, focusEventId).then((opened) => {
+      if (opened !== true || window.location.href !== identity) return;
+      window.history.replaceState(
+        window.history.state,
+        "",
+        removeSessionSearchIntent(window.location.href),
+      );
+      attemptedSessionIntent.current = null;
+    });
+  }, [authLoading, isAuthenticated, notify, sessionPanel.openSessionById]);
   const clearSessionPanelFocus = sessionPanel.clearFocusRequest;
   const selectedTask = useMemo(
     () => currentTasks.find((task) => task.page.id === selectedTaskId) ?? selectedTaskSnapshot,

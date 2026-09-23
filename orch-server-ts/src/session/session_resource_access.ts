@@ -29,6 +29,9 @@ export type SessionResourceAccessRepository = {
     sessionId: string,
   ) => Promise<SessionAccessRecord | null>;
   readonly listFoldersForAccess: () => Promise<readonly BoardAccessFolderRecord[]>;
+  readonly listFoldersForSearchAccess?: (
+    statementTimeoutMs: number,
+  ) => Promise<readonly BoardAccessFolderRecord[]>;
 };
 
 export type SessionResourceAccessInput = {

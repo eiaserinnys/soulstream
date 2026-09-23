@@ -35,6 +35,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@openai/agents": "0.11.4",
     "@openai/codex-sdk": "^0.155.1",
+    "@soulstream/model-catalog": "workspace:*",
     "@soulstream/agent-profile-contract": "workspace:*",
     "@soulstream/fractional-position": "workspace:*",
     "@soulstream/page-model": "workspace:*",

@@ -1,4 +1,4 @@
-import { isBoardFolderAllowed } from "../board/board_access.js";
+import { visibleBoardFolderIds } from "../board/board_access.js";
 import type {
   CogitoSearchAccessProvider,
   CogitoSearchResult,
@@ -13,30 +13,53 @@ export type CreateLiveCogitoSearchAccessProviderOptions = {
   readonly repository: SessionResourceAccessRepository;
 };
 
+const SEARCH_ACCESS_STATEMENT_TIMEOUT_MS = 500;
+
 export function createLiveCogitoSearchAccessProvider(
   options: CreateLiveCogitoSearchAccessProviderOptions,
 ): CogitoSearchAccessProvider {
   return {
-    resolveAccess: async (request) => options.accessProvider.resolveAccess({ request }),
-    async filterResults({ request, response }) {
+    async resolveAccess(request) {
       const access = await options.accessProvider.resolveAccess({ request });
-      const folders = await options.repository.listFoldersForAccess();
-      const results = [];
-      for (const result of response.results) {
-        const sessionId = resultSessionId(result);
-        if (sessionId === null) continue;
-        const session = await options.repository.getSessionAccessRecord(sessionId);
-        if (
-          session !== null &&
-          isBoardFolderAllowed(access, folders, session.folderId)
-        ) {
-          results.push(result);
-        }
-      }
+      if (!access.restricted) return { restricted: false };
+      const folders = options.repository.listFoldersForSearchAccess === undefined
+        ? await options.repository.listFoldersForAccess()
+        : await options.repository.listFoldersForSearchAccess(SEARCH_ACCESS_STATEMENT_TIMEOUT_MS);
       return {
-        results,
+        restricted: true,
+        allowedFolderIds: [...visibleBoardFolderIds(access, folders)],
+      };
+    },
+    async filterResults({ response, access }) {
+      const allowedFolderIds = new Set(access.allowedFolderIds ?? []);
+      // The live search provider selects folder_id from its joined session row and
+      // applies this same allow-list in every candidate SQL source. Rechecking
+      // session ownership with one query per hit would run unbounded post-search work.
+      const filterSessionResult = (result: CogitoSearchResult): CogitoSearchResult | null => {
+        const sessionId = resultSessionId(result);
+        const folderId = resultFolderId(result);
+        if (sessionId === null || folderId === null || !allowedFolderIds.has(folderId)) {
+          return null;
+        }
+        const { folder_id: _folderId, folderId: _folderIdAlias, ...publicResult } = result;
+        return publicResult;
+      };
+      return {
+        ...response,
+        results: response.results.flatMap((result) => {
+          const filtered = filterSessionResult(result);
+          return filtered === null ? [] : [filtered];
+        }),
+        ...(response.session_results === undefined
+          ? {}
+          : {
+            session_results: response.session_results.flatMap((result) => {
+              const filtered = filterSessionResult(result);
+              return filtered === null ? [] : [filtered];
+            }),
+          }),
         navigation_results: response.navigation_results.filter((result) =>
-          isBoardFolderAllowed(access, folders, resultFolderId(result))
+          allowedFolderIds.has(resultFolderId(result) ?? ""),
         ),
       };
     },

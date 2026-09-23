@@ -18,6 +18,9 @@ export type LivePostgresSql = {
     onlisten?: () => void,
   ) => Promise<{ readonly unlisten: () => Promise<void> }>;
   readonly end?: (options?: { readonly timeout?: number }) => Promise<void>;
+  readonly begin?: <T>(
+    callback: (transaction: LivePostgresSql) => Promise<T>,
+  ) => Promise<T>;
 };
 
 export type LivePostgresFactory = (
@@ -27,10 +30,44 @@ export type LivePostgresFactory = (
 
 export type LivePostgresOptions = {
   readonly max: number;
+  readonly pipeline?: boolean;
+  readonly connect_timeout?: number;
   readonly connection: {
     readonly statement_timeout: number;
   };
 };
+
+export type LiveSearchPendingQuery<T extends readonly Record<string, unknown>[]> =
+  Promise<T> & {
+    readonly cancel: () => void;
+    // postgres.js 3.4.9 exposes cancel() as void even though its internal
+    // canceller returns a Promise that may reject on CancelRequest failure.
+    canceller?: ((query: LiveSearchPendingQuery<T>) => Promise<void> | void) | null;
+  };
+
+export type LiveSearchSql = {
+  <T extends readonly Record<string, unknown>[] = readonly Record<string, unknown>[]>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): LiveSearchPendingQuery<T>;
+  readonly setStatementTimeout?: (timeoutMs: number) => Promise<void>;
+  readonly end?: (options?: { readonly timeout?: number }) => Promise<void>;
+};
+
+export type LiveSearchDbConnection = {
+  readonly sql: LiveSearchSql;
+  readonly close: () => Promise<void>;
+  readonly discard?: () => Promise<void>;
+};
+
+export type LiveSearchDbConnectionFactory = {
+  readonly open: (remainingBudgetMs: number) => Promise<LiveSearchDbConnection>;
+};
+
+export type LiveSearchPostgresFactory = (
+  databaseUrl: string,
+  options: LivePostgresOptions & { readonly pipeline: false },
+) => LiveSearchSql;
 
 export type LiveDbSqlResolver = {
   readonly resolveSql: () => Promise<LivePostgresSql>;
@@ -54,6 +91,25 @@ const DEFAULT_POSTGRES_MAX_CONNECTIONS = 10;
 // is the explicit server-side equivalent for executable commands.
 const DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS = 30_000;
 const DEFAULT_POSTGRES_CLOSE_TIMEOUT_SECONDS = 5;
+export const SEARCH_DB_STATEMENT_TIMEOUT_MS = 3_000;
+const SEARCH_DB_CLOSE_TIMEOUT_SECONDS = 1;
+
+export function cancelLiveSearchQuerySafely<T extends readonly Record<string, unknown>[]>(
+  query: LiveSearchPendingQuery<T>,
+  onError: (error: unknown) => void,
+): boolean {
+  const canceller = query.canceller;
+  if (canceller == null) return false;
+  query.canceller = undefined;
+  try {
+    const result = canceller(query);
+    if (result !== undefined) void result.catch(onError);
+    return true;
+  } catch (error) {
+    onError(error);
+    return false;
+  }
+}
 
 export function createLiveDbSqlResolver(
   options: CreateLiveDbSqlResolverOptions,
@@ -89,6 +145,51 @@ export function createLiveDbSqlResolver(
   };
 }
 
+export function createLiveSearchDbConnectionFactory(
+  options: {
+    readonly databaseUrl?: string;
+    readonly configProvider?: LiveConfigProviderBoundary;
+    readonly postgresFactory?: LiveSearchPostgresFactory;
+    readonly statementTimeoutMs?: number;
+  },
+): LiveSearchDbConnectionFactory {
+  const maxStatementTimeoutMs =
+    options.statementTimeoutMs ?? SEARCH_DB_STATEMENT_TIMEOUT_MS;
+  return {
+    async open(remainingBudgetMs) {
+      const databaseUrl = options.databaseUrl ??
+        await requireLiveDatabaseUrl(options.configProvider);
+      const factory = options.postgresFactory ?? defaultLiveSearchPostgresFactory;
+      const connectTimeoutSeconds = 1;
+      const statementTimeoutMs = Math.min(
+        maxStatementTimeoutMs,
+        Math.max(1, Math.floor(remainingBudgetMs - connectTimeoutSeconds * 1_000)),
+      );
+      const sql = factory(databaseUrl, {
+        max: 1,
+        pipeline: false,
+        connect_timeout: connectTimeoutSeconds,
+        connection: { statement_timeout: statementTimeoutMs },
+      });
+      let closePromise: Promise<void> | undefined;
+      const close = (timeoutSeconds: number) => {
+        closePromise ??= sql.end?.({ timeout: timeoutSeconds }) ?? Promise.resolve();
+        return closePromise;
+      };
+      const searchSql = Object.assign(sql, {
+        setStatementTimeout: async (timeoutMs: number) => {
+          await sql`SELECT set_config('statement_timeout', ${`${timeoutMs}ms`}, false)`;
+        },
+      });
+      return {
+        sql: searchSql,
+        close: () => close(SEARCH_DB_CLOSE_TIMEOUT_SECONDS),
+        discard: () => close(0),
+      };
+    },
+  };
+}
+
 export async function requireLiveDatabaseUrl(
   configProvider: LiveConfigProviderBoundary | undefined,
 ): Promise<string> {
@@ -111,4 +212,11 @@ function defaultLivePostgresFactory(
   options: LivePostgresOptions,
 ): LivePostgresSql {
   return postgres(databaseUrl, options) as unknown as LivePostgresSql;
+}
+
+function defaultLiveSearchPostgresFactory(
+  databaseUrl: string,
+  options: LivePostgresOptions & { readonly pipeline: false },
+): LiveSearchSql {
+  return postgres(databaseUrl, options) as unknown as LiveSearchSql;
 }

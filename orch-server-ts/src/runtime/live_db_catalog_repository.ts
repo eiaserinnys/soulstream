@@ -24,7 +24,9 @@ import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 import {
   createLiveDbSqlResolver,
+  createLiveSearchDbConnectionFactory,
   type LiveDbSqlResolver,
+  type LiveSearchDbConnectionFactory,
   type LivePostgresFactory,
   type LivePostgresSql,
 } from "./live_db_sql.js";
@@ -45,6 +47,7 @@ import { createLiveTaskRouteProvider } from "./live_task_route_provider.js";
 import type { TaskRouteProvider } from "../tasks/task_route_types.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
 import { createLiveCogitoSearchProvider } from "./live_cogito_search_provider.js";
+import type { SearchQueryExpander } from "../search/search_query_expander.js";
 import { serializeSessionRow } from "./live_session_serialization.js";
 import { createLiveUserPreferencesRepository } from "./live_user_preferences_repository.js";
 import type { UserBackgroundRepository } from "../user/user_background_routes.js";
@@ -116,6 +119,9 @@ export type ListSessionSnapshotsInput = LoadSessionSnapshotInput & {
 export type CreateLiveDbCatalogRepositoryOptions = {
   readonly sql?: LivePostgresSql;
   readonly sqlResolver?: LiveDbSqlResolver;
+  readonly searchDbConnectionFactory?: LiveSearchDbConnectionFactory;
+  readonly searchQueryExpander?: SearchQueryExpander;
+  readonly onSearchCancelError?: (error: unknown) => void;
   readonly postgresFactory?: LivePostgresFactory;
   readonly databaseUrl?: string;
   readonly configProvider?: LiveConfigProviderBoundary;
@@ -148,7 +154,16 @@ export function createLiveDbCatalogRepository(
       closeTimeoutSeconds: options.closeTimeoutSeconds,
     });
   const sessionHistoryProvider = createLiveSessionHistoryProvider({ sqlResolver });
-  const cogitoSearchProvider = createLiveCogitoSearchProvider({ sqlResolver });
+  const searchDbConnectionFactory = options.searchDbConnectionFactory ??
+    createLiveSearchDbConnectionFactory({
+      databaseUrl: options.databaseUrl,
+      configProvider: options.configProvider,
+    });
+  const cogitoSearchProvider = createLiveCogitoSearchProvider({
+    searchDbConnectionFactory,
+    queryExpander: options.searchQueryExpander,
+    onCancelError: options.onSearchCancelError,
+  });
   const adminUsersRepository = createLiveAdminUsersRepository({ sqlResolver });
   const agentProfileRepository = createLiveAgentProfileRepository(sqlResolver);
   const folderProvider = createLiveFolderProvider(sqlResolver);
@@ -426,9 +441,20 @@ function createSessionResourceAccessRepository(
       };
     },
     async listFoldersForAccess() {
-      const rows = await (await sqlResolver.resolveSql())`
-        SELECT id, parent_folder_id, settings FROM folders
-      `;
+      const sql = await sqlResolver.resolveSql();
+      const rows = await sql`SELECT id, parent_folder_id, settings FROM folders`;
+      return rows.flatMap(folderAccessRecord);
+    },
+    async listFoldersForSearchAccess(statementTimeoutMs) {
+      const sql = await sqlResolver.resolveSql();
+      const rows = sql.begin === undefined
+        ? await sql`SELECT id, parent_folder_id, settings FROM folders`
+        : await sql.begin(async (transaction) => {
+          await transaction`SELECT set_config(
+            'statement_timeout', ${`${statementTimeoutMs}ms`}, true
+          )`;
+          return await transaction`SELECT id, parent_folder_id, settings FROM folders`;
+        });
       return rows.flatMap(folderAccessRecord);
     },
   };

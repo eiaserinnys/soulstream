@@ -7,7 +7,7 @@ import {
 } from "./useSessionSearch";
 
 describe("buildSessionSearchUrl", () => {
-  it("preserves the existing request shape when derived-text scopes are off", () => {
+  it("requests product session results without changing the existing search filters", () => {
     const url = new URL(
       buildSessionSearchUrl("needle", DEFAULT_SEARCH_FILTERS, 20),
       "https://dashboard.test",
@@ -17,6 +17,7 @@ describe("buildSessionSearchUrl", () => {
       q: "needle",
       top_k: "20",
       search_session_id: "true",
+      include_session_results: "true",
       event_categories: "messages,responses",
     });
   });
@@ -36,5 +37,6 @@ describe("buildSessionSearchUrl", () => {
     expect(url.searchParams.get("include_turn_summaries")).toBe("true");
     expect(url.searchParams.has("include_highlight")).toBe(false);
     expect(url.searchParams.get("include_story")).toBe("true");
+    expect(url.searchParams.get("include_session_results")).toBe("true");
   });
 });

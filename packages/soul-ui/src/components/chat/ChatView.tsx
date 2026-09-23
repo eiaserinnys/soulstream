@@ -98,7 +98,12 @@ export function ChatView({
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
-  const focusEventId = useDashboardStore((s) => s.focusEventId);
+  const focusEventId = useDashboardStore((s) => (
+    s.focusEventSessionId === null || s.focusEventSessionId === s.activeSessionKey
+      ? s.focusEventId
+      : null
+  ));
+  const focusEventRequestId = useDashboardStore((s) => s.focusEventRequestId);
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   /**
    * 채팅창 좌표 정본 — store에서 직접 select.
@@ -148,6 +153,12 @@ export function ChatView({
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
   const handledFocusRef = useRef<number | null>(null);
+  const focusRingOwnersRef = useRef(new WeakMap<HTMLElement, number>());
+  const focusScrollRetryRef = useRef<{
+    key: string | null;
+    attempts: number;
+    frame: number | null;
+  }>({ key: null, attempts: 0, frame: null });
   const bottomFocusedSessionRef = useRef<string | null>(null);
   const initialBottomFocusPendingSessionRef = useRef<string | null>(
     activeSessionKey,
@@ -276,16 +287,75 @@ export function ChatView({
     scrollerRef,
     bindScrollerElement,
     scheduleVisuallyFirstItem,
+    cancelPendingRetention,
   } = useChatViewportRetention({
     activeSessionKey,
     grouped: timelineItems,
     firstItemIndex,
     isFollowing,
+    isExplicitEventFocus: focusEventId !== null,
     recordFirstVisibleKey,
     onUserViewportInput: handleUserViewportInput,
   });
+  const retryFocusScroll = useCallback(() => {
+    if (activeSessionKey === null || focusEventId === null) return;
+    const requestKey = `${activeSessionKey}:${focusEventId}:${focusEventRequestId}`;
+    const retry = focusScrollRetryRef.current;
+    if (retry.key !== requestKey) {
+      retry.key = requestKey;
+      retry.attempts = 0;
+    }
+    if (retry.frame !== null || retry.attempts >= 3) return;
+    retry.attempts += 1;
+    retry.frame = window.requestAnimationFrame(() => {
+      retry.frame = null;
+      const state = useDashboardStore.getState();
+      if (
+        state.activeSessionKey !== activeSessionKey
+        || state.focusEventId !== focusEventId
+        || state.focusEventSessionId !== activeSessionKey
+        || state.focusEventRequestId !== focusEventRequestId
+      ) return;
+      const targetIndex = findFocusIndex(timelineItems, focusEventId);
+      if (targetIndex < 0) return;
+      cancelPendingRetention();
+      virtuosoRef.current?.scrollToIndex({
+        // scrollToIndex addresses the current data array. firstItemIndex only
+        // shifts the stable keys used when prepending older history.
+        index: targetIndex,
+        align: "center",
+      });
+    });
+  }, [activeSessionKey, cancelPendingRetention, focusEventId, focusEventRequestId, timelineItems]);
+  useEffect(() => () => {
+    const frame = focusScrollRetryRef.current.frame;
+    if (frame !== null) window.cancelAnimationFrame(frame);
+    focusScrollRetryRef.current = { key: null, attempts: 0, frame: null };
+  }, [activeSessionKey, focusEventId]);
   const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef, historyEnabled);
   requestOlderRef.current = history.requestOlder;
+  useEffect(() => {
+    if (activeSessionKey === null || focusEventId === null) return;
+    if (findFocusIndex(timelineItems, focusEventId) >= 0) return;
+    if (
+      history.reachedTop
+      || history.loading
+      || !history.canLoadOlder
+      || history.blockedReason === "error"
+    ) return;
+    // Search navigation is explicit intent to inspect an older event. Fetch one
+    // page at a time until it appears; an error still requires the existing retry.
+    history.requestOlder("manual");
+  }, [
+    activeSessionKey,
+    focusEventId,
+    history.blockedReason,
+    history.canLoadOlder,
+    history.loading,
+    history.reachedTop,
+    history.requestOlder,
+    timelineItems,
+  ]);
   const requestOlderManually = useCallback(() => {
     clearOlderHistoryIntent();
     initialBottomFocusPendingSessionRef.current = null;
@@ -402,17 +472,16 @@ export function ChatView({
     scrollToBottomWithBehavior,
   ]);
 
-  // 세션 변경 시: follow 리셋 + 이전 세션의 focusEventId 잔재 정리.
-  // 다른 세션에 우연히 같은 eventId가 존재하면 엉뚱한 메시지를 하이라이트할 수 있으므로
-  // 세션이 바뀌는 순간 focusEventId와 handledFocusRef를 모두 비운다.
+  // 세션 변경 시: follow 상태와 이미 처리한 포커스 요청을 초기화한다.
+  // focusEventId는 store 세션 전환에서 함께 초기화되며, 새 세션의 검색 포커스는
+  // sessionId로 연결되어 이 effect가 같은 commit의 새 요청을 지우지 않는다.
   // 실제 스크롤 위치 리셋은 Virtuoso `key={activeSessionKey}` 재마운트로 처리된다.
   useEffect(() => {
     isFollowingRef.current = true;
     setIsFollowing(true);
     setShowNewMessage(false);
-    setFocusEventId(null);
     handledFocusRef.current = null;
-  }, [activeSessionKey, setFocusEventId]);
+  }, [activeSessionKey]);
 
   // 검색 결과 클릭 시: focusEventId에 해당하는 메시지로 스크롤.
   // 하이라이트는 itemsRendered 콜백에서 DOM 쿼리 후 적용.
@@ -422,17 +491,18 @@ export function ChatView({
     if (targetIndex < 0) return; // 다음 treeVersion tick에서 재시도
     // 검색 결과 이동은 사용자의 명시적 과거 탐색이다. history pagination 의도를
     // 만들지는 않지만, follow/초기 bottom 보정과는 경쟁하지 않게 먼저 해제한다.
+    cancelPendingRetention();
     clearOlderHistoryIntent();
     initialBottomFocusPendingSessionRef.current = null;
     bottomFocusedSessionRef.current = activeSessionKey;
     isFollowingRef.current = false;
     setIsFollowing(false);
     virtuosoRef.current?.scrollToIndex({
-      index: targetIndex + firstItemIndex,
+      index: targetIndex,
       align: "center",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusEventId, treeVersion, timelineItems, firstItemIndex]);
+  }, [cancelPendingRetention, focusEventId, focusEventRequestId, treeVersion, timelineItems]);
 
   const scrollToBottom = useCallback(() => {
     clearOlderHistoryIntent();
@@ -534,6 +604,14 @@ export function ChatView({
           <SessionStoryDisclosure sessionId={activeSessionKey} />
         </div>
       )}
+      {focusEventId !== null
+        && history.reachedTop
+        && !history.loading
+        && findFocusIndex(timelineItems, focusEventId) < 0 && (
+          <div role="alert" className="shrink-0 px-3 pb-2 text-center text-sm text-accent-red">
+            검색 결과 이벤트를 대화에서 찾을 수 없습니다.
+          </div>
+        )}
       {timelineItems.length === 0 && (
         <>
           <ChatHistoryStatus
@@ -618,18 +696,33 @@ export function ChatView({
           // 끄므로 과거 탐색 중인 viewport와 경쟁하지 않는다.
           maintainBottomIfFollowing();
           if (focusEventId == null) return;
-          // 이미 이 focusEventId를 처리했다면 중복 예약 방지
-          if (handledFocusRef.current === focusEventId) return;
+          // 새 요청은 같은 이벤트 ID를 다시 선택해도 처리한다.
+          if (handledFocusRef.current === focusEventRequestId) return;
           // scrollerRef로 virtuoso 내부 스크롤러 DOM 범위 한정 (document 전역 쿼리 금지)
           const el = scrollerRef.current?.querySelector(
             `[data-tree-node-id$="-${focusEventId}"]`,
           ) as HTMLElement | null;
-          if (!el) return;
-          handledFocusRef.current = focusEventId;
+          if (!el) {
+            retryFocusScroll();
+            return;
+          }
+          handledFocusRef.current = focusEventRequestId;
+          const requestId = focusEventRequestId;
+          focusRingOwnersRef.current.set(el, requestId);
           el.classList.add("chat-focus-ring");
           window.setTimeout(() => {
-            el.classList.remove("chat-focus-ring");
-            setFocusEventId(null);
+            if (focusRingOwnersRef.current.get(el) === requestId) {
+              el.classList.remove("chat-focus-ring");
+              focusRingOwnersRef.current.delete(el);
+            }
+            const currentFocus = useDashboardStore.getState();
+            if (
+              currentFocus.focusEventId === focusEventId
+              && currentFocus.focusEventSessionId === activeSessionKey
+              && currentFocus.focusEventRequestId === requestId
+            ) {
+              setFocusEventId(null);
+            }
           }, 2000);
         }}
           className="flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"

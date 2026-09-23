@@ -14,6 +14,7 @@ import {
 import type {
   SearchNavigationResult,
   SearchResultItem,
+  SearchSessionResult,
 } from "../hooks/useSessionSearch";
 
 const searchHarness = vi.hoisted(() => ({
@@ -36,6 +37,11 @@ const searchHarness = vi.hoisted(() => ({
       task_page_id: string;
     }
   >,
+  sessionResults: [] as SearchSessionResult[],
+  searchStatus: null as null | {
+    search?: { status: "partial"; stage: "lexical" | "semantic" | "navigation"; reason: "timeout" | "cancelled" };
+    query_expansion?: { status: "expanded" | "skipped" | "partial"; reason?: string; latency_ms: number };
+  },
   search: vi.fn(),
   clear: vi.fn(),
   currentSearchFlowId: vi.fn(() => "search-flow-1"),
@@ -45,6 +51,8 @@ vi.mock("../hooks/useSessionSearch", () => ({
   useSessionSearch: () => ({
     results: searchHarness.results,
     navigationResults: searchHarness.navigationResults,
+    sessionResults: searchHarness.sessionResults,
+    searchStatus: searchHarness.searchStatus,
     loading: false,
     error: null,
     search: searchHarness.search,
@@ -150,6 +158,8 @@ describe("SearchModal", () => {
     useDashboardStore.getState().reset();
     searchHarness.results = [];
     searchHarness.navigationResults = [];
+    searchHarness.sessionResults = [];
+    searchHarness.searchStatus = null;
     searchHarness.search.mockReset();
     searchHarness.clear.mockReset();
   });
@@ -261,6 +271,94 @@ describe("SearchModal", () => {
     expect(useDashboardStore.getState().selectedFolderId).toBe("current-folder");
     expect(useDashboardStore.getState().activeSessionKey).toBe("current-session");
     expect(useDashboardStore.getState().focusEventId).toBeNull();
+  });
+
+  it("shows one session row instead of duplicating its event row and opens its exact best event", async () => {
+    const target = makeSession("target-session", "target-folder");
+    const onOpenSession = vi.fn().mockResolvedValue(true);
+    searchHarness.sessionResults = [{
+      session_id: "target-session",
+      title: "Target work",
+      excerpt: "Related work excerpt",
+      updated_at: "2026-09-23T00:00:00Z",
+      task_id: "task-a",
+      task_title: "Linked task",
+      parent_session_id: null,
+      best_match: { event_id: 42, match_source: "message", excerpt: "Related work excerpt" },
+      evidence: [{ source: "message", event_id: 42, excerpt: "Related work excerpt" }],
+      session_url: "/?session=target-session&event=42",
+    }];
+    searchHarness.results = [{
+      session_id: "target-session",
+      event_id: 42,
+      score: 1,
+      preview: "Related work excerpt",
+      event_type: "user_message",
+      match_source: "message",
+    }];
+
+    ({ container, root } = renderSearchModal({ sessions: [target], onOpenSession }));
+
+    expect(document.body.querySelectorAll('[data-testid="session-search-result"]')).toHaveLength(1);
+    expect(document.body.textContent).toContain("Linked task");
+    clickResult("Related work excerpt");
+    await vi.waitFor(() => expect(onOpenSession).toHaveBeenCalledWith(
+      "target-session",
+      42,
+      expect.objectContaining({ agentSessionId: "target-session" }),
+    ));
+  });
+
+  it("shows an incomplete-search message instead of implying a completed zero-result search", () => {
+    searchHarness.searchStatus = {
+      search: { status: "partial", stage: "lexical", reason: "timeout" },
+      query_expansion: { status: "partial", reason: "timeout", latency_ms: 0 },
+    };
+
+    ({ container, root } = renderSearchModal());
+    const input = document.querySelector<HTMLInputElement>("input[type='text']");
+    if (!input) throw new Error("SearchModal 검색 입력창이 없습니다.");
+    setTextInputValue(input, "needle");
+
+    expect(document.body.textContent).toContain("검색을 완료하지 못했습니다. 다시 검색해 주세요.");
+    expect(document.body.textContent).not.toContain("검색 결과가 없습니다");
+  });
+
+  it("query expansion 부분 실패도 완료된 0건으로 표시하지 않는다", () => {
+    searchHarness.searchStatus = {
+      query_expansion: { status: "partial", reason: "configuration", latency_ms: 0 },
+    };
+
+    ({ container, root } = renderSearchModal());
+    const input = document.querySelector<HTMLInputElement>("input[type='text']");
+    if (!input) throw new Error("SearchModal 검색 입력창이 없습니다.");
+    setTextInputValue(input, "needle");
+
+    expect(document.body.textContent).toContain("검색을 완료하지 못했습니다. 다시 검색해 주세요.");
+    expect(document.body.textContent).not.toContain("검색 결과가 없습니다");
+  });
+
+  it("keeps the search open when the host refuses to open a session result", async () => {
+    const onOpenChange = vi.fn();
+    const onOpenSession = vi.fn().mockResolvedValue(false);
+    searchHarness.sessionResults = [{
+      session_id: "missing-session",
+      title: "Missing session",
+      excerpt: "Cannot be opened",
+      updated_at: null,
+      task_id: null,
+      task_title: null,
+      parent_session_id: null,
+      best_match: { event_id: null, match_source: "session_title", excerpt: "Cannot be opened" },
+      evidence: [],
+      session_url: "/?session=missing-session",
+    }];
+
+    ({ container, root } = renderSearchModal({ onOpenChange, onOpenSession }));
+    clickResult("Cannot be opened");
+    await vi.waitFor(() => expect(onOpenSession).toHaveBeenCalledTimes(1));
+
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
   it("opens project and task title results through the existing dashboard store", () => {

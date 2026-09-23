@@ -105,6 +105,9 @@ describe("orch-server-ts config scaffold", () => {
       environment: "production",
       claude_oauth_client_id: "claude-client",
       claude_oauth_callback_url: "https://example.com/claude/callback",
+      model_catalog_path: null,
+      search_query_expansion_preset_id: null,
+      search_query_expansion_effort: null,
       turn_summary_openai_key: "turn-summary-key",
       usage_summary_poll_interval_seconds: 300,
       soul_runner_process_enabled: true,
@@ -210,6 +213,20 @@ describe("orch-server-ts config scaffold", () => {
       ...minimalEnvironment(),
       ENVIRONMENT: "production",
     })).toThrow(/CORS_ALLOWED_ORIGINS/);
+  });
+
+  it("maps search expansion model settings independently of turn summaries", () => {
+    const config = loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      MODEL_CATALOG_PATH: "config/model-catalog.yaml",
+      SEARCH_QUERY_EXPANSION_PRESET_ID: "catalog-preset",
+      SEARCH_QUERY_EXPANSION_EFFORT: "max",
+    });
+
+    expect(config.model_catalog_path).toBe("config/model-catalog.yaml");
+    expect(config.search_query_expansion_preset_id).toBe("catalog-preset");
+    expect(config.search_query_expansion_effort).toBe("max");
+    expect(config.turn_summary_openai_key).toBe("");
   });
 
   it("requires a production bearer while preserving explicit development unauthenticated mode", () => {

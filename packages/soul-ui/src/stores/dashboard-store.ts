@@ -133,6 +133,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           set({
             ...initialStateSnapshot,
             processingCtx: createProcessingContext(),
+            focusEventRequestId: get().focusEventRequestId + 1,
           });
         },
       };

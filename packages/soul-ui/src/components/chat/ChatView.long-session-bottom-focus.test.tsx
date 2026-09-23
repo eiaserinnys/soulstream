@@ -17,6 +17,8 @@ const virtuosoMock = vi.hoisted(() => ({
   notifyViewportGeometry: vi.fn(),
   blockedReason: null as "cap" | "error" | null,
   canLoadOlder: false,
+  historyLoading: false,
+  reachedTop: false,
   props: null as Record<string, unknown> | null,
 }));
 
@@ -77,8 +79,8 @@ vi.mock("react-virtuoso", async () => {
 
 vi.mock("./useMessageHistoryBuffer", () => ({
   useMessageHistoryBuffer: () => ({
-    loading: false,
-    reachedTop: false,
+    loading: virtuosoMock.historyLoading,
+    reachedTop: virtuosoMock.reachedTop,
     canLoadOlder: virtuosoMock.canLoadOlder,
     blockedReason: virtuosoMock.blockedReason,
     requestOlder: virtuosoMock.requestOlder,
@@ -255,6 +257,8 @@ describe("ChatView long-session initial bottom focus", () => {
     virtuosoMock.notifyViewportGeometry.mockClear();
     virtuosoMock.blockedReason = null;
     virtuosoMock.canLoadOlder = false;
+    virtuosoMock.historyLoading = false;
+    virtuosoMock.reachedTop = false;
     virtuosoMock.props = null;
   });
 
@@ -1057,8 +1061,6 @@ describe("ChatView long-session initial bottom focus", () => {
     const nativeScrollTo = vi.fn();
     scroller.scrollTo = nativeScrollTo;
     const targetDataIndex = findDataIndexByKey("user-msg-1000");
-    const firstItemIndex = virtuosoMock.props?.firstItemIndex as number;
-
     flushSync(() => {
       useDashboardStore.getState().setFocusEventId(1000);
     });
@@ -1066,7 +1068,7 @@ describe("ChatView long-session initial bottom focus", () => {
 
     expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(1);
     expect(virtuosoMock.scrollToIndex).toHaveBeenCalledWith({
-      index: firstItemIndex + targetDataIndex,
+      index: targetDataIndex,
       align: "center",
     });
     expect(
@@ -1077,8 +1079,134 @@ describe("ChatView long-session initial bottom focus", () => {
     (virtuosoMock.props?.itemsRendered as (() => void) | undefined)?.();
     (virtuosoMock.props?.totalListHeightChanged as (() => void) | undefined)?.();
 
-    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(1);
+    // The first virtual range may settle back to the previous viewport. The
+    // itemsRendered retry restores the explicit search target without following bottom.
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(2);
     expect(nativeScrollTo).not.toHaveBeenCalled();
+  });
+
+  it("이전 검색 이벤트의 highlight timeout은 새 검색 focus를 지우지 않는다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
+    useDashboardStore.getState().setFocusEventId(42, "sess-long");
+    ({ container, root } = await renderChatView());
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    const previousTarget = document.createElement("div");
+    previousTarget.dataset.treeNodeId = "user-msg-42";
+    scroller.appendChild(previousTarget);
+
+    vi.useFakeTimers();
+    try {
+      const itemsRendered = virtuosoMock.props?.itemsRendered as (() => void) | undefined;
+      if (!itemsRendered) throw new Error("Virtuoso itemsRendered callback이 없습니다.");
+      flushSync(() => itemsRendered());
+      expect(previousTarget.classList.contains("chat-focus-ring")).toBe(true);
+
+      flushSync(() => {
+        useDashboardStore.getState().setFocusEventId(7, "sess-long");
+      });
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(useDashboardStore.getState().focusEventId).toBe(7);
+      expect(useDashboardStore.getState().focusEventSessionId).toBe("sess-long");
+      expect(previousTarget.classList.contains("chat-focus-ring")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("같은 이벤트 재선택은 이전 highlight timer가 focus와 ring을 지우지 않는다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeUserMessage(7),
+      makeUserMessage(42),
+    ]);
+    useDashboardStore.getState().setFocusEventId(7, "sess-long");
+    ({ container, root } = await renderChatView());
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+    const eventSeven = document.createElement("div");
+    eventSeven.dataset.treeNodeId = "user-msg-7";
+    const eventFortyTwo = document.createElement("div");
+    eventFortyTwo.dataset.treeNodeId = "user-msg-42";
+    scroller.append(eventSeven, eventFortyTwo);
+
+    vi.useFakeTimers();
+    try {
+      const renderItems = () => {
+        const callback = virtuosoMock.props?.itemsRendered as (() => void) | undefined;
+        if (!callback) throw new Error("Virtuoso itemsRendered callback이 없습니다.");
+        flushSync(() => callback());
+      };
+      renderItems();
+      expect(eventSeven.classList.contains("chat-focus-ring")).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(500);
+      flushSync(() => useDashboardStore.getState().setFocusEventId(42, "sess-long"));
+      renderItems();
+      expect(eventFortyTwo.classList.contains("chat-focus-ring")).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(500);
+      flushSync(() => useDashboardStore.getState().setFocusEventId(7, "sess-long"));
+      renderItems();
+      expect(eventSeven.classList.contains("chat-focus-ring")).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(useDashboardStore.getState().focusEventId).toBe(7);
+      expect(eventSeven.classList.contains("chat-focus-ring")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("검색 focus는 현재 기록에 없는 이벤트를 찾을 때까지 과거 페이지를 불러온다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeUserMessage(1000),
+      makeAssistantMessage(1001),
+    ]);
+    virtuosoMock.canLoadOlder = true;
+    ({ container, root } = await renderChatView());
+    virtuosoMock.scrollToIndex.mockClear();
+
+    flushSync(() => {
+      useDashboardStore.getState().setFocusEventId(42);
+    });
+    await flushPassiveEffects();
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledWith("manual");
+    expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
+
+    flushSync(() => {
+      useDashboardStore.getState().processHistoryEvents([makeUserMessage(900)]);
+    });
+    await flushPassiveEffects();
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledTimes(2);
+
+    flushSync(() => {
+      useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
+    });
+    await flushPassiveEffects();
+
+    const targetIndex = findDataIndexByKey("user-msg-42");
+    expect(targetIndex).toBeGreaterThanOrEqual(0);
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledWith({
+      index: targetIndex,
+      align: "center",
+    });
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledTimes(2);
+  });
+
+  it("검색 focus 이벤트가 대화 기록에 없으면 기록 끝에서 명시적으로 알린다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    virtuosoMock.reachedTop = true;
+    ({ container, root } = await renderChatView());
+
+    flushSync(() => {
+      useDashboardStore.getState().setFocusEventId(42);
+    });
+    await flushPassiveEffects();
+
+    expect(container?.querySelector('[role="alert"]')?.textContent)
+      .toContain("검색 결과 이벤트를 대화에서 찾을 수 없습니다");
+    expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
   });
 
   it("검색 focus 이동은 아직 소비되지 않은 history 탐색 의도를 취소한다", async () => {

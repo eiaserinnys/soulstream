@@ -25,6 +25,7 @@ import { Search } from "lucide-react";
 import {
   useSessionSearch,
   type SearchResultItem,
+  type SearchSessionResult,
   type SearchFilters,
   type SearchMatchSource,
   type SearchNavigationResult,
@@ -156,6 +157,45 @@ function SearchResultRow({
   );
 }
 
+function SearchSessionResultRow({
+  result,
+  onClick,
+}: {
+  result: SearchSessionResult;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      data-testid="session-search-result"
+      data-session-id={result.session_id}
+      className={cn(
+        "w-full text-left px-3 py-2.5 rounded-lg border border-transparent",
+        "hover:bg-muted/60 hover:border-border transition-colors",
+        "focus:outline-none focus:bg-muted/60",
+      )}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className={SEARCH_RESULT_KIND_BADGE_CLASS}>세션</span>
+        <span className="text-sm text-foreground truncate">{result.title}</span>
+        {result.updated_at && (
+          <time className="text-xs text-muted-foreground ml-auto shrink-0">
+            {result.updated_at.slice(0, 10)}
+          </time>
+        )}
+      </div>
+      <p className="text-sm line-clamp-2 break-words text-muted-foreground">
+        {result.excerpt}
+      </p>
+      {result.task_title && (
+        <p className="mt-1 text-xs text-muted-foreground truncate">
+          업무 · {result.task_title}
+        </p>
+      )}
+    </button>
+  );
+}
+
 function nextAnimationFrame(): Promise<void> {
   return new Promise((resolve) => {
     if (typeof globalThis.requestAnimationFrame === "function") {
@@ -250,7 +290,7 @@ export function SearchModal({
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const openTaskBoard = useDashboardStore((s) => s.openTaskBoard);
-  const { results, navigationResults, loading, error, search, clear, currentSearchFlowId } =
+  const { results, navigationResults, sessionResults, searchStatus, loading, error, search, clear, currentSearchFlowId } =
     useSessionSearch();
   // 사용 로그: 결과 선택과 그 뒤의 화면 전환을 같은 검색에 묶는다.
   const trackUiEvent = useUiEventTracker();
@@ -346,7 +386,7 @@ export function SearchModal({
         setActiveSessionSummary(targetSummary);
       }
       setActiveSession(result.session_id);
-      setFocusEventId(focusEventId);
+      setFocusEventId(focusEventId, result.session_id);
       setActiveTab("chat");
       openResult = true;
     }
@@ -382,7 +422,61 @@ export function SearchModal({
     onOpenChange(false);
   };
 
-  const resultCount = results.length + navigationResults.length;
+  const handleSessionResultClick = async (result: SearchSessionResult, rank: number) => {
+    trackUiEvent("search_result_open", {
+      flowId: currentSearchFlowId() ?? "unknown",
+      target: { kind: "session", id: result.session_id },
+      attrs: { rank, resultKind: "session", matchSource: result.best_match.match_source },
+    });
+    markEntry("search");
+    const assignment = catalog?.sessions[result.session_id];
+    const summary = sessionById.get(result.session_id);
+    const targetSummary = summary && assignment
+      ? { ...summary, folderId: assignment.folderId, displayName: assignment.displayName }
+      : summary;
+    const opened = onOpenSession
+      ? await onOpenSession(
+        result.session_id,
+        result.best_match.event_id,
+        targetSummary,
+      )
+      : (() => {
+        if (targetSummary?.folderId !== undefined) selectFolder(targetSummary.folderId);
+        if (targetSummary) setActiveSessionSummary(targetSummary);
+        setActiveSession(result.session_id);
+        setFocusEventId(result.best_match.event_id, result.session_id);
+        setActiveTab("chat");
+        return true;
+      })();
+    if (opened === false) return;
+    onOpenChange(false);
+  };
+
+  const sessionResultIds = useMemo(
+    () => new Set(sessionResults.map((result) => result.session_id)),
+    [sessionResults],
+  );
+  const remainingEventResults = results.filter((result) => !sessionResultIds.has(result.session_id));
+  const resultCount = sessionResults.length + remainingEventResults.length + navigationResults.length;
+  const searchIncomplete = searchStatus?.search?.status === "partial"
+    || searchStatus?.query_expansion?.status === "partial";
+  const partialSearchMessage = searchStatus?.search?.status === "partial"
+    ? resultCount === 0
+      ? "검색을 완료하지 못했습니다. 다시 검색해 주세요."
+      : searchStatus.search.stage === "lexical"
+        ? "검색이 시간 제한에 걸려 완료되지 않았습니다. 받은 결과만 표시합니다."
+        : "검색이 시간 제한에 걸려 일부 결과만 표시합니다."
+    : searchStatus?.db_cancel === "failed"
+      ? "검색 요청 정리가 지연될 수 있습니다. 잠시 후 다시 검색해 주세요."
+    : searchStatus?.query_expansion?.status === "partial"
+      ? searchStatus.query_expansion.reason === "configuration"
+        ? "의미 검색 설정을 사용할 수 없어 원문 검색만 표시합니다."
+      : "의미 검색이 제한되어 원문 검색 결과를 함께 표시합니다."
+      : null;
+  const showPartialSearchBanner = !loading
+    && !error
+    && partialSearchMessage !== null
+    && !(resultCount === 0 && query.trim() && searchIncomplete);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -469,9 +563,17 @@ export function SearchModal({
             </div>
           )}
 
+          {showPartialSearchBanner && (
+            <div role="status" className="mb-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              {partialSearchMessage}
+            </div>
+          )}
+
           {!loading && !error && resultCount === 0 && query.trim() && (
             <div className="py-6 text-center text-sm text-muted-foreground">
-              검색 결과가 없습니다
+              {searchIncomplete
+                ? "검색을 완료하지 못했습니다. 다시 검색해 주세요."
+                : "검색 결과가 없습니다"}
             </div>
           )}
 
@@ -494,12 +596,19 @@ export function SearchModal({
                   onClick={() => handleNavigationClick(result, index)}
                 />
               ))}
-              {results.map((result, index) => (
+              {sessionResults.map((result, index) => (
+                <SearchSessionResultRow
+                  key={result.session_id}
+                  result={result}
+                  onClick={() => void handleSessionResultClick(result, navigationResults.length + index)}
+                />
+              ))}
+              {remainingEventResults.map((result, index) => (
                 <SearchResultRow
                   key={`${result.session_id}-${result.event_id}-${result.match_source}`}
                   result={result}
                   onClick={() =>
-                    handleResultClick(result, navigationResults.length + index)}
+                    handleResultClick(result, navigationResults.length + sessionResults.length + index)}
                 />
               ))}
             </div>

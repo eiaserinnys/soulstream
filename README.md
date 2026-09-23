@@ -156,6 +156,8 @@ The worker's required runtime settings are:
 
 The complete current key reference is [orch-server-ts/.env.example](orch-server-ts/.env.example); every assignment is deliberately value-free. The orchestrator requires `ENVIRONMENT`, `HOST`, `DATABASE_URL`, `CLAUDE_OAUTH_CLIENT_ID`, and `CLAUDE_OAUTH_CALLBACK_URL`. Production additionally requires a non-empty `AUTH_BEARER_TOKEN` and an explicit CORS origin policy. Development may deliberately leave the bearer empty. Set `DASHBOARD_DIR` to the built `unified-dashboard/dist` directory to serve the UI from the orchestrator.
 
+Session-search model configuration and the operator's release-time verification steps are documented in [orch-server-ts/docs/session-search-deployment.md](orch-server-ts/docs/session-search-deployment.md).
+
 Keep credentials in environment files or the process manager's secret configuration. Do not commit service tokens, OAuth secrets, database credentials, or provider credentials.
 
 ## Development

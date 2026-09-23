@@ -49,6 +49,39 @@ describe("feed unread coordinate", () => {
     expect(getRawReadAcknowledgementEventId({ ...base, feedLastEventId: 70 })).toBe(70);
   });
 });
+
+describe("session-scoped search event focus", () => {
+  it("associates the event with the selected session and clears it on session change", () => {
+    const store = useDashboardStore.getState();
+    store.setActiveSession("session-focus-a");
+    useDashboardStore.getState().setFocusEventId(42);
+
+    expect(useDashboardStore.getState()).toMatchObject({
+      focusEventId: 42,
+      focusEventSessionId: "session-focus-a",
+    });
+
+    useDashboardStore.getState().setActiveSession("session-focus-b");
+    expect(useDashboardStore.getState()).toMatchObject({
+      focusEventId: null,
+      focusEventSessionId: null,
+    });
+  });
+
+  it("gives repeated focus requests distinct IDs and advances the ID on store reset", () => {
+    const initialRequestId = useDashboardStore.getState().focusEventRequestId;
+    useDashboardStore.getState().setFocusEventId(7, "session-focus-a");
+    const firstRequestId = useDashboardStore.getState().focusEventRequestId;
+    useDashboardStore.getState().setFocusEventId(7, "session-focus-a");
+    const secondRequestId = useDashboardStore.getState().focusEventRequestId;
+
+    expect(firstRequestId).toBe(initialRequestId + 1);
+    expect(secondRequestId).toBe(firstRequestId + 1);
+
+    useDashboardStore.getState().reset();
+    expect(useDashboardStore.getState().focusEventRequestId).toBe(secondRequestId + 1);
+  });
+});
 import { filterSessionsInFolder, type SessionPage } from "../hooks/session-stream-helpers";
 import type {
   TextStartEvent,

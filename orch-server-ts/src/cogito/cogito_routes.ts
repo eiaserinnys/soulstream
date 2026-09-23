@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 export const AGGREGATE_SCHEMA_VERSION = "soulstream.reflect.aggregate.v1";
 export const DEFAULT_BRIEF_TIMEOUT_SECONDS = 5;
+export const COGITO_SEARCH_DEADLINE_MS = 4_700;
 
 export type CogitoNode = {
   id: string;
@@ -21,8 +22,12 @@ export type CogitoSearchParams = {
   include_turn_summaries: boolean;
   include_highlight: boolean;
   include_story: boolean;
+  include_session_results?: boolean;
+  readonly allowedFolderIds?: readonly string[];
   event_types?: string;
   event_categories?: string;
+  readonly signal?: AbortSignal;
+  readonly deadlineAt?: number;
 };
 
 export type CogitoSearchResult = Record<string, unknown>;
@@ -31,6 +36,21 @@ export type CogitoNavigationSearchResult = Record<string, unknown>;
 export type CogitoSearchResponse = {
   results: CogitoSearchResult[];
   navigation_results: CogitoNavigationSearchResult[];
+  session_results?: CogitoSearchResult[];
+  search_status?: {
+    search?: {
+      status: "partial";
+      stage: "lexical" | "semantic" | "navigation";
+      reason: "timeout" | "cancelled";
+    };
+    query_expansion: {
+      status: "expanded" | "skipped" | "partial";
+      reason?: "configuration" | "timeout" | "cancelled" | "model_error";
+      latency_ms: number;
+    };
+    search_latency_ms?: number;
+    db_cancel?: "failed";
+  };
 };
 
 export type CogitoSearchProvider = {
@@ -51,6 +71,7 @@ export type CogitoSearchAccessFilter = {
 
 export type CogitoSearchAccess = {
   restricted: boolean;
+  allowedFolderIds?: readonly string[];
 };
 
 export type CogitoSearchAccessProvider = {
@@ -58,6 +79,7 @@ export type CogitoSearchAccessProvider = {
   filterResults?: (input: {
     request: FastifyRequest;
     response: CogitoSearchResponse;
+    access: CogitoSearchAccess;
   }) => CogitoSearchResponse | Promise<CogitoSearchResponse>;
 };
 
@@ -116,11 +138,59 @@ export function registerCogitoRoutes(
     const query = parseSearchQuery(request.query);
     if (!query.ok) return routeError(reply, query.statusCode, query.detail);
 
-    const response = await options.searchProvider.search(query.value);
-    const access = await resolveSearchAccess(options, request);
-    return access.restricted
-      ? await filterRestrictedResults(options, request, response)
-      : response;
+    const deadlineAt = Date.now() + COGITO_SEARCH_DEADLINE_MS;
+    const controller = new AbortController();
+    const onRequestAborted = () => controller.abort();
+    const onResponseClosed = () => {
+      if (!reply.raw.writableFinished) controller.abort();
+    };
+    const deadlineTimer = setTimeout(() => controller.abort(), COGITO_SEARCH_DEADLINE_MS);
+    request.raw.once("aborted", onRequestAborted);
+    reply.raw.once("close", onResponseClosed);
+    try {
+      const access = await waitForCogitoSearchStep(
+        resolveSearchAccess(options, request),
+        controller.signal,
+      );
+      const response = await options.searchProvider.search({
+        ...query.value,
+        signal: controller.signal,
+        deadlineAt,
+        ...(access.restricted
+          ? { allowedFolderIds: access.allowedFolderIds ?? [] }
+          : {}),
+      });
+      const filtered = access.restricted
+        ? await waitForCogitoSearchStep(
+          filterRestrictedResults(options, request, response, access),
+          controller.signal,
+        )
+        : response;
+      const publicResponse = stripInternalSessionFolderIds(filtered);
+      return {
+        ...publicResponse,
+        results: publicResponse.results.slice(0, query.value.top_k),
+        navigation_results: publicResponse.navigation_results.slice(0, query.value.top_k),
+        ...(publicResponse.session_results === undefined
+          ? {}
+          : { session_results: publicResponse.session_results.slice(0, query.value.top_k) }),
+      };
+    } catch (error) {
+      if (isPostgresStatementTimeout(error)
+        && !request.raw.aborted
+        && !reply.raw.destroyed) {
+        return routeError(reply, 504, "Search access scope exceeded its database time limit");
+      }
+      if (!controller.signal.aborted) throw error;
+      if (!request.raw.aborted && !reply.raw.destroyed && Date.now() >= deadlineAt) {
+        return routeError(reply, 504, "Search access exceeded the request deadline");
+      }
+      return reply;
+    } finally {
+      clearTimeout(deadlineTimer);
+      request.raw.removeListener("aborted", onRequestAborted);
+      reply.raw.removeListener("close", onResponseClosed);
+    }
   });
 
   app.get("/cogito/briefs", async (request, reply) => {
@@ -133,6 +203,47 @@ export function registerCogitoRoutes(
       nowIso: options.nowIso ?? nowIso,
     });
   });
+}
+
+function isPostgresStatementTimeout(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && error.code === "57014";
+}
+
+function waitForCogitoSearchStep<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(new Error("Cogito search request was cancelled"));
+  }
+  let rejectOnAbort!: (error: Error) => void;
+  const aborted = new Promise<never>((_resolve, reject) => { rejectOnAbort = reject; });
+  const onAbort = () => rejectOnAbort(new Error("Cogito search request was cancelled"));
+  signal.addEventListener("abort", onAbort, { once: true });
+  return Promise.race([operation, aborted]).finally(() => {
+    signal.removeEventListener("abort", onAbort);
+  });
+}
+
+function stripInternalSessionFolderIds(
+  response: CogitoSearchResponse,
+): CogitoSearchResponse {
+  const stripFolderId = (result: CogitoSearchResult): CogitoSearchResult => {
+    const publicResult = { ...result };
+    delete publicResult.folder_id;
+    delete publicResult.folderId;
+    return publicResult;
+  };
+  return {
+    ...response,
+    results: response.results.map(stripFolderId),
+    ...(response.session_results === undefined
+      ? {}
+      : { session_results: response.session_results.map(stripFolderId) }),
+  };
 }
 
 export async function collectCogitoBriefs(
@@ -265,6 +376,7 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
   );
   const includeHighlight = booleanQuery(query, "include_highlight", false);
   const includeStory = booleanQuery(query, "include_story", false);
+  const includeSessionResults = booleanQuery(query, "include_session_results", false);
   if (includeTurnSummaries === undefined) {
     return {
       ok: false,
@@ -286,6 +398,13 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
       detail: "include_story must be a boolean",
     };
   }
+  if (includeSessionResults === undefined) {
+    return {
+      ok: false,
+      statusCode: 422,
+      detail: "include_session_results must be a boolean",
+    };
+  }
   const eventTypes = stringQuery(query, "event_types", { allowEmpty: true });
   const eventCategories = stringQuery(query, "event_categories", { allowEmpty: true });
   return {
@@ -297,6 +416,7 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
       include_turn_summaries: includeTurnSummaries,
       include_highlight: includeHighlight,
       include_story: includeStory,
+      include_session_results: includeSessionResults,
       ...(eventTypes !== undefined ? { event_types: eventTypes } : {}),
       ...(eventCategories !== undefined ? { event_categories: eventCategories } : {}),
     },
@@ -327,11 +447,12 @@ async function filterRestrictedResults(
   options: CogitoRouteOptions,
   request: FastifyRequest,
   response: CogitoSearchResponse,
+  access: CogitoSearchAccess,
 ): Promise<CogitoSearchResponse> {
   if (options.accessProvider?.filterResults === undefined) {
     throw new Error("Restricted Cogito search requires an access result filter");
   }
-  return options.accessProvider.filterResults({ request, response });
+  return options.accessProvider.filterResults({ request, response, access });
 }
 
 function errorNodeEntry(
