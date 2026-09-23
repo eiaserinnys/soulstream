@@ -153,7 +153,7 @@ export interface EngineExecuteParams {
   /**
    * 시스템 프롬프트. 백엔드별 지원 여부:
    * - Claude SDK: `ClaudeAgentOptions.system_prompt`로 직접 매핑.
-   * - **Codex SDK 0.130.0**: ThreadOptions에 표면 없음 — `CodexOptions.config.base_instructions`
+   * - **Codex SDK 0.155.1**: ThreadOptions에 표면 없음 — `CodexOptions.config.base_instructions`
    *   인스턴스 단위로만 주입 가능. *turn-level systemPrompt 미지원*. Codex 어댑터는
    *   본 옵션을 받으면 warn 로깅 후 *무시*. 호출자(B-3)가 prompt에 prepend하거나
    *   어댑터 재생성 필요.
@@ -356,7 +356,7 @@ export type EngineInterventionResult =
 /**
  * 백엔드가 turn 중 AskUserQuestion 같은 input request 응답 주입을 지원하면 구현.
  *
- * Codex SDK 0.130.0은 해당 표면이 없으므로 구현하지 않는다. 호출자는 capability
+ * Codex SDK 0.155.1은 해당 표면이 없으므로 구현하지 않는다. 호출자는 capability
  * presence로만 판단하여 Codex 경로로 respond가 새지 않게 한다.
  */
 export type InputResponseDeliveryStatus =

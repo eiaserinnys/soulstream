@@ -1,5 +1,9 @@
 export type LiveProviderWiringStatus = "implemented" | "stub" | "blocked";
 
+export type LiveProviderWiringCompositionOwner =
+  | "live-provider-factory"
+  | "production-composition";
+
 export type LiveProviderCutoverRisk = "low" | "medium" | "high";
 
 export type LiveProviderDependency =
@@ -20,6 +24,7 @@ export type LiveProviderDependency =
 export type LiveProviderWiringInventoryEntry = {
   readonly owner: string;
   readonly path: string;
+  readonly compositionOwner: LiveProviderWiringCompositionOwner;
   readonly status: LiveProviderWiringStatus;
   readonly source: string;
   readonly dependencies: readonly LiveProviderDependency[];

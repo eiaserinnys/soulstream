@@ -8,7 +8,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-ReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
+ReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh", "max"]
 ClaudePermissionMode = Literal[
     "default",
     "acceptEdits",

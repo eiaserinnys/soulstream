@@ -43,6 +43,7 @@ describe("resolveReasoningEffortForCreate", () => {
 
   it("lets an explicit supported value win over the preset default", () => {
     expect(resolveReasoningEffortForCreate(opus, "low")).toBe("low");
+    expect(resolveReasoningEffortForCreate(astra, "max")).toBe("max");
     expect(resolveReasoningEffortForCreate(astra, "ultra")).toBe("ultra");
   });
 
@@ -108,18 +109,19 @@ describe("resolveEffortPreset", () => {
 });
 
 describe("adapter boundary narrowing", () => {
-  it("passes values each SDK can express", () => {
+  it("passes values allowed by each SDK adapter", () => {
     expect(toClaudeSdkEffort("xhigh")).toBe("xhigh");
     expect(toClaudeSdkEffort("max")).toBe("max");
     expect(toCodexSdkEffort("xhigh")).toBe("xhigh");
     expect(toCodexSdkEffort("minimal")).toBe("minimal");
+    expect(toCodexSdkEffort("max")).toBe("max");
   });
 
-  it("drops values the SDK union cannot represent instead of casting", () => {
-    // Claude has no minimal/ultra; the legacy Codex SDK has no max/ultra.
+  it("drops values excluded by each SDK adapter instead of casting", () => {
+    // Claude cannot express minimal/ultra; Soulstream keeps Codex ultra out of
+    // its SDK transport policy even though the updated SDK type declares it.
     expect(toClaudeSdkEffort("minimal")).toBeUndefined();
     expect(toClaudeSdkEffort("ultra")).toBeUndefined();
-    expect(toCodexSdkEffort("max")).toBeUndefined();
     expect(toCodexSdkEffort("ultra")).toBeUndefined();
   });
 
@@ -172,8 +174,8 @@ describe("model catalog effort advertisement", () => {
   });
 
   it("narrows advertised efforts to what the active transport can carry", () => {
-    // The legacy Codex SDK transport cannot express max/ultra. Advertising them
-    // there would let the UI offer a value the engine then silently drops.
+    // The SDK transport can express max but not ultra. Advertisement must stay
+    // narrower than the app-server path when a preset advertises both.
     const yaml = `presets:
   - id: codex-5.6-sol
     label: Codex - 5.6 Sol
@@ -192,7 +194,7 @@ describe("model catalog effort advertisement", () => {
 
     const legacySdk = new ModelCatalog(path, undefined, nodeEffortCapabilities("sdk"));
     expect(legacySdk.advertise({})[0]?.supported_efforts).toEqual([
-      "low", "medium", "high", "xhigh",
+      "low", "medium", "high", "xhigh", "max",
     ]);
     expect(legacySdk.advertise({})[0]?.default_effort).toBe("xhigh");
 
@@ -202,9 +204,32 @@ describe("model catalog effort advertisement", () => {
       "ultra",
     )).toThrow(UnsupportedReasoningEffortError);
     expect(resolveReasoningEffortForCreate(
+      legacySdk.resolve("codex-5.6-sol"),
+      "max",
+    )).toBe("max");
+    expect(resolveReasoningEffortForCreate(
       appServer.resolve("codex-5.6-sol"),
       "ultra",
     )).toBe("ultra");
+  });
+
+  it("rejects max when the selected model preset does not advertise it", () => {
+    const yaml = `presets:
+  - id: codex-basic
+    label: Codex Basic
+    backend: codex
+    model: gpt-5.6-sol
+    supported_efforts: [low, medium, high, xhigh]
+    default_effort: xhigh
+`;
+    const path = join(mkdtempSync(join(tmpdir(), "effort-no-max-")), "c.yaml");
+    writeFileSync(path, yaml, "utf-8");
+    const catalog = new ModelCatalog(path, undefined, nodeEffortCapabilities("sdk"));
+
+    expect(() => resolveReasoningEffortForCreate(
+      catalog.resolve("codex-basic"),
+      "max",
+    )).toThrow(UnsupportedReasoningEffortError);
   });
 
   it("treats a default the transport cannot deliver as a configuration error", () => {
@@ -213,8 +238,8 @@ describe("model catalog effort advertisement", () => {
     label: P
     backend: codex
     model: gpt-5.6-sol
-    supported_efforts: [xhigh, max]
-    default_effort: max
+    supported_efforts: [xhigh, ultra]
+    default_effort: ultra
 `;
     const path = join(mkdtempSync(join(tmpdir(), "effort-transport2-")), "c.yaml");
     writeFileSync(path, yaml, "utf-8");
@@ -225,7 +250,7 @@ describe("model catalog effort advertisement", () => {
 
     // The same file is fine on a transport that can carry `max`.
     const appServer = new ModelCatalog(path, undefined, nodeEffortCapabilities("app-server"));
-    expect(appServer.advertise({})[0]?.default_effort).toBe("max");
+    expect(appServer.advertise({})[0]?.default_effort).toBe("ultra");
   });
 
   it("keeps serving the last good catalogue when a reload introduces one", () => {
@@ -246,8 +271,8 @@ describe("model catalog effort advertisement", () => {
     const catalog = new ModelCatalog(path, logger, nodeEffortCapabilities("sdk"));
     expect(catalog.list()[0]?.default_effort).toBe("xhigh");
 
-    writeFileSync(path, good.replace("default_effort: xhigh", "default_effort: max")
-      .replace("[xhigh]", "[xhigh, max]"), "utf-8");
+    writeFileSync(path, good.replace("default_effort: xhigh", "default_effort: ultra")
+      .replace("[xhigh]", "[xhigh, ultra]"), "utf-8");
     expect(catalog.list()[0]?.default_effort).toBe("xhigh");
   });
 

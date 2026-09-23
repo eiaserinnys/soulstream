@@ -8,13 +8,13 @@ soul-server의 POST /execute와 동일한 인터페이스를 제공한다.
 import asyncio
 import json
 import logging
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
-from soulstream_server.api.session_models import ClaudePermissionMode
+from soulstream_server.api.session_models import ClaudePermissionMode, ReasoningEffort
 from soulstream_server.api.node_utils import (
     find_session_node,
     http_exception_for_node_resume_runtime_error,
@@ -28,9 +28,6 @@ from soulstream_server.dashboard_access import (
 from soulstream_server.service.session_router import SessionRouter
 
 logger = logging.getLogger(__name__)
-
-ReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
-
 
 # --- Request Model ---
 
