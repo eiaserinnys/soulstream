@@ -6,6 +6,8 @@ settings:
 
 importers:
 
+  .: {}
+
   chrome-extension:
     devDependencies:
       typescript:
