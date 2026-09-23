@@ -642,7 +642,7 @@ async function createHarness(): Promise<{
       import.meta.url,
     )), "utf8");
     const migration = readFileSync(fileURLToPath(new URL(
-      "../../packages/db-schema/sql/migrations/096_session_search_reliability.sql",
+      "../../packages/db-schema/sql/migrations/097_session_search_reliability.sql",
       import.meta.url,
     )), "utf8");
     await bootstrap.unsafe(schema);
