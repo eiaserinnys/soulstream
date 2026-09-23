@@ -82,6 +82,8 @@ describe("createRunnerProcessRuntimeFactory", () => {
       releaseManifestId: "manifest-pinned",
       snapshotPath: "/release/sha-pinned/soul-server-ts",
       codexDetachedResultRetentionMs: 120_000,
+      codexAppServerRequestTimeoutMs: 45_000,
+      codexAppServerStartupTimeoutMs: 135_000,
     }));
   });
 
@@ -194,6 +196,8 @@ function runnerEnv() {
     CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: 16,
     CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: 1_800_000,
     CODEX_DETACHED_RESULT_RETENTION_MS: 120_000,
+    CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: 45_000,
+    CODEX_APP_SERVER_STARTUP_TIMEOUT_MS: 135_000,
     MCP_INTERNAL_PORT: 4308,
     MCP_PATH: "/mcp",
   };

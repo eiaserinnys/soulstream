@@ -38,6 +38,8 @@ export function createRunnerChildEngine(
         apiKey: process.env.CODEX_API_KEY,
         codexPathOverride: config.codexCliPath,
         processEnv: process.env,
+        requestTimeoutMs: config.codexAppServerRequestTimeoutMs,
+        startupRequestTimeoutMs: config.codexAppServerStartupTimeoutMs,
         internalMcpUrl: config.internalMcpUrl,
         codexDetachedResultRetentionMs: config.codexDetachedResultRetentionMs,
         ...(config.resolvedMcpServers

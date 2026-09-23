@@ -17,6 +17,8 @@ type EngineFactoryEnv = Pick<
   Env,
   | "CODEX_ADAPTER_MODE"
   | "CODEX_API_KEY"
+  | "CODEX_APP_SERVER_REQUEST_TIMEOUT_MS"
+  | "CODEX_APP_SERVER_STARTUP_TIMEOUT_MS"
   | "CLAUDE_SESSION_RUNTIME_V2_ENABLED"
   | "MCP_INTERNAL_PORT"
   | "MCP_PATH"
@@ -58,6 +60,8 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
             apiKey: env.CODEX_API_KEY,
             codexPathOverride: codexCliPath?.path,
             processEnv: codexProcessEnv,
+            requestTimeoutMs: env.CODEX_APP_SERVER_REQUEST_TIMEOUT_MS,
+            startupRequestTimeoutMs: env.CODEX_APP_SERVER_STARTUP_TIMEOUT_MS,
             internalMcpUrl: localInternalMcpUrl(
               env.MCP_INTERNAL_PORT,
               env.MCP_PATH,

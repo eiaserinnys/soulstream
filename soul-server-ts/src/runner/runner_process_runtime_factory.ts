@@ -54,6 +54,8 @@ type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_LEASE_TIMEOUT_MS"
   | "CODEX_ADAPTER_MODE"
   | "CODEX_DETACHED_RESULT_RETENTION_MS"
+  | "CODEX_APP_SERVER_REQUEST_TIMEOUT_MS"
+  | "CODEX_APP_SERVER_STARTUP_TIMEOUT_MS"
   | "CLAUDE_SESSION_RUNTIME_V2_ENABLED"
   | "CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS"
   | "CLAUDE_SESSION_RUNTIME_MAX_ENTRIES"
@@ -161,6 +163,10 @@ export function createRunnerProcessRuntimeFactory(
       codexCliPath: options.codexCliPath?.path,
       codexDetachedResultRetentionMs:
         options.env.CODEX_DETACHED_RESULT_RETENTION_MS,
+      codexAppServerRequestTimeoutMs:
+        options.env.CODEX_APP_SERVER_REQUEST_TIMEOUT_MS,
+      codexAppServerStartupTimeoutMs:
+        options.env.CODEX_APP_SERVER_STARTUP_TIMEOUT_MS,
       claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
       claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
       claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
