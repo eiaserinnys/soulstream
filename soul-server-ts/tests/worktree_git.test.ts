@@ -280,6 +280,34 @@ describe("WorktreeGit", () => {
     expect(realpathSync(link)).toBe(realpathSync(target));
   });
 
+  it("refuses to finish a partial removal when registration reappears", async () => {
+    const { projectsRoot, repo } = makeRepository();
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const created = await worktrees.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/partial-reappeared",
+      mode: "new",
+      worktreeId: "worktree-partial-reappeared",
+    });
+    const expectedSha = created.head;
+    await worktrees.remove({
+      repoId: "demo",
+      path: created.path,
+      worktreeId: "worktree-partial-reappeared",
+      managedPaths: [],
+    });
+    git(repo, "worktree", "add", created.path, "feature/partial-reappeared");
+
+    await expect(worktrees.finishPartialRemoval({
+      repoId: "demo",
+      path: created.path,
+      branch: "feature/partial-reappeared",
+      expectedSha,
+    })).rejects.toMatchObject({ code: "WORKTREE_REGISTRATION_CHANGED" });
+    expect(existsSync(created.path)).toBe(true);
+  });
+
   it("validates branch names before feeding update-ref stdin", async () => {
     const { projectsRoot } = makeRepository();
     const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
