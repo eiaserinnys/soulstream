@@ -261,6 +261,12 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     );
 $$;
 
+-- 512 Unicode code points cap a UTF-8 index key at 2048 bytes; predicates recheck the full key.
+CREATE OR REPLACE FUNCTION session_search_index_prefix(p_compact_key TEXT) RETURNS TEXT
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT left(coalesce(p_compact_key, ''), 512);
+$$;
+
 CREATE TABLE IF NOT EXISTS sessions (
     session_id              TEXT PRIMARY KEY,
     folder_id               TEXT REFERENCES folders(id),
@@ -302,11 +308,9 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS display_name_search_key TEXT
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS prompt_search_key TEXT
     GENERATED ALWAYS AS (session_search_compact(prompt)) STORED;
 CREATE INDEX IF NOT EXISTS idx_sessions_display_name_search_key
-    ON sessions(display_name_search_key text_pattern_ops)
-    WHERE display_name_search_key <> '';
+    ON sessions(session_search_index_prefix(display_name_search_key) text_pattern_ops);
 CREATE INDEX IF NOT EXISTS idx_sessions_prompt_search_key
-    ON sessions(prompt_search_key text_pattern_ops)
-    WHERE prompt_search_key <> '';
+    ON sessions(session_search_index_prefix(prompt_search_key) text_pattern_ops);
 
 -- 기존 테이블에 caller_session_id 컬럼 추가 (멱등)
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS caller_session_id TEXT;

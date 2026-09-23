@@ -91,6 +91,139 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     })).rejects.toMatchObject({ statusCode: 504 });
   });
 
+  it("rebuilds compact session indexes for long existing keys and keeps long searches writable", async () => {
+    const migration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/097_session_search_reliability.sql",
+      import.meta.url,
+    )), "utf8");
+    const existingPrompt = longMixedText("기존요청문검색표적", 5_000, 17);
+    const existingTitle = longMixedText("기존제목검색표적", 5_000, 29);
+    const insertedTitle = longMixedText("신규제목검색표적", 5_000, 43);
+    const insertedPrompt = longMixedText("신규요청검색표적", 5_000, 59);
+    const updatedTitle = longMixedText("수정제목검색표적", 5_000, 71);
+    const updatedPrompt = longMixedText("수정요청검색표적", 5_000, 83);
+
+    await sql.begin(async (tx) => {
+      await tx`DROP INDEX idx_sessions_display_name_search_key`;
+      await tx`DROP INDEX idx_sessions_prompt_search_key`;
+      await tx`
+        INSERT INTO sessions (session_id, folder_id, display_name, prompt, node_id, status)
+        VALUES (
+          'long-prompt-before-migration', 'folder-allowed', 'short prompt fixture',
+          ${existingPrompt}, 'fixture-node', 'completed'
+        )
+      `;
+      await tx.unsafe(migration);
+    });
+
+    const existingPromptChars = Array.from(existingPrompt);
+    const prefixCollisionPrompt = [
+      ...existingPromptChars.slice(0, 512),
+      existingPromptChars[512] === "가" ? "나" : "가",
+      ...existingPromptChars.slice(513),
+    ].join("");
+    await sql`
+      INSERT INTO sessions (session_id, folder_id, display_name, prompt, node_id, status)
+      VALUES (
+        'long-prompt-prefix-collision', 'folder-allowed', 'prefix collision fixture',
+        ${prefixCollisionPrompt}, 'fixture-node', 'completed'
+      )
+    `;
+
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
+    });
+    const searchSessions = async (query: string) => provider.search({
+      q: query,
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      allowedFolderIds: ["folder-allowed"],
+    });
+
+    const promptHit = await searchSessions("기존요청문검색표적");
+    expect(promptHit.session_results?.map((row) => row.session_id))
+      .toContain("long-prompt-before-migration");
+    for (const queryLength of [511, 512]) {
+      const boundaryHits = await searchSessions(existingPromptChars.slice(0, queryLength).join(""));
+      expect(boundaryHits.session_results?.map((row) => row.session_id)).toEqual(
+        expect.arrayContaining(["long-prompt-before-migration", "long-prompt-prefix-collision"]),
+      );
+    }
+    for (const queryLength of [513, 700]) {
+      const longQueryHits = await searchSessions(existingPromptChars.slice(0, queryLength).join(""));
+      expect(longQueryHits.session_results?.map((row) => row.session_id)).toContain(
+        "long-prompt-before-migration",
+      );
+      expect(longQueryHits.session_results?.map((row) => row.session_id)).not.toContain(
+        "long-prompt-prefix-collision",
+      );
+    }
+    await sql`SET enable_seqscan = off`;
+    const promptPlan = await sql`
+      EXPLAIN SELECT session_id FROM sessions
+      WHERE session_search_index_prefix(prompt_search_key)
+        LIKE session_search_index_prefix(session_search_compact(${"기존요청문검색표적"})) || '%'
+        AND prompt_search_key LIKE session_search_compact(${"기존요청문검색표적"}) || '%'
+    `;
+    await sql`RESET enable_seqscan`;
+    expect(promptPlan.map((row) => JSON.stringify(row)).join("\n"))
+      .toContain("idx_sessions_prompt_search_key");
+    const prefixSize = await sql`
+      SELECT octet_length(session_search_index_prefix(prompt_search_key)) AS size
+      FROM sessions WHERE session_id = 'long-prompt-before-migration'
+    `;
+    expect(Number(prefixSize[0]?.size)).toBeLessThanOrEqual(2_048);
+    expect((await sql`
+      SELECT prompt FROM sessions WHERE session_id = 'long-prompt-before-migration'
+    `)[0]?.prompt).toBe(existingPrompt);
+
+    await sql.begin(async (tx) => {
+      await tx`DROP INDEX idx_sessions_display_name_search_key`;
+      await tx`
+        INSERT INTO sessions (session_id, folder_id, display_name, prompt, node_id, status)
+        VALUES (
+          'long-title-before-migration', 'folder-allowed', ${existingTitle},
+          'short title fixture', 'fixture-node', 'completed'
+        )
+      `;
+      await tx.unsafe(migration);
+    });
+
+    const titleHit = await searchSessions("기존제목검색표적");
+    expect(titleHit.session_results?.map((row) => row.session_id))
+      .toContain("long-title-before-migration");
+    expect((await sql`
+      SELECT display_name FROM sessions WHERE session_id = 'long-title-before-migration'
+    `)[0]?.display_name).toBe(existingTitle);
+
+    await sql`
+      INSERT INTO sessions (session_id, folder_id, display_name, prompt, node_id, status)
+      VALUES (
+        'long-session-after-migration', 'folder-allowed', ${insertedTitle},
+        ${insertedPrompt}, 'fixture-node', 'completed'
+      )
+    `;
+    await sql`
+      UPDATE sessions SET display_name = ${updatedTitle}, prompt = ${updatedPrompt}
+      WHERE session_id = 'long-session-after-migration'
+    `;
+
+    const updatedTitleHit = await searchSessions("수정제목검색표적");
+    expect(updatedTitleHit.session_results?.map((row) => row.session_id))
+      .toContain("long-session-after-migration");
+    const updatedPromptHit = await searchSessions("수정요청검색표적");
+    expect(updatedPromptHit.session_results?.map((row) => row.session_id))
+      .toContain("long-session-after-migration");
+    expect((await sql`
+      SELECT display_name, prompt FROM sessions WHERE session_id = 'long-session-after-migration'
+    `)[0]).toMatchObject({ display_name: updatedTitle, prompt: updatedPrompt });
+  }, 30_000);
+
   it("projects the authorized primary task membership for a real session search", async () => {
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
@@ -675,6 +808,20 @@ async function waitForPostgres(sql: ReturnType<typeof postgres>): Promise<void> 
     }
   }
   throw lastError ?? new Error("PostgreSQL did not become ready");
+}
+
+function longMixedText(prefix: string, length: number, seed: number): string {
+  const alphabet = Array.from("가나다라마바사아자차카타파하거너더러머버서어저처커터퍼허0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
+  const chars = new Array<string>(length);
+  let state = seed >>> 0;
+  for (let index = 0; index < length; index += 1) {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    state >>>= 0;
+    chars[index] = alphabet[state % alphabet.length] ?? "가";
+  }
+  return `${prefix}${chars.join("")}`;
 }
 
 async function seedSearchFixtures(sql: ReturnType<typeof postgres>): Promise<void> {
