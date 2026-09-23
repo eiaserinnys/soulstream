@@ -23,6 +23,8 @@ export interface UseSessionProviderOptions {
   /** Hidden chat surfaces do not fetch or subscribe. */
   active?: boolean;
   getSessionProvider: () => SessionStorageProvider;
+  /** Recheck auth after a real session stream connection error. */
+  onConnectionError?: () => void;
 }
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -50,6 +52,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     cursorScope,
     active = true,
     getSessionProvider,
+    onConnectionError,
   } = options;
 
   const processEvents = useDashboardStore((state) => state.processEvents);
@@ -79,6 +82,8 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   const processingFailureAttemptRef = useRef(0);
   const processingFailureBoundaryRef = useRef<number | null>(null);
   const activeConnectionRef = useRef<ActiveDetailConnection | null>(null);
+  const onConnectionErrorRef = useRef(onConnectionError);
+  onConnectionErrorRef.current = onConnectionError;
 
   const clearTimersAndQueue = useCallback(() => {
     if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
@@ -365,6 +370,13 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
         useDashboardStore.getState().processingCtx.historySynced = false;
       }
       setStatus(nextStatus);
+      if (nextStatus === "error") {
+        try {
+          onConnectionErrorRef.current?.();
+        } catch (error) {
+          console.error("[useSessionProvider] Connection error callback failed:", error);
+        }
+      }
     };
 
     let unsubscribe: (() => void) | null = null;

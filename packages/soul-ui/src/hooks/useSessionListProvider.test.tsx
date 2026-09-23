@@ -67,11 +67,13 @@ function makeProvider(sessions: SessionSummary[]): SessionStorageProvider {
 function Probe({
   external,
   onSessions,
+  onConnectionError,
   provider,
   sessionIds,
 }: {
   external?: boolean;
   onSessions: (sessions: SessionSummary[]) => void;
+  onConnectionError?: () => void;
   provider: SessionStorageProvider;
   sessionIds?: readonly string[];
 }) {
@@ -85,6 +87,7 @@ function Probe({
     streamEnabled: false,
     initialCatalogLoadEnabled: false,
     folderCountsEnabled: false,
+    onConnectionError,
   });
   onSessions(sessions);
   return null;
@@ -130,6 +133,7 @@ describe("useSessionListProvider query overrides", () => {
 
   it("keeps a sidebar feed query on feedOnly even after the center selects a folder", async () => {
     const provider = makeProvider([makeSession("global-feed")]);
+    const onConnectionError = vi.fn();
     let latest: SessionSummary[] = [];
 
     flushSync(() => {
@@ -139,6 +143,7 @@ describe("useSessionListProvider query overrides", () => {
           { client: queryClient },
           createElement(Probe, {
             provider,
+            onConnectionError,
             onSessions: (value) => {
               latest = value;
             },
@@ -164,7 +169,7 @@ describe("useSessionListProvider query overrides", () => {
     expect(provider.fetchFolderCounts).not.toHaveBeenCalled();
     expect(initialCatalogLoadSpy).toHaveBeenCalledWith(false);
     expect(streamCacheSyncSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ enabled: false }),
+      expect.objectContaining({ enabled: false, onConnectionError }),
     );
   });
 

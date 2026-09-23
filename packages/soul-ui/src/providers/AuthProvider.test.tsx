@@ -9,6 +9,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthGate } from "../components/auth/AuthGate";
 import { AuthProvider, useAuth } from "./AuthProvider";
+import { useSessionStreamSSE } from "../hooks/useSessionStreamSSE";
+import { useSessionProvider } from "../hooks/useSessionProvider";
+import { sseSessionProvider } from "./SSESessionProvider";
+
+class FakeEventSource {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSED = 2;
+  static instances: FakeEventSource[] = [];
+
+  readyState = FakeEventSource.CONNECTING;
+  onopen: ((this: EventSource, event: Event) => unknown) | null = null;
+  onerror: ((this: EventSource, event: Event) => unknown) | null = null;
+  close = vi.fn(() => { this.readyState = FakeEventSource.CLOSED; });
+  addEventListener = vi.fn();
+
+  constructor(readonly url: string) {
+    FakeEventSource.instances.push(this);
+  }
+
+  emitConnectionError(): void {
+    this.onerror?.call(this as unknown as EventSource, new Event("error"));
+  }
+}
 
 function AuthProbe() {
   const auth = useAuth();
@@ -35,6 +59,26 @@ function AuthGateProbe() {
   );
 }
 
+function SessionStreamProbe({ streamType }: { streamType: "detail" | "catalog" }) {
+  const { refreshAuthStatus } = useAuth();
+  const onConnectionError = () => {
+    void refreshAuthStatus().catch(() => undefined);
+  };
+  useSessionStreamSSE({
+    enabled: streamType === "catalog",
+    urlBuilder: () => "/api/sessions/stream",
+    onConnectionError,
+  });
+  useSessionProvider({
+    sessionKey: "session-a",
+    getSessionProvider: () => sseSessionProvider,
+    active: streamType === "detail",
+    cursorScope: "https://dashboard.test|director@example.com",
+    onConnectionError,
+  });
+  return createElement("div", { "data-testid": "dashboard" }, "dashboard");
+}
+
 function authStatusResponse(authenticated: boolean): Response {
   return Response.json({
     authenticated,
@@ -47,6 +91,8 @@ describe("AuthProvider refresh boundary", () => {
   let root: Root;
 
   beforeEach(() => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -298,6 +344,89 @@ describe("AuthProvider refresh boundary", () => {
     expect(await response.json()).toEqual({ sessions: [], total: 0 });
     expect(statusReads).toBe(3);
     expect(sessionReads).toBe(2);
+  });
+
+  it.each(["detail", "catalog"] as const)(
+    "returns to the AuthGate login when the %s session stream expires without an HTTP request",
+    async (streamType) => {
+      let statusReads = 0;
+      vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/auth/config") {
+          return Response.json({ authEnabled: true, devModeEnabled: false });
+        }
+        if (url === "/api/auth/status") {
+          statusReads += 1;
+          return authStatusResponse(statusReads === 1);
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      }));
+
+      flushSync(() => {
+        root.render(createElement(AuthProvider, null,
+          createElement(AuthGate, {
+            loginTitle: "Soul Dashboard",
+            children: createElement(SessionStreamProbe, { streamType }),
+          }),
+        ));
+      });
+      await vi.waitFor(() => {
+        expect(container.querySelector("[data-testid=dashboard]")).not.toBeNull();
+        expect(FakeEventSource.instances).toHaveLength(1);
+      });
+
+      FakeEventSource.instances[0].emitConnectionError();
+
+      await vi.waitFor(() => {
+        expect(statusReads).toBe(2);
+        expect(container.querySelector("[data-testid=dashboard]")).toBeNull();
+        expect(container.querySelector("[data-testid=google-login-button]")).not.toBeNull();
+      });
+    },
+  );
+
+  it.each([
+    ["status 503", "503"],
+    ["status network failure", "network"],
+    ["authenticated status", "authenticated"],
+  ])("keeps the dashboard when session stream auth status is %s", async (_label, result) => {
+    let statusReads = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/auth/config") {
+        return Response.json({ authEnabled: true, devModeEnabled: false });
+      }
+      if (url === "/api/auth/status") {
+        statusReads += 1;
+        if (statusReads === 1 || result === "authenticated") {
+          return authStatusResponse(true);
+        }
+        if (result === "503") return Response.json({ detail: "Unavailable" }, { status: 503 });
+        throw new TypeError("offline");
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    flushSync(() => {
+      root.render(createElement(AuthProvider, null,
+        createElement(AuthGate, {
+          loginTitle: "Soul Dashboard",
+          children: createElement(SessionStreamProbe, { streamType: "detail" }),
+        }),
+      ));
+    });
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-testid=dashboard]")).not.toBeNull();
+      expect(FakeEventSource.instances).toHaveLength(1);
+    });
+
+    const eventSource = FakeEventSource.instances[0];
+    eventSource.emitConnectionError();
+
+    await vi.waitFor(() => expect(statusReads).toBe(2));
+    expect(container.querySelector("[data-testid=dashboard]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=google-login-button]")).toBeNull();
+    expect(eventSource.close).toHaveBeenCalledOnce();
   });
 
   it("shows the AuthGate login when auth config cannot be loaded", async () => {

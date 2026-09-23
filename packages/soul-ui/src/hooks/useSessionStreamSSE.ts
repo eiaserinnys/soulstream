@@ -86,6 +86,8 @@ export interface UseSessionStreamSSEOptions {
   onReplayGap?: (event: ReplayGapStreamEvent) => void;
   /** 타입별 캐시 처리가 끝난 뒤 호출되는 통합 관찰자. */
   onEvent?: (event: SessionStreamEvent) => void;
+  /** 실제 EventSource 연결 오류가 발생하면 호출한다. 서버 오류 이벤트는 제외한다. */
+  onConnectionError?: () => void;
 }
 
 /**
@@ -133,6 +135,12 @@ export function useSessionStreamSSE(options: UseSessionStreamSSEOptions): void {
     }
 
     eventSource.onerror = () => {
+      if (eventSourceRef.current !== eventSource) return;
+      try {
+        optionsRef.current.onConnectionError?.();
+      } catch (error) {
+        console.error("[SSE] Connection error callback failed:", error);
+      }
       if (eventSource.readyState === EventSource.CLOSED) {
         console.warn(
           "[SSE] EventSource CLOSED, reconnecting with backoff...",

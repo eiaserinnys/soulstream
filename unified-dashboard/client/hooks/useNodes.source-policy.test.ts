@@ -16,7 +16,7 @@ describe("useNodes source policy", () => {
 
   it("marks node state ready only after the first snapshot, not when the socket opens", () => {
     const source = readFileSync(SOURCE_PATH, "utf8");
-    const onOpen = source.match(/es\.onopen = \(\) => \{([\s\S]*?)\n      \};/)?.[1] ?? "";
+    const onOpen = source.match(/connection\.onopen = \(\) => \{([\s\S]*?)\n      \};/)?.[1] ?? "";
     const snapshot = source.match(/addEventListener\("snapshot", \(e\) => \{([\s\S]*?)\n      \}\);/)?.[1] ?? "";
 
     expect(onOpen).not.toContain('setConnectionStatus("connected")');
