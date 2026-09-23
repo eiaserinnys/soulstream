@@ -31,6 +31,20 @@ export function resolveStarredTaskBoundaryPageId(
   return nextPageIds[0] ?? null;
 }
 
+export function isStarredTaskBoundaryCurrent(input: {
+  expectedRefreshKey: number;
+  currentRefreshKey: number;
+  expectedCursor: string | null;
+  currentCursor: string | null;
+  expectedPageIds: readonly string[];
+  currentPageIds: readonly string[];
+}): boolean {
+  return input.expectedRefreshKey === input.currentRefreshKey
+    && input.expectedCursor === input.currentCursor
+    && input.expectedPageIds.length === input.currentPageIds.length
+    && input.expectedPageIds.every((pageId, index) => pageId === input.currentPageIds[index]);
+}
+
 export function disableStarredTaskPaginationAfterRefreshFailure<T extends { nextCursor: string | null }>(
   page: T,
 ): T {

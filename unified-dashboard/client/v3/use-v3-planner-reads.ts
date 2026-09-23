@@ -229,6 +229,7 @@ export function usePlannerCollections({
     dependencies,
     notify,
     starredTaskIndexRef,
+    starredRefreshKeyRef,
     stableStarredTasksRef,
     setStarredTaskIndex,
   });

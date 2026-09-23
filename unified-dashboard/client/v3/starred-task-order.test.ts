@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   disableStarredTaskPaginationAfterRefreshFailure,
+  isStarredTaskBoundaryCurrent,
   resolveStarredTaskBoundaryPageId,
   resolveStarredTaskBeforePageId,
   resolveStarredTaskDropBoundary,
@@ -45,6 +46,17 @@ describe("starred task order boundaries", () => {
       nextCursor: "opaque-cursor",
       fetchBoundaryPage: async () => ({ pageIds: [], nextCursor: null }),
     })).rejects.toThrow("경계");
+  });
+
+  it("rejects a stale boundary after a second-page reorder even when first-page IDs and cursor are unchanged", () => {
+    expect(isStarredTaskBoundaryCurrent({
+      expectedRefreshKey: 4,
+      currentRefreshKey: 5,
+      expectedCursor: "cursor-first-page",
+      currentCursor: "cursor-first-page",
+      expectedPageIds: ["a", "b"],
+      currentPageIds: ["a", "b"],
+    })).toBe(false);
   });
 
   it("reloads the first page after a failed save so optimistic order can roll back", async () => {

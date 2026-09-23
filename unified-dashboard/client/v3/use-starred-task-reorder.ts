@@ -16,6 +16,7 @@ import {
 } from "./planner-data";
 import {
   disableStarredTaskPaginationAfterRefreshFailure,
+  isStarredTaskBoundaryCurrent,
   resolveStarredTaskBeforePageId,
   saveStarredTaskOrderAndReload,
 } from "./starred-task-order";
@@ -30,12 +31,14 @@ export function useStarredTaskReorder({
   dependencies,
   notify,
   starredTaskIndexRef,
+  starredRefreshKeyRef,
   stableStarredTasksRef,
   setStarredTaskIndex,
 }: {
   dependencies: PlannerDataDependencies;
   notify(message: string): void;
   starredTaskIndexRef: CurrentRef<StarredTaskIndex>;
+  starredRefreshKeyRef: CurrentRef<number>;
   stableStarredTasksRef: CurrentRef<StarredPlannerTask[]>;
   setStarredTaskIndex: Dispatch<SetStateAction<StarredTaskIndex>>;
 }) {
@@ -47,6 +50,7 @@ export function useStarredTaskReorder({
   ) => {
     const original = starredTaskIndexRef.current;
     const data = original.data;
+    const refreshKey = starredRefreshKeyRef.current;
     const visibleTasks = stableStarredTasksRef.current;
     const visibleIds = visibleTasks.map((task) => starredTaskPage(task).id);
     const baseIds = data?.items.map((task) => starredTaskPage(task).id) ?? [];
@@ -89,11 +93,15 @@ export function useStarredTaskReorder({
           const next = await loadStarredTasks(dependencies, { cursor });
           const latestData = starredTaskIndexRef.current.data;
           if (
-            latestData?.nextCursor !== cursor
-            || !samePageIds(
-              latestData.items.map((task) => starredTaskPage(task).id),
-              visibleIds,
-            )
+            !latestData
+            || !isStarredTaskBoundaryCurrent({
+              expectedRefreshKey: refreshKey,
+              currentRefreshKey: starredRefreshKeyRef.current,
+              expectedCursor: data.nextCursor,
+              currentCursor: latestData.nextCursor,
+              expectedPageIds: visibleIds,
+              currentPageIds: latestData.items.map((task) => starredTaskPage(task).id),
+            })
           ) throw new Error("별표 목록 경계가 변경되었습니다.");
           return {
             pageIds: next.items.map((task) => starredTaskPage(task).id),
@@ -121,11 +129,14 @@ export function useStarredTaskReorder({
     const latestData = starredTaskIndexRef.current.data;
     if (
       !latestData
-      || latestData.nextCursor !== data.nextCursor
-      || !samePageIds(
-        latestData.items.map((task) => starredTaskPage(task).id),
-        visibleIds,
-      )
+      || !isStarredTaskBoundaryCurrent({
+        expectedRefreshKey: refreshKey,
+        currentRefreshKey: starredRefreshKeyRef.current,
+        expectedCursor: data.nextCursor,
+        currentCursor: latestData.nextCursor,
+        expectedPageIds: visibleIds,
+        currentPageIds: latestData.items.map((task) => starredTaskPage(task).id),
+      })
     ) {
       try {
         const fresh = await loadStarredTasks(dependencies, {});
@@ -174,7 +185,7 @@ export function useStarredTaskReorder({
       notify(`별표 순서는 저장됐지만 목록을 새로 불러오지 못했습니다 · ${errorText(result.reloadError)}`);
     }
     setStarredTasksReordering(false);
-  }, [dependencies, notify, setStarredTaskIndex, stableStarredTasksRef, starredTaskIndexRef]);
+  }, [dependencies, notify, setStarredTaskIndex, stableStarredTasksRef, starredRefreshKeyRef, starredTaskIndexRef]);
 
   return { starredTasksReordering, reorderStarredTasks };
 }
