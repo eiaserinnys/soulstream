@@ -2252,6 +2252,23 @@ async def test_event_search_uses_bm25_terms(test_db):
     assert [r["id"] for r in rows[:2]] == [1, 2]
     assert rows[0]["score"] > rows[1]["score"]
 
+    global_rows = await test_db.fetch(
+        "SELECT * FROM event_search($1, NULL, 50, $2, NULL, 1)",
+        "alpha beta", ["user_message"],
+    )
+    alpha_rows = await test_db.fetch(
+        "SELECT * FROM event_search($1, NULL, 50, $2)",
+        "alpha", ["user_message"],
+    )
+    beta_rows = await test_db.fetch(
+        "SELECT * FROM event_search($1, NULL, 50, $2)",
+        "beta", ["user_message"],
+    )
+    assert [r["id"] for r in global_rows] == [1]
+    assert global_rows[0]["score"] == pytest.approx(
+        alpha_rows[0]["score"] + beta_rows[0]["score"]
+    )
+
 
 async def test_event_search_matches_korean_prefix_inflections(test_db):
     await _create_session(test_db, "ev-ko-prefix")
