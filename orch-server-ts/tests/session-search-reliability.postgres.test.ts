@@ -424,7 +424,9 @@ describePostgres("session search reliability PostgreSQL integration", () => {
         ('fuzzy-title-postposition', 'folder-allowed', '🔗 피드·검색 세션의 업무 자동 선택 수정', '', 'fixture-node', 'completed'),
         ('fuzzy-title-order', 'folder-allowed', '⚙️ 260924 새벽 워크트리와 원격 브랜치 정리', '', 'fixture-node', 'completed'),
         ('fuzzy-title-session-search', 'folder-allowed', '🔍 세션 검색 개선 여지 점검', '', 'fixture-node', 'completed'),
-        ('fuzzy-prompt-omission', 'folder-allowed', '연결된 작업 메모', '실제 작업 세션 검색·재개 진단', 'fixture-node', 'completed')
+        ('fuzzy-prompt-omission', 'folder-allowed', '연결된 작업 메모', '실제 작업 세션 검색·재개 진단', 'fixture-node', 'completed'),
+        ('fuzzy-prompt-below-threshold', 'folder-allowed', '일부 단어만 겹치는 기록', '이전 세션 검색 기록', 'fixture-node', 'completed'),
+        ('fuzzy-prompt-many-terms', 'folder-allowed', '긴 검색어 fallback 확인', '하나 둘 셋 넷 다섯 여섯 일곱 기록', 'fixture-node', 'completed')
     `;
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
@@ -459,7 +461,48 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     expect(thirdTitle.session_results?.[0]?.session_id).toBe("fuzzy-title-session-search");
     const omitted = await search("재개 세션 검색 진단");
     expect(omitted.session_results?.map((row) => row.session_id))
-      .toContain("fuzzy-prompt-omission");
+      .not.toContain("fuzzy-prompt-omission");
+    expect(omitted.search_status?.session_sources?.metadata_prompt_tokens)
+      .toEqual({ status: "deferred" });
+
+    const expandedPromptProvider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
+      queryExpander: {
+        expand: async () => ({ queries: [], latencyMs: 1, skipped: true }),
+      },
+    });
+    const expandedPrompt = await expandedPromptProvider.search({
+      q: "재개 세션 검색 진단",
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      session_search_mode: "expanded",
+      allowedFolderIds: ["folder-allowed"],
+    });
+    expect(expandedPrompt.session_results?.[0]?.session_id).toBe("fuzzy-prompt-omission");
+    expect(expandedPrompt.session_results?.map((row) => row.session_id))
+      .not.toContain("fuzzy-prompt-below-threshold");
+    expect(expandedPrompt.search_status?.session_sources?.metadata_prompt_tokens)
+      .toBeUndefined();
+
+    const manyTermPrompt = await expandedPromptProvider.search({
+      q: "하나 둘 셋 넷 다섯 여섯 일곱 여덟 아홉",
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      session_search_mode: "expanded",
+      allowedFolderIds: ["folder-allowed"],
+    });
+    expect(manyTermPrompt.session_results?.[0]?.session_id)
+      .toBe("fuzzy-prompt-many-terms");
 
     await sql`SET enable_seqscan = off`;
     const plan = await sql`
@@ -470,6 +513,15 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     await sql`RESET enable_seqscan`;
     expect(plan.map((row) => JSON.stringify(row)).join("\n"))
       .toContain("idx_sessions_display_name_search_terms");
+    await sql`SET enable_seqscan = off`;
+    const promptPlan = await sql`
+      EXPLAIN SELECT session_id FROM sessions
+      WHERE session_search_tokens(prompt)
+        @> ARRAY['세션', '검색', '진단']::text[]
+    `;
+    expect(promptPlan.map((row) => JSON.stringify(row)).join("\n"))
+      .toContain("idx_sessions_prompt_search_terms");
+    await sql`RESET enable_seqscan`;
     expect(postposition.search_status?.session_sources?.original_body)
       .toEqual({ status: "deferred" });
   }, 30_000);
@@ -494,6 +546,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     expect(lexical.session_results).toEqual([]);
     expect(lexical.search_status?.session_sources).toEqual({
       metadata: { status: "complete" },
+      metadata_prompt_tokens: { status: "deferred" },
       original_body: { status: "deferred" },
       semantic_body: { status: "deferred" },
     });

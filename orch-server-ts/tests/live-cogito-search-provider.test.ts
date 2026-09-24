@@ -396,6 +396,69 @@ describe("live Cogito search provider", () => {
     expect(response.search_status?.search).toEqual({ status: "partial", stage: "semantic", reason: "timeout" });
   });
 
+  it("materializes prompt-token vectors and overlap before reuse in filter, score and order", async () => {
+    const harness = createSqlHarness(() => []);
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(harness.sql),
+      queryExpander: {
+        expand: async () => ({
+          queries: ["이어 하던 작업"],
+          latencyMs: 1,
+          skipped: false,
+        }),
+      },
+    });
+
+    await provider.search({
+      q: "예전 작업을 이어서",
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      include_session_results: true,
+      session_search_mode: "expanded",
+      allowedFolderIds: ["folder-allowed"],
+      session_filters: {
+        node_id: "node-allowed",
+        statuses: ["completed"],
+        updated_after: "2026-01-01T00:00:00.000Z",
+        backends: ["codex"],
+      },
+    });
+
+    const promptTokenCalls = harness.calls.filter((call) =>
+      call.text.includes("session_metadata") && call.text.includes("session_search_tokens(candidate.prompt)"));
+    expect(promptTokenCalls.length).toBeGreaterThan(0);
+    for (const call of promptTokenCalls) {
+      expect(call.text).toContain("query_terms AS MATERIALIZED");
+      expect(call.text).toContain("query_term_combinations AS");
+      expect(call.text).toContain("indexed_prompt_candidates AS MATERIALIZED");
+      expect(call.text).toContain("filtered_prompt_candidates AS MATERIALIZED");
+      expect(call.text).toContain("tokenized_prompt_candidates AS MATERIALIZED");
+      expect(call.text).toContain("scored_prompt_candidates AS MATERIALIZED");
+      expect(call.text).toContain("session_search_tokens(candidate.prompt) @>");
+      expect(call.text).toContain("cardinality(query.terms) > 8");
+      expect(call.text).toContain("session_search_tokens(candidate.prompt) && query.terms");
+      expect(call.text).toMatch(/candidate\.overlap_count\s+>=\s+GREATEST\(/);
+      expect(call.text).toMatch(/candidate\.overlap_count::double precision\s*\/\s*NULLIF\(cardinality\(candidate\.query_terms\), 0\)/);
+      expect(call.text).toMatch(/ORDER BY candidate\.overlap_count::double precision\s*\/\s*cardinality\(candidate\.query_terms\) DESC/);
+      expect(call.text.match(/session_search_tokens\(candidate\.prompt\)/g))
+        .toHaveLength(3);
+      expect(call.text).toContain("candidate.folder_id = ANY");
+      expect(call.text).toContain("candidate.node_id =");
+      expect(call.text).toContain("candidate.status = ANY");
+      expect(call.text).toContain("candidate.updated_at >=");
+      expect(call.text).toContain("candidate.model_preset");
+      expect(call.text.indexOf("candidate.folder_id = ANY"))
+        .toBeLessThan(call.text.indexOf("tokenized_prompt_candidates AS MATERIALIZED"));
+      expect(call.text.indexOf("candidate.updated_at >="))
+        .toBeLessThan(call.text.indexOf("LIMIT $7::integer"));
+      expect(call.text.match(/SELECT COUNT\(\*\)::integer\s+FROM unnest/g))
+        .toHaveLength(1);
+    }
+  });
+
   it("keeps long original queries on the exact/prefix path in lexical and expanded search", async () => {
     const harness = createSqlHarness(() => []);
     const provider = createLiveCogitoSearchProvider({
