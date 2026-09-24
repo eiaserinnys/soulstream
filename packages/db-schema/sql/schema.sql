@@ -267,6 +267,23 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT left(coalesce(p_compact_key, ''), 512);
 $$;
 
+CREATE OR REPLACE FUNCTION session_search_tokens(p_text TEXT) RETURNS TEXT[]
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    WITH normalized AS (
+        SELECT lower(normalize(left(coalesce(p_text, ''), 512), NFKC)) AS value
+    ), distinct_terms AS (
+        SELECT DISTINCT token.value AS term
+        FROM normalized
+        CROSS JOIN LATERAL regexp_split_to_table(
+            normalized.value,
+            '[[:space:][:punct:]]+'
+        ) AS token(value)
+    )
+    SELECT coalesce(array_agg(term ORDER BY term), ARRAY[]::TEXT[])
+    FROM distinct_terms
+    WHERE term <> '';
+$$;
+
 CREATE TABLE IF NOT EXISTS sessions (
     session_id              TEXT PRIMARY KEY,
     folder_id               TEXT REFERENCES folders(id),
@@ -311,6 +328,10 @@ CREATE INDEX IF NOT EXISTS idx_sessions_display_name_search_key
     ON sessions(session_search_index_prefix(display_name_search_key) text_pattern_ops);
 CREATE INDEX IF NOT EXISTS idx_sessions_prompt_search_key
     ON sessions(session_search_index_prefix(prompt_search_key) text_pattern_ops);
+CREATE INDEX IF NOT EXISTS idx_sessions_display_name_search_terms
+    ON sessions USING GIN (session_search_tokens(display_name));
+CREATE INDEX IF NOT EXISTS idx_sessions_prompt_search_terms
+    ON sessions USING GIN (session_search_tokens(prompt));
 
 -- 기존 테이블에 caller_session_id 컬럼 추가 (멱등)
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS caller_session_id TEXT;
@@ -1110,6 +1131,12 @@ CREATE TABLE IF NOT EXISTS event_search_corpus_stats (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS event_search_term_document_frequency (
+    term TEXT PRIMARY KEY,
+    document_count BIGINT NOT NULL CHECK (document_count >= 0)
+);
+
+
 CREATE TABLE IF NOT EXISTS claude_transcript_entries (
     id          BIGSERIAL PRIMARY KEY,
     project_key TEXT NOT NULL,
@@ -1241,16 +1268,19 @@ BEGIN
     WHERE session_id = NEW.session_id
       AND event_id = NEW.id;
 
-    IF v_old_doc_len IS NOT NULL THEN
-        PERFORM event_search_adjust_corpus_stats(-1, -v_old_doc_len);
-    END IF;
+    v_tokens := event_search_tokenize(NEW.searchable_text);
+    v_doc_len := cardinality(v_tokens);
+
+    -- Acquire the corpus-stat row before ordered per-term DF locks to serialize event-index rewrites.
+    PERFORM event_search_adjust_corpus_stats(
+        CASE WHEN v_doc_len > 0 THEN 1 ELSE 0 END
+          - CASE WHEN v_old_doc_len IS NOT NULL THEN 1 ELSE 0 END,
+        v_doc_len - COALESCE(v_old_doc_len, 0)
+    );
 
     DELETE FROM event_search_terms
     WHERE session_id = NEW.session_id
       AND event_id = NEW.id;
-
-    v_tokens := event_search_tokenize(NEW.searchable_text);
-    v_doc_len := cardinality(v_tokens);
 
     IF v_doc_len > 0 THEN
         INSERT INTO event_search_terms (
@@ -1259,8 +1289,6 @@ BEGIN
         SELECT NEW.session_id, NEW.id, term, COUNT(*)::INTEGER, v_doc_len
         FROM unnest(v_tokens) AS token(term)
         GROUP BY term;
-
-        PERFORM event_search_adjust_corpus_stats(1, v_doc_len);
     END IF;
 
     RETURN NEW;
@@ -1293,6 +1321,109 @@ DROP TRIGGER IF EXISTS trg_event_search_corpus_stats_delete ON events;
 CREATE TRIGGER trg_event_search_corpus_stats_delete
     BEFORE DELETE ON events
     FOR EACH ROW EXECUTE FUNCTION decrement_event_search_corpus_stats();
+
+
+CREATE OR REPLACE FUNCTION event_search_adjust_term_document_frequency(
+    p_term TEXT,
+    p_delta BIGINT
+) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+    IF p_delta = 0 THEN
+        RETURN;
+    END IF;
+
+    IF p_delta > 0 THEN
+        INSERT INTO event_search_term_document_frequency (term, document_count)
+        VALUES (p_term, p_delta)
+        ON CONFLICT (term) DO UPDATE
+        SET document_count =
+            event_search_term_document_frequency.document_count + EXCLUDED.document_count;
+    ELSE
+        UPDATE event_search_term_document_frequency
+        SET document_count = document_count + p_delta
+        WHERE term = p_term;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'event search term document frequency is missing for term %', p_term
+                USING ERRCODE = '55000';
+        END IF;
+    END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION update_event_search_term_document_frequency()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+    v_delta RECORD;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        FOR v_delta IN
+            SELECT term, COUNT(*)::BIGINT AS delta
+            FROM new_rows
+            GROUP BY term
+            ORDER BY term COLLATE "C"
+        LOOP
+            PERFORM event_search_adjust_term_document_frequency(v_delta.term, v_delta.delta);
+        END LOOP;
+    ELSIF TG_OP = 'DELETE' THEN
+        FOR v_delta IN
+            SELECT term, -COUNT(*)::BIGINT AS delta
+            FROM old_rows
+            GROUP BY term
+            ORDER BY term COLLATE "C"
+        LOOP
+            PERFORM event_search_adjust_term_document_frequency(v_delta.term, v_delta.delta);
+        END LOOP;
+    ELSIF TG_OP = 'UPDATE' THEN
+        FOR v_delta IN
+            SELECT term, SUM(delta)::BIGINT AS delta
+            FROM (
+                SELECT term, COUNT(*)::BIGINT AS delta
+                FROM new_rows
+                GROUP BY term
+                UNION ALL
+                SELECT term, -COUNT(*)::BIGINT AS delta
+                FROM old_rows
+                GROUP BY term
+            ) changed_terms
+            GROUP BY term
+            HAVING SUM(delta) <> 0
+            ORDER BY term COLLATE "C"
+        LOOP
+            PERFORM event_search_adjust_term_document_frequency(v_delta.term, v_delta.delta);
+        END LOOP;
+    ELSE
+        RAISE EXCEPTION 'unexpected event_search_terms operation: %', TG_OP;
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_event_search_term_df_insert ON event_search_terms;
+CREATE TRIGGER trg_event_search_term_df_insert
+    AFTER INSERT ON event_search_terms
+    REFERENCING NEW TABLE AS new_rows
+    FOR EACH STATEMENT EXECUTE FUNCTION update_event_search_term_document_frequency();
+
+DROP TRIGGER IF EXISTS trg_event_search_term_df_update ON event_search_terms;
+CREATE TRIGGER trg_event_search_term_df_update
+    AFTER UPDATE ON event_search_terms
+    REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows
+    FOR EACH STATEMENT EXECUTE FUNCTION update_event_search_term_document_frequency();
+
+DROP TRIGGER IF EXISTS trg_event_search_term_df_delete ON event_search_terms;
+CREATE TRIGGER trg_event_search_term_df_delete
+    AFTER DELETE ON event_search_terms
+    REFERENCING OLD TABLE AS old_rows
+    FOR EACH STATEMENT EXECUTE FUNCTION update_event_search_term_document_frequency();
+
+
+INSERT INTO event_search_term_document_frequency (term, document_count)
+SELECT term, COUNT(*)::BIGINT
+FROM event_search_terms
+GROUP BY term
+ORDER BY term COLLATE "C"
+ON CONFLICT (term) DO UPDATE
+SET document_count = EXCLUDED.document_count;
 
 INSERT INTO event_search_corpus_stats (id, total_docs, total_doc_len, updated_at)
 SELECT
@@ -2620,6 +2751,35 @@ DROP FUNCTION IF EXISTS event_search(TEXT, TEXT[], INTEGER, TEXT[], TEXT[]);
 DROP FUNCTION IF EXISTS event_search(TEXT, TEXT[], INTEGER, TEXT[], TEXT[], INTEGER);
 DROP FUNCTION IF EXISTS event_search(TEXT, TEXT[], INTEGER, TEXT[], TEXT[], INTEGER, INTEGER);
 DROP FUNCTION IF EXISTS event_search(TEXT, TEXT[], INTEGER, TEXT[], TEXT[], INTEGER, INTEGER, TEXT, TEXT[], TIMESTAMPTZ, TEXT[], JSONB);
+CREATE OR REPLACE FUNCTION event_search_document_frequency(p_term TEXT)
+RETURNS BIGINT LANGUAGE plpgsql STABLE PARALLEL SAFE AS $$
+DECLARE
+    v_document_count BIGINT;
+BEGIN
+    SELECT document_count INTO v_document_count
+    FROM event_search_term_document_frequency
+    WHERE term = p_term;
+
+    IF FOUND THEN
+        IF v_document_count = 0 AND EXISTS (
+            SELECT 1 FROM event_search_terms WHERE term = p_term
+        ) THEN
+            RAISE EXCEPTION 'event search term document frequency is inconsistent for term %', p_term
+                USING ERRCODE = '55000';
+        END IF;
+        RETURN v_document_count;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM event_search_terms WHERE term = p_term
+    ) THEN
+        RAISE EXCEPTION 'event search term document frequency is missing for term %', p_term
+            USING ERRCODE = '55000';
+    END IF;
+    RETURN 0;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION event_search(
     p_query       TEXT,
     p_session_ids TEXT[] DEFAULT NULL,
@@ -2662,6 +2822,10 @@ CREATE OR REPLACE FUNCTION event_search(
         FROM event_search_corpus_stats
         WHERE id = TRUE
     ),
+    query_term_document_frequencies AS MATERIALIZED (
+        SELECT term, event_search_document_frequency(term)::FLOAT AS doc_count
+        FROM query_terms
+    ),
     scoped_events AS MATERIALIZED (
         SELECT e.id, e.session_id, e.event_type, e.created_at
         FROM events e
@@ -2689,13 +2853,6 @@ CREATE OR REPLACE FUNCTION event_search(
              LIMIT 1)
           ) = ANY(p_backends))
     ),
-    scoped_term_document_frequency AS MATERIALIZED (
-        SELECT t.term, COUNT(*)::FLOAT AS doc_count
-        FROM event_search_terms t
-        WHERE p_session_ids IS NOT NULL
-          AND t.term = ANY(ARRAY(SELECT term FROM query_terms))
-        GROUP BY t.term
-    ),
     -- A session-scoped query uses the (session_id, event_id, term) primary key
     -- for candidate postings. Global document frequencies remain exact, but
     -- only their term keys are read before the scope is applied.
@@ -2707,14 +2864,15 @@ CREATE OR REPLACE FUNCTION event_search(
           ON t.session_id = e.session_id
          AND t.event_id = e.id
         JOIN query_terms q ON q.term = t.term
-        JOIN scoped_term_document_frequency df ON df.term = q.term
+        JOIN query_term_document_frequencies df ON df.term = q.term
     ),
     -- Unscoped searches keep the term-first path, which avoids scanning every
     -- event when the caller supplied no session IDs.
     global_matching_postings AS (
         SELECT q.term, t.session_id, t.event_id, t.term_freq, t.doc_len,
-               COUNT(*) OVER (PARTITION BY q.term)::FLOAT AS doc_count
+               df.doc_count
         FROM query_terms q
+        JOIN query_term_document_frequencies df ON df.term = q.term
         JOIN event_search_terms t ON t.term = q.term
         WHERE p_session_ids IS NULL
     ),

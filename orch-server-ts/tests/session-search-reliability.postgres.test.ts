@@ -38,6 +38,99 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     await cleanup?.();
   });
 
+  it("backfills exact term document frequencies and tracks index lifecycle atomically", async () => {
+    const migration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/099_event_search_term_document_frequency.sql",
+      import.meta.url,
+    )), "utf8");
+
+    await sql.begin(async (tx) => {
+      await tx`DROP TRIGGER IF EXISTS trg_event_search_term_df_insert ON event_search_terms`;
+      await tx`DROP TRIGGER IF EXISTS trg_event_search_term_df_update ON event_search_terms`;
+      await tx`DROP TRIGGER IF EXISTS trg_event_search_term_df_delete ON event_search_terms`;
+      await tx`DELETE FROM event_search_term_document_frequency`;
+      await tx.unsafe(migration);
+    });
+    await expectTermDocumentFrequenciesMatchPostings(sql);
+
+    await sql`INSERT INTO sessions (session_id, status) VALUES ('df-lifecycle-a', 'idle')`;
+    await sql`INSERT INTO sessions (session_id, status) VALUES ('df-lifecycle-b', 'idle')`;
+    await sql`
+      INSERT INTO events (session_id, id, event_type, searchable_text)
+      VALUES ('df-lifecycle-a', 1, 'user_message', 'alpha shared shared')
+    `;
+    await sql`
+      INSERT INTO events (session_id, id, event_type, searchable_text)
+      VALUES ('df-lifecycle-b', 1, 'assistant_message', 'shared gamma')
+    `;
+    await expect(sql`
+      SELECT document_count FROM event_search_term_document_frequency WHERE term = 'shared'
+    `).resolves.toEqual([{ document_count: "2" }]);
+    await expectTermDocumentFrequenciesMatchPostings(sql);
+
+    await sql`DELETE FROM event_search_term_document_frequency WHERE term = 'alpha'`;
+    await expect(sql`SELECT event_search_document_frequency('alpha') AS document_count`)
+      .rejects.toMatchObject({ code: "55000" });
+    await sql`
+      INSERT INTO event_search_term_document_frequency (term, document_count)
+      SELECT term, COUNT(*)::BIGINT FROM event_search_terms WHERE term = 'alpha' GROUP BY term
+    `;
+    await expectTermDocumentFrequenciesMatchPostings(sql);
+
+    await sql`
+      UPDATE events SET searchable_text = 'shared beta beta'
+      WHERE session_id = 'df-lifecycle-a' AND id = 1
+    `;
+    await expect(sql`
+      SELECT document_count FROM event_search_term_document_frequency WHERE term = 'shared'
+    `).resolves.toEqual([{ document_count: "2" }]);
+    await expectTermDocumentFrequenciesMatchPostings(sql);
+
+    await sql`
+      UPDATE event_search_terms SET term = 'renamed'
+      WHERE session_id = 'df-lifecycle-a' AND event_id = 1 AND term = 'shared'
+    `;
+    await expect(sql`
+      SELECT term, document_count FROM event_search_term_document_frequency
+      WHERE term IN ('shared', 'renamed') ORDER BY term
+    `).resolves.toEqual([
+      { term: "renamed", document_count: "1" },
+      { term: "shared", document_count: "1" },
+    ]);
+    await expectTermDocumentFrequenciesMatchPostings(sql);
+
+    await sql.begin(async (tx) => {
+      await tx`
+        INSERT INTO events (session_id, id, event_type, searchable_text)
+        VALUES ('df-lifecycle-a', 2, 'user_message', 'rollback only')
+      `;
+      throw new Error("rollback the event and its term statistics");
+    }).catch((error: unknown) => {
+      expect(error).toMatchObject({ message: "rollback the event and its term statistics" });
+    });
+    await expectTermDocumentFrequenciesMatchPostings(sql);
+    await expect(sql`
+      SELECT count(*)::integer AS count FROM events
+      WHERE session_id = 'df-lifecycle-a' AND id = 2
+    `).resolves.toEqual([{ count: 0 }]);
+
+    await sql`DELETE FROM events WHERE session_id = 'df-lifecycle-a' AND id = 1`;
+    await expect(sql`
+      SELECT document_count FROM event_search_term_document_frequency WHERE term = 'shared'
+    `).resolves.toEqual([{ document_count: "1" }]);
+    await expectTermDocumentFrequenciesMatchPostings(sql);
+
+    await sql`DELETE FROM sessions WHERE session_id = 'df-lifecycle-b'`;
+    await expect(sql`
+      SELECT term, document_count FROM event_search_term_document_frequency
+      WHERE term IN ('gamma', 'shared') ORDER BY term
+    `).resolves.toEqual([
+      { term: "gamma", document_count: "0" },
+      { term: "shared", document_count: "0" },
+    ]);
+    await expectTermDocumentFrequenciesMatchPostings(sql);
+  }, 30_000);
+
   it("keeps exact defaults and independently recalls prefix candidates under folder scope", async () => {
     const exact = await sql`
       SELECT session_id FROM event_search(
@@ -285,6 +378,151 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       SELECT display_name, prompt FROM sessions WHERE session_id = 'long-session-after-migration'
     `)[0]).toMatchObject({ display_name: updatedTitle, prompt: updatedPrompt });
   }, 30_000);
+
+  it("uses the database key normalizer for Unicode symbol-prefixed session titles", async () => {
+    const title = "🔍 세션 검색 정규화 표적";
+    await sql`
+      INSERT INTO sessions (session_id, folder_id, display_name, status)
+      VALUES ('unicode-symbol-title', 'folder-allowed', ${title}, 'completed')
+    `;
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
+    });
+
+    const response = await provider.search({
+      q: title,
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      session_search_mode: "lexical",
+      allowedFolderIds: ["folder-allowed"],
+    });
+
+    expect(response.session_results?.map((row) => row.session_id))
+      .toContain("unicode-symbol-title");
+    expect(response.search_status?.session_sources?.metadata).toEqual({ status: "complete" });
+  });
+
+  it("finds metadata through indexed tokens when words are omitted or reordered", async () => {
+    const migration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/100_session_search_metadata_terms.sql",
+      import.meta.url,
+    )), "utf8");
+    await sql.begin(async (tx) => {
+      await tx`DROP INDEX IF EXISTS idx_sessions_display_name_search_terms`;
+      await tx`DROP INDEX IF EXISTS idx_sessions_prompt_search_terms`;
+      await tx`DROP FUNCTION IF EXISTS session_search_tokens(TEXT)`;
+      await tx.unsafe(migration);
+    });
+    await sql`
+      INSERT INTO sessions (session_id, folder_id, display_name, prompt, node_id, status)
+      VALUES
+        ('fuzzy-title-postposition', 'folder-allowed', '🔗 피드·검색 세션의 업무 자동 선택 수정', '', 'fixture-node', 'completed'),
+        ('fuzzy-title-order', 'folder-allowed', '⚙️ 260924 새벽 워크트리와 원격 브랜치 정리', '', 'fixture-node', 'completed'),
+        ('fuzzy-title-session-search', 'folder-allowed', '🔍 세션 검색 개선 여지 점검', '', 'fixture-node', 'completed'),
+        ('fuzzy-prompt-omission', 'folder-allowed', '연결된 작업 메모', '실제 작업 세션 검색·재개 진단', 'fixture-node', 'completed')
+    `;
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
+    });
+    const search = async (query: string) => provider.search({
+      q: query,
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      session_search_mode: "lexical",
+      allowedFolderIds: ["folder-allowed"],
+    });
+
+    const postposition = await search("피드 검색 세션 업무 자동 선택 수정");
+    expect(postposition.session_results?.map((row) => row.session_id))
+      .toContain("fuzzy-title-postposition");
+    expect(postposition.session_results?.[0]?.session_id).toBe("fuzzy-title-postposition");
+    const punctuation = await search("피드·검색 세션의 업무 자동 선택 수정");
+    expect(punctuation.session_results?.[0]?.session_id).toBe("fuzzy-title-postposition");
+    const reorderedPostposition = await search("수정 자동 업무 선택 검색 세션");
+    expect(reorderedPostposition.session_results?.[0]?.session_id)
+      .toBe("fuzzy-title-postposition");
+    const reordered = await search("정리 원격 워크트리 새벽");
+    expect(reordered.session_results?.map((row) => row.session_id))
+      .toContain("fuzzy-title-order");
+    expect(reordered.session_results?.[0]?.session_id).toBe("fuzzy-title-order");
+    const thirdTitle = await search("검색 세션의 점검 여지 개선");
+    expect(thirdTitle.session_results?.[0]?.session_id).toBe("fuzzy-title-session-search");
+    const omitted = await search("재개 세션 검색 진단");
+    expect(omitted.session_results?.map((row) => row.session_id))
+      .toContain("fuzzy-prompt-omission");
+
+    await sql`SET enable_seqscan = off`;
+    const plan = await sql`
+      EXPLAIN SELECT session_id FROM sessions
+      WHERE session_search_tokens(display_name)
+        && session_search_tokens(${"피드 검색 세션 업무 자동 선택 수정"})
+    `;
+    await sql`RESET enable_seqscan`;
+    expect(plan.map((row) => JSON.stringify(row)).join("\n"))
+      .toContain("idx_sessions_display_name_search_terms");
+    expect(postposition.search_status?.session_sources?.original_body)
+      .toEqual({ status: "deferred" });
+  }, 30_000);
+
+  it("defers event-only recall in lexical mode and recovers it in expanded mode", async () => {
+    const lexicalProvider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
+    });
+    const lexical = await lexicalProvider.search({
+      q: "unique execution phrase",
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      session_search_mode: "lexical",
+      allowedFolderIds: ["folder-allowed"],
+    });
+
+    expect(lexical.session_results).toEqual([]);
+    expect(lexical.search_status?.session_sources).toEqual({
+      metadata: { status: "complete" },
+      original_body: { status: "deferred" },
+      semantic_body: { status: "deferred" },
+    });
+
+    const expandedProvider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: createLiveSearchDbConnectionFactory({ databaseUrl }),
+      queryExpander: {
+        expand: async () => ({ queries: [], latencyMs: 1, skipped: true }),
+      },
+    });
+    const expanded = await expandedProvider.search({
+      q: "unique execution phrase",
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      session_search_mode: "expanded",
+      allowedFolderIds: ["folder-allowed"],
+    });
+
+    expect(expanded.session_results?.slice(0, 2).map((row) => row.session_id)).toEqual([
+      "actual-work-session",
+      "diagnostic-session",
+    ]);
+    expect(expanded.search_status?.session_sources?.original_body).toEqual({ status: "complete" });
+  });
 
   it("projects the authorized primary task membership for a real session search", async () => {
     const provider = createLiveCogitoSearchProvider({
@@ -768,7 +1006,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       await expect(admin`SELECT 1 AS value`).resolves.toEqual([{ value: 1 }]);
       controller.abort(new Error("caller disconnected"));
       await settleWithin(pending, 2_500);
-      await expectNoBackend(admin, pid);
+      await waitForNoBackend(admin, pid);
       await expect(admin`SELECT 2 AS value`).resolves.toEqual([{ value: 2 }]);
     } finally {
       await admin.end({ timeout: 2 });
@@ -844,9 +1082,19 @@ async function createHarness(): Promise<{
       "../../packages/db-schema/sql/migrations/098_event_search_scoped_postings.sql",
       import.meta.url,
     )), "utf8");
+    const documentFrequencyMigration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/099_event_search_term_document_frequency.sql",
+      import.meta.url,
+    )), "utf8");
+    const metadataTermMigration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/100_session_search_metadata_terms.sql",
+      import.meta.url,
+    )), "utf8");
     await bootstrap.unsafe(schema);
     await bootstrap.unsafe(migration);
     await bootstrap.unsafe(scopedSearchMigration);
+    await bootstrap.unsafe(documentFrequencyMigration);
+    await bootstrap.unsafe(metadataTermMigration);
   } catch (error) {
     await bootstrap.end({ timeout: 2 }).catch(() => undefined);
     container.stop();
@@ -875,6 +1123,25 @@ async function waitForPostgres(sql: ReturnType<typeof postgres>): Promise<void> 
     }
   }
   throw lastError ?? new Error("PostgreSQL did not become ready");
+}
+
+async function expectTermDocumentFrequenciesMatchPostings(sql: ReturnType<typeof postgres>) {
+  const mismatches = await sql`
+    WITH expected AS (
+      SELECT term, COUNT(*)::BIGINT AS document_count
+      FROM event_search_terms GROUP BY term
+    ), actual AS (
+      SELECT term, document_count
+      FROM event_search_term_document_frequency
+      WHERE document_count > 0
+    )
+    (SELECT term, document_count FROM expected
+     EXCEPT SELECT term, document_count FROM actual)
+    UNION ALL
+    (SELECT term, document_count FROM actual
+     EXCEPT SELECT term, document_count FROM expected)
+  `;
+  expect(mismatches).toEqual([]);
 }
 
 function longMixedText(prefix: string, length: number, seed: number): string {
@@ -1098,7 +1365,7 @@ async function waitForNoBackend(
     if (active.length === 0) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error("discarded search backend did not exit after statement_timeout");
+  throw new Error("request-owned search backend did not exit after cancel or discard");
 }
 
 async function settleWithin(

@@ -26,7 +26,7 @@ export type CandidateQueryInput = {
     current?: LiveSearchPendingQuery<readonly Record<string, unknown>[]>;
   };
   readonly deadlineAt: number;
-  readonly includeSessionMetadataSearch: boolean;
+  readonly productSessionSearch: boolean;
   readonly backendCatalog: readonly SessionBackendCatalogEntry[];
 };
 
@@ -41,7 +41,7 @@ export async function loadCandidateRows(
     candidateLimit,
     activeQuery,
     deadlineAt,
-    includeSessionMetadataSearch,
+    productSessionSearch,
     backendCatalog,
   } = input;
   const allowedFolderIds = params.allowedFolderIds ?? null;
@@ -99,8 +99,8 @@ export async function loadCandidateRows(
             ${candidateLimit},
             ${eventTypes}::text[],
             ${allowedFolderIds}::text[],
-            ${includeSessionMetadataSearch ? 1 : null},
-            ${includeSessionMetadataSearch ? candidateLimit : 0},
+            ${productSessionSearch ? 1 : null},
+            ${productSessionSearch ? candidateLimit : 0},
             ${sessionFilters?.node_id ?? null}::text,
             ${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[],
             ${sessionFilters?.updated_after ?? null}::timestamptz,
@@ -183,79 +183,6 @@ export async function loadCandidateRows(
         ORDER BY score DESC, created_at DESC, session_id ASC
         LIMIT ${candidateLimit}
       ) hit
-      UNION ALL
-      SELECT
-        query.query,
-        query.query_kind,
-        query.query_order,
-        NULL::integer AS id,
-        session.session_id,
-        'session_metadata'::text AS event_type,
-        CASE
-          WHEN session.display_name_search_key LIKE session_search_compact(query.query) || '%'
-            THEN coalesce(session.display_name, '')
-          ELSE coalesce(session.prompt, '')
-        END AS searchable_text,
-        session.updated_at AS created_at,
-        CASE
-          WHEN session.display_name_search_key = session_search_compact(query.query)
-            OR session.prompt_search_key = session_search_compact(query.query)
-            THEN 2.0
-          ELSE 1.0
-        END::double precision AS score,
-        CASE
-          WHEN session.display_name_search_key LIKE session_search_compact(query.query) || '%'
-            THEN 'title'::text
-          ELSE 'prompt'::text
-        END AS match_source,
-        CASE
-          WHEN session.display_name_search_key LIKE session_search_compact(query.query) || '%'
-            THEN 'title'::text
-          ELSE 'prompt'::text
-        END AS relevance_source
-      FROM query_variants query
-      JOIN LATERAL (
-        SELECT candidate.*
-        FROM sessions candidate
-        WHERE session_search_compact(query.query) <> ''
-          AND (${allowedFolderIds}::text[] IS NULL
-            OR candidate.folder_id = ANY(${allowedFolderIds}::text[]))
-          AND (${sessionFilters?.node_id ?? null}::text IS NULL
-            OR candidate.node_id = ${sessionFilters?.node_id ?? null}::text)
-          AND (${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[] IS NULL
-            OR candidate.status = ANY(${sessionFilters?.statuses?.length ? sessionFilters.statuses : null}::text[]))
-          AND (${sessionFilters?.updated_after ?? null}::timestamptz IS NULL
-            OR candidate.updated_at >= ${sessionFilters?.updated_after ?? null}::timestamptz)
-          AND (${backendFilters}::text[] IS NULL OR COALESCE(
-            (SELECT mapping.value->>'backend'
-             FROM jsonb_array_elements(${backendCatalogJson}::text::jsonb) AS mapping(value)
-             WHERE mapping.value->>'kind' = 'preset'
-               AND mapping.value->>'node_id' = candidate.node_id
-               AND mapping.value->>'model_preset' = candidate.model_preset
-             LIMIT 1),
-            (SELECT mapping.value->>'backend'
-             FROM jsonb_array_elements(${backendCatalogJson}::text::jsonb) AS mapping(value)
-             WHERE mapping.value->>'kind' = 'agent'
-               AND mapping.value->>'node_id' = candidate.node_id
-               AND mapping.value->>'agent_id' = candidate.agent_id
-             LIMIT 1)
-          ) = ANY(${backendFilters}::text[]))
-          AND (
-            (session_search_index_prefix(candidate.display_name_search_key)
-              LIKE session_search_index_prefix(session_search_compact(query.query)) || '%'
-             AND candidate.display_name_search_key LIKE session_search_compact(query.query) || '%')
-            OR
-            (session_search_index_prefix(candidate.prompt_search_key)
-              LIKE session_search_index_prefix(session_search_compact(query.query)) || '%'
-             AND candidate.prompt_search_key LIKE session_search_compact(query.query) || '%')
-          )
-        ORDER BY
-          (candidate.display_name_search_key = session_search_compact(query.query)
-           OR candidate.prompt_search_key = session_search_compact(query.query)) DESC,
-          candidate.updated_at DESC NULLS LAST,
-          candidate.session_id ASC
-        LIMIT ${candidateLimit}
-      ) session ON ${includeSessionMetadataSearch}
     )
     SELECT
       hit.query,
