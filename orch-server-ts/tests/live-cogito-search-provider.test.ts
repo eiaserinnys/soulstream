@@ -246,7 +246,144 @@ describe("live Cogito search provider", () => {
     expect(response.session_results?.map((row) => row.session_id)).toEqual(["lexical-session"]);
     expect(response.search_status?.query_expansion).toEqual({ status: "skipped", latency_ms: 0 });
     expect(queryExpander.expand).not.toHaveBeenCalled();
-    expect(harness.calls.filter((call) => call.text.includes("event_search(")).length).toBe(1);
+    expect(harness.calls.filter((call) => call.text.includes("event_search(")).length).toBe(0);
+    expect(response.search_status?.session_sources).toEqual({
+      metadata: { status: "complete" },
+      original_body: { status: "deferred" },
+      semantic_body: { status: "deferred" },
+    });
+    const metadataCall = harness.calls.find((call) => call.text.includes("session_metadata"));
+    expect(metadataCall?.text).toContain("UNION ALL");
+    expect(metadataCall?.text).toContain("session_search_index_prefix(candidate.display_name_search_key)");
+    expect(metadataCall?.text).toContain("candidate.display_name_search_key LIKE");
+    expect(metadataCall?.text).toContain("candidate.folder_id = ANY");
+    expect(metadataCall?.text).toContain("bounded_metadata AS MATERIALIZED");
+    expect(metadataCall?.text.indexOf("bounded_metadata AS MATERIALIZED"))
+      .toBeLessThan(metadataCall?.text.indexOf("LEFT JOIN LATERAL (") ?? -1);
+  });
+
+  it("returns no metadata candidates for punctuation-only variants without issuing invalid SQL", async () => {
+    const harness = createSqlHarness(() => []);
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(harness.sql),
+    });
+
+    const response = await provider.search({
+      q: "!!!",
+      top_k: 5,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      include_session_results: true,
+      session_search_mode: "lexical",
+    });
+
+    expect(response.session_results).toEqual([]);
+    expect(response.search_status?.session_sources?.metadata).toEqual({ status: "complete" });
+    expect(harness.calls.some((call) => call.text.includes("session_metadata"))).toBe(false);
+  });
+
+  it("preserves metadata and successful semantic rows when original body search times out", async () => {
+    const calls: SqlCall[] = [];
+    let bodyQueries = 0;
+    const metadataRow = {
+      query: "피드 검색 세션",
+      query_kind: "original",
+      query_order: 1,
+      id: null,
+      session_id: "metadata-session",
+      event_type: "session_metadata",
+      searchable_text: "피드 검색 세션",
+      created_at: "2026-09-23T00:00:00.000Z",
+      score: 2,
+      match_source: "title",
+      relevance_source: "title",
+      display_name: "피드 검색 세션",
+      session_prompt: "",
+      folder_id: "folder-a",
+      node_id: "node-a",
+      status: "completed",
+      backend: null,
+      parent_session_id: null,
+      session_updated_at: "2026-09-23T00:00:00.000Z",
+      task_id: null,
+      task_title: null,
+    };
+    const sql = Object.assign((
+      strings: TemplateStringsArray,
+      ...values: unknown[]
+    ) => {
+      const text = strings.join("?");
+      calls.push({ text, values });
+      if (text.includes("event_search(")) {
+        bodyQueries += 1;
+        if (bodyQueries === 1) {
+          return Object.assign(Promise.reject({ code: "57014" }), { cancel: vi.fn() });
+        }
+        return Object.assign(Promise.resolve([{
+          query: "continue previous work",
+          query_kind: "semantic_1",
+          query_order: 1,
+          id: 19,
+          session_id: "semantic-session",
+          event_type: "assistant_message",
+          searchable_text: "continue previous work from the last implementation",
+          created_at: "2026-09-23T00:00:00.000Z",
+          score: 0.8,
+          match_source: "message",
+          relevance_source: "assistant_message",
+          display_name: "Earlier implementation",
+          session_prompt: "",
+          folder_id: "folder-a",
+          node_id: "node-a",
+          status: "completed",
+          backend: null,
+          parent_session_id: null,
+          session_updated_at: "2026-09-23T00:00:00.000Z",
+          task_id: null,
+          task_title: null,
+        }]), { cancel: vi.fn() });
+      }
+      return Object.assign(Promise.resolve([]), { cancel: vi.fn() });
+    }, {
+      unsafe: (text: string, values: unknown[]) => {
+        calls.push({ text, values });
+        return Object.assign(Promise.resolve([metadataRow]), { cancel: vi.fn() });
+      },
+    }) as unknown as LiveSearchSql;
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(sql),
+      queryExpander: {
+        expand: async () => ({
+          queries: ["continue previous work"],
+          latencyMs: 7,
+          skipped: false,
+        }),
+      },
+    });
+
+    const response = await provider.search({
+      q: "피드 검색 세션",
+      top_k: 5,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      include_session_results: true,
+      session_search_mode: "expanded",
+    });
+
+    expect(bodyQueries).toBe(2);
+    expect(response.session_results?.map((row) => row.session_id)).toEqual(
+      expect.arrayContaining(["metadata-session", "semantic-session"]),
+    );
+    expect(response.search_status?.query_expansion.status).toBe("expanded");
+    expect(response.search_status?.session_sources).toEqual({
+      metadata: { status: "complete" },
+      original_body: { status: "partial", reason: "timeout" },
+      semantic_body: { status: "complete" },
+    });
   });
 
   it("does not query session ids when the option is disabled and keeps tools opt-in", async () => {
@@ -290,19 +427,22 @@ describe("live Cogito search provider", () => {
       allowedFolderIds: ["visible-root", "visible-child"],
     });
 
-    expect(harness.calls).toHaveLength(2);
-    expect(harness.calls[0]?.text).toContain("event_search(");
-    expect(harness.calls[0]?.text).toContain("session_id_search(");
-    expect(harness.calls[0]?.text).toContain("digest_session.folder_id = ANY");
-    expect(harness.calls[0]?.text).toContain("candidate.folder_id = ANY");
-    expect(harness.calls[0]?.text).toContain("primary_session_item.container_kind = 'task'");
-    expect(harness.calls[0]?.text).toContain("primary_session_item.membership_kind = 'primary'");
-    expect(harness.calls[0]?.text.match(/event_search\(/g)).toHaveLength(1);
-    expect(harness.calls[0]?.values).toContain(1);
-    expect(harness.calls[0]?.values).toContain(25);
-    expect(harness.calls[0]?.values).toContainEqual(["visible-root", "visible-child"]);
-    expect(harness.calls[1]?.text).toContain("f.id = ANY");
-    expect(harness.calls[1]?.values).toContainEqual(["visible-root", "visible-child"]);
+    expect(harness.calls).toHaveLength(3);
+    const metadataCall = harness.calls.find((call) => call.text.includes("session_metadata"));
+    const bodyCall = harness.calls.find((call) => call.text.includes("event_search("));
+    const navigationCall = harness.calls.find((call) => call.text.includes("FROM folders"));
+    expect(bodyCall?.text).toContain("event_search(");
+    expect(bodyCall?.text).toContain("session_id_search(");
+    expect(bodyCall?.text).toContain("digest_session.folder_id = ANY");
+    expect(bodyCall?.text.match(/event_search\(/g)).toHaveLength(1);
+    expect(bodyCall?.values).toContain(1);
+    expect(bodyCall?.values).toContain(25);
+    expect(metadataCall?.text).toContain("candidate.folder_id = ANY");
+    expect(metadataCall?.text).toContain("primary_session_item.container_kind = 'task'");
+    expect(metadataCall?.text).toContain("primary_session_item.membership_kind = 'primary'");
+    expect(metadataCall?.values).toContainEqual(["visible-root", "visible-child"]);
+    expect(navigationCall?.text).toContain("f.id = ANY");
+    expect(navigationCall?.values).toContainEqual(["visible-root", "visible-child"]);
   });
 
   it("cancels the active query and dispatches no later query after abort", async () => {
@@ -313,14 +453,18 @@ describe("live Cogito search provider", () => {
     const cancel = vi.fn(() => rejectActive(new Error("cancelled")));
     const calls: string[] = [];
     const close = vi.fn(async () => undefined);
-    const sql = ((strings: TemplateStringsArray) => {
-      calls.push(strings.join("?"));
+    const pendingQuery = (text: string) => {
+      calls.push(text);
       announceDispatch();
       const pending = new Promise<readonly Record<string, unknown>[]>((_resolve, reject) => {
         rejectActive = reject;
       });
       return Object.assign(pending, { cancel, canceller: () => Promise.resolve(cancel()) });
-    }) as unknown as LiveSearchSql;
+    };
+    const sql = Object.assign(
+      (strings: TemplateStringsArray) => pendingQuery(strings.join("?")),
+      { unsafe: (text: string) => pendingQuery(text) },
+    ) as unknown as LiveSearchSql;
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: {
         open: async () => ({ sql, close }),
@@ -345,7 +489,7 @@ describe("live Cogito search provider", () => {
       navigation_results: [],
       session_results: [],
       search_status: {
-        query_expansion: { status: "partial", reason: "cancelled" },
+        query_expansion: { status: "partial", reason: "configuration" },
       },
     });
     expect(cancel).toHaveBeenCalledOnce();
@@ -353,41 +497,50 @@ describe("live Cogito search provider", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
-  it("aborts a pending query expansion when the lexical database query fails", async () => {
+  it("keeps semantic expansion alive when the original body query fails", async () => {
     const databaseError = new Error("database unavailable");
     let expansionSignal: AbortSignal | undefined;
-    let signalExpansionStarted!: () => void;
-    let expansionAbortObserved = false;
-    const expansionStarted = new Promise<void>((resolve) => {
-      signalExpansionStarted = resolve;
-    });
+    let bodyQueries = 0;
     const queryExpander: SearchQueryExpander = {
       expand: async (_query, _timeoutMs, signal) => {
         expansionSignal = signal;
-        signalExpansionStarted();
-        await new Promise<never>((_resolve, reject) => {
-          signal?.addEventListener("abort", () => {
-            expansionAbortObserved = true;
-            reject(signal.reason);
-          }, { once: true });
-        });
-        return { queries: [], latencyMs: 0, skipped: false };
+        return { queries: ["semantic result"], latencyMs: 2, skipped: false };
       },
     };
-    const cancel = vi.fn();
-    const sql = (() => Object.assign(
-      Promise.reject(databaseError),
-      { cancel },
-    )) as unknown as LiveSearchSql;
-    const close = vi.fn(async () => undefined);
+    const sql = Object.assign((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      if (!text.includes("event_search(")) {
+        return Object.assign(Promise.resolve([]), { cancel: vi.fn() });
+      }
+      bodyQueries += 1;
+      if (bodyQueries === 1) {
+        return Object.assign(Promise.reject(databaseError), { cancel: vi.fn() });
+      }
+      return Object.assign(Promise.resolve([{
+        query: "semantic result",
+        query_kind: "semantic_1",
+        query_order: 1,
+        id: 9,
+        session_id: "semantic-session",
+        event_type: "assistant_message",
+        searchable_text: "semantic result from the completed work",
+        created_at: "2026-09-23T00:00:00.000Z",
+        score: 0.8,
+        match_source: "message",
+        relevance_source: "assistant_message",
+        display_name: "Semantic work",
+        session_prompt: "",
+        folder_id: "folder-a",
+      }]), { cancel: vi.fn() });
+    }, {
+      unsafe: () => Object.assign(Promise.resolve([]), { cancel: vi.fn() }),
+    }) as unknown as LiveSearchSql;
     const provider = createLiveCogitoSearchProvider({
-      searchDbConnectionFactory: {
-        open: async () => ({ sql, close }),
-      },
+      searchDbConnectionFactory: connectionFactoryFor(sql),
       queryExpander,
     });
 
-    await expect(provider.search({
+    const response = await provider.search({
       q: "검색어",
       top_k: 5,
       search_session_id: true,
@@ -395,13 +548,15 @@ describe("live Cogito search provider", () => {
       include_highlight: false,
       include_story: false,
       include_session_results: true,
-    })).rejects.toBe(databaseError);
-    await expansionStarted;
+    });
 
-    expect(expansionSignal?.aborted).toBe(true);
-    expect(expansionAbortObserved).toBe(true);
-    expect(cancel).not.toHaveBeenCalled();
-    expect(close).toHaveBeenCalledOnce();
+    expect(expansionSignal?.aborted).toBe(false);
+    expect(bodyQueries).toBe(2);
+    expect(response.session_results?.map((row) => row.session_id)).toContain("semantic-session");
+    expect(response.search_status?.session_sources).toMatchObject({
+      original_body: { status: "partial", reason: "error" },
+      semantic_body: { status: "complete" },
+    });
   });
 
   it("returns explicit partial status when PostgreSQL reaches the query-local timeout", async () => {
@@ -409,10 +564,11 @@ describe("live Cogito search provider", () => {
       code: "57014",
     });
     const sql = Object.assign((() => Object.assign(
-      Promise.reject(timeoutError),
+      Promise.resolve([]),
       { cancel: vi.fn() },
     )) as unknown as LiveSearchSql, {
       setStatementTimeout: vi.fn(async () => undefined),
+      unsafe: () => Object.assign(Promise.reject(timeoutError), { cancel: vi.fn() }),
     });
     const discard = vi.fn(async () => undefined);
     const provider = createLiveCogitoSearchProvider({
@@ -429,17 +585,23 @@ describe("live Cogito search provider", () => {
       include_highlight: false,
       include_story: false,
       include_session_results: true,
+      session_search_mode: "lexical",
       deadlineAt: Date.now() + 2_000,
     })).resolves.toMatchObject({
       results: [],
       session_results: [],
       search_status: {
         search: { status: "partial", stage: "lexical", reason: "timeout" },
-        query_expansion: { status: "partial", reason: "timeout" },
+        query_expansion: { status: "skipped", latency_ms: 0 },
+        session_sources: {
+          metadata: { status: "partial", reason: "timeout" },
+          original_body: { status: "deferred" },
+          semantic_body: { status: "deferred" },
+        },
       },
     });
-    expect(sql.setStatementTimeout).toHaveBeenCalledOnce();
-    expect(discard).toHaveBeenCalledOnce();
+    expect(sql.setStatementTimeout).toHaveBeenCalledTimes(2);
+    expect(discard).not.toHaveBeenCalled();
   });
 
   it("does not report semantic search complete when an expander adds no variant", async () => {
@@ -473,13 +635,14 @@ describe("live Cogito search provider", () => {
     const cancel = vi.fn(() => { throw cancelError; });
     const discard = vi.fn(async () => rejectPending(new Error("connection discarded")));
     const close = vi.fn(async () => undefined);
-    const sql = (() => {
+    const pendingQuery = () => {
       announceDispatch();
       const pending = new Promise<readonly Record<string, unknown>[]>((_resolve, reject) => {
         rejectPending = reject;
       });
       return Object.assign(pending, { cancel, canceller: () => Promise.resolve(cancel()) });
-    }) as unknown as LiveSearchSql;
+    };
+    const sql = Object.assign(pendingQuery, { unsafe: pendingQuery }) as unknown as LiveSearchSql;
     const onCancelError = vi.fn();
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: {
@@ -529,7 +692,13 @@ describe("live Cogito search provider", () => {
       { cancel: vi.fn() },
     ));
     const discard = vi.fn(async () => undefined);
-    const sql = Object.assign(query, { setStatementTimeout }) as unknown as LiveSearchSql;
+    const sql = Object.assign(query, {
+      setStatementTimeout,
+      unsafe: vi.fn(() => Object.assign(
+        Promise.resolve<readonly Record<string, unknown>[]>([]),
+        { cancel: vi.fn() },
+      )),
+    }) as unknown as LiveSearchSql;
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: {
         open: async () => ({ sql, close: vi.fn(async () => undefined), discard }),
@@ -683,7 +852,7 @@ describe("live Cogito search provider", () => {
       },
     });
     expect(expansionAborted).toBe(true);
-    expect(harness.calls).toHaveLength(1);
+    expect(harness.calls).toHaveLength(2);
     expect(Date.now() - startedAt).toBeLessThan(1_800);
   });
 
@@ -703,8 +872,8 @@ describe("live Cogito search provider", () => {
       async open() {
         opened += 1;
         if (opened === 1) {
-          const sql = ((strings: TemplateStringsArray) => {
-            firstCalls.push(strings.join("?"));
+          const firstPendingQuery = (text: string) => {
+            firstCalls.push(text);
             announceFirstDispatch();
             const pending = new Promise<readonly Record<string, unknown>[]>(
               (_resolve, reject) => { rejectFirst = reject; },
@@ -713,13 +882,25 @@ describe("live Cogito search provider", () => {
               cancel: firstCancel,
               canceller: () => Promise.resolve(firstCancel()),
             });
-          }) as unknown as LiveSearchSql;
+          };
+          const sql = Object.assign(
+            (strings: TemplateStringsArray) => firstPendingQuery(strings.join("?")),
+            { unsafe: (text: string) => firstPendingQuery(text) },
+          ) as unknown as LiveSearchSql;
           return { sql, close: firstClose };
         }
-        const sql = ((_strings: TemplateStringsArray) => Object.assign(
-          Promise.resolve<readonly Record<string, unknown>[]>([]),
-          { cancel: vi.fn() },
-        )) as unknown as LiveSearchSql;
+        const sql = Object.assign(
+          (_strings: TemplateStringsArray) => Object.assign(
+            Promise.resolve<readonly Record<string, unknown>[]>([]),
+            { cancel: vi.fn() },
+          ),
+          {
+            unsafe: () => Object.assign(
+              Promise.resolve<readonly Record<string, unknown>[]>([]),
+              { cancel: vi.fn() },
+            ),
+          },
+        ) as unknown as LiveSearchSql;
         return { sql, close: secondClose };
       },
     };
@@ -745,7 +926,7 @@ describe("live Cogito search provider", () => {
     controller.abort();
     await expect(first).resolves.toMatchObject({
       search_status: {
-        query_expansion: { status: "partial", reason: "cancelled" },
+        query_expansion: { status: "partial", reason: "configuration" },
       },
     });
 
@@ -800,11 +981,7 @@ function createSqlHarness(
   respond: (text: string, values: unknown[]) => readonly Record<string, unknown>[],
 ) {
   const calls: SqlCall[] = [];
-  const sql = ((
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ) => {
-    const text = strings.join("?");
+  const run = (text: string, values: unknown[]) => {
     calls.push({ text, values });
     const queryKinds = Array.isArray(values[1]) ? values[1] as string[] : ["original"];
     const rows = respond(text, values).map((row) => ({
@@ -814,14 +991,25 @@ function createSqlHarness(
     return Object.assign(Promise.resolve(rows), {
       cancel: () => undefined,
     });
+  };
+  const sql = Object.assign((
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ) => run(strings.join("?"), values), {
+    unsafe: (text: string, values: readonly unknown[] = []) => run(text, [...values]),
   }) as unknown as LiveSearchSql;
   return { sql, calls };
 }
 
 function connectionFactoryFor(sql: LiveSearchSql) {
+  const searchSql = sql.unsafe === undefined
+    ? Object.assign(sql, {
+      unsafe: () => Object.assign(Promise.resolve([]), { cancel: () => undefined }),
+    }) as LiveSearchSql
+    : sql;
   return {
     open: async () => ({
-      sql,
+      sql: searchSql,
       close: async () => undefined,
     }),
   };

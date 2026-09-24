@@ -33,6 +33,7 @@ import {
   runSearchQuery,
   SearchDeadlineError,
 } from "./live_session_search_candidates.js";
+import { loadSessionMetadataCandidateRows } from "./live_session_metadata_candidates.js";
 import type {
   LiveSearchDbConnectionFactory,
   LiveSearchPendingQuery,
@@ -53,7 +54,9 @@ export type CreateLiveCogitoSearchProviderOptions = {
   readonly onCancelError?: (error: unknown) => void;
   readonly onSearchTiming?: (timing: {
     readonly connectionOpenMs: number;
+    readonly metadataSqlMs: number;
     readonly lexicalSqlMs: number;
+    readonly originalBodySqlMs: number;
     readonly expansionWaitMs: number;
     readonly semanticSqlMs: number;
     readonly navigationSqlMs: number;
@@ -119,10 +122,16 @@ export function createLiveCogitoSearchProvider(
       let incompleteSearch:
         | NonNullable<CogitoSearchResponse["search_status"]>["search"]
         | undefined;
+      type SourceState = NonNullable<CogitoSearchResponse["search_status"]>["session_sources"];
+      let metadataSource: NonNullable<SourceState>["metadata"] = { status: "partial", reason: "error" };
+      let originalBodySource: NonNullable<SourceState>["original_body"] = { status: "deferred" };
+      let semanticBodySource: NonNullable<SourceState>["semantic_body"] = { status: "deferred" };
       const searchRows: SessionSearchCandidateRow[] = [];
       let navigationRows: readonly Record<string, unknown>[] = [];
       let connectionOpenMs = 0;
+      let metadataSqlMs = 0;
       let lexicalSqlMs = 0;
+      let originalBodySqlMs = 0;
       let expansionWaitMs = 0;
       let semanticSqlMs = 0;
       let navigationSqlMs = 0;
@@ -183,58 +192,131 @@ export function createLiveCogitoSearchProvider(
             options.queryExpansionTimeoutMs ?? QUERY_EXPANSION_TIMEOUT_MS,
           ).finally(() => { expansionPending = false; });
         }
-
-        const lexicalStartedAt = Date.now();
-        searchRows.push(...await loadCandidateRows({
-          sql: connection.sql,
-          variants: baseVariants,
-          params: searchParams,
-          eventTypes,
-          candidateLimit: isProductSearch ? candidateLimit : params.top_k,
-          activeQuery,
-          deadlineAt,
-          includeSessionMetadataSearch: isProductSearch,
-          backendCatalog,
-        }));
-        lexicalSqlMs = Math.max(0, Date.now() - lexicalStartedAt);
-        searchStage = "semantic";
-        if (expansionPromise) {
-          const expansionWaitStartedAt = Date.now();
-          const expansion = await expansionPromise;
-          expansionWaitMs = Math.max(0, Date.now() - expansionWaitStartedAt);
-          const expansionReason = deadlineExpired ? "timeout" : expansion.reason;
-          queryExpansion = {
-            status: deadlineExpired ? "partial" : expansion.status,
-            ...(expansionReason === undefined ? {} : { reason: expansionReason }),
-            latency_ms: expansion.latencyMs,
-          };
-          const semanticVariants = buildSemanticVariants(expansion.queries);
-          if (semanticVariants.length === 0) {
-            semanticSearchCompleted = true;
-            if (expansion.status === "expanded") {
-              queryExpansion = {
-                status: "partial",
-                reason: "model_error",
-                latency_ms: expansion.latencyMs,
-              };
-            }
-          } else {
-            assertSearchMayContinue(signal, deadlineAt);
-            const semanticStartedAt = Date.now();
-            searchRows.push(...await loadCandidateRows({
+        if (isProductSearch) {
+          const metadataStartedAt = Date.now();
+          try {
+            searchRows.push(...await loadSessionMetadataCandidateRows({
               sql: connection.sql,
-              variants: semanticVariants,
+              variants: baseVariants,
               params: searchParams,
-              eventTypes,
               candidateLimit,
               activeQuery,
               deadlineAt,
-              includeSessionMetadataSearch: true,
+              signal,
               backendCatalog,
             }));
-            semanticSqlMs = Math.max(0, Date.now() - semanticStartedAt);
-            semanticSearchCompleted = true;
+            metadataSource = { status: "complete" };
+          } catch (error) {
+            const reason = sourceFailureReason(error, signal, deadlineAt);
+            metadataSource = { status: "partial", reason };
+            incompleteSearch = { status: "partial", stage: "lexical", reason };
           }
+          metadataSqlMs = Math.max(0, Date.now() - metadataStartedAt);
+          lexicalSqlMs += metadataSqlMs;
+          if (shouldExpand) {
+            searchStage = "lexical";
+            const originalBodyStartedAt = Date.now();
+            try {
+              assertSearchMayContinue(signal, deadlineAt);
+              searchRows.push(...await loadCandidateRows({
+                sql: connection.sql,
+                variants: baseVariants,
+                params: searchParams,
+                eventTypes,
+                candidateLimit,
+                activeQuery,
+                deadlineAt,
+                productSessionSearch: true,
+                backendCatalog,
+              }));
+              originalBodySource = { status: "complete" };
+            } catch (error) {
+              const reason = sourceFailureReason(error, signal, deadlineAt);
+              originalBodySource = { status: "partial", reason };
+              incompleteSearch = { status: "partial", stage: "lexical", reason };
+            }
+            originalBodySqlMs = Math.max(0, Date.now() - originalBodyStartedAt);
+            lexicalSqlMs += originalBodySqlMs;
+          }
+          searchStage = "semantic";
+          if (expansionPromise) {
+            const expansionWaitStartedAt = Date.now();
+            const expansion = await expansionPromise;
+            expansionWaitMs = Math.max(0, Date.now() - expansionWaitStartedAt);
+            const expansionReason = deadlineExpired ? "timeout" : expansion.reason;
+            queryExpansion = {
+              status: deadlineExpired ? "partial" : expansion.status,
+              ...(expansionReason === undefined ? {} : { reason: expansionReason }),
+              latency_ms: expansion.latencyMs,
+            };
+            const semanticVariants = buildSemanticVariants(expansion.queries);
+            if (semanticVariants.length === 0) {
+              semanticSearchCompleted = true;
+              if (expansion.status === "expanded") {
+                queryExpansion = {
+                  status: "partial",
+                  reason: "model_error",
+                  latency_ms: expansion.latencyMs,
+                };
+              }
+            } else {
+              assertSearchMayContinue(signal, deadlineAt);
+              const semanticMetadataStartedAt = Date.now();
+              try {
+                searchRows.push(...await loadSessionMetadataCandidateRows({
+                  sql: connection.sql,
+                  variants: semanticVariants,
+                  params: searchParams,
+                  candidateLimit,
+                  activeQuery,
+                  deadlineAt,
+                  signal,
+                  backendCatalog,
+                }));
+              } catch (error) {
+                const reason = sourceFailureReason(error, signal, deadlineAt);
+                metadataSource = { status: "partial", reason };
+                incompleteSearch = { status: "partial", stage: "semantic", reason };
+              }
+              metadataSqlMs += Math.max(0, Date.now() - semanticMetadataStartedAt);
+              const semanticStartedAt = Date.now();
+              try {
+                assertSearchMayContinue(signal, deadlineAt);
+                searchRows.push(...await loadCandidateRows({
+                  sql: connection.sql,
+                  variants: semanticVariants,
+                  params: searchParams,
+                  eventTypes,
+                  candidateLimit,
+                  activeQuery,
+                  deadlineAt,
+                  productSessionSearch: true,
+                  backendCatalog,
+                }));
+                semanticBodySource = { status: "complete" };
+                semanticSearchCompleted = true;
+              } catch (error) {
+                const reason = sourceFailureReason(error, signal, deadlineAt);
+                semanticBodySource = { status: "partial", reason };
+                incompleteSearch = { status: "partial", stage: "semantic", reason };
+              }
+              semanticSqlMs = Math.max(0, Date.now() - semanticStartedAt);
+            }
+          }
+        } else {
+          const lexicalStartedAt = Date.now();
+          searchRows.push(...await loadCandidateRows({
+            sql: connection.sql,
+            variants: baseVariants,
+            params: searchParams,
+            eventTypes,
+            candidateLimit: params.top_k,
+            activeQuery,
+            deadlineAt,
+            productSessionSearch: false,
+            backendCatalog,
+          }));
+          lexicalSqlMs = Math.max(0, Date.now() - lexicalStartedAt);
         }
 
         searchStage = "navigation";
@@ -295,25 +377,31 @@ export function createLiveCogitoSearchProvider(
           throw new SearchDeadlineError("search request deadline exceeded");
         }
         if (isProductSearch) {
-          const stopReason = deadlineExpired || Date.now() >= deadlineAt
-            ? "timeout"
-            : "cancelled";
-          incompleteSearch = {
+          const stopReason = sourceFailureReason(error, signal, deadlineAt);
+          const expansionStopReason = stopReason === "error" ? undefined : stopReason;
+          incompleteSearch ??= {
             status: "partial",
             stage: searchStage,
             reason: stopReason,
           };
+          if (metadataSource.status === "partial") metadataSource = { status: "partial", reason: stopReason };
+          if (shouldExpand && originalBodySource.status === "deferred") {
+            originalBodySource = { status: "partial", reason: stopReason };
+          }
+          if (shouldExpand && semanticBodySource.status === "deferred" && semanticSearchCompleted === false) {
+            semanticBodySource = { status: "partial", reason: stopReason };
+          }
           if (!queryExpansion) {
             queryExpansion = {
               status: "partial",
-              reason: stopReason,
+              ...(expansionStopReason === undefined ? {} : { reason: expansionStopReason }),
               latency_ms: 0,
             };
           } else if (queryExpansion.status === "expanded" && !semanticSearchCompleted) {
             queryExpansion = {
               ...queryExpansion,
               status: "partial",
-              reason: stopReason,
+              ...(expansionStopReason === undefined ? {} : { reason: expansionStopReason }),
             };
           }
         }
@@ -349,9 +437,14 @@ export function createLiveCogitoSearchProvider(
               params.q,
               candidateLimit,
             ),
-            search_status: {
-              ...(incompleteSearch ? { search: incompleteSearch } : {}),
-              query_expansion: queryExpansion ?? {
+              search_status: {
+                ...(incompleteSearch ? { search: incompleteSearch } : {}),
+                session_sources: {
+                  metadata: metadataSource,
+                  original_body: originalBodySource,
+                  semantic_body: semanticBodySource,
+                },
+                query_expansion: queryExpansion ?? {
                 status: "partial",
                 reason: "configuration",
                 latency_ms: 0,
@@ -366,7 +459,9 @@ export function createLiveCogitoSearchProvider(
       try {
         options.onSearchTiming?.({
           connectionOpenMs,
+          metadataSqlMs,
           lexicalSqlMs,
+          originalBodySqlMs,
           expansionWaitMs,
           semanticSqlMs,
           navigationSqlMs,
@@ -388,6 +483,20 @@ function resolveProductFolderScope(
   if (selectedFolderId === undefined) return params.allowedFolderIds;
   if (params.allowedFolderIds === undefined) return [selectedFolderId];
   return params.allowedFolderIds.filter((folderId) => folderId === selectedFolderId);
+}
+
+function sourceFailureReason(
+  error: unknown,
+  signal: AbortSignal,
+  deadlineAt: number,
+): "timeout" | "cancelled" | "error" {
+  if (Date.now() >= deadlineAt) return "timeout";
+  if (signal.aborted) return "cancelled";
+  if (error instanceof SearchDeadlineError) return "timeout";
+  if (typeof error === "object" && error !== null && "code" in error && error.code === "57014") {
+    return "timeout";
+  }
+  return "error";
 }
 
 type ExpansionOutcome = {

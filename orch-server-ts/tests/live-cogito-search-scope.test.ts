@@ -8,7 +8,7 @@ import {
 describe("live Cogito derived-text search scope", () => {
   it("returns digest candidates only when a derived-text flag is enabled", async () => {
     const calls: Array<{ text: string; values: unknown[] }> = [];
-    const sql = ((
+    const query = ((
       strings: TemplateStringsArray,
       ...values: unknown[]
     ) => {
@@ -35,6 +35,12 @@ describe("live Cogito derived-text search scope", () => {
         }]);
       }
       return Promise.resolve([]);
+    });
+    const sql = Object.assign(query, {
+      unsafe: (text: string) => {
+        calls.push({ text, values: [] });
+        return Promise.resolve([]);
+      },
     }) as unknown as LiveSearchSql;
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: {

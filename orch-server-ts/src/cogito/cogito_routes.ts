@@ -60,7 +60,12 @@ export type CogitoSearchResponse = {
     search?: {
       status: "partial";
       stage: "lexical" | "semantic" | "navigation";
-      reason: "timeout" | "cancelled";
+      reason: "timeout" | "cancelled" | "error";
+    };
+    session_sources?: {
+      metadata: { status: "complete" | "partial"; reason?: "timeout" | "cancelled" | "error" };
+      original_body: { status: "complete" | "partial" | "deferred"; reason?: "timeout" | "cancelled" | "error" };
+      semantic_body: { status: "complete" | "partial" | "deferred"; reason?: "timeout" | "cancelled" | "error" };
     };
     query_expansion: {
       status: "expanded" | "skipped" | "partial";
