@@ -362,6 +362,49 @@ describe("ClaudeSdkClient persistent lifecycle", () => {
     );
   });
 
+  it("ends an aborted foreground turn without correlation so the next input can run", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      {
+        query: harness.queryFn,
+        detachedEventSink: harness.detached,
+        postResultDrainMs: 5,
+      },
+      silentLogger,
+    );
+
+    let interruptedResolved = false;
+    const interrupted = collect(
+      client.runPersistent(runOptions("first turn"), abortSignal()),
+    ).then((events) => {
+      interruptedResolved = true;
+      return events;
+    });
+    try {
+      await harness.nextInput();
+      harness.push(sdkInterruptedResult("sdk-session", undefined));
+      await vi.waitFor(() => expect(interruptedResolved).toBe(true), { timeout: 250 });
+      await expect(interrupted).resolves.toContainEqual(
+        expect.objectContaining({
+          type: "result",
+          success: false,
+        }),
+      );
+
+      const nextTurn = collect(
+        client.runPersistent(runOptions("next turn"), abortSignal()),
+      );
+      const nextInput = await harness.nextInput();
+      harness.push(sdkResult("sdk-session", nextInput.uuid, "next turn completed"));
+      await expect(nextTurn).resolves.toContainEqual(
+        expect.objectContaining({ type: "complete", result: "next turn completed" }),
+      );
+    } finally {
+      await client.close("shutdown");
+      await interrupted;
+    }
+  });
+
   it("leaves a live turn untouched when a background notification Result arrives", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(

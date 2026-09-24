@@ -356,10 +356,34 @@ export function provableTurnResultOwner(
 ): string | null {
   const explicitOwnerUuid = asString(message.user_message_uuid);
   if (explicitOwnerUuid) return explicitOwnerUuid;
-  // Bare Results also terminate SDK-owned notification turns. Only the abort
-  // Result of our sole interrupting foreground can inherit local ownership.
+  const resultOriginKind = asString(asRecord(message.origin)?.kind);
+  const abortedStreaming = message.subtype === "error_during_execution"
+    && message.is_error === true
+    && (
+      asString(message.terminal_reason) === "aborted_streaming"
+      || (Array.isArray(message.errors) && message.errors.some((error) =>
+        asString(error)?.includes("(aborted_streaming)") === true
+      ))
+    );
+  if (
+    phase === "generating"
+    && active
+    && resultOriginKind !== "task-notification"
+    && abortedStreaming
+  ) {
+    logger.info(
+      {
+        activeForegroundUuid: active.uuid,
+        resultUuid: asString(message.uuid),
+      },
+      "Correlating unowned aborted Claude Result to the active foreground turn",
+    );
+    return active.uuid;
+  }
+  // Bare Results can terminate SDK-owned notification turns. Apart from the
+  // exact aborted-streaming case above, only our interrupting foreground owns one.
   if (phase !== "interrupting" || !active) return null;
-  if (asString(asRecord(message.origin)?.kind) === "task-notification") return null;
+  if (resultOriginKind === "task-notification") return null;
   const ownerUuid = active.interruptedOwnerUuid ?? active.uuid;
   logger.info(
     {
