@@ -82,7 +82,7 @@ describe("live Postgres SQL resolver", () => {
     expect(end).toHaveBeenCalledWith({ timeout: 5 });
   });
 
-  it("opens one non-pipelined, request-owned search connection at a time", async () => {
+  it("disables JIT only on non-pipelined, request-owned search connections", async () => {
     const endFirst = vi.fn(async () => undefined);
     const endSecond = vi.fn(async () => undefined);
     const firstCalls: Array<{ text: string; values: unknown[] }> = [];
@@ -116,7 +116,7 @@ describe("live Postgres SQL resolver", () => {
         max: 1,
         pipeline: false,
         connect_timeout: 1,
-        connection: { statement_timeout: SEARCH_DB_STATEMENT_TIMEOUT_MS },
+        connection: { statement_timeout: SEARCH_DB_STATEMENT_TIMEOUT_MS, jit: "off" },
       },
     );
     expect(postgresFactory).toHaveBeenNthCalledWith(2,
@@ -125,7 +125,7 @@ describe("live Postgres SQL resolver", () => {
         max: 1,
         pipeline: false,
         connect_timeout: 1,
-        connection: { statement_timeout: 1_500 },
+        connection: { statement_timeout: 1_500, jit: "off" },
       },
     );
 

@@ -34,6 +34,7 @@ export type LivePostgresOptions = {
   readonly connect_timeout?: number;
   readonly connection: {
     readonly statement_timeout: number;
+    readonly jit?: "off";
   };
 };
 
@@ -320,7 +321,9 @@ export function createLiveSearchDbConnectionFactory(
         max: 1,
         pipeline: false,
         connect_timeout: connectTimeoutSeconds,
-        connection: { statement_timeout: statementTimeoutMs },
+        // Search requests have a short deadline. Compiling the BM25 plan can
+        // cost more than executing it, and each request owns a fresh connection.
+        connection: { statement_timeout: statementTimeoutMs, jit: "off" },
       });
       let closePromise: Promise<void> | undefined;
       const close = (timeoutSeconds: number) => {
