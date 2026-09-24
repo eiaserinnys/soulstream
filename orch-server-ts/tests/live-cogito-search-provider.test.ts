@@ -284,6 +284,65 @@ describe("live Cogito search provider", () => {
     expect(harness.calls.some((call) => call.text.includes("session_metadata"))).toBe(false);
   });
 
+  it("uses indexed token candidates for particle and word-order variants", async () => {
+    const harness = createSqlHarness(() => []);
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(harness.sql),
+    });
+
+    await provider.search({
+      q: "업무 자동 선택 수정 검색 세션",
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      session_search_mode: "lexical",
+      allowedFolderIds: ["folder-allowed"],
+    });
+
+    const metadataCall = harness.calls.find((call) => call.text.includes("session_metadata"));
+    expect(metadataCall?.text).toContain("session_search_tokens(");
+    expect(metadataCall?.text).toContain("&&");
+    expect(metadataCall?.text).toContain("candidate.folder_id = ANY");
+    expect(metadataCall?.text).toContain("bounded_metadata AS MATERIALIZED");
+  });
+
+  it("keeps long original queries on the exact/prefix path in lexical and expanded search", async () => {
+    const harness = createSqlHarness(() => []);
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(harness.sql),
+      queryExpander: {
+        expand: async () => ({
+          queries: ["세션 업무 자동 선택"],
+          latencyMs: 1,
+          skipped: false,
+        }),
+      },
+    });
+
+    const longQuery = "세션 검색 ".repeat(30);
+    const params = {
+      q: longQuery,
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      allowedFolderIds: ["folder-allowed"],
+    };
+    await provider.search({ ...params, session_search_mode: "lexical" });
+    await provider.search({ ...params, session_search_mode: "expanded" });
+
+    const metadataCalls = harness.calls.filter((call) => call.text.includes("session_metadata"));
+    expect(metadataCalls.length).toBeGreaterThanOrEqual(3);
+    expect(metadataCalls.every((call) => !call.text.includes("session_search_tokens("))).toBe(true);
+  });
+
   it("preserves metadata and successful semantic rows when original body search times out", async () => {
     const calls: SqlCall[] = [];
     let bodyQueries = 0;

@@ -267,6 +267,23 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT left(coalesce(p_compact_key, ''), 512);
 $$;
 
+CREATE OR REPLACE FUNCTION session_search_tokens(p_text TEXT) RETURNS TEXT[]
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    WITH normalized AS (
+        SELECT lower(normalize(left(coalesce(p_text, ''), 512), NFKC)) AS value
+    ), distinct_terms AS (
+        SELECT DISTINCT token.value AS term
+        FROM normalized
+        CROSS JOIN LATERAL regexp_split_to_table(
+            normalized.value,
+            '[[:space:][:punct:]]+'
+        ) AS token(value)
+    )
+    SELECT coalesce(array_agg(term ORDER BY term), ARRAY[]::TEXT[])
+    FROM distinct_terms
+    WHERE term <> '';
+$$;
+
 CREATE TABLE IF NOT EXISTS sessions (
     session_id              TEXT PRIMARY KEY,
     folder_id               TEXT REFERENCES folders(id),
@@ -311,6 +328,10 @@ CREATE INDEX IF NOT EXISTS idx_sessions_display_name_search_key
     ON sessions(session_search_index_prefix(display_name_search_key) text_pattern_ops);
 CREATE INDEX IF NOT EXISTS idx_sessions_prompt_search_key
     ON sessions(session_search_index_prefix(prompt_search_key) text_pattern_ops);
+CREATE INDEX IF NOT EXISTS idx_sessions_display_name_search_terms
+    ON sessions USING GIN (session_search_tokens(display_name));
+CREATE INDEX IF NOT EXISTS idx_sessions_prompt_search_terms
+    ON sessions USING GIN (session_search_tokens(prompt));
 
 -- 기존 테이블에 caller_session_id 컬럼 추가 (멱등)
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS caller_session_id TEXT;

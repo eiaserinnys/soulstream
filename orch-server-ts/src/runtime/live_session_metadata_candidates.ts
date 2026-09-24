@@ -43,10 +43,12 @@ export async function loadSessionMetadataCandidateRows(
   const backendFilter = bind(backends, "text[]");
   const backendCatalog = bind(input.backendCatalog, "jsonb");
   const limit = bind(candidateLimit, "integer");
+  const allowTokenCandidates = Array.from(params.q).length <= 128;
   const branches: string[] = [];
 
   variants.forEach((variant, index) => {
-    if (!compactSearchQuery(variant.query) || !/[\p{L}\p{N}]/u.test(variant.query)) return;
+    const compactVariant = compactSearchQuery(variant.query);
+    if (!compactVariant || !/[\p{L}\p{N}]/u.test(variant.query)) return;
     for (const source of [
       { key: "display_name_search_key", text: "display_name", kind: "title" },
       { key: "prompt_search_key", text: "prompt", kind: "prompt" },
@@ -89,6 +91,47 @@ export async function loadSessionMetadataCandidateRows(
           LIMIT ${limit}
         ) source_candidates
       `);
+      // Token overlap is for concise human search phrases. Long inputs retain
+      // exact/prefix metadata and the existing mode-specific body-search path.
+      if (allowTokenCandidates && Array.from(variant.query).length <= 128) {
+        const queryTerms = `session_search_tokens(${query})`;
+        const candidateTerms = `session_search_tokens(candidate.${source.text})`;
+        const overlappingTerms = `(
+          SELECT COUNT(*)::double precision
+          FROM unnest(${queryTerms}) AS query_term(term)
+          WHERE query_term.term = ANY(${candidateTerms})
+        )`;
+        const termCoverage = `(${overlappingTerms} / NULLIF(cardinality(${queryTerms}), 0))`;
+        branches.push(`
+          SELECT * FROM (
+            SELECT
+              ${query} AS query,
+              ${queryKind} AS query_kind,
+              ${queryOrder} AS query_order,
+              NULL::integer AS id,
+              candidate.session_id,
+              'session_metadata'::text AS event_type,
+              COALESCE(candidate.${source.text}, '') AS searchable_text,
+              candidate.updated_at AS created_at,
+              (1.0 + ${termCoverage})::double precision AS score,
+              '${source.kind}'::text AS match_source,
+              '${source.kind}'::text AS relevance_source
+            FROM sessions candidate
+            WHERE cardinality(${queryTerms}) >= 2
+              AND ${candidateTerms} && ${queryTerms}
+              AND ${overlappingTerms} >= GREATEST(2, CEIL(cardinality(${queryTerms}) * 0.6))
+              AND (${allowedFolders} IS NULL OR candidate.folder_id = ANY(${allowedFolders}))
+              AND (${nodeId} IS NULL OR candidate.node_id = ${nodeId})
+              AND (${statuses} IS NULL OR candidate.status = ANY(${statuses}))
+              AND (${updatedAfter} IS NULL OR candidate.updated_at >= ${updatedAfter})
+              AND (${backendFilter} IS NULL OR ${backend} = ANY(${backendFilter}))
+            ORDER BY ${termCoverage} DESC,
+                     candidate.updated_at DESC NULLS LAST,
+                     candidate.session_id ASC
+            LIMIT ${limit}
+          ) fuzzy_source_candidates
+        `);
+      }
     }
   });
 
