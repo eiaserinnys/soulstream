@@ -64,6 +64,7 @@ export type CogitoSearchResponse = {
     };
     session_sources?: {
       metadata: { status: "complete" | "partial"; reason?: "timeout" | "cancelled" | "error" };
+      metadata_prompt_tokens?: { status: "complete" | "partial" | "deferred"; reason?: "timeout" | "cancelled" | "error" };
       original_body: { status: "complete" | "partial" | "deferred"; reason?: "timeout" | "cancelled" | "error" };
       semantic_body: { status: "complete" | "partial" | "deferred"; reason?: "timeout" | "cancelled" | "error" };
     };

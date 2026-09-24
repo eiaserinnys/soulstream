@@ -249,9 +249,13 @@ describe("live Cogito search provider", () => {
     expect(harness.calls.filter((call) => call.text.includes("event_search(")).length).toBe(0);
     expect(response.search_status?.session_sources).toEqual({
       metadata: { status: "complete" },
+      metadata_prompt_tokens: { status: "deferred" },
       original_body: { status: "deferred" },
       semantic_body: { status: "deferred" },
     });
+    expect(harness.calls.filter((call) => call.text.includes("session_metadata"))).toHaveLength(3);
+    expect(harness.calls.some((call) => call.text.includes("session_search_tokens(candidate.prompt)")))
+      .toBe(false);
     const metadataCall = harness.calls.find((call) => call.text.includes("session_metadata"));
     expect(metadataCall?.text).toContain("UNION ALL");
     expect(metadataCall?.text).toContain("session_search_index_prefix(candidate.display_name_search_key)");
@@ -305,15 +309,17 @@ describe("live Cogito search provider", () => {
 
     const metadataCalls = harness.calls.filter((call) => call.text.includes("session_metadata"));
     const titleTokenCall = metadataCalls.find((call) => call.text.includes("session_search_tokens(candidate.display_name)"));
+    const promptPrefixCall = metadataCalls.find((call) => call.text.includes("session_search_index_prefix(candidate.prompt_search_key)"));
     const promptTokenCall = metadataCalls.find((call) => call.text.includes("session_search_tokens(candidate.prompt)"));
-    expect(metadataCalls).toHaveLength(4);
+    expect(metadataCalls).toHaveLength(3);
     expect(titleTokenCall?.text).toContain("&&");
     expect(titleTokenCall?.text).toContain("candidate.folder_id = ANY");
     expect(titleTokenCall?.text).toContain("bounded_metadata AS MATERIALIZED");
-    expect(promptTokenCall?.text).toContain("&&");
+    expect(promptPrefixCall?.text).toContain("session_search_index_prefix(candidate.prompt_search_key)");
+    expect(promptTokenCall).toBeUndefined();
   });
 
-  it("keeps completed metadata candidates when the prompt-token source times out", async () => {
+  it("runs original and semantic title candidates before expanded prompt-token search", async () => {
     const calls: SqlCall[] = [];
     const titleRow = {
       query: "피드 검색 세션",
@@ -355,6 +361,9 @@ describe("live Cogito search provider", () => {
     }) as unknown as LiveSearchSql;
     const provider = createLiveCogitoSearchProvider({
       searchDbConnectionFactory: connectionFactoryFor(sql),
+      queryExpander: {
+        expand: async () => ({ queries: ["이어 하던 작업"], latencyMs: 7, skipped: false }),
+      },
     });
 
     const response = await provider.search({
@@ -365,19 +374,26 @@ describe("live Cogito search provider", () => {
       include_highlight: false,
       include_story: false,
       include_session_results: true,
-      session_search_mode: "lexical",
+      session_search_mode: "expanded",
     });
 
     const metadataCalls = calls.filter((call) => call.text.includes("session_metadata"));
-    expect(metadataCalls).toHaveLength(4);
-    expect(metadataCalls[0]?.text).toContain("session_search_index_prefix(candidate.display_name_search_key)");
-    expect(metadataCalls[1]?.text).toContain("session_search_index_prefix(candidate.prompt_search_key)");
-    expect(metadataCalls[2]?.text).toContain("session_search_tokens(candidate.display_name)");
-    expect(metadataCalls[2]?.text).not.toContain("session_search_tokens(candidate.prompt)");
-    expect(metadataCalls[3]?.text).toContain("session_search_tokens(candidate.prompt)");
+    const promptTokenIndex = calls.findIndex((call) =>
+      call.text.includes("session_metadata") && call.text.includes("session_search_tokens(candidate.prompt)"));
+    const titleSourceIndices = calls.flatMap((call, index) =>
+      call.text.includes("session_metadata") && (
+        call.text.includes("session_search_index_prefix(candidate.display_name_search_key)")
+        || call.text.includes("session_search_tokens(candidate.display_name)")
+      ) ? [index] : []);
+    expect(metadataCalls.filter((call) => call.text.includes("session_search_tokens(candidate.prompt)")))
+      .toHaveLength(1);
+    expect(titleSourceIndices.length).toBeGreaterThan(0);
+    expect(Math.max(...titleSourceIndices)).toBeLessThan(promptTokenIndex);
     expect(response.session_results?.map((row) => row.session_id)).toContain("title-candidate");
-    expect(response.search_status?.session_sources?.metadata).toEqual({ status: "partial", reason: "timeout" });
-    expect(response.search_status?.search).toEqual({ status: "partial", stage: "lexical", reason: "timeout" });
+    expect(response.search_status?.session_sources?.metadata).toEqual({ status: "complete" });
+    expect(response.search_status?.session_sources?.metadata_prompt_tokens)
+      .toEqual({ status: "partial", reason: "timeout" });
+    expect(response.search_status?.search).toEqual({ status: "partial", stage: "semantic", reason: "timeout" });
   });
 
   it("keeps long original queries on the exact/prefix path in lexical and expanded search", async () => {
@@ -732,7 +748,7 @@ describe("live Cogito search provider", () => {
         },
       },
     });
-    expect(sql.setStatementTimeout).toHaveBeenCalledTimes(5);
+    expect(sql.setStatementTimeout).toHaveBeenCalledTimes(4);
     expect(discard).not.toHaveBeenCalled();
   });
 
@@ -979,13 +995,13 @@ describe("live Cogito search provider", () => {
       deadlineAt: startedAt + 1_200,
     })).resolves.toMatchObject({
       search_status: {
-        search: { status: "partial", stage: "navigation", reason: "timeout" },
+        search: { status: "partial", stage: "semantic", reason: "timeout" },
         query_expansion: { status: "partial", reason: "timeout" },
       },
     });
     expect(expansionAborted).toBe(true);
-    expect(harness.calls).toHaveLength(5);
-    expect(harness.calls.filter((call) => call.text.includes("session_metadata"))).toHaveLength(4);
+    expect(harness.calls).toHaveLength(4);
+    expect(harness.calls.filter((call) => call.text.includes("session_metadata"))).toHaveLength(3);
     expect(harness.calls.filter((call) => call.text.includes("event_search(")).length).toBe(1);
     expect(harness.calls.some((call) => call.text.includes("FROM folders"))).toBe(false);
     expect(Date.now() - startedAt).toBeLessThan(1_800);
