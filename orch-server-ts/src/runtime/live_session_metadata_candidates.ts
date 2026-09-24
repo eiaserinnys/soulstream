@@ -18,7 +18,13 @@ export type SessionMetadataCandidateResult = {
   readonly rows: readonly SessionSearchCandidateRow[];
   readonly status: "complete" | "partial";
   readonly reason?: "timeout" | "cancelled" | "error";
+  readonly promptTokenStatus: {
+    readonly status: "complete" | "partial" | "deferred";
+    readonly reason?: "timeout" | "cancelled" | "error";
+  };
 };
+
+export type SessionMetadataCandidatePhase = "fast" | "prompt_tokens";
 
 export type SessionMetadataCandidateInput = {
   readonly sql: LiveSearchSql;
@@ -31,13 +37,17 @@ export type SessionMetadataCandidateInput = {
   readonly deadlineAt: number;
   readonly signal: AbortSignal;
   readonly backendCatalog: readonly SessionBackendCatalogEntry[];
+  readonly phase: SessionMetadataCandidatePhase;
 };
 
 export async function loadSessionMetadataCandidateRows(
   input: SessionMetadataCandidateInput,
 ): Promise<SessionMetadataCandidateResult> {
   const { sql, variants, params, candidateLimit, activeQuery, deadlineAt, signal } = input;
-  if (variants.length === 0) return { rows: [], status: "complete" };
+  const phase = input.phase;
+  if (variants.length === 0) {
+    return { rows: [], status: "complete", promptTokenStatus: { status: "complete" } };
+  }
 
   const allowedFolderIds = params.allowedFolderIds ?? null;
   const sessionFilters = params.session_filters;
@@ -67,6 +77,12 @@ export async function loadSessionMetadataCandidateRows(
   const titleTokens = createGroup();
   const promptTokens = createGroup();
   const allowTokenCandidates = Array.from(params.q).length <= 128;
+  const hasPromptTokenSource = allowTokenCandidates && variants.some((variant) => {
+    const compactVariant = compactSearchQuery(variant.query);
+    return Boolean(compactVariant)
+      && /[\p{L}\p{N}]/u.test(variant.query)
+      && Array.from(variant.query).length <= 128;
+  });
 
   variants.forEach((variant, index) => {
     const compactVariant = compactSearchQuery(variant.query);
@@ -116,7 +132,10 @@ export async function loadSessionMetadataCandidateRows(
       `);
       // Token overlap is for concise human search phrases. Long inputs retain
       // exact/prefix metadata and the existing mode-specific body-search path.
-      if (allowTokenCandidates && Array.from(variant.query).length <= 128) {
+      const includeTokenSource = source.kind === "title"
+        ? phase !== "prompt_tokens"
+        : phase !== "fast";
+      if (includeTokenSource && allowTokenCandidates && Array.from(variant.query).length <= 128) {
         const tokenGroup = source.kind === "title" ? titleTokens : promptTokens;
         const tokenQuery = tokenGroup.bind(variant.query, "text");
         const tokenKind = tokenGroup.bind(variant.kind, "text");
@@ -163,9 +182,14 @@ export async function loadSessionMetadataCandidateRows(
     }
   });
 
-  const groups = [titlePrefix, promptPrefix, titleTokens, promptTokens];
+  const groups = phase === "prompt_tokens"
+    ? [promptTokens]
+    : [titlePrefix, titleTokens, promptPrefix];
+  const promptTokenStatus = phase === "fast" && hasPromptTokenSource
+    ? { status: "deferred" as const }
+    : { status: "complete" as const };
   if (groups.every((group) => group.branches.length === 0)) {
-    return { rows: [], status: "complete" };
+    return { rows: [], status: "complete", promptTokenStatus };
   }
   if (sql.unsafe === undefined) {
     throw new Error("parameterized session metadata search requires postgres unsafe bindings");
@@ -173,6 +197,7 @@ export async function loadSessionMetadataCandidateRows(
 
   const rows: SessionSearchCandidateRow[] = [];
   let failureReason: SessionMetadataCandidateResult["reason"];
+  let promptTokenFailureReason: SessionMetadataCandidateResult["reason"];
   for (const group of groups) {
     if (group.branches.length === 0) continue;
     try {
@@ -187,14 +212,20 @@ export async function loadSessionMetadataCandidateRows(
       ) as readonly SessionSearchCandidateRow[];
       rows.push(...result);
     } catch (error) {
-      failureReason ??= metadataFailureReason(error, signal, deadlineAt);
+      const reason = metadataFailureReason(error, signal, deadlineAt);
+      failureReason ??= reason;
+      if (group === promptTokens) promptTokenFailureReason ??= reason;
       if (signal.aborted || Date.now() >= deadlineAt) break;
     }
   }
 
-  return failureReason === undefined
-    ? { rows, status: "complete" }
-    : { rows, status: "partial", reason: failureReason };
+  return {
+    rows,
+    ...(failureReason === undefined ? { status: "complete" as const } : { status: "partial" as const, reason: failureReason }),
+    promptTokenStatus: promptTokenFailureReason === undefined
+      ? promptTokenStatus
+      : { status: "partial", reason: promptTokenFailureReason },
+  };
 }
 
 function buildMetadataQueryText(group: {
@@ -329,8 +360,13 @@ function metadataFailureReason(
   signal: AbortSignal,
   deadlineAt: number,
 ): "timeout" | "cancelled" | "error" {
-  if (signal.aborted) return "cancelled";
   if (Date.now() >= deadlineAt) return "timeout";
+  if (
+    signal.aborted
+    && signal.reason instanceof SearchDeadlineError
+    && signal.reason.message.includes("deadline")
+  ) return "timeout";
+  if (signal.aborted) return "cancelled";
   if (error instanceof SearchDeadlineError) return "timeout";
   if (typeof error === "object" && error !== null && "code" in error && error.code === "57014") {
     return "timeout";
