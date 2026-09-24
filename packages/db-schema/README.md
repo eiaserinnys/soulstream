@@ -27,3 +27,5 @@ prevents Haniel's conventional-manifest auto-discovery from activating the
 cluster authority manifest on a worker.
 
 The release manifest uses Haniel's `soulstream.database-release.v1` result contract. With the orchestrator as the only database writer, Haniel's central service stop is the writer-quiescence boundary. Recovery closes the failed release journal without restoring database contents; the daily backup remains operationally independent from deployment.
+
+The production size snapshot and guarded apply procedure for event-search covering-index migrations 101/102 are recorded in [`event-search-covering-index-apply.md`](./event-search-covering-index-apply.md). The snapshot is time-bounded; the database owner must remeasure disk and WAL headroom before applying.

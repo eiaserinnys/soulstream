@@ -63,6 +63,26 @@ describe.sequential("versioned migration runner", () => {
 
     const sql = postgres(url, { max: 1, idle_timeout: 1 });
     try {
+      const coveringIndex = await sql`
+        SELECT i.indisvalid, i.indisready, i.indnkeyatts, i.indnatts,
+               pg_get_indexdef(i.indexrelid) AS definition,
+               c.reloptions
+        FROM pg_index i
+        JOIN pg_class c ON c.oid = i.indrelid
+        WHERE i.indexrelid = 'public.idx_event_search_terms_term'::regclass
+      `;
+      expect(coveringIndex[0]).toMatchObject({
+        indisvalid: true,
+        indisready: true,
+        indnkeyatts: 1,
+        indnatts: 5,
+      });
+      expect(coveringIndex[0].definition).toContain(
+        "INCLUDE (session_id, event_id, term_freq, doc_len)",
+      );
+      expect(coveringIndex[0].reloptions)
+        .toContain("autovacuum_vacuum_insert_scale_factor=0.05");
+
       await seedCurrentTask(sql);
       await sql`DROP TABLE schema_migrations`;
 
