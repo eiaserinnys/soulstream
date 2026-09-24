@@ -33,7 +33,10 @@ import {
   runSearchQuery,
   SearchDeadlineError,
 } from "./live_session_search_candidates.js";
-import { loadSessionMetadataCandidateRows } from "./live_session_metadata_candidates.js";
+import {
+  loadSessionMetadataCandidateRows,
+  type SessionMetadataCandidateResult,
+} from "./live_session_metadata_candidates.js";
 import type {
   LiveSearchDbConnectionFactory,
   LiveSearchPendingQuery,
@@ -124,9 +127,34 @@ export function createLiveCogitoSearchProvider(
         | undefined;
       type SourceState = NonNullable<CogitoSearchResponse["search_status"]>["session_sources"];
       let metadataSource: NonNullable<SourceState>["metadata"] = { status: "partial", reason: "error" };
+      let metadataAttempted = false;
       let originalBodySource: NonNullable<SourceState>["original_body"] = { status: "deferred" };
       let semanticBodySource: NonNullable<SourceState>["semantic_body"] = { status: "deferred" };
       const searchRows: SessionSearchCandidateRow[] = [];
+      const recordMetadataResult = (
+        result: SessionMetadataCandidateResult,
+        stage: "lexical" | "semantic",
+      ) => {
+        searchRows.push(...result.rows);
+        if (result.status === "partial") {
+          const reason = result.reason ?? "error";
+          if (!metadataAttempted || metadataSource.status === "complete") {
+            metadataSource = { status: "partial", reason };
+          }
+          incompleteSearch ??= { status: "partial", stage, reason };
+        } else if (!metadataAttempted) {
+          metadataSource = { status: "complete" };
+        }
+        metadataAttempted = true;
+      };
+      const recordMetadataFailure = (error: unknown, stage: "lexical" | "semantic") => {
+        const reason = sourceFailureReason(error, signal, deadlineAt);
+        if (!metadataAttempted || metadataSource.status === "complete") {
+          metadataSource = { status: "partial", reason };
+        }
+        metadataAttempted = true;
+        incompleteSearch ??= { status: "partial", stage, reason };
+      };
       let navigationRows: readonly Record<string, unknown>[] = [];
       let connectionOpenMs = 0;
       let metadataSqlMs = 0;
@@ -195,7 +223,7 @@ export function createLiveCogitoSearchProvider(
         if (isProductSearch) {
           const metadataStartedAt = Date.now();
           try {
-            searchRows.push(...await loadSessionMetadataCandidateRows({
+            const metadataResult = await loadSessionMetadataCandidateRows({
               sql: connection.sql,
               variants: baseVariants,
               params: searchParams,
@@ -204,12 +232,10 @@ export function createLiveCogitoSearchProvider(
               deadlineAt,
               signal,
               backendCatalog,
-            }));
-            metadataSource = { status: "complete" };
+            });
+            recordMetadataResult(metadataResult, "lexical");
           } catch (error) {
-            const reason = sourceFailureReason(error, signal, deadlineAt);
-            metadataSource = { status: "partial", reason };
-            incompleteSearch = { status: "partial", stage: "lexical", reason };
+            recordMetadataFailure(error, "lexical");
           }
           metadataSqlMs = Math.max(0, Date.now() - metadataStartedAt);
           lexicalSqlMs += metadataSqlMs;
@@ -263,7 +289,7 @@ export function createLiveCogitoSearchProvider(
               assertSearchMayContinue(signal, deadlineAt);
               const semanticMetadataStartedAt = Date.now();
               try {
-                searchRows.push(...await loadSessionMetadataCandidateRows({
+                const metadataResult = await loadSessionMetadataCandidateRows({
                   sql: connection.sql,
                   variants: semanticVariants,
                   params: searchParams,
@@ -272,11 +298,10 @@ export function createLiveCogitoSearchProvider(
                   deadlineAt,
                   signal,
                   backendCatalog,
-                }));
+                });
+                recordMetadataResult(metadataResult, "semantic");
               } catch (error) {
-                const reason = sourceFailureReason(error, signal, deadlineAt);
-                metadataSource = { status: "partial", reason };
-                incompleteSearch = { status: "partial", stage: "semantic", reason };
+                recordMetadataFailure(error, "semantic");
               }
               metadataSqlMs += Math.max(0, Date.now() - semanticMetadataStartedAt);
               const semanticStartedAt = Date.now();
@@ -384,7 +409,9 @@ export function createLiveCogitoSearchProvider(
             stage: searchStage,
             reason: stopReason,
           };
-          if (metadataSource.status === "partial") metadataSource = { status: "partial", reason: stopReason };
+          if (metadataSource.status === "partial" && metadataSource.reason === "error") {
+            metadataSource = { status: "partial", reason: stopReason };
+          }
           if (shouldExpand && originalBodySource.status === "deferred") {
             originalBodySource = { status: "partial", reason: stopReason };
           }

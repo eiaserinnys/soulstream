@@ -2,12 +2,23 @@ import { compactSearchQuery } from "@soulstream/search-contract";
 
 import type { CogitoSearchParams } from "../cogito/cogito_routes.js";
 import type { SessionSearchCandidateRow } from "../search/session_search_projection.js";
-import { runSearchQuery, type QueryVariant } from "./live_session_search_candidates.js";
+import {
+  assertSearchMayContinue,
+  runSearchQuery,
+  SearchDeadlineError,
+  type QueryVariant,
+} from "./live_session_search_candidates.js";
 import type { SessionBackendCatalogEntry } from "./live_session_serialization.js";
 import type {
   LiveSearchPendingQuery,
   LiveSearchSql,
 } from "./live_db_sql.js";
+
+export type SessionMetadataCandidateResult = {
+  readonly rows: readonly SessionSearchCandidateRow[];
+  readonly status: "complete" | "partial";
+  readonly reason?: "timeout" | "cancelled" | "error";
+};
 
 export type SessionMetadataCandidateInput = {
   readonly sql: LiveSearchSql;
@@ -24,27 +35,38 @@ export type SessionMetadataCandidateInput = {
 
 export async function loadSessionMetadataCandidateRows(
   input: SessionMetadataCandidateInput,
-): Promise<readonly SessionSearchCandidateRow[]> {
+): Promise<SessionMetadataCandidateResult> {
   const { sql, variants, params, candidateLimit, activeQuery, deadlineAt, signal } = input;
-  if (variants.length === 0) return [];
+  if (variants.length === 0) return { rows: [], status: "complete" };
 
   const allowedFolderIds = params.allowedFolderIds ?? null;
   const sessionFilters = params.session_filters;
   const backends = sessionFilters?.backends?.length ? sessionFilters.backends : null;
-  const values: unknown[] = [];
-  const bind = (value: unknown, type: string): string => {
-    values.push(value);
-    return `$${values.length}::${type}`;
+  const createGroup = () => {
+    const values: unknown[] = [];
+    const bind = (value: unknown, type: string): string => {
+      values.push(value);
+      return `$${values.length}::${type}`;
+    };
+    return {
+      branches: [] as string[],
+      values,
+      bind,
+      allowedFolders: bind(allowedFolderIds, "text[]"),
+      nodeId: bind(sessionFilters?.node_id ?? null, "text"),
+      statuses: bind(sessionFilters?.statuses?.length ? sessionFilters.statuses : null, "text[]"),
+      updatedAfter: bind(sessionFilters?.updated_after ?? null, "timestamptz"),
+      backendFilter: bind(backends, "text[]"),
+      backendCatalog: bind(input.backendCatalog, "jsonb"),
+      limit: bind(candidateLimit, "integer"),
+    };
   };
-  const allowedFolders = bind(allowedFolderIds, "text[]");
-  const nodeId = bind(sessionFilters?.node_id ?? null, "text");
-  const statuses = bind(sessionFilters?.statuses?.length ? sessionFilters.statuses : null, "text[]");
-  const updatedAfter = bind(sessionFilters?.updated_after ?? null, "timestamptz");
-  const backendFilter = bind(backends, "text[]");
-  const backendCatalog = bind(input.backendCatalog, "jsonb");
-  const limit = bind(candidateLimit, "integer");
+
+  const titlePrefix = createGroup();
+  const promptPrefix = createGroup();
+  const titleTokens = createGroup();
+  const promptTokens = createGroup();
   const allowTokenCandidates = Array.from(params.q).length <= 128;
-  const branches: string[] = [];
 
   variants.forEach((variant, index) => {
     const compactVariant = compactSearchQuery(variant.query);
@@ -53,14 +75,15 @@ export async function loadSessionMetadataCandidateRows(
       { key: "display_name_search_key", text: "display_name", kind: "title" },
       { key: "prompt_search_key", text: "prompt", kind: "prompt" },
     ] as const) {
-      const query = bind(variant.query, "text");
-      const queryKind = bind(variant.kind, "text");
-      const queryOrder = bind(index + 1, "integer");
+      const prefixGroup = source.kind === "title" ? titlePrefix : promptPrefix;
+      const query = prefixGroup.bind(variant.query, "text");
+      const queryKind = prefixGroup.bind(variant.kind, "text");
+      const queryOrder = prefixGroup.bind(index + 1, "integer");
       // PostgreSQL's POSIX punctuation class is the canonical search-key normalizer.
       // It removes some Unicode symbols that the JS \\p{P} normalizer preserves.
       const compactQuery = `session_search_compact(${query})`;
-      const backend = sessionBackendExpression("candidate", backendCatalog);
-      branches.push(`
+      const prefixBackend = sessionBackendExpression("candidate", prefixGroup.backendCatalog);
+      prefixGroup.branches.push(`
         SELECT * FROM (
           SELECT
             ${query} AS query,
@@ -77,24 +100,29 @@ export async function loadSessionMetadataCandidateRows(
             '${source.kind}'::text AS relevance_source
           FROM sessions candidate
           WHERE ${compactQuery} <> ''
-            AND (${allowedFolders} IS NULL OR candidate.folder_id = ANY(${allowedFolders}))
-            AND (${nodeId} IS NULL OR candidate.node_id = ${nodeId})
-            AND (${statuses} IS NULL OR candidate.status = ANY(${statuses}))
-            AND (${updatedAfter} IS NULL OR candidate.updated_at >= ${updatedAfter})
-            AND (${backendFilter} IS NULL OR ${backend} = ANY(${backendFilter}))
+            AND (${prefixGroup.allowedFolders} IS NULL OR candidate.folder_id = ANY(${prefixGroup.allowedFolders}))
+            AND (${prefixGroup.nodeId} IS NULL OR candidate.node_id = ${prefixGroup.nodeId})
+            AND (${prefixGroup.statuses} IS NULL OR candidate.status = ANY(${prefixGroup.statuses}))
+            AND (${prefixGroup.updatedAfter} IS NULL OR candidate.updated_at >= ${prefixGroup.updatedAfter})
+            AND (${prefixGroup.backendFilter} IS NULL OR ${prefixBackend} = ANY(${prefixGroup.backendFilter}))
             AND session_search_index_prefix(candidate.${source.key})
                 LIKE session_search_index_prefix(${compactQuery}) || '%'
             AND candidate.${source.key} LIKE ${compactQuery} || '%'
           ORDER BY (candidate.${source.key} = ${compactQuery}) DESC,
                    candidate.updated_at DESC NULLS LAST,
                    candidate.session_id ASC
-          LIMIT ${limit}
+          LIMIT ${prefixGroup.limit}
         ) source_candidates
       `);
       // Token overlap is for concise human search phrases. Long inputs retain
       // exact/prefix metadata and the existing mode-specific body-search path.
       if (allowTokenCandidates && Array.from(variant.query).length <= 128) {
-        const queryTerms = `session_search_tokens(${query})`;
+        const tokenGroup = source.kind === "title" ? titleTokens : promptTokens;
+        const tokenQuery = tokenGroup.bind(variant.query, "text");
+        const tokenKind = tokenGroup.bind(variant.kind, "text");
+        const tokenOrder = tokenGroup.bind(index + 1, "integer");
+        const tokenBackend = sessionBackendExpression("candidate", tokenGroup.backendCatalog);
+        const queryTerms = `session_search_tokens(${tokenQuery})`;
         const candidateTerms = `session_search_tokens(candidate.${source.text})`;
         const overlappingTerms = `(
           SELECT COUNT(*)::double precision
@@ -102,12 +130,12 @@ export async function loadSessionMetadataCandidateRows(
           WHERE query_term.term = ANY(${candidateTerms})
         )`;
         const termCoverage = `(${overlappingTerms} / NULLIF(cardinality(${queryTerms}), 0))`;
-        branches.push(`
+        tokenGroup.branches.push(`
           SELECT * FROM (
             SELECT
-              ${query} AS query,
-              ${queryKind} AS query_kind,
-              ${queryOrder} AS query_order,
+              ${tokenQuery} AS query,
+              ${tokenKind} AS query_kind,
+              ${tokenOrder} AS query_order,
               NULL::integer AS id,
               candidate.session_id,
               'session_metadata'::text AS event_type,
@@ -120,26 +148,61 @@ export async function loadSessionMetadataCandidateRows(
             WHERE cardinality(${queryTerms}) >= 2
               AND ${candidateTerms} && ${queryTerms}
               AND ${overlappingTerms} >= GREATEST(2, CEIL(cardinality(${queryTerms}) * 0.6))
-              AND (${allowedFolders} IS NULL OR candidate.folder_id = ANY(${allowedFolders}))
-              AND (${nodeId} IS NULL OR candidate.node_id = ${nodeId})
-              AND (${statuses} IS NULL OR candidate.status = ANY(${statuses}))
-              AND (${updatedAfter} IS NULL OR candidate.updated_at >= ${updatedAfter})
-              AND (${backendFilter} IS NULL OR ${backend} = ANY(${backendFilter}))
+              AND (${tokenGroup.allowedFolders} IS NULL OR candidate.folder_id = ANY(${tokenGroup.allowedFolders}))
+              AND (${tokenGroup.nodeId} IS NULL OR candidate.node_id = ${tokenGroup.nodeId})
+              AND (${tokenGroup.statuses} IS NULL OR candidate.status = ANY(${tokenGroup.statuses}))
+              AND (${tokenGroup.updatedAfter} IS NULL OR candidate.updated_at >= ${tokenGroup.updatedAfter})
+              AND (${tokenGroup.backendFilter} IS NULL OR ${tokenBackend} = ANY(${tokenGroup.backendFilter}))
             ORDER BY ${termCoverage} DESC,
                      candidate.updated_at DESC NULLS LAST,
                      candidate.session_id ASC
-            LIMIT ${limit}
+            LIMIT ${tokenGroup.limit}
           ) fuzzy_source_candidates
         `);
       }
     }
   });
 
-  if (branches.length === 0) return [];
+  const groups = [titlePrefix, promptPrefix, titleTokens, promptTokens];
+  if (groups.every((group) => group.branches.length === 0)) {
+    return { rows: [], status: "complete" };
+  }
   if (sql.unsafe === undefined) {
     throw new Error("parameterized session metadata search requires postgres unsafe bindings");
   }
 
+  const rows: SessionSearchCandidateRow[] = [];
+  let failureReason: SessionMetadataCandidateResult["reason"];
+  for (const group of groups) {
+    if (group.branches.length === 0) continue;
+    try {
+      assertSearchMayContinue(signal, deadlineAt);
+      const queryText = buildMetadataQueryText(group);
+      const result = await runSearchQuery(
+        activeQuery,
+        () => sql.unsafe!(queryText, group.values) as LiveSearchPendingQuery<readonly Record<string, unknown>[]>,
+        signal,
+        deadlineAt,
+        sql,
+      ) as readonly SessionSearchCandidateRow[];
+      rows.push(...result);
+    } catch (error) {
+      failureReason ??= metadataFailureReason(error, signal, deadlineAt);
+      if (signal.aborted || Date.now() >= deadlineAt) break;
+    }
+  }
+
+  return failureReason === undefined
+    ? { rows, status: "complete" }
+    : { rows, status: "partial", reason: failureReason };
+}
+
+function buildMetadataQueryText(group: {
+  readonly branches: readonly string[];
+  readonly limit: string;
+  readonly backendCatalog: string;
+}): string {
+  const { branches, limit, backendCatalog } = group;
   const queryText = `
     WITH metadata_hits AS (
       ${branches.join("\nUNION ALL\n")}
@@ -258,14 +321,21 @@ export async function loadSessionMetadataCandidateRows(
     ) linked_task ON TRUE
     ORDER BY hit.query_order, hit.score DESC, hit.session_id ASC
   `;
+  return queryText;
+}
 
-  return await runSearchQuery(
-    activeQuery,
-    () => sql.unsafe!(queryText, values) as LiveSearchPendingQuery<readonly Record<string, unknown>[]>,
-    signal,
-    deadlineAt,
-    sql,
-  ) as readonly SessionSearchCandidateRow[];
+function metadataFailureReason(
+  error: unknown,
+  signal: AbortSignal,
+  deadlineAt: number,
+): "timeout" | "cancelled" | "error" {
+  if (signal.aborted) return "cancelled";
+  if (Date.now() >= deadlineAt) return "timeout";
+  if (error instanceof SearchDeadlineError) return "timeout";
+  if (typeof error === "object" && error !== null && "code" in error && error.code === "57014") {
+    return "timeout";
+  }
+  return "error";
 }
 
 function sessionBackendExpression(alias: string, backendCatalog: string): string {
