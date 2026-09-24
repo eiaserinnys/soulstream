@@ -1122,7 +1122,7 @@ CREATE TABLE IF NOT EXISTS event_search_terms (
     PRIMARY KEY (session_id, event_id, term),
     FOREIGN KEY (session_id, event_id)
         REFERENCES events(session_id, id) ON DELETE CASCADE
-);
+) WITH (autovacuum_vacuum_insert_scale_factor = 0.05);
 
 CREATE TABLE IF NOT EXISTS event_search_corpus_stats (
     id            BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
@@ -1177,7 +1177,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_dedupe_key
     ON events (session_id, dedupe_key)
     WHERE dedupe_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_events_search_vector ON events USING GIN (search_vector);
-CREATE INDEX IF NOT EXISTS idx_event_search_terms_term ON event_search_terms (term);
+CREATE INDEX IF NOT EXISTS idx_event_search_terms_term
+    ON event_search_terms (term)
+    INCLUDE (session_id, event_id, term_freq, doc_len);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions (updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_soulstream_schedules_session
     ON soulstream_schedules (session_id, status, next_run_at);

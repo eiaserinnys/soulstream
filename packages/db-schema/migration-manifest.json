@@ -102,6 +102,8 @@
     { "id": "097_session_search_reliability.sql", "sha256": "ace78bcb2f7ef29609a3fc9eb925dedfa19c190c350d6fe4772d23ec72437b15" },
     { "id": "098_event_search_scoped_postings.sql", "sha256": "d0864fdefb246c1812d7566a2665e64986a2d7b1b3b264311ba23f77f7a1058d" },
     { "id": "099_event_search_term_document_frequency.sql", "sha256": "fa2313bb8252606d7945ea1e91de3c551986910054e3e5d952ed3aad8f9ecb14" },
-    { "id": "100_session_search_metadata_terms.sql", "sha256": "2ac4f6aee446c57fb2076ee1b97fbeb5fbe08a39fc47a97766f7a59bece8bbf7" }
+    { "id": "100_session_search_metadata_terms.sql", "sha256": "2ac4f6aee446c57fb2076ee1b97fbeb5fbe08a39fc47a97766f7a59bece8bbf7" },
+    { "id": "101_event_search_terms_covering_index.sql", "sha256": "1ba06ddeb5cb4e2ff05cea5efda9e32a1d3aa8360fa6810c537434c4bc602035" },
+    { "id": "102_event_search_terms_insert_vacuum_scale.sql", "sha256": "7a5aeb13de9b8afd9ddf9a8c9e150d7d43bbc40abc779aeb0b7e4e14590ed1cd" }
   ]
 }
