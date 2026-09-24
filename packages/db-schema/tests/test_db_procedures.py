@@ -117,6 +117,27 @@ async def test_event_search_prefix_fallback_migration_is_mirrored_in_schema_sql(
     ) in schema_sql
 
 
+async def test_event_search_posting_aggregation_migration_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("103_event_search_aggregate_postings.sql").strip()
+    schema_sql = _schema_sql()
+
+    assert _function_sql(
+        migration_sql, "CREATE OR REPLACE FUNCTION event_search("
+    ) in schema_sql
+
+
+async def test_event_type_covering_index_migration_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("104_events_event_type_covering_index.sql")
+    schema_sql = _schema_sql()
+
+    assert "CREATE INDEX IF NOT EXISTS idx_events_event_type_cover" in migration_sql
+    assert "ON public.events USING btree (event_type)" in migration_sql
+    assert "INCLUDE (session_id, id, created_at)" in migration_sql
+    assert "CREATE INDEX IF NOT EXISTS idx_events_event_type_cover" in schema_sql
+    assert "ON events USING btree (event_type)" in schema_sql
+    assert "INCLUDE (session_id, id, created_at)" in schema_sql
+
+
 async def test_session_id_search_uses_sessions_before_indexed_event_lookup():
     migration_sql = _migration_sql("050_session_id_search_indexed.sql").strip()
     schema_sql = _schema_sql()
@@ -2251,6 +2272,57 @@ async def test_event_search_uses_bm25_terms(test_db):
     )
     assert [r["id"] for r in rows[:2]] == [1, 2]
     assert rows[0]["score"] > rows[1]["score"]
+
+
+async def test_global_event_search_applies_type_and_folder_filters_before_ranking(test_db):
+    allowed_folder = "event-search-allowed"
+    blocked_folder = "event-search-blocked"
+    allowed_session = "event-search-allowed-session"
+    blocked_session = "event-search-blocked-session"
+
+    await _create_folder(test_db, allowed_folder)
+    await _create_folder(test_db, blocked_folder)
+    await _create_session(test_db, allowed_session, folder_id=allowed_folder)
+    await _create_session(test_db, blocked_session, folder_id=blocked_folder)
+    now = _utc_now()
+
+    excluded_type_id = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        allowed_session,
+        "user_message",
+        '{"text":"needle needle needle needle"}',
+        "needle needle needle needle",
+        now,
+    )
+    expected_id = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        allowed_session,
+        "result",
+        '{"text":"needle common additional words"}',
+        "needle common additional words",
+        now,
+    )
+    blocked_id = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        blocked_session,
+        "result",
+        '{"text":"needle"}',
+        "needle",
+        now,
+    )
+
+    rows = await test_db.fetch(
+        "SELECT * FROM event_search($1, NULL, 1, $2, $3, 1)",
+        "needle",
+        ["result"],
+        [allowed_folder],
+    )
+
+    assert excluded_type_id != expected_id
+    assert blocked_id != expected_id
+    assert [(row["id"], row["session_id"], row["event_type"]) for row in rows] == [
+        (expected_id, allowed_session, "result"),
+    ]
 
 
 async def test_event_search_matches_korean_prefix_inflections(test_db):

@@ -20,6 +20,14 @@ const INSERT_VACUUM_MIGRATION_PATH = fileURLToPath(new URL(
   "../../../packages/db-schema/sql/migrations/102_event_search_terms_insert_vacuum_scale.sql",
   import.meta.url,
 ));
+const POSTING_AGGREGATION_MIGRATION_PATH = fileURLToPath(new URL(
+  "../../../packages/db-schema/sql/migrations/103_event_search_aggregate_postings.sql",
+  import.meta.url,
+));
+const EVENT_TYPE_INDEX_MIGRATION_PATH = fileURLToPath(new URL(
+  "../../../packages/db-schema/sql/migrations/104_events_event_type_covering_index.sql",
+  import.meta.url,
+));
 const MANIFEST_PATH = fileURLToPath(new URL(
   "../../../packages/db-schema/migration-manifest.json",
   import.meta.url,
@@ -32,6 +40,11 @@ const MIGRATIONS = [
   readFileSync(COVERING_MIGRATION_PATH, "utf8"),
   readFileSync(INSERT_VACUUM_MIGRATION_PATH, "utf8"),
 ];
+const POSTING_AGGREGATION_MIGRATION = readFileSync(
+  POSTING_AGGREGATION_MIGRATION_PATH,
+  "utf8",
+);
+const EVENT_TYPE_INDEX_MIGRATION = readFileSync(EVENT_TYPE_INDEX_MIGRATION_PATH, "utf8");
 const MANIFEST = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as {
   migrations: Array<{ id: string; sha256: string }>;
 };
@@ -46,12 +59,20 @@ afterEach(async () => {
 describe.sequential("event search covering index migrations", () => {
   it("keeps the fresh schema and ordered migration manifest on the same definition", () => {
     const entries = MANIFEST.migrations;
-    const covering = entries.at(-2);
-    const vacuum = entries.at(-1);
+    const covering = entries.at(-4);
+    const vacuum = entries.at(-3);
+    const postingAggregation = entries.at(-2);
+    const eventTypeIndex = entries.at(-1);
     expect(covering?.id).toBe("101_event_search_terms_covering_index.sql");
     expect(vacuum?.id).toBe("102_event_search_terms_insert_vacuum_scale.sql");
+    expect(postingAggregation?.id).toBe("103_event_search_aggregate_postings.sql");
+    expect(eventTypeIndex?.id).toBe("104_events_event_type_covering_index.sql");
     expect(covering?.sha256).toBe(migrationSha256(MIGRATIONS[0]));
     expect(vacuum?.sha256).toBe(migrationSha256(MIGRATIONS[1]));
+    expect(postingAggregation?.sha256).toBe(
+      migrationSha256(POSTING_AGGREGATION_MIGRATION),
+    );
+    expect(eventTypeIndex?.sha256).toBe(migrationSha256(EVENT_TYPE_INDEX_MIGRATION));
 
     const tableStart = SCHEMA.indexOf("CREATE TABLE IF NOT EXISTS event_search_terms (");
     expect(tableStart).toBeGreaterThanOrEqual(0);
@@ -70,6 +91,15 @@ describe.sequential("event search covering index migrations", () => {
     );
     expect(MIGRATIONS[0].indexOf("indisvalid")).toBeLessThan(
       MIGRATIONS[0].indexOf("DROP INDEX public.idx_event_search_terms_term"),
+    );
+    expect(POSTING_AGGREGATION_MIGRATION).toContain(
+      "CREATE OR REPLACE FUNCTION event_search(",
+    );
+    expect(EVENT_TYPE_INDEX_MIGRATION).toMatch(
+      /CREATE INDEX IF NOT EXISTS idx_events_event_type_cover\s+ON public\.events USING btree \(event_type\)\s+INCLUDE \(session_id, id, created_at\);/u,
+    );
+    expect(SCHEMA).toMatch(
+      /CREATE INDEX IF NOT EXISTS idx_events_event_type_cover\s+ON events USING btree \(event_type\)\s+INCLUDE \(session_id, id, created_at\);/u,
     );
   });
 

@@ -84,6 +84,7 @@ describe.sequential("versioned migration runner", () => {
         .toContain("autovacuum_vacuum_insert_scale_factor=0.05");
 
       await seedCurrentTask(sql);
+      await sql`DROP INDEX public.idx_events_event_type_cover`;
       await sql`DROP TABLE schema_migrations`;
 
       const backupDirectory = join(cwd, "backup");
@@ -138,6 +139,12 @@ describe.sequential("versioned migration runner", () => {
       const rows = await sql`
         SELECT
           (SELECT COUNT(*)::int FROM schema_migrations) AS migration_count,
+          (SELECT COUNT(*)::int FROM schema_migrations
+            WHERE migration_id = '103_event_search_aggregate_postings.sql')
+            AS posting_aggregation_migration_count,
+          (SELECT COUNT(*)::int FROM schema_migrations
+            WHERE migration_id = '104_events_event_type_covering_index.sql')
+            AS event_type_index_migration_count,
           (SELECT COUNT(*)::int FROM task_operations WHERE id = 'operation-sentinel')
             AS operation_count,
           (SELECT COUNT(DISTINCT applied_kind)::int FROM schema_migrations)
@@ -154,6 +161,8 @@ describe.sequential("versioned migration runner", () => {
       `;
       expect(rows[0]).toMatchObject({
         migration_count: MANIFEST_MIGRATION_COUNT,
+        posting_aggregation_migration_count: 1,
+        event_type_index_migration_count: 1,
         operation_count: 1,
         applied_kind_count: 2,
         applied_kind: "bootstrap",
@@ -162,6 +171,22 @@ describe.sequential("versioned migration runner", () => {
         migration_086_kind: "bootstrap",
         migration_087_kind: "migration",
       });
+
+      const eventTypeIndex = await sql`
+        SELECT i.indisvalid, i.indisready, i.indnkeyatts, i.indnatts,
+               pg_get_indexdef(i.indexrelid) AS definition
+        FROM pg_index i
+        WHERE i.indexrelid = 'public.idx_events_event_type_cover'::regclass
+      `;
+      expect(eventTypeIndex[0]).toMatchObject({
+        indisvalid: true,
+        indisready: true,
+        indnkeyatts: 1,
+        indnatts: 4,
+      });
+      expect(eventTypeIndex[0].definition).toContain(
+        "INCLUDE (session_id, id, created_at)",
+      );
 
       const repeated = runWithEnv(RELEASE_EXECUTOR, REPOSITORY_ROOT, gatedEnvironment, "apply");
       expect(repeated.status).toBe(0);
