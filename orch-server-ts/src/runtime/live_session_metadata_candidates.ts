@@ -76,6 +76,7 @@ export async function loadSessionMetadataCandidateRows(
   const promptPrefix = createGroup();
   const titleTokens = createGroup();
   const promptTokens = createGroup();
+  const promptTokenVariants: { query: string; kind: string; order: number }[] = [];
   const allowTokenCandidates = Array.from(params.q).length <= 128;
   const hasPromptTokenSource = allowTokenCandidates && variants.some((variant) => {
     const compactVariant = compactSearchQuery(variant.query);
@@ -137,6 +138,10 @@ export async function loadSessionMetadataCandidateRows(
         : phase !== "fast";
       if (includeTokenSource && allowTokenCandidates && Array.from(variant.query).length <= 128) {
         const tokenGroup = source.kind === "title" ? titleTokens : promptTokens;
+        if (source.kind === "prompt") {
+          promptTokenVariants.push({ query: variant.query, kind: variant.kind, order: index + 1 });
+          return;
+        }
         const tokenQuery = tokenGroup.bind(variant.query, "text");
         const tokenKind = tokenGroup.bind(variant.kind, "text");
         const tokenOrder = tokenGroup.bind(index + 1, "integer");
@@ -181,6 +186,152 @@ export async function loadSessionMetadataCandidateRows(
       }
     }
   });
+
+  if (promptTokenVariants.length > 0) {
+    const variants = promptTokenVariants.map((variant) => `(
+      ${promptTokens.bind(variant.query, "text")},
+      ${promptTokens.bind(variant.kind, "text")},
+      ${promptTokens.bind(variant.order, "integer")}
+    )`).join(",");
+    const candidateBackend = sessionBackendExpression("candidate", promptTokens.backendCatalog);
+    const filteredBackend = sessionBackendExpression("session", promptTokens.backendCatalog);
+    // For up to eight unique terms, threshold-sized GIN containment probes are
+    // an exact superset of rows that can meet the overlap threshold. This avoids
+    // tokenizing every any-term hit. Larger queries keep the broad GIN overlap path.
+    promptTokens.branches.push(`
+      (
+        WITH RECURSIVE
+        query_terms AS MATERIALIZED (
+          SELECT variant.query, variant.query_kind, variant.query_order,
+                 session_search_tokens(variant.query) AS terms
+          FROM (VALUES ${variants}) AS variant(query, query_kind, query_order)
+        ),
+        query_term_bounds AS MATERIALIZED (
+          SELECT query.*, GREATEST(
+            2, CEIL(cardinality(query.terms) * 0.6)::integer
+          ) AS required_overlap
+          FROM query_terms query
+        ),
+        query_term_combinations AS (
+          SELECT query.query, query.query_kind, query.query_order, query.terms,
+                 query.required_overlap, ARRAY[]::text[] AS selected_terms,
+                 0::integer AS selected_count, 0::integer AS last_index
+          FROM query_term_bounds query
+          WHERE cardinality(query.terms) >= 2
+            AND cardinality(query.terms) <= 8
+          UNION ALL
+          SELECT combination.query, combination.query_kind, combination.query_order,
+                 combination.terms, combination.required_overlap,
+                 combination.selected_terms || combination.terms[next_term.term_index],
+                 combination.selected_count + 1, next_term.term_index
+          FROM query_term_combinations combination
+          CROSS JOIN LATERAL generate_series(
+            combination.last_index + 1,
+            cardinality(combination.terms)
+              - (combination.required_overlap - combination.selected_count) + 1
+          ) AS next_term(term_index)
+          WHERE combination.selected_count < combination.required_overlap
+        ),
+        indexed_prompt_candidates AS MATERIALIZED (
+          SELECT query.query, query.query_kind, query.query_order,
+                 candidate.session_id
+          FROM query_term_bounds query
+          CROSS JOIN LATERAL (
+            SELECT candidate.session_id
+            FROM sessions candidate
+            WHERE cardinality(query.terms) > 8
+              AND cardinality(query.terms) >= 2
+              AND session_search_tokens(candidate.prompt) && query.terms
+              AND (${promptTokens.allowedFolders} IS NULL OR candidate.folder_id = ANY(${promptTokens.allowedFolders}))
+              AND (${promptTokens.nodeId} IS NULL OR candidate.node_id = ${promptTokens.nodeId})
+              AND (${promptTokens.statuses} IS NULL OR candidate.status = ANY(${promptTokens.statuses}))
+              AND (${promptTokens.updatedAfter} IS NULL OR candidate.updated_at >= ${promptTokens.updatedAfter})
+              AND (${promptTokens.backendFilter} IS NULL OR ${candidateBackend} = ANY(${promptTokens.backendFilter}))
+          ) candidate
+          UNION
+          SELECT combination.query, combination.query_kind, combination.query_order,
+                 candidate.session_id
+          FROM query_term_combinations combination
+          CROSS JOIN LATERAL (
+            SELECT candidate.session_id
+            FROM sessions candidate
+            WHERE session_search_tokens(candidate.prompt) @> combination.selected_terms
+              AND (${promptTokens.allowedFolders} IS NULL OR candidate.folder_id = ANY(${promptTokens.allowedFolders}))
+              AND (${promptTokens.nodeId} IS NULL OR candidate.node_id = ${promptTokens.nodeId})
+              AND (${promptTokens.statuses} IS NULL OR candidate.status = ANY(${promptTokens.statuses}))
+              AND (${promptTokens.updatedAfter} IS NULL OR candidate.updated_at >= ${promptTokens.updatedAfter})
+              AND (${promptTokens.backendFilter} IS NULL OR ${candidateBackend} = ANY(${promptTokens.backendFilter}))
+          ) candidate
+          WHERE combination.selected_count = combination.required_overlap
+        ),
+        filtered_prompt_candidates AS MATERIALIZED (
+          SELECT DISTINCT candidate.query, candidate.query_kind, candidate.query_order,
+                          candidate.session_id, session.prompt, session.updated_at
+          FROM indexed_prompt_candidates candidate
+          JOIN sessions session ON session.session_id = candidate.session_id
+          WHERE (${promptTokens.allowedFolders} IS NULL OR session.folder_id = ANY(${promptTokens.allowedFolders}))
+            AND (${promptTokens.nodeId} IS NULL OR session.node_id = ${promptTokens.nodeId})
+            AND (${promptTokens.statuses} IS NULL OR session.status = ANY(${promptTokens.statuses}))
+            AND (${promptTokens.updatedAfter} IS NULL OR session.updated_at >= ${promptTokens.updatedAfter})
+            AND (${promptTokens.backendFilter} IS NULL OR ${filteredBackend} = ANY(${promptTokens.backendFilter}))
+        ),
+        unique_prompt_candidates AS MATERIALIZED (
+          SELECT DISTINCT session_id, prompt, updated_at
+          FROM filtered_prompt_candidates
+        ),
+        tokenized_prompt_candidates AS MATERIALIZED (
+          SELECT candidate.session_id, candidate.prompt, candidate.updated_at,
+                 session_search_tokens(candidate.prompt) AS prompt_terms
+          FROM unique_prompt_candidates candidate
+        ),
+        scored_prompt_candidates AS MATERIALIZED (
+          SELECT candidate.query, candidate.query_kind, candidate.query_order,
+                 candidate.session_id, candidate.prompt, candidate.updated_at,
+                 query.terms AS query_terms,
+                 (
+                   SELECT COUNT(*)::integer
+                   FROM unnest(query.terms) AS query_term(term)
+                   WHERE query_term.term = ANY(tokenized.prompt_terms)
+                 ) AS overlap_count
+          FROM filtered_prompt_candidates candidate
+          JOIN query_terms query
+            ON query.query = candidate.query
+           AND query.query_kind = candidate.query_kind
+           AND query.query_order = candidate.query_order
+          JOIN tokenized_prompt_candidates tokenized USING (session_id)
+        ),
+        matching_prompt_candidates AS MATERIALIZED (
+          SELECT candidate.*
+          FROM scored_prompt_candidates candidate
+          WHERE candidate.overlap_count >= GREATEST(
+            2, CEIL(cardinality(candidate.query_terms) * 0.6)
+          )
+        ),
+        ranked_prompt_candidates AS MATERIALIZED (
+          SELECT candidate.*,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY candidate.query_order
+                   ORDER BY candidate.overlap_count::double precision
+                              / cardinality(candidate.query_terms) DESC,
+                            candidate.updated_at DESC NULLS LAST,
+                            candidate.session_id ASC
+                 ) AS query_rank
+          FROM matching_prompt_candidates candidate
+        )
+        SELECT candidate.query, candidate.query_kind, candidate.query_order,
+               NULL::integer AS id, candidate.session_id,
+               'session_metadata'::text AS event_type,
+               COALESCE(candidate.prompt, '') AS searchable_text,
+               candidate.updated_at AS created_at,
+               (1.0 + candidate.overlap_count::double precision
+                 / NULLIF(cardinality(candidate.query_terms), 0))::double precision AS score,
+               'prompt'::text AS match_source,
+               'prompt'::text AS relevance_source
+        FROM ranked_prompt_candidates candidate
+        WHERE candidate.query_rank <= ${promptTokens.limit}
+      )
+    `);
+  }
 
   const groups = phase === "prompt_tokens"
     ? [promptTokens]
