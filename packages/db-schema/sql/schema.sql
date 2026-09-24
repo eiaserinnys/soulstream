@@ -1173,6 +1173,9 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS subtree_height INTEGER NOT NULL DEFA
 -- ============================================================
 
 CREATE INDEX IF NOT EXISTS idx_events_session_id_id ON events (session_id, id);
+CREATE INDEX IF NOT EXISTS idx_events_event_type_cover
+    ON events USING btree (event_type)
+    INCLUDE (session_id, id, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_dedupe_key
     ON events (session_id, dedupe_key)
     WHERE dedupe_key IS NOT NULL;
@@ -2883,33 +2886,19 @@ CREATE OR REPLACE FUNCTION event_search(
         UNION ALL
         SELECT * FROM global_matching_postings
     ),
-    -- Reuse only the exact top-k identities when deciding whether prefix fallback is needed.
-    scored_exact AS (
+    -- Build the eligible event set once; scoped searches reuse their session-first path.
+    eligible_events AS MATERIALIZED (
+        SELECT id, session_id, event_type, created_at
+        FROM scoped_events
+        UNION ALL
         SELECT
             e.id,
             e.session_id,
             e.event_type,
-            e.created_at,
-            SUM(
-                ln(1 + ((c.total_docs - posting.doc_count + 0.5) / (posting.doc_count + 0.5))) *
-                (
-                    (posting.term_freq * 2.2) /
-                    (
-                        posting.term_freq +
-                        1.2 * (
-                            0.25 +
-                            0.75 * (posting.doc_len::FLOAT / GREATEST(c.avg_doc_len, 1))
-                        )
-                    )
-                )
-            )::FLOAT AS score
-        FROM matching_postings posting
-        JOIN corpus c ON c.total_docs > 0
-        JOIN events e
-          ON e.session_id = posting.session_id
-         AND e.id = posting.event_id
+            e.created_at
+        FROM events e
         JOIN sessions scoped_session ON scoped_session.session_id = e.session_id
-        WHERE (p_session_ids IS NULL OR e.session_id = ANY(p_session_ids))
+        WHERE p_session_ids IS NULL
           AND (p_event_types IS NULL OR e.event_type = ANY(p_event_types))
           AND (p_allowed_folder_ids IS NULL
                OR scoped_session.folder_id = ANY(p_allowed_folder_ids))
@@ -2930,7 +2919,41 @@ CREATE OR REPLACE FUNCTION event_search(
                AND mapping.value->>'agent_id' = scoped_session.agent_id
              LIMIT 1)
           ) = ANY(p_backends))
-        GROUP BY e.id, e.session_id, e.event_type, e.created_at
+    ),
+    -- Sum exact BM25 term contributions once per event before the eligible-event join.
+    scored_postings AS (
+        SELECT
+            posting.session_id,
+            posting.event_id,
+            SUM(
+                ln(1 + ((c.total_docs - posting.doc_count + 0.5) / (posting.doc_count + 0.5))) *
+                (
+                    (posting.term_freq * 2.2) /
+                    (
+                        posting.term_freq +
+                        1.2 * (
+                            0.25 +
+                            0.75 * (posting.doc_len::FLOAT / GREATEST(c.avg_doc_len, 1))
+                        )
+                    )
+                )
+            )::FLOAT AS score
+        FROM matching_postings posting
+        JOIN corpus c ON c.total_docs > 0
+        GROUP BY posting.session_id, posting.event_id
+    ),
+    -- Apply event and session filters before per-session ranking and global top-k.
+    scored_exact AS (
+        SELECT
+            e.id,
+            e.session_id,
+            e.event_type,
+            e.created_at,
+            posting.score
+        FROM scored_postings posting
+        JOIN eligible_events e
+          ON e.session_id = posting.session_id
+         AND e.id = posting.event_id
     ),
     scored_candidates AS MATERIALIZED (
         SELECT id, session_id, event_type, created_at, score
