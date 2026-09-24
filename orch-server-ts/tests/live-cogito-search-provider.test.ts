@@ -303,11 +303,81 @@ describe("live Cogito search provider", () => {
       allowedFolderIds: ["folder-allowed"],
     });
 
-    const metadataCall = harness.calls.find((call) => call.text.includes("session_metadata"));
-    expect(metadataCall?.text).toContain("session_search_tokens(");
-    expect(metadataCall?.text).toContain("&&");
-    expect(metadataCall?.text).toContain("candidate.folder_id = ANY");
-    expect(metadataCall?.text).toContain("bounded_metadata AS MATERIALIZED");
+    const metadataCalls = harness.calls.filter((call) => call.text.includes("session_metadata"));
+    const titleTokenCall = metadataCalls.find((call) => call.text.includes("session_search_tokens(candidate.display_name)"));
+    const promptTokenCall = metadataCalls.find((call) => call.text.includes("session_search_tokens(candidate.prompt)"));
+    expect(metadataCalls).toHaveLength(4);
+    expect(titleTokenCall?.text).toContain("&&");
+    expect(titleTokenCall?.text).toContain("candidate.folder_id = ANY");
+    expect(titleTokenCall?.text).toContain("bounded_metadata AS MATERIALIZED");
+    expect(promptTokenCall?.text).toContain("&&");
+  });
+
+  it("keeps completed metadata candidates when the prompt-token source times out", async () => {
+    const calls: SqlCall[] = [];
+    const titleRow = {
+      query: "피드 검색 세션",
+      query_kind: "original",
+      query_order: 1,
+      id: null,
+      session_id: "title-candidate",
+      event_type: "session_metadata",
+      searchable_text: "피드 검색 세션 업무 자동 선택 수정",
+      created_at: "2026-09-23T00:00:00.000Z",
+      score: 1.85,
+      match_source: "title",
+      relevance_source: "title",
+      display_name: "피드 검색 세션 업무 자동 선택 수정",
+      session_prompt: "",
+      folder_id: "folder-a",
+      node_id: "node-a",
+      status: "completed",
+      backend: null,
+      parent_session_id: null,
+      session_updated_at: "2026-09-23T00:00:00.000Z",
+      task_id: null,
+      task_title: null,
+    };
+    const promptTimeout = Object.assign(new Error("statement timeout"), { code: "57014" });
+    const run = (text: string, values: unknown[] = []) => {
+      calls.push({ text, values });
+      if (text.includes("session_metadata") && text.includes("session_search_tokens(candidate.prompt)")) {
+        return Object.assign(Promise.reject(promptTimeout), { cancel: vi.fn() });
+      }
+      if (text.includes("session_metadata")) {
+        return Object.assign(Promise.resolve([titleRow]), { cancel: vi.fn() });
+      }
+      return Object.assign(Promise.resolve([]), { cancel: vi.fn() });
+    };
+    const sql = Object.assign((strings: TemplateStringsArray, ...values: unknown[]) =>
+      run(strings.join("?"), values), {
+      unsafe: (text: string, values: readonly unknown[] = []) => run(text, [...values]),
+    }) as unknown as LiveSearchSql;
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(sql),
+    });
+
+    const response = await provider.search({
+      q: "피드 검색 세션",
+      top_k: 5,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      include_session_results: true,
+      session_search_mode: "lexical",
+    });
+
+    const metadataCalls = calls.filter((call) => call.text.includes("session_metadata"));
+    expect(metadataCalls).toHaveLength(4);
+    expect(metadataCalls[0]?.text).toContain("session_search_index_prefix(candidate.display_name_search_key)");
+    expect(metadataCalls[1]?.text).toContain("session_search_index_prefix(candidate.prompt_search_key)");
+    expect(metadataCalls[2]?.text).toContain("session_search_tokens(candidate.display_name)");
+    expect(metadataCalls[2]?.text).not.toContain("session_search_tokens(candidate.prompt)");
+    expect(metadataCalls[3]?.text).toContain("session_search_tokens(candidate.prompt)");
+    expect(response.session_results?.map((row) => row.session_id)).toContain("title-candidate");
+    expect(response.search_status?.session_sources?.metadata).toEqual({ status: "partial", reason: "timeout" });
+    expect(response.search_status?.search).toEqual({ status: "partial", stage: "lexical", reason: "timeout" });
   });
 
   it("keeps long original queries on the exact/prefix path in lexical and expanded search", async () => {
@@ -486,20 +556,23 @@ describe("live Cogito search provider", () => {
       allowedFolderIds: ["visible-root", "visible-child"],
     });
 
-    expect(harness.calls).toHaveLength(3);
-    const metadataCall = harness.calls.find((call) => call.text.includes("session_metadata"));
+    expect(harness.calls).toHaveLength(6);
+    const metadataCalls = harness.calls.filter((call) => call.text.includes("session_metadata"));
     const bodyCall = harness.calls.find((call) => call.text.includes("event_search("));
     const navigationCall = harness.calls.find((call) => call.text.includes("FROM folders"));
+    expect(metadataCalls).toHaveLength(4);
     expect(bodyCall?.text).toContain("event_search(");
     expect(bodyCall?.text).toContain("session_id_search(");
     expect(bodyCall?.text).toContain("digest_session.folder_id = ANY");
     expect(bodyCall?.text.match(/event_search\(/g)).toHaveLength(1);
     expect(bodyCall?.values).toContain(1);
     expect(bodyCall?.values).toContain(25);
-    expect(metadataCall?.text).toContain("candidate.folder_id = ANY");
-    expect(metadataCall?.text).toContain("primary_session_item.container_kind = 'task'");
-    expect(metadataCall?.text).toContain("primary_session_item.membership_kind = 'primary'");
-    expect(metadataCall?.values).toContainEqual(["visible-root", "visible-child"]);
+    for (const metadataCall of metadataCalls) {
+      expect(metadataCall.text).toContain("candidate.folder_id = ANY");
+      expect(metadataCall.text).toContain("primary_session_item.container_kind = 'task'");
+      expect(metadataCall.text).toContain("primary_session_item.membership_kind = 'primary'");
+      expect(metadataCall.values).toContainEqual(["visible-root", "visible-child"]);
+    }
     expect(navigationCall?.text).toContain("f.id = ANY");
     expect(navigationCall?.values).toContainEqual(["visible-root", "visible-child"]);
   });
@@ -659,7 +732,7 @@ describe("live Cogito search provider", () => {
         },
       },
     });
-    expect(sql.setStatementTimeout).toHaveBeenCalledTimes(2);
+    expect(sql.setStatementTimeout).toHaveBeenCalledTimes(5);
     expect(discard).not.toHaveBeenCalled();
   });
 
@@ -911,7 +984,10 @@ describe("live Cogito search provider", () => {
       },
     });
     expect(expansionAborted).toBe(true);
-    expect(harness.calls).toHaveLength(2);
+    expect(harness.calls).toHaveLength(5);
+    expect(harness.calls.filter((call) => call.text.includes("session_metadata"))).toHaveLength(4);
+    expect(harness.calls.filter((call) => call.text.includes("event_search(")).length).toBe(1);
+    expect(harness.calls.some((call) => call.text.includes("FROM folders"))).toBe(false);
     expect(Date.now() - startedAt).toBeLessThan(1_800);
   });
 
