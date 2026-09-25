@@ -6,6 +6,8 @@ R3 코드 대조 커밋 SHA: `e15bfa04bbb304f4138930a8e022f4d70ccffd4e`
 
 R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
+R52 코드 대조 커밋 SHA: `8d0a0be25a5e732816d525dcb340d7c01704a785`
+
 > 상태 배지: **R32 · R33 · R34-③ · R35 · R38 · R51 · Wave 3 · 1-B 코드 반영**
 
 > 범위 주석: REST·내부 세션 송신·노드 명령은 `TaskManager.addIntervention` 이후 하나의 경로로 수렴한다. 실행 시작은 DB owner를 선출하지 않고 exact runtime registration identity를 한 번 기록한다.
@@ -44,6 +46,6 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 | 24. orch registration fence·투영·방송 | `orch-server-ts/src/node/event_ingress_repository.ts:commitEnvelope` (L136–190), `event_ingress_controller.ts:NodeEventIngressController.process`, `committedEffectSessionUpdate` | execution-scoped event의 envelope registration id가 `sessions.execution_registration_id`와 정확히 같을 때만 commit한다. 그 뒤 canonical session effect를 cache에 먼저 적용하고 event·`session_updated`를 방송한 뒤 ACK한다. registration field가 없는 pre-registration·global event는 기존 경로를 유지한다. | registration 불일치·명시 NULL·세션 행 NULL이면 `STALE_REGISTRATION` dead-letter다. 구 generation envelope는 parser가 registration NULL로 정규화한다. invalid batch는 연결을 닫고 duplicate receipt는 canonical projection 유무에 따라 update를 생략한다. |
 | 25. terminal 의미 fence | `orch-server-ts/src/session/session_event_semantic_publication.ts:shouldPublishSessionEventSemantically` (L6–12) | session effect가 실제 적용된 `session_ended`만 의미 이벤트로 공개한다. | terminal CAS가 거부된 `session_ended`는 방송하지 않는다. |
 | 26. 호출자 통지 | `soul-server-ts/src/task/task_executor_finalizer.ts:TaskExecutorFinalizer.notifyCompletion` (L104–117), `completion_notifier.ts:TaskCompletionNotifier.notify` (L105–149) | 적용된 canonical terminal revision마다 caller delivery를 등록한다. 재스캔 중복은 `child_session:{source}:{terminalRevision}` deterministic identity가 막는다. | caller 없음·self caller·`notifyCompletion=false`·terminal receipt 없음이면 통지하지 않는다. |
-| 27. 앱 완료 푸시 | `orch-server-ts/src/node/event_ingress_controller.ts:NodeEventIngressController.process` (L117–143), `production.ts` additional sink (L356–360), `push/push_notifier.ts:PushNotifier.handleEvent` (L117–137), `handleSessionEnded` (L196–222) | 적용된 `session_ended`가 PushNotifier에 전달된다. `review_required=true`이고 status가 completed/error이며 llm이 아니고 폴더가 제외되지 않았으면 Expo push를 보낸다. 완료 자격은 caller source와 별도로 판정하지 않는다. | `review_required=false`, llm, 미지원 status, 오래된/중복 이벤트, 제외 폴더는 기존대로 건너뛴다. 입력 대기 알림은 별도 caller-source 정책을 유지한다. |
+| 27. 앱 완료 푸시 | `orch-server-ts/src/node/event_ingress_controller.ts:NodeEventIngressController.process` (L117–143), `production.ts` additional sink (L356–360), `push/push_notifier.ts:PushNotifier.handleEvent` (L117–137), `handleSessionEnded`, `runtime/live_db_catalog_repository.ts:loadSessionReviewState` | 적용된 `session_ended`가 PushNotifier에 전달된다. `loadSessionReviewState`가 DB `sessions.review_required`와 `session_type`을 한 번 조회해 완료 자격과 LLM 제외를 판정한다. 세션 캐시는 본문·호출자·폴더 등 부가 정보에만 쓰며 seed 도착 순서가 완료 자격에 영향을 주지 않는다. | DB에 세션 행이 없거나 `review_required=false`면 사유를 `pushNotification action=suppressed`로 기록한다. DB 조회 실패는 기존 notifier 경고를 남긴다. llm, 미지원 status, 오래된/중복 이벤트, 제외 폴더는 기존대로 건너뛴다. 입력 대기 알림은 별도 caller-source 정책을 유지한다. |
 
 이 장을 갱신해야 하는 변경 부류: intervene 진입·delivery admission/route·auto-resume·runner spawn·context 주입·turn loop·runtime follow-up receipt·terminal persistence/projection·completion notification 변경.

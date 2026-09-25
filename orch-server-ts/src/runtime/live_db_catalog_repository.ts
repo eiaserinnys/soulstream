@@ -12,6 +12,7 @@ import {
 import type {
   SessionCatalogProvider,
 } from "../session/session_catalog_routes.js";
+import type { PushSessionReviewState } from "../push/push_notifier.js";
 import {
   firstAllowedSessionFolderId,
   type SessionResourceAccessRepository,
@@ -101,6 +102,9 @@ export type LiveDbCatalogRepository = {
   readonly listSessionSnapshots: (
     input: ListSessionSnapshotsInput,
   ) => Promise<SessionSnapshotListResponse>;
+  readonly loadSessionReviewState: (
+    sessionId: string,
+  ) => Promise<PushSessionReviewState | undefined>;
   readonly close: () => Promise<void>;
 };
 
@@ -382,6 +386,20 @@ export function createLiveDbCatalogRepository(
         input.limit,
         { includeDetails: input.sessionIds?.length === 1 },
       );
+    },
+    async loadSessionReviewState(sessionId) {
+      const rows = await (await sqlResolver.resolveSql())`
+        SELECT session_type, review_required
+        FROM sessions
+        WHERE session_id = ${sessionId}
+        LIMIT 1
+      `;
+      const row = rows[0];
+      if (row === undefined) return undefined;
+      return {
+        sessionType: stringOrNull(row.session_type),
+        reviewRequired: row.review_required === true,
+      };
     },
     async findSessionOwnerNodeId(sessionId) {
       const rows = await (await sqlResolver.resolveSql())`

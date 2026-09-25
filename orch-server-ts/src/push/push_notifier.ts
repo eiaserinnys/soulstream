@@ -44,11 +44,19 @@ export type PushNotificationCatalog = {
   listFolders: () => Promise<readonly unknown[]> | readonly unknown[];
 };
 
+export type PushSessionReviewState = {
+  readonly sessionType: string | null;
+  readonly reviewRequired: boolean;
+};
+
 export type PushNotifierOptions = {
   readonly provider: PushNotificationProvider;
   readonly repository: PushNotificationRepository;
   readonly catalog: PushNotificationCatalog;
   readonly sessionLookup: (sessionId: string) => Record<string, unknown> | undefined;
+  readonly loadSessionReviewState: (
+    sessionId: string,
+  ) => Promise<PushSessionReviewState | undefined>;
   readonly resolveNodeEmail: (nodeId: string) => string | undefined;
   readonly foregroundObservers: SessionForegroundObserverTracker;
   readonly onInfo?: (event: PushNotificationLogEvent) => void;
@@ -66,7 +74,12 @@ export type PushNotificationLogEvent = {
     | "exit_plan_mode"
     | "permission_prompt"
     | "tool_approval";
-  readonly reason: "notification_dispatched" | "duplicate_event_identity";
+  readonly reason:
+    | "notification_dispatched"
+    | "duplicate_event_identity"
+    | "review_state_unavailable"
+    | "review_not_required"
+    | "llm_session";
 };
 
 const INPUT_REQUEST_SOURCES = new Set(["slack", "browser", "soul-app", "agent"]);
@@ -130,7 +143,13 @@ export class PushNotifier {
       if (this.isStalePushEvent(sessionId, payload)) return;
       const eventKey = this.claimEvent(sessionId, payload, "session_ended");
       if (eventKey === null) return;
-      const sent = await this.handleSessionEnded(event.nodeId, sessionId, event.data, payload);
+      const sent = await this.handleSessionEnded(
+        event.nodeId,
+        sessionId,
+        event.data,
+        payload,
+        eventKey,
+      );
       if (sent) this.logSent(sessionId, eventKey, "session_ended");
       return;
     }
@@ -198,14 +217,28 @@ export class PushNotifier {
     sessionId: string,
     envelope: Record<string, unknown>,
     event: Record<string, unknown>,
+    eventKey: string | undefined,
   ): Promise<boolean> {
-    const payload = {
+    const reviewState = await this.options.loadSessionReviewState(sessionId);
+    if (reviewState === undefined) {
+      this.logSuppressed(sessionId, eventKey, "review_state_unavailable");
+      return false;
+    }
+    if (reviewState.sessionType?.toLowerCase() === "llm") {
+      this.logSuppressed(sessionId, eventKey, "llm_session");
+      return false;
+    }
+    if (!reviewState.reviewRequired) {
+      this.logSuppressed(sessionId, eventKey, "review_not_required");
+      return false;
+    }
+    const payload: Record<string, unknown> = {
       ...(this.options.sessionLookup(sessionId) ?? {}),
       ...envelope,
       ...event,
+      session_type: reviewState.sessionType,
+      review_required: reviewState.reviewRequired,
     };
-    if (normalizedString(payload.session_type, payload.sessionType) === "llm") return false;
-    if ((payload.review_required ?? payload.reviewRequired) !== true) return false;
     const source = normalizedString(payload.caller_source, payload.callerSource);
     const status = normalizedString(payload.status);
     const title = TERMINAL_NOTIFICATION_TITLES.get(status);
@@ -215,8 +248,23 @@ export class PushNotifier {
     return await this.sendToUser(nodeId, title, completionBody(payload, title), {
       sessionId,
       status,
-      sessionType: normalizedString(payload.session_type, payload.sessionType),
+      sessionType: reviewState.sessionType,
       callerSource: source,
+    });
+  }
+
+  private logSuppressed(
+    sessionId: string,
+    eventKey: string | undefined,
+    reason: Extract<PushNotificationLogEvent["reason"],
+      "review_state_unavailable" | "review_not_required" | "llm_session">,
+  ): void {
+    this.options.onInfo?.({
+      action: "suppressed",
+      session_id: sessionId,
+      event_key: eventKey ?? "missing",
+      notification_kind: "session_ended",
+      reason,
     });
   }
 

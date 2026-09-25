@@ -303,6 +303,8 @@ export async function createLiveProductionApplication(
     catalog: dbCatalogRepository.folderRouteProvider,
     sessionLookup: (sessionId) =>
       registry.sessionCache.findSession(sessionId)?.payload,
+    loadSessionReviewState: (sessionId) =>
+      dbCatalogRepository.loadSessionReviewState(sessionId),
     resolveNodeEmail: (nodeId) =>
       stringValue(registry.getUserInfo(nodeId).email) || config.allowed_email || undefined,
     foregroundObservers,
