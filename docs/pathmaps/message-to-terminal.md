@@ -6,6 +6,8 @@ R3 코드 대조 커밋 SHA: `e15bfa04bbb304f4138930a8e022f4d70ccffd4e`
 
 R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
+R52 코드 대조 커밋 SHA: `8d0a0be25a5e732816d525dcb340d7c01704a785`
+
 > 상태 배지: **R32 · R33 · R34-③ · R35 · R38 · R51 · Wave 3 · 1-B 코드 반영**
 
 > 범위 주석: REST·내부 세션 송신·노드 명령은 `TaskManager.addIntervention` 이후 하나의 경로로 수렴한다. 실행 시작은 DB owner를 선출하지 않고 exact runtime registration identity를 한 번 기록한다.
