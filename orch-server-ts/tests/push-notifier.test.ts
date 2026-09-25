@@ -151,19 +151,22 @@ describe("PushNotifier", () => {
   });
 
   it.each([
-    ["llm", "browser", 0],
-    ["claude", "agent", 0],
-    ["claude", "llm", 0],
-    ["claude", "channel_observer", 0],
-    ["claude", "slack", 1],
-    ["claude", "browser", 1],
-    ["claude", "soul-app", 1],
+    ["claude", "clipper", "reviewRequired", true, 1],
+    ["claude", "external-llm", "review_required", true, 1],
+    ["claude", "browser", "review_required", false, 0],
+    ["claude", "browser", "review_required", true, 1],
+    ["llm", "browser", "review_required", true, 0],
   ] as const)(
-    "applies completion source policy for %s/%s",
-    async (sessionType, callerSource, expected) => {
+    "uses review eligibility for completion for %s/%s/%s=%s",
+    async (sessionType, callerSource, reviewField, reviewRequired, expected) => {
       const harness = createHarness({
         sessions: new Map([[
-          "session-a", { session_type: sessionType, caller_source: callerSource },
+          "session-a",
+          {
+            session_type: sessionType,
+            caller_source: callerSource,
+            [reviewField]: reviewRequired,
+          },
         ]]),
       });
       harness.notifier.accept([
@@ -566,7 +569,7 @@ function createCatalog(options: {
 }
 
 function userSession(source: string): Record<string, unknown> {
-  return { session_type: "claude", caller_source: source };
+  return { session_type: "claude", caller_source: source, review_required: true };
 }
 
 function updated(

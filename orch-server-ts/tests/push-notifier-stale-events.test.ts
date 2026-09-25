@@ -87,6 +87,7 @@ function createHarness() {
       sessionLookup: () => ({
         session_type: "claude",
         caller_source: "browser",
+        review_required: true,
       }),
       resolveNodeEmail: () => "user@example.com",
       foregroundObservers: new SessionForegroundObserverTracker(),

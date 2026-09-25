@@ -69,8 +69,7 @@ export type PushNotificationLogEvent = {
   readonly reason: "notification_dispatched" | "duplicate_event_identity";
 };
 
-const COMPLETION_SOURCES = new Set(["slack", "browser", "soul-app"]);
-const INPUT_REQUEST_SOURCES = new Set([...COMPLETION_SOURCES, "agent"]);
+const INPUT_REQUEST_SOURCES = new Set(["slack", "browser", "soul-app", "agent"]);
 const TERMINAL_NOTIFICATION_TITLES = new Map([
   ["completed", "세션 완료"],
   ["error", "세션 오류"],
@@ -206,8 +205,8 @@ export class PushNotifier {
       ...event,
     };
     if (normalizedString(payload.session_type, payload.sessionType) === "llm") return false;
+    if ((payload.review_required ?? payload.reviewRequired) !== true) return false;
     const source = normalizedString(payload.caller_source, payload.callerSource);
-    if (!COMPLETION_SOURCES.has(source)) return false;
     const status = normalizedString(payload.status);
     const title = TERMINAL_NOTIFICATION_TITLES.get(status);
     if (title === undefined) return false;
