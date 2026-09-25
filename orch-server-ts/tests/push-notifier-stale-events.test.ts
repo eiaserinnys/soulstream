@@ -89,6 +89,10 @@ function createHarness() {
         caller_source: "browser",
         review_required: true,
       }),
+      loadSessionReviewState: async () => ({
+        sessionType: "claude",
+        reviewRequired: true,
+      }),
       resolveNodeEmail: () => "user@example.com",
       foregroundObservers: new SessionForegroundObserverTracker(),
       onWarning: warn,

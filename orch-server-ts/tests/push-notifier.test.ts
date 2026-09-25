@@ -7,9 +7,12 @@ import {
   type NodeRegistryEvent,
   type PushNotificationRepository,
   type PushNotificationProvider,
+  type PushSessionReviewState,
   type PushNotifierOptions,
   type PushSendResult,
 } from "../src/index.js";
+import { InMemoryNodeRegistry } from "../src/node/registry.js";
+import { createSessionCacheSeedSink } from "../src/node/session_cache_seed_sink.js";
 
 const OK: PushSendResult = { ok: true, invalidToken: false };
 
@@ -78,6 +81,121 @@ describe("PushNotifier", () => {
       "세션 오류",
       expect.objectContaining({ sessionId: "session-b", status: "error" }),
     );
+  });
+
+  it("sends a review-required completion while the restart DB seed is still in flight", async () => {
+    const registry = new InMemoryNodeRegistry();
+    const registered = registry.registerNode({ type: "node_register", node_id: "node-a" });
+    let releaseSeed!: (value: {
+      sessions: Record<string, unknown>[];
+      sessionList: [];
+      total: number;
+      cursor: null;
+      nextCursor: null;
+      hasMore: false;
+    }) => void;
+    const seedResult = new Promise<{
+      sessions: Record<string, unknown>[];
+      sessionList: [];
+      total: number;
+      cursor: null;
+      nextCursor: null;
+      hasMore: false;
+    }>((resolve) => {
+      releaseSeed = resolve;
+    });
+    const onNodeReady = vi.fn();
+    const seedSink = createSessionCacheSeedSink({
+      registry,
+      repository: { listSessionSnapshots: async () => await seedResult },
+      logError: vi.fn(),
+      onNodeReady,
+    });
+    seedSink([registered.event]);
+
+    const harness = createHarness({
+      sessions: new Map(),
+      sessionLookup: (sessionId) => registry.sessionCache.findSession(sessionId)?.payload,
+      loadSessionReviewState: vi.fn(async () => ({
+        sessionType: "claude",
+        reviewRequired: true,
+      })),
+    });
+    registry.receiveNodeMessage(
+      { nodeId: "node-a", connectionId: registered.node.connectionId },
+      {
+        type: "session_updated",
+        agentSessionId: "session-a",
+        status: "completed",
+        review_state: "needs_review",
+        last_event_id: 1043,
+      },
+      { committedIngress: true },
+    );
+    expect(registry.sessionCache.findSession("session-a")?.payload)
+      .toMatchObject({ status: "completed", review_state: "needs_review" });
+    expect(registry.sessionCache.findSession("session-a")?.payload)
+      .not.toHaveProperty("reviewRequired");
+    harness.notifier.accept([
+      sessionEnded("node-a", "session-a", "completed", { _event_id: 1070 }),
+    ]);
+    await harness.notifier.flush();
+
+    releaseSeed({
+      sessions: [{ agent_session_id: "session-a", status: "completed", reviewRequired: true }],
+      sessionList: [],
+      total: 1,
+      cursor: null,
+      nextCursor: null,
+      hasMore: false,
+    });
+    await vi.waitFor(() => expect(onNodeReady).toHaveBeenCalledTimes(1));
+    expect(registry.sessionCache.findSession("session-a")?.payload)
+      .not.toHaveProperty("reviewRequired");
+    expect(harness.provider.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the database review state over a stale false cache during normal operation", async () => {
+    const loadSessionReviewState = vi.fn(async () => ({
+      sessionType: "claude",
+      reviewRequired: true,
+    }));
+    const harness = createHarness({
+      sessions: new Map([[
+        "session-a",
+        { ...userSession("browser"), review_required: false },
+      ]]),
+      loadSessionReviewState,
+    });
+
+    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
+    await harness.notifier.flush();
+
+    expect(loadSessionReviewState).toHaveBeenCalledTimes(1);
+    expect(loadSessionReviewState).toHaveBeenCalledWith("session-a");
+    expect(harness.provider.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the database review state to suppress a stale true cache", async () => {
+    const onInfo = vi.fn();
+    const harness = createHarness({
+      sessions: new Map([["session-a", userSession("browser")]]),
+      loadSessionReviewState: async () => ({
+        sessionType: "claude",
+        reviewRequired: false,
+      }),
+      onInfo,
+    });
+
+    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
+    await harness.notifier.flush();
+
+    expect(harness.provider.send).not.toHaveBeenCalled();
+    expect(onInfo).toHaveBeenCalledWith(expect.objectContaining({
+      action: "suppressed",
+      session_id: "session-a",
+      reason: "review_not_required",
+    }));
   });
 
   it("prefers final text carried by the completion wire over stale cached text", async () => {
@@ -509,6 +627,10 @@ function createHarness(options: {
   onInfo?: PushNotifierOptions["onInfo"];
   onWarning?: (message: string, error?: unknown) => void;
   nowMs?: () => number;
+  sessionLookup?: (sessionId: string) => Record<string, unknown> | undefined;
+  loadSessionReviewState?: (
+    sessionId: string,
+  ) => Promise<PushSessionReviewState | undefined>;
 } = {}) {
   const repository = options.repository ?? createRepository();
   const provider = options.provider ?? createProvider(async () => OK);
@@ -523,7 +645,16 @@ function createHarness(options: {
       provider,
       repository,
       catalog: options.catalog ?? createCatalog(),
-      sessionLookup: (sessionId) => sessions.get(sessionId),
+      sessionLookup: options.sessionLookup ?? ((sessionId) => sessions.get(sessionId)),
+      loadSessionReviewState: options.loadSessionReviewState ?? (async (sessionId) => {
+        const session = sessions.get(sessionId);
+        if (!session) return undefined;
+        const sessionType = session.session_type ?? session.sessionType;
+        return {
+          sessionType: typeof sessionType === "string" ? sessionType : null,
+          reviewRequired: (session.review_required ?? session.reviewRequired) === true,
+        };
+      }),
       resolveNodeEmail: () => "user@example.com",
       foregroundObservers: options.observers ?? new SessionForegroundObserverTracker(),
       onInfo: options.onInfo,
