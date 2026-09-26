@@ -262,7 +262,7 @@ describe("database release CLI and direct writer boundaries", () => {
     expect(source).toContain("board_yjs_runbook_residue");
   });
 
-  it("fails non-central direct board apply with one JSON before journal or database access", () => {
+  it("fails direct board apply at the journal gate without a central node check", () => {
     const directory = tempDirectory("release-board-direct-");
     const result = spawnSync(process.execPath, [
       TSX,
@@ -276,6 +276,7 @@ describe("database release CLI and direct writer boundaries", () => {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
         HANIEL_SERVICE_CWD: directory,
+        HANIEL_BACKUP_DIR: directory,
         SOULSTREAM_NODE_ID: "not-the-central-node",
       },
       timeout: 10_000,
@@ -285,15 +286,17 @@ describe("database release CLI and direct writer boundaries", () => {
     expect(result.stdout).toBe("");
     const lines = result.stderr.trim().split("\n");
     expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0])).toMatchObject({
+    const failure = JSON.parse(lines[0]);
+    expect(failure).toMatchObject({
       ok: false,
-      error: { code: "NON_CENTRAL_MUTATION_FORBIDDEN" },
+      error: { code: "DATABASE_RELEASE_FAILED" },
     });
-    expect(result.stderr).not.toContain("HANIEL_BACKUP_DIR is required");
+    expect(failure.error.message).toContain("database-release.json");
+    expect(result.stderr).not.toContain("not-the-central-node");
     expect(result.stderr).not.toContain("DATABASE_URL is required");
   });
 
-  it("redacts and bounds board deployment stdout and audit persistence", () => {
+  it("redacts and bounds a failed board deployment result and audit record", () => {
     const directory = tempDirectory("release-board-audit-");
     const secret = "board-audit-secret-value";
     writeFileSync(join(directory, ".env.soul-server-ts"), "\n", "utf8");
@@ -311,17 +314,26 @@ describe("database release CLI and direct writer boundaries", () => {
       },
       timeout: 10_000,
     });
-    expect(result.status, result.stderr).toBe(0);
+    expect(result.status, result.stderr).toBe(1);
     const stdoutLines = result.stdout.trim().split("\n");
     expect(stdoutLines).toHaveLength(1);
     expect(() => JSON.parse(stdoutLines[0])).not.toThrow();
     expect(Buffer.byteLength(stdoutLines[0], "utf8")).toBeLessThanOrEqual(32_768);
+    const output = JSON.parse(stdoutLines[0]) as Record<string, unknown>;
+    expect(output).toMatchObject({
+      schema_version: "soulstream.database-release.v1",
+      event: "board_yjs_runbook_migration",
+      status: "failed",
+      mode: "verify",
+      nodeId: "not-the-central-node",
+    });
     const audit = readFileSync(
       join(directory, "board-yjs-runbook-migration.jsonl"),
       "utf8",
     ).trim();
     expect(() => JSON.parse(audit)).not.toThrow();
     expect(Buffer.byteLength(audit, "utf8")).toBeLessThanOrEqual(32_768);
+    expect(JSON.parse(audit)).toEqual(output);
     expect(`${result.stdout}\n${audit}`).not.toContain(secret);
     expect(`${result.stdout}\n${audit}`).not.toContain(`user:${secret}@`);
   });

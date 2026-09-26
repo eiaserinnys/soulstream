@@ -7,7 +7,7 @@
   "composition": {
     "required_command_order": [
       "migration-preflight",
-      "apply-migrations-and-board-yjs-residue",
+      "apply-central-database-release",
       "verify-migration-ledger"
     ],
     "required_state_order": [

@@ -31,7 +31,7 @@ describe("orch-server-ts config scaffold", () => {
     );
   });
 
-  it("maps the complete Python Settings env surface and fixes JSON/CSV parsing", async () => {
+  it("maps the supported environment surface and tracks the ignored folder setting", async () => {
     const config = loadOrchServerEnvironment({
       NODE_NAME: "orch-primary",
       HOST: "127.0.0.1",
@@ -78,16 +78,7 @@ describe("orch-server-ts config scaffold", () => {
       trusted_proxy: "loopback",
       database_url: "postgres://orch@localhost/orch",
       dashboard_dir: "/srv/dashboard",
-      dashboard_user_folder_access: {
-        "user@example.com": {
-          restricted: false,
-          allowedFolderIds: ["alpha", "12"],
-        },
-        "legacy@example.com": {
-          restricted: true,
-          allowedFolderIds: ["beta"],
-        },
-      },
+      dashboard_user_folder_access_configured: true,
       r2_board_assets_access_key_id: "r2-access",
       r2_board_assets_secret_access_key: "r2-secret",
       r2_board_assets_bucket: "r2-bucket",
@@ -152,7 +143,7 @@ describe("orch-server-ts config scaffold", () => {
       port: 5200,
       trusted_proxy: "loopback",
       dashboard_dir: "",
-      dashboard_user_folder_access: {},
+      dashboard_user_folder_access_configured: false,
       r2_board_assets_access_key_id: "",
       atom_enabled: false,
       atom_root_node_id: null,
@@ -218,15 +209,15 @@ describe("orch-server-ts config scaffold", () => {
     expect(() => loadOrchServerEnvironment(env)).toThrow(new RegExp(key));
   });
 
-  it("rejects malformed structured and boolean env values explicitly", () => {
+  it("rejects malformed supported structured and boolean env values explicitly", () => {
     expect(() => loadOrchServerEnvironment({
       ...minimalEnvironment(),
       ATOM_ENABLED: "sometimes",
     })).toThrow(/ATOM_ENABLED/);
-    expect(() => loadOrchServerEnvironment({
+    expect(loadOrchServerEnvironment({
       ...minimalEnvironment(),
-      DASHBOARD_USER_FOLDER_ACCESS: "[]",
-    })).toThrow(/DASHBOARD_USER_FOLDER_ACCESS/);
+      DASHBOARD_USER_FOLDER_ACCESS: "not-json",
+    }).dashboard_user_folder_access_configured).toBe(true);
     expect(() => loadOrchServerEnvironment({
       ...minimalEnvironment(),
       CORS_ALLOWED_ORIGINS: '["https://ok.example", 3]',

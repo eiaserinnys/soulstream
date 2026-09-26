@@ -172,6 +172,7 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
             central.migration.apply.command,
             f"{DEPLOY_COMMAND} --migrate",
         )
+        self.assertEqual(central.migration.apply.name, "apply-central-database-release")
         central_verify = [
             command
             for command in central.post_start_verify

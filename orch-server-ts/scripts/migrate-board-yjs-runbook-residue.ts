@@ -33,8 +33,6 @@ import { computeBoardYjsRawRevision } from
   "../src/board-yjs/board_yjs_raw_document.js";
 import type { BoardYjsRawDocument } from "../src/board-yjs/board_yjs_persistence.js";
 import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
-import { BOARD_YJS_RUNBOOK_MIGRATION_NODE_ID } from
-  "../src/board-yjs/board_yjs_runbook_deploy.js";
 
 interface DocumentRow {
   name: string;
@@ -48,25 +46,18 @@ const collisionDetails = process.argv.includes("--collision-details");
 const approvedCollisionHashesPath = readOption("--approved-collision-hashes");
 loadDeploymentEnvironmentIfPresent();
 if (apply) {
-  const nodeId = requiredEnv("SOULSTREAM_NODE_ID");
-  if (nodeId !== BOARD_YJS_RUNBOOK_MIGRATION_NODE_ID) {
-    const error = new Error(
-      `NON_CENTRAL_MUTATION_FORBIDDEN: ${nodeId} cannot apply the central board migration`,
-    );
-    process.stderr.write(
-      `${serializeDatabaseReleaseResult(
-        databaseReleaseFailure(error, process.env, "board_yjs_runbook_residue"),
-        process.env,
-      )}\n`,
-    );
+  try {
+    await assertDatabaseReleaseSubphaseGate({
+      env: process.env,
+      subphase: "board_yjs_runbook_residue",
+    });
+  } catch (error) {
+    process.stderr.write(`${serializeDatabaseReleaseResult(
+      databaseReleaseFailure(error, process.env, "board_yjs_runbook_residue"),
+      process.env,
+    )}\n`);
     process.exit(1);
   }
-}
-if (apply) {
-  await assertDatabaseReleaseSubphaseGate({
-    env: process.env,
-    subphase: "board_yjs_runbook_residue",
-  });
 }
 await assertBoardYjsQuiescedApplyPreflight({
   apply,

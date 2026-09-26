@@ -29,12 +29,10 @@ const verificationScript = resolve(
 
 const mode = readMode(process.argv);
 loadDeploymentEnvironment();
-const nodeId = requiredEnv("SOULSTREAM_NODE_ID");
 const approvedCollisionHashes = await readApprovedCollisionHashes(approvalPath);
 
 try {
   await runBoardYjsRunbookDeployment({
-    nodeId,
     mode,
     approvedCollisionHashCount: approvedCollisionHashes.length,
     applySqlMigrations: async () => runNode([
@@ -128,7 +126,7 @@ async function writeAudit(input: { status: string; error?: string }): Promise<vo
     event: "board_yjs_runbook_migration",
     status: input.status,
     mode,
-    nodeId,
+    nodeId: process.env.SOULSTREAM_NODE_ID ?? null,
     approvedCollisionHashCount: approvedCollisionHashes.length,
     releaseId: process.env.HANIEL_RELEASE_ID ?? null,
     targetHead: process.env.HANIEL_TARGET_HEAD ?? null,
@@ -145,10 +143,4 @@ async function writeAudit(input: { status: string; error?: string }): Promise<vo
     `${line}\n`,
     "utf8",
   );
-}
-
-function requiredEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
 }

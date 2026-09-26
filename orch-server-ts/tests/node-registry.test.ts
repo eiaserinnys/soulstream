@@ -138,10 +138,16 @@ describe("Node registry and per-node session cache primitive", () => {
   });
 
   it("replaces duplicate node registration without letting stale disconnect remove the new connection", () => {
-    const { registry } = createRegistry();
+    const { registry, sessionCache } = createRegistry();
     const registration = fixture.registration as NodeRegistrationPayload;
 
     const first = registry.registerNode(registration);
+    sessionCache.replaceNodeSessions({
+      nodeId: "fake-node",
+      connectionId: first.node.connectionId,
+      sessions: [{ agentSessionId: "sess-half-open", status: "running" }],
+      nowMs: 1_700_000_000_000,
+    });
     const second = registry.registerNode(registration);
 
     expect(second.replacedConnectionId).toBe(first.node.connectionId);
@@ -152,6 +158,12 @@ describe("Node registry and per-node session cache primitive", () => {
     expect(registry.getConnectedNode("fake-node")?.connectionId).toBe(
       second.node.connectionId,
     );
+    expect(sessionCache.findSession("sess-half-open")).toMatchObject({
+      nodeId: "fake-node",
+      connectionId: first.node.connectionId,
+      fresh: false,
+    });
+    expect(registry.findConnectedNodeForSession("sess-half-open")).toBeUndefined();
 
     expect(
       registry.disconnectNode("fake-node", {

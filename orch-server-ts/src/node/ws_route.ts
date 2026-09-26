@@ -38,6 +38,7 @@ const INTERNAL_ERROR_CLOSE_CODE = 1011;
  */
 const MAX_DEFERRED_REGISTRATION_FRAMES = 512;
 const DEFAULT_REGISTRATION_TIMEOUT_MS = 10_000;
+const DEFAULT_APP_HEARTBEAT_TIMEOUT_MS = 30_000;
 
 export type NodeWsRouteOptions = {
   registry: InMemoryNodeRegistry;
@@ -45,6 +46,7 @@ export type NodeWsRouteOptions = {
   eventSink?: NodeRegistryEventSink;
   eventIngress?: NodeEventIngressCommitter;
   registrationTimeoutMs?: number;
+  heartbeatTimeoutMs?: number;
   releaseActivationReceipts?: ReleaseActivationReceiptStore;
 };
 
@@ -68,6 +70,7 @@ export function registerNodeWsRoute(
   const registrationTimeoutMs = resolveRegistrationTimeoutMs(
     options.registrationTimeoutMs,
   );
+  const heartbeatTimeoutMs = resolveHeartbeatTimeoutMs(options.heartbeatTimeoutMs);
   registerWebsocketPlugin(app);
   app.after(() => {
     registerNodeControlWsRoute(
@@ -100,6 +103,7 @@ export function registerNodeWsRoute(
       let releaseActivationInFlight = false;
       let deferredFrames: Record<string, unknown>[] | undefined;
       let registrationTimer: ReturnType<typeof setTimeout> | undefined;
+      let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
 
       app.log.info({
         path: "/ws/node",
@@ -109,6 +113,7 @@ export function registerNodeWsRoute(
         if (finalized) return;
         finalized = true;
         clearRegistrationTimer();
+        clearHeartbeatTimer();
         app.log.info({
           nodeId: attachment?.nodeId,
           path: "/ws/node",
@@ -140,6 +145,21 @@ export function registerNodeWsRoute(
         if (registrationTimer === undefined) return;
         clearTimeout(registrationTimer);
         registrationTimer = undefined;
+      };
+      const clearHeartbeatTimer = (): void => {
+        if (heartbeatTimer === undefined) return;
+        clearTimeout(heartbeatTimer);
+        heartbeatTimer = undefined;
+      };
+      const armHeartbeatTimer = (): void => {
+        clearHeartbeatTimer();
+        heartbeatTimer = setTimeout(() => {
+          closeAndFinalize(
+            INTERNAL_ERROR_CLOSE_CODE,
+            "heartbeat timeout",
+            "heartbeat_timeout",
+          );
+        }, heartbeatTimeoutMs);
       };
 
       registrationTimer = setTimeout(() => {
@@ -209,6 +229,9 @@ export function registerNodeWsRoute(
         } else if (result.type === "registered") {
           clearRegistrationTimer();
         }
+        if (result.type === "registered" && result.node.heartbeat.supported) {
+          armHeartbeatTimer();
+        }
         if (result.type === "registration_rejected") {
           closeAndFinalize(POLICY_VIOLATION_CLOSE_CODE, result.code);
           return;
@@ -251,6 +274,15 @@ export function registerNodeWsRoute(
               "websocket_send_error",
             );
           }
+        }
+        if (
+          result.type === "message"
+          && frame.type === "app_heartbeat_ping"
+          && !finalized
+          && options.registry.getConnectedNode(result.nodeId)?.connectionId
+            === result.connectionId
+        ) {
+          armHeartbeatTimer();
         }
       };
 
@@ -371,6 +403,14 @@ function resolveRegistrationTimeoutMs(value: number | undefined): number {
   const timeoutMs = value ?? DEFAULT_REGISTRATION_TIMEOUT_MS;
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
     throw new Error(`registrationTimeoutMs must be a positive integer: ${timeoutMs}`);
+  }
+  return timeoutMs;
+}
+
+function resolveHeartbeatTimeoutMs(value: number | undefined): number {
+  const timeoutMs = value ?? DEFAULT_APP_HEARTBEAT_TIMEOUT_MS;
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`heartbeatTimeoutMs must be a positive integer: ${timeoutMs}`);
   }
   return timeoutMs;
 }

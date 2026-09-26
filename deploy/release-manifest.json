@@ -23,7 +23,7 @@
       "timeout_seconds": 300
     },
     "apply": {
-      "name": "apply-migrations-and-board-yjs-residue",
+      "name": "apply-central-database-release",
       "command": "node orch-server-ts/node_modules/tsx/dist/cli.mjs orch-server-ts/scripts/deploy-board-yjs-runbook-residue.ts --migrate",
       "timeout_seconds": 300
     }

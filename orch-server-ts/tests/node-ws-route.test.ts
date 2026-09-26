@@ -507,6 +507,33 @@ describe("Node WS Fastify route harness", () => {
     await app.close();
   });
 
+  it("disconnects a heartbeat-capable node after the heartbeat deadline", async () => {
+    const { registry } = createRegistry();
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: { registry, heartbeatTimeoutMs: 40 },
+    });
+
+    await app.ready();
+    const ws = await injectAuthenticatedWs(app);
+    const closed = waitForClose(ws);
+    const registrationAck = waitForMessage(ws);
+    ws.send(JSON.stringify({
+      ...fixture.registration,
+      capabilities: { app_heartbeat_v1: true },
+    }));
+    await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+    await expect(registrationAck).resolves.toContain("node_register_ack");
+
+    await expect(closed).resolves.toEqual({
+      code: 1011,
+      reason: "heartbeat timeout",
+    });
+    expect(registry.getConnectedNode("fake-node")).toBeUndefined();
+
+    await app.close();
+  });
+
   it("closes an unregistered connection when the registration deadline expires", async () => {
     const { registry } = createRegistry();
     const app = createApp({

@@ -5,6 +5,7 @@ import { authRouteAuthRequirements } from "../auth/auth_routes.js";
 import { boardAssetRouteAuthRequirements } from "../board/board_asset_routes.js";
 import { boardItemRouteAuthRequirements } from "../board/board_item_routes.js";
 import { boardYjsHostProxyRouteAuthRequirements } from "../board/board_yjs_host_proxy.js";
+import { boardYjsRouteAuthRequirements } from "../board-yjs/board_yjs_route.js";
 import { markdownDocumentRouteAuthRequirements } from "../board/markdown_document_routes.js";
 import { cogitoRouteAuthRequirements } from "../cogito/cogito_routes.js";
 import { executeProxyRouteAuthRequirements } from "../execute/execute_proxy_routes.js";
@@ -44,6 +45,7 @@ export const routeCoverageOwners = [
   { owner: "board.assets", authRequirements: boardAssetRouteAuthRequirements },
   { owner: "board.items", authRequirements: boardItemRouteAuthRequirements },
   { owner: "board.yjs-host", authRequirements: boardYjsHostProxyRouteAuthRequirements },
+  { owner: "board.yjs", authRequirements: boardYjsRouteAuthRequirements },
   { owner: "cogito", authRequirements: cogitoRouteAuthRequirements },
   { owner: "execute", authRequirements: executeProxyRouteAuthRequirements },
   { owner: "llm.ephemeral", authRequirements: ephemeralLlmRouteAuthRequirements },
@@ -82,6 +84,8 @@ export const routeCoverageOwners = [
 // routes must be listed explicitly instead of being backfilled into that fixture.
 export const tsOnlyRouteKeys = [
   "WEBSOCKET /ws/node/control",
+  "WEBSOCKET /yjs/{folderId}",
+  "WEBSOCKET /yjs/{containerKind}/{containerId}",
   "GET /api/nodes/{node_id}/model-presets",
   "POST /api/nodes/{node_id}/worktrees/list",
   "POST /api/nodes/{node_id}/worktrees/create",

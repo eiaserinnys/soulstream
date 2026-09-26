@@ -1,19 +1,13 @@
-export const BOARD_YJS_RUNBOOK_MIGRATION_NODE_ID = "eiaserinnys";
 export const BOARD_YJS_RUNBOOK_COLLISION_APPROVAL_COUNT = 18;
 
 export type BoardYjsRunbookDeployMode = "migrate" | "verify";
 
 export function decideBoardYjsRunbookDeployAction(input: {
-  nodeId: string;
   mode: BoardYjsRunbookDeployMode;
   approvedCollisionHashCount: number;
 }):
-  | { action: "skip"; reason: "non_central_node" }
   | { action: "report"; reason: "approval_pending" }
   | { action: "run"; reason: "approved" } {
-  if (input.nodeId !== BOARD_YJS_RUNBOOK_MIGRATION_NODE_ID) {
-    return { action: "skip", reason: "non_central_node" };
-  }
   if (input.approvedCollisionHashCount === 0) {
     return { action: "report", reason: "approval_pending" };
   }
@@ -27,22 +21,17 @@ export function decideBoardYjsRunbookDeployAction(input: {
 }
 
 export async function runBoardYjsRunbookDeployment(input: {
-  nodeId: string;
   mode: BoardYjsRunbookDeployMode;
   approvedCollisionHashCount: number;
   applySqlMigrations: () => Promise<unknown>;
   reportResidue: () => Promise<unknown>;
   applyResidueMigration: () => Promise<unknown>;
   verifyResidue: () => Promise<unknown>;
-  audit: (status: "skipped" | "approval_pending" | "applied" | "verified") =>
+  audit: (status: "approval_pending" | "applied" | "verified") =>
     Promise<unknown>;
 }): Promise<void> {
-  const decision = decideBoardYjsRunbookDeployAction(input);
-  if (decision.action === "skip") {
-    await input.audit("skipped");
-    return;
-  }
   if (input.mode === "migrate") await input.applySqlMigrations();
+  const decision = decideBoardYjsRunbookDeployAction(input);
   if (decision.action === "report") {
     await input.reportResidue();
     await input.audit("approval_pending");
