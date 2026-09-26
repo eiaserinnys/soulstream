@@ -44,7 +44,7 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      rebuildProfileRegistry: () => registry.replace(readAgentsConfig(configPath).agents),
+      agentRegistry: registry,
     });
   });
 
@@ -85,7 +85,7 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      rebuildProfileRegistry: () => registry.replace(readAgentsConfig(configPath).agents),
+      agentRegistry: registry,
       isDbIdentityOwnedProfile: (profileId) => profileId === "codex-default",
     });
 
@@ -106,7 +106,7 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      rebuildProfileRegistry: () => registry.replace(readAgentsConfig(configPath).agents),
+      agentRegistry: registry,
       onAfterRegistryReplace,
     });
 
@@ -125,7 +125,7 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      rebuildProfileRegistry: () => registry.replace(readAgentsConfig(configPath).agents),
+      agentRegistry: registry,
       onAfterRegistryReplace,
     });
 
@@ -343,9 +343,7 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      rebuildProfileRegistry: () => registry.replace(
-        mcpConfig.resolveProfiles(readAgentsConfig(configPath).agents),
-      ),
+      agentRegistry: registry,
       profileResolver: (profiles) => mcpConfig.resolveProfiles(profiles),
     });
 
@@ -384,9 +382,7 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      rebuildProfileRegistry: () => registry.replace(
-        mcpConfig.resolveProfiles(readAgentsConfig(configPath).agents),
-      ),
+      agentRegistry: registry,
       profileResolver: (profiles) => mcpConfig.resolveProfiles(profiles),
     });
 

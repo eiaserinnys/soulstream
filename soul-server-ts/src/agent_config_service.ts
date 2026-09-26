@@ -5,7 +5,10 @@ import {
   type AgentAtomContext,
   type AgentProfile,
   type AgentsConfig,
+  readAgentsConfig,
+  type AgentRegistry,
 } from "./agent_registry.js";
+import type { NewSessionAgentProfileSource } from "./agent_profile_source.js";
 import {
   ConfigStore,
   type ConfigApplyResult,
@@ -18,7 +21,8 @@ type MaybePromise<T> = T | Promise<T>;
 export interface AgentConfigServiceOptions {
   configPath: string;
   snapshotRoot?: string;
-  rebuildProfileRegistry: () => MaybePromise<void>;
+  agentRegistry: Pick<AgentRegistry, "replace">;
+  profileSource?: Pick<NewSessionAgentProfileSource, "rebuild">;
   profileResolver?: (profiles: AgentProfile[]) => AgentProfile[];
   isDbIdentityOwnedProfile?: (profileId: string) => boolean;
   onAfterRegistryReplace?: () => MaybePromise<void>;
@@ -99,6 +103,11 @@ export class AgentConfigService {
 
   constructor(options: AgentConfigServiceOptions) {
     this.profileResolver = options.profileResolver;
+    const rebuildProfileRegistry = options.profileSource?.rebuild
+      ? options.profileSource.rebuild.bind(options.profileSource)
+      : () => options.agentRegistry.replace(
+          this.resolveProfiles(readAgentsConfig(options.configPath).agents),
+        );
     this.store = new ConfigStore({
       configPath: options.configPath,
       snapshotRoot: options.snapshotRoot,
@@ -107,7 +116,7 @@ export class AgentConfigService {
       assertChange: (current, next) =>
         this.assertDbIdentityFieldsUnchanged(current, next, options.isDbIdentityOwnedProfile),
       onAfterApply: async () => {
-        await options.rebuildProfileRegistry();
+        await rebuildProfileRegistry();
         await options.onAfterRegistryReplace?.();
       },
     });

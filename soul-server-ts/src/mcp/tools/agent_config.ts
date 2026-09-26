@@ -11,7 +11,6 @@ import {
   AgentConfigService,
   toAgentConfigSemanticChangeWire,
 } from "../../agent_config_service.js";
-import { rebuildAgentProfileRegistry } from "../../agent_profile_source.js";
 import {
   AgentAtomContextSchema,
   AgentProfileSchema,
@@ -29,7 +28,8 @@ export function registerAgentConfigTools(
   });
   const agentConfig = runtime.agentConfigService ?? new AgentConfigService({
     configPath: runtime.agentsConfigPath,
-    rebuildProfileRegistry: () => rebuildAgentProfileRegistry(runtime.agentProfileSource),
+    agentRegistry: runtime.agentRegistry,
+    profileSource: runtime.agentProfileSource,
     profileResolver: (profiles) => mcpConfig.resolveProfiles(profiles),
     isDbIdentityOwnedProfile: runtime.agentProfileSource?.isDbIdentityOwnedProfile
       ?.bind(runtime.agentProfileSource),

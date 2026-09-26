@@ -83,15 +83,6 @@ export interface NewSessionAgentProfileSource {
   readonly isDbIdentityOwnedProfile?: (profileId: string) => boolean;
 }
 
-export function rebuildAgentProfileRegistry(
-  source: NewSessionAgentProfileSource | undefined,
-): void {
-  if (!source?.rebuild) {
-    throw new Error("Agent profile source cannot rebuild the shared registry");
-  }
-  source.rebuild();
-}
-
 export type AgentProfileSourceOptions = {
   readonly agentsConfigPath: string;
   readonly cachePath: string;

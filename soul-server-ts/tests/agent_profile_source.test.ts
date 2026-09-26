@@ -58,7 +58,8 @@ describe("AgentProfileSource", () => {
 
     const service = new AgentConfigService({
       configPath: files.agentsConfigPath,
-      rebuildProfileRegistry: () => source.rebuild(),
+      agentRegistry,
+      profileSource: source,
       isDbIdentityOwnedProfile: source.isDbIdentityOwnedProfile.bind(source),
     });
     await service.replaceProfile({
