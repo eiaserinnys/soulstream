@@ -4,6 +4,7 @@ import type {
   SessionSummary,
 } from "../shared/types";
 import { getSessionActivityMs } from "../shared/session-activity";
+import { applyCatalogSessionDisplayName } from "../shared/session-projections";
 
 export interface SessionParentRef {
   parentSessionId: string;
@@ -76,10 +77,7 @@ function mergeSessionLists(
   const byId = new Map<string, SessionSummary>();
   for (const session of catalog.sessionList ?? []) {
     const assignment = catalog.sessions[session.agentSessionId];
-    byId.set(session.agentSessionId, {
-      ...session,
-      ...(assignment?.displayName ? { displayName: assignment.displayName } : {}),
-    });
+    byId.set(session.agentSessionId, applyCatalogSessionDisplayName(session, assignment));
   }
   for (const session of sessions) {
     const current = byId.get(session.agentSessionId);

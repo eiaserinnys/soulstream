@@ -1,4 +1,5 @@
 import {
+  mergeSessionSummarySnapshot,
   normalizeLastMessage,
   retainEqualValue,
   toSessionSummary,
@@ -11,15 +12,23 @@ export function projectSessionListSnapshot(
   catalog: CatalogState,
   event: SessionListStreamEvent,
 ): CatalogState {
+  const currentSessions = catalog.sessionList ?? [];
+  const currentById = new Map(
+    currentSessions.map((session) => [session.agentSessionId, session]),
+  );
   const incoming = event.sessions.map(normalizeSnapshotSession);
   const incomingIds = new Set(incoming.map((session) => session.agentSessionId));
-  const offWindowReviews = (catalog.sessionList ?? []).filter((session) => (
+  const offWindowReviews = currentSessions.filter((session) => (
     session.reviewState === "needs_review" &&
     !incomingIds.has(session.agentSessionId)
   ));
+  const mergedIncoming = incoming.map((session) => {
+    const current = currentById.get(session.agentSessionId);
+    return current ? mergeSessionSummarySnapshot(current, session) : session;
+  });
   const sessionList = retainEqualValue(
     catalog.sessionList,
-    [...incoming, ...offWindowReviews],
+    [...mergedIncoming, ...offWindowReviews],
   );
   return sessionList === catalog.sessionList
     ? catalog
@@ -45,7 +54,7 @@ export function reconcileCanonicalReviewSessions(
     const review = reviewsById.get(current.agentSessionId);
     if (review) {
       includedReviewIds.add(current.agentSessionId);
-      nextSessionList.push(review);
+      nextSessionList.push(mergeSessionSummarySnapshot(current, review));
       continue;
     }
     if (current.reviewState !== "needs_review") nextSessionList.push(current);

@@ -141,47 +141,8 @@ function targetedSessionBatches(
 function toOrchestratorSessionSummary(raw: Record<string, unknown>): SessionSummary {
   const summary = toSessionSummary(raw);
   return {
-    agentSessionId: summary.agentSessionId,
-    status: summary.status,
-    reviewRequired: summary.reviewRequired,
-    reviewState: summary.reviewState,
-    sessionType: (summary.sessionType ?? "claude") as "claude" | "llm",
-    eventCount: 0,
-    createdAt: summary.createdAt,
-    updatedAt: summary.updatedAt ?? undefined,
-    nodeId: summary.nodeId,
-    folderId: summary.folderId ?? null,
-    displayName: summary.displayName ?? null,
-    lastMessage: summary.lastMessage,
-    ...(summary.pendingAttentions === undefined
-      ? {}
-      : { pendingAttentions: summary.pendingAttentions }),
-    ...(summary.attentionRevision === undefined
-      ? {}
-      : { attentionRevision: summary.attentionRevision }),
-    ...(summary.recentNotices === undefined
-      ? {}
-      : { recentNotices: summary.recentNotices }),
-    ...(summary.notificationWatermark === undefined
-      ? {}
-      : { notificationWatermark: summary.notificationWatermark }),
-    ...(summary.noticesTruncated === undefined
-      ? {}
-      : { noticesTruncated: summary.noticesTruncated }),
-    lastEventId: summary.lastEventId ?? 0,
-    lastReadEventId: summary.lastReadEventId ?? 0,
-    ...(summary.awaySummary == null ? {} : { awaySummary: summary.awaySummary }),
-    prompt: summary.prompt ?? undefined,
-    agentId: summary.agentId ?? undefined,
-    agentName: summary.agentName ?? undefined,
-    agentPortraitUrl: summary.agentPortraitUrl ?? undefined,
-    backend: summary.backend ?? undefined,
-    modelPreset: summary.modelPreset ?? undefined,
-    modelLabel: summary.modelLabel ?? undefined,
-    model: summary.model ?? undefined,
-    userName: summary.userName ?? undefined,
-    userPortraitUrl: summary.userPortraitUrl ?? undefined,
-    callerSessionId: summary.callerSessionId ?? undefined,
+    ...summary,
+    sessionType: summary.sessionType ?? "claude",
   };
 }
 

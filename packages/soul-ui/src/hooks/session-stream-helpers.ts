@@ -20,6 +20,7 @@ import {
   normalizeLastMessage,
 } from "../shared/session-activity";
 import { retainEqualValue } from "../lib/structural-sharing";
+import { applyCatalogSessionDisplayName } from "../shared/session-projections";
 import {
   applyCatalogDisplayName,
   mergeSessionCreatedSummary,
@@ -27,8 +28,8 @@ import {
 import { dedupeSessionSnapshots } from "./session-snapshot-helpers";
 import { applySessionFeedDelta } from "./session-feed-projection";
 export {
-  applySessionLifecycleSnapshot,
-  applySessionLifecycleSnapshotToList,
+  applySessionSummarySnapshot,
+  applySessionSummarySnapshotToList,
   dedupeSessionSnapshots,
 } from "./session-snapshot-helpers";
 export { normalizeSessionStatus } from "../shared/session-status";
@@ -79,13 +80,10 @@ export function filterFeedSessions(
     })
     .sort(compareSessionActivityDesc);
 
-  return visibleSessions.map((s) => {
-    const assignment = catalog?.sessions[s.agentSessionId];
-    if (assignment?.displayName) {
-      return { ...s, displayName: assignment.displayName };
-    }
-    return s;
-  });
+  return visibleSessions.map((session) => applyCatalogSessionDisplayName(
+    session,
+    catalog?.sessions[session.agentSessionId],
+  ));
 }
 
 /**
@@ -115,13 +113,10 @@ export function filterSessionsInFolder(
     });
 
   return dedupeSessionSnapshots(folderSessions)
-    .map((s) => {
-      const assignment = catalog.sessions[s.agentSessionId];
-      if (assignment?.displayName) {
-        return { ...s, displayName: assignment.displayName };
-      }
-      return s;
-    });
+    .map((session) => applyCatalogSessionDisplayName(
+      session,
+      catalog.sessions[session.agentSessionId],
+    ));
 }
 
 function sessionMatchesCatalogCache(

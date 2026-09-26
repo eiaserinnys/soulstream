@@ -113,6 +113,7 @@ export type {
 
 // === Mappers ===
 export { toSessionSummary } from "./mappers";
+export { applyCatalogSessionDisplayName } from "./session-projections";
 export { normalizeSessionStatus } from "./session-status";
 export {
   compareSessionActivityDesc,

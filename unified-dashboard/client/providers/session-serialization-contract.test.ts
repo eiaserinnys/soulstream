@@ -47,6 +47,28 @@ describe("OrchestratorSessionProvider session serialization contract", () => {
     expect(result).toMatchObject({ total: 1, hasMore: false });
   });
 
+  it("keeps mapper fields that the provider does not own", async () => {
+    const fixture = loadCase();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          sessions: [fixture.expectedOrchResponse],
+          total: 1,
+        }),
+      }),
+    );
+
+    const result = await new OrchestratorSessionProvider().fetchSessions();
+
+    expect(result.sessions[0]).toMatchObject({
+      clientId: "client-contract",
+      metadata: fixture.expectedOrchResponse.metadata,
+      bindingWarnings: [],
+    });
+  });
+
   it("loads 250 referenced sessions in URL-safe batches without dropping any", async () => {
     const fixture = loadCase();
     const sessionIds = Array.from({ length: 250 }, (_, index) =>
@@ -83,13 +105,14 @@ describe("OrchestratorSessionProvider session serialization contract", () => {
   });
 
   it("requests the full canonical review queue without recent-window pagination", async () => {
+    const fixture = loadCase();
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ sessions: [], total: 0 }),
+      json: async () => ({ sessions: [fixture.expectedOrchResponse], total: 1 }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await new OrchestratorSessionProvider().fetchSessions({
+    const result = await new OrchestratorSessionProvider().fetchSessions({
       reviewState: "needs_review",
       limit: 0,
     });
@@ -97,6 +120,10 @@ describe("OrchestratorSessionProvider session serialization contract", () => {
     const url = new URL(String(fetchMock.mock.calls[0]?.[0]), "https://example.test");
     expect(url.searchParams.get("review_state")).toBe("needs_review");
     expect(url.searchParams.get("limit")).toBe("0");
+    expect(result.sessions[0]).toMatchObject({
+      clientId: "client-contract",
+      metadata: fixture.expectedOrchResponse.metadata,
+    });
   });
 
   it("preserves awaySummary for the run history summary toggle", async () => {

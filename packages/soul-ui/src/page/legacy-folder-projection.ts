@@ -4,6 +4,7 @@ import type {
   CatalogState,
   SessionSummary,
 } from "../shared/types";
+import { applyCatalogSessionDisplayName } from "../shared/session-projections";
 
 export interface LegacyFolderRow {
   readonly kind: "folder";
@@ -79,9 +80,7 @@ export function projectLegacyFolder(
       const assignment = catalog.sessions[source.agentSessionId];
       const assignedFolderId = assignment?.folderId ?? source.folderId ?? null;
       if (assignedFolderId !== currentFolderId) continue;
-      const session = assignment?.displayName
-        ? { ...source, displayName: assignment.displayName }
-        : source;
+      const session = applyCatalogSessionDisplayName(source, assignment);
       rows.push({
         kind: "session",
         id: session.agentSessionId,
