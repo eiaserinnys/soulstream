@@ -314,8 +314,7 @@ function resolveProviderOwners(
   const owners = new Map<string, string>();
   for (const group of groups) {
     const connectedMembers = group.nodeIds
-      .filter((nodeId) => connectedIds.has(nodeId))
-      .sort((left, right) => left.localeCompare(right));
+      .filter((nodeId) => connectedIds.has(nodeId));
     const representative = connectedMembers[0];
     if (representative === undefined) continue;
     for (const nodeId of connectedMembers) {
