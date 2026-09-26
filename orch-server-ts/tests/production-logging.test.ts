@@ -34,7 +34,6 @@ describe("production operations logging", () => {
     const capture = createLogCapture();
     const resolveTokenAccess = vi.fn()
       .mockResolvedValueOnce({ ok: true as const })
-      .mockResolvedValueOnce({ ok: true as const })
       .mockResolvedValueOnce({
         ok: false as const,
         statusCode: 401,
@@ -44,7 +43,8 @@ describe("production operations logging", () => {
         ok: false as const,
         statusCode: 403,
         detail: "Authentication forbidden",
-      });
+      })
+      .mockResolvedValueOnce({ ok: true as const });
     const app = createApp({
       config: productionConfig,
       logDestination: capture.stream,
