@@ -9,12 +9,14 @@ import {
   SessionContextMenu,
   SessionModelPresetBadge,
   SessionStoryDisclosure,
+  STATUS_CONFIG,
   useDashboardStore,
   useGlassSurface,
   type CatalogBoardItem,
   type CatalogFolder,
   type SessionContextMenuState,
   type SessionReviewAcknowledgeResult,
+  type SessionProviderConnectionStatus,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
@@ -49,6 +51,7 @@ import {
 import { TaskBoardPane } from "./TaskBoardPane";
 import { TaskBoardResourcePane } from "./TaskBoardResourcePane";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
+import { SessionStreamStatus } from "./SessionStreamStatus";
 
 const TASK_PANEL_KEYBOARD_STEP_PX = 24;
 
@@ -73,11 +76,15 @@ export function TaskBoardWorkspace({
   mobileMode,
   mobileTab,
   historyEnabled,
+  sessionConnectionStatus,
+  reconnectSession,
   taskMoveTargets,
   folders,
   contextInvalidationKey,
+  markdownDocumentsRevision,
   sessionDefaults,
   onClose,
+  onMarkdownDocumentEditorClosed,
   onOpenSession,
   onLoadMoreRuns,
   onRenameSession,
@@ -99,11 +106,15 @@ export function TaskBoardWorkspace({
   mobileMode: boolean;
   mobileTab: MobilePlannerTab;
   historyEnabled: boolean;
+  sessionConnectionStatus: SessionProviderConnectionStatus;
+  reconnectSession(): void;
   taskMoveTargets: readonly PlannerTask[];
   folders: readonly CatalogFolder[];
   contextInvalidationKey: number;
+  markdownDocumentsRevision: number;
   sessionDefaults: PageSessionDefaults | null;
   onClose(): void;
+  onMarkdownDocumentEditorClosed(): void;
   onOpenSession(session: SessionSummary): void;
   onLoadMoreRuns(): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
@@ -144,6 +155,8 @@ export function TaskBoardWorkspace({
   });
   const [overlayExpanded, setOverlayExpanded] = useState(false);
   const [overlayClosing, setOverlayClosing] = useState(false);
+  const [activeTaskDocumentId, setActiveTaskDocumentId] = useState<string | null>(null);
+  const [pendingTaskDocumentEditId, setPendingTaskDocumentEditId] = useState<string | null>(null);
   const [successionOpen, setSuccessionOpen] = useState(false);
   // 🔴30: 세션 행 우클릭 컨텍스트 메뉴 상태. 업무 패널(TaskRunHistory)과 동일한 공통
   // SessionContextMenu·승계 모달·이동 다이얼로그를 재사용한다(테마·포털은 base-ui Menu가
@@ -152,7 +165,6 @@ export function TaskBoardWorkspace({
   const [targetedSuccessionId, setTargetedSuccessionId] = useState<string | null>(null);
   const [moveSessionId, setMoveSessionId] = useState<string | null>(null);
   const moveApi = useMemo(() => createPageApiClient(), []);
-  const activeBoardDocumentId = useDashboardStore((state) => state.activeBoardDocumentId);
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
 
   // 새 세션 흐름은 업무 패널(TaskRunHistory)과 동일한 컨텍스트 상속 경로·다이얼로그를
@@ -194,10 +206,6 @@ export function TaskBoardWorkspace({
     [boardItems],
   );
 
-  useEffect(() => () => {
-    useDashboardStore.getState().setActiveBoardDocument(null);
-  }, []);
-
   // 🔴23: persist 시점에 최신 값을 읽기 위한 미러 ref. 매 렌더 동기화(값 비용 없음).
   const resourceStateRef = useRef(resourceState);
   resourceStateRef.current = resourceState;
@@ -221,12 +229,12 @@ export function TaskBoardWorkspace({
         })),
         overlayExpanded: overlayExpandedRef.current,
         overlayOffsetX: Math.round(overlayOffsetRef.current),
-        overlayOpen: store.activeBoardDocumentId != null,
-        overlayDocumentId: store.activeBoardDocumentId,
+        overlayOpen: activeTaskDocumentId != null,
+        overlayDocumentId: activeTaskDocumentId,
         activeSessionKey: store.activeSessionKey,
       });
     }, 300);
-  }, [layoutKey]);
+  }, [activeTaskDocumentId, layoutKey]);
 
   // 좌측 자료 패널 폭은 기존 `--v3-navigation-width`, 오른쪽 채팅 폭은 기존
   // `--v3-session-panel-width` 토큰(그리드 좌·우 컬럼)에 세션 로컬로 반영한다.
@@ -286,24 +294,41 @@ export function TaskBoardWorkspace({
   // 오버레이를 닫으면 다음에 열 때 다시 기본 높이(40%)에서 시작한다. 문서가 바뀌면
   // 진행 중인 닫힘 애니메이션도 취소한다(새 문서 열림이 닫힘보다 우선).
   useEffect(() => {
-    if (!activeBoardDocumentId) setOverlayExpanded(false);
+    if (!activeTaskDocumentId) setOverlayExpanded(false);
     setOverlayClosing(false);
-  }, [activeBoardDocumentId]);
+  }, [activeTaskDocumentId]);
+
+  const handleRequestMarkdownEdit = useCallback((documentId: string) => {
+    setActiveTaskDocumentId(documentId);
+    setPendingTaskDocumentEditId(documentId);
+  }, []);
+  const openTaskMarkdownDocument = useCallback((documentId: string) => {
+    setPendingTaskDocumentEditId(null);
+    setActiveTaskDocumentId(documentId);
+  }, []);
+  const clearPendingTaskDocumentEdit = useCallback(() => {
+    setPendingTaskDocumentEditId(null);
+  }, []);
+  const closeTaskDocumentOverlay = useCallback(() => {
+    setPendingTaskDocumentEditId(null);
+    setActiveTaskDocumentId(null);
+    onMarkdownDocumentEditorClosed();
+  }, [onMarkdownDocumentEditorClosed]);
 
   // 🔴13/14/15: 닫기(X)·중앙 보드 클릭은 🔴13 애니메이션을 태운다. reduced-motion이면
   // 애니메이션 없이 즉시 닫는다. 닫힘 애니메이션 종료 시 실제로 오버레이를 해제한다.
   const requestCloseOverlay = useCallback(() => {
     if (prefersReducedMotion()) {
-      useDashboardStore.getState().setActiveBoardDocument(null);
+      closeTaskDocumentOverlay();
       return;
     }
     setOverlayClosing(true);
-  }, []);
+  }, [closeTaskDocumentOverlay]);
   const handleOverlayAnimationEnd = useCallback((event: ReactAnimationEvent<HTMLDivElement>) => {
     // 자식 요소 애니메이션 버블은 무시하고 오버레이 자체의 닫힘 애니메이션에만 반응.
     if (event.target !== event.currentTarget) return;
-    if (overlayClosing) useDashboardStore.getState().setActiveBoardDocument(null);
-  }, [overlayClosing]);
+    if (overlayClosing) closeTaskDocumentOverlay();
+  }, [closeTaskDocumentOverlay, overlayClosing]);
 
   // 🔴20: 오버레이 바깥(보드 영역) 상호작용은 닫지 않고 기본 높이(40%)로 축소한다.
   // 이미 40%면 그대로 유지(축소만, 닫힘 아님). 완전 닫기는 X 버튼(requestCloseOverlay)만.
@@ -351,13 +376,13 @@ export function TaskBoardWorkspace({
 
   // 🔴22/23: 오버레이가 열릴 때 저장된 가로 오프셋을 적용한다(마운트/문서 전환 시).
   useEffect(() => {
-    if (activeBoardDocumentId) applyOverlayOffset(overlayOffsetRef.current);
-  }, [activeBoardDocumentId, applyOverlayOffset]);
+    if (activeTaskDocumentId) applyOverlayOffset(overlayOffsetRef.current);
+  }, [activeTaskDocumentId, applyOverlayOffset]);
 
   // 🔴23: 오버레이 확장 상태·활성 문서·활성 세션·탭 변경을 저장한다.
   useEffect(() => {
     schedulePersist();
-  }, [schedulePersist, resourceState, overlayExpanded, activeBoardDocumentId, activeSessionKey]);
+  }, [schedulePersist, resourceState, overlayExpanded, activeTaskDocumentId, activeSessionKey]);
 
   // 🔴23: 재진입 시 마지막 활성 채팅 세션과 편집 오버레이 문서를 복원한다. 대상이 아직
   // 로딩 중이면 다음 렌더까지 대기하고, 목록이 로드됐는데도 없으면 삭제된 것으로 보고 건너뛴다.
@@ -379,7 +404,7 @@ export function TaskBoardWorkspace({
     // 활성 세션 먼저(오버레이를 닫는 부작용 대비), 그다음 오버레이 문서를 마지막에 복원.
     if (restoredSession) onOpenSession(restoredSession);
     if (wantDocId && docExists) {
-      useDashboardStore.getState().setActiveBoardDocument(wantDocId);
+      setActiveTaskDocumentId(wantDocId);
       if (snap.overlayExpanded) setOverlayExpanded(true);
     }
     didRestoreRef.current = true;
@@ -390,17 +415,18 @@ export function TaskBoardWorkspace({
   }, []);
 
   const closeWorkspace = () => {
-    useDashboardStore.getState().setActiveBoardDocument(null);
+    if (activeTaskDocumentId) closeTaskDocumentOverlay();
+    else setActiveTaskDocumentId(null);
     onClose();
   };
   const openSession = (session: SessionSummary) => {
     // 🔴26: 세션 선택은 편집 오버레이를 닫지 않는다. 부모 onOpenSession→setActiveSession의
-    // 세션 리셋(_session-reset)이 activeBoardDocumentId를 비우므로, 같은 이벤트 핸들러 안에서
-    // 직전 문서를 즉시 다시 적용해 복원한다(React 배치로 재마운트·깜빡임 없음). 완전 닫기는 X 버튼만.
-    const preservedDocumentId = useDashboardStore.getState().activeBoardDocumentId;
+    // 전역 문서 선택을 바꾸는 부수효과가 task-local 문서에는 닿지 않는다. task-local 문서는
+    // 그대로 유지하고, 완전 닫기는 X 버튼만 허용한다.
+    const preservedDocumentId = activeTaskDocumentId;
     onOpenSession(session);
     if (preservedDocumentId) {
-      useDashboardStore.getState().setActiveBoardDocument(preservedDocumentId);
+      setActiveTaskDocumentId(preservedDocumentId);
     }
   };
   // 🔴30: 세션 행 우클릭 → 공통 SessionContextMenu를 마우스 좌표에 띄운다(TaskRunHistory와 동일).
@@ -450,9 +476,10 @@ export function TaskBoardWorkspace({
             boardItems={boardItems}
             openedResources={resourceState.openedResources}
             activeTabId={resourceState.activeTabId}
+            markdownDocumentsRevision={markdownDocumentsRevision}
             onOpenSession={openSession}
             onLoadMoreRuns={onLoadMoreRuns}
-            onOpenDocument={(documentId) => useDashboardStore.getState().setActiveBoardDocument(documentId)}
+            onOpenDocument={openTaskMarkdownDocument}
             onActiveTabChange={(activeTabId) => {
               setResourceState((current) => (
                 current.activeTabId === activeTabId
@@ -480,7 +507,7 @@ export function TaskBoardWorkspace({
         <main
           className="v3-task-board-canvas"
           data-testid="v3-task-board-canvas"
-          onMouseDownCapture={() => { if (activeBoardDocumentId) requestShrinkOverlay(); }}
+          onMouseDownCapture={() => { if (activeTaskDocumentId) requestShrinkOverlay(); }}
         >
           <TaskBoardPane
             taskId={task.taskId}
@@ -490,9 +517,13 @@ export function TaskBoardWorkspace({
             taskMoveTargets={taskMoveTargets}
             viewportPersistenceKey={layoutKey}
             onBoardItemsChanged={handleBoardItemsChanged}
+            onMarkdownDocumentDeleted={(documentId) => {
+              if (activeTaskDocumentId === documentId) setActiveTaskDocumentId(null);
+            }}
             onOpenMarkdownDocument={(documentId) => {
               openResource({ kind: "document", resourceId: documentId });
             }}
+            onRequestMarkdownEdit={handleRequestMarkdownEdit}
             onOpenCustomView={(customViewId) => {
               openResource({ kind: "custom_view", resourceId: customViewId });
             }}
@@ -525,8 +556,9 @@ export function TaskBoardWorkspace({
             </div>
             <SessionModelPresetBadge session={activeSession} />
             <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>
-              {activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}
+              {activeSession ? (STATUS_CONFIG[activeSession.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}
             </span>
+            {activeSession ? <SessionStreamStatus status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
             {activeSession ? (
               <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
             ) : null}
@@ -552,7 +584,7 @@ export function TaskBoardWorkspace({
           </div>
         </section>
 
-        {activeBoardDocumentId ? (
+        {activeTaskDocumentId ? (
           <LiquidGlassCard
             ref={overlayRef}
             webglSurface
@@ -587,7 +619,16 @@ export function TaskBoardWorkspace({
                 <X className="h-4 w-4" aria-hidden="true" />
               </DashboardIconCap>
             </header>
-            <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>
+            <div className="v3-board-document-content">
+              <MarkdownDocumentPanel
+                documentId={activeTaskDocumentId}
+                container={{ kind: "task", id: task.taskId }}
+                pendingEditId={pendingTaskDocumentEditId}
+                onPendingEditConsumed={clearPendingTaskDocumentEdit}
+                onClose={closeTaskDocumentOverlay}
+                onDeleted={(boardItemId) => setBoardItems((current) => current.filter((item) => item.id !== boardItemId))}
+              />
+            </div>
           </LiquidGlassCard>
         ) : null}
       </div>

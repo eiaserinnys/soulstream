@@ -5,8 +5,7 @@ import {
   useDashboardStore,
   useRenameSessionOperation,
 } from "@seosoyoung/soul-ui";
-import type { SessionSummary } from "@seosoyoung/soul-ui";
-import type { CatalogBoardItem } from "@seosoyoung/soul-ui";
+import type { BoardContainerRef, CatalogBoardItem, CatalogState, SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   createFolder,
@@ -24,11 +23,15 @@ import {
 import { useContinueSession } from "client/hooks/useContinueSession";
 
 interface BoardWorkspaceViewWrapperProps {
+  catalogOverride?: CatalogState | null;
+  boardContainerOverride?: BoardContainerRef | null;
+  selectedFolderIdOverride?: string | null;
   sessions?: SessionSummary[];
   taskMoveTargets?: ReadonlyArray<{ id: string; title: string }>;
   onBoardItemMoved?: (boardItem: CatalogBoardItem) => void;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
   onOpenMarkdownDocument?: (documentId: string) => void;
+  onRequestMarkdownEdit?: (documentId: string) => void;
   onOpenCustomView?: (customViewId: string) => void;
   onLoadMore?: () => Promise<unknown> | void;
   hasMore?: boolean;
@@ -36,19 +39,27 @@ interface BoardWorkspaceViewWrapperProps {
 }
 
 export function BoardWorkspaceView({
+  catalogOverride,
+  boardContainerOverride,
+  selectedFolderIdOverride,
   sessions,
   taskMoveTargets,
   onBoardItemMoved,
   onMarkdownDocumentDeleted,
   onOpenMarkdownDocument,
+  onRequestMarkdownEdit,
   onOpenCustomView,
   onLoadMore,
   hasMore,
   viewportPersistenceKey,
 }: BoardWorkspaceViewWrapperProps = {}) {
   const viewMode = useDashboardStore((s) => s.viewMode);
-  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
-  const catalog = useDashboardStore((s) => s.catalog);
+  const storedSelectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const selectedFolderId = selectedFolderIdOverride === undefined
+    ? storedSelectedFolderId
+    : selectedFolderIdOverride;
+  const storedCatalog = useDashboardStore((s) => s.catalog);
+  const catalog = catalogOverride === undefined ? storedCatalog : catalogOverride;
   const renameSession = useRenameSessionOperation(renameSessionOperation);
   const { continueSession, getContinueSessionDisabledReason } = useContinueSession(sessions);
 
@@ -71,11 +82,15 @@ export function BoardWorkspaceView({
 
   return (
     <SoulUIBoardWorkspaceView
+      catalogOverride={catalogOverride}
+      boardContainerOverride={boardContainerOverride}
+      selectedFolderIdOverride={selectedFolderIdOverride}
       sessions={sessions}
       taskMoveTargets={taskMoveTargets}
       onBoardItemMoved={onBoardItemMoved}
       onMarkdownDocumentDeleted={onMarkdownDocumentDeleted}
       onOpenMarkdownDocument={onOpenMarkdownDocument}
+      onRequestMarkdownEdit={onRequestMarkdownEdit}
       onOpenCustomView={onOpenCustomView}
       onMoveSessions={handleMoveSessions}
       onRenameSession={renameSession}

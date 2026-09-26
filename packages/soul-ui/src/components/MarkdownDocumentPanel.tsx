@@ -1,8 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Check, Pencil, Trash2 } from "lucide-react";
 
 import type { BoardContainerRef, MarkdownDocument } from "../shared/types";
-import { useDashboardStore } from "../stores/dashboard-store";
 import { Button } from "./ui/button";
 import { DashboardIconCap } from "./DashboardIconCap";
 import {
@@ -25,8 +24,6 @@ import {
   deleteMarkdownDocument,
   fetchMarkdownDocument,
   MarkdownDocumentConflictError,
-  publishMarkdownDocumentUpdate,
-  subscribeMarkdownDocumentUpdates,
   updateMarkdownDocument,
 } from "../lib/markdown-document-operations";
 
@@ -36,19 +33,22 @@ const MarkdownCodeMirrorEditor = lazy(async () => {
   return { default: module.MarkdownCodeMirrorEditor };
 });
 
-export function MarkdownDocumentPanel() {
-  const documentId = useDashboardStore((s) => s.activeBoardDocumentId);
-  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
-  const activeBoardContainer = useDashboardStore((s) => s.activeBoardContainer);
-  const setActiveBoardDocument = useDashboardStore((s) => s.setActiveBoardDocument);
-  const removeBoardItem = useDashboardStore((s) => s.removeBoardItem);
-  const pendingEditId = useDashboardStore((s) => s.pendingBoardDocumentEditId);
-  const clearPendingBoardDocumentEdit = useDashboardStore((s) => s.clearPendingBoardDocumentEdit);
-  const boardContainer = useMemo<BoardContainerRef | null>(
-    () => activeBoardContainer ?? (selectedFolderId ? { kind: "folder", id: selectedFolderId } : null),
-    [activeBoardContainer, selectedFolderId],
-  );
-  const runtime = useBoardRuntime(boardContainer);
+export function MarkdownDocumentPanel({
+  documentId,
+  container,
+  pendingEditId = null,
+  onPendingEditConsumed,
+  onClose,
+  onDeleted,
+}: {
+  documentId: string | null;
+  container: BoardContainerRef | null;
+  pendingEditId?: string | null;
+  onPendingEditConsumed(): void;
+  onClose(): void;
+  onDeleted(boardItemId: string, documentId: string): void;
+}) {
+  const runtime = useBoardRuntime(container);
   const runtimeReady = runtime
     ? (runtime.hasInitialSync?.() ?? !runtime.isProviderBacked)
     : false;
@@ -67,6 +67,10 @@ export function MarkdownDocumentPanel() {
   const [savedVersion, setSavedVersion] = useState(1);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const onCloseRef = useRef(onClose);
+  const onPendingEditConsumedRef = useRef(onPendingEditConsumed);
+  onCloseRef.current = onClose;
+  onPendingEditConsumedRef.current = onPendingEditConsumed;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedDocumentIdRef = useRef<string | null>(null);
   const canDeleteDocument = loadedDocumentIdRef.current === documentId && (!runtime?.isProviderBacked || runtimeReady);
@@ -108,7 +112,6 @@ export function MarkdownDocumentPanel() {
     setSavedVersion(nextVersion);
     setSaveError(null);
     setSaveStatus("saved");
-    publishMarkdownDocumentUpdate(nextDocument);
   }, [collaborativeRuntime, documentId, yText]);
 
   const saveNow = useCallback(async () => {
@@ -198,7 +201,7 @@ export function MarkdownDocumentPanel() {
         setSaveStatus("saved");
       })
       .catch(() => {
-        if (!cancelled) setActiveBoardDocument(null);
+        if (!cancelled) onCloseRef.current();
       });
     return () => {
       cancelled = true;
@@ -210,7 +213,6 @@ export function MarkdownDocumentPanel() {
     documentId,
     runtime,
     runtimeReady,
-    setActiveBoardDocument,
   ]);
 
   useEffect(() => {
@@ -223,43 +225,6 @@ export function MarkdownDocumentPanel() {
       unsubscribe();
     };
   }, [applyRuntimeSnapshot, collaborativeRuntime, yText]);
-
-  useEffect(() => {
-    if (!documentId) return;
-    return subscribeMarkdownDocumentUpdates(documentId, (next) => {
-      if (loadedDocumentIdRef.current !== documentId) return;
-      if (
-        titleEditingRef.current
-        || isEditingBody
-        || saveStatus === "dirty"
-        || saveStatus === "saving"
-        || saveStatus === "conflict"
-      ) {
-        return;
-      }
-      if (collaborativeRuntime && yText) {
-        const item = collaborativeRuntime
-          .getBoardItems()
-          .find((candidate) => candidate.id === `markdown:${documentId}`);
-        const runtimeTitle = getMetadataText(item?.metadata, "title") || "Untitled document";
-        if (runtimeTitle !== next.title) {
-          collaborativeRuntime.updateMarkdownTitle(documentId, next.title);
-        }
-        if (yText.toString() !== next.body) {
-          collaborativeRuntime.updateMarkdownBody(documentId, next.body);
-        }
-        return;
-      }
-      setDocument(next);
-      setTitle(next.title);
-      setBody(next.body);
-      setSavedTitle(next.title);
-      setSavedBody(next.body);
-      setSavedVersion(next.version);
-      setSaveError(null);
-      setSaveStatus("saved");
-    });
-  }, [collaborativeRuntime, documentId, isEditingBody, saveStatus, yText]);
 
   useEffect(() => {
     if (!documentId || !document || collaborativeRuntime) return;
@@ -296,8 +261,8 @@ export function MarkdownDocumentPanel() {
       } else {
         await deleteMarkdownDocument(documentId);
       }
-      removeBoardItem(`markdown:${documentId}`);
-      setActiveBoardDocument(null);
+      onDeleted(`markdown:${documentId}`, documentId);
+      onClose();
     } catch (err) {
       console.error("Markdown document delete failed:", err);
     }
@@ -331,10 +296,10 @@ export function MarkdownDocumentPanel() {
     if (!pendingEditId || pendingEditId !== documentId) return;
     if (!document || document.id !== documentId) return;
     if (!isEditingBody) enterEditMode();
-    clearPendingBoardDocumentEdit();
+    onPendingEditConsumedRef.current();
     // enterEditMode는 클로저(안정 동작); 소비 후 pendingEditId가 null이 되어 재실행돼도 무해.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingEditId, documentId, document, isEditingBody, clearPendingBoardDocumentEdit]);
+  }, [pendingEditId, documentId, document, isEditingBody]);
 
   const updateBody = (value: string) => {
     setBody(value);

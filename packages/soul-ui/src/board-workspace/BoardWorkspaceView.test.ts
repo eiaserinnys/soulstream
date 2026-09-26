@@ -982,6 +982,27 @@ describe("BoardWorkspaceView", () => {
     expect(document.body.textContent).toContain("새 문서");
   });
 
+  it("routes markdown tile context-menu edit through the scoped edit callback", () => {
+    const onRequestMarkdownEdit = vi.fn();
+    ({ container, root } = renderBoard({ onRequestMarkdownEdit }));
+
+    const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
+    expect(markdownTile).not.toBeNull();
+    flushSync(() => markdownTile!.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 300,
+      clientY: 120,
+    })));
+
+    const editAction = findButtonByText(document.body, "편집");
+    expect(editAction).not.toBeUndefined();
+    flushSync(() => editAction!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    expect(onRequestMarkdownEdit).toHaveBeenCalledWith("doc-a");
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBeNull();
+  });
+
   it("uploads dropped files from a task board with the task container target", async () => {
     seedTaskProjection();
     const onUploadBoardAsset = vi.fn(async (input) => ({

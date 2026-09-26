@@ -1,19 +1,26 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   acceptV3SessionStreamEvent,
+  getV3PageInvalidationKey,
   getV3InvalidationSnapshot,
   invalidateV3,
   resetV3InvalidationForTest,
   selectV3InvalidationKey,
   selectV3PlannerInvalidationKeys,
+  subscribeV3PageInvalidation,
   trackedV3PageIds,
 } from "./v3-live-invalidation-plane";
 
 describe("v3 live invalidation plane", () => {
   beforeEach(() => resetV3InvalidationForTest());
 
-  it("normalizes session, catalog, task, custom view, replay, and page changes", () => {
+  it("routes page changes to the matching page and the starred collection", () => {
+    const pageAListener = vi.fn();
+    const pageBListener = vi.fn();
+    const unsubscribeA = subscribeV3PageInvalidation(["page-a"], pageAListener);
+    const unsubscribeB = subscribeV3PageInvalidation(["page-b"], pageBListener);
+
     acceptV3SessionStreamEvent({
       type: "session_updated",
       agent_session_id: "session-a",
@@ -38,6 +45,7 @@ describe("v3 live invalidation plane", () => {
       revision: 2,
     });
     acceptV3SessionStreamEvent({ type: "replay_gap", latest_id: 9, instance_id: "orch-a" });
+    const beforePageUpdate = selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot());
     acceptV3SessionStreamEvent({ type: "page_updated", page_id: "page-a", version: 7 });
 
     const snapshot = getV3InvalidationSnapshot();
@@ -46,7 +54,17 @@ describe("v3 live invalidation plane", () => {
     expect(selectV3InvalidationKey(snapshot, ["task"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["custom_view"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["replay"])).toBe(1);
-    expect(selectV3InvalidationKey(snapshot, ["page"])).toBe(1);
+    expect(pageAListener).toHaveBeenCalledOnce();
+    expect(pageBListener).not.toHaveBeenCalled();
+    expect(getV3PageInvalidationKey(["page-a"])).toBe(1);
+    expect(getV3PageInvalidationKey(["page-b"])).toBe(0);
+    expect(selectV3PlannerInvalidationKeys(snapshot)).toMatchObject({
+      daily: beforePageUpdate.daily,
+      project: beforePageUpdate.project,
+      starred: beforePageUpdate.starred + 1,
+    });
+    unsubscribeA();
+    unsubscribeB();
   });
 
   it("invalidates only planner queries that consume each event kind", () => {
@@ -106,11 +124,11 @@ describe("v3 live invalidation plane", () => {
 
     acceptV3SessionStreamEvent({ type: "page_updated", page_id: "page-a", version: 8 });
     expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual({
-      daily: 4,
-      project: 4,
+      daily: 3,
+      project: 3,
       starred: 4,
       runHistory: 2,
-      pageDetail: 1,
+      pageDetail: 0,
     });
   });
 

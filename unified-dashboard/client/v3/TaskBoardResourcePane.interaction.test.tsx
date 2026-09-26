@@ -14,6 +14,7 @@ import {
 
 import { TaskBoardResourcePane } from "./TaskBoardResourcePane";
 import type { RunSessionLoadState } from "./task-workspace-model";
+import { resetV3InvalidationForTest } from "./v3-live-invalidation-plane";
 
 async function waitForContent(container: ParentNode, selector: string, content: string) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -40,6 +41,7 @@ describe("TaskBoardResourcePane 세션 탭 우클릭 (🔴30)", () => {
   } as SessionSummary;
 
   beforeEach(() => {
+    resetV3InvalidationForTest();
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -161,6 +163,7 @@ describe("TaskBoardResourcePane 마크다운 동기화", () => {
   };
 
   beforeEach(() => {
+    resetV3InvalidationForTest();
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -199,8 +202,8 @@ describe("TaskBoardResourcePane 마크다운 동기화", () => {
     vi.restoreAllMocks();
   });
 
-  it("다른 표면의 저장 성공 문서를 재조회 없이 즉시 반영한다", async () => {
-    flushSync(() => root.render(
+  it("문서 오버레이를 닫은 뒤 저장된 본문을 재조회해 표시한다", async () => {
+    const renderPane = (markdownDocumentsRevision: number) => flushSync(() => root.render(
       <TaskBoardResourcePane
         taskId="rb-1"
         taskTitle="보드뷰 개선"
@@ -218,8 +221,10 @@ describe("TaskBoardResourcePane 마크다운 동기화", () => {
         onLoadMoreRuns={vi.fn(async () => undefined)}
         onOpenDocument={vi.fn()}
         onActiveTabChange={vi.fn()}
+        markdownDocumentsRevision={markdownDocumentsRevision}
       />,
     ));
+    renderPane(0);
     await waitForContent(container, ".v3-task-board-document-copy", "저장 전 본문");
 
     await updateMarkdownDocument({
@@ -228,8 +233,15 @@ describe("TaskBoardResourcePane 마크다운 동기화", () => {
       body: "중앙 편집기에서 저장한 본문",
       expectedVersion: 1,
     });
+    expect(container.querySelector(".v3-task-board-document-copy")?.textContent)
+      .not.toContain("중앙 편집기에서 저장한 본문");
+    // TaskBoardWorkspace increments this value when its document overlay closes.
+    renderPane(1);
 
     await waitForContent(container, ".v3-task-board-document-copy", "중앙 편집기에서 저장한 본문");
-    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    const markdownReads = vi.mocked(globalThis.fetch).mock.calls.filter(([input, init]) => (
+      String(input).endsWith("/api/markdown-documents/doc-a") && init?.method !== "PUT"
+    ));
+    expect(markdownReads).toHaveLength(3);
   });
 });

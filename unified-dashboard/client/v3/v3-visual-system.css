@@ -290,6 +290,16 @@
   color: var(--v3-live);
 }
 
+.v3-chat-status--error {
+  color: var(--v3-error);
+  background: color-mix(in srgb, var(--v3-error) 14%, transparent);
+}
+
+.v3-session-stream-retry {
+  border: 0;
+  cursor: pointer;
+}
+
 .v3-status-chip--completed,
 .v3-run-status--completed {
   color: var(--v3-accent);

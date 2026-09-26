@@ -6,7 +6,6 @@ import {
   deleteMarkdownDocument,
   renameMarkdownDocument,
   retainEqualValue,
-  subscribeMarkdownDocumentUpdates,
   useBoardYjsRuntime,
   useCustomViewBindings,
   useDashboardStore,
@@ -30,7 +29,7 @@ import { TaskDocumentContextMenu, type TaskDocumentContextTarget } from "./TaskD
 import { documentContextMenuTargetForKey } from "./document-context-menu-keyboard";
 import { moveBoardItemToContainer } from "../lib/board-workspace-operations";
 import "./v3-context-menus.css";
-import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
+import { useV3InvalidationKey, useV3PageInvalidationKey } from "./v3-live-invalidation-plane";
 import { loadConfirmedResult } from "./planner-query-state";
 import {
   boardMarkdownDocuments,
@@ -60,12 +59,18 @@ export function TaskInlineBoard({
   folderId,
   api,
   taskMoveTargets,
+  activeDocumentId,
+  markdownDocumentsRevision = 0,
+  onDeletedActiveDocument,
   onMarkdownDocumentsChanged,
 }: {
   taskId: string;
   folderId: string | null;
   api: PageApiClient;
   taskMoveTargets: readonly TaskMoveTarget[];
+  activeDocumentId: string | null;
+  markdownDocumentsRevision?: number;
+  onDeletedActiveDocument(documentId: string): void;
   onMarkdownDocumentsChanged(documents: TaskBoardMarkdownDocument[]): void;
 }) {
   const [items, setItems] = useState<CatalogBoardItem[]>([]);
@@ -74,14 +79,14 @@ export function TaskInlineBoard({
   const [documentContext, setDocumentContext] = useState<TaskDocumentContextTarget | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const itemInvalidationKey = useV3InvalidationKey(["catalog", "task", "replay"]);
-  const pageInvalidationKey = useV3InvalidationKey(["page", "replay"]);
+  const pageInvalidationKey = useV3PageInvalidationKey(
+    items.filter((item) => item.itemType === "markdown").map((item) => item.itemId),
+  ) + useV3InvalidationKey(["replay"]) + markdownDocumentsRevision;
   const customViewInvalidationKey = useV3InvalidationKey(["custom_view", "replay"]);
   const itemsRef = useRef(items);
   const departedItemIdsRef = useRef(new Set<string>());
   const addBoardItem = useDashboardStore((state) => state.addBoardItem);
   const removeBoardItem = useDashboardStore((state) => state.removeBoardItem);
-  const activeBoardDocumentId = useDashboardStore((state) => state.activeBoardDocumentId);
-  const setActiveBoardDocument = useDashboardStore((state) => state.setActiveBoardDocument);
   const loadedTaskIdRef = useRef<string | null>(null);
   itemsRef.current = items;
   const boardCatalog = useMemo<CatalogState>(() => ({
@@ -247,7 +252,7 @@ export function TaskInlineBoard({
     setItems((current) => current.filter((candidate) => candidate.id !== item.id));
     removeBoardItem(item.id);
     if (expandedId === item.id) setExpandedId(null);
-    if (activeBoardDocumentId === item.itemId) setActiveBoardDocument(null);
+    if (activeDocumentId === item.itemId) onDeletedActiveDocument(item.itemId);
   };
 
   return (
@@ -398,24 +403,13 @@ function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; i
   const [error, setError] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    let savedDocument: MarkdownDocument | null = null;
-    const unsubscribe = subscribeMarkdownDocumentUpdates(documentId, (next) => {
-      savedDocument = next;
-      setDocument((current) => retainEqualValue(current ?? undefined, next));
-    });
     setError(false);
     void fetchInlineMarkdown(documentId, (input, init) => globalThis.fetch(input, { ...init, signal: controller.signal }))
-      .then((next) => setDocument((current) => retainEqualValue(
-        current ?? undefined,
-        savedDocument ?? next,
-      )))
+      .then((next) => setDocument((current) => retainEqualValue(current ?? undefined, next)))
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(true);
       });
-    return () => {
-      unsubscribe();
-      controller.abort();
-    };
+    return () => controller.abort();
   }, [documentId, invalidationKey]);
   if (error) return <p className="v3-inline-board-error">문서 본문을 불러오지 못했습니다.</p>;
   if (!document) return <p className="v3-detail-empty">본문을 불러오는 중…</p>;

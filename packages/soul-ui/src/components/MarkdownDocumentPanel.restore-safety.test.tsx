@@ -144,7 +144,14 @@ describe("MarkdownDocumentPanel restore safety", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     flushSync(() => {
-      root?.render(createElement(MarkdownDocumentPanel));
+      root?.render(createElement(MarkdownDocumentPanel, {
+        documentId: "doc-a",
+        container: { kind: "folder", id: "folder-a" },
+        pendingEditId: "doc-a",
+        onPendingEditConsumed: () => useDashboardStore.getState().clearPendingBoardDocumentEdit(),
+        onClose: () => useDashboardStore.getState().setActiveBoardDocument(null),
+        onDeleted: (boardItemId: string) => useDashboardStore.getState().removeBoardItem(boardItemId),
+      }));
     });
   });
 

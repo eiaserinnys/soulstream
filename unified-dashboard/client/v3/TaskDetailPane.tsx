@@ -55,6 +55,9 @@ export function TaskDetailPane({
   runHistoryHasMore,
   runHistoryLoading,
   activeSessionId,
+  activeDocumentId,
+  markdownDocumentsRevision,
+  onDeletedActiveDocument,
   focusRequest,
   onFocusRequestHandled,
   onLoadMoreRuns,
@@ -82,6 +85,9 @@ export function TaskDetailPane({
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
   activeSessionId: string | null;
+  activeDocumentId: string | null;
+  markdownDocumentsRevision: number;
+  onDeletedActiveDocument(documentId: string): void;
   focusRequest: TaskSectionFocusRequest | null;
   onFocusRequestHandled(requestId: number): void;
   onLoadMoreRuns(): Promise<void>;
@@ -389,6 +395,9 @@ export function TaskDetailPane({
                 folderId={projectFolderId}
                 api={api}
                 taskMoveTargets={taskMoveTargets}
+                activeDocumentId={activeDocumentId}
+                markdownDocumentsRevision={markdownDocumentsRevision}
+                onDeletedActiveDocument={onDeletedActiveDocument}
                 onMarkdownDocumentsChanged={setBoardDocuments}
               />
             </div>

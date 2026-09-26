@@ -16,17 +16,13 @@ import {
 import {
   acceptV3SessionStreamEvent,
   invalidateV3,
-  trackedV3PageIds,
-  useV3PageInvalidationSources,
 } from "./v3-live-invalidation-plane";
 
 export function useV3LiveDataPlane({
   sessionIds,
-  pageIds,
   onConnectionError,
 }: {
   sessionIds: readonly string[];
-  pageIds: readonly (string | null | undefined)[];
   onConnectionError?: () => void;
 }) {
   const catalog = useDashboardStore((state) => state.catalog);
@@ -42,7 +38,6 @@ export function useV3LiveDataPlane({
     staleTime: Infinity,
     gcTime: 0,
   });
-  useV3PageInvalidationSources(trackedV3PageIds(pageIds));
   useEffect(() => {
     if (!catalog) return;
     let nextCatalog = catalog;

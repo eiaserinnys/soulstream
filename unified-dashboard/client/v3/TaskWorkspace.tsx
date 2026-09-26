@@ -5,11 +5,13 @@ import {
   MarkdownDocumentPanel,
   SessionModelPresetBadge,
   SessionStoryDisclosure,
+  STATUS_CONFIG,
   useDashboardStore,
   useGlassSurface,
   type CatalogFolder,
   type SessionReviewAcknowledgeResult,
   type SessionSummary,
+  type SessionProviderConnectionStatus,
 } from "@seosoyoung/soul-ui";
 import { X } from "lucide-react";
 
@@ -29,6 +31,7 @@ import { TaskDetailPane } from "./TaskDetailPane";
 import type { TaskSectionFocusRequest } from "./TaskSectionNavigation";
 import { TaskBoardWorkspace } from "./TaskBoardWorkspace";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
+import { SessionStreamStatus } from "./SessionStreamStatus";
 import type { MobilePlannerTab } from "./mobile-planner-state";
 
 export function TaskWorkspace({
@@ -54,6 +57,8 @@ export function TaskWorkspace({
   mobileMode,
   mobileTab,
   historyEnabled,
+  sessionConnectionStatus,
+  reconnectSession,
   onChatVisibilityChange,
   taskMoveTargets,
   taskInToday,
@@ -92,6 +97,8 @@ export function TaskWorkspace({
   mobileMode: boolean;
   mobileTab: MobilePlannerTab;
   historyEnabled: boolean;
+  sessionConnectionStatus: SessionProviderConnectionStatus;
+  reconnectSession(): void;
   onChatVisibilityChange(visible: boolean): void;
   taskMoveTargets: readonly PlannerTask[];
   taskInToday: boolean;
@@ -113,10 +120,15 @@ export function TaskWorkspace({
   const draggingPointer = useRef<number | null>(null);
   const [splitPercent, setSplitPercent] = useState(DEFAULT_WORKSPACE_SPLIT);
   const [boardOpen, setBoardOpen] = useState(false);
+  const [markdownDocumentsRevision, setMarkdownDocumentsRevision] = useState(0);
   const [visibleTitle, setVisibleTitle] = useState(task?.page.title ?? "");
   const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: chatOpen && !boardOpen });
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
   const activeBoardDocumentId = useDashboardStore((state) => state.activeBoardDocumentId);
+  const setActiveBoardDocument = useDashboardStore((state) => state.setActiveBoardDocument);
+  const activeBoardContainer = useDashboardStore((state) => state.activeBoardContainer);
+  const pendingDocumentEditId = useDashboardStore((state) => state.pendingBoardDocumentEditId);
+  const clearPendingDocumentEdit = useDashboardStore((state) => state.clearPendingBoardDocumentEdit);
   const inspectorKind = workspaceInspectorKind(activeBoardDocumentId, activeSessionKey);
   const chatVisible = isTaskWorkspaceChatVisible({
     hasActiveSession: activeSession !== undefined,
@@ -229,7 +241,8 @@ export function TaskWorkspace({
             <header className="v3-chat-header">
               <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "세션"}</strong></div>
               <SessionModelPresetBadge session={activeSession} />
-              <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession?.status === "running" ? "실행 중" : "완료"}</span>
+              <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? (STATUS_CONFIG[activeSession.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}</span>
+              {activeSession ? <SessionStreamStatus status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
               {activeSession ? (
                 <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
               ) : null}
@@ -264,10 +277,16 @@ export function TaskWorkspace({
         mobileMode={mobileMode}
         mobileTab={mobileTab}
         historyEnabled={historyEnabled}
+        sessionConnectionStatus={sessionConnectionStatus}
+        reconnectSession={reconnectSession}
         taskMoveTargets={taskMoveTargets}
         folders={folders}
         contextInvalidationKey={contextInvalidationKey}
+        markdownDocumentsRevision={markdownDocumentsRevision}
         sessionDefaults={sessionDefaults}
+        onMarkdownDocumentEditorClosed={() => {
+          setMarkdownDocumentsRevision((current) => current + 1);
+        }}
         onClose={() => setBoardOpen(false)}
         onOpenSession={onOpenSession}
         onLoadMoreRuns={onLoadMoreRuns}
@@ -298,6 +317,11 @@ export function TaskWorkspace({
           runHistoryHasMore={runHistoryHasMore}
           runHistoryLoading={runHistoryLoading}
           activeSessionId={activeSessionKey}
+          activeDocumentId={activeBoardDocumentId}
+          markdownDocumentsRevision={markdownDocumentsRevision}
+          onDeletedActiveDocument={(documentId) => {
+            if (activeBoardDocumentId === documentId) setActiveBoardDocument(null);
+          }}
           focusRequest={focusRequest}
           onFocusRequestHandled={onFocusRequestHandled}
           onLoadMoreRuns={onLoadMoreRuns}
@@ -339,14 +363,24 @@ export function TaskWorkspace({
                   <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "선택된 세션 없음"}</strong></div>
                 )}
                 {inspectorKind !== "document" ? <SessionModelPresetBadge session={activeSession} /> : null}
-                {inspectorKind !== "document" ? <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span> : null}
+                {inspectorKind !== "document" ? <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? (STATUS_CONFIG[activeSession.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}</span> : null}
+                {inspectorKind !== "document" && activeSession ? <SessionStreamStatus status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
                 {inspectorKind !== "document" && activeSession ? (
                   <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
                 ) : null}
               </header>
               {inspectorKind === "chat" && activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
               {inspectorKind === "document" ? (
-                <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>
+                <div className="v3-board-document-content">
+                  <MarkdownDocumentPanel
+                    documentId={activeBoardDocumentId}
+                    container={activeBoardContainer ?? (projectFolderId ? { kind: "folder", id: projectFolderId } : null)}
+                    pendingEditId={pendingDocumentEditId}
+                    onPendingEditConsumed={clearPendingDocumentEdit}
+                    onClose={() => useDashboardStore.getState().setActiveBoardDocument(null)}
+                    onDeleted={(boardItemId) => useDashboardStore.getState().removeBoardItem(boardItemId)}
+                  />
+                </div>
               ) : <div className="v3-chat-content">
                 {inspectorKind === "chat" && activeSession ? (
                   <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} historyEnabled={historyEnabled} />

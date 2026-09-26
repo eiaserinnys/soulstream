@@ -94,15 +94,16 @@ describe("🔴25 markdown edit opens the center overlay in edit mode", () => {
     expect(useDashboardStore.getState().pendingBoardDocumentEditId).toBeNull();
   });
 
-  it("markdown menu edits via requestBoardDocumentEdit; custom_view has no edit item", () => {
+  it("markdown menu delegates edits by callback and keeps the standalone fallback", () => {
     const menus = read("./BoardWorkspaceContextMenus.tsx");
-    // 마크다운 "편집"은 중앙 오버레이를 편집 모드로 연다.
+    // task 보드는 callback으로 로컬 오버레이를 열고, 일반 보드는 기존 전역 경로를 쓴다.
+    expect(menus).toContain("onRequestMarkdownEdit(markdownContextMenu.item.documentId)");
     expect(menus).toContain("requestBoardDocumentEdit(markdownContextMenu.item.documentId)");
     // custom_view는 편집 항목/편집 위임 prop이 없다.
     expect(menus).not.toContain("requestBoardDocumentEdit(customViewContextMenu");
     expect(menus).not.toContain("onEditBoardItem");
-    // 왼쪽 탭으로 여는 onOpenMarkdownDocument는 더 이상 "편집" 액션에 쓰이지 않는다.
     const view = read("./BoardWorkspaceView.tsx");
+    expect(view).toContain("onRequestMarkdownEdit={onRequestMarkdownEdit}");
     expect(view).not.toContain("onEditBoardItem");
   });
 });

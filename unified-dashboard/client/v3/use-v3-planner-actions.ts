@@ -16,7 +16,7 @@ import {
 } from "./task-project-move";
 import type { TaskMoveTarget } from "./task-move-targets";
 import { completePlannerTask, togglePlannerTaskToday } from "./task-card-actions";
-import { publishTaskStarChange } from "./task-star-store";
+import { clearTaskStarChange, publishTaskStarChange } from "./task-star-store";
 import { renameTaskTitle as renameTaskIdentityTitle } from "./task-workspace-api";
 import { runOptimisticTodayMutation } from "./today-task-state";
 import { errorText } from "./v3-dashboard-utils";
@@ -122,15 +122,20 @@ export function useV3PlannerActions({
   }, [notify, notifyWriteFailure, queryClient]);
 
   const renameTaskTitle = useCallback(async (task: PlannerTask, title: string) => {
+    const mutationId = publishTaskStarChange({
+      page: { ...task.page, title },
+      starred: task.page.metadata.starred === true,
+    });
     try {
       const page = await renameTaskIdentityTitle(api, task.page.id, title);
-      publishTaskStarChange({ page, starred: page.metadata.starred === true });
       patchTask(task.page.id, (current) => ({ ...current, page }));
       notify("업무 제목을 변경했습니다");
       return page.title;
     } catch (error) {
       notifyWriteFailure("업무 제목 변경", error);
       throw error;
+    } finally {
+      clearTaskStarChange(task.page.id, mutationId);
     }
   }, [api, notify, notifyWriteFailure, patchTask]);
 

@@ -29,6 +29,7 @@ export function sessionPanelGroups(
     ready: false,
     connectedNodeIds: new Set(),
   },
+  acknowledgedReviewIds: ReadonlySet<string> = new Set(),
 ): SessionPanelGroups {
   const recentFirst = (left: SessionSummary, right: SessionSummary) =>
     sessionTimestamp(right) - sessionTimestamp(left)
@@ -43,6 +44,7 @@ export function sessionPanelGroups(
     review: sessions
       .filter((session) => (
         session.status === "completed" && session.reviewState === "needs_review"
+          && !acknowledgedReviewIds.has(session.agentSessionId)
       ))
       .sort(recentFirst),
   };

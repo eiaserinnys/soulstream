@@ -256,6 +256,9 @@ async function extractMediaMetadata(
   return {};
 }
 export function BoardWorkspaceView({
+  catalogOverride,
+  boardContainerOverride,
+  selectedFolderIdOverride,
   sessions = EMPTY_SESSIONS,
   taskMoveTargets: providedTaskMoveTargets,
   onMoveSessions,
@@ -272,6 +275,7 @@ export function BoardWorkspaceView({
   onBoardItemMoved,
   onMarkdownDocumentDeleted,
   onOpenMarkdownDocument,
+  onRequestMarkdownEdit,
   onOpenCustomView,
   onCreateMarkdownDocument: _onCreateMarkdownDocument,
   onUploadBoardAsset,
@@ -281,8 +285,12 @@ export function BoardWorkspaceView({
   onWorkspaceViewModeChange,
   viewportPersistenceKey,
 }: BoardWorkspaceViewProps) {
-  const catalog = useDashboardStore((s) => s.catalog);
-  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const storedCatalog = useDashboardStore((s) => s.catalog);
+  const catalog = catalogOverride === undefined ? storedCatalog : catalogOverride;
+  const storedSelectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const selectedFolderId = selectedFolderIdOverride === undefined
+    ? storedSelectedFolderId
+    : selectedFolderIdOverride;
   const selectFolder = useDashboardStore((s) => s.selectFolder);
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
@@ -326,10 +334,11 @@ export function BoardWorkspaceView({
   } = useBoardSelectionState();
   const folders = catalog?.folders ?? [];
   const selectedFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
-  const boardContainer = useMemo(
-    () => activeBoardContainer ?? folderBoardContainer(selectedFolderId),
-    [activeBoardContainer, selectedFolderId],
-  );
+  const boardContainer = useMemo(() => (
+    boardContainerOverride === undefined
+      ? activeBoardContainer ?? folderBoardContainer(selectedFolderId)
+      : boardContainerOverride
+  ), [activeBoardContainer, boardContainerOverride, selectedFolderId]);
   const activeBoardContainerKey = boardContainerKey(boardContainer);
   const resolvedBoardFolderId = boardContainer
     ? boardContainer.kind === "folder"
@@ -662,14 +671,15 @@ export function BoardWorkspaceView({
         y: snapped.y,
       });
       addBoardItem(result.boardItem);
-      setActiveBoardDocument(result.document.id);
+      if (onOpenMarkdownDocument) onOpenMarkdownDocument(result.document.id);
+      else setActiveBoardDocument(result.document.id);
       if (isMobile) setActiveTab("chat");
       setNewMenuOpen(false);
       setContextMenu(null);
     } catch (err) {
       console.error("Markdown document creation failed:", err);
     }
-  }, [addBoardItem, boardContainer, boardSync.runtime, isMobile, resolveSpawnPosition, resolvedBoardFolderId, setActiveBoardDocument, setActiveTab]);
+  }, [addBoardItem, boardContainer, boardSync.runtime, isMobile, onOpenMarkdownDocument, resolveSpawnPosition, resolvedBoardFolderId, setActiveBoardDocument, setActiveTab]);
 
   const createFrameAt = useCallback((position?: { x: number; y: number }) => {
     if (!selectedFolderId || boardContainer?.kind !== "folder" || !boardSync.runtime) return;
@@ -1127,6 +1137,7 @@ export function BoardWorkspaceView({
             onDeleteFrame={deleteFrame}
             onMoveBoardItemToContainer={moveBoardItemToContainer}
             onMarkdownDocumentDeleted={onMarkdownDocumentDeleted}
+            onRequestMarkdownEdit={onRequestMarkdownEdit}
             onMoveSessions={onMoveSessions}
             onRenameSession={onRenameSession}
             onDeleteSessions={onDeleteSessions}
