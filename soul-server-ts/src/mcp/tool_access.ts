@@ -13,6 +13,15 @@ const DESTRUCTIVE_OPERATIONS_BY_TOOL: Readonly<
 > = {
   batch_page_operations: new Set(["delete_block_subtree"]),
 };
+const CONFIG_MUTATION_TOOL_NAMES = new Set([
+  "update_agent_profile",
+  "set_agent_mcp_profile",
+  "rollback_agents_config",
+  "apply_remote_agent_profile_update",
+  "rollback_remote_agents_config",
+  "set_agent_atom_contexts",
+  "set_folder_system_prompt",
+]);
 const DESTRUCTIVE_TOOL_NAMES_BY_RUNTIME = new WeakMap<
   McpRuntime,
   Set<string>
@@ -22,6 +31,7 @@ export function isDestructiveMcpTool(
   toolName: string,
   config?: unknown,
 ): boolean {
+  if (CONFIG_MUTATION_TOOL_NAMES.has(toolName)) return true;
   const explicitHint = readDestructiveHint(config);
   return explicitHint ?? toolName.startsWith("delete_");
 }

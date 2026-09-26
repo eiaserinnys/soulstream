@@ -460,12 +460,19 @@ describe("MCP stateless restart recovery", () => {
     expect(
       internalNames.filter((name: string) => !publicNames.includes(name)).sort(),
     ).toEqual([
+      "apply_remote_agent_profile_update",
       "create_worktree",
       "delete_folder",
       "delete_markdown_document",
       "delete_session",
       "delete_worktree_branch",
       "remove_worktree",
+      "rollback_agents_config",
+      "rollback_remote_agents_config",
+      "set_agent_atom_contexts",
+      "set_agent_mcp_profile",
+      "set_folder_system_prompt",
+      "update_agent_profile",
     ]);
     expect(
       publicNames.filter((name: string) => !internalNames.includes(name)),
