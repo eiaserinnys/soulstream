@@ -52,6 +52,8 @@ export interface CompletionDeliveryCoordinatorDeps {
   logger: Pick<Logger, "error" | "warn" | "info">;
 }
 
+const COMPLETION_REGISTRATION_RETRY_DELAYS_MS = [100, 300] as const;
+
 /**
  * Durable coordinator of completion delivery admission.
  *
@@ -97,14 +99,23 @@ export class CompletionDeliveryCoordinator {
   async enqueue(input: DurableCompletionInput): Promise<void> {
     const registration = buildCompletionRegistration(input);
     let registered;
-    try {
-      registered = await this.deps.repository.register(registration);
-    } catch (err) {
-      this.deps.logger.error(
-        { err, sourceSessionId: input.sourceSessionId },
-        "Completion delivery could not be persisted",
-      );
-      return;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        registered = await this.deps.repository.register(registration);
+        break;
+      } catch (err) {
+        const delayMs = isRetryablePersistenceFailure(err)
+          ? COMPLETION_REGISTRATION_RETRY_DELAYS_MS[attempt]
+          : undefined;
+        if (delayMs === undefined) {
+          this.deps.logger.error(
+            { err, sourceSessionId: input.sourceSessionId, attempts: attempt + 1 },
+            "Completion delivery could not be persisted",
+          );
+          return;
+        }
+        await wait(delayMs);
+      }
     }
     if (registered.conflict) {
       this.deps.logger.error(
@@ -236,6 +247,17 @@ export class CompletionDeliveryCoordinator {
       );
     }
   }
+}
+
+function isRetryablePersistenceFailure(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "retryable" in error
+    && error.retryable === true;
+}
+
+function wait(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 function isStaleSelfCompletionDelivery(

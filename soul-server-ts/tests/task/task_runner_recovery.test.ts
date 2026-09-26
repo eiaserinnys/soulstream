@@ -22,12 +22,56 @@ describe("TaskRunnerRecovery", () => {
       newlyFinalized: true,
       terminalTransitionApplied: true,
     }));
-    const recovery = subject({ lifecycleTransition: { persistExecutorFinalState } as never });
+    const applyRunnerTerminalFact = vi.fn((task: Task, _fact: string, detail: string) => {
+      task.status = "error";
+      task.terminationReason = "error_aborted";
+      task.terminationDetail = detail;
+    });
+    const notifyCompletionIfApplied = vi.fn();
+    const recovery = subject({
+      lifecycleTransition: {
+        applyRunnerTerminalFact,
+        persistExecutorFinalState,
+        notifyCompletionIfApplied,
+      } as never,
+    });
     await recovery.markFailure(current, "runner exited");
     expect(persistExecutorFinalState).toHaveBeenCalledOnce();
+    expect(persistExecutorFinalState).toHaveBeenCalledWith(current, true);
+    expect(applyRunnerTerminalFact).toHaveBeenCalledWith(current, "reaped", "runner exited");
+    expect(notifyCompletionIfApplied).toHaveBeenCalledOnce();
     expect(current).toMatchObject({ status: "error", error: "runner exited" });
+    expect(current).toMatchObject({
+      terminationReason: "error_aborted",
+      terminationDetail: "runner exited",
+    });
     expect(current.runner).toBeUndefined();
     expect(current.executionPromise).toBeUndefined();
+  });
+
+  it("does not overwrite a task that is already terminal", async () => {
+    const current = task({
+      status: "completed",
+      result: "already completed",
+      terminationReason: "completed_ok",
+      terminationEventRecorded: true,
+    });
+    const persistExecutorFinalState = vi.fn();
+    const recovery = subject({
+      lifecycleTransition: {
+        persistExecutorFinalState,
+        notifyCompletionIfApplied: vi.fn(),
+      } as never,
+    });
+
+    await recovery.markFailure(current, "late runner failure");
+
+    expect(current).toMatchObject({
+      status: "completed",
+      result: "already completed",
+      terminationReason: "completed_ok",
+    });
+    expect(persistExecutorFinalState).not.toHaveBeenCalled();
   });
 
   it("projects closed through the ordinary terminal transition", async () => {
@@ -37,11 +81,18 @@ describe("TaskRunnerRecovery", () => {
       newlyFinalized: true,
       terminalTransitionApplied: true,
     }));
+    const notifyCompletionIfApplied = vi.fn();
     const recovery = subject({
-      lifecycleTransition: { applyRunnerTerminalFact, persistExecutorFinalState } as never,
+      lifecycleTransition: {
+        applyRunnerTerminalFact,
+        persistExecutorFinalState,
+        notifyCompletionIfApplied,
+      } as never,
     });
     await expect(recovery.projectClosed(current, "runner closed")).resolves.toBe(true);
     expect(applyRunnerTerminalFact).toHaveBeenCalledWith(current, "closed", "runner closed");
+    expect(persistExecutorFinalState).toHaveBeenCalledWith(current, true);
+    expect(notifyCompletionIfApplied).toHaveBeenCalledOnce();
   });
 
   it("does not emit another terminal fact after canonical termination", async () => {

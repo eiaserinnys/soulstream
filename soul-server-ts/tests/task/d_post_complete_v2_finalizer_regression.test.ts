@@ -108,8 +108,12 @@ describe("D post-complete V2 finalizer regression", () => {
       }),
     };
     const finalizer = new TaskExecutorFinalizer({
-      lifecycleTransition: { persistExecutorFinalState: terminalTransition },
-      completionNotifier,
+      lifecycleTransition: {
+        persistExecutorFinalState: terminalTransition,
+        notifyCompletionIfApplied: vi.fn(async (task, result) => {
+          if (result.terminalTransitionApplied) await completionNotifier.notify(task);
+        }),
+      },
       logger: { warn: vi.fn() } as unknown as Logger,
     });
 

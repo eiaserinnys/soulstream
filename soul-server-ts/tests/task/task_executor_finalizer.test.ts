@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EnginePort } from "../../src/engine/protocol.js";
+import type { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import { InProcessRunnerCommandDispatcher } from
   "../../src/runner/runner_command_dispatcher.js";
 import { RunnerProcessEngineProxy } from
@@ -32,6 +33,34 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 
 function makeLogger(): Logger {
   return { warn: vi.fn() } as unknown as Logger;
+}
+
+function makeFinalizer(deps: {
+  lifecycleTransition: Pick<TaskLifecycleTransition, "persistExecutorFinalState">
+    & Partial<Pick<TaskLifecycleTransition, "notifyCompletionIfApplied">>;
+  logger: Logger;
+  completionNotifier?: { notify(task: Task): Promise<void> };
+}): TaskExecutorFinalizer {
+  const { completionNotifier, ...finalizerDeps } = deps;
+  return new TaskExecutorFinalizer({
+    ...finalizerDeps,
+    lifecycleTransition: {
+      ...deps.lifecycleTransition,
+      notifyCompletionIfApplied: deps.lifecycleTransition.notifyCompletionIfApplied
+        ?? vi.fn(async (task, persistence) => {
+          if (persistence.terminalTransitionApplied && task.callerSessionId) {
+            try {
+              await completionNotifier?.notify(task);
+            } catch (err) {
+              deps.logger.warn(
+                { err, sessionId: task.agentSessionId },
+                "completion notification failed after terminal transition was applied",
+              );
+            }
+          }
+        }),
+    },
+  });
 }
 
 function makeEngine(close: () => Promise<void>): EnginePort {
@@ -93,7 +122,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     const close = vi.fn(async () => undefined);
     const activity = vi.fn(async () => codexActivity({ detachedRunningCount: 1 }));
     const task = makeTask({ runner: exactCodexRunner({ activity, close }) });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: { persistExecutorFinalState: vi.fn().mockResolvedValue({
         newlyFinalized: true, terminalTransitionApplied: true,
       }) },
@@ -112,7 +141,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     const task = makeTask({
       runner: exactCodexRunner({ activity: vi.fn(async () => null), close }),
     });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: { persistExecutorFinalState: vi.fn().mockResolvedValue({
         newlyFinalized: true, terminalTransitionApplied: true,
       }) },
@@ -134,7 +163,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
         close,
       }),
     });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: { persistExecutorFinalState: vi.fn().mockResolvedValue({
         newlyFinalized: true, terminalTransitionApplied: true,
       }) },
@@ -158,7 +187,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
       terminationEventRecorded: true,
       terminalEventId: 7,
     });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: { persistExecutorFinalState: vi.fn() },
       logger: makeLogger(),
     });
@@ -191,7 +220,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
       terminationEventRecorded: true,
       terminalEventId: 7,
     });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: { persistExecutorFinalState: vi.fn() },
       logger: makeLogger(),
     });
@@ -232,7 +261,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
       terminationEventRecorded: true,
       terminalEventId: 7,
     });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: { persistExecutorFinalState: vi.fn() },
       logger: makeLogger(),
     });
@@ -266,7 +295,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
       })),
     } as EnginePort;
     const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: { persistExecutorFinalState: vi.fn().mockResolvedValue({
         newlyFinalized: true, terminalTransitionApplied: true,
       }) },
@@ -294,7 +323,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
       })),
     } as EnginePort;
     const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: {
         persistExecutorFinalState: vi.fn().mockResolvedValue({
           newlyFinalized: true,
@@ -334,7 +363,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     } as EnginePort;
     const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
     task.runnerIsOfflineReplay = true;
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: {
         persistExecutorFinalState: vi.fn().mockResolvedValue({
           newlyFinalized: true,
@@ -373,7 +402,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     } as EnginePort;
     const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
     task.runnerIsOfflineReplay = false;
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: {
         persistExecutorFinalState: vi.fn().mockResolvedValue({
           newlyFinalized: true,
@@ -404,7 +433,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
       })),
     } as EnginePort;
     const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: {
         persistExecutorFinalState: vi.fn().mockResolvedValue({
           newlyFinalized: true,
@@ -436,7 +465,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
       childDispatcher as never,
     );
     const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: {
         persistExecutorFinalState: vi.fn().mockResolvedValue({
           newlyFinalized: true,
@@ -471,7 +500,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
       runner: createInProcessTaskRunnerRuntime(engine),
       runnerRetainedForDetachedWork: true,
     });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: {
         persistExecutorFinalState: vi.fn().mockResolvedValue({
           newlyFinalized: false,
@@ -508,7 +537,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     const notify = vi.fn(async (task: Task) => {
       calls.push(`notify:${task.runner ? "runner" : "no-runner"}`);
     });
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: { persistExecutorFinalState },
       logger: makeLogger(),
       completionNotifier: { notify },
@@ -528,7 +557,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
   it("keeps the runner until final-state persistence can release ownership", async () => {
     const close = vi.fn(async () => undefined);
     const notify = vi.fn();
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: {
         persistExecutorFinalState: vi.fn().mockRejectedValue(new Error("persist boom")),
       },
@@ -547,7 +576,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
 
   it("does not notify completion when persistence observes an existing terminal transition", async () => {
     const notify = vi.fn();
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: {
         persistExecutorFinalState: vi.fn().mockResolvedValue({
           newlyFinalized: false,
@@ -570,7 +599,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
 
   it("does not notify completion when a new local finalization loses the terminal CAS", async () => {
     const notify = vi.fn();
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: {
         persistExecutorFinalState: vi.fn().mockResolvedValue({
           newlyFinalized: true,
@@ -591,7 +620,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     const engine = makeEngine(close);
     const runnerCommandDispatcher = new InProcessRunnerCommandDispatcher(engine);
     const dispatch = vi.spyOn(runnerCommandDispatcher, "dispatch");
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: {
         persistExecutorFinalState: vi.fn().mockResolvedValue({
           newlyFinalized: false,
@@ -625,7 +654,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
       expect(task.runner).toBeUndefined();
     });
     const logger = makeLogger();
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: { persistExecutorFinalState },
       logger,
       completionNotifier: { notify },
@@ -652,7 +681,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     const close = vi.fn(async () => undefined);
     const notify = vi.fn().mockRejectedValue(new Error("notify boom"));
     const logger = makeLogger();
-    const finalizer = new TaskExecutorFinalizer({
+    const finalizer = makeFinalizer({
       lifecycleTransition: { persistExecutorFinalState },
       logger,
       completionNotifier: { notify },
@@ -668,7 +697,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     expect(notify).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith(
       { err: expect.any(Error), sessionId: "sess-1" },
-      "completionNotifier.notify threw (should not happen — notifier is supposed to isolate)",
+      "completion notification failed after terminal transition was applied",
     );
   });
 

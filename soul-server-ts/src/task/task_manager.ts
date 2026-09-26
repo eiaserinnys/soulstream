@@ -93,6 +93,7 @@ export class TaskManager {
   private readonly sessionMutations: SessionMutationHost;
   private readonly runnerRecovery: TaskRunnerRecovery;
   private readonly autoResumeTransition: AutoResumeTransition;
+  private readonly lifecycleTransition: TaskLifecycleTransition;
 
   constructor(
     private readonly nodeId: string,
@@ -138,6 +139,7 @@ export class TaskManager {
       logger,
       persistence,
     });
+    this.lifecycleTransition = lifecycleTransition;
     this.lifecycleRoute = new TaskLifecycleRoute({
       getTask: (sessionId) => this.tasks.get(sessionId),
       listTasks: () => Array.from(this.tasks.values()),
@@ -239,6 +241,12 @@ export class TaskManager {
         ? this.sessionNotificationPublisher
         : undefined,
     });
+  }
+
+  setCompletionNotifier(
+    completionNotifier: { notify(task: Task): Promise<void> },
+  ): void {
+    this.lifecycleTransition.setCompletionNotifier(completionNotifier);
   }
 
   /**

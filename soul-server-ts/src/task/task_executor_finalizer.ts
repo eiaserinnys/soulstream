@@ -6,7 +6,6 @@ import type {
   SupportsDetachedClaudeRuntime,
 } from "../engine/protocol.js";
 
-import type { CompletionNotifier } from "./completion_notifier.js";
 import type { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import {
   isTerminalTaskStatus,
@@ -19,9 +18,11 @@ import {
 } from "./task_runner_release.js";
 
 interface TaskExecutorFinalizerDeps {
-  lifecycleTransition: Pick<TaskLifecycleTransition, "persistExecutorFinalState">;
+  lifecycleTransition: Pick<
+    TaskLifecycleTransition,
+    "persistExecutorFinalState" | "notifyCompletionIfApplied"
+  >;
   logger: Logger;
-  completionNotifier?: CompletionNotifier;
 }
 
 export type RetainedRunnerReleaseResult =
@@ -50,9 +51,7 @@ export class TaskExecutorFinalizer {
     ) {
       await consumeSuccessfulDeliveries();
     }
-    if (persistence.terminalTransitionApplied) {
-      await this.notifyCompletion(task);
-    }
+    await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
   }
 
   async releaseRetainedClaudeRunner(task: Task): Promise<void> {
@@ -250,19 +249,6 @@ export class TaskExecutorFinalizer {
     return completeTaskRunnerReleaseClaim(task, claim);
   }
 
-  private async notifyCompletion(task: Task): Promise<void> {
-    if (!task.callerSessionId || !this.deps.completionNotifier) return;
-
-    try {
-      await this.deps.completionNotifier.notify(task);
-    } catch (err) {
-      // notifier is expected to isolate local/cross-node failures; this is a final safety net.
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "completionNotifier.notify threw (should not happen — notifier is supposed to isolate)",
-      );
-    }
-  }
 }
 
 function codexActivityIsEmpty(

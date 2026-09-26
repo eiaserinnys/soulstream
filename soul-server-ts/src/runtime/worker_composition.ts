@@ -307,6 +307,7 @@ export async function composeWorkerRuntime(
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
     ...(worktreeService ? { worktreeResolver: worktreeService } : {}),
   });
+  taskManager.setCompletionNotifier(taskRuntime.completionNotifier);
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({
     env,
     runnerProcessFactory: runnerProcess?.runtimeFactory,
