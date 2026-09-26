@@ -19,6 +19,7 @@ const ReasoningEffortToolSchema = z.enum(
 
 import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
 
+import { fetchOrchResponse, readOrchErrorEnvelope } from "../../control_plane/persistence_host_transport.js";
 import { AgentProfileSchema } from "../../agent_registry.js";
 import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
 import { resolveStructuralCallerSessionId } from "../../task/delegation_relationship.js";
@@ -391,25 +392,13 @@ async function fetchOrch(
   path: string,
   body?: unknown,
 ): Promise<unknown> {
-  const url = `${orch.baseUrl}${path}`;
-  const init: RequestInit = {
-    method,
-    headers: {
-      "content-type": "application/json",
-      ...orch.headers,
-    },
-  };
-  if (body !== undefined) {
-    init.body = JSON.stringify(body);
-  }
-  const res = await fetch(url, init);
+  const res = await fetchOrchResponse(orch, method, path, body);
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    const parsedDetail = orchErrorDetail(detail);
+    const detail = await readOrchErrorEnvelope(res);
     throw new OrchHttpError(
-      `orch ${method} ${path} failed: ${res.status} ${res.statusText}${detail ? ` ${detail}` : ""}`,
-      parsedDetail.code,
-      parsedDetail.message,
+      `orch ${method} ${path} failed: ${res.status} ${res.statusText} ${detail.message}`,
+      detail.code ?? undefined,
+      detail.message,
     );
   }
   return await res.json();
@@ -424,27 +413,4 @@ class OrchHttpError extends Error {
     super(message);
     this.name = "OrchHttpError";
   }
-}
-
-function orchErrorDetail(
-  detail: string,
-): { code?: string; message?: string } {
-  try {
-    const payload: unknown = JSON.parse(detail);
-    if (!isRecord(payload) || !isRecord(payload.error)) return {};
-    return {
-      ...(typeof payload.error.code === "string"
-        ? { code: payload.error.code }
-        : {}),
-      ...(typeof payload.error.message === "string"
-        ? { message: payload.error.message }
-        : {}),
-    };
-  } catch {
-    return {};
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { buildDeterministicDeliveryIdentity } from "../../src/task/delivery_identity.js";
 import {
   TaskHandoffNotifier,
   type TaskHandoffSubscriberQuery,
@@ -37,10 +38,12 @@ describe("TaskHandoffNotifier", () => {
     expect(sender.send).toHaveBeenNthCalledWith(1, {
       targetSessionId: "sess-agent-1",
       message: expect.stringContaining("업무 'Launch'의 'Deploy' 완료됨, 이어서 진행"),
+      ...handoffDelivery("sess-agent-1", "op-1"),
     });
     expect(sender.send).toHaveBeenNthCalledWith(2, {
       targetSessionId: "sess-agent-2",
       message: expect.stringContaining("item_id: item-1"),
+      ...handoffDelivery("sess-agent-2", "op-1"),
     });
   });
 
@@ -77,6 +80,23 @@ function makeEvent(
     operationId: "op-1",
     eventId: 12,
     ...overrides,
+  };
+}
+
+function handoffDelivery(targetSessionId: string, operationId: string) {
+  const relationKey = `task_handoff:rb-1:${operationId}:item-1:${targetSessionId}`;
+  const identity = buildDeterministicDeliveryIdentity({
+    targetSessionId,
+    relationKey,
+    intent: "durable_next_turn",
+  });
+  return {
+    deliveryId: identity.deliveryId,
+    deliveryIntent: "durable_next_turn" as const,
+    source: "task_handoff",
+    completionId: identity.completionId,
+    relationKey,
+    producerTerminalRevision: "12",
   };
 }
 

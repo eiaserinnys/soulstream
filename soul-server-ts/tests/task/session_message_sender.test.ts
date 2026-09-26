@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   sendMessageToSession,
@@ -70,6 +70,76 @@ describe("sendMessageToSession relay verdict", () => {
       detail: { relayed: true, delivered: true, outcome: "delivered" },
     });
     expect(verdictWarnings(deps.warnings)).toHaveLength(0);
+  });
+
+  it("relays every delivery identity field with a request deadline", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    let requestSignal: AbortSignal | null | undefined;
+    const deps = relayingDeps(() => jsonResponse({
+      type: "intervene_ack",
+      status: "ok",
+      outcome: "delivered",
+      delivered: true,
+    }));
+    deps.fetchImpl = async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requestSignal = init?.signal;
+      return jsonResponse({
+        type: "intervene_ack",
+        status: "ok",
+        outcome: "delivered",
+        delivered: true,
+      });
+    };
+
+    await sendMessageToSession(deps, {
+      targetSessionId: "session-1",
+      message: "handoff",
+      deliveryId: "delivery-1",
+      deliveryIntent: "durable_next_turn",
+      source: "task_handoff",
+      completionId: "completion-1",
+      relationKey: "task_handoff:operation-1:session-1",
+      producerTerminalRevision: "44",
+      parentDeliveryId: "parent-delivery-1",
+      callerTurnId: "turn-1",
+      deliveryCreatedAt: "2026-09-26T00:00:00.000Z",
+      deliveryAttemptToken: "attempt-1",
+    });
+
+    expect(requestSignal).toBeInstanceOf(AbortSignal);
+    expect(requestBody).toMatchObject({
+      delivery_id: "delivery-1",
+      delivery_intent: "durable_next_turn",
+      completion_id: "completion-1",
+      relation_key: "task_handoff:operation-1:session-1",
+      producer_terminal_revision: "44",
+      parent_delivery_id: "parent-delivery-1",
+      caller_turn_id: "turn-1",
+      delivery_attempt_token: "attempt-1",
+    });
+  });
+
+  it("does not relay a local failure unless it is a confirmed ownership handoff", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ delivered: true }));
+    const { logger } = silentLogger();
+    const result = await sendMessageToSession({
+      logger,
+      orch: ORCH,
+      onResume: () => {},
+      nodeId: "self",
+      sessionLookup: { getSession: async () => ({ node_id: "self" }) },
+      taskManager: {
+        addIntervention: async () => { throw new Error("local route failed"); },
+      },
+      fetchImpl,
+    }, {
+      targetSessionId: "session-1",
+      message: "steer",
+    });
+
+    expect(result).toMatchObject({ ok: false, error: "local route failed" });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("surfaces a queued verdict with its consumption point", async () => {

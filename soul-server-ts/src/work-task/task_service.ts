@@ -6,6 +6,7 @@ import type {
   TaskStatus,
 } from "../db/session_db_types.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
+import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import { TaskVersionConflict, type TaskAssigneeInput } from "./task_models.js";
 import type {
   TaskActorParams,
@@ -18,8 +19,11 @@ export type { TaskActorParams, TaskMutationResult } from "./task_service_models.
 /** Worker-side task facade. All persistence is owned by the orchestrator host. */
 export class TaskService {
   private handoffNotifier?: TaskHandoffNotifierPort;
+  private readonly transport: PersistenceHostTransport;
 
-  constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {}
+  constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {
+    this.transport = new PersistenceHostTransport(config);
+  }
 
   setHandoffNotifier(notifier: TaskHandoffNotifierPort): void {
     this.handoffNotifier = notifier;
@@ -182,16 +186,13 @@ export class TaskService {
   }
 
   private async request<T = unknown>(operation: string, input: object): Promise<T> {
-    const response = await fetch(
-      `${this.config.orch.baseUrl}/api/tasks/host/${encodeURIComponent(operation)}`,
-      {
-        method: "POST",
-        headers: { ...this.config.orch.headers, "content-type": "application/json" },
-        body: JSON.stringify(snakeCase(input)),
-      },
+    const response = await this.transport.send(
+      "POST",
+      `/api/tasks/host/${encodeURIComponent(operation)}`,
+      snakeCase(input),
     );
     if (!response.ok) {
-      const failure = await responseError(response);
+      const failure = await readOrchErrorEnvelope(response);
       if (response.status === 409 && isVersionConflictDetails(failure.details)) {
         throw new TaskVersionConflict(
           failure.details.targetKind,
@@ -225,30 +226,6 @@ function snakeCase(value: unknown): unknown {
 
 function snakeKey(key: string): string {
   return key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-}
-
-async function responseError(
-  response: Response,
-): Promise<{ message: string; details?: Record<string, unknown> }> {
-  const text = await response.text();
-  if (!text) return { message: `${response.status} ${response.statusText}` };
-  try {
-    const detail = (JSON.parse(text) as {
-      detail?: { error?: { message?: unknown; details?: unknown } };
-    }).detail;
-    if (typeof detail?.error?.message === "string") {
-      const details = detail.error.details;
-      return {
-        message: detail.error.message,
-        ...(details && typeof details === "object" && !Array.isArray(details)
-          ? { details: details as Record<string, unknown> }
-          : {}),
-      };
-    }
-  } catch {
-    return { message: text };
-  }
-  return { message: text };
 }
 
 function isVersionConflictDetails(value: Record<string, unknown> | undefined): value is {

@@ -608,7 +608,7 @@ describe("sendMessageToSession cross-node exact-once", () => {
     expect(result).toEqual({
       ok: false,
       error: failureMessage,
-      fallback_error: "orch fallback unavailable",
+      fallback_error: "orch relay is reserved for a confirmed remote owner",
     });
     expect(ledger.rows.size).toBe(0);
     expect(ledger.admissions.get("local-node") ?? 0).toBe(0);

@@ -4,6 +4,7 @@ import type {
   SendMessageToSessionParams,
   SendMessageToSessionResult,
 } from "../task/session_message_sender.js";
+import { buildDeterministicDeliveryIdentity } from "../task/delivery_identity.js";
 import type { TaskHandoffEvent, TaskHandoffNotifierPort } from "./task_service_models.js";
 
 export interface TaskHandoffSubscriberQuery {
@@ -43,30 +44,60 @@ export class TaskHandoffNotifier implements TaskHandoffNotifierPort {
     }
 
     const message = buildTaskHandoffMessage(event);
-    for (const targetSessionId of subscriberSessionIds) {
-      void this.sender
-        .send({ targetSessionId, message })
-        .then((result) => {
-          if (!result.ok) {
-            this.logger.warn(
-              {
-                taskId: event.taskId,
-                itemId: event.itemId,
-                targetSessionId,
-                result,
-              },
-              "Task handoff notification delivery failed",
-            );
-          }
-        })
-        .catch((err) => {
+    await Promise.all(subscriberSessionIds.map(async (targetSessionId) => {
+      try {
+        const result = await this.sender.send({
+          targetSessionId,
+          message,
+          ...handoffDelivery(event, targetSessionId),
+        });
+        if (!result.ok) {
           this.logger.warn(
-            { err, taskId: event.taskId, itemId: event.itemId, targetSessionId },
+            { taskId: event.taskId, itemId: event.itemId, targetSessionId, result },
             "Task handoff notification delivery failed",
           );
-        });
-    }
+        }
+      } catch (err) {
+        this.logger.warn(
+          { err, taskId: event.taskId, itemId: event.itemId, targetSessionId },
+          "Task handoff notification delivery failed",
+        );
+      }
+    }));
   }
+}
+
+function handoffDelivery(
+  event: TaskHandoffEvent,
+  targetSessionId: string,
+): Pick<SendMessageToSessionParams,
+  | "deliveryId"
+  | "deliveryIntent"
+  | "source"
+  | "completionId"
+  | "relationKey"
+  | "producerTerminalRevision"
+> {
+  const relationKey = [
+    "task_handoff",
+    event.taskId,
+    event.operationId,
+    event.itemId,
+    targetSessionId,
+  ].join(":");
+  const identity = buildDeterministicDeliveryIdentity({
+    targetSessionId,
+    relationKey,
+    intent: "durable_next_turn",
+  });
+  return {
+    deliveryId: identity.deliveryId,
+    deliveryIntent: "durable_next_turn",
+    source: "task_handoff",
+    completionId: identity.completionId,
+    relationKey,
+    producerTerminalRevision: String(event.eventId),
+  };
 }
 
 function buildTaskHandoffMessage(event: TaskHandoffEvent): string {

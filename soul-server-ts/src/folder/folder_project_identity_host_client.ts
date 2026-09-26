@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
 export interface FolderProjectHostResult {
@@ -17,7 +18,11 @@ export interface FolderProjectHostResult {
 }
 
 export class FolderProjectIdentityHostClient {
-  constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {}
+  private readonly transport: PersistenceHostTransport;
+
+  constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {
+    this.transport = new PersistenceHostTransport(config);
+  }
 
   async create(input: {
     name: string;
@@ -56,21 +61,18 @@ export class FolderProjectIdentityHostClient {
   }
 
   private async request(operation: string, body: unknown): Promise<FolderProjectHostResult> {
-    const response = await fetch(
-      `${this.config.orch.baseUrl}/api/folder-project-identities/host/${encodeURIComponent(operation)}`,
-      {
-        method: "POST",
-        headers: { ...this.config.orch.headers, "content-type": "application/json" },
-        body: JSON.stringify(body),
-      },
+    const response = await this.transport.send(
+      "POST",
+      `/api/folder-project-identities/host/${encodeURIComponent(operation)}`,
+      body,
     );
     if (!response.ok) {
-      const message = await responseErrorMessage(response);
+      const detail = await readOrchErrorEnvelope(response);
       this.config.logger.warn(
-        { operation, status: response.status, message },
+        { operation, status: response.status, message: detail.message },
         "folder project identity host request failed",
       );
-      throw new Error(`folder project identity host ${operation} failed: ${message}`);
+      throw new Error(`folder project identity host ${operation} failed: ${detail.message}`);
     }
     return await response.json() as FolderProjectHostResult;
   }
@@ -78,16 +80,4 @@ export class FolderProjectIdentityHostClient {
 
 function systemMutation(idempotencyKey: string) {
   return { actor_kind: "system", idempotency_key: idempotencyKey };
-}
-
-async function responseErrorMessage(response: Response): Promise<string> {
-  const text = await response.text();
-  if (!text) return `${response.status} ${response.statusText}`;
-  try {
-    const detail = (JSON.parse(text) as { detail?: { error?: { message?: unknown } } }).detail;
-    if (typeof detail?.error?.message === "string") return detail.error.message;
-  } catch {
-    return text;
-  }
-  return text;
 }
