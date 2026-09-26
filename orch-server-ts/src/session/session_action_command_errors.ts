@@ -1,4 +1,5 @@
 import type { FastifyReply } from "fastify";
+import type { ControlCommandType } from "@soulstream/wire-schema";
 
 import {
   PendingNodeCommandRejectedError,
@@ -26,7 +27,7 @@ export type SessionActionCommandDispatchOptions = {
 };
 
 export async function sendActionCommand<
-  TPayload extends ExistingSessionActionPayload<string>,
+  TPayload extends ExistingSessionActionPayload<ControlCommandType>,
 >(
   reply: FastifyReply,
   options: SessionActionCommandDispatchOptions,
@@ -213,7 +214,7 @@ function isAckStatusError(response: NodeCommandResponse): boolean {
 }
 
 async function dispatchActionCommand<
-  TPayload extends ExistingSessionActionPayload<string>,
+  TPayload extends ExistingSessionActionPayload<ControlCommandType>,
 >(
   options: SessionActionCommandDispatchOptions,
   payload: TPayload,

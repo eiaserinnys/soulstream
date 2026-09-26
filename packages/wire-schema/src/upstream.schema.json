@@ -2,10 +2,58 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 137개 $defs (top-level wire 66 + supporting/SSE 71). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 152개 $defs (top-level wire 79 + supporting/SSE 73). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "x-soulstream-control-command-types": [
+    "health_check",
+    "create_session",
+    "interrupt_session",
+    "acknowledge_session_review",
+    "subscribe_events",
+    "list_sessions",
+    "list_runner_inventory",
+    "respond",
+    "approve_tool",
+    "reject_tool",
+    "intervene",
+    "claude_runtime_list_tasks",
+    "claude_runtime_task_output",
+    "claude_runtime_stop_task",
+    "claude_runtime_background_tasks",
+    "claude_runtime_list_schedules",
+    "claude_runtime_delete_schedule",
+    "realtime_create_call",
+    "realtime_event",
+    "realtime_resolve_tool_approval",
+    "upload_attachment",
+    "upload_attachment_start",
+    "upload_attachment_chunk",
+    "upload_attachment_finish",
+    "upload_attachment_abort",
+    "delete_session_attachments",
+    "download_attachment",
+    "claude_auth_status",
+    "claude_auth_set_token",
+    "claude_auth_delete_token",
+    "claude_auth_get_usage",
+    "claude_auth_get_profile",
+    "provider_usage_get",
+    "reflect_brief",
+    "plan_agent_profile_update",
+    "apply_agent_profile_update",
+    "list_agents_config_snapshots",
+    "rollback_agents_config",
+    "worktree_list",
+    "worktree_create",
+    "worktree_remove",
+    "worktree_delete_branch"
+  ],
+  "x-soulstream-event-ingress-rejection-codes": [
+    "EVENT_INGRESS_TRANSIENT_FAILURE",
+    "EVENT_INGRESS_INVALID",
+    "EVENT_INGRESS_PROTOCOL_CONFLICT"
+  ],
   "x-soulstream-persistence-only-event-types": [
-    "metadata",
-    "system_message"
+    "metadata"
   ],
   "x-soulstream-event-durability": {
     "init": "durable",
@@ -71,7 +119,8 @@
     "assistant_error": "durable",
     "away_summary": "durable",
     "metadata": "durable",
-    "system_message": "durable"
+    "system_message": "durable",
+    "subtree_update": "durable"
   },
   "$defs": {
     "ReleaseExecutableIdentity": {
@@ -1951,6 +2000,165 @@
         }
       }
     },
+    "ClaudeRuntimeListTasks": {
+      "type": "object",
+      "description": "orch→노드: Claude runtime task 목록 조회.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_list_tasks" },
+        "requestId": { "type": "string" },
+        "agentSessionId": { "type": "string" },
+        "session_id": { "type": "string" }
+      }
+    },
+    "ClaudeRuntimeTaskOutput": {
+      "type": "object",
+      "description": "orch→노드: Claude runtime task 출력 조회.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_task_output" },
+        "requestId": { "type": "string" },
+        "agentSessionId": { "type": "string" },
+        "session_id": { "type": "string" },
+        "taskId": { "type": "string" },
+        "task_id": { "type": "string" }
+      }
+    },
+    "ClaudeRuntimeStopTask": {
+      "type": "object",
+      "description": "orch→노드: Claude runtime task 중단.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_stop_task" },
+        "requestId": { "type": "string" },
+        "agentSessionId": { "type": "string" },
+        "session_id": { "type": "string" },
+        "taskId": { "type": "string" },
+        "task_id": { "type": "string" }
+      }
+    },
+    "ClaudeRuntimeBackgroundTasks": {
+      "type": "object",
+      "description": "orch→노드: Claude runtime background task 조회.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_background_tasks" },
+        "requestId": { "type": "string" },
+        "agentSessionId": { "type": "string" },
+        "session_id": { "type": "string" },
+        "toolUseId": { "type": "string" },
+        "tool_use_id": { "type": "string" }
+      }
+    },
+    "ClaudeRuntimeListSchedules": {
+      "type": "object",
+      "description": "orch→노드: Claude runtime schedule 목록 조회.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_list_schedules" },
+        "requestId": { "type": "string" },
+        "agentSessionId": { "type": "string" },
+        "session_id": { "type": "string" }
+      }
+    },
+    "ClaudeRuntimeDeleteSchedule": {
+      "type": "object",
+      "description": "orch→노드: Claude runtime schedule 삭제.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_delete_schedule" },
+        "requestId": { "type": "string" },
+        "agentSessionId": { "type": "string" },
+        "session_id": { "type": "string" },
+        "scheduleId": { "type": "string" },
+        "schedule_id": { "type": "string" }
+      }
+    },
+    "ProviderUsageGet": {
+      "type": "object",
+      "description": "orch→노드: provider 사용량 조회.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "provider_usage_get" },
+        "requestId": { "type": "string" },
+        "provider": { "type": ["string", "null"] }
+      }
+    },
+    "ReflectBrief": {
+      "type": "object",
+      "description": "orch↔노드: reflect_brief 요청과 응답.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "reflect_brief" },
+        "requestId": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "checked_at": { "type": "string", "format": "date-time" },
+        "brief": {}
+      }
+    },
+    "WorktreeList": {
+      "type": "object",
+      "description": "orch→노드: worktree 목록 조회.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "worktree_list" },
+        "requestId": { "type": "string" },
+        "input": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "WorktreeCreate": {
+      "type": "object",
+      "description": "orch→노드: worktree 생성.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "worktree_create" },
+        "requestId": { "type": "string" },
+        "input": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "WorktreeRemove": {
+      "type": "object",
+      "description": "orch→노드: worktree 디렉터리 제거.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "worktree_remove" },
+        "requestId": { "type": "string" },
+        "input": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "WorktreeDeleteBranch": {
+      "type": "object",
+      "description": "orch→노드: 로컬 worktree branch 삭제.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "worktree_delete_branch" },
+        "requestId": { "type": "string" },
+        "input": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "WorktreeResult": {
+      "type": "object",
+      "description": "노드→orch: worktree command 결과.",
+      "required": ["type", "requestId", "result"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "worktree_result" },
+        "requestId": { "type": "string" },
+        "result": {}
+      }
+    },
     "SSEEventInit": {
       "type": "object",
       "description": "SSE: 세션 스트림 초기화. event 메시지의 event 키 안에 packed.",
@@ -2846,6 +3054,28 @@
         "type": { "const": "away_summary" },
         "content": { "type": "string" }
       }
+    },
+    "SSEEventSystemMessage": {
+      "type": "object",
+      "description": "SSE: 시스템 프롬프트·초기 상태 메시지.",
+      "required": ["type", "text"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "system_message" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventSubtreeUpdate": {
+      "type": "object",
+      "description": "SSE: deprecated subtree delta compatibility event.",
+      "required": ["type", "deltas", "new_total_subtree_height"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "subtree_update" },
+        "deltas": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "new_total_subtree_height": { "type": "integer" }
+      }
     }
   },
   "oneOf": [
@@ -2914,7 +3144,20 @@
     { "$ref": "#/$defs/ClaudeAuthSetToken" },
     { "$ref": "#/$defs/ClaudeAuthDeleteToken" },
     { "$ref": "#/$defs/ClaudeAuthGetUsage" },
-    { "$ref": "#/$defs/ClaudeAuthGetProfile" }
+    { "$ref": "#/$defs/ClaudeAuthGetProfile" },
+    { "$ref": "#/$defs/ClaudeRuntimeListTasks" },
+    { "$ref": "#/$defs/ClaudeRuntimeTaskOutput" },
+    { "$ref": "#/$defs/ClaudeRuntimeStopTask" },
+    { "$ref": "#/$defs/ClaudeRuntimeBackgroundTasks" },
+    { "$ref": "#/$defs/ClaudeRuntimeListSchedules" },
+    { "$ref": "#/$defs/ClaudeRuntimeDeleteSchedule" },
+    { "$ref": "#/$defs/ProviderUsageGet" },
+    { "$ref": "#/$defs/ReflectBrief" },
+    { "$ref": "#/$defs/WorktreeList" },
+    { "$ref": "#/$defs/WorktreeCreate" },
+    { "$ref": "#/$defs/WorktreeRemove" },
+    { "$ref": "#/$defs/WorktreeDeleteBranch" },
+    { "$ref": "#/$defs/WorktreeResult" }
   ],
   "discriminator": { "propertyName": "type" }
 }

@@ -1,3 +1,5 @@
+import type { ControlCommandType } from "@soulstream/wire-schema";
+
 export const DEFAULT_NODE_COMMAND_TIMEOUT_MS = 30_000;
 
 export type NodeCommandClock = () => number;
@@ -17,14 +19,18 @@ export type NodeCommandRequestIdGenerator = (
   context: NodeCommandRequestIdContext,
 ) => string;
 
-export type RequestResponseNodeCommandPayload<TType extends string = string> = {
+export type RequestResponseNodeCommandPayload<
+  TType extends ControlCommandType = ControlCommandType,
+> = {
   type: TType;
   requestId?: never;
   fireAndForget?: never;
   [key: string]: unknown;
 };
 
-export type FireAndForgetNodeCommandPayload<TType extends string = string> = {
+export type FireAndForgetNodeCommandPayload<
+  TType extends ControlCommandType = ControlCommandType,
+> = {
   type: TType;
   requestId?: never;
   [key: string]: unknown;

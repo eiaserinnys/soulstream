@@ -1,3 +1,8 @@
+import {
+  CONTROL_COMMAND_TYPES,
+  type ControlCommandType,
+} from "@soulstream/wire-schema";
+
 export type ControlCommandFamily =
   | "health"
   | "session"
@@ -17,7 +22,7 @@ export type ControlCommandPolicy =
   | "fire_and_forget";
 
 export type ControlCommandInventoryEntry = {
-  type: string;
+  type: ControlCommandType;
   family: ControlCommandFamily;
   policy: ControlCommandPolicy;
 };
@@ -67,6 +72,8 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("worktree_delete_branch", "worktree", "durable_mutation"),
 ] as const satisfies readonly ControlCommandInventoryEntry[];
 
+export { CONTROL_COMMAND_TYPES };
+
 const INVENTORY_BY_TYPE = new Map<string, ControlCommandInventoryEntry>(
   CONTROL_COMMAND_INVENTORY.map((item) => [item.type, item]),
 );
@@ -97,7 +104,7 @@ export function boundedResultTimeoutMs(commandType: string, fallbackMs: number):
 }
 
 function entry(
-  type: string,
+  type: ControlCommandType,
   family: ControlCommandFamily,
   policy: ControlCommandPolicy,
 ): ControlCommandInventoryEntry {
