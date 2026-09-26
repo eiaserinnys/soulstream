@@ -163,6 +163,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
       attention_revision INTEGER NOT NULL DEFAULT 0 CHECK (attention_revision >= 0),
       notification_watermark INTEGER NOT NULL DEFAULT 0 CHECK (notification_watermark >= 0),
+      feed_last_event_id INTEGER CHECK (feed_last_event_id IS NULL OR feed_last_event_id > 0),
       notification_count BIGINT NOT NULL DEFAULT 0 CHECK (notification_count >= 0),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );

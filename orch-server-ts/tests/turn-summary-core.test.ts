@@ -461,6 +461,7 @@ describe("Codex turn summary provider", () => {
         .mockReturnValueOnce(110)
         .mockReturnValueOnce(130)
         .mockReturnValueOnce(140)
+        .mockReturnValueOnce(150)
         .mockReturnValueOnce(170),
     });
 
