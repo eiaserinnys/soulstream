@@ -55,8 +55,8 @@ export const EnvSchema = z
      */
     CODEX_CLI_PATH: z.string().optional(),
     /**
-     * Codex backend adapter 선택. default는 기존 SDK/exec 경로 유지.
-     * app-server adapter는 실험 경로라 명시 opt-in에서만 사용한다.
+     * Codex backend adapter 선택. 설정 기본값은 기존 SDK/exec 경로이며,
+     * eias-linegames 운영 환경은 app-server를 명시 설정해 사용 중이다.
      */
     CODEX_ADAPTER_MODE: z.enum(["sdk", "app-server"]).default("sdk"),
     /** JSON-RPC deadline for ordinary Codex app-server requests. */
@@ -74,8 +74,8 @@ export const EnvSchema = z
      */
     EVENT_OUTBOX_DIR: z.string().min(1, "EVENT_OUTBOX_DIR required"),
     /**
-     * Session-per-process runner extraction. Disabled unless explicitly opted in;
-     * the in-process TaskRunnerRuntime remains the production default.
+     * 설정 기본값은 in-process TaskRunnerRuntime이다.
+     * eias-linegames 운영 환경은 session-per-process runner를 명시 설정해 사용 중이다.
      */
     SOUL_RUNNER_PROCESS_ENABLED: z
       .union([z.literal("true"), z.literal("false")])
