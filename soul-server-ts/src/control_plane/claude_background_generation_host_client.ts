@@ -53,6 +53,7 @@ export class ClaudeBackgroundGenerationHostClient {
   observe(params: ObserveClaudeBackgroundTaskGenerationParams) {
     return this.transport.request<ClaudeBackgroundTaskGenerationRow>(
       "claude-runtime", "observe_background_generation", [params],
+      { timeoutMs: 2_000 },
     );
   }
 
