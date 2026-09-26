@@ -19,7 +19,11 @@ const ReasoningEffortToolSchema = z.enum(
 
 import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
 
-import { fetchOrchResponse, readOrchErrorEnvelope } from "../../control_plane/persistence_host_transport.js";
+import {
+  fetchOrchResponse,
+  ORCH_NODE_COMMAND_TIMEOUT_MS,
+  readOrchErrorEnvelope,
+} from "../../control_plane/persistence_host_transport.js";
 import { AgentProfileSchema } from "../../agent_registry.js";
 import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
 import { resolveStructuralCallerSessionId } from "../../task/delegation_relationship.js";
@@ -146,6 +150,7 @@ export function registerMultiNodeTools(
             create_if_missing: create_if_missing ?? false,
             include_text_diff: include_text_diff ?? includeTextDiff ?? false,
           },
+          { timeoutMs: ORCH_NODE_COMMAND_TIMEOUT_MS },
         );
         return jsonResult(data);
       } catch (err) {
@@ -192,6 +197,7 @@ export function registerMultiNodeTools(
             expected_config_checksum:
               expected_config_checksum ?? expectedConfigChecksum,
           },
+          { timeoutMs: ORCH_NODE_COMMAND_TIMEOUT_MS },
         );
         return jsonResult(data);
       } catch (err) {
@@ -258,6 +264,7 @@ export function registerMultiNodeTools(
             snapshot_id,
             include_text_diff: include_text_diff ?? includeTextDiff ?? false,
           },
+          { timeoutMs: ORCH_NODE_COMMAND_TIMEOUT_MS },
         );
         return jsonResult(data);
       } catch (err) {
@@ -340,7 +347,13 @@ export function registerMultiNodeTools(
       }
 
       try {
-        const data = await fetchOrch(orch, "POST", "/api/sessions", body);
+        const data = await fetchOrch(
+          orch,
+          "POST",
+          "/api/sessions",
+          body,
+          { timeoutMs: ORCH_NODE_COMMAND_TIMEOUT_MS },
+        );
         return jsonResult(data);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -391,8 +404,9 @@ async function fetchOrch(
   method: "GET" | "POST",
   path: string,
   body?: unknown,
+  options: { timeoutMs?: number } = {},
 ): Promise<unknown> {
-  const res = await fetchOrchResponse(orch, method, path, body);
+  const res = await fetchOrchResponse(orch, method, path, body, options);
   if (!res.ok) {
     const detail = await readOrchErrorEnvelope(res);
     throw new OrchHttpError(
