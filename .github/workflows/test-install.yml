@@ -325,15 +325,13 @@ jobs:
               throw "Release activation contract stub did not listen on port 5200"
             }
 
-            $dbUrl = "postgresql://{0}:{1}@127.0.0.1:{2}/{3}" -f `
-              $env:PGUSER, $env:PGPASSWORD, $env:PGPORT, $env:PGDATABASE
             .\install\install.ps1 `
               -NonInteractive `
               -Force `
               -InstallDir "C:\soulstream-test" `
               -WorkspaceDir "C:\workspace-test" `
               -Port 3105 `
-              -DatabaseUrl $dbUrl `
+              -UpstreamUrl "ws://127.0.0.1:5200/ws/node" `
               -AuthBearerToken "ci-test-token" `
               -RepositoryUrl $env:SOULSTREAM_SOURCE_URL `
               -RepositoryBranch $env:SOULSTREAM_SOURCE_BRANCH
@@ -368,32 +366,6 @@ jobs:
           } finally {
             Stop-Process -Id $stubProcess.Id -Force -ErrorAction SilentlyContinue
           }
-
-      - name: Smoke test — PostgreSQL schema
-        shell: pwsh
-        run: |
-          $sessionsTable = psql `
-            -h 127.0.0.1 `
-            -p $env:PGPORT `
-            -U $env:PGUSER `
-            -d $env:PGDATABASE `
-            -tAc "SELECT to_regclass('public.sessions')"
-          if ($sessionsTable.Trim() -ne "sessions") {
-            Write-Error "sessions table was not created"
-            exit 1
-          }
-
-          $sessionGet = psql `
-            -h 127.0.0.1 `
-            -p $env:PGPORT `
-            -U $env:PGUSER `
-            -d $env:PGDATABASE `
-            -tAc "SELECT to_regprocedure('public.session_get(text)')"
-          if ($sessionGet.Trim() -ne "session_get(text)") {
-            Write-Error "session_get(text) procedure was not created"
-            exit 1
-          }
-          Write-Host "PostgreSQL schema smoke test passed"
 
       - name: Dump service logs on failure
         if: failure()
@@ -455,12 +427,7 @@ jobs:
           } catch {
             Write-Host "Service     : DOWN (health check failed)"
           }
-          Write-Host "Dashboard   : C:\soulstream-test\soulstream\unified-dashboard\dist"
-          if (Test-Path "C:\soulstream-test\soulstream\unified-dashboard\dist\index.html") {
-            Write-Host "Dashboard build: OK"
-          } else {
-            Write-Host "Dashboard build: MISSING"
-          }
+          Write-Host "Control plane: ws://127.0.0.1:5200/ws/node"
 
       - name: Stop PostgreSQL
         if: always()

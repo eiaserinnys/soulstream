@@ -10,11 +10,11 @@ import {
   type RespondNodeCommandPayload,
 } from "../node/pending_commands.js";
 import type { CreateSessionNodeCommandPayload } from "../node/registry_types.js";
+import { mapNodeCommandError, sendApiError } from "../http/api_errors.js";
 import {
   ModelPresetAvailabilityError,
   type ModelPresetAvailabilityService,
 } from "../model/model_preset_availability.js";
-import { NodeCommandTransportError } from "./session_command_transport.js";
 import {
   SessionCommandRouteError,
   SessionCommandRouter,
@@ -388,14 +388,9 @@ function serviceUnavailable(
   reply: FastifyReply,
   response: { code?: unknown; message?: unknown },
 ): FastifyReply {
-  return reply.code(503).send({
-    error: {
-      code: typeof response.code === "string" ? response.code : "NODE_COMMAND_FAILED",
-      message:
-        typeof response.message === "string"
-          ? response.message
-          : "Node command failed",
-    },
+  return sendApiError(reply, 503, {
+    code: typeof response.code === "string" ? response.code : "NODE_COMMAND_FAILED",
+    message: typeof response.message === "string" ? response.message : "Node command failed",
   });
 }
 
@@ -447,34 +442,17 @@ function sendMappedError(reply: FastifyReply, error: unknown): FastifyReply {
     });
   }
 
-  if (error instanceof NodeCommandTransportError) {
-    return reply.code(503).send({
-      error: {
-        code: error.code,
-        message: error.message,
-        nodeId: error.nodeId,
-        connectionId: error.connectionId,
-      },
-    });
-  }
-
-  if (error instanceof PendingNodeCommandTimeoutError) {
-    return reply.code(503).send({
-      error: {
-        code: "NODE_COMMAND_TIMEOUT",
-        message: error.message,
-        requestId: error.requestId,
-      },
-    });
-  }
-
-  if (error instanceof PendingNodeCommandRejectedError) {
+  const nodeCommandError = mapNodeCommandError(error);
+  if (nodeCommandError?.kind === "rejected") {
     // A rejection carrying a structured input-error code is the caller's
     // problem; without one it stays an upstream failure.
     return sendCreateAckError(reply, {
-      code: error.response?.code ?? "NODE_COMMAND_REJECTED",
-      message: error.message,
+      code: nodeCommandError.response?.code ?? nodeCommandError.apiError.code,
+      message: nodeCommandError.apiError.message,
     });
+  }
+  if (nodeCommandError !== undefined) {
+    return sendApiError(reply, nodeCommandError.statusCode, nodeCommandError.apiError);
   }
 
   return reply.code(500).send({

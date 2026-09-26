@@ -1,8 +1,8 @@
 import type { FastifyReply } from "fastify";
 import type { ControlCommandType } from "@soulstream/wire-schema";
+import { mapNodeCommandError, sendApiError } from "../http/api_errors.js";
 
 import {
-  PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
   type NodeCommandResponse,
 } from "../node/pending_commands.js";
@@ -10,10 +10,7 @@ import {
   SessionCommandRouteError,
   type SessionCommandRouter,
 } from "./session_command_router.js";
-import {
-  NodeCommandTransportError,
-  type SessionCommandTransportBridge,
-} from "./session_command_transport.js";
+import type { SessionCommandTransportBridge } from "./session_command_transport.js";
 import type {
   ExistingSessionActionPayload,
   InterveneNodeCommandPayload,
@@ -249,15 +246,13 @@ function sendMappedActionError(
   error: unknown,
   ackErrorMapper: (reply: FastifyReply, response: NodeCommandResponse) => FastifyReply,
 ): FastifyReply {
-  if (error instanceof PendingNodeCommandRejectedError) {
-    const response = error.response;
+  const nodeCommandError = mapNodeCommandError(error);
+  if (nodeCommandError?.kind === "rejected") {
+    const response = nodeCommandError.response;
     if (response !== undefined && isAckStatusError(response)) {
       return ackErrorMapper(reply, response);
     }
-    return serviceUnavailable(reply, {
-      code: "NODE_COMMAND_REJECTED",
-      message: error.message,
-    });
+    return sendApiError(reply, nodeCommandError.statusCode, nodeCommandError.apiError);
   }
 
   if (error instanceof SessionCommandRouteError) {
@@ -280,43 +275,14 @@ function sendMappedActionError(
     });
   }
 
-  if (error instanceof NodeCommandTransportError) {
-    return reply.code(503).send({
-      error: {
-        code: error.code,
-        message: error.message,
-        nodeId: error.nodeId,
-        connectionId: error.connectionId,
-      },
-    });
-  }
-
-  if (error instanceof PendingNodeCommandTimeoutError) {
-    return reply.code(503).send({
-      error: {
-        code: "NODE_COMMAND_TIMEOUT",
-        message: error.message,
-        requestId: error.requestId,
-      },
-    });
+  if (nodeCommandError !== undefined) {
+    return sendApiError(reply, nodeCommandError.statusCode, nodeCommandError.apiError);
   }
 
   return reply.code(500).send({
     error: {
       code: "SESSION_ACTION_COMMAND_ROUTE_ERROR",
       message: error instanceof Error ? error.message : String(error),
-    },
-  });
-}
-
-function serviceUnavailable(
-  reply: FastifyReply,
-  response: { code?: unknown; message?: unknown },
-): FastifyReply {
-  return reply.code(503).send({
-    error: {
-      code: stringField(response.code, "NODE_COMMAND_FAILED"),
-      message: stringField(response.message, "Node command failed"),
     },
   });
 }

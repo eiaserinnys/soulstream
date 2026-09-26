@@ -87,9 +87,8 @@ immediate-close behavior.
 
 `DATABASE_URL` is intentionally absent from the worker `EnvSchema`. In a
 cluster, the central orchestrator deployment owns PostgreSQL credentials and
-migrations. The standalone installer may place `DATABASE_URL` in the generated
-deployment environment because its release executor initializes and migrates the
-database; the worker runtime still ignores that key.
+migrations. The Windows installer configures a remote worker and does not set
+database credentials or run migrations.
 
 ## Local start
 
@@ -137,7 +136,7 @@ acknowledges durable persistence.
   shared database migration authority to the central orchestrator deployment.
 - [`deploy/release-manifest-worker.json`](../deploy/release-manifest-worker.json)
   contains no migration apply phase and is the cluster worker manifest.
-- [`deploy/release-manifest-standalone.json`](../deploy/release-manifest-standalone.json)
+- [`deploy/release-manifest-worker.json`](../deploy/release-manifest-worker.json)
   gives a standalone release executor migration authority for later releases.
 - [`scripts/verify-migrations.mjs`](scripts/verify-migrations.mjs) is a
   compatibility verifier. It explicitly skips on credential-free workers; it
@@ -145,9 +144,10 @@ acknowledges durable persistence.
 
 The worker-only Haniel reference is
 [`install/haniel-soul-server-ts.example.yaml`](../install/haniel-soul-server-ts.example.yaml).
-The Windows standalone installer uses
-[`install/haniel-standalone.yaml.template`](../install/haniel-standalone.yaml.template)
-and initializes a fresh database before starting the worker.
+The Windows installer configures this server as a remote-orchestrator worker.
+It uses [`install/haniel-worker.yaml.template`](../install/haniel-worker.yaml.template)
+and requires `SOULSTREAM_UPSTREAM_URL`; database migration and initialization
+belong to the central orchestrator release.
 
 ## Development
 

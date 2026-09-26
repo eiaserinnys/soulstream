@@ -621,6 +621,10 @@ describe("control-plane host routes", () => {
 
   it("routes runner transcript correlation to the idempotent repository method", async () => {
     const appendClaudeTranscriptEntriesIdempotent = vi.fn(async () => 1);
+    const entries = [{
+      type: "assistant",
+      message: { content: [{ type: "tool_use", tool_use_id: "toolu-resume" }] },
+    }];
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
@@ -638,7 +642,7 @@ describe("control-plane host routes", () => {
         idempotency_key: "runner:append:1",
         session_id: "soul-session-a",
         key: { project_key: "project-a", session_id: "session-a" },
-        entries: [],
+        entries,
       }] },
     });
 
@@ -647,8 +651,117 @@ describe("control-plane host routes", () => {
       idempotencyKey: "runner:append:1",
       sessionId: "soul-session-a",
       key: { projectKey: "project-a", sessionId: "session-a" },
-      entries: [],
+      entries,
     });
+  });
+
+  it("round-trips transcript entry keys unchanged through the worker transport and host store", async () => {
+    const workerModules = await vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/control_plane/persistence_host_clients.js",
+    );
+    const ClaudeRuntimeHostClient = workerModules.ClaudeRuntimeHostClient as new (
+      options: unknown,
+    ) => {
+      appendClaudeTranscriptEntries(key: unknown, entries: unknown[]): Promise<number>;
+      appendClaudeTranscriptEntriesIdempotent(input: {
+        idempotencyKey: string;
+        sessionId: string;
+        key: unknown;
+        entries: unknown[];
+      }): Promise<number>;
+      loadClaudeTranscriptEntries(key: unknown): Promise<unknown>;
+    };
+    const storedEntries: unknown[] = [];
+    const appendClaudeTranscriptEntries = vi.fn(async (_key: unknown, entries: unknown[]) => {
+      storedEntries.push(...entries);
+      return entries.length;
+    });
+    const appendClaudeTranscriptEntriesIdempotent = vi.fn(async (input: { entries: unknown[] }) => {
+      storedEntries.push(...input.entries);
+      return input.entries.length;
+    });
+    const loadClaudeTranscriptEntries = vi.fn(async () => storedEntries);
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        claudeTranscripts: {
+          appendClaudeTranscriptEntries,
+          appendClaudeTranscriptEntriesIdempotent,
+          loadClaudeTranscriptEntries,
+        },
+      }) as unknown as PersistenceHostRepositories,
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const worker = new ClaudeRuntimeHostClient({
+      orch: { baseUrl: address, headers: { authorization: `Bearer ${token}` } },
+      logger: { info: vi.fn(), warn: vi.fn() } as never,
+    });
+    const key = { projectKey: "project-a", sessionId: "session-a" };
+    const entries = [{
+      type: "assistant",
+      parentUuid: "parent-camel",
+      sessionId: "sdk-session-camel",
+      toolUseResult: { status_code: 200 },
+      snake_case_field: "already-snake",
+      message: {
+        content: [{ type: "tool_use", id: "tool-camel", tool_use_id: "tool-snake" }],
+      },
+    }];
+    const idempotentEntries = [{ ...entries[0], parentUuid: "idempotent-parent-camel" }];
+
+    await expect(worker.appendClaudeTranscriptEntries(key, entries as never)).resolves.toBe(1);
+    await expect(worker.appendClaudeTranscriptEntriesIdempotent({
+      idempotencyKey: "runner:append:1",
+      sessionId: "soul-session-a",
+      key,
+      entries: idempotentEntries as never,
+    })).resolves.toBe(1);
+    await expect(worker.loadClaudeTranscriptEntries(key)).resolves.toEqual([
+      ...entries,
+      ...idempotentEntries,
+    ]);
+    expect(appendClaudeTranscriptEntries).toHaveBeenCalledWith(key, entries);
+    expect(appendClaudeTranscriptEntriesIdempotent).toHaveBeenCalledWith({
+      idempotencyKey: "runner:append:1",
+      sessionId: "soul-session-a",
+      key,
+      entries: idempotentEntries,
+    });
+    expect(loadClaudeTranscriptEntries).toHaveBeenCalledWith(key);
+  });
+
+  it("preserves transcript entries on the non-idempotent host append", async () => {
+    const appendClaudeTranscriptEntries = vi.fn(async () => 1);
+    const entries = [{
+      type: "assistant",
+      message: { content: [{ type: "tool_use", tool_use_id: "toolu-resume" }] },
+    }];
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        claudeTranscripts: { appendClaudeTranscriptEntries },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/claude-runtime/host/append_transcript_entries",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { args: [
+        { project_key: "project-a", session_id: "session-a" },
+        entries,
+      ] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(appendClaudeTranscriptEntries).toHaveBeenCalledWith(
+      { projectKey: "project-a", sessionId: "session-a" },
+      entries,
+    );
   });
 
   it("preserves session transition fields, idempotency, and timestamps across the host boundary", async () => {

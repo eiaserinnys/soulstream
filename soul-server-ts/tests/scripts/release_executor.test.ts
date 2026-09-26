@@ -55,7 +55,7 @@ function environment(directory: string, operation = "upgrade") {
     HANIEL_BACKUP_DIR: directory,
     HANIEL_DATABASE_OPERATION: operation,
     HANIEL_DATABASE_REQUIRED_SUBPHASES: "[]",
-    HANIEL_DATABASE_WRITER_SERVICES: '["writer"]',
+    HANIEL_DATABASE_AFFECTED_SERVICES: '["writer"]',
     HANIEL_DEPLOY_REPO: "soulstream",
     HANIEL_DEPLOYMENT_JOURNAL: join(directory, "haniel-deployment.json"),
     HANIEL_DATABASE_CONTRACT_DIGEST: "b".repeat(64),

@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -49,17 +50,58 @@ function registrationIdentity(message) {
 }
 
 export async function startReleaseActivationOrchStub({ host, port, now = () => new Date() }) {
-  const server = new WebSocketServer({ host, port });
+  const connectedNodes = new Map();
   const receipts = new Map();
   let nextGeneration = 1;
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url ?? "/", `http://${request.headers.host}`).pathname;
+    if (request.method === "GET" && pathname === "/api/health") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+    if (request.method === "GET" && pathname === "/api/nodes") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        nodes: [...connectedNodes.keys()].map((nodeId) => ({
+          nodeId,
+          connected: true,
+          status: "connected",
+        })),
+      }));
+      return;
+    }
+    response.writeHead(404);
+    response.end();
+  });
+  const webSocketServer = new WebSocketServer({ noServer: true });
 
-  server.on("connection", (socket) => {
+  server.on("upgrade", (request, socket, head) => {
+    const pathname = new URL(request.url ?? "/", `http://${request.headers.host}`).pathname;
+    if (pathname !== "/ws/node") {
+      socket.destroy();
+      return;
+    }
+    webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+      webSocketServer.emit("connection", webSocket, request);
+    });
+  });
+
+  webSocketServer.on("connection", (socket) => {
+    let registeredNodeId;
+    socket.on("close", () => {
+      if (registeredNodeId && connectedNodes.get(registeredNodeId) === socket) {
+        connectedNodes.delete(registeredNodeId);
+      }
+    });
     socket.on("message", (raw) => {
       try {
         const message = JSON.parse(raw.toString());
         if (message.type !== "node_register") return;
 
         const { nodeId, manifestId, registrationKey } = registrationIdentity(message);
+        registeredNodeId = nodeId;
+        connectedNodes.set(nodeId, socket);
         const receiptKey = `${nodeId}\u0000${registrationKey}`;
         const existing = receipts.get(receiptKey);
         if (existing && existing.manifest_id !== manifestId) {
@@ -86,6 +128,7 @@ export async function startReleaseActivationOrchStub({ host, port, now = () => n
   await new Promise((resolveListening, rejectListening) => {
     server.once("listening", resolveListening);
     server.once("error", rejectListening);
+    server.listen(port, host);
   });
   const address = server.address();
   if (typeof address === "string" || address === null) {
@@ -94,7 +137,10 @@ export async function startReleaseActivationOrchStub({ host, port, now = () => n
   return {
     port: address.port,
     close: async () => {
-      for (const client of server.clients) client.terminate();
+      for (const client of webSocketServer.clients) client.terminate();
+      await new Promise((resolveClose, rejectClose) => {
+        webSocketServer.close((error) => error ? rejectClose(error) : resolveClose());
+      });
       await new Promise((resolveClose, rejectClose) => {
         server.close((error) => error ? rejectClose(error) : resolveClose());
       });

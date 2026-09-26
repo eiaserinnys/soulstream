@@ -11,6 +11,7 @@ export interface PersistenceHostRouteOptions {
 type RepositoryKey = keyof PersistenceHostRepositories;
 type OperationTarget = readonly [RepositoryKey, string | null, string];
 const OPAQUE_ARGUMENT_KEYS = new Set(["payload", "callerInfo"]);
+const OPAQUE_TRANSCRIPT_ENTRY_ARGUMENT_KEYS = new Set([...OPAQUE_ARGUMENT_KEYS, "entries"]);
 const REQUEST_ID_HEADER = "x-soulstream-persistence-request-id";
 const HOST_RECEIVED_AT_HEADER = "x-soulstream-host-received-at-ms";
 const HOST_RESPONDED_AT_HEADER = "x-soulstream-host-responded-at-ms";
@@ -160,7 +161,7 @@ function registerDomain(
         return sendTimed(request, reply, timing, 404, () =>
           errorReply(reply, 404, "HOST_OPERATION_NOT_FOUND", `unknown ${domain} operation`));
       }
-      const rawArgs = readArgs(request.body);
+      const rawArgs = readArgs(request.body, request.params.operation);
       if (!rawArgs) {
         return sendTimed(request, reply, timing, 422, () =>
           errorReply(reply, 422, "INVALID_HOST_REQUEST", "body.args must be an array"));
@@ -272,10 +273,19 @@ async function invoke(
   return await callable.apply(target, args as never[]);
 }
 
-function readArgs(value: unknown): unknown[] | null {
+function readArgs(value: unknown, operation: string): unknown[] | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const args = (value as Record<string, unknown>).args;
-  return Array.isArray(args) ? args.map(child => camelCase(child)) : null;
+  if (!Array.isArray(args)) return null;
+  return args.map((child, index) => {
+    // The transcript store is an opaque SDK wire format. Keep its snake-case
+    // fields intact so resume materialization receives the same entries the worker wrote.
+    if (operation === "append_transcript_entries" && index === 1) return child;
+    const opaqueKeys = operation === "append_transcript_entries_idempotent"
+      ? OPAQUE_TRANSCRIPT_ENTRY_ARGUMENT_KEYS
+      : OPAQUE_ARGUMENT_KEYS;
+    return camelCase(child, undefined, opaqueKeys);
+  });
 }
 
 function normalizeRetryDelay(operation: string, args: unknown[]): unknown[] | null {
@@ -290,15 +300,21 @@ function normalizeRetryDelay(operation: string, args: unknown[]): unknown[] | nu
   return normalized;
 }
 
-function camelCase(value: unknown, key?: string): unknown {
-  if (Array.isArray(value)) return value.map(child => camelCase(child));
+function camelCase(
+  value: unknown,
+  key?: string,
+  opaqueKeys: ReadonlySet<string> = OPAQUE_ARGUMENT_KEYS,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map(child => camelCase(child, undefined, opaqueKeys));
+  }
   if (typeof value === "string" && isDateValue(value, key)) return new Date(value);
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([childKey, child]) => {
     const camelKey = childKey.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
     return [
       camelKey,
-      OPAQUE_ARGUMENT_KEYS.has(camelKey) ? child : camelCase(child, camelKey),
+      opaqueKeys.has(camelKey) ? child : camelCase(child, camelKey, opaqueKeys),
     ];
   }));
 }

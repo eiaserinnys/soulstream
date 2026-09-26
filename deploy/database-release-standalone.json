@@ -1,5 +1,5 @@
 {
-  "schema_version": "soulstream.database-release-manifest.v1",
-  "writer_services": ["soul-server-ts"],
+  "schema_version": "soulstream.database-release-manifest.v2",
+  "affected_services": ["soul-server-ts"],
   "required_subphases": []
 }

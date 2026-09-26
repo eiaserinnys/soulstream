@@ -75,7 +75,7 @@ function assertReceipt(receipt, env, expectedServices) {
     || !sameStrings([...stoppedSet, ...alreadySet], expectedServices)
     || !sameStrings(quiesced, expectedServices)
   ) {
-    throw new Error("QUIESCENCE_REQUIRED: writer service set differs");
+    throw new Error("QUIESCENCE_REQUIRED: affected service set differs");
   }
   return canonicalReceipt(receipt);
 }
@@ -89,9 +89,9 @@ const PHASE_STATES = {
 
 export async function readHanielReleaseEvidence({ env, journal, phase }) {
   const hanielPath = required(env, "HANIEL_DEPLOYMENT_JOURNAL");
-  const expectedServices = journal.writer_services ?? readStringList(
+  const expectedServices = journal.affected_services ?? readStringList(
     env,
-    "HANIEL_DATABASE_WRITER_SERVICES",
+    "HANIEL_DATABASE_AFFECTED_SERVICES",
   );
   let haniel;
   try {
@@ -121,7 +121,7 @@ export async function readHanielReleaseEvidence({ env, journal, phase }) {
       haniel,
       owner_instance: null,
       quiescence_nonce: null,
-      writer_services: expectedServices,
+      affected_services: expectedServices,
     };
   }
   const receiptPath = required(env, "HANIEL_QUIESCENCE_RECEIPT");
@@ -142,6 +142,6 @@ export async function readHanielReleaseEvidence({ env, journal, phase }) {
     haniel,
     owner_instance: canonical.owner_instance,
     quiescence_nonce: canonical.quiescence_nonce,
-    writer_services: expectedServices,
+    affected_services: expectedServices,
   };
 }

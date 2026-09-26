@@ -96,7 +96,7 @@ class CiPrerequisiteStrictTest(unittest.TestCase):
                     start_and_wait=lambda: None,
                     rollback=lambda: None,
                     prepare_roll_forward=lambda: None,
-                    writer_services=("soulstream-orch-server",),
+                    affected_services=("soulstream-orch-server",),
                     owner_instance="owner-1",
                     quiescence_nonce="nonce-1",
                 ),

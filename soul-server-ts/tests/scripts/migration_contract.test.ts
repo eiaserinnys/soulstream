@@ -150,13 +150,13 @@ describe("versioned migration contract", () => {
     expect(standalone.migration).not.toHaveProperty("backup");
     expect(standalone.migration).not.toHaveProperty("verify_backup");
     expect(standaloneContract).toEqual({
-      schema_version: "soulstream.database-release-manifest.v1",
-      writer_services: ["soul-server-ts"],
+      schema_version: "soulstream.database-release-manifest.v2",
+      affected_services: ["soul-server-ts"],
       required_subphases: [],
     });
     expect(centralContract).toEqual({
-      schema_version: "soulstream.database-release-manifest.v1",
-      writer_services: ["soulstream-orch-server", "soulstream-soul-server-ts"],
+      schema_version: "soulstream.database-release-manifest.v2",
+      affected_services: ["soulstream-orch-server", "soulstream-soul-server-ts"],
       required_subphases: ["board_yjs_runbook_residue"],
     });
     expect(standalone.post_start_verify).toEqual(

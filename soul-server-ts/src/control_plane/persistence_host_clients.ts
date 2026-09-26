@@ -474,7 +474,12 @@ export class ClaudeRuntimeHostClient {
     return this.generations.resolve(sourceNode, sessionId, sdkSessionId, taskId);
   }
   appendClaudeTranscriptEntries(key: ClaudeTranscriptKey, entries: ClaudeTranscriptEntry[]): Promise<number> {
-    return this.transport.request("claude-runtime", "append_transcript_entries", [key, entries]);
+    return this.transport.request(
+      "claude-runtime",
+      "append_transcript_entries",
+      [key, entries],
+      { opaqueArgumentIndexes: [1] },
+    );
   }
   appendClaudeTranscriptEntriesIdempotent(input: {
     idempotencyKey: string;
@@ -482,7 +487,12 @@ export class ClaudeRuntimeHostClient {
     key: ClaudeTranscriptKey;
     entries: ClaudeTranscriptEntry[];
   }): Promise<number> {
-    return this.transport.request("claude-runtime", "append_transcript_entries_idempotent", [input]);
+    return this.transport.request(
+      "claude-runtime",
+      "append_transcript_entries_idempotent",
+      [input],
+      { opaqueArgumentKeys: ["entries"] },
+    );
   }
   loadClaudeTranscriptEntries(key: ClaudeTranscriptKey): Promise<ClaudeTranscriptEntry[] | null> {
     return this.transport.request("claude-runtime", "load_transcript_entries", [key]);
