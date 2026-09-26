@@ -2,7 +2,7 @@
  * 공유 데이터 변환 함수
  *
  * 서버 응답(snake_case)을 클라이언트 타입(camelCase)으로 변환합니다.
- * SSESessionProvider와 useSessionListProvider 양쪽에서 단일 함수를 공유합니다.
+ * OrchestratorSessionProvider와 useSessionListProvider가 이 매퍼를 공유합니다.
  */
 
 import type { ReviewState, SessionSummary, SessionStatus, LlmUsage, MetadataEntry } from "./types";

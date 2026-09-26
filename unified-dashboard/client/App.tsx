@@ -1,17 +1,12 @@
 /**
  * Unified Dashboard — Root App Component
  *
- * /api/config 응답(AppConfig)으로 single-node / orchestrator 모드를 분기한다.
- * 각 모드의 실제 레이아웃은 Phase 2-5에서 구현된다.
+ * Orchestrator dashboard entry point.
  */
 
 import { lazy, Suspense, useEffect, useState } from "react";
-import { useAppConfig } from "./config/AppConfigContext";
 import { redirectRetiredDashboardPathname } from "./dashboard-routes";
 
-const DashboardLayout = lazy(() =>
-  import("./DashboardLayout").then((mod) => ({ default: mod.DashboardLayout })),
-);
 const V3DashboardLayout = lazy(() =>
   import("./v3/V3DashboardLayout").then((mod) => ({
     default: mod.V3DashboardLayout,
@@ -19,7 +14,6 @@ const V3DashboardLayout = lazy(() =>
 );
 
 export function App() {
-  const config = useAppConfig();
   const [pathname, setPathname] = useState(() => window.location.pathname);
 
   useEffect(() => {
@@ -38,26 +32,12 @@ export function App() {
   }, [pathname]);
 
   useEffect(() => {
-    if (config.mode === "orchestrator") {
-      document.title = "Soulstream Dashboard";
-    } else {
-      document.title = config.nodeId
-        ? `Soul Dashboard (${config.nodeId})`
-        : "Soul Dashboard";
-    }
-  }, [config.mode, config.nodeId]);
-
-  if (config.mode === "orchestrator") {
-    return (
-      <Suspense fallback={null}>
-        <V3DashboardLayout />
-      </Suspense>
-    );
-  }
+    document.title = "Soulstream Dashboard";
+  }, []);
 
   return (
     <Suspense fallback={null}>
-      <DashboardLayout />
+      <V3DashboardLayout />
     </Suspense>
   );
 }

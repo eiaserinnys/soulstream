@@ -13,8 +13,7 @@ function requireDevProxyApiBase(env: Record<string, string | undefined>): string
     throw new Error(
       [
         "unified-dashboard dev server requires VITE_API_BASE.",
-        "Set VITE_API_BASE=http://localhost:3105 for a local soul-server-ts worker,",
-        "or VITE_API_BASE=http://localhost:5200 for the orchestrator.",
+        "Set VITE_API_BASE=http://localhost:5200 for the orchestrator.",
       ].join(" "),
     );
   }
@@ -49,7 +48,7 @@ export default defineConfig(({ command, mode }: ConfigEnv) => {
         // soul-ui 소스를 직접 alias로 참조할 때 soul-ui의 peer/deps를 찾을 수 있도록 명시적 alias 추가.
         // pnpm의 node_modules 구조상 Rollup이 packages/soul-ui/node_modules를 자동으로 탐색하지 않음.
         "@base-ui/react": resolve(__dirname, "../packages/soul-ui/node_modules/@base-ui/react"),
-        // @dnd-kit: soul-ui DashboardDndProvider/FolderTree에서 사용
+        // @dnd-kit: soul-ui DashboardDndProvider에서 사용
         "@dnd-kit/core": resolve(__dirname, "../packages/soul-ui/node_modules/@dnd-kit/core"),
         "@dnd-kit/sortable": resolve(__dirname, "../packages/soul-ui/node_modules/@dnd-kit/sortable"),
         "@dnd-kit/utilities": resolve(__dirname, "../packages/soul-ui/node_modules/@dnd-kit/utilities"),
@@ -112,9 +111,7 @@ export default defineConfig(({ command, mode }: ConfigEnv) => {
       },
     },
     server: {
-      // 개발 시 soul-server-ts worker(single-node) 또는 orchestrator로 API 프록시
-      // VITE_API_BASE=http://localhost:3105  (local soul-server-ts worker)
-      // VITE_API_BASE=http://localhost:5200  (orchestrator)
+      // 개발 시 orchestrator로 API를 프록시한다.
       proxy: devProxyTarget
         ? {
             "/api": {

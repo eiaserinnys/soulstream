@@ -24,7 +24,4 @@ export type { UseSessionProviderOptions } from "./useSessionProvider";
 export { useRenameSessionOperation } from "./useRenameSessionOperation";
 export { useReadPositionSync } from "./useReadPositionSync";
 export { useNotification } from "./useNotification";
-export { useUrlSync } from "./useUrlSync";
-export { useDashboardConfig } from "./useDashboardConfig";
 export { useServerStatus } from "./useServerStatus";
-export { useFlipAnimation } from "./useFlipAnimation";

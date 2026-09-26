@@ -7,7 +7,7 @@
  *   - 결과 메시지  : components/config/ConfigResultMessage
  *   - API / 상태  : hooks/useConfigSettings
  *
- * orchestrator 모드에서는 NodePanel이 Claude Auth를 처리하므로 해당 탭을 숨긴다.
+ * V3 설정 탭과 운영 패널을 조합한다.
  */
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
@@ -24,8 +24,6 @@ import {
   useDashboardStore,
   type WallpaperMode,
 } from "@seosoyoung/soul-ui";
-import { useAppConfig } from "../config/AppConfigContext";
-import { ClaudeAuthTab } from "./ClaudeAuthTab";
 import { NodePanel } from "./NodePanel";
 import { UserManagementTab } from "./UserManagementTab";
 import { AgentProfileEditorTab } from "./AgentProfileEditorTab";
@@ -39,8 +37,6 @@ import { SessionReviewPolicyTab } from "./SessionReviewPolicyTab";
 import { UsageLogTab } from "./UsageLogTab";
 import { RecurringJobsTab } from "./RecurringJobsTab";
 
-const CLAUDE_AUTH_TAB_NAME = "claude_auth";
-const CLAUDE_AUTH_TAB_LABEL = "Claude Code 인증";
 const LIQUID_GLASS_TAB_NAME = "liquid_glass";
 const CHAT_TAB_NAME = "chat";
 const NODES_TAB_NAME = "nodes";
@@ -56,9 +52,7 @@ interface ConfigModalProps {
 }
 
 export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
-  const config = useAppConfig();
   const { user } = useAuth();
-  const showClaudeAuthTab = config.mode !== "orchestrator";
 
   const {
     categories,
@@ -77,28 +71,19 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
   const extraTabs = useMemo(() => {
     const glassTab = { name: LIQUID_GLASS_TAB_NAME, label: "리퀴드 글래스" };
     const chatTab = { name: CHAT_TAB_NAME, label: "채팅" };
-    if (config.mode === "orchestrator") {
-      return [
-        chatTab,
-        glassTab,
-        { name: NODES_TAB_NAME, label: "노드" },
-        { name: RECURRING_JOBS_TAB_NAME, label: "반복 작업" },
-        { name: USAGE_LOG_TAB_NAME, label: "사용 로그" },
-        ...(user?.isAdmin ? [
-          { name: SESSION_REVIEW_TAB_NAME, label: "요청 검수" },
-          { name: AGENTS_TAB_NAME, label: "에이전트" },
-          { name: USERS_TAB_NAME, label: "사용자" },
-        ] : []),
-      ];
-    }
     return [
       chatTab,
       glassTab,
-      ...(showClaudeAuthTab
-        ? [{ name: CLAUDE_AUTH_TAB_NAME, label: CLAUDE_AUTH_TAB_LABEL }]
-        : []),
+      { name: NODES_TAB_NAME, label: "노드" },
+      { name: RECURRING_JOBS_TAB_NAME, label: "반복 작업" },
+      { name: USAGE_LOG_TAB_NAME, label: "사용 로그" },
+      ...(user?.isAdmin ? [
+        { name: SESSION_REVIEW_TAB_NAME, label: "요청 검수" },
+        { name: AGENTS_TAB_NAME, label: "에이전트" },
+        { name: USERS_TAB_NAME, label: "사용자" },
+      ] : []),
     ];
-  }, [config.mode, showClaudeAuthTab, user?.isAdmin]);
+  }, [user?.isAdmin]);
 
   // 카테고리 로드 시 첫 탭 선택. 모달을 닫으면 다음 오픈 시 재선택되도록 리셋.
   useEffect(() => {
@@ -153,9 +138,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
                 activeCategory={selectedTab}
                 onSelect={setSelectedTab}
               />
-              {selectedTab === CLAUDE_AUTH_TAB_NAME ? (
-                <ClaudeAuthTab />
-              ) : selectedTab === CHAT_TAB_NAME ? (
+              {selectedTab === CHAT_TAB_NAME ? (
                 <ChatTypographyTab />
               ) : selectedTab === LIQUID_GLASS_TAB_NAME ? (
                 <LiquidGlassTab />

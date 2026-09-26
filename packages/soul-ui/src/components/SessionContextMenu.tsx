@@ -1,7 +1,7 @@
 /**
  * SessionContextMenu - 세션 우클릭 컨텍스트 메뉴 공통 컴포넌트
  *
- * FeedView, FolderContents 등에서 세션 우클릭 시 동일한 메뉴와 모달을 제공한다.
+ * Session surfaces share the same context menu and dialogs.
  * 세션 ID 복사 · 이름 변경 · 폴더 이동 · 삭제 기능을 제공한다.
  *
  * 모바일: Dialog 하단 시트 (bottomStickOnMobile)
@@ -42,8 +42,7 @@ export interface SessionContextMenuProps {
   extraActions?: SessionContextMenuExtraAction[];
   /**
    * 이동할 세션 ID 목록 결정 (단일/다중 선택 지원)
-   * - FeedView: (id) => [id]
-   * - FolderContents: (id) => selectedIds.has(id) ? [...selectedIds] : [id]
+   * The caller decides whether the selected session expands to a multi-selection.
    */
   resolveSessionIds: (sessionId: string) => string[];
 }

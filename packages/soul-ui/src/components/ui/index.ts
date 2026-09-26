@@ -274,15 +274,6 @@ export {
 } from "./popover";
 
 export {
-  PreviewCard,
-  PreviewCard as HoverCard,
-  PreviewCardTrigger,
-  PreviewCardTrigger as HoverCardTrigger,
-  PreviewCardPopup,
-  PreviewCardPopup as HoverCardContent,
-} from "./preview-card";
-
-export {
   Progress,
   ProgressLabel,
   ProgressTrack,
@@ -367,15 +358,6 @@ export {
   TableCell,
   TableCaption,
 } from "./table";
-
-export {
-  Tabs,
-  TabsList,
-  TabsTab,
-  TabsTab as TabsTrigger,
-  TabsPanel,
-  TabsPanel as TabsContent,
-} from "./tabs";
 
 export { Textarea } from "./textarea";
 export type { TextareaProps } from "./textarea";

@@ -11,7 +11,8 @@ import { AuthGate } from "../components/auth/AuthGate";
 import { AuthProvider, useAuth } from "./AuthProvider";
 import { useSessionStreamSSE } from "../hooks/useSessionStreamSSE";
 import { useSessionProvider } from "../hooks/useSessionProvider";
-import { sseSessionProvider } from "./SSESessionProvider";
+import { createSSESubscribe } from "./sse-subscribe";
+import type { SessionStorageProvider } from "./types";
 
 class FakeEventSource {
   static CONNECTING = 0;
@@ -40,6 +41,18 @@ class FakeEventSource {
     );
   }
 }
+
+const testSessionProvider: SessionStorageProvider = {
+  fetchSessions: async () => ({ sessions: [], total: 0 }),
+  fetchCards: async () => [],
+  subscribe: (sessionKey, onEvent, onStatusChange, options) => createSSESubscribe({
+    baseUrl: `/api/sessions/${encodeURIComponent(sessionKey)}/events`,
+    onEvent,
+    onStatusChange,
+    initialLastEventId: options?.lastEventId,
+    getLastEventId: options?.getLastEventId,
+  }),
+};
 
 function AuthProbe() {
   const auth = useAuth();
@@ -78,7 +91,7 @@ function SessionStreamProbe({ streamType }: { streamType: "detail" | "catalog" }
   });
   useSessionProvider({
     sessionKey: "session-a",
-    getSessionProvider: () => sseSessionProvider,
+    getSessionProvider: () => testSessionProvider,
     active: streamType === "detail",
     cursorScope: "https://dashboard.test|director@example.com",
     onConnectionError,
