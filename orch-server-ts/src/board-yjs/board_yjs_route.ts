@@ -4,6 +4,11 @@ import type { BoardYjsService } from "./board_yjs_service.js";
 import { normalizeBoardContainerKind } from "./board_container_kind_compat.js";
 import { registerWebsocketPlugin } from "../websocket_plugin.js";
 
+export const boardYjsRouteAuthRequirements = {
+  "WEBSOCKET /yjs/{folderId}": false,
+  "WEBSOCKET /yjs/{containerKind}/{containerId}": false,
+} as const;
+
 export interface BoardYjsRouteOptions {
   createService: (logger: FastifyBaseLogger) => BoardYjsService;
 }

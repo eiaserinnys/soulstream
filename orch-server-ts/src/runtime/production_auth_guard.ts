@@ -3,6 +3,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AuthTokenResolver } from "../auth/auth_routes.js";
 import { normalizeRouteKey } from "../contract/route_coverage.js";
 import { routeCoverageOwners } from "../contract/route_coverage_matrix.js";
+import { classifyRouteFamily, isLowRiskRouteEntry } from "../contract/route_registry.js";
+import { isDashboardFallbackRequest } from "../dashboard/dashboard_serving.js";
 import { requestLogPath } from "./production_logging.js";
 
 export type ProductionAuthGuardOptions = {
@@ -22,6 +24,20 @@ export function registerProductionAuthGuard(
   options: ProductionAuthGuardOptions,
 ): void {
   app.addHook("onRequest", async (request, reply) => {
+    const routeUrl = request.routeOptions.url;
+    const requestPath = request.url.split("?", 1)[0] ?? "/";
+    if (
+      routeUrl === undefined &&
+      isDashboardFallbackRequest(request.method, requestPath)
+    ) {
+      return;
+    }
+    if (
+      routeUrl !== undefined &&
+      isLowRiskRouteEntry({ family: classifyRouteFamily(routeUrl) })
+    ) {
+      return;
+    }
     const authRequired = resolveProductionRouteAuthRequirement(
       requestRouteIdentity(request),
     );

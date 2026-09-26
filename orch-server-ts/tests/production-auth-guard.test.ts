@@ -95,6 +95,16 @@ describe("production auth guard", () => {
       routeUrl: "/ws/node",
       websocket: true,
     })).toBe(false);
+    expect(resolveProductionRouteAuthRequirement({
+      method: "GET",
+      routeUrl: "/yjs/:folderId",
+      websocket: true,
+    })).toBe(false);
+    expect(resolveProductionRouteAuthRequirement({
+      method: "GET",
+      routeUrl: "/yjs/:containerKind/:containerId",
+      websocket: true,
+    })).toBe(false);
     for (const [method, routeUrl] of [
       ["GET", "/api/pages"],
       ["POST", "/api/pages/daily"],
