@@ -23,8 +23,9 @@ export class OrchInterveneRequestError extends Error {
   constructor(
     readonly status: number,
     readonly responseBody: string,
+    message: string,
   ) {
-    super(`orch intervene request failed with HTTP ${status}`);
+    super(message);
     this.name = "OrchInterveneRequestError";
   }
 }
@@ -48,7 +49,11 @@ export class OrchInterveneClient {
       },
     );
     if (!response.ok) {
-      throw new OrchInterveneRequestError(response.status, await safeReadText(response));
+      throw new OrchInterveneRequestError(
+        response.status,
+        await safeReadText(response),
+        `orch POST /api/sessions/${params.agentSessionId}/intervene failed: ${response.status} ${response.statusText}`,
+      );
     }
     let body: unknown;
     try {
@@ -57,13 +62,16 @@ export class OrchInterveneClient {
       body = null;
     }
     const record = isRecord(body) ? body : {};
+    const delivered = typeof record.delivered === "boolean" || record.delivered === null
+      ? record.delivered
+      : null;
     return {
       verdict: classifyCompletionDeliveryAck(body),
-      delivered: typeof record.delivered === "boolean" || record.delivered === null
-        ? record.delivered
-        : null,
+      delivered,
       outcome: stringOrNull(record.outcome),
-      reason: stringOrNull(record.reason),
+      reason: stringOrNull(record.reason) ?? (
+        delivered === null ? "orch returned no intervene verdict" : null
+      ),
       consumeWhen: stringOrNull(record.consumeWhen ?? record.consume_when),
       queuePosition: typeof record.queuePosition === "number"
         ? record.queuePosition
