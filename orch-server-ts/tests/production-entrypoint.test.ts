@@ -188,6 +188,29 @@ describe("production orchestrator entrypoint", () => {
     expect(closeResources).toHaveBeenCalledTimes(1);
   });
 
+  it("warns when the ignored dashboard folder access setting is configured", async () => {
+    const warn = vi.fn();
+    const server = await createProductionOrchestrator({
+      config: loadOrchServerEnvironment({
+        ...minimalEnvironment(),
+        DASHBOARD_USER_FOLDER_ACCESS: JSON.stringify({
+          "dashboard@example.com": ["folder-1"],
+        }),
+      }),
+      warn,
+      applicationFactory: async () => ({
+        app: Fastify({ forceCloseConnections: true }),
+        startBackground: async () => undefined,
+        closeResources: async () => undefined,
+      }),
+    });
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("DASHBOARD_USER_FOLDER_ACCESS is configured but not enforced"),
+    );
+    await server.close();
+  });
+
 });
 
 async function createDashboardDirectory(): Promise<string> {

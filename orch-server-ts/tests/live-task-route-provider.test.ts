@@ -134,6 +134,40 @@ describe("live task route provider", () => {
     await app.close();
   });
 
+  it("does not send a task mutation to another node when its owner is offline", async () => {
+    const requestNode = vi.fn(async () => ({
+      statusCode: 202,
+      headers: { "content-type": "application/json" },
+      body: { accepted: true },
+    }));
+    const httpClient = createLiveTaskMutationHttpClient({
+      nodeHttpClient: { requestNode },
+    });
+    const app = createTaskApp(httpClient, {
+      async findSessionNode() {
+        throw Object.assign(new Error("Session owner node unavailable"), {
+          statusCode: 503,
+        });
+      },
+      listConnectedNodes: () => [targetNode],
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tasks/rb-1/status",
+      headers: { cookie: "sid=test", authorization: "Bearer test-token" },
+      payload: {
+        status: "completed",
+        expectedVersion: 1,
+        idempotencyKey: "idem-owner-offline",
+      },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(requestNode).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("broadcasts one canonical task_updated event for a new user mutation", async () => {
     const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
       instanceId: "task-user-status",
@@ -206,7 +240,10 @@ describe("live task route provider", () => {
   });
 });
 
-function createTaskApp(httpClient: ReturnType<typeof createLiveTaskMutationHttpClient>) {
+function createTaskApp(
+  httpClient: ReturnType<typeof createLiveTaskMutationHttpClient>,
+  providerOverrides: Partial<TaskRouteProvider> = {},
+) {
   const provider: TaskRouteProvider = {
     async listFolders() {
       return [{ id: "folder-a", parentFolderId: null, name: "Alpha" }];
@@ -228,6 +265,7 @@ function createTaskApp(httpClient: ReturnType<typeof createLiveTaskMutationHttpC
     listConnectedNodes() {
       return [targetNode];
     },
+    ...providerOverrides,
   };
   const accessProvider: TaskAccessProvider = {
     async resolveAccess() {

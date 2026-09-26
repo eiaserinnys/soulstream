@@ -27,11 +27,6 @@ export type OrchServerTsConfig = Omit<
   readonly trustProxy?: typeof DEFAULT_TRUSTED_PROXY;
 };
 
-export type DashboardFolderAccessRule = {
-  readonly restricted: boolean;
-  readonly allowedFolderIds: readonly string[];
-};
-
 export type OrchServerEnvironmentConfig = {
   readonly node_name: string | null;
   readonly host: string;
@@ -39,7 +34,7 @@ export type OrchServerEnvironmentConfig = {
   readonly trusted_proxy: typeof DEFAULT_TRUSTED_PROXY;
   readonly database_url: string;
   readonly dashboard_dir: string;
-  readonly dashboard_user_folder_access: Readonly<Record<string, DashboardFolderAccessRule>>;
+  readonly dashboard_user_folder_access_configured: boolean;
   readonly r2_board_assets_access_key_id: string;
   readonly r2_board_assets_secret_access_key: string;
   readonly r2_board_assets_bucket: string;
@@ -77,7 +72,6 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "PORT",
   "DATABASE_URL",
   "DASHBOARD_DIR",
-  "DASHBOARD_USER_FOLDER_ACCESS",
   "R2_BOARD_ASSETS_ACCESS_KEY_ID",
   "R2_BOARD_ASSETS_SECRET_ACCESS_KEY",
   "R2_BOARD_ASSETS_BUCKET",
@@ -109,7 +103,9 @@ export type OrchServerEnvironmentVariable =
   (typeof ORCH_SERVER_ENVIRONMENT_VARIABLES)[number];
 
 export type EnvironmentSource = Readonly<
-  Partial<Record<OrchServerEnvironmentVariable, string>>
+  Partial<Record<OrchServerEnvironmentVariable, string>> & {
+    DASHBOARD_USER_FOLDER_ACCESS?: string;
+  }
 >;
 
 export type EnvironmentConfigProvider = {
@@ -146,9 +142,8 @@ export function loadOrchServerEnvironment(
     trusted_proxy: DEFAULT_TRUSTED_PROXY,
     database_url: requiredString(env, "DATABASE_URL"),
     dashboard_dir: env.DASHBOARD_DIR ?? "",
-    dashboard_user_folder_access: parseDashboardFolderAccess(
-      env.DASHBOARD_USER_FOLDER_ACCESS,
-    ),
+    dashboard_user_folder_access_configured:
+      (env.DASHBOARD_USER_FOLDER_ACCESS?.trim() ?? "").length > 0,
     r2_board_assets_access_key_id: env.R2_BOARD_ASSETS_ACCESS_KEY_ID ?? "",
     r2_board_assets_secret_access_key: env.R2_BOARD_ASSETS_SECRET_ACCESS_KEY ?? "",
     r2_board_assets_bucket: env.R2_BOARD_ASSETS_BUCKET ?? "",
@@ -334,53 +329,6 @@ function parseCorsOrigins(value: string | undefined): string[] {
     throw new Error("CORS_ALLOWED_ORIGINS JSON value must be an array of strings");
   }
   return parsed;
-}
-
-function parseDashboardFolderAccess(
-  value: string | undefined,
-): Record<string, DashboardFolderAccessRule> {
-  const source = value?.trim() ?? "";
-  if (source.length === 0) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(source);
-  } catch (error) {
-    throw new Error(`DASHBOARD_USER_FOLDER_ACCESS must be valid JSON: ${errorMessage(error)}`);
-  }
-  if (!isRecord(parsed)) {
-    throw new Error("DASHBOARD_USER_FOLDER_ACCESS must be a JSON object");
-  }
-
-  const normalized: Record<string, DashboardFolderAccessRule> = {};
-  for (const [rawEmail, rawRule] of Object.entries(parsed)) {
-    const email = rawEmail.trim().toLowerCase();
-    if (email.length === 0) {
-      throw new Error("DASHBOARD_USER_FOLDER_ACCESS contains an empty email key");
-    }
-    normalized[email] = normalizeFolderAccessRule(rawRule);
-  }
-  return normalized;
-}
-
-function normalizeFolderAccessRule(rawRule: unknown): DashboardFolderAccessRule {
-  if (Array.isArray(rawRule)) {
-    return { restricted: true, allowedFolderIds: normalizeFolderIds(rawRule) };
-  }
-  if (!isRecord(rawRule)) {
-    throw new Error(
-      "DASHBOARD_USER_FOLDER_ACCESS values must be objects or folder-id arrays",
-    );
-  }
-  const folderIds = rawRule.allowedFolderIds ?? rawRule.allowed_folder_ids ?? [];
-  if (!Array.isArray(folderIds)) throw new Error("allowedFolderIds must be an array");
-  return {
-    restricted: Boolean(rawRule.restricted ?? true),
-    allowedFolderIds: normalizeFolderIds(folderIds),
-  };
-}
-
-function normalizeFolderIds(values: readonly unknown[]): string[] {
-  return values.map((value) => String(value).trim()).filter(Boolean);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

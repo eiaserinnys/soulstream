@@ -8,7 +8,7 @@ import {
 } from
   "../src/board-yjs/board_yjs_runbook_deploy.js";
 
-describe("board Y.Doc runbook deployment node guard", () => {
+describe("board Y.Doc runbook deployment", () => {
   it("selects the apply path from the committed approval file", () => {
     const approvals = JSON.parse(readFileSync(
       new URL("../scripts/ydoc-runbook-collision-approvals.json", import.meta.url),
@@ -18,23 +18,13 @@ describe("board Y.Doc runbook deployment node guard", () => {
     expect(approvals).toHaveLength(18);
     expect(new Set(approvals).size).toBe(18);
     expect(decideBoardYjsRunbookDeployAction({
-      nodeId: "eiaserinnys",
       mode: "migrate",
       approvedCollisionHashCount: approvals.length,
     })).toEqual({ action: "run", reason: "approved" });
   });
 
-  it("skips without a child command on non-central nodes", () => {
+  it("runs the residue subphase after collision approval", () => {
     expect(decideBoardYjsRunbookDeployAction({
-      nodeId: "eias-linegames",
-      mode: "migrate",
-      approvedCollisionHashCount: 18,
-    })).toEqual({ action: "skip", reason: "non_central_node" });
-  });
-
-  it("runs the migration on eiaserinnys after collision approval", () => {
-    expect(decideBoardYjsRunbookDeployAction({
-      nodeId: "eiaserinnys",
       mode: "migrate",
       approvedCollisionHashCount: 18,
     })).toEqual({ action: "run", reason: "approved" });
@@ -42,7 +32,6 @@ describe("board Y.Doc runbook deployment node guard", () => {
 
   it("keeps an approval-pending rollout read-only", () => {
     expect(decideBoardYjsRunbookDeployAction({
-      nodeId: "eiaserinnys",
       mode: "migrate",
       approvedCollisionHashCount: 0,
     })).toEqual({ action: "report", reason: "approval_pending" });
@@ -50,21 +39,18 @@ describe("board Y.Doc runbook deployment node guard", () => {
 
   it("runs strict verification only after approval", () => {
     expect(decideBoardYjsRunbookDeployAction({
-      nodeId: "eiaserinnys",
       mode: "verify",
       approvedCollisionHashCount: 18,
     })).toEqual({ action: "run", reason: "approved" });
     expect(decideBoardYjsRunbookDeployAction({
-      nodeId: "eiaserinnys",
       mode: "verify",
       approvedCollisionHashCount: 0,
     })).toEqual({ action: "report", reason: "approval_pending" });
   });
 
-  it("never invokes a migration child command on non-central nodes", async () => {
+  it("always applies SQL before the residue subphase", async () => {
     const events: string[] = [];
     await runBoardYjsRunbookDeployment({
-      nodeId: "eias-linegames-wsl",
       mode: "migrate",
       approvedCollisionHashCount: 18,
       applySqlMigrations: async () => events.push("sql"),
@@ -73,13 +59,12 @@ describe("board Y.Doc runbook deployment node guard", () => {
       verifyResidue: async () => events.push("verify"),
       audit: async (status) => events.push(`audit:${status}`),
     });
-    expect(events).toEqual(["audit:skipped"]);
+    expect(events).toEqual(["sql", "apply", "audit:applied"]);
   });
 
   it("runs SQL then Y.Doc migration on the central node", async () => {
     const events: string[] = [];
     await runBoardYjsRunbookDeployment({
-      nodeId: "eiaserinnys",
       mode: "migrate",
       approvedCollisionHashCount: 18,
       applySqlMigrations: async () => events.push("sql"),
@@ -94,7 +79,6 @@ describe("board Y.Doc runbook deployment node guard", () => {
   it("reports residue without applying it while approval is empty", async () => {
     const events: string[] = [];
     await runBoardYjsRunbookDeployment({
-      nodeId: "eiaserinnys",
       mode: "migrate",
       approvedCollisionHashCount: 0,
       applySqlMigrations: async () => events.push("sql"),

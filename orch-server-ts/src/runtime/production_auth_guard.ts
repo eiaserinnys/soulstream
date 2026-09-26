@@ -25,7 +25,7 @@ export function registerProductionAuthGuard(
     const authRequired = resolveProductionRouteAuthRequirement(
       requestRouteIdentity(request),
     );
-    if (authRequired !== true) return;
+    if (authRequired === false) return;
 
     const access = await options.resolveTokenAccess(request);
     if (!access.ok) {
