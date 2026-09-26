@@ -22,6 +22,18 @@ describe("v3 session panel model", () => {
     expect(groups.review[0]).toBe(review);
   });
 
+  it("shows an acknowledged review again after the session becomes running", () => {
+    const stillReview = session("review", "completed", "needs_review", "2026-07-16T04:00:00Z");
+    const updated = session("review", "running", "not_required", "2026-07-16T05:00:00Z");
+
+    const acknowledged = new Set(["review"]);
+    const pendingGroups = sessionPanelGroups([stillReview], undefined, acknowledged);
+    const updatedGroups = sessionPanelGroups([updated], undefined, acknowledged);
+
+    expect(pendingGroups.review).toEqual([]);
+    expect(updatedGroups.running).toEqual([updated]);
+  });
+
   it("separates running sessions whose assigned node disappeared from a ready snapshot", () => {
     const connected = {
       ready: true,

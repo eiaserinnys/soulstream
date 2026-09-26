@@ -37,6 +37,7 @@ interface V3SessionPanelProps {
   folders: readonly CatalogFolder[];
   nodeConnectivity: SessionNodeConnectivity;
   activeSessionId: string | null;
+  acknowledgedReviewIds?: ReadonlySet<string>;
   onOpenSession(session: SessionSummary): void;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
@@ -49,6 +50,7 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   folders,
   nodeConnectivity,
   activeSessionId,
+  acknowledgedReviewIds = new Set(),
   onOpenSession,
   onRenameSession,
   onDeleteSessions,
@@ -58,8 +60,8 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   const pendingRef = useRef(false);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
   const groups = useMemo(
-    () => sessionPanelGroups(sessions, nodeConnectivity),
-    [nodeConnectivity, sessions],
+    () => sessionPanelGroups(sessions, nodeConnectivity, acknowledgedReviewIds),
+    [acknowledgedReviewIds, nodeConnectivity, sessions],
   );
   const affiliations = useMemo(() => new Map(sessions.map((session) => [
     session.agentSessionId,

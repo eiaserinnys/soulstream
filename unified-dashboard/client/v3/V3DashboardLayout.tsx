@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type SessionSummary } from "@seosoyoung/soul-ui";
+import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type BoardContainerRef, type SessionSummary } from "@seosoyoung/soul-ui";
 import { clampDashboardLeftSidebarWidth, writeDashboardLeftSidebarWidth } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_NAVIGATION_DEFAULT_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX, readV3NavigationWidth } from "./v3-layout-metrics";
@@ -28,42 +28,45 @@ import { useTaskStarChanges } from "./task-star-store";
 import { createPlannerDataDependencies, loadStarredPlannerTask, starredTaskPage, type PlannerTask } from "./planner-data";
 import { fetchPageSessionDefaults, type PageSessionDefaults } from "./task-workspace-api";
 import { activateRunSession, resolveRunSessions } from "./task-workspace-model";
-import { buildMobileTaskOptions, dateKey, errorText, recentDates } from "./v3-dashboard-utils";
+import { buildMobileTaskOptions, errorText, recentDates } from "./v3-dashboard-utils";
 import { usePlannerCollections, useTaskRunHistory } from "./use-v3-planner-reads";
 import { useProjectFolderController } from "./use-project-folder-controller";
-import { useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
+import { useV3PageInvalidationKey, useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
 import { useTaskProjectMoveController } from "./use-task-project-move-controller";
 import {
   parseSessionSearchIntent,
   removeSessionSearchIntent,
 } from "@soulstream/search-contract";
 import { useV3LiveDataPlane } from "./use-v3-live-data-plane";
-import { openDocumentInV3 } from "./v3-inspector-model";
 import { useV3DashboardMutations } from "./use-v3-dashboard-mutations";
 import { useV3MutationProjection } from "./use-v3-mutation-projection";
 import { useV3SessionPanelController } from "./use-v3-session-panel-controller";
 import { useSessionNodeConnectivity } from "./use-session-node-connectivity";
 import { useProjectNavigationMutations } from "./use-project-navigation-mutations";
 import { useProjectLegacySessions } from "./use-project-legacy-sessions";
+import { useTodayDate } from "./use-today-date";
 import "./v3-dashboard-styles";
 export function V3DashboardLayout() {
   return <LiquidGlassProvider renderDefaultCanvas={false}><V3DashboardContent /></LiquidGlassProvider>;
 }
 function V3DashboardContent() {
-  const today = useMemo(() => dateKey(new Date()), []);
+  const today = useTodayDate();
   const dates = useMemo(() => recentDates(today), [today]);
   const api = useMemo(() => createPageApiClient(), []);
   const dataDependencies = useMemo(() => createPlannerDataDependencies(), []);
   const mutationPort = useMemo(() => new BrowserPlannerMutationPort(api), [api]);
   const [selectedDate, setSelectedDate] = useState(today);
+  const selectedDateFollowsToday = useRef(true);
   const projectSelection = useProjectFolderController();
   const { resolution, selectedFolderId, selectedProject, clearProject } = projectSelection;
   const selectedProjectId = selectedProject?.id ?? null;
   const plannerInvalidationKeys = useV3PlannerInvalidationKeys();
-  const projectContextInvalidationKey = plannerInvalidationKeys.pageDetail;
+  const projectContextInvalidationKey = useV3PageInvalidationKey([selectedProjectId]) + plannerInvalidationKeys.pageDetail;
   const [createOpen, setCreateOpen] = useState(false);
   const [ritualOpen, setRitualOpen] = useState(false);
   const [documentInspectorOpen, setDocumentInspectorOpen] = useState(false);
+  const [standaloneDocumentId, setStandaloneDocumentId] = useState<string | null>(null);
+  const [standaloneDocumentContainer, setStandaloneDocumentContainer] = useState<BoardContainerRef | null>(null);
   const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<ReadonlySet<string>>(() => new Set());
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -89,6 +92,9 @@ function V3DashboardContent() {
     });
   }, []);
   useEffect(() => { initTheme(); }, []);
+  useEffect(() => {
+    if (selectedDateFollowsToday.current) setSelectedDate(today);
+  }, [today]);
   const { user, refreshAuthStatus, isLoading: authLoading, isAuthenticated } = useAuth();
   const handleStreamConnectionError = useCallback(() => {
     void refreshAuthStatus().catch(() => undefined);
@@ -102,12 +108,24 @@ function V3DashboardContent() {
   const mobileMode = useMobilePlannerMode();
   const catalog = useDashboardStore((state) => state.catalog);
   const catalogSessions = catalog?.sessionList ?? [];
+  useEffect(() => {
+    setAcknowledgedReviewIds((current) => {
+      let next: Set<string> | null = null;
+      for (const sessionId of current) {
+        const session = catalogSessions.find((candidate) => candidate.agentSessionId === sessionId);
+        if (!session || session.status !== "completed" || session.reviewState !== "needs_review") {
+          next ??= new Set(current);
+          next.delete(sessionId);
+        }
+      }
+      return next ?? current;
+    });
+  }, [catalogSessions]);
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
   const activeSessionSummary = useDashboardStore((state) => state.activeSessionSummary);
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
-  const setActiveBoardDocument = useDashboardStore((state) => state.setActiveBoardDocument);
   const { nodes, nodeConnectivity } = useSessionNodeConnectivity();
   const taskStarChanges = useTaskStarChanges();
   const {
@@ -263,7 +281,6 @@ function V3DashboardContent() {
     loading: targetedRunSessionsLoading,
   } = useV3LiveDataPlane({
     sessionIds: plannerSessionIds,
-    pageIds: [daily.data?.daily.page.id, selectedProjectId, ...currentTasks.map((task) => task.page.id), ...starredTasks.map((task) => starredTaskPage(task).id)],
     onConnectionError: handleStreamConnectionError,
   });
   const runSessionResolution = useMemo(() => resolveRunSessions({
@@ -275,7 +292,11 @@ function V3DashboardContent() {
   const sessions = runSessionResolution.sessions;
   const cursorScope = `${window.location.origin}|${user?.email ?? "anonymous"}`;
   const detailActive = workspaceOpen && detailChatVisible;
-  const { synchronizedSessionKey } = useSessionProvider({
+  const {
+    synchronizedSessionKey,
+    status: sessionConnectionStatus,
+    reconnect: reconnectSession,
+  } = useSessionProvider({
     sessionKey: activeSessionKey,
     getSessionProvider: () => orchestratorSessionProvider,
     active: detailActive,
@@ -329,6 +350,7 @@ function V3DashboardContent() {
     }
     if (next.activeTab === "today") {
       clearProject();
+      selectedDateFollowsToday.current = true;
       setSelectedDate(today);
     }
   }, [activeSessionKey, clearProject, currentTasks, selectedTaskId, sessions, setActiveSession, setActiveSessionSummary, setActiveTab, today]);
@@ -346,6 +368,7 @@ function V3DashboardContent() {
     setChatOpen(false);
     setWorkspaceOpen(false);
     clearProject();
+    selectedDateFollowsToday.current = true;
     setSelectedDate(today);
   }, [clearProject, today]);
   const closeWorkspace = useCallback(() => {
@@ -377,7 +400,10 @@ function V3DashboardContent() {
       }
       else if (workspaceOpen) closeWorkspace();
       else if (selectedProjectId) clearProject();
-      else if (selectedDate !== today) setSelectedDate(today);
+      else if (selectedDate !== today) {
+        selectedDateFollowsToday.current = true;
+        setSelectedDate(today);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -404,8 +430,10 @@ function V3DashboardContent() {
     if (mobileMode && selectedTaskId) setMobileTab("chat");
   }, [clearSessionPanelFocus, mobileMode, selectedTaskId, setActiveSession, setActiveSessionSummary, setActiveTab]);
   const openProjectDocument = useCallback((documentId: string) => {
-    openDocumentInV3(documentId, { setActiveBoardDocument, setInspectorOpen: setDocumentInspectorOpen });
-  }, [setActiveBoardDocument]);
+    setStandaloneDocumentId(documentId);
+    setStandaloneDocumentContainer(selectedFolderId ? { kind: "folder", id: selectedFolderId } : null);
+    setDocumentInspectorOpen(true);
+  }, [selectedFolderId]);
   const {
     createTask,
     saveMemo,
@@ -473,7 +501,7 @@ function V3DashboardContent() {
         completedTaskIds={new Set(currentTasks.filter((task) => task.status === "completed").map((task) => task.page.id))}
         onLoadMoreStarredTasks={() => { void loadMoreStarredTasks(); }}
         onReorderStarredTasks={reorderStarredTasks}
-        onSelectDate={(date) => { clearProject(); setSelectedDate(date); }} onSelectFolder={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); setNewDocumentOpen(false); }}
+        onSelectDate={(date) => { clearProject(); selectedDateFollowsToday.current = date === today; setSelectedDate(date); }} onSelectFolder={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); setNewDocumentOpen(false); }}
         onSelectTask={(task) => { void openStarredTask(task); }} onCompleteTask={plannerActions.completeStarredTask} onToggleTaskToday={plannerActions.toggleStarredTaskToday}
         onMoveTaskToProject={(task) => { void taskProjectMove.openPage(task); }} {...projectNavigationMutations}
         onCreateTask={(folderId) => { projectSelection.setSelectedFolderId(folderId); setCreateOpen(true); }}
@@ -503,7 +531,7 @@ function V3DashboardContent() {
       <div className="v3-session-panel-resize" data-testid="v3-session-panel-resize-handle" aria-hidden="true">
         <DragHandle onDrag={sessionPanel.resize} widthPx={V3_PANEL_GAP_PX} />
       </div>
-      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} onOpenSession={sessionPanel.openSession} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
+      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} acknowledgedReviewIds={acknowledgedReviewIds} onOpenSession={sessionPanel.openSession} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
       {workspaceOpen && (workspaceTask || activeSession) ? (
         <TaskWorkspace
           task={workspaceTask}
@@ -528,6 +556,8 @@ function V3DashboardContent() {
           mobileMode={mobileMode}
           mobileTab={mobileTab}
           historyEnabled={historyEnabled}
+          sessionConnectionStatus={sessionConnectionStatus}
+          reconnectSession={reconnectSession}
           onChatVisibilityChange={setDetailChatVisible}
           taskMoveTargets={currentTasks}
           taskInToday={workspaceTask ? todayTaskIds.has(workspaceTask.page.id) : false}
@@ -545,7 +575,13 @@ function V3DashboardContent() {
           onAcknowledgedReview={acknowledgeReview}
         />
       ) : null}
-      <V3StandaloneDocumentInspector open={documentInspectorOpen} onClose={() => setDocumentInspectorOpen(false)} />
+      <V3StandaloneDocumentInspector
+        open={documentInspectorOpen}
+        documentId={standaloneDocumentId}
+        container={standaloneDocumentContainer}
+        onClose={() => { setDocumentInspectorOpen(false); setStandaloneDocumentId(null); setStandaloneDocumentContainer(null); }}
+        onDeleted={(boardItemId) => useDashboardStore.getState().removeBoardItem(boardItemId)}
+      />
       <AskQuestionBanner
         treeEnabled={detailActive}
         onOpenDetail={() => {

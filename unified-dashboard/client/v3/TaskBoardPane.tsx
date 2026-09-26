@@ -9,7 +9,6 @@ import {
   Button,
   DashboardIconCap,
   retainEqualValue,
-  useDashboardStore,
   useSessionListProvider,
   type CatalogBoardItem,
   type SessionSummary,
@@ -25,7 +24,7 @@ import {
   mergeTaskBoardSessions,
 } from "./task-board-model";
 import { V3ErrorNotice } from "./V3ErrorNotice";
-import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
+import { useV3InvalidationKey, useV3PageInvalidationKey } from "./v3-live-invalidation-plane";
 import { loadConfirmedResult } from "./planner-query-state";
 import type { PlannerTask } from "./planner-data";
 import "./v3-task-board.css";
@@ -38,7 +37,9 @@ export function TaskBoardPane({
   taskMoveTargets,
   viewportPersistenceKey,
   onBoardItemsChanged,
+  onMarkdownDocumentDeleted,
   onOpenMarkdownDocument,
+  onRequestMarkdownEdit,
   onOpenCustomView,
   onClose,
 }: {
@@ -49,14 +50,14 @@ export function TaskBoardPane({
   taskMoveTargets: readonly PlannerTask[];
   viewportPersistenceKey?: string;
   onBoardItemsChanged(items: readonly CatalogBoardItem[]): void;
+  onMarkdownDocumentDeleted(documentId: string, boardItemId: string): void;
   onOpenMarkdownDocument(documentId: string): void;
+  onRequestMarkdownEdit(documentId: string): void;
   onOpenCustomView(customViewId: string): void;
   onClose(): void;
 }) {
   const [boardItems, setBoardItems] = useState<CatalogBoardItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const previousStoreRef = useRef<Partial<ReturnType<typeof useDashboardStore.getState>> | null>(null);
-  const catalogInitializedRef = useRef(false);
   const boardItemsRef = useRef(boardItems);
   const loadedTaskIdRef = useRef<string | null>(null);
   boardItemsRef.current = boardItems;
@@ -67,6 +68,11 @@ export function TaskBoardPane({
   const invalidationKey = useV3InvalidationKey([
     "catalog", "task", "replay",
   ]);
+  const pageInvalidationKey = useV3PageInvalidationKey(
+    (boardItems ?? [])
+      .filter((item) => item.itemType === "markdown")
+      .map((item) => item.itemId),
+  );
   const {
     sessions: boardSessions,
     loading: boardSessionsLoading,
@@ -82,21 +88,19 @@ export function TaskBoardPane({
     () => mergeTaskBoardSessions(sessions, boardSessions),
     [boardSessions, sessions],
   );
+  const scopedCatalog = useMemo(() => buildTaskBoardCatalog({
+    currentCatalog: null,
+    boardItems: boardItems ?? [],
+    sessions: displaySessions,
+    projectFolderId,
+    projectTitle,
+  }), [boardItems, displaySessions, projectFolderId, projectTitle]);
 
   const removeSourceBoardItem = useCallback((boardItemId: string, movedItem?: CatalogBoardItem) => {
-    setBoardItems((current) => current?.filter((item) => item.id !== boardItemId) ?? current);
-    const previous = previousStoreRef.current;
-    if (!previous?.catalog) return;
-    previousStoreRef.current = {
-      ...previous,
-      catalog: {
-        ...previous.catalog,
-        boardItems: [
-          ...(previous.catalog.boardItems ?? []).filter((item) => item.id !== boardItemId),
-          ...(movedItem ? [movedItem] : []),
-        ],
-      },
-    };
+    setBoardItems((current) => current === null ? current : [
+      ...current.filter((item) => item.id !== boardItemId),
+      ...(movedItem ? [movedItem] : []),
+    ]);
   }, []);
 
   const reloadBoardItems = useCallback(async () => {
@@ -138,48 +142,11 @@ export function TaskBoardPane({
       setLoadError(errorText(error));
     });
     return () => controller.abort();
-  }, [invalidationKey, taskId]);
+  }, [invalidationKey, pageInvalidationKey, taskId]);
 
   useEffect(() => {
     onBoardItemsChanged(boardItems ?? []);
   }, [boardItems, onBoardItemsChanged]);
-
-  useEffect(() => {
-    const state = useDashboardStore.getState();
-    previousStoreRef.current = {
-      catalog: state.catalog,
-      catalogVersion: state.catalogVersion,
-      activeBoardContainer: state.activeBoardContainer,
-      selectedFolderId: state.selectedFolderId,
-      focusedBoardItem: state.focusedBoardItem,
-      viewMode: state.viewMode,
-      leftNavigationMode: state.leftNavigationMode,
-      activeTab: state.activeTab,
-      activeBoardDocumentId: state.activeBoardDocumentId,
-      activeCustomViewId: state.activeCustomViewId,
-    };
-    return () => {
-      if (previousStoreRef.current) useDashboardStore.setState(previousStoreRef.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (boardItems === null) return;
-    const state = useDashboardStore.getState();
-    const currentCatalog = catalogInitializedRef.current ? state.catalog : null;
-    const nextCatalog = retainEqualValue(currentCatalog ?? undefined, buildTaskBoardCatalog({
-      currentCatalog,
-      boardItems,
-      sessions: displaySessions,
-      projectFolderId,
-      projectTitle,
-    }));
-    if (nextCatalog !== currentCatalog) state.setCatalog(nextCatalog);
-    if (!catalogInitializedRef.current) {
-      state.openTaskBoard(taskId, projectFolderId);
-      catalogInitializedRef.current = true;
-    }
-  }, [boardItems, displaySessions, projectFolderId, projectTitle, taskId]);
 
   return (
     <article
@@ -210,14 +177,21 @@ export function TaskBoardPane({
           <div className="v3-board-load-state" data-testid="v3-task-board-loading">업무 내용을 불러오는 중…</div>
         ) : (
           <BoardWorkspaceView
+            catalogOverride={scopedCatalog}
+            boardContainerOverride={{ kind: "task", id: taskId }}
+            selectedFolderIdOverride={projectFolderId}
             sessions={displaySessions}
             viewportPersistenceKey={viewportPersistenceKey}
             taskMoveTargets={taskMoveTargets
               .filter((target) => target.taskId !== taskId)
               .map((target) => ({ id: target.taskId, title: target.page.title }))}
             onBoardItemMoved={(item) => removeSourceBoardItem(item.id, item)}
-            onMarkdownDocumentDeleted={(_documentId, boardItemId) => removeSourceBoardItem(boardItemId)}
+            onMarkdownDocumentDeleted={(documentId, boardItemId) => {
+              removeSourceBoardItem(boardItemId);
+              onMarkdownDocumentDeleted(documentId, boardItemId);
+            }}
             onOpenMarkdownDocument={onOpenMarkdownDocument}
+            onRequestMarkdownEdit={onRequestMarkdownEdit}
             onOpenCustomView={onOpenCustomView}
           />
         )}

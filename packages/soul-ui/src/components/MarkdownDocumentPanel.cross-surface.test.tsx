@@ -2,11 +2,10 @@
  * @vitest-environment jsdom
  */
 
-import { EditorView } from "@codemirror/view";
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
@@ -21,107 +20,65 @@ import {
   upsertBoardYjsItem,
   type BoardYjsRuntime,
 } from "../board-workspace";
-import {
-  publishMarkdownDocumentUpdate,
-  subscribeMarkdownDocumentUpdates,
-} from "../lib/markdown-document-operations";
-import { useDashboardStore } from "../stores/dashboard-store";
 import { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
 
-describe("MarkdownDocumentPanel cross-surface sync", () => {
+describe("MarkdownDocumentPanel container ownership", () => {
   let container: HTMLDivElement;
   let root: Root;
-  let originalFetch: typeof globalThis.fetch;
   const cleanups: Array<() => void> = [];
 
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
-    originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
-      id: "doc-a",
-      title: "Design note",
-      body: "Initial body",
-      version: 1,
-    }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
-    useDashboardStore.getState().reset();
-    useDashboardStore.getState().setActiveBoardDocument("doc-a");
   });
 
   afterEach(() => {
     flushSync(() => root.unmount());
     for (const cleanup of cleanups.splice(0)) cleanup();
-    globalThis.fetch = originalFetch;
     document.body.replaceChildren();
-    vi.restoreAllMocks();
   });
 
-  it("applies a confirmed save from another open surface while in read mode", async () => {
-    flushSync(() => root.render(createElement(MarkdownDocumentPanel)));
-    await waitForSelector(container, '[data-testid="markdown-read-body"]');
-
-    flushSync(() => {
-      publishMarkdownDocumentUpdate({
-        id: "doc-a",
-        title: "Updated elsewhere",
-        body: "Saved by another surface",
-        version: 2,
+  it("keeps a same-id document update inside its explicitly selected container", async () => {
+    const firstRuntime = createRuntime("folder-a", "First container body");
+    const secondRuntime = createRuntime("folder-b", "Second container body");
+    for (const runtime of [firstRuntime, secondRuntime]) {
+      cleanups.push(registerBoardYjsRuntime(runtime));
+      cleanups.push(() => {
+        runtime.awareness.destroy();
+        runtime.doc.destroy();
       });
-    });
+    }
 
-    await waitForContent(container, '[data-testid="markdown-read-body"]', "Saved by another surface");
-    expect(container.querySelector<HTMLInputElement>('input[aria-label="Document title"]')?.value)
-      .toBe("Updated elsewhere");
-  });
-
-  it("does not overwrite a local draft with another surface update", async () => {
-    flushSync(() => root.render(createElement(MarkdownDocumentPanel)));
-    const readBody = await waitForSelector<HTMLElement>(container, '[data-testid="markdown-read-body"]');
-    flushSync(() => readBody.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    const editor = await waitForEditor(container);
-    flushSync(() => editor.dispatch({
-      changes: { from: 0, to: editor.state.doc.length, insert: "Local draft" },
-    }));
-
-    flushSync(() => {
-      publishMarkdownDocumentUpdate({
-        id: "doc-a",
-        title: "Updated elsewhere",
-        body: "Saved by another surface",
-        version: 2,
-      });
-    });
-
-    expect(editor.state.doc.toString()).toBe("Local draft");
-  });
-
-  it("publishes the active runtime snapshot to other document surfaces", async () => {
-    const runtime = createRuntime("folder-a");
-    cleanups.push(registerBoardYjsRuntime(runtime));
-    cleanups.push(() => {
-      runtime.awareness.destroy();
-      runtime.doc.destroy();
-    });
-    const listener = vi.fn();
-    cleanups.push(subscribeMarkdownDocumentUpdates("doc-a", listener));
-    useDashboardStore.getState().selectFolder("folder-a");
-    flushSync(() => root.render(createElement(MarkdownDocumentPanel)));
-    await waitForSelector(container, '[data-testid="markdown-read-body"]');
-    listener.mockClear();
-
-    flushSync(() => runtime.updateMarkdownBody("doc-a", "Runtime update"));
-
-    await waitForCondition(() => listener.mock.calls.some(([document]) => (
-      document.body === "Runtime update"
+    flushSync(() => root.render(createElement("div", null,
+      createElement("section", { "data-testid": "first" }, createElement(MarkdownDocumentPanel, props("folder-a"))),
+      createElement("section", { "data-testid": "second" }, createElement(MarkdownDocumentPanel, props("folder-b"))),
     )));
+
+    const first = container.querySelector<HTMLElement>("[data-testid='first']");
+    const second = container.querySelector<HTMLElement>("[data-testid='second']");
+    await waitForText(first, "First container body");
+    await waitForText(second, "Second container body");
+
+    flushSync(() => secondRuntime.updateMarkdownBody("doc-a", "Updated second container"));
+
+    await waitForText(second, "Updated second container");
+    expect(first?.querySelector('[data-testid="markdown-read-body"]')?.textContent)
+      .toContain("First container body");
   });
 });
 
-function createRuntime(folderId: string): BoardYjsRuntime {
+function props(folderId: string) {
+  return {
+    documentId: "doc-a",
+    container: { kind: "folder" as const, id: folderId },
+    onPendingEditConsumed: () => undefined,
+    onClose: () => undefined,
+    onDeleted: () => undefined,
+  };
+}
+
+function createRuntime(folderId: string, body: string): BoardYjsRuntime {
   const doc = new Y.Doc();
   const awareness = new Awareness(doc);
   const listeners = new Set<() => void>();
@@ -131,7 +88,7 @@ function createRuntime(folderId: string): BoardYjsRuntime {
   createMarkdownYjsDocument(doc, folderId, {
     documentId: "doc-a",
     title: "Design note",
-    body: "Initial body",
+    body,
     x: 0,
     y: 0,
   });
@@ -162,8 +119,8 @@ function createRuntime(folderId: string): BoardYjsRuntime {
       updateMarkdownYjsTitle(doc, documentId, title);
       notify();
     },
-    updateMarkdownBody: (documentId, body) => {
-      updateMarkdownYjsBody(doc, documentId, body);
+    updateMarkdownBody: (documentId, nextBody) => {
+      updateMarkdownYjsBody(doc, documentId, nextBody);
       notify();
     },
     deleteMarkdownDocument: (documentId) => {
@@ -176,35 +133,11 @@ function createRuntime(folderId: string): BoardYjsRuntime {
   };
 }
 
-async function waitForSelector<T extends Element>(
-  container: ParentNode,
-  selector: string,
-): Promise<T> {
+async function waitForText(container: ParentNode | null, text: string): Promise<void> {
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    const element = container.querySelector<T>(selector);
-    if (element) return element;
+    if (container?.querySelector('[data-testid="markdown-read-body"]')?.textContent?.includes(text)) return;
     await Promise.resolve();
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
-  throw new Error(`Timed out waiting for ${selector}`);
-}
-
-async function waitForContent(container: ParentNode, selector: string, content: string) {
-  await waitForCondition(() => container.querySelector(selector)?.textContent?.includes(content) === true);
-}
-
-async function waitForEditor(container: ParentNode): Promise<EditorView> {
-  const editor = await waitForSelector<HTMLElement>(container, ".cm-editor");
-  const view = EditorView.findFromDOM(editor);
-  if (!view) throw new Error("CodeMirror EditorView not found");
-  return view;
-}
-
-async function waitForCondition(predicate: () => boolean) {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    if (predicate()) return;
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  throw new Error("Timed out waiting for condition");
+  throw new Error(`Timed out waiting for markdown text ${text}`);
 }

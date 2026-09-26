@@ -6,6 +6,22 @@ function read(relativePath: string): string {
 }
 
 describe("task board r3 workspace contract", () => {
+  it("keeps the task board catalog and document selection scoped to the task board", () => {
+    const pane = read("./TaskBoardPane.tsx");
+    const workspace = read("./TaskBoardWorkspace.tsx");
+
+    expect(pane).toContain("catalogOverride={scopedCatalog}");
+    expect(pane).toContain("boardContainerOverride={{ kind: \"task\", id: taskId }}");
+    expect(pane).toContain("selectedFolderIdOverride={projectFolderId}");
+    expect(pane).not.toContain("useDashboardStore");
+    expect(pane).not.toContain("previousStoreRef");
+    expect(pane).not.toContain("openTaskBoard(");
+    expect(pane).not.toContain("setCatalog(");
+    expect(workspace).toContain("const [activeTaskDocumentId, setActiveTaskDocumentId]");
+    expect(workspace).toContain("if (activeTaskDocumentId === documentId) setActiveTaskDocumentId(null)");
+    expect(workspace).not.toContain("setActiveBoardDocument");
+  });
+
   it("composes the three workspace areas from existing product components", () => {
     const workspace = read("./TaskBoardWorkspace.tsx");
     const resources = read("./TaskBoardResourcePane.tsx");
@@ -14,7 +30,7 @@ describe("task board r3 workspace contract", () => {
     expect(workspace).toContain('data-testid="v3-task-board-canvas"');
     expect(workspace).toContain('data-testid="v3-task-board-chat"');
     expect(workspace).toContain('data-testid="v3-task-board-document-overlay"');
-    expect(workspace).toContain("<MarkdownDocumentPanel />");
+    expect(workspace).toContain("<MarkdownDocumentPanel");
     expect(workspace).toContain("<ChatView");
     expect(resources).toContain("<TaskCard");
     expect(resources).toContain("<RichSessionRow");
@@ -133,13 +149,13 @@ describe("document overlay animation, close policy, and close button contract", 
     const workspace = read("./TaskBoardWorkspace.tsx");
 
     // 🔴20: 보드 영역 상호작용은 닫지 않고 기본 높이(40%)로 축소한다.
-    expect(workspace).toMatch(/v3-task-board-canvas[\s\S]*onMouseDownCapture=\{\(\) => \{ if \(activeBoardDocumentId\) requestShrinkOverlay\(\); \}\}/);
+    expect(workspace).toMatch(/v3-task-board-canvas[\s\S]*onMouseDownCapture=\{\(\) => \{ if \(activeTaskDocumentId\) requestShrinkOverlay\(\); \}\}/);
     expect(workspace).toContain("const requestShrinkOverlay");
     expect(workspace).toContain("setOverlayExpanded(false)");
     // 완전 닫기(requestCloseOverlay)는 X 버튼에만 남는다.
     expect(workspace).toMatch(/data-testid="v3-task-board-document-overlay-close"[\s\S]*onClick=\{requestCloseOverlay\}/);
     // 중앙 캔버스 핸들러는 close가 아니라 shrink를 호출한다.
-    expect(workspace).toMatch(/v3-task-board-canvas"[\s\S]{0,200}?onMouseDownCapture=\{\(\) => \{ if \(activeBoardDocumentId\) requestShrinkOverlay\(\); \}\}/);
+    expect(workspace).toMatch(/v3-task-board-canvas"[\s\S]{0,200}?onMouseDownCapture=\{\(\) => \{ if \(activeTaskDocumentId\) requestShrinkOverlay\(\); \}\}/);
   });
 
   it("adds an explicit close button beside the expand/shrink toggle", () => {
@@ -204,19 +220,52 @@ describe("task board editor refine (🔴18~24) contract", () => {
   });
 });
 
+describe("task board markdown edit routing and reader refresh", () => {
+  it("routes the markdown context-menu edit into the task-local overlay", () => {
+    const menus = read("../../../packages/soul-ui/src/board-workspace/BoardWorkspaceContextMenus.tsx");
+    const boardView = read("../../../packages/soul-ui/src/board-workspace/BoardWorkspaceView.tsx");
+    const dashboardBoardView = read("../components/BoardWorkspaceView.tsx");
+    const boardPane = read("./TaskBoardPane.tsx");
+    const workspace = read("./TaskBoardWorkspace.tsx");
+
+    expect(menus).toContain("onRequestMarkdownEdit(markdownContextMenu.item.documentId)");
+    expect(boardView).toContain("onRequestMarkdownEdit={onRequestMarkdownEdit}");
+    expect(dashboardBoardView).toContain("onRequestMarkdownEdit={onRequestMarkdownEdit}");
+    expect(boardPane).toContain("onRequestMarkdownEdit={onRequestMarkdownEdit}");
+    expect(workspace).toMatch(
+      /const handleRequestMarkdownEdit = useCallback\(\(documentId: string\) => \{\s*setActiveTaskDocumentId\(documentId\);\s*setPendingTaskDocumentEditId\(documentId\);\s*\}, \[\]\);/,
+    );
+    expect(workspace).toContain("onRequestMarkdownEdit={handleRequestMarkdownEdit}");
+    expect(workspace).toContain("pendingEditId={pendingTaskDocumentEditId}");
+    expect(workspace).toContain('data-testid="v3-task-board-document-overlay"');
+    expect(workspace).not.toContain("pendingBoardDocumentEditId");
+  });
+
+  it("refreshes both task markdown readers when the editor closes", () => {
+    const taskWorkspace = read("./TaskWorkspace.tsx");
+    const workspace = read("./TaskBoardWorkspace.tsx");
+    const detail = read("./TaskDetailPane.tsx");
+    const resources = read("./TaskBoardResourcePane.tsx");
+    const inlineBoard = read("./TaskInlineBoard.tsx");
+
+    expect(taskWorkspace).toContain("setMarkdownDocumentsRevision");
+    expect(workspace).toContain("onMarkdownDocumentEditorClosed");
+    expect(taskWorkspace).toContain("markdownDocumentsRevision={markdownDocumentsRevision}");
+    expect(detail).toContain("markdownDocumentsRevision={markdownDocumentsRevision}");
+    expect(resources).toMatch(/documentInvalidationKey[\s\S]*markdownDocumentsRevision/);
+    expect(inlineBoard).toMatch(/pageInvalidationKey[\s\S]*markdownDocumentsRevision/);
+  });
+});
+
 describe("task board editor refine 3rd round (🔴26~28) contract", () => {
   it("keeps the overlay open when a chat session is selected; only X closes it (🔴26)", () => {
     const workspace = read("./TaskBoardWorkspace.tsx");
 
-    // openSession은 편집 오버레이를 닫지 않는다. 세션 리셋이 비운 activeBoardDocumentId를
-    // 같은 이벤트 핸들러 안에서 직전 문서로 복원한다(capture → onOpenSession → restore 순서).
+    // openSession은 편집 오버레이를 닫지 않는다. task 로컬 문서 ID를 그대로 보존한다.
     expect(workspace).toMatch(
-      /const openSession = \(session[^)]*\) => \{[\s\S]*?const preservedDocumentId = useDashboardStore\.getState\(\)\.activeBoardDocumentId;[\s\S]*?onOpenSession\(session\);[\s\S]*?if \(preservedDocumentId\) \{[\s\S]*?setActiveBoardDocument\(preservedDocumentId\)/s,
+      /const openSession = \(session[^)]*\) => \{[\s\S]*?const preservedDocumentId = activeTaskDocumentId;[\s\S]*?onOpenSession\(session\);[\s\S]*?if \(preservedDocumentId\) \{[\s\S]*?setActiveTaskDocumentId\(preservedDocumentId\)/s,
     );
-    // 세션 선택 경로가 오버레이를 무조건 닫던 예전 부작용(널 세팅 후 세션 열기)은 제거한다.
-    expect(workspace).not.toMatch(
-      /openSession = \(session[^)]*\) => \{\s*useDashboardStore\.getState\(\)\.setActiveBoardDocument\(null\);\s*onOpenSession/s,
-    );
+    expect(workspace).not.toContain("setActiveBoardDocument");
     // 완전 닫기는 여전히 X 버튼(requestCloseOverlay)에만 있다(🔴20 축소와 공존).
     expect(workspace).toMatch(
       /data-testid="v3-task-board-document-overlay-close"[\s\S]*onClick=\{requestCloseOverlay\}/,

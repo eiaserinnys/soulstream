@@ -42,6 +42,7 @@ import {
 } from "./planner-mutation-projection";
 import { usePlannerProjectMoveProjection } from "./use-planner-project-move-projection";
 import { useStarredTaskReorder } from "./use-starred-task-reorder";
+import { useV3PageInvalidationKey } from "./v3-live-invalidation-plane";
 
 const EMPTY_SESSION_IDS: string[] = [];
 
@@ -89,6 +90,17 @@ export function usePlannerCollections({
   projectRef.current = project;
   starredTaskIndexRef.current = starredTaskIndex;
   starredRefreshKeyRef.current = refreshKeys.starred;
+
+  const dailyPageRefreshKey = useV3PageInvalidationKey([
+    daily.data?.daily.page.id,
+    ...(daily.data?.tasks.map((task) => task.page.id) ?? []),
+  ]);
+  const projectPageRefreshKey = useV3PageInvalidationKey([
+    selectedProject?.id,
+    project.data?.project.id,
+    ...(project.data?.tasks.map((task) => task.page.id) ?? []),
+    ...(project.data?.documents.map((document) => document.id) ?? []),
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -180,7 +192,7 @@ export function usePlannerCollections({
       if (active) setDaily((current) => failPlannerLoad(current, errorText(error)));
     });
     return () => { active = false; };
-  }, [api, dependencies, mutationRefresh.daily, refreshKeys.daily, selectedDate, today]);
+  }, [api, dailyPageRefreshKey, dependencies, mutationRefresh.daily, refreshKeys.daily, selectedDate, today]);
 
   useEffect(() => {
     if (selectedDate === today) return;
@@ -193,7 +205,7 @@ export function usePlannerCollections({
       // The selected planner remains usable; its own error surface handles load failures.
     });
     return () => { active = false; };
-  }, [api, dependencies, mutationRefresh.daily, refreshKeys.daily, selectedDate, today]);
+  }, [api, dailyPageRefreshKey, dependencies, mutationRefresh.daily, refreshKeys.daily, selectedDate, today]);
 
   const setTaskTodayPresence = useCallback((taskId: string, present: boolean) => {
     setTodayTaskIds((current) => {
@@ -251,7 +263,7 @@ export function usePlannerCollections({
       if (active) setProject((current) => failPlannerLoad(current, errorText(error)));
     });
     return () => { active = false; };
-  }, [api, dependencies, mutationRefresh.project, refreshKeys.project, selectedProject]);
+  }, [api, dependencies, mutationRefresh.project, projectPageRefreshKey, refreshKeys.project, selectedProject]);
 
   const updateLoadedTasks = useCallback((update: (tasks: PlannerTask[]) => PlannerTask[]) => {
     setDaily((current) => {

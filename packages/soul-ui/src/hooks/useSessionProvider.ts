@@ -27,7 +27,7 @@ export interface UseSessionProviderOptions {
   onConnectionError?: () => void;
 }
 
-type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+export type SessionProviderConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
 interface QueuedEvent {
   event: SoulSSEEvent;
@@ -62,7 +62,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   const processEventsRef = useRef(processEvents);
   processEventsRef.current = processEvents;
 
-  const [status, setStatus] = useState<ConnectionStatus>("disconnected");
+  const [status, setStatus] = useState<SessionProviderConnectionStatus>("disconnected");
   const [synchronizedSessionKey, setSynchronizedSessionKey] = useState<string | null>(null);
   const [reconnectVersion, setReconnectVersion] = useState(0);
 

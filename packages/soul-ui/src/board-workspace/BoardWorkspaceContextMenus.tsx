@@ -71,6 +71,7 @@ interface BoardWorkspaceContextMenusProps {
     target: BoardContainerRef,
   ) => Promise<void>;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
+  onRequestMarkdownEdit?: (documentId: string) => void;
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
@@ -104,6 +105,7 @@ export function BoardWorkspaceContextMenus({
   onDeleteFrame,
   onMoveBoardItemToContainer,
   onMarkdownDocumentDeleted,
+  onRequestMarkdownEdit,
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
@@ -421,9 +423,12 @@ export function BoardWorkspaceContextMenus({
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
             onClick={() => {
-              // 🔴25: 마크다운 "편집" = 중앙 오버레이/문서 패널을 편집 모드로 연다(왼쪽 탭 아님).
-              // 이미 열려 있으면 이 문서로 교체 후 편집(requestBoardDocumentEdit).
-              useDashboardStore.getState().requestBoardDocumentEdit(markdownContextMenu.item.documentId);
+              // task 보드는 편집 소유자에게 요청해 로컬 오버레이를 연다. 일반 보드는 기존 store 경로를 쓴다.
+              if (onRequestMarkdownEdit) {
+                onRequestMarkdownEdit(markdownContextMenu.item.documentId);
+              } else {
+                useDashboardStore.getState().requestBoardDocumentEdit(markdownContextMenu.item.documentId);
+              }
               onCloseCardContextMenu();
             }}
           >

@@ -3,6 +3,7 @@ import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
 
 import { setTaskStarred } from "./task-star-actions";
 import {
+  clearTaskStarChange,
   publishTaskStarChange,
   taskStarredState,
   useTaskStarChanges,
@@ -19,12 +20,17 @@ export function useTaskStar(page: PageDto) {
     if (pending) return;
     setPending(true);
     setError(null);
+    const nextStarred = !starred;
+    const mutationId = publishTaskStarChange({
+      page: { ...page, metadata: { ...page.metadata, starred: nextStarred } },
+      starred: nextStarred,
+    });
     try {
-      const updated = await setTaskStarred(api, page.id, !starred);
-      publishTaskStarChange({ page: updated, starred: !starred });
+      await setTaskStarred(api, page.id, nextStarred);
     } catch (cause) {
       setError(cause instanceof Error && cause.message ? cause.message : String(cause));
     } finally {
+      clearTaskStarChange(page.id, mutationId);
       setPending(false);
     }
   };

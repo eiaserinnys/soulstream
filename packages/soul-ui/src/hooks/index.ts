@@ -20,7 +20,7 @@ export { useInitialCatalogLoad } from "./useInitialCatalogLoad";
 export { useSessionStreamSSE } from "./useSessionStreamSSE";
 export type { UseSessionStreamSSEOptions } from "./useSessionStreamSSE";
 export { useSessionProvider } from "./useSessionProvider";
-export type { UseSessionProviderOptions } from "./useSessionProvider";
+export type { SessionProviderConnectionStatus, UseSessionProviderOptions } from "./useSessionProvider";
 export { useRenameSessionOperation } from "./useRenameSessionOperation";
 export { useReadPositionSync } from "./useReadPositionSync";
 export { useNotification } from "./useNotification";

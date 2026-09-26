@@ -56,10 +56,13 @@ export function useV3SessionPanelController({
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
   const setFocusEventId = useDashboardStore((state) => state.setFocusEventId);
   const sessions = useMemo(
-    () => (catalog?.sessionList ?? []).filter((session) => !acknowledgedReviewIds.has(session.agentSessionId)),
-    [acknowledgedReviewIds, catalog?.sessionList],
+    () => catalog?.sessionList ?? [],
+    [catalog?.sessionList],
   );
-  const reviewSessions = useMemo(() => sessionPanelGroups(sessions).review, [sessions]);
+  const reviewSessions = useMemo(
+    () => sessionPanelGroups(sessions, undefined, acknowledgedReviewIds).review,
+    [acknowledgedReviewIds, sessions],
+  );
 
   const resize = useCallback((deltaPercent: number) => {
     const deltaPx = document.documentElement.clientWidth * deltaPercent / 100;

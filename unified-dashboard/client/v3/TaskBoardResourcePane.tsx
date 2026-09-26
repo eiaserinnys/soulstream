@@ -4,7 +4,6 @@ import {
   DashboardIconCap,
   DisclosureActionIcon,
   MarkdownContent,
-  subscribeMarkdownDocumentUpdates,
   TaskCard,
   retainEqualValue,
   type CatalogBoardItem,
@@ -27,6 +26,7 @@ import {
   type RunSessionLoadState,
   type RunTreeNode,
 } from "./task-workspace-model";
+import { useV3PageInvalidationKey } from "./v3-live-invalidation-plane";
 
 export function TaskBoardResourcePane({
   taskId,
@@ -41,6 +41,7 @@ export function TaskBoardResourcePane({
   boardItems,
   openedResources,
   activeTabId,
+  markdownDocumentsRevision = 0,
   onOpenSession,
   onLoadMoreRuns,
   onOpenDocument,
@@ -60,6 +61,7 @@ export function TaskBoardResourcePane({
   boardItems: readonly CatalogBoardItem[];
   openedResources: readonly TaskBoardResourceSelection[];
   activeTabId: string;
+  markdownDocumentsRevision?: number;
   onOpenSession(session: SessionSummary): void;
   onLoadMoreRuns(): Promise<void>;
   onOpenDocument(documentId: string): void;
@@ -73,24 +75,9 @@ export function TaskBoardResourcePane({
   );
   const baseActiveTab = baseTabs.find((tab) => tab.id === activeTabId) ?? baseTabs[0];
   const activeDocumentId = baseActiveTab.kind === "document" ? baseActiveTab.documentId : null;
-  const [savedDocument, setSavedDocument] = useState<MarkdownDocument | null>(null);
-  useEffect(() => {
-    setSavedDocument(null);
-    if (!activeDocumentId) return;
-    return subscribeMarkdownDocumentUpdates(activeDocumentId, (next) => {
-      setSavedDocument((current) => retainEqualValue(current ?? undefined, next));
-    });
-  }, [activeDocumentId]);
-  const tabs = useMemo(
-    () => savedDocument?.id === activeDocumentId
-      ? baseTabs.map((tab) => (
-          tab.kind === "document" && tab.documentId === activeDocumentId
-            ? { ...tab, title: savedDocument.title }
-            : tab
-        ))
-      : baseTabs,
-    [activeDocumentId, baseTabs, savedDocument],
-  );
+  const documentInvalidationKey = useV3PageInvalidationKey(activeDocumentId ? [activeDocumentId] : [])
+    + markdownDocumentsRevision;
+  const tabs = baseTabs;
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
 
   return (
@@ -133,7 +120,7 @@ export function TaskBoardResourcePane({
         ) : (
           <TaskBoardDocumentReader
             tab={activeTab}
-            savedDocument={savedDocument?.id === activeTab.documentId ? savedDocument : null}
+            invalidationKey={documentInvalidationKey}
             onOpenDocument={() => onOpenDocument(activeTab.documentId)}
           />
         )}
@@ -362,17 +349,15 @@ function TaskBoardSessionNode({
 
 function TaskBoardDocumentReader({
   tab,
-  savedDocument,
+  invalidationKey,
   onOpenDocument,
 }: {
   tab: Extract<TaskBoardResourceTab, { kind: "document" }>;
-  savedDocument: MarkdownDocument | null;
+  invalidationKey: number;
   onOpenDocument(): void;
 }) {
   const [document, setDocument] = useState<MarkdownDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const savedDocumentRef = useRef(savedDocument);
-  savedDocumentRef.current = savedDocument;
   useEffect(() => {
     const controller = new AbortController();
     setDocument(null);
@@ -381,23 +366,14 @@ function TaskBoardDocumentReader({
       tab.documentId,
       (input, init) => globalThis.fetch(input, { ...init, signal: controller.signal }),
     ).then((next) => {
-      const liveDocument = savedDocumentRef.current;
-      setDocument((current) => retainEqualValue(
-        current ?? undefined,
-        liveDocument?.id === tab.documentId ? liveDocument : next,
-      ));
+      setDocument((current) => retainEqualValue(current ?? undefined, next));
     }).catch((cause: unknown) => {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) {
         setError(cause instanceof Error ? cause.message : String(cause));
       }
     });
     return () => controller.abort();
-  }, [tab.documentId]);
-  useEffect(() => {
-    if (savedDocument?.id === tab.documentId) {
-      setDocument((current) => retainEqualValue(current ?? undefined, savedDocument));
-    }
-  }, [savedDocument, tab.documentId]);
+  }, [invalidationKey, tab.documentId]);
 
   return (
     <div className="v3-task-board-document-reader">

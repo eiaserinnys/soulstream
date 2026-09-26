@@ -1,4 +1,4 @@
-import type { CatalogBoardItem, CatalogFolder, FolderSettings, MarkdownDocument, SessionSummary } from "../shared/types";
+import type { BoardContainerRef, CatalogBoardItem, CatalogFolder, CatalogState, FolderSettings, MarkdownDocument, SessionSummary } from "../shared/types";
 import type { LoadMoreCallback } from "../components/load-more-guard";
 import type {
   BoardAssetCommitResponse,
@@ -22,6 +22,9 @@ export interface CreateMarkdownDocumentResult {
 }
 
 export interface BoardWorkspaceViewProps {
+  catalogOverride?: CatalogState | null;
+  boardContainerOverride?: BoardContainerRef | null;
+  selectedFolderIdOverride?: string | null;
   sessions?: SessionSummary[];
   taskMoveTargets?: ReadonlyArray<{ id: string; title: string }>;
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
@@ -40,6 +43,7 @@ export interface BoardWorkspaceViewProps {
   onBoardItemMoved?: (boardItem: CatalogBoardItem) => void;
   onMarkdownDocumentDeleted?: (documentId: string, boardItemId: string) => void;
   onOpenMarkdownDocument?: (documentId: string) => void;
+  onRequestMarkdownEdit?: (documentId: string) => void;
   onOpenCustomView?: (customViewId: string) => void;
   onCreateMarkdownDocument?: (input: CreateMarkdownDocumentInput) => Promise<CreateMarkdownDocumentResult>;
   onUploadBoardAsset?: (input: UploadBoardAssetInput) => Promise<BoardAssetCommitResponse>;

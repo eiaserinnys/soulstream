@@ -36,7 +36,13 @@ function renderPanel(options: { folderId?: string } = {}) {
   }
   useDashboardStore.getState().setActiveBoardDocument("doc-a");
   flushSync(() => {
-    root.render(createElement(MarkdownDocumentPanel));
+    root.render(createElement(MarkdownDocumentPanel, {
+      documentId: "doc-a",
+      container: options.folderId ? { kind: "folder", id: options.folderId } : null,
+      onPendingEditConsumed: () => useDashboardStore.getState().clearPendingBoardDocumentEdit(),
+      onClose: () => useDashboardStore.getState().setActiveBoardDocument(null),
+      onDeleted: (boardItemId: string) => useDashboardStore.getState().removeBoardItem(boardItemId),
+    }));
   });
   return { container, root };
 }
@@ -368,7 +374,14 @@ describe("MarkdownDocumentPanel", () => {
     container = editContainer;
     root = editRoot;
     flushSync(() => {
-      editRoot.render(createElement(MarkdownDocumentPanel));
+      editRoot.render(createElement(MarkdownDocumentPanel, {
+        documentId: "doc-a",
+        container: { kind: "folder", id: "folder-a" },
+        pendingEditId: "doc-a",
+        onPendingEditConsumed: () => useDashboardStore.getState().clearPendingBoardDocumentEdit(),
+        onClose: () => useDashboardStore.getState().setActiveBoardDocument(null),
+        onDeleted: (boardItemId: string) => useDashboardStore.getState().removeBoardItem(boardItemId),
+      }));
     });
 
     // 읽기 본문 클릭 없이 CodeMirror(편집 모드)가 나타난다.

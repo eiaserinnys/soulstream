@@ -2,24 +2,29 @@ import { useRef } from "react";
 import {
   DashboardIconCap,
   MarkdownDocumentPanel,
-  useDashboardStore,
   useGlassSurface,
 } from "@seosoyoung/soul-ui";
+import type { BoardContainerRef } from "@seosoyoung/soul-ui";
 import { X } from "lucide-react";
 
 export function V3StandaloneDocumentInspector({
   open,
+  documentId,
+  container,
   onClose,
+  onDeleted,
 }: {
   open: boolean;
+  documentId: string | null;
+  container: BoardContainerRef | null;
   onClose(): void;
+  onDeleted(boardItemId: string, documentId: string): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: open });
   if (!open) return null;
 
   const close = () => {
-    useDashboardStore.getState().setActiveBoardDocument(null);
     onClose();
   };
 
@@ -39,7 +44,16 @@ export function V3StandaloneDocumentInspector({
               <X className="h-4 w-4" aria-hidden="true" />
             </DashboardIconCap>
           </header>
-          <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>
+          <div className="v3-board-document-content">
+            <MarkdownDocumentPanel
+              documentId={documentId}
+              container={container}
+              pendingEditId={null}
+              onPendingEditConsumed={() => undefined}
+              onClose={onClose}
+              onDeleted={onDeleted}
+            />
+          </div>
         </section>
       </div>
     </div>

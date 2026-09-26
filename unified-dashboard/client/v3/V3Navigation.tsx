@@ -27,6 +27,7 @@ import { ProjectNavigationTree } from "./ProjectNavigationTree";
 import { saveProjectFormContext } from "./project-form-actions";
 import { setTaskStarred } from "./task-star-actions";
 import {
+  clearTaskStarChange,
   publishTaskStarChange,
   taskStarredState,
   useTaskStarChanges,
@@ -148,12 +149,16 @@ export function V3Navigation({
     if (pendingTaskId) return;
     setPendingTaskId(page.id);
     setError(null);
+    const mutationId = publishTaskStarChange({
+      page: { ...page, metadata: { ...page.metadata, starred: false } },
+      starred: false,
+    });
     try {
-      const updated = await setTaskStarred(api, page.id, false);
-      publishTaskStarChange({ page: updated, starred: false });
+      await setTaskStarred(api, page.id, false);
     } catch (cause) {
       setError(`별표 변경 실패 · ${errorText(cause)}`);
     } finally {
+      clearTaskStarChange(page.id, mutationId);
       setPendingTaskId(null);
     }
   };

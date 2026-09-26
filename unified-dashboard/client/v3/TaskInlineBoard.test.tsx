@@ -87,6 +87,8 @@ describe("TaskInlineBoard document context menu", () => {
         folderId: "folder-1",
         api: {} as PageApiClient,
         taskMoveTargets: [target],
+        activeDocumentId: null,
+        onDeletedActiveDocument: vi.fn(),
         onMarkdownDocumentsChanged: vi.fn(),
       }));
     });
@@ -128,5 +130,64 @@ describe("TaskInlineBoard document context menu", () => {
     expect(container.querySelector(".v3-inline-board-row")).toBeNull();
     expect(useDashboardStore.getState().catalog?.boardItems?.find((item) => item.id === documentItem.id))
       .toMatchObject({ itemId: "doc-1", containerId: "task-2" });
+  });
+
+  it("re-fetches inline markdown when the task document revision changes", async () => {
+    let storedDocument = {
+      id: "doc-1",
+      title: "실수로 만든 문서",
+      body: "오버레이 저장 전 본문",
+      version: 1,
+    };
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith("/api/board-items?")) {
+        return new Response(JSON.stringify({ boardItems: [documentItem] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/markdown-documents/doc-1")) {
+        return new Response(JSON.stringify(storedDocument), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as typeof globalThis.fetch;
+    const boardContainer = document.createElement("div");
+    container = boardContainer;
+    document.body.appendChild(boardContainer);
+    root = createRoot(boardContainer);
+    const render = (markdownDocumentsRevision: number) => flushSync(() => {
+      root!.render(createElement(TaskInlineBoard, {
+        taskId: "task-1",
+        folderId: "folder-1",
+        api: {} as PageApiClient,
+        taskMoveTargets: [],
+        activeDocumentId: null,
+        onDeletedActiveDocument: vi.fn(),
+        onMarkdownDocumentsChanged: vi.fn(),
+        markdownDocumentsRevision,
+      }));
+    });
+
+    render(0);
+    for (let attempt = 0; attempt < 10 && !boardContainer.querySelector(".v3-inline-board-row"); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      flushSync(() => undefined);
+    }
+    const expand = boardContainer.querySelector<HTMLButtonElement>(
+      '[aria-label="실수로 만든 문서 펼치기"]',
+    );
+    expect(expand).not.toBeNull();
+    flushSync(() => expand!.click());
+    await vi.waitFor(() => expect(boardContainer.querySelector(".v3-inline-markdown")?.textContent)
+      .toContain("오버레이 저장 전 본문"));
+
+    storedDocument = { ...storedDocument, body: "오버레이 저장 후 본문", version: 2 };
+    render(1);
+    await vi.waitFor(() => expect(boardContainer.querySelector(".v3-inline-markdown")?.textContent)
+      .toContain("오버레이 저장 후 본문"));
   });
 });
