@@ -1,4 +1,8 @@
 import type { SSEEventType } from './types';
+import {
+  SSE_EVENT_TYPES as GENERATED_SSE_EVENT_TYPES,
+  type SSEEventType as GeneratedSSEEventType,
+} from "@soulstream/wire-schema";
 
 export const SYSTEM_FOLDER_IDS = {
   claude: "claude",
@@ -22,71 +26,26 @@ export function isSystemFolderId(folderId: string | null | undefined): folderId 
   return typeof folderId === "string" && SYSTEM_FOLDER_ID_SET.has(folderId);
 }
 
-// "init": 연결 초기화 시 발행되는 내부 이벤트 (SSESessionProvider가 직접 처리)
-// "reconnected": 재연결 후 발행되는 내부 이벤트 (SSESessionProvider가 직접 처리)
-type _SSEExcludedTypes = "init" | "reconnected";
+// init/reconnected는 provider가 직접 처리한다. 세 이벤트는 현재 UI handler가 없어
+// 구독 목록에서 제외하고, 추가 시에는 handler와 함께 이 목록을 갱신한다.
+type _SSEExcludedTypes =
+  | "init"
+  | "reconnected"
+  | "realtime_status"
+  | "realtime_transcript"
+  | "session_ended";
+const SSE_EXCLUDED_TYPES: ReadonlySet<_SSEExcludedTypes> = new Set([
+  "init",
+  "reconnected",
+  "realtime_status",
+  "realtime_transcript",
+  "session_ended",
+]);
 
-export const SSE_EVENT_TYPES = [
-  "progress",
-  "memory",
-  "session",
-  "intervention_sent",
-  "session_notification",
-  "user_message",
-  "system_message",
-  "assistant_message",
-  "input_request",
-  "input_request_expired",
-  "input_request_responded",
-  "debug",
-  "complete",
-  "error",
-  "thinking",
-  "text_start",
-  "text_delta",
-  "text_end",
-  "tool_start",
-  "tool_result",
-  "agent_updated",
-  "handoff_requested",
-  "handoff_occurred",
-  "tool_approval_requested",
-  "tool_approval_resolved",
-  "guardrail_tripwire",
-  "result",
-  "away_summary",
-  "turn_summary",
-  "prompt_suggestion",
-  "subagent_start",
-  "subagent_stop",
-  "claude_runtime_session_state",
-  "claude_runtime_task_started",
-  "claude_runtime_task_created",
-  "claude_runtime_task_updated",
-  "claude_runtime_task_progress",
-  "claude_runtime_task_completed",
-  "claude_runtime_task_notification",
-  "claude_runtime_notification",
-  "claude_runtime_remote_trigger",
-  "claude_runtime_transcript_mirror_error",
-  "claude_runtime_hook_event",
-  "claude_runtime_mode_state",
-  "claude_runtime_schedule_updated",
-  "claude_runtime_schedule_deleted",
-  "task_updated",
-  "runbook_updated",
-  "custom_view_updated",
-  "context_usage",
-  "context_manifest",
-  "compact",
-  "assistant_error",
-  "credential_alert",
-  "reconnect",
-  "history_sync",
-  "text_snapshot",
-  "metadata_updated",
-  "subtree_update",
-] as const satisfies readonly Exclude<SSEEventType, _SSEExcludedTypes>[];
+export const SSE_EVENT_TYPES = GENERATED_SSE_EVENT_TYPES.filter(
+  (eventType): eventType is Exclude<GeneratedSSEEventType, _SSEExcludedTypes> =>
+    !SSE_EXCLUDED_TYPES.has(eventType as _SSEExcludedTypes),
+) satisfies readonly Exclude<SSEEventType, _SSEExcludedTypes>[];
 
 // 컴파일 타임 검증: 시스템 이벤트를 제외한 모든 SSEEventType이 SSE_EVENT_TYPES에 포함되는지 확인
 type _AssertHandledEventTypesCovered = {

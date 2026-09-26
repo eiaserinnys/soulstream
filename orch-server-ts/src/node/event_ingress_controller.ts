@@ -1,3 +1,4 @@
+import type { EventIngressRejectionCode } from "@soulstream/wire-schema";
 import type { NodeRegistryEvent } from "./registry.js";
 import { shouldPublishSessionEventSemantically } from
   "../session/session_event_semantic_publication.js";
@@ -12,6 +13,10 @@ import {
   type EventAppendBatch,
   type EventSessionEffectApplication,
 } from "./event_ingress_types.js";
+
+const TRANSIENT_FAILURE_REJECTION_CODE: EventIngressRejectionCode =
+  "EVENT_INGRESS_TRANSIENT_FAILURE";
+const INVALID_EVENT_REJECTION_CODE: EventIngressRejectionCode = "EVENT_INGRESS_INVALID";
 
 export type NodeEventIngressCommitter = Pick<EventIngressRepository, "commitBatch">;
 
@@ -51,7 +56,7 @@ export class NodeEventIngressController {
           type: "error",
           command_type: "event_append_batch",
           status: 503,
-          code: "EVENT_INGRESS_TRANSIENT_FAILURE",
+          code: TRANSIENT_FAILURE_REJECTION_CODE,
           retryable: true,
           message: "event ingress temporarily unavailable",
           ...ingressCoordinate(frame),
@@ -82,7 +87,7 @@ export class NodeEventIngressController {
           type: "error",
           command_type: "event_append_batch",
           status: 400,
-          code: "EVENT_INGRESS_INVALID",
+          code: INVALID_EVENT_REJECTION_CODE,
           retryable: false,
           message: error.message,
           ...ingressCoordinate(frame),

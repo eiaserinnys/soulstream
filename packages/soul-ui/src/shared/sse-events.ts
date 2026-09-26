@@ -6,7 +6,10 @@
  */
 
 import type { SessionStatus } from "./session-types";
-import type { SSEEventTextSnapshot } from "@soulstream/wire-schema";
+import type {
+  SSEEventTextSnapshot,
+  SSEEventType as GeneratedSSEEventType,
+} from "@soulstream/wire-schema";
 import type {
   LiveTextEventMetadata,
   SessionHistoryResetReason,
@@ -14,81 +17,8 @@ import type {
 
 // === SSE Event Types ===
 
-/** Soul SSE 이벤트 타입 (wire-schema SSE event payload와 동기화) */
-export type SSEEventType =
-  // 제어 이벤트
-  | "init"
-  | "reconnected"
-  // 기본 이벤트
-  | "progress"
-  | "memory"
-  | "session"
-  | "intervention_sent"
-  | "user_message"
-  | "system_message"
-  | "session_notification"
-  | "debug"
-  | "complete"
-  | "error"
-  // 세분화 이벤트 (대시보드용)
-  | "assistant_error"
-  | "credential_alert"
-  | "thinking"
-  | "text_start"
-  | "text_delta"
-  | "text_end"
-  | "tool_start"
-  | "tool_result"
-  | "agent_updated"
-  | "handoff_requested"
-  | "handoff_occurred"
-  | "tool_approval_requested"
-  | "tool_approval_resolved"
-  | "guardrail_tripwire"
-  | "result"
-  | "away_summary"
-  | "turn_summary"
-  | "prompt_suggestion"
-  // 서브에이전트 이벤트
-  | "subagent_start"
-  | "subagent_stop"
-  // Claude SDK runtime 상태 이벤트
-  | "claude_runtime_session_state"
-  | "claude_runtime_task_started"
-  | "claude_runtime_task_created"
-  | "claude_runtime_task_updated"
-  | "claude_runtime_task_progress"
-  | "claude_runtime_task_completed"
-  | "claude_runtime_task_notification"
-  | "claude_runtime_notification"
-  | "claude_runtime_remote_trigger"
-  | "claude_runtime_transcript_mirror_error"
-  | "claude_runtime_hook_event"
-  | "claude_runtime_mode_state"
-  | "claude_runtime_schedule_updated"
-  | "claude_runtime_schedule_deleted"
-  | "task_updated"
-  | "runbook_updated"
-  | "custom_view_updated"
-  // 대시보드 내부 이벤트
-  | "context_usage"
-  | "context_manifest"
-  | "compact"
-  | "reconnect"
-  // 사용자 입력 요청 이벤트
-  | "input_request"
-  | "input_request_expired"
-  | "input_request_responded"
-  // 히스토리 동기화 이벤트
-  | "history_sync"
-  | "text_snapshot"
-  // LLM 프록시 이벤트
-  | "assistant_message"
-  // 메타데이터 이벤트
-  | "metadata_updated"
-  // 뷰포트 가상화 이벤트 (Phase 3 viewport API)
-  /** @deprecated Phase 2-B-1: 발신 폐기. 인터페이스는 wire 호환성을 위해 보존. */
-  | "subtree_update";
+/** Soul SSE 이벤트 타입은 wire-schema 생성 타입을 따른다. */
+export type SSEEventType = GeneratedSSEEventType;
 
 // === Soul SSE Event Payloads ===
 

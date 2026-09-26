@@ -4,11 +4,13 @@
 
 ## 정본
 
-- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 137개 $defs (top-level wire 66 + supporting/SSE 71).
-  - wire 메시지 66종
-  - SSE event payload 62종 (`event` 메시지의 `event` 키 안에 packed — canonical 61종 + production-gated 읽기 호환 `runbook_updated` 1종)
-  - `x-soulstream-event-durability` — SSE event 62종과 outbox 내부 이벤트 2종의 `durable`/`transient` 명시 분류. 누락·미등록 타입은 생성 실패
-  - `x-soulstream-persistence-only-event-types` — SSE wire에는 없지만 같은 outbox를 쓰는 `metadata`·`system_message`의 명시 인벤토리
+- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 152개 $defs (top-level wire 79 + supporting/SSE 73).
+  - wire 메시지 79종
+  - SSE event payload 64종 (`event` 메시지의 `event` 키 안에 packed — `runbook_updated` production-gated 읽기 호환과 deprecated `subtree_update` 포함)
+  - `x-soulstream-event-durability` — SSE event 64종과 outbox 내부 이벤트 1종의 `durable`/`transient` 명시 분류. 누락·미등록 타입은 생성 실패
+  - `x-soulstream-control-command-types` — 노드 제어 요청 42종의 생성 상수·타입 정본
+  - `x-soulstream-event-ingress-rejection-codes` — 이벤트 ingress 거절 코드의 생성 타입 정본
+  - `x-soulstream-persistence-only-event-types` — SSE wire에는 없지만 같은 outbox를 쓰는 `metadata`의 명시 인벤토리
 
 `runbook_updated`의 제거 조건은 `docs/task-read-compatibility.md`가 정본이다. 내부 Phase 번호만으로 제거하지 않는다.
 
@@ -17,6 +19,7 @@
 - `generated/python/upstream.py` — `datamodel-code-generator`로 생성한 TypedDict
 - `generated/typescript/index.ts` — `json-schema-to-typescript`로 생성한 interface
   - `EVENT_DURABILITY` — schema 분류를 그대로 생성한 런타임 상수
+  - `SSE_EVENT_TYPES`, `CONTROL_COMMAND_TYPES`, `EVENT_INGRESS_REJECTION_CODES` — schema에서 생성한 런타임 목록과 타입
 
 ## 워크플로우
 

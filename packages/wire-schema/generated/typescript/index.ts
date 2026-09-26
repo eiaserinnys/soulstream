@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 137개 $defs (top-level wire 66 + supporting/SSE 71). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 152개 $defs (top-level wire 79 + supporting/SSE 73). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -69,7 +69,20 @@ export type SoulstreamUpstreamProtocol =
   | ClaudeAuthSetToken
   | ClaudeAuthDeleteToken
   | ClaudeAuthGetUsage
-  | ClaudeAuthGetProfile;
+  | ClaudeAuthGetProfile
+  | ClaudeRuntimeListTasks
+  | ClaudeRuntimeTaskOutput
+  | ClaudeRuntimeStopTask
+  | ClaudeRuntimeBackgroundTasks
+  | ClaudeRuntimeListSchedules
+  | ClaudeRuntimeDeleteSchedule
+  | ProviderUsageGet
+  | ReflectBrief
+  | WorktreeList
+  | WorktreeCreate
+  | WorktreeRemove
+  | WorktreeDeleteBranch
+  | WorktreeResult;
 
 /**
  * 노드→orch: 등록. soul-server-ts/src/upstream/registration.ts.
@@ -2397,6 +2410,147 @@ export interface ClaudeAuthGetProfile {
   };
   [k: string]: unknown;
 }
+/**
+ * orch→노드: Claude runtime task 목록 조회.
+ */
+export interface ClaudeRuntimeListTasks {
+  type: "claude_runtime_list_tasks";
+  requestId?: string;
+  agentSessionId?: string;
+  session_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: Claude runtime task 출력 조회.
+ */
+export interface ClaudeRuntimeTaskOutput {
+  type: "claude_runtime_task_output";
+  requestId?: string;
+  agentSessionId?: string;
+  session_id?: string;
+  taskId?: string;
+  task_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: Claude runtime task 중단.
+ */
+export interface ClaudeRuntimeStopTask {
+  type: "claude_runtime_stop_task";
+  requestId?: string;
+  agentSessionId?: string;
+  session_id?: string;
+  taskId?: string;
+  task_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: Claude runtime background task 조회.
+ */
+export interface ClaudeRuntimeBackgroundTasks {
+  type: "claude_runtime_background_tasks";
+  requestId?: string;
+  agentSessionId?: string;
+  session_id?: string;
+  toolUseId?: string;
+  tool_use_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: Claude runtime schedule 목록 조회.
+ */
+export interface ClaudeRuntimeListSchedules {
+  type: "claude_runtime_list_schedules";
+  requestId?: string;
+  agentSessionId?: string;
+  session_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: Claude runtime schedule 삭제.
+ */
+export interface ClaudeRuntimeDeleteSchedule {
+  type: "claude_runtime_delete_schedule";
+  requestId?: string;
+  agentSessionId?: string;
+  session_id?: string;
+  scheduleId?: string;
+  schedule_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: provider 사용량 조회.
+ */
+export interface ProviderUsageGet {
+  type: "provider_usage_get";
+  requestId?: string;
+  provider?: string | null;
+  [k: string]: unknown;
+}
+/**
+ * orch↔노드: reflect_brief 요청과 응답.
+ */
+export interface ReflectBrief {
+  type: "reflect_brief";
+  requestId?: string;
+  ok?: boolean;
+  checked_at?: string;
+  brief?: unknown;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: worktree 목록 조회.
+ */
+export interface WorktreeList {
+  type: "worktree_list";
+  requestId?: string;
+  input?: {
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: worktree 생성.
+ */
+export interface WorktreeCreate {
+  type: "worktree_create";
+  requestId?: string;
+  input?: {
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: worktree 디렉터리 제거.
+ */
+export interface WorktreeRemove {
+  type: "worktree_remove";
+  requestId?: string;
+  input?: {
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 로컬 worktree branch 삭제.
+ */
+export interface WorktreeDeleteBranch {
+  type: "worktree_delete_branch";
+  requestId?: string;
+  input?: {
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+}
+/**
+ * 노드→orch: worktree command 결과.
+ */
+export interface WorktreeResult {
+  type: "worktree_result";
+  requestId: string;
+  result: unknown;
+  [k: string]: unknown;
+}
 
 /**
  * Event persistence policy generated from upstream.schema.json.
@@ -2467,7 +2621,129 @@ export const EVENT_DURABILITY = {
   "away_summary": "durable",
   "metadata": "durable",
   "system_message": "durable",
+  "subtree_update": "durable",
 } as const;
 
 export type PersistenceEventType = keyof typeof EVENT_DURABILITY;
 export type EventDurability = (typeof EVENT_DURABILITY)[PersistenceEventType];
+
+export const SSE_EVENT_TYPES = [
+  "init",
+  "reconnected",
+  "progress",
+  "memory",
+  "session",
+  "intervention_sent",
+  "session_notification",
+  "user_message",
+  "assistant_message",
+  "turn_summary",
+  "input_request",
+  "input_request_expired",
+  "input_request_responded",
+  "debug",
+  "complete",
+  "error",
+  "credential_alert",
+  "session_ended",
+  "thinking",
+  "text_start",
+  "text_delta",
+  "text_end",
+  "text_snapshot",
+  "tool_start",
+  "tool_result",
+  "agent_updated",
+  "handoff_requested",
+  "handoff_occurred",
+  "tool_approval_requested",
+  "tool_approval_resolved",
+  "guardrail_tripwire",
+  "realtime_status",
+  "realtime_transcript",
+  "result",
+  "prompt_suggestion",
+  "subagent_start",
+  "subagent_stop",
+  "claude_runtime_session_state",
+  "claude_runtime_task_started",
+  "claude_runtime_task_created",
+  "claude_runtime_task_updated",
+  "claude_runtime_task_progress",
+  "claude_runtime_task_completed",
+  "claude_runtime_task_notification",
+  "claude_runtime_notification",
+  "claude_runtime_remote_trigger",
+  "claude_runtime_transcript_mirror_error",
+  "claude_runtime_hook_event",
+  "claude_runtime_mode_state",
+  "claude_runtime_schedule_updated",
+  "claude_runtime_schedule_deleted",
+  "context_usage",
+  "context_manifest",
+  "compact",
+  "reconnect",
+  "history_sync",
+  "task_updated",
+  "runbook_updated",
+  "custom_view_updated",
+  "metadata_updated",
+  "assistant_error",
+  "away_summary",
+  "system_message",
+  "subtree_update",
+] as const;
+export type SSEEventType = (typeof SSE_EVENT_TYPES)[number];
+
+export const CONTROL_COMMAND_TYPES = [
+  "health_check",
+  "create_session",
+  "interrupt_session",
+  "acknowledge_session_review",
+  "subscribe_events",
+  "list_sessions",
+  "list_runner_inventory",
+  "respond",
+  "approve_tool",
+  "reject_tool",
+  "intervene",
+  "claude_runtime_list_tasks",
+  "claude_runtime_task_output",
+  "claude_runtime_stop_task",
+  "claude_runtime_background_tasks",
+  "claude_runtime_list_schedules",
+  "claude_runtime_delete_schedule",
+  "realtime_create_call",
+  "realtime_event",
+  "realtime_resolve_tool_approval",
+  "upload_attachment",
+  "upload_attachment_start",
+  "upload_attachment_chunk",
+  "upload_attachment_finish",
+  "upload_attachment_abort",
+  "delete_session_attachments",
+  "download_attachment",
+  "claude_auth_status",
+  "claude_auth_set_token",
+  "claude_auth_delete_token",
+  "claude_auth_get_usage",
+  "claude_auth_get_profile",
+  "provider_usage_get",
+  "reflect_brief",
+  "plan_agent_profile_update",
+  "apply_agent_profile_update",
+  "list_agents_config_snapshots",
+  "rollback_agents_config",
+  "worktree_list",
+  "worktree_create",
+  "worktree_remove",
+  "worktree_delete_branch",
+] as const;
+export type ControlCommandType = (typeof CONTROL_COMMAND_TYPES)[number];
+
+export const EVENT_INGRESS_REJECTION_CODES = [
+  "EVENT_INGRESS_TRANSIENT_FAILURE",
+  "EVENT_INGRESS_INVALID",
+  "EVENT_INGRESS_PROTOCOL_CONFLICT",
+] as const;
+export type EventIngressRejectionCode = (typeof EVENT_INGRESS_REJECTION_CODES)[number];
