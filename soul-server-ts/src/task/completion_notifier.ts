@@ -28,8 +28,8 @@ import type { SessionDB } from "../db/session_db.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
 import { CompletionDeliveryCoordinator } from "./completion_delivery_coordinator.js";
+import { OrchInterveneClient, OrchInterveneRequestError } from "./orch_intervene_client.js";
 import {
-  classifyCompletionDeliveryAck,
   classifyCompletionDeliveryResult,
   type CompletionDeliveryVerdict,
 } from "./completion_delivery_verdict.js";
@@ -39,9 +39,6 @@ import type {
   TaskManager,
 } from "./task_manager.js";
 import type { Task } from "./task_models.js";
-
-/** Matches the persistence host transport deadline for cross-service HTTP. */
-const CROSS_NODE_RELAY_TIMEOUT_MS = 10_000;
 
 /**
  * 본 notifier의 *유일한* 진입점. 다른 public 메서드를 추가하지 않는다 —
@@ -53,7 +50,7 @@ export interface CompletionNotifier {
 }
 
 export class TaskCompletionNotifier implements CompletionNotifier {
-  private readonly fetchImpl: typeof fetch;
+  private readonly interveneClient?: OrchInterveneClient;
   private readonly durableCoordinator?: CompletionDeliveryCoordinator;
 
   constructor(
@@ -76,8 +73,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     private readonly deliveryV2Enabled = false,
     deliveryRepository?: SessionDeliveryRepository,
   ) {
-    // 테스트가 fetch mock을 주입 — 운영 시 globalThis.fetch (Node 18+ 내장).
-    this.fetchImpl = fetchImpl ?? ((...args) => fetch(...args));
+    this.interveneClient = orch ? new OrchInterveneClient(orch, fetchImpl) : undefined;
     if (deliveryV2Enabled && deliveryRepository) {
       this.durableCoordinator = new CompletionDeliveryCoordinator({
         repository: deliveryRepository,
@@ -301,62 +297,13 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     params: AddInterventionParams,
     sourceSessionId?: string,
   ): Promise<CompletionDeliveryVerdict> {
-    if (!this.orch) {
+    const client = this.interveneClient;
+    if (!client) {
       return { kind: "failed", reason: "orch_fallback_unavailable" };
     }
     const callerSessionId = params.agentSessionId;
-    const url = `${this.orch.baseUrl}/api/sessions/${callerSessionId}/intervene`;
-    const headers: Record<string, string> = {
-      ...this.orch.headers,
-      "content-type": "application/json",
-    };
-    const body = {
-      text: params.text,
-      user: params.user,
-      caller_info: params.callerInfo,  // snake_case 의무 (Pydantic 필드명)
-      ...(params.rateLimitType !== undefined
-        ? { rate_limit_type: params.rateLimitType }
-        : {}),
-      ...(params.resetsAt !== undefined ? { resets_at: params.resetsAt } : {}),
-      ...(params.deliveryId
-        ? {
-            delivery_id: params.deliveryId,
-            delivery_intent: params.deliveryIntent,
-            source: params.source,
-            completion_id: params.completionId,
-            relation_key: params.relationKey,
-            producer_terminal_revision: params.producerTerminalRevision,
-            parent_delivery_id: params.parentDeliveryId,
-            caller_turn_id: params.callerTurnId,
-            created_at: params.deliveryCreatedAt,
-            delivery_attempt_token: params.deliveryAttemptToken,
-          }
-        : {}),
-    };
     try {
-      const resp = await this.fetchImpl(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        // Every other persistence-host call carries a deadline; this relay was
-        // the one HTTP hop on the delivery path that could hang forever and
-        // park the maintenance lane behind it (260820 incident).
-        signal: AbortSignal.timeout(CROSS_NODE_RELAY_TIMEOUT_MS),
-      });
-      if (!resp.ok) {
-        const bodyText = await safeReadText(resp);
-        this.logger.error(
-          {
-            ...(sourceSessionId ? { childId: sourceSessionId } : {}),
-            callerSessionId,
-            status: resp.status,
-            body: bodyText,
-          },
-          "Cross-node completion notification: orch returned non-2xx",
-        );
-        return { kind: "failed", reason: `orch_http_${resp.status}` };
-      }
-      const verdict = await readInterventionVerdict(resp);
+      const { verdict } = await client.send(params);
       if (verdict.kind === "accepted") {
         this.logger.info(
           {
@@ -392,6 +339,18 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       }
       return verdict;
     } catch (err) {
+      if (err instanceof OrchInterveneRequestError) {
+        this.logger.error(
+          {
+            ...(sourceSessionId ? { childId: sourceSessionId } : {}),
+            callerSessionId,
+            status: err.status,
+            body: err.responseBody,
+          },
+          "Cross-node completion notification: orch returned non-2xx",
+        );
+        return { kind: "failed", reason: `orch_http_${err.status}` };
+      }
       this.logger.error(
         {
           err,
@@ -402,24 +361,5 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       );
       return { kind: "failed", reason: "cross_node_relay_failed" };
     }
-  }
-}
-
-async function readInterventionVerdict(
-  response: Response,
-): Promise<CompletionDeliveryVerdict> {
-  try {
-    const body = await response.json() as unknown;
-    return classifyCompletionDeliveryAck(body);
-  } catch {
-    return { kind: "unknown", reason: "verdict_unreadable" };
-  }
-}
-
-async function safeReadText(resp: Response): Promise<string> {
-  try {
-    return await resp.text();
-  } catch {
-    return "";
   }
 }

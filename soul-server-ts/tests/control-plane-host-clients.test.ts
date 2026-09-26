@@ -188,7 +188,25 @@ describe("worker control-plane host clients", () => {
     });
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/tasks/host/set_item_status");
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeDefined();
     expect(notifyHumanHandoff).toHaveBeenCalledOnce();
+  });
+
+  it("parses both orchestrator host error envelope shapes", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      error: { code: "BAD_INPUT", message: "invalid folder", details: { field: "name" } },
+    }), { status: 400 })));
+    const client = new (await import("../src/folder/folder_project_identity_host_client.js"))
+      .FolderProjectIdentityHostClient({ orch, logger });
+
+    await expect(client.create({
+      name: "",
+      sortOrder: 0,
+      parentFolderId: null,
+      idempotencyKey: "idem-1",
+    })).rejects.toMatchObject({
+      message: "folder project identity host create failed: invalid folder",
+    });
   });
 
   it("sends schedule claims only to the explicit schedule host operation", async () => {

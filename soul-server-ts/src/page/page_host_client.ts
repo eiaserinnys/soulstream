@@ -10,6 +10,7 @@ import type {
 } from "@soulstream/page-model";
 
 import type { OrchProxyConfig } from "../mcp/runtime.js";
+import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 
 export interface PageYjsHostClientConfig {
   orch: OrchProxyConfig;
@@ -42,7 +43,11 @@ export class PageYjsHostClientError extends Error {
 }
 
 export class PageYjsHostClient {
-  constructor(private readonly config: PageYjsHostClientConfig) {}
+  private readonly transport: PersistenceHostTransport;
+
+  constructor(private readonly config: PageYjsHostClientConfig) {
+    this.transport = new PersistenceHostTransport(config);
+  }
 
   async getPage(pageId: string, includeBlocks: boolean): Promise<{ page: PageDto; blocks?: BlockDto[] }> {
     return await this.request("get-page", { page_id: pageId, include_blocks: includeBlocks });
@@ -122,16 +127,13 @@ export class PageYjsHostClient {
   }
 
   private async request<T>(operation: string, body: unknown): Promise<T> {
-    const response = await fetch(
-      `${this.config.orch.baseUrl}/api/page-yjs/host/${encodeURIComponent(operation)}`,
-      {
-        method: "POST",
-        headers: { ...this.config.orch.headers, "content-type": "application/json" },
-        body: JSON.stringify(body),
-      },
+    const response = await this.transport.send(
+      "POST",
+      `/api/page-yjs/host/${encodeURIComponent(operation)}`,
+      body,
     );
     if (!response.ok) {
-      const detail = await responseErrorDetail(response);
+      const detail = await readOrchErrorEnvelope(response);
       this.config.logger.warn(
         { operation, status: response.status, message: detail.message, code: detail.code },
         "page Yjs host request failed",
@@ -153,33 +155,4 @@ function actor(input: PageClientActor, idempotencyKey: string) {
     actor_session_id: input.actorSessionId,
     idempotency_key: idempotencyKey,
   };
-}
-
-async function responseErrorDetail(response: Response): Promise<{
-  message: string;
-  code: string | null;
-  details: Record<string, unknown>;
-}> {
-  const text = await response.text();
-  if (!text) {
-    return { message: `${response.status} ${response.statusText}`, code: null, details: {} };
-  }
-  try {
-    const detail = (JSON.parse(text) as {
-      detail?: { error?: { message?: unknown; code?: unknown; details?: unknown } };
-    }).detail;
-    if (typeof detail?.error?.message === "string") {
-      const details = detail.error.details;
-      return {
-        message: detail.error.message,
-        code: typeof detail.error.code === "string" ? detail.error.code : null,
-        details: details !== null && typeof details === "object" && !Array.isArray(details)
-          ? details as Record<string, unknown>
-          : {},
-      };
-    }
-  } catch {
-    return { message: text, code: null, details: {} };
-  }
-  return { message: text, code: null, details: {} };
 }
