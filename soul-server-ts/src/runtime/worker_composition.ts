@@ -75,15 +75,8 @@ export async function composeWorkerRuntime(
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,
     agentRegistry,
-    profileResolver: (profiles) => mcpConfigService.resolveProfilesIsolated(
-      profiles,
-      (profile, error) => logger.warn(
-        { agentId: profile.id, err: error },
-        "Agent MCP profile resolution failed; other profiles remain available",
-      ),
-    ),
-    isDbIdentityOwnedProfile: (profileId) =>
-      agentProfileSource?.isDbIdentityOwnedProfile?.(profileId) ?? false,
+    profileResolver: (profiles) => mcpConfigService.resolveProfilesIsolated(profiles, logger),
+    isDbIdentityOwnedProfile: agentProfileSource?.isDbIdentityOwnedProfile?.bind(agentProfileSource),
     onAfterRegistryReplace: async () => {
       if (!upstreamAdapter) {
         logger.warn(

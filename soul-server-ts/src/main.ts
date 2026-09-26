@@ -85,13 +85,7 @@ async function main(): Promise<void> {
   let agentRegistry;
   try {
     agentRegistry = loadAgentRegistry(env.AGENTS_CONFIG_PATH, {
-      profileResolver: (profiles) => mcpConfigService.resolveProfilesIsolated(
-        profiles,
-        (profile, error) => logger.warn(
-          { agentId: profile.id, err: error },
-          "Agent MCP profile resolution failed; other profiles remain available",
-        ),
-      ),
+      profileResolver: (profiles) => mcpConfigService.resolveProfilesIsolated(profiles, logger),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

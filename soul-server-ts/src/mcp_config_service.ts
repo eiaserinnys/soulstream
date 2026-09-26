@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import type { Logger } from "pino";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
@@ -166,13 +167,19 @@ export class McpConfigService {
 
   resolveProfilesIsolated(
     profiles: AgentProfile[],
-    onFailure: (profile: AgentProfile, error: Error) => void,
+    logger: Pick<Logger, "warn">,
   ): AgentProfile[] {
     return profiles.map((profile) => {
       try {
         return this.resolveAgentProfile(profile);
       } catch (error) {
-        onFailure(profile, error instanceof Error ? error : new Error(String(error)));
+        logger.warn(
+          {
+            agentId: profile.id,
+            err: error instanceof Error ? error : new Error(String(error)),
+          },
+          "Agent MCP profile resolution failed; other profiles remain available",
+        );
         return profile;
       }
     });
