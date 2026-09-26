@@ -497,6 +497,7 @@ export async function createLiveProductionApplication(
     registry: runtimeServices.registry,
     bridge: runtimeServices.sessionBridge,
     pollIntervalMs: config.usage_summary_poll_interval_seconds * 1_000,
+    sharedAccountGroups: config.usage_summary_shared_accounts,
     onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
   try {

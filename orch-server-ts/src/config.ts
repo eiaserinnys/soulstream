@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+import {
+  USAGE_SUMMARY_PROVIDER_NAMES,
+  type UsageSummarySharedAccountGroup,
+} from "./usage/usage_summary_service.js";
+
 export const DEFAULT_TRUSTED_PROXY = "loopback" as const;
 
 const ConfigSchema = z
@@ -59,6 +64,7 @@ export type OrchServerEnvironmentConfig = {
   readonly search_query_expansion_effort: string | null;
   readonly turn_summary_openai_key: string;
   readonly usage_summary_poll_interval_seconds: number;
+  readonly usage_summary_shared_accounts: readonly UsageSummarySharedAccountGroup[];
   readonly soul_runner_process_enabled: boolean;
   readonly soul_runner_lease_timeout_ms: number;
 };
@@ -94,6 +100,7 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "SEARCH_QUERY_EXPANSION_EFFORT",
   "TURN_SUMMARY_OPENAI_KEY",
   "USAGE_SUMMARY_POLL_INTERVAL_SECONDS",
+  "USAGE_SUMMARY_SHARED_ACCOUNTS",
   "SOUL_RUNNER_PROCESS_ENABLED",
   "SOUL_RUNNER_LEASE_TIMEOUT_MS",
 ] as const;
@@ -173,6 +180,9 @@ export function loadOrchServerEnvironment(
       env.USAGE_SUMMARY_POLL_INTERVAL_SECONDS,
       "USAGE_SUMMARY_POLL_INTERVAL_SECONDS",
       DEFAULT_USAGE_SUMMARY_POLL_INTERVAL_SECONDS,
+    ),
+    usage_summary_shared_accounts: parseUsageSummarySharedAccounts(
+      env.USAGE_SUMMARY_SHARED_ACCOUNTS,
     ),
     soul_runner_process_enabled: parseBoolean(
       env.SOUL_RUNNER_PROCESS_ENABLED,
@@ -254,6 +264,46 @@ function parsePositiveInteger(
     throw new Error(`${key} must be a positive integer`);
   }
   return parsed;
+}
+
+function parseUsageSummarySharedAccounts(
+  value: string | undefined,
+): UsageSummarySharedAccountGroup[] {
+  const source = value?.trim() ?? "";
+  if (source.length === 0) return [];
+  const providers = new Set<string>(USAGE_SUMMARY_PROVIDER_NAMES);
+  const memberships = new Set<string>();
+  return source.split(";").map((rawGroup) => {
+    const parts = rawGroup.split(":");
+    if (parts.length !== 2) throw invalidUsageSummarySharedAccounts();
+    const provider = parts[0]?.trim();
+    if (provider === undefined || !providers.has(provider)) {
+      throw invalidUsageSummarySharedAccounts();
+    }
+    const nodeIds = parts[1]?.split(",").map((nodeId) => nodeId.trim()) ?? [];
+    if (nodeIds.length < 2 || nodeIds.some((nodeId) => nodeId.length === 0)) {
+      throw invalidUsageSummarySharedAccounts();
+    }
+    if (new Set(nodeIds).size !== nodeIds.length) {
+      throw invalidUsageSummarySharedAccounts();
+    }
+    for (const nodeId of nodeIds) {
+      const membership = `${provider}:${nodeId}`;
+      if (memberships.has(membership)) throw invalidUsageSummarySharedAccounts();
+      memberships.add(membership);
+    }
+    return {
+      provider: provider as UsageSummarySharedAccountGroup["provider"],
+      nodeIds,
+    };
+  });
+}
+
+function invalidUsageSummarySharedAccounts(): Error {
+  return new Error(
+    "USAGE_SUMMARY_SHARED_ACCOUNTS must contain semicolon-separated " +
+    "provider:node-a,node-b groups for claude, codex, or gemini",
+  );
 }
 
 function parseBoolean(
