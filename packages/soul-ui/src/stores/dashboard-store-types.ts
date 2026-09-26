@@ -173,7 +173,7 @@ export interface DashboardState {
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
   lastEventId: number;
 
-  /** history_sync reset_required가 durable timeline refetch를 요청한 횟수. */
+  /** Durable history invalidation generation for reset markers and cleared trees. */
   historyResetVersion: number;
 
   /** Current session's history cursor so a remounted chat view can continue pagination. */
