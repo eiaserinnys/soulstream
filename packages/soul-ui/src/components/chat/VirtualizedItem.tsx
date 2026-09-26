@@ -12,8 +12,8 @@ import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
  * 외부에서 주입하던 `vi`(VirtualItem) 및 `measureElement` 바인딩이 제거되었다.
  * virtuoso는 내부 `ResizeObserver`로 항목을 측정하므로 외부 ref 바인딩이 필요 없다.
  *
- * `data-tree-node-id` 등 하위 컴포넌트가 노출하는 DOM 속성은 그대로 유지되며,
- * ChatView의 `itemsRendered` 콜백이 해당 속성으로 포커스 하이라이트 타겟을 찾는다.
+ * `data-tree-node-id` 등 하위 컴포넌트가 노출하는 DOM 속성은 그대로 유지된다.
+ * ChatView는 Virtuoso 행 key로 행을 찾고 이 속성으로 하이라이트 요소를 찾는다.
  */
 
 export type VirtualizedItemProps = {

@@ -93,7 +93,21 @@ vi.mock("../ChatInput", () => ({
 }));
 
 vi.mock("./VirtualizedItem", () => ({
-  VirtualizedItem: () => createElement("div", { "data-testid": "chat-item" }),
+  VirtualizedItem: ({ item }: { item: any }) => {
+    const firstMessage = item.type === "tool-group"
+      ? item.messages[0]
+      : item.type === "summary-group"
+        ? item.anchor.type === "tool-group"
+          ? item.anchor.messages[0]
+          : item.anchor.msg
+        : item.type === "single"
+          ? item.msg
+          : null;
+    return createElement("div", {
+      "data-testid": "chat-item",
+      "data-tree-node-id": firstMessage?.treeNodeId,
+    });
+  },
 }));
 
 vi.mock("./hooks", () => ({
@@ -131,6 +145,19 @@ function makeComplete(eventId: number): { event: SoulSSEEvent; eventId: number }
   return {
     event: {
       type: "complete",
+      timestamp: 0,
+    } as unknown as SoulSSEEvent,
+    eventId,
+  };
+}
+
+function makeToolStart(eventId: number): { event: SoulSSEEvent; eventId: number } {
+  return {
+    event: {
+      type: "tool_start",
+      tool_name: "Read",
+      tool_input: { file_path: `/tmp/${eventId}` },
+      tool_use_id: `tool-use-${eventId}`,
       timestamp: 0,
     } as unknown as SoulSSEEvent,
     eventId,
@@ -1079,9 +1106,8 @@ describe("ChatView long-session initial bottom focus", () => {
     (virtuosoMock.props?.itemsRendered as (() => void) | undefined)?.();
     (virtuosoMock.props?.totalListHeightChanged as (() => void) | undefined)?.();
 
-    // The first virtual range may settle back to the previous viewport. The
-    // itemsRendered retry restores the explicit search target without following bottom.
-    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(2);
+    // The explicit request scrolls once; itemsRendered resolves its stable row key.
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(1);
     expect(nativeScrollTo).not.toHaveBeenCalled();
   });
 
@@ -1089,11 +1115,10 @@ describe("ChatView long-session initial bottom focus", () => {
     useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
     useDashboardStore.getState().setFocusEventId(42, "sess-long");
     ({ container, root } = await renderChatView());
-    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
-    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
-    const previousTarget = document.createElement("div");
-    previousTarget.dataset.treeNodeId = "user-msg-42";
-    scroller.appendChild(previousTarget);
+    const previousTarget = container.querySelector<HTMLElement>(
+      '[data-chat-item-key="user-msg-42"] [data-tree-node-id]',
+    );
+    if (!previousTarget) throw new Error("검색 대상 chat row가 없습니다.");
 
     vi.useFakeTimers();
     try {
@@ -1122,13 +1147,13 @@ describe("ChatView long-session initial bottom focus", () => {
     ]);
     useDashboardStore.getState().setFocusEventId(7, "sess-long");
     ({ container, root } = await renderChatView());
-    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
-    if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
-    const eventSeven = document.createElement("div");
-    eventSeven.dataset.treeNodeId = "user-msg-7";
-    const eventFortyTwo = document.createElement("div");
-    eventFortyTwo.dataset.treeNodeId = "user-msg-42";
-    scroller.append(eventSeven, eventFortyTwo);
+    const eventSeven = container.querySelector<HTMLElement>(
+      '[data-chat-item-key="user-msg-7"] [data-tree-node-id]',
+    );
+    const eventFortyTwo = container.querySelector<HTMLElement>(
+      '[data-chat-item-key="user-msg-42"] [data-tree-node-id]',
+    );
+    if (!eventSeven || !eventFortyTwo) throw new Error("검색 대상 chat row가 없습니다.");
 
     vi.useFakeTimers();
     try {
@@ -1235,5 +1260,87 @@ describe("ChatView long-session initial bottom focus", () => {
     scroller.scrollTop = 0;
     (virtuosoMock.props?.startReached as (() => void) | undefined)?.();
     expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+  });
+
+  it("같은 검색 focus 요청은 새 트리 이벤트가 와도 한 번만 스크롤한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeUserMessage(1000),
+      makeAssistantMessage(1001),
+    ]);
+    ({ container, root } = await renderChatView());
+    virtuosoMock.scrollToIndex.mockClear();
+
+    flushSync(() => {
+      useDashboardStore.getState().setFocusEventId(1000, "sess-long");
+    });
+    await flushPassiveEffects();
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(1);
+
+    flushSync(() => {
+      useDashboardStore.getState().processEvent(makeAssistantMessage(1002).event, 1002);
+    });
+    await flushPassiveEffects();
+
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it("DOM 행을 찾지 못한 포커스 요청은 재시도가 끝나면 해제한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
+    ({ container, root } = await renderChatView());
+    flushSync(() => {
+      useDashboardStore.getState().setFocusEventId(42, "sess-long");
+    });
+    await flushPassiveEffects();
+
+    const targetRow = container.querySelector<HTMLElement>(
+      '[data-chat-item-key="user-msg-42"]',
+    );
+    expect(targetRow).not.toBeNull();
+    targetRow?.remove();
+
+    let frameId = 0;
+    const pendingFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      pendingFrames.push(callback);
+      frameId += 1;
+      return frameId;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const flushFrames = () => {
+      while (pendingFrames.length > 0) {
+        const frames = pendingFrames.splice(0);
+        flushSync(() => frames.forEach((callback) => callback(0)));
+      }
+    };
+
+    const itemsRendered = virtuosoMock.props?.itemsRendered as (() => void) | undefined;
+    if (!itemsRendered) throw new Error("Virtuoso itemsRendered callback이 없습니다.");
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      flushSync(() => itemsRendered());
+      flushFrames();
+    }
+
+    expect(useDashboardStore.getState().focusEventId).toBeNull();
+  });
+
+  it("도구 그룹의 두 번째 메시지도 Virtuoso 행 key로 찾아 하이라이트한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([
+      makeToolStart(10),
+      makeToolStart(11),
+    ]);
+    useDashboardStore.getState().setFocusEventId(11, "sess-long");
+    ({ container, root } = await renderChatView());
+
+    const targetRow = container.querySelector<HTMLElement>(
+      '[data-chat-item-key="tg-tool-11"]',
+    );
+    const targetMessage = targetRow?.querySelector<HTMLElement>("[data-tree-node-id]");
+    if (!targetMessage) throw new Error("도구 그룹 chat row가 없습니다.");
+    const itemsRendered = virtuosoMock.props?.itemsRendered as (() => void) | undefined;
+    if (!itemsRendered) throw new Error("Virtuoso itemsRendered callback이 없습니다.");
+
+    flushSync(() => itemsRendered());
+
+    expect(targetMessage.classList.contains("chat-focus-ring")).toBe(true);
   });
 });
