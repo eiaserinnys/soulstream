@@ -9,7 +9,7 @@ import type { StateCreator } from "zustand";
 import type { DashboardState, DashboardActions } from "../dashboard-store-types";
 
 export type DraftSlice = Pick<DashboardState,
-  "drafts" | "focusEventId" | "focusEventSessionId" | "focusEventRequestId"
+  "drafts" | "focusEventId" | "focusEventSessionId" | "focusEventTarget" | "focusEventRequestId"
 > &
   Pick<DashboardActions, "setDraft" | "clearDraft" | "setFocusEventId">;
 
@@ -22,6 +22,7 @@ export const createDraftSlice: StateCreator<
   drafts: {},
   focusEventId: null,
   focusEventSessionId: null,
+  focusEventTarget: null,
   focusEventRequestId: 0,
 
   setDraft: (key, text) => {
@@ -40,11 +41,12 @@ export const createDraftSlice: StateCreator<
     set({ drafts: rest });
   },
 
-  setFocusEventId: (focusEventId, sessionId) => set((state) => ({
+  setFocusEventId: (focusEventId, sessionId, target) => set((state) => ({
     focusEventId,
     focusEventSessionId: focusEventId === null
       ? null
       : sessionId ?? state.activeSessionKey,
+    focusEventTarget: focusEventId === null ? null : target ?? "event",
     focusEventRequestId: state.focusEventRequestId + 1,
   })),
 });

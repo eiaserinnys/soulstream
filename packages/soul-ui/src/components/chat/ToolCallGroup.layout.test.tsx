@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 
-import { createElement } from "react";
+import { createElement, useState, type ComponentType } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
@@ -31,6 +31,21 @@ function renderGroup(messages: ChatMessage[]) {
   root = createRoot(container);
   flushSync(() => root!.render(createElement(ToolCallGroup, { messages })));
   return container;
+}
+
+const ControlledToolCallGroup = ToolCallGroup as ComponentType<{
+  messages: ChatMessage[];
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+}>;
+
+function ControlledGroupHost({ messages, rowKey }: { messages: ChatMessage[]; rowKey: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return createElement("div", { key: rowKey }, createElement(ControlledToolCallGroup, {
+    messages,
+    expanded,
+    onExpandedChange: setExpanded,
+  }));
 }
 
 afterEach(() => {
@@ -78,5 +93,30 @@ describe("ToolCallGroup compact header", () => {
     flushSync(() => itemToggle.click());
     expect(itemToggle.getAttribute("aria-expanded")).toBe("true");
     expect(view.querySelector('[data-slot="chat-tool-body"]')?.textContent).toBe("ok");
+  });
+
+  it("keeps the expanded group open when an appended tool changes its virtual row key", () => {
+    const view = document.createElement("div");
+    document.body.appendChild(view);
+    container = view;
+    root = createRoot(view);
+    const initial = [message(0, "done"), message(1, "done")];
+    flushSync(() => root!.render(createElement(ControlledGroupHost, {
+      messages: initial,
+      rowKey: "tg-root-tool-1",
+    })));
+
+    flushSync(() => view.querySelector<HTMLButtonElement>("[data-slot='tool-call-group-toggle']")?.click());
+    expect(view.querySelector("[data-slot='tool-call-group-toggle']")?.getAttribute("aria-expanded"))
+      .toBe("true");
+
+    flushSync(() => root!.render(createElement(ControlledGroupHost, {
+      messages: [...initial, message(2, "done")],
+      rowKey: "tg-root-tool-2",
+    })));
+
+    expect(view.querySelector("[data-slot='tool-call-group-toggle']")?.getAttribute("aria-expanded"))
+      .toBe("true");
+    expect(view.querySelectorAll("[data-slot='tool-call-item-toggle']")).toHaveLength(3);
   });
 });

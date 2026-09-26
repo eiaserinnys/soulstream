@@ -13,9 +13,13 @@
  */
 
 import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
+import type { ChatFocusTarget } from "../../shared/search-focus";
 
 /** virtuoso 권장 패턴: 큰 시작 인덱스에서 prepend 때마다 차감 */
 export const START_INDEX = 10_000;
+
+/** A search jump automatically reads at most five older pages before yielding to scrolling. */
+export const MAX_SEARCH_FOCUS_HISTORY_PAGES = 5;
 
 /**
  * virtuoso `firstItemIndex`로 전달할 값.
@@ -31,6 +35,46 @@ export function messageOrGroupKey(item: ChatTimelineItem): string {
   return item.type === "tool-group"
     ? `tg-${item.messages[item.messages.length - 1].treeNodeId}`
     : item.msg.treeNodeId;
+}
+
+/** Expansion follows the first tool in a group even when later tools change its virtual row key. */
+export function toolGroupExpansionKey(
+  sessionId: string,
+  item: Extract<ChatTimelineItem, { type: "tool-group" }>,
+): string {
+  return `${sessionId}:${item.messages[0].treeNodeId}`;
+}
+
+/** Resolve non-rendered search events to a visible row in their transcript turn. */
+export function resolveFocusEventId(
+  items: ChatTimelineItem[],
+  eventId: number | null,
+  target: ChatFocusTarget | null,
+): number | null {
+  if (eventId === null || target === "session") return null;
+  if (target !== "assistant_turn") return eventId;
+
+  const messages = items.flatMap((item) => {
+    if (item.type === "thinking-indicator") return [];
+    if (item.type === "summary-group") {
+      return [item.anchor, ...item.summaries.map((msg) => ({ type: "single" as const, msg }))]
+        .flatMap((nested) => nested.type === "single" ? [nested.msg] : nested.messages);
+    }
+    return item.type === "tool-group" ? item.messages : [item.msg];
+  });
+  let assistantEventId: number | null = null;
+  for (const message of messages) {
+    const messageEventId = message.eventId;
+    if (messageEventId === undefined || messageEventId >= eventId) continue;
+    if (message.role === "user") {
+      assistantEventId = null;
+      continue;
+    }
+    if (message.role === "assistant" && message.treeNodeType === "assistant_message") {
+      assistantEventId = messageEventId;
+    }
+  }
+  return assistantEventId ?? eventId;
 }
 
 /**

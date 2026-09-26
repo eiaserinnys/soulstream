@@ -271,6 +271,13 @@ export function useMessageHistoryBuffer(
 
       initialPageLoadedRef.current = true;
       nextCursorRef.current = nextCursor;
+      useDashboardStore.getState().setHistoryCursor({
+        sessionId: generation.sessionId,
+        historyResetVersion: generation.historyResetVersion,
+        nextCursor,
+        initialPageLoaded: true,
+        reachedTop: nextCursor === null,
+      });
       run.pagesFetched += 1;
       if (run.source === "manual") updateBlockedReason(null);
 
@@ -415,12 +422,20 @@ export function useMessageHistoryBuffer(
             sessionId: activationTarget.sessionId,
             historyResetVersion: activationTarget.historyResetVersion,
           };
-      reachedTopRef.current = false;
+      const cursorSnapshot = useDashboardStore.getState().historyCursor;
+      const resumableCursor = cursorSnapshot?.sessionId === activationTarget.sessionId
+        && cursorSnapshot.historyResetVersion === activationTarget.historyResetVersion
+        ? cursorSnapshot
+        : null;
+      reachedTopRef.current = resumableCursor?.reachedTop ?? false;
       blockedReasonRef.current = null;
-      nextCursorRef.current = null;
-      initialPageLoadedRef.current = false;
-      setReachedTop(false);
+      nextCursorRef.current = resumableCursor?.nextCursor ?? null;
+      initialPageLoadedRef.current = resumableCursor?.initialPageLoaded ?? false;
+      setReachedTop(reachedTopRef.current);
       setBlockedReason(null);
+      if (cursorSnapshot !== null && resumableCursor === null) {
+        useDashboardStore.getState().setHistoryCursor(null);
+      }
     }
 
     if (!activationTarget.enabled || activationTarget.sessionId === null) return;

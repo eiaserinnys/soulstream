@@ -80,8 +80,22 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
 });
 
 /** 연속된 tool 메시지를 하나로 묶어 표시하는 그룹 컴포넌트 */
-export const ToolCallGroup = memo(function ToolCallGroup({ messages }: { messages: ChatMessage[] }) {
-  const [expanded, setExpanded] = useState(false);
+export const ToolCallGroup = memo(function ToolCallGroup({
+  messages,
+  expanded: controlledExpanded,
+  onExpandedChange,
+}: {
+  messages: ChatMessage[];
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
+}) {
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = controlledExpanded ?? internalExpanded;
+  const toggleExpanded = () => {
+    const next = !expanded;
+    if (onExpandedChange) onExpandedChange(next);
+    else setInternalExpanded(next);
+  };
   const hasError = messages.some((m) => m.isError);
   const allDone = messages.length > 0 && messages.every(
     (m) => m.toolResult !== undefined || m.toolDurationMs !== undefined,
@@ -101,7 +115,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({ messages }: { message
           type="button"
           aria-expanded={expanded}
           data-slot="tool-call-group-toggle"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={toggleExpanded}
           className="flex h-6 w-full min-w-0 items-center gap-1.5 overflow-hidden text-xs leading-[18px] text-muted-foreground hover:text-foreground"
         >
           {expanded

@@ -59,6 +59,7 @@ export function getEventProcessingInitialState(): Pick<
   | "chatLastPrependAtMs"
   | "lastEventId"
   | "historyResetVersion"
+  | "historyCursor"
   | "pendingNotifications"
   | "processingCtx"
 > {
@@ -70,6 +71,7 @@ export function getEventProcessingInitialState(): Pick<
     chatLastPrependAtMs: null as number | null,
     lastEventId: 0,
     historyResetVersion: 0,
+    historyCursor: null,
     pendingNotifications: [] as SessionNotice[],
     processingCtx: createProcessingContext(),
   };
@@ -83,7 +85,8 @@ export type EventProcessingSlice = Pick<
   | "chatPrependedCount"
   | "chatLastPrependAtMs"
   | "lastEventId"
-  | "historyResetVersion"
+    | "historyResetVersion"
+    | "historyCursor"
   | "pendingNotifications"
   | "processingCtx"
 > &
@@ -92,6 +95,7 @@ export type EventProcessingSlice = Pick<
     | "processEvent"
     | "processEvents"
     | "processHistoryEvents"
+    | "setHistoryCursor"
   >;
 
 export const createEventProcessingSlice: StateCreator<
@@ -101,6 +105,8 @@ export const createEventProcessingSlice: StateCreator<
   EventProcessingSlice
 > = (set, get) => ({
   ...getEventProcessingInitialState(),
+
+  setHistoryCursor: (historyCursor) => set({ historyCursor }),
 
   // --- SSE 이벤트 처리 ---
   // createNodeFromEvent + placeInTree + applyUpdate + enqueueNotification

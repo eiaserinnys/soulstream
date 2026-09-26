@@ -19,6 +19,8 @@ export { REASONING_EFFORT_LABELS, reasoningEffortLabel } from "./api-types";
 export { fetchNodeModelPresets } from "./model-presets";
 export { fetchSessionStory } from "./session-story-api";
 export type { SessionStory } from "./session-story-api";
+export { resolveSearchChatFocus } from "./search-focus";
+export type { ChatFocusTarget, SearchChatFocus } from "./search-focus";
 
 // === Types (types.ts is itself a barrel) ===
 export type {

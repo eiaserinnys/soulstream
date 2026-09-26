@@ -20,9 +20,19 @@ export type VirtualizedItemProps = {
   item: ChatTimelineItem;
   llmContext?: LlmContext;
   sessionId?: string;
+  toolGroupKey?: string;
+  toolGroupExpanded?: boolean;
+  onToolGroupExpandedChange?: (key: string, expanded: boolean) => void;
 };
 
-function VirtualizedItemImpl({ item, llmContext, sessionId }: VirtualizedItemProps) {
+function VirtualizedItemImpl({
+  item,
+  llmContext,
+  sessionId,
+  toolGroupKey,
+  toolGroupExpanded,
+  onToolGroupExpandedChange,
+}: VirtualizedItemProps) {
   if (item.type === "thinking-indicator") {
     return <ChatThinkingIndicator />;
   }
@@ -33,6 +43,9 @@ function VirtualizedItemImpl({ item, llmContext, sessionId }: VirtualizedItemPro
           item={item.anchor}
           llmContext={llmContext}
           sessionId={sessionId}
+          toolGroupKey={toolGroupKey}
+          toolGroupExpanded={toolGroupExpanded}
+          onToolGroupExpandedChange={onToolGroupExpandedChange}
         />
         {item.summaries.map((summary) => (
           <ChatMessageItem
@@ -46,7 +59,15 @@ function VirtualizedItemImpl({ item, llmContext, sessionId }: VirtualizedItemPro
     );
   }
   if (item.type === "tool-group") {
-    return <ToolCallGroup messages={item.messages} />;
+    return (
+      <ToolCallGroup
+        messages={item.messages}
+        expanded={toolGroupExpanded}
+        onExpandedChange={toolGroupKey && onToolGroupExpandedChange
+          ? (expanded) => onToolGroupExpandedChange(toolGroupKey, expanded)
+          : undefined}
+      />
+    );
   }
   return (
     <ChatMessageItem msg={item.msg} llmContext={llmContext} sessionId={sessionId} />
@@ -66,6 +87,9 @@ function VirtualizedItemImpl({ item, llmContext, sessionId }: VirtualizedItemPro
 export function arePropsEqual(prev: VirtualizedItemProps, next: VirtualizedItemProps): boolean {
   if (prev.llmContext !== next.llmContext) return false;
   if (prev.sessionId !== next.sessionId) return false;
+  if (prev.toolGroupKey !== next.toolGroupKey) return false;
+  if (prev.toolGroupExpanded !== next.toolGroupExpanded) return false;
+  if (prev.onToolGroupExpandedChange !== next.onToolGroupExpandedChange) return false;
   if (prev.item.type !== next.item.type) return false;
   if (
     prev.item.type === "thinking-indicator" &&

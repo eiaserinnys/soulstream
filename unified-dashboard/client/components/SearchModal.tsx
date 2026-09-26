@@ -19,7 +19,9 @@ import {
   useUiEventEntryMarker,
   useUiEventTracker,
   applyCatalogSessionDisplayName,
+  resolveSearchChatFocus,
   cn,
+  type ChatFocusTarget,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { Search } from "lucide-react";
@@ -266,6 +268,7 @@ interface SearchModalProps {
     sessionId: string,
     focusEventId: number | null,
     session?: SessionSummary,
+    focusTarget?: ChatFocusTarget,
   ) => boolean | void | Promise<boolean | void>;
   onOpenFolder?: (result: Extract<SearchNavigationResult, { kind: "folder" }>) =>
     void | Promise<void>;
@@ -366,14 +369,14 @@ export function SearchModal({
         : summary;
     const opensStoryPanel =
       result.match_source === "highlight" || result.match_source === "story";
-    const focusEventId = opensStoryPanel ? null : result.event_id;
+    const searchFocus = resolveSearchChatFocus(result.event_id, result.event_type);
+    const focusEventId = opensStoryPanel ? null : searchFocus.eventId;
+    const focusTarget = opensStoryPanel ? undefined : searchFocus.target;
     let openResult: boolean | void | Promise<boolean | void>;
     if (onOpenSession) {
-      openResult = onOpenSession(
-        result.session_id,
-        focusEventId,
-        targetSummary,
-      );
+      openResult = focusTarget === undefined || focusTarget === "event"
+        ? onOpenSession(result.session_id, focusEventId, targetSummary)
+        : onOpenSession(result.session_id, focusEventId, targetSummary, focusTarget);
     } else {
       const targetFolderId = assignment
         ? assignment.folderId
@@ -386,7 +389,7 @@ export function SearchModal({
         setActiveSessionSummary(targetSummary);
       }
       setActiveSession(result.session_id);
-      setFocusEventId(focusEventId, result.session_id);
+      setFocusEventId(focusEventId, result.session_id, focusTarget);
       setActiveTab("chat");
       openResult = true;
     }

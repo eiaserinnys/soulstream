@@ -10,6 +10,7 @@ import type { SoulSSEEvent } from "@shared/types";
 
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { ChatView } from "./ChatView";
+import { MAX_SEARCH_FOCUS_HISTORY_PAGES } from "./ChatView.reverse-helpers";
 
 const virtuosoMock = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
@@ -1232,6 +1233,33 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(container?.querySelector('[role="alert"]')?.textContent)
       .toContain("검색 결과 이벤트를 대화에서 찾을 수 없습니다");
     expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
+  });
+
+  it("검색 focus는 자동으로 과거 페이지를 제한된 수만큼 요청한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    virtuosoMock.canLoadOlder = true;
+    ({ container, root } = await renderChatView());
+
+    flushSync(() => useDashboardStore.getState().setFocusEventId(42, "sess-long"));
+    await flushPassiveEffects();
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledTimes(1);
+
+    for (let pageIndex = 1; pageIndex < MAX_SEARCH_FOCUS_HISTORY_PAGES; pageIndex += 1) {
+      flushSync(() => {
+        useDashboardStore.getState().processHistoryEvents([
+          makeUserMessage(1000 - pageIndex * 100),
+        ]);
+      });
+      await flushPassiveEffects();
+    }
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledTimes(MAX_SEARCH_FOCUS_HISTORY_PAGES);
+
+    flushSync(() => useDashboardStore.getState().processHistoryEvents([makeUserMessage(400)]));
+    await flushPassiveEffects();
+
+    expect(virtuosoMock.requestOlder).toHaveBeenCalledTimes(MAX_SEARCH_FOCUS_HISTORY_PAGES);
+    expect(container?.querySelector('[role="alert"]')?.textContent)
+      .toContain(`${MAX_SEARCH_FOCUS_HISTORY_PAGES}페이지`);
   });
 
   it("검색 focus 이동은 아직 소비되지 않은 history 탐색 의도를 취소한다", async () => {

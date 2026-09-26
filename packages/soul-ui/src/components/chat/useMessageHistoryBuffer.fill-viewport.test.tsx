@@ -662,6 +662,27 @@ describe("useMessageHistoryBuffer bounded viewport fill", () => {
     root = createRoot(container);
   });
 
+  it("같은 세션의 채팅 뷰가 다시 마운트되면 history cursor를 이어 쓴다", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(page([20], "cursor-after-first"))
+      .mockResolvedValueOnce(page([19], "cursor-after-older"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderSession("sess-remount-cursor");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await renderSession("sess-remount-cursor");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await requestOlder("manual");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const nextUrl = new URL(String(fetchMock.mock.calls[1]?.[0]), "https://example.test");
+    expect(nextUrl.searchParams.get("before")).toBe("cursor-after-first");
+  });
+
   it("does not fetch while disabled and starts when the same session becomes visible", async () => {
     const fetchMock = vi.fn().mockResolvedValue(page([1], null));
     vi.stubGlobal("fetch", fetchMock);
