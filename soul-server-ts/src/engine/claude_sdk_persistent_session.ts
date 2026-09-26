@@ -394,6 +394,10 @@ export class ClaudeSdkPersistentSession {
     if (active) {
       active.rateLimitTerminationState =
         rateLimit.observeTerminationSignal(active.rateLimitTerminationState, event);
+      active.rateLimitTerminationInfo = rateLimit.captureRejectedRateLimitInfo(
+        active.rateLimitTerminationInfo,
+        event,
+      );
     }
     if (active?.rateLimitTerminationState === "terminal") {
       active.output.push(event);
@@ -402,7 +406,7 @@ export class ClaudeSdkPersistentSession {
       this.clearForegroundTimers(active);
       this.runtime.finishForegroundResult();
       this.armDrainTimer();
-      active.output.push(rateLimit.makeStopFailureError());
+      active.output.push(rateLimit.makeStopFailureError(active.rateLimitTerminationInfo));
       active.output.close();
       if (this.activeForeground === active) this.activeForeground = null;
       settleInterventionInterrupt(active, false);

@@ -10,6 +10,8 @@ const NOTIFICATION_PAYLOAD_KEYS = new Set([
   "followup_key",
   "followup_attempt",
   "disposition",
+  "rate_limit_type",
+  "resets_at",
 ]);
 
 export function validateNotificationPayload(params: {
@@ -34,6 +36,14 @@ export function validateNotificationPayload(params: {
   ] as const) {
     if (typeof payload[key] !== "string" || payload[key].length === 0) {
       throw new Error(`Notification outbox payload is missing ${key}`);
+    }
+  }
+  for (const key of ["rate_limit_type", "resets_at"] as const) {
+    if (
+      payload[key] !== undefined &&
+      (typeof payload[key] !== "string" || payload[key].length === 0)
+    ) {
+      throw new Error(`Notification outbox payload ${key} must be a non-empty string`);
     }
   }
   if (

@@ -86,6 +86,8 @@ export interface SessionNotificationNode extends BaseNode {
   disposition: "queued" | "auto_resume";
   completionId?: string;
   relationKey?: string;
+  rateLimitType?: string;
+  resetsAt?: string;
 }
 
 /** 인터벤션 노드 */
@@ -191,6 +193,9 @@ export interface CompleteNode extends BaseNode {
 export interface ErrorNode extends BaseNode {
   type: "error";
   isError?: boolean;
+  errorCode?: string;
+  rateLimitType?: string;
+  resetsAt?: string;
   /** 현재 상태가 아니라, 이 이벤트에서 자동 재연결이 발생했음을 표시한다. */
   isRetrying?: boolean;
 }

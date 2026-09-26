@@ -127,6 +127,8 @@ describe("session action command HTTP route harness", () => {
         caller_turn_id: "turn-3",
         created_at: "2026-07-26T00:00:00.000Z",
         delivery_attempt_token: "completion:node-a",
+        rate_limit_type: "five_hour",
+        resets_at: "2026-09-26T03:12:00.000Z",
       },
     });
 
@@ -152,6 +154,8 @@ describe("session action command HTTP route harness", () => {
       caller_turn_id: "turn-3",
       created_at: "2026-07-26T00:00:00.000Z",
       delivery_attempt_token: "completion:node-a",
+      rate_limit_type: "five_hour",
+      resets_at: "2026-09-26T03:12:00.000Z",
     });
 
     await app.close();

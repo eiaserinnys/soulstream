@@ -478,6 +478,8 @@ export interface SSEEventSessionNotification {
   disposition: "queued" | "auto_resume";
   completion_id?: string;
   relation_key?: string;
+  rate_limit_type?: string;
+  resets_at?: string;
   timestamp?: number;
   [k: string]: unknown;
 }
@@ -570,6 +572,8 @@ export interface SSEEventError {
   recovery_hint?: string;
   error_info?: unknown;
   additional_details?: unknown;
+  rate_limit_type?: string;
+  resets_at?: string;
   thread_id?: string;
   turn_id?: string;
   [k: string]: unknown;

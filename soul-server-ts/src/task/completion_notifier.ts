@@ -137,6 +137,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
         terminalRevision: String(task.terminalEventId),
         text,
         callerInfo,
+        ...task.rateLimitStopInfo,
         createdAt: task.completedAt ?? new Date(),
       });
       return;
@@ -146,6 +147,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       text,
       user: "agent",
       callerInfo,
+      ...task.rateLimitStopInfo,
     }, childId);
   }
 
@@ -312,6 +314,10 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       text: params.text,
       user: params.user,
       caller_info: params.callerInfo,  // snake_case 의무 (Pydantic 필드명)
+      ...(params.rateLimitType !== undefined
+        ? { rate_limit_type: params.rateLimitType }
+        : {}),
+      ...(params.resetsAt !== undefined ? { resets_at: params.resetsAt } : {}),
       ...(params.deliveryId
         ? {
             delivery_id: params.deliveryId,

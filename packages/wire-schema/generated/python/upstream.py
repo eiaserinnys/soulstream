@@ -1358,6 +1358,8 @@ class SSEEventSessionNotification(TypedDict):
     disposition: Literal['queued', 'auto_resume']
     completion_id: NotRequired[str]
     relation_key: NotRequired[str]
+    rate_limit_type: NotRequired[str]
+    resets_at: NotRequired[str]
     timestamp: NotRequired[float]
 
 
@@ -1455,6 +1457,8 @@ class SSEEventError(TypedDict):
     recovery_hint: NotRequired[str]
     error_info: NotRequired[Any]
     additional_details: NotRequired[Any]
+    rate_limit_type: NotRequired[str]
+    resets_at: NotRequired[str]
     thread_id: NotRequired[str]
     turn_id: NotRequired[str]
 

@@ -2020,6 +2020,8 @@
         },
         "completion_id": { "type": "string" },
         "relation_key": { "type": "string" },
+        "rate_limit_type": { "type": "string" },
+        "resets_at": { "type": "string" },
         "timestamp": { "type": "number" }
       }
     },
@@ -2130,6 +2132,8 @@
         "recovery_hint": { "type": "string" },
         "error_info": {},
         "additional_details": {},
+        "rate_limit_type": { "type": "string" },
+        "resets_at": { "type": "string" },
         "thread_id": { "type": "string" },
         "turn_id": { "type": "string" }
       }

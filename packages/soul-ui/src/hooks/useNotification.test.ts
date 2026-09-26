@@ -33,4 +33,21 @@ describe("formatNotification", () => {
       body: "Something went wrong",
     });
   });
+
+  it("adds known rate-limit details to terminal error alerts", () => {
+    const event: ErrorEvent = {
+      type: "error",
+      message: "The session stopped at a rate limit.",
+      error_code: "claude_rate_limit_stop_failure",
+      rate_limit_type: "five_hour",
+      resets_at: "2999-09-26T03:12:00.000Z",
+    };
+
+    const notice = formatNotification(event);
+
+    expect(notice.title).toBe("❌ Session Error");
+    expect(notice.body).toContain("5시간 한도");
+    expect(notice.body).toContain("해제 시각");
+    expect(notice.body).toContain("남음");
+  });
 });

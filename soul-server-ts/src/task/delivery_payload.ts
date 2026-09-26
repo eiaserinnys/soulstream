@@ -12,6 +12,8 @@ export interface CanonicalDeliveryMessage {
   attachmentPaths?: string[];
   context?: ContextItem[];
   callerInfo?: CallerInfo;
+  rateLimitType?: string;
+  resetsAt?: string;
   followupKey?: string;
   followupAttempt?: number;
   followupTaskIds?: string[];
@@ -27,6 +29,8 @@ export function readCanonicalDeliveryPayload(
     attachmentPaths: stringArray(payload.attachment_paths),
     context: contextItems(payload.context),
     callerInfo: callerInfo(payload.caller_info),
+    rateLimitType: optionalString(payload.rate_limit_type),
+    resetsAt: optionalString(payload.resets_at),
     followupKey: optionalString(payload.followup_key),
     followupAttempt: optionalPositiveInteger(payload.followup_attempt),
     followupTaskIds: stringArray(payload.followup_task_ids),

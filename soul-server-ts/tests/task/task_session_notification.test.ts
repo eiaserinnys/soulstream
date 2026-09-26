@@ -35,6 +35,8 @@ function makeMessage(): InterventionMessage {
     completionId: "completion-1",
     relationKey: "child_session:child-1:42",
     source: "completion_notifier",
+    rateLimitType: "five_hour",
+    resetsAt: "2026-09-26T03:12:00.000Z",
   };
 }
 
@@ -71,6 +73,8 @@ describe("SessionNotificationPublisher", () => {
         type: "session_notification",
         delivery_id: "99999999-9999-4999-8999-999999999999",
         disposition: "queued",
+        rate_limit_type: "five_hour",
+        resets_at: "2026-09-26T03:12:00.000Z",
         _dedupe_key:
           "session_notification:99999999-9999-4999-8999-999999999999",
       }),

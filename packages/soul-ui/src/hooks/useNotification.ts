@@ -12,6 +12,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { SoulSSEEvent } from "../shared/types";
 import { formatRetryingErrorHistory } from "../shared/sse-events";
+import { formatRateLimitNotice } from "../shared/rate-limit-notice";
 import { useUiEventTracker } from "../lib/ui-events";
 
 /**
@@ -140,7 +141,15 @@ export function formatNotification(event: SoulSSEEvent): { title: string; body: 
       }
       return {
         title: "\u274C Session Error",
-        body: event.message || "An error occurred",
+        body: event.error_code === "claude_rate_limit_stop_failure"
+          ? formatRateLimitNotice(event.message || "An error occurred", event.rate_limit_type, event.resets_at)
+          : event.message || "An error occurred",
+      };
+
+    case "session_notification":
+      return {
+        title: "Soul Dashboard",
+        body: formatRateLimitNotice(event.text, event.rate_limit_type, event.resets_at),
       };
 
     case "intervention_sent":

@@ -45,6 +45,7 @@ export class TaskEngineEventPublisher {
     const sessionEffect = this.captureSessionId(task, event, eventType);
     this.captureClaudeRuntimeState(task, event);
     this.captureCompactReinjectionNeed(task, eventType);
+    this.captureRateLimitStopInfo(task, event, eventType);
     this.captureTerminationHint(task, event, eventType);
     const persistent = options.alreadyPersisted && shouldPersistEvent(event)
       ? true
@@ -71,7 +72,11 @@ export class TaskEngineEventPublisher {
     eventType: string,
   ): void {
     if (eventType === "credential_alert") {
-      const alert = event as { status?: unknown; message?: unknown; detail?: unknown };
+      const alert = event as {
+        status?: unknown;
+        message?: unknown;
+        detail?: unknown;
+      };
       // allowed_warning is observability only. A hard limit is terminalized by
       // the existing rejected + StopFailure fatal-error contract.
       if (alert.status !== "rejected") return;
@@ -82,6 +87,33 @@ export class TaskEngineEventPublisher {
         typeof detail === "string" ? detail : "credential_alert",
       );
     }
+  }
+
+  private captureRateLimitStopInfo(
+    task: Task,
+    event: SSEEventPayload,
+    eventType: string,
+  ): void {
+    if (eventType !== "error") return;
+    const error = event as {
+      error_code?: unknown;
+      rate_limit_type?: unknown;
+      resets_at?: unknown;
+    };
+    if (error.error_code !== "claude_rate_limit_stop_failure") return;
+
+    const rateLimitType = typeof error.rate_limit_type === "string"
+      ? error.rate_limit_type
+      : undefined;
+    const resetsAt = typeof error.resets_at === "string"
+      ? error.resets_at
+      : undefined;
+    task.rateLimitStopInfo = rateLimitType !== undefined || resetsAt !== undefined
+      ? {
+        ...(rateLimitType !== undefined ? { rateLimitType } : {}),
+        ...(resetsAt !== undefined ? { resetsAt } : {}),
+      }
+      : undefined;
   }
 
   private captureSessionId(

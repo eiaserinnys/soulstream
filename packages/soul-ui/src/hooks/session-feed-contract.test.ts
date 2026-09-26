@@ -139,6 +139,42 @@ describe("server-owned session feed v2 fixture", () => {
     expect(appendBrowserNotices([fromGlobal], [raw!])).toEqual([fromGlobal]);
   });
 
+  it("includes rate-limit reset metadata in the completion notice", () => {
+    const notice = detailEventToSessionNotice({
+      type: "session_notification",
+      delivery_id: "delivery-rate-limit",
+      delivery_intent: "completion_notification",
+      source: "background-agent",
+      disposition: "auto_resume",
+      text: "Background work stopped",
+      rate_limit_type: "seven_day",
+      resets_at: "2999-09-26T03:12:00.000Z",
+      timestamp: 42,
+    }, 43, "session-a");
+
+    expect(notice?.body).toContain("주간 한도");
+    expect(notice?.body).toContain("해제 시각");
+    expect(notice?.body).toContain("남음");
+  });
+
+  it("keeps rate-limit details visible when completion text is long", () => {
+    const notice = detailEventToSessionNotice({
+      type: "session_notification",
+      delivery_id: "delivery-rate-limit-long",
+      delivery_intent: "completion_notification",
+      source: "background-agent",
+      disposition: "auto_resume",
+      text: "Background work stopped. ".repeat(20),
+      rate_limit_type: "seven_day",
+      resets_at: "2999-09-26T03:12:00.000Z",
+      timestamp: 42,
+    }, 44, "session-a");
+
+    expect(notice?.body).toContain("주간 한도");
+    expect(notice?.body).toContain("해제 시각");
+    expect(notice?.body).toContain("남음");
+  });
+
   it("installs one cumulative text prefix and drops queued/live duplicate sequences", () => {
     const ctx = createProcessingContext();
     const result = processEventsBatch(

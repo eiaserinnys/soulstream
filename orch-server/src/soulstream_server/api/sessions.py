@@ -402,6 +402,8 @@ def create_sessions_router(
                 attachment_paths=body.attachmentPaths,
                 caller_info=caller_info,
                 extra_context_items=body.context_items,
+                rate_limit_type=body.rate_limit_type,
+                resets_at=body.resets_at,
             )
             return result
         except (WebSocketDisconnect, ConnectionError) as e:

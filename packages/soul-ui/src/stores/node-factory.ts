@@ -151,6 +151,8 @@ export function createNodeFromEvent(
           disposition: e.disposition,
           completionId: e.completion_id,
           relationKey: e.relation_key,
+          rateLimitType: e.rate_limit_type,
+          resetsAt: e.resets_at,
           timestamp: e.timestamp,
         },
       );
@@ -248,6 +250,9 @@ export function createNodeFromEvent(
       return makeNode(`error-${eventId}`, "error", content, {
         completed: true,
         isError: !isRetrying,
+        errorCode: e.error_code,
+        rateLimitType: e.rate_limit_type,
+        resetsAt: e.resets_at,
         ...(isRetrying ? { isRetrying: true } : {}),
       });
     }

@@ -64,6 +64,24 @@ function makePublisherDeps() {
 }
 
 describe("TaskEngineEventPublisher", () => {
+  it("captures terminal rate-limit metadata for the completion notification", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "error",
+      error_code: "claude_rate_limit_stop_failure",
+      rate_limit_type: "seven_day",
+      resets_at: "2026-10-01T00:00:00.000Z",
+    } as SSEEventPayload);
+
+    expect(task.rateLimitStopInfo).toEqual({
+      rateLimitType: "seven_day",
+      resetsAt: "2026-10-01T00:00:00.000Z",
+    });
+  });
+
   it("enqueues a persistent event without worker broadcast, then runs side effects", async () => {
     const deps = makePublisherDeps();
     const publisher = new TaskEngineEventPublisher(deps);

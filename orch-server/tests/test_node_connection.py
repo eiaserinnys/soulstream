@@ -1200,6 +1200,26 @@ class TestAttachmentPaths:
         assert sent["type"] == CMD_INTERVENE
         assert sent["extra_context_items"] == context_items
 
+    async def test_send_intervene_includes_rate_limit_reset_metadata_when_provided(self, node, ws):
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({"ok": True})
+
+        ws.send_json.side_effect = resolve_future
+
+        await node.send_intervene(
+            "sess-1",
+            "completion alert",
+            rate_limit_type="five_hour",
+            resets_at="2026-09-26T03:12:00.000Z",
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["rate_limit_type"] == "five_hour"
+        assert sent["resets_at"] == "2026-09-26T03:12:00.000Z"
+
     async def test_send_intervene_no_attachment_paths_key_when_none(self, node, ws):
         """attachment_paths가 None이면 payload에 해당 키가 없다."""
         async def resolve_future(*args, **kwargs):

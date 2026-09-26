@@ -136,6 +136,8 @@ export interface InterventionMessage {
    * intentionally not copied into intervention_sent/user_message wire payloads.
    */
   source?: string;
+  rateLimitType?: string;
+  resetsAt?: string;
   deliveryId?: string;
   deliveryIntent?: DeliveryIntent;
   completionId?: string;
@@ -433,6 +435,9 @@ export interface Task {
   claudeRuntime?: ClaudeRuntimeState;
 
   // === 런타임 전용 (DB·wire에 직접 박지 않음) ===
+
+  /** Rate-limit metadata retained for the terminal completion notification. */
+  rateLimitStopInfo?: { rateLimitType?: string; resetsAt?: string };
 
   /** 현재 엔진 turn에 native-delivered 개입을 합류시키는 기존 receipt 경계. */
   activeDeliveryTurnReceipt?: ActiveDeliveryTurnReceipt;
