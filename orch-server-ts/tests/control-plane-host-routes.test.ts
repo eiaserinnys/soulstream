@@ -12,8 +12,6 @@ import type { PersistenceHostRepositories } from "../src/control_plane/persisten
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 import { SessionDeliveryNotificationRepository } from
   "../src/control_plane/repositories/session_delivery_notification_repository.js";
-import { ClaudeRuntimeHostClient } from
-  "../../soul-server-ts/src/control_plane/persistence_host_clients.js";
 
 const token = "service-token";
 const apps: ReturnType<typeof Fastify>[] = [];
@@ -658,6 +656,21 @@ describe("control-plane host routes", () => {
   });
 
   it("round-trips transcript entry keys unchanged through the worker transport and host store", async () => {
+    const workerModules = await vi.importActual<Record<string, unknown>>(
+      "../../soul-server-ts/src/control_plane/persistence_host_clients.js",
+    );
+    const ClaudeRuntimeHostClient = workerModules.ClaudeRuntimeHostClient as new (
+      options: unknown,
+    ) => {
+      appendClaudeTranscriptEntries(key: unknown, entries: unknown[]): Promise<number>;
+      appendClaudeTranscriptEntriesIdempotent(input: {
+        idempotencyKey: string;
+        sessionId: string;
+        key: unknown;
+        entries: unknown[];
+      }): Promise<number>;
+      loadClaudeTranscriptEntries(key: unknown): Promise<unknown>;
+    };
     const storedEntries: unknown[] = [];
     const appendClaudeTranscriptEntries = vi.fn(async (_key: unknown, entries: unknown[]) => {
       storedEntries.push(...entries);
