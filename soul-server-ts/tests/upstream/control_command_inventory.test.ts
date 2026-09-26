@@ -6,6 +6,7 @@ import { createAuthCommandFamily } from "../../src/upstream/auth_command_family.
 import { createClaudeRuntimeCommandFamily } from "../../src/upstream/claude_runtime_command_family.js";
 import {
   CONTROL_COMMAND_INVENTORY,
+  boundedResultTimeoutMs,
   controlCommandPolicy,
 } from "../../src/upstream/control_command_inventory.js";
 import { createHealthCommandFamily } from "../../src/upstream/health_command_family.js";
@@ -156,5 +157,16 @@ describe("control command inventory", () => {
     expect(() => controlCommandPolicy("unreviewed_command")).toThrow(
       /not present in the control command inventory/,
     );
+  });
+
+  it("gives external provider queries their 14.5 second result budget", () => {
+    for (const commandType of [
+      "provider_usage_get",
+      "claude_auth_get_usage",
+      "claude_auth_get_profile",
+    ]) {
+      expect(boundedResultTimeoutMs(commandType, 900)).toBe(14_500);
+    }
+    expect(boundedResultTimeoutMs("list_sessions", 900)).toBe(900);
   });
 });

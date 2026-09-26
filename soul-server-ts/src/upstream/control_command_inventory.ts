@@ -82,7 +82,18 @@ export function controlCommandPolicy(commandType: string): ControlCommandInvento
 }
 
 export function boundedResultTimeoutMs(commandType: string, fallbackMs: number): number {
-  return commandType === "worktree_list" ? 130_000 : fallbackMs;
+  switch (commandType) {
+    case "worktree_list":
+      return 130_000;
+    case "provider_usage_get":
+    case "claude_auth_get_usage":
+    case "claude_auth_get_profile":
+      // Usage work can consume its 14s internal budget, and profile is in the
+      // same external HTTP family. Stay below orch's 15s command limit.
+      return 14_500;
+    default:
+      return fallbackMs;
+  }
 }
 
 function entry(
