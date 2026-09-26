@@ -12,6 +12,7 @@ export interface ConfigStoreOptions<TConfig> {
   parse: (raw: string) => TConfig;
   stringify: (config: TConfig) => string;
   onAfterApply?: (config: TConfig) => MaybePromise<void>;
+  assertChange?: (current: TConfig, next: TConfig) => MaybePromise<void>;
 }
 
 export interface ConfigReadResult<TConfig> {
@@ -70,6 +71,7 @@ export class ConfigStore<TConfig> {
   private readonly parseRaw: (raw: string) => TConfig;
   private readonly stringifyConfig: (config: TConfig) => string;
   private readonly onAfterApply?: (config: TConfig) => MaybePromise<void>;
+  private readonly assertChange?: (current: TConfig, next: TConfig) => MaybePromise<void>;
 
   constructor(options: ConfigStoreOptions<TConfig>) {
     this.displayConfigPath = options.configPath;
@@ -78,6 +80,7 @@ export class ConfigStore<TConfig> {
     this.parseRaw = options.parse;
     this.stringifyConfig = options.stringify;
     this.onAfterApply = options.onAfterApply;
+    this.assertChange = options.assertChange;
   }
 
   read(): ConfigReadResult<TConfig> {
@@ -130,6 +133,7 @@ export class ConfigStore<TConfig> {
   ): Promise<ConfigChangePlan<TConfig>> {
     const current = this.read();
     const nextConfig = this.normalize(await mutate(current.config));
+    await this.assertChange?.(current.config, nextConfig);
     const currentCanonicalRaw = this.stringifyConfig(current.config);
     const nextRaw = this.stringifyConfig(nextConfig);
     const changed = currentCanonicalRaw !== nextRaw;
@@ -155,6 +159,7 @@ export class ConfigStore<TConfig> {
     const current = this.read();
     this.assertExpectedChecksum(current.checksum, options.expectedConfigChecksum);
     const nextConfig = this.normalize(await mutate(current.config));
+    await this.assertChange?.(current.config, nextConfig);
     const currentCanonicalRaw = this.stringifyConfig(current.config);
     const nextRaw = this.stringifyConfig(nextConfig);
     const changed = currentCanonicalRaw !== nextRaw;
@@ -199,6 +204,7 @@ export class ConfigStore<TConfig> {
     const rollbackRaw = fs.readFileSync(resolvedSnapshotPath, "utf-8");
     const rollbackConfig = this.parseRaw(rollbackRaw);
     const current = this.read();
+    await this.assertChange?.(current.config, rollbackConfig);
     const changed = current.raw !== rollbackRaw;
     const includeTextDiff = options.includeTextDiff ?? true;
     const rollbackChecksum = changed ? checksumRaw(rollbackRaw) : current.checksum;

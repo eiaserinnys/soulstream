@@ -31,10 +31,7 @@ import { TaskIdentityHostClient } from "../work-task/task_identity_host_client.j
 import { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
 import { FolderHostClient } from "../folder/folder_host_client.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
-import {
-  SessionLegacyProjection,
-  SessionPageBindingService,
-} from "../page/session_page_binding_service.js";
+import { SessionLegacyProjection, SessionPageBindingService } from "../page/session_page_binding_service.js";
 import { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { ScheduleHostClient } from "../schedule/schedule_host_client.js";
 import { buildServer } from "../server.js";
@@ -74,7 +71,9 @@ export async function composeWorkerRuntime(
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,
     agentRegistry,
-    profileResolver: (profiles) => mcpConfigService.resolveProfiles(profiles),
+    profileSource: agentProfileSource,
+    profileResolver: (profiles) => mcpConfigService.resolveProfilesIsolated(profiles, logger),
+    isDbIdentityOwnedProfile: agentProfileSource?.isDbIdentityOwnedProfile?.bind(agentProfileSource),
     onAfterRegistryReplace: async () => {
       if (!upstreamAdapter) {
         logger.warn(

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentProfileSchema } from "../src/agent_registry.js";
 import {
@@ -65,6 +65,32 @@ describe("McpConfigService", () => {
     expect(service.listRegistry().servers).toEqual([]);
     expect(service.listProfiles().profiles).toEqual([]);
     expect(service.resolveAgentProfile(profile)).toBe(profile);
+  });
+
+  it("isolates a missing MCP profile to its agent", () => {
+    const service = new McpConfigService({ agentsConfigPath });
+    const good = AgentProfileSchema.parse({
+      id: "good-agent",
+      name: "Good",
+      backend: "codex",
+      workspace_dir: "/tmp/good",
+    });
+    const broken = AgentProfileSchema.parse({
+      id: "broken-agent",
+      name: "Broken",
+      backend: "codex",
+      workspace_dir: "/tmp/broken",
+      mcp_profile: "missing",
+    });
+    const logger = { warn: vi.fn() };
+
+    const resolved = service.resolveProfilesIsolated([good, broken], logger);
+
+    expect(resolved).toEqual([good, broken]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      { agentId: "broken-agent", err: new Error("MCP profile not found: missing") },
+      "Agent MCP profile resolution failed; other profiles remain available",
+    );
   });
 
   it("redacts sensitive URL query values from registry listings without changing runtime URLs", () => {

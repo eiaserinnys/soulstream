@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AgentRegistry } from "../src/agent_registry.js";
+import { AgentRegistry, readAgentsConfig } from "../src/agent_registry.js";
 import { AgentConfigService } from "../src/agent_config_service.js";
 import { McpConfigService } from "../src/mcp_config_service.js";
 
@@ -79,6 +79,24 @@ describe("AgentConfigService", () => {
     expect(registry.get("codex-default")?.name).toBe("Codex Updated");
     expect(registry.get("codex-default")?.max_turns).toBe(25);
     expect(registry.get("codex-default")?.model).toBe("gpt-5.3-codex-spark");
+  });
+
+  it("rejects YAML identity edits for profiles owned by a DB overlay", async () => {
+    service = new AgentConfigService({
+      configPath,
+      snapshotRoot,
+      agentRegistry: registry,
+      isDbIdentityOwnedProfile: (profileId) => profileId === "codex-default",
+    });
+
+    await expect(service.replaceProfile({
+      id: "codex-default",
+      name: "Changed in YAML",
+      backend: "codex",
+      workspace_dir: "/tmp/codex",
+    })).rejects.toThrow("identity fields are owned by the DB overlay: name");
+
+    expect(fs.readFileSync(configPath, "utf-8")).toContain("name: Codex");
   });
 
   it("notifies after registry reload when a profile apply changes config", async () => {

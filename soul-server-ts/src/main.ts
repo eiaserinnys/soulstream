@@ -85,7 +85,7 @@ async function main(): Promise<void> {
   let agentRegistry;
   try {
     agentRegistry = loadAgentRegistry(env.AGENTS_CONFIG_PATH, {
-      profileResolver: (profiles) => mcpConfigService.resolveProfiles(profiles),
+      profileResolver: (profiles) => mcpConfigService.resolveProfilesIsolated(profiles, logger),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -117,7 +117,9 @@ async function main(): Promise<void> {
       ? { authorization: `Bearer ${env.AUTH_BEARER_TOKEN}` }
       : {},
     logger,
-    profileResolver: (profiles) => mcpConfigService.resolveProfiles(profiles),
+    profileResolver: (profiles) =>
+      profiles.map((profile) => mcpConfigService.resolveAgentProfile(profile)),
+    agentRegistry,
   });
   await agentProfileSource.initialize();
 
