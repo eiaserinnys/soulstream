@@ -118,8 +118,18 @@ export class PersistenceHostTransport {
     domain: string,
     operation: string,
     args: unknown[],
-    options: { timeoutMs?: number; signal?: AbortSignal } = {},
+    options: {
+      timeoutMs?: number;
+      signal?: AbortSignal;
+      opaqueArgumentIndexes?: readonly number[];
+      opaqueArgumentKeys?: readonly string[];
+    } = {},
   ): Promise<T> {
+    const { opaqueArgumentIndexes = [], opaqueArgumentKeys = [], ...requestOptions } = options;
+    const opaqueIndexes = new Set(opaqueArgumentIndexes);
+    const opaqueKeys = opaqueArgumentKeys.length === 0
+      ? OPAQUE_ARGUMENT_KEYS
+      : new Set([...OPAQUE_ARGUMENT_KEYS, ...opaqueArgumentKeys]);
     const requestId = randomUUID();
     const nodeRequestedAtMs = Date.now();
     let response: Response | undefined;
@@ -128,9 +138,13 @@ export class PersistenceHostTransport {
       response = await this.send(
         "POST",
         `/api/${domain}/host/${encodeURIComponent(operation)}`,
-        { args: snakeCase(args) },
         {
-          ...options,
+          args: args.map((argument, index) => opaqueIndexes.has(index)
+            ? argument
+            : snakeCase(argument, opaqueKeys)),
+        },
+        {
+          ...requestOptions,
           headers: { [REQUEST_ID_HEADER]: requestId },
         },
       );
@@ -229,8 +243,8 @@ function subtract(later: number | null, earlier: number | null): number | null {
   return later === null || earlier === null ? null : later - earlier;
 }
 
-function snakeCase(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(snakeCase);
+function snakeCase(value: unknown, opaqueKeys: ReadonlySet<string> = OPAQUE_ARGUMENT_KEYS): unknown {
+  if (Array.isArray(value)) return value.map(child => snakeCase(child, opaqueKeys));
   if (!value || typeof value !== "object" || value instanceof Date) return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>)
     .filter(([, child]) => child !== undefined)
@@ -238,7 +252,7 @@ function snakeCase(value: unknown): unknown {
       const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
       return [
         snakeKey,
-        OPAQUE_ARGUMENT_KEYS.has(snakeKey) ? child : snakeCase(child),
+        opaqueKeys.has(snakeKey) ? child : snakeCase(child, opaqueKeys),
       ];
     }));
 }
