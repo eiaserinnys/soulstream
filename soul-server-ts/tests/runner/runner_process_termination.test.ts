@@ -196,6 +196,7 @@ function dependencies(
   overrides: Partial<RunnerProcessTerminationDependencies>,
 ): RunnerProcessTerminationDependencies {
   return {
+    platform: "linux",
     inspectWriterLock: sequence({ kind: "free" }),
     inspectProcess: async () => ({ alive: false, startIdentity: null }),
     signalPid: vi.fn(),
