@@ -46,10 +46,10 @@ describe("terminal transition application chain", () => {
       persistence,
     });
     const notify = vi.fn().mockResolvedValue(undefined);
+    lifecycleTransition.setCompletionNotifier({ notify });
     const finalizer = new TaskExecutorFinalizer({
       lifecycleTransition,
       logger: silentLogger,
-      completionNotifier: { notify },
     });
     const task: Task = {
       agentSessionId: "sess-1",

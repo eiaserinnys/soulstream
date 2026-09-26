@@ -1,4 +1,4 @@
-import type { Task } from "./task_models.js";
+import { isTerminalTaskStatus, type Task } from "./task_models.js";
 import type { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
 
@@ -29,13 +29,14 @@ export class TaskRunnerRecovery {
     task: Task,
     message: string,
   ): Promise<void> {
+    if (isTerminalTaskStatus(task.status)) return;
     const runner = task.runner;
     if (runner) releaseTaskRunner(task, runner);
     task.executionPromise = undefined;
-    task.status = "error";
     task.error = message;
-    task.completedAt = new Date();
-    await this.deps.lifecycleTransition.persistExecutorFinalState(task);
+    this.deps.lifecycleTransition.applyRunnerTerminalFact(task, "reaped", message);
+    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true);
+    await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
   }
 
   async projectClosed(task: Task, detail: string): Promise<boolean> {
@@ -44,9 +45,9 @@ export class TaskRunnerRecovery {
     if (runner) releaseTaskRunner(task, runner);
     task.executionPromise = undefined;
     this.deps.lifecycleTransition.applyRunnerTerminalFact(task, "closed", detail);
-    return (
-      await this.deps.lifecycleTransition.persistExecutorFinalState(task)
-    ).terminalTransitionApplied;
+    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true);
+    await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
+    return persistence.terminalTransitionApplied;
   }
 
 }

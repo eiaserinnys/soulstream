@@ -41,8 +41,7 @@ import { buildServer } from "../server.js";
 import { sendMessageToSession } from "../task/session_message_sender.js";
 import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js";
 import { redeliverStoredDeliveryContent } from "../task/delivery_row_intervention.js";
-import { TransientEventLogAggregator } from
-  "../task/transient_event_log_aggregator.js";
+import { TransientEventLogAggregator } from "../task/transient_event_log_aggregator.js";
 import { TaskManager } from "../task/task_manager.js";
 import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
@@ -307,6 +306,7 @@ export async function composeWorkerRuntime(
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
     ...(worktreeService ? { worktreeResolver: worktreeService } : {}),
   });
+  taskManager.setCompletionNotifier(taskRuntime.completionNotifier);
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({
     env,
     runnerProcessFactory: runnerProcess?.runtimeFactory,

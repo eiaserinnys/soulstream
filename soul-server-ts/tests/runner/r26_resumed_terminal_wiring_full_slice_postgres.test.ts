@@ -118,9 +118,9 @@ describe("R26 resumed terminal wiring production full slice", () => {
         true,
         deliveryRepository as never,
       );
+      lifecycle.setCompletionNotifier(completionNotifier);
       const initialFinalizer = new TaskExecutorFinalizer({
         lifecycleTransition: lifecycle,
-        completionNotifier,
         logger,
       });
 
@@ -179,8 +179,9 @@ describe("R26 resumed terminal wiring production full slice", () => {
             );
             return replayPersistence;
           },
+          notifyCompletionIfApplied: async (recoveredTask, persistence) =>
+            await lifecycle.notifyCompletionIfApplied(recoveredTask, persistence),
         },
-        completionNotifier,
         logger,
       });
       const recover = async (recoveredTask: Task) =>
