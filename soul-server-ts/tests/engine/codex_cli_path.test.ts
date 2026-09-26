@@ -66,6 +66,19 @@ describe("resolveCodexCliPath", () => {
     });
   });
 
+  it("Windows에서 shim보다 codex.exe를 먼저 선택한다", () => {
+    const dir = makeTempDir();
+    const cmdShim = join(dir, "codex.cmd");
+    const exe = join(dir, "codex.exe");
+    makeFile(cmdShim);
+    makeFile(exe);
+
+    expect(resolveCodexCliPath({ PATH: dir, HOME: "" }, "win32")).toEqual({
+      path: exe,
+      source: "PATH",
+    });
+  });
+
   it("Windows Path 키도 PATH처럼 처리한다", () => {
     const dir = makeTempDir();
     const cmdShim = join(dir, "codex.cmd");

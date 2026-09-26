@@ -52,15 +52,33 @@ describe("runner registration reader", () => {
     });
   });
 
-  it("rejects a complete identity that disagrees with the pid sidecar", async () => {
+  it("uses the held kernel lock when a complete identity conflicts with a stale pid sidecar", async () => {
     const fixture = await writeRegistrationFixture("sidecar-conflict", {
       identity: "complete",
       sidecarPid: STALE_PID,
       lifecyclePid: CURRENT_PID,
     });
 
-    await expect(readFixture(fixture, CURRENT_START_IDENTITY))
-      .rejects.toThrow(`runner pid evidence disagrees: ${fixture.paths.sessionDirectory}`);
+    await expect(readFixture(fixture, CURRENT_START_IDENTITY)).resolves.toMatchObject({
+      pid: CURRENT_PID,
+      pidAlive: true,
+    });
+  });
+
+  it("treats conflicting live PID evidence as dead residue when the kernel lock is free", async () => {
+    const fixture = await writeRegistrationFixture("reused-pid-free-lock", {
+      identity: "complete",
+      sidecarPid: STALE_PID,
+      lifecyclePid: CURRENT_PID,
+    });
+
+    await expect(readRunnerRegistrationSummary(fixture.paths.sessionDirectory, {
+      verifyProcessIdentity: true,
+      inspectWriterLock: async () => ({ kind: "free" }),
+    })).resolves.toMatchObject({
+      pid: CURRENT_PID,
+      pidAlive: false,
+    });
   });
 
   it("marks a complete identity dead when the held lock has another start identity", async () => {
@@ -75,6 +93,25 @@ describe("runner registration reader", () => {
       pidAlive: false,
       pidStartIdentity: CURRENT_START_IDENTITY,
     });
+  });
+
+  it("stops advertising a registration after three unavailable lock scans", async () => {
+    const fixture = await writeRegistrationFixture("unavailable-lock", {
+      identity: "complete",
+      sidecarPid: CURRENT_PID,
+      lifecyclePid: CURRENT_PID,
+    });
+
+    const options: Parameters<typeof readRunnerRegistrationSummary>[1] = {
+      verifyProcessIdentity: true,
+      inspectWriterLock: async () => ({ kind: "unavailable" }),
+    };
+
+    const first = await readRunnerRegistrationSummary(fixture.paths.sessionDirectory, options);
+    const second = await readRunnerRegistrationSummary(fixture.paths.sessionDirectory, options);
+    const third = await readRunnerRegistrationSummary(fixture.paths.sessionDirectory, options);
+
+    expect([first.pidAlive, second.pidAlive, third.pidAlive]).toEqual([true, true, false]);
   });
 
   it.each(["absent", "pending"] as const)(
@@ -95,7 +132,7 @@ describe("runner registration reader", () => {
   );
 
   it.each(["absent", "pending"] as const)(
-    "rejects live sidecar and lifecycle disagreement when the identity is %s",
+    "uses the held kernel lock when pid sidecar and lifecycle disagree and identity is %s",
     async (identity) => {
       const fixture = await writeRegistrationFixture(`conflict-${identity}`, {
         identity,
@@ -103,8 +140,10 @@ describe("runner registration reader", () => {
         lifecyclePid: STALE_PID,
       });
 
-      await expect(readFixture(fixture, CURRENT_START_IDENTITY))
-        .rejects.toThrow(`runner pid evidence disagrees: ${fixture.paths.sessionDirectory}`);
+      await expect(readFixture(fixture, CURRENT_START_IDENTITY)).resolves.toMatchObject({
+        pid: CURRENT_PID,
+        pidAlive: true,
+      });
     },
   );
 });

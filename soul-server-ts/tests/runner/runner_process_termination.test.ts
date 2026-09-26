@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  exactRunnerStartIdentitiesMatch,
   terminateExactRunner,
   type RunnerProcessTerminationDependencies,
 } from "../../src/runner/runner_process_termination.js";
@@ -13,6 +14,37 @@ const expectedRunner = {
 const lockPath = "/runner/session-a/runner.lock";
 
 describe("terminateExactRunner", () => {
+  it("matches the runner self timestamp to an equivalent Windows process identity", () => {
+    const unixStartMs = 1_700_000_000_123;
+    const windowsTicks = 621_355_968_000_000_000n + BigInt(unixStartMs) * 10_000n;
+
+    expect(exactRunnerStartIdentitiesMatch(
+      `node-start-${unixStartMs}`,
+      `windows-process-${windowsTicks}`,
+    )).toBe(true);
+  });
+
+  it("terminates the exact Windows process tree after the IPC close request", async () => {
+    const terminateProcessTree = vi.fn(async () => undefined);
+    const requestShutdown = vi.fn(async () => undefined);
+    const signalPid = vi.fn();
+
+    await expect(terminateExactRunner(expectedRunner, dependencies({
+      platform: "win32",
+      inspectWriterLock: sequence(
+        { kind: "held", owner: expectedRunner },
+        { kind: "free" },
+      ),
+      requestShutdown,
+      terminateProcessTree,
+      signalPid,
+    }), lockPath, undefined, "/runner/session-a/runner.sock")).resolves.toBeUndefined();
+
+    expect(requestShutdown).toHaveBeenCalledWith("/runner/session-a/runner.sock");
+    expect(terminateProcessTree).toHaveBeenCalledWith(expectedRunner.pid);
+    expect(signalPid).not.toHaveBeenCalled();
+  });
+
   it("treats a free lock as death even when an unrelated process occupies the stale pid", async () => {
     const signalPid = vi.fn();
     const inspectProcess = vi.fn(async () => {

@@ -4,6 +4,7 @@ import {
   type SpawnOptionsWithoutStdio,
 } from "node:child_process";
 
+import { terminateWindowsProcessTree } from "../../process/terminate_windows_process_tree.js";
 import { setSessionEngineOomScore } from "../session_engine_oom_score.js";
 import type { AppServerTransportUrl } from "./protocol.js";
 import type { AppServerJsonMessage, AppServerTransport } from "./transport.js";
@@ -35,6 +36,7 @@ export interface StdioAppServerTransportOptions {
   logger?: AppServerTransportLogger;
   closeGraceMs?: number;
   spawnProcess?: StdioSpawnProcess;
+  terminateProcessTree?: (pid: number) => Promise<void>;
   applyOomScore?: (pid: number | undefined) => void;
 }
 
@@ -61,6 +63,8 @@ class StdioAppServerTransport implements AppServerTransport {
   private readonly child: AppServerChildProcess;
   private readonly logger: AppServerTransportLogger;
   private readonly closeGraceMs: number;
+  private readonly platform: NodeJS.Platform;
+  private readonly terminateProcessTree?: (pid: number) => Promise<void>;
   private readonly messageHandlers = new Set<(message: AppServerJsonMessage) => void>();
   private readonly errorHandlers = new Set<(error: Error) => void>();
   private readonly closeHandlers = new Set<(error?: Error) => void>();
@@ -79,6 +83,8 @@ class StdioAppServerTransport implements AppServerTransport {
     this.closeGraceMs = options.closeGraceMs ?? 2_000;
     const spawnProcess = options.spawnProcess ?? defaultSpawnProcess;
     const platform = options.platform ?? process.platform;
+    this.platform = platform;
+    this.terminateProcessTree = options.terminateProcessTree;
     this.child = spawnProcess(command, args, {
       cwd: options.cwd,
       env: options.env,
@@ -139,7 +145,18 @@ class StdioAppServerTransport implements AppServerTransport {
     this.closePromise = new Promise((resolve) => {
       this.resolveClose = resolve;
     });
-    this.child.kill("SIGTERM");
+    if (this.platform === "win32" && this.child.pid !== undefined) {
+      void (this.terminateProcessTree ?? terminateWindowsProcessTree)(this.child.pid)
+        .catch((error: unknown) => {
+          this.logger.error(
+            { err: error, pid: this.child.pid },
+            "Codex app-server process-tree termination failed",
+          );
+          this.child.kill("SIGKILL");
+        });
+    } else {
+      this.child.kill("SIGTERM");
+    }
     this.closeTimer = setTimeout(() => {
       if (!this.closed) {
         this.child.kill("SIGKILL");
