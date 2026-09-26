@@ -79,7 +79,17 @@ export interface NewSessionAgentProfileSource {
   readonly resolve: (profileId: string) => Promise<AgentProfileResolution | undefined>;
   readonly list: () => Promise<readonly AgentProfileResolution[]>;
   readonly state: () => AgentProfileSourceState;
+  readonly rebuild?: () => void;
   readonly isDbIdentityOwnedProfile?: (profileId: string) => boolean;
+}
+
+export function rebuildAgentProfileRegistry(
+  source: NewSessionAgentProfileSource | undefined,
+): void {
+  if (!source?.rebuild) {
+    throw new Error("Agent profile source cannot rebuild the shared registry");
+  }
+  source.rebuild();
 }
 
 export type AgentProfileSourceOptions = {
@@ -134,6 +144,10 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
 
   state(): AgentProfileSourceState {
     return this.currentState;
+  }
+
+  rebuild(): void {
+    this.buildSnapshot();
   }
 
   isDbIdentityOwnedProfile(profileId: string): boolean {

@@ -4,7 +4,6 @@ import {
   AgentsConfigSchema,
   type AgentAtomContext,
   type AgentProfile,
-  type AgentRegistry,
   type AgentsConfig,
 } from "./agent_registry.js";
 import {
@@ -19,7 +18,7 @@ type MaybePromise<T> = T | Promise<T>;
 export interface AgentConfigServiceOptions {
   configPath: string;
   snapshotRoot?: string;
-  agentRegistry?: Pick<AgentRegistry, "replace">;
+  rebuildProfileRegistry: () => MaybePromise<void>;
   profileResolver?: (profiles: AgentProfile[]) => AgentProfile[];
   isDbIdentityOwnedProfile?: (profileId: string) => boolean;
   onAfterRegistryReplace?: () => MaybePromise<void>;
@@ -107,8 +106,8 @@ export class AgentConfigService {
       stringify: stringifyAgentsConfig,
       assertChange: (current, next) =>
         this.assertDbIdentityFieldsUnchanged(current, next, options.isDbIdentityOwnedProfile),
-      onAfterApply: async (config) => {
-        options.agentRegistry?.replace(this.resolveProfiles(config.agents));
+      onAfterApply: async () => {
+        await options.rebuildProfileRegistry();
         await options.onAfterRegistryReplace?.();
       },
     });

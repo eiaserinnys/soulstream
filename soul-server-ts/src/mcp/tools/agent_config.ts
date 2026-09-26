@@ -1,8 +1,8 @@
 /**
  * agents.yaml 도구 — agent profile 정본을 MCP에서 읽고 편집한다.
  *
- * 파일 쓰기 후 같은 AgentRegistry 인스턴스를 reload하여, 새 세션 생성 경로가 즉시
- * 갱신된 profile을 보도록 한다. 이미 실행 중인 세션은 시작 당시 profile을 유지한다.
+ * 파일 쓰기 후 AgentProfileSource가 YAML과 DB overlay를 합쳐 registry를 재구성한다.
+ * 이미 실행 중인 세션은 시작 당시 profile을 유지한다.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -11,6 +11,7 @@ import {
   AgentConfigService,
   toAgentConfigSemanticChangeWire,
 } from "../../agent_config_service.js";
+import { rebuildAgentProfileRegistry } from "../../agent_profile_source.js";
 import {
   AgentAtomContextSchema,
   AgentProfileSchema,
@@ -28,8 +29,10 @@ export function registerAgentConfigTools(
   });
   const agentConfig = runtime.agentConfigService ?? new AgentConfigService({
     configPath: runtime.agentsConfigPath,
-    agentRegistry: runtime.agentRegistry,
+    rebuildProfileRegistry: () => rebuildAgentProfileRegistry(runtime.agentProfileSource),
     profileResolver: (profiles) => mcpConfig.resolveProfiles(profiles),
+    isDbIdentityOwnedProfile: runtime.agentProfileSource?.isDbIdentityOwnedProfile
+      ?.bind(runtime.agentProfileSource),
   });
 
   server.registerTool(

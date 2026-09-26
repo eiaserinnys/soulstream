@@ -1,4 +1,5 @@
 import { AgentConfigService } from "../agent_config_service.js";
+import { rebuildAgentProfileRegistry } from "../agent_profile_source.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { CatalogService } from "../catalog/catalog_service.js";
@@ -71,7 +72,7 @@ export async function composeWorkerRuntime(
   let upstreamAdapter: UpstreamAdapter | null = null;
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,
-    agentRegistry,
+    rebuildProfileRegistry: () => rebuildAgentProfileRegistry(agentProfileSource),
     profileResolver: (profiles) => mcpConfigService.resolveProfilesIsolated(profiles, logger),
     isDbIdentityOwnedProfile: agentProfileSource?.isDbIdentityOwnedProfile?.bind(agentProfileSource),
     onAfterRegistryReplace: async () => {

@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AgentRegistry } from "../src/agent_registry.js";
+import { AgentRegistry, readAgentsConfig } from "../src/agent_registry.js";
 import { AgentConfigService } from "../src/agent_config_service.js";
 import { McpConfigService } from "../src/mcp_config_service.js";
 
@@ -44,7 +44,7 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      agentRegistry: registry,
+      rebuildProfileRegistry: () => registry.replace(readAgentsConfig(configPath).agents),
     });
   });
 
@@ -85,7 +85,7 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      agentRegistry: registry,
+      rebuildProfileRegistry: () => registry.replace(readAgentsConfig(configPath).agents),
       isDbIdentityOwnedProfile: (profileId) => profileId === "codex-default",
     });
 
@@ -106,7 +106,7 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      agentRegistry: registry,
+      rebuildProfileRegistry: () => registry.replace(readAgentsConfig(configPath).agents),
       onAfterRegistryReplace,
     });
 
@@ -125,7 +125,7 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      agentRegistry: registry,
+      rebuildProfileRegistry: () => registry.replace(readAgentsConfig(configPath).agents),
       onAfterRegistryReplace,
     });
 
@@ -343,7 +343,9 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      agentRegistry: registry,
+      rebuildProfileRegistry: () => registry.replace(
+        mcpConfig.resolveProfiles(readAgentsConfig(configPath).agents),
+      ),
       profileResolver: (profiles) => mcpConfig.resolveProfiles(profiles),
     });
 
@@ -382,7 +384,9 @@ describe("AgentConfigService", () => {
     service = new AgentConfigService({
       configPath,
       snapshotRoot,
-      agentRegistry: registry,
+      rebuildProfileRegistry: () => registry.replace(
+        mcpConfig.resolveProfiles(readAgentsConfig(configPath).agents),
+      ),
       profileResolver: (profiles) => mcpConfig.resolveProfiles(profiles),
     });
 

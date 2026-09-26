@@ -6,6 +6,7 @@ import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry, readAgentsConfig } from "../src/agent_registry.js";
+import { AgentConfigService } from "../src/agent_config_service.js";
 import { AgentProfileSource } from "../src/agent_profile_source.js";
 
 const directories: string[] = [];
@@ -41,6 +42,40 @@ function remote(overrides: Record<string, unknown> = {}) {
 }
 
 describe("AgentProfileSource", () => {
+  it("rebuilds DB overlays after an unrelated YAML profile apply", async () => {
+    const files = await fixture();
+    const yaml = await readFile(files.agentsConfigPath, "utf8");
+    await writeFile(files.agentsConfigPath, `${yaml}  - id: codex-default\n    name: Codex\n    backend: codex\n    workspace_dir: /tmp/codex\n`, "utf8");
+    const agentRegistry = new AgentRegistry(readAgentsConfig(files.agentsConfigPath).agents);
+    const source = new AgentProfileSource({
+      ...files,
+      runtimeUrl: "http://orch/api/agent-profiles/runtime",
+      logger,
+      fetchRuntime: async () => ({ profiles: [remote()] }),
+      agentRegistry,
+    });
+    await source.initialize();
+
+    const service = new AgentConfigService({
+      configPath: files.agentsConfigPath,
+      rebuildProfileRegistry: () => source.rebuild(),
+      isDbIdentityOwnedProfile: source.isDbIdentityOwnedProfile.bind(source),
+    });
+    await service.replaceProfile({
+      id: "codex-default",
+      name: "Codex Updated",
+      backend: "codex",
+      workspace_dir: "/tmp/codex",
+    });
+
+    expect(agentRegistry.get("roselin")).toMatchObject({
+      name: "DB Roselin",
+      default_preset: "db-preset",
+      aliases: [{ id: "db-alias" }],
+    });
+    expect(agentRegistry.get("codex-default")?.name).toBe("Codex Updated");
+  });
+
   it("updates the shared registry so resumed sessions keep the DB overlay", async () => {
     const files = await fixture();
     const agentRegistry = new AgentRegistry(readAgentsConfig(files.agentsConfigPath).agents);
