@@ -89,6 +89,7 @@ export async function composeClaudeRuntime(
   const backgroundLifecycle = new ClaudeBackgroundTaskLifecycle({
     repository: params.db.claudeBackgroundTasks(),
     sourceNode: params.sourceNode,
+    logger: params.logger,
   });
   const backgroundGenerationRecovery = new ClaudeBackgroundGenerationStartupRecovery({
     repository: params.db.claudeBackgroundTasks(),

@@ -1,3 +1,5 @@
+import type { Logger } from "pino";
+
 import type { ClaudeClientEvent } from "../engine/claude_event_mapper.js";
 import { readClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
@@ -31,8 +33,11 @@ import { CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE } from "./claude_runtime_task_follo
 interface ClaudeBackgroundTaskLifecycleDeps {
   repository: ClaudeBackgroundTaskRepository;
   sourceNode: string;
+  logger?: Pick<Logger, "warn">;
   now?: () => Date;
 }
+
+const OBSERVE_RETRY_DELAYS_MS = [100, 250, 500] as const;
 
 /** Persists SDK background lifecycle before the event is exposed to callers. */
 export class ClaudeBackgroundTaskLifecycle {
@@ -74,7 +79,7 @@ export class ClaudeBackgroundTaskLifecycle {
       ? new Date(timestamp * 1_000)
       : this.now();
     if (!parsed.terminalStatus) {
-      const row = await this.deps.repository.observeGeneration({
+      const observation = {
         ...(idempotencyKey ? { idempotencyKey } : {}),
         sourceNode: this.deps.sourceNode,
         sessionId,
@@ -93,7 +98,31 @@ export class ClaudeBackgroundTaskLifecycle {
         summary: parsed.summary,
         outputFile: parsed.outputFile,
         observedAt,
-      });
+      };
+      let row: ClaudeBackgroundTaskGenerationRow;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          row = await this.deps.repository.observeGeneration(observation);
+          break;
+        } catch (err) {
+          const delayMs = isRetryablePersistenceFailure(err)
+            ? OBSERVE_RETRY_DELAYS_MS[attempt]
+            : undefined;
+          if (delayMs === undefined) {
+            this.deps.logger?.warn(
+              {
+                err,
+                sessionId,
+                taskId: parsed.taskId,
+                attempts: attempt + 1,
+              },
+              "Claude background runtime observation was not persisted; continuing the turn",
+            );
+            return true;
+          }
+          await wait(delayMs);
+        }
+      }
       return row.status === "pending" || row.status === "running";
     }
 
@@ -399,4 +428,15 @@ function revision(value: unknown): string | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? String(value)
     : asString(value);
+}
+
+function isRetryablePersistenceFailure(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "retryable" in error
+    && error.retryable === true;
+}
+
+function wait(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
