@@ -15,12 +15,8 @@ import type {
   PendingNodeCommand,
   RequestResponseNodeCommandPayload,
 } from "../node/pending_commands.js";
-import {
-  PendingNodeCommandRejectedError,
-  PendingNodeCommandTimeoutError,
-} from "../node/pending_commands.js";
 import type { NodeConnectionSnapshot } from "../node/registry_types.js";
-import { NodeCommandTransportError } from "../session/session_command_transport.js";
+import { mapNodeCommandError } from "../http/api_errors.js";
 import type { RoutedPendingSessionCommand } from "../session/session_command_router.js";
 import type {
   LiveNodeHttpClientBoundary,
@@ -429,26 +425,26 @@ function requireConnectedNode(
 
 function mapCommandError(error: unknown): NodeAgentProfileRouteError {
   if (error instanceof NodeAgentProfileRouteError) return error;
-  if (
-    error instanceof NodeCommandTransportError ||
-    error instanceof PendingNodeCommandTimeoutError ||
-    isDisconnectedCommandError(error)
-  ) {
+  const nodeCommandError = mapNodeCommandError(error);
+  if (nodeCommandError?.kind === "transport"
+    || nodeCommandError?.kind === "timeout"
+    || isDisconnectedCommandError(error)) {
+    const message = nodeCommandError?.apiError.message;
     return new NodeAgentProfileRouteError(
       "NODE_AGENT_PROFILE_COMMAND_UNAVAILABLE",
-      error.message,
+      typeof message === "string" ? message : error instanceof Error ? error.message : String(error),
       503,
     );
   }
-  if (error instanceof PendingNodeCommandRejectedError) {
-    const responseCode = error.response?.code;
+  if (nodeCommandError?.kind === "rejected") {
+    const responseCode = nodeCommandError.response?.code;
     return new NodeAgentProfileRouteError(
       typeof responseCode === "string"
         ? responseCode
         : "NODE_AGENT_PROFILE_COMMAND_REJECTED",
-      error.message,
+      nodeCommandError.apiError.message,
       400,
-      isRecord(error.response?.details) ? error.response.details : undefined,
+      isRecord(nodeCommandError.response?.details) ? nodeCommandError.response.details : undefined,
     );
   }
   return new NodeAgentProfileRouteError(

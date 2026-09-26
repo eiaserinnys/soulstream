@@ -59,8 +59,8 @@ describe("database release CLI and direct writer boundaries", () => {
       migration: {},
     }), "utf8");
     writeFileSync(contractPath, JSON.stringify({
-      schema_version: "soulstream.database-release-manifest.v1",
-      writer_services: ["writer"],
+      schema_version: "soulstream.database-release-manifest.v2",
+      affected_services: ["writer"],
       required_subphases: ["board"],
     }), "utf8");
     const env: Record<string, string> = {};
@@ -80,7 +80,7 @@ describe("database release CLI and direct writer boundaries", () => {
     })).resolves.toBe(0);
     expect(observed).toHaveLength(1);
     expect(observed[0]).toMatchObject({
-      HANIEL_DATABASE_WRITER_SERVICES: '["writer"]',
+      HANIEL_DATABASE_AFFECTED_SERVICES: '["writer"]',
       HANIEL_DATABASE_REQUIRED_SUBPHASES: '["board"]',
       HANIEL_MANIFEST_DIGEST: expect.stringMatching(/^[a-f0-9]{64}$/),
       HANIEL_DATABASE_CONTRACT_DIGEST: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -111,7 +111,7 @@ describe("database release CLI and direct writer boundaries", () => {
     await expect(runDatabaseReleaseCli(async (
       _command: string,
       options: { env: Record<string, string> },
-    ) => ({ writer_services: JSON.parse(options.env.HANIEL_DATABASE_WRITER_SERVICES) }), {
+    ) => ({ affected_services: JSON.parse(options.env.HANIEL_DATABASE_AFFECTED_SERVICES) }), {
       argv: [
         "probe", "--manifest", CENTRAL_MANIFEST,
         "--database-contract", CENTRAL_CONTRACT,
@@ -120,7 +120,7 @@ describe("database release CLI and direct writer boundaries", () => {
       stdout: () => undefined,
       stderr: () => undefined,
     })).resolves.toBe(0);
-    expect(JSON.parse(env.HANIEL_DATABASE_WRITER_SERVICES)).toEqual([
+    expect(JSON.parse(env.HANIEL_DATABASE_AFFECTED_SERVICES)).toEqual([
       "soulstream-orch-server",
       "soulstream-soul-server-ts",
     ]);
@@ -129,7 +129,7 @@ describe("database release CLI and direct writer boundaries", () => {
   it.each([
     ["HANIEL_MANIFEST_DIGEST", "0".repeat(64)],
     ["HANIEL_DATABASE_CONTRACT_DIGEST", "1".repeat(64)],
-    ["HANIEL_DATABASE_WRITER_SERVICES", '["poisoned-writer"]'],
+    ["HANIEL_DATABASE_AFFECTED_SERVICES", '["poisoned-writer"]'],
     ["HANIEL_DATABASE_REQUIRED_SUBPHASES", '["poisoned-subphase"]'],
   ])("rejects poisoned %s before invoking the release runner", async (name, value) => {
     const env: Record<string, string> = { [name]: value };

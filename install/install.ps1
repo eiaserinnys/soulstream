@@ -1,4 +1,4 @@
-﻿# Soulstream Standalone Installer
+﻿# Soulstream Remote Worker Installer
 #
 # Usage:
 #   irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1 | iex
@@ -8,23 +8,22 @@
 #   2. Installs Claude Code CLI if missing
 #   3. Installs Haniel if missing
 #   4. Installs pnpm if missing
-#   5. Prompts for install path, workspace path, port, and PostgreSQL URL
+#   5. Prompts for install path, workspace path, port, and remote orchestrator URL
 #   6. Generates a haniel.yaml from the template
 #   7. Runs haniel install (clones repo and sets up .env.soul-server-ts)
-#   8. Builds the TypeScript soul server and dashboard
+#   8. Builds the TypeScript soul server
 #   9. Starts the service
 
 param(
     [string]$InstallDir      = "",
     [string]$WorkspaceDir    = "",
     [int]$Port               = 0,
-    [string]$DatabaseUrl      = "",
+    [string]$UpstreamUrl      = "",
     [string]$AuthBearerToken  = "",
     [string]$RepositoryUrl    = "https://github.com/eiaserinnys/soulstream.git",
     [string]$RepositoryBranch = "main",
     [switch]$Force,
-    [switch]$NonInteractive,
-    [switch]$SkipDashboard
+    [switch]$NonInteractive
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -33,7 +32,7 @@ chcp 65001 | Out-Null
 
 $ErrorActionPreference = "Stop"
 
-$TEMPLATE_URL = "https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/haniel-standalone.yaml.template"
+$TEMPLATE_URL = "https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/haniel-worker.yaml.template"
 $HANIEL_INSTALL_URL = "https://raw.githubusercontent.com/eiaserinnys/haniel/main/install-haniel.ps1"
 $PNPM_VERSION = "10.32.1"
 $MINIMUM_NODE_VERSION = [version]"22.5.0"
@@ -105,7 +104,7 @@ function Find-FreePort {
 
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║       Soulstream Standalone Installer    ║" -ForegroundColor Cyan
+Write-Host "║        Soulstream Worker Installer       ║" -ForegroundColor Cyan
 Write-Host "╚══════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
 
@@ -273,21 +272,21 @@ if ($portInUse) {
 }
 
 if ($NonInteractive) {
-    if ([string]::IsNullOrWhiteSpace($DatabaseUrl)) {
-        Write-Fail "-DatabaseUrl is required in non-interactive mode."
-        Write-Host "    Example: -DatabaseUrl `"postgresql://user:pass@127.0.0.1:5432/soulstream_test`"" -ForegroundColor DarkGray
+    if ([string]::IsNullOrWhiteSpace($UpstreamUrl)) {
+        Write-Fail "-UpstreamUrl is required in non-interactive mode."
+        Write-Host "    Example: -UpstreamUrl `"wss://soulstream.example/ws/node`"" -ForegroundColor DarkGray
         exit 1
     }
-    $databaseUrl = $DatabaseUrl
+    $upstreamUrl = $UpstreamUrl
     if ([string]::IsNullOrWhiteSpace($AuthBearerToken)) {
         Write-Fail "-AuthBearerToken is required in non-interactive mode."
         exit 1
     }
     $authBearerToken = $AuthBearerToken
 } else {
-    $databaseUrl = $DatabaseUrl
-    while ([string]::IsNullOrWhiteSpace($databaseUrl)) {
-        $databaseUrl = Read-Host "  PostgreSQL URL (DATABASE_URL)"
+    $upstreamUrl = $UpstreamUrl
+    while ([string]::IsNullOrWhiteSpace($upstreamUrl)) {
+        $upstreamUrl = Read-Host "  Remote orchestrator WebSocket URL (SOULSTREAM_UPSTREAM_URL)"
     }
     $authBearerToken = $AuthBearerToken
     while ([string]::IsNullOrWhiteSpace($authBearerToken)) {
@@ -299,7 +298,7 @@ Write-Host ""
 Write-Host "  Install path : $installDir" -ForegroundColor DarkGray
 Write-Host "  Workspace    : $workspaceDir" -ForegroundColor DarkGray
 Write-Host "  Port         : $port" -ForegroundColor DarkGray
-Write-Host "  Database     : configured" -ForegroundColor DarkGray
+Write-Host "  Orchestrator : configured" -ForegroundColor DarkGray
 Write-Host ""
 
 # ── step 5: existing install detection ───────────────────────────────────────
@@ -326,7 +325,7 @@ New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 Write-Step "Generating haniel.yaml..."
 
 # Prefer local template (CI checkout) — fall back to remote URL (irm | iex usage)
-$localTemplate = Join-Path $PSScriptRoot "haniel-standalone.yaml.template"
+$localTemplate = Join-Path $PSScriptRoot "haniel-worker.yaml.template"
 if (Test-Path $localTemplate) {
     $template = Get-Content $localTemplate -Raw
     Write-Host "    Using local template: $localTemplate" -ForegroundColor DarkGray
@@ -341,7 +340,7 @@ $workspaceDirFwd = $workspaceDir -replace "\\", "/"
 $hanielYaml = $template.Replace("__INSTALL_DIR__", $installDirFwd)
 $hanielYaml = $hanielYaml.Replace("__WORKSPACE_DIR__", $workspaceDirFwd)
 $hanielYaml = $hanielYaml.Replace("__PORT__", [string]$port)
-$hanielYaml = $hanielYaml.Replace("__DATABASE_URL__", $databaseUrl)
+$hanielYaml = $hanielYaml.Replace("__UPSTREAM_URL__", $upstreamUrl)
 $hanielYaml = $hanielYaml.Replace("__AUTH_BEARER_TOKEN__", $authBearerToken)
 $hanielYaml = $hanielYaml.Replace("__REPOSITORY_URL__", $RepositoryUrl)
 $hanielYaml = $hanielYaml.Replace("__REPOSITORY_BRANCH__", $RepositoryBranch)
@@ -373,7 +372,6 @@ Write-Ok "haniel install completed."
 
 $monoRepoDir  = Join-Path $installDir "soulstream"
 $serverTsDir  = Join-Path $monoRepoDir "soul-server-ts"
-$dashboardDir = Join-Path $monoRepoDir "unified-dashboard"
 
 Write-Step "Preparing soul-server-ts configuration..."
 
@@ -403,49 +401,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-Ok "soul-server-ts built."
-
-Write-Step "Initializing the versioned database ledger..."
-
-$installHead = (git -C $monoRepoDir rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($installHead)) {
-    Write-Fail "Could not resolve the installed Soulstream commit for the migration release ID."
-    exit 1
-}
-$previousReleaseId = $env:SOULSTREAM_RELEASE_ID
-$env:SOULSTREAM_RELEASE_ID = "standalone-install-$installHead"
-Push-Location $monoRepoDir
-try {
-    node "packages/db-schema/scripts/migrate.mjs" initialize
-    $migrationExitCode = $LASTEXITCODE
-} finally {
-    Pop-Location
-    if ($null -eq $previousReleaseId) {
-        Remove-Item Env:SOULSTREAM_RELEASE_ID -ErrorAction SilentlyContinue
-    } else {
-        $env:SOULSTREAM_RELEASE_ID = $previousReleaseId
-    }
-}
-if ($migrationExitCode -ne 0) {
-    Write-Fail "Database initialization or migration failed. The service was not started."
-    exit 1
-}
-Write-Ok "Database schema and migration ledger verified."
-
-Write-Step "Building dashboard..."
-
-if ($SkipDashboard) {
-    Write-Warn "Dashboard build skipped (-SkipDashboard)."
-} elseif (-not (Test-Path $dashboardDir)) {
-    Write-Warn "Dashboard directory not found at $dashboardDir — skipping build."
-} else {
-    Write-Host "    Building dashboard (this may take a minute)..." -ForegroundColor DarkGray
-    pnpm --dir $dashboardDir build
-    if ($LASTEXITCODE -ne 0) {
-        Write-Fail "Dashboard build failed."
-        exit 1
-    }
-    Write-Ok "Dashboard built."
-}
 
 # ── step 7.5: start service ───────────────────────────────────────────────────
 

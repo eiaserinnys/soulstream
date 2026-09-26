@@ -1,10 +1,12 @@
-# Soulstream Standalone — Haniel Configuration Template
+# Soulstream Remote Worker — Haniel Configuration Template
+#
+# This installs only soul-server-ts. It requires an already running
+# orch-server-ts control plane reachable at SOULSTREAM_UPSTREAM_URL.
+# Database migrations are owned by the orchestrator deployment.
 #
 # This file is a template. __INSTALL_DIR__, __WORKSPACE_DIR__, __PORT__,
-# __DATABASE_URL__, __AUTH_BEARER_TOKEN__, __REPOSITORY_URL__, and
-# __REPOSITORY_BRANCH__ are substituted by install.ps1
-# before use.
-#
+# __UPSTREAM_URL__, __AUTH_BEARER_TOKEN__, __REPOSITORY_URL__, and
+# __REPOSITORY_BRANCH__ are substituted by install.ps1.
 # Do not use this file directly with haniel — use the generated
 # haniel.yaml in your install directory instead.
 
@@ -16,7 +18,7 @@ poll_interval: 60
 # true: any new commit in tracked repos (including soulstream) triggers an automatic
 #   pull and service restart — suitable for unattended servers, not for dev machines.
 # Note: haniel self-update is separately controlled by the 'self' section, which is
-#   intentionally absent here (haniel will not auto-update itself).
+# intentionally absent here (haniel will not auto-update itself).
 auto_apply: false
 
 repos:
@@ -24,7 +26,7 @@ repos:
     url: __REPOSITORY_URL__
     branch: __REPOSITORY_BRANCH__
     path: __INSTALL_DIR__/soulstream
-    release_manifest: deploy/release-manifest-standalone.json
+    release_manifest: deploy/release-manifest-worker.json
 
 services:
   soul-server-ts:
@@ -48,19 +50,16 @@ install:
       path: __INSTALL_DIR__/soulstream/.env.soul-server-ts
       keys:
         - key: SOULSTREAM_NODE_ID
-          prompt: "노드 ID (이 서버의 고유 식별자, 영문으로 입력)"
-          default: standalone-ts
+          prompt: "노드 ID (오케스트레이터에 등록될 고유 이름, 영문으로 입력)"
+          default: worker-ts
         - key: SOULSTREAM_UPSTREAM_URL
-          prompt: "오케스트레이터 WebSocket URL"
-          default: ws://127.0.0.1:5200/ws/node
-        - key: DATABASE_URL
-          prompt: "PostgreSQL 연결 URL"
-          default: __DATABASE_URL__
+          prompt: "연결할 원격 오케스트레이터 WebSocket URL"
+          default: __UPSTREAM_URL__
         - key: EVENT_OUTBOX_DIR
           prompt: "노드 로컬 durable event outbox 디렉터리"
           default: __INSTALL_DIR__/cache/event-outbox
         - key: AUTH_BEARER_TOKEN
-          prompt: "오케스트레이터 인증 토큰 (로컬 개발은 공백 가능)"
+          prompt: "오케스트레이터 인증 토큰 (public repo에 default 박지 않음)"
           default: __AUTH_BEARER_TOKEN__
         - key: PORT
           default: "__PORT__"
@@ -74,11 +73,6 @@ install:
           default: "false"
         - key: MCP_REQUIRE_AUTH
           default: "false"
-        - key: WORKTREE_MCP_ENABLED
-          default: "false"
-        - key: WORKTREE_PROJECTS_ROOT
-          prompt: "워크트리 기능을 켤 때 사용할 projects 절대 경로 (disabled면 공백)"
-          default: ""
         - key: ENVIRONMENT
           default: development
         - key: LOG_LEVEL
@@ -89,5 +83,5 @@ install:
           default: __INSTALL_DIR__/cache/incoming
   service:
     name: soulstream
-    display: "Soulstream Server"
+    display: "Soulstream Worker"
     working_directory: __INSTALL_DIR__

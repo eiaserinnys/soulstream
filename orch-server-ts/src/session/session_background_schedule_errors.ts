@@ -1,18 +1,14 @@
 import type { FastifyReply } from "fastify";
+import { mapNodeCommandError, sendApiError } from "../http/api_errors.js";
 
 import {
-  PendingNodeCommandRejectedError,
-  PendingNodeCommandTimeoutError,
   type NodeCommandResponse,
 } from "../node/pending_commands.js";
 import {
   SessionCommandRouteError,
   type SessionCommandRouter,
 } from "./session_command_router.js";
-import {
-  NodeCommandTransportError,
-  type SessionCommandTransportBridge,
-} from "./session_command_transport.js";
+import type { SessionCommandTransportBridge } from "./session_command_transport.js";
 import type { SessionBackgroundSchedulePayload } from "./session_background_schedule_payloads.js";
 
 export type SessionBackgroundScheduleCommandDispatchOptions = {
@@ -87,15 +83,13 @@ function sendMappedBackgroundScheduleError(
   reply: FastifyReply,
   error: unknown,
 ): FastifyReply {
-  if (error instanceof PendingNodeCommandRejectedError) {
-    const response = error.response;
+  const nodeCommandError = mapNodeCommandError(error);
+  if (nodeCommandError?.kind === "rejected") {
+    const response = nodeCommandError.response;
     if (response !== undefined && isRuntimeCommandError(response)) {
       return sendClaudeRuntimeStatusError(reply, response);
     }
-    return serviceUnavailable(reply, {
-      code: "NODE_COMMAND_REJECTED",
-      message: error.message,
-    });
+    return sendApiError(reply, nodeCommandError.statusCode, nodeCommandError.apiError);
   }
 
   if (error instanceof SessionCommandRouteError) {
@@ -118,25 +112,8 @@ function sendMappedBackgroundScheduleError(
     });
   }
 
-  if (error instanceof NodeCommandTransportError) {
-    return reply.code(503).send({
-      error: {
-        code: error.code,
-        message: error.message,
-        nodeId: error.nodeId,
-        connectionId: error.connectionId,
-      },
-    });
-  }
-
-  if (error instanceof PendingNodeCommandTimeoutError) {
-    return reply.code(503).send({
-      error: {
-        code: "NODE_COMMAND_TIMEOUT",
-        message: error.message,
-        requestId: error.requestId,
-      },
-    });
+  if (nodeCommandError !== undefined) {
+    return sendApiError(reply, nodeCommandError.statusCode, nodeCommandError.apiError);
   }
 
   return reply.code(500).send({
@@ -157,18 +134,6 @@ function sendClaudeRuntimeStatusError(
     error: {
       code,
       message,
-    },
-  });
-}
-
-function serviceUnavailable(
-  reply: FastifyReply,
-  response: { code?: unknown; message?: unknown },
-): FastifyReply {
-  return reply.code(503).send({
-    error: {
-      code: stringField(response.code, "NODE_COMMAND_FAILED"),
-      message: stringField(response.message, "Node command failed"),
     },
   });
 }

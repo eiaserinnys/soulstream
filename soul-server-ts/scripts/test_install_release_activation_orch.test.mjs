@@ -20,7 +20,7 @@ test("test-install orch stub returns one idempotent receipt for repeated registr
 
   const registration = {
     type: "node_register",
-    node_id: "standalone-ts",
+    node_id: "worker-ts",
     release_manifest: { manifest_id: "manifest-1" },
     release_activation: {
       manifest_id: "manifest-1",
@@ -37,13 +37,25 @@ test("test-install orch stub returns one idempotent receipt for repeated registr
   assert.deepEqual(first, second);
   assert.deepEqual(first, {
     type: "node_register_ack",
-    node_id: "standalone-ts",
+    node_id: "worker-ts",
     release_activation_receipt: {
       manifest_id: "manifest-1",
       activation_generation: 1,
       activated_at: "2026-08-21T08:00:00.000Z",
       registration_idempotency_key: "registration-key",
     },
+  });
+
+  const health = await fetch(`http://127.0.0.1:${stub.port}/api/health`);
+  assert.equal(health.status, 200);
+  assert.deepEqual(await health.json(), { status: "ok" });
+
+  const nodes = await fetch(`http://127.0.0.1:${stub.port}/api/nodes`, {
+    headers: { authorization: "Bearer ci-test-token" },
+  });
+  assert.equal(nodes.status, 200);
+  assert.deepEqual(await nodes.json(), {
+    nodes: [{ nodeId: "worker-ts", connected: true, status: "connected" }],
   });
 });
 
@@ -55,7 +67,7 @@ test("test-install orch stub rejects a registration whose manifest identities di
   await once(socket, "open");
   socket.send(JSON.stringify({
     type: "node_register",
-    node_id: "standalone-ts",
+    node_id: "worker-ts",
     release_manifest: { manifest_id: "manifest-a" },
     release_activation: {
       manifest_id: "manifest-b",

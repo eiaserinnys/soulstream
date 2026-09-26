@@ -32,7 +32,7 @@ export async function applyManifestContract(manifestPath, databaseContractPath, 
   const manifest = JSON.parse(bytes.toString("utf8"));
   const contractBytes = await readFile(databaseContractPath);
   const contract = JSON.parse(contractBytes.toString("utf8"));
-  if (contract.schema_version !== "soulstream.database-release-manifest.v1") {
+  if (contract.schema_version !== "soulstream.database-release-manifest.v2") {
     throw new Error("JOURNAL_GATE_FAILED: database release contract schema differs");
   }
   assignCanonicalEnvironmentValue(env, "HANIEL_MANIFEST_DIGEST", sha256(bytes));
@@ -42,15 +42,15 @@ export async function applyManifestContract(manifestPath, databaseContractPath, 
   const isStringList = (value) => Array.isArray(value)
     && value.every((item) => typeof item === "string" && item.trim())
     && new Set(value).size === value.length;
-  if (!isStringList(contract.writer_services) || contract.writer_services.length === 0
-    || !contract.writer_services.includes(manifest.environment_service)
+  if (!isStringList(contract.affected_services) || contract.affected_services.length === 0
+    || !contract.affected_services.includes(manifest.environment_service)
     || !isStringList(contract.required_subphases)) {
     throw new Error("JOURNAL_GATE_FAILED: database release contract identity is invalid");
   }
   assignCanonicalEnvironmentValue(
     env,
-    "HANIEL_DATABASE_WRITER_SERVICES",
-    JSON.stringify(contract.writer_services),
+    "HANIEL_DATABASE_AFFECTED_SERVICES",
+    JSON.stringify(contract.affected_services),
   );
   assignCanonicalEnvironmentValue(
     env,

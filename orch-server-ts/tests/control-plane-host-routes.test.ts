@@ -621,6 +621,10 @@ describe("control-plane host routes", () => {
 
   it("routes runner transcript correlation to the idempotent repository method", async () => {
     const appendClaudeTranscriptEntriesIdempotent = vi.fn(async () => 1);
+    const entries = [{
+      type: "assistant",
+      message: { content: [{ type: "tool_use", tool_use_id: "toolu-resume" }] },
+    }];
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
@@ -638,7 +642,7 @@ describe("control-plane host routes", () => {
         idempotency_key: "runner:append:1",
         session_id: "soul-session-a",
         key: { project_key: "project-a", session_id: "session-a" },
-        entries: [],
+        entries,
       }] },
     });
 
@@ -647,8 +651,40 @@ describe("control-plane host routes", () => {
       idempotencyKey: "runner:append:1",
       sessionId: "soul-session-a",
       key: { projectKey: "project-a", sessionId: "session-a" },
-      entries: [],
+      entries,
     });
+  });
+
+  it("preserves transcript entries on the non-idempotent host append", async () => {
+    const appendClaudeTranscriptEntries = vi.fn(async () => 1);
+    const entries = [{
+      type: "assistant",
+      message: { content: [{ type: "tool_use", tool_use_id: "toolu-resume" }] },
+    }];
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        claudeTranscripts: { appendClaudeTranscriptEntries },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/claude-runtime/host/append_transcript_entries",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { args: [
+        { project_key: "project-a", session_id: "session-a" },
+        entries,
+      ] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(appendClaudeTranscriptEntries).toHaveBeenCalledWith(
+      { projectKey: "project-a", sessionId: "session-a" },
+      entries,
+    );
   });
 
   it("preserves session transition fields, idempotency, and timestamps across the host boundary", async () => {
