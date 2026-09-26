@@ -77,6 +77,16 @@ export class RunnerRecoveryCoordinator {
     this.unreadableRegistrationHandler = new UnreadableRunnerRegistrationHandler({
       stateDirectory: options.stateDirectory,
       logger: options.logger,
+      beforeQuarantine: async (failure) => {
+        if (!failure.sessionId) return;
+        const task = await options.taskManager.hydrateRunnerRecoveryTask(failure.sessionId);
+        if (task) {
+          await options.taskManager.markRunnerFailure(
+            task,
+            `Unreadable runner registration quarantined after kernel lock release: ${failure.error.message}`,
+          );
+        }
+      },
       ...(options.quarantineFailure
         ? { quarantineFailure: options.quarantineFailure }
         : {}),

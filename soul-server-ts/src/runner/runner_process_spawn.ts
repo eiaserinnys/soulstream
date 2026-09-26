@@ -135,6 +135,7 @@ export class RunnerProcessSpawner {
     const config: RunnerChildConfig = {
       schemaVersion: 1,
       sessionId: input.sessionId,
+      registrationId: registrationIdentity.registrationId,
       backend: input.backend,
       agent: input.agent,
       paths,
@@ -269,7 +270,13 @@ export class RunnerProcessSpawner {
     } catch (registrationError) {
       try {
         if (childProcessProof) {
-          await terminateExactRunner(childProcessProof, this.deps, paths.lockPath);
+          await terminateExactRunner(
+            childProcessProof,
+            this.deps,
+            paths.lockPath,
+            undefined,
+            paths.socketPath,
+          );
         } else if (!childAbsenceProven) {
           if (registrationError instanceof RunnerMutationFailure) throw registrationError;
           throw new RunnerMutationFailure(
@@ -404,6 +411,8 @@ export class RunnerProcessSpawner {
           { pid: identity.pid, startIdentity: identity.startIdentity },
           this.deps,
           paths.lockPath,
+          undefined,
+          paths.socketPath,
         );
       }
       await retireTerminalRunnerRegistrationFilesLocked(

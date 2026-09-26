@@ -1,7 +1,14 @@
 import { RunnerMutationFailure } from "./runner_mutation_failure.js";
+import { terminateWindowsProcessTree } from "../process/terminate_windows_process_tree.js";
+import { randomUUID } from "node:crypto";
+import { closeCommandFrame } from "./frame_protocol.js";
+import { connectRunnerSocket } from "./runner_socket_endpoint.js";
 import type { RunnerProcessPaths } from "./runner_process_paths.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
-import { defaultProcessOwnershipLockDependencies } from "./runner_process_lock.js";
+import {
+  defaultProcessOwnershipLockDependencies,
+  processStartIdentitiesMatch,
+} from "./runner_process_lock.js";
 import {
   invalidateRunnerRegistrationFilesLocked,
   removeRunnerRegistrationEvidenceForReplacementLocked,
@@ -21,7 +28,7 @@ export interface ExactRunnerProcess {
 }
 
 export function exactRunnerStartIdentitiesMatch(left: string, right: string): boolean {
-  return left === right;
+  return processStartIdentitiesMatch(left, right);
 }
 
 export interface RunnerProcessTerminationDependencies {
@@ -30,6 +37,9 @@ export interface RunnerProcessTerminationDependencies {
   signalPid(pid: number, signal: NodeJS.Signals): void;
   now(): number;
   delay(ms: number): Promise<void>;
+  platform?: NodeJS.Platform;
+  terminateProcessTree?(pid: number): Promise<void>;
+  requestShutdown?(socketPath: string): Promise<void>;
 }
 
 export type RunnerTerminationOutcome =
@@ -51,7 +61,7 @@ export async function stopExistingRunnerLocked(
       || identity.registrationId === expected.registrationId);
   const lockState = await inspectRunnerLivenessLock(paths.lockPath, deps);
   if (expected && !expectedOwnsIdentity) {
-    await terminateExactRunner(expected, deps, paths.lockPath, lockState);
+    await terminateExactRunner(expected, deps, paths.lockPath, lockState, paths.socketPath);
     return "registration_absent";
   }
   if (lockState.kind === "unavailable") {
@@ -63,6 +73,7 @@ export async function stopExistingRunnerLocked(
       deps,
       paths.lockPath,
       lockState,
+      paths.socketPath,
     );
   }
   if (lockState.kind === "held") {
@@ -70,7 +81,7 @@ export async function stopExistingRunnerLocked(
     if (!sameExactRunner(owner, lockState.owner)) {
       throw identityProofFailure(`runner writer lock owner does not match registration: ${paths.lockPath}`);
     }
-    await terminateExactRunner(owner, deps, paths.lockPath, lockState);
+    await terminateExactRunner(owner, deps, paths.lockPath, lockState, paths.socketPath);
   }
   if (identity) {
     await invalidateRunnerRegistrationFilesLocked(
@@ -92,6 +103,7 @@ export async function terminateExactRunner(
   deps: RunnerProcessTerminationDependencies,
   lockPath: string,
   initialState?: RunnerWriterLockState,
+  socketPath?: string,
 ): Promise<void> {
   return await terminateExactRunnerWithPolicy(
     expected,
@@ -99,6 +111,7 @@ export async function terminateExactRunner(
     lockPath,
     initialState,
     false,
+    socketPath,
   );
 }
 
@@ -107,6 +120,7 @@ async function terminateRegisteredRunnerDuringLockRelease(
   deps: RunnerProcessTerminationDependencies,
   lockPath: string,
   initialState: RunnerWriterLockState,
+  socketPath: string,
 ): Promise<void> {
   return await terminateExactRunnerWithPolicy(
     expected,
@@ -114,6 +128,7 @@ async function terminateRegisteredRunnerDuringLockRelease(
     lockPath,
     initialState,
     true,
+    socketPath,
   );
 }
 
@@ -123,7 +138,25 @@ async function terminateExactRunnerWithPolicy(
   lockPath: string,
   initialState: RunnerWriterLockState | undefined,
   acceptRegisteredReleaseGap: boolean,
+  socketPath?: string,
 ): Promise<void> {
+  if ((deps.platform ?? process.platform) === "win32") {
+    if (socketPath) {
+      try {
+        await (deps.requestShutdown ?? requestRunnerShutdown)(socketPath);
+      } catch {
+        // The child may already be closing its IPC endpoint; taskkill remains
+        // the final Windows process-tree cleanup after the bounded IPC request.
+      }
+    }
+    const terminateProcessTree = deps.terminateProcessTree ?? terminateWindowsProcessTree;
+    await terminateProcessTree(expected.pid);
+    if (await waitForExactProcessExit(expected, lockPath, deps, "retirement")) return;
+    throw new RunnerMutationFailure(
+      "runner_termination_exit_proof_failed",
+      `exact runner remained live after Windows process-tree termination: ${expected.pid}`,
+    );
+  }
   if (await exactProcessIsAbsent(
     expected,
     lockPath,
@@ -141,6 +174,24 @@ async function terminateExactRunnerWithPolicy(
     "runner_termination_exit_proof_failed",
     `exact runner remained live after SIGKILL: ${expected.pid}`,
   );
+}
+
+async function requestRunnerShutdown(socketPath: string): Promise<void> {
+  const connection = await connectRunnerSocket(socketPath, {
+    timeoutMs: 1_000,
+    deadlineMs: 1_000,
+  });
+  try {
+    const result = await connection.request(
+      closeCommandFrame(`windows-shutdown:${randomUUID()}`),
+      { timeoutMs: 1_000 },
+    );
+    if (result.kind !== "command_result" || result.result.status !== "ok") {
+      throw new Error("runner IPC shutdown request was not acknowledged");
+    }
+  } finally {
+    connection.close();
+  }
 }
 
 async function waitForExactProcessExit(

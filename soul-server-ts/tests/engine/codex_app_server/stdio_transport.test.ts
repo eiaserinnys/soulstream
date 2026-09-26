@@ -127,6 +127,24 @@ describe("stdio app-server transport", () => {
     expect(spawnOptions[0]!.shell).toBe(true);
   });
 
+  it("uses process-tree termination for Windows command shims", async () => {
+    const child = new MockChildProcess(1234);
+    const terminateProcessTree = vi.fn(async () => {
+      child.emit("exit", 0, null);
+    });
+    const transport = createStdioAppServerTransport({
+      command: "C:\\Users\\LG\\AppData\\Roaming\\npm\\codex.cmd",
+      platform: "win32",
+      spawnProcess: () => child,
+      terminateProcessTree,
+    });
+
+    await transport.close();
+
+    expect(terminateProcessTree).toHaveBeenCalledWith(1234);
+    expect(child.killSignals).toEqual([]);
+  });
+
   it("does not force shell mode for Windows .exe commands", async () => {
     const child = new MockChildProcess();
     const spawnOptions: Array<{ shell?: unknown }> = [];
