@@ -151,6 +151,59 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
       status: "completed",
     }));
   });
+
+  it("continues after retryable nonterminal observation failures", async () => {
+    const retryableFailure = Object.assign(new Error("502 Bad Gateway"), {
+      retryable: true,
+    });
+    const observeGeneration = vi.fn()
+      .mockRejectedValueOnce(retryableFailure)
+      .mockResolvedValue({ status: "running" });
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { observeGeneration } as never,
+      sourceNode: "node-test",
+    });
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_task_progress",
+      taskId: "background-agent",
+      sessionId: "sdk-session",
+      toolUseId: "toolu-background-agent",
+      description: "long work",
+      summary: "still running",
+    };
+    attachClaudeBackgroundProvenance(event, "sdk_membership");
+
+    await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+
+    expect(observeGeneration).toHaveBeenCalledTimes(2);
+  });
+
+  it("logs exhausted retryable observations and leaves the turn live", async () => {
+    const retryableFailure = Object.assign(new Error("502 Bad Gateway"), {
+      retryable: true,
+    });
+    const observeGeneration = vi.fn().mockRejectedValue(retryableFailure);
+    const warn = vi.fn();
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { observeGeneration } as never,
+      sourceNode: "node-test",
+      logger: { warn },
+    });
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_task_progress",
+      taskId: "background-agent",
+      sessionId: "sdk-session",
+      toolUseId: "toolu-background-agent",
+      description: "long work",
+      summary: "still running",
+    };
+    attachClaudeBackgroundProvenance(event, "sdk_membership");
+
+    await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+
+    expect(observeGeneration).toHaveBeenCalledTimes(4);
+    expect(warn).toHaveBeenCalledOnce();
+  });
 });
 
 describe("ClaudeBackgroundTaskLifecycle dead-runner recovery", () => {
