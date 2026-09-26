@@ -469,7 +469,9 @@ describe("MCP stateless restart recovery", () => {
       "remove_worktree",
       "rollback_agents_config",
       "rollback_remote_agents_config",
+      "set_agent_atom_contexts",
       "set_agent_mcp_profile",
+      "set_folder_system_prompt",
       "update_agent_profile",
     ]);
     expect(
