@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { query as defaultQuery } from "@anthropic-ai/claude-agent-sdk";
 import type {
   Options as ClaudeSdkOptions,
@@ -271,6 +272,28 @@ export class ClaudeSdkClient implements ClaudeClient {
   async compact(sessionId: string): Promise<void> {
     if (!this.lastWorkspaceDir || !this.lastRunOptions) {
       throw new Error("ClaudeSdkClient.compact requires a previous run context");
+    }
+
+    const persistentSession = this.persistentSession;
+    if (persistentSession?.snapshot().queryLifecycle === "open") {
+      const options = buildClaudeCompactRunOptions(
+        this.lastRunOptions,
+        this.lastWorkspaceDir,
+        sessionId,
+        this.lastEnv,
+      );
+      options.inputUuid = randomUUID();
+      let observedCompactBoundary = false;
+      for await (const event of persistentSession.runTurn(
+        options,
+        new AbortController().signal,
+      )) {
+        if (event.type === "compact_completed") observedCompactBoundary = true;
+      }
+      if (!observedCompactBoundary) {
+        throw new Error("Claude compact finished without compact_boundary");
+      }
+      return;
     }
 
     const controller = new AbortController();

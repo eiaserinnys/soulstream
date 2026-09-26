@@ -40,6 +40,14 @@ function activationBarrier(promise: Promise<void>): NonNullable<Task["executionA
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function makeSubject(
   initialTasks: Task[] = [],
   deliveryLedgerGate?: Pick<
@@ -634,13 +642,98 @@ describe("TaskInterventionRoute.addIntervention", () => {
       relationKey: "delivery:concurrent:1",
     }, vi.fn());
 
-    await Promise.resolve();
-    expect(gate.beginDispatch).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(gate.beginDispatch).toHaveBeenCalledOnce());
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
 
     resolveActivation();
     await expect(request).resolves.toMatchObject({ queued: true });
     expect(gate.beginDispatch).toHaveBeenCalledOnce();
+  });
+
+  it("waits for a concurrent activation that starts while durable dispatch is in flight", async () => {
+    const firstId = "64646464-6464-4464-8464-646464646464";
+    const secondId = "65656565-6565-4565-8565-656565656565";
+    const task = makeTask({ status: "completed" });
+    const firstDispatch = deferred<DeliveryLedgerAdmission>();
+    const secondDispatch = deferred<DeliveryLedgerAdmission>();
+    let dispatchCount = 0;
+    const gate = {
+      admit: vi.fn(async (params) => admitted(
+        params.deliveryId!,
+        "durable_next_turn",
+      )),
+      beginDispatch: vi.fn((_candidate: DeliveryLedgerAdmission) => {
+        dispatchCount += 1;
+        return dispatchCount === 1 ? firstDispatch.promise : secondDispatch.promise;
+      }),
+      recordResult: vi.fn().mockResolvedValue(undefined),
+      recordFailure: vi.fn().mockResolvedValue(undefined),
+    } as Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    >;
+    const { route, autoResumeTransition, runningInterventionTransition } =
+      makeSubject([task], gate);
+    const activation = deferred<void>();
+    const executionActivation = {
+      promise: activation.promise,
+      resolve: activation.resolve,
+      reject: vi.fn(),
+    } as NonNullable<Task["executionActivation"]>;
+    const onResume = vi.fn((resumedTask: Task) => {
+      resumedTask.executionActivation = executionActivation;
+    });
+    vi.mocked(autoResumeTransition.resume).mockImplementationOnce(async (
+      resumedTask,
+      _message,
+      deferResume,
+    ) => {
+      resumedTask.status = "initializing";
+      resumedTask.executionActivation = executionActivation;
+      deferResume(resumedTask, executionActivation);
+      return { autoResumed: true };
+    });
+
+    const first = route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "first child completion",
+      user: "agent",
+      deliveryId: firstId,
+      deliveryIntent: "durable_next_turn",
+      completionId: `completion:${firstId}`,
+      relationKey: `relation:${firstId}`,
+    }, onResume);
+    let secondSettled = false;
+    const second = route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "second child completion",
+      user: "agent",
+      deliveryId: secondId,
+      deliveryIntent: "durable_next_turn",
+      completionId: `completion:${secondId}`,
+      relationKey: `relation:${secondId}`,
+    }, onResume).finally(() => {
+      secondSettled = true;
+    });
+
+    await vi.waitFor(() => expect(gate.beginDispatch).toHaveBeenCalledTimes(2));
+    firstDispatch.resolve(gate.beginDispatch.mock.calls[0]![0]);
+    await vi.waitFor(() => expect(task.status).toBe("initializing"));
+    secondDispatch.resolve(gate.beginDispatch.mock.calls[1]![0]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(secondSettled).toBe(false);
+    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+
+    task.status = "running";
+    task.executionActivation = undefined;
+    activation.resolve();
+    await expect(Promise.all([first, second])).resolves.toMatchObject([
+      { autoResumed: true },
+      { queued: true },
+    ]);
+    expect(runningInterventionTransition.deliver).toHaveBeenCalledOnce();
   });
 
   it.each(["running"] as const)(

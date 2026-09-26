@@ -700,14 +700,14 @@ describe("EventPersistence transient boundary", () => {
     }
   });
 
-  it("producer의 _live_only 표기는 durable 타입을 임의로 휘발화하지 못한다", () => {
+  it("worker durability 판정은 producer의 _live_only 표기를 존중한다", () => {
     const event = {
       type: "progress",
       _live_only: true,
     } as unknown as SSEEventPayload;
 
     expect(isLiveOnlyEvent(event)).toBe(true);
-    expect(shouldPersistEvent(event)).toBe(true);
+    expect(shouldPersistEvent(event)).toBe(false);
   });
 
   it("live-only event는 durable outbox 대상이 아니다", async () => {

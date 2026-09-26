@@ -928,6 +928,29 @@ describe("CodexAppServerEngineAdapter", () => {
     await eventsPromise;
   });
 
+  it("sends an interrupt requested during turn/start as soon as the turn is known", async () => {
+    const { adapter, client } = makeAdapter();
+    const turnStarted = deferred<TurnStartResponse>();
+    client.startTurn.mockReturnValueOnce(turnStarted.promise);
+    const eventsPromise = drain(adapter.execute({ prompt: "interrupt during startup" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledOnce());
+
+    await expect(adapter.interrupt()).resolves.toBe(true);
+    expect(client.interruptTurn).not.toHaveBeenCalled();
+
+    turnStarted.resolve({ turn: turn("turn-1") });
+    await vi.waitFor(() => expect(client.interruptTurn).toHaveBeenCalledOnce());
+    expect(client.interruptTurn).toHaveBeenCalledWith({
+      threadId: "thread-1",
+      turnId: "turn-1",
+    });
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "interrupted") },
+    });
+    await eventsPromise;
+  });
+
   it("transport close during execute yields fatal error and close() is idempotent", async () => {
     const { adapter, client } = makeAdapter();
     const executionPromise = drainFailure(adapter.execute({ prompt: "hello" }));
