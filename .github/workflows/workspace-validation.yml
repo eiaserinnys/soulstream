@@ -73,13 +73,22 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ matrix.kind }}" == "postgres" ]]; then
+            shopt -s globstar nullglob
+            postgres_tests=(
+              orch-server-ts/tests/**/*-postgres.test.ts
+              orch-server-ts/tests/**/*.postgres.test.ts
+              orch-server-ts/tests/**/*.postgres.integration.test.ts
+            )
+            for index in "${!postgres_tests[@]}"; do
+              postgres_tests[$index]="${postgres_tests[$index]#orch-server-ts/}"
+            done
             corepack pnpm --dir orch-server-ts exec vitest run \
-              'tests/**/*.postgres.test.ts' \
-              'tests/**/*.postgres.integration.test.ts' \
+              "${postgres_tests[@]}" \
               --minWorkers=1 --maxWorkers=1 --no-file-parallelism
           elif [[ "${{ matrix.package }}" == "orch-server-ts" ]]; then
             corepack pnpm --dir orch-server-ts exec vitest run \
               --minWorkers=1 --maxWorkers=2 \
+              --exclude '**/*-postgres.test.ts' \
               --exclude '**/*.postgres.test.ts' \
               --exclude '**/*.postgres.integration.test.ts'
           elif [[ "${{ matrix.package }}" == "packages/soul-ui" ]]; then
