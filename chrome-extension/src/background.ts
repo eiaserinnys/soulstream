@@ -93,7 +93,7 @@ async function extractPayload(
     }
     return {
       action,
-      url: response.page.url || fallbackUrl,
+      url: info.linkUrl || response.page.url || fallbackUrl,
       title: response.page.title || fallbackTitle,
       selectionText: response.page.selectionText || selectedText,
       metaDescription: response.page.metaDescription,
