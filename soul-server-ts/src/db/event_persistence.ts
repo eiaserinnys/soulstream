@@ -373,7 +373,7 @@ function resolveEventDurability(event: SSEEventPayload): EventDurability {
   if (durability === undefined) {
     throw new Error(`unclassified event durability: ${eventType}`);
   }
-  return durability;
+  return isLiveOnlyEvent(event) ? "transient" : durability;
 }
 
 export function clearEventPersistenceInternals(event: SSEEventPayload): void {

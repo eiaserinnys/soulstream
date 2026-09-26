@@ -1,4 +1,8 @@
-import type { SDKMessage, SessionMessage } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  Query as ClaudeSdkQuery,
+  SDKMessage,
+  SessionMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
@@ -29,6 +33,63 @@ import {
 const silentLogger = pino({ level: "silent" });
 
 describe("ClaudeSdkClient persistent runtime", () => {
+  it("sends preemptive compact through the persistent query without replacing its control query", async () => {
+    const harness = makeHarness();
+    let queryCalls = 0;
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) => {
+          queryCalls += 1;
+          if (queryCalls === 1) return harness.queryFn(params);
+          const output = (async function* () {
+            yield {
+              type: "system",
+              subtype: "compact_boundary",
+              compact_metadata: { trigger: "manual" },
+              uuid: "separate-compact-boundary",
+              session_id: "sdk-session",
+            } as unknown as SDKMessage;
+          })();
+          return Object.assign(output, {
+            interrupt: vi.fn().mockResolvedValue(undefined),
+            close: vi.fn(),
+          }) as unknown as ClaudeSdkQuery;
+        },
+        detachedEventSink: harness.detached,
+      },
+      silentLogger,
+    );
+    const first = collect(client.runPersistent({
+      ...runOptions("first turn"),
+      env: { CLAUDE_CODE_OAUTH_TOKEN: "task-token" },
+    }, abortSignal()));
+    const firstInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+    await first;
+
+    const compact = client.compact("sdk-session");
+    const compactInput = await Promise.race([
+      harness.nextInput(),
+      compact.then(() => null),
+    ]);
+    expect(compactInput?.message.content).toBe("/compact");
+    expect(queryCalls).toBe(1);
+    harness.push({
+      type: "system",
+      subtype: "compact_boundary",
+      compact_metadata: { trigger: "manual" },
+      uuid: "persistent-compact-boundary",
+      session_id: "sdk-session",
+    } as unknown as SDKMessage);
+    harness.push(sdkResult("sdk-session", compactInput!.uuid, "compacted"));
+    await compact;
+
+    await expect(client.backgroundClaudeRuntimeTasks()).resolves.toMatchObject({
+      status: "no_match",
+    });
+    await client.close();
+  });
+
   it("no-ops an unproven settled retry and accepts the next distinct input", async () => {
     const harness = makeHarness();
     const client = new ClaudeSdkClient(

@@ -349,6 +349,40 @@ describe("EventOutboxPump", () => {
     }));
   });
 
+  it("quarantines a permanent EVENT_INGRESS_INVALID rejection", async () => {
+    const outbox = await createOutbox();
+    const record = await outbox.append(eventInput("invalid payload"));
+    const pump = new EventOutboxPump(outbox, vi.fn(), {
+      rejectionThreshold: 2,
+      now: () => new Date("2026-09-26T00:00:00.000Z"),
+    });
+    let sent = 0;
+    const rejection = {
+      type: "error" as const,
+      command_type: "event_append_batch" as const,
+      status: 400,
+      code: "EVENT_INGRESS_INVALID",
+      retryable: false,
+      stream_id: outbox.streamId,
+      source_seq: record.source_seq,
+    };
+
+    pump.connect(async () => { sent += 1; });
+    await waitFor(() => sent === 1);
+    await expect(pump.handleRejection(rejection)).resolves.toBeNull();
+    pump.disconnect();
+
+    pump.connect(async () => { sent += 1; });
+    await waitFor(() => sent === 2);
+    await expect(pump.handleRejection(rejection)).resolves.toMatchObject({
+      sourceSeq: record.source_seq,
+      attempts: 2,
+    });
+
+    expect(outbox.ackedSeq).toBe(record.source_seq);
+    await expect(outbox.readBatch()).resolves.toBeNull();
+  });
+
   it("keeps retryable ingress failures in the outbox for the next connection", async () => {
     const outbox = await createOutbox();
     await outbox.append(eventInput("retry me"));

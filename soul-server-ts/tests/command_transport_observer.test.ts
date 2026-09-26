@@ -5,6 +5,28 @@ import type { WebSocket } from "ws";
 import { CommandTransportObserver } from "../src/upstream/command_transport_observer.js";
 
 describe("CommandTransportObserver", () => {
+  it("binds a correlated response to the socket that received its command", async () => {
+    const logger = { debug: vi.fn(), warn: vi.fn() } as unknown as Logger;
+    const inboundSocket = {} as WebSocket;
+    const observer = new CommandTransportObserver(logger, () => 0);
+
+    await observer.observe(
+      { type: "health_check", requestId: "req-origin" },
+      async () => {
+        expect(observer.responseSocket({
+          type: "health_status",
+          requestId: "req-origin",
+        })).toBe(inboundSocket);
+        expect(observer.responseSocket({
+          type: "health_status",
+          requestId: "req-other",
+        })).toBeNull();
+      },
+      true,
+      inboundSocket,
+    );
+  });
+
   it("logs receive-to-send latency and WebSocket pressure for a correlated response", async () => {
     const logger = { debug: vi.fn(), warn: vi.fn() } as unknown as Logger;
     const timestamps = [10, 11, 35];

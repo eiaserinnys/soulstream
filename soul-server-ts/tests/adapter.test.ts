@@ -503,6 +503,59 @@ describe("UpstreamAdapter", () => {
     await adapter.shutdown();
   });
 
+  it("terminates the socket when registration setup fails before serving", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({ acknowledgeRegistration: true });
+    const releaseActivationState = new ReleaseActivationState(releaseManifest, {
+      registrationIdempotencyKey: "registration-key",
+    });
+    releaseActivationState.markPrewarmed({
+      host: "verified",
+      runner: "verified",
+      env: "verified",
+      executable: "verified",
+    });
+    const retryWaiting = deferred<void>();
+    const allowRetry = deferred<void>();
+    const reconnectPolicy: ReconnectPolicyBoundary = {
+      attempt: 0,
+      currentDelaySeconds: 3,
+      reset: () => undefined,
+      wait: async () => {
+        retryWaiting.resolve();
+        await allowRetry.promise;
+      },
+    };
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+        releaseActivationState,
+      },
+      silentLogger,
+      makeDeps({ reconnectPolicy }),
+    );
+
+    const runPromise = adapter.run();
+    await retryWaiting.promise;
+    try {
+      await waitFor(
+        () => orch.sockets[0]?.readyState !== orch.sockets[0]?.OPEN,
+        500,
+      );
+    } finally {
+      await adapter.shutdown();
+      allowRetry.resolve();
+      await runPromise;
+    }
+  });
+
   it("grows reconnect backoff when registration ACK arrives but poison catch-up never completes", async () => {
     await stopMockOrch(orch);
     orch = await startMockOrch({

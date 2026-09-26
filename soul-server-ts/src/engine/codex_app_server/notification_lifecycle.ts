@@ -110,7 +110,10 @@ export function clearNotificationExecution(
 export function applyNotificationLifecycle(
   state: NotificationLifecycleState,
   notification: AppServerNotification,
-  options: { suppressThreadStartedSession: boolean },
+  options: {
+    suppressThreadStartedSession: boolean;
+    onUnknownNotification?: (method: string) => void;
+  },
 ): NotificationLifecycleResult {
   if (!belongsToNotificationExecution(state, notification)) {
     return { state, payloads: [], closeQueue: false };
@@ -141,7 +144,7 @@ export function applyNotificationLifecycle(
     };
   }
 
-  const payloads = mapAppServerNotification(notification);
+  const payloads = mapAppServerNotification(notification, options.onUnknownNotification);
 
   if (notification.method === "turn/completed") {
     return {

@@ -19,6 +19,7 @@ import { firstMeaningfulText } from "./text_sanitizer.js";
 
 export function mapAppServerNotification(
   notification: AppServerNotification,
+  onUnknownNotification?: (method: string) => void,
 ): SSEEventPayload[] {
   switch (notification.method) {
     case "thread/started": {
@@ -123,6 +124,7 @@ export function mapAppServerNotification(
           type: "progress",
           text: params.delta,
           timestamp: nowEpochSec(),
+          _live_only: true,
           ...rawContext(notification.method, params),
         } as SSEEventPayload,
       ];
@@ -146,6 +148,7 @@ export function mapAppServerNotification(
           type: isReasoning ? "thinking" : "progress",
           text,
           timestamp: nowEpochSec(),
+          _live_only: true,
           ...rawContext(notification.method, params),
         } as SSEEventPayload,
       ];
@@ -201,14 +204,8 @@ export function mapAppServerNotification(
     }
 
     default:
-      return [
-        {
-          type: "debug",
-          message: `Ignored Codex app-server notification: ${notification.method}`,
-          timestamp: nowEpochSec(),
-          raw_event_type: notification.method,
-        } as SSEEventPayload,
-      ];
+      onUnknownNotification?.(notification.method);
+      return [];
   }
 }
 
