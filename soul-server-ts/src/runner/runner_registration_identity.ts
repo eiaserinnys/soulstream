@@ -80,6 +80,7 @@ export async function completeRunnerRegistrationIdentityFromChild(
   sessionDirectory: string,
   input: {
     sessionId: string;
+    registrationId?: string;
     codeSha: string;
     releaseManifestId?: string;
     runtimeEnvIdentity?: string;
@@ -88,6 +89,13 @@ export async function completeRunnerRegistrationIdentityFromChild(
   },
 ): Promise<RunnerRegistrationIdentity> {
   const current = await readRunnerRegistrationIdentity(sessionDirectory);
+  if (input.registrationId && (
+    !current
+    || current.registrationId !== input.registrationId
+    || current.retiredAt !== undefined
+  )) {
+    throw new Error(`runner registration was superseded before child startup: ${input.sessionId}`);
+  }
   if (!current) {
     const completed = {
       ...pendingRunnerRegistrationIdentity(input.sessionId, input.codeSha, input),
@@ -181,6 +189,18 @@ export async function waitForChildRunnerRegistrationIdentity(
       return current;
     }
     await deps.delay(25);
+  }
+  const current = await readRunnerRegistrationIdentity(sessionDirectory);
+  if (
+    current
+    && current.registrationId === pending.registrationId
+    && current.pid === null
+    && current.retiredAt === undefined
+  ) {
+    await writeRunnerRegistrationIdentity(sessionDirectory, {
+      ...current,
+      retiredAt: new Date(deps.now()).toISOString(),
+    });
   }
   return null;
 }

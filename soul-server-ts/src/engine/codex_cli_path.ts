@@ -17,7 +17,7 @@ export interface CodexCliPathResolution {
 type EnvLike = NodeJS.ProcessEnv | Record<string, string | undefined>;
 type PlatformLike = NodeJS.Platform;
 
-const WINDOWS_SPAWNABLE_EXTENSIONS = [".cmd", ".exe", ".bat", ".com"] as const;
+const WINDOWS_SPAWNABLE_EXTENSIONS = [".exe", ".com", ".cmd", ".bat"] as const;
 
 /**
  * Resolve the target-node Codex CLI executable used by both SDK exec mode and

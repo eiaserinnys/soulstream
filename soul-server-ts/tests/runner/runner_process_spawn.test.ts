@@ -24,6 +24,7 @@ import {
   pendingRunnerRegistrationIdentity,
   readRunnerRegistrationIdentity,
   runnerRegistrationIdentityPath,
+  waitForChildRunnerRegistrationIdentity,
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
 
@@ -42,6 +43,33 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessSpawner", () => {
+  it("retires a pending registration when the child misses its startup deadline", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const pending = pendingRunnerRegistrationIdentity(params.sessionId, params.codeSha);
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, pending);
+    let now = 0;
+
+    await expect(waitForChildRunnerRegistrationIdentity(
+      paths.sessionDirectory,
+      pending,
+      4124,
+      {
+        isPidAlive: () => true,
+        now: () => now,
+        delay: async () => { now = 10_000; },
+      },
+    )).resolves.toBeNull();
+
+    await expect(readRunnerRegistrationIdentity(paths.sessionDirectory))
+      .resolves.toMatchObject({
+        registrationId: pending.registrationId,
+        pid: null,
+        retiredAt: new Date(10_000).toISOString(),
+      });
+  });
+
   it("reads old configs with the default Codex retention and validates explicit values", async () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
@@ -120,7 +148,8 @@ describe("RunnerProcessSpawner", () => {
     expect(spawned.pid).toBe(4123);
     expect(spawned.adopted).toBe(false);
     expect(await readFile(spawned.paths.pidPath, "utf8")).toBe("4123\n");
-    await expect(readRunnerRegistrationIdentity(spawned.paths.sessionDirectory)).resolves.toEqual({
+    const registrationIdentity = await readRunnerRegistrationIdentity(spawned.paths.sessionDirectory);
+    expect(registrationIdentity).toEqual({
       schemaVersion: 1,
       registrationId: expect.any(String),
       sessionId: "session-a",
@@ -135,6 +164,7 @@ describe("RunnerProcessSpawner", () => {
     expect(writtenConfig).toMatchObject({
       schemaVersion: 1,
       sessionId: "session-a",
+      registrationId: registrationIdentity!.registrationId,
       codeSha: "sha-a",
       snapshotPath: SNAPSHOT_PATH,
       runnerLeaseTimeoutMs: 120_000,

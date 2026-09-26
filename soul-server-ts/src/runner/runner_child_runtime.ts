@@ -100,6 +100,7 @@ export class RunnerChildRuntime {
       this.config.paths.sessionDirectory,
       {
         sessionId: this.config.sessionId,
+        registrationId: this.config.registrationId,
         codeSha: this.config.codeSha,
         releaseManifestId: this.config.releaseManifestId,
         runtimeEnvIdentity: this.config.runtimeEnvIdentity,

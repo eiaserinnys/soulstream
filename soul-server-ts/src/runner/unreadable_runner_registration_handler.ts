@@ -19,6 +19,7 @@ export class UnreadableRunnerRegistrationHandler {
     stateDirectory: string;
     logger: Pick<Logger, "error" | "info">;
     quarantineFailure?: typeof quarantineUnreadableRunnerRegistration;
+    beforeQuarantine?: (failure: RegistrationFailure) => Promise<void>;
   }) {}
 
   async handle(failures: RegistrationFailure[]): Promise<void> {
@@ -41,7 +42,11 @@ export class UnreadableRunnerRegistrationHandler {
       try {
         result = await (
           this.options.quarantineFailure ?? quarantineUnreadableRunnerRegistration
-        )(this.options.stateDirectory, failure);
+        )(this.options.stateDirectory, failure, {
+          ...(this.options.beforeQuarantine
+            ? { beforeQuarantine: async () => await this.options.beforeQuarantine!(failure) }
+            : {}),
+        });
       } catch (error) {
         if (shouldLog) {
           this.options.logger.error(

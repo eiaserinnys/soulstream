@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createConnection, createServer, type Server } from "node:net";
-import { resolve } from "node:path";
+import { resolve, win32 } from "node:path";
 
 const LOCK_NAME_PREFIX = "soulstream-runner-lock-";
 
@@ -71,12 +71,15 @@ export class RunnerKernelLock {
   }
 }
 
-export function runnerKernelLockEndpoint(path: string): string {
-  const canonicalPath = process.platform === "win32"
-    ? resolve(path).toLowerCase()
+export function runnerKernelLockEndpoint(
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const canonicalPath = platform === "win32"
+    ? win32.resolve(path).toLowerCase()
     : resolve(path);
   const digest = createHash("sha256").update(canonicalPath).digest("hex");
-  if (process.platform === "linux") return `\0${LOCK_NAME_PREFIX}${digest}`;
-  if (process.platform === "win32") return `\\\\.\\pipe\\${LOCK_NAME_PREFIX}${digest}`;
-  throw new Error(`runner kernel lock is unsupported on ${process.platform}`);
+  if (platform === "linux") return `\0${LOCK_NAME_PREFIX}${digest}`;
+  if (platform === "win32") return `\\\\.\\pipe\\${LOCK_NAME_PREFIX}${digest}`;
+  throw new Error(`runner kernel lock is unsupported on ${platform}`);
 }

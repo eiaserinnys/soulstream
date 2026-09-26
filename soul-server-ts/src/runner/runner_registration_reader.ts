@@ -35,6 +35,8 @@ import {
 import type { RunnerRegistration } from "./runner_process_registry.js";
 
 type RegistrationStage = "config" | "summary" | "identity" | "sqlite";
+const UNAVAILABLE_LOCK_SCAN_LIMIT = 3;
+const unavailableLockScans = new Map<string, { registrationId: string | null; count: number }>();
 
 export async function readRunnerRegistrationSummary(
   directory: string,
@@ -112,32 +114,59 @@ export async function readRunnerRegistrationSummary(
     const hasCompleteIdentity = identity !== null
       && identity.pid !== null
       && identity.startIdentity !== null;
+    let observedLock: RunnerWriterLockState | undefined;
+    if (options.verifyProcessIdentity) {
+      const defaults = defaultProcessOwnershipLockDependencies();
+      observedLock = await (options.inspectWriterLock ?? (async (path: string) =>
+        await inspectRunnerWriterLock(path, {
+          ...defaults,
+          ...(options.inspectProcess ? { inspectProcess: options.inspectProcess } : {}),
+        })))(config.paths.lockPath);
+    }
     const pid = resolveRegisteredRunnerPid(
       await readRunnerPid(config.paths.pidPath),
       hasCompleteIdentity ? null : lifecycle?.runner_pid ?? null,
       identity?.pid ?? null,
       directory,
       isPidAlive,
+      observedLock?.kind === "held"
+        ? observedLock.owner.pid
+        : observedLock?.kind === "free"
+          ? null
+          : undefined,
     );
-    if (identity && identity.pid !== null && identity.pid !== pid) {
+    if (
+      identity
+      && identity.pid !== null
+      && identity.pid !== pid
+      && observedLock?.kind !== "held"
+    ) {
       throw new Error(`runner pid identity does not match registration: ${directory}`);
     }
     let pidAlive = !options.verifyProcessIdentity && pid !== null && isPidAlive(pid);
     if (options.verifyProcessIdentity && pid !== null) {
-      const defaults = defaultProcessOwnershipLockDependencies();
-      const observed = await (options.inspectWriterLock ?? (async (path: string) =>
-        await inspectRunnerWriterLock(path, {
-          ...defaults,
-          ...(options.inspectProcess ? { inspectProcess: options.inspectProcess } : {}),
-        })))(config.paths.lockPath);
-      pidAlive = observed.kind === "unavailable" || (
-        observed.kind === "held"
-        && observed.owner.pid === pid
-        && (
-          !identity?.startIdentity
-          || processStartIdentitiesMatch(observed.owner.startIdentity, identity.startIdentity)
-        )
-      );
+      const scanKey = directory;
+      if (observedLock?.kind === "unavailable") {
+        const prior = unavailableLockScans.get(scanKey);
+        const count = prior && prior.registrationId === (identity?.registrationId ?? null)
+          ? prior.count + 1
+          : 1;
+        unavailableLockScans.set(scanKey, {
+          registrationId: identity?.registrationId ?? null,
+          count,
+        });
+        pidAlive = count < UNAVAILABLE_LOCK_SCAN_LIMIT;
+      } else if (observedLock) {
+        unavailableLockScans.delete(scanKey);
+        pidAlive = (
+          observedLock.kind === "held"
+          && observedLock.owner.pid === pid
+          && (
+            !identity?.startIdentity
+            || processStartIdentitiesMatch(observedLock.owner.startIdentity, identity.startIdentity)
+          )
+        );
+      }
     }
     return {
       config,

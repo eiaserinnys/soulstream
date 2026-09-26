@@ -19,11 +19,17 @@ export function resolveRegisteredRunnerPid(
   identityPid: number | null,
   label: string,
   candidateIsAlive: (pid: number) => boolean = isProcessAlive,
+  authoritativePid?: number | null,
 ): number | null {
+  if (authoritativePid !== undefined && authoritativePid !== null) {
+    return authoritativePid;
+  }
   const candidates = [pidFilePid, lifecyclePid, identityPid]
     .filter((pid): pid is number => pid !== null);
   const uniqueCandidates = [...new Set(candidates)];
   if (
+    authoritativePid === undefined
+    &&
     uniqueCandidates.length > 1
     && uniqueCandidates.filter(candidateIsAlive).length > 0
   ) {
