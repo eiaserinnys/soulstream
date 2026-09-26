@@ -21,6 +21,7 @@ export interface AgentConfigServiceOptions {
   snapshotRoot?: string;
   agentRegistry?: Pick<AgentRegistry, "replace">;
   profileResolver?: (profiles: AgentProfile[]) => AgentProfile[];
+  isDbIdentityOwnedProfile?: (profileId: string) => boolean;
   onAfterRegistryReplace?: () => MaybePromise<void>;
 }
 
@@ -104,6 +105,8 @@ export class AgentConfigService {
       snapshotRoot: options.snapshotRoot,
       parse: parseAgentsConfigRaw,
       stringify: stringifyAgentsConfig,
+      assertChange: (current, next) =>
+        this.assertDbIdentityFieldsUnchanged(current, next, options.isDbIdentityOwnedProfile),
       onAfterApply: async (config) => {
         options.agentRegistry?.replace(this.resolveProfiles(config.agents));
         await options.onAfterRegistryReplace?.();
@@ -259,6 +262,31 @@ export class AgentConfigService {
 
   private resolveProfiles(profiles: AgentProfile[]): AgentProfile[] {
     return this.profileResolver ? this.profileResolver(profiles) : profiles;
+  }
+
+  private assertDbIdentityFieldsUnchanged(
+    current: AgentsConfig,
+    next: AgentsConfig,
+    isDbIdentityOwnedProfile: AgentConfigServiceOptions["isDbIdentityOwnedProfile"],
+  ): void {
+    if (!isDbIdentityOwnedProfile) return;
+    const nextById = new Map(next.agents.map((profile) => [profile.id, profile]));
+    for (const before of current.agents) {
+      if (!isDbIdentityOwnedProfile(before.id)) continue;
+      const after = nextById.get(before.id);
+      if (!after) continue;
+      const changed = ([
+        "name",
+        "atom_contexts",
+        "aliases",
+        "default_preset",
+      ] as const).filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+      if (changed.length > 0) {
+        throw new Error(
+          `Agent profile "${before.id}" identity fields are owned by the DB overlay: ${changed.join(", ")}`,
+        );
+      }
+    }
   }
 }
 

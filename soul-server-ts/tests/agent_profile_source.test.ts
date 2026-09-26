@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { AgentRegistry, readAgentsConfig } from "../src/agent_registry.js";
 import { AgentProfileSource } from "../src/agent_profile_source.js";
 
 const directories: string[] = [];
@@ -40,6 +41,26 @@ function remote(overrides: Record<string, unknown> = {}) {
 }
 
 describe("AgentProfileSource", () => {
+  it("updates the shared registry so resumed sessions keep the DB overlay", async () => {
+    const files = await fixture();
+    const agentRegistry = new AgentRegistry(readAgentsConfig(files.agentsConfigPath).agents);
+    const sourceOptions = {
+      ...files,
+      runtimeUrl: "http://orch/api/agent-profiles/runtime",
+      logger,
+      fetchRuntime: async () => ({ profiles: [remote()] }),
+      agentRegistry,
+    } as ConstructorParameters<typeof AgentProfileSource>[0] & { agentRegistry: AgentRegistry };
+    const source = new AgentProfileSource(sourceOptions);
+
+    await source.initialize();
+
+    expect(agentRegistry.get("roselin")).toMatchObject({
+      name: "DB Roselin",
+      default_preset: "db-preset",
+    });
+  });
+
   it("preserves YAML behavior exactly when the DB runtime list is empty", async () => {
     const files = await fixture();
     const source = new AgentProfileSource({

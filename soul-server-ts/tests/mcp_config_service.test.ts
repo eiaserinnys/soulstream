@@ -67,6 +67,31 @@ describe("McpConfigService", () => {
     expect(service.resolveAgentProfile(profile)).toBe(profile);
   });
 
+  it("isolates a missing MCP profile to its agent", () => {
+    const service = new McpConfigService({ agentsConfigPath });
+    const good = AgentProfileSchema.parse({
+      id: "good-agent",
+      name: "Good",
+      backend: "codex",
+      workspace_dir: "/tmp/good",
+    });
+    const broken = AgentProfileSchema.parse({
+      id: "broken-agent",
+      name: "Broken",
+      backend: "codex",
+      workspace_dir: "/tmp/broken",
+      mcp_profile: "missing",
+    });
+    const failures: string[] = [];
+
+    const resolved = service.resolveProfilesIsolated([good, broken], (profile, error) => {
+      failures.push(`${profile.id}: ${error.message}`);
+    });
+
+    expect(resolved).toEqual([good, broken]);
+    expect(failures).toEqual(["broken-agent: MCP profile not found: missing"]);
+  });
+
   it("redacts sensitive URL query values from registry listings without changing runtime URLs", () => {
     const runtimeUrl =
       "https://mcp.example.test/mcp?exaApiKey=fake-exa-key&tools=web_search_exa,get_code_context_exa";

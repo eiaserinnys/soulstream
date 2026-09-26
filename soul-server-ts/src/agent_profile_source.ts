@@ -79,6 +79,7 @@ export interface NewSessionAgentProfileSource {
   readonly resolve: (profileId: string) => Promise<AgentProfileResolution | undefined>;
   readonly list: () => Promise<readonly AgentProfileResolution[]>;
   readonly state: () => AgentProfileSourceState;
+  readonly isDbIdentityOwnedProfile?: (profileId: string) => boolean;
 }
 
 export type AgentProfileSourceOptions = {
@@ -88,6 +89,7 @@ export type AgentProfileSourceOptions = {
   readonly headers?: Readonly<Record<string, string>>;
   readonly logger: Pick<Logger, "info" | "warn">;
   readonly profileResolver?: (profiles: AgentProfile[]) => AgentProfile[];
+  readonly agentRegistry?: AgentRegistry;
   readonly fetchRuntime?: () => Promise<unknown>;
   readonly fetchTimeoutMs?: number;
   readonly now?: () => Date;
@@ -114,6 +116,13 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
     const snapshot = await this.snapshot();
     const profile = snapshot.registry.get(profileId);
     if (!profile) return undefined;
+    if (snapshot.unresolvedProfileIds.has(profile.id)) {
+      const [resolved] = this.options.profileResolver
+        ? this.options.profileResolver([profile])
+        : [profile];
+      if (!resolved) throw new Error(`Agent MCP profile resolution returned no profile: ${profile.id}`);
+      return this.resolution(resolved, snapshot.dbIds, snapshot.portraits);
+    }
     return this.resolution(profile, snapshot.dbIds, snapshot.portraits);
   }
 
@@ -125,6 +134,10 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
 
   state(): AgentProfileSourceState {
     return this.currentState;
+  }
+
+  isDbIdentityOwnedProfile(profileId: string): boolean {
+    return this.overlays.some((profile) => profile.agent_id === profileId);
   }
 
   private async snapshot(): Promise<ProfileSnapshot> {
@@ -147,14 +160,27 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
   private createSnapshot(overlays: readonly RemoteAgentProfile[]): ProfileSnapshot {
     const yamlProfiles = readAgentsConfig(this.options.agentsConfigPath).agents;
     const merged = mergeProfiles(yamlProfiles, overlays, this.options.logger);
-    const resolved = this.options.profileResolver
-      ? this.options.profileResolver(merged.profiles)
-      : merged.profiles;
+    const unresolvedProfileIds = new Set<string>();
+    const resolved = merged.profiles.map((profile) => {
+      try {
+        return this.options.profileResolver?.([profile])[0] ?? profile;
+      } catch (error) {
+        unresolvedProfileIds.add(profile.id);
+        this.options.logger.warn(
+          { agentId: profile.id, error: error instanceof Error ? error.message : String(error) },
+          "Agent MCP profile resolution failed; keeping this profile isolated",
+        );
+        return profile;
+      }
+    });
     const validated = AgentsConfigSchema.parse({ agents: resolved });
+    const registry = this.options.agentRegistry ?? new AgentRegistry(validated.agents);
+    if (this.options.agentRegistry) registry.replace(validated.agents);
     return {
-      registry: new AgentRegistry(validated.agents),
+      registry,
       dbIds: merged.dbIds,
       portraits: merged.portraits,
+      unresolvedProfileIds,
     };
   }
 
@@ -246,6 +272,7 @@ type ProfileSnapshot = {
   readonly registry: AgentRegistry;
   readonly dbIds: ReadonlySet<string>;
   readonly portraits: ReadonlyMap<string, boolean>;
+  readonly unresolvedProfileIds: ReadonlySet<string>;
 };
 
 function mergeProfiles(

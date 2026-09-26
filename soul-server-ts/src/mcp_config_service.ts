@@ -164,6 +164,20 @@ export class McpConfigService {
     return profiles.map((profile) => this.resolveAgentProfile(profile));
   }
 
+  resolveProfilesIsolated(
+    profiles: AgentProfile[],
+    onFailure: (profile: AgentProfile, error: Error) => void,
+  ): AgentProfile[] {
+    return profiles.map((profile) => {
+      try {
+        return this.resolveAgentProfile(profile);
+      } catch (error) {
+        onFailure(profile, error instanceof Error ? error : new Error(String(error)));
+        return profile;
+      }
+    });
+  }
+
   resolveMcpProfile(profile: AgentProfile): ResolvedMcpProfile | undefined {
     if (!profile.mcp_profile) return undefined;
 
