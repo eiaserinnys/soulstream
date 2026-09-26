@@ -118,9 +118,9 @@ describe("planner repository", () => {
     });
 
     const taskQuery = normalizeSql(harness.calls[0]?.text);
-    expect(taskQuery).toContain("COALESCE((p.metadata->>'starred')::boolean, FALSE)");
+    expect(taskQuery).toContain("p.metadata->'starred' = 'true'::jsonb");
     expect(taskQuery).toContain("b.block_type IN ('task_ref', 'runbook_ref')");
-    expect(taskQuery).toContain("COALESCE((b.properties->>'primary')::boolean, FALSE)");
+    expect(taskQuery).toContain("b.properties->'primary' = 'true'::jsonb");
     expect(taskQuery).toContain("WHEN 'runbook_ref' THEN b.properties->>'runbookId'");
     expect(taskQuery).toContain("LIMIT ?");
     expect(harness.calls[0]?.values).toContain(2);
@@ -160,7 +160,7 @@ describe("planner repository", () => {
     expect(query).toContain("task_summaries AS");
     expect(query).toContain("task_sessions AS");
     expect(query).toContain("mounted_documents AS");
-    expect(query).toContain("COALESCE((page.metadata->>'starred')::boolean, FALSE)");
+    expect(query).toContain("page.metadata->'starred' = 'true'::jsonb");
   });
 
   it("pages only direct project-folder sessions that have no task container", async () => {

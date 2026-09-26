@@ -377,6 +377,9 @@ function createFakeSql(options: {
   const query = vi.fn(async (strings: TemplateStringsArray) => {
     const text = strings.join("?");
     queries.push(text.replace(/\s+/g, " ").trim());
+    if (text.includes("SELECT session_type, review_required")) {
+      return [{ session_type: "codex", review_required: true }];
+    }
     if (text.includes("SELECT DISTINCT node_id") && options.runningNodeId) {
       return [{ node_id: options.runningNodeId }];
     }

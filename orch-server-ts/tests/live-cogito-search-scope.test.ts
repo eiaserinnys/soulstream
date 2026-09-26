@@ -14,9 +14,9 @@ describe("live Cogito derived-text search scope", () => {
     ) => {
       const text = strings.join("?");
       calls.push({ text, values });
-      const booleanValues = values.filter((value) => typeof value === "boolean");
-      const includeHighlight = booleanValues[2];
-      const includeStory = booleanValues[3];
+      const searchFlags = values.filter((value) => typeof value === "boolean");
+      const includeHighlight = searchFlags[1];
+      const includeStory = searchFlags[2];
       if (
         text.includes("FROM session_digests")
         && (includeHighlight === true || includeStory === true)
@@ -51,7 +51,7 @@ describe("live Cogito derived-text search scope", () => {
       },
     });
 
-    await provider.search({
+    const disabledResponse = await provider.search({
       q: "needle",
       top_k: 10,
       search_session_id: false,
@@ -59,8 +59,7 @@ describe("live Cogito derived-text search scope", () => {
       include_highlight: false,
       include_story: false,
     });
-    expect(calls[0]?.values.filter((value) => typeof value === "boolean"))
-      .toEqual([false, false, false, false, false]);
+    expect(disabledResponse.results).toEqual([]);
 
     const response = await provider.search({
       q: "needle",
@@ -70,7 +69,11 @@ describe("live Cogito derived-text search scope", () => {
       include_highlight: false,
       include_story: true,
     });
-    expect(calls.some((call) => call.text.includes("FROM session_digests"))).toBe(true);
+    const digestCalls = calls.filter((call) => call.text.includes("FROM session_digests"));
+    expect(digestCalls.some((call) => {
+      const flags = call.values.filter((value) => typeof value === "boolean");
+      return flags[1] === false && flags[2] === true;
+    })).toBe(true);
     expect(response.results).toEqual([
       expect.objectContaining({ match_source: "story" }),
     ]);

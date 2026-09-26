@@ -322,18 +322,31 @@ async function loadActualBoardYjsHostClient(): Promise<new (config: unknown) => 
     "../../soul-server-ts/src/custom_view/custom_view_contract.ts",
     import.meta.url,
   );
+  const transportUrl = new URL(
+    "../../soul-server-ts/src/control_plane/persistence_host_transport.ts",
+    import.meta.url,
+  );
   const contractSource = await readFile(contractUrl, "utf8");
   const contractOutput = ts.transpileModule(contractSource, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const contractModuleUrl =
     `data:text/javascript;base64,${Buffer.from(contractOutput).toString("base64")}`;
+  const transportSource = await readFile(transportUrl, "utf8");
+  const transportOutput = ts.transpileModule(transportSource, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const transportModuleUrl =
+    `data:text/javascript;base64,${Buffer.from(transportOutput).toString("base64")}`;
   const source = await readFile(sourceUrl, "utf8");
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
   }).outputText.replace(
     "../custom_view/custom_view_contract.js",
     contractModuleUrl,
+  ).replace(
+    "../control_plane/persistence_host_transport.js",
+    transportModuleUrl,
   );
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(output).toString("base64")}`;
   const loaded = await import(moduleUrl) as { BoardYjsHostClient: new (config: unknown) => ActualClient };

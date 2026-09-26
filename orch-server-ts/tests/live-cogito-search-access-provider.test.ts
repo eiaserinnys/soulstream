@@ -60,7 +60,7 @@ describe("live cogito search access provider", () => {
     expect(response).toEqual({
       results: [{ session_id: "allowed-session", event_id: 1 }],
       session_results: [
-        { session_id: "allowed-session", title: "Visible title" },
+        { session_id: "allowed-session", folder_id: "allowed-child", title: "Visible title" },
       ],
       navigation_results: [
         { kind: "folder", id: "allowed", folder_id: "allowed-child" },
