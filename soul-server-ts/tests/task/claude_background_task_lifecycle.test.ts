@@ -7,6 +7,8 @@ import { attachClaudeBackgroundProvenance } from
 import { readClaudeBackgroundDeliveryMetadata } from
   "../../src/engine/claude_background_delivery_metadata.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import { ClaudeRuntimeHostClient } from
+  "../../src/control_plane/persistence_host_clients.js";
 import { ClaudeBackgroundTaskLifecycle } from
   "../../src/task/claude_background_task_lifecycle.js";
 
@@ -150,6 +152,116 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
       initiatingToolUseId: "toolu-background-agent",
       status: "completed",
     }));
+  });
+
+  it("continues after retryable nonterminal observation failures", async () => {
+    const retryableFailure = Object.assign(new Error("502 Bad Gateway"), {
+      retryable: true,
+    });
+    const observeGeneration = vi.fn()
+      .mockRejectedValueOnce(retryableFailure)
+      .mockResolvedValue({ status: "running" });
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { observeGeneration } as never,
+      sourceNode: "node-test",
+    });
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_task_progress",
+      taskId: "background-agent",
+      sessionId: "sdk-session",
+      toolUseId: "toolu-background-agent",
+      description: "long work",
+      summary: "still running",
+    };
+    attachClaudeBackgroundProvenance(event, "sdk_membership");
+
+    await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+
+    expect(observeGeneration).toHaveBeenCalledTimes(2);
+  });
+
+  it("logs exhausted retryable observations and leaves the turn live", async () => {
+    const retryableFailure = Object.assign(new Error("502 Bad Gateway"), {
+      retryable: true,
+    });
+    const observeGeneration = vi.fn().mockRejectedValue(retryableFailure);
+    const warn = vi.fn();
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { observeGeneration } as never,
+      sourceNode: "node-test",
+      logger: { warn },
+    });
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_task_progress",
+      taskId: "background-agent",
+      sessionId: "sdk-session",
+      toolUseId: "toolu-background-agent",
+      description: "long work",
+      summary: "still running",
+    };
+    attachClaudeBackgroundProvenance(event, "sdk_membership");
+
+    await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+
+    expect(observeGeneration).toHaveBeenCalledTimes(4);
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it("aborts hung observe requests quickly and leaves the turn live", async () => {
+    const timeoutCalls: number[] = [];
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((timeoutMs) => {
+      timeoutCalls.push(timeoutMs);
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 5);
+      return controller.signal;
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) {
+          reject(new Error("observe request did not receive an abort signal"));
+          return;
+        }
+        const rejectAborted = () => reject(new DOMException("aborted", "AbortError"));
+        if (signal.aborted) {
+          rejectAborted();
+          return;
+        }
+        signal.addEventListener("abort", rejectAborted, { once: true });
+      }),
+    );
+    const transportLogger = { warn: vi.fn(), info: vi.fn() };
+    const lifecycleLogger = { warn: vi.fn() };
+    const hostClient = new ClaudeRuntimeHostClient({
+      orch: { baseUrl: "http://orch.test", headers: {} },
+      logger: transportLogger as never,
+    });
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: hostClient as never,
+      sourceNode: "node-test",
+      logger: lifecycleLogger,
+    });
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_task_progress",
+      taskId: "background-agent",
+      sessionId: "sdk-session",
+      toolUseId: "toolu-background-agent",
+      description: "long work",
+      summary: "still running",
+    };
+    attachClaudeBackgroundProvenance(event, "sdk_membership");
+    const startedAt = Date.now();
+
+    try {
+      await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+      expect(Date.now() - startedAt).toBeLessThan(3_000);
+      expect(timeoutCalls).toEqual([2_000, 2_000, 2_000, 2_000]);
+      expect(fetchSpy).toHaveBeenCalledTimes(4);
+      expect(lifecycleLogger.warn).toHaveBeenCalledOnce();
+    } finally {
+      timeoutSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
   });
 });
 

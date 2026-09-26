@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { mapAppServerNotification } from "../../../src/engine/codex_app_server/event_mapper.js";
 import type {
@@ -282,6 +282,23 @@ describe("Codex app-server notification mapper", () => {
       type: "thinking",
       text: "I should inspect the stream path.",
       raw_event_type: "item/reasoning/summaryTextDelta",
+      _live_only: true,
+    });
+
+    expect(
+      mapAppServerNotification({
+        method: "item/mcpToolCall/progress",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          itemId: "tool-1",
+          message: "Reading records",
+        },
+      })[0],
+    ).toMatchObject({
+      type: "progress",
+      text: "Reading records",
+      _live_only: true,
     });
   });
 
@@ -358,6 +375,7 @@ describe("Codex app-server notification mapper", () => {
       raw_event_type: "item/commandExecution/outputDelta",
       tool_use_id: "cmd-1",
       text: "stdout chunk",
+      _live_only: true,
     });
 
     const completed = mapAppServerNotification({
@@ -523,14 +541,12 @@ describe("Codex app-server notification mapper", () => {
       raw_event_type: "error",
     });
 
+    const onUnknownNotification = vi.fn();
     const ignored = mapAppServerNotification({
       method: "future/notification",
       params: { value: 1 },
-    } as AppServerNotification);
-    expect(ignored[0]).toMatchObject({
-      type: "debug",
-      message: "Ignored Codex app-server notification: future/notification",
-      raw_event_type: "future/notification",
-    });
+    } as AppServerNotification, onUnknownNotification);
+    expect(ignored).toEqual([]);
+    expect(onUnknownNotification).toHaveBeenCalledWith("future/notification");
   });
 });

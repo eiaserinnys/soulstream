@@ -1,4 +1,5 @@
 import type { RequestResponseNodeCommandPayload } from "../node/pending_commands.js";
+import type { ControlCommandType } from "@soulstream/wire-schema";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -14,7 +15,7 @@ export type ScheduleParams = SessionParams & {
   schedule_id: string;
 };
 
-export type ExistingSessionRuntimePayload<TType extends string> =
+export type ExistingSessionRuntimePayload<TType extends ControlCommandType> =
   RequestResponseNodeCommandPayload<TType> & {
     agentSessionId: string;
   };

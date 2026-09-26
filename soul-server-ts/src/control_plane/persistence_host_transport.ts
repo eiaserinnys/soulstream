@@ -6,6 +6,74 @@ import type { OrchProxyConfig } from "../mcp/runtime.js";
 
 export type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
 
+export const ORCH_HOST_REQUEST_TIMEOUT_MS = 10_000;
+export const ORCH_NODE_COMMAND_TIMEOUT_MS = 35_000;
+
+export interface OrchErrorEnvelope {
+  message: string;
+  code: string | null;
+  details: Record<string, unknown>;
+}
+
+export async function fetchOrchResponse(
+  orch: Pick<OrchProxyConfig, "baseUrl" | "headers">,
+  method: "GET" | "POST",
+  path: string,
+  body?: unknown,
+  options: {
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    headers?: Record<string, string>;
+    fetchImpl?: typeof fetch;
+  } = {},
+): Promise<Response> {
+  const timeoutSignal = AbortSignal.timeout(
+    options.timeoutMs ?? ORCH_HOST_REQUEST_TIMEOUT_MS,
+  );
+  return await (options.fetchImpl ?? fetch)(`${orch.baseUrl}${path}`, {
+    method,
+    headers: {
+      ...orch.headers,
+      "content-type": "application/json",
+      ...options.headers,
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    signal: options.signal === undefined
+      ? timeoutSignal
+      : AbortSignal.any([options.signal, timeoutSignal]),
+  });
+}
+
+export async function readOrchErrorEnvelope(
+  response: Response,
+): Promise<OrchErrorEnvelope> {
+  const text = await response.text();
+  const fallback = text || `${response.status} ${response.statusText}`;
+  if (!text) return { message: fallback, code: null, details: {} };
+  try {
+    const payload: unknown = JSON.parse(text);
+    if (!isRecord(payload)) return { message: fallback, code: null, details: {} };
+    const detail = payload.detail;
+    if (typeof detail === "string") {
+      return { message: detail, code: null, details: {} };
+    }
+    const envelope = isRecord(detail) ? detail : payload;
+    const error = isRecord(envelope.error) ? envelope.error : envelope;
+    const details = isRecord(error.details) ? error.details : {};
+    return {
+      message: typeof error.message === "string" ? error.message : fallback,
+      code: typeof error.code === "string" ? error.code : null,
+      details,
+    };
+  } catch {
+    return { message: fallback, code: null, details: {} };
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 const REQUEST_ID_HEADER = "x-soulstream-persistence-request-id";
 const HOST_RECEIVED_AT_HEADER = "x-soulstream-host-received-at-ms";
 const HOST_RESPONDED_AT_HEADER = "x-soulstream-host-responded-at-ms";
@@ -32,6 +100,20 @@ export class PersistenceHostRequestError extends Error {
 export class PersistenceHostTransport {
   constructor(private readonly config: HostClientConfig) {}
 
+  async send(
+    method: "GET" | "POST",
+    path: string,
+    body?: unknown,
+    options: {
+      timeoutMs?: number;
+      signal?: AbortSignal;
+      headers?: Record<string, string>;
+      fetchImpl?: typeof fetch;
+    } = {},
+  ): Promise<Response> {
+    return await fetchOrchResponse(this.config.orch, method, path, body, options);
+  }
+
   async request<T>(
     domain: string,
     operation: string,
@@ -43,22 +125,13 @@ export class PersistenceHostTransport {
     let response: Response | undefined;
     let responseBody: string;
     try {
-      response = await fetch(
-        `${this.config.orch.baseUrl}/api/${domain}/host/${encodeURIComponent(operation)}`,
+      response = await this.send(
+        "POST",
+        `/api/${domain}/host/${encodeURIComponent(operation)}`,
+        { args: snakeCase(args) },
         {
-          method: "POST",
-          headers: {
-            ...this.config.orch.headers,
-            "content-type": "application/json",
-            [REQUEST_ID_HEADER]: requestId,
-          },
-          body: JSON.stringify({ args: snakeCase(args) }),
-          signal: options.signal === undefined
-            ? AbortSignal.timeout(options.timeoutMs ?? 10_000)
-            : AbortSignal.any([
-              options.signal,
-              AbortSignal.timeout(options.timeoutMs ?? 10_000),
-            ]),
+          ...options,
+          headers: { [REQUEST_ID_HEADER]: requestId },
         },
       );
       responseBody = await response.text();

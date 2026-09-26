@@ -25,6 +25,51 @@ function makeRuntime(): McpRuntime {
 }
 
 describe("외부 LLM destructive tool 경계", () => {
+  it.each([
+    "update_agent_profile",
+    "set_agent_mcp_profile",
+    "rollback_agents_config",
+    "apply_remote_agent_profile_update",
+    "rollback_remote_agents_config",
+    "set_agent_atom_contexts",
+    "set_folder_system_prompt",
+  ])("blocks the llm caller from configuration mutation tool %s", (toolName) => {
+    const blocked = withMcpRequestContext(
+      { principal: genericExternal },
+      () => guardMcpToolExecution(makeRuntime(), toolName),
+    );
+
+    expect(blocked).toMatchObject({
+      isError: true,
+      structuredContent: {
+        error: `MCP tool "${toolName}" is not available to external LLM callers`,
+      },
+    });
+  });
+
+  it("hides configuration mutation tools from the llm tools/list surface", () => {
+    const registerTool = vi.fn();
+
+    withMcpRequestContext({ principal: genericExternal }, () => {
+      const guarded = createGuardedMcpServer(
+        { registerTool } as unknown as McpServer,
+        makeRuntime(),
+      );
+      guarded.registerTool("update_agent_profile", { inputSchema: {} }, vi.fn());
+      guarded.registerTool("apply_remote_agent_profile_update", { inputSchema: {} }, vi.fn());
+      guarded.registerTool("set_agent_atom_contexts", { inputSchema: {} }, vi.fn());
+      guarded.registerTool("set_folder_system_prompt", { inputSchema: {} }, vi.fn());
+      guarded.registerTool("get_agents_config", { inputSchema: {} }, vi.fn());
+    });
+
+    expect(registerTool).toHaveBeenCalledTimes(1);
+    expect(registerTool).toHaveBeenCalledWith(
+      "get_agents_config",
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
   it("delete_ 명명 규칙으로 신규 도구도 자동 분류한다", () => {
     expect(isDestructiveMcpTool("delete_session")).toBe(true);
     expect(isDestructiveMcpTool("delete_example")).toBe(true);

@@ -8,6 +8,7 @@ import { TaskExecutor } from "../../src/task/task_executor.js";
 import { TaskExecutorFinalizer } from
   "../../src/task/task_executor_finalizer.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
+import { TaskRunnerRecovery } from "../../src/task/task_runner_recovery.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -25,7 +26,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function makeMocks() {
+function makeMocks(completionNotifier?: { notify(task: Task): Promise<void> }) {
   const enqueueTerminalTransitionAndWaitForApplication = vi.fn(async (
     _sessionId: string,
     _event: unknown,
@@ -55,6 +56,7 @@ function makeMocks() {
   const transition = new TaskLifecycleTransition({
     logger: silentLogger,
     persistence: { enqueueTerminalTransitionAndWaitForApplication } as never,
+    completionNotifier,
   });
 
   return {
@@ -87,6 +89,21 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     expect(interrupt).toHaveBeenCalledOnce();
     expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
     expect(task.status).toBe("interrupted");
+  });
+
+  it("does not register a completion notification for a user requested stop", async () => {
+    const completionNotifier = { notify: vi.fn().mockResolvedValue(undefined) };
+    const { transition } = makeMocks(completionNotifier);
+    const task = makeTask({ callerSessionId: "parent-session" });
+    const engine = { interrupt: vi.fn().mockResolvedValue(true) } as unknown as EnginePort;
+    task.runner = {
+      engine,
+      dispatcher: new InProcessRunnerCommandDispatcher(engine),
+    };
+
+    await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
+
+    expect(completionNotifier.notify).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -386,6 +403,40 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     expect(enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledTimes(2);
     expect(task.runner).toBeUndefined();
     expect(task.executionPromise).toBeUndefined();
+  });
+});
+
+describe("TaskLifecycleTransition completion notification recovery", () => {
+  it("notifies the parent when runner death finalization is applied", async () => {
+    const completionNotifier = { notify: vi.fn().mockResolvedValue(undefined) };
+    const { transition } = makeMocks(completionNotifier);
+    const recovery = new TaskRunnerRecovery({
+      getTask: vi.fn(),
+      loadTask: vi.fn(),
+      rememberTask: vi.fn(),
+      lifecycleTransition: transition,
+    });
+    const task = makeTask({ callerSessionId: "parent-session" });
+
+    await recovery.markFailure(task, "runner exited");
+
+    expect(completionNotifier.notify).toHaveBeenCalledWith(task);
+  });
+
+  it("notifies the parent when closed runner finalization is applied", async () => {
+    const completionNotifier = { notify: vi.fn().mockResolvedValue(undefined) };
+    const { transition } = makeMocks(completionNotifier);
+    const recovery = new TaskRunnerRecovery({
+      getTask: vi.fn(),
+      loadTask: vi.fn(),
+      rememberTask: vi.fn(),
+      lifecycleTransition: transition,
+    });
+    const task = makeTask({ callerSessionId: "parent-session" });
+
+    await expect(recovery.projectClosed(task, "runner closed")).resolves.toBe(true);
+
+    expect(completionNotifier.notify).toHaveBeenCalledWith(task);
   });
 });
 

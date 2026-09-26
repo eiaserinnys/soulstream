@@ -5,6 +5,7 @@ import {
 } from "@soulstream/page-model";
 
 import type { OrchProxyConfig } from "../mcp/runtime.js";
+import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 
 export interface TaskIdentityActor {
   actorKind: "agent" | "user" | "system" | "llm";
@@ -42,7 +43,11 @@ export class TaskIdentityHostClientError extends Error {
 }
 
 export class TaskIdentityHostClient {
-  constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {}
+  private readonly transport: PersistenceHostTransport;
+
+  constructor(private readonly config: { orch: OrchProxyConfig; logger: Logger }) {
+    this.transport = new PersistenceHostTransport(config);
+  }
 
   async resolvePageIdentity(pageId: string): Promise<TaskIdentityPageResolution | null> {
     return await this.request<TaskIdentityPageResolution | null>("resolve-page", {
@@ -115,16 +120,13 @@ export class TaskIdentityHostClient {
   }
 
   private async request<T = TaskIdentityHostResult>(operation: string, body: unknown): Promise<T> {
-    const response = await fetch(
-      `${this.config.orch.baseUrl}/api/task-identities/host/${encodeURIComponent(operation)}`,
-      {
-        method: "POST",
-        headers: { ...this.config.orch.headers, "content-type": "application/json" },
-        body: JSON.stringify(body),
-      },
+    const response = await this.transport.send(
+      "POST",
+      `/api/task-identities/host/${encodeURIComponent(operation)}`,
+      body,
     );
     if (!response.ok) {
-      const detail = await responseErrorDetail(response);
+      const detail = await readOrchErrorEnvelope(response);
       this.config.logger.warn(
         { operation, status: response.status, message: detail.message, code: detail.code },
         "task identity host request failed",
@@ -146,33 +148,4 @@ function actor(input: TaskIdentityActor) {
     actor_session_id: input.actorSessionId ?? null,
     actor_user_id: input.actorUserId ?? null,
   };
-}
-
-async function responseErrorDetail(response: Response): Promise<{
-  message: string;
-  code: string | null;
-  details: Record<string, unknown>;
-}> {
-  const text = await response.text();
-  if (!text) {
-    return { message: `${response.status} ${response.statusText}`, code: null, details: {} };
-  }
-  try {
-    const detail = (JSON.parse(text) as {
-      detail?: { error?: { message?: unknown; code?: unknown; details?: unknown } };
-    }).detail;
-    if (typeof detail?.error?.message === "string") {
-      const details = detail.error.details;
-      return {
-        message: detail.error.message,
-        code: typeof detail.error.code === "string" ? detail.error.code : null,
-        details: details !== null && typeof details === "object" && !Array.isArray(details)
-          ? details as Record<string, unknown>
-          : {},
-      };
-    }
-  } catch {
-    return { message: text, code: null, details: {} };
-  }
-  return { message: text, code: null, details: {} };
 }

@@ -31,18 +31,14 @@ import { TaskIdentityHostClient } from "../work-task/task_identity_host_client.j
 import { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
 import { FolderHostClient } from "../folder/folder_host_client.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
-import {
-  SessionLegacyProjection,
-  SessionPageBindingService,
-} from "../page/session_page_binding_service.js";
+import { SessionLegacyProjection, SessionPageBindingService } from "../page/session_page_binding_service.js";
 import { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { ScheduleHostClient } from "../schedule/schedule_host_client.js";
 import { buildServer } from "../server.js";
 import { sendMessageToSession } from "../task/session_message_sender.js";
 import { TaskEngineEventPublisher } from "../task/task_engine_event_publisher.js";
 import { redeliverStoredDeliveryContent } from "../task/delivery_row_intervention.js";
-import { TransientEventLogAggregator } from
-  "../task/transient_event_log_aggregator.js";
+import { TransientEventLogAggregator } from "../task/transient_event_log_aggregator.js";
 import { TaskManager } from "../task/task_manager.js";
 import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
@@ -75,7 +71,9 @@ export async function composeWorkerRuntime(
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,
     agentRegistry,
-    profileResolver: (profiles) => mcpConfigService.resolveProfiles(profiles),
+    profileSource: agentProfileSource,
+    profileResolver: (profiles) => mcpConfigService.resolveProfilesIsolated(profiles, logger),
+    isDbIdentityOwnedProfile: agentProfileSource?.isDbIdentityOwnedProfile?.bind(agentProfileSource),
     onAfterRegistryReplace: async () => {
       if (!upstreamAdapter) {
         logger.warn(
@@ -307,6 +305,7 @@ export async function composeWorkerRuntime(
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
     ...(worktreeService ? { worktreeResolver: worktreeService } : {}),
   });
+  taskManager.setCompletionNotifier(taskRuntime.completionNotifier);
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({
     env,
     runnerProcessFactory: runnerProcess?.runtimeFactory,

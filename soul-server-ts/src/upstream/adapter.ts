@@ -272,6 +272,7 @@ export class UpstreamAdapter {
             cmd,
             () => this.dispatcher.dispatch(cmd),
             this.dispatcher.expectsResponse(cmd),
+            ws,
           );
         } catch (err) {
           this.logger.error({ err }, "Dispatcher threw");
@@ -315,6 +316,7 @@ export class UpstreamAdapter {
       ws.once("error", onError);
     });
 
+    let established = false;
     try {
       // node_register 발행
       await this.send(
@@ -373,18 +375,23 @@ export class UpstreamAdapter {
         send: async (data) => await this.sendOnSocket(ws, data),
         logger: this.logger,
       });
-      const established = await Promise.race([
+      const catchUpEstablished = await Promise.race([
         catchUpReady,
         servePromise.then(() => false),
       ]);
-      if (established) {
+      if (catchUpEstablished) {
+        established = true;
         this.reconnect.reset();
         this.authWarned = false;
         this.logger.info({ nodeId: this.config.nodeId }, "Registered with upstream");
         await servePromise;
       }
     } finally {
+      this.stopAppHeartbeat();
       this.deps.eventOutboxPump?.disconnect();
+      if (!established && ws.readyState === WebSocket.OPEN) {
+        ws.terminate();
+      }
       if (this.ws === ws) {
         this.ws = null;
       }
@@ -484,7 +491,7 @@ export class UpstreamAdapter {
   }
 
   private async send(data: unknown): Promise<void> {
-    const ws = this.ws;
+    const ws = this.commandTransportObserver.responseSocket(data) ?? this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       this.logger.warn(summarizePayloadForLog(data), "Cannot send — WebSocket not open");
       return;

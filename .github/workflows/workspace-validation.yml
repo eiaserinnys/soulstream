@@ -33,6 +33,72 @@ permissions:
   contents: read
 
 jobs:
+  workspace-tests:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: orch-server-ts unit tests
+            package: orch-server-ts
+            kind: unit
+          - name: orch-server-ts PostgreSQL tests
+            package: orch-server-ts
+            kind: postgres
+          - name: soul-ui tests
+            package: packages/soul-ui
+            kind: unit
+          - name: page-model tests
+            package: packages/page-model
+            kind: unit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install workspace dependencies
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+          corepack pnpm install --frozen-lockfile --config.strict-dep-builds=false
+
+      - name: Run package tests
+        shell: bash
+        run: |
+          if [[ "${{ matrix.kind }}" == "postgres" ]]; then
+            shopt -s globstar nullglob
+            postgres_tests=(
+              orch-server-ts/tests/**/*-postgres.test.ts
+              orch-server-ts/tests/**/*.postgres.test.ts
+              orch-server-ts/tests/**/*.postgres.integration.test.ts
+            )
+            for index in "${!postgres_tests[@]}"; do
+              postgres_tests[$index]="${postgres_tests[$index]#orch-server-ts/}"
+            done
+            corepack pnpm --dir orch-server-ts exec vitest run \
+              "${postgres_tests[@]}" \
+              --minWorkers=1 --maxWorkers=1 --no-file-parallelism
+          elif [[ "${{ matrix.package }}" == "orch-server-ts" ]]; then
+            corepack pnpm --dir orch-server-ts exec vitest run \
+              --minWorkers=1 --maxWorkers=2 \
+              --exclude '**/*-postgres.test.ts' \
+              --exclude '**/*.postgres.test.ts' \
+              --exclude '**/*.postgres.integration.test.ts'
+          elif [[ "${{ matrix.package }}" == "packages/soul-ui" ]]; then
+            corepack pnpm --dir packages/soul-ui exec vitest run \
+              --config vitest.config.ts --minWorkers=1 --maxWorkers=2
+          else
+            corepack pnpm --dir packages/page-model exec vitest run \
+              --minWorkers=1 --maxWorkers=2
+          fi
+
   workspace-validation:
     runs-on: ubuntu-latest
     timeout-minutes: 30

@@ -13,6 +13,7 @@ import {
 interface InboundCommandTrace extends CommandTraceFields {
   receivedAtMs: number;
   responseSent: boolean;
+  socket: WebSocket | null;
 }
 
 // One second is 1/30 of the orch command timeout: early enough to expose
@@ -31,12 +32,14 @@ export class CommandTransportObserver {
     rawCmd: unknown,
     dispatch: () => Promise<T>,
     expectsResponse?: boolean,
+    socket?: WebSocket,
   ): Promise<T> {
     const cmd = (rawCmd ?? {}) as CommandLike;
     const trace = {
       ...commandTraceFields(cmd),
       receivedAtMs: this.nowMs(),
       responseSent: false,
+      socket: socket ?? null,
     };
     const shouldExpectResponse = expectsResponse ?? (trace.requestId !== null);
     this.logger.debug(commandTraceFields(cmd), "Upstream command received");
@@ -73,6 +76,14 @@ export class CommandTransportObserver {
         );
       }
     }
+  }
+
+  responseSocket(data: unknown): WebSocket | null {
+    const trace = this.activeCommand.getStore();
+    if (!trace?.socket || trace.requestId === null) return null;
+    return commandRequestId((data ?? {}) as CommandLike) === trace.requestId
+      ? trace.socket
+      : null;
   }
 
   async send(ws: WebSocket, data: unknown): Promise<void> {

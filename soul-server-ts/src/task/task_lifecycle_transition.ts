@@ -30,6 +30,7 @@ export interface ExternalFinalizeParams {
 interface TaskLifecycleTransitionDeps {
   logger: Logger;
   persistence?: EventPersistence;
+  completionNotifier?: { notify(task: Task): Promise<void> };
 }
 
 export interface TaskFinalStatePersistenceResult {
@@ -64,7 +65,36 @@ export function isUserStopConverged(task: Task | undefined): boolean {
 }
 
 export class TaskLifecycleTransition {
-  constructor(private readonly deps: TaskLifecycleTransitionDeps) {}
+  private completionNotifier?: { notify(task: Task): Promise<void> };
+
+  constructor(private readonly deps: TaskLifecycleTransitionDeps) {
+    this.completionNotifier = deps.completionNotifier;
+  }
+
+  setCompletionNotifier(
+    completionNotifier: { notify(task: Task): Promise<void> },
+  ): void {
+    this.completionNotifier = completionNotifier;
+  }
+
+  async notifyCompletionIfApplied(
+    task: Task,
+    persistence: TaskFinalStatePersistenceResult,
+  ): Promise<void> {
+    if (!persistence.terminalTransitionApplied) return;
+    // Explicit user stops are cancellations, not delegated completion reports.
+    if (task.terminationDetail === "user_stop") return;
+    if (!task.callerSessionId || !this.completionNotifier) return;
+
+    try {
+      await this.completionNotifier.notify(task);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "completion notification failed after terminal transition was applied",
+      );
+    }
+  }
 
   async cancelRunningTask(task: Task | undefined): Promise<boolean> {
     if (!task) return false;
@@ -142,6 +172,7 @@ export class TaskLifecycleTransition {
     const stopCompletedAt = task.completedAt ?? new Date();
     task.completedAt = stopCompletedAt;
     try {
+      // Policy: explicit user stops never register a parent completion notification.
       await this.persistFinalState(task, true);
     } catch (err) {
       this.deps.logger.warn(

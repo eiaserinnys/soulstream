@@ -193,7 +193,6 @@ export class TaskInterventionRoute {
       }
     };
     try {
-      await this.awaitInitializingTask(task);
       if (this.deps.deliveryLedgerGate) {
         const rechecked = await this.deps.deliveryLedgerGate.beginDispatch(
           admission,
@@ -206,6 +205,7 @@ export class TaskInterventionRoute {
           };
         }
       }
+      await this.awaitInitializingTask(task);
       const taskRoute = interventionTaskRoute(task);
       if (taskRoute === "activating") {
         throw new Error(

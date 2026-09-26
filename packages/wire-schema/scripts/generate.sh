@@ -88,8 +88,7 @@ else
 fi
 
 # json-schema-to-typescript는 custom JSON Schema annotation을 출력하지 않는다.
-# 이벤트 내구성 분류는 schema가 정본이며, TS consumer가 같은 정본을 직접 쓰도록
-# 검증된 generated constant를 산출물 끝에 추가한다.
+# 런타임 목록과 유니온 타입은 schema metadata에서 생성한다.
 node - "$SCHEMA" "$TS_OUT" <<'NODE'
 const { readFileSync, writeFileSync } = require("node:fs");
 
@@ -106,6 +105,35 @@ if (!Array.isArray(persistenceOnly) || persistenceOnly.some((eventType) => typeo
 }
 if (new Set(persistenceOnly).size !== persistenceOnly.length) {
   throw new Error("x-soulstream-persistence-only-event-types must not contain duplicates");
+}
+const controlCommandTypes = schema["x-soulstream-control-command-types"];
+if (!Array.isArray(controlCommandTypes) || controlCommandTypes.some((commandType) => typeof commandType !== "string")) {
+  throw new Error("x-soulstream-control-command-types string array is required");
+}
+if (new Set(controlCommandTypes).size !== controlCommandTypes.length) {
+  throw new Error("x-soulstream-control-command-types must not contain duplicates");
+}
+const schemaWireTypes = new Set(
+  Object.values(schema.$defs ?? {}).map((definition) => definition?.properties?.type?.const),
+);
+const rootWireTypes = new Set(
+  (schema.oneOf ?? []).map((entry) => {
+    const name = entry?.$ref?.split("/").at(-1);
+    return schema.$defs?.[name]?.properties?.type?.const;
+  }),
+);
+const missingCommandTypes = controlCommandTypes.filter(
+  (commandType) => !schemaWireTypes.has(commandType) || !rootWireTypes.has(commandType),
+);
+if (missingCommandTypes.length > 0) {
+  throw new Error(`control command types missing from wire schema: ${missingCommandTypes.join(",")}`);
+}
+const eventIngressRejectionCodes = schema["x-soulstream-event-ingress-rejection-codes"];
+if (!Array.isArray(eventIngressRejectionCodes) || eventIngressRejectionCodes.some((code) => typeof code !== "string" || !code.startsWith("EVENT_INGRESS_"))) {
+  throw new Error("x-soulstream-event-ingress-rejection-codes must be EVENT_INGRESS_ string array");
+}
+if (new Set(eventIngressRejectionCodes).size !== eventIngressRejectionCodes.length) {
+  throw new Error("x-soulstream-event-ingress-rejection-codes must not contain duplicates");
 }
 
 const eventTypes = Object.entries(schema.$defs ?? {})
@@ -135,6 +163,8 @@ if (overlap.length > 0 || missing.length > 0 || extra.length > 0 || invalid.leng
 const entries = Object.entries(durability)
   .map(([eventType, classification]) => `  ${JSON.stringify(eventType)}: ${JSON.stringify(classification)},`)
   .join("\n");
+const generatedStringArray = (name, values) =>
+  `export const ${name} = [\n${values.map((value) => `  ${JSON.stringify(value)},`).join("\n")}\n] as const;`;
 const generated = `
 
 /**
@@ -147,6 +177,15 @@ ${entries}
 
 export type PersistenceEventType = keyof typeof EVENT_DURABILITY;
 export type EventDurability = (typeof EVENT_DURABILITY)[PersistenceEventType];
+
+${generatedStringArray("SSE_EVENT_TYPES", eventTypes)}
+export type SSEEventType = (typeof SSE_EVENT_TYPES)[number];
+
+${generatedStringArray("CONTROL_COMMAND_TYPES", controlCommandTypes)}
+export type ControlCommandType = (typeof CONTROL_COMMAND_TYPES)[number];
+
+${generatedStringArray("EVENT_INGRESS_REJECTION_CODES", eventIngressRejectionCodes)}
+export type EventIngressRejectionCode = (typeof EVENT_INGRESS_REJECTION_CODES)[number];
 `;
 
 writeFileSync(outputPath, `${readFileSync(outputPath, "utf8").trimEnd()}${generated}`);

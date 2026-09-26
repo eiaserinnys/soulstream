@@ -20,16 +20,18 @@ function App() {
   const [updateDismissed, setUpdateDismissed] = useState(false);
 
   useEffect(() => {
-    checkForUpdate().then(setUpdate);
-    loadConfig();
+    const updateCheck = checkForUpdate();
+    updateCheck.then(setUpdate);
+    loadConfig(updateCheck);
   }, []);
 
-  async function loadConfig() {
+  async function loadConfig(updateCheck: Promise<Update | null>) {
     try {
       const url = await getServerUrl();
       if (url) {
         setSavedUrl(url);
-        navigateToServer(url);
+        const availableUpdate = await updateCheck;
+        if (!availableUpdate) navigateToServer(url);
       } else {
         setState("setup");
       }
@@ -79,6 +81,11 @@ function App() {
     setState("setup");
   }
 
+  function handleUpdateDismiss() {
+    setUpdateDismissed(true);
+    if (savedUrl) navigateToServer(savedUrl);
+  }
+
   function handleOpenSettings() {
     setState("settings");
   }
@@ -98,7 +105,7 @@ function App() {
       {showBanner && (
         <UpdateBanner
           update={update}
-          onDismiss={() => setUpdateDismissed(true)}
+          onDismiss={handleUpdateDismiss}
         />
       )}
 

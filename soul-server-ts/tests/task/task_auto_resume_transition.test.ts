@@ -614,7 +614,10 @@ describe("AutoResumeTransition", () => {
       terminalEventId: 6,
     });
     const finalizer = new TaskExecutorFinalizer({
-      lifecycleTransition: { persistExecutorFinalState: vi.fn() },
+      lifecycleTransition: {
+        persistExecutorFinalState: vi.fn(),
+        notifyCompletionIfApplied: vi.fn(),
+      },
       logger: silentLogger,
     });
     const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {

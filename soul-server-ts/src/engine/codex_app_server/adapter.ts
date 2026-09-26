@@ -106,6 +106,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
   private initialized = false;
   private executing = false;
   private closed = false;
+  private pendingInterrupt = false;
   private notificationLifecycle: NotificationLifecycleState =
     createNotificationLifecycleState();
   private activeQueue: AsyncPayloadQueue<SSEEventPayload> | null = null;
@@ -167,6 +168,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     }
 
     this.executing = true;
+    this.pendingInterrupt = false;
     this.notificationLifecycle = clearNotificationExecution(this.notificationLifecycle);
     const queue = new AsyncPayloadQueue<SSEEventPayload>();
     this.activeQueue = queue;
@@ -208,6 +210,13 @@ export class CodexAppServerEngineAdapter implements EnginePort {
                 turnResponse.turn,
               );
               this.notificationLifecycle = turnStart.state;
+              if (this.pendingInterrupt && turnStart.state.activeTurn) {
+                this.pendingInterrupt = false;
+                await this.client.interruptTurn({
+                  threadId: turnStart.state.activeTurn.threadId,
+                  turnId: turnStart.state.activeTurn.turnId,
+                });
+              }
               if (turnStart.closeQueue) {
                 queue.close();
               }
@@ -239,6 +248,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     } finally {
       for (const off of unsubscribe) off();
       this.notificationLifecycle = clearNotificationExecution(this.notificationLifecycle);
+      this.pendingInterrupt = false;
       this.detachedCommandActivity.endForegroundExecution();
       this.activeQueue = null;
       this.executing = false;
@@ -279,6 +289,10 @@ export class CodexAppServerEngineAdapter implements EnginePort {
   async interrupt(): Promise<boolean> {
     const activeTurn = this.notificationLifecycle.activeTurn;
     if (!activeTurn) {
+      if (this.executing) {
+        this.pendingInterrupt = true;
+        return true;
+      }
       this.logger.debug("Codex app-server interrupt called with no active turn");
       return false;
     }
@@ -297,6 +311,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.pendingInterrupt = false;
     this.notificationLifecycle = clearNotificationExecution(this.notificationLifecycle);
     this.unsubscribeDetachedCommandNotifications();
     this.unsubscribeDetachedCommandClose();
@@ -379,6 +394,10 @@ export class CodexAppServerEngineAdapter implements EnginePort {
   ): void {
     const result = applyNotificationLifecycle(this.notificationLifecycle, notification, {
       suppressThreadStartedSession,
+      onUnknownNotification: (method) => this.logger.warn(
+        { method },
+        "Ignoring unknown Codex app-server notification",
+      ),
     });
     this.notificationLifecycle = result.state;
 

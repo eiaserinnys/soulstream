@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   mapAgentsGuardrailError,
@@ -21,6 +21,17 @@ describe("non-Claude mapper runner JSON contract", () => {
       assertMapperOutput(mapAppServerNotification(notification as never), "Codex app-server");
     },
   );
+
+  it("drops unknown Codex app-server notifications and reports their method", () => {
+    const onUnknownNotification = vi.fn();
+    const events = mapAppServerNotification(
+      { method: "future/event", params: {} } as never,
+      onUnknownNotification,
+    );
+
+    expect(events).toEqual([]);
+    expect(onUnknownNotification).toHaveBeenCalledWith("future/event");
+  });
 
   it.each(agentsFixtures)("keeps Agents $name output inside the contract", ({ event }) => {
     const output = event.kind === "guardrail"
@@ -138,10 +149,6 @@ const codexAppServerFixtures = [
   {
     name: "error without optional IDs",
     notification: { method: "error", params: { error: { message: "failed" } } },
-  },
-  {
-    name: "unknown notification",
-    notification: { method: "future/event", params: {} },
   },
 ];
 

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { CONTROL_COMMAND_TYPES } from "@soulstream/wire-schema";
 
 import { createAgentConfigCommandFamily } from "../../src/upstream/agent_config_command_family.js";
 import { createAttachmentCommandFamily } from "../../src/upstream/attachment_command_family.js";
@@ -36,6 +37,7 @@ describe("control command inventory", () => {
     expect(inventoryTypes).toHaveLength(42);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
+    expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
   });
 
   it("has the ten approved families and only one fire-and-forget command", () => {

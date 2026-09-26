@@ -347,6 +347,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
             newlyFinalized: true,
             terminalTransitionApplied: true,
           })),
+          notifyCompletionIfApplied: vi.fn(async () => {}),
         },
         logger: { warn() {} } as never,
       });

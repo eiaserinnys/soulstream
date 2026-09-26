@@ -88,6 +88,7 @@ describe("orch PageRepository", () => {
       expect.stringContaining("INSERT INTO board_yjs_documents"),
       expect.stringContaining("INSERT INTO board_yjs_updates"),
       expect.stringContaining("INSERT INTO pages"),
+      expect.stringContaining("SELECT EXISTS"),
       expect.stringContaining("DELETE FROM blocks"),
       expect.stringContaining("INSERT INTO blocks"),
       expect.stringContaining("INSERT INTO blocks"),

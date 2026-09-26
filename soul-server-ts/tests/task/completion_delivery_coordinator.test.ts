@@ -136,6 +136,34 @@ describe("CompletionDeliveryCoordinator", () => {
     }));
   });
 
+  it("retries durable registration after a retryable host failure", async () => {
+    const repository = repositoryFixture();
+    const retryableFailure = Object.assign(new Error("502 Bad Gateway"), {
+      retryable: true,
+    });
+    repository.register
+      .mockRejectedValueOnce(retryableFailure)
+      .mockResolvedValueOnce({ row: pendingRow(), inserted: true, conflict: false });
+    const dispatch = vi.fn().mockResolvedValue(undefined);
+    const coordinator = new CompletionDeliveryCoordinator({
+      repository: repository as never,
+      dispatch,
+      logger: loggerFixture(),
+    }, "completion:test-worker");
+
+    await coordinator.enqueue({
+      targetSessionId: "caller-session",
+      sourceSessionId: "child-session",
+      terminalRevision: "42",
+      text: "done",
+      callerInfo: { source: "agent" },
+      createdAt,
+    });
+
+    expect(repository.register).toHaveBeenCalledTimes(2);
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
   it("keeps an initial retryable failure durable without periodic redispatch", async () => {
     const repository = repositoryFixture();
     const dispatch = vi.fn().mockRejectedValue(new Error("route unavailable"));

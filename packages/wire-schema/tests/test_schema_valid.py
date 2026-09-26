@@ -4,8 +4,8 @@
 설계 명세의 wire·SSE event inventory를 모두 포함하는지 확인한다.
 """
 
-import ast
 import json
+import re
 from pathlib import Path
 
 import jsonschema
@@ -19,9 +19,6 @@ GENERATED_TS_PATH = (
 GENERATED_PY_PATH = Path(__file__).parent.parent / "generated" / "python" / "upstream.py"
 RUNTIME_EVENT_CONTRACT_FIXTURE_PATH = (
     Path(__file__).parent.parent / "fixtures" / "runtime_event_contract.json"
-)
-ORCH_CONSTANTS_PATH = (
-    Path(__file__).parents[3] / "orch-server" / "src" / "soulstream_server" / "constants.py"
 )
 
 
@@ -83,24 +80,18 @@ def _message_inventory_summary(schema: dict) -> str:
     return f"{defs_count}개 $defs (top-level wire {wire_count} + supporting/SSE {sse_count})"
 
 
-def _load_orch_string_set(name: str) -> set[str]:
-    tree = ast.parse(ORCH_CONSTANTS_PATH.read_text(encoding="utf-8"))
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        if not any(
-            isinstance(target, ast.Name) and target.id == name
-            for target in node.targets
-        ):
-            continue
-        assert isinstance(node.value, ast.Call)
-        assert node.value.args
-        return set(ast.literal_eval(node.value.args[0]))
-    raise AssertionError(f"{name} assignment not found")
-
-
-def _load_orch_known_sse_event_types() -> set[str]:
-    return _load_orch_string_set("KNOWN_SSE_EVENT_TYPES")
+def _load_generated_string_set(name: str) -> set[str]:
+    source = GENERATED_TS_PATH.read_text(encoding="utf-8")
+    match = re.search(
+        rf"export const {re.escape(name)} = \[(.*?)\] as const;",
+        source,
+        re.DOTALL,
+    )
+    assert match is not None, f"generated {name} constant not found"
+    entries = match.group(1).rstrip()
+    if entries.endswith(","):
+        entries = entries[:-1]
+    return set(json.loads(f"[{entries}]"))
 
 
 def test_schema_is_valid_draft_2020_12() -> None:
@@ -267,6 +258,19 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthDeleteToken",
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
+        "ClaudeRuntimeListTasks",
+        "ClaudeRuntimeTaskOutput",
+        "ClaudeRuntimeStopTask",
+        "ClaudeRuntimeBackgroundTasks",
+        "ClaudeRuntimeListSchedules",
+        "ClaudeRuntimeDeleteSchedule",
+        "ProviderUsageGet",
+        "ReflectBrief",
+        "WorktreeList",
+        "WorktreeCreate",
+        "WorktreeRemove",
+        "WorktreeDeleteBranch",
+        "WorktreeResult",
         "AcknowledgeSessionReview",
         "AcknowledgeSessionReviewAck",
         "NodeControlRegister",
@@ -278,7 +282,7 @@ def test_schema_has_all_message_types() -> None:
         "ControlResultAck",
         "ControlAckMetric",
     }
-    assert len(wire_types) == 66
+    assert len(wire_types) == 79
 
     sse_types = {
         "SSEEventInit",
@@ -374,8 +378,8 @@ def test_every_persisted_event_has_an_explicit_durability_class() -> None:
         if name.startswith("SSEEvent")
     }
 
-    assert len(sse_event_types) == 62
-    assert persistence_only_event_types == {"metadata", "system_message"}
+    assert len(sse_event_types) == 64
+    assert persistence_only_event_types == {"metadata"}
     assert persistence_only_event_types.isdisjoint(sse_event_types)
     assert set(durability) == sse_event_types | persistence_only_event_types
     assert set(durability.values()) == {"durable", "transient"}
@@ -401,28 +405,13 @@ def test_context_manifest_event_contract() -> None:
     assert manifest["properties"]["type"]["const"] == "context_manifest"
     source = manifest["properties"]["sources"]["items"]
     assert source["properties"]["mode"]["enum"] == ["full", "index", "titles"]
-    assert _load_orch_string_set("CONTEXT_MANIFEST_SOURCE_MODES") == {
-        "full",
-        "index",
-        "titles",
-    }
     assert source["properties"]["instance"]["enum"] == ["atom", "atom-nl"]
-    assert _load_orch_string_set("CONTEXT_MANIFEST_SOURCE_INSTANCES") == {
-        "atom",
-        "atom-nl",
-    }
     assert source["properties"]["status"]["enum"] == [
         "ok",
         "empty",
         "error",
         "filtered",
     ]
-    assert _load_orch_string_set("CONTEXT_MANIFEST_SOURCE_STATUSES") == {
-        "ok",
-        "empty",
-        "error",
-        "filtered",
-    }
     assert source["required"] == [
         "id",
         "label",
@@ -582,6 +571,19 @@ def test_oneof_covers_all_wire_messages() -> None:
         "ClaudeAuthDeleteToken",
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
+        "ClaudeRuntimeListTasks",
+        "ClaudeRuntimeTaskOutput",
+        "ClaudeRuntimeStopTask",
+        "ClaudeRuntimeBackgroundTasks",
+        "ClaudeRuntimeListSchedules",
+        "ClaudeRuntimeDeleteSchedule",
+        "ProviderUsageGet",
+        "ReflectBrief",
+        "WorktreeList",
+        "WorktreeCreate",
+        "WorktreeRemove",
+        "WorktreeDeleteBranch",
+        "WorktreeResult",
         "AcknowledgeSessionReview",
         "AcknowledgeSessionReviewAck",
         "NodeControlRegister",
@@ -617,7 +619,7 @@ def test_plan_agent_profile_update_is_read_only_command() -> None:
 
 
 def test_known_sse_event_types_completeness() -> None:
-    """orch-server/constants.py KNOWN_SSE_EVENT_TYPES와 schema SSE $defs의 type const가 일치해야 한다."""
+    """생성된 TS SSE_EVENT_TYPES, 기대 목록, schema SSE $defs가 일치해야 한다."""
     schema = _load_schema()
     sse_consts = set()
     for name, body in schema["$defs"].items():
@@ -633,6 +635,7 @@ def test_known_sse_event_types_completeness() -> None:
         "session",
         "intervention_sent",
         "session_notification",
+        "system_message",
         "user_message",
         "assistant_message",
         "input_request",
@@ -685,6 +688,7 @@ def test_known_sse_event_types_completeness() -> None:
         "reconnect",
         "history_sync",
         "metadata_updated",
+        "subtree_update",
         "assistant_error",
         "turn_summary",
         "away_summary",
@@ -692,7 +696,38 @@ def test_known_sse_event_types_completeness() -> None:
     assert sse_consts == expected_known, (
         f"Missing: {expected_known - sse_consts}, Extra: {sse_consts - expected_known}"
     )
-    actual_known = _load_orch_known_sse_event_types()
-    assert actual_known == expected_known, (
-        f"orch Missing: {expected_known - actual_known}, orch Extra: {actual_known - expected_known}"
+    assert sse_consts == expected_known
+    generated_known = _load_generated_string_set("SSE_EVENT_TYPES")
+    assert generated_known == expected_known, (
+        f"generated Missing: {expected_known - generated_known}, "
+        f"generated Extra: {generated_known - expected_known}"
     )
+
+
+def test_control_command_inventory_names_are_schema_generated() -> None:
+    schema = _load_schema()
+    declared = schema.get("x-soulstream-control-command-types")
+    assert isinstance(declared, list)
+    assert len(declared) == len(set(declared))
+    schema_types = {
+        body["properties"]["type"]["const"]
+        for body in schema["$defs"].values()
+        if body.get("properties", {}).get("type", {}).get("const")
+    }
+    root_types = {
+        schema["$defs"][entry["$ref"].split("/")[-1]]["properties"]["type"]["const"]
+        for entry in schema["oneOf"]
+    }
+    assert set(declared) <= schema_types
+    assert set(declared) <= root_types
+    assert _load_generated_string_set("CONTROL_COMMAND_TYPES") == set(declared)
+
+
+def test_event_ingress_rejection_codes_are_schema_generated() -> None:
+    schema = _load_schema()
+    declared = schema.get("x-soulstream-event-ingress-rejection-codes")
+    assert isinstance(declared, list)
+    assert declared
+    assert all(code.startswith("EVENT_INGRESS_") for code in declared)
+    assert len(declared) == len(set(declared))
+    assert _load_generated_string_set("EVENT_INGRESS_REJECTION_CODES") == set(declared)

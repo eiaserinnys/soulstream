@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import type {
   BoardYjsContainerRef,
@@ -28,7 +29,11 @@ export interface BoardYjsHostClientConfig {
 
 export class BoardYjsHostClient
   implements ChecklistTaskProjectionRepository, CustomViewProjectionHost {
-  constructor(private readonly config: BoardYjsHostClientConfig) {}
+  private readonly transport: PersistenceHostTransport;
+
+  constructor(private readonly config: BoardYjsHostClientConfig) {
+    this.transport = new PersistenceHostTransport(config);
+  }
 
   async createMarkdownDocument(input: {
     folderId: string;
@@ -282,18 +287,13 @@ export class BoardYjsHostClient
   }
 
   private async request<T>(operation: string, body: unknown): Promise<T> {
-    const url = `${this.config.orch.baseUrl}/api/board-yjs/host/${encodeURIComponent(operation)}`;
-    const headers = {
-      ...this.config.orch.headers,
-      "content-type": "application/json",
-    };
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
+    const response = await this.transport.send(
+      "POST",
+      `/api/board-yjs/host/${encodeURIComponent(operation)}`,
+      body,
+    );
     if (!response.ok) {
-      const detail = await responseErrorDetail(response);
+      const detail = await readOrchErrorEnvelope(response);
       this.config.logger.warn(
         { operation, status: response.status, message: detail.message, code: detail.code },
         "board Yjs host proxy request failed",
@@ -326,40 +326,4 @@ class BoardYjsHostClientError extends Error {
     super(message);
     this.name = "BoardYjsHostClientError";
   }
-}
-
-async function responseErrorDetail(response: Response): Promise<{
-  message: string;
-  code: string | null;
-  details: Record<string, unknown>;
-}> {
-  const text = await response.text();
-  if (!text) {
-    return {
-      message: `${response.status} ${response.statusText}`,
-      code: null,
-      details: {},
-    };
-  }
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    if (parsed && typeof parsed === "object") {
-      const detail = (parsed as { detail?: unknown }).detail;
-      if (typeof detail === "string") {
-        return { message: detail, code: null, details: {} };
-      }
-      if (detail && typeof detail === "object") {
-        const error = (detail as { error?: unknown }).error;
-        if (error && typeof error === "object") {
-          const record = error as Record<string, unknown>;
-          const message = typeof record.message === "string" ? record.message : text;
-          const code = typeof record.code === "string" ? record.code : null;
-          return { message, code, details: record };
-        }
-      }
-    }
-  } catch {
-    return { message: text, code: null, details: {} };
-  }
-  return { message: text, code: null, details: {} };
 }

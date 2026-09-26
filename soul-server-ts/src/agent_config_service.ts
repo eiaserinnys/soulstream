@@ -4,9 +4,11 @@ import {
   AgentsConfigSchema,
   type AgentAtomContext,
   type AgentProfile,
-  type AgentRegistry,
   type AgentsConfig,
+  readAgentsConfig,
+  type AgentRegistry,
 } from "./agent_registry.js";
+import type { NewSessionAgentProfileSource } from "./agent_profile_source.js";
 import {
   ConfigStore,
   type ConfigApplyResult,
@@ -19,8 +21,10 @@ type MaybePromise<T> = T | Promise<T>;
 export interface AgentConfigServiceOptions {
   configPath: string;
   snapshotRoot?: string;
-  agentRegistry?: Pick<AgentRegistry, "replace">;
+  agentRegistry: Pick<AgentRegistry, "replace">;
+  profileSource?: Pick<NewSessionAgentProfileSource, "rebuild">;
   profileResolver?: (profiles: AgentProfile[]) => AgentProfile[];
+  isDbIdentityOwnedProfile?: (profileId: string) => boolean;
   onAfterRegistryReplace?: () => MaybePromise<void>;
 }
 
@@ -99,13 +103,20 @@ export class AgentConfigService {
 
   constructor(options: AgentConfigServiceOptions) {
     this.profileResolver = options.profileResolver;
+    const rebuildProfileRegistry = options.profileSource?.rebuild
+      ? options.profileSource.rebuild.bind(options.profileSource)
+      : () => options.agentRegistry.replace(
+          this.resolveProfiles(readAgentsConfig(options.configPath).agents),
+        );
     this.store = new ConfigStore({
       configPath: options.configPath,
       snapshotRoot: options.snapshotRoot,
       parse: parseAgentsConfigRaw,
       stringify: stringifyAgentsConfig,
-      onAfterApply: async (config) => {
-        options.agentRegistry?.replace(this.resolveProfiles(config.agents));
+      assertChange: (current, next) =>
+        this.assertDbIdentityFieldsUnchanged(current, next, options.isDbIdentityOwnedProfile),
+      onAfterApply: async () => {
+        await rebuildProfileRegistry();
         await options.onAfterRegistryReplace?.();
       },
     });
@@ -259,6 +270,31 @@ export class AgentConfigService {
 
   private resolveProfiles(profiles: AgentProfile[]): AgentProfile[] {
     return this.profileResolver ? this.profileResolver(profiles) : profiles;
+  }
+
+  private assertDbIdentityFieldsUnchanged(
+    current: AgentsConfig,
+    next: AgentsConfig,
+    isDbIdentityOwnedProfile: AgentConfigServiceOptions["isDbIdentityOwnedProfile"],
+  ): void {
+    if (!isDbIdentityOwnedProfile) return;
+    const nextById = new Map(next.agents.map((profile) => [profile.id, profile]));
+    for (const before of current.agents) {
+      if (!isDbIdentityOwnedProfile(before.id)) continue;
+      const after = nextById.get(before.id);
+      if (!after) continue;
+      const changed = ([
+        "name",
+        "atom_contexts",
+        "aliases",
+        "default_preset",
+      ] as const).filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+      if (changed.length > 0) {
+        throw new Error(
+          `Agent profile "${before.id}" identity fields are owned by the DB overlay: ${changed.join(", ")}`,
+        );
+      }
+    }
   }
 }
 

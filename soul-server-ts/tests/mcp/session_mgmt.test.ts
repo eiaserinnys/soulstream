@@ -15,6 +15,7 @@ import {
 } from "../../src/server.js";
 import { assertRunnerJsonValue } from "../../src/runner/frame_protocol.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
+import { TaskOwnedByAnotherNodeError } from "../../src/task/task_hydration_errors.js";
 import {
   createExecutionActivation,
   type Task,
@@ -171,6 +172,20 @@ function makeRuntime(
     createTask,
     startNewExecution,
   };
+}
+
+function confirmRemoteOwnerAfterNotOwner(
+  runtime: McpRuntime,
+  targetSessionId: string,
+): void {
+  let targetLookups = 0;
+  vi.mocked(runtime.db.getSession).mockImplementation(async (sessionId) => {
+    if (sessionId !== targetSessionId) return null;
+    const nodeId = targetLookups++ === 0 ? "node-test" : "node-remote";
+    return { node_id: nodeId } as unknown as NonNullable<
+      Awaited<ReturnType<SessionDB["getSession"]>>
+    >;
+  });
 }
 
 async function createClient(
@@ -1950,10 +1965,14 @@ describe("send_message_to_session", () => {
     });
   });
 
-  it("local failure falls back to orch /intervene with snake_case caller_info", async () => {
+  it("confirmed remote owner relays to orch /intervene with snake_case caller_info", async () => {
     const capture = await createOrchCapture();
     try {
-      const runtime = makeRuntime(new Error("Task not found: target-sess-2"), capture.orch);
+      const runtime = makeRuntime(
+        new TaskOwnedByAnotherNodeError("target-sess-2", "node-remote", "node-test"),
+        capture.orch,
+      );
+      confirmRemoteOwnerAfterNotOwner(runtime, "target-sess-2");
       const client = await createClient(runtime);
 
       const result = await client.callTool({
@@ -1975,7 +1994,7 @@ describe("send_message_to_session", () => {
         detail: {
           relayed: true,
           target_session_id: "target-sess-2",
-          local_error: "Task not found: target-sess-2",
+          local_error: "Task owned by another node: target-sess-2 owner=node-remote current=node-test",
           delivered: null,
           outcome: null,
           reason: "orch returned no intervene verdict",
@@ -2004,7 +2023,10 @@ describe("send_message_to_session", () => {
   });
 
   it("local failure without orch reports explicit fallback unavailability", async () => {
-    const runtime = makeRuntime(new Error("Task not found: target-sess-3"));
+    const runtime = makeRuntime(
+      new TaskOwnedByAnotherNodeError("target-sess-3", "node-remote", "node-test"),
+    );
+    confirmRemoteOwnerAfterNotOwner(runtime, "target-sess-3");
     const client = await createClient(runtime);
 
     const result = await client.callTool({
@@ -2018,7 +2040,7 @@ describe("send_message_to_session", () => {
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toEqual({
       ok: false,
-      error: "Task not found: target-sess-3",
+      error: "Task owned by another node: target-sess-3 owner=node-remote current=node-test",
       fallback_error: "orch fallback unavailable",
     });
   });
@@ -2026,7 +2048,11 @@ describe("send_message_to_session", () => {
   it("orch non-2xx response returns ok=false with fallback_error", async () => {
     const capture = await createOrchCapture(502);
     try {
-      const runtime = makeRuntime(new Error("Task not found: target-sess-4"), capture.orch);
+      const runtime = makeRuntime(
+        new TaskOwnedByAnotherNodeError("target-sess-4", "node-remote", "node-test"),
+        capture.orch,
+      );
+      confirmRemoteOwnerAfterNotOwner(runtime, "target-sess-4");
       const client = await createClient(runtime);
 
       const result = await client.callTool({
@@ -2040,7 +2066,7 @@ describe("send_message_to_session", () => {
       expect(result.isError).not.toBe(true);
       expect(result.structuredContent).toEqual({
         ok: false,
-        error: "Task not found: target-sess-4",
+        error: "Task owned by another node: target-sess-4 owner=node-remote current=node-test",
         fallback_error:
           "orch POST /api/sessions/target-sess-4/intervene failed: 502 Bad Gateway",
       });

@@ -201,11 +201,11 @@ export class TaskExecutor {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
       persistence,
+      completionNotifier,
     });
     this.executorFinalizer = new TaskExecutorFinalizer({
       lifecycleTransition: this.lifecycleTransition,
       logger: this.logger,
-      completionNotifier,
     });
     this.engineEventPublisher = new TaskEngineEventPublisher({
       broadcaster,

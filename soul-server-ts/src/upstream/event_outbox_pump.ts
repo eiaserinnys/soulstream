@@ -168,10 +168,6 @@ export class EventOutboxPump {
       this.scheduleRetryFlush();
       return null;
     }
-    if (rejection.code !== "EVENT_INGRESS_PROTOCOL_CONFLICT") {
-      this.rejectionState = undefined;
-      return null;
-    }
     if (rejection.source_seq !== first.source_seq) {
       this.singleEventProbe = true;
       this.rejectionState = undefined;
