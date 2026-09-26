@@ -156,7 +156,7 @@ describe("UsageSummaryService", () => {
         const provider = command.message.provider;
         if (provider === undefined) return successResponse(10, 20, 30);
         const usedPercentByQuery: Readonly<Record<string, number>> = {
-          "node-b:claude": 40,
+          "node-a:claude": 40,
           "node-b:gemini": 50,
         };
         const usedPercent = usedPercentByQuery[`${node.nodeId}:${provider}`];
@@ -180,12 +180,12 @@ describe("UsageSummaryService", () => {
 
     expect(registry.createCommand).toHaveBeenCalledTimes(3);
     expect(registry.createCommand).toHaveBeenCalledWith(
-      "node-a",
+      "node-c",
       { type: "provider_usage_get" },
       { timeoutMs: 15_000 },
     );
     expect(registry.createCommand).toHaveBeenCalledWith(
-      "node-b",
+      "node-a",
       { type: "provider_usage_get", provider: "claude" },
       { timeoutMs: 15_000 },
     );
@@ -194,16 +194,11 @@ describe("UsageSummaryService", () => {
       { type: "provider_usage_get", provider: "gemini" },
       { timeoutMs: 15_000 },
     );
-    expect(registry.createCommand).not.toHaveBeenCalledWith(
-      "node-c",
-      expect.anything(),
-      expect.anything(),
-    );
     expect(service.getSummary().nodes).toMatchObject([
       {
         nodeId: "node-a",
         providers: {
-          claude: { weeklyRemainingPercent: 90 },
+          claude: { weeklyRemainingPercent: 60 },
           codex: { weeklyRemainingPercent: 80 },
           gemini: { weeklyRemainingPercent: 70 },
         },
@@ -211,7 +206,7 @@ describe("UsageSummaryService", () => {
       {
         nodeId: "node-b",
         providers: {
-          claude: { weeklyRemainingPercent: 60 },
+          claude: { weeklyRemainingPercent: 90 },
           codex: { weeklyRemainingPercent: 80 },
           gemini: { weeklyRemainingPercent: 50 },
         },
@@ -219,12 +214,39 @@ describe("UsageSummaryService", () => {
       {
         nodeId: "node-c",
         providers: {
-          claude: { weeklyRemainingPercent: 60 },
+          claude: { weeklyRemainingPercent: 90 },
           codex: { weeklyRemainingPercent: 80 },
           gemini: { weeklyRemainingPercent: 70 },
         },
       },
     ]);
+  });
+
+  it("uses the first connected member in configured order as the shared representative", async () => {
+    const registry = fakeRegistry(["node-a", "node-z"]);
+    const bridge = {
+      sendPendingCommand: vi.fn(async () => successResponse(10, 20, 30)),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [
+        { provider: "claude", nodeIds: ["node-z", "node-a"] },
+        { provider: "codex", nodeIds: ["node-z", "node-a"] },
+        { provider: "gemini", nodeIds: ["node-z", "node-a"] },
+      ],
+      now: () => new Date("2026-07-20T10:00:00.000Z"),
+    });
+
+    await service.collectOnce();
+
+    expect(registry.createCommand).toHaveBeenCalledTimes(1);
+    expect(registry.createCommand).toHaveBeenCalledWith(
+      "node-z",
+      { type: "provider_usage_get" },
+      { timeoutMs: 15_000 },
+    );
   });
 
   it("keeps every member stale when the shared representative query fails", async () => {
