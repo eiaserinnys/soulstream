@@ -118,7 +118,7 @@ describe("ControlInboxRuntime", () => {
       frames.push(frame);
     });
 
-    await runtime.handleCommand({ type: "provider_usage_get", requestId: "req-query" });
+    await runtime.handleCommand({ type: "list_sessions", requestId: "req-query" });
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(frames).toContainEqual(expect.objectContaining({
@@ -128,6 +128,71 @@ describe("ControlInboxRuntime", () => {
       code: "CONTROL_RESULT_TIMEOUT",
     }));
     expect(frames).not.toContainEqual(expect.objectContaining({ status: "accepted" }));
+    store.close();
+  });
+
+  it("returns a provider usage result after the default 900ms query budget", async () => {
+    vi.useFakeTimers();
+    const frames: Array<Record<string, unknown>> = [];
+    const work: ControlInboxDispatchWork[] = [];
+    const store = await makeStore();
+    const runtime = new ControlInboxRuntime({
+      store,
+      nodeId: "node-a",
+      mainHeartbeatAgeMs: () => 0,
+      postWork: (item) => work.push(item),
+    });
+    runtime.initialize();
+    await runtime.connect(async (frame) => {
+      frames.push(frame);
+    });
+
+    await runtime.handleCommand({ type: "provider_usage_get", requestId: "req-slow-usage" });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(runtime.handleDomainResult(work[0]!.workId, {
+      type: "provider_usage_result",
+      success: true,
+    })).resolves.toBe(true);
+
+    expect(frames).toContainEqual(expect.objectContaining({
+      type: "provider_usage_result",
+      requestId: "req-slow-usage",
+      success: true,
+    }));
+    expect(frames).not.toContainEqual(expect.objectContaining({
+      code: "CONTROL_RESULT_TIMEOUT",
+    }));
+    store.close();
+  });
+
+  it("still times out provider usage at its command-specific result limit", async () => {
+    vi.useFakeTimers();
+    const frames: Array<Record<string, unknown>> = [];
+    const store = await makeStore();
+    const runtime = new ControlInboxRuntime({
+      store,
+      nodeId: "node-a",
+      mainHeartbeatAgeMs: () => 0,
+      postWork: () => undefined,
+    });
+    runtime.initialize();
+    await runtime.connect(async (frame) => {
+      frames.push(frame);
+    });
+
+    await runtime.handleCommand({ type: "provider_usage_get", requestId: "req-over-limit" });
+    await vi.advanceTimersByTimeAsync(14_499);
+    expect(frames).not.toContainEqual(expect.objectContaining({
+      code: "CONTROL_RESULT_TIMEOUT",
+    }));
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(frames).toContainEqual(expect.objectContaining({
+      type: "error",
+      requestId: "req-over-limit",
+      status: "degraded",
+      code: "CONTROL_RESULT_TIMEOUT",
+    }));
     store.close();
   });
 
