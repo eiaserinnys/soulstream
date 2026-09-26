@@ -46,10 +46,18 @@ const collisionDetails = process.argv.includes("--collision-details");
 const approvedCollisionHashesPath = readOption("--approved-collision-hashes");
 loadDeploymentEnvironmentIfPresent();
 if (apply) {
-  await assertDatabaseReleaseSubphaseGate({
-    env: process.env,
-    subphase: "board_yjs_runbook_residue",
-  });
+  try {
+    await assertDatabaseReleaseSubphaseGate({
+      env: process.env,
+      subphase: "board_yjs_runbook_residue",
+    });
+  } catch (error) {
+    process.stderr.write(`${serializeDatabaseReleaseResult(
+      databaseReleaseFailure(error, process.env, "board_yjs_runbook_residue"),
+      process.env,
+    )}\n`);
+    process.exit(1);
+  }
 }
 await assertBoardYjsQuiescedApplyPreflight({
   apply,
