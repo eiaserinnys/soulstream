@@ -64,7 +64,7 @@ describe("soul-server-ts affected CI gate", () => {
       },
       {
         name: "workspace-validation.yml",
-        jobs: ["workspace-validation"],
+        jobs: ["workspace-tests", "workspace-validation"],
       },
     ]);
 
