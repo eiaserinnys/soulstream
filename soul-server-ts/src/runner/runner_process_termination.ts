@@ -141,17 +141,39 @@ async function terminateExactRunnerWithPolicy(
   socketPath?: string,
 ): Promise<void> {
   if ((deps.platform ?? process.platform) === "win32") {
+    if (await exactProcessIsAbsent(
+      expected,
+      lockPath,
+      deps,
+      initialState,
+      "retirement",
+      false,
+      acceptRegisteredReleaseGap,
+    )) return;
     if (socketPath) {
       try {
         await (deps.requestShutdown ?? requestRunnerShutdown)(socketPath);
       } catch {
         // The child may already be closing its IPC endpoint; taskkill remains
-        // the final Windows process-tree cleanup after the bounded IPC request.
+        // the final Windows process-tree cleanup after the graceful window.
       }
     }
+    if (await waitForExactProcessExit(
+      expected,
+      lockPath,
+      deps,
+      "retirement",
+      acceptRegisteredReleaseGap,
+    )) return;
     const terminateProcessTree = deps.terminateProcessTree ?? terminateWindowsProcessTree;
     await terminateProcessTree(expected.pid);
-    if (await waitForExactProcessExit(expected, lockPath, deps, "retirement")) return;
+    if (await waitForExactProcessExit(
+      expected,
+      lockPath,
+      deps,
+      "retirement",
+      acceptRegisteredReleaseGap,
+    )) return;
     throw new RunnerMutationFailure(
       "runner_termination_exit_proof_failed",
       `exact runner remained live after Windows process-tree termination: ${expected.pid}`,
@@ -199,6 +221,7 @@ async function waitForExactProcessExit(
   lockPath: string,
   deps: RunnerProcessTerminationDependencies,
   boundary: "SIGKILL" | "retirement",
+  acceptRegisteredReleaseGap = false,
 ): Promise<boolean> {
   const deadline = deps.now() + EXISTING_RUNNER_STOP_TIMEOUT_MS;
   while (deps.now() < deadline) {
@@ -209,10 +232,19 @@ async function waitForExactProcessExit(
       undefined,
       boundary,
       true,
+      acceptRegisteredReleaseGap,
     )) return true;
     await deps.delay(25);
   }
-  return await exactProcessIsAbsent(expected, lockPath, deps, undefined, boundary);
+  return await exactProcessIsAbsent(
+    expected,
+    lockPath,
+    deps,
+    undefined,
+    boundary,
+    false,
+    acceptRegisteredReleaseGap,
+  );
 }
 
 async function exactProcessIsAbsent(
