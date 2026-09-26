@@ -286,14 +286,14 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   /**
    * orch /api/sessions/{caller}/intervene HTTP POST.
    *
-   * 키 케이스 *고정* — orch `InterveneRequest` Pydantic 모델
-   * (`orch-server/src/soulstream_server/api/session_models.py:37-41`) 정합:
+   * 키 케이스 *고정* — orch TypeScript `InterveneNodeCommandPayload`
+   * (`orch-server-ts/src/session/session_action_command_payloads.ts`) 정합:
    *   - text         : str
    *   - user         : str (=== "agent")
    *   - caller_info  : Optional[dict]   ← snake_case! `callerInfo`(camelCase)는 무시됨.
    *
-   * Python `cross_node_relay.py:45-54` 정본과 같은 wire payload — 양 서버가 같은 키 케이스로
-   * 일관 처리하여 atom F-11C 회로(cross-node fallback caller_info 누락) 차단.
+   * 활성 TypeScript wire 계약과 같은 payload — 양 서버가 같은 키 케이스로 일관 처리하여
+   * atom F-11C 회로(cross-node fallback caller_info 누락) 차단.
    *
    * 응답 non-2xx 또는 fetch throw 모두 *child finalize에 throw 전파 금지*.
    */

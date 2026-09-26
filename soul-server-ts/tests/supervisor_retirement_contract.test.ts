@@ -12,7 +12,6 @@ const repositoryRoot = path.resolve(
 const retiredSurfaceRoots = [
   "soul-server-ts/src",
   "orch-server-ts/src",
-  "orch-server/src",
   "packages/soul-common/src",
   "packages/wire-schema/src",
   "packages/wire-schema/generated",

@@ -926,7 +926,7 @@ function warnForPartialR2Config(
 
 function createSystemPortraitAssets(): LiveSystemPortraitAssetBoundary {
   const portraitUrl = new URL(
-    "../../packages/soul-common/src/soul_common/portraits/",
+    "../assets/portraits/",
     import.meta.url,
   );
   return {

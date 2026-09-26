@@ -4,8 +4,8 @@ F-11E (2026-05-09): build_system_caller_info 신설 — 소울스트림 서버 l
 발신자 신원 조립 helper.
 
 R-3 (2026-05-11, atom G-5): B-1 + system 통합 — 빌더가 wire에 server-relative avatar_url
-직접 박음. 정본 자산은 packages/soul-common/src/soul_common/portraits/{source}.png 단일.
-호스팅은 orch-server `/api/system/portraits/{source}` (verify_auth 포함).
+직접 박음. 정본 자산은 orch-server-ts/assets/portraits/system.png 단일.
+호스팅은 orch-server-ts `/api/system/portraits/{source}` (auth guard 포함).
 build_bot_caller_info 신설 — channel_observer / trello_watcher 봇 source 정체성 조립.
 """
 

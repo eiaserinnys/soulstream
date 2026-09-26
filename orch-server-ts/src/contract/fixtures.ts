@@ -32,17 +32,11 @@ export const CONTRACT_FIXTURE_FILES = {
 
 export function resolveContractFixtureDir(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    resolve(moduleDir, "../../../orch-server/tests/fixtures/orch_contract"),
-    resolve(process.cwd(), "../orch-server/tests/fixtures/orch_contract"),
-    resolve(process.cwd(), "orch-server/tests/fixtures/orch_contract"),
-  ];
-
-  const found = candidates.find((candidate) => existsSync(candidate));
-  if (!found) {
-    throw new Error(`orch contract fixture directory not found: ${candidates.join(", ")}`);
+  const fixtureDir = resolve(moduleDir, "../../../packages/wire-schema/fixtures");
+  if (!existsSync(fixtureDir)) {
+    throw new Error(`shared contract fixture directory not found: ${fixtureDir}`);
   }
-  return found;
+  return fixtureDir;
 }
 
 export function loadContractFixture<T>(name: string, fixtureDir = resolveContractFixtureDir()): T {

@@ -70,6 +70,15 @@ describe("production orchestrator entrypoint", () => {
     expect(sqlResolver.resolveSql).toHaveBeenCalledOnce();
     expect(schemaQuery).toHaveBeenCalledOnce();
 
+    const systemPortrait = await application.app.inject({
+      method: "GET",
+      url: "/api/system/portraits/system",
+      headers: { authorization: "Bearer production-service-token" },
+    });
+    expect(systemPortrait.statusCode).toBe(200);
+    expect(systemPortrait.headers["content-type"]).toBe("image/png");
+    expect(systemPortrait.body.length).toBeGreaterThan(0);
+
     const protectedRoutes = ["/api/status", "/api/nodes", "/api/auth/token"];
     for (const url of protectedRoutes) {
       const unauthenticated = await application.app.inject({ method: "GET", url });

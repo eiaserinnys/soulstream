@@ -22,7 +22,7 @@ Instead of treating an agent as a terminal process that disappears after one pro
 
 The production control plane is `orch-server-ts`. It serves the built dashboard, owns the public HTTP/SSE surface, keeps the connected-node registry, and persists canonical state in PostgreSQL. `soul-server-ts` workers execute agent turns and connect upstream over WebSocket; their local HTTP surface is limited to health, optional MCP, and node-local support routes.
 
-The Python `orch-server` runtime and its supervisor subsystem are retired. Python code remains only where the repository still needs compatibility contracts, migration tooling, or shared legacy assets; it is not the live server architecture.
+The retired Python orchestrator source tree has been removed. Python migration tooling and shared legacy packages remain where the repository still uses them; the live control plane is TypeScript.
 
 ## Repository layout
 
@@ -43,7 +43,6 @@ soulstream/
 ├── soul-desktop/           Tauri desktop client
 ├── deploy/                 Haniel release and database safety manifests
 ├── install/                Windows and Haniel installation templates
-└── orch-server/            Deprecated Python orchestrator contracts
 ```
 
 The pnpm workspace is declared in `pnpm-workspace.yaml`. The node ↔ orchestrator protocol is defined once in `packages/wire-schema/src/upstream.schema.json`; generated TypeScript and Python clients must stay in sync with that schema.
