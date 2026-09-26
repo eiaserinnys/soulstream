@@ -6,6 +6,7 @@ import type {
   CatalogState,
   SessionSummary,
 } from "../shared/types";
+import { applyCatalogSessionDisplayName } from "../shared/session-projections";
 import { retainEqualValue } from "../lib/structural-sharing";
 
 export function mergeCatalogSessionsDelta(
@@ -81,24 +82,20 @@ export function applyCatalogDisplayNames(
   catalog: CatalogState | null,
 ): SessionSummary[] {
   if (!catalog?.sessions) return sessions;
-  return sessions.map((s) => {
-    const assignment = catalog.sessions[s.agentSessionId];
-    if (assignment?.displayName) {
-      return { ...s, displayName: assignment.displayName };
-    }
-    return s;
-  });
+  return sessions.map((session) => applyCatalogSessionDisplayName(
+    session,
+    catalog.sessions[session.agentSessionId],
+  ));
 }
 
 export function applyCatalogDisplayName(
   session: SessionSummary,
   catalog: CatalogState,
 ): SessionSummary {
-  const assignment = catalog.sessions[session.agentSessionId];
-  if (assignment?.displayName) {
-    return { ...session, displayName: assignment.displayName };
-  }
-  return session;
+  return applyCatalogSessionDisplayName(
+    session,
+    catalog.sessions[session.agentSessionId],
+  );
 }
 
 function shallowSessionSummaryEqual(left: SessionSummary, right: SessionSummary): boolean {

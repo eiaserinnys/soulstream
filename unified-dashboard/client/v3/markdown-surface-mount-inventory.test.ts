@@ -40,7 +40,6 @@ describe("markdown surface mount inventory", () => {
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
       "packages/soul-ui/src/task/TaskChecklistItem.tsx",
-      "packages/soul-ui/src/task/TaskOverviewRows.tsx",
       "unified-dashboard/client/v3/TaskBoardResourcePane.tsx",
       "unified-dashboard/client/v3/TaskDescriptionPanel.tsx",
     ]);
@@ -48,7 +47,6 @@ describe("markdown surface mount inventory", () => {
 
   it("enumerates every shared MarkdownDocumentPanel surface", () => {
     expect(inventoryMounts("MarkdownDocumentPanel")).toEqual([
-      "packages/soul-ui/src/components/RightPanel.tsx",
       "unified-dashboard/client/v3/TaskBoardWorkspace.tsx",
       "unified-dashboard/client/v3/TaskWorkspace.tsx",
       "unified-dashboard/client/v3/V3StandaloneDocumentInspector.tsx",
@@ -65,7 +63,6 @@ describe("markdown surface mount inventory", () => {
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
       "packages/soul-ui/src/task/TaskChecklistItem.tsx",
-      "packages/soul-ui/src/task/TaskOverviewRows.tsx",
     ];
 
     for (const file of documentSurfaces) {

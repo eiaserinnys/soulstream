@@ -13,8 +13,6 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import { useTaskStore } from "../stores/task-store";
 import { BoardWorkspaceView } from "./BoardWorkspaceView";
 import { resolveEffectiveBoardCatalog } from "./board-catalog-resolution";
-import { FolderWorkspaceView } from "./FolderWorkspaceView";
-import { writeFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
 const catalog: CatalogState = {
   folders: [
@@ -211,26 +209,6 @@ function renderBoard(
 
   flushSync(() => {
     root.render(createElement(BoardWorkspaceView, { sessions: options.sessions ?? sessions, ...props }));
-  });
-
-  return { container, root };
-}
-
-function renderFolderWorkspace(
-  props: Partial<React.ComponentProps<typeof FolderWorkspaceView>> = {},
-  options: { catalog?: CatalogState; sessions?: SessionSummary[] } = {},
-) {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-
-  useDashboardStore.getState().reset();
-  useDashboardStore.getState().setCatalog(options.catalog ?? catalog);
-  useDashboardStore.getState().selectFolder("root");
-  writeFolderWorkspaceViewMode(window.localStorage, "root", "board");
-
-  flushSync(() => {
-    root.render(createElement(FolderWorkspaceView, { sessions: options.sessions ?? sessions, ...props }));
   });
 
   return { container, root };
@@ -1558,41 +1536,6 @@ describe("BoardWorkspaceView", () => {
     });
   });
 
-  it("forwards board asset uploads through FolderWorkspaceView board mode", async () => {
-    const onUploadBoardAsset = vi.fn(async (input) => ({
-      asset: { id: "asset-folder-workspace" },
-      boardItem: {
-        id: "asset:asset-folder-workspace",
-        folderId: input.folderId,
-        itemType: "asset" as const,
-        itemId: "asset-folder-workspace",
-        x: input.x,
-        y: input.y,
-        metadata: {
-          assetId: "asset-folder-workspace",
-          storageKey: "folders/root/assets/asset-folder-workspace/report.pdf",
-          originalName: input.file.name,
-          mimeType: input.file.type,
-          byteSize: input.file.size,
-          signedUrl: "https://r2.example/report.pdf",
-        },
-      },
-    }));
-    ({ container, root } = renderFolderWorkspace({ onUploadBoardAsset }));
-
-    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
-    expect(scroller).not.toBeNull();
-    const file = new File(["hello"], "report.pdf", { type: "application/pdf" });
-
-    dispatchFileDragEvent(scroller!, "drop", [file], {
-      clientX: 52000,
-      clientY: 52000,
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(onUploadBoardAsset).toHaveBeenCalledTimes(1);
-  });
 
   it("opens the desktop context menu with folder, session, and markdown actions at a snapped board point", async () => {
     ({ container, root } = renderBoard());

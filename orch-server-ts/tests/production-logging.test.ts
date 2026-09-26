@@ -33,6 +33,7 @@ describe("production operations logging", () => {
   it("records access, authentication, and 5xx diagnostics while redacting secrets", async () => {
     const capture = createLogCapture();
     const resolveTokenAccess = vi.fn()
+      .mockResolvedValueOnce({ ok: true as const })
       .mockResolvedValueOnce({
         ok: false as const,
         statusCode: 401,
@@ -42,7 +43,8 @@ describe("production operations logging", () => {
         ok: false as const,
         statusCode: 403,
         detail: "Authentication forbidden",
-      });
+      })
+      .mockResolvedValueOnce({ ok: true as const });
     const app = createApp({
       config: productionConfig,
       logDestination: capture.stream,

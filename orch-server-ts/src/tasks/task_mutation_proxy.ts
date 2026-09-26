@@ -99,7 +99,10 @@ async function resolveTaskMutationNode(
     if (node !== undefined && node !== null) return { ok: true, value: node };
   } catch (error) {
     const statusCode = errorStatusCode(error);
-    if (statusCode !== 404 && statusCode !== 503) {
+    if (statusCode === 503) {
+      return { ok: false, error: routeErrorFromUnknown(error, 503) };
+    }
+    if (statusCode !== 404) {
       return { ok: false, error: routeErrorFromUnknown(error, 500) };
     }
   }

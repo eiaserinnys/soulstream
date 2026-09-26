@@ -89,7 +89,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
           writeCachedUserPreferences(accountKey, response.preferences);
         })
         .catch(() => {
-          // Offline and single-node fallback: local account cache remains authoritative.
+          // Offline fallback: local account cache remains authoritative.
         });
     }, 250);
 

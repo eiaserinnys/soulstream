@@ -7,8 +7,6 @@ const DISCLOSURE_SOURCES = [
   "./TaskInlineBoard.tsx",
   "./ProjectNavigationTree.tsx",
   "../../../packages/soul-ui/src/task/TaskChecklist.tsx",
-  "../../../packages/soul-ui/src/task/TaskOverview.tsx",
-  "../../../packages/soul-ui/src/components/FolderItem.tsx",
   "../../../packages/soul-ui/src/components/ClaudeRuntimeNotificationsPanel.tsx",
   "../../../packages/soul-ui/src/components/ClaudeRuntimeSchedulesPanel.tsx",
   "../../../packages/soul-ui/src/components/ClaudeRuntimeTasksPanel.tsx",

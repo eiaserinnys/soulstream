@@ -17,7 +17,7 @@ test("every Haniel build hook uses the cross-platform release env entrypoint", a
   const repositoryRoot = join(packageRoot, "..");
   for (const relativePath of [
     "install/haniel-soul-server-ts.example.yaml",
-    "install/haniel-standalone.yaml.template",
+    "install/haniel-worker.yaml.template",
   ]) {
     const source = await readFile(join(repositoryRoot, relativePath), "utf8");
     const postPull = source.match(/^\s*post_pull:\s*(.+)$/m)?.[1];

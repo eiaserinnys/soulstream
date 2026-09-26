@@ -1,7 +1,7 @@
 /**
  * 화면 전환 사용 로그.
  *
- * V3 레이아웃은 hash 라우팅을 쓰지 않으므로(`useUrlSync`는 v1 전용) 전환의
+ * V3 레이아웃은 hash 라우팅을 쓰지 않으므로 전환의
  * 단일 수렴점은 라우터가 아니라 **dashboard store** 다. zustand 구독은
  * `(state, prevState)`를 주므로 "이전 화면"이 공짜로 나온다.
  *

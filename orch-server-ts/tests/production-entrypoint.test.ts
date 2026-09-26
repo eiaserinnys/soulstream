@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -179,6 +179,51 @@ describe("production orchestrator entrypoint", () => {
     ]);
   });
 
+  it("serves the live dashboard and assets without authentication", async () => {
+    const dashboardDir = await createDashboardDirectory();
+    await mkdir(join(dashboardDir, "assets"));
+    await writeFile(join(dashboardDir, "assets", "app.js"), "window.dashboardReady = true;");
+    const sql = Object.assign(async () => [], {
+      json: (value: unknown) => value,
+    }) as unknown as LivePostgresSql;
+    const sqlResolver: LiveDbSqlResolver = {
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(async () => undefined),
+    };
+    const server = await createProductionOrchestrator({
+      config: loadOrchServerEnvironment({
+        ...minimalEnvironment(),
+        PORT: "0",
+        DASHBOARD_DIR: dashboardDir,
+      }),
+      applicationFactory: async (config, context) => {
+        const application = await createLiveProductionApplication(
+          config,
+          context,
+          { sqlResolver },
+        );
+        return { ...application, startBackground: async () => undefined };
+      },
+    });
+
+    const address = await server.listen();
+    try {
+      const root = await fetch(`${address}/`);
+      expect(root.status).toBe(200);
+      expect(await root.text()).toBe("production-dashboard");
+
+      const asset = await fetch(`${address}/assets/app.js`);
+      expect(asset.status).toBe(200);
+      expect(await asset.text()).toBe("window.dashboardReady = true;");
+
+      const spaRoute = await fetch(`${address}/login/continue`);
+      expect(spaRoute.status).toBe(200);
+      expect(await spaRoute.text()).toBe("production-dashboard");
+    } finally {
+      await server.close();
+    }
+  });
+
   it("cleans resources without listening when background startup fails", async () => {
     const closeResources = vi.fn(async () => undefined);
     const server = await createProductionOrchestrator({
@@ -195,6 +240,29 @@ describe("production orchestrator entrypoint", () => {
 
     await expect(server.listen()).rejects.toThrow(/LISTEN unavailable/);
     expect(closeResources).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns when the ignored dashboard folder access setting is configured", async () => {
+    const warn = vi.fn();
+    const server = await createProductionOrchestrator({
+      config: loadOrchServerEnvironment({
+        ...minimalEnvironment(),
+        DASHBOARD_USER_FOLDER_ACCESS: JSON.stringify({
+          "dashboard@example.com": ["folder-1"],
+        }),
+      }),
+      warn,
+      applicationFactory: async () => ({
+        app: Fastify({ forceCloseConnections: true }),
+        startBackground: async () => undefined,
+        closeResources: async () => undefined,
+      }),
+    });
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("DASHBOARD_USER_FOLDER_ACCESS is configured but not enforced"),
+    );
+    await server.close();
   });
 
 });

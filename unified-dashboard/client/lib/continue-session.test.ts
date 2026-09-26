@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CatalogState, DashboardAgentConfig, SessionSummary } from "@seosoyoung/soul-ui";
+import type { CatalogState, SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   buildContinueSessionPrompt,
@@ -11,14 +11,6 @@ const catalog: CatalogState = {
   sessions: {
     "session-a": { folderId: "folder-from-catalog", displayName: null },
   },
-};
-
-const agent: DashboardAgentConfig = {
-  id: "roselin_codex",
-  name: "Roselin",
-  hasPortrait: true,
-  portraitUrl: "/portrait",
-  backend: "codex",
 };
 
 function session(overrides: Partial<SessionSummary> = {}): SessionSummary {
@@ -47,9 +39,6 @@ describe("continue-session helpers", () => {
     expect(resolveContinueSessionTarget({
       session: session(),
       catalog,
-      agents: [agent],
-      mode: "orchestrator",
-      localNodeId: null,
     })).toMatchObject({
       disabledReason: null,
       nodeId: "node-a",
@@ -65,34 +54,13 @@ describe("continue-session helpers", () => {
     expect(resolveContinueSessionTarget({
       session: session({ folderId: undefined }),
       catalog,
-      agents: [agent],
-      mode: "orchestrator",
-      localNodeId: null,
     })?.folderId).toBe("folder-from-catalog");
-  });
-
-  it("falls back to the single configured agent only in single-node mode", () => {
-    expect(resolveContinueSessionTarget({
-      session: session({ agentId: undefined, agentName: undefined }),
-      catalog,
-      agents: [agent],
-      mode: "single",
-      localNodeId: "node-local",
-    })).toMatchObject({
-      disabledReason: null,
-      nodeId: "node-a",
-      agentId: "roselin_codex",
-      agentName: "Roselin",
-    });
   });
 
   it("disables continuation when no same-agent target can be resolved", () => {
     expect(resolveContinueSessionTarget({
       session: session({ agentId: undefined, agentName: undefined }),
       catalog,
-      agents: [],
-      mode: "orchestrator",
-      localNodeId: null,
     })).toMatchObject({
       disabledReason: "이 세션에는 에이전트 정보가 없어 이어서 시작할 수 없습니다.",
     });
@@ -102,9 +70,6 @@ describe("continue-session helpers", () => {
     expect(resolveContinueSessionTarget({
       session: session({ nodeId: undefined }),
       catalog,
-      agents: [agent],
-      mode: "orchestrator",
-      localNodeId: null,
     })).toMatchObject({
       disabledReason: "이 세션에는 노드 정보가 없어 이어서 시작할 수 없습니다.",
     });

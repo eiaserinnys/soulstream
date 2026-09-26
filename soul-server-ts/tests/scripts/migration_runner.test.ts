@@ -95,7 +95,7 @@ describe.sequential("versioned migration runner", () => {
         HANIEL_BACKUP_DIR: backupDirectory,
         HANIEL_DATABASE_OPERATION: "upgrade",
         HANIEL_DATABASE_REQUIRED_SUBPHASES: "[]",
-        HANIEL_DATABASE_WRITER_SERVICES: '["soulstream-orch-server"]',
+        HANIEL_DATABASE_AFFECTED_SERVICES: '["soulstream-orch-server"]',
         HANIEL_DEPLOYMENT_JOURNAL: join(backupDirectory, "haniel-deployment.json"),
         HANIEL_DEPLOY_REPO: "soulstream",
         HANIEL_DATABASE_CONTRACT_DIGEST: "b".repeat(64),

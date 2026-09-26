@@ -46,7 +46,7 @@ describe("database release CI contract", () => {
   it("keeps executable database release modules LF-normalized on Windows", () => {
     const attributes = readFileSync(gitAttributesPath, "utf8");
     expect(attributes).toContain("packages/db-schema/scripts/*.mjs text eol=lf");
-    expect(attributes).toContain("install/haniel-standalone.yaml.template text eol=lf");
+    expect(attributes).toContain("install/haniel-worker.yaml.template text eol=lf");
     expect(attributes).toContain(
       "soul-server-ts/tests/fixtures/eiaserinnys-haniel-services.yaml text eol=lf",
     );

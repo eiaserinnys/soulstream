@@ -18,6 +18,7 @@ import {
   useDashboardStore,
   useUiEventEntryMarker,
   useUiEventTracker,
+  applyCatalogSessionDisplayName,
   cn,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
@@ -358,11 +359,10 @@ export function SearchModal({
     const summary = sessionById.get(result.session_id);
     const targetSummary =
       summary && assignment
-        ? {
-            ...summary,
-            folderId: assignment.folderId,
-            displayName: assignment.displayName,
-          }
+        ? applyCatalogSessionDisplayName(
+            { ...summary, folderId: assignment.folderId },
+            assignment,
+          )
         : summary;
     const opensStoryPanel =
       result.match_source === "highlight" || result.match_source === "story";
@@ -432,7 +432,10 @@ export function SearchModal({
     const assignment = catalog?.sessions[result.session_id];
     const summary = sessionById.get(result.session_id);
     const targetSummary = summary && assignment
-      ? { ...summary, folderId: assignment.folderId, displayName: assignment.displayName }
+      ? applyCatalogSessionDisplayName(
+          { ...summary, folderId: assignment.folderId },
+          assignment,
+        )
       : summary;
     const opened = onOpenSession
       ? await onOpenSession(

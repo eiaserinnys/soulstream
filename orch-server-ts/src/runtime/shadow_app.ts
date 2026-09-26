@@ -9,6 +9,7 @@ import type { AuthRouteOptions } from "../auth/auth_routes.js";
 import type { BoardAssetRouteOptions } from "../board/board_asset_routes.js";
 import type { BoardItemRouteOptions } from "../board/board_item_routes.js";
 import type { BoardYjsHostProxyRouteOptions } from "../board/board_yjs_host_proxy.js";
+import type { BoardYjsRouteOptions } from "../board-yjs/board_yjs_route.js";
 import type { MarkdownDocumentRouteOptions } from "../board/markdown_document_routes.js";
 import type { CogitoRouteOptions } from "../cogito/cogito_routes.js";
 import type { OrchServerTsConfig } from "../config.js";
@@ -83,6 +84,7 @@ export type ShadowOrchestratorProviderBundle = {
   attachmentRoutes: AttachmentRouteOptions;
   boardAssetRoutes: BoardAssetRouteOptions;
   boardItemRoutes: ShadowBoardItemRouteProviders;
+  boardYjsRoutes: BoardYjsRouteOptions;
   cogitoRoutes: CogitoRouteOptions;
   executeProxyRoutes: ExecuteProxyRouteOptions;
   ephemeralLlmRoutes: EphemeralLlmRouteOptions;
@@ -119,6 +121,7 @@ export type ShadowOrchestratorRouteOptions = Required<
     | "attachmentRoutes"
     | "boardAssetRoutes"
     | "boardItemRoutes"
+    | "boardYjsRoutes"
     | "boardYjsHostProxyRoutes"
     | "cogitoRoutes"
     | "executeProxyRoutes"
@@ -191,6 +194,7 @@ export const shadowRouteCompositionRequirements = [
     paths: ["boardItemRoutes.provider", "boardItemRoutes.accessProvider"],
   },
   { owner: "board.yjs-host", paths: ["runtime"] },
+  { owner: "board.yjs", paths: ["boardYjsRoutes.createService"] },
   {
     owner: "cogito",
     paths: [
@@ -377,6 +381,7 @@ function buildShadowRouteOptions(
       accessProvider: providers.boardItemRoutes.accessProvider,
       hostProxy: boardYjsHostProxyRoutes,
     },
+    boardYjsRoutes: providers.boardYjsRoutes,
     boardYjsHostProxyRoutes,
     cogitoRoutes: providers.cogitoRoutes,
     executeProxyRoutes: providers.executeProxyRoutes,

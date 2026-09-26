@@ -562,12 +562,6 @@ export async function installV3VisualQaRoutes(
 
     if (path === "/api/auth/config") return fulfillJson(route, { authEnabled: false, devModeEnabled: false });
     if (path === "/api/auth/status") return fulfillJson(route, { authenticated: true, user: null });
-    if (path === "/api/config") return fulfillJson(route, {
-      mode: "orchestrator",
-      nodeId: null,
-      auth: { enabled: false },
-      features: { configModal: true, searchModal: true, nodePanel: true, nodeGuard: false },
-    });
     if (path === "/api/config/settings" && request.method() === "GET") {
       return fulfillJson(route, { categories: [] });
     }

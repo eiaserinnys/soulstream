@@ -73,7 +73,7 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
                 config = _load_writer_source(source_name)
                 runner = ServiceRunner(config, config_dir=REPOSITORY_ROOT)
                 affected = sorted(runner.get_affected_services("soulstream"))
-                self.assertEqual(affected, sorted(contract["writer_services"]))
+                self.assertEqual(affected, sorted(contract["affected_services"]))
                 self.assertIn(manifest.environment_service, affected)
 
         worker = ReleaseManifest.load(WORKER_MANIFEST_PATH)
@@ -98,17 +98,17 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
             "after": [],
         }
         with self.assertRaises(AssertionError):
-            _assert_writer_services(
+            _assert_affected_services(
                 HanielConfig.model_validate(yaml.safe_load(render_haniel_projection(added))),
-                contract["writer_services"],
+                contract["affected_services"],
             )
 
         removed = copy.deepcopy(payload)
-        removed["services"].pop(contract["writer_services"][0])
+        removed["services"].pop(contract["affected_services"][0])
         with self.assertRaises(AssertionError):
-            _assert_writer_services(
+            _assert_affected_services(
                 HanielConfig.model_validate(yaml.safe_load(render_haniel_projection(removed))),
-                contract["writer_services"],
+                contract["affected_services"],
             )
 
     def test_committed_writer_projection_has_source_provenance(self) -> None:
@@ -172,6 +172,7 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
             central.migration.apply.command,
             f"{DEPLOY_COMMAND} --migrate",
         )
+        self.assertEqual(central.migration.apply.name, "apply-central-database-release")
         central_verify = [
             command
             for command in central.post_start_verify
@@ -346,7 +347,7 @@ def _render_source(source_name: str, source: dict[str, str]) -> str:
         "__INSTALL_DIR__": "C:/soulstream-test",
         "__WORKSPACE_DIR__": "C:/workspace-test",
         "__PORT__": "3105",
-        "__DATABASE_URL__": "postgresql://test:test@127.0.0.1/test_db",
+        "__UPSTREAM_URL__": "ws://127.0.0.1:5200/ws/node",
         "__AUTH_BEARER_TOKEN__": "test-token",
         "__REPOSITORY_URL__": "https://example.invalid/soulstream.git",
         "__REPOSITORY_BRANCH__": "main",
@@ -362,7 +363,7 @@ def _load_writer_source(name: str) -> HanielConfig:
     )
 
 
-def _assert_writer_services(config: HanielConfig, expected: list[str]) -> None:
+def _assert_affected_services(config: HanielConfig, expected: list[str]) -> None:
     actual = sorted(
         ServiceRunner(config, config_dir=REPOSITORY_ROOT)
         .get_affected_services("soulstream")

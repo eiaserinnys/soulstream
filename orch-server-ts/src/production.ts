@@ -137,6 +137,11 @@ export async function createProductionOrchestrator(
   options: CreateProductionOrchestratorOptions,
 ): Promise<ProductionOrchestrator> {
   const warn = options.warn ?? console.warn;
+  if (options.config.dashboard_user_folder_access_configured) {
+    warn(
+      "DASHBOARD_USER_FOLDER_ACCESS is configured but not enforced; manage folder permissions through the users table.",
+    );
+  }
   const application = await (
     options.applicationFactory ?? createLiveProductionApplication
   )(options.config, { warn });

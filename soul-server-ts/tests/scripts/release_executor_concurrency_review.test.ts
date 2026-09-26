@@ -59,7 +59,7 @@ function environment(backupDirectory: string, requestId = "request-1") {
     HANIEL_BACKUP_DIR: backupDirectory,
     HANIEL_DATABASE_OPERATION: "fresh_install",
     HANIEL_DATABASE_REQUIRED_SUBPHASES: '["board_yjs_runbook_residue"]',
-    HANIEL_DATABASE_WRITER_SERVICES: '["soulstream-orch-server"]',
+    HANIEL_DATABASE_AFFECTED_SERVICES: '["soulstream-orch-server"]',
     HANIEL_DEPLOY_REPO: "soulstream",
     HANIEL_DEPLOYMENT_JOURNAL: join(backupDirectory, "haniel-deployment.json"),
     HANIEL_DATABASE_CONTRACT_DIGEST: "b".repeat(64),
@@ -127,6 +127,22 @@ async function prepareSqlAppliedRelease(backupDirectory: string) {
 }
 
 describe.sequential("database release cross-process and subphase boundaries", () => {
+  it("reads existing journals with the former writer_services field", async () => {
+    const backupDirectory = directory("release-legacy-service-field-");
+    mkdirSync(backupDirectory, { recursive: true });
+    const path = join(backupDirectory, "database-release.json");
+    writeFileSync(path, JSON.stringify({
+      schema_version: "soulstream.database-release.v1",
+      revision: 1,
+      writer_services: ["soulstream-orch-server"],
+    }), "utf8");
+
+    const journal = await readDatabaseReleaseJournal(path);
+
+    expect(journal.affected_services).toEqual(["soulstream-orch-server"]);
+    expect(journal).not.toHaveProperty("writer_services");
+  });
+
   it("serializes same and conflicting create identities in actual Node processes", async () => {
     const backupDirectory = directory("release-create-process-");
     mkdirSync(backupDirectory, { recursive: true });

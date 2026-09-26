@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionSummary } from "../shared/types";
-import { applySessionLifecycleSnapshotToList } from "./session-snapshot-helpers";
+import { applySessionSummarySnapshotToList } from "./session-snapshot-helpers";
 
 function session(overrides: Partial<SessionSummary>): SessionSummary {
   return {
@@ -14,7 +14,7 @@ function session(overrides: Partial<SessionSummary>): SessionSummary {
   };
 }
 
-describe("applySessionLifecycleSnapshotToList", () => {
+describe("applySessionSummarySnapshotToList", () => {
   it("projects lifecycle and latest valid message without replacing list-only fields", () => {
     const current = session({
       prompt: "preserve me",
@@ -32,7 +32,7 @@ describe("applySessionLifecycleSnapshotToList", () => {
       },
     });
 
-    const result = applySessionLifecycleSnapshotToList(
+    const result = applySessionSummarySnapshotToList(
       [current],
       new Map([[incoming.agentSessionId, incoming]]),
     );
@@ -58,7 +58,7 @@ describe("applySessionLifecycleSnapshotToList", () => {
     });
     const snapshots = new Map([[current.agentSessionId, { ...current }]]);
 
-    const result = applySessionLifecycleSnapshotToList([current], snapshots);
+    const result = applySessionSummarySnapshotToList([current], snapshots);
 
     expect(result[0]).toBe(current);
   });
@@ -85,15 +85,15 @@ describe("applySessionLifecycleSnapshotToList", () => {
       feedLastEventId: 72,
     });
 
-    const [afterLegacy] = applySessionLifecycleSnapshotToList(
+    const [afterLegacy] = applySessionSummarySnapshotToList(
       [current],
       new Map([[current.agentSessionId, legacySnapshot]]),
     );
-    const [afterReplay] = applySessionLifecycleSnapshotToList(
+    const [afterReplay] = applySessionSummarySnapshotToList(
       [afterLegacy],
       new Map([[current.agentSessionId, replayedOlderWatermark]]),
     );
-    const [afterAdvance] = applySessionLifecycleSnapshotToList(
+    const [afterAdvance] = applySessionSummarySnapshotToList(
       [afterReplay],
       new Map([[current.agentSessionId, advanced]]),
     );
@@ -116,10 +116,11 @@ describe("applySessionLifecycleSnapshotToList", () => {
     const incoming = {
       agentSessionId: current.agentSessionId,
       status: "completed" as const,
+      eventCount: 0,
       createdAt: "2026-09-03T00:00:00Z",
     };
 
-    const result = applySessionLifecycleSnapshotToList(
+    const result = applySessionSummarySnapshotToList(
       [current],
       new Map([[incoming.agentSessionId, incoming]]),
     );
@@ -128,6 +129,41 @@ describe("applySessionLifecycleSnapshotToList", () => {
       status: "completed",
       reviewState: "needs_review",
       lastMessage: current.lastMessage,
+    });
+  });
+
+  it("applies every defined summary field from the same newer snapshot", () => {
+    const current = session({
+      status: "running",
+      eventCount: 4,
+      updatedAt: "2026-09-01T00:00:00Z",
+      prompt: "old prompt",
+      llmModel: "old-model",
+      metadata: [{ type: "branch", value: "old" }],
+    });
+    const incoming = session({
+      status: "completed",
+      eventCount: 9,
+      updatedAt: "2026-09-02T00:00:00Z",
+      lastEventId: 17,
+      prompt: "new prompt",
+      llmModel: "new-model",
+      reasoningEffort: "max",
+      metadata: [{ type: "branch", value: "new" }],
+    });
+
+    const [result] = applySessionSummarySnapshotToList(
+      [current],
+      new Map([[incoming.agentSessionId, incoming]]),
+    );
+
+    expect(result).toMatchObject({
+      status: "completed",
+      eventCount: 9,
+      prompt: "new prompt",
+      llmModel: "new-model",
+      reasoningEffort: "max",
+      metadata: [{ type: "branch", value: "new" }],
     });
   });
 
@@ -156,7 +192,7 @@ describe("applySessionLifecycleSnapshotToList", () => {
       attentionRevision: 11,
     });
 
-    const [result] = applySessionLifecycleSnapshotToList(
+    const [result] = applySessionSummarySnapshotToList(
       [current],
       new Map([[incoming.agentSessionId, incoming]]),
     );
@@ -209,7 +245,7 @@ describe("applySessionLifecycleSnapshotToList", () => {
       noticesTruncated: true,
     });
 
-    const [result] = applySessionLifecycleSnapshotToList(
+    const [result] = applySessionSummarySnapshotToList(
       [current],
       new Map([[incoming.agentSessionId, incoming]]),
     );

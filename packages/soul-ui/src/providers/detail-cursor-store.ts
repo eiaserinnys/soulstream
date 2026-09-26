@@ -68,7 +68,7 @@ export class DetailCursorStore {
   }
 }
 
-// The two production providers are module-level singletons, but tests, HMR, or
+// The production provider is a module-level singleton, but tests, HMR, or
 // embedders may construct additional providers. Keep logout fan-out weak so the
 // registry follows provider lifetime instead of retaining every created store.
 const registeredStores = new Set<WeakRef<DetailCursorStore>>();

@@ -57,9 +57,8 @@ export async function registerDashboardServing(
   app.setNotFoundHandler(async (request, reply) => {
     const requestPath = requestPathname(request);
     if (
-      request.method !== "GET" ||
       requestPath === undefined ||
-      isReservedPath(requestPath)
+      !isDashboardFallbackRequest(request.method, requestPath)
     ) {
       return sendNotFound(reply);
     }
@@ -75,6 +74,10 @@ export async function registerDashboardServing(
     return sendFile(reply, indexPath, DASHBOARD_INDEX_CACHE_CONTROL);
   });
   return true;
+}
+
+export function isDashboardFallbackRequest(method: string, pathname: string): boolean {
+  return method === "GET" && !isReservedPath(pathname);
 }
 
 function dashboardRootCacheControl(

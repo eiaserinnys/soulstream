@@ -9,7 +9,7 @@
  *   이동 궤적 없이 하단 고정.
  * - prepend는 virtuoso 공식 패턴 `firstItemIndex -= N` (store.chatPrependedCount 참조 — 정본은 store).
  * - 과거 로드는 startReached/viewport geometry/수동 재시도가 하나의 bounded controller를 사용.
- * - focusEventId 하이라이트는 `itemsRendered` 콜백에서 `scrollerRef` 범위로 한정한 querySelector로 처리.
+ * - focusEventId 하이라이트는 `itemsRendered` 콜백에서 Virtuoso 행 key로 찾는다.
  * - 세션 전환은 Virtuoso `key={activeSessionKey}` 재마운트로 처리.
  *
  * Follow mode: 새 메시지 도착 시 자동 스크롤 follow/unfollow 토글.
@@ -153,6 +153,7 @@ export function ChatView({
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
   const handledFocusRef = useRef<number | null>(null);
+  const focusedScrollRequestRef = useRef<number | null>(null);
   const focusRingOwnersRef = useRef(new WeakMap<HTMLElement, number>());
   const focusScrollRetryRef = useRef<{
     key: string | null;
@@ -305,7 +306,19 @@ export function ChatView({
       retry.key = requestKey;
       retry.attempts = 0;
     }
-    if (retry.frame !== null || retry.attempts >= 3) return;
+    if (retry.frame !== null) return;
+    if (retry.attempts >= 3) {
+      const state = useDashboardStore.getState();
+      if (
+        state.activeSessionKey === activeSessionKey
+        && state.focusEventId === focusEventId
+        && state.focusEventSessionId === activeSessionKey
+        && state.focusEventRequestId === focusEventRequestId
+      ) {
+        setFocusEventId(null);
+      }
+      return;
+    }
     retry.attempts += 1;
     retry.frame = window.requestAnimationFrame(() => {
       retry.frame = null;
@@ -326,7 +339,14 @@ export function ChatView({
         align: "center",
       });
     });
-  }, [activeSessionKey, cancelPendingRetention, focusEventId, focusEventRequestId, timelineItems]);
+  }, [
+    activeSessionKey,
+    cancelPendingRetention,
+    focusEventId,
+    focusEventRequestId,
+    setFocusEventId,
+    timelineItems,
+  ]);
   useEffect(() => () => {
     const frame = focusScrollRetryRef.current.frame;
     if (frame !== null) window.cancelAnimationFrame(frame);
@@ -484,11 +504,13 @@ export function ChatView({
   }, [activeSessionKey]);
 
   // 검색 결과 클릭 시: focusEventId에 해당하는 메시지로 스크롤.
-  // 하이라이트는 itemsRendered 콜백에서 DOM 쿼리 후 적용.
+  // 같은 요청은 한 번만 스크롤하고, 행 highlight는 itemsRendered에서 적용한다.
   useEffect(() => {
     if (!focusEventId || timelineItems.length === 0) return;
+    if (focusedScrollRequestRef.current === focusEventRequestId) return;
     const targetIndex = findFocusIndex(timelineItems, focusEventId);
     if (targetIndex < 0) return; // 다음 treeVersion tick에서 재시도
+    focusedScrollRequestRef.current = focusEventRequestId;
     // 검색 결과 이동은 사용자의 명시적 과거 탐색이다. history pagination 의도를
     // 만들지는 않지만, follow/초기 bottom 보정과는 경쟁하지 않게 먼저 해제한다.
     cancelPendingRetention();
@@ -698,10 +720,13 @@ export function ChatView({
           if (focusEventId == null) return;
           // 새 요청은 같은 이벤트 ID를 다시 선택해도 처리한다.
           if (handledFocusRef.current === focusEventRequestId) return;
-          // scrollerRef로 virtuoso 내부 스크롤러 DOM 범위 한정 (document 전역 쿼리 금지)
-          const el = scrollerRef.current?.querySelector(
-            `[data-tree-node-id$="-${focusEventId}"]`,
-          ) as HTMLElement | null;
+          const targetIndex = findFocusIndex(timelineItems, focusEventId);
+          if (targetIndex < 0) return;
+          const targetKey = messageOrGroupKey(timelineItems[targetIndex]);
+          const targetRow = Array.from(
+            scrollerRef.current?.querySelectorAll<HTMLElement>("[data-chat-item-key]") ?? [],
+          ).find((row) => row.dataset.chatItemKey === targetKey);
+          const el = targetRow?.querySelector<HTMLElement>("[data-tree-node-id]") ?? null;
           if (!el) {
             retryFocusScroll();
             return;

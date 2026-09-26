@@ -124,6 +124,35 @@ describe("v3 session_list catalog projection", () => {
     expect(projected.sessionList).toHaveLength(1);
     expect(projected.sessionList?.[0]?.reviewState).toBe("acknowledged");
   });
+
+  it("does not let an older stream snapshot regress the canonical summary", () => {
+    const current = session("session-a", "completed");
+    current.updatedAt = "2026-09-08T00:00:00Z";
+    current.lastEventId = 80;
+    current.eventCount = 12;
+    current.prompt = "current prompt";
+    const catalog: CatalogState = {
+      folders: [],
+      sessions: {},
+      sessionList: [current],
+    };
+    const event: SessionListStreamEvent = {
+      type: "session_list",
+      sessions: [{
+        ...current,
+        status: "running",
+        updatedAt: "2026-09-07T00:00:00Z",
+        lastEventId: 79,
+        eventCount: 3,
+        prompt: "stale prompt",
+      }],
+      total: 1,
+    };
+
+    const projected = projectSessionListSnapshot(catalog, event);
+
+    expect(projected.sessionList?.[0]).toBe(current);
+  });
 });
 
 describe("canonical review queue reconciliation", () => {
@@ -151,6 +180,32 @@ describe("canonical review queue reconciliation", () => {
     expect(reconciled.sessionList?.[0]).toBe(recent);
     expect(reconciled.sessionList?.[1]).toBe(currentReview);
     expect(reconciled.sessionList?.[2]).toEqual(oldReview);
+  });
+
+  it("keeps the current full summary when review reconciliation is older", () => {
+    const current = {
+      ...reviewSession("reviewed"),
+      updatedAt: "2026-09-08T00:00:00Z",
+      lastEventId: 80,
+      llmModel: "current-model",
+      metadata: [{ type: "branch", value: "current" }],
+    };
+    const stale = {
+      ...reviewSession("reviewed"),
+      updatedAt: "2026-09-07T00:00:00Z",
+      lastEventId: 79,
+      llmModel: "stale-model",
+      metadata: [{ type: "branch", value: "stale" }],
+    };
+    const catalog: CatalogState = {
+      folders: [],
+      sessions: {},
+      sessionList: [current],
+    };
+
+    const reconciled = reconcileCanonicalReviewSessions(catalog, [stale]);
+
+    expect(reconciled.sessionList?.[0]).toBe(current);
   });
 });
 

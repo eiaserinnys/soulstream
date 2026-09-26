@@ -19,9 +19,6 @@ export {
 } from "./starred-task-dnd";
 export type { StarredTaskDragData } from "./starred-task-dnd";
 
-// === SSE Session Provider ===
-export { SSESessionProvider, sseSessionProvider } from "./SSESessionProvider";
-
 // === SSE Subscribe Utility ===
 export { createSSESubscribe } from "./sse-subscribe";
 export type { SSESubscribeOptions } from "./sse-subscribe";

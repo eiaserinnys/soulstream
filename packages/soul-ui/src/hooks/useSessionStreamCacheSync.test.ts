@@ -108,6 +108,8 @@ describe("useSessionStreamCacheSync", () => {
       prompt: "preserved",
       eventCount: 4,
       createdAt: "2026-08-12T00:00:00Z",
+      llmModel: "old-model",
+      metadata: [{ type: "branch", value: "old" }],
     };
     const unchangedSession = {
       agentSessionId: "session-b",
@@ -143,6 +145,9 @@ describe("useSessionStreamCacheSync", () => {
         reviewState: "not_required",
         eventCount: 5,
         createdAt: "2026-08-12T00:00:00Z",
+        prompt: "updated prompt",
+        llmModel: "new-model",
+        metadata: [{ type: "branch", value: "new" }],
       }],
       total: 1,
     });
@@ -153,19 +158,28 @@ describe("useSessionStreamCacheSync", () => {
     expect(cached?.pages[0].sessions[0]).toMatchObject({
       status: "running",
       reviewState: "not_required",
-      prompt: "preserved",
+      prompt: "updated prompt",
+      eventCount: 5,
+      llmModel: "new-model",
+      metadata: [{ type: "branch", value: "new" }],
     });
     expect(cached?.pages[0].sessions[1]).toBe(unchangedSession);
     expect(useDashboardStore.getState().catalog?.sessionList?.[0]).toMatchObject({
       status: "running",
       reviewState: "not_required",
-      prompt: "preserved",
+      prompt: "updated prompt",
+      eventCount: 5,
+      llmModel: "new-model",
+      metadata: [{ type: "branch", value: "new" }],
     });
     expect(useDashboardStore.getState().catalog?.sessionList?.[1]).toBe(unchangedSession);
     expect(useDashboardStore.getState().activeSessionSummary).toMatchObject({
       status: "running",
       reviewState: "not_required",
-      prompt: "preserved",
+      prompt: "updated prompt",
+      eventCount: 5,
+      llmModel: "new-model",
+      metadata: [{ type: "branch", value: "new" }],
     });
     expect(invalidateQueries).not.toHaveBeenCalled();
   });

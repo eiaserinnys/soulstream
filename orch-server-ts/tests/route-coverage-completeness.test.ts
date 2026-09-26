@@ -161,6 +161,7 @@ function createAllOptInRouteApp() {
     attachmentRoutes: inert,
     boardAssetRoutes: inert,
     boardItemRoutes: inert,
+    boardYjsRoutes: { createService: () => ({ close: async () => undefined }) as never },
     boardYjsHostProxyRoutes: inert,
     cogitoRoutes: inert,
     executeProxyRoutes: inert,

@@ -32,8 +32,8 @@ const SUPERVISOR_RETIREMENT_MIGRATION_PATH = fileURLToPath(new URL(
 const YAML_PATH = fileURLToPath(
   new URL("../../../install/haniel-soul-server-ts.example.yaml", import.meta.url),
 );
-const STANDALONE_YAML_PATH = fileURLToPath(
-  new URL("../../../install/haniel-standalone.yaml.template", import.meta.url),
+const WORKER_INSTALL_YAML_PATH = fileURLToPath(
+  new URL("../../../install/haniel-worker.yaml.template", import.meta.url),
 );
 const INSTALLER_PATH = fileURLToPath(new URL("../../../install/install.ps1", import.meta.url));
 const EIASERINNYS_FIXTURE_PATH = fileURLToPath(
@@ -819,34 +819,27 @@ describe("apply-schema.mjs", () => {
     expect(envConfig.keys.map((entry) => entry.key)).toContain("EVENT_OUTBOX_DIR");
   });
 
-  it("keeps standalone initialization separate from normal service starts", () => {
-    const yaml = readFileSync(STANDALONE_YAML_PATH, "utf8");
-    const parsed = parseYaml(yaml) as HanielStandaloneTemplate;
+  it("configures the installer as a remote worker without a database writer", () => {
+    const yaml = readFileSync(WORKER_INSTALL_YAML_PATH, "utf8");
+    const parsed = parseYaml(yaml) as HanielWorkerTemplate;
     const service = parsed.services["soul-server-ts"];
     const installer = readFileSync(INSTALLER_PATH, "utf8");
 
     expect(parsed.repos.soulstream.release_manifest).toBe(
-      "deploy/release-manifest-standalone.json",
+      "deploy/release-manifest-worker.json",
     );
     expect(service.ready).toBe("http://127.0.0.1:__PORT__/health");
     expect(service.hooks).not.toHaveProperty("pre_start");
-    const standaloneEnv = parsed.install.configs["soul-server-ts-env"];
-    expect(standaloneEnv.keys.map((entry) => entry.key)).toContain("EVENT_OUTBOX_DIR");
-    expect(installer).toContain("Push-Location $monoRepoDir");
-    expect(installer).toContain(
-      'node "packages/db-schema/scripts/migrate.mjs" initialize',
-    );
-    expect(installer).toContain(
-      '$env:SOULSTREAM_RELEASE_ID = "standalone-install-$installHead"',
-    );
-    expect(installer).not.toContain("Get-PostgresToolMajorVersion");
-    expect(installer).not.toContain("pg_dump");
-    expect(installer).not.toContain("pg_restore");
-    expect(installer.trimEnd()).toMatch(/exit 0$/);
+    const workerEnv = parsed.install.configs["soul-server-ts-env"];
+    expect(workerEnv.keys.map((entry) => entry.key)).not.toContain("DATABASE_URL");
+    expect(workerEnv.keys.map((entry) => entry.key)).toContain("SOULSTREAM_UPSTREAM_URL");
+    expect(workerEnv.keys.map((entry) => entry.key)).toContain("EVENT_OUTBOX_DIR");
+    expect(yaml).toContain("default: __UPSTREAM_URL__");
+    expect(installer).toContain("-UpstreamUrl");
+    expect(installer).not.toContain("DatabaseUrl");
+    expect(installer).not.toContain('node "packages/db-schema/scripts/migrate.mjs" initialize');
+    expect(installer).not.toContain("SkipDashboard");
     expect(installer).toContain("-AuthBearerToken is required in non-interactive mode");
-    expect(
-      installer.indexOf('node "packages/db-schema/scripts/migrate.mjs" initialize'),
-    ).toBeLessThan(installer.indexOf('Write-Step "Starting Soulstream service..."'));
   });
 
   it("pins release migration execution to the eiaserinnys orch authority", () => {
@@ -901,7 +894,7 @@ interface HanielSoulServerTsExample {
   };
 }
 
-interface HanielStandaloneTemplate {
+interface HanielWorkerTemplate {
   repos: { soulstream: { release_manifest: string } };
   install: {
     configs: {
@@ -1006,7 +999,7 @@ function prepareDatabaseRelease(cwd: string): Record<string, string> {
     HANIEL_DEPLOY_REPO: "soulstream",
     HANIEL_DATABASE_CONTRACT_DIGEST: "b".repeat(64),
     HANIEL_DATABASE_REQUIRED_SUBPHASES: "[]",
-    HANIEL_DATABASE_WRITER_SERVICES: '["soulstream-orch-server"]',
+    HANIEL_DATABASE_AFFECTED_SERVICES: '["soulstream-orch-server"]',
     HANIEL_MANIFEST_DIGEST: "a".repeat(64),
     HANIEL_PREVIOUS_HEAD: "1".repeat(40),
     HANIEL_QUIESCENCE_RECEIPT: receiptPath,

@@ -57,6 +57,26 @@ describe("production auth guard", () => {
     await app.close();
   });
 
+  it("rejects an unlisted route by default", async () => {
+    const app = createApp({
+      config,
+      productionAuth: {
+        resolveTokenAccess: vi.fn(async () => ({
+          ok: false as const,
+          statusCode: 401,
+          detail: "Authorization header required",
+        })),
+      },
+    });
+    app.get("/api/unlisted", async () => ({ public: true }));
+
+    const response = await app.inject({ method: "GET", url: "/api/unlisted" });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ detail: "Authorization header required" });
+    await app.close();
+  });
+
   it("uses protocol-aware matrix keys for SSE, public HTTP, and WebSocket routes", () => {
     expect(resolveProductionRouteAuthRequirement({
       method: "GET",
@@ -73,6 +93,16 @@ describe("production auth guard", () => {
     expect(resolveProductionRouteAuthRequirement({
       method: "GET",
       routeUrl: "/ws/node",
+      websocket: true,
+    })).toBe(false);
+    expect(resolveProductionRouteAuthRequirement({
+      method: "GET",
+      routeUrl: "/yjs/:folderId",
+      websocket: true,
+    })).toBe(false);
+    expect(resolveProductionRouteAuthRequirement({
+      method: "GET",
+      routeUrl: "/yjs/:containerKind/:containerId",
       websocket: true,
     })).toBe(false);
     for (const [method, routeUrl] of [

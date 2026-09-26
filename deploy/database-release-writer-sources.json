@@ -10,8 +10,8 @@
       "live_gate": "HANIEL_LIVE_CONFIG_PATH=<node-config> python deploy/generate_haniel_writer_projection.py --source <node-config> --fixture soul-server-ts/tests/fixtures/eiaserinnys-haniel-services.yaml --provenance deploy/eiaserinnys-haniel-writer-provenance.json --check"
     },
     "standalone": {
-      "path": "install/haniel-standalone.yaml.template",
-      "sha256": "dffca1711cf5fb9c33c944c55e3bc5c7e9fa0ebd1f23aeed92d359452894341b"
+      "path": "install/haniel-worker.yaml.template",
+      "sha256": "6fcf9ab77cb43393f726e3a57ba02bcf22741f71f0d48c2d1f382b510d16f943"
     }
   }
 }

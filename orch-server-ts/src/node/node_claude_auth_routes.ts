@@ -1,16 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
-  PendingNodeCommandRejectedError,
-  PendingNodeCommandTimeoutError,
   type NodeCommandResponse,
   type RequestResponseNodeCommandPayload,
 } from "./pending_commands.js";
 import type { InMemoryNodeRegistry, NodeConnectionSnapshot } from "./registry.js";
-import {
-  NodeCommandTransportError,
-  type SessionCommandTransportBridge,
-} from "../session/session_command_transport.js";
+import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
+import { mapNodeCommandError, sendApiError } from "../http/api_errors.js";
 import {
   BROWSER_SCOPE,
   CLAUDE_OAUTH_TOKEN_URL,
@@ -387,37 +383,20 @@ async function dispatchNodeCommandResult(
 }
 
 function sendCommandError(reply: FastifyReply, error: unknown): FastifyReply {
-  if (error instanceof PendingNodeCommandRejectedError) {
-    const response = error.response;
+  const nodeCommandError = mapNodeCommandError(error);
+  if (nodeCommandError?.kind === "rejected") {
+    const response = nodeCommandError.response;
     if (response !== undefined && isUnsuccessfulAck(response)) {
       return detail(reply, 400, ackErrorDetail(response));
     }
-    return reply.code(503).send({ error: { code: "NODE_COMMAND_REJECTED", message: error.message } });
+    return sendApiError(reply, nodeCommandError.statusCode, nodeCommandError.apiError);
   }
-  if (error instanceof PendingNodeCommandTimeoutError) {
-    return reply.code(503).send({
-      error: {
-        code: "NODE_COMMAND_TIMEOUT",
-        message: error.message,
-        requestId: error.requestId,
-      },
-    });
+  if (nodeCommandError !== undefined) {
+    return sendApiError(reply, nodeCommandError.statusCode, nodeCommandError.apiError);
   }
-  if (error instanceof NodeCommandTransportError) {
-    return reply.code(503).send({
-      error: {
-        code: error.code,
-        message: error.message,
-        nodeId: error.nodeId,
-        connectionId: error.connectionId,
-      },
-    });
-  }
-  return reply.code(500).send({
-    error: {
-      code: "NODE_CLAUDE_AUTH_ROUTE_ERROR",
-      message: error instanceof Error ? error.message : String(error),
-    },
+  return sendApiError(reply, 500, {
+    code: "NODE_CLAUDE_AUTH_ROUTE_ERROR",
+    message: error instanceof Error ? error.message : String(error),
   });
 }
 

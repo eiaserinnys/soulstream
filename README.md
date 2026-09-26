@@ -51,7 +51,7 @@ The pnpm workspace is declared in `pnpm-workspace.yaml`. The node ↔ orchestrat
 
 ### Windows installer
 
-The installer bootstraps a TypeScript worker installation, installs or reuses Haniel, prepares the repository and dashboard bundle, initializes an empty PostgreSQL database safely, and registers the service.
+The installer registers a `soul-server-ts` worker with an existing remote `orch-server-ts` control plane. It does not install an orchestrator or own database migrations.
 
 Prerequisites are checked before installation: Python 3.11 or newer and Node.js 22.5 or newer.
 
@@ -66,11 +66,11 @@ Non-interactive install:
 ```powershell
 & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1'))) `
   -NonInteractive `
-  -DatabaseUrl $env:SOULSTREAM_DATABASE_URL `
+  -UpstreamUrl $env:SOULSTREAM_UPSTREAM_URL `
   -AuthBearerToken $env:SOULSTREAM_AUTH_BEARER_TOKEN
 ```
 
-The default install directory is `%USERPROFILE%\soulstream`, the default agent workspace is `%USERPROFILE%\workspace`, and the default worker port is `3105`. Non-interactive mode requires both the database URL and the shared orchestrator service token. A complete cluster also needs an `orch-server-ts` control plane reachable at the worker's configured `SOULSTREAM_UPSTREAM_URL`.
+The default install directory is `%USERPROFILE%\soulstream`, the default agent workspace is `%USERPROFILE%\workspace`, and the default worker port is `3105`. Non-interactive mode requires the remote orchestrator WebSocket URL and its shared service token. Database migrations are applied by the orchestrator's central release manifest.
 
 Haniel auto-apply is disabled by default. It detects new commits and presents them for approval without silently pulling or restarting the service.
 
@@ -192,9 +192,8 @@ Useful contract and component references:
 [Haniel](https://github.com/eiaserinnys/haniel) is Soulstream's process and release manager. The repository keeps deployment behavior explicit:
 
 - `deploy/release-manifest.json` makes the central orchestrator deployment the shared database migration authority and defines preflight, apply, post-start verification, and recovery.
-- `deploy/release-manifest-worker.json` keeps worker-only deployments database-free and limits them to runtime verification and rollback.
-- `deploy/release-manifest-standalone.json` owns the database lifecycle for a standalone installation.
+- `deploy/release-manifest-worker.json` keeps remote worker deployments database-free; the central orchestrator release owns migrations.
 - `install/haniel-soul-server-ts.example.yaml` is the worker-node integration reference.
-- `install/haniel-standalone.yaml.template` is rendered by the Windows installer.
+- `install/haniel-worker.yaml.template` is rendered by the Windows worker installer.
 
 Normal service starts never apply schema changes. Database upgrades run through the release manifest so writer quiescence, migration checksums, health checks, and release-journal recovery remain one audited path. Backups are operated independently from deployment.

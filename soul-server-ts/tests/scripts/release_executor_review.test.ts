@@ -31,7 +31,7 @@ function environment(directory: string, requestId = "request-1", operation = "up
     HANIEL_BACKUP_DIR: directory,
     HANIEL_DATABASE_OPERATION: operation,
     HANIEL_DATABASE_REQUIRED_SUBPHASES: "[]",
-    HANIEL_DATABASE_WRITER_SERVICES:
+    HANIEL_DATABASE_AFFECTED_SERVICES:
       '["soulstream-orch-server","soulstream-soul-server-ts"]',
     HANIEL_DEPLOY_REPO: "soulstream",
     HANIEL_DEPLOYMENT_JOURNAL: join(directory, "haniel-deployment.json"),

@@ -265,6 +265,7 @@
         "status": "running",
         "reviewRequired": true,
         "reviewState": "needs_review",
+        "bindingWarnings": [],
         "sessionType": "claude",
         "eventCount": 0,
         "createdAt": "2026-06-14T10:00:00.000Z",
@@ -272,16 +273,31 @@
         "nodeId": "node-contract",
         "folderId": "folder-contract",
         "displayName": "Contract Display",
+        "clientId": "client-contract",
         "lastMessage": {
           "type": "assistant_message",
           "preview": "마지막 응답",
           "timestamp": "2026-06-14T10:02:00.000Z"
         },
+        "metadata": [
+          {
+            "type": "caller_info",
+            "value": {
+              "source": "agent",
+              "display_name": "서소영",
+              "avatar_url": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+              "agent_node": "node-parent",
+              "agent_id": "seosoyoung-opus",
+              "agent_name": "서소영"
+            }
+          }
+        ],
         "lastEventId": 12,
         "lastReadEventId": 7,
         "prompt": "계약 테스트 프롬프트",
         "agentId": "codex-contract",
         "agentName": "Codex Contract",
+        "agentPortraitUrl": null,
         "backend": "codex",
         "modelPreset": "codex-5.6-sol",
         "modelLabel": "Codex - 5.6 Sol",

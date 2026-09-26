@@ -34,20 +34,6 @@ const settingsPayload = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock("../config/AppConfigContext", () => ({
-  useAppConfig: () => ({
-    mode: "orchestrator",
-    nodeId: null,
-    auth: { enabled: true, provider: "google" },
-    features: {
-      configModal: true,
-      searchModal: true,
-      nodePanel: true,
-      nodeGuard: false,
-    },
-  }),
-}));
-
 vi.mock("@seosoyoung/soul-ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@seosoyoung/soul-ui")>();
   return {

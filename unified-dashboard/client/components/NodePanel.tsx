@@ -1,8 +1,7 @@
 /**
  * NodePanel - 좌측 하단 노드 목록 패널 (unified-dashboard)
  *
- * orchestrator-dashboard의 NodePanel.tsx에서 포팅.
- * orchestrator 모드(features.nodePanel = true)에서만 사용된다.
+ * V3 설정의 노드 상태와 Claude 인증 패널을 표시한다.
  * 노드 헤더 클릭 시 NodeClaudeAuthPanel이 확장된다.
  */
 

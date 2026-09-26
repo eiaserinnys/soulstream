@@ -174,6 +174,13 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
     attachmentRoutes: createInertProvider(),
     boardAssetRoutes: createInertProvider(),
     boardItemRoutes: createInertProvider(),
+    boardYjsRoutes: {
+      createService: () => ({
+        handleConnection: vi.fn(),
+        handleContainerConnection: vi.fn(),
+        close: vi.fn(async () => undefined),
+      } as never),
+    },
     cogitoRoutes: createInertProvider(),
     executeProxyRoutes: createInertProvider(),
     ephemeralLlmRoutes: createInertProvider(),

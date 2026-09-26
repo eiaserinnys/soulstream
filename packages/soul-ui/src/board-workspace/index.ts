@@ -5,8 +5,6 @@ export type {
   CreateMarkdownDocumentInput,
   CreateMarkdownDocumentResult,
 } from "./BoardWorkspaceView";
-export { FolderWorkspaceView } from "./FolderWorkspaceView";
-export type { FolderWorkspaceViewProps } from "./FolderWorkspaceView";
 export {
   getChildFolders,
   getFolderBreadcrumbs,

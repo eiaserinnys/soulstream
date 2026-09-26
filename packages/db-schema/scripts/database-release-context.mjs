@@ -10,7 +10,7 @@ export async function resolveDatabaseReleaseContext(options, command) {
   const protectedIdentity = new Map([
     "HANIEL_MANIFEST_DIGEST",
     "HANIEL_DATABASE_CONTRACT_DIGEST",
-    "HANIEL_DATABASE_WRITER_SERVICES",
+    "HANIEL_DATABASE_AFFECTED_SERVICES",
     "HANIEL_DATABASE_REQUIRED_SUBPHASES",
   ].filter((name) => env[name] !== undefined).map((name) => [name, env[name]]));
   dotenv.config({

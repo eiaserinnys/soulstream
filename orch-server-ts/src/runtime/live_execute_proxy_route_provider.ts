@@ -16,18 +16,15 @@ import type {
   InMemoryNodeRegistry,
 } from "../node/registry.js";
 import {
-  PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
   type NodeCommandResponse,
 } from "../node/pending_commands.js";
+import { apiErrorBody, mapNodeCommandError } from "../http/api_errors.js";
 import {
   SessionCommandRouteError,
   type SessionCommandRouter,
 } from "../session/session_command_router.js";
-import {
-  NodeCommandTransportError,
-  type SessionCommandTransportBridge,
-} from "../session/session_command_transport.js";
+import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
 import type { InterveneNodeCommandPayload } from "../session/session_action_command_payloads.js";
 import { SessionCreateNodeSelectionError } from "../session/session_create_node_selector.js";
 import type {
@@ -309,36 +306,21 @@ function mapCommandError(error: unknown, ackErrorStatus: number): ExecuteProxyRo
       },
     );
   }
-  if (error instanceof NodeCommandTransportError) {
-    return new ExecuteProxyRouteError(503, {
-      error: {
-        code: error.code,
-        message: error.message,
-        nodeId: error.nodeId,
-        connectionId: error.connectionId,
-      },
-    });
-  }
-  if (error instanceof PendingNodeCommandTimeoutError) {
-    return new ExecuteProxyRouteError(503, {
-      error: {
-        code: "NODE_COMMAND_TIMEOUT",
-        message: error.message,
-        requestId: error.requestId,
-      },
-    });
-  }
-  if (error instanceof PendingNodeCommandRejectedError) {
-    if (error.response !== undefined && isCommandError(error.response)) {
-      return routeErrorFromAck(ackErrorStatus, error.response);
+  const nodeCommandError = mapNodeCommandError(error);
+  if (nodeCommandError?.kind === "rejected") {
+    if (nodeCommandError.response !== undefined && isCommandError(nodeCommandError.response)) {
+      return routeErrorFromAck(ackErrorStatus, nodeCommandError.response);
     }
-    return new ExecuteProxyRouteError(503, {
-      error: {
-        code: "NODE_COMMAND_REJECTED",
-        message: error.message,
-        requestId: error.requestId,
-      },
-    });
+    return new ExecuteProxyRouteError(nodeCommandError.statusCode, apiErrorBody({
+      ...nodeCommandError.apiError,
+      requestId: nodeCommandError.requestId,
+    }));
+  }
+  if (nodeCommandError !== undefined) {
+    return new ExecuteProxyRouteError(
+      nodeCommandError.statusCode,
+      apiErrorBody(nodeCommandError.apiError),
+    );
   }
   return new ExecuteProxyRouteError(500, {
     error: {

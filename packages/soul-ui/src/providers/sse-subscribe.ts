@@ -1,8 +1,7 @@
 /**
  * createSSESubscribe - 재사용 가능한 SSE 구독 유틸리티
  *
- * SSESessionProvider와 OrchestratorSessionProvider에서 공유하는
- * EventSource 연결·재연결·lastEventId 추적 로직을 캡슐화합니다.
+ * OrchestratorSessionProvider의 EventSource 연결, 재연결, lastEventId 추적 로직.
  */
 
 import type { SoulSSEEvent } from "@shared/types";

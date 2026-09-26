@@ -82,7 +82,7 @@ export function journalIdentity(env, operation) {
     manifest_checksum: required(env, "HANIEL_MANIFEST_DIGEST"),
     database_contract_checksum: required(env, "HANIEL_DATABASE_CONTRACT_DIGEST"),
     haniel_journal_path: required(env, "HANIEL_DEPLOYMENT_JOURNAL"),
-    writer_services: readStringList(env, "HANIEL_DATABASE_WRITER_SERVICES"),
+    affected_services: readStringList(env, "HANIEL_DATABASE_AFFECTED_SERVICES"),
     required_subphases: optionalList(env, "HANIEL_DATABASE_REQUIRED_SUBPHASES"),
   };
 }
@@ -95,7 +95,9 @@ export async function readDatabaseReleaseJournal(path) {
   if (!Number.isInteger(value.revision) || value.revision < 1) {
     throw new Error("JOURNAL_GATE_FAILED: database release journal revision is invalid");
   }
-  return value;
+  if (value.affected_services !== undefined) return value;
+  const { writer_services: legacyAffectedServices, ...journal } = value;
+  return { ...journal, affected_services: legacyAffectedServices };
 }
 
 const DEFAULT_FILE_SYSTEM = {
@@ -170,7 +172,7 @@ function journalIdentityFromJournal(journal) {
     manifest_checksum: journal.manifest_checksum,
     database_contract_checksum: journal.database_contract_checksum,
     haniel_journal_path: journal.haniel_journal_path,
-    writer_services: journal.writer_services,
+    affected_services: journal.affected_services ?? journal.writer_services,
     required_subphases: journal.required_subphases,
   };
 }
@@ -205,7 +207,7 @@ async function retireRecoveredPreflightJournal({ path, current, identity, plan, 
     || current.operation !== identity.operation
     || current.database_contract_checksum !== identity.database_contract_checksum
     || current.haniel_journal_path !== identity.haniel_journal_path
-    || !sameJson(current.writer_services, identity.writer_services)
+    || !sameJson(current.affected_services, identity.affected_services)
     || !sameJson(current.required_subphases, identity.required_subphases)
   ) {
     throw new Error("JOURNAL_IDENTITY_CONFLICT: database release contract differs");
