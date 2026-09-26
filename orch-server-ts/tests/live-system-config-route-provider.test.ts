@@ -7,7 +7,7 @@ import {
 } from "../src/index.js";
 
 describe("live system config route provider adapter", () => {
-  it("maps Python system portrait sources to the canonical system.png asset", async () => {
+  it("maps system portrait sources to the canonical system.png asset", async () => {
     const assets = createPortraitAssets();
     const provider = createLiveSystemConfigRouteProvider({
       registry: new InMemoryNodeRegistry(),

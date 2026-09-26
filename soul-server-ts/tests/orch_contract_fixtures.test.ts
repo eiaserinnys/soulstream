@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const fixtureDir = resolve(__dirname, "../../orch-server/tests/fixtures/orch_contract");
+const fixtureDir = resolve(__dirname, "../../packages/wire-schema/fixtures");
 
 function loadFixture<T>(name: string): T {
   return JSON.parse(readFileSync(resolve(fixtureDir, name), "utf8")) as T;

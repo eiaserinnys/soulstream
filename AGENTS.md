@@ -1,3 +1,3 @@
 # Agent Instructions
 
-- `orch-server/` is the deprecated Python orchestrator runtime. Do not add features or fix runtime bugs there; make production runtime changes in `orch-server-ts/`. Only `orch-server/tests/test_contract_*` remains a maintained code surface.
+- `orch-server-ts/` is the production orchestrator. The retired Python `orch-server/` tree has been removed; do not recreate it for production changes.

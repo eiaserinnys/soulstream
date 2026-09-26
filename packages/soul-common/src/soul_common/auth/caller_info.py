@@ -135,8 +135,7 @@ def extract_caller_info_from_metadata(metadata) -> Optional[dict]:
     3. metadata 전체에 caller_info entry 0건 → None
 
     호출 위치 (4 곳, §9 대칭):
-    - orch-server/api/session_serializer.py: REST /api/sessions 응답 직렬화
-    - orch-server/api/sessions.py: REST /api/sessions sessionList
+    - orch-server-ts/src/session/session_snapshot_routes.ts and session_snapshot_service.ts: GET /api/sessions 응답
     - soul-server-ts session query/list paths
     - soul-server-ts evicted task on-demand restore paths
 
@@ -181,8 +180,8 @@ def build_agent_caller_info(
     JWT 디코드로 추출, agent는 cogito MCP 호출자가 TaskManager·AgentRegistry에서 사전 조회.
     helper는 추출된 값을 v1 dict로 *조립*하는 단일 책임만 진다 (design-principles §1 깊이).
 
-    avatar_url은 orch-server의 노드 프록시 경로(/api/nodes/{node}/agents/{id}/portrait)를
-    사용한다. 정본: orch-server/api/session_serializer.py:13-15 _build_portrait_proxy_url.
+    avatar_url은 orch-server-ts 노드 프록시 경로(/api/nodes/{node}/agents/{id}/portrait)를
+    사용한다. 경로 처리는 orch-server-ts/src/node/node_agent_profile_routes.ts에 있다.
     soul-server 로컬 라우트(/api/agents/{id}/portrait)는 unified-dashboard에서 404.
 
     Args:
@@ -221,7 +220,7 @@ def build_llm_caller_info(*, node_id: str) -> dict[str, Any]:
 
 
 SYSTEM_PORTRAIT_BASE = "/api/system/portraits"
-"""orch-server 시스템 portrait 라우트 base path. agent portrait `/api/nodes/.../portrait`와
+"""orch-server-ts 시스템 portrait 라우트 base path. agent portrait `/api/nodes/.../portrait`와
 §9 대칭. 클라이언트(unified-dashboard / soul-app)는 server-relative URL을 그대로 사용 —
 source별 자산 매핑 책임을 클라이언트에서 빌더로 끌어올린다 (R-3 fix, 2026-05-11)."""
 
@@ -237,8 +236,8 @@ def build_system_caller_info(*, node_id: str) -> dict[str, Any]:
     클라이언트가 진다 — soul-app: assets/icon-symbol.png, unified-dashboard:
     public/system-portrait.png"은 superseded — wire avatar_url 단일 정본.
 
-    정본 자산: `packages/soul-common/src/soul_common/portraits/system.png`
-    호스팅: `orch-server` `GET /api/system/portraits/{source}` (verify_auth 포함, agent
+    정본 자산: `orch-server-ts/assets/portraits/system.png`
+    호스팅: `orch-server-ts` `GET /api/system/portraits/{source}` (auth guard 포함, agent
     portrait §9 대칭). 클라이언트는 caller_info.avatar_url을 그대로 사용 — source별 분기 없음.
 
     user_id도 None — 시스템은 사용자/에이전트와 달리 식별자가 무의미.
@@ -274,8 +273,8 @@ def build_bot_caller_info(
     R-4 fix(2026-05-11, G-14): agent_node 인자가 host config 정합 사용 — plugin __init__에
     `Config.orchestrator.preferred_node or None` 전달 (다중 노드 환경 audit 가시성).
 
-    정본 자산: `packages/soul-common/src/soul_common/portraits/system.png` (R-4 단일 파일)
-    호스팅: orch-server `GET /api/system/portraits/{source}` (verify_auth 포함). `_PORTRAIT_FILE_MAP`
+    정본 자산: `orch-server-ts/assets/portraits/system.png` (R-4 단일 파일)
+    호스팅: orch-server-ts `GET /api/system/portraits/{source}` (auth guard 포함). `_PORTRAIT_FILE_MAP`
     이 source → `system.png` 매핑 (현재 3 source 모두 동일 자산, 디자이너 봇별 자산 결정 시
     매핑만 갱신). 클라이언트는 caller_info.avatar_url 그대로 사용 — 매핑 분기 없음
     (design-principles §3 정본 하나, §9 일관성).
@@ -331,7 +330,8 @@ def resolve_caller_info_or_system(
         3. 그 외 → build_browser_caller_info (기존 browser 흐름 — JWT 충실/decode 실패 모두).
 
     호출자 (4 진입점 §9 대칭):
-        - orch-server/api/sessions.py:create_session, intervene
+        - orch-server-ts/src/session/session_command_routes.ts:create_session
+        - orch-server-ts/src/session/session_action_command_routes.ts:intervene
         - node worker create/intervene command paths
 
     Args:
@@ -367,7 +367,7 @@ def resolve_caller_info_or_system(
 #: 본 상수가 *정체성 명시 source 의도*를 직접 표현한다.
 #:
 #: 사용 위치 (3 곳, §9 대칭):
-#: - orch-server/.../api/session_serializer.py:apply_user_profile_enrichment
+#: - orch-server-ts/src/runtime/live_session_serialization.ts:IDENTITY_BEARING_SOURCES
 #: - node worker user-profile enrichment
 #: - node worker task caller identity checks
 IDENTITY_BEARING_SOURCES: frozenset[str] = frozenset({

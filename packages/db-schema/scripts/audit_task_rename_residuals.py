@@ -70,7 +70,6 @@ FORBIDDEN_EARLY_REMOVAL_MARKERS = {
 
 ALLOWLIST = {
     # Immutable history and captured evidence.
-    "orch-server/DEPRECATED.md": "deprecated Python engine history",
     "packages/db-schema/sql/migrations/027_board_runbooks.sql": "immutable historical migration",
     "packages/db-schema/sql/migrations/029_runbook_status.sql": "immutable historical migration",
     "packages/db-schema/sql/migrations/031_runbook_item_review_status.sql": "immutable historical migration",
