@@ -19,6 +19,8 @@ const CONFIG_MUTATION_TOOL_NAMES = new Set([
   "rollback_agents_config",
   "apply_remote_agent_profile_update",
   "rollback_remote_agents_config",
+  "set_agent_atom_contexts",
+  "set_folder_system_prompt",
 ]);
 const DESTRUCTIVE_TOOL_NAMES_BY_RUNTIME = new WeakMap<
   McpRuntime,

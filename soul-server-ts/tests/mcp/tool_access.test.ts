@@ -31,6 +31,8 @@ describe("외부 LLM destructive tool 경계", () => {
     "rollback_agents_config",
     "apply_remote_agent_profile_update",
     "rollback_remote_agents_config",
+    "set_agent_atom_contexts",
+    "set_folder_system_prompt",
   ])("blocks the llm caller from configuration mutation tool %s", (toolName) => {
     const blocked = withMcpRequestContext(
       { principal: genericExternal },
@@ -55,6 +57,8 @@ describe("외부 LLM destructive tool 경계", () => {
       );
       guarded.registerTool("update_agent_profile", { inputSchema: {} }, vi.fn());
       guarded.registerTool("apply_remote_agent_profile_update", { inputSchema: {} }, vi.fn());
+      guarded.registerTool("set_agent_atom_contexts", { inputSchema: {} }, vi.fn());
+      guarded.registerTool("set_folder_system_prompt", { inputSchema: {} }, vi.fn());
       guarded.registerTool("get_agents_config", { inputSchema: {} }, vi.fn());
     });
 
