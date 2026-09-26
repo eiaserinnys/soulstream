@@ -202,6 +202,35 @@ describe("flattenTree", () => {
     expect(message.deliveryDisposition).toBe("auto_resume");
   });
 
+  it("session_notification의 rate-limit 정보는 채팅 투영 시 계산한다", () => {
+    const notification = makeSessionNotification("rate-limited-completion", "Child task stopped.");
+    notification.rateLimitType = "five_hour";
+    notification.resetsAt = "2999-09-26T03:12:00.000Z";
+
+    const [message] = flattenTree(makeSession([notification]));
+
+    expect(message.content).toContain("5시간 한도");
+    expect(message.content).toContain("해제 시각");
+    expect(message.content).toContain("KST");
+    expect(message.content).toContain("남음");
+  });
+
+  it("rate-limit 종료 오류는 구조화 필드가 있을 때만 채팅에 해제 정보를 표시한다", () => {
+    const error: ErrorNode = {
+      type: "error",
+      id: "rate-limit-error",
+      content: "Session stopped.",
+      completed: true,
+      children: [],
+      errorCode: "claude_rate_limit_stop_failure",
+      rateLimitType: "seven_day",
+    };
+
+    const [message] = flattenTree(makeSession([error]));
+
+    expect(message.content).toBe("Session stopped.\n\n주간 한도");
+  });
+
   it("모든 raw-event ChatMessage 생성 경로가 eventId를 한 번씩 전달한다", () => {
     const notification = makeSessionNotification("delivery-notification", "완료 결과");
     notification.eventId = 30;

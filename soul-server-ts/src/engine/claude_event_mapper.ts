@@ -86,6 +86,8 @@ export type ClaudeClientEvent =
       message: string;
       fatal?: boolean;
       errorCode?: string;
+      rateLimitType?: string;
+      resetsAt?: string;
       timestamp?: number;
       parentEventId?: ParentEventId;
     }
@@ -447,6 +449,10 @@ export function mapClaudeClientEvent(
           message: event.message,
           fatal: event.fatal ?? true,
           ...(event.errorCode !== undefined ? { error_code: event.errorCode } : {}),
+          ...(event.rateLimitType !== undefined
+            ? { rate_limit_type: event.rateLimitType }
+            : {}),
+          ...(event.resetsAt !== undefined ? { resets_at: event.resetsAt } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
           ...parentField(event.parentEventId),
         }),

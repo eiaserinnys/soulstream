@@ -38,6 +38,10 @@ export class SessionNotificationPublisher {
       source: message.source ?? "unknown",
       text: message.text,
       disposition,
+      ...(message.rateLimitType !== undefined
+        ? { rate_limit_type: message.rateLimitType }
+        : {}),
+      ...(message.resetsAt !== undefined ? { resets_at: message.resetsAt } : {}),
       ...(message.completionId ? { completion_id: message.completionId } : {}),
       ...(message.relationKey ? { relation_key: message.relationKey } : {}),
       timestamp: Date.now() / 1000,

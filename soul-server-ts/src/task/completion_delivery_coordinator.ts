@@ -30,6 +30,8 @@ export interface DurableCompletionInput {
   terminalRevision: string;
   text: string;
   callerInfo: CallerInfo;
+  rateLimitType?: string;
+  resetsAt?: string;
   createdAt: Date;
 }
 
@@ -267,6 +269,8 @@ function buildCompletionRegistration(
     completionId: identity.completionId,
     relationKey,
     callerInfo: input.callerInfo,
+    rateLimitType: input.rateLimitType,
+    resetsAt: input.resetsAt,
   });
   return {
     deliveryId: identity.deliveryId,

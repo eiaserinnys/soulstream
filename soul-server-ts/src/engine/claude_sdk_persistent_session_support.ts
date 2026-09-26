@@ -11,7 +11,10 @@ import type { EventQueue } from "./claude_sdk_event_queue.js";
 import { messageContent, userMessageText } from "./claude_sdk_event_mapper_helpers.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
 import type { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
-import type { RateLimitTerminationState } from
+import type {
+  RateLimitStopInfo,
+  RateLimitTerminationState,
+} from
   "./claude_sdk_rate_limit_stop_failure.js";
 import type {
   ClaudeForegroundPhase,
@@ -54,6 +57,7 @@ export type ActiveForeground = {
   timedOut: boolean;
   origin: { kind: string; id: string };
   rateLimitTerminationState: RateLimitTerminationState;
+  rateLimitTerminationInfo?: RateLimitStopInfo;
 };
 
 export type InterventionInterruptObservation = {

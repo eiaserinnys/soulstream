@@ -141,6 +141,8 @@ export interface SessionNotificationEvent {
   disposition: "queued" | "auto_resume";
   completion_id?: string;
   relation_key?: string;
+  rate_limit_type?: string;
+  resets_at?: string;
   timestamp: number;
 }
 
@@ -268,6 +270,8 @@ export interface ErrorEvent {
   type: "error";
   message: string;
   error_code?: string;
+  rate_limit_type?: string;
+  resets_at?: string;
   fatal?: boolean;
   /** 현재 턴에서 자동 재연결을 시도하는 오류인지 여부 */
   will_retry?: boolean;

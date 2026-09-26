@@ -107,7 +107,12 @@ describe("TaskCompletionNotifier.notify", () => {
       fetchImpl,
     );
 
-    const child = makeChild();
+    const child = makeChild({
+      rateLimitStopInfo: {
+        rateLimitType: "five_hour",
+        resetsAt: "2026-09-26T03:12:00.000Z",
+      },
+    });
     await notifier.notify(child);
 
     // local addIntervention 1회
@@ -118,6 +123,10 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(params.text).toMatch(/^✅ 에이전트 세션 완료/);
     expect(params.text).toContain("child-sess-1");
     expect(params.text).toContain("hello world from child");
+    expect(params).toMatchObject({
+      rateLimitType: "five_hour",
+      resetsAt: "2026-09-26T03:12:00.000Z",
+    });
     // callerInfo 신원 박힘 검증
     expect(params.callerInfo?.source).toBe("agent");
     expect(params.callerInfo?.agent_node).toBe(NODE_ID);
@@ -259,6 +268,10 @@ describe("TaskCompletionNotifier.notify", () => {
         source: "agent",
         agent_id: "seosoyoung-opus",
       },
+      rateLimitStopInfo: {
+        rateLimitType: "seven_day",
+        resetsAt: "2026-10-01T00:00:00.000Z",
+      },
     }));
     const params = tm.addIntervention.mock.calls[0]![0] as AddInterventionParams;
 
@@ -266,8 +279,14 @@ describe("TaskCompletionNotifier.notify", () => {
       agentSessionId: "caller-current",
       deliveryIntent: "completion_notification",
       source: "completion_notifier",
+      rateLimitType: "seven_day",
+      resetsAt: "2026-10-01T00:00:00.000Z",
       producerTerminalRevision: "42",
       relationKey: "child_session:child-sess-1:42",
+    });
+    expect(stored?.payload).toMatchObject({
+      rate_limit_type: "seven_day",
+      resets_at: "2026-10-01T00:00:00.000Z",
     });
     expect(params.deliveryId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
@@ -773,6 +792,10 @@ describe("TaskCompletionNotifier.notify", () => {
         source: "browser",
         email: "owner@example.com",
       },
+      rateLimitStopInfo: {
+        rateLimitType: "five_hour",
+        resetsAt: "2026-09-26T03:12:00.000Z",
+      },
     }));
 
     // local 1회 시도 (throw)
@@ -795,6 +818,8 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(body.caller_info.source).toBe("agent");
     expect(body.caller_info.agent_node).toBe(NODE_ID);
     expect(body.caller_info.email).toBe("owner@example.com");
+    expect(body.rate_limit_type).toBe("five_hour");
+    expect(body.resets_at).toBe("2026-09-26T03:12:00.000Z");
     // camelCase callerInfo 키는 *박히지 않는다*
     expect(body.callerInfo).toBeUndefined();
   });

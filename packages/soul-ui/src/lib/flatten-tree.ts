@@ -28,6 +28,7 @@ import type {
 } from "@shared/types";
 import { extractNodeEventId } from "./event-tree-id";
 import { placeTurnSummariesAtResponseAnchors } from "./turn-summary-projection";
+import { formatRateLimitNotice } from "@shared/rate-limit-notice";
 
 export { extractEventId } from "./event-tree-id";
 
@@ -319,7 +320,11 @@ function nodeToMessage(
       return {
         id: n.id,
         role: "notification",
-        content: n.content,
+        content: formatRateLimitNotice(
+          n.content,
+          n.rateLimitType,
+          n.resetsAt,
+        ),
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
@@ -414,10 +419,13 @@ function nodeToMessage(
     }
 
     case "error": {
+      const content = node.errorCode === "claude_rate_limit_stop_failure"
+        ? formatRateLimitNotice(node.content, node.rateLimitType, node.resetsAt)
+        : node.content;
       return {
         id: node.id,
         role: "system",
-        content: node.content,
+        content,
         timestamp: node.timestamp,
         isError: node.isError,
         isRetrying: node.isRetrying,

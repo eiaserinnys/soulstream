@@ -79,6 +79,8 @@ function buildRegistration(
       attachmentPaths: params.attachmentPaths,
       context: params.context,
       callerInfo: params.callerInfo,
+      rateLimitType: params.rateLimitType,
+      resetsAt: params.resetsAt,
       followupKey: params.followupKey,
       followupAttempt: params.followupAttempt,
       followupTaskIds: params.followupTaskIds,

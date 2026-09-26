@@ -422,6 +422,8 @@ class TestInterveneCallerInfoSystemRouting:
                 "context_items": [
                     {"key": "attachments", "label": "첨부 파일", "content": "파일: map.png"},
                 ],
+                "rate_limit_type": "seven_day",
+                "resets_at": "2026-10-01T00:00:00.000Z",
             },
             headers={"Authorization": f"Bearer {token}", "user-agent": "curl/8.5.0"},
         )
@@ -431,6 +433,8 @@ class TestInterveneCallerInfoSystemRouting:
         assert payload["extra_context_items"] == [
             {"key": "attachments", "label": "첨부 파일", "content": "파일: map.png"},
         ]
+        assert payload["rate_limit_type"] == "seven_day"
+        assert payload["resets_at"] == "2026-10-01T00:00:00.000Z"
         # send_intervene WS payload에 caller_info 박힘
         ci = payload["caller_info"]
         assert ci["source"] == "system"

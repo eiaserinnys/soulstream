@@ -271,6 +271,22 @@ describe("Claude event mapper semantic history contract", () => {
     });
   });
 
+  it("rate-limit StopFailure metadata maps to structured error SSE fields", () => {
+    expect(mapClaudeClientEvent({
+      type: "error",
+      message: "The request stopped at a rate limit.",
+      fatal: true,
+      errorCode: "claude_rate_limit_stop_failure",
+      rateLimitType: "seven_day",
+      resetsAt: "2026-10-01T00:00:00.000Z",
+    } as never)).toEqual([expect.objectContaining({
+      type: "error",
+      error_code: "claude_rate_limit_stop_failure",
+      rate_limit_type: "seven_day",
+      resets_at: "2026-10-01T00:00:00.000Z",
+    })]);
+  });
+
   it("compact is an explicit SSE event, not a silent no-op", () => {
     expect(
       mapClaudeClientEvent({

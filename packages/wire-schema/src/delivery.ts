@@ -9,6 +9,8 @@ export interface CanonicalDeliveryPayloadInput {
   attachmentPaths?: ReadonlyArray<string> | null;
   context?: unknown;
   callerInfo?: unknown;
+  rateLimitType?: string;
+  resetsAt?: string;
   followupKey?: string;
   followupAttempt?: number;
   followupTaskIds?: ReadonlyArray<string> | null;
@@ -29,6 +31,10 @@ export function buildCanonicalDeliveryPayload(
     attachment_paths: arrayOrNull(input.attachmentPaths),
     context: input.context ?? null,
     caller_info: input.callerInfo ?? null,
+    ...(input.rateLimitType !== undefined
+      ? { rate_limit_type: input.rateLimitType }
+      : {}),
+    ...(input.resetsAt !== undefined ? { resets_at: input.resetsAt } : {}),
     followup_key: input.followupKey ?? null,
     followup_attempt: input.followupAttempt ?? null,
     followup_task_ids: arrayOrNull(input.followupTaskIds),

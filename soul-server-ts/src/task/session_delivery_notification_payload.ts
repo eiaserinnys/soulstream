@@ -22,5 +22,11 @@ export function buildNotificationOutboxPayload(
     followup_key: row.payload.followup_key,
     followup_attempt: row.payload.followup_attempt,
     disposition,
+    ...(typeof row.payload.rate_limit_type === "string"
+      ? { rate_limit_type: row.payload.rate_limit_type }
+      : {}),
+    ...(typeof row.payload.resets_at === "string"
+      ? { resets_at: row.payload.resets_at }
+      : {}),
   };
 }

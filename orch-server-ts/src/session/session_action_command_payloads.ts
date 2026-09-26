@@ -32,6 +32,8 @@ export type DeliveryMetadataWireFields = {
   caller_turn_id?: string;
   created_at?: string;
   delivery_attempt_token?: string;
+  rate_limit_type?: string;
+  resets_at?: string;
 };
 
 export type InterveneNodeCommandPayload =
@@ -161,6 +163,8 @@ function parseDeliveryMetadata(
     ["caller_turn_id", "callerTurnId"],
     ["created_at", "createdAt"],
     ["delivery_attempt_token", "deliveryAttemptToken"],
+    ["rate_limit_type", "rateLimitType"],
+    ["resets_at", "resetsAt"],
   ] as const;
   const value: DeliveryMetadataWireFields = {};
   if (deliveryId.value !== undefined) value.delivery_id = deliveryId.value;

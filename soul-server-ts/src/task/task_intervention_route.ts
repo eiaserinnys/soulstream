@@ -56,6 +56,8 @@ export interface AddInterventionParams {
   attachmentPaths?: string[];
   context?: ContextItem[];
   source?: string;
+  rateLimitType?: string;
+  resetsAt?: string;
   deliveryId?: string;
   deliveryIntent?: DeliveryIntent;
   completionId?: string;
@@ -139,6 +141,8 @@ export class TaskInterventionRoute {
       attachmentPaths: request.attachmentPaths,
       context: request.context,
       source: request.source,
+      rateLimitType: request.rateLimitType,
+      resetsAt: request.resetsAt,
       deliveryId: request.deliveryId,
       deliveryIntent: request.deliveryIntent,
       completionId: request.completionId,
@@ -412,6 +416,8 @@ function hydrateStoredDeliveryMessage(
     text: canonical.text,
     user: canonical.user,
     callerInfo: canonical.callerInfo,
+    rateLimitType: canonical.rateLimitType,
+    resetsAt: canonical.resetsAt,
     attachmentPaths: canonical.attachmentPaths,
     context: canonical.context,
     followupKey: canonical.followupKey,

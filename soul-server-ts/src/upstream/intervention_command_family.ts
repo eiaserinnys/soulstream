@@ -37,6 +37,8 @@ interface InterveneCmd extends CommandLike {
   caller_turn_id?: string;
   created_at?: string;
   delivery_attempt_token?: string;
+  rate_limit_type?: string;
+  resets_at?: string;
 }
 
 interface InterventionCommandFamilyDeps {
@@ -140,6 +142,8 @@ async function handleIntervene(
       callerTurnId: cmd.caller_turn_id,
       deliveryCreatedAt: cmd.created_at,
       deliveryAttemptToken: cmd.delivery_attempt_token,
+      rateLimitType: cmd.rate_limit_type,
+      resetsAt: cmd.resets_at,
     });
   } catch (err) {
     throw new CommandDispatchError(err instanceof Error ? err.message : String(err));

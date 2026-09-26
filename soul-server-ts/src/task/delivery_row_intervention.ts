@@ -24,6 +24,8 @@ export function deliveryRowToInterventionParams(
     text: message.text,
     user: message.user,
     callerInfo: message.callerInfo,
+    rateLimitType: message.rateLimitType,
+    resetsAt: message.resetsAt,
     attachmentPaths: message.attachmentPaths,
     context: message.context,
     source: row.source,

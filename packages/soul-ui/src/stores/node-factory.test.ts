@@ -263,6 +263,26 @@ describe("createNodeFromEvent", () => {
       expect(node.timestamp).toBe(123);
     });
 
+    it("formats completion notification rate-limit metadata in the chat node", () => {
+      const event: SessionNotificationEvent = {
+        type: "session_notification",
+        delivery_id: "22222222-2222-4222-8222-222222222222",
+        delivery_intent: "completion_notification",
+        source: "completion_notifier",
+        text: "Child task stopped.",
+        disposition: "queued",
+        rate_limit_type: "five_hour",
+        resets_at: "2026-09-26T03:12:00.000Z",
+        timestamp: 123,
+      };
+
+      const node = createNodeFromEvent(event, 43) as SessionNotificationNode;
+
+      expect(node.content).toBe(event.text);
+      expect(node.rateLimitType).toBe("five_hour");
+      expect(node.resetsAt).toBe(event.resets_at);
+    });
+
     it("should attach callerInfo from intervention_sent.caller_info (F-9 fix)", () => {
       // 슬랙 발신자 케이스 — 2차+ 메시지가 InterventionSentEvent로 운반됨
       const event: InterventionSentEvent = {
@@ -513,6 +533,21 @@ describe("createNodeFromEvent", () => {
       expect(node!.content).toBe("Something went wrong");
       expect(node!.completed).toBe(true);
       expect((node as ErrorNode).isError).toBe(true);
+    });
+
+    it("includes a known rate-limit type when reset time is absent", () => {
+      const event: ErrorEvent = {
+        type: "error",
+        message: "The session stopped at a rate limit.",
+        error_code: "claude_rate_limit_stop_failure",
+        rate_limit_type: "seven_day",
+      };
+
+      const node = createNodeFromEvent(event, 51);
+
+      expect(node?.content).toBe(event.message);
+      expect((node as ErrorNode).errorCode).toBe("claude_rate_limit_stop_failure");
+      expect((node as ErrorNode).rateLimitType).toBe("seven_day");
     });
 
     it("should preserve retryable errors as reconnect history instead of terminal danger", () => {
