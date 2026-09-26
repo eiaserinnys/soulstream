@@ -655,6 +655,16 @@ describe("applyCatalogDisplayNames", () => {
 
     expect(result[0].displayName).toBe("Pinned");
   });
+
+  it("catalog의 null displayName은 세션 요약에서 이전 이름을 지운다", () => {
+    const sessions = [makeSession("s1", { displayName: "Old name" })];
+    const result = applyCatalogDisplayNames(sessions, {
+      folders: [],
+      sessions: { s1: { folderId: null, displayName: null } },
+    });
+
+    expect(result[0]?.displayName).toBeNull();
+  });
 });
 
 describe("reconcileSessionPagesForCatalog", () => {

@@ -36,8 +36,8 @@ import type {
 } from "../shared/stream-events";
 import {
   applyMetadataUpdated,
-  applySessionLifecycleSnapshot,
-  applySessionLifecycleSnapshotToList,
+  applySessionSummarySnapshot,
+  applySessionSummarySnapshotToList,
   applySessionCreated,
   mergeSessionCreatedSummary,
   applySessionDeleted,
@@ -175,7 +175,7 @@ export function useSessionStreamCacheSync(
       setActiveSessionSummary(snapshot);
       return;
     }
-    const [summary] = applySessionLifecycleSnapshotToList(
+    const [summary] = applySessionSummarySnapshotToList(
       [state.activeSessionSummary],
       snapshots,
     );
@@ -423,7 +423,7 @@ export function useSessionStreamCacheSync(
   );
 
   const onSessionList = useCallback((event: SessionListStreamEvent) => {
-    const lifecycleSnapshots = new Map(
+    const sessionSnapshots = new Map(
       event.sessions.map((rawSession) => {
         const session = toSessionSummary(
           rawSession as unknown as Record<string, unknown>,
@@ -431,14 +431,14 @@ export function useSessionStreamCacheSync(
         return [session.agentSessionId, session] as const;
       }),
     );
-    for (const session of lifecycleSnapshots.values()) {
+    for (const session of sessionSnapshots.values()) {
       hydrateNoticeBaseline(noticeBaselinesRef.current, session);
     }
     const state = useDashboardStore.getState();
     if (state.catalog?.sessionList) {
-      const sessionList = applySessionLifecycleSnapshotToList(
+      const sessionList = applySessionSummarySnapshotToList(
         state.catalog.sessionList,
-        lifecycleSnapshots,
+        sessionSnapshots,
       );
       if (sessionList !== state.catalog.sessionList) {
         state.setCatalog({ ...state.catalog, sessionList });
@@ -448,17 +448,17 @@ export function useSessionStreamCacheSync(
     queryClient.setQueriesData<InfiniteData<SessionPage>>(
       { queryKey: ["sessions"], exact: false },
       (old) => old
-        ? applySessionLifecycleSnapshot(old, lifecycleSnapshots)
+        ? applySessionSummarySnapshot(old, sessionSnapshots)
         : old,
     );
 
     const storeState = useDashboardStore.getState();
     const activeSessionKey = storeState.activeSessionKey;
-    if (activeSessionKey === null || !lifecycleSnapshots.has(activeSessionKey)) return;
+    if (activeSessionKey === null || !sessionSnapshots.has(activeSessionKey)) return;
     if (storeState.activeSessionSummary) {
-      const [summary] = applySessionLifecycleSnapshotToList(
+      const [summary] = applySessionSummarySnapshotToList(
         [storeState.activeSessionSummary],
-        lifecycleSnapshots,
+        sessionSnapshots,
       );
       if (summary !== storeState.activeSessionSummary) {
         setActiveSessionSummary(summary);

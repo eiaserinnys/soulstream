@@ -25,3 +25,4 @@ export { useRenameSessionOperation } from "./useRenameSessionOperation";
 export { useReadPositionSync } from "./useReadPositionSync";
 export { useNotification } from "./useNotification";
 export { useServerStatus } from "./useServerStatus";
+export { mergeSessionSummarySnapshot } from "./session-snapshot-helpers";

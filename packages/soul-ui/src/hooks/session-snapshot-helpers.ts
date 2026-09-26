@@ -1,7 +1,6 @@
 import type { InfiniteData } from "@tanstack/react-query";
 
 import type { SessionSummary } from "../shared/types";
-import { normalizeLastMessage } from "../shared/session-activity";
 import { retainEqualValue } from "../lib/structural-sharing";
 import { feedLastEventIdPatch } from "./session-feed-projection";
 
@@ -66,7 +65,7 @@ function nonNegativeRevision(value: unknown): number | null {
 
 function sessionFeedHydrationPatch(
   current: SessionSummary,
-  snapshot: SessionLifecycleSnapshot,
+  snapshot: SessionSummary,
 ): Partial<SessionSummary> {
   const patch: Partial<SessionSummary> = {};
   const currentAttentionRevision = nonNegativeRevision(current.attentionRevision);
@@ -139,34 +138,17 @@ export function dedupeSessionSnapshots(
   return unique;
 }
 
-export type SessionLifecycleSnapshot = Pick<
-  SessionSummary,
-  | "agentSessionId"
-  | "status"
-  | "reviewState"
-  | "updatedAt"
-  | "createdAt"
-  | "lastEventId"
-  | "feedLastEventId"
-  | "lastMessage"
-  | "pendingAttentions"
-  | "attentionRevision"
-  | "recentNotices"
-  | "notificationWatermark"
-  | "noticesTruncated"
->;
-
 /**
- * Initial session_list는 REST 목록을 대체하지 않고 lifecycle 필드만 보정한다.
- * 일치하는 세션과 그 페이지만 복제하여 광역 refetch 없이 구조 공유를 유지한다.
+ * session_list 요약을 기존 query 페이지에 공통 규칙으로 병합한다.
+ * 목록 membership은 유지하고, 일치하는 행의 최신 full summary만 반영한다.
  */
-export function applySessionLifecycleSnapshot(
+export function applySessionSummarySnapshot(
   data: InfiniteData<SessionPage>,
-  snapshots: ReadonlyMap<string, SessionLifecycleSnapshot>,
+  snapshots: ReadonlyMap<string, SessionSummary>,
 ): InfiniteData<SessionPage> {
   let dataChanged = false;
   const pages = data.pages.map((page) => {
-    const sessions = applySessionLifecycleSnapshotToList(
+    const sessions = applySessionSummarySnapshotToList(
       page.sessions,
       snapshots,
     );
@@ -177,49 +159,52 @@ export function applySessionLifecycleSnapshot(
   return dataChanged ? { ...data, pages } : data;
 }
 
-export function applySessionLifecycleSnapshotToList(
+export function applySessionSummarySnapshotToList(
   sessions: SessionSummary[],
-  snapshots: ReadonlyMap<string, SessionLifecycleSnapshot>,
+  snapshots: ReadonlyMap<string, SessionSummary>,
 ): SessionSummary[] {
   let changed = false;
   const next = sessions.map((session) => {
     const snapshot = snapshots.get(session.agentSessionId);
     if (snapshot === undefined) return session;
-    const replaceLifecycle = shouldReplaceSessionSnapshot(session, snapshot);
-    const lastMessage = normalizeLastMessage(snapshot.lastMessage);
-    const currentLastMessage = normalizeLastMessage(session.lastMessage);
-    const lastMessageChanged = replaceLifecycle && lastMessage !== undefined && (
-      currentLastMessage === undefined
-      || currentLastMessage.type !== lastMessage.type
-      || currentLastMessage.preview !== lastMessage.preview
-      || currentLastMessage.timestamp !== lastMessage.timestamp
-      || currentLastMessage.eventId !== lastMessage.eventId
-    );
-    const patch: Partial<SessionSummary> = {
-      ...(replaceLifecycle && snapshot.status !== session.status
-        ? { status: snapshot.status }
-        : {}),
-      ...(!replaceLifecycle || snapshot.reviewState === undefined || snapshot.reviewState === session.reviewState
-        ? {}
-        : { reviewState: snapshot.reviewState }),
-      ...(!replaceLifecycle || snapshot.updatedAt === undefined || snapshot.updatedAt === session.updatedAt
-        ? {}
-        : { updatedAt: snapshot.updatedAt }),
-      ...(!replaceLifecycle || snapshot.lastEventId === undefined || snapshot.lastEventId === session.lastEventId
-        ? {}
-        : { lastEventId: snapshot.lastEventId }),
-      ...feedLastEventIdPatch(session, snapshot),
-      ...(lastMessageChanged ? { lastMessage } : {}),
-      ...sessionFeedHydrationPatch(session, snapshot),
-    };
-    if (Object.keys(patch).length === 0) {
-      return session;
-    }
+    const merged = mergeSessionSummarySnapshot(session, snapshot);
+    if (merged === session) return session;
     changed = true;
-    return {
-      ...session,
-      ...patch,
-    };
+    return merged;
   });
   return changed ? next : sessions;
+}
+
+/**
+ * Apply a full summary snapshot only when its lifecycle revision is current.
+ * Omitted optional fields stay intact; attention, notice, and feed watermarks
+ * retain their own monotonic revision rules.
+ */
+export function mergeSessionSummarySnapshot(
+  current: SessionSummary,
+  incoming: SessionSummary,
+): SessionSummary {
+  const replaceSnapshot = shouldReplaceSessionSnapshot(current, incoming);
+  const definedIncoming = Object.fromEntries(
+    Object.entries(incoming).filter(([key, value]) => (
+      value !== undefined
+      && key !== "feedLastEventId"
+      && key !== "pendingAttentions"
+      && key !== "attentionRevision"
+      && key !== "recentNotices"
+      && key !== "notificationWatermark"
+      && key !== "noticesTruncated"
+    )),
+  ) as Partial<SessionSummary>;
+  const feedPatch = feedLastEventIdPatch(current, incoming);
+  const hydrationPatch = sessionFeedHydrationPatch(current, incoming);
+  if (!replaceSnapshot && Object.keys(feedPatch).length === 0 && Object.keys(hydrationPatch).length === 0) {
+    return current;
+  }
+  return retainEqualValue(current, {
+    ...current,
+    ...(replaceSnapshot ? definedIncoming : {}),
+    ...feedPatch,
+    ...hydrationPatch,
+  });
 }

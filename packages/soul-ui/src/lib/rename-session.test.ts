@@ -16,10 +16,19 @@ describe("createRenameSessionOperation", () => {
 
   beforeEach(() => {
     useDashboardStore.getState().reset();
+    const summary = {
+      agentSessionId: "session-a",
+      status: "running",
+      eventCount: 3,
+      displayName: "이전 이름",
+    } as SessionSummary;
     useDashboardStore.getState().setCatalog({
       folders: [],
       sessions: { "session-a": { folderId: null, displayName: "이전 이름" } },
+      sessionList: [summary],
     });
+    useDashboardStore.getState().setActiveSession("session-a");
+    useDashboardStore.getState().setActiveSessionSummary(summary);
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     queryClient.setQueryData<InfiniteData<SessionPage>>(queryKey, {
       pages: [{
@@ -30,6 +39,11 @@ describe("createRenameSessionOperation", () => {
         total: 1,
       }],
       pageParams: [0, 1],
+    });
+    queryClient.setQueryData(["v3-review-queue", "needs_review"], {
+      sessions: [summary],
+      total: 1,
+      hasMore: false,
     });
   });
 
@@ -50,8 +64,12 @@ describe("createRenameSessionOperation", () => {
     const after = queryClient.getQueryData<InfiniteData<SessionPage>>(queryKey);
 
     expect(useDashboardStore.getState().catalog?.sessions["session-a"]?.displayName).toBe("새 이름");
+    expect(useDashboardStore.getState().catalog?.sessionList?.[0]?.displayName).toBe("새 이름");
+    expect(useDashboardStore.getState().activeSessionSummary?.displayName).toBe("새 이름");
     expect(after?.pages[0]?.sessions[0]?.displayName).toBe("새 이름");
     expect(after?.pages[1]).toBe(before?.pages[1]);
+    expect(queryClient.getQueryData<{ sessions: SessionSummary[] }>(["v3-review-queue", "needs_review"])
+      ?.sessions[0]?.displayName).toBe("새 이름");
   });
 
   it("restores both projections and rethrows when the network request fails", async () => {
@@ -66,7 +84,11 @@ describe("createRenameSessionOperation", () => {
       .rejects.toThrow("Rename failed: 503");
 
     expect(useDashboardStore.getState().catalog?.sessions["session-a"]?.displayName).toBe("이전 이름");
+    expect(useDashboardStore.getState().catalog?.sessionList?.[0]?.displayName).toBe("이전 이름");
+    expect(useDashboardStore.getState().activeSessionSummary?.displayName).toBe("이전 이름");
     expect(queryClient.getQueryData<InfiniteData<SessionPage>>(queryKey)?.pages[0]?.sessions[0]?.displayName)
       .toBe("이전 이름");
+    expect(queryClient.getQueryData<{ sessions: SessionSummary[] }>(["v3-review-queue", "needs_review"])
+      ?.sessions[0]?.displayName).toBe("이전 이름");
   });
 });
