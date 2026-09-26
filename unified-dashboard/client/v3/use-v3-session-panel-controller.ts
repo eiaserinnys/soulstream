@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAct
 import {
   useDashboardStore,
   type CatalogState,
+  type ChatFocusTarget,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
@@ -128,6 +129,7 @@ export function useV3SessionPanelController({
     sessionId: string,
     focusEventId: number | null,
     knownSession?: SessionSummary,
+    focusTarget?: ChatFocusTarget,
   ) => {
     const requestSequence = ++openRequestSequence.current;
     try {
@@ -143,7 +145,7 @@ export function useV3SessionPanelController({
       }
       const opened = await openSessionForRequest(session, requestSequence);
       if (!opened || requestSequence !== openRequestSequence.current) return false;
-      setFocusEventId(focusEventId, sessionId);
+      setFocusEventId(focusEventId, sessionId, focusTarget);
       return true;
     } catch (error) {
       if (requestSequence !== openRequestSequence.current) return false;

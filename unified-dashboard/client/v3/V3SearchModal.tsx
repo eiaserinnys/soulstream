@@ -2,6 +2,7 @@ import {
   createPageApiClient,
 } from "@seosoyoung/soul-ui/page";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
+import type { ChatFocusTarget } from "@seosoyoung/soul-ui";
 
 import { SearchModal } from "../components/SearchModal";
 import {
@@ -18,6 +19,7 @@ type V3SearchModalProps = {
     sessionId: string,
     focusEventId: number | null,
     session?: SessionSummary,
+    focusTarget?: ChatFocusTarget,
   ) => boolean | void | Promise<boolean | void>;
   api: ReturnType<typeof createPageApiClient>;
   onOpenProjectPage: (pageId: string) => void;

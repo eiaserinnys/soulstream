@@ -31,7 +31,10 @@ import {
   findFocusIndex,
   getBottomScrollLocation,
   getInitialTopMostItemIndex,
+  MAX_SEARCH_FOCUS_HISTORY_PAGES,
   messageOrGroupKey,
+  resolveFocusEventId,
+  toolGroupExpansionKey,
 } from "./ChatView.reverse-helpers";
 import { useChatLogicalInsertionCoordinate } from "./useChatLogicalInsertionCoordinate";
 import { useChatViewportRetention } from "./useChatViewportRetention";
@@ -98,11 +101,12 @@ export function ChatView({
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
-  const focusEventId = useDashboardStore((s) => (
+  const requestedFocusEventId = useDashboardStore((s) => (
     s.focusEventSessionId === null || s.focusEventSessionId === s.activeSessionKey
       ? s.focusEventId
       : null
   ));
+  const focusEventTarget = useDashboardStore((s) => s.focusEventTarget);
   const focusEventRequestId = useDashboardStore((s) => s.focusEventRequestId);
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   /**
@@ -128,6 +132,11 @@ export function ChatView({
     () => buildChatTimelineItems(grouped, messages, chatStatus),
     [grouped, messages, chatStatus],
   );
+  const focusEventId = resolveFocusEventId(
+    timelineItems,
+    requestedFocusEventId,
+    focusEventTarget,
+  );
   const { firstItemIndex, recordFirstVisibleKey } =
     useChatLogicalInsertionCoordinate(
       timelineItems,
@@ -148,6 +157,21 @@ export function ChatView({
   const headerWebglActive = useGlassSurface(headerRef, { enabled: showHeader });
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
+  const [expandedToolGroups, setExpandedToolGroups] = useState<{
+    sessionId: string | null;
+    keys: ReadonlySet<string>;
+  }>({ sessionId: activeSessionKey, keys: new Set() });
+  const [focusHistoryCappedRequestId, setFocusHistoryCappedRequestId] = useState<number | null>(null);
+  const handleToolGroupExpansionChange = useCallback((key: string, expanded: boolean) => {
+    setExpandedToolGroups((current) => {
+      const keys = current.sessionId === activeSessionKey
+        ? new Set(current.keys)
+        : new Set<string>();
+      if (expanded) keys.add(key);
+      else keys.delete(key);
+      return { sessionId: activeSessionKey, keys };
+    });
+  }, [activeSessionKey]);
   const prevTreeVersion = useRef(treeVersion);
   const prevVisibleItemsRef = useRef(timelineItems);
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
@@ -160,6 +184,7 @@ export function ChatView({
     attempts: number;
     frame: number | null;
   }>({ key: null, attempts: 0, frame: null });
+  const focusHistoryCrawlRef = useRef({ requestId: -1, pagesRequested: 0 });
   const bottomFocusedSessionRef = useRef<string | null>(null);
   const initialBottomFocusPendingSessionRef = useRef<string | null>(
     activeSessionKey,
@@ -299,8 +324,12 @@ export function ChatView({
     onUserViewportInput: handleUserViewportInput,
   });
   const retryFocusScroll = useCallback(() => {
-    if (activeSessionKey === null || focusEventId === null) return;
-    const requestKey = `${activeSessionKey}:${focusEventId}:${focusEventRequestId}`;
+    if (
+      activeSessionKey === null
+      || requestedFocusEventId === null
+      || focusEventId === null
+    ) return;
+    const requestKey = `${activeSessionKey}:${requestedFocusEventId}:${focusEventRequestId}`;
     const retry = focusScrollRetryRef.current;
     if (retry.key !== requestKey) {
       retry.key = requestKey;
@@ -311,7 +340,7 @@ export function ChatView({
       const state = useDashboardStore.getState();
       if (
         state.activeSessionKey === activeSessionKey
-        && state.focusEventId === focusEventId
+        && state.focusEventId === requestedFocusEventId
         && state.focusEventSessionId === activeSessionKey
         && state.focusEventRequestId === focusEventRequestId
       ) {
@@ -325,7 +354,7 @@ export function ChatView({
       const state = useDashboardStore.getState();
       if (
         state.activeSessionKey !== activeSessionKey
-        || state.focusEventId !== focusEventId
+        || state.focusEventId !== requestedFocusEventId
         || state.focusEventSessionId !== activeSessionKey
         || state.focusEventRequestId !== focusEventRequestId
       ) return;
@@ -345,17 +374,26 @@ export function ChatView({
     focusEventId,
     focusEventRequestId,
     setFocusEventId,
+    requestedFocusEventId,
     timelineItems,
   ]);
   useEffect(() => () => {
     const frame = focusScrollRetryRef.current.frame;
     if (frame !== null) window.cancelAnimationFrame(frame);
     focusScrollRetryRef.current = { key: null, attempts: 0, frame: null };
-  }, [activeSessionKey, focusEventId]);
+  }, [activeSessionKey, focusEventRequestId]);
   const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef, historyEnabled);
   requestOlderRef.current = history.requestOlder;
   useEffect(() => {
-    if (activeSessionKey === null || focusEventId === null) return;
+    if (focusHistoryCrawlRef.current.requestId !== focusEventRequestId) {
+      focusHistoryCrawlRef.current = { requestId: focusEventRequestId, pagesRequested: 0 };
+      setFocusHistoryCappedRequestId(null);
+    }
+    if (
+      activeSessionKey === null
+      || requestedFocusEventId === null
+      || focusEventId === null
+    ) return;
     if (findFocusIndex(timelineItems, focusEventId) >= 0) return;
     if (
       history.reachedTop
@@ -363,17 +401,24 @@ export function ChatView({
       || !history.canLoadOlder
       || history.blockedReason === "error"
     ) return;
-    // Search navigation is explicit intent to inspect an older event. Fetch one
-    // page at a time until it appears; an error still requires the existing retry.
+    if (focusHistoryCrawlRef.current.pagesRequested >= MAX_SEARCH_FOCUS_HISTORY_PAGES) {
+      setFocusHistoryCappedRequestId(focusEventRequestId);
+      return;
+    }
+    // Search navigation is explicit intent, capped to five pages. The existing
+    // older-history control remains the user's path to continue beyond that window.
+    focusHistoryCrawlRef.current.pagesRequested += 1;
     history.requestOlder("manual");
   }, [
     activeSessionKey,
     focusEventId,
+    focusEventRequestId,
     history.blockedReason,
     history.canLoadOlder,
     history.loading,
     history.reachedTop,
     history.requestOlder,
+    requestedFocusEventId,
     timelineItems,
   ]);
   const requestOlderManually = useCallback(() => {
@@ -535,16 +580,14 @@ export function ChatView({
   }, [clearOlderHistoryIntent, scrollToBottomWithBehavior]);
 
   const toggleFollow = useCallback(() => {
-    setIsFollowing((prev) => {
-      const next = !prev;
-      isFollowingRef.current = next;
-      if (next && bottomScrollLocation !== null) {
-        clearOlderHistoryIntent();
-        scrollToBottomWithBehavior("smooth");
-        setShowNewMessage(false);
-      }
-      return next;
-    });
+    const next = !isFollowingRef.current;
+    isFollowingRef.current = next;
+    setIsFollowing(next);
+    if (next && bottomScrollLocation !== null) {
+      clearOlderHistoryIntent();
+      scrollToBottomWithBehavior("smooth");
+      setShowNewMessage(false);
+    }
   }, [bottomScrollLocation, clearOlderHistoryIntent, scrollToBottomWithBehavior]);
 
   const VirtuosoHeader = useCallback(
@@ -627,11 +670,16 @@ export function ChatView({
         </div>
       )}
       {focusEventId !== null
-        && history.reachedTop
         && !history.loading
-        && findFocusIndex(timelineItems, focusEventId) < 0 && (
+        && findFocusIndex(timelineItems, focusEventId) < 0
+        && (
+          history.reachedTop
+          || focusHistoryCappedRequestId === focusEventRequestId
+        ) && (
           <div role="alert" className="shrink-0 px-3 pb-2 text-center text-sm text-accent-red">
-            검색 결과 이벤트를 대화에서 찾을 수 없습니다.
+            {history.reachedTop
+              ? "검색 결과 이벤트를 대화에서 찾을 수 없습니다."
+              : `최근 ${MAX_SEARCH_FOCUS_HISTORY_PAGES}페이지에서 검색 결과를 찾지 못했습니다. 이전 대화를 더 불러오면 이동할 수 있습니다.`}
           </div>
         )}
       {timelineItems.length === 0 && (
@@ -696,18 +744,29 @@ export function ChatView({
          * turn summary가 늦게 결합되어도 가상 행의 key와 data 길이가 바뀌지 않는다.
          */
         computeItemKey={(_index, item) => messageOrGroupKey(item)}
-        itemContent={(_, item) => (
-          <div
-            data-chat-item-key={messageOrGroupKey(item)}
-            className="contents"
-          >
-            <VirtualizedItem
-              item={item}
-              llmContext={llmContext}
-              sessionId={activeSessionKey ?? undefined}
-            />
-          </div>
-        )}
+        itemContent={(_, item) => {
+          const toolGroupKey = item.type === "tool-group" && activeSessionKey !== null
+            ? toolGroupExpansionKey(activeSessionKey, item)
+            : undefined;
+          const toolGroupExpanded = toolGroupKey !== undefined
+            && expandedToolGroups.sessionId === activeSessionKey
+            && expandedToolGroups.keys.has(toolGroupKey);
+          return (
+            <div
+              data-chat-item-key={messageOrGroupKey(item)}
+              className="contents"
+            >
+              <VirtualizedItem
+                item={item}
+                llmContext={llmContext}
+                sessionId={activeSessionKey ?? undefined}
+                toolGroupKey={toolGroupKey}
+                toolGroupExpanded={toolGroupKey === undefined ? undefined : toolGroupExpanded}
+                onToolGroupExpandedChange={handleToolGroupExpansionChange}
+              />
+            </div>
+          );
+        }}
         itemsRendered={() => {
           // Virtuoso가 data와 spacer DOM을 같은 프레임에 정합한 뒤 geometry를 읽는다.
           // 즉시 읽으면 재배치 중인 overscan 행 또는 빈 중간 프레임을 관찰할 수 있다.

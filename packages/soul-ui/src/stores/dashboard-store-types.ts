@@ -25,6 +25,7 @@ import type { ClaudeRuntimeView } from "./claude-runtime-state";
 import type { WallpaperMode, WallpaperSettings } from "../lib/wallpaper-settings";
 import type { LiquidGlassSettings } from "../lib/glass-settings";
 import type { ChatFontSize } from "../lib/chat-typography";
+import type { ChatFocusTarget } from "../shared/search-focus";
 
 // === Dashboard Config ===
 
@@ -90,6 +91,14 @@ export interface BoardItemFocusRequest {
   boardItemId: string;
   folderId: string | null;
   requestId: number;
+}
+
+export interface HistoryCursorSnapshot {
+  sessionId: string;
+  historyResetVersion: number;
+  nextCursor: string | null;
+  initialPageLoaded: boolean;
+  reachedTop: boolean;
 }
 
 // === Desktop Left Navigation ===
@@ -164,8 +173,11 @@ export interface DashboardState {
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
   lastEventId: number;
 
-  /** history_sync reset_required가 durable timeline refetch를 요청한 횟수. */
+  /** Durable history invalidation generation for reset markers and cleared trees. */
   historyResetVersion: number;
+
+  /** Current session's history cursor so a remounted chat view can continue pagination. */
+  historyCursor: HistoryCursorSnapshot | null;
 
   /** 모든 세션의 정규화된 브라우저 알림 큐. */
   pendingNotifications: SessionNotice[];
@@ -199,6 +211,9 @@ export interface DashboardState {
 
   /** 검색 결과 클릭 시 스크롤할 이벤트 ID (ChatView가 감지하여 해당 메시지로 스크롤) */
   focusEventId: number | null;
+
+  /** Search-hit to transcript-row mapping selected by the search-event contract. */
+  focusEventTarget: ChatFocusTarget | null;
 
   /** focusEventId의 소유 세션. 다른 세션의 같은 이벤트 번호에 포커스하지 않도록 구분한다. */
   focusEventSessionId: string | null;
@@ -392,7 +407,12 @@ export interface DashboardActions {
   clearPromptSuggestion: (sessionId: string) => void;
 
   // 검색 포커스 이벤트 ID
-  setFocusEventId: (eventId: number | null, sessionId?: string) => void;
+  setFocusEventId: (
+    eventId: number | null,
+    sessionId?: string,
+    target?: ChatFocusTarget,
+  ) => void;
+  setHistoryCursor: (snapshot: HistoryCursorSnapshot | null) => void;
 
   // 뷰 모드 (URL 동기화 전용)
   setViewMode: (mode: DashboardViewMode) => void;

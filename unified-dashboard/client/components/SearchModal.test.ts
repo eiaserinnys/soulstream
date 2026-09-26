@@ -8,6 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   useDashboardStore,
+  type ChatFocusTarget,
   type CatalogState,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
@@ -106,6 +107,7 @@ function renderSearchModal(options: {
     sessionId: string,
     focusEventId: number | null,
     session?: SessionSummary,
+    focusTarget?: ChatFocusTarget,
   ) => boolean | void | Promise<boolean | void>;
   onOpenFolder?: (
     result: Extract<SearchNavigationResult, { kind: "folder" }>,
@@ -640,5 +642,44 @@ describe("SearchModal", () => {
       );
       expect(storyTriggerClick).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("routes result and complete hits to their assistant turn and thinking hits to the session", () => {
+    const onOpenSession = vi.fn();
+    searchHarness.results = [
+      {
+        session_id: "result-session",
+        event_id: 31,
+        score: 1,
+        preview: "Result preview",
+        event_type: "result",
+        match_source: "message",
+      },
+      {
+        session_id: "thinking-session",
+        event_id: 32,
+        score: 1,
+        preview: "Thinking preview",
+        event_type: "thinking",
+        match_source: "message",
+      },
+    ];
+    ({ container, root } = renderSearchModal({ onOpenSession }));
+
+    clickResult("Result preview");
+    expect(onOpenSession).toHaveBeenCalledWith(
+      "result-session",
+      31,
+      undefined,
+      "assistant_turn",
+    );
+
+    clickResult("Thinking preview");
+    expect(onOpenSession).toHaveBeenCalledWith(
+      "thinking-session",
+      null,
+      undefined,
+      "session",
+    );
   });
 });

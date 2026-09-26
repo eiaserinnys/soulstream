@@ -12,11 +12,14 @@ import {
   getInitialTopMostItemIndex,
   findFocusIndex,
   messageOrGroupKey,
+  resolveFocusEventId,
+  toolGroupExpansionKey,
   countInsertedRowsBeforeKey,
   areMessageGroupsRenderEqual,
 } from "./ChatView.reverse-helpers";
 import type { MessageOrGroup } from "../../lib/grouping";
 import type { ChatMessage } from "../../lib/flatten-tree";
+import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 
 const makeMsg = (overrides: Partial<ChatMessage>): ChatMessage => ({
   id: "msg-x",
@@ -75,6 +78,32 @@ describe("stable viewport key helpers", () => {
     expect(messageOrGroupKey(single)).toBe("node-10");
     expect(messageOrGroupKey(group)).toBe("tg-tool-12");
     expect(messageOrGroupKey({ type: "thinking-indicator" })).toBe("chat-thinking-indicator");
+  });
+
+  it("tool group 확장 상태 키는 마지막 멤버가 늘어도 첫 멤버와 세션으로 유지한다", () => {
+    const first: MessageOrGroup = {
+      type: "tool-group",
+      messages: [
+        makeMsg({ treeNodeId: "tool-11" }),
+        makeMsg({ treeNodeId: "tool-12" }),
+      ],
+    };
+    const appended: MessageOrGroup = {
+      type: "tool-group",
+      messages: [
+        makeMsg({ treeNodeId: "tool-11" }),
+        makeMsg({ treeNodeId: "tool-12" }),
+        makeMsg({ treeNodeId: "tool-13" }),
+      ],
+    };
+
+    expect(messageOrGroupKey(first)).not.toBe(messageOrGroupKey(appended));
+    expect(toolGroupExpansionKey("session-a", first)).toBe(
+      toolGroupExpansionKey("session-a", appended),
+    );
+    expect(toolGroupExpansionKey("session-b", appended)).not.toBe(
+      toolGroupExpansionKey("session-a", appended),
+    );
   });
 
   it("생각 중 행은 같은 안정 행으로 비교한다", () => {
@@ -157,5 +186,37 @@ describe("findFocusIndex", () => {
 
   it("생각 중 행은 이벤트 포커스 대상에서 제외한다", () => {
     expect(findFocusIndex([{ type: "thinking-indicator" }], 100)).toBe(-1);
+  });
+});
+
+describe("resolveFocusEventId", () => {
+  const turn: ChatTimelineItem[] = [
+    { type: "single", msg: makeMsg({ role: "user", eventId: 100, treeNodeType: "user_message" }) },
+    { type: "single", msg: makeMsg({ role: "assistant", eventId: 101, treeNodeType: "assistant_message" }) },
+    {
+      type: "tool-group",
+      messages: [
+        makeMsg({ role: "tool", eventId: 102, treeNodeType: "tool_use", treeNodeId: "tool-102" }),
+        makeMsg({ role: "tool", eventId: 103, treeNodeType: "tool_result", treeNodeId: "tool-103" }),
+      ],
+    },
+    { type: "single", msg: makeMsg({ role: "assistant", eventId: 104, treeNodeType: "assistant_message" }) },
+    { type: "single", msg: makeMsg({ role: "user", eventId: 110, treeNodeType: "user_message" }) },
+    { type: "single", msg: makeMsg({ role: "assistant", eventId: 111, treeNodeType: "assistant_message" }) },
+  ];
+
+  it("result와 complete는 같은 턴의 마지막 assistant 메시지에 연결한다", () => {
+    expect(resolveFocusEventId(turn, 105, "assistant_turn")).toBe(104);
+    expect(resolveFocusEventId(turn, 112, "assistant_turn")).toBe(111);
+  });
+
+  it("thinking은 세션 열기만 하며 일반 이벤트는 원래 ID를 유지한다", () => {
+    expect(resolveFocusEventId(turn, 105, "session")).toBeNull();
+    expect(resolveFocusEventId(turn, 101, "event")).toBe(101);
+    expect(resolveFocusEventId(turn, null, "assistant_turn")).toBeNull();
+  });
+
+  it("turn assistant가 아직 불러오지 않은 상태에서는 검색 ID를 보존한다", () => {
+    expect(resolveFocusEventId([], 105, "assistant_turn")).toBe(105);
   });
 });

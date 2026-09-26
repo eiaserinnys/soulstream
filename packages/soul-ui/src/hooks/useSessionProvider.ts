@@ -292,7 +292,15 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       if (previous.cursorScope !== cursorScope) {
         previous.provider?.detailCursorStore?.clearScope(previous.cursorScope);
       }
+      const hadHistoryCursor = useDashboardStore.getState().historyCursor !== null;
       clearTree();
+      if (hadHistoryCursor) {
+        // clearTree also removes the cursor snapshot. Invalidate the buffer
+        // generation so a remount that already read that snapshot refetches.
+        useDashboardStore.setState((state) => ({
+          historyResetVersion: state.historyResetVersion + 1,
+        }));
+      }
       localCommittedCursorRef.current = 0;
       setSynchronizedSessionKey(null);
     }
