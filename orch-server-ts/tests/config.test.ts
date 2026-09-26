@@ -65,6 +65,8 @@ describe("orch-server-ts config scaffold", () => {
       CLAUDE_OAUTH_CLIENT_ID: "claude-client",
       CLAUDE_OAUTH_CALLBACK_URL: "https://example.com/claude/callback",
       TURN_SUMMARY_OPENAI_KEY: "turn-summary-key",
+      USAGE_SUMMARY_SHARED_ACCOUNTS:
+        "claude:eias-linegames-wsl,eiaserinnys;codex:eias-linegames,eias-linegames-wsl,eiaserinnys",
       SOUL_RUNNER_PROCESS_ENABLED: "true",
       SOUL_RUNNER_LEASE_TIMEOUT_MS: "120000",
     });
@@ -110,6 +112,16 @@ describe("orch-server-ts config scaffold", () => {
       search_query_expansion_effort: null,
       turn_summary_openai_key: "turn-summary-key",
       usage_summary_poll_interval_seconds: 300,
+      usage_summary_shared_accounts: [
+        {
+          provider: "claude",
+          nodeIds: ["eias-linegames-wsl", "eiaserinnys"],
+        },
+        {
+          provider: "codex",
+          nodeIds: ["eias-linegames", "eias-linegames-wsl", "eiaserinnys"],
+        },
+      ],
       soul_runner_process_enabled: true,
       soul_runner_lease_timeout_ms: 120_000,
     });
@@ -150,6 +162,7 @@ describe("orch-server-ts config scaffold", () => {
       jwt_secret: "",
       turn_summary_openai_key: "",
       usage_summary_poll_interval_seconds: 300,
+      usage_summary_shared_accounts: [],
       soul_runner_process_enabled: false,
       soul_runner_lease_timeout_ms: 1_800_000,
     });
@@ -164,6 +177,18 @@ describe("orch-server-ts config scaffold", () => {
       ...minimalEnvironment(),
       USAGE_SUMMARY_POLL_INTERVAL_SECONDS: "0",
     })).toThrow(/USAGE_SUMMARY_POLL_INTERVAL_SECONDS/);
+  });
+
+  it.each([
+    "openai:node-a,node-b",
+    "claude:node-a",
+    "claude:node-a,,node-b",
+    "claude:node-a,node-b;claude:node-b,node-c",
+  ])("rejects malformed shared usage account groups: %s", (value) => {
+    expect(() => loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      USAGE_SUMMARY_SHARED_ACCOUNTS: value,
+    })).toThrow(/USAGE_SUMMARY_SHARED_ACCOUNTS/);
   });
 
   it("configures runner process mode and disconnect grace", () => {

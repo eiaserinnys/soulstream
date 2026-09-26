@@ -18,6 +18,7 @@ describe("UsageSummaryService", () => {
       registry,
       bridge,
       pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
       now: () => new Date("2026-07-20T10:00:00.000Z"),
     });
 
@@ -70,6 +71,7 @@ describe("UsageSummaryService", () => {
       registry,
       bridge,
       pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
       now: () => now,
     });
 
@@ -103,6 +105,7 @@ describe("UsageSummaryService", () => {
         sendPendingCommand: vi.fn(async () => { throw new Error("offline"); }),
       } as unknown as UsageSummaryBridge,
       pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
       now: () => new Date("2026-07-20T10:00:00.000Z"),
     });
 
@@ -127,6 +130,7 @@ describe("UsageSummaryService", () => {
         registry,
         bridge: { sendPendingCommand: vi.fn() } as unknown as UsageSummaryBridge,
         pollIntervalMs: 300_000,
+        sharedAccountGroups: [],
       });
 
       service.start();
@@ -140,6 +144,141 @@ describe("UsageSummaryService", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("queries shared providers once and copies their limits to connected group members", async () => {
+    const registry = fakeRegistry(["node-c", "node-b", "node-a"]);
+    const bridge = {
+      sendPendingCommand: vi.fn(async ({ node, command }: {
+        node: { nodeId: string };
+        command: { message: { provider?: string } };
+      }) => {
+        const provider = command.message.provider;
+        if (provider === undefined) return successResponse(10, 20, 30);
+        const usedPercentByQuery: Readonly<Record<string, number>> = {
+          "node-b:claude": 40,
+          "node-b:gemini": 50,
+        };
+        const usedPercent = usedPercentByQuery[`${node.nodeId}:${provider}`];
+        if (usedPercent === undefined) throw new Error("unexpected provider query");
+        return providerSuccessResponse(provider, usedPercent);
+      }),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [
+        { provider: "claude", nodeIds: ["node-c", "node-b"] },
+        { provider: "codex", nodeIds: ["node-c", "node-b", "node-a"] },
+        { provider: "gemini", nodeIds: ["node-c", "node-a"] },
+      ],
+      now: () => new Date("2026-07-20T10:00:00.000Z"),
+    });
+
+    await service.collectOnce();
+
+    expect(registry.createCommand).toHaveBeenCalledTimes(3);
+    expect(registry.createCommand).toHaveBeenCalledWith(
+      "node-a",
+      { type: "provider_usage_get" },
+      { timeoutMs: 15_000 },
+    );
+    expect(registry.createCommand).toHaveBeenCalledWith(
+      "node-b",
+      { type: "provider_usage_get", provider: "claude" },
+      { timeoutMs: 15_000 },
+    );
+    expect(registry.createCommand).toHaveBeenCalledWith(
+      "node-b",
+      { type: "provider_usage_get", provider: "gemini" },
+      { timeoutMs: 15_000 },
+    );
+    expect(registry.createCommand).not.toHaveBeenCalledWith(
+      "node-c",
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(service.getSummary().nodes).toMatchObject([
+      {
+        nodeId: "node-a",
+        providers: {
+          claude: { weeklyRemainingPercent: 90 },
+          codex: { weeklyRemainingPercent: 80 },
+          gemini: { weeklyRemainingPercent: 70 },
+        },
+      },
+      {
+        nodeId: "node-b",
+        providers: {
+          claude: { weeklyRemainingPercent: 60 },
+          codex: { weeklyRemainingPercent: 80 },
+          gemini: { weeklyRemainingPercent: 50 },
+        },
+      },
+      {
+        nodeId: "node-c",
+        providers: {
+          claude: { weeklyRemainingPercent: 60 },
+          codex: { weeklyRemainingPercent: 80 },
+          gemini: { weeklyRemainingPercent: 70 },
+        },
+      },
+    ]);
+  });
+
+  it("keeps every member stale when the shared representative query fails", async () => {
+    let now = new Date("2026-07-20T10:00:00.000Z");
+    let failRepresentative = false;
+    const registry = fakeRegistry(["node-b", "node-a"]);
+    const bridge = {
+      sendPendingCommand: vi.fn(async ({ node, command }: {
+        node: { nodeId: string };
+        command: { message: { provider?: string } };
+      }) => {
+        if (node.nodeId === "node-a" && failRepresentative) throw new Error("timeout");
+        const provider = command.message.provider;
+        return provider === undefined
+          ? successResponse(10, 20, 30)
+          : providerSuccessResponse(provider, provider === "claude" ? 40 : 50);
+      }),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [
+        { provider: "codex", nodeIds: ["node-a", "node-b"] },
+      ],
+      now: () => now,
+    });
+
+    await service.collectOnce();
+    failRepresentative = true;
+    now = new Date("2026-07-20T10:05:00.000Z");
+    await service.collectOnce();
+
+    expect(service.getSummary().nodes).toMatchObject([
+      {
+        nodeId: "node-a",
+        fetchedAt: "2026-07-20T10:00:00.000Z",
+        stale: true,
+        staleSince: "2026-07-20T10:05:00.000Z",
+        providers: { codex: { weeklyRemainingPercent: 80 } },
+      },
+      {
+        nodeId: "node-b",
+        fetchedAt: "2026-07-20T10:00:00.000Z",
+        stale: true,
+        staleSince: "2026-07-20T10:05:00.000Z",
+        providers: { codex: { weeklyRemainingPercent: 80 } },
+      },
+    ]);
+    expect(registry.createCommand).not.toHaveBeenCalledWith(
+      "node-b",
+      expect.objectContaining({ provider: "codex" }),
+      expect.anything(),
+    );
   });
 });
 
@@ -165,7 +304,11 @@ function fakeRegistry(nodeIds: readonly string[]): UsageSummaryRegistry {
   } as unknown as UsageSummaryRegistry;
 }
 
-function successResponse(claudeWeeklyUsedPercent: number) {
+function successResponse(
+  claudeWeeklyUsedPercent: number,
+  codexWeeklyUsedPercent = 80,
+  geminiWeeklyUsedPercent: number | null = null,
+) {
   return {
     type: "provider_usage_result",
     success: true,
@@ -180,10 +323,19 @@ function successResponse(claudeWeeklyUsedPercent: number) {
           remainingPercent: 84,
           resetAt: 1_753_100_000,
         }]),
-        codex: limits(80, null, []),
-        gemini: limits(null, null, []),
+        codex: limits(codexWeeklyUsedPercent, null, []),
+        gemini: limits(geminiWeeklyUsedPercent, null, []),
       },
     },
+  };
+}
+
+function providerSuccessResponse(provider: string, weeklyUsedPercent: number) {
+  return {
+    type: "provider_usage_result",
+    success: true,
+    data: limits(weeklyUsedPercent, null, []),
+    provider,
   };
 }
 

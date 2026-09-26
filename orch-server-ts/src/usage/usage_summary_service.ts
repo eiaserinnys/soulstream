@@ -8,9 +8,14 @@ import type { SessionCommandTransportBridge } from "../session/session_command_t
 
 export const USAGE_SUMMARY_NODE_TIMEOUT_MS = 15_000;
 
-const PROVIDER_NAMES = ["claude", "codex", "gemini"] as const;
+export const USAGE_SUMMARY_PROVIDER_NAMES = ["claude", "codex", "gemini"] as const;
 
-export type UsageSummaryProviderName = (typeof PROVIDER_NAMES)[number];
+export type UsageSummaryProviderName = (typeof USAGE_SUMMARY_PROVIDER_NAMES)[number];
+
+export type UsageSummarySharedAccountGroup = {
+  readonly provider: UsageSummaryProviderName;
+  readonly nodeIds: readonly string[];
+};
 
 export type UsageSummaryQuota = {
   readonly id: string;
@@ -63,6 +68,7 @@ export type UsageSummaryServiceOptions = {
   readonly registry: UsageSummaryRegistry;
   readonly bridge: UsageSummaryBridge;
   readonly pollIntervalMs: number;
+  readonly sharedAccountGroups: readonly UsageSummarySharedAccountGroup[];
   readonly nodeTimeoutMs?: number;
   readonly now?: () => Date;
   readonly onWarning?: (message: string, error?: unknown) => void;
@@ -109,6 +115,7 @@ export class UsageSummaryService {
   private readonly registry: UsageSummaryRegistry;
   private readonly bridge: UsageSummaryBridge;
   private readonly pollIntervalMs: number;
+  private readonly sharedAccountGroups: readonly UsageSummarySharedAccountGroup[];
   private readonly nodeTimeoutMs: number;
   private readonly now: () => Date;
   private readonly onWarning: (message: string, error?: unknown) => void;
@@ -124,6 +131,7 @@ export class UsageSummaryService {
     this.registry = options.registry;
     this.bridge = options.bridge;
     this.pollIntervalMs = options.pollIntervalMs;
+    this.sharedAccountGroups = options.sharedAccountGroups;
     this.nodeTimeoutMs = nodeTimeoutMs;
     this.now = options.now ?? (() => new Date());
     this.onWarning = options.onWarning ?? (() => undefined);
@@ -181,7 +189,7 @@ export class UsageSummaryService {
       }
     }
 
-    await Promise.all(connectedNodes.map(async (node) => {
+    for (const node of connectedNodes) {
       const state = this.nodes.get(node.nodeId) ?? {
         nodeId: node.nodeId,
         snapshot: null,
@@ -189,8 +197,38 @@ export class UsageSummaryService {
         staleSince: cycleStartedAt,
       };
       this.nodes.set(node.nodeId, state);
+    }
+
+    const providerOwners = resolveProviderOwners(
+      connectedIds,
+      this.sharedAccountGroups,
+    );
+    const providerRequests = this.createProviderRequests(
+      connectedNodes,
+      providerOwners,
+    );
+
+    await Promise.all(connectedNodes.map(async (node) => {
+      const state = this.nodes.get(node.nodeId);
+      if (state === undefined) throw new Error(`Missing usage state for node ${node.nodeId}`);
       try {
-        const snapshot = await this.fetchNodeSnapshot(node.nodeId);
+        const requiredProvider = (provider: UsageSummaryProviderName): Promise<ProviderLimits> => {
+          const ownerId = providerOwners.get(providerRequestKey(node.nodeId, provider))
+            ?? node.nodeId;
+          const request = providerRequests.get(providerRequestKey(ownerId, provider));
+          if (request === undefined) {
+            throw new Error(`Missing ${provider} usage request for node ${node.nodeId}`);
+          }
+          return request;
+        };
+        const [claude, codex, gemini] = await Promise.all([
+          requiredProvider("claude"),
+          requiredProvider("codex"),
+          requiredProvider("gemini"),
+        ]);
+        const snapshot: ProviderUsageSnapshot = {
+          providers: { claude, codex, gemini },
+        };
         state.snapshot = snapshot;
         state.fetchedAt = this.now().toISOString();
         state.staleSince = null;
@@ -202,19 +240,93 @@ export class UsageSummaryService {
     this.collectedAt = this.now().toISOString();
   }
 
+  private createProviderRequests(
+    connectedNodes: readonly NodeConnectionSnapshot[],
+    providerOwners: ReadonlyMap<string, string>,
+  ): Map<string, Promise<ProviderLimits>> {
+    const requests = new Map<string, Promise<ProviderLimits>>();
+    for (const node of connectedNodes) {
+      const ownedProviders = USAGE_SUMMARY_PROVIDER_NAMES.filter((provider) =>
+        (providerOwners.get(providerRequestKey(node.nodeId, provider)) ?? node.nodeId)
+          === node.nodeId,
+      );
+      if (ownedProviders.length === USAGE_SUMMARY_PROVIDER_NAMES.length) {
+        const snapshot = this.fetchNodeSnapshot(node.nodeId);
+        for (const provider of USAGE_SUMMARY_PROVIDER_NAMES) {
+          requests.set(
+            providerRequestKey(node.nodeId, provider),
+            snapshot.then((result) => result.providers[provider]),
+          );
+        }
+        continue;
+      }
+      for (const provider of ownedProviders) {
+        requests.set(
+          providerRequestKey(node.nodeId, provider),
+          this.fetchNodeProvider(node.nodeId, provider),
+        );
+      }
+    }
+    return requests;
+  }
+
   private async fetchNodeSnapshot(nodeId: string): Promise<ProviderUsageSnapshot> {
+    const response = await this.sendProviderUsageCommand(nodeId);
+    return parseProviderUsageSnapshot(response.data);
+  }
+
+  private async fetchNodeProvider(
+    nodeId: string,
+    provider: UsageSummaryProviderName,
+  ): Promise<ProviderLimits> {
+    const response = await this.sendProviderUsageCommand(nodeId, provider);
+    return parseProviderLimits(response.data, provider);
+  }
+
+  private async sendProviderUsageCommand(
+    nodeId: string,
+    provider?: UsageSummaryProviderName,
+  ): Promise<ProviderUsageCommandResponse> {
     const node = this.registry.getConnectedNode(nodeId);
     if (node === undefined) throw new Error(`Node is not connected: ${nodeId}`);
     const command = this.registry.createCommand<
       ProviderUsageCommandPayload,
       ProviderUsageCommandResponse
-    >(nodeId, { type: "provider_usage_get" }, { timeoutMs: this.nodeTimeoutMs });
+    >(
+      nodeId,
+      provider === undefined
+        ? { type: "provider_usage_get" }
+        : { type: "provider_usage_get", provider },
+      { timeoutMs: this.nodeTimeoutMs },
+    );
     const response = await this.bridge.sendPendingCommand({ node, command });
     if (response.success !== true) {
       throw new Error(stringValue(response.error) || `Provider usage failed for node ${nodeId}`);
     }
-    return parseProviderUsageSnapshot(response.data);
+    return response;
   }
+}
+
+function resolveProviderOwners(
+  connectedIds: ReadonlySet<string>,
+  groups: readonly UsageSummarySharedAccountGroup[],
+): Map<string, string> {
+  const owners = new Map<string, string>();
+  for (const group of groups) {
+    const connectedMembers = group.nodeIds
+      .filter((nodeId) => connectedIds.has(nodeId))
+      .sort((left, right) => left.localeCompare(right));
+    const representative = connectedMembers[0];
+    if (representative === undefined) continue;
+    for (const nodeId of connectedMembers) {
+      owners.set(providerRequestKey(nodeId, group.provider), representative);
+    }
+  }
+  return owners;
+}
+
+function providerRequestKey(nodeId: string, provider: UsageSummaryProviderName): string {
+  return `${nodeId}\u0000${provider}`;
 }
 
 function summarizeNode(state: MutableNodeState): UsageSummaryNode {
