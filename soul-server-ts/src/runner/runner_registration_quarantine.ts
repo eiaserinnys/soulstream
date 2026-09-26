@@ -47,6 +47,7 @@ export async function quarantineUnreadableRunnerRegistration(
     inspectProcess?: (pid: number) => Promise<ProcessIdentity>;
     inspectWriterLock?: (path: string) => Promise<RunnerWriterLockState>;
     now?: () => number;
+    beforeQuarantine?: () => Promise<void>;
   } = {},
 ): Promise<RunnerRegistrationQuarantineResult> {
   assertDirectChild(stateDirectory, failure.directory);
@@ -81,6 +82,7 @@ export async function quarantineUnreadableRunnerRegistration(
     if (observed.kind !== "free") return { status: "retained", reason: "runner_alive" };
     const identity = await readIdentityIfValid(failure.directory);
     const pid = identity?.pid ?? await readPidIfValid(join(failure.directory, "runner.pid"));
+    await dependencies.beforeQuarantine?.();
 
     const quarantineRoot = `${resolve(stateDirectory)}.quarantine`;
     await mkdir(quarantineRoot, { recursive: true, mode: 0o700 });

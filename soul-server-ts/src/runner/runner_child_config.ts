@@ -30,6 +30,7 @@ const RunnerProcessPathsSchema = z.object({
 
 const RunnerChildConfigFields = {
   sessionId: z.string().min(1),
+  registrationId: z.string().min(1).optional(),
   backend: AgentBackendSchema,
   agent: AgentProfileSchema,
   paths: RunnerProcessPathsSchema,
