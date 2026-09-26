@@ -28,7 +28,6 @@ const soulUiDialogConsumers = [
   "../../../packages/soul-ui/src/components/FolderDialog.tsx",
   "../../../packages/soul-ui/src/components/FolderSettingsDialog.tsx",
   "../../../packages/soul-ui/src/components/MarkdownDeleteDialog.tsx",
-  "../../../packages/soul-ui/src/components/NewSessionDialog.tsx",
   "../../../packages/soul-ui/src/components/RenameSessionDialog.tsx",
   "../../../packages/soul-ui/src/components/SessionContextMenu.tsx",
 ] as const;

@@ -4,7 +4,6 @@ import {
   useDashboardStore,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { useAppConfig } from "../config/AppConfigContext";
 import {
   buildContinueSessionPrompt,
   resolveContinueSessionTarget,
@@ -13,9 +12,7 @@ import { createDashboardSession } from "client/lib/session-create";
 
 export function useContinueSession(sessions: SessionSummary[] | undefined) {
   const queryClient = useQueryClient();
-  const appConfig = useAppConfig();
   const catalog = useDashboardStore((s) => s.catalog);
-  const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const addOptimisticSession = useDashboardStore((s) => s.addOptimisticSession);
 
@@ -32,12 +29,9 @@ export function useContinueSession(sessions: SessionSummary[] | undefined) {
       return resolveContinueSessionTarget({
         session: lookupSessions.get(sessionId),
         catalog,
-        agents: dashboardConfig?.agents ?? [],
-        mode: appConfig.mode,
-        localNodeId: appConfig.nodeId,
       });
     },
-    [appConfig.mode, appConfig.nodeId, catalog, dashboardConfig?.agents, lookupSessions],
+    [catalog, lookupSessions],
   );
 
   const getContinueSessionDisabledReason = useCallback(

@@ -4,8 +4,6 @@ import { describe, expect, it } from "vitest";
 import { buttonVariants } from "./button";
 
 const visualButtonFiles = [
-  "../FeedTopBar.tsx",
-  "../SessionsTopBar.tsx",
   "../ConfigButton.tsx",
   "../ChatInput.tsx",
   "../AskQuestionBanner.tsx",

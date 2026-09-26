@@ -2,7 +2,7 @@
  * NodeBadge - 노드 ID 뱃지
  *
  * 노드 ID를 hue 해시 기반 색상으로 표시한다.
- * FeedCard, SessionItem 등 다수의 컴포넌트에서 중복 계산되던 로직을 통합.
+ * Session rows and node status panels share one node color mapping.
  */
 
 import { useTheme } from "../hooks/useTheme";
