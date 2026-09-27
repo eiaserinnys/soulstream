@@ -8,7 +8,7 @@
     "provenance_probe": {
       "prepare": {
         "name": "prepare-database-release-probe",
-        "command": "corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false",
+        "command": "corepack pnpm install --frozen-lockfile --ignore-scripts",
         "timeout_seconds": 300
       },
       "probe": {

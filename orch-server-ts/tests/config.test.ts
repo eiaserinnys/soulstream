@@ -98,6 +98,7 @@ describe("orch-server-ts config scaffold", () => {
       environment: "production",
       claude_oauth_client_id: "claude-client",
       claude_oauth_callback_url: "https://example.com/claude/callback",
+      codex_cli_path: null,
       model_catalog_path: null,
       search_query_expansion_preset_id: null,
       search_query_expansion_effort: null,
@@ -234,11 +235,13 @@ describe("orch-server-ts config scaffold", () => {
   it("maps search expansion model settings independently of turn summaries", () => {
     const config = loadOrchServerEnvironment({
       ...minimalEnvironment(),
+      CODEX_CLI_PATH: "/configured/codex",
       MODEL_CATALOG_PATH: "config/model-catalog.yaml",
       SEARCH_QUERY_EXPANSION_PRESET_ID: "catalog-preset",
       SEARCH_QUERY_EXPANSION_EFFORT: "max",
     });
 
+    expect(config.codex_cli_path).toBe("/configured/codex");
     expect(config.model_catalog_path).toBe("config/model-catalog.yaml");
     expect(config.search_query_expansion_preset_id).toBe("catalog-preset");
     expect(config.search_query_expansion_effort).toBe("max");

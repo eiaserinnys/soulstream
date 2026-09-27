@@ -16,7 +16,6 @@ README_PATH = Path(__file__).parent.parent / "src" / "README.md"
 GENERATED_TS_PATH = (
     Path(__file__).parent.parent / "generated" / "typescript" / "index.ts"
 )
-GENERATED_PY_PATH = Path(__file__).parent.parent / "generated" / "python" / "upstream.py"
 RUNTIME_EVENT_CONTRACT_FIXTURE_PATH = (
     Path(__file__).parent.parent / "fixtures" / "runtime_event_contract.json"
 )
@@ -183,7 +182,6 @@ def test_intervene_ack_preserves_an_unknown_delivery_verdict() -> None:
 
     jsonschema.Draft202012Validator(schema).validate(frame)
     assert '"unknown"' in GENERATED_TS_PATH.read_text(encoding="utf-8")
-    assert "delivered: bool | None" in GENERATED_PY_PATH.read_text(encoding="utf-8")
 
 
 def test_event_append_batch_accepts_running_transition_effect() -> None:
@@ -198,9 +196,6 @@ def test_event_append_batch_accepts_running_transition_effect() -> None:
 
     jsonschema.Draft202012Validator(schema).validate(frame)
     assert 'kind: "running_transition"' in GENERATED_TS_PATH.read_text(
-        encoding="utf-8"
-    )
-    assert "kind: Literal['running_transition']" in GENERATED_PY_PATH.read_text(
         encoding="utf-8"
     )
 
@@ -409,7 +404,6 @@ def test_documented_message_inventory_counts_match_schema() -> None:
 
     assert expected in README_PATH.read_text(encoding="utf-8")
     assert expected in GENERATED_TS_PATH.read_text(encoding="utf-8")
-    assert expected in GENERATED_PY_PATH.read_text(encoding="utf-8")
 
 
 def test_every_persisted_event_has_an_explicit_durability_class() -> None:

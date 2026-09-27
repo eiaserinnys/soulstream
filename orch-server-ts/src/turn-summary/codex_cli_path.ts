@@ -19,10 +19,11 @@ type EnvLike = NodeJS.ProcessEnv | Readonly<Record<string, string | undefined>>;
 const WINDOWS_SPAWNABLE_EXTENSIONS = [".cmd", ".exe", ".bat", ".com"] as const;
 
 export function resolveCodexCliPath(
-  env: EnvLike = process.env,
+  configuredPath: string | null | undefined,
+  env: EnvLike,
   platform: NodeJS.Platform = process.platform,
 ): CodexCliPathResolution | undefined {
-  const explicit = nonEmpty(env.CODEX_CLI_PATH);
+  const explicit = nonEmpty(configuredPath ?? undefined);
   if (explicit !== undefined) {
     return { path: explicit, source: "CODEX_CLI_PATH" };
   }

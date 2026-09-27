@@ -43,8 +43,8 @@ jobs:
       - name: Install pnpm dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Python codegen + test deps
-        run: pip install 'datamodel-code-generator>=0.25.0' 'jsonschema>=4.20.0' 'pytest>=8.0.0'
+      - name: Install Python test deps
+        run: pip install 'jsonschema>=4.20.0' 'pytest>=8.0.0'
 
       - name: Verify schema ↔ generated 정합
         run: bash packages/wire-schema/scripts/verify.sh

@@ -16,16 +16,15 @@
 
 ## 생성물 (직접 편집 금지)
 
-- `generated/python/upstream.py` — `datamodel-code-generator`로 생성한 TypedDict
-- `generated/typescript/index.ts` — `json-schema-to-typescript`로 생성한 interface
+- `generated/typescript/index.ts` — `json-schema-to-typescript`로 생성한 TypeScript interface
   - `EVENT_DURABILITY` — schema 분류를 그대로 생성한 런타임 상수
   - `SSE_EVENT_TYPES`, `CONTROL_COMMAND_TYPES`, `EVENT_INGRESS_REJECTION_CODES` — schema에서 생성한 런타임 목록과 타입
 
 ## 워크플로우
 
 1. `src/upstream.schema.json`을 편집한다.
-2. `bash scripts/generate.sh`로 양쪽 generated를 재생성한다.
-3. `git add src/ generated/`로 schema와 생성물을 함께 커밋한다.
+2. `bash scripts/generate.sh`로 TypeScript generated를 재생성한다.
+3. `git add src/ generated/typescript/`로 schema와 TypeScript 생성물을 함께 커밋한다.
 
 CI가 `scripts/verify.sh`로 schema ↔ generated 정합을 검증한다.
 
@@ -38,6 +37,5 @@ CI가 `scripts/verify.sh`로 schema ↔ generated 정합을 검증한다.
 
 - 단일 schema 파일 (wire 메시지가 평탄하므로 분리 가치 0)
 - discriminator union (`type` 필드)
-- Python TypedDict 출력
 - TS interface + discriminated union 출력
 - `NodeRegister.supported_backends` 신규 top-level 필드 (옵션 D — Codex 백엔드 라우팅 준비)

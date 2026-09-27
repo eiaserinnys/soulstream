@@ -29,6 +29,7 @@ on:
       - 'deploy/release-manifest*.json'
       - 'deploy/database-release-*.json'
       - 'deploy/tests/**'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/test-install.yml'
   pull_request:
     paths:
@@ -54,6 +55,7 @@ on:
       - 'deploy/release-manifest*.json'
       - 'deploy/database-release-*.json'
       - 'deploy/tests/**'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/test-install.yml'
   workflow_dispatch:
 
@@ -84,7 +86,7 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
-          corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
+          corepack pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install pinned Haniel release contract
         shell: bash
@@ -151,7 +153,7 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
-          corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
+          corepack pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run isolated PostgreSQL database release contracts
         shell: bash
@@ -214,7 +216,7 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
-          corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
+          corepack pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Expose PostgreSQL 16+ client tools
         shell: pwsh

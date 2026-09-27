@@ -13,6 +13,7 @@ from haniel.core.release_manifest import ReleaseManifest
 
 from ci_prerequisite_contract import (
     CENTRAL_MANIFEST_PATH,
+    INSTALLER_PATH,
     INSTALL_WORKFLOW_PATH,
     STANDALONE_MANIFEST_PATH,
     WRITER_SOURCES_PATH,
@@ -42,6 +43,7 @@ class CiPrerequisiteStrictTest(unittest.TestCase):
             self.contract,
             load_json(WRITER_SOURCES_PATH),
             INSTALL_WORKFLOW_PATH.read_text(encoding="utf8"),
+            INSTALLER_PATH.read_text(encoding="utf-8-sig"),
         )
         assert_installed_haniel_lane(self.contract)
 

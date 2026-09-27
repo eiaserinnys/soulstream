@@ -67,7 +67,7 @@ export function createLiveTurnSummaryPipeline(options: {
   );
   const codexPath =
     options.overrides?.turnSummaryCodexPath ??
-    resolveCodexCliPath(processEnv)?.path;
+    resolveCodexCliPath(options.config.codex_cli_path, processEnv)?.path;
   if (codexPath === undefined) {
     options.warn(
       "Codex turn-summary provider disabled: CLI path was not resolved from CODEX_CLI_PATH, PATH, or HOME",

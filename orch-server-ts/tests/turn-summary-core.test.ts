@@ -363,12 +363,21 @@ describe("Codex turn summary provider", () => {
     writeFileSync(codexPath, "#!/bin/sh\n", "utf8");
     chmodSync(codexPath, 0o755);
 
-    expect(resolveCodexCliPath({
+    expect(resolveCodexCliPath(null, {
       HOME: home,
       PATH: join(home, "process-manager-bin"),
     })).toEqual({
       path: codexPath,
       source: "HOME_LOCAL_BIN",
+    });
+  });
+
+  it("uses the configured Codex CLI path before PATH discovery", () => {
+    expect(resolveCodexCliPath("/configured/codex", {
+      PATH: "/usr/bin",
+    })).toEqual({
+      path: "/configured/codex",
+      source: "CODEX_CLI_PATH",
     });
   });
 
