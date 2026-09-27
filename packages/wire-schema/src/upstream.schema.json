@@ -175,7 +175,7 @@
       "additionalProperties": false,
       "properties": {
         "host": { "const": "verified" },
-        "runner": { "enum": ["verified", "skipped"] },
+        "runner": { "const": "verified" },
         "env": { "const": "verified" },
         "executable": { "const": "verified" }
       }

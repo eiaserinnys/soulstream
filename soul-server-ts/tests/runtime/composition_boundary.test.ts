@@ -261,9 +261,6 @@ describe("worker composition boundary", () => {
     expect(workerComposition).not.toContain("ensureStableSessionOrderIndexInBackground");
     expect(workerComposition).not.toContain("env.DATABASE_URL");
     expect(workerComposition).not.toContain("interruptRunningSessionsForNode");
-    expect(workerComposition).toContain(
-      'runner: env.SOUL_RUNNER_PROCESS_ENABLED ? "verified" : "skipped"',
-    );
   });
 
   it("keeps every production module touched by the extraction below 500 lines", () => {

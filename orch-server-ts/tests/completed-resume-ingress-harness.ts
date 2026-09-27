@@ -286,24 +286,24 @@ export async function observeCompletedResumeIngress(
       activation?.resolve();
     }),
   };
-  const dispatcher = new CommandDispatcher(
-    async (frame: unknown) => {
+  const dispatcher = new CommandDispatcher({
+    send: async (frame: unknown) => {
       registry.receiveNodeMessage(
         { nodeId: NODE_ID, connectionId },
         frame as Record<string, unknown>,
       );
     },
     logger,
-    NODE_ID,
-    agentRegistry as never,
-    taskManager as never,
-    taskExecutor as never,
-    {
+    nodeId: NODE_ID,
+    agentRegistry: agentRegistry as never,
+    taskManager: taskManager as never,
+    taskExecutor: taskExecutor as never,
+    attachmentStore: {
       save: vi.fn(),
       getPath: vi.fn(),
       delete: vi.fn(),
     } as never,
-  );
+  });
   transports.attach({
     nodeId: NODE_ID,
     connectionId,
