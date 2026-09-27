@@ -11,6 +11,7 @@ import type { RunnerControlFrame } from "../runner/frame_protocol.js";
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
 import { buildClaudeCompactRunOptions, consumeClaudeCompact } from "./claude_sdk_compact.js";
 import { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
+import { isMissingSpawnExecutableError } from "./claude_spawn_errors.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 import { ClaudePostResultDrain } from "./claude_sdk_drain.js";
 import {
@@ -487,14 +488,4 @@ export class ClaudeSdkClient implements ClaudeClient {
     input.close();
     if (this.activeInput === input) this.activeInput = null;
   }
-}
-
-function isMissingSpawnExecutableError(
-  err: unknown,
-): err is NodeJS.ErrnoException & { syscall: string } {
-  if (!err || typeof err !== "object") return false;
-  const candidate = err as NodeJS.ErrnoException;
-  return candidate.code === "ENOENT"
-    && typeof candidate.syscall === "string"
-    && candidate.syscall.startsWith("spawn ");
 }
