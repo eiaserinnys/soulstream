@@ -196,19 +196,10 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
   async deleteOnceJob(jobId: string): Promise<boolean> {
     const sql = await this.resolveSql();
     return await sql.begin(async (transaction) => {
-      const jobs = await transaction<Row[]>`
-        SELECT job_id FROM recurring_jobs
-        WHERE job_id = ${jobId} AND schedule_kind = 'once'
-        FOR UPDATE
-      `;
+      const jobs = await transaction<Row[]>`SELECT job_id FROM recurring_jobs WHERE job_id = ${jobId} AND schedule_kind = 'once' FOR UPDATE`;
       if (!jobs[0]) return false;
-
       await transaction<Row[]>`DELETE FROM recurring_job_runs WHERE job_id = ${jobId}`;
-      const deleted = await transaction<Row[]>`
-        DELETE FROM recurring_jobs
-        WHERE job_id = ${jobId} AND schedule_kind = 'once'
-        RETURNING job_id
-      `;
+      const deleted = await transaction<Row[]>`DELETE FROM recurring_jobs WHERE job_id = ${jobId} AND schedule_kind = 'once' RETURNING job_id`;
       return deleted.length > 0;
     });
   }

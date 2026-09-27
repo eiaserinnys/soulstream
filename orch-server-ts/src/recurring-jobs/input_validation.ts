@@ -28,6 +28,11 @@ export function validation(message: string): RecurringJobError {
   return new RecurringJobError("VALIDATION", message, 422);
 }
 
+export function positiveLateRunWindowSeconds(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 1) throw validation("late_run_window_seconds must be a positive integer");
+  return value;
+}
+
 export function compileSchedule(input: {
   timezone: string;
   scheduleExpressions: readonly string[];
