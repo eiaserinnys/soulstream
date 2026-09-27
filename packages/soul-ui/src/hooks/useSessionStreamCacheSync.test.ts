@@ -22,7 +22,7 @@ function Harness() {
   useSessionStreamCacheSync({
     enabled: true,
     urlBuilder: () => "/api/sessions/stream",
-    queryKey: ["sessions", "all", "feed", null],
+    queryKey: ["sessions", "feed", null],
   });
   return null;
 }
@@ -53,7 +53,7 @@ describe("useSessionStreamCacheSync", () => {
     root = createRoot(container);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
-    const queryKey = ["sessions", "all", "feed", null] as const;
+    const queryKey = ["sessions", "feed", null] as const;
     queryClient.setQueryData(queryKey, {
       pages: [{
         sessions: [{
@@ -99,7 +99,7 @@ describe("useSessionStreamCacheSync", () => {
     root = createRoot(container);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
-    const queryKey = ["sessions", "all", "feed", null] as const;
+    const queryKey = ["sessions", "feed", null] as const;
     const staleSession = {
       agentSessionId: "session-a",
       sessionType: "claude" as const,
@@ -189,7 +189,7 @@ describe("useSessionStreamCacheSync", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const queryKey = ["sessions", "all", "feed", null] as const;
+    const queryKey = ["sessions", "feed", null] as const;
     const currentSession = {
       agentSessionId: "session-a",
       sessionType: "claude" as const,
@@ -276,8 +276,8 @@ describe("useSessionStreamCacheSync", () => {
     expect(getChildFolders(catalog?.folders ?? [], "parent")).toEqual([]);
     expect(getChildFolders(catalog?.folders ?? [], null).map((folder) => folder.id)).toEqual(["parent", "child"]);
     const predicate = invalidateQueries.mock.calls[0]?.[0]?.predicate;
-    expect(predicate?.({ queryKey: ["sessions", "all", "ids", null, ["session-a"]] } as never)).toBe(false);
-    expect(predicate?.({ queryKey: ["sessions", "all", "feed", null] } as never)).toBe(true);
+    expect(predicate?.({ queryKey: ["sessions", "ids", null, ["session-a"]] } as never)).toBe(false);
+    expect(predicate?.({ queryKey: ["sessions", "feed", null] } as never)).toBe(true);
   });
 
   it("preserves bound and explicit-null project page ids from catalog snapshots", () => {
@@ -438,7 +438,7 @@ describe("useSessionStreamCacheSync", () => {
       useSessionStreamCacheSync({
         enabled: true,
         urlBuilder: () => "/api/sessions/stream",
-        queryKey: ["sessions", "all", "feed", null],
+        queryKey: ["sessions", "feed", null],
         onEventIdAdvance,
         onStreamEvent,
       });

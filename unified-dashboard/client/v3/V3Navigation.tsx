@@ -53,6 +53,7 @@ export function V3Navigation({
   dates,
   selectedDate,
   folders,
+  catalogLoadError = null,
   selectedFolderId,
   starredTasks,
   starredTasksHasMore,
@@ -77,6 +78,7 @@ export function V3Navigation({
   dates: readonly PlannerDateNavItem[];
   selectedDate: string;
   folders: readonly CatalogFolder[];
+  catalogLoadError?: string | null;
   selectedFolderId: string | null;
   starredTasks: readonly StarredPlannerTask[];
   starredTasksHasMore: boolean;
@@ -241,7 +243,8 @@ export function V3Navigation({
           }}
           onReorder={reorderProjects}
         />
-        {folders.length === 0 ? <p>프로젝트가 없습니다.</p> : null}
+        {catalogLoadError ? <p className="v3-project-star-error" role="alert">{catalogLoadError}</p> : null}
+        {!catalogLoadError && folders.length === 0 ? <p>프로젝트가 없습니다.</p> : null}
         <DashboardIconCap
           label="새 프로젝트"
           className="v3-new-project-trigger"

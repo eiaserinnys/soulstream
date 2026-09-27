@@ -1,7 +1,6 @@
 {
   "name": "soul-desktop",
   "private": true,
-  "version": "0.2.5",
   "type": "module",
   "scripts": {
     "dev": "vite",

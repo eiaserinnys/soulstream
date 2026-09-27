@@ -7,6 +7,7 @@
     "core:default",
     "store:default",
     "updater:default",
-    "process:default"
+    "process:default",
+    "allow-set-dashboard-origin"
   ]
 }

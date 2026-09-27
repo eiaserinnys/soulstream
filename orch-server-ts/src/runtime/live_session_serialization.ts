@@ -90,7 +90,6 @@ const IDENTITY_BEARING_SOURCES = new Set([
   "slack",
   "soul-app",
   "channel_observer",
-  "trello_watcher",
   "llm",
 ]);
 

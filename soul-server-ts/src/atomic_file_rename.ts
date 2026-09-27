@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { renameSync } from "node:fs";
-import { rename } from "node:fs/promises";
+import { rename, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 export const TRANSIENT_RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80, 160] as const;
@@ -14,6 +15,20 @@ export interface SyncRenameRetryOptions {
   renameFile?: (sourcePath: string, destinationPath: string) => void;
   sleep?: (delayMs: number) => void;
   retryDelaysMs?: readonly number[];
+}
+
+export async function writeFileAtomically(
+  path: string,
+  contents: string,
+  mode = 0o600,
+): Promise<void> {
+  const temporaryPath = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  await writeFile(temporaryPath, contents, {
+    encoding: "utf8",
+    flag: "wx",
+    mode,
+  });
+  await renameWithTransientRetry(temporaryPath, path);
 }
 
 export async function renameWithTransientRetry(

@@ -15,6 +15,7 @@ import {
   resolveProfilePreset,
   type AdvertisedAgent,
   type AdvertisedModelPreset,
+  type ReasoningEffort,
 } from "./shared/schema.js";
 
 /** The settings that decide what the picker may offer. */
@@ -34,7 +35,7 @@ export interface EffortPickerView {
   note: string;
 }
 
-const EFFORT_LABELS: Record<string, string> = {
+const EFFORT_LABELS: Record<ReasoningEffort, string> = {
   minimal: "Minimal",
   low: "Low",
   medium: "Medium",
@@ -92,15 +93,21 @@ export async function resolveEffortPickerView(
   const headers: Record<string, string> = scope.bearerToken
     ? { Authorization: `Bearer ${scope.bearerToken}` }
     : {};
-  let efforts: string[] = [];
-  let presetDefault: string | undefined;
+  let efforts: ReasoningEffort[] = [];
+  let presetDefault: ReasoningEffort | undefined;
   let scopeLabel = "";
   let loadFailed = false;
   let presetUnresolved = false;
   try {
     const [presetsResponse, agentsResponse] = await Promise.all([
-      fetch(buildModelPresetsEndpoint(scope.baseUrl, scope.nodeId), { headers }),
-      fetch(buildAgentsEndpoint(scope.baseUrl, scope.nodeId), { headers }),
+      fetch(buildModelPresetsEndpoint(scope.baseUrl, scope.nodeId), {
+        credentials: "include",
+        headers,
+      }),
+      fetch(buildAgentsEndpoint(scope.baseUrl, scope.nodeId), {
+        credentials: "include",
+        headers,
+      }),
     ]);
     if (!presetsResponse.ok) throw new Error(`HTTP ${presetsResponse.status}`);
     const presetBody = (await presetsResponse.json()) as {
@@ -141,12 +148,13 @@ export async function resolveEffortPickerView(
   for (const effort of efforts) {
     options.push({ value: effort, label: EFFORT_LABELS[effort] ?? effort });
   }
-  const selectedUnsupported = Boolean(selected) && !efforts.includes(selected);
+  const selectedUnsupported = Boolean(selected)
+    && (!isKnownEffort(selected) || !efforts.includes(selected));
   if (selectedUnsupported) {
     // Keep the value in the list so the user sees what must be re-chosen.
     options.push({
       value: selected,
-      label: `${EFFORT_LABELS[selected] ?? selected} (unsupported)`,
+      label: `${labelForEffort(selected)} (unsupported)`,
     });
   }
 
@@ -162,6 +170,14 @@ export async function resolveEffortPickerView(
       hasEfforts: efforts.length > 0,
     }),
   };
+}
+
+function labelForEffort(effort: string): string {
+  return isKnownEffort(effort) ? EFFORT_LABELS[effort] : effort;
+}
+
+function isKnownEffort(effort: string): effort is ReasoningEffort {
+  return Object.prototype.hasOwnProperty.call(EFFORT_LABELS, effort);
 }
 
 function pickerNote(state: {

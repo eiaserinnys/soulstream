@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { TaskAssigneeInput } from "../../work-task/task_models.js";
 import type { TaskService } from "../../work-task/task_service.js";
 import type { TaskOperationTargetKind } from "../../db/session_db_types.js";
-import { errorResult, jsonResult } from "../result.js";
+import { errorResultFromError, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
 import {
@@ -79,7 +79,7 @@ export async function mutation(
       ),
     );
   } catch (err) {
-    return errorResult(errorMessage(err));
+    return errorResultFromError(err);
   }
 }
 

@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSessionProvider } from "./useSessionProvider";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type {
-  EventTreeNode,
   SoulSSEEvent,
 } from "../shared/types";
 import type {
@@ -36,10 +35,6 @@ class FakeSessionProvider implements SessionStorageProvider {
 
   async fetchFolderCounts(): Promise<Record<string, number>> {
     return {};
-  }
-
-  async fetchCards(_sessionKey: string): Promise<EventTreeNode[]> {
-    return [];
   }
 
   subscribe(
@@ -205,7 +200,7 @@ describe("useSessionProvider", () => {
       createdAt: "2026-05-23T00:00:00.000Z",
       reviewState: "needs_review" as const,
     };
-    const queryKey = ["sessions", "all", "feed", null] as const;
+    const queryKey = ["sessions", "feed", null] as const;
     queryClient.setQueryData(queryKey, {
       pages: [{ sessions: [completed], total: 1 }],
       pageParams: [0],

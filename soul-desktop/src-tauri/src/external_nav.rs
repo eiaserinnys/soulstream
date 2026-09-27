@@ -35,7 +35,7 @@ pub struct NavigationDecision {
 /// 외부 HTTP(S) navigation인지 판단한다.
 ///
 /// - scheme이 `http` 또는 `https`가 아니면 `false`를 반환한다(외부 분류 대상 아님).
-/// - Tauri v2의 packaged app origin(`http://tauri.localhost`)은 내부 앱 URL로 취급한다.
+/// - Tauri app origin과 debug 전용 Vite URL(`http://localhost:1420`)은 내부로 취급한다.
 /// - HTTP(S)이면서 `allowed_origins`의 어느 항목과도 origin이 일치하지 않으면 `true`다.
 pub fn is_external_http(url: &Url, allowed_origins: &[Url]) -> bool {
     if !matches!(url.scheme(), "http" | "https") {
@@ -117,8 +117,22 @@ pub fn should_open_new_window_in_external_browser(
 /// Tauri v1/v2와 플랫폼 차이를 모두 허용하기 위해 legacy `tauri:` scheme과
 /// v2 custom protocol host인 `tauri.localhost`를 함께 내부로 본다.
 pub fn is_tauri_app_url(url: &Url) -> bool {
-    url.scheme() == "tauri"
-        || (matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost"))
+    if url.scheme() == "tauri"
+        || (matches!(url.scheme(), "http" | "https")
+            && url.host_str() == Some("tauri.localhost"))
+    {
+        return true;
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        return url.scheme() == "http"
+            && url.host_str() == Some("localhost")
+            && url.port_or_known_default() == Some(1420);
+    }
+
+    #[cfg(not(debug_assertions))]
+    false
 }
 
 /// 두 URL의 origin이 동일한지 비교한다(scheme + host + port).
@@ -192,7 +206,16 @@ mod tests {
         assert!(is_tauri_app_url(&url(
             "https://tauri.localhost/assets/app.js"
         )));
-        assert!(!is_tauri_app_url(&url("http://localhost:1420/")));
+        assert_eq!(
+            is_tauri_app_url(&url("http://localhost:1420/")),
+            cfg!(debug_assertions),
+        );
+    }
+
+    #[test]
+    fn dev_server_is_internal_only_in_debug_builds() {
+        let dev_url = url("http://localhost:1420/@vite/client");
+        assert_eq!(is_external_http(&dev_url, &[]), !cfg!(debug_assertions));
     }
 
     #[test]

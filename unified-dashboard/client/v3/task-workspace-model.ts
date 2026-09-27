@@ -46,14 +46,11 @@ export interface WorkspaceVisibility {
   chatOpen: boolean;
 }
 
-export type WorkspaceInspectorKind = "document" | "chat" | "empty";
-
 export interface TaskWorkspaceChatVisibility {
   hasActiveSession: boolean;
   hasTask: boolean;
   boardOpen: boolean;
   chatOpen: boolean;
-  inspectorKind: WorkspaceInspectorKind;
   mobileMode: boolean;
   mobileChatTab: boolean;
 }
@@ -82,30 +79,21 @@ export function reduceWorkspaceEscape(state: WorkspaceVisibility): WorkspaceVisi
   return { ...state, handled: false };
 }
 
-export function workspaceInspectorKind(
-  activeBoardDocumentId: string | null,
-  activeSessionKey: string | null,
-): WorkspaceInspectorKind {
-  if (activeBoardDocumentId) return "document";
-  return activeSessionKey ? "chat" : "empty";
-}
-
 /** Whether a mounted V3 ChatView is actually visible and may own detail I/O. */
 export function isTaskWorkspaceChatVisible({
   hasActiveSession,
   hasTask,
   boardOpen,
   chatOpen,
-  inspectorKind,
   mobileMode,
   mobileChatTab,
 }: TaskWorkspaceChatVisibility): boolean {
   if (
     !hasActiveSession
-    || (mobileMode && (!mobileChatTab || inspectorKind === "document"))
+    || (mobileMode && !mobileChatTab)
   ) return false;
   if (!hasTask || boardOpen) return true;
-  return chatOpen && inspectorKind === "chat";
+  return chatOpen;
 }
 
 export function buildRunTree(

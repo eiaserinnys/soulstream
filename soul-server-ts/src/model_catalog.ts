@@ -92,6 +92,8 @@ export type EffortCapabilities = Partial<
 
 export class ModelCatalog {
   private lastSuccessfulConfig: ModelCatalogConfig | undefined;
+  private lastReadSignature: string | null = null;
+  private lastReadFailure: unknown = null;
 
   constructor(
     private readonly catalogPath: string,
@@ -168,23 +170,45 @@ export class ModelCatalog {
   }
 
   private read(): ModelCatalogConfig {
+    let fileStat: fs.Stats;
+    try {
+      fileStat = fs.statSync(this.catalogPath);
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        this.lastReadSignature = null;
+        this.lastReadFailure = null;
+        this.lastSuccessfulConfig ??= { presets: [] };
+        return this.lastSuccessfulConfig;
+      }
+      return this.lastSuccessfulOrThrow(error);
+    }
+    const signature = `${fileStat.dev}:${fileStat.ino}:${fileStat.size}:${fileStat.mtimeMs}`;
+    if (signature === this.lastReadSignature) {
+      if (this.lastReadFailure !== null) {
+        if (this.lastSuccessfulConfig) return this.lastSuccessfulConfig;
+        throw this.lastReadFailure;
+      }
+      return this.lastSuccessfulConfig!;
+    }
+
     let raw: string;
     try {
       raw = fs.readFileSync(this.catalogPath, "utf-8");
     } catch (error) {
-      if (isMissingFileError(error)) {
-        const empty = { presets: [] };
-        this.lastSuccessfulConfig ??= empty;
-        return empty;
-      }
+      this.lastReadSignature = signature;
+      this.lastReadFailure = error;
       return this.lastSuccessfulOrThrow(error);
     }
     try {
       const config = parseModelCatalogYaml(raw);
       this.assertDefaultsAreDeliverable(config);
       this.lastSuccessfulConfig = config;
+      this.lastReadSignature = signature;
+      this.lastReadFailure = null;
       return config;
     } catch (error) {
+      this.lastReadSignature = signature;
+      this.lastReadFailure = error;
       return this.lastSuccessfulOrThrow(error);
     }
   }

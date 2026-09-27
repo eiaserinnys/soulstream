@@ -19,16 +19,8 @@ use external_nav::{
 type OriginState = Arc<Mutex<Option<Url>>>;
 type AuthFlowState = Arc<Mutex<bool>>;
 
-const WEBVIEW2_NO_CACHE_ARGS: &str =
-    "--disable-http-cache --disk-cache-size=1 --media-cache-size=1";
-
 const DEPRECATED_API_HARD_RELOAD_SCRIPT: &str = concat!(
     r#"(function () {
-  const cacheParam = "soul_desktop_cache_bust";
-  const reloadParam = "soul_desktop_hard_reload";
-  const cacheValue = "v"#,
-    env!("CARGO_PKG_VERSION"),
-    r#"";
   const reloadSessionKey = "soul_desktop_deprecated_api_reload_at";
   const minReloadIntervalMs = 10000;
 
@@ -37,20 +29,13 @@ const DEPRECATED_API_HARD_RELOAD_SCRIPT: &str = concat!(
       && window.location.hostname !== "tauri.localhost";
   }
 
-  function buildReloadUrl() {
-    const next = new URL(window.location.href);
-    next.searchParams.set(cacheParam, cacheValue);
-    next.searchParams.set(reloadParam, String(Date.now()));
-    return next.toString();
-  }
-
   function triggerHardReload() {
     if (!shouldRunInThisLocation()) return;
     const now = Date.now();
     const last = Number(sessionStorage.getItem(reloadSessionKey) || "0");
     if (now - last < minReloadIntervalMs) return;
     sessionStorage.setItem(reloadSessionKey, String(now));
-    window.location.replace(buildReloadUrl());
+    window.location.reload();
   }
 
   const originalFetch = window.fetch;
@@ -148,7 +133,6 @@ pub fn run() {
                 .expect("main window config missing");
 
             WebviewWindowBuilder::from_config(app, &main_window_config)?
-                .additional_browser_args(WEBVIEW2_NO_CACHE_ARGS)
                 .initialization_script(DEPRECATED_API_HARD_RELOAD_SCRIPT)
                 .on_navigation(move |url| {
                     let allowed = snapshot_allowed(&origin_state_nav);

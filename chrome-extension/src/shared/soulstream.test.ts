@@ -57,4 +57,16 @@ describe("soulstream request helpers", () => {
       detail: { error: { message: "인증이 필요합니다" } },
     }, "")).toBe("인증이 필요합니다");
   });
+
+  it("reports a non-JSON gateway error body after one body read", async () => {
+    const response = new Response("upstream gateway unavailable", {
+      status: 502,
+      headers: { "Content-Type": "text/plain" },
+    });
+    const fetchImpl = vi.fn(async () => response) as unknown as FetchLike;
+
+    await expect(sendSessionRequest(config, "prompt", fetchImpl)).rejects.toThrow(
+      "upstream gateway unavailable",
+    );
+  });
 });

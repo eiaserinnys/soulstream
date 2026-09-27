@@ -73,6 +73,24 @@ afterEach(() => {
 });
 
 describe("effort picker scope handling", () => {
+  it("includes same-origin cookies in both catalog requests", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => ({
+      ok: true,
+      json: async () => (String(input).includes("model-presets")
+        ? { model_presets: [OPUS, ASTRA] }
+        : { agents: AGENTS }),
+    } as Response));
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await resolveEffortPickerView(scope("roselin"), "");
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls.map(([, init]) => init?.credentials)).toEqual([
+      "include",
+      "include",
+    ]);
+  });
+
   it("keeps the saved value on the initial load", async () => {
     immediateFetch();
     const view = await resolveEffortPickerView(scope("roselin"), "low");

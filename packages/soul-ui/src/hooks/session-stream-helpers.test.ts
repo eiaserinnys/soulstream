@@ -671,7 +671,7 @@ describe("reconcileSessionPagesForCatalog", () => {
   it("folder cache에서 다른 폴더로 이동한 세션을 즉시 제거한다", () => {
     const result = reconcileSessionPagesForCatalog(
       makeData([[makeSession("s-a"), makeSession("s-b")]]),
-      ["sessions", "all", "folder", "folder-A"],
+      ["sessions", "folder", "folder-A"],
       {
         folders: [
           { id: "folder-A", name: "A", sortOrder: 0 },
@@ -698,7 +698,7 @@ describe("reconcileSessionPagesForCatalog", () => {
           makeSession("llm", { sessionType: "llm" }),
         ],
       ]),
-      ["sessions", "all", "feed", null],
+      ["sessions", "feed", null],
       {
         folders: [
           { id: "visible-folder", name: "Visible", sortOrder: 0 },
@@ -834,16 +834,15 @@ describe("shared normalizeSessionStatus", () => {
 
 // ============================================================
 // F-A(2026-05-17): SSE session_created 캐시 적용 predicate 검증.
-// queryKey 구조 ["sessions", typeFilter, viewMode, folderId]별로 다음 invariant 검증:
-//   - typeFilter "all"은 모든 sessionType 통과
-//   - typeFilter !== "all" + 불일치 → 제외
+// queryKey 구조 ["sessions", viewMode, folderId]별로 다음 invariant 검증:
+//   - "all" 범위는 모든 sessionType 통과
 //   - viewMode "feed" 캐시(folderId=null)는 feed-eligible 폴더 세션만 통과
 //   - viewMode "folder" 캐시는 같은 folderId만 통과, 다른 폴더 / undefined → 제외
 describe("shouldApplySessionCreatedToCache", () => {
   it("ids 캐시는 참조된 session_created만 통과시킨다", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "all", "ids", null, ["session-a"]],
+        ["sessions", "ids", null, ["session-a"]],
         "claude",
         null,
         null,
@@ -852,7 +851,7 @@ describe("shouldApplySessionCreatedToCache", () => {
     ).toBe(true);
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "all", "ids", null, ["session-a"]],
+        ["sessions", "ids", null, ["session-a"]],
         "claude",
         null,
         null,
@@ -861,10 +860,10 @@ describe("shouldApplySessionCreatedToCache", () => {
     ).toBe(false);
   });
 
-  it("feed 캐시(typeFilter=all, viewMode=feed, folderId=null)는 모든 세션 통과", () => {
+  it("feed 캐시는 모든 세션 통과", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "all", "feed", null],
+        ["sessions", "feed", null],
         "claude",
         "folder-X",
       ),
@@ -874,7 +873,7 @@ describe("shouldApplySessionCreatedToCache", () => {
   it("feed 캐시는 catalog상 excludeFromFeed 폴더의 session_created를 제외한다", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "all", "feed", null],
+        ["sessions", "feed", null],
         "claude",
         "hidden-folder",
         {
@@ -895,7 +894,7 @@ describe("shouldApplySessionCreatedToCache", () => {
   it("feed 캐시는 catalog상 일반 폴더의 session_created를 통과시킨다", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "all", "feed", null],
+        ["sessions", "feed", null],
         "claude",
         "visible-folder",
         {
@@ -913,20 +912,20 @@ describe("shouldApplySessionCreatedToCache", () => {
     ).toBe(true);
   });
 
-  it("typeFilter='claude' 캐시는 sessionType=claude 통과", () => {
+  it("feed cache accepts claude sessions", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "claude", "feed", null],
+        ["sessions", "feed", null],
         "claude",
         undefined,
       ),
     ).toBe(true);
   });
 
-  it("typeFilter='claude' 캐시는 sessionType=llm 제외", () => {
+  it("feed cache excludes llm sessions", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "claude", "feed", null],
+        ["sessions", "feed", null],
         "llm",
         undefined,
       ),
@@ -936,7 +935,7 @@ describe("shouldApplySessionCreatedToCache", () => {
   it("folder=folderA 캐시는 같은 folderId 세션 통과", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "all", "folder", "folder-A"],
+        ["sessions", "folder", "folder-A"],
         "claude",
         "folder-A",
       ),
@@ -946,7 +945,7 @@ describe("shouldApplySessionCreatedToCache", () => {
   it("folder=folderA 캐시는 다른 folderB 세션 제외 (P0 핵심 — F-A 회귀 차단)", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "all", "folder", "folder-A"],
+        ["sessions", "folder", "folder-A"],
         "claude",
         "folder-B",
       ),
@@ -956,7 +955,7 @@ describe("shouldApplySessionCreatedToCache", () => {
   it("folder 캐시는 folderId가 undefined인 세션(assignment 불명) 제외", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "all", "folder", "folder-A"],
+        ["sessions", "folder", "folder-A"],
         "claude",
         undefined,
       ),
@@ -966,35 +965,21 @@ describe("shouldApplySessionCreatedToCache", () => {
   it("feed 캐시(folderId=null)는 assignment 불명 세션도 통과 (피드 표시 의도)", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "all", "feed", null],
+        ["sessions", "feed", null],
         "claude",
         undefined,
       ),
     ).toBe(true);
   });
 
-  it("typeFilter + folder 둘 다 적용 — 둘 다 일치할 때만 통과", () => {
+  it("folder cache membership follows folder assignment, not session type", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "claude", "folder", "folder-A"],
-        "claude",
-        "folder-A",
-      ),
-    ).toBe(true);
-    expect(
-      shouldApplySessionCreatedToCache(
-        ["sessions", "claude", "folder", "folder-A"],
+        ["sessions", "folder", "folder-A"],
         "llm",
         "folder-A",
       ),
-    ).toBe(false);
-    expect(
-      shouldApplySessionCreatedToCache(
-        ["sessions", "claude", "folder", "folder-A"],
-        "claude",
-        "folder-B",
-      ),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
@@ -1017,7 +1002,7 @@ describe("countLoadedSessionsForQuery", () => {
     expect(
       countLoadedSessionsForQuery(
         pages,
-        ["sessions", "all", "feed", null],
+        ["sessions", "feed", null],
         {
           folders: [
             {
@@ -1052,7 +1037,7 @@ describe("countLoadedSessionsForQuery", () => {
     expect(
       countLoadedSessionsForQuery(
         pages,
-        ["sessions", "all", "feed", null],
+        ["sessions", "feed", null],
         { folders: [], sessions: {} },
       ),
     ).toBe(2);

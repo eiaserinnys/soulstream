@@ -42,6 +42,27 @@ function remote(overrides: Record<string, unknown> = {}) {
 }
 
 describe("AgentProfileSource", () => {
+  it("refreshes profiles on a short TTL without blocking a resolved lookup", async () => {
+    const files = await fixture();
+    let nowMs = Date.parse("2026-08-01T00:00:00.000Z");
+    const fetchRuntime = vi.fn(async () => ({ profiles: [remote()] }));
+    const source = new AgentProfileSource({
+      ...files,
+      runtimeUrl: "http://orch/api/agent-profiles/runtime",
+      logger,
+      fetchRuntime,
+      now: () => new Date(nowMs),
+    });
+
+    await source.resolve("roselin");
+    await source.resolve("roselin");
+    expect(fetchRuntime).toHaveBeenCalledTimes(1);
+
+    nowMs += 60_000;
+    await source.resolve("roselin");
+    await vi.waitFor(() => expect(fetchRuntime).toHaveBeenCalledTimes(2));
+  });
+
   it("rebuilds DB overlays after an unrelated YAML profile apply", async () => {
     const files = await fixture();
     const yaml = await readFile(files.agentsConfigPath, "utf8");

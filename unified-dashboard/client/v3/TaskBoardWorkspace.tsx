@@ -76,6 +76,7 @@ export function TaskBoardWorkspace({
   mobileMode,
   mobileTab,
   historyEnabled,
+  sessionStreamActive,
   sessionConnectionStatus,
   reconnectSession,
   taskMoveTargets,
@@ -106,6 +107,7 @@ export function TaskBoardWorkspace({
   mobileMode: boolean;
   mobileTab: MobilePlannerTab;
   historyEnabled: boolean;
+  sessionStreamActive: boolean;
   sessionConnectionStatus: SessionProviderConnectionStatus;
   reconnectSession(): void;
   taskMoveTargets: readonly PlannerTask[];
@@ -558,7 +560,7 @@ export function TaskBoardWorkspace({
             <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>
               {activeSession ? (STATUS_CONFIG[activeSession.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}
             </span>
-            {activeSession ? <SessionStreamStatus status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
+            {activeSession ? <SessionStreamStatus active={sessionStreamActive} status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
             {activeSession ? (
               <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
             ) : null}
@@ -571,7 +573,6 @@ export function TaskBoardWorkspace({
               <ChatView
                 chatInputDisabled={chatInputDisabled}
                 fileUploadUrl={fileUploadUrl}
-                showHeader={false}
                 historyEnabled={historyEnabled}
               />
             ) : (

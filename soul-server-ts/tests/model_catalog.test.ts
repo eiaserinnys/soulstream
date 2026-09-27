@@ -111,7 +111,7 @@ presets:
     );
   });
 
-  it("re-reads the yaml for each resolution", () => {
+  it("caches an unchanged catalog and reloads it after its mtime changes", () => {
     withTempCatalog(
       `
 presets:
@@ -122,7 +122,10 @@ presets:
 `,
       (catalogPath) => {
         const catalog = new ModelCatalog(catalogPath);
+        const readFile = vi.spyOn(fs, "readFileSync");
         expect(catalog.resolve("claude-fable").model).toBe("fable");
+        expect(catalog.resolve("claude-fable").model).toBe("fable");
+        expect(readFile.mock.calls.filter(([path]) => path === catalogPath)).toHaveLength(1);
 
         fs.writeFileSync(
           catalogPath,
@@ -135,8 +138,23 @@ presets:
 `,
           "utf-8",
         );
+        const changedMtime = fs.statSync(catalogPath).mtimeMs + 2_000;
+        fs.utimesSync(catalogPath, changedMtime / 1_000, changedMtime / 1_000);
 
         expect(catalog.resolve("claude-fable").model).toBe("claude-fable-5[1m]");
+        expect(readFile.mock.calls.filter(([path]) => path === catalogPath)).toHaveLength(2);
+        readFile.mockRestore();
+      },
+    );
+  });
+
+  it("keeps the last successful catalog when the file is temporarily missing", () => {
+    withTempCatalog(
+      `\npresets:\n  - id: claude-opus\n    label: Claude - Opus\n    backend: claude\n    model: opus\n`,
+      (catalogPath) => {
+        const catalog = loadModelCatalog(catalogPath);
+        fs.unlinkSync(catalogPath);
+        expect(catalog.list()).toMatchObject([{ id: "claude-opus", model: "opus" }]);
       },
     );
   });
@@ -201,6 +219,7 @@ presets:
           }),
           "Model catalog reload failed; using the last successful catalog",
         );
+        expect(error).toHaveBeenCalledTimes(1);
       },
     );
   });

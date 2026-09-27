@@ -85,6 +85,7 @@ describe("V3Navigation frame contract", () => {
         dates={[]}
         selectedDate="2026-07-15"
         folders={[]}
+        catalogLoadError="목록 불러오기 실패"
         selectedFolderId={null}
         starredTasks={[{
           id: "starred-a",
@@ -120,6 +121,8 @@ describe("V3Navigation frame contract", () => {
     expect(html).toContain('data-testid="v3-starred-task-row-starred-a"');
     expect(html).toContain('aria-label="중요 작업 중요 작업 A 순서 변경"');
     expect(html).toContain('data-testid="v3-load-more-starred-tasks"');
+    expect(html).toContain('role="alert">목록 불러오기 실패</p>');
+    expect(html).not.toContain("프로젝트가 없습니다.");
   });
 
   it("opens the existing task context menu from the drag handle", () => {

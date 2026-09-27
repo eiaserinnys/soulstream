@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import { renameWithTransientRetrySync } from "./atomic_file_rename.js";
+
 type MaybePromise<T> = T | Promise<T>;
 
 export type CommentPreservation = "not_preserved";
@@ -301,7 +303,7 @@ export class ConfigStore<TConfig> {
       } catch {
         // New files keep Node's default mode.
       }
-      fs.renameSync(tmp, this.actualConfigPath);
+      renameWithTransientRetrySync(tmp, this.actualConfigPath);
     } catch (err) {
       fs.rmSync(tmp, { force: true });
       throw err;

@@ -186,7 +186,6 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().activeSessionKey).toBe("sess-abc");
       expect(useDashboardStore.getState().tree).toBeNull();
       expect(useDashboardStore.getState().lastEventId).toBe(0);
-      expect(useDashboardStore.getState().selectedCardId).toBeNull();
     });
 
     it("should clear active session when set to null", () => {
@@ -256,36 +255,6 @@ describe("dashboard-store", () => {
       expect(state.activeSessionKey).toBe("sess-b");
       expect(state.selectedFolderId).toBe("folder-a");
       expect(state.viewMode).toBe("folder");
-    });
-  });
-
-  // === 카드 선택 ===
-
-  describe("selectCard", () => {
-    it("should select and deselect card", () => {
-      useDashboardStore.getState().selectCard("card-1");
-      expect(useDashboardStore.getState().selectedCardId).toBe("card-1");
-
-      useDashboardStore.getState().selectCard(null);
-      expect(useDashboardStore.getState().selectedCardId).toBeNull();
-    });
-
-    it("should switch from chat to detail tab when selecting a card", () => {
-      useDashboardStore.getState().setActiveRightTab("chat");
-      useDashboardStore.getState().selectCard("card-1");
-      expect(useDashboardStore.getState().activeRightTab).toBe("detail");
-    });
-
-    it("should NOT switch from info to detail tab when selecting a card", () => {
-      useDashboardStore.getState().setActiveRightTab("info");
-      useDashboardStore.getState().selectCard("card-1");
-      expect(useDashboardStore.getState().activeRightTab).toBe("info");
-    });
-
-    it("should NOT switch tab when already on detail", () => {
-      useDashboardStore.getState().setActiveRightTab("detail");
-      useDashboardStore.getState().selectCard("card-1");
-      expect(useDashboardStore.getState().activeRightTab).toBe("detail");
     });
   });
 
@@ -657,72 +626,6 @@ describe("dashboard-store", () => {
     });
   });
 
-  // === 이벤트 노드 선택 ===
-
-  describe("selectEventNode", () => {
-    it("should set selectedEventNodeData and clear card/node selection", () => {
-      useDashboardStore.getState().selectCard("card-1", "node-1");
-      expect(useDashboardStore.getState().selectedCardId).toBe("card-1");
-      expect(useDashboardStore.getState().selectedNodeId).toBe("node-1");
-
-      const eventNodeData = {
-        nodeType: "user" as const,
-        label: "User Message",
-        content: "Hello world",
-      };
-      useDashboardStore.getState().selectEventNode(eventNodeData);
-
-      const state = useDashboardStore.getState();
-      expect(state.selectedEventNodeData).toEqual(eventNodeData);
-      expect(state.selectedCardId).toBeNull();
-      expect(state.selectedNodeId).toBeNull();
-    });
-
-    it("should handle intervention node data", () => {
-      const interventionData = {
-        nodeType: "intervention" as const,
-        label: "Operator",
-        content: "Please stop",
-      };
-      useDashboardStore.getState().selectEventNode(interventionData);
-
-      const state = useDashboardStore.getState();
-      expect(state.selectedEventNodeData).toEqual(interventionData);
-    });
-
-    it("should clear selectedEventNodeData when set to null", () => {
-      useDashboardStore.getState().selectEventNode({
-        nodeType: "user",
-        label: "msg",
-        content: "text",
-      });
-      expect(useDashboardStore.getState().selectedEventNodeData).not.toBeNull();
-
-      useDashboardStore.getState().selectEventNode(null);
-      expect(useDashboardStore.getState().selectedEventNodeData).toBeNull();
-    });
-
-    it("should switch from chat to detail tab when selecting event node", () => {
-      useDashboardStore.getState().setActiveRightTab("chat");
-      useDashboardStore.getState().selectEventNode({
-        nodeType: "user",
-        label: "User",
-        content: "hello",
-      });
-      expect(useDashboardStore.getState().activeRightTab).toBe("detail");
-    });
-
-    it("should NOT switch from info to detail tab when selecting event node", () => {
-      useDashboardStore.getState().setActiveRightTab("info");
-      useDashboardStore.getState().selectEventNode({
-        nodeType: "user",
-        label: "User",
-        content: "hello",
-      });
-      expect(useDashboardStore.getState().activeRightTab).toBe("info");
-    });
-  });
-
 
   // === New Session 모달 ===
 
@@ -784,20 +687,12 @@ describe("dashboard-store", () => {
 
   describe("clearTree", () => {
     it("should clear tree and related state", () => {
-      const { processEvent, selectCard } =
-        useDashboardStore.getState();
+      const { processEvent } = useDashboardStore.getState();
 
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_delta", text: "content" } as TextDeltaEvent, 2);
       processEvent({ type: "session", session_id: "s1" } as SessionEvent, 3);
-      selectCard("t1", "node-t1");
-      useDashboardStore.getState().selectEventNode({
-        nodeType: "user",
-        label: "msg",
-        content: "hello",
-      });
-
       expect(useDashboardStore.getState().tree).not.toBeNull();
       expect(useDashboardStore.getState().lastEventId).toBeGreaterThan(0);
 
@@ -807,9 +702,6 @@ describe("dashboard-store", () => {
       expect(state.tree).toBeNull();
       expect(state.treeVersion).toBe(0);
       expect(state.lastEventId).toBe(0);
-      expect(state.selectedCardId).toBeNull();
-      expect(state.selectedNodeId).toBeNull();
-      expect(state.selectedEventNodeData).toBeNull();
     });
 
     it("should not affect activeSessionKey", () => {
@@ -924,9 +816,9 @@ describe("dashboard-store", () => {
 
     it("should only prepend a folder-scoped optimistic session to matching folder caches", () => {
       const qc = makeTestQueryClient();
-      const feedKey = ["sessions", "all", "feed", null] as const;
-      const folderAKey = ["sessions", "all", "folder", "folder-A"] as const;
-      const folderBKey = ["sessions", "all", "folder", "folder-B"] as const;
+      const feedKey = ["sessions", "feed", null] as const;
+      const folderAKey = ["sessions", "folder", "folder-A"] as const;
+      const folderBKey = ["sessions", "folder", "folder-B"] as const;
       seedQueryClientAt(qc, feedKey, []);
       seedQueryClientAt(qc, folderAKey, []);
       seedQueryClientAt(qc, folderBKey, []);
@@ -946,8 +838,8 @@ describe("dashboard-store", () => {
 
     it("should not prepend an excluded-folder optimistic session to the feed cache", () => {
       const qc = makeTestQueryClient();
-      const feedKey = ["sessions", "all", "feed", null] as const;
-      const hiddenFolderKey = ["sessions", "all", "folder", "hidden-folder"] as const;
+      const feedKey = ["sessions", "feed", null] as const;
+      const hiddenFolderKey = ["sessions", "folder", "hidden-folder"] as const;
       seedQueryClientAt(qc, feedKey, []);
       seedQueryClientAt(qc, hiddenFolderKey, []);
       useDashboardStore.getState().setCatalog({
@@ -970,28 +862,6 @@ describe("dashboard-store", () => {
       expect(getQuerySessionsAt(qc, hiddenFolderKey).map((s) => s.agentSessionId)).toEqual([
         "sess-hidden",
       ]);
-    });
-
-    it("should include dashboard user profile in optimistic summary", () => {
-      const qc = makeTestQueryClient();
-      seedQueryClient(qc, []);
-      useDashboardStore.setState({
-        dashboardConfig: {
-          user: {
-            id: "user-1",
-            name: "Jubok Kim",
-            hasPortrait: true,
-            portraitUrl: "https://example.com/avatar.png",
-          },
-          agents: [],
-        },
-      });
-
-      useDashboardStore.getState().addOptimisticSession(qc, "sess-profile", "hi");
-
-      expect(useDashboardStore.getState().activeSessionSummary?.userName).toBe("Jubok Kim");
-      expect(useDashboardStore.getState().activeSessionSummary?.userPortraitUrl).toBe("https://example.com/avatar.png");
-      expect(getQuerySessions(qc)[0].userPortraitUrl).toBe("https://example.com/avatar.png");
     });
 
     it("should not include nodeId when not provided", () => {
@@ -1858,20 +1728,17 @@ describe("dashboard-store", () => {
 
   describe("reset", () => {
     it("should reset all state to initial values", () => {
-      const { processEvent, setActiveSession, selectCard } =
+      const { processEvent, setActiveSession } =
         useDashboardStore.getState();
 
       setActiveSession("sess-abc");
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start" } as TextStartEvent, 1);
-      selectCard("x");
-
       useDashboardStore.getState().reset();
       const state = useDashboardStore.getState();
 
       expect(state.activeSessionKey).toBeNull();
       expect(state.tree).toBeNull();
-      expect(state.selectedCardId).toBeNull();
       expect(state.lastEventId).toBe(0);
     });
   });
@@ -2101,8 +1968,7 @@ describe("dashboard-store", () => {
   // === catalog 자동 폴더 선택 가드 — store 사전 조건 회귀 테스트 ===
   // useSessionListProvider.ts L339의 guard 조건:
   //   store.selectedFolderId === null && !store.activeSessionKey && store.viewMode !== "feed"
-  // 이 guard는 store의 selectFolder/selectFeed 동작에 의존하므로,
-  // 해당 액션들의 store 상태 변경이 올바른지 회귀 검증한다.
+  // 이 guard는 store의 폴더·뷰 상태에 의존하므로 상태 변경을 회귀 검증한다.
 
   describe("catalog 자동 폴더 선택 가드 — store 사전 조건 회귀 테스트", () => {
     it("left navigation mode defaults to folders and persists feed selection", () => {
@@ -2130,27 +1996,15 @@ describe("dashboard-store", () => {
 
     it("openTaskBoard 호출 시 폴더 선택과 보드 렌더 컨테이너를 분리한다", () => {
       useDashboardStore.getState().selectFolder("folder-1");
-      useDashboardStore.getState().focusBoardItem("task:rb-1", "folder-1");
 
       useDashboardStore.getState().openTaskBoard("rb-1", "folder-1");
 
       const state = useDashboardStore.getState();
       expect(state.selectedFolderId).toBe("folder-1");
       expect(state.activeBoardContainer).toEqual({ kind: "task", id: "rb-1" });
-      expect(state.focusedBoardItem).toBeNull();
       expect(state.viewMode).toBe("folder");
       expect(state.activeTab).toBe("folder");
       expect(state.leftNavigationMode).toBe("folders");
-    });
-
-    it("selectFolder 후 selectFeed 호출 시 viewMode가 'feed'로 변경되고 selectedFolderId는 이전 값을 유지한다", () => {
-      useDashboardStore.getState().selectFolder("folder-1");
-      useDashboardStore.getState().selectFeed();
-
-      const state = useDashboardStore.getState();
-      expect(state.viewMode).toBe("feed");
-      // selectedFolderId는 selectFeed가 건드리지 않으므로 이전 값 유지
-      expect(state.selectedFolderId).toBe("folder-1");
     });
   });
 
@@ -2596,190 +2450,6 @@ describe("dashboard-store", () => {
       const childrenIds = tree!.children.map((n) => n.id);
       // handleTextStart 도 placeInTree 와 동일한 sorted insert 패턴을 사용해야 시간순 정합.
       expect(childrenIds).toEqual(["text-50", "text-400"]);
-    });
-  });
-
-  // === chatLastPrependAtMs — atBottom=true settle 가드용 시각 추적 ===
-
-  describe("chatLastPrependAtMs — prepend 시각 추적 + atomic 갱신", () => {
-    it("초기값은 null", () => {
-      expect(useDashboardStore.getState().chatLastPrependAtMs).toBeNull();
-    });
-
-    it("processHistoryEvents 호출 후 chatLastPrependAtMs ≈ performance.now()", () => {
-      const before = performance.now();
-      const result = useDashboardStore.getState().processHistoryEvents([
-        {
-          event: { type: "user_message", content: "u" } as UserMessageEvent,
-          eventId: 100,
-        },
-      ]);
-      const after = performance.now();
-
-      expect(result.addedCount).toBeGreaterThan(0);
-      const ts = useDashboardStore.getState().chatLastPrependAtMs;
-      expect(ts).not.toBeNull();
-      expect(ts).toBeGreaterThanOrEqual(before);
-      expect(ts).toBeLessThanOrEqual(after);
-    });
-
-    it("setActiveSession 호출 시 chatLastPrependAtMs는 null로 리셋", () => {
-      // 먼저 prepend로 timestamp 설정
-      useDashboardStore.getState().processHistoryEvents([
-        {
-          event: { type: "user_message", content: "u" } as UserMessageEvent,
-          eventId: 200,
-        },
-      ]);
-      expect(useDashboardStore.getState().chatLastPrependAtMs).not.toBeNull();
-
-      // 세션 전환
-      useDashboardStore.getState().setActiveSession("sess-reset");
-      expect(useDashboardStore.getState().chatLastPrependAtMs).toBeNull();
-    });
-
-    it("한 번의 set() 호출: subscribe 1회 보장 (chatLastPrependAtMs는 updated 분기와 무관, chatPrependedCount는 updated=true일 때만)", () => {
-      // 라이브 트리 셋업
-      useDashboardStore.getState().processEvent(
-        { type: "user_message", content: "live-u" } as UserMessageEvent,
-        300,
-      );
-
-      const events = [
-        {
-          event: { type: "user_message", content: "old-u" } as UserMessageEvent,
-          eventId: 250,
-        },
-      ];
-
-      const listener = vi.fn();
-      const unsubscribe = useDashboardStore.subscribe(listener);
-      try {
-        useDashboardStore.getState().processHistoryEvents(events);
-
-        // 한 번의 알림으로 tree, chatPrependedCount, chatLastPrependAtMs 모두 갱신
-        expect(listener).toHaveBeenCalledTimes(1);
-        const state = useDashboardStore.getState();
-        expect(state.chatPrependedCount).toBeGreaterThan(0);
-        expect(state.chatLastPrependAtMs).not.toBeNull();
-        expect(state.tree).not.toBeNull();
-      } finally {
-        unsubscribe();
-      }
-    });
-
-    it("dedup 케이스: addedCount=0이어도 chatLastPrependAtMs는 사용자 prepend 시도 시각을 추적하여 strict 단조 증가", async () => {
-      const events = [
-        {
-          event: { type: "user_message", content: "u" } as UserMessageEvent,
-          eventId: 400,
-        },
-      ];
-      useDashboardStore.getState().processHistoryEvents(events);
-      const tsAfterFirst = useDashboardStore.getState().chatLastPrependAtMs;
-      expect(tsAfterFirst).not.toBeNull();
-
-      // 시간 진행을 보장 (performance.now 단조 증가는 마이크로초 단위)
-      await new Promise((r) => setTimeout(r, 5));
-
-      // 동일 eventId 재호출 — addedCount=0이지만 사용자 prepend 시도 시각이므로
-      // chatLastPrependAtMs는 항상 갱신되어야 한다. settle 가드는 사용자 행위 시각 기준.
-      useDashboardStore.getState().processHistoryEvents(events);
-      const tsAfterSecond = useDashboardStore.getState().chatLastPrependAtMs;
-      expect(tsAfterSecond).not.toBeNull();
-      // strict greater-than — dedup-only 응답에서도 시각이 갱신되어야 settle 가드 stale 방지
-      expect(tsAfterSecond! > tsAfterFirst!).toBe(true);
-    });
-
-    it("빈 events: processHistoryEvents([])는 chatLastPrependAtMs를 갱신하지 않음 (early-return)", async () => {
-      // 먼저 prepend로 timestamp 설정
-      useDashboardStore.getState().processHistoryEvents([
-        {
-          event: { type: "user_message", content: "u" } as UserMessageEvent,
-          eventId: 410,
-        },
-      ]);
-      const tsBefore = useDashboardStore.getState().chatLastPrependAtMs;
-      expect(tsBefore).not.toBeNull();
-
-      await new Promise((r) => setTimeout(r, 5));
-
-      // 빈 events — early-return으로 set 자체 호출 안 함
-      const result = useDashboardStore.getState().processHistoryEvents([]);
-      expect(result.addedCount).toBe(0);
-      const tsAfter = useDashboardStore.getState().chatLastPrependAtMs;
-      // 갱신되지 않아야 함 — 호출자가 prepend를 "시도"한 것이 아니므로
-      expect(tsAfter).toBe(tsBefore);
-    });
-
-    it("다발 dedup: 연속 dedup-only 호출에도 시각이 단조 증가", async () => {
-      const events = [
-        {
-          event: { type: "user_message", content: "u" } as UserMessageEvent,
-          eventId: 420,
-        },
-      ];
-      useDashboardStore.getState().processHistoryEvents(events);
-      const t1 = useDashboardStore.getState().chatLastPrependAtMs!;
-
-      await new Promise((r) => setTimeout(r, 5));
-      useDashboardStore.getState().processHistoryEvents(events);
-      const t2 = useDashboardStore.getState().chatLastPrependAtMs!;
-
-      await new Promise((r) => setTimeout(r, 5));
-      useDashboardStore.getState().processHistoryEvents(events);
-      const t3 = useDashboardStore.getState().chatLastPrependAtMs!;
-
-      expect(t2 > t1).toBe(true);
-      expect(t3 > t2).toBe(true);
-    });
-
-    it("updated=false 경로 (subtree_update만 포함된 events)에서도 chatLastPrependAtMs 갱신 — settle 가드 stale 방지", async () => {
-      // 먼저 일반 prepend로 timestamp 설정
-      useDashboardStore.getState().processHistoryEvents([
-        {
-          event: { type: "user_message", content: "u" } as UserMessageEvent,
-          eventId: 430,
-        },
-      ]);
-      const tsBefore = useDashboardStore.getState().chatLastPrependAtMs!;
-      expect(tsBefore).not.toBeNull();
-
-      await new Promise((r) => setTimeout(r, 5));
-
-      // subtree_update만 포함된 events — processEventsBatch에서 updated=false로 빠진다.
-      // 사용자가 위로 스크롤하여 fetch한 응답 페이지가 모두 트리 변경을 일으키지 않는 코너 케이스.
-      // 옵션 A에 따르면 chatLastPrependAtMs는 "사용자 prepend 시도 시각"이므로 갱신되어야 한다.
-      const result = useDashboardStore.getState().processHistoryEvents([
-        {
-          event: {
-            type: "subtree_update",
-            timestamp: 1,
-            affected_event_ids: [],
-            deltas: {},
-            new_total_subtree_height: 0,
-          } as any,
-          eventId: 431,
-        },
-      ]);
-      expect(result.addedCount).toBe(0);
-      const tsAfter = useDashboardStore.getState().chatLastPrependAtMs!;
-      expect(tsAfter).not.toBeNull();
-      // strict greater-than — updated=false 분기에서도 시각 갱신
-      expect(tsAfter > tsBefore).toBe(true);
-    });
-
-    it("clearTree 호출 시 chatLastPrependAtMs는 null로 리셋", () => {
-      useDashboardStore.getState().processHistoryEvents([
-        {
-          event: { type: "user_message", content: "u" } as UserMessageEvent,
-          eventId: 500,
-        },
-      ]);
-      expect(useDashboardStore.getState().chatLastPrependAtMs).not.toBeNull();
-
-      useDashboardStore.getState().clearTree();
-      expect(useDashboardStore.getState().chatLastPrependAtMs).toBeNull();
     });
   });
 
