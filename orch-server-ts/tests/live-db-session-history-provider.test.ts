@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
-
 import { describe, expect, it, vi } from "vitest";
+import { SESSION_TIMELINE_EVENT_TYPES } from "@soulstream/wire-schema";
 
 import {
   createApp,
@@ -209,7 +208,7 @@ describe("live DB session history provider", () => {
     ]);
   });
 
-  it("keeps /timeline event inventory in exact parity with Python and returns durable interventions", async () => {
+  it("keeps /timeline event inventory aligned to the wire schema and returns durable interventions", async () => {
     const createdAt = new Date("2026-08-12T14:37:00.902Z");
     const interventionRows = [
       {
@@ -273,7 +272,8 @@ describe("live DB session history provider", () => {
     const timelineQuery = harness.calls.find((call) =>
       call.text.includes("event_type = ANY"),
     );
-    expect(timelineQuery?.values[1]).toEqual(readPythonTimelineEventTypes());
+    expect(timelineQuery?.values[1]).toEqual(SESSION_TIMELINE_EVENT_TYPES);
+    expect(timelineQuery?.values[1]).not.toContain("system");
 
     await app.close();
   });
@@ -502,18 +502,4 @@ function createSqlHarness(
     normalizedCalls: () =>
       calls.map((call) => call.text.replace(/\s+/g, " ").trim()),
   };
-}
-
-function readPythonTimelineEventTypes(): string[] {
-  const source = readFileSync(new URL(
-    "../../packages/soul-common/src/soul_common/db/postgres/viewport.py",
-    import.meta.url,
-  ), "utf8");
-  const block = source.match(
-    /TIMELINE_EVENT_TYPES: tuple\[str, \.\.\.\] = \(([\s\S]*?)\n\)/,
-  )?.[1];
-  if (block === undefined) {
-    throw new Error("Python TIMELINE_EVENT_TYPES declaration was not found");
-  }
-  return [...block.matchAll(/"([^"]+)"/g)].map((match) => match[1]!);
 }
