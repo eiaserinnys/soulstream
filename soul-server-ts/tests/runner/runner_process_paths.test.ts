@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -28,6 +30,16 @@ describe("runner process path portability", () => {
       "session-a",
       "win32",
     )).not.toThrow();
+  });
+
+  it("keeps the stable session-derived Windows runner pipe name", () => {
+    const sessionId = "same-session";
+    const sessionHash = createHash("sha256")
+      .update(sessionId)
+      .digest("hex")
+      .slice(0, 24);
+    expect(runnerProcessPaths("C:/state", sessionId, "win32").socketPath)
+      .toBe(`\\\\.\\pipe\\soulstream-runner-${sessionHash}`);
   });
 
   it("reserves underscore-prefixed names for runner-state infrastructure", () => {
