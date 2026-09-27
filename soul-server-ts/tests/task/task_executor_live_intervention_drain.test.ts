@@ -116,7 +116,7 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
       silentLogger,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(turnInputs).toHaveLength(2);
@@ -236,7 +236,7 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
       runningIntervention.deliver(task, message),
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await new Promise<void>((resolve) => setImmediate(resolve));
     initialBarrier.resolve(false);
     await queuedDelivery;

@@ -343,7 +343,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
   /**
    * 260820 incident: a terminal runner whose process had exited was replayed
    * offline, and the finalizer then retained that dead handle for background
-   * work. `task.runner` stayed set forever and `startExecution` refuses to run
+   * work. `task.runner` stayed set forever and `startNewExecution` refuses to run
    * while a runner is attached, so the session could never take another turn.
    */
   it("never retains an offline replay handle, which has no live child to keep", async () => {

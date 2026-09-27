@@ -4,7 +4,7 @@ import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
 import type { ClaudeRunOptions } from "./claude_adapter.js";
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { createEventQueue } from "./claude_sdk_event_queue.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
 import { ClaudeRuntimeFollowupWatchdog } from "./claude_runtime_followup_watchdog.js";

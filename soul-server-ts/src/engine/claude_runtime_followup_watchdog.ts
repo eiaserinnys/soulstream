@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 
 interface FollowupOrigin {
   kind: string;

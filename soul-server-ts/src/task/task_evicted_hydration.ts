@@ -6,7 +6,14 @@ import {
   TaskOwnedByAnotherNodeError,
 } from "./task_hydration_errors.js";
 import type { ExecutionRegistration } from "./execution_registration.js";
-import type { Task, TaskStatus, TerminationReason } from "./task_models.js";
+import {
+  isTaskStatus,
+  isTerminationReason,
+  terminalTaskStatusForReason,
+  type Task,
+  type TaskStatus,
+  type TerminationReason,
+} from "./task_models.js";
 import {
   extractAgentsRunStateFromMetadata,
   extractAgentsSessionItemsFromMetadata,
@@ -16,26 +23,6 @@ import {
 } from "./task_metadata.js";
 import { readStoredReasoningEffort } from "./session_effort_storage.js";
 
-const VALID_TASK_STATUSES: readonly TaskStatus[] = [
-  "initializing",
-  "running",
-  "completed",
-  "error",
-  "interrupted",
-];
-
-const VALID_TERMINATION_REASONS: readonly TerminationReason[] = [
-  "completed_ok",
-  "killed",
-  "limit_hit",
-  "error_aborted",
-  "unknown",
-];
-
-function isTaskStatus(status: string | null): status is TaskStatus {
-  return Boolean(status && VALID_TASK_STATUSES.includes(status as TaskStatus));
-}
-
 function completedAtFromRow(row: SessionRow, status: TaskStatus): Date | undefined {
   if (status === "completed" || status === "error" || status === "interrupted") {
     return row.updated_at ?? undefined;
@@ -44,15 +31,7 @@ function completedAtFromRow(row: SessionRow, status: TaskStatus): Date | undefin
 }
 
 function terminationReasonFromRow(value: string | null | undefined): TerminationReason | undefined {
-  return value && VALID_TERMINATION_REASONS.includes(value as TerminationReason)
-    ? value as TerminationReason
-    : undefined;
-}
-
-function terminalStatusFromReason(reason: TerminationReason): TaskStatus {
-  if (reason === "completed_ok") return "completed";
-  if (reason === "killed") return "interrupted";
-  return "error";
+  return isTerminationReason(value) ? value : undefined;
 }
 
 function positiveEventId(value: number | null | undefined): number | undefined {
@@ -133,7 +112,7 @@ export function hydrateEvictedTaskFromSessionRow(
   }
   const hydratedStatus = terminationReason === undefined
     ? status
-    : terminalStatusFromReason(terminationReason);
+    : terminalTaskStatusForReason(terminationReason);
   const executionRegistration = executionRegistrationFromRow(row, logger);
   if (executionRegistration === null) return null;
 

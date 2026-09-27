@@ -148,7 +148,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       followup,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(turnCount).toBe(2);
@@ -242,7 +242,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       deliveryRecorder,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(prompts).toHaveLength(2);
@@ -324,7 +324,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       deliveryRecorder,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(prompts).toEqual(["hi", "runtime follow-up prompt", "?"]);
@@ -387,7 +387,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       deliveryRecorder,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(turnCount).toBe(2);
@@ -445,7 +445,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       deliveryRecorder,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(turnCount).toBe(2);
@@ -514,7 +514,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       deliveryRecorder,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(turnCount).toBe(3);
@@ -584,7 +584,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       deliveryRecorder,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(turnCount).toBe(4);
@@ -637,7 +637,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       controller,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(addIntervention).not.toHaveBeenCalled();
@@ -737,7 +737,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       controller,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(addInterventionCalls).toBe(2);
@@ -837,7 +837,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         controller,
       );
 
-      executor.startExecution(task, claudeAgent);
+      executor.startNewExecution(task, claudeAgent);
       await task.executionPromise;
 
       expect(addInterventionCalls).toBe(0);
@@ -903,7 +903,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       deliveryRecorder,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
@@ -995,7 +995,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       followup,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(addIntervention).toHaveBeenCalledOnce();
@@ -1039,7 +1039,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       followup,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     const errorPersist = mocks.enqueueEvent.mock.calls.find(

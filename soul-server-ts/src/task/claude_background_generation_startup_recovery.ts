@@ -13,7 +13,7 @@ import type {
 import type { SessionRow } from "../db/session_db_types.js";
 import { attachClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
-import type { ClaudeClientEvent } from "../engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../engine/claude_client_event.js";
 import { userMessageText } from "../engine/claude_sdk_event_mapper_helpers.js";
 import { buildClaudeBackgroundGenerationIdentity } from
   "./claude_background_generation_identity.js";

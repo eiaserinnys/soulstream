@@ -346,25 +346,25 @@ export async function observeCompletedDeliveryReconnect(
     }),
   };
   let connectionId: string | undefined;
-  const dispatcher = new CommandDispatcher(
-    async (frame: unknown) => {
+  const dispatcher = new CommandDispatcher({
+    send: async (frame: unknown) => {
       if (!connectionId) throw new Error("node response arrived without a connection");
       registry.receiveNodeMessage(
         { nodeId: NODE_ID, connectionId },
         frame as Record<string, unknown>,
       );
     },
-    silentLogger,
-    NODE_ID,
-    agentRegistry as never,
-    taskManager as never,
-    taskExecutor as never,
-    {
+    logger: silentLogger,
+    nodeId: NODE_ID,
+    agentRegistry: agentRegistry as never,
+    taskManager: taskManager as never,
+    taskExecutor: taskExecutor as never,
+    attachmentStore: {
       save: vi.fn(),
       getPath: vi.fn(),
       delete: vi.fn(),
     } as never,
-  );
+  });
   const wakePendingForReadyNode = async (
     nodeId: string,
     readyConnectionId?: string,

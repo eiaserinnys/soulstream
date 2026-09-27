@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { ClaudeClientEvent } from "../engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../engine/claude_client_event.js";
 import { readClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
 import { readClaudeSdkSessionMetadata } from

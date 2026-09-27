@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { SOULSTREAM_SCHEDULE_TOOLS } from "./claude_sdk_constants.js";
 import {
   asRecord,

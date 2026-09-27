@@ -58,9 +58,8 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     private readonly taskManager: TaskManager,
     private readonly agentRegistry: AgentRegistry,
     /**
-     * `taskManager.addIntervention`의 두 번째 인자로 forward. parent가 terminal 상태면
-     * `_addInterventionAutoResume`이 본 콜백을 호출하여 새 turn 시작. running이면 호출되지 않음.
-     * main.ts wiring에서 `taskExecutor.startExecution(task, agent)`을 호출하도록 구성.
+     * `taskManager.addIntervention`의 두 번째 인자로 전달한다. terminal task가 재개될 때
+     * `runtime/task_runtime_composition.ts`에서 연결한 콜백이 새 turn을 시작한다.
      */
     private readonly onResume: StartExecutionCallback,
     private readonly logger: Logger,

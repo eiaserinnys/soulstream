@@ -6,7 +6,7 @@ import {
   ClaudeEngineAdapter,
   ClaudeSdkClient,
 } from "../../src/engine/claude_adapter.js";
-import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
 import { ClaudeSessionClientRegistry } from
   "../../src/engine/claude_session_client_registry.js";
 import {

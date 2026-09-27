@@ -1,7 +1,7 @@
 /**
  * Phase 11 통합 테스트 — mock orch ws + fake EnginePort + mock outbox/postgres.
  *
- * 흐름: dispatcher.dispatch(create_session) → task_manager.createTask → task_executor.startExecution
+ * 흐름: dispatcher.dispatch(create_session) → task_manager.createTask → task_executor.startNewExecution
  *  → engine.execute drain → persistent event는 outbox, transient event는 worker WS
  *  → 완료 상태는 terminal effect로 orch ingress가 broadcast
  *
@@ -240,14 +240,14 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       silentLogger,
     );
 
-    const dispatcher = new CommandDispatcher(
+    const dispatcher = new CommandDispatcher({
       send,
-      silentLogger,
-      "eias-shopping-ts",
-      registry,
+      logger: silentLogger,
+      nodeId: "eias-shopping-ts",
+      agentRegistry: registry,
       taskManager,
       taskExecutor,
-    );
+    });
 
     // === ACT — orch가 create_session 보냄 ===
     await dispatcher.dispatch({
@@ -396,14 +396,14 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       broadcaster,
       silentLogger,
     );
-    const dispatcher = new CommandDispatcher(
+    const dispatcher = new CommandDispatcher({
       send,
-      silentLogger,
-      "node-metadata-failure",
-      registry,
+      logger: silentLogger,
+      nodeId: "node-metadata-failure",
+      agentRegistry: registry,
       taskManager,
       taskExecutor,
-    );
+    });
 
     const dispatch = dispatcher.dispatch({
       type: "create_session",
@@ -579,9 +579,14 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     const taskManager = new TaskManager("n", db, broadcaster, silentLogger, persistence);
     const factory = vi.fn();
     const taskExecutor = new TaskExecutor(factory, db, persistence, broadcaster, silentLogger);
-    const dispatcher = new CommandDispatcher(
-      send, silentLogger, "n", registry, taskManager, taskExecutor,
-    );
+    const dispatcher = new CommandDispatcher({
+      send,
+      logger: silentLogger,
+      nodeId: "n",
+      agentRegistry: registry,
+      taskManager,
+      taskExecutor,
+    });
 
     await dispatcher.dispatch({
       type: "create_session",

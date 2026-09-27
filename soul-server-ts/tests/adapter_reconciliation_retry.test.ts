@@ -98,7 +98,7 @@ function createAdapter(
     {
       agentRegistry: new AgentRegistry([]),
       taskManager,
-      taskExecutor: { startExecution: () => undefined } as unknown as TaskExecutor,
+      taskExecutor: { startNewExecution: () => undefined } as unknown as TaskExecutor,
       sessionDb,
       listLiveRunnerSessionIds,
     },

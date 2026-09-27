@@ -1,7 +1,7 @@
 import type { Query as ClaudeSdkQuery, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import {
   ClaudePostResultDrain,
   MAX_COMPACT_RETRIES,

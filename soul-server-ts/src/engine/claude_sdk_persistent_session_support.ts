@@ -6,7 +6,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import type { EventQueue } from "./claude_sdk_event_queue.js";
 import { messageContent, userMessageText } from "./claude_sdk_event_mapper_helpers.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";

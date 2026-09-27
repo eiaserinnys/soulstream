@@ -1,4 +1,4 @@
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import type { GenericHookEventName } from "./claude_sdk_constants.js";
 import {
   asRecord,

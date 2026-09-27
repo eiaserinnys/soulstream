@@ -11,7 +11,7 @@ import type {
   ClaudeSdkQueryParams,
 } from "../../src/engine/claude_sdk_client.js";
 import { createEventQueue } from "../../src/engine/claude_sdk_event_queue.js";
-import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 
 export function makeHarness(

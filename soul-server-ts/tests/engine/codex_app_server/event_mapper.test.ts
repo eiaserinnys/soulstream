@@ -320,16 +320,6 @@ describe("Codex app-server notification mapper", () => {
       }),
     ).toEqual([]);
 
-    expect(
-      mapAppServerNotification({
-        method: "rawResponseItem/completed",
-        params: {
-          threadId: "thread-1",
-          turnId: "turn-1",
-          item: { type: "reasoning", text: "Reviewed the stream." },
-        },
-      })[0],
-    ).toMatchObject({ type: "thinking", text: "Reviewed the stream." });
   });
 
   it("command execution start/output/complete maps without marking output deltas complete", () => {

@@ -13,10 +13,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import {
-  mapClaudeClientEvent,
-  type ClaudeClientEvent,
-} from "../../src/engine/claude_event_mapper.js";
+import { mapClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
 
 /**
  * Python BaseModel이 *없는* TS-only event types. ClaudeClientEvent → wire 변환은 존재하나

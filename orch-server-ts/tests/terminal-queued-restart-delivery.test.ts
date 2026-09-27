@@ -181,8 +181,8 @@ describe("terminal queued delivery across node restart", () => {
         sessionId === SESSION_ID ? NODE_ID : null,
     });
     let activeConnectionId: string | undefined;
-    const dispatcher = new CommandDispatcher(
-      async (frame) => {
+    const dispatcher = new CommandDispatcher({
+      send: async (frame) => {
         if (!activeConnectionId) throw new Error("new node connection is missing");
         registry.receiveNodeMessage(
           { nodeId: NODE_ID, connectionId: activeConnectionId },
@@ -190,19 +190,11 @@ describe("terminal queued delivery across node restart", () => {
         );
       },
       logger,
-      NODE_ID,
-      agentRegistry as never,
-      taskManager as never,
-      executor,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      true,
-    );
+      nodeId: NODE_ID,
+      agentRegistry: agentRegistry as never,
+      taskManager: taskManager as never,
+      taskExecutor: executor,
+    });
     const transcriptInspect = vi.fn(async () => ({
       kind: "absent" as const,
       inputUuid: buildDeliveryInputUuid(DELIVERY_ID),

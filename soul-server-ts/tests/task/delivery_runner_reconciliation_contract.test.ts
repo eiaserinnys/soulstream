@@ -112,7 +112,7 @@ function makeLedgerGate(terminalStates: Map<string, TerminalDeliveryState>) {
   });
   const beginDispatch = vi.fn(async (admission: DeliveryLedgerAdmission) => admission);
   const recordResult = vi.fn(async () => undefined);
-  const recordFailure = vi.fn(async () => undefined);
+  const deferFailureToCoordinator = vi.fn(async () => undefined);
   const recordReservationRetry = vi.fn(async () => "retryable" as const);
   const recordConsumed = vi.fn(async (message: InterventionMessage) => {
     if (message.deliveryId) terminalStates.set(message.deliveryId, "consumed");
@@ -140,14 +140,14 @@ function makeLedgerGate(terminalStates: Map<string, TerminalDeliveryState>) {
     admit,
     beginDispatch,
     recordResult,
-    recordFailure,
+    deferFailureToCoordinator,
     recordReservationRetry,
     recordConsumed,
     recordTurnStarted,
     discardIfConsumed,
   } as unknown as Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
       | "recordReservationRetry" | "recordConsumed" | "recordTurnStarted"
       | "discardIfConsumed"
   >;
@@ -340,7 +340,7 @@ function makeHarness(input: {
     const result = await route.addIntervention({
       agentSessionId: task.agentSessionId,
       ...message,
-    }, (resumedTask, activation) => executor.startExecution(resumedTask, agent, activation));
+    }, (resumedTask, activation) => executor.startNewExecution(resumedTask, agent, activation));
     await task.executionPromise;
     return result;
   };

@@ -37,10 +37,10 @@ type NotificationPublication = Awaited<
  *
  * - running 세션 → `engine.intervene()`가 현재 전달하면 `{delivered: true}`,
  *   전달하지 못하면 소비 시점과 사유가 명시된 queue/defer 결과.
- * - active + logical turn complete → 새 generation으로 `{autoResumed: true}`.
- * - completed → 모든 새 입력이 `{autoResumed: true}`.
- * - error/interrupted → completion notification만 다음 명시적 turn까지 queued;
- *   사용자 입력과 runtime follow-up은 `{autoResumed: true}`.
+ * - active 상태에서 논리 turn이 완료되었거나 terminal task가 재개되면
+ *   `{autoResumed: true}`.
+ * - 재생 원장에 이미 반영된 전송은 `{suppressed: true}`.
+ * - running task는 실제 전달 또는 queue/defer 결과를 반환한다.
  */
 export type AddInterventionResult =
   | RunningInterventionResult
@@ -87,7 +87,7 @@ export interface AddInterventionParams {
  * `addIntervention`의 auto-resume 경로 콜백.
  *
  * Task가 completed/error/interrupted일 때 route는 status를 "running"으로 돌리는
- * transition에 본 콜백을 넘긴다. 콜백은 *task_executor.startExecution*을 호출할 책임.
+ * transition에 본 콜백을 넘긴다. 콜백은 executor의 현재 실행 진입점을 호출할 책임.
  * design-principles §1(지식 경계) — task route는 executor를 알지 않는다.
  */
 export type StartExecutionCallback = AutoResumeCallback;
@@ -103,7 +103,7 @@ export interface TaskInterventionRouteDeps {
   autoResumeTransition: Pick<AutoResumeTransition, "resume">;
   deliveryLedgerGate?: Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
       | "recordNotificationPublished" | "recordNotificationFailure"
   >;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
@@ -316,9 +316,9 @@ export class TaskInterventionRoute {
       }
       if (this.deps.deliveryLedgerGate && !ledgerResultRecorded) {
         try {
-          await this.deps.deliveryLedgerGate.recordFailure(admission);
-        } catch (recordFailureError) {
-          recoveryError ??= recordFailureError;
+          await this.deps.deliveryLedgerGate.deferFailureToCoordinator(admission);
+        } catch (deferFailureToCoordinatorError) {
+          recoveryError ??= deferFailureToCoordinatorError;
         }
       }
       if (recoveryError && err instanceof Error && err.cause === undefined) {

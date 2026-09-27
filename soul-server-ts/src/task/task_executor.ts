@@ -245,23 +245,6 @@ export class TaskExecutor {
    * task.executionPromise에 drain promise를 박아 *후속 shutdown/cancel*이 drain 가능.
    * promise 실패는 task.error에 박히고 status="error"로 전환.
    */
-  startExecution(
-    task: Task,
-    agent: AgentProfile,
-    transferredActivation?: ExecutionActivation,
-  ): Promise<void> {
-    const releaseClaim = task.runnerReleaseClaim;
-    if (releaseClaim) {
-      return this.startExecutionAfterRunnerReleaseClaim(
-        task,
-        agent,
-        transferredActivation,
-        releaseClaim,
-      );
-    }
-    return this.startExecutionWithRegistrationRecord(task, agent, transferredActivation);
-  }
-
   startNewExecution(
     task: Task,
     agent: AgentProfile,
@@ -496,6 +479,23 @@ export class TaskExecutor {
     return { backend, retainedRunner };
   }
 
+  private takeOrCreateRunner(
+    task: Task,
+    agent: AgentProfile,
+    backend: BackendId,
+    retainedRunner: TaskRunnerRuntime | undefined,
+  ): TaskRunnerRuntime {
+    const runner = retainedRunner ?? (this.runnerProcessFactory
+      ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
+      : createInProcessTaskRunnerRuntime(
+          task.modelPresetBackend
+            ? this.engineFactory(agent, backend)
+            : this.engineFactory(agent),
+        ));
+    if (retainedRunner) releaseTaskRunner(task, retainedRunner);
+    return runner;
+  }
+
   private startExecutionWithoutRegistration(
     task: Task,
     agent: AgentProfile,
@@ -504,16 +504,7 @@ export class TaskExecutor {
     activation?: ExecutionActivation,
     executionSlotHeld = false,
   ): Promise<void> {
-    const runner = retainedRunner ?? (this.runnerProcessFactory
-      ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
-      : createInProcessTaskRunnerRuntime(
-          task.modelPresetBackend
-            ? this.engineFactory(agent, backend)
-            : this.engineFactory(agent),
-        ));
-    if (retainedRunner) {
-      releaseTaskRunner(task, retainedRunner);
-    }
+    const runner = this.takeOrCreateRunner(task, agent, backend, retainedRunner);
     return this.startExecutionWithRunner(task, agent, runner, activation, executionSlotHeld);
   }
 
@@ -581,16 +572,7 @@ export class TaskExecutor {
     let runner: TaskRunnerRuntime | undefined;
     let proof: import("./execution_registration.js").RunnerExecutionIdentity | undefined;
     try {
-      runner = retainedRunner ?? (this.runnerProcessFactory
-        ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
-        : createInProcessTaskRunnerRuntime(
-            task.modelPresetBackend
-              ? this.engineFactory(agent, backend)
-              : this.engineFactory(agent),
-          ));
-      if (retainedRunner) {
-        releaseTaskRunner(task, retainedRunner);
-      }
+      runner = this.takeOrCreateRunner(task, agent, backend, retainedRunner);
       if (task.runner) {
         throw new Error(
           `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,

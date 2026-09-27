@@ -11,25 +11,23 @@ export function createUpstreamCommandDispatcher(input: {
   listRunningSessionIds(): Promise<string[]>;
 }): CommandDispatcher {
   const deps = input.dependencies;
-  return new CommandDispatcher(
-    input.send,
-    input.logger,
-    input.nodeId,
-    deps.agentRegistry,
-    deps.taskManager,
-    deps.taskExecutor,
-    deps.attachmentStore,
-    deps.claudeAuth,
-    deps.sessionDb,
-    deps.realtimeBroker,
-    undefined,
-    deps.agentConfigService,
-    deps.reflectionRuntime,
-    deps.scheduleCommands,
-    deps.deliveryV2Enabled,
-    deps.modelCatalog,
-    deps.agentProfileSource,
-    input.listRunningSessionIds,
-    deps.worktreeService,
-  );
+  return new CommandDispatcher({
+    send: input.send,
+    logger: input.logger,
+    nodeId: input.nodeId,
+    agentRegistry: deps.agentRegistry,
+    taskManager: deps.taskManager,
+    taskExecutor: deps.taskExecutor,
+    attachmentStore: deps.attachmentStore,
+    claudeAuth: deps.claudeAuth,
+    sessionDb: deps.sessionDb,
+    realtimeBroker: deps.realtimeBroker,
+    agentConfigService: deps.agentConfigService,
+    reflectionRuntime: deps.reflectionRuntime,
+    scheduleCommands: deps.scheduleCommands,
+    modelCatalog: deps.modelCatalog,
+    agentProfileSource: deps.agentProfileSource,
+    listRunningSessionIds: input.listRunningSessionIds,
+    worktreeService: deps.worktreeService,
+  });
 }

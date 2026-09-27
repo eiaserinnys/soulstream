@@ -271,7 +271,7 @@ export class TaskDeliveryLedgerGate {
     }
   }
 
-  async recordFailure(admission: DeliveryLedgerAdmission): Promise<void> {
+  async deferFailureToCoordinator(admission: DeliveryLedgerAdmission): Promise<void> {
     if (admission.kind !== "admitted") return;
     // The end-to-end coordinator owns retry scheduling. Keeping the attempt token
     // intact lets a cross-node fallback reuse the same fenced attempt token.

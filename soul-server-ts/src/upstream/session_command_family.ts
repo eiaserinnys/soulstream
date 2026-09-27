@@ -154,7 +154,7 @@ function reviewOutcomeMessage(outcome: string): string {
  * `create_session` 명령.
  *
  * TaskRuntimeCommands owns profile lookup, task creation, attachment context,
- * backend-specific OAuth forwarding, and startExecution. This route keeps the
+ * backend-specific OAuth forwarding, and startNewExecution. This route keeps the
  * minimal wire guard and requestId-gated `session_created` ACK.
  */
 async function handleCreateSession(

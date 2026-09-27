@@ -150,7 +150,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
   }
 }
 
-describe("TaskExecutor.startExecution", () => {
+describe("TaskExecutor.startNewExecution", () => {
   it("waits for a retained-runner release claim before direct admission", async () => {
     const mocks = makeMocks();
     const factory = vi.fn(() => makeFakeEngine([
@@ -181,7 +181,7 @@ describe("TaskExecutor.startExecution", () => {
       resolve: () => claimed.resolve(),
     };
 
-    const execution = executor.startExecution(task, agent);
+    const execution = executor.startNewExecution(task, agent);
     await Promise.resolve();
     expect(factory).not.toHaveBeenCalled();
     expect(task.runner).toBe(oldRunner);
@@ -215,7 +215,7 @@ describe("TaskExecutor.startExecution", () => {
     );
     const task = makeTask();
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
 
     await task.executionPromise;
     expect(prepareSessionRuntime).toHaveBeenCalledWith(task.agentSessionId);
@@ -235,7 +235,7 @@ describe("TaskExecutor.startExecution", () => {
     );
     const task = makeTask();
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(factory).toHaveBeenCalledTimes(1);
@@ -277,7 +277,7 @@ describe("TaskExecutor.startExecution", () => {
       model: "persisted-kimi-model",
     };
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(factory).toHaveBeenCalledWith(agent, "claude");
@@ -324,7 +324,7 @@ describe("TaskExecutor.startExecution", () => {
       model: "persisted-model",
     };
 
-    executor.startExecution(task, fallbackAgent);
+    executor.startNewExecution(task, fallbackAgent);
     await task.executionPromise;
 
     expect(factory.mock.calls[0]).toEqual([fallbackAgent]);
@@ -354,7 +354,7 @@ describe("TaskExecutor.startExecution", () => {
     );
     const task = makeTask();
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(observe).not.toHaveBeenCalled();
@@ -393,7 +393,7 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     task.interventionQueue.push(message);
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledWith(message, task);
@@ -454,7 +454,7 @@ describe("TaskExecutor.startExecution", () => {
     });
 
     try {
-      executor.startExecution(task, agent);
+      executor.startNewExecution(task, agent);
       await task.executionPromise;
 
       expect(task.status).toBe("completed");
@@ -506,7 +506,7 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     task.interventionQueue.push(message);
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
@@ -544,7 +544,7 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     task.interventionQueue.push(message);
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(deliveryRecorder.recordConsumed).toHaveBeenCalledOnce();
@@ -599,7 +599,7 @@ describe("TaskExecutor.startExecution", () => {
     task.profileId = claudeAgent.id;
     task.interventionQueue.push(message);
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(task.status).toBe("error");
@@ -684,7 +684,7 @@ describe("TaskExecutor.startExecution", () => {
       const failedTask = makeTask();
       failedTask.interventionQueue.push(message);
 
-      executor.startExecution(failedTask, agent);
+      executor.startNewExecution(failedTask, agent);
       await failedTask.executionPromise;
 
       expect(failedTask.status).toBe("error");
@@ -766,7 +766,7 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     task.interventionQueue.push(message);
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
@@ -851,7 +851,7 @@ describe("TaskExecutor.startExecution", () => {
       gate,
     );
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(turn).toBe(3);
@@ -903,7 +903,7 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     task.interventionQueue.push(message);
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(deliveryRecorder.recordTurnStarted).toHaveBeenCalledTimes(1);
@@ -940,7 +940,7 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     task.interventionQueue.push(message);
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
@@ -976,7 +976,7 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     task.interventionQueue.push(message);
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
@@ -1002,7 +1002,7 @@ describe("TaskExecutor.startExecution", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     // user_message + session + assistant_message + session_ended만 durable 저장.
@@ -1085,7 +1085,7 @@ describe("TaskExecutor.startExecution", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     const persistedTypes = mocks.persistEvent.mock.calls.map(
@@ -1142,7 +1142,7 @@ describe("TaskExecutor.startExecution", () => {
     );
     const task = makeTask();
     task.attachmentPaths = ["/tmp/incoming/sess/a.jpeg", "/tmp/incoming/sess/readme.txt"];
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(capturedImageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.jpeg"]);
@@ -1174,7 +1174,7 @@ describe("TaskExecutor.startExecution", () => {
     );
     const task = makeTask();
     task.reasoningEffort = "low";
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(capturedReasoningEffort).toBe("low");
@@ -1209,7 +1209,7 @@ describe("TaskExecutor.startExecution", () => {
     task.profileId = claudeAgent.id;
     task.oauthToken = "task-oauth-token";
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(capturedExtraEnv).toEqual({ [CLAUDE_OAUTH_TOKEN_ENV]: "task-oauth-token" });
@@ -1285,7 +1285,7 @@ describe("TaskExecutor.startExecution", () => {
     );
     const task = makeTask();
     task.profileId = "agent-openai";
-    executor.startExecution(task, { ...agent, id: "agent-openai", backend: "openai-agents" });
+    executor.startNewExecution(task, { ...agent, id: "agent-openai", backend: "openai-agents" });
 
     await waitFor(() => mocks.persistEvent.mock.calls.some(
       (c) => (c[1] as { type: string }).type === "tool_approval_requested",
@@ -1372,7 +1372,7 @@ describe("TaskExecutor.startExecution", () => {
       options: { message: "no prod write" },
     };
 
-    executor.startExecution(task, { ...agent, id: "agent-openai", backend: "openai-agents" });
+    executor.startNewExecution(task, { ...agent, id: "agent-openai", backend: "openai-agents" });
     await task.executionPromise;
 
     expect(captured).toMatchObject({
@@ -1429,7 +1429,7 @@ describe("TaskExecutor.startExecution", () => {
     const factory = vi.fn(() => engine);
     const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(task.status).toBe("error");
@@ -1469,7 +1469,7 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     task.profileId = claudeAgent.id;
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(task.status).toBe("error");
@@ -1556,7 +1556,7 @@ describe("TaskExecutor.startExecution", () => {
       deliveryIntent: "human_live_steer",
     });
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(task.status).toBe("error");
@@ -1654,7 +1654,7 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     task.profileId = claudeAgent.id;
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(task.status).toBe("error");
@@ -1715,7 +1715,7 @@ describe("TaskExecutor.startExecution", () => {
       },
     };
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
@@ -1782,7 +1782,7 @@ describe("TaskExecutor.startExecution", () => {
       },
     };
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(task.status).toBe("error");
@@ -1843,7 +1843,7 @@ describe("TaskExecutor.startExecution", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(task.status).toBe("error");
@@ -1866,7 +1866,7 @@ describe("TaskExecutor.startExecution", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
     expect(task.codexThreadId).toBe("thr-first");
   });
@@ -1888,7 +1888,7 @@ describe("TaskExecutor.startExecution", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     // 메모리: 첫 thread id만 박힘 (기존 동작 유지)
@@ -1924,7 +1924,7 @@ describe("TaskExecutor.startExecution", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
@@ -1949,7 +1949,7 @@ describe("TaskExecutor.startExecution", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
@@ -1967,13 +1967,13 @@ describe("TaskExecutor.startExecution", () => {
     );
   });
 
-  it("같은 task에 startExecution 두 번 호출 → throw", () => {
+  it("같은 task에 startNewExecution 두 번 호출 → throw", () => {
     const mocks = makeMocks();
     const engine = makeFakeEngine([]);
     const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
-    executor.startExecution(task, agent);
-    expect(() => executor.startExecution(task, agent)).toThrow(/admission in flight/);
+    executor.startNewExecution(task, agent);
+    expect(() => executor.startNewExecution(task, agent)).toThrow(/admission in flight/);
   });
 
   it("worktree 해석을 기다리는 동안에도 실행 slot을 즉시 점유한다", async () => {
@@ -2002,9 +2002,9 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     task.worktreeId = "worktree-1";
 
-    const execution = executor.startExecution(task, agent);
+    const execution = executor.startNewExecution(task, agent);
     expect(task.executionPromise).toBe(execution);
-    expect(() => executor.startExecution(task, agent)).toThrow(/admission in flight/);
+    expect(() => executor.startNewExecution(task, agent)).toThrow(/admission in flight/);
 
     resolution.resolve("/tmp/demo--feature");
     await execution;
@@ -2035,7 +2035,7 @@ describe("TaskExecutor.startExecution", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await turnStarted.promise;
     const interrupt = deferred<boolean>();
     task.interruptRequest = interrupt.promise.then((accepted) => {
@@ -2103,7 +2103,7 @@ describe("TaskExecutor.startExecution", () => {
     const task = makeTask();
     task.profileId = claudeAgent.id;
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await turnStarted.promise;
     const executionPromise = task.executionPromise;
     const delivery = await task.runner!.engine.intervene({ prompt: "new input" });
@@ -2145,7 +2145,7 @@ describe("TaskExecutor.startExecution", () => {
     });
     const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
-    const execution = executor.startExecution(task, agent);
+    const execution = executor.startNewExecution(task, agent);
     const activation = task.executionActivation!.promise;
     await execution;
     await expect(activation).rejects.toThrow(/factory boom/);
@@ -2173,7 +2173,7 @@ describe("TaskExecutor.startExecution", () => {
       .mockRejectedValueOnce(new Error("prepare boom"));
 
     try {
-      executor.startExecution(task, agent);
+      executor.startNewExecution(task, agent);
       await task.executionPromise;
     } finally {
       prepareSpy.mockRestore();
@@ -2227,7 +2227,7 @@ describe("TaskExecutor.startExecution", () => {
     );
     const task = makeTask();
     task.callerSessionId = "parent-sess-1";
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
@@ -2253,7 +2253,7 @@ describe("TaskExecutor.startExecution", () => {
     );
     const task = makeTask();
     // callerSessionId 미설정
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(notify).not.toHaveBeenCalled();
@@ -2275,7 +2275,7 @@ describe("TaskExecutor.startExecution", () => {
     );
     const task = makeTask();
     task.callerSessionId = "parent-sess-1";  // 있어도 notifier 없으면 호출 안 됨
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
@@ -2306,7 +2306,7 @@ describe("TaskExecutor.startExecution", () => {
     );
     const task = makeTask();
     task.callerSessionId = "parent-sess-1";
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
 
     // executionPromise는 정상 resolve (finalize에서 throw 격리됨)
     await expect(task.executionPromise).resolves.toBeUndefined();
@@ -2658,7 +2658,7 @@ describe("TaskExecutor runner process boundary", () => {
       task.status = "initializing";
       task.pendingExecutionExpectedTerminalEventId = expectedTerminalEventId;
 
-      await executor.startExecution(task, agent);
+      await executor.startNewExecution(task, agent);
 
       expect(acquire).toHaveBeenCalledWith(task.agentSessionId, expect.objectContaining({
         registrationId: proof.registrationId,
@@ -2745,7 +2745,7 @@ describe("TaskExecutor runner process boundary", () => {
     );
     const task = makeTask();
     task.status = "initializing";
-    const execution = executor.startExecution(task, agent);
+    const execution = executor.startNewExecution(task, agent);
     const activation = task.executionActivation!.promise;
     await execution;
     await expect(activation).resolves.toBeUndefined();
@@ -2829,7 +2829,7 @@ describe("TaskExecutor runner process boundary", () => {
     const task = makeTask();
     task.status = "initializing";
 
-    const firstExecution = executor.startExecution(task, agent);
+    const firstExecution = executor.startNewExecution(task, agent);
     const firstActivation = task.executionActivation!;
     await firstActivation.promise;
     await firstExecution;
@@ -2958,7 +2958,7 @@ describe("TaskExecutor runner process boundary", () => {
       const task = makeTask();
       task.status = "initializing";
 
-      const execution = executor.startExecution(task, agent);
+      const execution = executor.startNewExecution(task, agent);
       const activation = task.executionActivation!.promise;
       await execution;
       await expect(activation).rejects.toThrow();
@@ -3006,7 +3006,7 @@ describe("TaskExecutor runner process boundary", () => {
     const task = makeTask();
     task.status = "initializing";
 
-    const execution = executor.startExecution(task, agent);
+    const execution = executor.startNewExecution(task, agent);
     const activation = task.executionActivation!.promise;
     await execution;
 
@@ -3084,7 +3084,7 @@ describe("TaskExecutor runner process boundary", () => {
       undefined,
     );
     const task = makeTask();
-    const startExecution = vi.spyOn(executor, "startExecution");
+    const startNewExecution = vi.spyOn(executor, "startNewExecution");
 
     const recovery = executor.recoverRunnerExecution(
       task,
@@ -3106,7 +3106,7 @@ describe("TaskExecutor runner process boundary", () => {
       proof.executionCommandId,
       undefined,
     );
-    expect(startExecution).not.toHaveBeenCalled();
+    expect(startNewExecution).not.toHaveBeenCalled();
     expect(task.executionRegistration).toBeUndefined();
   });
 
@@ -3494,7 +3494,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       silentLogger,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await started.promise;
     task.interventionQueue.push({
       text: "지금 반영",
@@ -3563,7 +3563,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       silentLogger,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await started.promise;
     task.interventionQueue.push({
       text: "이 이미지 봐줘",
@@ -3644,7 +3644,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(capturedSystemPrompts).toEqual([
@@ -3689,7 +3689,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       silentLogger,
     );
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(turnCount).toBe(2);
@@ -3746,7 +3746,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const factory = vi.fn(() => engine);
     const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(turnCount).toBe(2);
@@ -3795,7 +3795,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     );
     task.profileId = claudeAgent.id;
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(turnCount).toBe(2);
@@ -3856,7 +3856,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     );
     task.profileId = claudeAgent.id;
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(turnCount).toBe(2);
@@ -3888,7 +3888,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       async close() {},
     };
     const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(task.status).toBe("error");
@@ -3962,7 +3962,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       deliveryRecorder,
     );
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(factory).toHaveBeenCalledTimes(1);
@@ -4040,7 +4040,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     ];
     task.interventionQueue.push(...messages);
 
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(executeInputs).toHaveLength(1);
@@ -4084,7 +4084,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const factory = vi.fn(() => makeFakeEngine(events));
     const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
     expect(task.status).toBe("completed");
     expect(factory).toHaveBeenCalledTimes(1);
@@ -4116,7 +4116,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       silentLogger,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(capturedResumeIds).toEqual(["claude-existing"]);
@@ -4173,7 +4173,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(fakeBuilder.build).not.toHaveBeenCalled();
@@ -4244,7 +4244,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(captured).toHaveLength(2);
@@ -4328,7 +4328,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(captured).toHaveLength(2);
@@ -4432,7 +4432,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
         processFactory,
       );
 
-      executor.startExecution(task, claudeAgent);
+      executor.startNewExecution(task, claudeAgent);
       await task.executionPromise;
 
       expect(compact).toHaveBeenCalledTimes(1);
@@ -4490,7 +4490,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(captured).toHaveLength(2);
@@ -4535,7 +4535,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(captured).toHaveLength(1);
@@ -4589,7 +4589,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       silentLogger,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(captured).toHaveLength(1);
@@ -4644,7 +4644,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(captured).toHaveLength(4);
@@ -4694,7 +4694,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       silentLogger,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(execute).toHaveBeenCalledTimes(1);
@@ -4732,7 +4732,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       silentLogger,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(compact).toHaveBeenCalledTimes(1);
@@ -4772,7 +4772,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       silentLogger,
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     const compactPersist = mocks.persistEvent.mock.calls.find(
@@ -4843,7 +4843,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
 
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(turnCount).toBe(2);
@@ -4885,7 +4885,7 @@ describe("TaskExecutor engine event publishing — durable ingress / transient w
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     const persistedTypes = mocks.persistEvent.mock.calls.map(
@@ -4922,7 +4922,7 @@ describe("TaskExecutor engine event publishing — durable ingress / transient w
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(task.status).toBe("error");
@@ -4946,7 +4946,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
     task.callerInfo = { source: "slack", display_name: "Alice" };
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     const firstCall = mocks.persistEvent.mock.calls[0];
@@ -4971,7 +4971,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();  // callerInfo 미설정
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     const first = mocks.persistEvent.mock.calls[0][1] as Record<string, unknown>;
@@ -4993,7 +4993,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
       { key: "page_context_sources", label: "internal", content: { pages: [{ page_id: "page-1" }] } },
       { key: "visible", label: "Visible", content: "keep" },
     ];
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     const first = mocks.persistEvent.mock.calls[0][1] as Record<string, unknown>;
@@ -5011,12 +5011,12 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
     expect(task.status).toBe("error");
   });
 
-  it("auto-resume task (queue에 메시지 push된 상태로 startExecution) → 접수 시 기록된 user_message를 중복 발행하지 않는다", async () => {
+  it("auto-resume task (queue에 메시지 push된 상태로 startNewExecution) → 접수 시 기록된 user_message를 중복 발행하지 않는다", async () => {
     // 완료 세션의 재개 메시지는 AutoResumeTransition이 접수 시점에 이미 기록한다.
     // executor는 queue를 엔진에 전달하되 timeline 이벤트를 다시 만들지 않는다.
     const mocks = makeMocks();
@@ -5027,7 +5027,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     const task = makeTask();
     task.prompt = "second turn";
     task.interventionQueue.push({ text: "second turn", user: "u" });
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     const userMessages = mocks.persistEvent.mock.calls.filter(
@@ -5057,7 +5057,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();  // task.prompt = "hi" (원래 prompt)
     task.interventionQueue.push({ text: "new message", user: "u" });
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
     expect(capturedPrompt).toBe("new message");  // task.prompt="hi"가 아니라 queue dequeue
   });
@@ -5087,7 +5087,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
       user: "u",
       attachmentPaths: ["/tmp/incoming/sess/a.png"],
     });
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(capturedPrompt).toBe(
@@ -5121,7 +5121,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
       user: "u",
       attachmentPaths: ["/tmp/incoming/sess/a.png", "/tmp/incoming/sess/readme.txt"],
     });
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(capturedImageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
@@ -5186,7 +5186,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     // persistEvent 첫 호출은 system_message (Python 순서 — system_message 먼저, user_message 다음).
@@ -5224,7 +5224,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     const sysCalls = mocks.persistEvent.mock.calls.filter(
@@ -5255,7 +5255,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     const userCall = mocks.persistEvent.mock.calls.find(
@@ -5302,7 +5302,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     const task = makeTask();
     task.profileId = claudeAgent.id;
     task.prompt = "사용자 요청";
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     // systemPrompt는 SDK 옵션으로 분리.
@@ -5334,7 +5334,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     const userCall = mocks.persistEvent.mock.calls.find(
@@ -5362,7 +5362,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     const types = mocks.persistEvent.mock.calls.map((c) => (c[1] as { type: string }).type);
@@ -5391,7 +5391,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
     const task = makeTask();
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     // ctx 격리 → system_message 영속화 0회, user_message.context 키 미박힘 (legacy 동작)
@@ -5427,7 +5427,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     const task = makeTask();
     task.prompt = "queued";
     task.interventionQueue.push({ text: "queued", user: "u" });
-    executor.startExecution(task, agent);
+    executor.startNewExecution(task, agent);
     await task.executionPromise;
 
     expect(fakeBuilder.build).not.toHaveBeenCalled();
@@ -5489,7 +5489,7 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
     );
     const task = makeTask();
     task.profileId = claudeAgent.id;
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(capturedSystemPrompt).toBe("you are roselin");
@@ -5526,7 +5526,7 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
     const task = makeTask();
-    executor.startExecution(task, agent);  // codex agent
+    executor.startNewExecution(task, agent);  // codex agent
     await task.executionPromise;
 
     // codex SDK는 turn-level systemPrompt 미지원 — 호출자가 prompt에 prepend.
@@ -5563,7 +5563,7 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
     );
     const task = makeTask();
     task.profileId = claudeAgentWithOpts.id;
-    executor.startExecution(task, claudeAgentWithOpts);
+    executor.startNewExecution(task, claudeAgentWithOpts);
     await task.executionPromise;
 
     expect(capturedParams.allowedTools).toEqual(["Read", "Bash"]);
@@ -5601,7 +5601,7 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
     task.allowedTools = ["Bash"];
     task.disallowedTools = ["Edit"];
     task.useMcp = false;
-    executor.startExecution(task, claudeAgentWithOpts);
+    executor.startNewExecution(task, claudeAgentWithOpts);
     await task.executionPromise;
 
     expect(capturedParams.allowedTools).toEqual(["Bash"]);

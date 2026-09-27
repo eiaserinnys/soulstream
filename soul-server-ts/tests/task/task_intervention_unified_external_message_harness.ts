@@ -224,7 +224,7 @@ async function observeIdle(
   const result = await route.addIntervention(
     requestFor(axis, task.agentSessionId, deliveryId),
     (resumedTask, activation) => {
-      execution = executor.startExecution(resumedTask, agent, activation);
+      execution = executor.startNewExecution(resumedTask, agent, activation);
     },
   );
   const routeResult = "autoResumed" in result
@@ -406,10 +406,10 @@ function makeLedgerGate(
     }),
     beginDispatch: vi.fn(async (candidate: DeliveryLedgerAdmission) => candidate),
     recordResult: vi.fn().mockResolvedValue(undefined),
-    recordFailure: vi.fn().mockResolvedValue(undefined),
+    deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
   } as Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
   >;
   return { gate, admissionIds };
 }

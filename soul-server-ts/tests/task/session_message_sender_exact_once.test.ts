@@ -66,7 +66,7 @@ class SharedDeliveryLedger {
 
   gate(nodeId: string): Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
       | "recordNotificationPublished" | "recordNotificationFailure"
       | "recordReservationRetry"
   > {
@@ -115,7 +115,7 @@ class SharedDeliveryLedger {
           stored.row.queued_at = new Date(this.clock.now);
         }
       },
-      recordFailure: async (admission) => {
+      deferFailureToCoordinator: async (admission) => {
         if (admission.kind !== "admitted") return;
         admission.row.last_error = "NOT_OWNER";
       },
@@ -143,7 +143,7 @@ class SharedDeliveryLedger {
         continue;
       }
       // resolveTask currently throws before the route's try/catch, so the
-      // NOT_OWNER row receives no recordFailure call. It remains claimed until
+      // NOT_OWNER row receives no deferFailureToCoordinator call. It remains claimed until
       // the ordinary stale-attempt recovery horizon makes it eligible again.
       stored.row.attempt_count += 1;
       stored.row.next_attempt_at = new Date(this.clock.now);
