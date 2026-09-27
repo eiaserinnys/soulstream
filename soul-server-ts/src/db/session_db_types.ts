@@ -1,4 +1,15 @@
 import type { SessionBindingWarning } from "@soulstream/page-model";
+import type {
+  BoardContainerKind,
+  BoardItemType,
+  TaskItemStatus,
+} from "@soulstream/wire-schema";
+
+export type {
+  BoardContainerKind,
+  BoardItemType,
+  TaskItemStatus,
+} from "@soulstream/wire-schema";
 
 import type {
   ReviewState,
@@ -61,17 +72,6 @@ export interface CatalogFolderRow {
   projectPageId?: string | null;
   createdAt?: string;
 }
-
-export type BoardItemType =
-  | "session"
-  | "markdown"
-  | "subfolder"
-  | "asset"
-  | "frame"
-  | "task"
-  | "custom_view";
-
-export type BoardContainerKind = "folder" | "task";
 
 export interface BoardYjsContainerRef {
   containerKind: BoardContainerKind;
@@ -470,12 +470,6 @@ export interface SessionDeliveryNotificationOutboxRow {
 }
 
 export type TaskAssigneeKind = "agent" | "human" | "session";
-export type TaskItemStatus =
-  | "pending"
-  | "in_progress"
-  | "review"
-  | "completed"
-  | "cancelled";
 export type TaskStatus = "open" | "completed";
 export type TaskOperationTargetKind = "task" | "section" | "item";
 export type TaskOperationActorKind = "agent" | "user" | "system" | "llm";

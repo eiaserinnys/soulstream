@@ -13,7 +13,10 @@
  */
 
 import type { SessionEventEnvelope } from "@soulstream/wire-schema";
-import { MODEL_REASONING_EFFORTS } from "@soulstream/model-catalog";
+import {
+  MODEL_REASONING_EFFORTS,
+  type AgentBackend,
+} from "@soulstream/model-catalog";
 
 import type {
   RunnerControlFrame,
@@ -34,7 +37,7 @@ export type SSEEventPayload = SessionEventEnvelope["event"];
  * 백엔드 식별자. 새 백엔드(예: gemini) 추가 시 본 type alias만 갱신.
  * spec-reviewer 1차 P2 — inline literal 대신 분리 (분산 수정 회피).
  */
-export type BackendId = "claude" | "codex" | "openai-agents";
+export type BackendId = AgentBackend;
 
 /**
  * Accept-set for reasoning effort (D10a): every value the wire, DB and resume

@@ -8,20 +8,14 @@
 import type { SessionBindingWarning } from "@soulstream/page-model";
 
 import type { SessionSummary } from "./session-types";
+import type { ReasoningEffort } from "@soulstream/model-catalog";
 
 /**
  * Read vocabulary. `minimal` only exists for rows written before the model
  * catalog became the source of truth; no current model advertises it.
  * Selectable values always come from a preset's `supported_efforts`.
  */
-export type ReasoningEffort =
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "ultra";
+export type { ReasoningEffort } from "@soulstream/model-catalog";
 
 /**
  * Display labels only. Which efforts are *offered* is decided by the selected

@@ -1,4 +1,7 @@
 import { create } from "zustand";
+import type { TaskItemStatus } from "@soulstream/wire-schema";
+
+export type { TaskItemStatus } from "@soulstream/wire-schema";
 
 import type { TaskUpdatedStreamEvent } from "../shared/stream-events";
 import {
@@ -14,12 +17,6 @@ import {
 } from "./task-mutations";
 
 export type TaskAssigneeKind = "agent" | "human" | "session";
-export type TaskItemStatus =
-  | "pending"
-  | "in_progress"
-  | "review"
-  | "completed"
-  | "cancelled";
 export type TaskStatus = "open" | "completed";
 export type TaskCompletionKind = "agent" | "user" | "llm";
 

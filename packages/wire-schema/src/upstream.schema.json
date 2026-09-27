@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 152개 $defs (top-level wire 79 + supporting/SSE 73). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 155개 $defs (top-level wire 79 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -55,6 +55,70 @@
   "x-soulstream-persistence-only-event-types": [
     "metadata"
   ],
+  "x-soulstream-session-timeline-event-types": [
+    "user_message",
+    "intervention_sent",
+    "session_notification",
+    "assistant_message",
+    "turn_summary",
+    "thinking",
+    "tool_start",
+    "tool_result",
+    "error",
+    "assistant_error",
+    "system_message",
+    "context_usage",
+    "compact",
+    "input_request",
+    "input_request_expired",
+    "input_request_responded",
+    "tool_approval_requested",
+    "tool_approval_resolved",
+    "agent_updated",
+    "handoff_requested",
+    "handoff_occurred",
+    "guardrail_tripwire",
+    "away_summary",
+    "credential_alert",
+    "realtime_status",
+    "realtime_transcript"
+  ],
+  "x-soulstream-session-statuses": [
+    "running",
+    "completed",
+    "error",
+    "interrupted",
+    "unknown"
+  ],
+  "x-soulstream-caller-info-sources": [
+    "agent",
+    "api",
+    "browser",
+    "channel_observer",
+    "execute-proxy",
+    "llm",
+    "slack",
+    "soul-app",
+    "system",
+    "trello_watcher"
+  ],
+  "x-soulstream-task-item-statuses": [
+    "pending",
+    "in_progress",
+    "review",
+    "completed",
+    "cancelled"
+  ],
+  "x-soulstream-board-item-types": [
+    "session",
+    "markdown",
+    "subfolder",
+    "asset",
+    "frame",
+    "task",
+    "custom_view"
+  ],
+  "x-soulstream-board-container-kinds": ["folder", "task"],
   "x-soulstream-event-durability": {
     "init": "durable",
     "reconnected": "durable",
@@ -123,6 +187,38 @@
     "subtree_update": "durable"
   },
   "$defs": {
+    "SessionLifecycleStatus": {
+      "type": "string",
+      "enum": ["initializing", "running", "completed", "error", "interrupted"]
+    },
+    "CallerInfoSource": {
+      "type": "string",
+      "enum": ["agent", "api", "browser", "channel_observer", "execute-proxy", "llm", "slack", "soul-app", "system", "trello_watcher"]
+    },
+    "CallerInfo": {
+      "type": "object",
+      "required": ["source"],
+      "additionalProperties": true,
+      "properties": {
+        "source": { "$ref": "#/$defs/CallerInfoSource" },
+        "display_name": { "type": ["string", "null"] },
+        "user_id": { "type": ["string", "null"] },
+        "avatar_url": { "type": ["string", "null"] },
+        "email": { "type": ["string", "null"] },
+        "agent_node": { "type": ["string", "null"] },
+        "agent_id": { "type": ["string", "null"] },
+        "agent_name": { "type": ["string", "null"] },
+        "slack": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "channel_id": { "type": "string" },
+            "thread_ts": { "type": "string" },
+            "user_id": { "type": "string" }
+          }
+        }
+      }
+    },
     "ReleaseExecutableIdentity": {
       "type": "object",
       "required": ["kind", "path", "identity"],
@@ -961,10 +1057,11 @@
     "SessionUpdated": {
       "type": "object",
       "description": "노드→orch: 세션 상태 변경 broadcast. soul-server-ts/src/upstream/session_broadcaster.ts.",
-      "required": ["type"],
+      "required": ["type", "status"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "session_updated" },
+        "status": { "$ref": "#/$defs/SessionLifecycleStatus" },
         "agent_session_id": { "type": "string" },
         "agentSessionId": { "type": "string" },
         "review_required": { "type": "boolean" },
@@ -1265,7 +1362,7 @@
           "type": "array",
           "items": { "type": "object", "additionalProperties": true }
         },
-        "caller_info": { "type": "object", "additionalProperties": true },
+        "caller_info": { "$ref": "#/$defs/CallerInfo" },
         "predecessor_session_id": {
           "type": ["string", "null"],
           "description": "Optional predecessor session for explicit run succession."
@@ -1320,7 +1417,7 @@
           "description": "Live intervention ride-along context items.",
           "items": { "type": "object", "additionalProperties": true }
         },
-        "caller_info": { "type": "object", "additionalProperties": true },
+        "caller_info": { "$ref": "#/$defs/CallerInfo" },
         "delivery_id": {
           "type": "string",
           "description": "Stable UUID for exactly-once delivery accounting."
@@ -2409,36 +2506,42 @@
         "streams": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": [
-              "streamIdentity", "text", "updatedAt", "truncated",
-              "resetRequired", "recovery"
-            ],
-            "additionalProperties": true,
-            "properties": {
-              "streamIdentity": { "type": "string", "minLength": 1 },
-              "text": { "type": ["string", "null"] },
-              "updatedAt": { "type": "string", "format": "date-time" },
-              "truncated": { "type": "boolean" },
-              "resetRequired": { "type": "boolean" },
-              "recovery": { "enum": ["none", "durable_final"] }
-            },
-            "oneOf": [
+            "allOf": [
               {
+                "type": "object",
+                "required": [
+                  "streamIdentity", "text", "updatedAt", "truncated",
+                  "resetRequired", "recovery"
+                ],
+                "additionalProperties": true,
                 "properties": {
-                  "text": { "type": "string" },
-                  "truncated": { "const": false },
-                  "resetRequired": { "const": false },
-                  "recovery": { "const": "none" }
+                  "streamIdentity": { "type": "string", "minLength": 1 },
+                  "text": { "type": ["string", "null"] },
+                  "updatedAt": { "type": "string", "format": "date-time" },
+                  "truncated": { "type": "boolean" },
+                  "resetRequired": { "type": "boolean" },
+                  "recovery": { "enum": ["none", "durable_final"] }
                 }
               },
               {
-                "properties": {
-                  "text": { "type": "null" },
-                  "truncated": { "const": true },
-                  "resetRequired": { "const": true },
-                  "recovery": { "const": "durable_final" }
-                }
+                "oneOf": [
+                  {
+                    "properties": {
+                      "text": { "type": "string" },
+                      "truncated": { "const": false },
+                      "resetRequired": { "const": false },
+                      "recovery": { "const": "none" }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "text": { "type": "null" },
+                      "truncated": { "const": true },
+                      "resetRequired": { "const": true },
+                      "recovery": { "const": "durable_final" }
+                    }
+                  }
+                ]
               }
             ]
           }

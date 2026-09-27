@@ -6,6 +6,9 @@
  */
 
 import type { SessionBindingWarning } from "@soulstream/page-model";
+import type { SessionStatus } from "@soulstream/wire-schema";
+
+export type { SessionStatus } from "@soulstream/wire-schema";
 
 import type { EventRecord } from "./api-types";
 import type {
@@ -15,9 +18,6 @@ import type {
 } from "../../../../orch-server-ts/src/session/session_feed_contract";
 
 export type { PendingAttention, SessionNotice } from "../../../../orch-server-ts/src/session/session_feed_contract";
-
-/** 세션 상태 */
-export type SessionStatus = "running" | "completed" | "error" | "interrupted" | "unknown";
 
 export type ReviewState = "not_required" | "needs_review" | "acknowledged";
 

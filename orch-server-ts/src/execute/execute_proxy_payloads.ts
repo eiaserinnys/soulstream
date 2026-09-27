@@ -3,21 +3,18 @@ import type {
   DeliveryIntent,
   DeliveryMetadataWireFields,
 } from "../session/session_action_command_payloads.js";
+import {
+  MODEL_REASONING_EFFORTS,
+  type ReasoningEffort,
+} from "@soulstream/model-catalog";
+
+export type { ReasoningEffort };
 
 /**
  * Accept-set, mirroring packages/wire-schema CreateSession.reasoningEffort and
  * soul-server-ts/src/engine/protocol.ts. Whether a value is usable for a given
  * session is decided by the node against the selected preset, not here.
  */
-export type ReasoningEffort =
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "ultra";
-
 export type ClaudePermissionMode =
   | "default"
   | "acceptEdits"
@@ -72,15 +69,7 @@ export const AGENT_PROFILE_REQUIRED_DETAIL = {
   },
 } as const;
 
-const reasoningEfforts = new Set<ReasoningEffort>([
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-  "ultra",
-]);
+const reasoningEfforts = new Set<ReasoningEffort>(MODEL_REASONING_EFFORTS);
 
 const claudePermissionModes = new Set<ClaudePermissionMode>([
   "default",

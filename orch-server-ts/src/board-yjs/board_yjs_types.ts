@@ -1,13 +1,6 @@
-export type BoardItemType =
-  | "session"
-  | "markdown"
-  | "subfolder"
-  | "asset"
-  | "frame"
-  | "task"
-  | "custom_view";
+import type { BoardContainerKind, BoardItemType } from "@soulstream/wire-schema";
 
-export type BoardContainerKind = "folder" | "task";
+export type { BoardContainerKind, BoardItemType } from "@soulstream/wire-schema";
 
 export interface BoardYjsContainerRef {
   containerKind: BoardContainerKind;

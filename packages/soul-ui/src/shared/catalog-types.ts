@@ -6,6 +6,9 @@
  */
 
 import type { SessionSummary } from "./session-types";
+import type { BoardContainerKind, BoardItemType } from "@soulstream/wire-schema";
+
+export type { BoardContainerKind } from "@soulstream/wire-schema";
 
 /** atom 트리 주입 설정 */
 export interface AtomContextNodeSettings {
@@ -52,16 +55,7 @@ export interface CatalogAssignment {
 /** catalog_updated 신형 payload의 세션별 변경분. null은 카탈로그 제거를 뜻한다. */
 export type CatalogSessionsDelta = Record<string, CatalogAssignment | null>;
 
-export type CatalogBoardItemType =
-  | "session"
-  | "markdown"
-  | "subfolder"
-  | "asset"
-  | "frame"
-  | "task"
-  | "custom_view";
-
-export type BoardContainerKind = "folder" | "task";
+export type CatalogBoardItemType = BoardItemType;
 
 export interface BoardContainerRef {
   kind: BoardContainerKind;
