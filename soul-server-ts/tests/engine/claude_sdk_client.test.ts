@@ -3575,6 +3575,26 @@ describe("ClaudeSdkClient", () => {
     });
   });
 
+  it("emits a fatal error when the legacy SDK stream ends without a Result", async () => {
+    const client = new ClaudeSdkClient(
+      { query: () => makeQuery(sdkMessages([])) },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "error",
+      fatal: true,
+      errorCode: "claude_runtime_ended_before_idle",
+    }));
+  });
+
   it("post-result drain ignores non prompt_suggestion messages (Python drain phase narrowing)", async () => {
     const client = new ClaudeSdkClient(
       {
@@ -4285,12 +4305,12 @@ describe("ClaudeSdkClient", () => {
   it("wraps Claude executable startup failures with an explicit operator-facing error", async () => {
     const client = new ClaudeSdkClient(
       {
-        query: () =>
-          makeQuery(
-            (async function* () {
-              throw new Error("spawn /missing/claude ENOENT");
-            })(),
-          ),
+        query: () => makeQuery((async function* () {
+          throw Object.assign(new Error("spawn /missing/claude ENOENT"), {
+            code: "ENOENT",
+            syscall: "spawn /missing/claude",
+          });
+        })()),
       },
       silentLogger,
     );
@@ -4309,6 +4329,28 @@ describe("ClaudeSdkClient", () => {
     ).rejects.toThrow(
       "Claude Code executable failed to start at CLAUDE_CODE_EXECPATH: spawn /missing/claude ENOENT",
     );
+  });
+
+  it("preserves non-spawn errors that contain not found", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () => makeQuery((async function* () {
+          throw new Error("profile not found");
+        })()),
+      },
+      silentLogger,
+    );
+
+    await expect(
+      collect(client.run(
+        {
+          prompt: "hi",
+          workspaceDir: "/tmp/claude-work",
+          env: { CLAUDE_CODE_EXECPATH: "/missing/claude" },
+        },
+        new AbortController().signal,
+      )),
+    ).rejects.toMatchObject({ message: "profile not found" });
   });
 });
 

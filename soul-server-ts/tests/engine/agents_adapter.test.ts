@@ -79,4 +79,34 @@ describe("AgentsEngineAdapter provider/hosted tools config", () => {
       ),
     ).toThrow(/agents_sdk\.provider\.api_key_env missing/);
   });
+
+  it("RunState 복원 실패 뒤 실행 가드를 해제한다", async () => {
+    const profile = makeProfile();
+    for (const agent of profile.agents_sdk!.agents) agent.mcp_servers = [];
+    const adapter = new AgentsEngineAdapter(
+      {
+        workspaceDir: "/tmp/agents",
+        profile,
+        processEnv: { OPENAI_API_KEY: "test-key" },
+      },
+      silentLogger,
+    );
+    const execute = async (): Promise<void> => {
+      for await (const _event of adapter.execute({
+        prompt: "resume",
+        resumeSessionId: "agents-session",
+        resumeRunState: "{",
+      })) {
+        // drain
+      }
+    };
+
+    const firstError = await execute().catch((error: unknown) => error);
+    const secondError = await execute().catch((error: unknown) => error);
+
+    expect(firstError).toBeInstanceOf(Error);
+    expect(secondError).toBeInstanceOf(Error);
+    expect((secondError as Error).message).toBe((firstError as Error).message);
+    await adapter.close();
+  });
 });
