@@ -7,7 +7,6 @@
 
 import type {
   SessionSummary,
-  EventTreeNode,
   ReviewState,
   SoulSSEEvent,
 } from "@shared/types";
@@ -58,9 +57,6 @@ export interface SessionListProvider {
  * SSE 스트림을 구독하여 실시간 업데이트를 수신합니다.
  */
 export interface SessionDetailProvider {
-  /** 세션 카드 목록 조회 (스냅샷) */
-  fetchCards(sessionKey: string): Promise<EventTreeNode[]>;
-
   /**
    * 실시간 업데이트 구독.
    *

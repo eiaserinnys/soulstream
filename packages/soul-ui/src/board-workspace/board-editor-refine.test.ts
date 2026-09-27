@@ -76,31 +76,11 @@ describe("🔴23 task board layout persistence slice", () => {
   });
 });
 
-describe("🔴25 markdown edit opens the center overlay in edit mode", () => {
-  it("requestBoardDocumentEdit sets active doc + pending edit; a normal open clears pending", () => {
-    const store = useDashboardStore.getState();
-    store.requestBoardDocumentEdit("doc-25");
-    let s = useDashboardStore.getState();
-    expect(s.activeBoardDocumentId).toBe("doc-25");
-    expect(s.pendingBoardDocumentEditId).toBe("doc-25");
-
-    // 일반 열기(카드/탭)는 편집 요청을 비운다 → 자동 편집 진입 없음.
-    store.setActiveBoardDocument("doc-25");
-    expect(useDashboardStore.getState().pendingBoardDocumentEditId).toBeNull();
-
-    // 소비 clear.
-    store.requestBoardDocumentEdit("doc-25");
-    store.clearPendingBoardDocumentEdit();
-    expect(useDashboardStore.getState().pendingBoardDocumentEditId).toBeNull();
-  });
-
-  it("markdown menu delegates edits by callback and keeps the standalone fallback", () => {
+describe("markdown context menu edit delegation", () => {
+  it("delegates document edits to the owning board surface without a global inspector fallback", () => {
     const menus = read("./BoardWorkspaceContextMenus.tsx");
-    // task 보드는 callback으로 로컬 오버레이를 열고, 일반 보드는 기존 전역 경로를 쓴다.
-    expect(menus).toContain("onRequestMarkdownEdit(markdownContextMenu.item.documentId)");
-    expect(menus).toContain("requestBoardDocumentEdit(markdownContextMenu.item.documentId)");
-    // custom_view는 편집 항목/편집 위임 prop이 없다.
-    expect(menus).not.toContain("requestBoardDocumentEdit(customViewContextMenu");
+    expect(menus).toContain("onRequestMarkdownEdit?.(markdownContextMenu.item.documentId)");
+    expect(menus).not.toContain("requestBoardDocumentEdit");
     expect(menus).not.toContain("onEditBoardItem");
     const view = read("./BoardWorkspaceView.tsx");
     expect(view).toContain("onRequestMarkdownEdit={onRequestMarkdownEdit}");

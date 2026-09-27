@@ -9,7 +9,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
-  EventTreeNode,
   SessionSummary,
   SoulSSEEvent,
 } from "../shared/types";
@@ -54,7 +53,6 @@ function makeProvider(sessions: SessionSummary[]): SessionStorageProvider {
       hasMore: false,
     }),
     fetchFolderCounts: vi.fn().mockResolvedValue({}),
-    fetchCards: vi.fn().mockResolvedValue([] as EventTreeNode[]),
     subscribe: vi.fn(
       (
         _sessionKey: string,
@@ -223,7 +221,7 @@ describe("useSessionListProvider query overrides", () => {
     });
 
     await waitFor(() => {
-      expect(queryClient.getQueryState(["sessions", "all", "ids", null, []])?.status)
+      expect(queryClient.getQueryState(["sessions", "ids", null, []])?.status)
         .toBe("success");
     });
     expect(provider.fetchSessions).not.toHaveBeenCalled();

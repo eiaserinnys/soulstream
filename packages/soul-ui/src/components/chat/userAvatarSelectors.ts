@@ -10,7 +10,6 @@
  * 우선순위:
  *   1) 메시지 단위 caller_info (msg.callerInfo) — 멀티-소스 세션에서 메시지마다 발신자가 다를 때
  *   2) 세션 단위 caller_info (activeSessionSummary.metadata) — 세션 발신자 fallback
- *   3) 노드 단일 사용자 (dashboardConfig.user.portraitUrl) — caller_info 부재 세션 호환
  */
 
 import type { CallerInfo, MetadataEntry } from "../../shared/types";
@@ -45,16 +44,14 @@ export function extractCallerAvatarUrl(
  * 우선순위:
  *   1) msgCallerInfo.avatar_url — 메시지 단위 발신자 신원 (멀티-소스 세션에서 메시지마다 다른 경우 정본)
  *   2) sessionAvatarUrl — 세션-수준 caller_info fallback (extractCallerAvatarUrl이 추출한 값)
- *   3) userPortraitUrl — 노드 단일 사용자 dashboardConfig fallback (caller_info 부재 세션 호환)
  *
  * 비문자열·빈 문자열인 msgCallerInfo.avatar_url은 무시하고 다음 우선순위로 진행 (defensive).
  */
 export function pickMessageAvatarUrl(
   msgCallerInfo: CallerInfo | undefined,
   sessionAvatarUrl: string | null,
-  userPortraitUrl: string | null | undefined,
 ): string | null {
   const mu = msgCallerInfo?.avatar_url;
   if (typeof mu === "string" && mu.length > 0) return mu;
-  return sessionAvatarUrl ?? userPortraitUrl ?? null;
+  return sessionAvatarUrl;
 }

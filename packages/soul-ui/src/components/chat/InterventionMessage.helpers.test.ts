@@ -10,7 +10,6 @@
 import { describe, it, expect } from "vitest";
 import { computeInterventionDisplay } from "./InterventionMessage.helpers";
 import type { ChatMessage } from "../../lib/flatten-tree";
-import type { ProfileConfig } from "../../stores/dashboard-store-types";
 
 function makeMsg(partial: Partial<ChatMessage>): ChatMessage {
   return {
@@ -23,19 +22,12 @@ function makeMsg(partial: Partial<ChatMessage>): ChatMessage {
   } as ChatMessage;
 }
 
-const userConfig: ProfileConfig = {
-  id: "eiaserinnys@gmail.com",
-  name: "Jubok",
-  hasPortrait: true,
-  portraitUrl: "https://google.com/picture.jpg",
-};
-
 describe("computeInterventionDisplay — system 분기", () => {
   it("source=system이면 Soulstream 이름 + 정적 자산 portrait + ⚙️ fallback", () => {
     const msg = makeMsg({
       callerInfo: { source: "system", agent_node: "eias-shopping", display_name: "Soulstream" },
     });
-    const d = computeInterventionDisplay(msg, null, userConfig);
+    const d = computeInterventionDisplay(msg, null);
     expect(d.isSystem).toBe(true);
     expect(d.isAgent).toBe(false);
     expect(d.displayName).toBe("Soulstream");
@@ -49,7 +41,7 @@ describe("computeInterventionDisplay — system 분기", () => {
     const msg = makeMsg({
       callerInfo: { source: "system", agent_node: "eias-shopping" },
     });
-    const d = computeInterventionDisplay(msg, null, userConfig);
+    const d = computeInterventionDisplay(msg, null);
     expect(d.displayName).toBe("Soulstream");
   });
 
@@ -58,7 +50,7 @@ describe("computeInterventionDisplay — system 분기", () => {
       callerInfo: { source: "system", agent_node: "eias-shopping" },
       agentInfo: { source: "agent", agent_node: "eias", agent_id: "shay", agent_name: "Shay" },
     });
-    const d = computeInterventionDisplay(msg, null, userConfig);
+    const d = computeInterventionDisplay(msg, null);
     expect(d.isSystem).toBe(true);
     expect(d.isAgent).toBe(false);
     expect(d.displayName).toBe("Soulstream"); // agent 이름 아님
@@ -74,7 +66,7 @@ describe("computeInterventionDisplay — system 분기", () => {
         avatar_url: "/api/system/portraits/system",
       },
     });
-    const d = computeInterventionDisplay(msg, null, userConfig);
+    const d = computeInterventionDisplay(msg, null);
     expect(d.portraitUrl).toBe("/api/system/portraits/system");
     expect(d.hasPortrait).toBe(true);
   });
@@ -84,14 +76,14 @@ describe("computeInterventionDisplay — system 분기", () => {
     const msgEmpty = makeMsg({
       callerInfo: { source: "system", display_name: "Soulstream", avatar_url: "" },
     });
-    expect(computeInterventionDisplay(msgEmpty, null, userConfig).portraitUrl).toBe(
+    expect(computeInterventionDisplay(msgEmpty, null).portraitUrl).toBe(
       "/system-portrait.png",
     );
     // undefined
     const msgUndef = makeMsg({
       callerInfo: { source: "system", display_name: "Soulstream" },
     });
-    expect(computeInterventionDisplay(msgUndef, null, userConfig).portraitUrl).toBe(
+    expect(computeInterventionDisplay(msgUndef, null).portraitUrl).toBe(
       "/system-portrait.png",
     );
   });
@@ -102,7 +94,7 @@ describe("computeInterventionDisplay — agent 분기 (회귀 보존)", () => {
     const msg = makeMsg({
       agentInfo: { source: "agent", agent_node: "eias", agent_id: "shay", agent_name: "Shay" },
     });
-    const d = computeInterventionDisplay(msg, null, userConfig);
+    const d = computeInterventionDisplay(msg, null);
     expect(d.isAgent).toBe(true);
     expect(d.displayName).toBe("Shay");
     expect(d.displayId).toBe("Shay@eias");
@@ -114,7 +106,7 @@ describe("computeInterventionDisplay — agent 분기 (회귀 보존)", () => {
     const msg = makeMsg({
       agentInfo: { source: "agent", agent_node: "eias", agent_id: null, agent_name: "Anon" },
     });
-    const d = computeInterventionDisplay(msg, null, userConfig);
+    const d = computeInterventionDisplay(msg, null);
     expect(d.portraitUrl).toBeNull();
     expect(d.hasPortrait).toBe(false);
   });
@@ -125,24 +117,17 @@ describe("computeInterventionDisplay — user 분기 (회귀 보존)", () => {
     const msg = makeMsg({
       callerInfo: { source: "slack", display_name: "Alice" },
     });
-    const d = computeInterventionDisplay(msg, null, userConfig);
+    const d = computeInterventionDisplay(msg, null);
     expect(d.isSystem).toBe(false);
     expect(d.isAgent).toBe(false);
     expect(d.displayName).toBe("Alice");
-    expect(d.displayId).toBe(userConfig.id);
+    expect(d.displayId).toBeNull();
     expect(d.fallbackEmoji).toBe("\u{270B}");
   });
 
-  it("callerInfo 부재 시 userConfig.name fallback", () => {
+  it("callerInfo 부재 시 일반 사용자 라벨을 쓴다", () => {
     const msg = makeMsg({});
-    const d = computeInterventionDisplay(msg, null, userConfig);
-    expect(d.displayName).toBe("Jubok");
-  });
-
-  it("userConfig.name='USER' (default sentinel)이면 'Intervention' fallback", () => {
-    const msg = makeMsg({});
-    const userDefault: ProfileConfig = { id: "x", name: "USER", hasPortrait: false, portraitUrl: null };
-    const d = computeInterventionDisplay(msg, null, userDefault);
+    const d = computeInterventionDisplay(msg, null);
     expect(d.displayName).toBe("Intervention");
   });
 });

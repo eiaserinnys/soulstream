@@ -43,20 +43,13 @@ import {
   shouldScrollToBottomOnTreeChange,
 } from "./ChatView.follow-helpers";
 import { ChatRuntimeCompactStrips } from "./ChatRuntimeCompactStrips";
-import { ProfileAvatar } from "../ProfileAvatar";
-import { CHAT_STATUS_TONE_CONFIG } from "./chat-tone-config";
-import { useGlassSurface } from "../LiquidGlassProvider";
 import { resolveChatTypography } from "../../lib/chat-typography";
-import { SessionModelPresetBadge } from "../SessionModelPresetBadge";
-import { SessionStoryDisclosure } from "../SessionStoryDisclosure";
 import { buildChatTimelineItems } from "./ChatView.thinking-indicator";
 import { ChatHistoryStatus } from "./ChatHistoryStatus";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
-  isOtherNodeSession?: boolean;
   fileUploadUrl?: string;
-  showHeader?: boolean;
   historyEnabled?: boolean;
 }
 
@@ -92,9 +85,7 @@ function canNestedScrollerConsumeVerticalInput(
 
 export function ChatView({
   chatInputDisabled = false,
-  isOtherNodeSession = false,
   fileUploadUrl,
-  showHeader = true,
   historyEnabled = true,
 }: ChatViewProps = {}) {
   const tree = useDashboardStore((s) => s.tree);
@@ -153,8 +144,6 @@ export function ChatView({
   );
 
   const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
-  const headerWebglActive = useGlassSurface(headerRef, { enabled: showHeader });
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const [expandedToolGroups, setExpandedToolGroups] = useState<{
@@ -623,13 +612,6 @@ export function ChatView({
     );
   }
 
-  const chatTitle =
-    activeSessionSummary?.displayName ||
-    activeSessionSummary?.lastMessage?.preview ||
-    activeSessionSummary?.prompt ||
-    activeSessionKey;
-  const chatStatusConfig = CHAT_STATUS_TONE_CONFIG[chatStatus] ?? CHAT_STATUS_TONE_CONFIG.unknown;
-
   return (
     <div
       data-slot="chat-root"
@@ -638,37 +620,6 @@ export function ChatView({
       style={chatTypographyStyle}
       className="flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"
     >
-      {showHeader && (
-        <div
-          ref={headerRef}
-          className="relative z-[1] mb-3 flex h-[50px] shrink-0 items-center gap-2.5 rounded-full border border-glass-border glass-strong glass-shadow-xs px-4"
-          data-liquid-glass-webgl={headerWebglActive ? "true" : undefined}
-        >
-          <ProfileAvatar
-            role="assistant"
-            hasPortrait={!!activeSessionSummary?.agentPortraitUrl}
-            fallbackEmoji="🤖"
-            portraitUrl={activeSessionSummary?.agentPortraitUrl}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-foreground">
-              {chatTitle}
-            </div>
-            <div className={cn("mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden text-xs font-semibold", chatStatusConfig.chipClass)}>
-              <span
-                className={cn(
-                  "h-1.5 w-1.5 shrink-0 rounded-full",
-                  chatStatusConfig.dotClass,
-                  chatStatusConfig.animate && "animate-[lg-pulse_1.6s_infinite]",
-                )}
-              />
-              <span className="shrink-0">{chatStatusConfig.label}</span>
-              <SessionModelPresetBadge className="ml-1" session={activeSessionSummary} />
-            </div>
-          </div>
-          <SessionStoryDisclosure sessionId={activeSessionKey} />
-        </div>
-      )}
       {focusEventId !== null
         && !history.loading
         && findFocusIndex(timelineItems, focusEventId) < 0
@@ -843,7 +794,6 @@ export function ChatView({
 
       <ChatInput
         additionalDisabled={chatInputDisabled}
-        isOtherNodeSession={isOtherNodeSession}
         fileUploadUrl={fileUploadUrl}
       />
     </div>

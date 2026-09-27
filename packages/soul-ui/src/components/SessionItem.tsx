@@ -2,7 +2,7 @@
  * SessionItem - 폴더 내 세션 목록에서 개별 세션 행을 렌더링하는 컴포넌트.
  *
  * DnD 핸들, 포트레이트, 상태 뱃지, 인라인 이름 편집을 담당한다.
- * 가상 스크롤/컨텍스트 메뉴/FLIP 애니메이션은 상위 FolderContents에서 처리한다.
+ * 가상 스크롤/컨텍스트 메뉴/FLIP 애니메이션은 상위 목록 뷰에서 처리한다.
  */
 
 import { memo, useState } from "react";

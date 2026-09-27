@@ -321,54 +321,6 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     setStatus("connecting");
     setSynchronizedSessionKey(null);
 
-    void provider.fetchCards(sessionKey).then((cards) => {
-      if (generation !== generationRef.current || cards.length === 0) return;
-      const batch: Array<{ event: SoulSSEEvent; eventId: number }> = [];
-      for (let index = 0; index < cards.length; index += 1) {
-        const card = cards[index];
-        if (card.type === "text") {
-          batch.push({ event: { type: "text_start", timestamp: 0 }, eventId: index * 3 });
-          batch.push({
-            event: { type: "text_delta", timestamp: 0, text: card.content },
-            eventId: index * 3 + 1,
-          });
-          batch.push({ event: { type: "text_end", timestamp: 0 }, eventId: index * 3 + 2 });
-        } else if (card.type === "tool") {
-          batch.push({
-            event: {
-              type: "tool_start",
-              timestamp: 0,
-              tool_name: card.toolName,
-              tool_input: card.toolInput,
-              tool_use_id: card.toolUseId,
-              parent_event_id: card.parentEventId,
-            },
-            eventId: index * 3,
-          });
-          if (card.completed) {
-            batch.push({
-              event: {
-                type: "tool_result",
-                timestamp: 0,
-                tool_name: card.toolName,
-                result: card.toolResult ?? "",
-                is_error: card.isError ?? false,
-                tool_use_id: card.toolUseId,
-                parent_event_id: card.parentEventId,
-              },
-              eventId: index * 3 + 1,
-            });
-          }
-        }
-      }
-      if (batch.length > 0 && generation === generationRef.current) {
-        processEventsRef.current(batch);
-      }
-    }).catch((error: unknown) => {
-      if (generation !== generationRef.current) return;
-      console.error("[useSessionProvider] Failed to load initial cards:", error);
-    });
-
     const handleStatus = (nextStatus: "connecting" | "connected" | "error") => {
       if (generation !== generationRef.current) return;
       if (nextStatus === "connecting") {

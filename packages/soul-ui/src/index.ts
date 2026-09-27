@@ -7,7 +7,6 @@
  * 이 파일은 카테고리 배럴을 재노출할 뿐입니다.
  */
 
-export * from "./styles";
 export * from "./shared";
 export * from "./providers";
 export * from "./stores";

@@ -11,35 +11,24 @@ export type UISlice = Pick<
   DashboardState,
   | "viewMode"
   | "feedScrollOffset"
-  | "sessionTypeFilter"
   | "isNewSessionModalOpen"
   | "newSessionSource"
   | "newSessionDefaults"
   | "activeRightTab"
   | "activeBoardDocumentId"
-  | "pendingBoardDocumentEditId"
   | "activeCustomViewId"
-  | "focusedBoardItem"
-  | "dashboardConfig"
   | "activeTab"
   | "leftNavigationMode"
 > &
   Pick<
     DashboardActions,
-    | "setSessionTypeFilter"
     | "openNewSessionModal"
     | "closeNewSessionModal"
     | "setActiveRightTab"
     | "setActiveBoardDocument"
-    | "requestBoardDocumentEdit"
-    | "clearPendingBoardDocumentEdit"
     | "setActiveCustomView"
-    | "focusBoardItem"
-    | "clearFocusedBoardItem"
     | "openTaskBoard"
-    | "setDashboardConfig"
     | "setViewMode"
-    | "selectFeed"
     | "setFeedScrollOffset"
     | "setActiveTab"
     | "setLeftNavigationMode"
@@ -53,20 +42,14 @@ export const createUISlice: StateCreator<
 > = (set) => ({
   viewMode: "feed",
   feedScrollOffset: 0,
-  sessionTypeFilter: "all",
   isNewSessionModalOpen: false,
   newSessionSource: "folder",
   newSessionDefaults: null,
   activeRightTab: "chat",
   activeBoardDocumentId: null,
-  pendingBoardDocumentEditId: null,
   activeCustomViewId: null,
-  focusedBoardItem: null,
-  dashboardConfig: null,
   activeTab: "feed",
   leftNavigationMode: "folders",
-
-  setSessionTypeFilter: (sessionTypeFilter) => set({ sessionTypeFilter }),
 
   openNewSessionModal: (source = "folder", defaults = null) =>
     set({
@@ -80,54 +63,19 @@ export const createUISlice: StateCreator<
   setActiveRightTab: (activeRightTab) => set({ activeRightTab }),
 
   setActiveBoardDocument: (activeBoardDocumentId) =>
-    // 일반 열기/닫기는 편집 요청을 비운다(🔴25: 편집 요청은 requestBoardDocumentEdit만 설정).
-    set({ activeBoardDocumentId, pendingBoardDocumentEditId: null, activeCustomViewId: null, activeRightTab: "chat" }),
-
-  requestBoardDocumentEdit: (documentId) =>
-    set({
-      activeBoardDocumentId: documentId,
-      pendingBoardDocumentEditId: documentId,
-      activeCustomViewId: null,
-      activeRightTab: "chat",
-    }),
-
-  clearPendingBoardDocumentEdit: () => set({ pendingBoardDocumentEditId: null }),
+    set({ activeBoardDocumentId, activeCustomViewId: null, activeRightTab: "chat" }),
 
   setActiveCustomView: (activeCustomViewId) =>
     set({ activeCustomViewId, activeBoardDocumentId: null, activeRightTab: "chat" }),
-
-  focusBoardItem: (boardItemId, folderId) =>
-    set((state) => ({
-      focusedBoardItem: {
-        boardItemId,
-        folderId,
-        requestId: (state.focusedBoardItem?.requestId ?? 0) + 1,
-      },
-      selectedFolderId: folderId,
-      activeBoardContainer: folderId ? { kind: "folder", id: folderId } : null,
-      viewMode: "folder",
-      leftNavigationMode: "folders",
-      activeTab: "folder",
-    })),
-
-  clearFocusedBoardItem: (requestId) =>
-    set((state) => (
-      state.focusedBoardItem?.requestId === requestId
-        ? { focusedBoardItem: null }
-        : {}
-    )),
 
   openTaskBoard: (taskId, parentFolderId = null) =>
     set({
       activeBoardContainer: { kind: "task", id: taskId },
       selectedFolderId: parentFolderId,
-      focusedBoardItem: null,
       viewMode: "folder",
       leftNavigationMode: "folders",
       activeTab: "folder",
     }),
-
-  setDashboardConfig: (dashboardConfig) => set({ dashboardConfig }),
 
   setViewMode: (mode) =>
     set((state) => ({
@@ -135,11 +83,6 @@ export const createUISlice: StateCreator<
       leftNavigationMode:
         mode === "feed" ? "feed" : mode === "folder" ? "folders" : state.leftNavigationMode,
     })),
-
-  selectFeed: () => {
-    set({ viewMode: "feed", leftNavigationMode: "feed" });
-    // URL은 useUrlSync의 effect가 viewMode 변경을 감지하여 자동 반영
-  },
 
   setFeedScrollOffset: (offset) => set({ feedScrollOffset: offset }),
 

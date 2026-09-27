@@ -264,15 +264,15 @@ interface SearchModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessions?: SessionSummary[];
-  onOpenSession?: (
+  onOpenSession: (
     sessionId: string,
     focusEventId: number | null,
     session?: SessionSummary,
     focusTarget?: ChatFocusTarget,
   ) => boolean | void | Promise<boolean | void>;
-  onOpenFolder?: (result: Extract<SearchNavigationResult, { kind: "folder" }>) =>
+  onOpenFolder: (result: Extract<SearchNavigationResult, { kind: "folder" }>) =>
     void | Promise<void>;
-  onOpenTask?: (result: Extract<SearchNavigationResult, { kind: "task" }>) =>
+  onOpenTask: (result: Extract<SearchNavigationResult, { kind: "task" }>) =>
     void | Promise<void>;
 }
 
@@ -288,12 +288,6 @@ export function SearchModal({
 }: SearchModalProps) {
   const catalog = useDashboardStore((s) => s.catalog);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
-  const selectFolder = useDashboardStore((s) => s.selectFolder);
-  const setActiveSession = useDashboardStore((s) => s.setActiveSession);
-  const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
-  const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
-  const setActiveTab = useDashboardStore((s) => s.setActiveTab);
-  const openTaskBoard = useDashboardStore((s) => s.openTaskBoard);
   const { results, navigationResults, sessionResults, searchStatus, loading, expansionPending, expansionFailed, error, search, invalidate, clear, currentSearchFlowId } =
     useSessionSearch();
   // 사용 로그: 결과 선택과 그 뒤의 화면 전환을 같은 검색에 묶는다.
@@ -372,27 +366,9 @@ export function SearchModal({
     const searchFocus = resolveSearchChatFocus(result.event_id, result.event_type);
     const focusEventId = opensStoryPanel ? null : searchFocus.eventId;
     const focusTarget = opensStoryPanel ? undefined : searchFocus.target;
-    let openResult: boolean | void | Promise<boolean | void>;
-    if (onOpenSession) {
-      openResult = focusTarget === undefined || focusTarget === "event"
-        ? onOpenSession(result.session_id, focusEventId, targetSummary)
-        : onOpenSession(result.session_id, focusEventId, targetSummary, focusTarget);
-    } else {
-      const targetFolderId = assignment
-        ? assignment.folderId
-        : targetSummary?.folderId;
-
-      if (targetFolderId !== undefined) {
-        selectFolder(targetFolderId);
-      }
-      if (targetSummary) {
-        setActiveSessionSummary(targetSummary);
-      }
-      setActiveSession(result.session_id);
-      setFocusEventId(focusEventId, result.session_id, focusTarget);
-      setActiveTab("chat");
-      openResult = true;
-    }
+    const openResult = focusTarget === undefined || focusTarget === "event"
+      ? onOpenSession(result.session_id, focusEventId, targetSummary)
+      : onOpenSession(result.session_id, focusEventId, targetSummary, focusTarget);
     onOpenChange(false);
     if (opensStoryPanel) {
       void Promise.resolve(openResult)
@@ -415,13 +391,8 @@ export function SearchModal({
       attrs: { rank, resultKind: result.kind },
     });
     markEntry("search");
-    if (result.kind === "folder") {
-      if (onOpenFolder) void onOpenFolder(result);
-      else selectFolder(result.folder_id);
-    } else {
-      if (onOpenTask) void onOpenTask(result);
-      else openTaskBoard(result.id, result.folder_id);
-    }
+    if (result.kind === "folder") void onOpenFolder(result);
+    else void onOpenTask(result);
     onOpenChange(false);
   };
 
@@ -440,20 +411,11 @@ export function SearchModal({
           assignment,
         )
       : summary;
-    const opened = onOpenSession
-      ? await onOpenSession(
-        result.session_id,
-        result.best_match.event_id,
-        targetSummary,
-      )
-      : (() => {
-        if (targetSummary?.folderId !== undefined) selectFolder(targetSummary.folderId);
-        if (targetSummary) setActiveSessionSummary(targetSummary);
-        setActiveSession(result.session_id);
-        setFocusEventId(result.best_match.event_id, result.session_id);
-        setActiveTab("chat");
-        return true;
-      })();
+    const opened = await onOpenSession(
+      result.session_id,
+      result.best_match.event_id,
+      targetSummary,
+    );
     if (opened === false) return;
     onOpenChange(false);
   };

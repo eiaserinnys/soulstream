@@ -129,5 +129,4 @@ export { renameSessionOptimistic, createRenameSessionOperation } from "./rename-
 export type { RenameSessionApiConfig, RenameSessionOperations } from "./rename-session";
 
 // === Viewport API (Phase 3) ===
-export { encodeCursor, decodeCursor } from "./cursor-codec";
 export * from "./ui-events";

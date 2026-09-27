@@ -21,11 +21,4 @@ describe("disclosure action icon contract", () => {
     expect(source).not.toMatch(/expanded\s*\?\s*<Chevron(?:Down|Right|Up)/);
     expect(source).not.toMatch(/isExpanded\s*\?\s*<Chevron(?:Down|Right|Up)/);
   });
-
-  it("keeps the generic accordion primitive on the same visual contract", () => {
-    const accordion = read("../../../packages/soul-ui/src/components/ui/accordion.tsx");
-
-    expect(accordion).toContain("ChevronDownIcon");
-    expect(accordion).toContain("data-panel-open:*:data-[slot=accordion-indicator]:rotate-180");
-  });
 });

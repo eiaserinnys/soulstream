@@ -302,8 +302,7 @@ export function MarkdownDocumentPanel({
     }
   }, [isEditingBody]);
 
-  // 🔴25: "편집" 요청(requestBoardDocumentEdit)으로 열린 문서는 로드된 뒤 자동으로 편집
-  // 모드에 진입한다. 요청 문서가 실제 로드된 문서와 일치할 때만 소비하고 즉시 clear한다.
+  // 편집 요청이 해당 문서와 일치할 때만 로드 뒤 자동으로 편집 모드에 진입하고 소비한다.
   useEffect(() => {
     if (!pendingEditId || pendingEditId !== documentId) return;
     if (!document || document.id !== documentId) return;

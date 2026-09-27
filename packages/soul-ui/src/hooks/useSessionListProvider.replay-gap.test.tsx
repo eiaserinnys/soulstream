@@ -7,7 +7,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
-  EventTreeNode,
   SessionNotice,
   SessionSummary,
   SoulSSEEvent,
@@ -191,7 +190,6 @@ describe("useSessionListProvider replay-gap hydration", () => {
     const initialRest = deferred<SessionListResult>();
     const provider: SessionStorageProvider = {
       fetchSessions: vi.fn(() => initialRest.promise),
-      fetchCards: vi.fn().mockResolvedValue([] as EventTreeNode[]),
       subscribe: vi.fn(() => () => undefined),
     };
     const onStreamReset = vi.fn();
@@ -224,7 +222,7 @@ describe("useSessionListProvider replay-gap hydration", () => {
       notification_watermark: 11,
     });
 
-    expect(queryClient.getQueryData(["sessions", "all", "feed", null])).toBeUndefined();
+    expect(queryClient.getQueryData(["sessions", "feed", null])).toBeUndefined();
     expect(useDashboardStore.getState().activeSessionSummary).toBeNull();
     expect(useDashboardStore.getState().pendingNotifications).toEqual([]);
 
@@ -243,7 +241,7 @@ describe("useSessionListProvider replay-gap hydration", () => {
 
     const cached = queryClient.getQueryData<{
       pages: Array<{ sessions: SessionSummary[] }>;
-    }>(["sessions", "all", "feed", null]);
+    }>(["sessions", "feed", null]);
     expect(cached?.pages[0].sessions[0]).toMatchObject({
       pendingAttentions: [],
       attentionRevision: 11,
@@ -271,7 +269,6 @@ describe("useSessionListProvider replay-gap hydration", () => {
         total: 1,
         hasMore: false,
       }),
-      fetchCards: vi.fn().mockResolvedValue([] as EventTreeNode[]),
       subscribe: vi.fn(() => () => undefined),
     };
     const onStreamReset = vi.fn();
@@ -287,10 +284,10 @@ describe("useSessionListProvider replay-gap hydration", () => {
     });
     await waitFor(() => {
       expect(provider.fetchSessions).toHaveBeenCalledTimes(1);
-      expect(queryClient.getQueryState(["sessions", "all", "feed", null])?.status)
+      expect(queryClient.getQueryState(["sessions", "feed", null])?.status)
         .toBe("success");
     });
-    expect(queryClient.getQueryState(["sessions", "all", "ids", null, []])?.data)
+    expect(queryClient.getQueryState(["sessions", "ids", null, []])?.data)
       .toBeUndefined();
 
     const stream = vi.mocked(useSessionStreamSSE).mock.calls
@@ -345,7 +342,6 @@ describe("useSessionListProvider replay-gap hydration", () => {
       fetchSessions: vi.fn()
         .mockReturnValueOnce(feedRest.promise)
         .mockReturnValueOnce(folderRest.promise),
-      fetchCards: vi.fn().mockResolvedValue([] as EventTreeNode[]),
       subscribe: vi.fn(() => () => undefined),
     };
     useDashboardStore.getState().setActiveSession("session-a");
@@ -388,7 +384,7 @@ describe("useSessionListProvider replay-gap hydration", () => {
       pendingAttentions: [expect.objectContaining({ id: staleAttention.id })],
       attentionRevision: 10,
     });
-    expect(queryClient.getQueryData(["sessions", "all", "folder", "folder-a"]))
+    expect(queryClient.getQueryData(["sessions", "folder", "folder-a"]))
       .toBeUndefined();
 
     reactTestEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
@@ -404,8 +400,8 @@ describe("useSessionListProvider replay-gap hydration", () => {
     reactTestEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
 
     for (const key of [
-      ["sessions", "all", "feed", null],
-      ["sessions", "all", "folder", "folder-a"],
+      ["sessions", "feed", null],
+      ["sessions", "folder", "folder-a"],
     ] as const) {
       const cached = queryClient.getQueryData<{
         pages: Array<{ sessions: SessionSummary[] }>;
@@ -467,7 +463,6 @@ describe("useSessionListProvider replay-gap hydration", () => {
       fetchSessions: vi.fn<(_options?: FetchSessionsOptions) => Promise<SessionListResult>>()
         .mockResolvedValueOnce({ sessions: [initial], total: 1, hasMore: false })
         .mockResolvedValueOnce({ sessions: [recovered], total: 1, hasMore: false }),
-      fetchCards: vi.fn().mockResolvedValue([] as EventTreeNode[]),
       subscribe: vi.fn((
         _sessionKey: string,
         _onEvent: (event: SoulSSEEvent, eventId: number) => void,
@@ -486,7 +481,7 @@ describe("useSessionListProvider replay-gap hydration", () => {
     });
     await waitFor(() => {
       expect(provider.fetchSessions).toHaveBeenCalledTimes(1);
-      expect(queryClient.getQueryState(["sessions", "all", "feed", null])?.status)
+      expect(queryClient.getQueryState(["sessions", "feed", null])?.status)
         .toBe("success");
     });
 
@@ -587,7 +582,6 @@ describe("useSessionListProvider replay-gap hydration", () => {
       fetchSessions: vi.fn(async () => (
         recovering ? recovery.promise : { sessions: [initial], total: 1, hasMore: false }
       )),
-      fetchCards: vi.fn().mockResolvedValue([] as EventTreeNode[]),
       subscribe: vi.fn(() => () => undefined),
     };
     const onStreamReset = vi.fn();
@@ -655,8 +649,8 @@ describe("useSessionListProvider replay-gap hydration", () => {
     reactTestEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
 
     for (const key of [
-      ["sessions", "all", "feed", null],
-      ["sessions", "all", "folder", "folder-a"],
+      ["sessions", "feed", null],
+      ["sessions", "folder", "folder-a"],
     ] as const) {
       const cached = queryClient.getQueryData<{
         pages: Array<{ sessions: SessionSummary[] }>;
@@ -711,7 +705,6 @@ describe("useSessionListProvider replay-gap hydration", () => {
         .mockResolvedValueOnce({ sessions: [initial], total: 1, hasMore: false })
         .mockRejectedValueOnce(new Error("temporary hydration failure"))
         .mockResolvedValueOnce({ sessions: [recovered], total: 1, hasMore: false }),
-      fetchCards: vi.fn().mockResolvedValue([] as EventTreeNode[]),
       subscribe: vi.fn(() => () => undefined),
     };
     const onStreamReset = vi.fn();
@@ -727,7 +720,7 @@ describe("useSessionListProvider replay-gap hydration", () => {
     });
     await waitFor(() => {
       expect(provider.fetchSessions).toHaveBeenCalledTimes(1);
-      expect(queryClient.getQueryState(["sessions", "all", "feed", null])?.status)
+      expect(queryClient.getQueryState(["sessions", "feed", null])?.status)
         .toBe("success");
     });
 

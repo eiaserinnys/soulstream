@@ -29,8 +29,6 @@ import { useGlassSurface } from "./LiquidGlassProvider";
 interface ChatInputProps {
   /** 외부에서 주입하는 추가 비활성화 조건 (예: 오케스트레이터에서 노드 dead 상태) */
   additionalDisabled?: boolean;
-  /** 다른 노드 소속 세션. true이면 입력/버튼 비활성화 + 안내 문구 표시 */
-  isOtherNodeSession?: boolean;
   /**
    * 파일 업로드 URL.
    * 있으면 파일 첨부 버튼이 활성화된다.
@@ -41,7 +39,7 @@ interface ChatInputProps {
   fileUploadUrl?: string;
 }
 
-export function ChatInput({ additionalDisabled = false, isOtherNodeSession = false, fileUploadUrl }: ChatInputProps = {}) {
+export function ChatInput({ additionalDisabled = false, fileUploadUrl }: ChatInputProps = {}) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const tree = useDashboardStore((s) => s.tree);
@@ -231,8 +229,8 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
   if (!activeSessionKey) return null;
 
   const fileUploadDisabled = effectiveFileUploadUrl ? isUploading : false;
-  const isDisabled = sending || !text.trim() || additionalDisabled || fileUploadDisabled || isOtherNodeSession;
-  const textareaDisabled = sending || additionalDisabled || isOtherNodeSession;
+  const isDisabled = sending || !text.trim() || additionalDisabled || fileUploadDisabled;
+  const textareaDisabled = sending || additionalDisabled;
   const showInterrupt = status === "running";
   const interruptDisabled = interrupting || additionalDisabled || !activeSessionKey;
 
@@ -263,11 +261,11 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
       )}
 
       {/* prompt_suggestion chip — turn 직후 SDK가 제안한 다음 prompt 후보.
-          가드: !isOtherNodeSession(다른 노드 세션은 입력 자체 불가) + !sending(전송 중 새 turn 시작 불가).
+          가드: !sending(전송 중 새 turn 시작 불가).
           isDisabled는 의도적으로 사용하지 않는다 — chip의 본질은 "비어있는 입력창에 채우기"이므로
           !text.trim() 가드가 들어가면 chip이 사라진다.
           짧은 탭 → setText, 1초 롱프레스 → 즉시 send. clear는 응답 시작(text_start) 시 자동. */}
-      {lastSuggestion && !isOtherNodeSession && !sending && (
+      {lastSuggestion && !sending && (
         <SuggestionChip
           text={lastSuggestion}
           onShortTap={(t) => {
@@ -319,12 +317,6 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
           textareaDisabled={textareaDisabled}
         />
       </div>
-
-      {isOtherNodeSession && (
-        <div className="text-xs text-muted-foreground py-1 px-2 text-center">
-          다른 노드에서 실행된 세션은 재개하거나 개입할 수 없습니다
-        </div>
-      )}
 
       {(error || interruptError) && (
         <div className="chat-tone-danger rounded px-2 py-1 text-xs">

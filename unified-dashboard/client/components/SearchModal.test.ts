@@ -120,19 +120,22 @@ function renderSearchModal(options: {
   document.body.appendChild(container);
   const root = createRoot(container);
   const onOpenChange = options.onOpenChange ?? vi.fn();
+  const onOpenSession = options.onOpenSession ?? vi.fn(() => true);
+  const onOpenFolder = options.onOpenFolder ?? vi.fn();
+  const onOpenTask = options.onOpenTask ?? vi.fn();
 
   flushSync(() => {
     root.render(createElement(SearchModal, {
       open: true,
       onOpenChange,
       sessions: options.sessions ?? [],
-      onOpenSession: options.onOpenSession,
-      onOpenFolder: options.onOpenFolder,
-      onOpenTask: options.onOpenTask,
+      onOpenSession,
+      onOpenFolder,
+      onOpenTask,
     }));
   });
 
-  return { container, root, onOpenChange };
+  return { container, root, onOpenChange, onOpenSession, onOpenFolder, onOpenTask };
 }
 
 function clickResult(preview: string) {
@@ -189,7 +192,7 @@ describe("SearchModal", () => {
     vi.restoreAllMocks();
   });
 
-  it("activates the selected session summary and folder when clicking a search result", () => {
+  it("delegates a search result with its normalized session summary to the host", () => {
     const target = makeSession("target-session", "target-folder");
     useDashboardStore.getState().setCatalog(makeCatalog(target));
     useDashboardStore.getState().selectFolder("current-folder");
@@ -204,22 +207,19 @@ describe("SearchModal", () => {
       },
     ];
 
-    ({ container, root } = renderSearchModal({ sessions: [] }));
+    const onOpenSession = vi.fn();
+    ({ container, root } = renderSearchModal({ sessions: [], onOpenSession }));
 
     clickResult("Needle preview");
 
-    const state = useDashboardStore.getState();
-    expect(state.selectedFolderId).toBe("target-folder");
-    expect(state.activeSessionKey).toBe("target-session");
-    expect(state.activeSessionSummary).toMatchObject({
-      agentSessionId: "target-session",
+    expect(onOpenSession).toHaveBeenCalledWith("target-session", 42, {
+      ...target,
       folderId: "target-folder",
       displayName: "Catalog target",
     });
-    expect(state.focusEventId).toBe(42);
   });
 
-  it("keeps the same-session overlay reset path when selecting the active session from search", () => {
+  it("delegates same-session navigation without mutating the global store", () => {
     const target = makeSession("target-session", "target-folder");
     useDashboardStore.getState().setCatalog(makeCatalog(target));
     useDashboardStore.getState().selectFolder("target-folder");
@@ -237,15 +237,13 @@ describe("SearchModal", () => {
       },
     ];
 
-    ({ container, root } = renderSearchModal({ sessions: [target] }));
+    const onOpenSession = vi.fn();
+    ({ container, root } = renderSearchModal({ sessions: [target], onOpenSession }));
 
     clickResult("Same session preview");
 
-    const state = useDashboardStore.getState();
-    expect(state.activeSessionKey).toBe("target-session");
-    expect(state.activeBoardDocumentId).toBeNull();
-    expect(state.activeRightTab).toBe("chat");
-    expect(state.focusEventId).toBe(88);
+    expect(onOpenSession).toHaveBeenCalledWith("target-session", 88, expect.any(Object));
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-1");
   });
 
   it("delegates a selected result to the host session opener when one is provided", () => {
@@ -415,7 +413,7 @@ describe("SearchModal", () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
-  it("opens project and task title results through the existing dashboard store", () => {
+  it("delegates project and task navigation to the host", () => {
     searchHarness.navigationResults = [
       {
         kind: "folder",
@@ -425,10 +423,11 @@ describe("SearchModal", () => {
         project_page_id: "project-page",
       },
     ];
-    ({ container, root } = renderSearchModal());
+    const onOpenFolder = vi.fn();
+    ({ container, root } = renderSearchModal({ onOpenFolder }));
 
     clickResult("Needle project");
-    expect(useDashboardStore.getState().selectedFolderId).toBe("project-folder");
+    expect(onOpenFolder).toHaveBeenCalledWith(expect.objectContaining({ kind: "folder", id: "project-folder" }));
 
     flushSync(() => root?.unmount());
     root = undefined;
@@ -444,13 +443,11 @@ describe("SearchModal", () => {
         task_page_id: "task-page-a",
       },
     ];
-    ({ container, root } = renderSearchModal());
+    const onOpenTask = vi.fn();
+    ({ container, root } = renderSearchModal({ onOpenTask }));
 
     clickResult("Needle task");
-    expect(useDashboardStore.getState().activeBoardContainer).toEqual({
-      kind: "task",
-      id: "task-a",
-    });
+    expect(onOpenTask).toHaveBeenCalledWith(expect.objectContaining({ kind: "task", id: "task-a" }));
   });
 
   it("removes the human tool filter and gives every leading result badge one width", () => {

@@ -4,8 +4,6 @@ import { describe, expect, it } from "vitest";
 const dialogSurfaceFiles = [
   "dialog.tsx",
   "alert-dialog.tsx",
-  "sheet.tsx",
-  "command.tsx",
 ] as const;
 
 function readUiSource(fileName: string) {
