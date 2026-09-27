@@ -392,6 +392,48 @@ describe("MarkdownDocumentPanel", () => {
     await waitForCondition(() => useDashboardStore.getState().pendingBoardDocumentEditId === null);
   });
 
+  it("keeps the panel open and shows document load failures", async () => {
+    fetchMock.mockResolvedValue(new Response("unavailable", { status: 503 }));
+    ({ container, root } = renderPanel());
+
+    const error = await waitForSelector(container, '[data-testid="markdown-load-error"]');
+
+    expect(error.textContent).toBe("불러오기 실패");
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-a");
+  });
+
+  it("shows document delete failures", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/markdown-documents/doc-a") && !init?.method) {
+        return new Response(JSON.stringify(storedDocument), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/markdown-documents/doc-a") && init?.method === "DELETE") {
+        return new Response("unavailable", { status: 503 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    ({ container, root } = renderPanel());
+    await waitForSelector(container, '[data-testid="markdown-read-body"]');
+
+    const deleteButton = container.querySelector<HTMLButtonElement>('button[title="Delete document"]');
+    expect(deleteButton).not.toBeNull();
+    flushSync(() => deleteButton?.click());
+
+    await waitForText(container, '[data-testid="markdown-save-status"]', "삭제 실패");
+    expect(container.querySelector('[data-testid="markdown-save-status"]')?.getAttribute("title"))
+      .toContain("503");
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-a");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Markdown document delete failed:",
+      expect.objectContaining({ message: expect.stringContaining("503") }),
+    );
+  });
+
   it("stale REST save keeps document dirty and shows a conflict message", async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

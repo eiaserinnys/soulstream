@@ -28,6 +28,7 @@ import {
 } from "../lib/markdown-document-operations";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "conflict";
+type PanelError = { kind: "load" | "save" | "delete"; message: string };
 const MarkdownCodeMirrorEditor = lazy(async () => {
   const module = await import("./MarkdownCodeMirrorEditor");
   return { default: module.MarkdownCodeMirrorEditor };
@@ -66,10 +67,8 @@ export function MarkdownDocumentPanel({
   const [savedBody, setSavedBody] = useState("");
   const [savedVersion, setSavedVersion] = useState(1);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const onCloseRef = useRef(onClose);
+  const [panelError, setPanelError] = useState<PanelError | null>(null);
   const onPendingEditConsumedRef = useRef(onPendingEditConsumed);
-  onCloseRef.current = onClose;
   onPendingEditConsumedRef.current = onPendingEditConsumed;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedDocumentIdRef = useRef<string | null>(null);
@@ -110,7 +109,7 @@ export function MarkdownDocumentPanel({
     setBody(nextBody);
     setSavedBody(nextBody);
     setSavedVersion(nextVersion);
-    setSaveError(null);
+    setPanelError(null);
     setSaveStatus("saved");
   }, [collaborativeRuntime, documentId, yText]);
 
@@ -132,7 +131,7 @@ export function MarkdownDocumentPanel({
       setSaveStatus("saved");
       return;
     }
-    setSaveError(null);
+    setPanelError(null);
     setSaveStatus("saving");
     try {
       const updated = await updateMarkdownDocument({
@@ -150,10 +149,13 @@ export function MarkdownDocumentPanel({
       setSaveStatus("saved");
     } catch (err) {
       if (err instanceof MarkdownDocumentConflictError) {
-        setSaveError(null);
+        setPanelError(null);
         setSaveStatus("conflict");
       } else {
-        setSaveError(err instanceof Error ? err.message : "문서를 저장하지 못했습니다.");
+        setPanelError({
+          kind: "save",
+          message: err instanceof Error ? err.message : "문서를 저장하지 못했습니다.",
+        });
         setSaveStatus("dirty");
         console.error("Markdown document save failed:", err);
       }
@@ -179,7 +181,7 @@ export function MarkdownDocumentPanel({
     if (!documentId) return;
     setDocument(null);
     setIsEditingBody(false);
-    setSaveError(null);
+    setPanelError(null);
     setSaveStatus("idle");
     if (collaborativeRuntime) {
       applyRuntimeSnapshot();
@@ -200,8 +202,13 @@ export function MarkdownDocumentPanel({
         setSavedVersion(next.version);
         setSaveStatus("saved");
       })
-      .catch(() => {
-        if (!cancelled) onCloseRef.current();
+      .catch((err) => {
+        if (!cancelled) {
+          setPanelError({
+            kind: "load",
+            message: err instanceof Error ? err.message : "문서를 불러오지 못했습니다.",
+          });
+        }
       });
     return () => {
       cancelled = true;
@@ -255,6 +262,7 @@ export function MarkdownDocumentPanel({
 
   const remove = async () => {
     if (!documentId || !canDeleteDocument) return;
+    setPanelError(null);
     try {
       if (runtime) {
         runtime.deleteMarkdownDocument(documentId);
@@ -264,6 +272,10 @@ export function MarkdownDocumentPanel({
       onDeleted(`markdown:${documentId}`, documentId);
       onClose();
     } catch (err) {
+      setPanelError({
+        kind: "delete",
+        message: err instanceof Error ? err.message : "문서를 삭제하지 못했습니다.",
+      });
       console.error("Markdown document delete failed:", err);
     }
   };
@@ -303,7 +315,7 @@ export function MarkdownDocumentPanel({
 
   const updateBody = (value: string) => {
     setBody(value);
-    setSaveError(null);
+    setPanelError(null);
     setSaveStatus(collaborativeRuntime ? "saved" : "dirty");
     if (collaborativeRuntime && documentId) {
       setSavedBody(value);
@@ -313,7 +325,7 @@ export function MarkdownDocumentPanel({
 
   const updateTitle = (value: string) => {
     setTitle(value);
-    setSaveError(null);
+    setPanelError(null);
     setSaveStatus(collaborativeRuntime ? "saved" : "dirty");
     if (collaborativeRuntime && documentId) {
       const normalized = value.trim() || "Untitled document";
@@ -367,6 +379,19 @@ export function MarkdownDocumentPanel({
   }, [leaveEditMode, saveNow]);
 
   if (!documentId) return null;
+  const statusLabel = panelError
+    ? panelError.kind === "load"
+      ? ""
+      : panelError.kind === "delete"
+        ? "삭제 실패"
+        : "저장 실패 · 다시 시도"
+    : saveStatus === "saving"
+      ? "저장 중..."
+      : saveStatus === "conflict"
+        ? "충돌: 새로고침 필요"
+        : saveStatus === "saved"
+          ? (collaborativeRuntime ? "동기화됨" : "저장됨")
+          : "";
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
@@ -390,18 +415,10 @@ export function MarkdownDocumentPanel({
         <span
           data-testid="markdown-save-status"
           className="shrink-0 text-xs text-muted-foreground"
-          role={saveError ? "alert" : undefined}
-          title={saveError ?? undefined}
+          role={panelError && panelError.kind !== "load" ? "alert" : undefined}
+          title={panelError && panelError.kind !== "load" ? panelError.message : undefined}
         >
-          {saveError
-            ? "저장 실패 · 다시 시도"
-            : saveStatus === "saving"
-              ? "저장 중..."
-              : saveStatus === "conflict"
-                ? "충돌: 새로고침 필요"
-                : saveStatus === "saved"
-                  ? (collaborativeRuntime ? "동기화됨" : "저장됨")
-                  : ""}
+          {statusLabel}
         </span>
         {document ? (
           isEditingBody ? (
@@ -430,7 +447,9 @@ export function MarkdownDocumentPanel({
 
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto p-3" onMouseDown={handleEditScrollMouseDown}>
         {!document ? (
-          <div className="text-sm text-muted-foreground">Loading...</div>
+          panelError?.kind === "load"
+            ? <div className="text-sm text-muted-foreground" data-testid="markdown-load-error" role="alert">불러오기 실패</div>
+            : <div className="text-sm text-muted-foreground">Loading...</div>
         ) : isEditingBody ? (
           <Suspense fallback={<div className="text-sm text-muted-foreground">Loading editor...</div>}>
             <MarkdownCodeMirrorEditor
