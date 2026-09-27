@@ -8,19 +8,11 @@ export const PAGE_ACTIONS = [
 export type PageAction = (typeof PAGE_ACTIONS)[number];
 
 /**
- * Read vocabulary only. Which values are *offered* comes from the node's model
- * preset advertisement — this extension must not carry its own list.
+ * This standalone extension validates values from the model catalog's public
+ * API contract. schema.test.ts keeps this wire vocabulary aligned with that
+ * package without pulling its source tree into the extension build.
  */
-export type ReasoningEffort =
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "ultra";
-
-export const REASONING_EFFORT_ACCEPT_SET: readonly ReasoningEffort[] = [
+export const REASONING_EFFORT_ACCEPT_SET = [
   "minimal",
   "low",
   "medium",
@@ -28,14 +20,16 @@ export const REASONING_EFFORT_ACCEPT_SET: readonly ReasoningEffort[] = [
   "xhigh",
   "max",
   "ultra",
-];
+] as const;
 
-export interface AdvertisedModelPreset {
+export type ReasoningEffort = (typeof REASONING_EFFORT_ACCEPT_SET)[number];
+
+export type AdvertisedModelPreset = {
   id: string;
   label: string;
-  supported_efforts?: readonly string[];
-  default_effort?: string;
-}
+  default_effort?: ReasoningEffort;
+  supported_efforts?: readonly ReasoningEffort[];
+};
 
 export interface AdvertisedAgent {
   id: string;

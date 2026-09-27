@@ -63,13 +63,12 @@ export async function sendSessionRequest(
   });
 
   if (!response.ok) {
-    let parsed: unknown = "";
-    let text = "";
+    const text = await response.text();
+    let parsed: unknown = text;
     try {
-      parsed = await response.json();
+      parsed = JSON.parse(text);
     } catch {
-      text = await response.text().catch(() => "");
-      parsed = text;
+      // Non-JSON proxy and gateway responses are useful error messages too.
     }
     throw new Error(extractErrorMessage(response.status, parsed, text));
   }
