@@ -463,8 +463,11 @@ describe("Session command router primitive", () => {
     const { registry, sessionCache } = createRegistry();
     const router = new SessionCommandRouter({
       registry,
-      findSessionOwnerNodeId: async (agentSessionId) =>
-        agentSessionId === "offline-durable-session" ? "offline-node" : null,
+      findSessionOwnerNodeId: async (agentSessionId) => {
+        if (agentSessionId === "offline-durable-session") return "offline-node";
+        if (agentSessionId === "ghost-session") return "ghost-node";
+        return null;
+      },
     });
 
     expect(() =>
@@ -516,6 +519,29 @@ describe("Session command router primitive", () => {
         answers: {},
       }),
     ).rejects.toThrow(SessionRouteNodeUnavailableError);
+  });
+
+  it("uses the durable owner when a fresh cache entry belongs to an older connection", async () => {
+    const { registry, sessionCache } = createRegistry();
+    const activeConnectionId = registerNode(registry, "fresh-node");
+    sessionCache.replaceNodeSessions({
+      nodeId: "fresh-node",
+      connectionId: "old-connection",
+      sessions: [{ agent_session_id: "sess-contract", status: "running" }],
+      nowMs: 1_700_000_000_000,
+    });
+    const router = new SessionCommandRouter({
+      registry,
+      findSessionOwnerNodeId: async () => "fresh-node",
+    });
+
+    const routed = await router.subscribeEvents({
+      type: "subscribe_events",
+      agentSessionId: upstream.outbound.subscribeEvents.agentSessionId,
+      subscribeId: upstream.outbound.subscribeEvents.subscribeId,
+    });
+
+    expect(routed.node.connectionId).toBe(activeConnectionId);
   });
 
   it("does not leave pending entries when command creation rejects an invalid payload", async () => {

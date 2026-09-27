@@ -28,9 +28,8 @@ import { CodexEphemeralExecutor } from "./llm/codex_ephemeral_executor.js";
 import type { EphemeralLlmRouteOptions } from "./llm/ephemeral_llm_routes.js";
 import { createSearchQueryExpander } from "./search/search_query_expander.js";
 import { createSearchQueryModelResolver } from "./search/search_query_model_resolver.js";
-import { InMemoryNodeRegistry } from "./node/registry.js";
+import { InMemoryNodeRegistry, type NodeRegistryEvent } from "./node/registry.js";
 import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
-import { collectDirectNodeSessionEvents } from "./node/session_message_events.js";
 import {
   EventIngressRepository,
   LiveEventIngressSqlProvider,
@@ -360,12 +359,16 @@ export async function createLiveProductionApplication(
     sessionHistoryProvider: dbCatalogRepository.sessionHistoryProvider,
     sessionHistoryCloseAfterHistorySync: false,
     sessionForegroundObservers: foregroundObservers,
+    onNodeEventSinkError: (error, sinkIndex) =>
+      context.warn(
+        `node registry event sink ${sinkIndex + 1} failed: ${String(error)}`,
+      ),
     additionalNodeEventSinks: [
+      sessionCacheSeed,
+      sessionReconciliation,
       (events) => pushNotifier.accept(events),
       (events) => turnSummaryPipeline?.accept(events),
       (events) => recurringJobScheduler?.accept(events),
-      sessionCacheSeed,
-      sessionReconciliation,
     ],
     boardYjsRoutes: {
       createService: (logger) => boardYjsService ??= new BoardYjsService({
@@ -444,16 +447,18 @@ export async function createLiveProductionApplication(
       review_state: update.reviewState,
       updated_at: update.updatedAt.toISOString(),
     };
-    const connectionId = registry.getNodeState(update.nodeId)?.connectionId
-      ?? `reconciliation:${update.nodeId}`;
-    const events = collectDirectNodeSessionEvents({
-      sessionCache: registry.sessionCache,
+    registry.sessionCache.patchReconciledSessionStatus({
       nodeId: update.nodeId,
-      connectionId,
-      message,
+      agentSessionId: update.agentSessionId,
+      status: update.status,
       nowMs: update.updatedAt.getTime(),
     });
-    if (events) runtimeServices.routeOptions.nodeWsRoute.eventSink?.(events);
+    const events: NodeRegistryEvent[] = [{
+      type: "node_session_session_updated",
+      nodeId: update.nodeId,
+      data: message,
+    }];
+    runtimeServices.routeOptions.nodeWsRoute.eventSink?.(events);
   };
   const memoryStats = createOrchestratorMemoryStatsCollector({
     sessionBroadcaster: runtimeServices.sessionBroadcaster,

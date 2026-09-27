@@ -19,6 +19,7 @@ import {
   readRuntimeFollowupCandidate,
   registerRuntimeFollowupDelivery,
 } from "./session_delivery_runtime_followup_repository.js";
+import { isTerminalSessionStatus } from "../../session/session_status.js";
 
 export { compareRuntimeFollowupCandidates } from
   "./session_delivery_runtime_followup_repository.js";
@@ -302,7 +303,7 @@ async function recordRelationConsumedInTransaction(
 }
 
 function isTerminalStatus(status: string | null): boolean {
-  return status === "completed" || status === "error" || status === "interrupted";
+  return isTerminalSessionStatus(status ?? undefined);
 }
 
 async function lockRelation(sql: SqlClient, relationKey: string): Promise<void> {

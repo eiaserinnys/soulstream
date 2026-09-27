@@ -735,6 +735,30 @@ describe("task route harness", () => {
     await app.close();
   });
 
+  it("does not fall back to the first node when the actor session lookup returns 404", async () => {
+    const httpClient: TaskMutationHttpClient = vi.fn();
+    const { app, calls } = createAppWithTasks(
+      { restricted: false },
+      {
+        async findSessionNode() {
+          throw new TaskRouteError("SESSION_NOT_FOUND", "Session not found", 404);
+        },
+      },
+      httpClient,
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tasks/rb-1/items/item-1/status",
+      payload: { status: "completed", expectedVersion: 1, idempotencyKey: "idem" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(calls).not.toContainEqual(["listNodes"]);
+    expect(httpClient).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("rejects missing item, missing provenance, and invalid status before proxying", async () => {
     const httpClient: TaskMutationHttpClient = vi.fn();
     const { app } = createAppWithTasks(

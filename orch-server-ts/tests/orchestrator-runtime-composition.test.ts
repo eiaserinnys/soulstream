@@ -261,6 +261,40 @@ describe("orchestrator runtime composition harness", () => {
     await runtime.app.close();
   });
 
+  it("continues node event sinks after one sink throws and reports the failure", async () => {
+    const sinkError = new Error("ride-along sink failed");
+    const onNodeEventSinkError = vi.fn();
+    const laterSink = vi.fn();
+    const runtime = createOrchestratorRuntimeComposition({
+      config,
+      onNodeEventSinkError,
+      additionalNodeEventSinks: [
+        () => {
+          throw sinkError;
+        },
+        laterSink,
+      ],
+    });
+
+    await runtime.app.ready();
+    const ws = await injectAuthenticatedWs(runtime.app);
+    try {
+      ws.send(JSON.stringify(reconnect.registration));
+      await waitFor(() => runtime.registry.getConnectedNode("fake-node") !== undefined);
+      await waitFor(() => laterSink.mock.calls.length > 0);
+      expect(onNodeEventSinkError).toHaveBeenCalledWith(
+        sinkError,
+        expect.any(Number),
+      );
+      expect(laterSink.mock.calls[0]?.[0]).toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: "node_registered" })]),
+      );
+    } finally {
+      ws.terminate();
+      await runtime.app.close();
+    }
+  });
+
   it("shares SSE broadcasters and injectable snapshot loaders with the SSE routes", async () => {
     const loadSessionSnapshot = vi.fn(async () => ({
       sessions: [{ agent_session_id: "snapshot-session", title: "Snapshot" }],

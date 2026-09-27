@@ -1,6 +1,8 @@
 import type { ControlCommandType } from "@soulstream/wire-schema";
 
-export const DEFAULT_NODE_COMMAND_TIMEOUT_MS = 30_000;
+import { DEFAULT_NODE_COMMAND_TIMEOUT_MS } from "./node_timeouts.js";
+
+export { DEFAULT_NODE_COMMAND_TIMEOUT_MS } from "./node_timeouts.js";
 
 export type NodeCommandClock = () => number;
 

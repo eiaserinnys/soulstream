@@ -18,6 +18,7 @@ import {
   selectNodeForSessionCreate,
   type SessionCreateNodeSelection,
 } from "./session_create_node_selector.js";
+import { DEFAULT_SESSION_CREATE_RECONCILE_TIMEOUT_MS } from "../node/node_timeouts.js";
 
 export type SessionCommandRouterOptions = {
   registry: InMemoryNodeRegistry;
@@ -29,8 +30,6 @@ export type SessionCommandRouterOptions = {
 export type SessionOwnerNodeIdLookup = (
   agentSessionId: string,
 ) => Promise<string | null>;
-
-const DEFAULT_SESSION_CREATE_RECONCILE_TIMEOUT_MS = 5_000;
 
 export type RoutedPendingSessionCommand<
   TPayload extends RequestResponseNodeCommandPayload,
@@ -291,30 +290,25 @@ export class SessionCommandRouter {
     agentSessionId: string,
   ): Promise<NodeConnectionSnapshot> {
     const owner = this.registry.findSessionOwner(agentSessionId);
-    if (owner === undefined || !owner.fresh) {
-      const durableNodeId =
-        (await this.findSessionOwnerNodeId?.(agentSessionId)) ?? null;
-      if (durableNodeId === null) {
-        throw new SessionRouteSessionOwnerMissingError(agentSessionId);
-      }
-      const durableNode = this.registry.getConnectedNode(durableNodeId);
-      if (durableNode === undefined) {
-        throw new SessionRouteNodeUnavailableError({
-          agentSessionId,
-          nodeId: durableNodeId,
-        });
-      }
-      return durableNode;
+    if (owner?.fresh) {
+      const connectedNode = this.registry.findConnectedNodeForSession(agentSessionId);
+      if (connectedNode !== undefined) return connectedNode;
     }
 
-    const connectedNode = this.registry.findConnectedNodeForSession(agentSessionId);
-    if (connectedNode === undefined) {
+    const durableNodeId = this.findSessionOwnerNodeId === undefined
+      ? owner?.nodeId ?? null
+      : await this.findSessionOwnerNodeId(agentSessionId);
+    if (durableNodeId === null) {
+      throw new SessionRouteSessionOwnerMissingError(agentSessionId);
+    }
+    const durableNode = this.registry.getConnectedNode(durableNodeId);
+    if (durableNode === undefined) {
       throw new SessionRouteNodeUnavailableError({
         agentSessionId,
-        nodeId: owner.nodeId,
+        nodeId: durableNodeId,
       });
     }
-    return connectedNode;
+    return durableNode;
   }
 }
 

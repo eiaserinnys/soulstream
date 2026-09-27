@@ -86,6 +86,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   pageYjsRoutes?: PageYjsRouteOptions;
   nodeHttpFetch?: LiveNodeHttpFetch;
   nodeHttpRequestTimeoutMs?: number;
+  onNodeEventSinkError?: (error: unknown, sinkIndex: number) => void;
   additionalNodeEventSinks?: readonly NodeRegistryEventSink[];
   eventIngress?: NodeWsRouteOptions["eventIngress"];
   releaseActivationReceipts?: NodeWsRouteOptions["releaseActivationReceipts"];
@@ -173,6 +174,11 @@ export function createOrchestratorRuntimeServices(
       registry,
       transportHub: transports,
       eventSink: composeEventSinks(
+        options.onNodeEventSinkError ?? ((error, sinkIndex) => {
+          console.error(
+            `node registry event sink ${sinkIndex + 1} failed: ${String(error)}`,
+          );
+        }),
         createRuntimeSessionEventHubSink(sessionEventHub),
         createNodeSessionEventBroadcasterSink(
           sessionBroadcaster,
@@ -315,11 +321,16 @@ export function createOrchestratorRuntimeComposition(
 }
 
 function composeEventSinks(
+  onError: (error: unknown, sinkIndex: number) => void,
   ...sinks: Array<(events: NodeRegistryEvent[]) => void>
 ): NonNullable<NodeWsRouteOptions["eventSink"]> {
   return (events) => {
-    for (const sink of sinks) {
-      sink(events);
+    for (const [sinkIndex, sink] of sinks.entries()) {
+      try {
+        sink(events);
+      } catch (error) {
+        onError(error, sinkIndex);
+      }
     }
   };
 }

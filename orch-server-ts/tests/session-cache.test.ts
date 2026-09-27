@@ -175,6 +175,47 @@ describe("PerNodeSessionCache retention", () => {
     expect(cache.getStats()).toEqual({ nodes: 0, sessions: 0 });
   });
 
+  it("keeps reconciliation status updates on the existing cached connection", () => {
+    const cache = new PerNodeSessionCache();
+    cache.replaceNodeSessions({
+      nodeId: "node-a",
+      connectionId: "connection-a",
+      sessions: [{ agent_session_id: "session-a", status: "running" }],
+      nowMs: 1_000,
+    });
+    cache.markNodeDisconnected("node-a", 2_000);
+
+    cache.patchReconciledSessionStatus({
+      nodeId: "node-a",
+      agentSessionId: "session-a",
+      status: "interrupted",
+      nowMs: 3_000,
+    });
+
+    expect(cache.findSession("session-a")).toMatchObject({
+      nodeId: "node-a",
+      connectionId: "connection-a",
+      fresh: false,
+      disconnectedAtMs: 2_000,
+      updatedAtMs: 3_000,
+      status: "interrupted",
+      payload: { status: "interrupted" },
+    });
+  });
+
+  it("expires interrupted sessions with the shared terminal retention window", () => {
+    const cache = new PerNodeSessionCache();
+    cache.upsertFromSessionUpdated({
+      nodeId: "node-a",
+      connectionId: "connection-a",
+      message: { agent_session_id: "session-a", status: "interrupted" },
+      nowMs: 1_000,
+    });
+
+    expect(cache.sweepExpired(1_000 + TERMINAL_SESSION_CACHE_TTL_MS))
+      .toEqual({ terminalSessions: 1, disconnectedSessions: 0, total: 1 });
+  });
+
   it("projects repeated updates onto a bounded serialization payload whitelist", () => {
     const cache = new PerNodeSessionCache();
     for (let index = 0; index < 100; index += 1) {

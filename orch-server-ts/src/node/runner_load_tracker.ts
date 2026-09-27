@@ -1,12 +1,7 @@
 import type { MutableNodeConnection } from "./registry_types.js";
 import type { PerNodeSessionCache } from "./session_cache.js";
 import { sessionIdFromPayload } from "./session_cache_payload.js";
-
-const TERMINAL_RUNNER_SESSION_STATUSES = new Set([
-  "completed",
-  "error",
-  "interrupted",
-]);
+import { isTerminalSessionStatus } from "../session/session_status.js";
 
 export type ReportedRunnerLoad = {
   runningSessionCount: number;
@@ -61,7 +56,7 @@ export function updateReportedRunnerSession(
   const cached = sessionCache.getSessionForNode(node.nodeId, sessionId);
   if (
     cached !== undefined
-    && !TERMINAL_RUNNER_SESSION_STATUSES.has(cached.status ?? "")
+    && !isTerminalSessionStatus(cached.status)
   ) {
     node.runningSessionIds.add(sessionId);
   } else {
