@@ -561,6 +561,7 @@ function V3DashboardContent() {
           mobileMode={mobileMode}
           mobileTab={mobileTab}
           historyEnabled={historyEnabled}
+          sessionStreamActive={detailActive}
           sessionConnectionStatus={sessionConnectionStatus}
           reconnectSession={reconnectSession}
           onChatVisibilityChange={setDetailChatVisible}

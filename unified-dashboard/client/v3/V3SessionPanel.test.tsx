@@ -9,6 +9,13 @@ const acknowledgeSessionReview = vi.hoisted(() => vi.fn());
 
 vi.mock("@seosoyoung/soul-ui", () => ({
   acknowledgeSessionReview,
+  STATUS_CONFIG: {
+    running: { label: "실행 중" },
+    completed: { label: "완료" },
+    error: { label: "오류" },
+    interrupted: { label: "중단" },
+    unknown: { label: "대기" },
+  },
   getSessionActivityTimestamp: (session: SessionSummary) =>
     session.lastMessage?.timestamp ?? session.createdAt ?? session.updatedAt,
   getSessionActivityMs: (session: SessionSummary) => {

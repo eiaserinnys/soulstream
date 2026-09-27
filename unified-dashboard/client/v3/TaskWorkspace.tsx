@@ -55,6 +55,7 @@ export function TaskWorkspace({
   mobileMode,
   mobileTab,
   historyEnabled,
+  sessionStreamActive,
   sessionConnectionStatus,
   reconnectSession,
   onChatVisibilityChange,
@@ -95,6 +96,7 @@ export function TaskWorkspace({
   mobileMode: boolean;
   mobileTab: MobilePlannerTab;
   historyEnabled: boolean;
+  sessionStreamActive: boolean;
   sessionConnectionStatus: SessionProviderConnectionStatus;
   reconnectSession(): void;
   onChatVisibilityChange(visible: boolean): void;
@@ -233,7 +235,7 @@ export function TaskWorkspace({
               <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "세션"}</strong></div>
               <SessionModelPresetBadge session={activeSession} />
               <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? (STATUS_CONFIG[activeSession.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}</span>
-              {activeSession ? <SessionStreamStatus status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
+              {activeSession ? <SessionStreamStatus active={sessionStreamActive} status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
               {activeSession ? (
                 <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
               ) : null}
@@ -268,6 +270,7 @@ export function TaskWorkspace({
         mobileMode={mobileMode}
         mobileTab={mobileTab}
         historyEnabled={historyEnabled}
+        sessionStreamActive={sessionStreamActive}
         sessionConnectionStatus={sessionConnectionStatus}
         reconnectSession={reconnectSession}
         taskMoveTargets={taskMoveTargets}
@@ -347,7 +350,7 @@ export function TaskWorkspace({
                 <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "선택된 세션 없음"}</strong></div>
                 <SessionModelPresetBadge session={activeSession} />
                 <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? (STATUS_CONFIG[activeSession.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}</span>
-                {activeSession ? <SessionStreamStatus status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
+                {activeSession ? <SessionStreamStatus active={sessionStreamActive} status={sessionConnectionStatus} reconnect={reconnectSession} /> : null}
                 {activeSession ? (
                   <SessionStoryDisclosure sessionId={activeSession.agentSessionId} />
                 ) : null}

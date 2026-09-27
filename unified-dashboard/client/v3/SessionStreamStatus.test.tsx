@@ -26,7 +26,7 @@ describe("SessionStreamStatus", () => {
   it("shows an error label and a manual reconnect action after the stream stops", () => {
     const reconnect = vi.fn();
     flushSync(() => root.render(
-      <SessionStreamStatus status="error" reconnect={reconnect} />,
+      <SessionStreamStatus active={true} status="error" reconnect={reconnect} />,
     ));
 
     const button = container.querySelector<HTMLButtonElement>("[data-testid='v3-session-stream-retry']");
@@ -34,5 +34,21 @@ describe("SessionStreamStatus", () => {
     expect(button?.textContent).toContain("다시 연결");
     flushSync(() => button?.click());
     expect(reconnect).toHaveBeenCalledOnce();
+  });
+
+  it("hides the initial disconnected state before the stream starts", () => {
+    flushSync(() => root.render(
+      <SessionStreamStatus active={true} status="disconnected" reconnect={vi.fn()} />,
+    ));
+
+    expect(container.querySelector("[data-testid='v3-session-stream-retry']")).toBeNull();
+  });
+
+  it("hides a stale error while the chat is inactive", () => {
+    flushSync(() => root.render(
+      <SessionStreamStatus active={false} status="error" reconnect={vi.fn()} />,
+    ));
+
+    expect(container.querySelector("[data-testid='v3-session-stream-retry']")).toBeNull();
   });
 });
