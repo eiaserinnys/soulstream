@@ -393,9 +393,9 @@ describe("remote worktree tools", () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual({
+      expect(result.structuredContent).toEqual({
+        error: "clean the worktree and retry",
         code: "WORKTREE_DIRTY",
-        message: "clean the worktree and retry",
         details: {
           tracked: ["README.md"],
           untracked: [],
