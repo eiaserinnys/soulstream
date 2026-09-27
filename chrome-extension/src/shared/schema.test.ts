@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+
+import { MODEL_REASONING_EFFORTS } from "../../../packages/model-catalog/src/index.js";
 
 import {
   buildAgentsEndpoint,
@@ -9,6 +12,9 @@ import {
   isReasoningEffort,
   mergeConfig,
   normalizeBodyCharLimit,
+  DEFAULT_BODY_CHAR_LIMIT,
+  MAX_BODY_CHAR_LIMIT,
+  REASONING_EFFORT_ACCEPT_SET,
   resolveProfilePreset,
   truncateText,
 } from "./schema.js";
@@ -64,6 +70,19 @@ describe("schema helpers", () => {
 });
 
 describe("catalog-driven reasoning effort", () => {
+  it("keeps the extension effort contract aligned with the model catalog", () => {
+    expect([...REASONING_EFFORT_ACCEPT_SET].sort()).toEqual(
+      [...MODEL_REASONING_EFFORTS].sort(),
+    );
+
+    const contentScript = readFileSync(
+      new URL("../content-script.ts", import.meta.url),
+      "utf8",
+    );
+    expect(contentScript).toContain(`return ${DEFAULT_BODY_CHAR_LIMIT.toLocaleString("en-US").replaceAll(",", "_")};`);
+    expect(contentScript).toContain(`return ${MAX_BODY_CHAR_LIMIT.toLocaleString("en-US").replaceAll(",", "_")};`);
+  });
+
   it("offers only what the resolved preset advertises, ordered canonically", () => {
     const agents = [{ id: "roselin", name: "roselin", default_preset: "b" }];
     const presets = [

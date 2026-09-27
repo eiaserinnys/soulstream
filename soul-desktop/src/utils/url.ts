@@ -1,16 +1,13 @@
 /**
- * Normalize user input to a valid HTTPS URL.
- * - Replaces `http://` with `https://`
+ * Normalize user input to a valid HTTP(S) URL.
+ * - Preserves an explicit `http://` or `https://` scheme
  * - Prepends `https://` if no scheme is present
  * - Validates URL structure
  * @throws if the resulting URL is invalid
  */
 export function normalizeUrl(input: string): string {
   let cleaned = input.trim();
-  if (cleaned.startsWith("http://")) {
-    cleaned = cleaned.replace(/^http:\/\//, "https://");
-  }
-  const fullUrl = cleaned.startsWith("https://")
+  const fullUrl = cleaned.startsWith("https://") || cleaned.startsWith("http://")
     ? cleaned
     : `https://${cleaned}`;
   new URL(fullUrl); // throws TypeError if invalid

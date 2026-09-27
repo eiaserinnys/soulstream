@@ -4,7 +4,6 @@ import { getServerUrl, setServerUrl } from "./utils/config";
 import { checkReachability } from "./utils/url";
 import { registerDashboardOrigin } from "./utils/origin";
 import { checkForUpdate } from "./utils/updater";
-import { toCacheBustedDashboardUrl } from "./utils/dashboard-cache";
 import Setup from "./pages/Setup";
 import Settings from "./pages/Settings";
 import ErrorPage from "./pages/Error";
@@ -52,7 +51,7 @@ function App() {
       // Navigate the entire WebView to the server URL.
       // This unloads the React app — there's no programmatic way back.
       // TODO(phase-1): Add native menu item (Cmd+, / Settings) to return to bundled UI.
-      window.location.href = toCacheBustedDashboardUrl(url);
+      window.location.href = url;
     } catch {
       setErrorMessage(`${url} 에 연결할 수 없습니다.`);
       setState("error");

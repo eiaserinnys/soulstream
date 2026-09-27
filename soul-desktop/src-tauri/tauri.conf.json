@@ -1,7 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicholasyager/tauri-v2-schema/main/schema.json",
   "productName": "Soulstream",
-  "version": "0.2.5",
   "identifier": "me.eiaserinnys.soulstream",
   "build": {
     "frontendDist": "../dist",
