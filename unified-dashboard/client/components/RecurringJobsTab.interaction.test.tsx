@@ -183,6 +183,93 @@ describe("RecurringJobsTab lifecycle", () => {
     await waitFor(() => expect(document.body.textContent).toContain("보관됨"));
   });
 
+  it("creates and displays a once job from a local date-time without recurring controls", async () => {
+    let job: Record<string, any> | null = null;
+    const requests: Array<{ path: string; method: string; body?: Record<string, unknown> }> = [];
+    vi.stubGlobal("crypto", { randomUUID: () => "once-id" });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      const method = init?.method ?? "GET";
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : undefined;
+      requests.push({ path, method, body });
+      if (path === "/api/recurring-jobs?include_archived=true") return json({ jobs: job ? [job] : [] });
+      if (path.endsWith("/runs?limit=50")) return json({ runs: [] });
+      if (path === "/api/recurring-jobs" && method === "POST") {
+        job = {
+          ...body,
+          schedule_kind: "once",
+          schedule_expressions: [],
+          run_at: body?.run_at,
+          job_id: "job-once",
+          version: 1,
+          archived_at: null,
+          next_run_at: body?.run_at,
+          created_at: "2026-09-28T00:00:00.000Z",
+          updated_at: "2026-09-28T00:00:00.000Z",
+        };
+        return json({ job });
+      }
+      throw new Error(`unexpected request ${method} ${path}`);
+    }));
+
+    await renderTab();
+    setSelect("반복 주기", "once");
+    expect(document.body.querySelector('[aria-label="실행 일시"]')).not.toBeNull();
+    expect(document.body.querySelector('[aria-label="시간대"]')).toBeNull();
+    expect(button("다음 5회 보기")).toBeUndefined();
+    setInput("작업 이름", "한 번만 알림");
+    setInput("작업 내용", "내일 일정 확인");
+    setInput("노드", "eiaserinnys");
+    setInput("에이전트", "seosoyoung");
+    setInput("실행 일시", "2026-10-01T09:00");
+    setSelect("결과 폴더", "folder-a");
+    clickButton("1회 예약 생성");
+
+    const expectedRunAt = new Date("2026-10-01T09:00").toISOString();
+    await waitFor(() => expect(requests.some((request) => request.method === "POST" && request.path === "/api/recurring-jobs")).toBe(true));
+    const create = requests.find((request) => request.method === "POST" && request.path === "/api/recurring-jobs");
+    expect(create?.body).toMatchObject({
+      run_at: expectedRunAt,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      container: { kind: "folder", id: "folder-a" },
+    });
+    expect(create?.body).not.toHaveProperty("schedule_expressions");
+    await waitFor(() => expect(document.body.textContent).toContain("1회 ·"));
+  });
+
+  it("clears a selected once draft after a manual run deletes the job", async () => {
+    let job: Record<string, any> | null = recurringJob({
+      schedule_kind: "once",
+      schedule_expressions: [],
+      run_at: "2099-09-22T00:00:00.000Z",
+      next_run_at: "2099-09-22T00:00:00.000Z",
+    });
+    let listCount = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/recurring-jobs?include_archived=true") {
+        listCount += 1;
+        return json({ jobs: listCount === 1 && job ? [job] : [] });
+      }
+      if (path.endsWith("/runs?limit=50")) return json({ runs: [] });
+      if (path === "/api/recurring-jobs/job-1/run" && init?.method === "POST") {
+        job = null;
+        return json({ run: { run_id: "manual-run", job_id: "job-1", state: "running" } });
+      }
+      throw new Error(`unexpected request ${init?.method ?? "GET"} ${path}`);
+    }));
+
+    await renderTab();
+    await waitFor(() => expect(buttonContaining("음악 추천")).toBeDefined());
+    flushSync(() => buttonContaining("음악 추천")?.click());
+    await waitFor(() => expect(button("지금 실행")?.disabled).toBe(false));
+    clickButton("지금 실행");
+
+    await waitFor(() => expect(button("반복 작업 생성")).toBeDefined());
+    expect((document.body.querySelector('[aria-label="작업 이름"]') as HTMLInputElement).value).toBe("");
+    expect(listCount).toBeGreaterThanOrEqual(2);
+  });
+
   it("reloads the durable version after a save conflict without discarding the draft", async () => {
     const initial = recurringJob({ version: 4, name: "음악 추천" });
     const latest = recurringJob({ version: 5, name: "다른 사용자의 변경" });
@@ -228,6 +315,7 @@ function json(body: unknown, status = 200): Response {
 function recurringJob(patch: Partial<Record<string, unknown>> = {}) {
   return {
     job_id: "job-1", name: "음악 추천", prompt: "기존 지시문", timezone: "Asia/Seoul",
+    schedule_kind: "recurring", run_at: null,
     schedule_expressions: ["0 9 * * 1-5"], node_id: "node-a", agent_id: "agent-a", model_preset: null,
     folder_id: "folder-a", container: { kind: "folder", id: "folder-a" }, late_run_window_seconds: 1_800,
     enabled: true, archived_at: null, next_run_at: "2026-09-22T00:00:00.000Z", version: 1,

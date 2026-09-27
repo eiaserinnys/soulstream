@@ -140,7 +140,12 @@ export function createInput(body: Record<string, unknown>): RecurringJobCreateIn
     name: stringValue(body, "name"),
     prompt: stringValue(body, "prompt"),
     timezone: stringValue(body, "timezone"),
-    scheduleExpressions: stringsValue(body, "scheduleExpressions", "schedule_expressions"),
+    ...(has(body, "scheduleExpressions") || has(body, "schedule_expressions")
+      ? { scheduleExpressions: stringsValue(body, "scheduleExpressions", "schedule_expressions") }
+      : {}),
+    ...(has(body, "runAt") || has(body, "run_at")
+      ? { runAt: stringAlias(body, "runAt", "run_at") }
+      : {}),
     nodeId: stringAlias(body, "nodeId", "node_id"),
     agentId: stringAlias(body, "agentId", "agent_id"),
     modelPreset: nullableStringAlias(body, "modelPreset", "model_preset"),
@@ -160,6 +165,7 @@ export function updateInput(body: Record<string, unknown>): RecurringJobUpdateIn
   if (has(body, "name")) result.name = stringValue(body, "name");
   if (has(body, "prompt")) result.prompt = stringValue(body, "prompt");
   if (has(body, "timezone")) result.timezone = stringValue(body, "timezone");
+  if (has(body, "runAt") || has(body, "run_at")) result.runAt = stringAlias(body, "runAt", "run_at");
   if (has(body, "scheduleExpressions") || has(body, "schedule_expressions")) {
     result.scheduleExpressions = stringsValue(body, "scheduleExpressions", "schedule_expressions");
   }
@@ -187,8 +193,10 @@ export function serializeJob(job: import("./types.js").RecurringJob): Record<str
     name: job.name,
     prompt: job.prompt,
     timezone: job.timezone,
+    schedule_kind: job.scheduleKind,
     schedule_expressions: job.scheduleExpressions,
     schedule: { timezone: job.timezone, schedule_expressions: job.scheduleExpressions },
+    run_at: job.runAt,
     node_id: job.nodeId,
     agent_id: job.agentId,
     model_preset: job.modelPreset,

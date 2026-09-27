@@ -13,6 +13,32 @@ import {
 describe("recurring job dashboard client", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("posts once jobs with run_at and no schedule_expressions", async () => {
+    const fetchImplementation = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ job: {} }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchImplementation);
+    const input = {
+      name: "once reminder",
+      prompt: "remind me",
+      timezone: "Asia/Seoul",
+      run_at: "2026-09-29T00:00:00.000Z",
+      node_id: "node-a",
+      agent_id: "seosoyoung",
+      model_preset: null,
+      container: { kind: "folder" as const, id: "folder-a" },
+      folder_id: "folder-a",
+      idempotency_key: "once-create",
+    };
+
+    await createRecurringJob(input);
+
+    expect(JSON.parse(fetchImplementation.mock.calls[0]![1]?.body as string)).toEqual(input);
+  });
+
   it("uses the authenticated public lifecycle contract, including escaped IDs", async () => {
     const fetchImplementation = vi.fn<typeof globalThis.fetch>().mockImplementation(async () =>
       new Response(JSON.stringify({ jobs: [], job: {}, run: {}, nextRuns: [] }), {

@@ -65,6 +65,73 @@ describe("recurring job routes", () => {
     }
   });
 
+  it("parses once create and update timestamps through both HTTP boundaries and serializes them", async () => {
+    const service = fakeService();
+    const createdRunAt = "2099-09-22T09:00:00+09:00";
+    const updatedRunAt = "2099-09-23T09:00:00+09:00";
+    const onceJob = {
+      ...job(),
+      scheduleKind: "once" as const,
+      scheduleExpressions: [] as string[],
+      runAt: createdRunAt,
+      nextRunAt: createdRunAt,
+    };
+    service.create.mockResolvedValue(onceJob);
+    service.update.mockResolvedValue({ ...onceJob, runAt: updatedRunAt, nextRunAt: updatedRunAt });
+    const app = createApp({
+      config,
+      recurringJobRoutes: { service, resolveActor: async () => browserActor },
+      recurringJobHostRoutes: { service, authBearerToken: "service-token" },
+    });
+    const { schedule_expressions: _scheduleExpressions, ...base } = createBody("once-create");
+    try {
+      const http = await app.inject({
+        method: "POST",
+        url: "/api/recurring-jobs",
+        payload: { ...base, run_at: createdRunAt },
+      });
+      const host = await app.inject({
+        method: "POST",
+        url: "/api/recurring-jobs/host/create",
+        headers: { authorization: "Bearer service-token" },
+        payload: { ...base, idempotency_key: "once-host", run_at: createdRunAt, actor: agentActor },
+      });
+      const update = await app.inject({
+        method: "POST",
+        url: "/api/recurring-jobs/host/update",
+        headers: { authorization: "Bearer service-token" },
+        payload: {
+          job_id: onceJob.jobId,
+          expected_version: 1,
+          run_at: updatedRunAt,
+          actor: agentActor,
+        },
+      });
+
+      expect(http.statusCode).toBe(201);
+      expect(host.statusCode).toBe(200);
+      expect(update.statusCode).toBe(200);
+      expect(http.json()).toMatchObject({
+        job: { schedule_kind: "once", schedule_expressions: [], run_at: createdRunAt },
+      });
+      expect(host.json()).toMatchObject({
+        job: { schedule_kind: "once", schedule_expressions: [], run_at: createdRunAt },
+      });
+      expect(update.json()).toMatchObject({
+        job: { schedule_kind: "once", schedule_expressions: [], run_at: updatedRunAt },
+      });
+      expect(service.create.mock.calls[0]?.[1]).toMatchObject({ runAt: createdRunAt });
+      expect(service.create.mock.calls[0]?.[1]).not.toHaveProperty("scheduleExpressions");
+      expect(service.create.mock.calls[1]?.[1]).toMatchObject({ runAt: createdRunAt });
+      expect(service.create.mock.calls[1]?.[1]).not.toHaveProperty("scheduleExpressions");
+      expect(service.update).toHaveBeenCalledWith(agentActor, onceJob.jobId, expect.objectContaining({
+        runAt: updatedRunAt,
+      }));
+    } finally {
+      await app.close();
+    }
+  });
+
   it("persists a verified agent caller through the host route and shared target gate", async () => {
     const { service, validateTarget } = persistedService();
     const app = createApp({
@@ -170,6 +237,7 @@ function fakeService() {
     runManual: vi.fn(async () => ({ runId: "run-1" })),
   } as unknown as RecurringJobService & {
     create: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
     list: ReturnType<typeof vi.fn>;
   };
 }
@@ -218,6 +286,7 @@ function failingRepository() {
     createJob: async () => { throw new Error("unused"); },
     findJobByCreateIdempotency: async () => null,
     updateJob: async () => { throw new Error("unused"); },
+    deleteOnceJob: async () => false,
     archiveJob: async () => null,
     listRuns: async () => [],
     findRunByManualIdempotency: async () => null,
@@ -257,6 +326,7 @@ function job(): RecurringJob {
   return {
     jobId: "job-1", ownerEmail: "owner@example.com", executionCaller: {},
     name: "music recommendation", prompt: "recommend music", timezone: "Asia/Seoul",
+    scheduleKind: "recurring", runAt: null,
     scheduleExpressions: ["0 9,12 * * 1-5"], nodeId: "node-a", agentId: "roselin",
     modelPreset: null, container: { kind: "folder", id: "folder-a" }, folderId: "folder-a",
     enabled: true, archivedAt: null, lateRunWindowSeconds: 1800, nextRunAt: "2026-09-22T00:00:00.000Z",

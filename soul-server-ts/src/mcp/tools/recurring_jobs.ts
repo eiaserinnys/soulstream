@@ -23,6 +23,11 @@ const scheduleSchema = {
   timezone: z.string().min(1),
   schedule_expressions: z.array(z.string().min(1)).min(1),
 };
+const createScheduleSchema = {
+  timezone: z.string().min(1),
+  schedule_expressions: z.array(z.string().min(1)).min(1).optional(),
+  run_at: z.string().min(1).describe("오프셋이 명시된 ISO 8601 시각. 예: 2026-09-29T09:00:00+09:00").optional(),
+};
 
 type RecurringJobMcpActor = {
   readonly ownerEmail: string;
@@ -70,14 +75,14 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
   server.registerTool(
     "create_recurring_job",
     {
-      description: "반복 에이전트 작업을 생성한다. idempotency_key는 재시도에도 같은 값을 쓴다.",
+      description: "반복 또는 1회 에이전트 작업을 생성한다. 반복은 schedule_expressions(cron 배열), 1회는 run_at(오프셋 포함 ISO 8601, 예: 2026-09-29T09:00:00+09:00) 중 정확히 하나를 준다. 1회 작업은 실행으로 세션이 만들어진 것이 확인되면 작업과 이력이 삭제된다. idempotency_key는 재시도에도 같은 값을 쓴다.",
       inputSchema: {
         name: z.string().min(1),
         prompt: z.string().min(1),
         idempotency_key: z.string().min(1),
         enabled: z.boolean().optional(),
         late_run_window_seconds: z.number().int().positive().optional(),
-        ...scheduleSchema,
+        ...createScheduleSchema,
         ...jobTargetSchema,
         ...callerSchema,
       },
@@ -87,7 +92,10 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
       prompt: input.prompt,
       idempotency_key: input.idempotency_key,
       timezone: input.timezone,
-      schedule_expressions: input.schedule_expressions,
+      ...(input.schedule_expressions === undefined
+        ? {}
+        : { schedule_expressions: input.schedule_expressions }),
+      ...(input.run_at === undefined ? {} : { run_at: input.run_at }),
       node_id: input.node_id,
       agent_id: input.agent_id,
       model_preset: input.model_preset,
@@ -103,7 +111,7 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
   server.registerTool(
     "update_recurring_job",
     {
-      description: "반복 작업을 CAS version으로 수정하거나 일시정지·재개한다.",
+      description: "반복 작업을 CAS version으로 수정하거나 일시정지·재개한다. 1회 작업의 실행 시각은 run_at으로 바꾼다.",
       inputSchema: {
         job_id: z.string().min(1),
         expected_version: z.number().int().positive(),
@@ -111,6 +119,7 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
         prompt: z.string().min(1).optional(),
         timezone: z.string().min(1).optional(),
         schedule_expressions: z.array(z.string().min(1)).min(1).optional(),
+        run_at: z.string().min(1).describe("오프셋이 명시된 ISO 8601 시각. 예: 2026-09-29T09:00:00+09:00").optional(),
         node_id: z.string().min(1).optional(),
         agent_id: z.string().min(1).optional(),
         model_preset: z.string().min(1).nullable().optional(),

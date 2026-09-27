@@ -4671,6 +4671,8 @@ CREATE TABLE IF NOT EXISTS recurring_jobs (
     name                        TEXT NOT NULL,
     prompt                      TEXT NOT NULL,
     schedule_expressions        JSONB NOT NULL,
+    schedule_kind               TEXT NOT NULL DEFAULT 'recurring',
+    run_at                       TIMESTAMPTZ,
     timezone                    TEXT NOT NULL,
     node_id                     TEXT NOT NULL,
     agent_id                    TEXT NOT NULL,
@@ -4691,9 +4693,12 @@ CREATE TABLE IF NOT EXISTS recurring_jobs (
     CONSTRAINT recurring_jobs_owner_email_nonempty CHECK (length(btrim(owner_email)) > 0),
     CONSTRAINT recurring_jobs_name_nonempty CHECK (length(btrim(name)) > 0),
     CONSTRAINT recurring_jobs_prompt_nonempty CHECK (length(btrim(prompt)) > 0),
-    CONSTRAINT recurring_jobs_schedule_array CHECK (
+    CONSTRAINT recurring_jobs_schedule_shape CHECK (
         jsonb_typeof(schedule_expressions) = 'array'
-        AND jsonb_array_length(schedule_expressions) > 0
+        AND (
+            (schedule_kind = 'recurring' AND jsonb_array_length(schedule_expressions) > 0 AND run_at IS NULL)
+            OR (schedule_kind = 'once' AND jsonb_array_length(schedule_expressions) = 0 AND run_at IS NOT NULL)
+        )
     ),
     CONSTRAINT recurring_jobs_timezone_nonempty CHECK (length(btrim(timezone)) > 0),
     CONSTRAINT recurring_jobs_node_nonempty CHECK (length(btrim(node_id)) > 0),

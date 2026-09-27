@@ -47,6 +47,7 @@ function repository(): RecurringJobRepository {
     createJob: async () => { throw new Error("unused"); },
     findJobByCreateIdempotency: async () => null,
     updateJob: async () => { throw new Error("unused"); },
+    deleteOnceJob: async () => false,
     archiveJob: async () => null,
     listRuns: async () => [],
     findRunByManualIdempotency: async () => null,

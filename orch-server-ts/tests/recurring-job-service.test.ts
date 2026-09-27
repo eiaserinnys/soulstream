@@ -68,6 +68,193 @@ describe("RecurringJobService", () => {
     expect(await service.reserveAndDispatchDueJob(job)).toBeNull();
   });
 
+  it("creates a future once job without compiling a cron schedule", async () => {
+    const repository = memoryRepository();
+    const service = new RecurringJobService({
+      repository,
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+    });
+
+    const job = await service.create(actor, onceInput());
+
+    expect(job).toMatchObject({
+      scheduleKind: "once",
+      scheduleExpressions: [],
+      runAt: "2026-09-22T09:00:00+09:00",
+      nextRunAt: "2026-09-22T09:00:00+09:00",
+    });
+  });
+
+  it.each([
+    ["neither schedule field", { runAt: undefined }],
+    ["both schedule fields", { scheduleExpressions: ["0 9 * * *"] }],
+    ["offset-free run_at", { runAt: "2026-09-22T09:00:00" }],
+    ["invalid run_at", { runAt: "2026-02-30T09:00:00Z" }],
+    ["past run_at", { runAt: "2026-09-20T09:00:00Z" }],
+    ["invalid once timezone", { timezone: "Mars/Olympus" }],
+  ])("rejects once creation with %s", async (_label, patch) => {
+    const service = new RecurringJobService({
+      repository: memoryRepository(),
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+    });
+
+    await expect(service.create(actor, onceInput(patch)))
+      .rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+  });
+
+  it("rejects changing schedule kind and resuming a once job after its run_at", async () => {
+    const repository = memoryRepository();
+    let now = new Date("2026-09-21T00:00:00.000Z");
+    const service = new RecurringJobService({ repository, now: () => now, newId: sequentialIds() });
+    const once = await service.create(actor, onceInput({ runAt: "2026-09-21T00:01:00Z" }));
+
+    await expect(service.update(actor, once.jobId, {
+      expectedVersion: once.version,
+      scheduleExpressions: ["0 9 * * *"],
+    })).rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+    const paused = await service.update(actor, once.jobId, {
+      expectedVersion: once.version,
+      enabled: false,
+    });
+    now = new Date("2026-09-21T00:02:00.000Z");
+    await expect(service.update(actor, once.jobId, {
+      expectedVersion: paused.version,
+      enabled: true,
+    })).rejects.toMatchObject({
+      code: "VALIDATION",
+      statusCode: 422,
+      message: "run_at must be in the future",
+    });
+
+    const recurring = await service.create(actor, { ...createInput(), idempotencyKey: "create-recurring" });
+    await expect(service.update(actor, recurring.jobId, {
+      expectedVersion: recurring.version,
+      runAt: "2026-09-23T00:00:00Z",
+    })).rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+  });
+
+  it("deletes a once job and its run when dispatch confirms the created session", async () => {
+    const repository = memoryRepository();
+    let now = new Date("2026-09-21T00:00:00.000Z");
+    const service = new RecurringJobService({
+      repository,
+      now: () => now,
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        createRecurringSession: async () => ({ state: "running", resolvedModelPreset: null }),
+        findDurableSession: async () => null,
+      },
+    });
+    const job = await service.create(actor, onceInput({ runAt: "2026-09-21T00:01:00Z" }));
+    now = new Date(job.runAt!);
+
+    const run = await service.reserveAndDispatchDueJob(job);
+
+    expect(run).toMatchObject({ state: "running", trigger: "scheduled" });
+    expect(repository.jobs.has(job.jobId)).toBe(false);
+    expect(repository.runs.size).toBe(0);
+  });
+
+  it("keeps awaiting once jobs until reconciliation observes a durable session", async () => {
+    const repository = memoryRepository();
+    let now = new Date("2026-09-21T00:00:00.000Z");
+    let durableStatus: "completed" | null = null;
+    const service = new RecurringJobService({
+      repository,
+      now: () => now,
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        createRecurringSession: async () => ({ state: "awaiting_session", resolvedModelPreset: null }),
+        findDurableSession: async () => durableStatus ? { status: durableStatus } : null,
+      },
+    });
+    const job = await service.create(actor, onceInput({ runAt: "2026-09-21T00:01:00Z" }));
+    now = new Date(job.runAt!);
+    const pending = await service.reserveAndDispatchDueJob(job);
+
+    expect(pending).toMatchObject({ state: "awaiting_session" });
+    expect(repository.jobs.get(job.jobId)?.nextRunAt).toBeNull();
+    expect(repository.runs.size).toBe(1);
+
+    durableStatus = "completed";
+    const reconciled = await service.reconcileSession(pending!.sessionId);
+
+    expect(reconciled).toMatchObject({ state: "completed" });
+    expect(repository.jobs.has(job.jobId)).toBe(false);
+    expect(repository.runs.size).toBe(0);
+  });
+
+  it("retains failed and late once jobs with a null next run and an explained run", async () => {
+    const failedRepository = memoryRepository();
+    let failedNow = new Date("2026-09-21T00:00:00.000Z");
+    const failedService = new RecurringJobService({
+      repository: failedRepository,
+      now: () => failedNow,
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        createRecurringSession: async () => { throw new Error("before send"); },
+        findDurableSession: async () => null,
+      },
+    });
+    const failedJob = await failedService.create(actor, onceInput({ runAt: "2026-09-21T00:01:00Z" }));
+    failedNow = new Date(failedJob.runAt!);
+    const failedRun = await failedService.reserveAndDispatchDueJob(failedJob);
+
+    expect(failedRun).toMatchObject({ state: "error", reasonCode: "CREATE_SESSION_BEFORE_SEND_FAILED" });
+    expect(failedRepository.jobs.get(failedJob.jobId)?.nextRunAt).toBeNull();
+    expect(failedRepository.runs.get(failedRun!.runId)?.reasonMessage).toContain("before send");
+    const renamed = await failedService.update(actor, failedJob.jobId, {
+      expectedVersion: failedRepository.jobs.get(failedJob.jobId)!.version,
+      name: "failed once job",
+    });
+    expect(renamed.name).toBe("failed once job");
+    expect(renamed.nextRunAt).toBeNull();
+
+    const lateRepository = memoryRepository();
+    let lateNow = new Date("2026-09-21T00:00:00.000Z");
+    const lateService = new RecurringJobService({
+      repository: lateRepository,
+      now: () => lateNow,
+      newId: sequentialIds(),
+    });
+    const lateJob = await lateService.create(actor, onceInput({
+      runAt: "2026-09-21T00:01:00Z",
+      lateRunWindowSeconds: 60,
+    }));
+    lateNow = new Date("2026-09-21T00:03:00.000Z");
+    const lateRun = await lateService.reserveAndDispatchDueJob(lateJob);
+
+    expect(lateRun).toMatchObject({ state: "skipped_late", reasonCode: "LATE_RUN_WINDOW_EXPIRED" });
+    expect(lateRepository.jobs.get(lateJob.jobId)?.nextRunAt).toBeNull();
+    expect(lateRepository.runs.size).toBe(1);
+  });
+
+  it("deletes a once job after a confirmed manual run", async () => {
+    const repository = memoryRepository();
+    const service = new RecurringJobService({
+      repository,
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        createRecurringSession: async () => ({ state: "running", resolvedModelPreset: null }),
+        findDurableSession: async () => null,
+      },
+    });
+    const job = await service.create(actor, onceInput());
+
+    const run = await service.runManual(actor, job.jobId, "manual-once");
+
+    expect(run).toMatchObject({ trigger: "manual", state: "running" });
+    expect(repository.jobs.has(job.jobId)).toBe(false);
+    expect(repository.runs.size).toBe(0);
+  });
+
   it("recovers only the latest eligible occurrence and compresses older missed work", async () => {
     const repository = memoryRepository();
     let current = new Date("2026-09-20T15:00:00.000Z");
@@ -537,6 +724,11 @@ function createInput() {
   };
 }
 
+function onceInput(patch: Record<string, unknown> = {}) {
+  const { scheduleExpressions: _scheduleExpressions, ...base } = createInput();
+  return { ...base, runAt: "2026-09-22T09:00:00+09:00", ...patch };
+}
+
 function sequentialIds(): () => string {
   let index = 0;
   return () => `id-${++index}`;
@@ -564,6 +756,12 @@ function memoryRepository(): RecurringJobRepository & {
     async findJobByCreateIdempotency(ownerEmail, key) {
       return [...jobs.values()].find((job) =>
         job.ownerEmail === ownerEmail && job.createdIdempotencyKey === key) ?? null;
+    },
+    async deleteOnceJob(jobId) {
+      if (jobs.get(jobId)?.scheduleKind !== "once") return false;
+      for (const [runId, run] of runs) if (run.jobId === jobId) runs.delete(runId);
+      jobs.delete(jobId);
+      return true;
     },
     async updateJob(job, expectedVersion) {
       const current = jobs.get(job.jobId)!;
