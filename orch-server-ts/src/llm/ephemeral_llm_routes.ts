@@ -13,6 +13,7 @@ export const EPHEMERAL_LLM_MAX_TIMEOUT_MS = 120_000;
 
 export type EphemeralLlmRouteOptions = {
   readonly authBearerToken: string;
+  readonly environment?: string;
   readonly generator: Pick<CodexEphemeralExecutor, "generate">;
 };
 
@@ -39,11 +40,12 @@ export function registerEphemeralLlmRoutes(
     const authorization = verifyServiceBearerAuthorization(
       request.headers.authorization,
       options.authBearerToken,
+      options.environment,
     );
     if (!authorization.ok) {
       return errorReply(
         reply,
-        401,
+        authorization.statusCode,
         "UNAUTHORIZED",
         `bearer token is ${authorization.reason}`,
       );

@@ -4,6 +4,7 @@ import {
   type PageMutationApplication,
 } from "../page/page_mutation_core.js";
 import { readPageYDocReplica } from "../page/page_yjs_model.js";
+import { TaskIdentityStalePlanConflictError } from "./task_identity_errors.js";
 import type {
   TaskIdentityRepository,
   TaskMountBinding,
@@ -86,7 +87,9 @@ async function planDeletes(
     const existing = new Set(replica.blocks.map((block) => block.id));
     const missing = blockIds.filter((blockId) => !existing.has(blockId));
     if (missing.length > 0) {
-      throw new Error(`task mount projection changed on ${pageId}: ${missing.join(",")}`);
+      throw new TaskIdentityStalePlanConflictError(
+        `task mount projection changed on ${pageId}: ${missing.join(",")}`,
+      );
     }
     return {
       pageId,

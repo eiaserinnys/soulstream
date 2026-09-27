@@ -175,7 +175,7 @@ describePostgres("board Y.Doc bootstrap seed scope", () => {
         authBearerToken: "test-token",
         environment: "production",
         dashboardAuthEnabled: false,
-        verifyDashboardToken: async () => null,
+        resolveDashboardUserFromHeaders: async () => null,
       },
     });
 

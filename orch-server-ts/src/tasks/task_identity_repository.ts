@@ -10,6 +10,11 @@ import {
   commitPageMutationInTransaction,
 } from "../page/page_repository.js";
 import { getPageYjsDocumentName } from "../page/page_yjs_model.js";
+import {
+  TaskIdentityBindingConflictError,
+  TaskIdentityCreateCollisionError,
+  TaskIdentityStalePlanConflictError,
+} from "./task_identity_errors.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import type {
   LegacyTaskBackfillResult,
@@ -92,7 +97,9 @@ export class SqlTaskIdentityRepository implements TaskIdentityRepository {
       `;
       if (!folders[0]) throw new Error(`task identity folder not found: ${input.folderId}`);
       if (folders[0].project_page_id !== input.expectedProjectPageId) {
-        throw new Error(`task identity project mapping changed: ${input.folderId}`);
+        throw new TaskIdentityStalePlanConflictError(
+          `task identity project mapping changed: ${input.folderId}`,
+        );
       }
       const expectsProjectMount = Boolean(input.expectedProjectPageId);
       if (
@@ -108,7 +115,7 @@ export class SqlTaskIdentityRepository implements TaskIdentityRepository {
           EXISTS(SELECT 1 FROM pages WHERE id = ${input.pageId}) AS page_exists
       `;
       if (collisions[0]?.task_exists || collisions[0]?.page_exists) {
-        throw new Error(`task identity already exists: ${input.id}`);
+        throw new TaskIdentityCreateCollisionError(`task identity already exists: ${input.id}`);
       }
 
       await storeMergedBoardYjsApplicationWithSql(
@@ -209,10 +216,12 @@ export class SqlTaskIdentityRepository implements TaskIdentityRepository {
       const bindings = await bindingRows(transaction, "task", input.binding.taskId, true);
       const locked = bindings[0];
       if (!locked || locked.pageId !== input.binding.pageId) {
-        throw new Error(`task identity mapping changed: ${input.binding.taskId}`);
+        throw new TaskIdentityStalePlanConflictError(
+          `task identity mapping changed: ${input.binding.taskId}`,
+        );
       }
       if (locked.taskVersion !== input.expectedTaskVersion) {
-        throw new Error(
+        throw new TaskIdentityStalePlanConflictError(
           `task version conflict: ${input.binding.taskId} expected ${input.expectedTaskVersion}, actual ${locked.taskVersion}`,
         );
       }
@@ -249,7 +258,9 @@ export class SqlTaskIdentityRepository implements TaskIdentityRepository {
         RETURNING *
       `;
       if (!updated[0]) {
-        throw new Error(`task version conflict: ${input.binding.taskId}`);
+        throw new TaskIdentityStalePlanConflictError(
+          `task version conflict: ${input.binding.taskId}`,
+        );
       }
       const operation = await insertTaskOperation(transaction, {
         id: input.operationId,
@@ -331,7 +342,9 @@ export class SqlTaskIdentityRepository implements TaskIdentityRepository {
       const pages = await transaction<readonly { exists: boolean }[]>`
         SELECT EXISTS(SELECT 1 FROM pages WHERE id = ${input.pageId}) AS exists
       `;
-      if (pages[0]?.exists) throw new Error(`backfill page already exists: ${input.pageId}`);
+      if (pages[0]?.exists) {
+        throw new TaskIdentityBindingConflictError(`backfill page already exists: ${input.pageId}`);
+      }
       const pageCommitInput = {
         documentName: getPageYjsDocumentName(input.pageId),
         application: input.pageApplication,

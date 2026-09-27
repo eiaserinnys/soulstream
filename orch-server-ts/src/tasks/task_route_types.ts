@@ -117,6 +117,7 @@ export type TaskRouteOptions = {
   >;
   taskControlPlaneServiceProvider?: () => Promise<TaskControlPlaneService>;
   authBearerToken?: string;
+  environment?: string;
 };
 
 export class TaskRouteError extends Error {

@@ -22,15 +22,13 @@ import {
   type SessionSnapshotListResponse,
 } from "../session/session_snapshot_service.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
-import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 import {
   createLiveDbSqlResolver,
-  createLiveSearchDbConnectionFactory,
   type LiveDbSqlResolver,
   type LiveSearchDbConnectionFactory,
-  type LivePostgresFactory,
   type LivePostgresSql,
 } from "./live_db_sql.js";
+import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 import {
   createLiveFolderProvider,
   type LiveFolderProvider,
@@ -132,12 +130,8 @@ export type CreateLiveDbCatalogRepositoryOptions = {
   readonly searchDbConnectionFactory?: LiveSearchDbConnectionFactory;
   readonly searchQueryExpander?: SearchQueryExpander;
   readonly onSearchCancelError?: (error: unknown) => void;
-  readonly postgresFactory?: LivePostgresFactory;
-  readonly databaseUrl?: string;
   readonly configProvider?: LiveConfigProviderBoundary;
   readonly registry?: InMemoryNodeRegistry;
-  readonly maxConnections?: number;
-  readonly closeTimeoutSeconds?: number;
   readonly sessionSnapshotLimit?: number;
   readonly boardAssetStorage?: LiveBoardAssetStorage | null;
   readonly sessionDeletion?: SessionDeletionPort;
@@ -154,21 +148,20 @@ const DEFAULT_SESSION_SNAPSHOT_LIMIT = 200;
 export function createLiveDbCatalogRepository(
   options: CreateLiveDbCatalogRepositoryOptions = {},
 ): LiveDbCatalogRepository {
+  if (options.sqlResolver === undefined && options.sql === undefined) {
+    throw new Error("sqlResolver or sql is required");
+  }
   const sqlResolver = options.sqlResolver ??
     createLiveDbSqlResolver({
       sql: options.sql,
-      postgresFactory: options.postgresFactory,
-      databaseUrl: options.databaseUrl,
-      configProvider: options.configProvider,
-      maxConnections: options.maxConnections,
-      closeTimeoutSeconds: options.closeTimeoutSeconds,
     });
   const sessionHistoryProvider = createLiveSessionHistoryProvider({ sqlResolver });
-  const searchDbConnectionFactory = options.searchDbConnectionFactory ??
-    createLiveSearchDbConnectionFactory({
-      databaseUrl: options.databaseUrl,
-      configProvider: options.configProvider,
-    });
+  const searchDbConnectionFactory: LiveSearchDbConnectionFactory =
+    options.searchDbConnectionFactory ?? {
+      open: async () => {
+        throw new Error("searchDbConnectionFactory is required");
+      },
+    };
   const adminUsersRepository = createLiveAdminUsersRepository({ sqlResolver });
   const agentProfileRepository = createLiveAgentProfileRepository(sqlResolver);
   const cogitoSearchProvider = createLiveCogitoSearchProvider({

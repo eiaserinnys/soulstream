@@ -19,6 +19,10 @@ import {
   readResult,
   storeBoardApplication,
 } from "./task_identity_operation_store.js";
+import {
+  TaskIdentityCreateCollisionError,
+  TaskIdentityStalePlanConflictError,
+} from "./task_identity_errors.js";
 
 export async function persistTaskPromotion(
   sql: BoardYjsSql,
@@ -44,7 +48,7 @@ export async function persistTaskPromotion(
         EXISTS(SELECT 1 FROM pages WHERE id = ${input.pageId}) AS page_exists
     `;
     if (collisions[0]?.task_exists) {
-      throw new Error(`task identity task already exists: ${input.taskId}`);
+      throw new TaskIdentityCreateCollisionError(`task identity task already exists: ${input.taskId}`);
     }
     if (!collisions[0]?.page_exists) {
       throw new Error(`task identity source page not found: ${input.pageId}`);
@@ -130,7 +134,9 @@ async function assertProjectMountContract(
     throw new Error(`task identity folder not found: ${input.folderId}`);
   }
   if (folder.project_page_id !== input.expectedProjectPageId) {
-    throw new Error(`task identity project mapping changed: ${input.folderId}`);
+    throw new TaskIdentityStalePlanConflictError(
+      `task identity project mapping changed: ${input.folderId}`,
+    );
   }
   if ((input.mountPageApplications ?? []).some(
     (application) => application.pageId !== input.expectedProjectPageId,

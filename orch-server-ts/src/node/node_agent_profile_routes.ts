@@ -92,6 +92,7 @@ export type NodeAgentProfileRouteOptions = {
     invoke(nodeId: string, operation: "list" | "create" | "remove" | "delete-branch", input: Record<string, unknown>): Promise<unknown>;
   };
   worktreeAuthBearerToken?: string;
+  environment?: string;
 };
 
 export class NodeAgentProfileRouteError extends Error {
@@ -154,9 +155,10 @@ export function registerNodeAgentProfileRoutes(
           const authorization = verifyServiceBearerAuthorization(
             request.headers.authorization,
             options.worktreeAuthBearerToken ?? "",
+            options.environment,
           );
           if (!authorization.ok) {
-            return reply.code(401).send({
+            return reply.code(authorization.statusCode).send({
               error: {
                 code: "WORKTREE_INTERNAL_AUTH_REQUIRED",
                 message: `service bearer is ${authorization.reason}`,

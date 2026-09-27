@@ -6,6 +6,8 @@ import {
 } from "@soulstream/agent-profile-contract";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { isUuid } from "../http/uuid.js";
+
 export type AgentAtomContext = {
   readonly node_id: string;
   readonly depth?: number;
@@ -106,7 +108,6 @@ export const agentProfileRouteAuthRequirements = {
 } as const;
 
 type AgentParams = { agent_id: string };
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function registerAgentProfileRoutes(
   app: FastifyInstance,
@@ -257,7 +258,7 @@ function parseAtomContexts(value: unknown): ParseResult<AgentAtomContext[]> {
   if (!Array.isArray(value)) return invalid("atom_contexts must be an array");
   const result: AgentAtomContext[] = [];
   for (const entry of value) {
-    if (!isObject(entry) || typeof entry.node_id !== "string" || !UUID_RE.test(entry.node_id)) return invalid("atom_contexts node_id must be a UUID");
+    if (!isObject(entry) || !isUuid(entry.node_id)) return invalid("atom_contexts node_id must be a UUID");
     if (entry.depth !== undefined && (!Number.isInteger(entry.depth) || (entry.depth as number) < 0)) return invalid("atom_contexts depth must be a non-negative integer");
     if (entry.mode !== undefined && !["full", "index", "titles"].includes(String(entry.mode))) return invalid("atom_contexts mode is invalid");
     if (entry.titles_only !== undefined && typeof entry.titles_only !== "boolean") return invalid("atom_contexts titles_only must be boolean");

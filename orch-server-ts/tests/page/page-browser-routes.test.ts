@@ -116,6 +116,30 @@ describe("browser page routes", () => {
     }
   });
 
+  it("does not infer a 404 from a generic error message", async () => {
+    const service = serviceDouble();
+    vi.mocked(service.getBrowserPage)
+      .mockRejectedValueOnce(new Error("page not found: missing-page"));
+    const app = Fastify({ logger: false });
+    registerPageBrowserRoutes(app, {
+      service,
+      reads: service,
+      resolveUser: cookieUserResolver(),
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/pages/missing-page",
+        headers: { cookie: browserCookie },
+      });
+
+      expect(response.statusCode).toBe(500);
+      expect(response.json().detail.error.code).toBe("PAGE_BROWSER_OPERATION_FAILED");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("returns effective session defaults without opening the page Y.Doc", async () => {
     const service = serviceDouble();
     vi.mocked(service.resolvePageSessionDefaults).mockResolvedValueOnce({

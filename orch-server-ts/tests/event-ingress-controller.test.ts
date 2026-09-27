@@ -52,7 +52,7 @@ describe("NodeEventIngressController", () => {
     ]);
   });
 
-  it("re-publishes a duplicate receipt with its stable event identity", async () => {
+  it("does not re-publish a duplicate receipt", async () => {
     const value = batch(1);
     const publish = vi.fn();
     const controller = createController({
@@ -69,14 +69,7 @@ describe("NodeEventIngressController", () => {
     controller.enqueue(value as unknown as Record<string, unknown>);
     await controller.drain();
 
-    expect(publish).toHaveBeenCalledWith([
-      expect.objectContaining({
-        type: "node_session_event",
-        data: expect.objectContaining({
-          event: expect.objectContaining({ id: 101, _event_id: 101 }),
-        }),
-      }),
-    ]);
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("ingests one amplified structured result and its assistant/complete tail exactly once", async () => {

@@ -15,6 +15,7 @@ import type {
 import {
   isTaskIdentityAlreadyPromotedError,
   isTaskIdentityCreateCollision,
+  TaskIdentityAlreadyPromotedError,
   TaskIdentityTitleConflictError,
 } from "./task_identity_errors.js";
 import {
@@ -104,7 +105,7 @@ export async function promoteTaskPage(input: {
   }
   const existing = await input.config.repository.findByPageId(input.pageId);
   if (existing) {
-    throw new Error(`page is already a task identity: ${input.pageId}`);
+    throw new TaskIdentityAlreadyPromotedError(`page is already a task identity: ${input.pageId}`);
   }
   const snapshot = await loadPageDocument(
     input.pageId,

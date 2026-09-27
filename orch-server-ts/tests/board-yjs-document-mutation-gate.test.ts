@@ -102,7 +102,7 @@ function createNodeService(): BoardYjsService {
       authBearerToken: "test-token",
       environment: "production",
       dashboardAuthEnabled: false,
-      verifyDashboardToken: vi.fn().mockResolvedValue(null),
+      resolveDashboardUserFromHeaders: vi.fn().mockResolvedValue(null),
     },
   });
 }

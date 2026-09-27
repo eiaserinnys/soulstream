@@ -21,6 +21,7 @@ export const pageYjsRouteAuthRequirements = {
 export interface PageYjsRouteOptions {
   createService: (logger: FastifyBaseLogger) => PageYjsService;
   authBearerToken: string;
+  environment?: string;
   resolveBrowserUser?: PageBrowserRouteOptions["resolveUser"];
   browserReads?: PageBrowserRouteOptions["reads"];
   resolveAgentId?: PageBrowserRouteOptions["resolveAgentId"];
@@ -38,6 +39,7 @@ export function registerPageYjsRoutes(
   registerPageYjsHostOperationRoutes(app, {
     service,
     authBearerToken: options.authBearerToken,
+    environment: options.environment,
   });
   if (options.resolveBrowserUser) {
     if (!options.browserReads) {

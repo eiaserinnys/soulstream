@@ -63,7 +63,7 @@ export type CreatePostgresDashboardUserRepositoryOptions = {
 export type CreateLiveDashboardAccessProviderOptions = {
   readonly configProvider: LiveConfigProviderBoundary;
   readonly jwt: AuthJwtHelper;
-  readonly repository?: DashboardUserRepository;
+  readonly repository: DashboardUserRepository;
   readonly cookieName?: string;
   readonly verifyDashboardToken?: LiveDashboardTokenVerifier;
 };
@@ -109,8 +109,10 @@ export class DashboardAccessError extends Error {
 export function createLiveDashboardAccessProvider(
   options: CreateLiveDashboardAccessProviderOptions,
 ): LiveDashboardAccessProvider {
-  const repository = options.repository ??
-    createPostgresDashboardUserRepository({ configProvider: options.configProvider });
+  if (options.repository === undefined) {
+    throw new Error("repository is required");
+  }
+  const repository = options.repository;
   const cookieName = options.cookieName ?? AUTH_COOKIE_NAME;
 
   return {
@@ -223,20 +225,8 @@ async function resolveAccessIdentity(input: {
     }
   }
 
-  let bearer: AuthTokenAccessResult;
-  if (!configuredBearer) {
-    if (!isProductionEnvironment(environment)) {
-      return { mode: "service_token", accessEmail };
-    }
-    bearer = {
-      ok: false,
-      statusCode: 500,
-      detail: "Authentication not configured",
-    };
-  } else {
-    bearer = verifyServiceBearer(input.request, configuredBearer);
-    if (bearer.ok) return { mode: "service_token", accessEmail };
-  }
+  const bearer = verifyServiceBearer(input.request, configuredBearer ?? "", environment);
+  if (bearer.ok) return { mode: "service_token", accessEmail };
 
   if (googleClientId.length > 0) {
     const dashboardToken = extractDashboardBearerToken(input.request);
@@ -343,12 +333,21 @@ function extractAccessEmail(request: FastifyRequest): string | null {
 function verifyServiceBearer(
   request: FastifyRequest,
   configuredBearer: string,
+  environment: string,
 ): AuthTokenAccessResult {
   const verification = verifyServiceBearerAuthorization(
     request.headers.authorization,
     configuredBearer,
+    environment,
   );
   if (verification.ok) return { ok: true };
+  if (verification.reason === "not_configured") {
+    return {
+      ok: false,
+      statusCode: 503,
+      detail: "Authentication not configured",
+    };
+  }
   if (verification.reason === "missing") {
     return {
       ok: false,
@@ -398,10 +397,6 @@ function optionalConfigString(
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "string") throw new Error(`${key} must be a string`);
   return value;
-}
-
-function isProductionEnvironment(environment: string): boolean {
-  return environment.toLowerCase() === "production";
 }
 
 function defaultPostgresFactory(

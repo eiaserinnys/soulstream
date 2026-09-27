@@ -11,6 +11,7 @@ import type {
   TaskMountBinding,
   TaskMountPageApplication,
 } from "./task_identity_contracts.js";
+import { TaskIdentityStalePlanConflictError } from "./task_identity_errors.js";
 import {
   planArchivedTaskMountRemoval,
   planTaskProjectMountReconciliation,
@@ -55,7 +56,9 @@ export async function moveTaskIdentity(input: {
     throw new Error(`task identity mapping not found: ${move.boardItem.itemId}`);
   }
   if (binding.folderId !== move.boardItem.folderId) {
-    throw new Error(`task identity source folder changed: ${move.boardItem.itemId}`);
+    throw new TaskIdentityStalePlanConflictError(
+      `task identity source folder changed: ${move.boardItem.itemId}`,
+    );
   }
   const projectPage = await input.config.repository.findProjectPageByFolderId(
     move.targetScope.folderId,

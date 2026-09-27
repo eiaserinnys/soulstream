@@ -26,7 +26,7 @@ export async function registerDashboardServing(
   app: FastifyInstance,
   options: RegisterDashboardServingOptions,
 ): Promise<boolean> {
-  const warn = options.warn ?? console.warn;
+  const warn = options.warn ?? ((message: string) => app.log.warn(message));
   if (options.dashboardDir.trim().length === 0) {
     warn("DASHBOARD_DIR is not configured; dashboard static serving is disabled");
     return false;

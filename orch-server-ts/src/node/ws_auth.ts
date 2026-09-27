@@ -15,20 +15,19 @@ export type NodeWsAuthResult =
     };
 
 export function verifyNodeWsBearer(input: NodeWsAuthInput): NodeWsAuthResult {
-  if (input.configuredToken.length === 0) {
-    if (input.environment.toLowerCase() !== "production") return { ok: true };
-    return {
-      ok: false,
-      statusCode: 503,
-      detail: "Node WebSocket authentication is not configured",
-    };
-  }
-
   const verification = verifyServiceBearerAuthorization(
     input.authorization,
     input.configuredToken,
+    input.environment,
   );
   if (verification.ok) return { ok: true };
+  if (verification.reason === "not_configured") {
+    return {
+      ok: false,
+      statusCode: 503,
+      detail: "Service authentication is not configured",
+    };
+  }
   if (verification.reason === "missing") {
     return {
       ok: false,
@@ -45,7 +44,7 @@ export function verifyNodeWsBearer(input: NodeWsAuthInput): NodeWsAuthResult {
   }
   return {
     ok: false,
-    statusCode: 403,
+    statusCode: 401,
     detail: "Invalid token",
   };
 }

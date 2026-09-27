@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import { isUuid } from "../http/uuid.js";
 
 import {
   PendingNodeCommandRejectedError,
@@ -35,6 +36,7 @@ export type SessionCommandRouteOptions = {
   createSessionLifecycle?: SessionCreateLifecycle;
   modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">;
   worktreeAuthBearerToken?: string;
+  environment?: string;
 };
 
 export const sessionCommandRouteAuthRequirements = {
@@ -110,9 +112,10 @@ export function registerSessionCommandRoutes(
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
         options.worktreeAuthBearerToken ?? "",
+        options.environment,
       );
       if (!authorization.ok) {
-        return reply.code(401).send({
+        return reply.code(authorization.statusCode).send({
           error: {
             code: "WORKTREE_INTERNAL_AUTH_REQUIRED",
             message: `service bearer is ${authorization.reason}`,
@@ -302,7 +305,7 @@ function createSessionPayload(
     profile,
     ...rest
   } = body;
-  const agentSessionId = isPageAnchor(rest.pageAnchor) && isUuid(requestedSessionId)
+  const agentSessionId = isPageAnchor(rest.pageAnchor) && isUuid(requestedSessionId, 4)
     ? requestedSessionId
     : randomUUID();
   const canonicalProfile = firstNonEmptyString(profile, agentId);
@@ -348,11 +351,6 @@ function isPageAnchor(value: unknown): value is JsonObject {
     && value.blockId.trim().length > 0
     && Number.isInteger(value.expectedVersion)
     && Number(value.expectedVersion) > 0;
-}
-
-function isUuid(value: unknown): value is string {
-  return typeof value === "string"
-    && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function parseObjectBody(body: unknown): JsonObject | undefined {

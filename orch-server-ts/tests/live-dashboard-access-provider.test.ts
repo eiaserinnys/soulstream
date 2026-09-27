@@ -13,6 +13,17 @@ import {
 } from "../src/index.js";
 
 describe("live dashboard DB access provider", () => {
+  it("requires an explicit user repository", () => {
+    const options = {
+      configProvider: configWith({ environment: "production" }),
+      jwt: {
+        issueToken: vi.fn(async () => "token"),
+        verifyToken: vi.fn(async () => null),
+      },
+    } as unknown as Parameters<typeof createLiveDashboardAccessProvider>[0];
+    expect(() => createLiveDashboardAccessProvider(options)).toThrow("repository is required");
+  });
+
   it("resolves DB users table policy for admin, unrestricted, restricted, and unknown users", async () => {
     const { provider, repository } = createProviderHarness();
 

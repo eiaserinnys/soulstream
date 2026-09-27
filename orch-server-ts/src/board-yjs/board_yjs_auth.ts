@@ -1,7 +1,7 @@
-import { timingSafeEqual } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 
 import { AUTH_COOKIE_NAME } from "../auth/auth_routes.js";
+import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 
 export const DASHBOARD_AUTH_COOKIE_NAME = AUTH_COOKIE_NAME;
 
@@ -9,9 +9,12 @@ export interface BoardYjsAuthConfig {
   authBearerToken: string;
   environment: string;
   dashboardAuthEnabled: boolean;
-  verifyDashboardToken: (
-    token: string,
-  ) => Promise<Record<string, unknown> | null>;
+  resolveDashboardUserFromHeaders: (
+    headers: Pick<IncomingHttpHeaders, "authorization" | "cookie">,
+  ) => Promise<{
+    payload: Record<string, unknown>;
+    carrier: "cookie" | "bearer";
+  } | null>;
 }
 
 export interface BoardYjsAuthInput {
@@ -30,50 +33,48 @@ export async function authenticateBoardYjsConnection({
   requestHeaders,
   config,
 }: BoardYjsAuthInput): Promise<BoardYjsAuthResult> {
-  const authorization = firstHeaderValue(requestHeaders.authorization);
-  const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1] ?? null;
-  const providedToken = token || bearer;
-  if (
-    config.authBearerToken &&
-    providedToken &&
-    constantTimeEqual(providedToken, config.authBearerToken)
-  ) {
+  const serviceAuthorization = token
+    ? `Bearer ${token}`
+    : requestHeaders.authorization;
+  const serviceBearer = verifyServiceBearerAuthorization(
+    serviceAuthorization,
+    config.authBearerToken,
+    config.environment,
+  );
+  if (serviceBearer.ok && !serviceBearer.developmentBypass) {
     return { source: "bearer", subject: "bearer" };
   }
 
   if (config.dashboardAuthEnabled) {
-    const cookieToken = parseCookieHeader(
-      firstHeaderValue(requestHeaders.cookie) ?? "",
-    )[DASHBOARD_AUTH_COOKIE_NAME];
-    if (!cookieToken) throw new Error("missing dashboard auth cookie");
-    const payload = await config.verifyDashboardToken(cookieToken);
-    if (!payload) throw new Error("invalid dashboard auth cookie");
-    return { source: "cookie", subject: getJwtSubject(payload) };
+    const dashboardUser = await config.resolveDashboardUserFromHeaders(requestHeaders);
+    if (dashboardUser) {
+      return {
+        source: dashboardUser.carrier,
+        subject: getJwtSubject(dashboardUser.payload),
+      };
+    }
+    if (firstHeaderValue(requestHeaders.cookie)) {
+      throw new Error("invalid dashboard authentication credentials");
+    }
+    if (firstHeaderValue(requestHeaders.authorization)) {
+      throw new Error("invalid dashboard bearer token");
+    }
+    throw new Error("missing dashboard authentication credentials");
   }
 
-  if (isDevelopmentEnvironment(config.environment)) {
+  if (serviceBearer.ok) {
     return { source: "development", subject: "development" };
   }
-  if (config.authBearerToken && providedToken) {
+  if (serviceBearer.reason === "not_configured") {
+    throw new Error("board workspace websocket authentication is not configured");
+  }
+  if (serviceBearer.reason === "missing") {
+    throw new Error("missing board workspace websocket bearer token");
+  }
+  if (serviceBearer.reason === "malformed" || serviceBearer.reason === "invalid") {
     throw new Error("invalid board workspace websocket bearer token");
   }
   throw new Error("board workspace websocket authentication is not configured");
-}
-
-function firstHeaderValue(value: string | string[] | undefined): string | null {
-  return Array.isArray(value) ? value[0] ?? null : value ?? null;
-}
-
-function parseCookieHeader(header: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const part of header.split(";")) {
-    const index = part.indexOf("=");
-    if (index < 0) continue;
-    const key = part.slice(0, index).trim();
-    if (!key) continue;
-    result[key] = decodeURIComponent(part.slice(index + 1).trim());
-  }
-  return result;
 }
 
 function getJwtSubject(payload: Record<string, unknown>): string {
@@ -82,14 +83,6 @@ function getJwtSubject(payload: Record<string, unknown>): string {
   return "dashboard-user";
 }
 
-function isDevelopmentEnvironment(environment: string): boolean {
-  const normalized = environment.trim().toLowerCase();
-  return normalized === "development" || normalized === "dev";
-}
-
-function constantTimeEqual(leftValue: string, rightValue: string): boolean {
-  const left = Buffer.from(leftValue);
-  const right = Buffer.from(rightValue);
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
+function firstHeaderValue(value: string | string[] | undefined): string | null {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null;
 }

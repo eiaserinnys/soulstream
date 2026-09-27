@@ -13,6 +13,7 @@ export type ProductionRecurringJobWiringOptions = {
     "resolveEmail" | "resolveCallerInfo"
   >;
   readonly authBearerToken: string;
+  readonly environment?: string;
   readonly onError: (error: unknown, operation: string) => void;
 };
 
@@ -51,6 +52,7 @@ export function createProductionRecurringJobWiring(
     hostRoutes: {
       service,
       authBearerToken: options.authBearerToken,
+      environment: options.environment,
     },
   };
 }

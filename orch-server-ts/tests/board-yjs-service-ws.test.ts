@@ -263,7 +263,7 @@ function createService(
       authBearerToken: "wire-token",
       environment: "production",
       dashboardAuthEnabled: false,
-      verifyDashboardToken: vi.fn().mockResolvedValue(null),
+      resolveDashboardUserFromHeaders: vi.fn().mockResolvedValue(null),
     },
   });
   return service;

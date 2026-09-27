@@ -9,6 +9,7 @@ import type { BoardProjectionHost } from "../board-yjs/board_projection_types.js
 
 export type BoardYjsHostProxyRouteOptions = {
   authBearerToken: string;
+  environment?: string;
   service?: BoardYjsService;
   createService?: (logger: FastifyInstance["log"]) => BoardYjsService;
   projectionHost?: BoardProjectionHost;
@@ -46,6 +47,7 @@ function resolveLocalOperationOptions(
     service: resolveLocalBoardYjsService(app, options),
     projectionHost: options.projectionHost,
     authBearerToken: options.authBearerToken,
+    environment: options.environment,
   };
 }
 

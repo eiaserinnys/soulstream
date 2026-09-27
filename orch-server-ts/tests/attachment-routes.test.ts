@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  AttachmentRouteError,
   AttachmentTransportConnectionError,
   AttachmentTransportTimeoutError,
   attachmentRouteAuthRequirements,
@@ -138,6 +139,23 @@ async function collectChunkStrings(chunks: AsyncIterable<Buffer>) {
 }
 
 describe("attachment route harness", () => {
+  it("does not infer an HTTP status from a generic transport error message", async () => {
+    const { app } = createHarness({
+      uploadAttachment: vi.fn(async () => {
+        throw new Error("INVALID_REQUEST: bad file");
+      }),
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/attachments/sessions?nodeId=node-1",
+      ...createUploadBody({ sessionId: "session-abc" }),
+    });
+
+    expect(response.statusCode).toBe(502);
+    await app.close();
+  });
+
   const fixtures = loadContractFixtures();
 
   it("keeps attachment routes disabled on the default app", async () => {
@@ -284,7 +302,7 @@ describe("attachment route harness", () => {
   it.each([
     [new AttachmentTransportConnectionError("closed"), 503, "Node temporarily unavailable: closed"],
     [new AttachmentTransportTimeoutError("slow"), 504, "Node attachment upload timed out: slow"],
-    [new Error("INVALID_REQUEST: bad file"), 400, "bad file"],
+    [new AttachmentRouteError("INVALID_ATTACHMENT_REQUEST", "bad file", 400), 400, "bad file"],
     [new Error("disk exploded"), 502, "Node attachment upload failed: disk exploded"],
   ])("maps upload transport error %#", async (error, statusCode, detail) => {
     const { app } = createHarness({
@@ -352,7 +370,7 @@ describe("attachment route harness", () => {
   it.each([
     [new AttachmentTransportConnectionError("closed"), 503, "Node temporarily unavailable: closed"],
     [new AttachmentTransportTimeoutError("slow"), 504, "Node attachment delete timed out: slow"],
-    [new Error("INVALID_REQUEST: bad session"), 400, "bad session"],
+    [new AttachmentRouteError("INVALID_ATTACHMENT_REQUEST", "bad session", 400), 400, "bad session"],
     [new Error("boom"), 502, "Node attachment delete failed: boom"],
   ])("maps delete transport error %#", async (error, statusCode, detail) => {
     const { app } = createHarness({
@@ -444,8 +462,8 @@ describe("attachment route harness", () => {
   });
 
   it.each([
-    [new Error("NOT_FOUND: missing"), 404, "missing"],
-    [new Error("INVALID_REQUEST: bad path"), 400, "bad path"],
+    [new AttachmentRouteError("ATTACHMENT_NOT_FOUND", "missing", 404), 404, "missing"],
+    [new AttachmentRouteError("INVALID_ATTACHMENT_REQUEST", "bad path", 400), 400, "bad path"],
     [new AttachmentTransportConnectionError("closed"), 503, "Node temporarily unavailable: closed"],
     [new AttachmentTransportTimeoutError("slow"), 504, "Node download timed out: slow"],
     [new Error("boom"), 502, "Node download failed: boom"],

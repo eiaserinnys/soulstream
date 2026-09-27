@@ -418,7 +418,6 @@ function downloadError(reply: FastifyReply, error: unknown): FastifyReply {
   return mappedTransportError(reply, error, {
     timeout: "Node download timed out",
     failure: "Node download failed",
-    notFoundPrefix: "NOT_FOUND:",
   });
 }
 
@@ -437,7 +436,7 @@ function resetErrorReply(reply: FastifyReply): FastifyReply {
 function mappedTransportError(
   reply: FastifyReply,
   error: unknown,
-  messages: { timeout: string; failure: string; notFoundPrefix?: string },
+  messages: { timeout: string; failure: string },
 ): FastifyReply {
   resetErrorReply(reply);
   if (error instanceof AttachmentRouteError) return attachmentError(reply, error);
@@ -448,12 +447,6 @@ function mappedTransportError(
     return reply.code(504).send({ detail: `${messages.timeout}: ${error.message}` });
   }
   const message = errorMessage(error);
-  if (messages.notFoundPrefix !== undefined && message.startsWith(messages.notFoundPrefix)) {
-    return reply.code(404).send({ detail: message.slice(messages.notFoundPrefix.length).trim() });
-  }
-  if (message.startsWith("INVALID_REQUEST:")) {
-    return reply.code(400).send({ detail: message.slice("INVALID_REQUEST:".length).trim() });
-  }
   return reply.code(502).send({ detail: `${messages.failure}: ${message}` });
 }
 

@@ -4,6 +4,10 @@ import type {
   TaskIdentityRepository,
 } from "./task_identity_contracts.js";
 import { insertTaskOperation } from "./task_identity_operation_store.js";
+import {
+  TaskIdentityBindingConflictError,
+  TaskIdentityStalePlanConflictError,
+} from "./task_identity_errors.js";
 
 export async function assertLegacyBinding(
   sql: BoardYjsQuerySql,
@@ -18,10 +22,12 @@ export async function assertLegacyBinding(
   const row = rows[0];
   if (!row) throw new Error(`legacy task not found: ${binding.taskId}`);
   if (Number(row.version) !== binding.taskVersion) {
-    throw new Error(`task version conflict: ${binding.taskId}`);
+    throw new TaskIdentityStalePlanConflictError(`task version conflict: ${binding.taskId}`);
   }
   if (row.task_page_id && row.task_page_id !== pageId) {
-    throw new Error(`legacy task is already bound to page ${row.task_page_id}`);
+    throw new TaskIdentityBindingConflictError(
+      `legacy task is already bound to page ${row.task_page_id}`,
+    );
   }
   const pages = await sql<readonly { exists: boolean }[]>`
     SELECT EXISTS(SELECT 1 FROM pages WHERE id = ${pageId}) AS exists
@@ -49,7 +55,9 @@ export async function persistLegacyBinding(
       AND version = ${input.binding.taskVersion}
     RETURNING *
   `;
-  if (!rows[0]) throw new Error(`task version conflict: ${input.binding.taskId}`);
+  if (!rows[0]) {
+    throw new TaskIdentityStalePlanConflictError(`task version conflict: ${input.binding.taskId}`);
+  }
   return await insertTaskOperation(sql, {
     id: input.operationId,
     taskId: input.binding.taskId,
