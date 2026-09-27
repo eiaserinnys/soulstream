@@ -1,5 +1,5 @@
-import type { SessionDeliveryRepository } from
-  "../db/repositories/session_delivery_repository.js";
+import type { SessionDeliveryHostClient } from
+  "../control_plane/persistence_host_clients.js";
 import type {
   RecordObservedChildCompletionBatchResult,
   RecordObservedChildCompletionParams,
@@ -23,7 +23,7 @@ export type ChildCompletionObservationResult =
   | "revision_mismatch";
 
 type ChildCompletionRepository = Pick<
-  SessionDeliveryRepository,
+  SessionDeliveryHostClient,
   "recordObservedChildCompletions"
 >;
 

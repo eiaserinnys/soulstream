@@ -1,22 +1,22 @@
 import { withDeadline } from "../runtime/deadline.js";
 import type { Logger } from "pino";
 
-import type { SessionDeliveryRepository } from
-  "../db/repositories/session_delivery_repository.js";
+import type { SessionDeliveryHostClient } from
+  "../control_plane/persistence_host_clients.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
-import type { SessionDeliveryRecoveryRepository } from
-  "../db/repositories/session_delivery_recovery_repository.js";
+import type { SessionDeliveryRecoveryHostClient } from
+  "../control_plane/persistence_host_clients.js";
 import type {
   ClaudeDeliveryTranscriptReceiptReader,
 } from "../engine/claude_delivery_transcript_receipt.js";
 
 export interface QueuedDeliveryTranscriptRecoveryDeps {
   deliveryRepository: Pick<
-    SessionDeliveryRepository,
+    SessionDeliveryHostClient,
     "get" | "markConsumed" | "markUncertain" | "retryDeliveryAttempt"
   >;
   recoveryRepository: Pick<
-    SessionDeliveryRecoveryRepository,
+    SessionDeliveryRecoveryHostClient,
     "claimQueuedAfterNodeRestart" | "markDeliveredFromTranscript"
   >;
   transcriptReceipt: Pick<
@@ -90,7 +90,7 @@ export class QueuedDeliveryTranscriptRecovery {
 
   private async reconcile(
     rows: Awaited<
-      ReturnType<SessionDeliveryRecoveryRepository["claimQueuedAfterNodeRestart"]>
+      ReturnType<SessionDeliveryRecoveryHostClient["claimQueuedAfterNodeRestart"]>
     >,
   ): Promise<number> {
     let settled = 0;

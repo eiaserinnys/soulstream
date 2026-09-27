@@ -149,6 +149,20 @@ describe("CatalogService.listFolders", () => {
 });
 
 describe("CatalogService.createFolder", () => {
+  it("requires the orch identity host and has no local fallback", async () => {
+    const { sql, calls } = setupSqlWithCatalog();
+    const db = createSessionDb(sql);
+    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await expect(svc.createFolder("Folder")).rejects.toThrow(
+      "folder identity host is required to create folders",
+    );
+
+    expect(calls).toHaveLength(0);
+    expect(emitCatalogUpdated).not.toHaveBeenCalled();
+  });
+
   it("uses the orch identity host for MCP create/rename/delete without a local DB fallback", async () => {
     const { sql, calls } = setupSqlWithCatalog();
     const db = createSessionDb(sql);

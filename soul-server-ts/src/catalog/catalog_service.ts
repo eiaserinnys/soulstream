@@ -210,19 +210,15 @@ export class CatalogService {
     sortOrder = 0,
     parentFolderId: string | null = null,
   ): Promise<CatalogFolderDto> {
-    if (this.folderProjectIdentityHost) {
-      return (await this.folderProjectIdentityHost.create({
-        name,
-        sortOrder,
-        parentFolderId,
-        idempotencyKey: randomUUID(),
-      })).folder;
+    if (!this.folderProjectIdentityHost) {
+      throw new Error("folder identity host is required to create folders");
     }
-    const id = randomUUID();
-    await this.assertParentAllowed(id, parentFolderId);
-    await this.db.createFolder(id, name, sortOrder, parentFolderId);
-    await this.broadcastCatalog();
-    return { id, name, sortOrder, settings: {}, parentFolderId, projectPageId: null };
+    return (await this.folderProjectIdentityHost.create({
+      name,
+      sortOrder,
+      parentFolderId,
+      idempotencyKey: randomUUID(),
+    })).folder;
   }
 
   async renameFolder(folderId: string, name: string): Promise<void> {

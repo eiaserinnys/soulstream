@@ -20,8 +20,7 @@ import type { SessionPageBindingRepository } from "../page/session_page_binding_
 import type { ChecklistTaskProjectionRepository } from "../page/checklist_task_projection_repository.js";
 import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
-import type { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
-import type { ClaudeBackgroundTaskRepository } from "./repositories/claude_background_task_repository.js";
+import type { ClaudeRuntimeHostClient } from "../control_plane/persistence_host_clients.js";
 import {
   type SessionDigestSearchMatch,
   type SessionStoryTurnSummary,
@@ -29,7 +28,7 @@ import {
   type SessionSearchMetadata,
   type SessionTurnSummaryCounts,
 } from "./session_story_types.js";
-import type { SessionDeliveryRepository } from "./repositories/session_delivery_repository.js";
+import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
 import type { BoardYjsContainerRef, BoardYjsContainerScope, CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionRow, TaskRow, TaskSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
@@ -42,11 +41,11 @@ export class SessionDB {
   private scheduleHost?: ScheduleHostClient;
   private sessionPageBindingRepository?: SessionPageBindingRepository;
   private boardProjectionHost?: BoardYjsHostClient;
-  private sessionDeliveryRepository?: SessionDeliveryRepository;
-  private claudeBackgroundTaskRepository?: ClaudeBackgroundTaskRepository;
+  private sessionDeliveryHost?: SessionDeliveryHostClient;
+  private claudeBackgroundTaskHost?: ClaudeRuntimeHostClient;
   private sessionDataHost?: SessionDataHost;
   private folderHost?: FolderHostClient;
-  private claudeTranscriptRepository?: ClaudeTranscriptRepository;
+  private claudeTranscriptHost?: ClaudeRuntimeHostClient;
 
   configureTaskReader(reader: { getTask(taskId: string): Promise<TaskSnapshot | null> }): void {
     this.taskReader = reader;
@@ -69,8 +68,8 @@ export class SessionDB {
   }
 
   configurePersistenceHosts(hosts: {
-    deliveries: SessionDeliveryRepository;
-    claudeRuntime: ClaudeBackgroundTaskRepository & ClaudeTranscriptRepository;
+    deliveries: SessionDeliveryHostClient;
+    claudeRuntime: ClaudeRuntimeHostClient;
     sessionPageBindings: SessionPageBindingRepository;
     sessionData: SessionDataHost;
   }): void {
@@ -81,16 +80,16 @@ export class SessionDB {
     this.configureSessionDataHost(hosts.sessionData);
   }
 
-  configureSessionDeliveryHost(host: SessionDeliveryRepository): void {
-    this.sessionDeliveryRepository = host;
+  configureSessionDeliveryHost(host: SessionDeliveryHostClient): void {
+    this.sessionDeliveryHost = host;
   }
 
-  configureClaudeBackgroundTaskHost(host: ClaudeBackgroundTaskRepository): void {
-    this.claudeBackgroundTaskRepository = host;
+  configureClaudeBackgroundTaskHost(host: ClaudeRuntimeHostClient): void {
+    this.claudeBackgroundTaskHost = host;
   }
 
-  configureClaudeTranscriptHost(host: ClaudeTranscriptRepository): void {
-    this.claudeTranscriptRepository = host;
+  configureClaudeTranscriptHost(host: ClaudeRuntimeHostClient): void {
+    this.claudeTranscriptHost = host;
   }
 
   configureSessionPageBindingHost(host: SessionPageBindingRepository): void {
@@ -119,14 +118,14 @@ export class SessionDB {
     return this.requireBoardProjectionHost();
   }
 
-  sessionDeliveries(): SessionDeliveryRepository {
-    if (!this.sessionDeliveryRepository) throw new Error("session delivery host is not configured");
-    return this.sessionDeliveryRepository;
+  sessionDeliveries(): SessionDeliveryHostClient {
+    if (!this.sessionDeliveryHost) throw new Error("session delivery host is not configured");
+    return this.sessionDeliveryHost;
   }
 
-  claudeBackgroundTasks(): ClaudeBackgroundTaskRepository {
-    if (!this.claudeBackgroundTaskRepository) throw new Error("Claude runtime host is not configured");
-    return this.claudeBackgroundTaskRepository;
+  claudeBackgroundTasks(): ClaudeRuntimeHostClient {
+    if (!this.claudeBackgroundTaskHost) throw new Error("Claude runtime host is not configured");
+    return this.claudeBackgroundTaskHost;
   }
 
   async getSession(sessionId: string): Promise<SessionRow | null> {
@@ -323,15 +322,6 @@ export class SessionDB {
     return await this.requireSessionDataHost().streamEventsRaw(sessionId, afterId);
   }
 
-  async createFolder(
-    id: string,
-    name: string,
-    sortOrder: number,
-    parentFolderId: string | null = null,
-  ): Promise<void> {
-    throw new Error(`folder creation must use identity host: ${id}:${name}:${sortOrder}:${parentFolderId ?? "root"}`);
-  }
-
   async updateFolder(
     folderId: string,
     columns: ReadonlyArray<"name" | "sort_order" | "settings" | "parent_folder_id">,
@@ -435,9 +425,9 @@ export class SessionDB {
     await this.claudeTranscripts().deleteClaudeTranscriptIdempotent(input);
   }
 
-  private claudeTranscripts(): ClaudeTranscriptRepository {
-    if (!this.claudeTranscriptRepository) throw new Error("Claude runtime host is not configured");
-    return this.claudeTranscriptRepository;
+  private claudeTranscripts(): ClaudeRuntimeHostClient {
+    if (!this.claudeTranscriptHost) throw new Error("Claude runtime host is not configured");
+    return this.claudeTranscriptHost;
   }
 
   private requireSessionDataHost(): SessionDataHost {

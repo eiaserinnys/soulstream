@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { SessionDeliveryNotificationRepository } from "../db/repositories/session_delivery_notification_repository.js";
+import type { SessionDeliveryNotificationHostClient } from "../control_plane/persistence_host_clients.js";
 import type { SessionDeliveryNotificationOutboxRow } from "../db/session_db_types.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import {
@@ -12,7 +12,7 @@ import { projectNotificationReceipt } from "./notification_receipt_projection.js
 
 export interface SessionDeliveryNotificationRecoveryDeps {
   repository: Pick<
-    SessionDeliveryNotificationRepository,
+    SessionDeliveryNotificationHostClient,
     "claimDue" | "deadLetter" | "get" | "markPublished" | "expireStaleNotificationAttempts" | "retry"
   >;
   publish(

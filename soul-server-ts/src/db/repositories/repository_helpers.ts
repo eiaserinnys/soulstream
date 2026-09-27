@@ -1,30 +1,8 @@
-import { normalizeMarkdownVersion } from "../markdown_document_version.js";
 import type {
   BoardContainerKind,
   BoardItemType,
   CatalogBoardItemRow,
-  ClaudeTranscriptEntry,
-  MarkdownDocumentRow,
-  SqlClient,
 } from "../session_db_types.js";
-
-export type TransactionSql = SqlClient;
-export type RepositorySql = SqlClient | TransactionSql;
-export type PostgresJsonValue = unknown;
-
-export function asPostgresJsonValue(value: unknown): PostgresJsonValue {
-  return value as PostgresJsonValue;
-}
-
-export function numberFromDb(
-  value: string | number | null | undefined,
-  field: string,
-): number {
-  if (value === null || value === undefined) {
-    throw new Error(`${field} returned null`);
-  }
-  return Number(value);
-}
 
 export function recordFromDb(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -71,91 +49,4 @@ export function toCatalogBoardItemRow(row: {
     ...(toIsoString(row.created_at) ? { createdAt: toIsoString(row.created_at) } : {}),
     ...(toIsoString(row.updated_at) ? { updatedAt: toIsoString(row.updated_at) } : {}),
   };
-}
-
-export function parseCatalogBoardItems(value: unknown): CatalogBoardItemRow[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (!isRecord(item)) return [];
-    const id = typeof item.id === "string" ? item.id : null;
-    const folderId = typeof item.folderId === "string" ? item.folderId : null;
-    const containerKind = isBoardContainerKind(item.containerKind)
-      ? item.containerKind
-      : "folder";
-    const membershipKind = item.membershipKind === "reference" ? "reference" : "primary";
-    const sourceTaskItemId = typeof item.sourceTaskItemId === "string"
-      ? item.sourceTaskItemId
-      : null;
-    const itemType = isBoardItemType(item.itemType) ? item.itemType : null;
-    const itemId = typeof item.itemId === "string" ? item.itemId : null;
-    if (!id || !folderId || !itemType || !itemId) return [];
-    const containerId = typeof item.containerId === "string" ? item.containerId : folderId;
-
-    const x = Number(item.x);
-    const y = Number(item.y);
-    return [{
-      id,
-      folderId,
-      containerKind,
-      containerId,
-      membershipKind,
-      sourceTaskItemId,
-      itemType,
-      itemId,
-      x: Number.isFinite(x) ? x : 0,
-      y: Number.isFinite(y) ? y : 0,
-      metadata: isRecord(item.metadata) ? item.metadata : {},
-      ...(toIsoString(typeof item.createdAt === "string" ? item.createdAt : null)
-        ? { createdAt: toIsoString(typeof item.createdAt === "string" ? item.createdAt : null) }
-        : {}),
-      ...(toIsoString(typeof item.updatedAt === "string" ? item.updatedAt : null)
-        ? { updatedAt: toIsoString(typeof item.updatedAt === "string" ? item.updatedAt : null) }
-        : {}),
-    }];
-  });
-}
-
-export function isBoardContainerKind(value: unknown): value is BoardContainerKind {
-  return value === "folder" || value === "task";
-}
-
-export function isBoardItemType(value: unknown): value is BoardItemType {
-  return value === "session" ||
-    value === "markdown" ||
-    value === "subfolder" ||
-    value === "asset" ||
-    value === "frame" ||
-    value === "task" ||
-    value === "custom_view";
-}
-
-export function toMarkdownDocumentRow(row: {
-  id: string;
-  title: string;
-  body: string;
-  version?: string | number | null;
-  created_at: Date | string | null;
-  updated_at: Date | string | null;
-}): MarkdownDocumentRow {
-  return {
-    id: row.id,
-    title: row.title,
-    body: row.body,
-    version: normalizeMarkdownVersion(row.version),
-    ...(toIsoString(row.created_at) ? { createdAt: toIsoString(row.created_at) } : {}),
-    ...(toIsoString(row.updated_at) ? { updatedAt: toIsoString(row.updated_at) } : {}),
-  };
-}
-
-export function normalizeTranscriptSubpath(value: string | null | undefined): string | null {
-  return value && value.length > 0 ? value : null;
-}
-
-export function isClaudeTranscriptEntry(value: unknown): value is ClaudeTranscriptEntry {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    typeof (value as Record<string, unknown>).type === "string"
-  );
 }

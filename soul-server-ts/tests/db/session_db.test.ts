@@ -480,17 +480,6 @@ describe("SessionDB session-data host delegation", () => {
     ]);
   });
 
-  it("createFolder → identity host 우회를 명시적으로 거부", async () => {
-    const { sql, calls } = createMockSql();
-    const db = new SessionDB();
-
-    await expect(db.createFolder("child", "Child", 7, "parent")).rejects.toThrow(
-      "folder creation must use identity host",
-    );
-
-    expect(calls).toHaveLength(0);
-  });
-
   it("updateFolder parent_folder_id=null → 루트 승격을 stored proc에 null로 전달", async () => {
     const { sql, calls } = createMockSql();
     const db = createFolderHostedDb(sql);
