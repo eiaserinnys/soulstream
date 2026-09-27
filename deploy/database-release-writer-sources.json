@@ -11,7 +11,7 @@
     },
     "standalone": {
       "path": "install/haniel-worker.yaml.template",
-      "sha256": "6fcf9ab77cb43393f726e3a57ba02bcf22741f71f0d48c2d1f382b510d16f943"
+      "sha256": "9bb26328dc664554f9c8d4eec1e4fd1ee3a25a826e688246688b0d5a87ebc7fa"
     }
   }
 }
