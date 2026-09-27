@@ -67,7 +67,6 @@ export type RunnerRecoveryDisposition =
   | "replay_terminal_dead"
   | "retired_terminal"
   | "reap_dead"
-  | "reap_stalled"
   | "already_reaped"
   | "closed";
 
@@ -117,6 +116,14 @@ export async function scanRunnerRegistrations(
       }));
     } catch (error) {
       const normalized = asError(error);
+      const stage = (normalized as Error & { runnerRegistrationStage?: string })
+        .runnerRegistrationStage;
+      const causeCode = (normalized as Error & { cause?: NodeJS.ErrnoException })
+        .cause?.code;
+      if (
+        stage === "config"
+        && ((normalized as NodeJS.ErrnoException).code === "ENOENT" || causeCode === "ENOENT")
+      ) continue;
       const sessionId = (normalized as Error & { runnerSessionId?: unknown }).runnerSessionId;
       const codeSha = (normalized as Error & { runnerCodeSha?: unknown }).runnerCodeSha;
       errors.push({
@@ -165,24 +172,6 @@ export function classifyRunnerRegistration(
   // progress_at remains durable observation data. Elapsed wall-clock time is
   // not process-death evidence; adopt() verifies the full runner identity.
   return "adopt_running";
-}
-
-/**
- * Recovery also uses a renewable progress gap instead of a tool start-time cap.
- * Periodic process liveness and an old in-flight tool identity cannot renew it;
- * only durable runner progress can.
- */
-export function runnerProgressInactivityTimeoutMs(
-  leaseTimeoutMs: number,
-  turnInactivityTimeoutMs: number,
-): number {
-  if (!Number.isSafeInteger(leaseTimeoutMs) || leaseTimeoutMs <= 0) {
-    throw new Error("runner lease timeout must be a positive integer");
-  }
-  if (!Number.isSafeInteger(turnInactivityTimeoutMs) || turnInactivityTimeoutMs <= 0) {
-    throw new Error("runner turn inactivity timeout must be a positive integer");
-  }
-  return Math.max(leaseTimeoutMs, turnInactivityTimeoutMs);
 }
 
 /**

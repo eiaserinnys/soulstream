@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
+import { runnerKernelLockEndpoint } from "./runner_kernel_lock.js";
+
 /**
  * Transport backing `socketPath`. A unix socket is a filesystem entry the
  * host can quarantine and unlink; a Windows named pipe lives in the pipe
@@ -67,16 +69,16 @@ export function runnerProcessPaths(
   if (!stateDirectory) throw new Error("runner state directory required");
   if (!sessionId) throw new Error("runner session id required");
   assertRunnerStateDirectoryCompatible(stateDirectory, platform);
-  const slug = createHash("sha256")
+  const sessionHash = createHash("sha256")
     .update(sessionId)
     .digest("hex")
     .slice(0, RUNNER_SESSION_SLUG_LENGTH);
-  const sessionDirectory = join(stateDirectory, slug);
+  const sessionDirectory = join(stateDirectory, sessionHash);
   return {
     sessionDirectory,
     databasePath: join(sessionDirectory, "runner.sqlite"),
     socketPath: platform === "win32"
-      ? `\\\\.\\pipe\\soulstream-runner-${slug}`
+      ? runnerKernelLockEndpoint(join(sessionDirectory, RUNNER_SOCKET_FILE_NAME), "win32")
       : join(sessionDirectory, RUNNER_SOCKET_FILE_NAME),
     socketKind: platform === "win32" ? "named_pipe" : "unix_socket",
     pidPath: join(sessionDirectory, "runner.pid"),

@@ -30,6 +30,11 @@ describe("runner process path portability", () => {
     )).not.toThrow();
   });
 
+  it("scopes a Windows runner pipe to its state directory", () => {
+    expect(runnerProcessPaths("C:/one/state", "same-session", "win32").socketPath)
+      .not.toBe(runnerProcessPaths("C:/two/state", "same-session", "win32").socketPath);
+  });
+
   it("reserves underscore-prefixed names for runner-state infrastructure", () => {
     expect(isRunnerRegistrationDirectoryName("_control")).toBe(false);
     expect(isRunnerRegistrationDirectoryName("_future-infrastructure")).toBe(false);

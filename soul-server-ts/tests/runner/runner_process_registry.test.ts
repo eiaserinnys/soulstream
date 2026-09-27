@@ -41,6 +41,17 @@ afterEach(async () => {
 });
 
 describe("runner process registry", () => {
+  it("skips a registration directory while its config is not yet published", async () => {
+    const stateDirectory = await temporaryDirectory("config-publication-race");
+    const paths = runnerProcessPaths(stateDirectory, "session-config-pending");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+
+    await expect(scanRunnerRegistrations(stateDirectory)).resolves.toEqual({
+      registrations: [],
+      errors: [],
+    });
+  });
+
   it("uses lifecycle pid evidence when the pid sidecar is missing", () => {
     expect(resolveRegisteredRunnerPid(null, 4123, 4123, "session-a")).toBe(4123);
     expect(resolveRegisteredRunnerPid(

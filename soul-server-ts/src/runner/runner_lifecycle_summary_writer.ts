@@ -11,6 +11,7 @@ import {
   renameWithTransientRetrySync,
   type SyncRenameRetryOptions,
 } from "../atomic_file_rename.js";
+import { isProcessAlive } from "./runner_process_lock.js";
 import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 
 export interface RunnerSqliteLifecycleOptions extends SyncRenameRetryOptions {
@@ -97,7 +98,7 @@ function scavengeStaleLifecycleTemps(
   const prefix = `${basename(path)}.tmp-`;
   const now = (options.now ?? Date.now)();
   const minAgeMs = options.staleTmpMinAgeMs ?? RUNNER_LIFECYCLE_STALE_TMP_MIN_AGE_MS;
-  const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
+  const isPidAlive = options.isPidAlive ?? isProcessAlive;
   let entries: string[];
   try {
     entries = readdirSync(directory);
@@ -117,15 +118,6 @@ function scavengeStaleLifecycleTemps(
     } catch {
       // Stale cache cleanup is best effort and never supersedes SQLite state.
     }
-  }
-}
-
-function defaultIsPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }
 

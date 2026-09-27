@@ -1,8 +1,13 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
   renameWithTransientRetry,
   renameWithTransientRetrySync,
+  writeFileAtomically,
 } from "../src/atomic_file_rename.js";
 
 function renameError(code: string): NodeJS.ErrnoException {
@@ -10,6 +15,17 @@ function renameError(code: string): NodeJS.ErrnoException {
 }
 
 describe("bounded atomic rename retry", () => {
+  it("publishes a fully written file through a sibling temporary path", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "atomic-write-"));
+    const path = join(directory, "registration.json");
+    try {
+      await writeFileAtomically(path, "complete registration\n");
+      await expect(readFile(path, "utf8")).resolves.toBe("complete registration\n");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("retries transient EPERM to success", async () => {
     const renameFile = vi.fn()
       .mockRejectedValueOnce(renameError("EPERM"))

@@ -386,15 +386,6 @@ export class RunnerRecoveryCoordinator {
       );
       return;
     }
-    if (disposition === "reap_stalled") {
-      await this.recoverByDisposition(
-        registration,
-        registration.lifecycle ? "adopt_running" : "adopt_prebootstrap",
-        requireRecoveryTask(task, registration),
-        onRunnerAttached,
-      );
-      return;
-    }
     if (disposition === "reap_dead") {
       await this.terminalizeFailed(
         registration,
@@ -595,7 +586,7 @@ export class RunnerRecoveryCoordinator {
 
   private async terminalizeFailed(
     registration: RunnerRegistration,
-    disposition: "reap_dead" | "reap_stalled",
+    disposition: "reap_dead",
     task: Task,
     onRunnerAttached?: () => void,
   ): Promise<void> {

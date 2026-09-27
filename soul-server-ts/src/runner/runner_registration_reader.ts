@@ -17,6 +17,7 @@ import {
 } from "./runner_process_spawn.js";
 import {
   defaultProcessOwnershipLockDependencies,
+  isProcessAlive,
   processStartIdentitiesMatch,
   type ProcessIdentity,
 } from "./runner_process_lock.js";
@@ -128,7 +129,7 @@ export async function readRunnerRegistrationSummary(
       hasCompleteIdentity ? null : lifecycle?.runner_pid ?? null,
       identity?.pid ?? null,
       directory,
-      isPidAlive,
+      isProcessAlive,
       observedLock?.kind === "held"
         ? observedLock.owner.pid
         : observedLock?.kind === "free"
@@ -143,7 +144,7 @@ export async function readRunnerRegistrationSummary(
     ) {
       throw new Error(`runner pid identity does not match registration: ${directory}`);
     }
-    let pidAlive = !options.verifyProcessIdentity && pid !== null && isPidAlive(pid);
+    let pidAlive = !options.verifyProcessIdentity && pid !== null && isProcessAlive(pid);
     if (options.verifyProcessIdentity && pid !== null) {
       const scanKey = directory;
       if (observedLock?.kind === "unavailable") {
@@ -204,15 +205,6 @@ function samePaths(left: RunnerProcessPaths, right: RunnerProcessPaths): boolean
     && left.lockPath === right.lockPath
     && left.configPath === right.configPath
     && left.logPath === right.logPath;
-}
-
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
 }
 
 async function statIfExists(path: string): Promise<Stats | null> {
