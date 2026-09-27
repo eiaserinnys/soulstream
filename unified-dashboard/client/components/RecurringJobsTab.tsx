@@ -296,7 +296,7 @@ export function RecurringJobsTab() {
           {editor.schedule.mode !== "once" ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void previewSchedule()}>다음 5회 보기</Button> : null}
           <Button type="button" size="sm" disabled={busy || selected?.archived_at != null} onClick={() => void save()}>{busy ? "저장 중..." : selected ? "변경 저장" : editor.schedule.mode === "once" ? "1회 예약 생성" : "반복 작업 생성"}</Button>
         </div>
-        {preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time}>{displayTime(time)}</li>)}</ol></div> : null}
+        {editor.schedule.mode !== "once" && preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time}>{displayTime(time)}</li>)}</ol></div> : null}
 
         {selected ? <RunHistory runs={runs} onOpenSession={setActiveSession} /> : null}
       </div>

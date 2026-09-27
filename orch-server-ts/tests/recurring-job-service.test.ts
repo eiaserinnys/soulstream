@@ -158,6 +158,27 @@ describe("RecurringJobService", () => {
     expect(repository.runs.size).toBe(0);
   });
 
+  it("propagates a once-job deletion failure after session confirmation", async () => {
+    const repository = memoryRepository();
+    repository.deleteOnceJob = async () => { throw new Error("hard delete failed"); };
+    const service = new RecurringJobService({
+      repository,
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        createRecurringSession: async () => ({ state: "running", resolvedModelPreset: null }),
+        findDurableSession: async () => null,
+      },
+    });
+    const once = await service.create(actor, onceInput());
+
+    await expect(service.runManual(actor, once.jobId, "manual-delete-error"))
+      .rejects.toThrow("hard delete failed");
+    expect(repository.jobs.has(once.jobId)).toBe(true);
+    expect([...repository.runs.values()][0]?.state).toBe("running");
+  });
+
   it("keeps awaiting once jobs until reconciliation observes a durable session", async () => {
     const repository = memoryRepository();
     let now = new Date("2026-09-21T00:00:00.000Z");

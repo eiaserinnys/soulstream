@@ -337,6 +337,8 @@ export class RecurringJobService {
       }
       return currentRun ?? run;
     }
+    let shouldDeleteOnceJob = false;
+    let saved: RecurringJobRun;
     try {
       const launched = await launcher.createRecurringSession({ job: frozenJob, run: dispatching });
       const launchedRun = {
@@ -346,14 +348,11 @@ export class RecurringJobService {
           resolvedModelPreset: launched.resolvedModelPreset,
         },
       };
-      const saved = await saveRecurringRun(this.options.repository, launchedRun, launched.state, this.now(), launched.state === "awaiting_session" ? {
+      saved = await saveRecurringRun(this.options.repository, launchedRun, launched.state, this.now(), launched.state === "awaiting_session" ? {
         code: "AWAITING_SESSION_CONFIRMATION",
         message: "The create_session request may have reached the node. Soulstream will only recheck this fixed session ID.",
       } : null);
-      if (job.scheduleKind === "once" && launched.state === "running") {
-        await this.options.repository.deleteOnceJob(job.jobId);
-      }
-      return saved;
+      shouldDeleteOnceJob = job.scheduleKind === "once" && launched.state === "running";
     } catch (error) {
       if (isUncertainLaunchFailure(error)) {
         return await saveRecurringRun(this.options.repository, dispatching, "awaiting_session", this.now(), {
@@ -366,6 +365,8 @@ export class RecurringJobService {
         message: error instanceof Error ? error.message : String(error),
       });
     }
+    if (shouldDeleteOnceJob) await this.options.repository.deleteOnceJob(job.jobId);
+    return saved;
   }
 
   async reconcileSession(sessionId: string): Promise<RecurringJobRun | null> {

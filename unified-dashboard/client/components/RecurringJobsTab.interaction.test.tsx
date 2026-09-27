@@ -192,6 +192,9 @@ describe("RecurringJobsTab lifecycle", () => {
       const method = init?.method ?? "GET";
       const body = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : undefined;
       requests.push({ path, method, body });
+      if (path === "/api/recurring-jobs/preview" && method === "POST") {
+        return json({ nextRuns: ["2026-10-02T00:00:00.000Z"] });
+      }
       if (path === "/api/recurring-jobs?include_archived=true") return json({ jobs: job ? [job] : [] });
       if (path.endsWith("/runs?limit=50")) return json({ runs: [] });
       if (path === "/api/recurring-jobs" && method === "POST") {
@@ -213,10 +216,14 @@ describe("RecurringJobsTab lifecycle", () => {
     }));
 
     await renderTab();
+    clickButton("다음 5회 보기");
+    await waitFor(() => expect(document.body.textContent).toContain("다음 5회"));
+    await waitFor(() => expect(button("다음 5회 보기")?.disabled).toBe(false));
     setSelect("반복 주기", "once");
     expect(document.body.querySelector('[aria-label="실행 일시"]')).not.toBeNull();
     expect(document.body.querySelector('[aria-label="시간대"]')).toBeNull();
     expect(button("다음 5회 보기")).toBeUndefined();
+    expect(document.body.textContent).not.toContain("다음 5회");
     setInput("작업 이름", "한 번만 알림");
     setInput("작업 내용", "내일 일정 확인");
     setInput("노드", "eiaserinnys");
