@@ -38,7 +38,6 @@ const TRACE_EVENT_TYPES = [
   "tool_result",
   "progress",
   "debug",
-  "system",
   "system_message",
 ];
 

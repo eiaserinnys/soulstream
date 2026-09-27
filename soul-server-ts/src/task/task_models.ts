@@ -13,6 +13,7 @@
  */
 
 import type { ContextItem } from "../context/prompt_assembler.js";
+import type { SessionLifecycleStatus } from "@soulstream/wire-schema";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type {
   BackendId,
@@ -29,7 +30,7 @@ import type {
 } from "./execution_registration.js";
 
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
-export type TaskStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
+export type TaskStatus = SessionLifecycleStatus;
 
 export const TASK_STATUSES = [
   "initializing",

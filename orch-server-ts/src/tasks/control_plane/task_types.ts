@@ -7,8 +7,11 @@ export type SqlClient = RepositorySql & {
   begin<T>(callback: (sql: RepositorySql) => Promise<T>): Promise<T>;
 };
 
+import type { TaskItemStatus } from "@soulstream/wire-schema";
+
+export type { TaskItemStatus } from "@soulstream/wire-schema";
+
 export type TaskAssigneeKind = "agent" | "human" | "session";
-export type TaskItemStatus = "pending" | "in_progress" | "review" | "completed" | "cancelled";
 export type TaskStatus = "open" | "completed";
 export type TaskOperationTargetKind = "task" | "section" | "item";
 export type TaskOperationActorKind = "agent" | "user" | "system" | "llm";

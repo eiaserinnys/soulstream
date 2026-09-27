@@ -9,6 +9,7 @@ import type { Logger } from "pino";
 import { createHash } from "node:crypto";
 
 import { AgentBackendSchema } from "../../agent_registry.js";
+import { CALLER_INFO_SOURCES } from "@soulstream/wire-schema";
 import {
   ATOM_CONTEXT_HEADER,
   fetchAtomMarkdownResult,
@@ -135,18 +136,7 @@ const CONTEXT_FILTER_FIELDS = new Set<ContextFilterField>([
   "backend",
 ]);
 
-const KNOWN_CALLER_SOURCES = new Set([
-  "agent",
-  "api",
-  "browser",
-  "channel_observer",
-  "execute-proxy",
-  "llm",
-  "slack",
-  "soul-app",
-  "system",
-  "trello_watcher",
-]);
+const KNOWN_CALLER_SOURCES = new Set<string>(CALLER_INFO_SOURCES);
 
 const KNOWN_CONTAINER_KINDS = new Set(["folder", "task", "runbook"]);
 const IDENTIFIER_VALUE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;

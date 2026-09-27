@@ -122,6 +122,52 @@ def test_schema_top_level_keys() -> None:
     assert schema["discriminator"]["propertyName"] == "type"
 
 
+def test_shared_contract_inventories_match_generated_types() -> None:
+    schema = _load_schema()
+    shared_inventories = {
+        "x-soulstream-session-timeline-event-types": "SESSION_TIMELINE_EVENT_TYPES",
+        "x-soulstream-session-statuses": "SESSION_STATUSES",
+        "x-soulstream-caller-info-sources": "CALLER_INFO_SOURCES",
+        "x-soulstream-task-item-statuses": "TASK_ITEM_STATUSES",
+        "x-soulstream-board-item-types": "BOARD_ITEM_TYPES",
+        "x-soulstream-board-container-kinds": "BOARD_CONTAINER_KINDS",
+    }
+
+    for schema_key, generated_name in shared_inventories.items():
+        values = schema[schema_key]
+        assert len(values) == len(set(values))
+        assert set(values) == _load_generated_string_set(generated_name)
+
+    timeline_types = schema["x-soulstream-session-timeline-event-types"]
+    sse_types = _load_generated_string_set("SSE_EVENT_TYPES")
+    assert set(timeline_types) <= sse_types
+    assert "system" not in timeline_types
+
+    caller_sources = schema["x-soulstream-caller-info-sources"]
+    assert schema["$defs"]["CallerInfoSource"]["enum"] == caller_sources
+    assert "execute-proxy" in caller_sources
+    assert "channel_observer" in caller_sources
+
+    session_updated = schema["$defs"]["SessionUpdated"]
+    assert "status" in session_updated["required"]
+    assert session_updated["properties"]["status"]["$ref"] == "#/$defs/SessionLifecycleStatus"
+    assert "initializing" in schema["$defs"]["SessionLifecycleStatus"]["enum"]
+    assert "unknown" in schema["x-soulstream-session-statuses"]
+
+    for command in ("CreateSession", "Intervene"):
+        assert schema["$defs"][command]["properties"]["caller_info"]["$ref"] == "#/$defs/CallerInfo"
+
+
+def test_text_snapshot_generated_type_keeps_required_stream_fields() -> None:
+    generated = GENERATED_TS_PATH.read_text(encoding="utf-8")
+
+    assert "streamIdentity: string" in generated
+    assert "text: string | null" in generated
+    assert "updatedAt: string" in generated
+    assert "truncated: boolean" in generated
+    assert "resetRequired: boolean" in generated
+
+
 def test_intervene_ack_preserves_an_unknown_delivery_verdict() -> None:
     schema = _load_schema()
     frame = {

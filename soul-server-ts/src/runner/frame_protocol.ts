@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MODEL_REASONING_EFFORTS } from "@soulstream/model-catalog";
 import {
   stripRunnerJsonUndefined,
   withRunnerJsonContract as withJsonContract,
@@ -47,7 +48,7 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   resumeSessionId: z.string().optional(),
   backendSessionRolloverFrom: z.string().min(1).optional(),
   model: z.string().nullable().optional(),
-  reasoningEffort: z.enum(["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]).optional(),
+  reasoningEffort: z.enum(MODEL_REASONING_EFFORTS).optional(),
   systemPrompt: z.string().optional(),
   allowedTools: z.array(z.string()).optional(),
   disallowedTools: z.array(z.string()).optional(),

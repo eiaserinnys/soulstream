@@ -5,6 +5,7 @@ import {
   parseOrchServerConfig,
   type SessionHistoryProvider,
 } from "../src/index.js";
+import { isSessionTimelineEventType } from "../src/session/session_history_service.js";
 
 const config = parseOrchServerConfig({
   environment: "test",
@@ -23,6 +24,11 @@ function createHarness() {
 }
 
 describe("session timeline event_types filter", () => {
+  it("uses the shared timeline event inventory and excludes the schema-outside system event", () => {
+    expect(isSessionTimelineEventType("system_message")).toBe(true);
+    expect(isSessionTimelineEventType("system")).toBe(false);
+  });
+
   it("passes an additive event_types subset to timeline reads", async () => {
     const { app, readTimeline } = createHarness();
 

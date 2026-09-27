@@ -146,6 +146,45 @@ const eventTypes = Object.entries(schema.$defs ?? {})
     return eventType;
   });
 const eventTypeSet = new Set(eventTypes);
+const timelineEventTypes = schema["x-soulstream-session-timeline-event-types"];
+if (!Array.isArray(timelineEventTypes) || timelineEventTypes.some((eventType) => typeof eventType !== "string")) {
+  throw new Error("x-soulstream-session-timeline-event-types string array is required");
+}
+if (new Set(timelineEventTypes).size !== timelineEventTypes.length) {
+  throw new Error("x-soulstream-session-timeline-event-types must not contain duplicates");
+}
+const invalidTimelineEventTypes = timelineEventTypes.filter((eventType) => !eventTypeSet.has(eventType));
+if (invalidTimelineEventTypes.length > 0) {
+  throw new Error(`session timeline event types missing from SSE schema: ${invalidTimelineEventTypes.join(",")}`);
+}
+const callerInfoSources = schema["x-soulstream-caller-info-sources"];
+if (!Array.isArray(callerInfoSources) || callerInfoSources.some((source) => typeof source !== "string")) {
+  throw new Error("x-soulstream-caller-info-sources string array is required");
+}
+if (new Set(callerInfoSources).size !== callerInfoSources.length) {
+  throw new Error("x-soulstream-caller-info-sources must not contain duplicates");
+}
+const callerInfoSourceSchema = schema.$defs?.CallerInfoSource?.enum;
+if (!Array.isArray(callerInfoSourceSchema)
+  || callerInfoSourceSchema.length !== callerInfoSources.length
+  || callerInfoSourceSchema.some((source, index) => source !== callerInfoSources[index])) {
+  throw new Error("CallerInfoSource enum must match x-soulstream-caller-info-sources");
+}
+const sharedStringSets = [
+  ["x-soulstream-session-statuses", "session statuses"],
+  ["x-soulstream-task-item-statuses", "task item statuses"],
+  ["x-soulstream-board-item-types", "board item types"],
+  ["x-soulstream-board-container-kinds", "board container kinds"],
+];
+for (const [key, label] of sharedStringSets) {
+  const values = schema[key];
+  if (!Array.isArray(values) || values.length === 0 || values.some((value) => typeof value !== "string")) {
+    throw new Error(`${key} non-empty string array is required`);
+  }
+  if (new Set(values).size !== values.length) {
+    throw new Error(`${key} must not contain duplicates`);
+  }
+}
 const overlap = persistenceOnly.filter((eventType) => eventTypeSet.has(eventType));
 const classifiedEventTypes = [...eventTypes, ...persistenceOnly];
 const classifiedEventTypeSet = new Set(classifiedEventTypes);
@@ -180,6 +219,23 @@ export type EventDurability = (typeof EVENT_DURABILITY)[PersistenceEventType];
 
 ${generatedStringArray("SSE_EVENT_TYPES", eventTypes)}
 export type SSEEventType = (typeof SSE_EVENT_TYPES)[number];
+
+${generatedStringArray("SESSION_TIMELINE_EVENT_TYPES", timelineEventTypes)}
+export type SessionTimelineEventType = (typeof SESSION_TIMELINE_EVENT_TYPES)[number];
+
+${generatedStringArray("SESSION_STATUSES", schema["x-soulstream-session-statuses"])}
+export type SessionStatus = (typeof SESSION_STATUSES)[number];
+
+${generatedStringArray("CALLER_INFO_SOURCES", callerInfoSources)}
+
+${generatedStringArray("TASK_ITEM_STATUSES", schema["x-soulstream-task-item-statuses"])}
+export type TaskItemStatus = (typeof TASK_ITEM_STATUSES)[number];
+
+${generatedStringArray("BOARD_ITEM_TYPES", schema["x-soulstream-board-item-types"])}
+export type BoardItemType = (typeof BOARD_ITEM_TYPES)[number];
+
+${generatedStringArray("BOARD_CONTAINER_KINDS", schema["x-soulstream-board-container-kinds"])}
+export type BoardContainerKind = (typeof BOARD_CONTAINER_KINDS)[number];
 
 ${generatedStringArray("CONTROL_COMMAND_TYPES", controlCommandTypes)}
 export type ControlCommandType = (typeof CONTROL_COMMAND_TYPES)[number];

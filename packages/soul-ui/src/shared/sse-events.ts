@@ -7,6 +7,7 @@
 
 import type { SessionStatus } from "./session-types";
 import type {
+  CallerInfoSource,
   SSEEventTextSnapshot,
   SSEEventType as GeneratedSSEEventType,
 } from "@soulstream/wire-schema";
@@ -96,7 +97,7 @@ export interface CallerInfo {
    * F-11 (2026-05-09): 'system' 추가 — soulstream 서버 자신이 발신한 lifecycle
    * 인터벤션(graceful_shutdown 종료 예고, resume_shutdown_sessions 재개 안내)을 표시한다.
    */
-  source: "browser" | "slack" | "agent" | "soul-app" | "api" | "system" | "llm";
+  source: CallerInfoSource;
   display_name?: string;
   user_id?: string;
   avatar_url?: string;

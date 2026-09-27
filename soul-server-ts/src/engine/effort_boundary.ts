@@ -1,5 +1,6 @@
 import type { EffortLevel } from "@anthropic-ai/claude-agent-sdk";
 import type { ModelReasoningEffort } from "@openai/codex-sdk";
+import { MODEL_REASONING_EFFORTS } from "@soulstream/model-catalog";
 
 import type { ReasoningEffort } from "./protocol.js";
 
@@ -54,19 +55,9 @@ export function codexTransportEfforts(
   // The app-server transport takes the effort as a free-form string advertised
   // by the model, so it can carry everything the catalogue declares.
   return adapterMode === "app-server"
-    ? CLAUDE_AND_CODEX_FULL_SET
+    ? MODEL_REASONING_EFFORTS
     : (CODEX_SDK_EFFORTS as readonly ReasoningEffort[]);
 }
-
-const CLAUDE_AND_CODEX_FULL_SET: readonly ReasoningEffort[] = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-  "ultra",
-];
 
 export function claudeTransportEfforts(): readonly ReasoningEffort[] {
   return CLAUDE_SDK_EFFORTS as readonly ReasoningEffort[];

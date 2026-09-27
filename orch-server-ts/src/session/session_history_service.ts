@@ -7,6 +7,13 @@ import type {
   SessionTurnSummaryQuery,
   SessionTurnSummaryResponse,
 } from "./session_turn_summary_read_service.js";
+import {
+  SESSION_TIMELINE_EVENT_TYPES,
+  type SessionTimelineEventType,
+} from "@soulstream/wire-schema";
+
+export { SESSION_TIMELINE_EVENT_TYPES } from "@soulstream/wire-schema";
+export type { SessionTimelineEventType } from "@soulstream/wire-schema";
 
 export type SessionHistoryRawEvent = {
   eventId: number;
@@ -14,38 +21,6 @@ export type SessionHistoryRawEvent = {
   payloadText: string;
   sessionEffectApplied?: boolean;
 };
-
-export const SESSION_TIMELINE_EVENT_TYPES = [
-  "user_message",
-  "intervention_sent",
-  "session_notification",
-  "assistant_message",
-  "turn_summary",
-  "thinking",
-  "tool_start",
-  "tool_result",
-  "error",
-  "assistant_error",
-  "system",
-  "system_message",
-  "context_usage",
-  "compact",
-  "input_request",
-  "input_request_expired",
-  "input_request_responded",
-  "tool_approval_requested",
-  "tool_approval_resolved",
-  "agent_updated",
-  "handoff_requested",
-  "handoff_occurred",
-  "guardrail_tripwire",
-  "away_summary",
-  "credential_alert",
-  "realtime_status",
-  "realtime_transcript",
-] as const;
-
-export type SessionTimelineEventType = typeof SESSION_TIMELINE_EVENT_TYPES[number];
 
 const SESSION_TIMELINE_EVENT_TYPE_SET = new Set<string>(SESSION_TIMELINE_EVENT_TYPES);
 

@@ -1,4 +1,8 @@
 import type { NodeConnectionSnapshot } from "../node/registry_types.js";
+import {
+  MODEL_BACKENDS,
+  type AgentBackend,
+} from "@soulstream/model-catalog";
 import type {
   UsageSummaryQuota,
   UsageSummarySnapshot,
@@ -7,7 +11,7 @@ import type {
 export type StaticModelPreset = {
   readonly id: string;
   readonly label: string;
-  readonly backend: "claude" | "codex" | "openai-agents";
+  readonly backend: AgentBackend;
   readonly available: boolean;
   readonly reason?: "env_unresolved";
   readonly usage_provider: "claude" | "codex" | null;
@@ -307,7 +311,8 @@ function modelIdentityMatches(left: string, right: string): boolean {
 function isBackend(
   value: unknown,
 ): value is StaticModelPreset["backend"] {
-  return value === "claude" || value === "codex" || value === "openai-agents";
+  return typeof value === "string"
+    && (MODEL_BACKENDS as readonly string[]).includes(value);
 }
 
 function isUsageProvider(

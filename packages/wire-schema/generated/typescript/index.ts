@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 152개 $defs (top-level wire 79 + supporting/SSE 73). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 155개 $defs (top-level wire 79 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -83,6 +83,18 @@ export type SoulstreamUpstreamProtocol =
   | WorktreeRemove
   | WorktreeDeleteBranch
   | WorktreeResult;
+export type SessionLifecycleStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
+export type CallerInfoSource =
+  | "agent"
+  | "api"
+  | "browser"
+  | "channel_observer"
+  | "execute-proxy"
+  | "llm"
+  | "slack"
+  | "soul-app"
+  | "system"
+  | "trello_watcher";
 
 /**
  * 노드→orch: 등록. soul-server-ts/src/upstream/registration.ts.
@@ -644,7 +656,15 @@ export interface SSEEventTextSnapshot {
   type: "text_snapshot";
   basedOnEventId: number;
   throughLiveSeq: number;
-  streams: ((
+  streams: ({
+    streamIdentity: string;
+    text: string | null;
+    updatedAt: string;
+    truncated: boolean;
+    resetRequired: boolean;
+    recovery: "none" | "durable_final";
+    [k: string]: unknown;
+  } & (
     | {
         text?: string;
         truncated?: false;
@@ -657,15 +677,7 @@ export interface SSEEventTextSnapshot {
         resetRequired?: true;
         recovery?: "durable_final";
       }
-  ) & {
-    streamIdentity: string;
-    text: string | null;
-    updatedAt: string;
-    truncated: boolean;
-    resetRequired: boolean;
-    recovery: "none" | "durable_final";
-    [k: string]: unknown;
-  })[];
+  ))[];
   [k: string]: unknown;
 }
 /**
@@ -1456,6 +1468,7 @@ export interface HealthStatus {
  */
 export interface SessionUpdated {
   type: "session_updated";
+  status: SessionLifecycleStatus;
   agent_session_id?: string;
   agentSessionId?: string;
   review_required?: boolean;
@@ -1707,9 +1720,7 @@ export interface CreateSession {
   extra_context_items?: {
     [k: string]: unknown;
   }[];
-  caller_info?: {
-    [k: string]: unknown;
-  };
+  caller_info?: CallerInfo;
   /**
    * Optional predecessor session for explicit run succession.
    */
@@ -1733,6 +1744,23 @@ export interface CreateSession {
   };
   [k: string]: unknown;
 }
+export interface CallerInfo {
+  source: CallerInfoSource;
+  display_name?: string | null;
+  user_id?: string | null;
+  avatar_url?: string | null;
+  email?: string | null;
+  agent_node?: string | null;
+  agent_id?: string | null;
+  agent_name?: string | null;
+  slack?: {
+    channel_id?: string;
+    thread_ts?: string;
+    user_id?: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+}
 /**
  * orch→노드: 개입 명령. attachment_paths/caller_info 포함.
  */
@@ -1753,9 +1781,7 @@ export interface Intervene {
   extra_context_items?: {
     [k: string]: unknown;
   }[];
-  caller_info?: {
-    [k: string]: unknown;
-  };
+  caller_info?: CallerInfo;
   /**
    * Stable UUID for exactly-once delivery accounting.
    */
@@ -2694,6 +2720,84 @@ export const SSE_EVENT_TYPES = [
   "subtree_update",
 ] as const;
 export type SSEEventType = (typeof SSE_EVENT_TYPES)[number];
+
+export const SESSION_TIMELINE_EVENT_TYPES = [
+  "user_message",
+  "intervention_sent",
+  "session_notification",
+  "assistant_message",
+  "turn_summary",
+  "thinking",
+  "tool_start",
+  "tool_result",
+  "error",
+  "assistant_error",
+  "system_message",
+  "context_usage",
+  "compact",
+  "input_request",
+  "input_request_expired",
+  "input_request_responded",
+  "tool_approval_requested",
+  "tool_approval_resolved",
+  "agent_updated",
+  "handoff_requested",
+  "handoff_occurred",
+  "guardrail_tripwire",
+  "away_summary",
+  "credential_alert",
+  "realtime_status",
+  "realtime_transcript",
+] as const;
+export type SessionTimelineEventType = (typeof SESSION_TIMELINE_EVENT_TYPES)[number];
+
+export const SESSION_STATUSES = [
+  "running",
+  "completed",
+  "error",
+  "interrupted",
+  "unknown",
+] as const;
+export type SessionStatus = (typeof SESSION_STATUSES)[number];
+
+export const CALLER_INFO_SOURCES = [
+  "agent",
+  "api",
+  "browser",
+  "channel_observer",
+  "execute-proxy",
+  "llm",
+  "slack",
+  "soul-app",
+  "system",
+  "trello_watcher",
+] as const;
+
+export const TASK_ITEM_STATUSES = [
+  "pending",
+  "in_progress",
+  "review",
+  "completed",
+  "cancelled",
+] as const;
+export type TaskItemStatus = (typeof TASK_ITEM_STATUSES)[number];
+
+export const BOARD_ITEM_TYPES = [
+  "session",
+  "markdown",
+  "subfolder",
+  "asset",
+  "frame",
+  "task",
+  "custom_view",
+] as const;
+export type BoardItemType = (typeof BOARD_ITEM_TYPES)[number];
+
+export const BOARD_CONTAINER_KINDS = [
+  "folder",
+  "task",
+] as const;
+export type BoardContainerKind = (typeof BOARD_CONTAINER_KINDS)[number];
 
 export const CONTROL_COMMAND_TYPES = [
   "health_check",
