@@ -92,7 +92,11 @@ export function RecurringJobsTab() {
       if (next) {
         if (!options.preserveEditor) setEditor(editorFromJob(next));
         await loadRuns(next.job_id);
-      } else setRuns([]);
+      } else {
+        setEditor(emptyEditor());
+        setRuns([]);
+        setPreview([]);
+      }
     }
   }, [loadRuns]);
 
@@ -167,8 +171,13 @@ export function RecurringJobsTab() {
     setBusy(true);
     setError(null);
     try {
-      const run = await runRecurringJob(selected.job_id, `recurring-run:${crypto.randomUUID()}`);
-      setRuns((current) => [run, ...current.filter((item) => item.run_id !== run.run_id)]);
+      const jobId = selected.job_id;
+      const run = await runRecurringJob(jobId, `recurring-run:${crypto.randomUUID()}`);
+      if (selected.schedule_kind === "once") {
+        await refresh(jobId);
+      } else {
+        setRuns((current) => [run, ...current.filter((item) => item.run_id !== run.run_id)]);
+      }
     } catch (caught) {
       setError(message(caught));
     } finally {
@@ -238,10 +247,10 @@ export function RecurringJobsTab() {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="작업 이름"><input aria-label="작업 이름" value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></Field>
-          <Field label="시간대"><input aria-label="시간대" value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })} placeholder="Asia/Seoul" /></Field>
+          {editor.schedule.mode !== "once" ? <Field label="시간대"><input aria-label="시간대" value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })} placeholder="Asia/Seoul" /></Field> : null}
           <Field label="오프라인 허용 초"><input aria-label="오프라인 허용 초" type="number" min="1" value={editor.lateRunWindowSeconds} onChange={(event) => setEditor({ ...editor, lateRunWindowSeconds: event.target.value })} /></Field>
         </div>
-        <RecurringScheduleEditor value={editor.schedule} onChange={(schedule) => setEditor((current) => ({ ...current, schedule }))} />
+        <RecurringScheduleEditor value={editor.schedule} scheduleKind={selected?.schedule_kind} onChange={(schedule) => setEditor((current) => ({ ...current, schedule }))} />
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editor.enabled} onChange={(event) => setEditor({ ...editor, enabled: event.target.checked })} />생성·저장 후 자동 실행</label>
         <Field label="작업 내용"><textarea aria-label="작업 내용" rows={5} value={editor.prompt} onChange={(event) => setEditor({ ...editor, prompt: event.target.value })} /></Field>
 
@@ -284,10 +293,10 @@ export function RecurringJobsTab() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void previewSchedule()}>다음 5회 보기</Button>
-          <Button type="button" size="sm" disabled={busy || selected?.archived_at != null} onClick={() => void save()}>{busy ? "저장 중..." : selected ? "변경 저장" : "반복 작업 생성"}</Button>
+          {editor.schedule.mode !== "once" ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void previewSchedule()}>다음 5회 보기</Button> : null}
+          <Button type="button" size="sm" disabled={busy || selected?.archived_at != null} onClick={() => void save()}>{busy ? "저장 중..." : selected ? "변경 저장" : editor.schedule.mode === "once" ? "1회 예약 생성" : "반복 작업 생성"}</Button>
         </div>
-        {preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time}>{displayTime(time)}</li>)}</ol></div> : null}
+        {editor.schedule.mode !== "once" && preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time}>{displayTime(time)}</li>)}</ol></div> : null}
 
         {selected ? <RunHistory runs={runs} onOpenSession={setActiveSession} /> : null}
       </div>
@@ -296,7 +305,7 @@ export function RecurringJobsTab() {
 }
 
 function JobList({ title, jobs, selectedId, onSelect }: { title: string; jobs: RecurringJob[]; selectedId: string | null; onSelect(job: RecurringJob): void }) {
-  return <div className="mb-4"><p className="mb-1 text-xs font-medium text-muted-foreground">{title}</p><div className="space-y-1">{jobs.length === 0 ? <p className="px-2 py-1 text-xs text-muted-foreground">없음</p> : jobs.map((job) => <button key={job.job_id} type="button" className={`w-full rounded px-2 py-2 text-left text-sm ${selectedId === job.job_id ? "bg-accent-blue/15 text-foreground" : "hover:bg-muted"}`} onClick={() => onSelect(job)}><span className="block truncate font-medium">{job.name}</span><span className="block truncate text-xs text-muted-foreground">{job.enabled ? displayTime(job.next_run_at) : job.archived_at ? "보관됨" : "일시정지"}</span></button>)}</div></div>;
+  return <div className="mb-4"><p className="mb-1 text-xs font-medium text-muted-foreground">{title}</p><div className="space-y-1">{jobs.length === 0 ? <p className="px-2 py-1 text-xs text-muted-foreground">없음</p> : jobs.map((job) => <button key={job.job_id} type="button" className={`w-full rounded px-2 py-2 text-left text-sm ${selectedId === job.job_id ? "bg-accent-blue/15 text-foreground" : "hover:bg-muted"}`} onClick={() => onSelect(job)}><span className="block truncate font-medium">{job.name}</span><span className="block truncate text-xs text-muted-foreground">{job.archived_at ? "보관됨" : !job.enabled ? "일시정지" : job.schedule_kind === "once" ? `1회 · ${displayTime(job.next_run_at ?? job.run_at)}` : displayTime(job.next_run_at)}</span></button>)}</div></div>;
 }
 
 function TaskTargetSelector({
@@ -348,7 +357,9 @@ function editorFromJob(job: RecurringJob): Editor {
     name: job.name,
     prompt: job.prompt,
     timezone: job.timezone,
-    schedule: recurringScheduleFromExpressions(job.schedule_expressions),
+    schedule: job.schedule_kind === "once"
+      ? { ...defaultRecurringSchedule(), mode: "once", runAtLocal: job.run_at ? toLocalDateTime(job.run_at) : defaultRecurringSchedule().runAtLocal }
+      : recurringScheduleFromExpressions(job.schedule_expressions),
     nodeId: job.node_id,
     agentId: job.agent_id,
     modelPreset: job.model_preset ?? "",
@@ -363,11 +374,12 @@ function editorFromJob(job: RecurringJob): Editor {
 function writeFromEditor(editor: Editor): RecurringJobWrite {
   const lateRunWindowSeconds = Number(editor.lateRunWindowSeconds);
   if (!Number.isSafeInteger(lateRunWindowSeconds) || lateRunWindowSeconds < 1) throw new Error("오프라인 허용 초는 1 이상의 정수여야 합니다.");
-  return {
+  const common = {
     name: editor.name.trim(),
     prompt: editor.prompt.trim(),
-    timezone: editor.timezone.trim(),
-    schedule_expressions: recurringScheduleExpressions(editor.schedule),
+    timezone: editor.schedule.mode === "once"
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : editor.timezone.trim(),
     node_id: editor.nodeId.trim(),
     agent_id: editor.agentId.trim(),
     model_preset: editor.modelPreset.trim() || null,
@@ -376,8 +388,19 @@ function writeFromEditor(editor: Editor): RecurringJobWrite {
     late_run_window_seconds: lateRunWindowSeconds,
     enabled: editor.enabled,
   };
+  if (editor.schedule.mode === "once") {
+    const runAt = new Date(editor.schedule.runAtLocal);
+    if (!editor.schedule.runAtLocal || !Number.isFinite(runAt.getTime())) throw new Error("실행 일시를 입력해야 합니다.");
+    return { ...common, run_at: runAt.toISOString() };
+  }
+  return { ...common, schedule_expressions: recurringScheduleExpressions(editor.schedule) };
 }
 
 function displayTime(value: string | null): string { return value ? new Date(value).toLocaleString() : "없음"; }
+function toLocalDateTime(value: string): string {
+  const date = new Date(value);
+  const parts = [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")];
+  return `${String(parts[0]).padStart(4, "0")}-${parts[1]}-${parts[2]}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
 function message(value: unknown): string { return value instanceof Error ? value.message : String(value); }
 function isVersionConflict(value: unknown): value is HttpResponseError { return value instanceof HttpResponseError && value.status === 409; }

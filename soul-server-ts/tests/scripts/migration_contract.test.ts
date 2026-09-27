@@ -277,6 +277,25 @@ describe("versioned migration contract", () => {
     expect(migrations.every((item) => !Object.hasOwn(item, "rollback_compatibility"))).toBe(true);
   });
 
+  it("keeps the recurring once migration, manifest checksum, and canonical schema aligned", async () => {
+    const migrations = await loadMigrationManifest();
+    const migration = migrations.find((item) => item.id === "106_recurring_jobs_once.sql");
+    const schema = readFileSync(fileURLToPath(
+      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
+    ), "utf8");
+
+    expect(migrations.at(-1)?.id).toBe("106_recurring_jobs_once.sql");
+    expect(migration?.sql).toContain("ADD COLUMN IF NOT EXISTS schedule_kind TEXT NOT NULL DEFAULT 'recurring'");
+    expect(migration?.sql).toContain("ADD COLUMN IF NOT EXISTS run_at TIMESTAMPTZ");
+    expect(migration?.sql).toContain("DROP CONSTRAINT IF EXISTS recurring_jobs_schedule_array");
+    expect(migration?.sql).toContain("recurring_jobs_schedule_shape");
+    expect(schema).toContain("schedule_kind               TEXT NOT NULL DEFAULT 'recurring'");
+    expect(schema).toContain("run_at                       TIMESTAMPTZ");
+    expect(schema).toContain("CONSTRAINT recurring_jobs_schedule_shape CHECK (");
+    expect(schema).toContain("schedule_kind = 'once' AND jsonb_array_length(schedule_expressions) = 0 AND run_at IS NOT NULL");
+    expect(schema).toContain("job_id                      TEXT NOT NULL REFERENCES recurring_jobs(job_id)");
+  });
+
   it("keeps terminal status and execution registration on the sessions-row canon", async () => {
     const migrations = await loadMigrationManifest();
     const addMigration = migrations.find((item) =>

@@ -87,13 +87,61 @@ describe("recurring-job MCP tools", () => {
       }),
     }));
   });
+
+  it("forwards once run_at through the MCP schemas without a cron array", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response({ job: { job_id: "job-once" } }))
+      .mockResolvedValueOnce(response({ job: { job_id: "job-once", version: 2 } }));
+    vi.stubGlobal("fetch", fetch);
+    const { call, registered } = register();
+    const createTool = registered.get("create_recurring_job")!;
+    const updateTool = registered.get("update_recurring_job")!;
+    const { schedule_expressions: _scheduleExpressions, ...base } = createInput();
+    const runAt = "2026-09-29T09:00:00+09:00";
+
+    expect(createTool.config.description).toContain("1회");
+    expect(createTool.config.description).toContain("idempotency_key");
+    expect(createTool.config.inputSchema.schedule_expressions.isOptional()).toBe(true);
+    expect(createTool.config.inputSchema.run_at.isOptional()).toBe(true);
+    expect(updateTool.config.description).toContain("run_at");
+    expect(updateTool.config.inputSchema.run_at.isOptional()).toBe(true);
+
+    await withMcpRequestContext(
+      { callerSessionId: "caller-session" },
+      async () => await call("create_recurring_job", { ...base, run_at: runAt }),
+    );
+    await withMcpRequestContext(
+      { callerSessionId: "caller-session" },
+      async () => await call("update_recurring_job", {
+        job_id: "job-once",
+        expected_version: 1,
+        run_at: "2026-09-30T09:00:00+09:00",
+      }),
+    );
+
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+      run_at: runAt,
+      timezone: "Asia/Seoul",
+    });
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).not.toHaveProperty("schedule_expressions");
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toMatchObject({
+      job_id: "job-once",
+      run_at: "2026-09-30T09:00:00+09:00",
+    });
+  });
 });
 
 function register() {
-  const registered = new Map<string, { handler: Function }>();
+  const registered = new Map<string, {
+    config: { description: string; inputSchema: Record<string, { isOptional(): boolean }> };
+    handler: Function;
+  }>();
   const server = {
-    registerTool(name: string, _config: unknown, handler: Function) {
-      registered.set(name, { handler });
+    registerTool(name: string, config: unknown, handler: Function) {
+      registered.set(name, { config: config as {
+        description: string;
+        inputSchema: Record<string, { isOptional(): boolean }>;
+      }, handler });
     },
   } as unknown as McpServer;
   registerRecurringJobTools(server, runtime());

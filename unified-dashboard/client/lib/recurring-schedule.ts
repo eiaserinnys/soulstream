@@ -1,4 +1,4 @@
-export type RecurringScheduleMode = "daily" | "weekdays" | "weekly" | "monthly" | "advanced";
+export type RecurringScheduleMode = "once" | "daily" | "weekdays" | "weekly" | "monthly" | "advanced";
 
 export type RecurringScheduleDraft = {
   mode: RecurringScheduleMode;
@@ -6,15 +6,20 @@ export type RecurringScheduleDraft = {
   weekdays: number[];
   monthDays: number[];
   advancedExpressions: string;
+  runAtLocal: string;
 };
 
 export function defaultRecurringSchedule(): RecurringScheduleDraft {
+  const runAt = new Date();
+  runAt.setMinutes(0, 0, 0);
+  runAt.setHours(runAt.getHours() + 1);
   return {
     mode: "weekdays",
     times: ["09:00"],
     weekdays: [1, 2, 3, 4, 5],
     monthDays: [1],
     advancedExpressions: "0 9 * * 1-5",
+    runAtLocal: formatLocalDateTime(runAt),
   };
 }
 
@@ -60,6 +65,7 @@ export function recurringScheduleFromExpressions(
 }
 
 export function recurringScheduleExpressions(schedule: RecurringScheduleDraft): string[] {
+  if (schedule.mode === "once") return [];
   if (schedule.mode === "advanced") return splitExpressions(schedule.advancedExpressions);
   const times = [...new Set(schedule.times.map(normalizeTime))];
   if (times.length === 0) throw new Error("실행 시각을 하나 이상 선택해야 합니다.");
@@ -79,6 +85,15 @@ export function recurringScheduleExpressions(schedule: RecurringScheduleDraft): 
     const [hour, minute] = time.split(":");
     return `${Number(minute)} ${Number(hour)} ${day} * ${weekday}`;
   });
+}
+
+function formatLocalDateTime(value: Date): string {
+  const year = String(value.getFullYear()).padStart(4, "0");
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  const hour = String(value.getHours()).padStart(2, "0");
+  const minute = String(value.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hour}:${minute}`;
 }
 
 function advancedSchedule(expressions: readonly string[]): RecurringScheduleDraft {

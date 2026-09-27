@@ -6,12 +6,18 @@ import type { RecurringJob, RecurringJobRun } from "./types.js";
  */
 export function jobForRun(job: RecurringJob, run: RecurringJobRun): RecurringJob {
   const snapshot = run.jobSnapshot;
+  const scheduleKind = snapshot.scheduleKind === undefined ? "recurring" : snapshot.scheduleKind;
+  if (scheduleKind !== "recurring" && scheduleKind !== "once") {
+    throw new Error("Recurring run snapshot has an invalid scheduleKind.");
+  }
   return {
     ...job,
     name: snapshotText(snapshot, "name"),
     prompt: snapshotText(snapshot, "prompt"),
     timezone: snapshotText(snapshot, "timezone"),
-    scheduleExpressions: snapshotStrings(snapshot, "scheduleExpressions"),
+    scheduleKind,
+    scheduleExpressions: snapshotStrings(snapshot, "scheduleExpressions", scheduleKind === "once"),
+    runAt: snapshot.runAt === undefined ? null : snapshotNullableText(snapshot, "runAt"),
     nodeId: snapshotText(snapshot, "nodeId"),
     agentId: snapshotText(snapshot, "agentId"),
     modelPreset: snapshotNullableText(snapshot, "modelPreset"),
@@ -39,9 +45,13 @@ function snapshotNullableText(
   return snapshotText(snapshot, key);
 }
 
-function snapshotStrings(snapshot: Readonly<Record<string, unknown>>, key: string): string[] {
+function snapshotStrings(
+  snapshot: Readonly<Record<string, unknown>>,
+  key: string,
+  allowEmpty = false,
+): string[] {
   const value = snapshot[key];
-  if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== "string" || !item.trim())) {
+  if (!Array.isArray(value) || (!allowEmpty && value.length === 0) || value.some((item) => typeof item !== "string" || !item.trim())) {
     throw new Error(`Recurring run snapshot is missing ${key}.`);
   }
   return [...value] as string[];

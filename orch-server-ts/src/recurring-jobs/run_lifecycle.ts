@@ -28,7 +28,8 @@ export function makeRecurringRun(
     sessionId: newId(),
     jobSnapshot: {
       name: job.name, prompt: job.prompt, timezone: job.timezone,
-      scheduleExpressions: job.scheduleExpressions, nodeId: job.nodeId, agentId: job.agentId,
+      scheduleKind: job.scheduleKind, scheduleExpressions: job.scheduleExpressions, runAt: job.runAt,
+      nodeId: job.nodeId, agentId: job.agentId,
       modelPreset: job.modelPreset, container: job.container, folderId: job.folderId,
       executionCaller: job.executionCaller, lateRunWindowSeconds: job.lateRunWindowSeconds,
     },

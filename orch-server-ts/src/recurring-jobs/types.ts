@@ -4,6 +4,7 @@ export type RecurringJobContainer = {
 };
 
 export type RecurringJobRunTrigger = "scheduled" | "manual";
+export type RecurringJobScheduleKind = "recurring" | "once";
 
 export type RecurringJobRunState =
   | "queued"
@@ -32,7 +33,9 @@ export type RecurringJob = {
   readonly executionCaller: Readonly<Record<string, unknown>>;
   readonly name: string;
   readonly prompt: string;
+  readonly scheduleKind: RecurringJobScheduleKind;
   readonly scheduleExpressions: readonly string[];
+  readonly runAt: string | null;
   readonly timezone: string;
   readonly nodeId: string;
   readonly agentId: string;
@@ -74,7 +77,8 @@ export type RecurringJobCreateInput = {
   readonly name: string;
   readonly prompt: string;
   readonly timezone: string;
-  readonly scheduleExpressions: readonly string[];
+  readonly scheduleExpressions?: readonly string[];
+  readonly runAt?: string;
   readonly nodeId: string;
   readonly agentId: string;
   readonly modelPreset: string | null;
@@ -91,6 +95,7 @@ export type RecurringJobUpdateInput = {
   readonly prompt?: string;
   readonly timezone?: string;
   readonly scheduleExpressions?: readonly string[];
+  readonly runAt?: string;
   readonly nodeId?: string;
   readonly agentId?: string;
   readonly modelPreset?: string | null;
@@ -135,6 +140,7 @@ export interface RecurringJobRepository {
   createJob(input: RecurringJob): Promise<RecurringJob>;
   findJobByCreateIdempotency(ownerEmail: string, idempotencyKey: string): Promise<RecurringJob | null>;
   updateJob(input: RecurringJob, expectedVersion: number): Promise<RecurringJob | RecurringJobConflict>;
+  deleteOnceJob(jobId: string): Promise<boolean>;
   archiveJob(jobId: string, ownerEmail: string, expectedVersion: number, actorId: string, now: Date): Promise<RecurringJob | RecurringJobConflict | null>;
   listRuns(jobId: string, limit: number): Promise<RecurringJobRun[]>;
   findRunByManualIdempotency(jobId: string, idempotencyKey: string): Promise<RecurringJobRun | null>;

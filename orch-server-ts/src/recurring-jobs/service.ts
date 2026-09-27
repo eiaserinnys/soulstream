@@ -10,10 +10,18 @@ import {
   compileSchedule,
   normalizedContainer,
   normalizedModelPreset,
+  onceTimezone,
+  parseRunAt,
+  positiveLateRunWindowSeconds,
   requiredText,
   validation,
   versionConflict,
 } from "./input_validation.js";
+import {
+  mergeRecurringJobUpdate,
+  normalizeRecurringJobCreate,
+  type ValidateRecurringJobTarget,
+} from "./service_normalization.js";
 import {
   isActiveRecurringRun,
   RecurringJobError,
@@ -40,12 +48,7 @@ export type RecurringJobServiceOptions = {
   readonly now?: () => Date;
   readonly newId?: () => string;
   /** Shared UI/MCP target and folder-access gate. */
-  readonly validateTarget?: (input: {
-    readonly actor: RecurringJobActor;
-    readonly target: Pick<RecurringJob, "nodeId" | "agentId" | "modelPreset" | "container" | "folderId">;
-    /** Existing targets may be offline while a pause or metadata update is saved. */
-    readonly requireAvailableTarget: boolean;
-  }) => Promise<void>;
+  readonly validateTarget?: ValidateRecurringJobTarget;
 };
 
 export class RecurringJobService {
@@ -88,18 +91,22 @@ export class RecurringJobService {
       idempotencyKey,
     );
     if (existing) return existing;
-    const normalized = await this.normalizeCreateOrUpdate(actor, raw);
+    const normalized = await normalizeRecurringJobCreate(actor, raw, this.now, this.options.validateTarget);
     const { schedule: _schedule, ...jobFields } = normalized;
     const now = this.now();
-    const firstRun = nextRecurringOccurrences(normalized.schedule, now, 1)[0];
-    if (!firstRun) throw new Error("compiled schedule did not produce a future occurrence");
     const enabled = raw.enabled ?? true;
+    const firstRun = normalized.schedule
+      ? nextRecurringOccurrences(normalized.schedule, now, 1)[0]
+      : null;
+    if (normalized.schedule && !firstRun) {
+      throw new Error("compiled schedule did not produce a future occurrence");
+    }
     const job: RecurringJob = {
       jobId: this.newId(),
       ownerEmail: actor.ownerEmail,
       executionCaller: { ...actor.callerInfo },
       ...jobFields,
-      nextRunAt: enabled ? firstRun.toISOString() : null,
+      nextRunAt: enabled ? normalized.runAt ?? firstRun?.toISOString() ?? null : null,
       enabled,
       archivedAt: null,
       version: 1,
@@ -203,9 +210,11 @@ export class RecurringJobService {
     const now = this.now();
     const scheduledFor = new Date(job.nextRunAt);
     if (!Number.isFinite(scheduledFor.getTime())) throw new Error(`invalid next_run_at: ${job.jobId}`);
-    const schedule = compileRecurringSchedule(job);
-    const nextRunAt = nextRecurringOccurrences(schedule, now, 1)[0] ?? null;
-    const latestOccurrence = latestRecurringOccurrenceOnOrBefore(schedule, now);
+    const schedule = job.scheduleKind === "once" ? null : compileRecurringSchedule(job);
+    const nextRunAt = schedule ? nextRecurringOccurrences(schedule, now, 1)[0] ?? null : null;
+    const latestOccurrence = schedule
+      ? latestRecurringOccurrenceOnOrBefore(schedule, now)
+      : scheduledFor;
     const latestEligible = latestOccurrence !== null &&
       latestOccurrence.getTime() >= scheduledFor.getTime() &&
       now.getTime() - latestOccurrence.getTime() <= job.lateRunWindowSeconds * 1_000
@@ -329,6 +338,8 @@ export class RecurringJobService {
       }
       return currentRun ?? run;
     }
+    let shouldDeleteOnceJob = false;
+    let saved: RecurringJobRun;
     try {
       const launched = await launcher.createRecurringSession({ job: frozenJob, run: dispatching });
       const launchedRun = {
@@ -338,10 +349,11 @@ export class RecurringJobService {
           resolvedModelPreset: launched.resolvedModelPreset,
         },
       };
-      return await saveRecurringRun(this.options.repository, launchedRun, launched.state, this.now(), launched.state === "awaiting_session" ? {
+      saved = await saveRecurringRun(this.options.repository, launchedRun, launched.state, this.now(), launched.state === "awaiting_session" ? {
         code: "AWAITING_SESSION_CONFIRMATION",
         message: "The create_session request may have reached the node. Soulstream will only recheck this fixed session ID.",
       } : null);
+      shouldDeleteOnceJob = job.scheduleKind === "once" && launched.state === "running";
     } catch (error) {
       if (isUncertainLaunchFailure(error)) {
         return await saveRecurringRun(this.options.repository, dispatching, "awaiting_session", this.now(), {
@@ -354,6 +366,8 @@ export class RecurringJobService {
         message: error instanceof Error ? error.message : String(error),
       });
     }
+    if (shouldDeleteOnceJob) await this.options.repository.deleteOnceJob(job.jobId);
+    return saved;
   }
 
   async reconcileSession(sessionId: string): Promise<RecurringJobRun | null> {
@@ -381,10 +395,12 @@ export class RecurringJobService {
         message: "The previously observed session was deleted. Open or restore that existing session manually; no replacement was created.",
       });
     }
-    if (session.status === "completed" || session.status === "error" || session.status === "interrupted") {
-      return await saveRecurringRun(this.options.repository, run, session.status, now, null);
-    }
-    return await saveRecurringRun(this.options.repository, run, "running", now, null);
+    const saved = session.status === "completed" || session.status === "error" || session.status === "interrupted"
+      ? await saveRecurringRun(this.options.repository, run, session.status, now, null)
+      : await saveRecurringRun(this.options.repository, run, "running", now, null);
+    const job = await this.options.repository.getJob(run.jobId);
+    if (job?.scheduleKind === "once") await this.options.repository.deleteOnceJob(job.jobId);
+    return saved;
   }
 
   private async mergeUpdate(
@@ -393,88 +409,52 @@ export class RecurringJobService {
     input: RecurringJobUpdateInput,
     now: Date,
   ): Promise<RecurringJob> {
-    const scheduleExpressions = input.scheduleExpressions ?? current.scheduleExpressions;
-    const timezone = input.timezone ?? current.timezone;
-    const schedule = compileSchedule({ timezone, scheduleExpressions });
-    const enabled = input.enabled ?? current.enabled;
-    const modelPreset = input.modelPreset === undefined
-      ? current.modelPreset
-      : normalizedModelPreset(input.modelPreset);
-    const recomputeNextRun =
-      (input.enabled === true && !current.enabled) ||
-      input.timezone !== undefined ||
-      input.scheduleExpressions !== undefined;
-    const nextOccurrence = nextRecurringOccurrences(schedule, now, 1)[0];
-    if (!nextOccurrence) throw new Error("compiled schedule did not produce a future occurrence");
-    const nextRunAt = !enabled
-      ? null
-      : recomputeNextRun
-        ? nextOccurrence.toISOString()
-        : current.nextRunAt;
-    const candidate = {
-      ...current,
-      name: input.name === undefined ? current.name : requiredText(input.name, "name"),
-      prompt: input.prompt === undefined ? current.prompt : requiredText(input.prompt, "prompt"),
-      scheduleExpressions: schedule.scheduleExpressions,
-      timezone: schedule.timezone,
-      nodeId: input.nodeId === undefined ? current.nodeId : requiredText(input.nodeId, "node_id"),
-      agentId: input.agentId === undefined ? current.agentId : requiredText(input.agentId, "agent_id"),
-      modelPreset,
-      container: input.container === undefined ? current.container : normalizedContainer(input.container),
-      folderId: input.folderId === undefined ? current.folderId : requiredText(input.folderId, "folder_id"),
-      lateRunWindowSeconds: positiveLateRunWindowSeconds(
-        input.lateRunWindowSeconds === undefined ? current.lateRunWindowSeconds : input.lateRunWindowSeconds,
-      ),
-      enabled,
-      nextRunAt,
-      updatedAt: now.toISOString(),
-    } satisfies RecurringJob;
-    await this.options.validateTarget?.({
-      actor,
-      target: candidate,
-      requireAvailableTarget: candidate.nodeId !== current.nodeId ||
-        candidate.agentId !== current.agentId ||
-        candidate.modelPreset !== current.modelPreset,
-    });
-    return candidate;
-  }
-
-  private async normalizeCreateOrUpdate(
-    actor: RecurringJobActor,
-    input: RecurringJobCreateInput,
-  ): Promise<{
-    name: string;
-    prompt: string;
-    scheduleExpressions: readonly string[];
-    timezone: string;
-    nodeId: string;
-    agentId: string;
-    modelPreset: string | null;
-    container: RecurringJob["container"];
-    folderId: string;
-    lateRunWindowSeconds: number;
-    schedule: ReturnType<typeof compileRecurringSchedule>;
-  }> {
-    const schedule = compileSchedule(input);
-    const normalized = {
-      name: requiredText(input.name, "name"),
-      prompt: requiredText(input.prompt, "prompt"),
-      scheduleExpressions: schedule.scheduleExpressions,
-      timezone: schedule.timezone,
-      nodeId: requiredText(input.nodeId, "node_id"),
-      agentId: requiredText(input.agentId, "agent_id"),
-      modelPreset: normalizedModelPreset(input.modelPreset),
-      container: normalizedContainer(input.container),
-      folderId: requiredText(input.folderId, "folder_id"),
-      lateRunWindowSeconds: positiveLateRunWindowSeconds(input.lateRunWindowSeconds ?? 1_800),
-      schedule,
-    };
-    await this.options.validateTarget?.({
-      actor,
-      target: normalized,
-      requireAvailableTarget: true,
-    });
-    return normalized;
+    if (current.scheduleKind === "once") {
+      if (input.scheduleExpressions !== undefined) {
+        throw validation("schedule_expressions cannot be changed for a once job");
+      }
+      const enabled = input.enabled ?? current.enabled;
+      const runAt = input.runAt === undefined ? current.runAt! : requiredText(input.runAt, "run_at");
+      const runAtDate = parseRunAt(runAt);
+      const recomputeNextRun = input.runAt !== undefined || (input.enabled === true && !current.enabled);
+      let nextRunAt = current.nextRunAt;
+      if (!enabled) nextRunAt = null;
+      else if (recomputeNextRun) {
+        if (runAtDate.getTime() <= now.getTime()) throw validation("run_at must be in the future");
+        nextRunAt = runAt;
+      }
+      const candidate = {
+        ...current,
+        name: input.name === undefined ? current.name : requiredText(input.name, "name"),
+        prompt: input.prompt === undefined ? current.prompt : requiredText(input.prompt, "prompt"),
+        timezone: input.timezone === undefined ? current.timezone : onceTimezone(input.timezone),
+        scheduleKind: "once" as const,
+        scheduleExpressions: [],
+        runAt,
+        nodeId: input.nodeId === undefined ? current.nodeId : requiredText(input.nodeId, "node_id"),
+        agentId: input.agentId === undefined ? current.agentId : requiredText(input.agentId, "agent_id"),
+        modelPreset: input.modelPreset === undefined
+          ? current.modelPreset
+          : normalizedModelPreset(input.modelPreset),
+        container: input.container === undefined ? current.container : normalizedContainer(input.container),
+        folderId: input.folderId === undefined ? current.folderId : requiredText(input.folderId, "folder_id"),
+        lateRunWindowSeconds: positiveLateRunWindowSeconds(
+          input.lateRunWindowSeconds === undefined ? current.lateRunWindowSeconds : input.lateRunWindowSeconds,
+        ),
+        enabled,
+        nextRunAt,
+        updatedAt: now.toISOString(),
+      } satisfies RecurringJob;
+      await this.options.validateTarget?.({
+        actor,
+        target: candidate,
+        requireAvailableTarget: candidate.nodeId !== current.nodeId ||
+          candidate.agentId !== current.agentId ||
+          candidate.modelPreset !== current.modelPreset,
+      });
+      return candidate;
+    }
+    return await mergeRecurringJobUpdate(actor, current, input, now, this.options.validateTarget);
   }
 
   private async requireJob(
@@ -493,8 +473,4 @@ export class RecurringJobService {
 }
 
 function positiveVersion(value: number): boolean { return Number.isSafeInteger(value) && value > 0; }
-function positiveLateRunWindowSeconds(value: number): number {
-  if (!Number.isSafeInteger(value) || value < 1) throw validation("late_run_window_seconds must be a positive integer");
-  return value;
-}
 function boundedLimit(value: number): number { return Number.isSafeInteger(value) ? Math.max(1, Math.min(value, 100)) : 50; }

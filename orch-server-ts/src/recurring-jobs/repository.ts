@@ -53,13 +53,13 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
     const rows = await sql<Row[]>`
       INSERT INTO recurring_jobs (
         job_id, owner_email, execution_caller, name, prompt, schedule_expressions,
-        timezone, node_id, agent_id, model_preset, container_kind, container_id,
+        schedule_kind, run_at, timezone, node_id, agent_id, model_preset, container_kind, container_id,
         folder_id, enabled, archived_at, late_run_window_seconds, next_run_at,
         version, created_idempotency_key, created_by, updated_by, created_at, updated_at
       ) VALUES (
         ${input.jobId}, ${input.ownerEmail}, ${sql.json(input.executionCaller)},
         ${input.name}, ${input.prompt}, ${sql.json(input.scheduleExpressions)},
-        ${input.timezone}, ${input.nodeId}, ${input.agentId}, ${input.modelPreset},
+        ${input.scheduleKind}, ${input.runAt}, ${input.timezone}, ${input.nodeId}, ${input.agentId}, ${input.modelPreset},
         ${input.container.kind}, ${input.container.id}, ${input.folderId}, ${input.enabled},
         ${input.archivedAt}, ${input.lateRunWindowSeconds}, ${input.nextRunAt},
         ${input.version}, ${input.createdIdempotencyKey}, ${input.createdBy}, ${input.updatedBy},
@@ -92,6 +92,7 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
       SET execution_caller = ${sql.json(input.executionCaller)},
           name = ${input.name}, prompt = ${input.prompt},
           schedule_expressions = ${sql.json(input.scheduleExpressions)},
+          run_at = ${input.runAt},
           timezone = ${input.timezone}, node_id = ${input.nodeId}, agent_id = ${input.agentId},
           model_preset = ${input.modelPreset}, container_kind = ${input.container.kind},
           container_id = ${input.container.id}, folder_id = ${input.folderId}, enabled = ${input.enabled},
@@ -190,6 +191,17 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
     const sql = await this.resolveSql();
     const rows = await sql<Row[]>`SELECT * FROM recurring_jobs WHERE job_id = ${jobId} LIMIT 1`;
     return rows[0] ? jobFromRow(rows[0]) : null;
+  }
+
+  async deleteOnceJob(jobId: string): Promise<boolean> {
+    const sql = await this.resolveSql();
+    return await sql.begin(async (transaction) => {
+      const jobs = await transaction<Row[]>`SELECT job_id FROM recurring_jobs WHERE job_id = ${jobId} AND schedule_kind = 'once' FOR UPDATE`;
+      if (!jobs[0]) return false;
+      await transaction<Row[]>`DELETE FROM recurring_job_runs WHERE job_id = ${jobId}`;
+      const deleted = await transaction<Row[]>`DELETE FROM recurring_jobs WHERE job_id = ${jobId} AND schedule_kind = 'once' RETURNING job_id`;
+      return deleted.length > 0;
+    });
   }
 
   async getRun(runId: string): Promise<RecurringJobRun | null> {
@@ -435,6 +447,8 @@ function jobFromRow(row: Row): RecurringJob {
     name: stringValue(row.name),
     prompt: stringValue(row.prompt),
     scheduleExpressions: stringArray(row.schedule_expressions),
+    scheduleKind: row.schedule_kind === "once" ? "once" : "recurring",
+    runAt: timestampOrNull(row.run_at),
     timezone: stringValue(row.timezone),
     nodeId: stringValue(row.node_id),
     agentId: stringValue(row.agent_id),

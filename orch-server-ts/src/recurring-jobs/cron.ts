@@ -40,13 +40,7 @@ const FALLBACK_HISTORY_MS = 26 * 60 * 60 * 1_000;
 export function compileRecurringSchedule(
   input: RecurringScheduleInput,
 ): CompiledRecurringSchedule {
-  const timezone = input.timezone.trim();
-  if (!timezone) throw new Error("timezone is required");
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
-  } catch {
-    throw new Error(`invalid timezone: ${input.timezone}`);
-  }
+  const timezone = normalizeRecurringTimezone(input.timezone);
   if (input.scheduleExpressions.length === 0) {
     throw new Error("at least one schedule expression is required");
   }
@@ -58,6 +52,17 @@ export function compileRecurringSchedule(
     scheduleExpressions,
     expressions: scheduleExpressions.map(parseExpression),
   };
+}
+
+export function normalizeRecurringTimezone(timezone: string): string {
+  const normalized = timezone.trim();
+  if (!normalized) throw new Error("timezone is required");
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: normalized }).format();
+  } catch {
+    throw new Error(`invalid timezone: ${timezone}`);
+  }
+  return normalized;
 }
 
 /**

@@ -7,6 +7,8 @@ export type RecurringJob = {
   name: string;
   prompt: string;
   timezone: string;
+  schedule_kind: "recurring" | "once";
+  run_at: string | null;
   schedule_expressions: string[];
   node_id: string;
   agent_id: string;
@@ -42,7 +44,8 @@ export type RecurringJobWrite = {
   name: string;
   prompt: string;
   timezone: string;
-  schedule_expressions: string[];
+  schedule_expressions?: string[];
+  run_at?: string;
   node_id: string;
   agent_id: string;
   model_preset: string | null;

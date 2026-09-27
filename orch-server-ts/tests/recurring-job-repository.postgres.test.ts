@@ -21,6 +21,27 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
       "utf8",
     );
     await harness.sql.unsafe(migration);
+    await harness.sql`
+      INSERT INTO recurring_jobs (
+        job_id, owner_email, execution_caller, name, prompt, schedule_expressions,
+        timezone, node_id, agent_id, container_kind, container_id, folder_id,
+        created_idempotency_key, created_by, updated_by
+      ) VALUES (
+        'legacy-recurring-job', 'owner@example.com', ${harness.sql.json({ source: "agent" })},
+        'legacy job', 'legacy prompt', ${harness.sql.json(["0 9 * * *"])},
+        'Asia/Seoul', 'node-a', 'agent-a', 'folder', 'folder-a', 'folder-a',
+        'legacy-key', 'owner@example.com', 'owner@example.com'
+      )
+    `;
+    const onceMigration = await readFile(
+      new URL("../../packages/db-schema/sql/migrations/106_recurring_jobs_once.sql", import.meta.url),
+      "utf8",
+    );
+    await harness.sql.unsafe(onceMigration);
+    const migratedRows = await harness.sql<{ schedule_kind: string; run_at: string | null }[]>`
+      SELECT schedule_kind, run_at FROM recurring_jobs WHERE job_id = 'legacy-recurring-job'
+    `;
+    expect(migratedRows).toEqual([{ schedule_kind: "recurring", run_at: null }]);
     repository = new SqlRecurringJobRepository(
       createLiveDbSqlResolver({ sql: harness.liveSql }),
     );
@@ -91,6 +112,48 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
       manualIdempotencyKey: "manual-after-terminal",
     }));
     expect(nextManual).toMatchObject({ created: true, run: { runId: "run-after-terminal" } });
+  });
+
+  it("persists once fields and only hard-deletes once jobs with their runs", async () => {
+    const once = job({
+      jobId: "once-job",
+      createdIdempotencyKey: "create-once",
+      scheduleKind: "once",
+      scheduleExpressions: [],
+      runAt: "2026-09-22T00:00:00.000Z",
+      nextRunAt: "2026-09-22T00:00:00.000Z",
+    });
+    const recurring = job({ jobId: "recurring-job" });
+    await repository.createJob(once);
+    await repository.createJob(recurring);
+    await repository.createScheduledRun(run({
+      runId: "once-run",
+      jobId: once.jobId,
+      trigger: "scheduled",
+      scheduledFor: once.runAt,
+      manualIdempotencyKey: null,
+    }));
+    await repository.createManualRun(run({
+      runId: "recurring-run",
+      jobId: recurring.jobId,
+      sessionId: "recurring-session",
+    }));
+
+    expect(await repository.getJob(once.jobId)).toMatchObject({
+      scheduleKind: "once",
+      scheduleExpressions: [],
+      runAt: once.runAt,
+    });
+    expect(await repository.deleteOnceJob(once.jobId)).toBe(true);
+    expect(await repository.getJob(once.jobId)).toBeNull();
+    expect(await repository.listRuns(once.jobId, 10)).toEqual([]);
+
+    expect(await repository.deleteOnceJob(recurring.jobId)).toBe(false);
+    expect(await repository.getJob(recurring.jobId)).toMatchObject({
+      scheduleKind: "recurring",
+      runAt: null,
+    });
+    expect(await repository.listRuns(recurring.jobId, 10)).toHaveLength(1);
   });
 
   it("uses row-version CAS to reserve only one scheduled occurrence", async () => {
@@ -249,6 +312,8 @@ function job(overrides: Partial<RecurringJob> = {}): RecurringJob {
     name: "music recommendation",
     prompt: "recommend music",
     scheduleExpressions: ["0 9 * * 1-5"],
+    scheduleKind: "recurring",
+    runAt: null,
     timezone: "Asia/Seoul",
     nodeId: "node-a",
     agentId: "roselin",
