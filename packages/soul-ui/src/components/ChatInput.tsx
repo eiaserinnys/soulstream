@@ -25,6 +25,8 @@ import { useTextareaAutoHeight } from "./chat/useTextareaAutoHeight";
 import { SuggestionChip } from "./SuggestionChip";
 import { Button } from "./ui/button";
 import { useGlassSurface } from "./LiquidGlassProvider";
+import { mergePendingTextIntoComposer, type PendingChatSendActions } from "./chat/pending-chat-send";
+import type { PendingChatSend } from "../stores/dashboard-store-types";
 
 interface ChatInputProps {
   /** 외부에서 주입하는 추가 비활성화 조건 (예: 오케스트레이터에서 노드 dead 상태) */
@@ -37,9 +39,14 @@ interface ChatInputProps {
    * orchestrator-dashboard: "/api/attachments/sessions?nodeId={id}"
    */
   fileUploadUrl?: string;
+  registerPendingSendActions?: (actions: PendingChatSendActions | null) => void;
 }
 
-export function ChatInput({ additionalDisabled = false, fileUploadUrl }: ChatInputProps = {}) {
+export function ChatInput({
+  additionalDisabled = false,
+  fileUploadUrl,
+  registerPendingSendActions,
+}: ChatInputProps = {}) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const tree = useDashboardStore((s) => s.tree);
@@ -47,6 +54,10 @@ export function ChatInput({ additionalDisabled = false, fileUploadUrl }: ChatInp
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const setDraft = useDashboardStore((s) => s.setDraft);
   const clearDraft = useDashboardStore((s) => s.clearDraft);
+  const setPendingChatSend = useDashboardStore((s) => s.setPendingChatSend);
+  const pendingChatSend = useDashboardStore((s) => (
+    activeSessionKey ? s.pendingChatSends[activeSessionKey] : undefined
+  ));
   // store-only selector — closure 외부 의존 0 (정본 하나).
   // primitive 반환이라 reference equality 안전.
   const lastSuggestion = useDashboardStore((s) =>
@@ -90,13 +101,21 @@ export function ChatInput({ additionalDisabled = false, fileUploadUrl }: ChatInp
   const composerWebglActive = useGlassSurface(composerRef, { enabled: true });
 
   // 파일 업로드 훅 — activeSessionKey를 sessionId로 사용 (fileUploadUrl 없으면 noop)
-  const { files, isUploading, addFiles, removeFile, resetLocal, uploadedPaths } = useFileUpload({
+  const {
+    files,
+    isUploading,
+    addFiles,
+    removeFile,
+    resetLocal,
+    restoreUploadedFiles,
+    uploadedPaths,
+  } = useFileUpload({
     uploadUrl: effectiveFileUploadUrl ?? "",
     sessionId: activeSessionKey ?? "",
   });
 
   // submit 디스패처 훅 — sending / error / abort 관리 + 전략 호출
-  const { sending, error, reset, send } = useChatInputSend({
+  const { sending, error, reset, send, retry } = useChatInputSend({
     activeSessionKey,
     tree,
     isFinished,
@@ -106,25 +125,63 @@ export function ChatInput({ additionalDisabled = false, fileUploadUrl }: ChatInp
     clientId: activeSessionSummary?.clientId,
     fileUploadUrl: effectiveFileUploadUrl,
     uploadedPaths,
-    hasFiles: files.length > 0,
-    resetLocal,
+    uploadedAttachments: files.flatMap((file) => (
+      file.status === "done" && file.path !== null
+        ? [{ id: file.id, file: file.file, path: file.path }]
+        : []
+    )),
+    getPendingChatSend: (sessionId) => useDashboardStore.getState().pendingChatSends[sessionId],
+    setPendingChatSend,
     clearDraft,
     setActiveSession,
     onBeforeSend: () => {
       composeEvents.submitted(activeSessionKey, textRef.current.length, composeMode);
       setText("");
-      if (activeSessionKey) clearDraft(activeSessionKey);
+      if (!isLlmFinished) resetLocal();
     },
     onAfterSend: () => {
       composeEvents.settled("ok");
-      setText("");
     },
+    onSendFailure: () => composeEvents.settled("error"),
     onSendError: (failedText) => {
-      composeEvents.settled("error");
       setText(failedText);
       if (activeSessionKey) setDraft(activeSessionKey, failedText);
     },
+    onRetry: (sessionId, pending) => {
+      composeEvents.submitted(sessionId, pending.text.length, pending.mode);
+    },
   });
+
+  const restorePendingSend = useCallback((sessionId: string, pending: PendingChatSend) => {
+    const current = useDashboardStore.getState().pendingChatSends[sessionId];
+    if (
+      sessionId !== activeSessionKey ||
+      !current ||
+      current.id !== pending.id ||
+      current.status !== "failed"
+    ) return;
+
+    setPendingChatSend(sessionId, null);
+    const restoredText = mergePendingTextIntoComposer(pending.text, textRef.current);
+    setText(restoredText);
+    setDraft(sessionId, restoredText);
+    restoreUploadedFiles(pending.attachments.map(({ id, file, path }) => ({
+      id,
+      file,
+      path,
+      status: "done" as const,
+    })));
+  }, [activeSessionKey, restoreUploadedFiles, setDraft, setPendingChatSend]);
+
+  useEffect(() => {
+    registerPendingSendActions?.({
+      retry: (sessionId, pending) => {
+        void retry(sessionId, pending);
+      },
+      restore: restorePendingSend,
+    });
+    return () => registerPendingSendActions?.(null);
+  }, [registerPendingSendActions, restorePendingSend, retry]);
 
   // 세션 변경 시 상태 초기화 & in-flight 요청 취소
   useEffect(() => {
@@ -229,8 +286,8 @@ export function ChatInput({ additionalDisabled = false, fileUploadUrl }: ChatInp
   if (!activeSessionKey) return null;
 
   const fileUploadDisabled = effectiveFileUploadUrl ? isUploading : false;
-  const isDisabled = sending || !text.trim() || additionalDisabled || fileUploadDisabled;
-  const textareaDisabled = sending || additionalDisabled;
+  const isDisabled = sending || pendingChatSend !== undefined || !text.trim() || additionalDisabled || fileUploadDisabled;
+  const textareaDisabled = additionalDisabled;
   const showInterrupt = status === "running";
   const interruptDisabled = interrupting || additionalDisabled || !activeSessionKey;
 

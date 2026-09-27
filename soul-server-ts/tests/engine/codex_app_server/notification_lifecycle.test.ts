@@ -46,6 +46,47 @@ function errorNotification(
 }
 
 describe("Codex app-server notification lifecycle", () => {
+  it("uses the last completed assistant message as complete.result", () => {
+    let state = recordTurnStartResponse(
+      beginNotificationExecution(createNotificationLifecycleState(), "thread-1"),
+      "thread-1",
+      turn("turn-1"),
+    ).state;
+
+    const message = applyNotificationLifecycle(
+      state,
+      {
+        method: "item/completed",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: { type: "agentMessage", id: "answer-1", text: "final answer" },
+        },
+      },
+      { suppressThreadStartedSession: false },
+    );
+    state = message.state;
+
+    const completed = applyNotificationLifecycle(
+      state,
+      {
+        method: "turn/completed",
+        params: {
+          threadId: "thread-1",
+          turn: {
+            ...turn("turn-1", "completed"),
+            items: [{ type: "agentMessage", id: "answer-1", text: "final answer" }],
+          },
+        },
+      },
+      { suppressThreadStartedSession: false },
+    );
+
+    expect(completed.payloads).toContainEqual(
+      expect.objectContaining({ type: "complete", result: "final answer" }),
+    );
+  });
+
   it("suppresses duplicate thread session payloads without reporting side effects", () => {
     let state = beginNotificationExecution(
       createNotificationLifecycleState(),

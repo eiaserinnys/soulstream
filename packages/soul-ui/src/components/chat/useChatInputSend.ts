@@ -1,19 +1,16 @@
 /**
  * useChatInputSend — ChatInput 의 submit 디스패처 훅.
  *
- * 세션 상태(running/completed/error, Claude/LLM)에 따라 submit 전략을 호출하고
- * 공통 제어(abort, sending, error)를 관리한다. UI 상태(text/height/focus)는 호출자 소유.
- *
- * R-4 fix(2026-05-11, atom G-10): useAuth() hook으로 dashboard auth context user를 추출하여
- * submitLlmContinuation에 caller로 forward. LLM continuation 시 wire/DB에 dashboard 사용자
- * 본인 정체성이 박혀 D1/D5에 시스템(Soulstream) 대신 본인 표시된다.
+ * 일반 세션 메시지는 dashboard store의 세션별 pending 칸으로 상태를 관리한다.
+ * LLM continuation은 기존 전송·취소 동작을 유지한다.
  */
 
 import { useCallback, useRef, useState } from "react";
 import type { EventTreeNode } from "@shared/types";
+import type { PendingChatSend, PendingChatSendAttachment } from "../../stores/dashboard-store-types";
 import { useAuth } from "../../providers/AuthProvider";
 import { appendAttachmentPathNotes } from "../../lib/attachment-path-notes";
-import { submitIntervention } from "./submitIntervention";
+import { submitIntervention, SubmitInterventionHttpError } from "./submitIntervention";
 import { submitResume } from "./submitResume";
 import { submitLlmContinuation } from "./submitLlmContinuation";
 
@@ -30,37 +27,95 @@ export interface UseChatInputSendArgs {
   clientId?: string;
   fileUploadUrl?: string;
   uploadedPaths: string[];
-  hasFiles: boolean;
-  resetLocal: () => void;
+  uploadedAttachments: PendingChatSendAttachment[];
+  getPendingChatSend: (sessionId: string) => PendingChatSend | undefined;
+  setPendingChatSend: (sessionId: string, pending: PendingChatSend | null) => void;
   clearDraft: (key: string) => void;
   setActiveSession: (key: string) => void;
-  /** 전송 검증 통과 직후 호출: 네트워크 응답 전 입력창을 낙관적으로 비운다. */
+  /** 전송 검증 통과 직후 호출: 입력창·첨부를 네트워크 응답 전에 비운다. */
   onBeforeSend?: (text: string) => void;
-  /** 전송 성공 시 호출: 입력 텍스트를 초기화할 수 있게 한다. */
+  /** 서버 요청이 성공적으로 응답했을 때 사용 로그를 정리한다. */
   onAfterSend: () => void;
-  /** 전송 실패 시 호출: 낙관적으로 비운 입력값을 복원할 수 있게 한다. */
+  /** 실패 응답의 사용 로그를 유지한다. 입력창 복원에는 사용하지 않는다. */
+  onSendFailure?: () => void;
+  /** LLM continuation 실패는 기존 입력창 복원 동작을 유지한다. */
   onSendError?: (text: string) => void;
+  onRetry?: (sessionId: string, pending: PendingChatSend) => void;
 }
 
 export interface UseChatInputSendResult {
   sending: boolean;
   error: string | null;
-  /** 세션 전환 / 언마운트 시 호출. in-flight 요청 abort + 상태 리셋. */
+  /** 세션 전환 시 LLM continuation만 취소한다. 메시지 요청은 세션별 칸에 남긴다. */
   reset: () => void;
-  /** 입력 텍스트(trim 전)를 받아 적절한 전략을 디스패치한다. 제한 초과 시 에러만 설정. */
   send: (rawText: string) => Promise<void>;
+  retry: (sessionId: string, pending: PendingChatSend) => Promise<void>;
+}
+
+const UNKNOWN_DELIVERY_REASON = "전달을 확인하지 못했습니다";
+
+function getFailureReason(error: unknown): string {
+  if (error instanceof SubmitInterventionHttpError) {
+    return `전송하지 못했습니다: ${error.message}`;
+  }
+  return UNKNOWN_DELIVERY_REASON;
 }
 
 export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendResult {
   const { isAuthenticated, user } = useAuth();
-  const [sending, setSending] = useState(false);
+  const [llmSendingSessionKey, setLlmSendingSessionKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const llmSendingSessionRef = useRef<string | null>(null);
+
+  const activePending = args.activeSessionKey
+    ? args.getPendingChatSend(args.activeSessionKey)
+    : undefined;
+  const sending = activePending?.status === "sending" ||
+    (args.activeSessionKey !== null && llmSendingSessionKey === args.activeSessionKey);
+
+  const submitPending = useCallback(async (sessionId: string, pending: PendingChatSend) => {
+    try {
+      const context = {
+        sessionKey: sessionId,
+        text: pending.messageText,
+        attachmentPaths: pending.attachmentPaths.length > 0
+          ? pending.attachmentPaths
+          : undefined,
+      };
+      const result = await (
+        pending.mode === "resume" ? submitResume(context) : submitIntervention(context)
+      );
+      if (result.delivered === null) {
+        const current = args.getPendingChatSend(sessionId);
+        if (current?.id === pending.id) {
+          args.setPendingChatSend(sessionId, {
+            ...current,
+            status: "failed",
+            reason: UNKNOWN_DELIVERY_REASON,
+          });
+        }
+        args.onSendFailure?.();
+        return;
+      }
+      args.onAfterSend();
+    } catch (requestError) {
+      const current = args.getPendingChatSend(sessionId);
+      if (current?.id === pending.id) {
+        args.setPendingChatSend(sessionId, {
+          ...current,
+          status: "failed",
+          reason: getFailureReason(requestError),
+        });
+      }
+      args.onSendFailure?.();
+    }
+  }, [args]);
 
   const send = useCallback(
     async (rawText: string) => {
-      const { activeSessionKey } = args;
-      if (!activeSessionKey || !rawText.trim() || sending) return;
+      const sessionId = args.activeSessionKey;
+      if (!sessionId || !rawText.trim()) return;
 
       const trimmed = rawText.trim();
       if (trimmed.length > MAX_MESSAGE_LENGTH) {
@@ -68,27 +123,19 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
         return;
       }
 
-      // 이전 요청 취소
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const attachmentPaths =
-        args.fileUploadUrl && args.uploadedPaths.length > 0 ? args.uploadedPaths : undefined;
-      const messageText = appendAttachmentPathNotes(trimmed, attachmentPaths);
-
-      setSending(true);
-      setError(null);
-      args.onBeforeSend?.(messageText);
-
-      try {
-        let nextSessionId: string | undefined;
-        if (args.isLlmFinished) {
-          // R-4 (atom G-10): dashboard auth context user → submitLlmContinuation caller로 forward.
-          // 인증 비활성/미로그인이면 caller undefined (서버 측 LlmExecutor system fallback 자연 흡수).
-          const caller =
-            isAuthenticated && user
-              ? { email: user.email, name: user.name, picture: user.picture }
-              : undefined;
+      if (args.isLlmFinished) {
+        if (llmSendingSessionRef.current !== null) return;
+        const controller = new AbortController();
+        abortRef.current = controller;
+        llmSendingSessionRef.current = sessionId;
+        setLlmSendingSessionKey(sessionId);
+        setError(null);
+        args.clearDraft(sessionId);
+        args.onBeforeSend?.(trimmed);
+        try {
+          const caller = isAuthenticated && user
+            ? { email: user.email, name: user.name, picture: user.picture }
+            : undefined;
           const result = await submitLlmContinuation({
             tree: args.tree,
             text: trimmed,
@@ -98,50 +145,67 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
             caller,
             signal: controller.signal,
           });
-          nextSessionId = result.sessionId;
-        } else {
-          const ctx = {
-            sessionKey: activeSessionKey,
-            text: messageText,
-            attachmentPaths,
-            signal: controller.signal,
-          };
-          const result = await (
-            args.isFinished ? submitResume(ctx) : submitIntervention(ctx)
-          );
-          if (result.delivered === null) {
-            args.onSendError?.(trimmed);
-            setError(
-              result.reason
-                ? `전달 여부를 확인할 수 없습니다: ${result.reason}`
-                : "전달 여부를 확인할 수 없습니다. 자동으로 다시 보내지 않았습니다.",
-            );
-            return;
+          args.onAfterSend();
+          if (result.sessionId) args.setActiveSession(result.sessionId);
+        } catch (requestError) {
+          if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+          args.onSendFailure?.();
+          args.onSendError?.(trimmed);
+          setError(requestError instanceof Error ? requestError.message : "Failed to send");
+        } finally {
+          if (llmSendingSessionRef.current === sessionId) {
+            llmSendingSessionRef.current = null;
+            abortRef.current = null;
+            setLlmSendingSessionKey(null);
           }
-          // 파일 첨부가 있었으면 로컬 상태 초기화 (서버 파일은 유지 — Claude가 읽어야 함)
-          if (args.fileUploadUrl && args.hasFiles) args.resetLocal();
         }
-        args.onAfterSend();
-        args.clearDraft(activeSessionKey);
-        if (nextSessionId) args.setActiveSession(nextSessionId);
-      } catch (err) {
-        // AbortError는 의도적 취소이므로 무시
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        args.onSendError?.(trimmed);
-        setError(err instanceof Error ? err.message : "Failed to send");
-      } finally {
-        setSending(false);
+        return;
       }
+
+      if (args.getPendingChatSend(sessionId)) return;
+      const attachmentPaths = args.fileUploadUrl && args.uploadedPaths.length > 0
+        ? [...args.uploadedPaths]
+        : [];
+      const messageText = appendAttachmentPathNotes(trimmed, attachmentPaths);
+      const pending: PendingChatSend = {
+        id: globalThis.crypto.randomUUID(),
+        status: "sending",
+        text: trimmed,
+        messageText,
+        attachmentPaths,
+        attachments: [...args.uploadedAttachments],
+        mode: args.isFinished ? "resume" : "intervention",
+      };
+
+      setError(null);
+      args.setPendingChatSend(sessionId, pending);
+      args.clearDraft(sessionId);
+      args.onBeforeSend?.(messageText);
+      await submitPending(sessionId, pending);
     },
-    [sending, args, isAuthenticated, user],
+    [args, isAuthenticated, user, submitPending],
   );
+
+  const retry = useCallback(async (sessionId: string, pending: PendingChatSend) => {
+    const current = args.getPendingChatSend(sessionId);
+    if (!current || current.id !== pending.id || current.status !== "failed") return;
+    const retrying: PendingChatSend = {
+      ...current,
+      status: "sending",
+      reason: undefined,
+    };
+    args.setPendingChatSend(sessionId, retrying);
+    args.onRetry?.(sessionId, retrying);
+    await submitPending(sessionId, retrying);
+  }, [args, submitPending]);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
-    setSending(false);
+    llmSendingSessionRef.current = null;
+    setLlmSendingSessionKey(null);
     setError(null);
   }, []);
 
-  return { sending, error, reset, send };
+  return { sending, error, reset, send, retry };
 }

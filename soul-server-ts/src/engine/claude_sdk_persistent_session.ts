@@ -178,12 +178,15 @@ export class ClaudeSdkPersistentSession {
         await this.handleSdkMessage(message);
       }
       if (this.runtime.snapshot().queryLifecycle === "open") {
-        await this.emitDetached({
+        const error = {
           type: "error",
           fatal: true,
           errorCode: "claude_persistent_query_ended",
           message: "Persistent Claude SDK Query ended without an explicit close.",
-        });
+        } as const;
+        const active = this.activeForeground;
+        if (active) active.output.push(error);
+        else await this.emitDetached(error);
         await this.close("fatal");
       }
     } catch (err) {

@@ -53,6 +53,7 @@ export function makeHarness(
     fail: (error: Error) => activeOutput.fail(error),
     interrupt,
     push: (message: SDKMessage) => activeOutput.push(message),
+    end: () => activeOutput.close(),
     queryFn,
     releaseClosedQueries(): void {
       for (const output of deferredClosedOutputs.splice(0)) output.close();

@@ -3,6 +3,8 @@ import type { LlmContext } from "./hooks";
 import { ToolCallGroup } from "./ToolCallGroup";
 import { ChatMessageItem } from "./ChatMessageItem";
 import { ChatThinkingIndicator } from "./ChatThinkingIndicator";
+import { PendingMessageBubble } from "./PendingMessageBubble";
+import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 
 /**
@@ -23,6 +25,8 @@ export type VirtualizedItemProps = {
   toolGroupKey?: string;
   toolGroupExpanded?: boolean;
   onToolGroupExpandedChange?: (key: string, expanded: boolean) => void;
+  onRetryPending?: (pending: PendingChatSend) => void;
+  onRestorePending?: (pending: PendingChatSend) => void;
 };
 
 function VirtualizedItemImpl({
@@ -32,9 +36,22 @@ function VirtualizedItemImpl({
   toolGroupKey,
   toolGroupExpanded,
   onToolGroupExpandedChange,
+  onRetryPending,
+  onRestorePending,
 }: VirtualizedItemProps) {
   if (item.type === "thinking-indicator") {
     return <ChatThinkingIndicator />;
+  }
+  if (item.type === "pending-message") {
+    if (!sessionId) return null;
+    return (
+      <PendingMessageBubble
+        sessionId={sessionId}
+        pending={item.pending}
+        onRetry={(_sessionId, pending) => onRetryPending?.(pending)}
+        onRestore={(_sessionId, pending) => onRestorePending?.(pending)}
+      />
+    );
   }
   if (item.type === "summary-group") {
     return (
@@ -46,6 +63,8 @@ function VirtualizedItemImpl({
           toolGroupKey={toolGroupKey}
           toolGroupExpanded={toolGroupExpanded}
           onToolGroupExpandedChange={onToolGroupExpandedChange}
+          onRetryPending={onRetryPending}
+          onRestorePending={onRestorePending}
         />
         {item.summaries.map((summary) => (
           <ChatMessageItem
@@ -90,11 +109,16 @@ export function arePropsEqual(prev: VirtualizedItemProps, next: VirtualizedItemP
   if (prev.toolGroupKey !== next.toolGroupKey) return false;
   if (prev.toolGroupExpanded !== next.toolGroupExpanded) return false;
   if (prev.onToolGroupExpandedChange !== next.onToolGroupExpandedChange) return false;
+  if (prev.onRetryPending !== next.onRetryPending) return false;
+  if (prev.onRestorePending !== next.onRestorePending) return false;
   if (prev.item.type !== next.item.type) return false;
   if (
     prev.item.type === "thinking-indicator" &&
     next.item.type === "thinking-indicator"
   ) return true;
+  if (prev.item.type === "pending-message" && next.item.type === "pending-message") {
+    return prev.item.pending === next.item.pending;
+  }
   if (prev.item.type === "single" && next.item.type === "single") {
     return prev.item.msg === next.item.msg;
   }

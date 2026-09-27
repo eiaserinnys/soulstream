@@ -63,12 +63,15 @@ export async function pumpLegacyClaudeQuery(
             compactRetryCount += 1;
             break;
           }
-          if (runtimeState.hasPendingWork()) {
+          const hasPendingWork = runtimeState.hasPendingWork();
+          if (hasPendingWork || (!signal.aborted && !sawResult)) {
             output.push({
               type: "error",
               fatal: true,
               errorCode: "claude_runtime_ended_before_idle",
-              message: "Claude SDK stream ended while runtime work was still pending.",
+              message: hasPendingWork
+                ? "Claude SDK stream ended while runtime work was still pending."
+                : "Claude SDK stream ended without a terminal Result.",
             });
           }
           params.closeInput(input);

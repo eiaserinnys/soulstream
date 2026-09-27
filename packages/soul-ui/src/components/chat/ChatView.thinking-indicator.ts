@@ -1,11 +1,17 @@
 import type { ChatMessage } from "../../lib/flatten-tree";
 import type { MessageOrGroup } from "../../lib/grouping";
+import type { PendingChatSend } from "../../stores/dashboard-store-types";
 
 export type ChatThinkingIndicatorItem = {
   type: "thinking-indicator";
 };
 
-export type ChatTimelineItem = MessageOrGroup | ChatThinkingIndicatorItem;
+export type ChatPendingMessageItem = {
+  type: "pending-message";
+  pending: PendingChatSend;
+};
+
+export type ChatTimelineItem = MessageOrGroup | ChatThinkingIndicatorItem | ChatPendingMessageItem;
 
 const THINKING_INDICATOR_ITEM: ChatThinkingIndicatorItem = Object.freeze({
   type: "thinking-indicator",
@@ -38,11 +44,18 @@ export function buildChatTimelineItems(
   grouped: MessageOrGroup[],
   messages: ChatMessage[],
   sessionStatus: string | undefined,
+  pending?: PendingChatSend,
 ): ChatTimelineItem[] {
-  if (!shouldShowChatThinkingIndicator(sessionStatus, messages)) return grouped;
-  const visibleItems = grouped.filter(
-    (item) =>
-      item.type !== "single" || !isEmptyStreamingAssistantText(item.msg),
-  );
-  return [...visibleItems, THINKING_INDICATOR_ITEM];
+  const showThinking = shouldShowChatThinkingIndicator(sessionStatus, messages);
+  if (!showThinking && !pending) return grouped;
+  const visibleItems = showThinking
+    ? grouped.filter(
+        (item) => item.type !== "single" || !isEmptyStreamingAssistantText(item.msg),
+      )
+    : grouped;
+  return [
+    ...visibleItems,
+    ...(pending ? [{ type: "pending-message" as const, pending }] : []),
+    ...(showThinking ? [THINKING_INDICATOR_ITEM] : []),
+  ];
 }

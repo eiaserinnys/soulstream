@@ -161,27 +161,27 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
     }
     this.running = true;
 
-    const sessionId = params.resumeSessionId ?? `agents-${randomUUID()}`;
-    if (!params.resumeSessionId) {
-      await channel.emit(engineEventFrame({
-        type: "session",
-        session_id: sessionId,
-      }));
-    }
-
-    await this.connectMcpServersOnce();
-    const sdkSession = new SoulstreamAgentsSession(
-      sessionId,
-      params.sessionItems,
-      (snapshot) => channel.emit(sessionItemsSnapshotFrame(snapshot)),
-    );
-    let nextInput: string | RunState<any, AnyAgent> = params.resumeRunState
-      ? await RunState.fromString(this.entryAgent, params.resumeRunState)
-      : params.prompt;
-    if (nextInput instanceof RunState && params.queuedToolApproval) {
-      applyQueuedToolApproval(nextInput, params.queuedToolApproval);
-    }
     try {
+      const sessionId = params.resumeSessionId ?? `agents-${randomUUID()}`;
+      if (!params.resumeSessionId) {
+        await channel.emit(engineEventFrame({
+          type: "session",
+          session_id: sessionId,
+        }));
+      }
+
+      await this.connectMcpServersOnce();
+      const sdkSession = new SoulstreamAgentsSession(
+        sessionId,
+        params.sessionItems,
+        (snapshot) => channel.emit(sessionItemsSnapshotFrame(snapshot)),
+      );
+      let nextInput: string | RunState<any, AnyAgent> = params.resumeRunState
+        ? await RunState.fromString(this.entryAgent, params.resumeRunState)
+        : params.prompt;
+      if (nextInput instanceof RunState && params.queuedToolApproval) {
+        applyQueuedToolApproval(nextInput, params.queuedToolApproval);
+      }
       while (!this.closed) {
         const controller = new AbortController();
         this.currentTurn = controller;

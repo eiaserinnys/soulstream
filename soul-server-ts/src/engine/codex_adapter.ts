@@ -176,7 +176,6 @@ export class CodexEngineAdapter implements EnginePort {
     }
 
     const controller = new AbortController();
-    this.currentTurn = controller;
 
     // Thread 시작 또는 재개.
     // ThreadOptions — Python claude `permission_mode="bypassPermissions"` 의미 등가:
@@ -253,6 +252,8 @@ export class CodexEngineAdapter implements EnginePort {
       thread = this.codex.startThread(threadOptions);
       this.logger.debug({ workspaceDir: this.workspaceDir }, "Started new Codex thread");
     }
+
+    this.currentTurn = controller;
 
     // 새 thread면 첫 frame은 thread.started → session SSE.
     // 기존 thread resume이면 thread.id를 session engine_event frame으로 먼저 발행한다.

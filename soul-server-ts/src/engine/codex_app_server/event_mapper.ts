@@ -63,9 +63,13 @@ export function mapAppServerNotification(
           } as SSEEventPayload,
         ];
       }
+      const finalAgentMessage = [...turn.items]
+        .reverse()
+        .find((item) => item.type === "agentMessage");
       return [
         {
           type: "complete",
+          ...(finalAgentMessage ? { result: finalAgentMessage.text } : {}),
           timestamp: nowEpochSec(),
           status: turn.status,
           duration_ms: turn.durationMs,
