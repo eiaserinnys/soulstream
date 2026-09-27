@@ -18,7 +18,7 @@ import {
   DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
   deliveryRetryDelayMs,
 } from "./session_delivery_notification_policy.js";
-import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
+import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
 import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
@@ -36,7 +36,7 @@ export interface DurableCompletionInput {
 }
 
 type CompletionDeliveryRepository = Pick<
-  SessionDeliveryRepository,
+  SessionDeliveryHostClient,
   | "register"
   | "get"
   | "claimAttemptForTarget"

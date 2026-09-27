@@ -296,9 +296,6 @@ describe("worker composition boundary", () => {
       "task/completion_delivery_recovery_worker.ts",
       "task/completion_notifier.ts",
       "task/queued_delivery_transcript_recovery.ts",
-      "db/repositories/session_delivery_repository.ts",
-      "db/repositories/session_delivery_recovery_repository.ts",
-      "db/repositories/session_delivery_relation_repository.ts",
       "engine/claude_delivery_transcript_receipt.ts",
     ];
 

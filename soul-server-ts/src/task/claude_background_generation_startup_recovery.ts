@@ -7,9 +7,9 @@ import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
 import type {
-  ClaudeBackgroundTaskRepository,
+  ClaudeRuntimeHostClient,
   ClaudeBackgroundTaskRow,
-} from "../db/repositories/claude_background_task_repository.js";
+} from "../control_plane/persistence_host_clients.js";
 import type { SessionRow } from "../db/session_db_types.js";
 import { attachClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
@@ -32,7 +32,7 @@ export interface ClaudeBackgroundGenerationRecoveryPass {
 
 interface ClaudeBackgroundGenerationStartupRecoveryDeps {
   repository: Pick<
-    ClaudeBackgroundTaskRepository,
+    ClaudeRuntimeHostClient,
     "terminalForNode" | "getGeneration"
   >;
   lifecycle: Pick<ClaudeBackgroundTaskLifecycle, "observe">;

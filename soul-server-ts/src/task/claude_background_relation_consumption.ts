@@ -1,7 +1,7 @@
-import type { ClaudeBackgroundTaskRepository } from
-  "../db/repositories/claude_background_task_repository.js";
-import type { SessionDeliveryRepository } from
-  "../db/repositories/session_delivery_repository.js";
+import type { ClaudeRuntimeHostClient } from
+  "../control_plane/persistence_host_clients.js";
+import type { SessionDeliveryHostClient } from
+  "../control_plane/persistence_host_clients.js";
 
 import { buildClaudeBackgroundGenerationIdentity } from
   "./claude_background_generation_identity.js";
@@ -10,8 +10,8 @@ import type { ClaudeBackgroundConsumptionProof } from
 import type { Task } from "./task_models.js";
 
 export async function recordClaudeBackgroundRelationConsumption(
-  repository: Pick<SessionDeliveryRepository, "recordRelationConsumed">,
-  backgroundRepository: Pick<ClaudeBackgroundTaskRepository, "resolveGeneration">,
+  repository: Pick<SessionDeliveryHostClient, "recordRelationConsumed">,
+  backgroundRepository: Pick<ClaudeRuntimeHostClient, "resolveGeneration">,
   sourceNode: string,
   task: Task,
   proof: ClaudeBackgroundConsumptionProof,
