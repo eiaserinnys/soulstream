@@ -33,7 +33,9 @@ soulstream/
 ├── unified-dashboard/      React dashboard and PWA
 ├── packages/
 │   ├── db-schema/          Canonical PostgreSQL schema and migrations
+│   ├── agent-profile-contract/ Shared agent profile contract
 │   ├── fractional-position/ Shared ordering primitive
+│   ├── model-catalog/      Shared model catalog contract
 │   ├── page-model/         Shared page, block, and task-page contracts
 │   ├── search-contract/    Shared search request and result contracts
 │   ├── soul-ui/            Reusable dashboard UI and state modules
@@ -44,7 +46,7 @@ soulstream/
 ├── install/                Windows and Haniel installation templates
 ```
 
-The pnpm workspace is declared in `pnpm-workspace.yaml`. The node ↔ orchestrator protocol is defined once in `packages/wire-schema/src/upstream.schema.json`; generated TypeScript and Python clients must stay in sync with that schema.
+The pnpm workspace is declared in `pnpm-workspace.yaml`. The node ↔ orchestrator protocol is defined once in `packages/wire-schema/src/upstream.schema.json`; its generated TypeScript client stays in sync with that schema.
 
 ## Quick start
 
@@ -113,7 +115,7 @@ Initialize a fresh, empty database once. The initializer also verifies an alread
 
 ```bash
 export DATABASE_URL=postgresql://user:password@127.0.0.1:5432/soulstream
-node soul-server-ts/scripts/apply-schema.mjs
+node packages/db-schema/scripts/migrate.mjs fresh-install
 ```
 
 Start the orchestrator. `CLAUDE_OAUTH_CLIENT_ID` must contain a valid OAuth application client ID; the callback URL must be registered with that application.

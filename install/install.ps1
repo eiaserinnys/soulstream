@@ -181,7 +181,7 @@ if (-not (Test-CommandExists "haniel")) {
         # requires interactive prompts (service account password, config URL) that cannot
         # be automated. We only need the haniel binary to run `haniel install`.
         Write-Warn "Haniel not found. Installing via pip (non-interactive)..."
-        pip install git+https://github.com/eiaserinnys/haniel.git
+        pip install git+https://github.com/eiaserinnys/haniel.git@809798b981b9282b96dc074d77d523efa280f9ec
         if ($LASTEXITCODE -ne 0) {
             Write-Fail "Haniel pip install failed."
             exit 1
@@ -388,7 +388,7 @@ if (-not (Test-Path $agentsConfigPath)) {
 Write-Step "Building soul-server-ts..."
 
 Write-Host "    Installing Node.js dependencies..." -ForegroundColor DarkGray
-pnpm --dir $monoRepoDir install --frozen-lockfile --config.strict-dep-builds=false
+pnpm --dir $monoRepoDir install --frozen-lockfile
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "pnpm install failed."
     exit 1

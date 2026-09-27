@@ -10,6 +10,7 @@ from ci_prerequisite_contract import (
     HANIEL_COMPOSITION,
     HANIEL_MATRIX,
     HANIEL_PIN,
+    INSTALLER_PATH,
     INSTALL_WORKFLOW_PATH,
     MIGRATION_POLICY_FIELDS_ABSENT,
     STANDALONE_MANIFEST_PATH,
@@ -71,6 +72,22 @@ class CiPrerequisiteMutationTest(unittest.TestCase):
                 contract,
                 mutated_sources,
                 INSTALL_WORKFLOW_PATH.read_text(encoding="utf8"),
+                INSTALLER_PATH.read_text(encoding="utf-8-sig"),
+            ),
+        )
+
+    def test_installer_pin_drift_is_detected(self) -> None:
+        contract = load_contract()
+        installer = INSTALLER_PATH.read_text(encoding="utf-8-sig")
+        pinned = contract["haniel_contracts"]["pinned"]
+        mutated_installer = installer.replace(pinned, "f" * 40)
+        self.assert_named_violation(
+            HANIEL_PIN,
+            lambda: assert_haniel_contract_matrix(
+                contract,
+                load_json(WRITER_SOURCES_PATH),
+                INSTALL_WORKFLOW_PATH.read_text(encoding="utf8"),
+                mutated_installer,
             ),
         )
 
@@ -83,6 +100,7 @@ class CiPrerequisiteMutationTest(unittest.TestCase):
                 mutated,
                 load_json(WRITER_SOURCES_PATH),
                 INSTALL_WORKFLOW_PATH.read_text(encoding="utf8"),
+                INSTALLER_PATH.read_text(encoding="utf-8-sig"),
             ),
         )
 

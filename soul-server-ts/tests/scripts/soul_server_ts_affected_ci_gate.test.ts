@@ -154,4 +154,13 @@ describe("soul-server-ts affected CI gate", () => {
       expect(matchesGlob(causalTest, broadTestInclude)).toBe(true);
     }
   });
+
+  it("selects each install workflow when the workspace build policy changes", () => {
+    expect(selectedPullRequestWorkflows(["pnpm-workspace.yaml"]).map(({ name }) => name))
+      .toEqual([
+        "soul-server-ts.yml",
+        "test-install.yml",
+        "workspace-validation.yml",
+      ]);
+  });
 });

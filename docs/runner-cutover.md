@@ -8,15 +8,15 @@
 
 | 프로세스 | 환경 변수 | 기본값 | 역할 | 의존·제약 |
 |---|---|---:|---|---|
-| soul-server | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | 새 세션을 session-per-process 러너에서 실행 | ON이면 state/artifact/releases 세 경로 필수. MCP가 켜져 있으면 stateless도 ON이어야 함 |
-| soul-server | `MCP_ENABLED` | `false` | Streamable HTTP MCP route 활성화 | stateless를 켜려면 먼저 ON. production에서는 `MCP_REQUIRE_AUTH=true`와 bearer token 필수 |
-| soul-server | `MCP_INTERNAL_PORT` | `PORT+1` | 내부 Claude SDK 전용 loopback 리스너 | 배포 전 노드별 포트 점유를 실측하고 충돌 시 free 포트를 env에 선반영. `127.0.0.1`에만 bind하며 nginx·외부 프록시에 절대 노출하지 않음 |
-| soul-server | `MCP_STATELESS_TRANSPORT_ENABLED` | `false` | LLM 전용 `/mcp`에서 process-local session map 제거 | `MCP_ENABLED=true` 필수. runner+MCP 컷오버에서는 ON 필수. 내부 Claude SDK의 별도 `/mcp/internal`은 이 값과 무관하게 항상 stateless |
-| orch-server | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | runner node disconnect 시 inventory 재접속 유예 사용 | soul-server와 독립적으로 설정 가능 |
-| soul-server | `SOUL_RUNNER_LEASE_TIMEOUT_MS` | `1800000` | bootstrap registration grace period | reaper interval보다 길게 유지 |
-| orch-server | `SOUL_RUNNER_LEASE_TIMEOUT_MS` | `1800000` | runner node disconnect 뒤 inventory 재접속 유예 창 | 노드 운영 조건에 맞게 설정 |
-| soul-server | `SOUL_RUNNER_REAPER_INTERVAL_MS` | `15000` | node-local runner scan/reap 주기 | lease timeout보다 짧게 유지 |
-| soul-server | `SOUL_RUNNER_TERMINAL_RETENTION_MS` | `86400000` | 최종 ACK가 끝난 terminal 세션 상태 보존기한 | 경과 뒤에만 세션 디렉토리 GC. 삭제 직전 registration과 PID 시작 identity를 다시 증명하지 못하면 보존 |
+| soul-server (= soul-server-ts) | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | 새 세션을 session-per-process 러너에서 실행 | ON이면 state/artifact/releases 세 경로 필수. MCP가 켜져 있으면 stateless도 ON이어야 함 |
+| soul-server (= soul-server-ts) | `MCP_ENABLED` | `false` | Streamable HTTP MCP route 활성화 | stateless를 켜려면 먼저 ON. production에서는 `MCP_REQUIRE_AUTH=true`와 bearer token 필수 |
+| soul-server (= soul-server-ts) | `MCP_INTERNAL_PORT` | `PORT+1` | 내부 Claude SDK 전용 loopback 리스너 | 배포 전 노드별 포트 점유를 실측하고 충돌 시 free 포트를 env에 선반영. `127.0.0.1`에만 bind하며 nginx·외부 프록시에 절대 노출하지 않음 |
+| soul-server (= soul-server-ts) | `MCP_STATELESS_TRANSPORT_ENABLED` | `false` | LLM 전용 `/mcp`에서 process-local session map 제거 | `MCP_ENABLED=true` 필수. runner+MCP 컷오버에서는 ON 필수. 내부 Claude SDK의 별도 `/mcp/internal`은 이 값과 무관하게 항상 stateless |
+| orch-server (= orch-server-ts) | `SOUL_RUNNER_PROCESS_ENABLED` | `false` | runner node disconnect 시 inventory 재접속 유예 사용 | soul-server와 독립적으로 설정 가능 |
+| soul-server (= soul-server-ts) | `SOUL_RUNNER_LEASE_TIMEOUT_MS` | `1800000` | bootstrap registration grace period | reaper interval보다 길게 유지 |
+| orch-server (= orch-server-ts) | `SOUL_RUNNER_LEASE_TIMEOUT_MS` | `1800000` | runner node disconnect 뒤 inventory 재접속 유예 창 | 노드 운영 조건에 맞게 설정 |
+| soul-server (= soul-server-ts) | `SOUL_RUNNER_REAPER_INTERVAL_MS` | `15000` | node-local runner scan/reap 주기 | lease timeout보다 짧게 유지 |
+| soul-server (= soul-server-ts) | `SOUL_RUNNER_TERMINAL_RETENTION_MS` | `86400000` | 최종 ACK가 끝난 terminal 세션 상태 보존기한 | 경과 뒤에만 세션 디렉토리 GC. 삭제 직전 registration과 PID 시작 identity를 다시 증명하지 못하면 보존 |
 
 스냅샷 풀에는 별도 flag가 없다. `SOUL_RUNNER_PROCESS_ENABLED=true`가 release materialization·GC·spawn을 함께 여는 단일 게이트다.
 

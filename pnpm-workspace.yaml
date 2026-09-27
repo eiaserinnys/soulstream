@@ -5,8 +5,6 @@ packages:
   - 'soul-server-ts'
   - 'orch-server-ts'
   - 'chrome-extension'
-onlyBuiltDependencies:
-  - esbuild
 minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk@0.3.218'
   - '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.218'
@@ -19,4 +17,4 @@ minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.218'
   - 'thinking-orbs@0.2.0'
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true

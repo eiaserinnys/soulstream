@@ -16,6 +16,7 @@ STANDALONE_MANIFEST_PATH = (
 )
 WRITER_SOURCES_PATH = REPOSITORY_ROOT / "deploy" / "database-release-writer-sources.json"
 INSTALL_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "test-install.yml"
+INSTALLER_PATH = REPOSITORY_ROOT / "install" / "install.ps1"
 
 MIGRATION_POLICY_FIELDS_ABSENT = "MIGRATION_POLICY_FIELDS_MUST_STAY_ABSENT"
 HANIEL_PIN = "HANIEL_PINNED_CONTRACT_SHA_MUST_MATCH_CI"
@@ -65,6 +66,7 @@ def assert_haniel_contract_matrix(
     contract: dict[str, Any],
     writer_sources: dict[str, Any],
     workflow: str,
+    installer: str,
 ) -> None:
     contracts = contract.get("haniel_contracts", {})
     require(
@@ -75,9 +77,11 @@ def assert_haniel_contract_matrix(
     )
     pinned = contracts["pinned"]
     require(
-        writer_sources.get("haniel_contract_sha") == pinned and pinned in workflow,
+        writer_sources.get("haniel_contract_sha") == pinned
+        and pinned in workflow
+        and pinned in installer,
         HANIEL_PIN,
-        "writer source pin and install workflow must use the fixture pinned SHA",
+        "writer source, install workflow, and PowerShell installer must use the fixture pinned SHA",
     )
 
 

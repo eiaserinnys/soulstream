@@ -54,6 +54,7 @@ export type OrchServerEnvironmentConfig = {
   readonly environment: string;
   readonly claude_oauth_client_id: string;
   readonly claude_oauth_callback_url: string;
+  readonly codex_cli_path: string | null;
   readonly model_catalog_path: string | null;
   readonly search_query_expansion_preset_id: string | null;
   readonly search_query_expansion_effort: string | null;
@@ -89,6 +90,7 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "JWT_SECRET",
   "CLAUDE_OAUTH_CLIENT_ID",
   "CLAUDE_OAUTH_CALLBACK_URL",
+  "CODEX_CLI_PATH",
   "MODEL_CATALOG_PATH",
   "SEARCH_QUERY_EXPANSION_PRESET_ID",
   "SEARCH_QUERY_EXPANSION_EFFORT",
@@ -163,6 +165,7 @@ export function loadOrchServerEnvironment(
     environment,
     claude_oauth_client_id: requiredString(env, "CLAUDE_OAUTH_CLIENT_ID"),
     claude_oauth_callback_url: requiredString(env, "CLAUDE_OAUTH_CALLBACK_URL"),
+    codex_cli_path: optionalString(env.CODEX_CLI_PATH),
     model_catalog_path: optionalString(env.MODEL_CATALOG_PATH),
     search_query_expansion_preset_id: optionalString(
       env.SEARCH_QUERY_EXPANSION_PRESET_ID,

@@ -81,6 +81,15 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
         self.assertFalse(
             (REPOSITORY_ROOT / "deploy" / "database-release-worker.json").exists()
         )
+        worker_health = next(
+            command
+            for command in worker.post_start_verify
+            if command.name == "verify-release-health"
+        )
+        self.assertEqual(worker.recovery.strategy, "rollback")
+        self.assertEqual(worker.recovery.command.name, worker_health.name)
+        self.assertEqual(worker.recovery.command.command, worker_health.command)
+        self.assertNotIn("release-executor.mjs", worker.recovery.command.command)
 
     def test_writer_sidecar_drift_is_detected_after_real_config_loading(self) -> None:
         source = _writer_source("central")
@@ -204,6 +213,11 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
         ):
             with self.subTest(manifest=path.name):
                 raw = json.loads(path.read_text(encoding="utf8"))
+                database_contract_path = (
+                    "deploy/database-release-central.json"
+                    if scope == "cluster"
+                    else "deploy/database-release-standalone.json"
+                )
                 for field in ("destructive", "backup", "verify_backup"):
                     self.assertNotIn(field, raw["migration"])
                 manifest = ReleaseManifest.load(path)
@@ -219,10 +233,17 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
                 self.assertIn("release-executor.mjs", migration.preflight.command)
                 self.assertIn("release-executor.mjs", manifest.recovery.command.command)
                 for command in _find_commands(
-                    json.loads(path.read_text(encoding="utf8"))
+                    raw
                 ):
                     if "release-executor.mjs" in command:
-                        self.assertIn("--database-contract", command)
+                        self.assertIn(
+                            f"--manifest {path.relative_to(REPOSITORY_ROOT).as_posix()}",
+                            command,
+                        )
+                        self.assertIn(
+                            f"--database-contract {database_contract_path}",
+                            command,
+                        )
                 health = next(
                     command
                     for command in manifest.post_start_verify

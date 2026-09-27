@@ -13,6 +13,7 @@ on:
       - 'soul-server-ts/tsconfig*.json'
       - 'soul-server-ts/vitest.config.ts'
       - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/soul-server-ts.yml'
   pull_request:
     paths:
@@ -22,6 +23,7 @@ on:
       - 'soul-server-ts/tsconfig*.json'
       - 'soul-server-ts/vitest.config.ts'
       - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/soul-server-ts.yml'
 
 permissions:
@@ -46,7 +48,7 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
-          corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
+          corepack pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck soul-server-ts
         run: corepack pnpm --dir soul-server-ts typecheck
@@ -87,7 +89,7 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
-          corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
+          corepack pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Verify Windows kernel lock contracts
         shell: bash

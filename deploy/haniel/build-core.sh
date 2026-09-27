@@ -2,6 +2,8 @@
 set -euo pipefail
 
 script_dir="$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")"
+# Haniel may call this from a node-specific checkout; the account paths below
+# intentionally match the host that owns this build hook.
 app_dir="$(realpath -- "$script_dir/../..")"
 lock_file=/tmp/soulstream-heavy-verify.lock
 minimum_available_mb=2000
@@ -44,7 +46,7 @@ run_heavy_pnpm() {
   )
 }
 
-run_heavy_pnpm install --frozen-lockfile --prod=false --config.strict-dep-builds=false
+run_heavy_pnpm install --frozen-lockfile --prod=false
 run_heavy_pnpm --filter @soulstream/soul-server-ts exec env SOULSTREAM_RELEASE_ENV_FILE="$app_dir/.env.soul-server-ts" pnpm run build
 run_heavy_pnpm --filter @soulstream/orch-server-ts run build
 run_heavy_pnpm --dir "$app_dir/unified-dashboard" run build

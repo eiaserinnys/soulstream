@@ -1,7 +1,7 @@
 # Haniel 통합 — soul-server-ts live execution worker
 #
-# 이 파일은 *참조용 yaml 조각*이다. 운영자(작가님)의 실제 `haniel.yaml`(예:
-# `/home/eias/haniel-root/haniel.yaml`)에 아래 조각을 복사·붙여넣기하여 적용한다.
+# 이 파일은 *참조용 yaml 조각*이다. 운영자의 실제 `haniel.yaml`(예:
+# `/home/<service-user>/haniel-root/haniel.yaml`)에 아래 조각을 복사·붙여넣기하여 적용한다.
 #
 # - 본 PR 머지 + Haniel pull 후, 본 파일의 services/configs 항목을 운영 `haniel.yaml`에 추가하면
 #   `soulstream-server` 서비스가 자동 시작·재시작된다.
@@ -17,7 +17,7 @@
 # - cwd 경로는 `./services/soulstream`
 # - 모노레포 루트는 `cwd` 기준 `src/soulstream/`
 #
-# 본 노드 ID 패턴: `{기존 노드 ID}-ts` — 예: 노드가 `eias-shopping`이면 `eias-shopping-ts`.
+# 본 노드 ID 패턴: `{기존 노드 ID}-ts` — 예: 노드가 `your-worker-node`이면 `your-worker-node-ts`.
 
 repos:
   soulstream-server-src:
@@ -46,10 +46,10 @@ install:
       keys:
         # 노드 ID — orch에 등록될 고유 노드 이름
         - key: SOULSTREAM_NODE_ID
-          prompt: "TS 노드 ID (예: eias-shopping-ts)"
-          default: eias-shopping-ts
+          prompt: "TS 노드 ID (예: your-worker-node-ts)"
+          default: your-worker-node-ts
         - key: SOULSTREAM_UPSTREAM_URL
-          default: ws://eiaserinnys.me:5200/ws/node
+          default: wss://your-orchestrator.example/ws/node
         - key: AUTH_BEARER_TOKEN
           prompt: "orch API 인증 토큰 (운영 .env에서 확인 — public repo에 default 박지 않음)"
           # default 키 *제거* — Haniel install 시 운영자가 직접 입력
@@ -88,6 +88,6 @@ install:
         - key: LOG_LEVEL
           default: info
         - key: DASH_USER_NAME
-          default: 김주복
+          default: your-dashboard-user
         - key: DASH_USER_PORTRAIT
           prompt: "대시보드 사용자 초상화 이미지 경로 (비우면 portrait 없음)"

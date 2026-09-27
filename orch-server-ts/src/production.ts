@@ -266,7 +266,10 @@ export async function createLiveProductionApplication(
       context.warn(`Search query expansion is in lexical-only mode: ${error.message}`);
     },
   });
-  const searchCodexPath = resolveCodexCliPath(process.env)?.path;
+  const searchCodexPath = resolveCodexCliPath(
+    config.codex_cli_path,
+    process.env,
+  )?.path;
   const searchQueryExpander = createSearchQueryExpander({
     executor: new CodexEphemeralExecutor({
       ...(searchCodexPath === undefined ? {} : { codexPath: searchCodexPath }),
@@ -549,7 +552,7 @@ export async function createLiveProductionApplication(
   });
   const ephemeralProcessEnv = overrides.turnSummaryProcessEnv ?? process.env;
   const ephemeralCodexPath = overrides.turnSummaryCodexPath ??
-    resolveCodexCliPath(ephemeralProcessEnv)?.path;
+    resolveCodexCliPath(config.codex_cli_path, ephemeralProcessEnv)?.path;
   const ephemeralLlmRoutes: EphemeralLlmRouteOptions = {
     authBearerToken: appConfig.authBearerToken,
     generator: new CodexEphemeralExecutor({
