@@ -741,6 +741,31 @@ describe("CodexEngineAdapter.execute — 세션 resume", () => {
     expect(mockStartThread).not.toHaveBeenCalled();
   });
 
+  it("resumeThread 실패 뒤 turn 실행 가드를 해제한다", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockResumeThread.mockImplementationOnce(() => {
+      throw new Error("resume temporarily unavailable");
+    });
+    mockResumeThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const execute = async (): Promise<void> => {
+      for await (const _event of engine.execute({
+        prompt: "retry",
+        resumeSessionId: "thr-prior",
+      })) {
+        // drain
+      }
+    };
+
+    await expect(execute()).rejects.toThrow("resume temporarily unavailable");
+    await expect(execute()).resolves.toBeUndefined();
+  });
+
   it("resume no-rollout 실행 오류는 fatal SSE 없이 graceful 종료", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockResumeThread.mockReturnValue({ runStreamed: mockRunStreamed });

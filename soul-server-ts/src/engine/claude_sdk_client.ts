@@ -214,11 +214,17 @@ export class ClaudeSdkClient implements ClaudeClient {
       }
       persistentSession = null;
     }
+    const { maxTurns, ...persistentOptions } = options;
+    if (maxTurns !== undefined) {
+      this.logger.warn(
+        { maxTurns },
+        "Claude SDK persistent runtime ignores maxTurns; the limit only applies to one-shot queries",
+      );
+    }
     if (!persistentSession) {
       this.clearPerRunState();
       const hookOutput = createEventQueue<ClaudeClientEvent>();
       const abortController = new AbortController();
-      const { maxTurns: _queryGlobalMaxTurns, ...persistentOptions } = options;
       const queryOptions = buildClaudeSdkOptions({
         options: persistentOptions,
         abortController,
@@ -459,12 +465,12 @@ export class ClaudeSdkClient implements ClaudeClient {
 
   private normalizeExecutionError(err: unknown, executablePath?: string): Error {
     const rawMessage = err instanceof Error ? err.message : String(err);
-    if (executablePath && /ENOENT|not found|no such file/i.test(rawMessage)) {
+    if (isMissingSpawnExecutableError(err) && executablePath) {
       return new Error(
         `Claude Code executable failed to start at CLAUDE_CODE_EXECPATH: ${rawMessage}`,
       );
     }
-    if (/ENOENT|not found|no such file/i.test(rawMessage)) {
+    if (isMissingSpawnExecutableError(err)) {
       return new Error(`Claude Code executable failed to start: ${rawMessage}`);
     }
     return err instanceof Error ? err : new Error(rawMessage);
@@ -481,4 +487,14 @@ export class ClaudeSdkClient implements ClaudeClient {
     input.close();
     if (this.activeInput === input) this.activeInput = null;
   }
+}
+
+function isMissingSpawnExecutableError(
+  err: unknown,
+): err is NodeJS.ErrnoException & { syscall: string } {
+  if (!err || typeof err !== "object") return false;
+  const candidate = err as NodeJS.ErrnoException;
+  return candidate.code === "ENOENT"
+    && typeof candidate.syscall === "string"
+    && candidate.syscall.startsWith("spawn ");
 }

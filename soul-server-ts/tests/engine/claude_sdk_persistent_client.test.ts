@@ -33,6 +33,50 @@ import {
 const silentLogger = pino({ level: "silent" });
 
 describe("ClaudeSdkClient persistent runtime", () => {
+  it("warns when maxTurns is ignored by the persistent runtime", async () => {
+    const harness = makeHarness();
+    const logger = pino({ level: "silent" });
+    const warn = vi.spyOn(logger, "warn");
+    const client = new ClaudeSdkClient({ query: harness.queryFn }, logger);
+    const turn = collect(client.runPersistent(
+      { ...runOptions("foreground"), maxTurns: 3 },
+      abortSignal(),
+    ));
+    await harness.nextInput();
+
+    harness.end();
+    await turn;
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ maxTurns: 3 }),
+      expect.stringContaining("maxTurns"),
+    );
+    await client.close();
+  });
+
+  it("emits a fatal terminal event to the foreground when the Query ends normally", async () => {
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient(
+      { query: harness.queryFn, detachedEventSink: harness.detached },
+      silentLogger,
+    );
+    const turn = collect(client.runPersistent(runOptions("foreground"), abortSignal()));
+    await harness.nextInput();
+
+    harness.end();
+    const events = await turn;
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "error",
+      fatal: true,
+      errorCode: "claude_persistent_query_ended",
+    }));
+    expect(harness.detached).not.toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: "claude_persistent_query_ended" }),
+    );
+    await client.close();
+  });
+
   it("sends preemptive compact through the persistent query without replacing its control query", async () => {
     const harness = makeHarness();
     let queryCalls = 0;
