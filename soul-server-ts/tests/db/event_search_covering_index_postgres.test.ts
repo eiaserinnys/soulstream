@@ -59,10 +59,11 @@ afterEach(async () => {
 describe.sequential("event search covering index migrations", () => {
   it("keeps the fresh schema and ordered migration manifest on the same definition", () => {
     const entries = MANIFEST.migrations;
-    const covering = entries.at(-4);
-    const vacuum = entries.at(-3);
-    const postingAggregation = entries.at(-2);
-    const eventTypeIndex = entries.at(-1);
+    const findMigration = (id: string) => entries.find((entry) => entry.id === id);
+    const covering = findMigration("101_event_search_terms_covering_index.sql");
+    const vacuum = findMigration("102_event_search_terms_insert_vacuum_scale.sql");
+    const postingAggregation = findMigration("103_event_search_aggregate_postings.sql");
+    const eventTypeIndex = findMigration("104_events_event_type_covering_index.sql");
     expect(covering?.id).toBe("101_event_search_terms_covering_index.sql");
     expect(vacuum?.id).toBe("102_event_search_terms_insert_vacuum_scale.sql");
     expect(postingAggregation?.id).toBe("103_event_search_aggregate_postings.sql");

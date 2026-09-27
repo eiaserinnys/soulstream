@@ -28,7 +28,7 @@ Runbook에서 Task로 전환하는 동안 구 이름은 읽기 경계에서만 �
 
 운영 PostgreSQL에는 현재 `pg_stat_statements`가 없다. 이번 변경은 운영 설정을 바꾸지 않는다. DB view 네 개의 대체 증거는 다음 소비자 inventory로 남긴다.
 
-- 제품 SQL: `orch-server-ts`, `soul-server-ts`, `packages/soul-common`의 실행 쿼리
+- 제품 SQL: `orch-server-ts`, `soul-server-ts`의 실행 쿼리
 - 배치·마이그레이션: `packages/db-schema/scripts`, Haniel soulstream hook
 - 외부 SQL: 운영에 등록된 서비스와 수동 운영 런북
 
@@ -58,14 +58,14 @@ Y.Doc apply 실패는 Haniel 배포 실패로 전파된다. 트랜잭션이 원�
 - SQL 투영의 runbook item·source key와 `runbook_ref`
 - 각 Y.Doc board item과 `board_yjs_catalog_cache`·`board_items`의 ID·container·type·source·좌표·metadata
 
-Phase 번호만을 근거로 이 파일이나 호환 구현을 삭제하는 변경은 계약 위반이다. 잔존 감사와 계약 테스트는 이 문서 및 모든 호환 경계 파일의 존재를 강제한다.
+Phase 번호만을 근거로 이 파일이나 호환 구현을 삭제하는 변경은 계약 위반이다. Task 계약 테스트는 이 문서 및 각 호환 경계 파일의 존재를 확인한다.
 
 ## 배포 순서
 
 1. 사용자에게 배포·migration 전환 창을 승인받고 mutation을 동결한다.
-2. 프로덕션 DB snapshot과 v1 Task Tree 외부 백업 검증 결과를 확보한다.
+2. 프로덕션 DB snapshot과 v1 Task Tree 외부 백업 검증 결과가 이미 확보됐는지 확인한다.
 3. `041_retire_task_tree.sql`을 적용하고 백업 정합을 확인한다.
-4. `042_runbook_to_task.sql`을 적용하고 migration verifier로 식별자·상태·연결·집계 보존을 확인한다.
+4. `042_runbook_to_task.sql`을 적용하고 이전 snapshot과 대조해 식별자·상태·연결·집계가 보존됐는지 확인한다.
 5. Task 계약 코드를 배포한 뒤 canonical Task read와 호환 read를 smoke test한다. 이 시점까지 에이전트 지침은 구 쓰기를 시도하지 않도록 mutation 동결 상태를 유지한다.
 6. atom과 디스크의 work-plan 계열 정본을 Task MCP와 `container.kind=task`로 일괄 전환한다.
 7. 통제된 Task mutation 한 건을 검증한 뒤 mutation 동결을 해제하고 전환 release와 시각을 기록한다.

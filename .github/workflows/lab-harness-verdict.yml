@@ -103,9 +103,16 @@ jobs:
         working-directory: scripts/lab-node
         run: |
           node --test --test-concurrency=1 \
+            fault-acquire-application-evidence.test.mjs \
+            fault-activate-rollback-lifecycle-red.test.mjs \
+            fault-activate-rollback.test.mjs \
+            fault-h2-product-mutation.test.mjs \
             fault-harness.test.mjs \
+            fault-harness-registration.test.mjs \
+            fault-harness-suite.test.mjs \
             fault-harness-verdict.test.mjs \
             fault-harness-contracts.test.mjs \
+            fault-transparency-oracle.test.mjs \
             lab-node.test.mjs
 
       # 진짜 위반 행을 심고, 진짜 샘플러를 돌리고, 판정기가 그것을 지목하기를

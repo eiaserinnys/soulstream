@@ -2,7 +2,7 @@
   "name": "@soulstream/orch-server-ts",
   "version": "0.0.1",
   "private": true,
-  "description": "Soulstream TypeScript orchestrator scaffold and contract parity harness.",
+  "description": "Production TypeScript orchestrator and API.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

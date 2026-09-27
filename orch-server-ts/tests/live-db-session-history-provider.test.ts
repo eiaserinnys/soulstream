@@ -13,7 +13,7 @@ type SqlCall = {
 };
 
 describe("live DB session history provider", () => {
-  it("reads viewport, last id, and raw events using the Python DB queries", async () => {
+  it("reads viewport, last id, and raw events using the canonical DB queries", async () => {
     const harness = createSqlHarness((text) => {
       if (text.includes("COUNT(*)::int")) return [{ count: 1 }];
       if (text.includes("events_viewport")) {
@@ -274,7 +274,6 @@ describe("live DB session history provider", () => {
     );
     expect(timelineQuery?.values[1]).toEqual(SESSION_TIMELINE_EVENT_TYPES);
     expect(timelineQuery?.values[1]).not.toContain("system");
-
     await app.close();
   });
 

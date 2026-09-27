@@ -2,8 +2,7 @@ import type { CallerInfo } from "./task_models.js";
 import { CLAUDE_PERMISSION_MODES, type ClaudePermissionMode } from "../engine/protocol.js";
 
 /**
- * Python `IDENTITY_BEARING_SOURCES` 정본(`packages/soul-common/.../auth/caller_info.py`).
- * 정체성 명시 source는 신원 필드가 비어도 *신원 박힘*으로 간주.
+ * 정체성을 명시하는 source는 신원 필드가 비어도 *신원 박힘*으로 간주.
  */
 const IDENTITY_BEARING_SOURCES: ReadonlySet<string> = new Set([
   "agent",

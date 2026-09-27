@@ -3,11 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   CONTRACT_FIXTURE_FILES,
   CONTRACT_FIXTURE_NAMES,
-  contractFixtureSummary,
-  inferFakeNodeReconnectSteps,
   loadContractFixtures,
   routeOwnerManifest,
-  staticBeforeDynamicHazards,
 } from "../src/index.js";
 
 describe("orch-server-ts contract fixture reader", () => {
@@ -27,39 +24,6 @@ describe("orch-server-ts contract fixture reader", () => {
     for (const fixture of Object.values(fixtures)) {
       expect(fixture.version).toBe(1);
     }
-  });
-
-  it("keeps route inventory count, public routes, and static-before-dynamic hazards visible", () => {
-    const summary = contractFixtureSummary(fixtures);
-
-    expect(summary.routeCount).toBe(116);
-    expect(summary.publicRoutes).toEqual([
-      "/api/auth/config",
-      "/api/auth/dev-login",
-      "/api/auth/google",
-      "/api/auth/google/callback",
-      "/api/auth/google/native",
-      "/api/auth/logout",
-      "/api/auth/status",
-      "/api/config",
-      "/api/health",
-      "/ws/node",
-      "/yjs/page/{pageId}",
-    ]);
-    expect(staticBeforeDynamicHazards(fixtures.routeInventory)).toEqual([
-      {
-        staticPath: "/api/sessions/{session_id}/events/viewport",
-        dynamicPath: "/api/sessions/{session_id}/events",
-      },
-      {
-        staticPath: "/api/tasks/my-turn",
-        dynamicPath: "/api/tasks/{task_id}",
-      },
-      {
-        staticPath: "/api/pages/daily",
-        dynamicPath: "/api/pages/{pageId}",
-      },
-    ]);
   });
 
   it("keeps upstream WS respond and subscribe_events semantics explicit", () => {
@@ -95,18 +59,6 @@ describe("orch-server-ts contract fixture reader", () => {
       lastEventIdBeforeOldest: 0,
       expectedLatestId: 3,
     });
-  });
-
-  it("keeps fake node reconnect scenario as register-ack-relay-reconnect-update", () => {
-    expect(inferFakeNodeReconnectSteps(fixtures.fakeNodeReconnect)).toEqual([
-      "register",
-      "ack",
-      "relay",
-      "disconnect",
-      "reconnect",
-      "sessions_update",
-    ]);
-    expect(fixtures.fakeNodeReconnect.sessionsUpdateAfterReconnect.sessions).toHaveLength(1);
   });
 
   it("keeps board Y.Doc host proxy cardinality and no-direct-mutation contract", () => {

@@ -2,8 +2,7 @@
  * Agent caller_info v1 빌더 (atom card `ed3a216d-2811-4792-bfbe-f15043c7faba` 정본).
  *
  * MCP 위임 진입점(create_agent_session, send_message_to_session, create_remote_agent_session)이
- * 공유하는 단일 표면. Python `build_agent_caller_info`
- * (`packages/soul-common/src/soul_common/auth/caller_info.py` L166-209)와 *키 호환*.
+ * 공유하는 단일 표면. 기존 caller_info wire 키와 호환한다.
  *
  * 정본 단일성 (design-principles §3):
  * - `AgentCallerInfo`는 `CallerInfo`의 narrowed sub-type. `TaskManager.createTask`의

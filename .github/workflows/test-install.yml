@@ -104,7 +104,7 @@ jobs:
             --maxWorkers=2 --minWorkers=1
           python -m unittest discover \
             -s deploy/tests \
-            -p "test_haniel_release_contract.py" \
+            -p "test_*.py" \
             -v
 
       - name: Run real Windows file and SQLite contention contracts
@@ -338,7 +338,7 @@ jobs:
 
             python -m unittest discover `
               -s deploy/tests `
-              -p "test_haniel_release_contract.py" `
+              -p "test_*.py" `
               -v
             if ($LASTEXITCODE -ne 0) {
               throw "Release manifest recovery contract failed"

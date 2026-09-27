@@ -1,7 +1,7 @@
 /**
  * CatalogService — 폴더·세션 카탈로그 mutation과 broadcast 정본.
  *
- * Python `packages/soul-common/src/soul_common/catalog/catalog_service.py` 키 호환 포팅.
+ * 기존 catalog wire와 키 호환을 유지한다.
  * MCP cogito 도구(`mcp_catalog.py`)와 dashboard 양쪽이 *같은 service*를 경유하여
  * 정책(broadcast 시점, ID 생성 책임)을 단일 자리에 둔다 (design-principles §3).
  *

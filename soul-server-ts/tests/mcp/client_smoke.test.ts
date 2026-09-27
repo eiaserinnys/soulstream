@@ -137,25 +137,6 @@ function createMockSql() {
         },
       ]);
     }
-    if (text.includes("session_list_summary")) {
-      return Promise.resolve([
-        {
-          session_id: "sess-root",
-          display_name: "Root Session",
-          status: "running",
-          session_type: "claude",
-          created_at: new Date("2026-06-17T00:00:00.000Z"),
-          updated_at: new Date("2026-06-17T01:00:00.000Z"),
-          event_count: "3",
-          away_summary: null,
-          caller_session_id: null,
-          last_event_id: "30",
-          last_read_event_id: "20",
-          node_id: "test-node",
-          total_count: "1",
-        },
-      ]);
-    }
     return Promise.resolve([]);
   }) as unknown as SqlClient & {
     array: (a: unknown[]) => unknown[];

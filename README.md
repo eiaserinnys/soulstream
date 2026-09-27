@@ -38,7 +38,6 @@ soulstream/
 │   ├── search-contract/    Shared search request and result contracts
 │   ├── soul-ui/            Reusable dashboard UI and state modules
 │   ├── wire-schema/        Canonical node ↔ orchestrator protocol
-│   └── soul-common/        Legacy Python compatibility and contract support
 ├── chrome-extension/       Optional page-action client
 ├── soul-desktop/           Tauri desktop client
 ├── deploy/                 Haniel release and database safety manifests
