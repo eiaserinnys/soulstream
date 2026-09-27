@@ -74,6 +74,7 @@ export type LiveNodeHttpRequest = {
   readonly nodeId: string;
   readonly method: string;
   readonly path: string;
+  readonly timeoutMs?: number;
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: unknown;
   readonly responseType?: "arrayBuffer";

@@ -102,9 +102,10 @@ async function resolveTaskMutationNode(
     if (statusCode === 503) {
       return { ok: false, error: routeErrorFromUnknown(error, 503) };
     }
-    if (statusCode !== 404) {
-      return { ok: false, error: routeErrorFromUnknown(error, 500) };
+    if (statusCode === 404) {
+      return { ok: false, error: routeErrorFromUnknown(error, 404) };
     }
+    return { ok: false, error: routeErrorFromUnknown(error, 500) };
   }
 
   const fallback = provider.listConnectedNodes()[0];

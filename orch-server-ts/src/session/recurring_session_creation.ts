@@ -6,6 +6,7 @@ import {
 import type { CreateSessionNodeCommandPayload } from "../node/registry_types.js";
 import type { ModelPresetAvailabilityService } from "../model/model_preset_availability.js";
 import type { RecurringSessionLaunchResult } from "../recurring-jobs/types.js";
+import { DEFAULT_SESSION_CREATE_RECONCILE_TIMEOUT_MS } from "../node/node_timeouts.js";
 import {
   NodeCommandTransportError,
   type SessionCommandTransportBridge,
@@ -134,7 +135,7 @@ async function reconcileTimeout(
 ): Promise<boolean> {
   try {
     return await options.router.waitForCreatedSession(sessionId, nodeId, {
-      timeoutMs: options.reconcileTimeoutMs ?? 5_000,
+      timeoutMs: options.reconcileTimeoutMs ?? DEFAULT_SESSION_CREATE_RECONCILE_TIMEOUT_MS,
     });
   } catch {
     // The durable recurring reconciler owns follow-up lookup. This narrow

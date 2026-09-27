@@ -4,6 +4,7 @@ import type {
   LiveNodeHttpRequest,
   LiveNodeHttpResponse,
 } from "./live_provider_dependencies.js";
+import { DEFAULT_NODE_HTTP_REQUEST_TIMEOUT_MS } from "../node/node_timeouts.js";
 
 export type LiveNodeHttpFetch = (
   input: string,
@@ -49,6 +50,7 @@ type LiveNodeHttpSendRequest = {
   readonly connectionId?: string;
   readonly method: string;
   readonly url: string;
+  readonly timeoutMs: number;
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: unknown;
   readonly responseType?: LiveNodeHttpRequest["responseType"];
@@ -87,6 +89,7 @@ async function requestConnectedNode(
     connectionId: node.connectionId,
     method: request.method,
     url: `http://${node.host}:${node.port}${request.path}`,
+    timeoutMs: normalizeTimeoutMs(request.timeoutMs ?? options.timeoutMs),
     headers: request.headers ?? {},
     body: request.body,
     responseType: request.responseType,
@@ -98,7 +101,7 @@ async function sendRequest(
   request: LiveNodeHttpSendRequest,
 ): Promise<LiveNodeHttpResponse> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+  const timer = setTimeout(() => controller.abort(), request.timeoutMs);
   try {
     const response = await options.fetch(request.url, {
       method: request.method,
@@ -108,7 +111,7 @@ async function sendRequest(
     });
     return readResponse(response, request.responseType);
   } catch (error) {
-    throw mapFetchError(error, request, options.timeoutMs);
+    throw mapFetchError(error, request, request.timeoutMs);
   } finally {
     clearTimeout(timer);
   }
@@ -204,7 +207,7 @@ function parseJsonBody(text: string): unknown {
 }
 
 function normalizeTimeoutMs(timeoutMs: number | undefined): number {
-  const resolved = timeoutMs ?? 10_000;
+  const resolved = timeoutMs ?? DEFAULT_NODE_HTTP_REQUEST_TIMEOUT_MS;
   if (!Number.isInteger(resolved) || resolved <= 0) {
     throw new Error(`node HTTP timeoutMs must be a positive integer: ${resolved}`);
   }

@@ -86,4 +86,45 @@ describe("createSessionCacheSeedSink", () => {
     expect(registry.sessionCache.findSession("stale-session")).toBeUndefined();
     expect(onNodeReady).not.toHaveBeenCalled();
   });
+
+  it("seeds over a disconnected old connection when disconnect and snapshot start share a millisecond", async () => {
+    let nowMs = 100;
+    const registry = new InMemoryNodeRegistry({ nowMs: () => nowMs });
+    const first = registry.registerNode({ type: "node_register", node_id: "node-a" });
+    registry.sessionCache.replaceNodeSessions({
+      nodeId: "node-a",
+      connectionId: first.node.connectionId,
+      sessions: [{ agent_session_id: "session-a", status: "running" }],
+      nowMs,
+    });
+
+    nowMs = 200;
+    const replacement = registry.registerNode({
+      type: "node_register",
+      node_id: "node-a",
+    });
+    const sink = createSessionCacheSeedSink({
+      registry,
+      repository: {
+        listSessionSnapshots: async () => ({
+          sessions: [{ agent_session_id: "session-a", status: "interrupted" }],
+          sessionList: [],
+          total: 1,
+          cursor: null,
+          nextCursor: null,
+          hasMore: false,
+        }),
+      },
+      logError: vi.fn(),
+      nowMs: () => nowMs,
+    });
+
+    sink([replacement.event]);
+    await vi.waitFor(() => expect(registry.sessionCache.findSession("session-a"))
+      .toMatchObject({
+        connectionId: replacement.node.connectionId,
+        fresh: true,
+        status: "interrupted",
+      }));
+  });
 });

@@ -1,4 +1,5 @@
 import type { NodeCommandResponse } from "./pending_commands.js";
+import { isTerminalSessionStatus } from "../session/session_status.js";
 import {
   isRecord,
   lastEventIdFromEventRelay,
@@ -13,7 +14,6 @@ import {
 export const TERMINAL_SESSION_CACHE_TTL_MS = 10 * 60_000;
 export const DISCONNECTED_SESSION_CACHE_TTL_MS = 24 * 60 * 60_000;
 
-const TERMINAL_SESSION_STATUSES = new Set(["completed", "error"]);
 export type CachedNodeSession = {
   nodeId: string;
   connectionId: string;
@@ -21,6 +21,7 @@ export type CachedNodeSession = {
   status: string | undefined;
   lastEventId: number | undefined;
   fresh: boolean;
+  disconnectedAtMs?: number;
   payload: Record<string, unknown>;
   updatedAtMs: number;
 };
@@ -142,6 +143,7 @@ export class PerNodeSessionCache {
       lastEventId:
         lastEventIdFromEventRelay(params.message) ?? previous?.lastEventId,
       fresh: true,
+      disconnectedAtMs: undefined,
       payload: {
         ...projectSessionPayload(previous?.payload),
         last_event_id:
@@ -169,6 +171,7 @@ export class PerNodeSessionCache {
       status,
       lastEventId: lastEventIdFromPayload(params.message),
       fresh: true,
+      disconnectedAtMs: undefined,
       payload: projectSessionPayload({
         ...session,
         ...selectedSessionCreateFields(params.message),
@@ -197,7 +200,24 @@ export class PerNodeSessionCache {
       status: sessionStatusFromPayload(params.message) ?? previous?.status,
       lastEventId: lastEventIdFromPayload(params.message) ?? previous?.lastEventId,
       fresh: true,
+      disconnectedAtMs: undefined,
       payload: projectSessionPayload(previous?.payload, params.message),
+      updatedAtMs: params.nowMs,
+    });
+  }
+
+  patchReconciledSessionStatus(params: {
+    nodeId: string;
+    agentSessionId: string;
+    status: string;
+    nowMs: number;
+  }): CachedNodeSession | undefined {
+    const current = this.sessionsByNode.get(params.nodeId)?.get(params.agentSessionId);
+    if (current === undefined) return undefined;
+    return this.storeSession({
+      ...current,
+      status: params.status,
+      payload: { ...current.payload, status: params.status },
       updatedAtMs: params.nowMs,
     });
   }
@@ -238,6 +258,7 @@ export class PerNodeSessionCache {
           status: sessionStatusFromPayload(rawSession),
           lastEventId: lastEventIdFromPayload(rawSession),
           fresh: true,
+          disconnectedAtMs: undefined,
           payload: projectSessionPayload(rawSession),
           updatedAtMs: params.nowMs,
         }),
@@ -263,7 +284,12 @@ export class PerNodeSessionCache {
       if (agentSessionId === undefined) continue;
       snapshotIds.add(agentSessionId);
       const current = this.sessionsByNode.get(params.nodeId)?.get(agentSessionId);
-      if (current !== undefined && current.updatedAtMs >= params.snapshotStartedAtMs) {
+      if (
+        current !== undefined
+        && current.connectionId === params.connectionId
+        && current.fresh
+        && current.updatedAtMs >= params.snapshotStartedAtMs
+      ) {
         stored.push(copySession(current));
         continue;
       }
@@ -274,6 +300,7 @@ export class PerNodeSessionCache {
         status: sessionStatusFromPayload(rawSession),
         lastEventId: lastEventIdFromPayload(rawSession),
         fresh: true,
+        disconnectedAtMs: undefined,
         payload: projectSessionPayload(rawSession),
         updatedAtMs: params.nowMs,
       }));
@@ -302,7 +329,7 @@ export class PerNodeSessionCache {
       sessions.set(session.agentSessionId, {
         ...session,
         fresh: false,
-        updatedAtMs: nowMs,
+        disconnectedAtMs: nowMs,
       });
     }
   }
@@ -317,7 +344,7 @@ export class PerNodeSessionCache {
     for (const session of this.listSessions()) {
       const ageMs = nowMs - session.updatedAtMs;
       if (
-        TERMINAL_SESSION_STATUSES.has(session.status ?? "") &&
+        isTerminalSessionStatus(session.status) &&
         ageMs >= TERMINAL_SESSION_CACHE_TTL_MS
       ) {
         if (this.deleteSession(session.agentSessionId) !== undefined) {
@@ -325,7 +352,11 @@ export class PerNodeSessionCache {
         }
         continue;
       }
-      if (!session.fresh && ageMs >= DISCONNECTED_SESSION_CACHE_TTL_MS) {
+      if (
+        !session.fresh
+        && session.disconnectedAtMs !== undefined
+        && nowMs - session.disconnectedAtMs >= DISCONNECTED_SESSION_CACHE_TTL_MS
+      ) {
         if (this.deleteSession(session.agentSessionId) !== undefined) {
           disconnectedSessions += 1;
         }
