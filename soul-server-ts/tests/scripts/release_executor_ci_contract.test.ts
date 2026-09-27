@@ -110,7 +110,7 @@ describe("database release CI contract", () => {
     ]) {
       expect(commands).toContain(test);
     }
-    expect(commands).toContain("test_haniel_release_contract.py");
+    expect(commands).toContain('-p "test_*.py"');
     expect(commands).toContain("--maxWorkers=2 --minWorkers=1");
   });
 
@@ -122,6 +122,9 @@ describe("database release CI contract", () => {
     expect(job.env.TEST_DATABASE_URL).toContain("release_executor_test_db");
     const commands = job.steps.map((step: { run?: string }) => step.run ?? "").join("\n");
     expect(commands).toContain("release_executor_postgres_review.test.ts");
+    expect(commands).toContain("python -m pytest packages/db-schema/tests --timeout=60 -q");
+    expect(job.steps.some((step: { name?: string }) => step.name === "Setup Python 3.11"))
+      .toBe(true);
     for (const test of databaseTestFiles) expect(commands).toContain(test);
     expect(commands).toContain("verify-vitest-contract-result.mjs");
     expect(commands).toContain(

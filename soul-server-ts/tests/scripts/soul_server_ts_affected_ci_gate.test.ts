@@ -52,6 +52,44 @@ function selectedPullRequestWorkflows(changedPaths: string[]) {
 }
 
 describe("soul-server-ts affected CI gate", () => {
+  it("routes the reconnected database and lab test assets through pull-request CI", () => {
+    const databaseWorkflows = selectedPullRequestWorkflows([
+      "packages/db-schema/sql/migrations/105_retire_legacy_procedures.sql",
+    ]);
+    const databaseWorkflow = databaseWorkflows.find(
+      ({ name }) => name === "test-install.yml",
+    );
+    expect(databaseWorkflow?.workflow.jobs).toHaveProperty("database-release-postgres");
+    const databaseCommands = databaseWorkflow?.workflow.jobs["database-release-postgres"].steps
+      .map((step: { run?: string }) => step.run ?? "")
+      .join("\n");
+    expect(databaseCommands).toContain("python -m pytest packages/db-schema/tests --timeout=60 -q");
+
+    const labWorkflows = selectedPullRequestWorkflows([
+      "scripts/lab-node/fault-acquire-application-evidence.test.mjs",
+    ]);
+    const labWorkflow = labWorkflows.find(({ name }) => name === "lab-harness-verdict.yml");
+    expect(labWorkflow?.workflow.jobs).toHaveProperty("verdict-self-proof");
+    const labCommands = labWorkflow?.workflow.jobs["verdict-self-proof"].steps
+      .map((step: { run?: string }) => step.run ?? "")
+      .join("\n");
+    for (const test of [
+      "fault-acquire-application-evidence.test.mjs",
+      "fault-activate-rollback-lifecycle-red.test.mjs",
+      "fault-activate-rollback.test.mjs",
+      "fault-h2-product-mutation.test.mjs",
+      "fault-harness.test.mjs",
+      "fault-harness-registration.test.mjs",
+      "fault-harness-suite.test.mjs",
+      "fault-harness-verdict.test.mjs",
+      "fault-harness-contracts.test.mjs",
+      "fault-transparency-oracle.test.mjs",
+      "lab-node.test.mjs",
+    ]) {
+      expect(labCommands).toContain(test);
+    }
+  });
+
   it("selects the affected job and runs typecheck plus the broad causal test slice", () => {
     const selected = selectedPullRequestWorkflows(laneQChangedPaths);
     expect(selected.map(({ name, workflow }) => ({

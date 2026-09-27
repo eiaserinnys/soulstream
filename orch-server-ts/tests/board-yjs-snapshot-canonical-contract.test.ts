@@ -37,7 +37,6 @@ describe("board Y.Doc snapshot canonical contract", () => {
       "orch-server-ts/src/runtime/live_board_asset_route_provider.ts",
       "orch-server-ts/src/runtime/live_folder_route_provider.ts",
       "packages/db-schema/sql/schema.sql",
-      "packages/soul-common/src/soul_common/db/postgres/folders.py",
     ]);
   });
 

@@ -55,14 +55,56 @@ async def _create_folder(db, folder_id="test-folder", name="Test Folder", sort_o
 
 async def _create_session(db, session_id="test-session", **overrides):
     now = _utc_now()
-    columns = ["status", "node_id"]
-    values = ["idle", "test-node"]
-    for k, v in overrides.items():
-        columns.append(k)
-        values.append(str(v) if not isinstance(v, str) else v)
+    values = {"status": "idle", "node_id": "test-node", **overrides}
+    columns = list(values)
+    await _seed_session(
+        db,
+        session_id,
+        columns,
+        [values[column] for column in columns],
+        now,
+        now,
+    )
+
+
+async def _seed_session(db, session_id, columns, values, created_at, updated_at):
+    jsonb_columns = {"last_message", "metadata"}
+    bool_columns = {"was_running_at_shutdown", "notify_completion", "review_required"}
+    integer_columns = {"last_event_id", "last_read_event_id", "termination_event_id"}
+    typed_values = []
+    for column, value in zip(columns, values, strict=True):
+        if value is None:
+            typed_values.append(None)
+        elif column in jsonb_columns:
+            typed_values.append(json.loads(value) if isinstance(value, str) else value)
+        elif column in bool_columns:
+            typed_values.append(value if isinstance(value, bool) else value.lower() == "true")
+        elif column in integer_columns:
+            typed_values.append(int(value))
+        else:
+            typed_values.append(value)
+
+    insert_columns = ["session_id", "created_at", "updated_at", *columns]
+    placeholders = [f"${index}" for index in range(1, len(insert_columns) + 1)]
+    updates = ["updated_at = EXCLUDED.updated_at"]
+    for column in columns:
+        if column == "created_at":
+            continue
+        if column in {"node_id", "agent_id", "claude_session_id"}:
+            updates.append(
+                f"{column} = COALESCE(sessions.{column}, EXCLUDED.{column})"
+            )
+        else:
+            updates.append(f"{column} = EXCLUDED.{column}")
+
     await db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        session_id, columns, values, now, now,
+        f"INSERT INTO sessions ({', '.join(insert_columns)}) "
+        f"VALUES ({', '.join(placeholders)}) "
+        f"ON CONFLICT (session_id) DO UPDATE SET {', '.join(updates)}",
+        session_id,
+        created_at,
+        updated_at,
+        *typed_values,
     )
 
 
@@ -182,7 +224,6 @@ async def test_session_review_migration_contract_is_mirrored_in_schema_sql():
     for required in [
         "review_required BOOLEAN NOT NULL DEFAULT FALSE",
         "review_state TEXT NOT NULL DEFAULT 'not_required'",
-        "CREATE OR REPLACE FUNCTION session_register_with_review(",
         "CREATE OR REPLACE FUNCTION session_acknowledge_review(",
         "'termination_reason', 'termination_detail', 'review_state'",
     ]:
@@ -334,8 +375,6 @@ async def test_session_predecessor_migration_contract_is_mirrored_in_schema_sql(
     for required in [
         "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS predecessor_session_id TEXT",
         "FOREIGN KEY (predecessor_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL",
-        "CREATE OR REPLACE FUNCTION session_register_with_predecessor(",
-        "p_predecessor_session_id TEXT",
     ]:
         assert required in migration_sql
         assert required in schema_sql
@@ -395,19 +434,6 @@ async def test_session_model_preset_registration_and_summary_round_trip(test_db)
         "model": "gpt-5.6-sol",
     }
 
-    summary = await test_db.fetchrow(
-        """
-        SELECT model_preset, model
-        FROM session_list_summary(NULL, NULL, 20, 0, NULL, NULL)
-        WHERE session_id = 'sess-model-preset'
-        """
-    )
-    assert dict(summary) == {
-        "model_preset": "codex-5.6-sol",
-        "model": "gpt-5.6-sol",
-    }
-
-
 async def test_session_predecessor_schema_reapply_is_idempotent(test_db):
     schema_sql = _schema_sql()
     await test_db.execute(schema_sql)
@@ -429,27 +455,15 @@ async def test_session_predecessor_registration_and_delete_semantics(test_db):
         ("sess-parent", None),
         ("sess-child", "sess-parent"),
     ]:
-        await test_db.execute(
-            """
-            SELECT session_register_with_predecessor(
-              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
-            )
-            """,
+        await _create_session(
+            test_db,
             session_id,
-            "node-1",
-            "codex-default",
-            None,
-            "claude",
-            "prompt",
-            None,
-            "running",
-            now,
-            now,
-            None,
-            True,
-            False,
-            "not_required",
-            predecessor_id,
+            node_id="node-1",
+            agent_id="codex-default",
+            session_type="claude",
+            prompt="prompt",
+            status="running",
+            predecessor_session_id=predecessor_id,
         )
 
     assert await test_db.fetchval(
@@ -599,26 +613,16 @@ async def test_session_review_schema_and_atomic_transitions(test_db):
     assert columns["review_state"]["column_default"] == "'not_required'::text"
 
     now = _utc_now()
-    await test_db.execute(
-        """
-        SELECT session_register_with_review(
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
-        )
-        """,
+    await _create_session(
+        test_db,
         "sess-review",
-        "node-1",
-        "codex-default",
-        None,
-        "claude",
-        "review",
-        None,
-        "running",
-        now,
-        now,
-        None,
-        True,
-        True,
-        "not_required",
+        node_id="node-1",
+        agent_id="codex-default",
+        session_type="claude",
+        prompt="review",
+        status="running",
+        review_required=True,
+        review_state="not_required",
     )
     await test_db.execute(
         "SELECT session_update($1, $2, $3, $4)",
@@ -1447,68 +1451,10 @@ async def test_schema_reapply_upgrades_task_item_review_status_check(test_db):
 
 # === 세션 CRUD ===
 
-async def test_session_upsert_and_get(test_db):
-    now = _utc_now()
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "s1", ["status", "node_id", "session_type"], ["running", "node-a", "claude"], now, now,
-    )
-
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s1")
-    assert row is not None
-    assert row["session_id"] == "s1"
-    assert row["status"] == "running"
-    assert row["node_id"] == "node-a"
-    assert row["session_type"] == "claude"
-
-
-async def test_session_upsert_updates_existing(test_db):
-    now = _utc_now()
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "s-up", ["status"], ["idle"], now, now,
-    )
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "s-up", ["status"], ["running"], now, now,
-    )
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s-up")
-    assert row["status"] == "running"
-
-
-async def test_session_upsert_invalid_column(test_db):
-    now = _utc_now()
-    with pytest.raises(Exception, match="Invalid session column"):
-        await test_db.execute(
-            "SELECT session_upsert($1, $2, $3, $4, $5)",
-            "s-bad", ["bogus_col"], ["val"], now, now,
-        )
-
-
-async def test_session_upsert_jsonb_columns(test_db):
-    now = _utc_now()
-    meta = json.dumps([{"type": "test", "value": "hello"}])
-    msg = json.dumps({"text": "hi"})
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "s-json", ["metadata", "last_message", "status"], [meta, msg, "idle"], now, now,
-    )
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s-json")
-    assert _decode_jsonb(row["metadata"]) == [{"type": "test", "value": "hello"}]
-    assert _decode_jsonb(row["last_message"]) == {"text": "hi"}
-
-
 async def test_session_get_all_and_count(test_db):
-    now = _utc_now()
     for i in range(3):
-        await test_db.execute(
-            "SELECT session_upsert($1, $2, $3, $4, $5)",
-            f"sa-{i}", ["session_type", "status"], ["claude", "idle"], now, now,
-        )
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "sa-other", ["session_type", "status"], ["llm", "idle"], now, now,
-    )
+        await _create_session(test_db, f"sa-{i}", session_type="claude")
+    await _create_session(test_db, "sa-other", session_type="llm")
 
     # 전체 조회
     rows = await test_db.fetch("SELECT * FROM session_get_all(NULL)")
@@ -1908,70 +1854,6 @@ async def test_session_assign_folder(test_db):
     await test_db.execute("SELECT session_assign_folder($1, $2)", "s-assign", "f-assign")
     row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s-assign")
     assert row["folder_id"] == "f-assign"
-
-
-# === Graceful Shutdown ===
-
-async def test_shutdown_mark_running_all(test_db):
-    now = _utc_now()
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "sh-1", ["status"], ["running"], now, now,
-    )
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "sh-2", ["status"], ["idle"], now, now,
-    )
-
-    await test_db.execute("SELECT shutdown_mark_running(NULL)")
-
-    rows = await test_db.fetch("SELECT * FROM shutdown_get_sessions()")
-    session_ids = [r["session_id"] for r in rows]
-    assert "sh-1" in session_ids
-    assert "sh-2" not in session_ids
-
-
-async def test_shutdown_mark_running_by_ids(test_db):
-    now = _utc_now()
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "sh-3", ["status"], ["idle"], now, now,
-    )
-    await test_db.execute("SELECT shutdown_mark_running($1)", ["sh-3"])
-    rows = await test_db.fetch("SELECT * FROM shutdown_get_sessions()")
-    assert any(r["session_id"] == "sh-3" for r in rows)
-
-
-async def test_shutdown_mark_running_empty_array(test_db):
-    # 빈 배열은 no-op
-    await test_db.execute("SELECT shutdown_mark_running($1::text[])", [])
-
-
-async def test_shutdown_clear_flags(test_db):
-    now = _utc_now()
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "sh-clear", ["status", "was_running_at_shutdown"], ["running", "true"], now, now,
-    )
-    await test_db.execute("SELECT shutdown_clear_flags()")
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "sh-clear")
-    assert row["was_running_at_shutdown"] is False
-
-
-async def test_shutdown_repair_read_positions(test_db):
-    now = _utc_now()
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "sh-repair",
-        ["status", "last_event_id", "last_read_event_id"],
-        ["idle", "10", "5"],
-        now, now,
-    )
-    count = await test_db.fetchval("SELECT shutdown_repair_read_positions()")
-    assert count >= 1
-
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "sh-repair")
-    assert row["last_read_event_id"] == row["last_event_id"]
 
 
 # === 이벤트 CRUD ===
@@ -2501,7 +2383,7 @@ async def test_event_search_handles_short_and_symbol_queries(test_db):
 
 async def test_folder_create_and_get(test_db):
     await test_db.execute("SELECT folder_create($1, $2, $3)", "f1", "Folder 1", 10)
-    row = await test_db.fetchrow("SELECT * FROM folder_get($1)", "f1")
+    row = await test_db.fetchrow("SELECT * FROM folders WHERE id = $1", "f1")
     assert row is not None
     assert row["name"] == "Folder 1"
     assert row["sort_order"] == 10
@@ -2513,7 +2395,7 @@ async def test_folder_update(test_db):
         "SELECT folder_update($1, $2, $3)",
         "f-upd", ["name", "sort_order"], ["After", "5"],
     )
-    row = await test_db.fetchrow("SELECT * FROM folder_get($1)", "f-upd")
+    row = await test_db.fetchrow("SELECT * FROM folders WHERE id = $1", "f-upd")
     assert row["name"] == "After"
     assert row["sort_order"] == 5
 
@@ -2525,13 +2407,6 @@ async def test_folder_update_invalid_column(test_db):
             "SELECT folder_update($1, $2, $3)",
             "f-bad", ["hacked"], ["value"],
         )
-
-
-async def test_folder_delete(test_db):
-    await _create_folder(test_db, "f-del", "Delete Me")
-    await test_db.execute("SELECT folder_delete($1)", "f-del")
-    row = await test_db.fetchrow("SELECT * FROM folder_get($1)", "f-del")
-    assert row is None
 
 
 async def test_folder_get_all(test_db):
@@ -2552,31 +2427,12 @@ async def test_folder_get_default(test_db):
     assert row["id"] == "f-def"
 
 
-async def test_folder_ensure_defaults(test_db):
-    folders_json = json.dumps([
-        {"id": "fe-1", "name": "Default 1", "sort_order": 0},
-        {"id": "fe-2", "name": "Default 2", "sort_order": 1},
-    ])
-    await test_db.execute("SELECT folder_ensure_defaults($1::jsonb)", folders_json)
-
-    row = await test_db.fetchrow("SELECT * FROM folder_get($1)", "fe-1")
-    assert row is not None
-
-    # 이미 존재하면 DO NOTHING
-    await test_db.execute("SELECT folder_ensure_defaults($1::jsonb)", folders_json)
-    row = await test_db.fetchrow("SELECT * FROM folder_get($1)", "fe-1")
-    assert row is not None
-
-
 # === 카탈로그 ===
 
 async def test_catalog_get_sessions(test_db):
     await _create_folder(test_db, "f-cat", "Catalog Folder")
-    now = _utc_now()
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "cat-1", ["folder_id", "display_name", "status"],
-        ["f-cat", "My Session", "idle"], now, now,
+    await _create_session(
+        test_db, "cat-1", folder_id="f-cat", display_name="My Session"
     )
     rows = await test_db.fetch("SELECT * FROM catalog_get_sessions()")
     match = [r for r in rows if r["session_id"] == "cat-1"]
@@ -2587,100 +2443,16 @@ async def test_catalog_get_sessions(test_db):
 
 # === 마이그레이션 ===
 
-async def test_migration_upsert_folder(test_db):
-    await test_db.execute("SELECT migration_upsert_folder($1, $2, $3)", "mf-1", "Migrated", 0)
-    row = await test_db.fetchrow("SELECT * FROM folder_get($1)", "mf-1")
-    assert row is not None
-
-    # 再度実行しても DO NOTHING
-    await test_db.execute("SELECT migration_upsert_folder($1, $2, $3)", "mf-1", "Changed", 1)
-    row = await test_db.fetchrow("SELECT * FROM folder_get($1)", "mf-1")
-    assert row["name"] == "Migrated"  # 変更されない
 
 
-async def test_migration_upsert_session(test_db):
-    data = json.dumps({
-        "status": "idle",
-        "node_id": "test-node",
-        "session_type": "claude",
-    })
-    await test_db.execute("SELECT migration_upsert_session($1, $2::jsonb)", "ms-1", data)
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "ms-1")
-    assert row is not None
-    assert row["status"] == "idle"
-
-    # upsert: 상태 변경
-    data2 = json.dumps({"status": "running", "node_id": "test-node"})
-    await test_db.execute("SELECT migration_upsert_session($1, $2::jsonb)", "ms-1", data2)
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "ms-1")
-    assert row["status"] == "running"
 
 
-async def test_migration_insert_event(test_db):
-    await _create_session(test_db, "me-1")
-    now = _utc_now()
-    payload = json.dumps({"text": "migrated"})
-    await test_db.execute(
-        "SELECT migration_insert_event($1, $2, $3, $4::jsonb, $5, $6)",
-        "me-1", 100, "text_delta", payload, "migrated", now,
-    )
-    row = await test_db.fetchrow("SELECT * FROM event_read_one($1, $2)", "me-1", 100)
-    assert row is not None
-
-    # ON CONFLICT DO NOTHING
-    await test_db.execute(
-        "SELECT migration_insert_event($1, $2, $3, $4::jsonb, $5, $6)",
-        "me-1", 100, "text_delta", payload, "migrated", now,
-    )
 
 
-async def test_migration_ensure_session(test_db):
-    data = json.dumps({"status": "idle", "node_id": "test-node"})
-    await test_db.execute("SELECT migration_ensure_session($1, $2::jsonb)", "mes-1", data)
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "mes-1")
-    assert row is not None
-
-    # 既存なら INSERT しない
-    data2 = json.dumps({"status": "running", "node_id": "test-node"})
-    await test_db.execute("SELECT migration_ensure_session($1, $2::jsonb)", "mes-1", data2)
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "mes-1")
-    assert row["status"] == "idle"  # 変更されない
 
 
-async def test_migration_update_last_event_id(test_db):
-    await _create_session(test_db, "mlei-1")
-
-    # 初回: NULL → 10
-    await test_db.execute("SELECT migration_update_last_event_id($1, $2)", "mlei-1", 10)
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "mlei-1")
-    assert row["last_event_id"] == 10
-
-    # より大きい値 → 更新
-    await test_db.execute("SELECT migration_update_last_event_id($1, $2)", "mlei-1", 20)
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "mlei-1")
-    assert row["last_event_id"] == 20
-
-    # より小さい値 → 更新しない
-    await test_db.execute("SELECT migration_update_last_event_id($1, $2)", "mlei-1", 5)
-    row = await test_db.fetchrow("SELECT * FROM session_get($1)", "mlei-1")
-    assert row["last_event_id"] == 20
 
 
-async def test_migration_verify(test_db):
-    now = _utc_now()
-    await test_db.execute(
-        "SELECT session_upsert($1, $2, $3, $4, $5)",
-        "mv-1", ["node_id", "status"], ["verify-node", "idle"], now, now,
-    )
-    await test_db.fetchval(
-        "SELECT event_append($1, $2, $3, $4, $5)",
-        "mv-1", "test", '{"x":1}', "test", now,
-    )
-
-    row = await test_db.fetchrow("SELECT * FROM migration_verify($1)", "verify-node")
-    assert row["session_count"] >= 1
-    assert row["event_count"] >= 1
-    assert row["folder_count"] >= 0
 
 
 # === Session feed projection ===

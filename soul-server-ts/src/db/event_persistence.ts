@@ -397,8 +397,7 @@ function stripInternalPersistenceFields(value: unknown): unknown {
 }
 
 /**
- * full-text 검색용 텍스트 추출. Python `soul_common.db.session_db_base.extract_searchable_text`
- * 최소 등가 — 기본은 preview 텍스트를 사용한다. live-only chunk는 DB 저장 대상이
+ * full-text 검색용 텍스트 추출. 기본은 preview 텍스트를 사용한다. live-only chunk는 DB 저장 대상이
  * 아니므로 검색 텍스트도 비운다.
  */
 export function extractSearchableText(event: SSEEventPayload): string {
