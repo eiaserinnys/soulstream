@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import type {
   SessionDeliveryRow,
 } from "../db/session_db_types.js";
-import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
-import type { ClaudeBackgroundTaskRepository } from
-  "../db/repositories/claude_background_task_repository.js";
+import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
+import type { ClaudeRuntimeHostClient } from
+  "../control_plane/persistence_host_clients.js";
 
 import type {
   AddInterventionParams,
@@ -40,7 +40,7 @@ export type DeliveryLedgerAdmission =
 const RESERVATION_CONFLICT_RETRY_MAX_DELAY_MS = 10_000;
 
 type LedgerRepository = Pick<
-  SessionDeliveryRepository,
+  SessionDeliveryHostClient,
   "register" | "claimAttemptForTarget" | "beginDispatch" | "get"
   | "markQueued" | "markDelivered"
   | "markUncertain" | "markConsumed" | "markConsumedByRelation"
@@ -48,7 +48,7 @@ type LedgerRepository = Pick<
   | "retryDeliveryAttempt" | "markPendingSuperseded"
 > & {
   notifications: Pick<
-    SessionDeliveryRepository["notifications"],
+    SessionDeliveryHostClient["notifications"],
     "stageWithQueuedDelivery" | "get" | "markPublished" | "retry"
   >;
 };
@@ -58,7 +58,7 @@ export class TaskDeliveryLedgerGate {
     private readonly enabled: boolean,
     private readonly repository?: LedgerRepository,
     private readonly backgroundRepository?: Pick<
-      ClaudeBackgroundTaskRepository,
+      ClaudeRuntimeHostClient,
       "resolveGeneration"
     >,
     private readonly sourceNode?: string,

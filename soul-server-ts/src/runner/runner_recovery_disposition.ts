@@ -67,7 +67,7 @@ export async function terminalizeReapedRunner(input: {
 
 export async function terminalizeFailedRunner(input: {
   registration: RunnerRegistration;
-  disposition: "reap_dead" | "reap_stalled";
+  disposition: "reap_dead";
   task: Task;
   hydrate?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
   now(): number;
@@ -81,7 +81,7 @@ export async function terminalizeFailedRunner(input: {
     registration: RunnerRegistration,
     task: Task,
     error: { code: string; message: string },
-    disposition: "reap_dead" | "reap_stalled",
+    disposition: "reap_dead",
   ): Promise<void>;
 }): Promise<void> {
   const hydrated = await (input.hydrate ?? hydrateRunnerRegistration)(input.registration);
@@ -99,15 +99,12 @@ export async function terminalizeFailedRunner(input: {
     ) await input.recover(hydrated, verifiedDisposition, input.task);
     return;
   }
-  const message = input.disposition === "reap_stalled"
-    ? "runner progress lease expired"
-    : "runner process exited before execution completed";
   await input.terminalize(
     hydrated,
     input.task,
     {
-      code: input.disposition === "reap_stalled" ? "lease_expired" : "runner_exited",
-      message,
+      code: "runner_exited",
+      message: "runner process exited before execution completed",
     },
     input.disposition,
   );

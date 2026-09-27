@@ -10,10 +10,10 @@ import {
   type ClaudeBackgroundDeliveryMetadata,
 } from "../engine/claude_background_delivery_metadata.js";
 import type {
-  ClaudeBackgroundTaskRepository,
+  ClaudeRuntimeHostClient,
   ClaudeBackgroundTaskGenerationRow,
   ClaudeBackgroundTerminalStatus,
-} from "../db/repositories/claude_background_task_repository.js";
+} from "../control_plane/persistence_host_clients.js";
 import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
@@ -31,7 +31,7 @@ import {
 import { CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE } from "./claude_runtime_task_followup.js";
 
 interface ClaudeBackgroundTaskLifecycleDeps {
-  repository: ClaudeBackgroundTaskRepository;
+  repository: ClaudeRuntimeHostClient;
   sourceNode: string;
   logger?: Pick<Logger, "warn">;
   now?: () => Date;

@@ -94,7 +94,7 @@ export class RunnerAdoptionFailureRecovery {
     registration: RunnerRegistration,
     task: Task,
     error: { code: string; message: string },
-    disposition: "reap_dead" | "reap_stalled" | "socket_unavailable",
+    disposition: "reap_dead" | "socket_unavailable",
     afterProcessStopped?: () => Promise<void>,
   ): Promise<void> {
     if (registration.pidAlive) {
@@ -206,7 +206,7 @@ export class RunnerAdoptionFailureRecovery {
         (this.deps.now ?? Date.now)(),
         this.deps.leaseTimeoutMs,
       );
-      if (verifiedDisposition === "reap_dead" || verifiedDisposition === "reap_stalled") {
+      if (verifiedDisposition === "reap_dead") {
         this.deps.logger.info(
           recoveryLogContext(registration, error, verifiedDisposition),
           "runner adoption failed and refreshed registration is no longer live",
@@ -214,9 +214,7 @@ export class RunnerAdoptionFailureRecovery {
         await this.terminalize(
           hydrated,
           task,
-          verifiedDisposition === "reap_stalled"
-            ? { code: "lease_expired", message: "runner progress lease expired" }
-            : { code: "runner_exited", message: "runner process exited before execution completed" },
+          { code: "runner_exited", message: "runner process exited before execution completed" },
           verifiedDisposition,
           releaseStoppedRecoveryHandles,
         );

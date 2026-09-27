@@ -3,8 +3,8 @@ import type {
   RegisterSessionDeliveryResult,
   SessionDeliveryRow,
 } from "../db/session_db_types.js";
-import type { SessionDeliveryRepository } from
-  "../db/repositories/session_delivery_repository.js";
+import type { SessionDeliveryHostClient } from
+  "../control_plane/persistence_host_clients.js";
 
 import type { DeliveryIntent } from "./delivery_contract.js";
 import type { AddInterventionParams } from "./task_intervention_route.js";
@@ -23,7 +23,7 @@ export type LoadOrRegisterResult =
 
 /** Preserves one immutable payload while entering the serialized runtime gate. */
 export async function loadOrRegisterDelivery(
-  repository: Pick<SessionDeliveryRepository, "register" | "get">,
+  repository: Pick<SessionDeliveryHostClient, "register" | "get">,
   params: ControlledRegistrationParams,
 ): Promise<LoadOrRegisterResult> {
   if (params.deliveryIntent === "runtime_followup") {
