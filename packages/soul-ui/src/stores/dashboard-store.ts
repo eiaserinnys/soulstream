@@ -32,6 +32,7 @@ import { createSessionSlice } from "./slices/session-slice";
 import { createEventProcessingSlice } from "./slices/event-processing-slice";
 import { createOptimisticSessionSlice } from "./slices/optimistic-session-slice";
 import { createPromptSuggestionSlice } from "./slices/prompt-suggestion-slice";
+import { createPendingChatSendSlice } from "./slices/pending-chat-send-slice";
 import { createWallpaperSlice } from "./slices/wallpaper-slice";
 import { createLiquidGlassSlice } from "./slices/liquid-glass-slice";
 import { createChatTypographySlice } from "./slices/chat-typography-slice";
@@ -48,6 +49,8 @@ export type {
   ChatFontSize,
   DashboardState,
   DashboardActions,
+  PendingChatSend,
+  PendingChatSendAttachment,
 } from "./dashboard-store-types";
 
 // === Unread Utility ===
@@ -110,6 +113,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         ...createEventProcessingSlice(set, get, store),
         ...createOptimisticSessionSlice(set, get, store),
         ...createPromptSuggestionSlice(set, get, store),
+        ...createPendingChatSendSlice(set, get, store),
         ...createWallpaperSlice(set, get, store),
         ...createLiquidGlassSlice(set, get, store),
         ...createChatTypographySlice(set, get, store),

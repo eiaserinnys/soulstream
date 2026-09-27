@@ -32,6 +32,7 @@ export interface UseFileUploadReturn {
   removeFile: (id: string) => void;
   cancel: () => Promise<void>;
   resetLocal: () => void;
+  restoreUploadedFiles: (files: UploadedFile[]) => void;
   uploadedPaths: string[];
 }
 
@@ -157,6 +158,14 @@ export function useFileUpload({
     setFiles([]);
   }, []);
 
+  const restoreUploadedFiles = useCallback((restored: UploadedFile[]) => {
+    if (restored.length === 0) return;
+    setFiles((current) => {
+      const restoredIds = new Set(restored.map((file) => file.id));
+      return [...restored, ...current.filter((file) => !restoredIds.has(file.id))];
+    });
+  }, []);
+
   const isUploading = files.some((f) => f.status === "uploading");
   const uploadedPaths = files
     .filter((f) => f.status === "done" && f.path !== null)
@@ -169,6 +178,7 @@ export function useFileUpload({
     removeFile,
     cancel,
     resetLocal,
+    restoreUploadedFiles,
     uploadedPaths,
   };
 }
