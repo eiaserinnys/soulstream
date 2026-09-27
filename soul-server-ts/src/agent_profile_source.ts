@@ -1,9 +1,10 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { Logger } from "pino";
 import { z } from "zod";
 
+import { writeFileAtomically } from "./atomic_file_rename.js";
 import {
   AgentRegistry,
   AgentAtomContextSchema,
@@ -55,6 +56,8 @@ const CacheSchema = z.object({
   profiles: z.array(RemoteAgentProfileSchema),
 });
 
+const PROFILE_SOURCE_REFRESH_TTL_MS = 5_000;
+
 export type RemoteAgentProfile = z.infer<typeof RemoteAgentProfileSchema>;
 
 export type AgentProfileSourceState = {
@@ -105,6 +108,8 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
     counts: { db: 0, yaml: 0 },
   };
   private refreshInFlight: Promise<void> | null = null;
+  private lastRefreshAttemptAtMs: number | null = null;
+  private cachedSnapshot: ProfileSnapshot | null = null;
 
   constructor(private readonly options: AgentProfileSourceOptions) {}
 
@@ -138,6 +143,7 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
   }
 
   rebuild(): void {
+    this.cachedSnapshot = null;
     this.buildSnapshot();
   }
 
@@ -146,12 +152,17 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
   }
 
   private async snapshot(): Promise<ProfileSnapshot> {
-    await this.refresh();
+    if (this.lastRefreshAttemptAtMs === null || this.refreshInFlight) {
+      await this.refresh();
+    } else {
+      void this.refresh();
+    }
     return this.buildSnapshot();
   }
 
   private buildSnapshot(): ProfileSnapshot {
-    const snapshot = this.createSnapshot(this.overlays);
+    const snapshot = this.cachedSnapshot ?? this.createSnapshot(this.overlays);
+    this.cachedSnapshot = snapshot;
     this.currentState = {
       ...this.currentState,
       counts: {
@@ -207,6 +218,12 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
 
   private async refresh(): Promise<void> {
     if (this.refreshInFlight) return this.refreshInFlight;
+    const attemptedAtMs = (this.options.now ?? (() => new Date()))().getTime();
+    if (
+      this.lastRefreshAttemptAtMs !== null
+      && attemptedAtMs - this.lastRefreshAttemptAtMs < PROFILE_SOURCE_REFRESH_TTL_MS
+    ) return;
+    this.lastRefreshAttemptAtMs = attemptedAtMs;
     this.refreshInFlight = this.performRefresh().finally(() => {
       this.refreshInFlight = null;
     });
@@ -224,8 +241,9 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
             this.options.fetchTimeoutMs ?? 10_000,
           );
       const response = RuntimeResponseSchema.parse(payload);
-      this.createSnapshot(response.profiles);
+      const snapshot = this.createSnapshot(response.profiles);
       this.overlays = response.profiles;
+      this.cachedSnapshot = snapshot;
       try {
         await writeCache(this.options.cachePath, checkedAt, response.profiles);
       } catch (cacheError) {
@@ -240,13 +258,15 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
         lastError: null,
         counts: this.currentState.counts,
       };
+      this.buildSnapshot();
     } catch (error) {
       const message = errorMessage(error);
       const cached = await readCache(this.options.cachePath);
       let cacheHit = false;
+      let snapshot: ProfileSnapshot | null = null;
       if (cached) {
         try {
-          this.createSnapshot(cached.profiles);
+          snapshot = this.createSnapshot(cached.profiles);
           this.overlays = cached.profiles;
           cacheHit = true;
         } catch (cacheError) {
@@ -265,6 +285,8 @@ export class AgentProfileSource implements NewSessionAgentProfileSource {
         lastError: message,
         counts: this.currentState.counts,
       };
+      this.cachedSnapshot = snapshot;
+      this.buildSnapshot();
       this.options.logger.warn(
         { error: message, cachePath: this.options.cachePath, cacheHit },
         "Agent profile runtime unavailable; using last-known-good overlay",
@@ -346,18 +368,11 @@ async function writeCache(
   profiles: readonly RemoteAgentProfile[],
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  const temporaryPath = `${path}.${process.pid}.tmp`;
-  try {
-    await writeFile(temporaryPath, JSON.stringify({
-      schema_version: 1,
-      fetched_at: fetchedAt,
-      profiles,
-    }, null, 2), "utf8");
-    await rename(temporaryPath, path);
-  } catch (error) {
-    await rm(temporaryPath, { force: true });
-    throw error;
-  }
+  await writeFileAtomically(path, JSON.stringify({
+    schema_version: 1,
+    fetched_at: fetchedAt,
+    profiles,
+  }, null, 2));
 }
 
 async function readCache(path: string): Promise<z.infer<typeof CacheSchema> | null> {

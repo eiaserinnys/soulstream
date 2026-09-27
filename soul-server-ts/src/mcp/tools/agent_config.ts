@@ -47,10 +47,17 @@ export function registerAgentConfigTools(
     async ({ include_raw }) => {
       try {
         const { raw, parsed } = agentConfig.readRaw();
+        const resolutions = runtime.agentProfileSource
+          ? await runtime.agentProfileSource.list()
+          : parsed.agents.map((profile) => ({ profile, source: "yaml" as const, stale: false }));
         return jsonResult({
           config_path: runtime.agentsConfigPath,
-          agents: parsed.agents,
-          ...(include_raw ? { raw_yaml: raw } : {}),
+          agents: resolutions.map(({ profile, source, stale }) => ({
+            ...profile,
+            source,
+            stale,
+          })),
+          ...(include_raw ? { raw_yaml: raw, yaml_agents: parsed.agents } : {}),
         });
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : String(err));

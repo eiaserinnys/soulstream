@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { WorktreeGit } from "../src/worktree/worktree_git.js";
+import { samePath, WorktreeGit } from "../src/worktree/worktree_git.js";
 import { GitProcessError, runBoundedProcess } from "../src/worktree/worktree_process.js";
 
 const roots: string[] = [];
@@ -42,6 +42,11 @@ function makeRepository(): { projectsRoot: string; repo: string } {
 }
 
 describe("WorktreeGit", () => {
+  it("compares canonical worktree paths case-insensitively on Windows", () => {
+    expect(samePath("C:\\Soulstream\\Projects\\Demo", "c:\\soulstream\\projects\\demo", "win32"))
+      .toBe(true);
+  });
+
   it("creates a marked linked worktree without changing the base checkout", async () => {
     const { projectsRoot, repo } = makeRepository();
     const baseBranch = git(repo, "branch", "--show-current");
