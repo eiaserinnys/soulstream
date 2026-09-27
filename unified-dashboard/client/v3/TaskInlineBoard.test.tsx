@@ -87,8 +87,6 @@ describe("TaskInlineBoard document context menu", () => {
         folderId: "folder-1",
         api: {} as PageApiClient,
         taskMoveTargets: [target],
-        activeDocumentId: null,
-        onDeletedActiveDocument: vi.fn(),
         onMarkdownDocumentsChanged: vi.fn(),
       }));
     });
@@ -165,8 +163,6 @@ describe("TaskInlineBoard document context menu", () => {
         folderId: "folder-1",
         api: {} as PageApiClient,
         taskMoveTargets: [],
-        activeDocumentId: null,
-        onDeletedActiveDocument: vi.fn(),
         onMarkdownDocumentsChanged: vi.fn(),
         markdownDocumentsRevision,
       }));

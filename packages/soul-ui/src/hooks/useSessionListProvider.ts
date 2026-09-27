@@ -114,8 +114,6 @@ export function useSessionListProvider(
   const handleTaskUpdated = useTaskStore((s) => s.handleTaskUpdated);
   const handleCustomViewUpdated = useCustomViewStore((s) => s.handleCustomViewUpdated);
 
-  // 필터 상태
-  const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
   const storeViewMode = useDashboardStore((s) => s.viewMode);
   const storeSelectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const viewMode = viewModeOverride ?? storeViewMode;
@@ -138,9 +136,9 @@ export function useSessionListProvider(
   );
   const queryKey = useMemo<SessionListQueryKey>(
     () => normalizedSessionIds !== undefined
-      ? ["sessions", "all", "ids", null, normalizedSessionIds]
-      : ["sessions", sessionTypeFilter, viewMode, effectiveFolderId],
-    [normalizedSessionIds, sessionTypeFilter, viewMode, effectiveFolderId],
+      ? ["sessions", "ids", null, normalizedSessionIds]
+      : ["sessions", viewMode, effectiveFolderId],
+    [normalizedSessionIds, viewMode, effectiveFolderId],
   );
   const pageSize = DEFAULT_PAGE_SIZE;
 

@@ -167,15 +167,13 @@ describe("document overlay animation, close policy, and close button contract", 
     expect(workspace).toContain("onClick={requestCloseOverlay}");
   });
 
-  it("shares the MarkdownDocumentPanel edit surface between board overlay and task panel (🔴17)", () => {
+  it("keeps MarkdownDocumentPanel in the task board overlay, outside the task chat inspector", () => {
     const boardOverlay = read("./TaskBoardWorkspace.tsx");
     const taskPanelInspector = read("./TaskWorkspace.tsx");
 
-    // Both the board overlay and the (non-board) task detail inspector mount the same shared
-    // panel, so the edit/done buttons (🔴16) and the editor focus ring (🔴7) — which live inside
-    // MarkdownDocumentPanel — appear identically in both surfaces without a new branch.
     expect(boardOverlay).toContain("<MarkdownDocumentPanel");
-    expect(taskPanelInspector).toContain("<MarkdownDocumentPanel");
+    expect(taskPanelInspector).not.toContain("<MarkdownDocumentPanel");
+    expect(taskPanelInspector).not.toContain("activeBoardDocumentId");
   });
 });
 
@@ -228,7 +226,7 @@ describe("task board markdown edit routing and reader refresh", () => {
     const boardPane = read("./TaskBoardPane.tsx");
     const workspace = read("./TaskBoardWorkspace.tsx");
 
-    expect(menus).toContain("onRequestMarkdownEdit(markdownContextMenu.item.documentId)");
+    expect(menus).toContain("onRequestMarkdownEdit?.(markdownContextMenu.item.documentId)");
     expect(boardView).toContain("onRequestMarkdownEdit={onRequestMarkdownEdit}");
     expect(dashboardBoardView).toContain("onRequestMarkdownEdit={onRequestMarkdownEdit}");
     expect(boardPane).toContain("onRequestMarkdownEdit={onRequestMarkdownEdit}");

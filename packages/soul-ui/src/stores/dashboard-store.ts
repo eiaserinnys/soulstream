@@ -40,10 +40,6 @@ import { createBoardLayoutSlice } from "./slices/board-layout-slice";
 // === Re-exports for backward compatibility ===
 
 export type {
-  ProfileConfig,
-  DashboardAgentConfig,
-  DashboardConfig,
-  SelectedEventNodeData,
   FolderSortMode,
   MobileTab,
   LeftNavigationMode,

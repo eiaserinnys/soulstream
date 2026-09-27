@@ -15,10 +15,8 @@
  *     소비자 0건 재확인 후 폐기 완료. 더 이상 슬라이스에 존재하지 않는다.
  *
  * 핵심 invariants:
- * - tree, treeVersion, chatPrependedCount, chatLastPrependAtMs는 한 set({}) 호출 안에 묶여야
+ * - tree, treeVersion, chatPrependedCount는 한 set({}) 호출 안에 묶여야
  *   Zustand subscribe가 1회만 발화하여 React 한 렌더 사이클에서 정합 (atom 816060d2).
- * - processHistoryEvents의 chatLastPrependAtMs 갱신은 result.updated 분기 *밖*에 둔다 —
- *   dedup-only 같은 updated=false 코너 케이스에서도 settle 가드가 stale로 남지 않도록 한다 (atom c3047ee9).
  * - chatPrependedCount는 grouped 차분(messages 차분 아님)으로 갱신해야 Virtuoso
  *   firstItemIndex 변화량과 data 추가량이 정합 (atom 3eb91fad).
  */
@@ -31,7 +29,6 @@ import {
   createProcessingContext,
 } from "../processing-context";
 import {
-  processEventSingle,
   processEventsBatch,
 } from "../event-processor";
 import { applyClaudeRuntimeStoreEvent } from "../claude-runtime-state";
@@ -56,7 +53,6 @@ export function getEventProcessingInitialState(): Pick<
   | "claudeRuntime"
   | "treeVersion"
   | "chatPrependedCount"
-  | "chatLastPrependAtMs"
   | "lastEventId"
   | "historyResetVersion"
   | "historyCursor"
@@ -68,7 +64,6 @@ export function getEventProcessingInitialState(): Pick<
     claudeRuntime: null,
     treeVersion: 0,
     chatPrependedCount: 0,
-    chatLastPrependAtMs: null as number | null,
     lastEventId: 0,
     historyResetVersion: 0,
     historyCursor: null,
@@ -80,10 +75,9 @@ export function getEventProcessingInitialState(): Pick<
 export type EventProcessingSlice = Pick<
   DashboardState,
     | "tree"
-    | "claudeRuntime"
-    | "treeVersion"
+  | "claudeRuntime"
+  | "treeVersion"
   | "chatPrependedCount"
-  | "chatLastPrependAtMs"
   | "lastEventId"
     | "historyResetVersion"
     | "historyCursor"
@@ -112,74 +106,7 @@ export const createEventProcessingSlice: StateCreator<
   // createNodeFromEvent + placeInTree + applyUpdate + enqueueNotification
   // 트리에 in-place 변경 후 treeVersion++ 으로 리렌더 트리거
 
-  processEvent: (event, eventId) => {
-    const state = get();
-    const nextClaudeRuntime = applyClaudeRuntimeStoreEvent(state.claudeRuntime, event);
-    const result = processEventSingle(
-      event,
-      eventId,
-      state.processingCtx,
-      state.tree,
-      state.activeSessionKey,
-      state.activeSessionSummary,
-      state.lastEventId,
-    );
-
-    // prompt_suggestion: clear → set 순서. 같은 호출에 둘 다 있을 일은 없지만 일관성 유지.
-    if (result.clearPromptSuggestionFor) {
-      get().clearPromptSuggestion(result.clearPromptSuggestionFor);
-    }
-    if (result.promptSuggestion) {
-      get().setPromptSuggestion(
-        result.promptSuggestion.sessionId,
-        result.promptSuggestion.text,
-      );
-    }
-
-    if (result.isHistorySync) {
-      set({
-        ...(result.newLastEventId > state.lastEventId
-          ? { lastEventId: result.newLastEventId }
-          : {}),
-        ...(nextClaudeRuntime !== state.claudeRuntime
-          ? { claudeRuntime: nextClaudeRuntime }
-          : {}),
-      });
-      return;
-    }
-
-    if (result.updated) {
-      const notice = result.notify
-        ? detailEventToSessionNotice(event, eventId, state.activeSessionKey)
-        : null;
-      set({
-        tree: result.root,
-        treeVersion: state.treeVersion + 1,
-        lastEventId: result.newLastEventId,
-        ...(nextClaudeRuntime !== state.claudeRuntime
-          ? { claudeRuntime: nextClaudeRuntime }
-          : {}),
-        ...(notice
-          ? { pendingNotifications: appendBrowserNotices(state.pendingNotifications, [notice]) }
-          : {}),
-      });
-    } else {
-      const notice = result.notify
-        ? detailEventToSessionNotice(event, eventId, state.activeSessionKey)
-        : null;
-      set({
-        lastEventId: result.newLastEventId,
-        ...(nextClaudeRuntime !== state.claudeRuntime
-          ? { claudeRuntime: nextClaudeRuntime }
-          : {}),
-        ...(notice
-          ? { pendingNotifications: appendBrowserNotices(state.pendingNotifications, [notice]) }
-          : {}),
-      });
-    }
-
-    return;
-  },
+  processEvent: (event, eventId) => get().processEvents([{ event, eventId }]),
 
   // --- SSE 이벤트 배치 처리 ---
 
@@ -308,12 +235,6 @@ export const createEventProcessingSlice: StateCreator<
         ...(nextClaudeRuntime !== state.claudeRuntime
           ? { claudeRuntime: nextClaudeRuntime }
           : {}),
-        // chatLastPrependAtMs는 "마지막 prepend 시도 시각" — settle 가드용.
-        // result.updated와 무관하게 항상 갱신한다 (events.length===0 early-return으로
-        // 빈 호출은 위에서 이미 차단됨). 사용자가 startReached로 fetch를 일으킨
-        // 모든 응답이 settle 가드의 시각 기준이 되어야 dedup-only 같은 updated=false
-        // 코너 케이스에서도 stale 가드 무력화가 발생하지 않는다 (atom c3047ee9).
-        chatLastPrependAtMs: performance.now(),
         // history prepend의 result.maxEventId는 과거 ID라 작을 수 있다. 라이브 SSE의
         // 큰 lastEventId가 prepend로 줄어들면 이후 라이브 dedup이 무력화되므로 max로 보호.
         lastEventId: Math.max(state.lastEventId, result.maxEventId),

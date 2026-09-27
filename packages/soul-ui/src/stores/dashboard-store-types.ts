@@ -18,7 +18,6 @@ import type {
   CatalogBoardItem,
   BoardContainerRef,
   CatalogFolderReorderItem,
-  TokenUsage,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
 import type { ClaudeRuntimeView } from "./claude-runtime-state";
@@ -26,28 +25,6 @@ import type { WallpaperMode, WallpaperSettings } from "../lib/wallpaper-settings
 import type { LiquidGlassSettings } from "../lib/glass-settings";
 import type { ChatFontSize } from "../lib/chat-typography";
 import type { ChatFocusTarget } from "../shared/search-focus";
-
-// === Dashboard Config ===
-
-export interface ProfileConfig {
-  name: string;
-  id: string;
-  hasPortrait: boolean;
-  portraitUrl?: string | null;
-}
-
-export interface DashboardAgentConfig {
-  id: string;
-  name: string;
-  hasPortrait: boolean;
-  portraitUrl: string | null;
-  backend?: string | null;
-}
-
-export interface DashboardConfig {
-  user: ProfileConfig;
-  agents: DashboardAgentConfig[];
-}
 
 export interface NewSessionDefaults {
   folderId?: string | null;
@@ -57,19 +34,6 @@ export interface NewSessionDefaults {
   agentId?: string | null;
   modelPreset?: string | null;
   boardPosition?: { x: number; y: number };
-}
-
-// === Selected Event Node Data ===
-
-/** selectEventNode로 선택된 이벤트 노드의 데이터 (user, intervention, system, result) */
-export interface SelectedEventNodeData {
-  nodeType: "user" | "intervention" | "system" | "result";
-  label: string;
-  content: string;
-  durationMs?: number;
-  usage?: TokenUsage;
-  totalCostUsd?: number;
-  isError?: boolean;
 }
 
 // === Folder Sort Mode ===
@@ -86,12 +50,6 @@ export type FolderSortMode =
 export type DashboardViewMode = "feed" | "folder" | "tasks";
 
 export type MobileTab = "feed" | "folder" | "tasks" | "chat" | "settings";
-
-export interface BoardItemFocusRequest {
-  boardItemId: string;
-  folderId: string | null;
-  requestId: number;
-}
 
 export interface HistoryCursorSnapshot {
   sessionId: string;
@@ -116,24 +74,12 @@ export interface DashboardState {
   /** 피드 스크롤 오프셋 (뷰 전환 시 위치 복원용) */
   feedScrollOffset: number;
 
-  /** 세션 타입 필터 */
-  sessionTypeFilter: "all" | "claude" | "llm";
-
   /** 활성 세션 (현재 보고 있는 세션) */
   activeSessionKey: string | null;
   activeSession: SessionDetail | null;
 
   /** 활성 세션의 SessionSummary 스냅샷 — sessions.find 대체용 (단일 구독 포인트) */
   activeSessionSummary: SessionSummary | null;
-
-  /** 선택된 카드 (상세 뷰에 표시) */
-  selectedCardId: string | null;
-
-  /** 선택된 React Flow 노드 ID */
-  selectedNodeId: string | null;
-
-  /** 선택된 이벤트 노드 데이터 (user/intervention/system/result 노드용) */
-  selectedEventNodeData: SelectedEventNodeData | null;
 
   /** 이벤트 트리 루트 (소스 오브 트루스) */
   tree: EventTreeNode | null;
@@ -155,20 +101,6 @@ export interface DashboardState {
    * 세션 전환 시 0으로 리셋된다 (getSessionResetState).
    */
   chatPrependedCount: number;
-
-  /**
-   * 마지막 prepend 시각 (performance.now() 기반). atBottom=true settle 가드용.
-   *
-   * react-virtuoso는 prepend로 firstItemIndex가 바뀐 직후 한 프레임 동안
-   * atBottom 판정이 흔들릴 수 있다 — 그 시점의 잘못된 atBottom=true 보고를
-   * 무시하기 위해 가장 최근 prepend 시각을 추적한다 (ChatView.follow-helpers
-   * decideFollowOnAtBottomChange의 prependAgeMs 인자).
-   *
-   * null = 직전 prepend 없음 (또는 세션 진입 후 첫 prepend 전).
-   * processHistoryEvents의 set() 안에서 chatPrependedCount와 함께 atomic
-   * 갱신되며, 세션 리셋 시 null로 돌아간다.
-   */
-  chatLastPrependAtMs: number | null;
 
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
   lastEventId: number;
@@ -193,9 +125,6 @@ export interface DashboardState {
 
   /** 오른쪽 패널 활성 탭 */
   activeRightTab: "detail" | "chat" | "info";
-
-  /** 대시보드 프로필 설정 */
-  dashboardConfig: DashboardConfig | null;
 
   /** 이벤트 처리 컨텍스트 (nodeMap, activeTextTarget 등) */
   processingCtx: ProcessingContext;
@@ -248,17 +177,8 @@ export interface DashboardState {
   /** 오른쪽 Chat 슬롯에 표시 중인 보드 마크다운 문서 */
   activeBoardDocumentId: string | null;
 
-  /**
-   * 편집 모드로 열도록 요청된 보드 마크다운 문서(🔴25). MarkdownDocumentPanel이 해당 문서를
-   * 로드한 뒤 자동으로 편집 모드에 진입하고 소비(clear)한다. 일반 열기는 이 값을 비운다.
-   */
-  pendingBoardDocumentEditId: string | null;
-
   /** 오른쪽 Chat 슬롯에 표시 중인 커스텀 뷰 */
   activeCustomViewId: string | null;
-
-  /** 외부 표면에서 board item으로 이동할 때 BoardWorkspaceView가 소비하는 일회성 요청 */
-  focusedBoardItem: BoardItemFocusRequest | null;
 
   /** 폴더 카탈로그 상태 */
   catalog: CatalogState | null;
@@ -314,22 +234,9 @@ export interface TaskBoardLayoutSnapshot {
 // === Actions Interface ===
 
 export interface DashboardActions {
-  // 세션 타입 필터
-  setSessionTypeFilter: (type: "all" | "claude" | "llm") => void;
-
   // 활성 세션
   setActiveSession: (key: string | null, detail?: SessionDetail) => void;
   setActiveSessionSummary: (summary: SessionSummary | null) => void;
-
-  // 카드 선택 (nodeId: React Flow 노드의 고유 ID, switchTab: detail 탭 전환 여부)
-  selectCard: (cardId: string | null, nodeId?: string | null, switchTab?: boolean) => void;
-
-  // 이벤트 노드 선택 (user/intervention/system/result 등 카드가 아닌 노드)
-  selectEventNode: (
-    data: SelectedEventNodeData | null,
-    nodeId?: string | null,
-    switchTab?: boolean,
-  ) => void;
 
   // SSE 이벤트 처리
   processEvent: (
@@ -386,14 +293,7 @@ export interface DashboardActions {
   // 오른쪽 패널 탭
   setActiveRightTab: (tab: "detail" | "chat" | "info") => void;
   setActiveBoardDocument: (documentId: string | null) => void;
-  /** 🔴25: 문서를 편집 모드로 연다(중앙 오버레이/문서 패널). 이미 열려 있으면 해당 문서로 교체 후 편집. */
-  requestBoardDocumentEdit: (documentId: string) => void;
-  /** 편집 요청을 소비 처리(clear)한다. */
-  clearPendingBoardDocumentEdit: () => void;
   setActiveCustomView: (customViewId: string | null) => void;
-
-  // 대시보드 프로필 설정
-  setDashboardConfig: (config: DashboardConfig) => void;
 
   // input_request 타임아웃 만료 처리
   expireInputRequest: (nodeId: string) => void;
@@ -416,10 +316,7 @@ export interface DashboardActions {
 
   // 뷰 모드 (URL 동기화 전용)
   setViewMode: (mode: DashboardViewMode) => void;
-  selectFeed: () => void;
   setFeedScrollOffset: (offset: number) => void;
-  focusBoardItem: (boardItemId: string, folderId: string | null) => void;
-  clearFocusedBoardItem: (requestId: number) => void;
   openTaskBoard: (taskId: string, parentFolderId?: string | null) => void;
 
   // 카탈로그

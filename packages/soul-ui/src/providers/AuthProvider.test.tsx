@@ -44,7 +44,6 @@ class FakeEventSource {
 
 const testSessionProvider: SessionStorageProvider = {
   fetchSessions: async () => ({ sessions: [], total: 0 }),
-  fetchCards: async () => [],
   subscribe: (sessionKey, onEvent, onStatusChange, options) => createSSESubscribe({
     baseUrl: `/api/sessions/${encodeURIComponent(sessionKey)}/events`,
     onEvent,

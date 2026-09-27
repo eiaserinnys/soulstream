@@ -15,7 +15,6 @@ import { BoardWorkspaceCanvasContent } from "./BoardWorkspaceCanvasContent";
 import {
   boardToCanvasStyle,
   BOARD_ASSET_TILE_HEIGHT,
-  BOARD_TILE_HEIGHT,
   BOARD_TILE_WIDTH,
   buildBoardWorkspaceItems,
   filterTaskBoardSpatialItems,
@@ -53,7 +52,6 @@ import { BoardWorkspaceZoomControls } from "./BoardWorkspaceZoomControls";
 import type { BoardItemPositionUpdate } from "./board-selection";
 import { useBoardSelectionState } from "./useBoardSelectionState";
 import { useBoardCanvasViewport } from "./useBoardCanvasViewport";
-import { centerBoardPointInScroller } from "./board-viewport";
 import {
   buildBoardSessionRelations,
   type DirectChildPortalItem,
@@ -85,12 +83,6 @@ function taskProgress(snapshot: TaskSnapshot | null): { completed: number; total
     if (item.status === "completed") completed += 1;
   }
   return { completed, total };
-}
-
-function getBoardItemCenter(item: BoardWorkspaceItem): { x: number; y: number } {
-  const width = "width" in item ? item.width : BOARD_TILE_WIDTH;
-  const height = "height" in item ? item.height : BOARD_TILE_HEIGHT;
-  return { x: item.x + width / 2, y: item.y + height / 2 };
 }
 
 function createBoardMoveIdempotencyKey(
@@ -300,8 +292,6 @@ export function BoardWorkspaceView({
   const toggleSessionSelection = useDashboardStore((s) => s.toggleSessionSelection);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeBoardDocumentId = useDashboardStore((s) => s.activeBoardDocumentId);
-  const focusedBoardItem = useDashboardStore((s) => s.focusedBoardItem);
-  const clearFocusedBoardItem = useDashboardStore((s) => s.clearFocusedBoardItem);
   const addBoardItem = useDashboardStore((s) => s.addBoardItem);
   const activeBoardContainer = useDashboardStore((s) => s.activeBoardContainer);
   const openTaskBoard = useDashboardStore((s) => s.openTaskBoard);
@@ -596,27 +586,6 @@ export function BoardWorkspaceView({
     updateBoardItemPositions: yjsUpdateBoardItemPositions,
     viewportPersistenceKey,
   });
-
-  useEffect(() => {
-    if (!focusedBoardItem) return;
-    if (focusedBoardItem.folderId !== selectedFolderId) return;
-    const item = boardItems.find((candidate) => candidate.boardItemId === focusedBoardItem.boardItemId);
-    const scroller = scrollRef.current;
-    if (!item || !scroller) return;
-    selectSingleBoardItem(item.boardItemId);
-    raiseBoardItems([item.boardItemId]);
-    centerBoardPointInScroller(scroller, getBoardItemCenter(item), zoom);
-    clearFocusedBoardItem(focusedBoardItem.requestId);
-  }, [
-    boardItems,
-    clearFocusedBoardItem,
-    focusedBoardItem,
-    raiseBoardItems,
-    scrollRef,
-    selectSingleBoardItem,
-    selectedFolderId,
-    zoom,
-  ]);
 
   const resolveSpawnPosition = useCallback(() => {
     const spawnViewport = viewport.width > 0 && viewport.height > 0

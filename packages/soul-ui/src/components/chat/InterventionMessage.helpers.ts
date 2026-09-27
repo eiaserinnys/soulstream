@@ -7,13 +7,12 @@
  * 분기 우선순위 (높→낮):
  *   1. system  — caller_info.source === "system" → 정적 자산 + 고정 이름
  *   2. agent   — agentInfo 있고 system 아님 → 노드 프록시 portrait + agent 이름
- *   3. user    — 그 외 → caller_info / 세션 metadata / dashboardConfig.user 다단 fallback
+ *   3. user    — 그 외 → caller_info / 세션 metadata
  *
  * F-11 (2026-05-09, atom F-11): system 분기 신설.
  */
 
 import type { ChatMessage } from "../../lib/flatten-tree";
-import type { ProfileConfig } from "../../stores/dashboard-store-types";
 import { pickMessageAvatarUrl } from "./userAvatarSelectors";
 
 export interface InterventionDisplay {
@@ -36,7 +35,6 @@ const FALLBACK_USER = "\u{270B}"; // ✋ raised hand — intervention
 export function computeInterventionDisplay(
   msg: ChatMessage,
   callerAvatarUrl: string | null | undefined,
-  userConfig: ProfileConfig | null | undefined,
 ): InterventionDisplay {
   const isSystem = msg.callerInfo?.source === "system";
   const isAgent = !!msg.agentInfo && !isSystem;
@@ -87,25 +85,21 @@ export function computeInterventionDisplay(
     };
   }
 
-  // ---- user 분기 (fallback 사슬) ----
+  // ---- user 분기 ----
   const callerName = msg.callerInfo?.display_name;
   const displayName =
     typeof callerName === "string" && callerName.length > 0
       ? callerName
-      : userConfig && userConfig.name !== "USER"
-        ? userConfig.name
-        : "Intervention";
-  const displayId = userConfig?.id ? userConfig.id : null;
+      : "Intervention";
   const portraitUrl = pickMessageAvatarUrl(
     msg.callerInfo,
     callerAvatarUrl ?? null,
-    userConfig?.portraitUrl ?? null,
   );
   return {
     isSystem: false,
     isAgent: false,
     displayName,
-    displayId,
+    displayId: null,
     portraitUrl,
     hasPortrait: !!portraitUrl,
     fallbackEmoji: FALLBACK_USER,

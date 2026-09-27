@@ -59,18 +59,14 @@ export function TaskInlineBoard({
   folderId,
   api,
   taskMoveTargets,
-  activeDocumentId,
   markdownDocumentsRevision = 0,
-  onDeletedActiveDocument,
   onMarkdownDocumentsChanged,
 }: {
   taskId: string;
   folderId: string | null;
   api: PageApiClient;
   taskMoveTargets: readonly TaskMoveTarget[];
-  activeDocumentId: string | null;
   markdownDocumentsRevision?: number;
-  onDeletedActiveDocument(documentId: string): void;
   onMarkdownDocumentsChanged(documents: TaskBoardMarkdownDocument[]): void;
 }) {
   const [items, setItems] = useState<CatalogBoardItem[]>([]);
@@ -252,7 +248,6 @@ export function TaskInlineBoard({
     setItems((current) => current.filter((candidate) => candidate.id !== item.id));
     removeBoardItem(item.id);
     if (expandedId === item.id) setExpandedId(null);
-    if (activeDocumentId === item.itemId) onDeletedActiveDocument(item.itemId);
   };
 
   return (

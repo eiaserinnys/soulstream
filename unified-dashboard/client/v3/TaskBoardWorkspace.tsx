@@ -571,7 +571,6 @@ export function TaskBoardWorkspace({
               <ChatView
                 chatInputDisabled={chatInputDisabled}
                 fileUploadUrl={fileUploadUrl}
-                showHeader={false}
                 historyEnabled={historyEnabled}
               />
             ) : (

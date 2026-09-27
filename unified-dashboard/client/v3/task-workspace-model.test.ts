@@ -14,7 +14,6 @@ import {
   reduceWorkspaceEscape,
   reconcileTaskSessions,
   resolveRunSessions,
-  workspaceInspectorKind,
   workspaceSplitForKey,
 } from "./task-workspace-model";
 
@@ -63,7 +62,6 @@ describe("task workspace chat visibility", () => {
       hasTask: true,
       boardOpen: false,
       chatOpen: true,
-      inspectorKind: "chat",
       mobileMode: false,
       mobileChatTab: false,
       ...overrides,
@@ -71,7 +69,6 @@ describe("task workspace chat visibility", () => {
 
   it("keeps detail I/O active only for a visible chat surface", () => {
     expect(visibility()).toBe(true);
-    expect(visibility({ inspectorKind: "document" })).toBe(false);
     expect(visibility({ chatOpen: false })).toBe(false);
     expect(visibility({ hasActiveSession: false })).toBe(false);
   });
@@ -81,12 +78,6 @@ describe("task workspace chat visibility", () => {
     expect(visibility({ hasTask: false, chatOpen: false })).toBe(true);
     expect(visibility({ boardOpen: true, mobileMode: true, mobileChatTab: false })).toBe(false);
     expect(visibility({ boardOpen: true, mobileMode: true, mobileChatTab: true })).toBe(true);
-    expect(visibility({
-      boardOpen: true,
-      mobileMode: true,
-      mobileChatTab: true,
-      inspectorKind: "document",
-    })).toBe(false);
   });
 });
 
@@ -342,14 +333,6 @@ describe("workspace Escape hierarchy", () => {
       chatOpen: false,
       handled: false,
     });
-  });
-});
-
-describe("workspace inspector priority", () => {
-  it("keeps an opened document in the v3 right pane ahead of a stale chat selection", () => {
-    expect(workspaceInspectorKind("doc-a", "session-a")).toBe("document");
-    expect(workspaceInspectorKind(null, "session-a")).toBe("chat");
-    expect(workspaceInspectorKind(null, null)).toBe("empty");
   });
 });
 

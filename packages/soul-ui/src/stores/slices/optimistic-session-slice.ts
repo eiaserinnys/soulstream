@@ -41,7 +41,6 @@ export const createOptimisticSessionSlice: StateCreator<
     boardPosition,
   ) => {
     let catalog = get().catalog;
-    const userConfig = get().dashboardConfig?.user;
     const newSession: SessionSummary = {
       agentSessionId,
       status: "running",
@@ -56,8 +55,6 @@ export const createOptimisticSessionSlice: StateCreator<
       ...(agentName ? { agentName } : {}),
       ...(agentPortraitUrl ? { agentPortraitUrl } : {}),
       ...(backend ? { backend } : {}),
-      ...(userConfig?.name && userConfig.name !== "USER" ? { userName: userConfig.name } : {}),
-      ...(userConfig?.portraitUrl ? { userPortraitUrl: userConfig.portraitUrl } : {}),
     };
 
     // TanStack Query 캐시에 낙관적 prepend

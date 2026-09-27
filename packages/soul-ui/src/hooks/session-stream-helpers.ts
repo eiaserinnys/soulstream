@@ -88,7 +88,7 @@ export function filterFeedSessions(
 
 /**
  * 폴더 내 세션 필터링 순수 함수.
- * FolderContents에서 TanStack Query 캐시의 전체 세션을 필터링할 때 사용.
+ * 세션 목록 뷰에서 TanStack Query 캐시를 필터링할 때 사용.
  *
  * - llm 세션 제외
  * - folderId가 null이면 미분류(카탈로그 미등록 or folderId=null) 세션만 반환
@@ -124,12 +124,10 @@ function sessionMatchesCatalogCache(
   catalog: CatalogState,
   cacheQueryKey: readonly unknown[],
 ): boolean {
-  const typeFilter = (cacheQueryKey[1] as string | undefined) ?? "all";
-  const vMode = (cacheQueryKey[2] as string | undefined) ?? "feed";
-  const fId = (cacheQueryKey[3] as string | null | undefined) ?? null;
-  const sessionIds = cacheQueryKey[4] as readonly string[] | undefined;
+  const vMode = (cacheQueryKey[1] as string | undefined) ?? "feed";
+  const fId = (cacheQueryKey[2] as string | null | undefined) ?? null;
+  const sessionIds = cacheQueryKey[3] as readonly string[] | undefined;
 
-  if (typeFilter !== "all" && session.sessionType !== typeFilter) return false;
   if (vMode === "ids") return sessionIds?.includes(session.agentSessionId) === true;
 
   const assignment = catalog.sessions[session.agentSessionId];
@@ -180,7 +178,7 @@ export function countLoadedSessionsForQuery(
   cacheQueryKey: readonly unknown[],
   catalog: CatalogState | null,
 ): number {
-  const vMode = (cacheQueryKey[2] as string | undefined) ?? "feed";
+  const vMode = (cacheQueryKey[1] as string | undefined) ?? "feed";
   const seen = new Set<string>();
   let count = 0;
   for (const page of pages) {
@@ -201,20 +199,12 @@ export function countLoadedSessionsForQuery(
 }
 
 /**
- * session_created 이벤트:
- * filter가 'all'이거나 newSession.sessionType이 filter와 일치할 때
- * pages[0] 앞에 newSession을 prepend한다.
- * filter 불일치 시 data를 그대로 반환한다.
- */
-/**
  * F-A(2026-05-17): SSE session_created 이벤트가 N개의 ["sessions", ...] 캐시 중
  * 어느 캐시에 prepend되어야 하는지 결정하는 순수 predicate.
  *
- * queryKey 구조: ["sessions", sessionTypeFilter, viewMode, effectiveFolderId]
- * (useSessionListProvider.ts L70-73 정본).
+ * queryKey 구조: ["sessions", viewMode, effectiveFolderId].
  *
  * 규칙:
- * - typeFilter !== "all" + newSession.sessionType !== typeFilter → 제외
  * - viewMode === "folder" + cache fId !== event folderId → 제외
  * - viewMode === "feed" + catalog상 folder가 excludeFromFeed=true → 제외
  * - 그 외 → 적용
@@ -229,11 +219,9 @@ export function shouldApplySessionCreatedToCache(
   catalog?: CatalogState | null,
   newSessionId?: string,
 ): boolean {
-  const typeFilter = (cacheQueryKey[1] as string | undefined) ?? "all";
-  const vMode = (cacheQueryKey[2] as string | undefined) ?? "feed";
-  const fId = (cacheQueryKey[3] as string | null | undefined) ?? null;
-  const sessionIds = cacheQueryKey[4] as readonly string[] | undefined;
-  if (typeFilter !== "all" && newSessionType !== typeFilter) return false;
+  const vMode = (cacheQueryKey[1] as string | undefined) ?? "feed";
+  const fId = (cacheQueryKey[2] as string | null | undefined) ?? null;
+  const sessionIds = cacheQueryKey[3] as readonly string[] | undefined;
   if (vMode === "ids") return newSessionId !== undefined && sessionIds?.includes(newSessionId) === true;
   // viewMode=folder 캐시 — newSessionFolderId가 undefined(assignment 불명)이면
   // fId(string|null) !== undefined → 항상 false → 어떤 folder 캐시에도 prepend 안 함
@@ -258,7 +246,7 @@ export function shouldApplySessionCreatedToCache(
  * server `session_created` wire 도착 시점에 즉시 채워진다 — 분석 캐시
  * `20260518-1405-cycle-a-optimistic-session-merge.md`.
  *
- * F-A(2026-05-17) 이후: 본 함수는 cache 차원 적합성(typeFilter, viewMode, folderId)을
+ * F-A(2026-05-17) 이후: 본 함수는 cache 차원 적합성(viewMode, folderId)을
  * 검사하지 않는다 — 호출자가 setQueriesData predicate(shouldApplySessionCreatedToCache)로
  * 결정한다 (design-principles §3 정본 하나, §5 제어의 단일 경로). 본 fix는 2-arg signature를
  * 유지하여 분리 정본을 보존.

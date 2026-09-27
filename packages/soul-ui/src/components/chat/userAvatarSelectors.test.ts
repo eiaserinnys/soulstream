@@ -152,43 +152,39 @@ describe("extractCallerAvatarUrl", () => {
 describe("pickMessageAvatarUrl", () => {
   // === 메시지 우선순위 (atom ed3a216d 후속 fix — 첫 history fetch 시점 즉시 표시) ===
 
-  it("prefers msg caller_info.avatar_url over session avatar over userConfig", () => {
+  it("prefers msg caller_info.avatar_url over session avatar", () => {
     const msgCi: CallerInfo = {
       source: "browser",
       avatar_url: "/msg.png",
     };
-    expect(pickMessageAvatarUrl(msgCi, "/session.png", "/user.png")).toBe("/msg.png");
+    expect(pickMessageAvatarUrl(msgCi, "/session.png")).toBe("/msg.png");
   });
 
   it("falls back to session avatar when msg caller_info is undefined", () => {
-    expect(pickMessageAvatarUrl(undefined, "/session.png", "/user.png")).toBe("/session.png");
+    expect(pickMessageAvatarUrl(undefined, "/session.png")).toBe("/session.png");
   });
 
   it("falls back to session avatar when msg caller_info has no avatar_url", () => {
     const msgCi: CallerInfo = { source: "browser", display_name: "User" };
-    expect(pickMessageAvatarUrl(msgCi, "/session.png", "/user.png")).toBe("/session.png");
+    expect(pickMessageAvatarUrl(msgCi, "/session.png")).toBe("/session.png");
   });
 
-  it("falls back to userConfig portrait when both msg and session are absent", () => {
-    expect(pickMessageAvatarUrl(undefined, null, "/user.png")).toBe("/user.png");
+  it("returns null when message and session avatars are absent", () => {
+    expect(pickMessageAvatarUrl(undefined, null)).toBeNull();
   });
 
-  it("returns null when all three are absent", () => {
-    expect(pickMessageAvatarUrl(undefined, null, null)).toBeNull();
-  });
-
-  it("returns null when msg has no avatar, session is null, userConfig is undefined", () => {
-    expect(pickMessageAvatarUrl(undefined, null, undefined)).toBeNull();
+  it("returns null when message has no avatar and session is absent", () => {
+    expect(pickMessageAvatarUrl(undefined, null)).toBeNull();
   });
 
   it("ignores empty string msg avatar_url and falls back (defensive)", () => {
     const msgCi: CallerInfo = { source: "browser", avatar_url: "" };
-    expect(pickMessageAvatarUrl(msgCi, "/session.png", "/user.png")).toBe("/session.png");
+    expect(pickMessageAvatarUrl(msgCi, "/session.png")).toBe("/session.png");
   });
 
   it("ignores non-string msg avatar_url and falls back (defensive)", () => {
     const msgCi = { source: "browser", avatar_url: 12345 as unknown as string } as CallerInfo;
-    expect(pickMessageAvatarUrl(msgCi, "/session.png", "/user.png")).toBe("/session.png");
+    expect(pickMessageAvatarUrl(msgCi, "/session.png")).toBe("/session.png");
   });
 
   it("uses msg caller_info from agent source for delegated message", () => {
@@ -200,7 +196,7 @@ describe("pickMessageAvatarUrl", () => {
       agent_node: "eias",
       agent_id: "shay",
     };
-    expect(pickMessageAvatarUrl(msgCi, null, null)).toBe("/api/agents/shay/portrait");
+    expect(pickMessageAvatarUrl(msgCi, null)).toBe("/api/agents/shay/portrait");
   });
 
   it("uses msg caller_info from slack source", () => {
@@ -209,7 +205,7 @@ describe("pickMessageAvatarUrl", () => {
       avatar_url: "https://avatars.slack-edge.com/2024/img_192.png",
       slack: { channel_id: "C08", user_id: "U08" },
     };
-    expect(pickMessageAvatarUrl(msgCi, null, "/user.png")).toBe(
+    expect(pickMessageAvatarUrl(msgCi, null)).toBe(
       "https://avatars.slack-edge.com/2024/img_192.png",
     );
   });
