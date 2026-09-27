@@ -33,7 +33,8 @@ Add it to `.mcp.json` in the workspace:
 }
 ```
 
-Once connected, all tools below are available inside the Claude Code session.
+Once connected, the common tools documented below are available inside the client session. The live
+inventory is returned by `tools/list` and by `reflect_service` Level 0 under the `mcp_tools` capability.
 
 ## Tools
 

@@ -145,7 +145,6 @@ const KNOWN_CALLER_SOURCES = new Set([
   "slack",
   "soul-app",
   "system",
-  "trello_watcher",
 ]);
 
 const KNOWN_CONTAINER_KINDS = new Set(["folder", "task", "runbook"]);

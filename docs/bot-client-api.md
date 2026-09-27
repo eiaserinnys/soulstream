@@ -85,7 +85,7 @@ Common optional new-session fields are:
 | `system_prompt` | string | Add a session system prompt. |
 | `model` | string | Explicit model override accepted by the execution proxy. |
 | `model_preset` | string | Select the new session's model, backend, and environment preset. |
-| `reasoningEffort` | string | Codex reasoning effort: `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. |
+| `reasoningEffort` | string | Codex reasoning effort: `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra`. |
 | `caller_info` | object | Structured caller metadata. The proxy derives basic metadata when omitted. |
 | `context_items` | object array | Additional structured context items. |
 
@@ -168,8 +168,8 @@ when execution finishes. Send a service bearer token in `Authorization`.
 }
 ```
 
-`reasoning_effort` accepts `minimal`, `low`, `medium`, `high`, `xhigh`, or
-`max`; it defaults to `medium`. `timeout_ms` defaults to 120000 and cannot
+`reasoning_effort` accepts `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or
+`ultra`; it defaults to `medium`. `timeout_ms` defaults to 120000 and cannot
 exceed 120000. `max_attempts` defaults to 1 and cannot exceed 3. `output_schema`
 and `purpose` are optional.
 

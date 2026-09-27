@@ -4,108 +4,17 @@ export const SELF_SERVICE_NAME = "soul-server-ts";
 export const SELF_IDENTITY = {
   name: SELF_SERVICE_NAME,
   description:
-    "Soulstream Codex 전담 노드 (TS) — Codex CLI Streamable HTTP MCP 진입점.",
+    "Soulstream TypeScript worker with a Streamable HTTP MCP endpoint.",
   capabilities: [
     {
-      name: "cogito",
-      description: "서비스 리플렉션 데이터 조회 (MCP 도구)",
-      tools: ["reflect_service", "reflect_brief", "reflect_refresh"],
-    },
-    {
-      name: "session_query",
-      description: "세션·이벤트 조회",
-      tools: [
-        "list_sessions",
-        "list_session_events",
-        "get_session_event",
-        "get_session_story",
-        "get_session_highlight",
-        "get_session_turn_summaries",
-        "download_session_history",
-        "search_session_history",
-        "get_session_summary",
-      ],
-    },
-    {
-      name: "session_mgmt",
-      description: "에이전트 세션 생성·메시지·이름",
-      tools: [
-        "list_local_agents",
-        "create_agent_session",
-        "send_message_to_session",
-        "get_session_name",
-        "set_session_name",
-      ],
-    },
-    {
-      name: "catalog",
-      description: "폴더·세션 카탈로그 mutation",
-      tools: [
-        "list_folders",
-        "list_child_folders",
-        "browse_folder",
-        "browse_container",
-        "search_container_items",
-        "create_folder",
-        "move_folder",
-        "rename_folder",
-        "delete_folder",
-        "move_sessions_to_folder",
-        "update_board_item_position",
-        "create_markdown_document",
-        "get_markdown_document",
-        "update_markdown_document",
-        "delete_markdown_document",
-        "get_folder_system_prompt",
-        "set_folder_system_prompt",
-        "delete_session",
-      ],
-    },
-    {
-      name: "agent_config",
-      description: "agents.yaml agent profile 조회·편집",
-      tools: [
-        "get_agents_config",
-        "list_mcp_registry",
-        "list_mcp_profiles",
-        "list_agents_config_snapshots",
-        "plan_agent_profile_update",
-        "update_agent_profile",
-        "plan_agent_mcp_profile_update",
-        "set_agent_mcp_profile",
-        "set_agent_atom_contexts",
-        "rollback_agents_config",
-      ],
-    },
-    {
-      name: "multi_node",
-      description: "오케스트레이터 경유 다른 노드 호출",
-      tools: [
-        "list_nodes",
-        "list_node_agents",
-        "list_node_model_presets",
-        "reflect_cluster_brief",
-        "create_remote_agent_session",
-        "plan_remote_agent_profile_update",
-        "apply_remote_agent_profile_update",
-        "list_remote_agents_config_snapshots",
-        "rollback_remote_agents_config",
-      ],
-    },
-    {
-      name: "worktree",
-      description: "노드 로컬 Git worktree 생성·조회·안전한 제거와 branch 정리",
-      tools: [
-        "list_worktrees",
-        "create_worktree",
-        "remove_worktree",
-        "delete_worktree_branch",
-      ],
+      name: "mcp_tools",
+      description: "도구 이름의 현재 등록 인벤토리",
+      tools: [],
     },
   ],
 } as const;
 
-export function filterCapabilities(capability?: string) {
-  if (!capability) return SELF_IDENTITY.capabilities;
-  return SELF_IDENTITY.capabilities.filter((c) => c.name === capability);
+export function filterCapabilities(capability?: string, tools: string[] = []) {
+  if (capability && capability !== "mcp_tools") return [];
+  return [{ ...SELF_IDENTITY.capabilities[0], tools: [...tools].sort() }];
 }

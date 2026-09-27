@@ -171,19 +171,29 @@ async function route(
         signal: controller.signal,
       },
     );
-    const result = await response.json() as unknown;
-    if (!response.ok) {
-      const remote = remoteError(result);
-      throw new WorktreeServiceError(
-        remote?.code ?? "REMOTE_WORKTREE_FAILED",
-        remote?.message ?? JSON.stringify(result),
-        remote?.details,
-      );
-    }
-    return result;
+    return await decodeRemoteWorktreeResponse(response);
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function decodeRemoteWorktreeResponse(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!response.ok) {
+    let result: unknown;
+    try {
+      result = JSON.parse(text) as unknown;
+    } catch {
+      result = text;
+    }
+    const remote = remoteError(result);
+    throw new WorktreeServiceError(
+      remote?.code ?? "REMOTE_WORKTREE_FAILED",
+      remote?.message ?? (typeof result === "string" ? result : JSON.stringify(result)),
+      remote?.details,
+    );
+  }
+  return JSON.parse(text) as unknown;
 }
 
 function remoteError(value: unknown): {
@@ -212,15 +222,16 @@ function remoteError(value: unknown): {
 
 function worktreeError(error: unknown) {
   if (error instanceof WorktreeServiceError) {
-    return errorResult(JSON.stringify({
+    return errorResult(error.message, {
       code: error.code,
-      message: error.message,
       ...(error.details ? { details: error.details } : {}),
-    }));
+    });
   }
-  const candidate = error as { code?: unknown; message?: unknown };
-  return errorResult(JSON.stringify({
+  const candidate = error as { code?: unknown; details?: unknown };
+  return errorResult(error instanceof Error ? error.message : String(error), {
     code: typeof candidate?.code === "string" ? candidate.code : "WORKTREE_FAILED",
-    message: error instanceof Error ? error.message : String(error),
-  }));
+    ...(candidate?.details && typeof candidate.details === "object" && !Array.isArray(candidate.details)
+      ? { details: candidate.details as Record<string, unknown> }
+      : {}),
+  });
 }

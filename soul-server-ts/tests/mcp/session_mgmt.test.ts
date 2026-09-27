@@ -1089,7 +1089,6 @@ describe("create_remote_agent_session", () => {
       const structured = result.structuredContent as { error?: string };
       expect(structured.error).toContain("agent_id를 찾을 수 없습니다: roselin");
       expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
-        "GET /api/nodes/node-remote/agents",
         "POST /api/sessions",
       ]);
     } finally {
@@ -1127,10 +1126,9 @@ describe("create_remote_agent_session", () => {
 
       expect(result.isError).not.toBe(true);
       expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
-        "GET /api/nodes/node-remote/agents",
         "POST /api/sessions",
       ]);
-      expect(JSON.parse(capture.requests[1]!.body).profile).toBe("roselin_codex");
+      expect(JSON.parse(capture.requests[0]!.body).profile).toBe("roselin_codex");
     } finally {
       await capture.close();
     }
@@ -1178,7 +1176,7 @@ describe("create_remote_agent_session", () => {
     }
   });
 
-  it("agent_id가 정확히 일치하면 검증 후 /api/sessions에 그대로 전달한다", async () => {
+  it("agent_id가 정확히 일치하면 추가 조회 없이 /api/sessions에 전달한다", async () => {
     const capture = await createOrchCapture(200, (req) => {
       if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
         return {
@@ -1221,10 +1219,9 @@ describe("create_remote_agent_session", () => {
         nodeId: "node-remote",
       });
       expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
-        "GET /api/nodes/node-remote/agents",
         "POST /api/sessions",
       ]);
-      const body = JSON.parse(capture.requests[1]!.body);
+      const body = JSON.parse(capture.requests[0]!.body);
       expect(body.profile).toBe("roselin_codex");
       expect(body.nodeId).toBe("node-remote");
       expect(body.folderId).toBe("folder-1");
@@ -1278,10 +1275,9 @@ describe("create_remote_agent_session", () => {
 
       expect(result.isError).not.toBe(true);
       expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
-        "GET /api/nodes/node-remote/agents",
         "POST /api/sessions",
       ]);
-      const body = JSON.parse(capture.requests[1]!.body);
+      const body = JSON.parse(capture.requests[0]!.body);
       expect(body.caller_session_id).toBe("caller-sess-1");
       expect(body.folderId).toBe("caller-folder");
       expect(body.caller_info).toEqual(expect.objectContaining({
@@ -1334,7 +1330,7 @@ describe("create_remote_agent_session", () => {
       });
 
       expect(result.isError).not.toBe(true);
-      const body = JSON.parse(capture.requests[1]!.body);
+      const body = JSON.parse(capture.requests[0]!.body);
       expect(body.caller_session_id).toBe("caller-sess-1");
       expect(body.folderId).toBe("caller-folder");
     } finally {
@@ -1367,7 +1363,7 @@ describe("create_remote_agent_session", () => {
       });
 
       expect(result.isError).not.toBe(true);
-      const body = JSON.parse(capture.requests[1]!.body);
+      const body = JSON.parse(capture.requests[0]!.body);
       expect(body.folderId).toBe("caller-folder");
     } finally {
       await capture.close();
@@ -1417,7 +1413,7 @@ describe("create_remote_agent_session", () => {
       });
 
       expect(result.isError).not.toBe(true);
-      const body = JSON.parse(capture.requests[1]!.body);
+      const body = JSON.parse(capture.requests[0]!.body);
       expect(body.folderId).toBe("root");
       expect(body.container).toEqual({ kind: "task", id: "rb-1" });
       expect(body.notify_completion).toBe(false);
@@ -1458,7 +1454,7 @@ describe("create_remote_agent_session", () => {
       });
 
       expect(result.isError).not.toBe(true);
-      const body = JSON.parse(capture.requests[1]!.body);
+      const body = JSON.parse(capture.requests[0]!.body);
       expect(body.folderId).toBeNull();
     } finally {
       await capture.close();
@@ -1517,7 +1513,7 @@ describe("create_remote_agent_session", () => {
       });
 
       expect(result.isError).not.toBe(true);
-      const body = JSON.parse(capture.requests[1]!.body);
+      const body = JSON.parse(capture.requests[0]!.body);
       expect(body).not.toHaveProperty("caller_session_id");
       expect(body.caller_info).toEqual({
         source: "external-llm",

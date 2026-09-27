@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import { PageYjsHostClient } from "../../page/page_host_client.js";
 import { isCurrentMcpCallerExternal } from "../request_context.js";
-import { errorResult, jsonResult } from "../result.js";
+import { errorResult, errorResultFromError, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import {
   CALLER_SESSION_ID_FALLBACK_GUIDANCE,
@@ -142,7 +142,7 @@ export function registerPageTools(server: McpServer, runtime: McpRuntime): void 
         }],
       };
     } catch (error) {
-      return errorResult(errorMessage(error));
+      return errorResultFromError(error);
     }
   });
 
@@ -276,7 +276,7 @@ async function handle(
   try {
     return jsonResult(await fn(getPageHostClient(runtime)));
   } catch (error) {
-    return errorResult(errorMessage(error));
+    return errorResultFromError(error);
   }
 }
 
@@ -292,7 +292,7 @@ async function mutation(
     );
     return jsonResult(await fn(getPageHostClient(runtime), actor));
   } catch (error) {
-    return errorResult(errorMessage(error));
+    return errorResultFromError(error);
   }
 }
 
@@ -304,8 +304,4 @@ function getPageHostClient(runtime: McpRuntime): PageYjsHostClient {
 
 function mutationDescription(description: string): string {
   return `${description} ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
