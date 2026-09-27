@@ -27,6 +27,13 @@ export interface SubmitInterventionResult {
   consumeWhen: "next_turn" | null;
 }
 
+export class SubmitInterventionHttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "SubmitInterventionHttpError";
+  }
+}
+
 export async function submitIntervention(
   ctx: SubmitInterventionContext,
 ): Promise<SubmitInterventionResult> {
@@ -58,7 +65,10 @@ export async function submitIntervention(
     const body = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(extractErrorMessage(body, response.status));
+    throw new SubmitInterventionHttpError(
+      extractErrorMessage(body, response.status),
+      response.status,
+    );
   }
 
   const verdict = await response.json() as InterveneResponse;

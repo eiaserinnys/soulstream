@@ -31,6 +31,7 @@ export const computeFirstItemIndex = (prependedCount: number): number =>
 /** Virtuoso와 viewport 보정이 공유하는 안정 키. */
 export function messageOrGroupKey(item: ChatTimelineItem): string {
   if (item.type === "thinking-indicator") return "chat-thinking-indicator";
+  if (item.type === "pending-message") return `pending-chat-send-${item.pending.id}`;
   if (item.type === "summary-group") return messageOrGroupKey(item.anchor);
   return item.type === "tool-group"
     ? `tg-${item.messages[item.messages.length - 1].treeNodeId}`
@@ -55,7 +56,7 @@ export function resolveFocusEventId(
   if (target !== "assistant_turn") return eventId;
 
   const messages = items.flatMap((item) => {
-    if (item.type === "thinking-indicator") return [];
+    if (item.type === "thinking-indicator" || item.type === "pending-message") return [];
     if (item.type === "summary-group") {
       return [item.anchor, ...item.summaries.map((msg) => ({ type: "single" as const, msg }))]
         .flatMap((nested) => nested.type === "single" ? [nested.msg] : nested.messages);
@@ -93,6 +94,9 @@ export function areMessageGroupsRenderEqual(
     if (item.type !== nextItem?.type) return false;
     if (item.type === "thinking-indicator" && nextItem.type === "thinking-indicator") {
       return true;
+    }
+    if (item.type === "pending-message" && nextItem.type === "pending-message") {
+      return item.pending === nextItem.pending;
     }
     if (item.type === "single" && nextItem.type === "single") {
       return item.msg === nextItem.msg;
@@ -164,7 +168,7 @@ export const findFocusIndex = (
 ): number => {
   if (focusEventId == null) return -1;
   return grouped.findIndex((item) => {
-    if (item.type === "thinking-indicator") return false;
+    if (item.type === "thinking-indicator" || item.type === "pending-message") return false;
     if (item.type === "summary-group") {
       return findFocusIndex(
         [item.anchor, ...item.summaries.map((msg) => ({ type: "single" as const, msg }))],

@@ -46,6 +46,8 @@ import { ChatRuntimeCompactStrips } from "./ChatRuntimeCompactStrips";
 import { resolveChatTypography } from "../../lib/chat-typography";
 import { buildChatTimelineItems } from "./ChatView.thinking-indicator";
 import { ChatHistoryStatus } from "./ChatHistoryStatus";
+import type { PendingChatSend } from "../../stores/dashboard-store-types";
+import type { PendingChatSendActions } from "./pending-chat-send";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -91,6 +93,9 @@ export function ChatView({
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const pendingChatSend = useDashboardStore((s) => (
+    s.activeSessionKey ? s.pendingChatSends[s.activeSessionKey] : undefined
+  ));
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const requestedFocusEventId = useDashboardStore((s) => (
     s.focusEventSessionId === null || s.focusEventSessionId === s.activeSessionKey
@@ -99,6 +104,20 @@ export function ChatView({
   ));
   const focusEventTarget = useDashboardStore((s) => s.focusEventTarget);
   const focusEventRequestId = useDashboardStore((s) => s.focusEventRequestId);
+  const pendingSendActionsRef = useRef<PendingChatSendActions | null>(null);
+  const registerPendingSendActions = useCallback((actions: PendingChatSendActions | null) => {
+    pendingSendActionsRef.current = actions;
+  }, []);
+  const handlePendingRetry = useCallback((pending: PendingChatSend) => {
+    if (activeSessionKey) {
+      pendingSendActionsRef.current?.retry(activeSessionKey, pending);
+    }
+  }, [activeSessionKey]);
+  const handlePendingRestore = useCallback((pending: PendingChatSend) => {
+    if (activeSessionKey) {
+      pendingSendActionsRef.current?.restore(activeSessionKey, pending);
+    }
+  }, [activeSessionKey]);
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   /**
    * 채팅창 좌표 정본 — store에서 직접 select.
@@ -120,8 +139,8 @@ export function ChatView({
   const grouped = useMemo(() => groupMessages(messages), [messages]);
   const chatStatus = activeSessionSummary?.status ?? "unknown";
   const timelineItems = useMemo(
-    () => buildChatTimelineItems(grouped, messages, chatStatus),
-    [grouped, messages, chatStatus],
+    () => buildChatTimelineItems(grouped, messages, chatStatus, pendingChatSend),
+    [grouped, messages, chatStatus, pendingChatSend],
   );
   const focusEventId = resolveFocusEventId(
     timelineItems,
@@ -714,6 +733,8 @@ export function ChatView({
                 toolGroupKey={toolGroupKey}
                 toolGroupExpanded={toolGroupKey === undefined ? undefined : toolGroupExpanded}
                 onToolGroupExpandedChange={handleToolGroupExpansionChange}
+                onRetryPending={handlePendingRetry}
+                onRestorePending={handlePendingRestore}
               />
             </div>
           );
@@ -795,6 +816,7 @@ export function ChatView({
       <ChatInput
         additionalDisabled={chatInputDisabled}
         fileUploadUrl={fileUploadUrl}
+        registerPendingSendActions={registerPendingSendActions}
       />
     </div>
   );

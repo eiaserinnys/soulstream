@@ -14,6 +14,7 @@ import {
   isSessionUnread,
   useDashboardStore,
 } from "./dashboard-store";
+import type { PendingChatSend } from "./dashboard-store-types";
 
 /**
  * 평탄화 후(Phase 2-A §11.1 옵션 C) tree-utils.ts가 폐기되어 본 테스트는
@@ -2453,4 +2454,83 @@ describe("dashboard-store", () => {
     });
   });
 
+  describe("pending chat send delivery matching", () => {
+    const messageText = "처리해 주세요\n\n[첨부 파일 로컬 경로: /tmp/scene.png]";
+    const pending: PendingChatSend = {
+      id: "pending-1",
+      status: "failed",
+      text: "처리해 주세요",
+      messageText,
+      attachmentPaths: ["/tmp/scene.png"],
+      attachments: [],
+      mode: "intervention",
+      reason: "전달을 확인하지 못했습니다",
+    };
+
+    beforeEach(() => {
+      useDashboardStore.getState().setActiveSession("session-pending");
+      useDashboardStore.getState().setPendingChatSend("session-pending", pending);
+    });
+
+    it("clears the failed cell when a real-shaped intervention_sent event enters the live path", () => {
+      const event = {
+        type: "intervention_sent",
+        user: "dashboard",
+        text: messageText,
+        timestamp: 1_790_000_000,
+        attachments: ["/tmp/scene.png"],
+      } as unknown as import("../shared/types").SoulSSEEvent;
+
+      useDashboardStore.getState().processEvent(event, 10);
+
+      expect(useDashboardStore.getState().pendingChatSends["session-pending"]).toBeUndefined();
+      expect(useDashboardStore.getState().tree?.children[0]).toMatchObject({
+        type: "intervention",
+        content: messageText,
+      });
+    });
+
+    it("clears the sending cell for a real-shaped user_message in the batch path", () => {
+      useDashboardStore.getState().setPendingChatSend("session-pending", {
+        ...pending,
+        status: "sending",
+      });
+
+      useDashboardStore.getState().processEvents([{
+        event: {
+          type: "user_message",
+          user: "director",
+          text: messageText,
+          timestamp: 1_790_000_001,
+          attachments: ["/tmp/scene.png"],
+        } as unknown as import("../shared/types").SoulSSEEvent,
+        eventId: 11,
+      }]);
+
+      expect(useDashboardStore.getState().pendingChatSends["session-pending"]).toBeUndefined();
+      expect(useDashboardStore.getState().tree?.children[0]).toMatchObject({
+        type: "user_message",
+        content: messageText,
+      });
+    });
+
+    it("clears the cell for a matching user_message loaded from history", () => {
+      useDashboardStore.getState().processHistoryEvents([{
+        event: {
+          type: "user_message",
+          user: "director",
+          text: messageText,
+          timestamp: 1_790_000_002,
+          attachments: ["/tmp/scene.png"],
+        } as unknown as import("../shared/types").SoulSSEEvent,
+        eventId: 12,
+      }]);
+
+      expect(useDashboardStore.getState().pendingChatSends["session-pending"]).toBeUndefined();
+      expect(useDashboardStore.getState().tree?.children[0]).toMatchObject({
+        type: "user_message",
+        content: messageText,
+      });
+    });
+  });
 });

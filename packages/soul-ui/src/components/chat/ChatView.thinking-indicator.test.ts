@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import type { MessageOrGroup } from "../../lib/grouping";
+import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import {
   buildChatTimelineItems,
   shouldShowChatThinkingIndicator,
@@ -77,5 +78,26 @@ describe("buildChatTimelineItems", () => {
     );
 
     expect(items).toEqual([{ type: "thinking-indicator" }]);
+  });
+
+  it("pending 메시지를 타임라인 끝, 생각 중 표시 앞에 둔다", () => {
+    const pending: PendingChatSend = {
+      id: "pending-1",
+      status: "sending",
+      text: "전송 문장",
+      messageText: "전송 문장",
+      attachmentPaths: [],
+      attachments: [],
+      mode: "intervention",
+    };
+
+    const items = buildChatTimelineItems(grouped, [message], "running", pending);
+
+    expect(items.map((item) => item.type)).toEqual([
+      "single",
+      "pending-message",
+      "thinking-indicator",
+    ]);
+    expect(items[1]).toEqual({ type: "pending-message", pending });
   });
 });

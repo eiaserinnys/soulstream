@@ -36,6 +36,22 @@ export interface NewSessionDefaults {
   boardPosition?: { x: number; y: number };
 }
 
+export interface PendingChatSendAttachment {
+  id: string;
+  file: File;
+  path: string;
+}
+
+export interface PendingChatSend {
+  id: string;
+  status: "sending" | "failed";
+  text: string;
+  messageText: string;
+  attachmentPaths: string[];
+  attachments: PendingChatSendAttachment[];
+  mode: "intervention" | "resume";
+  reason?: string;
+}
 // === Folder Sort Mode ===
 
 export type FolderSortMode =
@@ -137,6 +153,9 @@ export interface DashboardState {
    * 정본은 서버 EventStore — partialize에 포함하지 않으며, 새로고침 시 history_sync baseline으로 복원된다.
    * drafts와 같은 정책: getSessionResetState()에 포함하지 않아 세션 전환 시 보존된다. */
   lastPromptSuggestions: Record<string, string | null>;
+
+  /** HTTP 응답과 서버 사용자 이벤트 사이의 세션별 임시 전송 한 칸. persist 대상이 아니다. */
+  pendingChatSends: Record<string, PendingChatSend>;
 
   /** 검색 결과 클릭 시 스크롤할 이벤트 ID (ChatView가 감지하여 해당 메시지로 스크롤) */
   focusEventId: number | null;
@@ -301,6 +320,9 @@ export interface DashboardActions {
   // draft 저장/삭제
   setDraft: (key: string, text: string) => void;
   clearDraft: (key: string) => void;
+
+  // 전송 중 메시지
+  setPendingChatSend: (sessionId: string, pending: PendingChatSend | null) => void;
 
   // prompt_suggestion (chip) 저장/삭제
   setPromptSuggestion: (sessionId: string, text: string | null) => void;

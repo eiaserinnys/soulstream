@@ -22,7 +22,7 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { SessionNotice, EventTreeNode } from "@shared/types";
+import type { SessionNotice, EventTreeNode, SoulSSEEvent } from "@shared/types";
 import type { DashboardState, DashboardActions } from "../dashboard-store-types";
 import {
   type ProcessingContext,
@@ -38,6 +38,27 @@ import {
   appendBrowserNotices,
   detailEventToSessionNotice,
 } from "../../shared/browser-notices";
+
+function clearMatchingPendingChatSend(
+  pendingChatSends: DashboardState["pendingChatSends"],
+  sessionId: string | null,
+  events: Array<{ event: SoulSSEEvent }>,
+): DashboardState["pendingChatSends"] | undefined {
+  if (!sessionId) return undefined;
+  const pending = pendingChatSends[sessionId];
+  if (!pending) return undefined;
+  const delivered = events.some(({ event }) => {
+    const candidate = event as SoulSSEEvent & { text?: unknown };
+    return (
+      (candidate.type === "user_message" || candidate.type === "intervention_sent") &&
+      candidate.text === pending.messageText
+    );
+  });
+  if (!delivered) return undefined;
+  const next = { ...pendingChatSends };
+  delete next[sessionId];
+  return next;
+}
 
 /**
  * event-processing-slice가 소유하는 필드들의 초기값을 매번 새 인스턴스로 생성한다.
@@ -126,6 +147,11 @@ export const createEventProcessingSlice: StateCreator<
       state.activeSessionSummary,
       state.lastEventId,
     );
+    const pendingChatSends = clearMatchingPendingChatSend(
+      state.pendingChatSends,
+      state.activeSessionKey,
+      events,
+    );
 
     // prompt_suggestion: clear → set 순서. 같은 배치에 둘 다 있을 때 새 값이 정본이 됨.
     if (result.clearPromptSuggestionFor) {
@@ -146,6 +172,7 @@ export const createEventProcessingSlice: StateCreator<
       return notice ? [notice] : [];
     });
     set({
+      ...(pendingChatSends ? { pendingChatSends } : {}),
       ...(result.updated
         ? { tree: result.root, treeVersion: state.treeVersion + 1 }
         : {}),
@@ -201,6 +228,11 @@ export const createEventProcessingSlice: StateCreator<
         state.lastEventId,
         true,
       );
+      const pendingChatSends = clearMatchingPendingChatSend(
+        state.pendingChatSends,
+        state.activeSessionKey,
+        events,
+      );
       const nextClaudeRuntime = events.reduce(
         (runtime, item) => applyClaudeRuntimeStoreEvent(runtime, item.event),
         state.claudeRuntime,
@@ -223,6 +255,7 @@ export const createEventProcessingSlice: StateCreator<
       addedGrouped = afterGrouped - beforeGrouped;
 
       set({
+        ...(pendingChatSends ? { pendingChatSends } : {}),
         ...(result.updated
           ? {
               tree: result.root,
