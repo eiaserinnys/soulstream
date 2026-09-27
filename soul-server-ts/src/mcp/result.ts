@@ -41,12 +41,32 @@ export function paginatedArrayResult<T>(
   };
 }
 
-export function errorResult(message: string): CallToolResult {
+export function errorResult(
+  message: string,
+  metadata: { code?: string; details?: Record<string, unknown> } = {},
+): CallToolResult {
   return {
     isError: true,
     content: [{ type: "text", text: message }],
-    structuredContent: { error: message },
+    structuredContent: {
+      error: message,
+      ...(metadata.code ? { code: metadata.code } : {}),
+      ...(metadata.details ? { details: metadata.details } : {}),
+    },
   };
+}
+
+export function errorResultFromError(error: unknown): CallToolResult {
+  const candidate = error && typeof error === "object"
+    ? error as { code?: unknown; details?: unknown }
+    : undefined;
+  return errorResult(
+    error instanceof Error ? error.message : String(error),
+    {
+      ...(typeof candidate?.code === "string" ? { code: candidate.code } : {}),
+      ...(isRecord(candidate?.details) ? { details: candidate.details } : {}),
+    },
+  );
 }
 
 function toStructuredContent(value: unknown): Record<string, unknown> {
@@ -55,4 +75,8 @@ function toStructuredContent(value: unknown): Record<string, unknown> {
   }
 
   return { result: value };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

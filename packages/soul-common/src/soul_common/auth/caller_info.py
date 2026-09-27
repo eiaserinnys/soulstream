@@ -100,7 +100,7 @@ def has_caller_identity(caller_info: dict) -> bool:
     `extract_caller_info_from_metadata`가 *마지막 신원 박힌 entry* 추출에 동일 로직을 사용하므로
     §3 정본 하나로 합쳤다. `task_factory._has_identity`는 본 함수의 backward-compat alias.
 
-    정체성 명시 source(IDENTITY_BEARING_SOURCES 7 원소)는 신원 필드가 비어도 True —
+    정체성 명시 source(IDENTITY_BEARING_SOURCES 6 원소)는 신원 필드가 비어도 True —
     orch/soul-server enrichment 헬퍼의 NOOP 정책과 §9 대칭. 그 외 source는 신원 필드
     (display_name 또는 avatar_url) truthy일 때만 True.
 
@@ -362,7 +362,8 @@ def resolve_caller_info_or_system(
 #: `_has_identity`는 True를 반환한다.
 #:
 #: R-2 (2026-05-10): agent/system/slack/soul-app 4 원소 — atom 0499ee7b 정본.
-#: R-4 (atom G-13, 2026-05-11): channel_observer/trello_watcher/llm 명시 포함 (7 원소).
+#: R-4 (atom G-13, 2026-05-11): channel_observer/llm 명시 포함 (6 원소).
+#: A-93 (2026-09-27): trello_watcher는 source만으로 신원 판정을 통과하지 않도록 제외.
 #: R-3 빌더 측 avatar_url truthy NOOP은 *우연 정합 의존* — §4 명시적 실패에 정합하지 않는다.
 #: 본 상수가 *정체성 명시 source 의도*를 직접 표현한다.
 #:
@@ -376,6 +377,5 @@ IDENTITY_BEARING_SOURCES: frozenset[str] = frozenset({
     "slack",
     "soul-app",
     "channel_observer",
-    "trello_watcher",
     "llm",
 })

@@ -65,22 +65,21 @@ def _make_request(
 
 
 class TestIdentityBearingSourcesConstant:
-    """R-4 (atom G-13, 2026-05-11): IDENTITY_BEARING_SOURCES 공유 정본 단위.
+    """IDENTITY_BEARING_SOURCES 공유 정본 단위.
 
     이전 R-2까지: orch session_serializer + soul-server task_factory + soul-server
     dashboard/user_profile 3 위치에 각자 `_IDENTITY_BEARING_SOURCES` 사본 (4 원소).
-    R-4: soul_common.auth.caller_info 단일 정본으로 추출 + 봇/llm source 명시 포함 (7 원소).
+    R-4: soul_common.auth.caller_info 단일 정본으로 추출 + 봇/llm source 명시 포함 (6 원소).
     """
 
-    def test_seven_elements(self):
-        """R-4: agent/system/slack/soul-app + channel_observer/trello_watcher/llm — 7 원소."""
+    def test_six_elements(self):
+        """agent/system/slack/soul-app/channel_observer/llm만 신원 필드 없는 source로 인정."""
         assert IDENTITY_BEARING_SOURCES == frozenset({
             "agent",
             "system",
             "slack",
             "soul-app",
             "channel_observer",
-            "trello_watcher",
             "llm",
         })
 
@@ -88,11 +87,14 @@ class TestIdentityBearingSourcesConstant:
         """immutable frozenset — 모듈 정본을 호출자가 변경 못 함 (§3 정본 보호)."""
         assert isinstance(IDENTITY_BEARING_SOURCES, frozenset)
 
-    def test_bot_sources_included_explicitly(self):
-        """R-4 atom G-13: 봇/llm source 명시 포함 (우연 정합 제거)."""
+    def test_channel_observer_and_llm_are_identity_sources(self):
+        """명시적으로 identity-bearing인 봇/llm source를 포함한다."""
         assert "channel_observer" in IDENTITY_BEARING_SOURCES
-        assert "trello_watcher" in IDENTITY_BEARING_SOURCES
         assert "llm" in IDENTITY_BEARING_SOURCES
+
+    def test_trello_watcher_source_alone_is_not_identity(self):
+        """trello_watcher는 실제 발신처가 신원 필드를 채우므로 source만으로는 제외."""
+        assert "trello_watcher" not in IDENTITY_BEARING_SOURCES
 
     def test_non_identity_sources_excluded(self):
         """browser/api는 IDENTITY_BEARING_SOURCES에 미포함 — owner fallback 발동 대상."""
@@ -399,7 +401,7 @@ class TestExtractCallerInfoFromMetadata:
         """source ∈ IDENTITY_BEARING_SOURCES이면 신원 필드 부재여도 *신원 박힌* 것으로 취급
         (`_has_identity`와 §9 대칭, R-4 atom G-13).
 
-        agent/system/slack/soul-app/channel_observer/trello_watcher/llm 7 원소가 정체성 명시 source.
+        agent/system/slack/soul-app/channel_observer/llm 6 원소가 정체성 명시 source.
         """
         metadata = [
             {"type": "caller_info", "value": {"source": "browser", "ip": "1.1.1.1"}},

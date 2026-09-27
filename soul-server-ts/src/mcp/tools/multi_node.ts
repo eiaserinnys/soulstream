@@ -301,11 +301,6 @@ export function registerMultiNodeTools(
       const caller = requireRemoteCallerAttribution(runtime, caller_session_id);
       if (!caller.ok) return errorResult(caller.error);
 
-      if (agent_id !== undefined) {
-        const validation = await validateRemoteAgentId(orch, node_id, agent_id);
-        if (!validation.ok) return errorResult(validation.message);
-      }
-
       const body: Record<string, unknown> = {
         prompt,
         nodeId: node_id,
@@ -369,34 +364,6 @@ export function registerMultiNodeTools(
       }
     },
   );
-}
-
-type AgentIdValidation =
-  | { ok: true }
-  | { ok: false; message: string };
-
-async function validateRemoteAgentId(
-  orch: { baseUrl: string; headers: Record<string, string> },
-  nodeId: string,
-  _agentId: string,
-): Promise<AgentIdValidation> {
-  try {
-    await fetchOrch(
-      orch,
-      "GET",
-      `/api/nodes/${encodeURIComponent(nodeId)}/agents`,
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      ok: false,
-      message: `agent_id 검증 실패: ${message}`,
-    };
-  }
-
-  // Alias는 프로필 목록에 광고하지 않는다. 목록 조회 성공만 확인하고,
-  // canonical/alias 유효성의 정본 판정은 POST /api/sessions에 맡긴다.
-  return { ok: true };
 }
 
 async function fetchOrch(

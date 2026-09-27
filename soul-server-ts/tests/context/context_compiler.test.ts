@@ -333,6 +333,23 @@ describe("context compiler applies_when filter", () => {
     );
   });
 
+  it("accepts the active trello_watcher source in context filters", async () => {
+    const compiled = await compileContexts(config, [{
+      nodeId: "node-active-source",
+      depth: 1,
+      titlesOnly: false,
+      appliesWhen: { source: ["trello_watcher"] },
+    }], logger, { ...session, source: "trello_watcher" });
+
+    expect(compiled.manifest.sources[0]?.status).toBe("ok");
+    expect(compiled.manifest.sources[0]?.applies_when).toEqual({ source: ["trello_watcher"] });
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ field: "source", value: "trello_watcher" }),
+      "[context compiler] unknown applies_when value — ignoring condition",
+    );
+  });
+
   it("ignores the whole condition when an OR array contains an unknown value", async () => {
     const compiled = await compileContexts(config, [{
       nodeId: "node-mixed",
