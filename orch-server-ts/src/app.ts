@@ -242,6 +242,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerNodeAgentProfileRoutes(app, {
       ...options.nodeAgentProfileRoutes,
       worktreeAuthBearerToken: options.config.authBearerToken,
+      environment: options.config.environment,
     });
   }
   if (options.agentProfileRoutes !== undefined) {
@@ -260,6 +261,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerSessionCommandRoutes(app, {
       ...options.sessionCommandRoutes,
       worktreeAuthBearerToken: options.config.authBearerToken,
+      environment: options.config.environment,
     });
   }
   if (options.sessionActionCommandRoutes !== undefined) {
@@ -275,7 +277,10 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerRecurringJobRoutes(app, options.recurringJobRoutes);
   }
   if (options.recurringJobHostRoutes !== undefined) {
-    registerRecurringJobHostRoutes(app, options.recurringJobHostRoutes);
+    registerRecurringJobHostRoutes(app, {
+      ...options.recurringJobHostRoutes,
+      environment: options.config.environment,
+    });
   }
   if (options.sessionCatalogRoutes !== undefined) {
     registerSessionCatalogRoutes(app, options.sessionCatalogRoutes);
@@ -299,7 +304,10 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerExecuteProxyRoutes(app, options.executeProxyRoutes);
   }
   if (options.ephemeralLlmRoutes !== undefined) {
-    registerEphemeralLlmRoutes(app, options.ephemeralLlmRoutes);
+    registerEphemeralLlmRoutes(app, {
+      ...options.ephemeralLlmRoutes,
+      environment: options.config.environment,
+    });
   }
   if (options.pushRoutes !== undefined) {
     registerPushRoutes(app, options.pushRoutes);
@@ -326,16 +334,25 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerUserPreferencesRoutes(app, options.userPreferencesRoutes);
   }
   if (options.folderRoutes !== undefined) {
-    registerFolderRoutes(app, options.folderRoutes);
+    registerFolderRoutes(app, {
+      ...options.folderRoutes,
+      environment: options.config.environment,
+    });
   }
   if (options.boardYjsHostProxyRoutes !== undefined) {
-    registerBoardYjsHostProxyRoutes(app, options.boardYjsHostProxyRoutes);
+    registerBoardYjsHostProxyRoutes(app, {
+      ...options.boardYjsHostProxyRoutes,
+      environment: options.config.environment,
+    });
   }
   if (options.boardYjsRoutes !== undefined) {
     registerBoardYjsRoutes(app, options.boardYjsRoutes);
   }
   if (options.pageYjsRoutes !== undefined) {
-    registerPageYjsRoutes(app, options.pageYjsRoutes);
+    registerPageYjsRoutes(app, {
+      ...options.pageYjsRoutes,
+      environment: options.config.environment,
+    });
   }
   if (options.boardAssetRoutes !== undefined) {
     registerBoardAssetRoutes(app, options.boardAssetRoutes);
@@ -350,13 +367,22 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerMarkdownDocumentRoutes(app, options.markdownDocumentRoutes);
   }
   if (options.taskRoutes !== undefined) {
-    registerTaskRoutes(app, options.taskRoutes);
+    registerTaskRoutes(app, {
+      ...options.taskRoutes,
+      environment: options.config.environment,
+    });
   }
   if (options.scheduleHostRoutes !== undefined) {
-    registerScheduleHostRoute(app, options.scheduleHostRoutes);
+    registerScheduleHostRoute(app, {
+      ...options.scheduleHostRoutes,
+      environment: options.config.environment,
+    });
   }
   if (options.persistenceHostRoutes !== undefined) {
-    registerPersistenceHostRoutes(app, options.persistenceHostRoutes);
+    registerPersistenceHostRoutes(app, {
+      ...options.persistenceHostRoutes,
+      environment: options.config.environment,
+    });
   }
   if (options.usageSummaryRoutes !== undefined) {
     registerUsageSummaryRoutes(app, options.usageSummaryRoutes);

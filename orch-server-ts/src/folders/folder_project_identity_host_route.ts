@@ -11,6 +11,7 @@ export interface FolderProjectIdentityHostRouteOptions {
     "create" | "mutateFromFolder" | "backfillLegacyFolder"
   >;
   authBearerToken: string;
+  environment?: string;
 }
 
 const id = z.string().trim().min(1);
@@ -56,9 +57,10 @@ export function registerFolderProjectIdentityHostRoute(
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
         options.authBearerToken,
+        options.environment,
       );
       if (!authorization.ok) {
-        return errorReply(reply, 401, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
+        return errorReply(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
       }
       const operation = request.params.operation as keyof typeof schemas;
       const schema = schemas[operation];

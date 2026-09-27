@@ -9,6 +9,7 @@ import {
   type TaskIdentityRepository,
 } from "../src/tasks/task_identity_service.js";
 import { PageMutationCore } from "../src/page/page_mutation_core.js";
+import { TaskIdentityAlreadyPromotedError } from "../src/tasks/task_identity_errors.js";
 
 const identityId = "00000000-0000-4000-8000-0000000000ae";
 
@@ -248,7 +249,7 @@ describe("TaskIdentityService", () => {
       });
     vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
     vi.mocked(repository.promote).mockRejectedValue(
-      new Error(`page is already a task identity: ${identityId}`),
+      new TaskIdentityAlreadyPromotedError(`page is already a task identity: ${identityId}`),
     );
     const service = new TaskIdentityService({
       board: new MemoryBoardPort(),

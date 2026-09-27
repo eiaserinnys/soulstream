@@ -1,4 +1,4 @@
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { isUuid } from "../http/uuid.js";
 
 export class EventIngressValidationError extends Error {}
 
@@ -36,7 +36,7 @@ export function stringValue(value: unknown, field: string): string {
 
 export function requiredUuid(value: unknown, field: string): string {
   const text = nonEmptyString(value, field);
-  if (!UUID_PATTERN.test(text)) throw new EventIngressValidationError(`${field} must be UUID`);
+  if (!isUuid(text, "rfc4122")) throw new EventIngressValidationError(`${field} must be UUID`);
   return text;
 }
 

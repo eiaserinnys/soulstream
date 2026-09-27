@@ -14,6 +14,12 @@ import {
 import { createLiveDbCatalogRepository } from "../src/runtime/live_db_catalog_repository.js";
 
 describe("live Postgres SQL resolver", () => {
+  it("requires an explicit SQL resolver instead of creating an implicit pool", () => {
+    expect(() => createLiveDbCatalogRepository({})).toThrow(
+      "sqlResolver or sql is required",
+    );
+  });
+
   it("captures the pinned postgres.js query canceller rejection", async () => {
     const cancellationError = new Error("CancelRequest socket failed");
     let report!: (error: unknown) => void;

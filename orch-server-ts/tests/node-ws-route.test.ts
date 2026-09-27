@@ -100,7 +100,7 @@ describe("Node WS Fastify route harness", () => {
       injectable.injectWS("/ws/node", {
         headers: { authorization: "Bearer wrong-token" },
       }),
-    ).rejects.toThrow("Unexpected server response: 403");
+    ).rejects.toThrow("Unexpected server response: 401");
     expect(registry.listConnectedNodes()).toEqual([]);
 
     await app.close();

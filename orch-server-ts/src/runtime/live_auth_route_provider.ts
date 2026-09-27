@@ -162,18 +162,8 @@ export function createLiveAuthTokenResolver(
     const environment = requiredSnapshotString(snapshot, "environment");
     const googleClientId = requiredSnapshotString(snapshot, "google_client_id");
 
-    let bearer: AuthTokenAccessResult;
-    if (!configuredBearer) {
-      if (!isProductionEnvironment(environment)) return { ok: true };
-      bearer = {
-        ok: false,
-        statusCode: 500,
-        detail: "Authentication not configured",
-      };
-    } else {
-      bearer = verifyServiceBearer(request, configuredBearer);
-      if (bearer.ok) return { ok: true };
-    }
+    const bearer = verifyServiceBearer(request, configuredBearer ?? "", environment);
+    if (bearer.ok) return { ok: true };
 
     if (googleClientId.length > 0) {
       const payload = options.resolveDashboardUser === undefined
@@ -345,12 +335,21 @@ function constantTimeStringEqual(left: string, right: string): boolean {
 function verifyServiceBearer(
   request: Parameters<AuthTokenResolver>[0],
   configuredBearer: string,
+  environment: string,
 ): AuthTokenAccessResult {
   const verification = verifyServiceBearerAuthorization(
     request.headers.authorization,
     configuredBearer,
+    environment,
   );
   if (verification.ok) return { ok: true };
+  if (verification.reason === "not_configured") {
+    return {
+      ok: false,
+      statusCode: 503,
+      detail: "Authentication not configured",
+    };
+  }
   if (verification.reason === "missing") {
     return {
       ok: false,
@@ -395,8 +394,4 @@ function optionalConfigString(
     throw new Error(`${key} must be a string`);
   }
   return value;
-}
-
-function isProductionEnvironment(environment: string): boolean {
-  return environment.toLowerCase() === "production";
 }

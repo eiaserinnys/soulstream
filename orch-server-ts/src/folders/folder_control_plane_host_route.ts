@@ -6,6 +6,7 @@ import type { FolderControlPlaneService } from "./folder_control_plane_service.j
 export interface FolderControlPlaneHostRouteOptions {
   serviceProvider: () => Promise<FolderControlPlaneService>;
   authBearerToken: string;
+  environment?: string;
 }
 
 const operations = new Set([
@@ -30,9 +31,10 @@ export function registerFolderControlPlaneHostRoute(
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
         options.authBearerToken,
+        options.environment,
       );
       if (!authorization.ok) {
-        return errorReply(reply, 401, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
+        return errorReply(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
       }
       const body = record(request.body);
       if (!body) return errorReply(reply, 422, "INVALID_FOLDER_REQUEST", "body must be an object");

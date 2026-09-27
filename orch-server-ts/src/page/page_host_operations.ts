@@ -16,6 +16,7 @@ import { PageYjsPageNotFoundError } from "./page_yjs_persistence.js";
 export interface PageYjsHostOperationOptions {
   service: PageYjsService;
   authBearerToken: string;
+  environment?: string;
 }
 
 const id = z.string().trim().min(1);
@@ -174,9 +175,10 @@ export async function handlePageYjsHostOperation(
   const authorization = verifyServiceBearerAuthorization(
     request.headers.authorization,
     options.authBearerToken,
+    options.environment,
   );
   if (!authorization.ok) {
-    return errorReply(reply, 401, "UNAUTHORIZED", `Page Yjs host bearer token is ${authorization.reason}`);
+    return errorReply(reply, authorization.statusCode, "UNAUTHORIZED", `Page Yjs host bearer token is ${authorization.reason}`);
   }
   const parsed = schema.safeParse(request.body ?? {});
   if (!parsed.success) {

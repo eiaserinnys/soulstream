@@ -157,7 +157,7 @@ describe("live attachment WS transport", () => {
         node!,
         uploadInput([Buffer.from("chunk")], 5),
       ),
-    ).rejects.toThrow("INVALID_REQUEST: chunk rejected");
+    ).rejects.toThrow("chunk rejected");
     expect(fixture.sent.map((message) => message.type)).toEqual([
       "upload_attachment_start",
       "upload_attachment_chunk",
@@ -229,7 +229,7 @@ describe("live attachment WS transport", () => {
         node!,
         uploadInput([], MAX_ATTACHMENT_SIZE_BYTES + 1),
       ),
-    ).rejects.toThrow("INVALID_REQUEST: 파일이 너무 큽니다");
+    ).rejects.toThrow("파일이 너무 큽니다");
     expect(fixture.createCommand).not.toHaveBeenCalled();
   });
 

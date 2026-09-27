@@ -49,7 +49,7 @@ describe("identity page commit → live Y.Doc synchronization", () => {
           authBearerToken: "service-token",
           environment: "production",
           dashboardAuthEnabled: false,
-          verifyDashboardToken: async () => null,
+          resolveDashboardUserFromHeaders: async () => null,
         },
       });
       registerPageYjsRoutes(app, {

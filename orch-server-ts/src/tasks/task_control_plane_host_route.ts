@@ -6,6 +6,7 @@ import type { TaskControlPlaneService } from "./task_control_plane_service.js";
 export interface TaskControlPlaneHostRouteOptions {
   serviceProvider: () => Promise<TaskControlPlaneService>;
   authBearerToken: string;
+  environment?: string;
 }
 
 const readOperations = new Set([
@@ -39,9 +40,10 @@ export function registerTaskControlPlaneHostRoute(
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
         options.authBearerToken,
+        options.environment,
       );
       if (!authorization.ok) {
-        return errorReply(reply, 401, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
+        return errorReply(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
       }
       const body = record(request.body);
       if (!body) return errorReply(reply, 422, "INVALID_TASK_HOST_REQUEST", "body must be an object");

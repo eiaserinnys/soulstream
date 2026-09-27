@@ -6,6 +6,7 @@ import type { SoulstreamScheduleRepository } from "./schedule_repository.js";
 export interface ScheduleHostRouteOptions {
   repositoryProvider: () => Promise<SoulstreamScheduleRepository>;
   authBearerToken: string;
+  environment?: string;
 }
 
 const operations = {
@@ -31,9 +32,10 @@ export function registerScheduleHostRoute(app: FastifyInstance, options: Schedul
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
         options.authBearerToken,
+        options.environment,
       );
       if (!authorization.ok) {
-        return errorReply(reply, 401, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
+        return errorReply(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
       }
       const method = operations[request.params.operation as keyof typeof operations];
       if (!method) return errorReply(reply, 404, "SCHEDULE_OPERATION_NOT_FOUND", "unknown schedule operation");

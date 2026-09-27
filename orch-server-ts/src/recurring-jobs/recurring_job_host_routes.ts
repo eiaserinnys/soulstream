@@ -13,6 +13,7 @@ import { RecurringJobError, type RecurringJobActor } from "./types.js";
 export type RecurringJobHostRouteOptions = {
   readonly service: RecurringJobService;
   readonly authBearerToken: string;
+  readonly environment?: string;
 };
 
 const operations = new Set([
@@ -41,8 +42,9 @@ export function registerRecurringJobHostRoutes(
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
         options.authBearerToken,
+        options.environment,
       );
-      if (!authorization.ok) return hostError(reply, 401, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
+      if (!authorization.ok) return hostError(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
       if (!operations.has(request.params.operation)) {
         return hostError(reply, 404, "RECURRING_JOB_OPERATION_NOT_FOUND", "unknown recurring job operation");
       }

@@ -7,7 +7,9 @@
  * fastify·postgres 등 어떤 것도 import하지 않는다.
  *
  * soul-app(별도 리포)은 코드를 공유할 수 없으므로 이 규약을 손으로 미러링한다.
- */
+*/
+
+import { isUuid } from "../http/uuid.js";
 
 export const UI_EVENT_SCHEMA_VERSION = "soulstream.ui_event.v1";
 
@@ -218,8 +220,6 @@ export type NormalizedUiEvent = {
   readonly attrs: Record<string, UiEventAttrValue>;
 };
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export function isUiEventType(value: unknown): value is UiEventType {
   return typeof value === "string" && (UI_EVENT_TYPES as readonly string[]).includes(value);
 }
@@ -247,7 +247,7 @@ export function validateUiEvent(raw: unknown, receivedAtMs: number): UiEventVali
   if (!isRecord(raw)) return fail("event_not_object");
 
   const eventId = raw.eventId;
-  if (typeof eventId !== "string" || !UUID_RE.test(eventId)) return fail("invalid_event_id");
+  if (!isUuid(eventId)) return fail("invalid_event_id");
 
   if (!isUiEventType(raw.type)) return fail("unknown_type");
   const type = raw.type;

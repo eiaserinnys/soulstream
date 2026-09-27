@@ -21,6 +21,7 @@ export interface BoardYjsHostOperationOptions {
   service: BoardYjsService;
   projectionHost?: BoardProjectionHost;
   authBearerToken: string;
+  environment?: string;
 }
 
 const containerSchema = z.object({
@@ -169,9 +170,10 @@ export async function handleBoardYjsHostOperation(
   const authorization = verifyServiceBearerAuthorization(
     request.headers.authorization,
     options.authBearerToken,
+    options.environment,
   );
   if (!authorization.ok) {
-    return reply.status(401).send({
+    return reply.status(authorization.statusCode).send({
       detail: {
         error: {
           code: "UNAUTHORIZED",

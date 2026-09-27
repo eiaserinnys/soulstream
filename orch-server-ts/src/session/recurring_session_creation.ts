@@ -7,6 +7,7 @@ import type { CreateSessionNodeCommandPayload } from "../node/registry_types.js"
 import type { ModelPresetAvailabilityService } from "../model/model_preset_availability.js";
 import type { RecurringSessionLaunchResult } from "../recurring-jobs/types.js";
 import { DEFAULT_SESSION_CREATE_RECONCILE_TIMEOUT_MS } from "../node/node_timeouts.js";
+import { isUuid } from "../http/uuid.js";
 import {
   NodeCommandTransportError,
   type SessionCommandTransportBridge,
@@ -52,7 +53,7 @@ export async function createRecurringSession(
   options: RecurringSessionCreateCoreOptions,
   input: CreateRecurringSessionInput,
 ): Promise<RecurringSessionLaunchResult> {
-  if (!isUuidV4(input.sessionId)) {
+  if (!isUuid(input.sessionId, 4)) {
     throw new RecurringSessionCreateError(
       "INVALID_STABLE_SESSION_ID",
       "Recurring run session_id must be a UUID v4.",
@@ -165,8 +166,4 @@ function responseMessage(response: NodeCommandResponse, fallback: string): strin
   return typeof response.message === "string" && response.message.trim()
     ? response.message
     : fallback;
-}
-
-function isUuidV4(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }

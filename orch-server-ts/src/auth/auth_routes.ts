@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { extractBearerToken } from "./service_bearer.js";
+
 export const AUTH_COOKIE_NAME = "soul_dashboard_auth";
 export const OAUTH_STATE_COOKIE_NAME = "soul_oauth_state";
 export const RETURN_TO_COOKIE_NAME = "soul_return_to";
@@ -127,7 +129,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
       return routeError(reply, access.statusCode ?? 401, access.detail);
     }
     const token = extractCookieToken(request, await getCookieName(options))
-      ?? extractBearerToken(request);
+      ?? extractBearerToken(request.headers.authorization);
     if (!token) return routeError(reply, 401, "No auth token in session");
     return { token };
   });
@@ -223,7 +225,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     // carry it as a bearer token. Service bearer tokens fail jwt.verifyToken and
     // never gain a dashboard/admin identity.
     const cookieToken = extractCookieToken(request, cookieName(authConfig));
-    const bearerToken = extractBearerToken(request);
+    const bearerToken = extractBearerToken(request.headers.authorization);
     let payload = cookieToken
       ? await options.jwt.verifyToken(cookieToken)
       : null;
@@ -396,14 +398,6 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
 function extractCookieToken(request: FastifyRequest, name: string): string | undefined {
   return parseCookies(request.headers.cookie)[name];
-}
-
-function extractBearerToken(request: FastifyRequest): string | undefined {
-  const authorization = headerString(request.headers.authorization);
-  if (authorization?.toLowerCase().startsWith("bearer ")) {
-    return authorization.slice(7);
-  }
-  return undefined;
 }
 
 function parseCookies(header: string | string[] | undefined): Record<string, string> {

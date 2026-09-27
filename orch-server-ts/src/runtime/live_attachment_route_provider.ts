@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  AttachmentRouteError,
   AttachmentTransportConnectionError,
   AttachmentTransportTimeoutError,
   MAX_ATTACHMENT_SIZE_BYTES,
@@ -238,6 +239,26 @@ function mapAttachmentCommandError(error: unknown): unknown {
   ) {
     return error;
   }
+  if (error instanceof PendingNodeCommandRejectedError) {
+    const invalidRequest = /^INVALID_REQUEST:\s*(.*)$/s.exec(error.message);
+    if (invalidRequest) {
+      return new AttachmentRouteError(
+        "INVALID_ATTACHMENT_REQUEST",
+        invalidRequest[1] ?? error.message,
+        400,
+      );
+    }
+    if (error.commandType === "download_attachment") {
+      const notFound = /^NOT_FOUND:\s*(.*)$/s.exec(error.message);
+      if (notFound) {
+        return new AttachmentRouteError(
+          "ATTACHMENT_NOT_FOUND",
+          notFound[1] ?? error.message,
+          404,
+        );
+      }
+    }
+  }
   if (error instanceof PendingNodeCommandTimeoutError) {
     return new AttachmentTransportTimeoutError(error.message);
   }
@@ -259,16 +280,18 @@ function isDisconnectedError(error: unknown): boolean {
 
 function validateExpectedSize(expectedSize: number): void {
   if (!Number.isFinite(expectedSize) || !Number.isInteger(expectedSize) || expectedSize < 0) {
-    throw new Error("INVALID_REQUEST: 파일 크기가 잘못되었습니다");
+    throw new AttachmentRouteError("INVALID_ATTACHMENT_SIZE", "파일 크기가 잘못되었습니다", 400);
   }
   validateCumulativeSize(expectedSize);
 }
 
 function validateCumulativeSize(size: number): void {
   if (size > MAX_ATTACHMENT_SIZE_BYTES) {
-    throw new Error(
-      `INVALID_REQUEST: 파일이 너무 큽니다 (${Math.floor(size / 1024 / 1024)}MB > ` +
+    throw new AttachmentRouteError(
+      "ATTACHMENT_TOO_LARGE",
+      `파일이 너무 큽니다 (${Math.floor(size / 1024 / 1024)}MB > ` +
         `${MAX_ATTACHMENT_SIZE_BYTES / 1024 / 1024}MB)`,
+      400,
     );
   }
 }

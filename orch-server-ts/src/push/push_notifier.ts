@@ -60,7 +60,7 @@ export type PushNotifierOptions = {
   readonly resolveNodeEmail: (nodeId: string) => string | undefined;
   readonly foregroundObservers: SessionForegroundObserverTracker;
   readonly onInfo?: (event: PushNotificationLogEvent) => void;
-  readonly onWarning?: (message: string, error?: unknown) => void;
+  readonly onWarning: (message: string, error?: unknown) => void;
   readonly nowMs?: () => number;
 };
 
@@ -101,7 +101,7 @@ export class PushNotifier {
   private closed = false;
 
   constructor(private readonly options: PushNotifierOptions) {
-    this.warn = options.onWarning ?? ((message, error) => console.warn(message, error));
+    this.warn = options.onWarning;
     this.nowMs = options.nowMs ?? Date.now;
   }
 

@@ -35,6 +35,20 @@ describe("live authenticated user resolver", () => {
     ).resolves.toEqual({ email: "native@example.com" });
   });
 
+  it("resolves dashboard identity from headers for WebSocket consumers", async () => {
+    const jwt = createJwtHelper({
+      "native-jwt": { email: "native@example.com" },
+    });
+    const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
+
+    await expect(resolvers.resolveUserFromHeaders({
+      authorization: "bEaReR   native-jwt",
+    })).resolves.toEqual({
+      payload: { email: "native@example.com" },
+      carrier: "bearer",
+    });
+  });
+
   it("falls back to a valid bearer JWT when a stale cookie is also present", async () => {
     const jwt = createJwtHelper({
       "native-jwt": { email: "native@example.com" },

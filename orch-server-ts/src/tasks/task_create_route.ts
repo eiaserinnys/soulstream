@@ -7,7 +7,11 @@ import {
 import type { FastifyInstance } from "fastify";
 
 import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
-import { isTaskIdentityTitleConflictError } from "./task_identity_errors.js";
+import {
+  isTaskIdentityCreateCollision,
+  isTaskIdentityRequestValidationError,
+  isTaskIdentityTitleConflictError,
+} from "./task_identity_errors.js";
 import type { TaskRouteOptions } from "./task_route_types.js";
 
 interface CreateTaskBody {
@@ -70,9 +74,8 @@ export function registerTaskCreateRoute(
 
 function taskIdentityCreateErrorStatus(error: unknown): 409 | 422 | 500 {
   if (isTaskIdentityTitleConflictError(error)) return 409;
-  if (!(error instanceof Error)) return 500;
-  if (error.message === "new task identity id must be a UUID") return 422;
-  if (error.message.startsWith("task identity already exists:")) return 409;
+  if (isTaskIdentityRequestValidationError(error)) return 422;
+  if (isTaskIdentityCreateCollision(error)) return 409;
   return 500;
 }
 

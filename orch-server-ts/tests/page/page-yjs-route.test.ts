@@ -252,12 +252,34 @@ function productionAuth(overrides: Partial<{
   dashboardAuthEnabled: boolean;
   verifyDashboardToken: (token: string) => Promise<Record<string, unknown> | null>;
 }> = {}) {
+  const { verifyDashboardToken, ...configOverrides } = overrides;
+  const verifyDashboardJwt = verifyDashboardToken ?? vi.fn().mockResolvedValue(null);
   return {
     authBearerToken: "service-token",
     environment: "production",
     dashboardAuthEnabled: false,
-    verifyDashboardToken: vi.fn().mockResolvedValue(null),
-    ...overrides,
+    ...configOverrides,
+    resolveDashboardUserFromHeaders: async (headers: {
+      authorization?: string | string[];
+      cookie?: string | string[];
+    }) => {
+      const rawCookie = Array.isArray(headers.cookie) ? headers.cookie[0] : headers.cookie;
+      const cookieToken = rawCookie
+        ?.split(";")
+        .map((part) => part.trim())
+        .find((part) => part.startsWith(`${DASHBOARD_AUTH_COOKIE_NAME}=`))
+        ?.slice(DASHBOARD_AUTH_COOKIE_NAME.length + 1);
+      const rawAuthorization = Array.isArray(headers.authorization)
+        ? headers.authorization[0]
+        : headers.authorization;
+      const bearerToken = rawAuthorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+      const token = cookieToken ?? bearerToken;
+      if (token === undefined) return null;
+      const payload = await verifyDashboardJwt(token);
+      return payload === null
+        ? null
+        : { payload, carrier: cookieToken === undefined ? "bearer" as const : "cookie" as const };
+    },
   };
 }
 

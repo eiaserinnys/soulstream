@@ -9,6 +9,7 @@ import {
   type PageMutationActor,
 } from "../page/page_mutation_core.js";
 import { readPageYDocReplica } from "../page/page_yjs_model.js";
+import { TaskIdentityRequestValidationError } from "./task_identity_errors.js";
 
 export function initialTaskOperations(
   title: string,
@@ -137,7 +138,7 @@ export function requireNonEmpty(value: string, name: string): string {
 
 export function assertUuid(value: string): void {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-    throw new Error("new task identity id must be a UUID");
+    throw new TaskIdentityRequestValidationError("new task identity id must be a UUID");
   }
 }
 

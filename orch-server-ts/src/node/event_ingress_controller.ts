@@ -142,10 +142,12 @@ export class NodeEventIngressController {
       const effectEvents = sessionUpdate
         ? this.options.receiveCommittedEvent(sessionUpdate)
         : undefined;
-      try {
-        this.options.publish(registryEvents);
-      } catch (error) {
-        this.options.logError(error, "Committed event broadcast failed");
+      if (!item.duplicateReceipt) {
+        try {
+          this.options.publish(registryEvents);
+        } catch (error) {
+          this.options.logError(error, "Committed event broadcast failed");
+        }
       }
       if (effectEvents) {
         try {

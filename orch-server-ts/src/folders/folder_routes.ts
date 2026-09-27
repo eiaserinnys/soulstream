@@ -66,6 +66,7 @@ export type FolderRouteOptions = {
     "create" | "mutateFromFolder" | "backfillLegacyFolder"
   >;
   authBearerToken?: string;
+  environment?: string;
   controlPlaneServiceProvider?: () => Promise<FolderControlPlaneService>;
 };
 
@@ -103,16 +104,18 @@ export function registerFolderRoutes(
   app: FastifyInstance,
   options: FolderRouteOptions,
 ): void {
-  if (options.projectIdentityService && options.authBearerToken) {
+  if (options.projectIdentityService) {
     registerFolderProjectIdentityHostRoute(app, {
       service: options.projectIdentityService,
-      authBearerToken: options.authBearerToken,
+      authBearerToken: options.authBearerToken ?? "",
+      environment: options.environment,
     });
   }
-  if (options.controlPlaneServiceProvider && options.authBearerToken) {
+  if (options.controlPlaneServiceProvider) {
     registerFolderControlPlaneHostRoute(app, {
       serviceProvider: options.controlPlaneServiceProvider,
-      authBearerToken: options.authBearerToken,
+      authBearerToken: options.authBearerToken ?? "",
+      environment: options.environment,
     });
   }
   app.get("/api/folders", async (request, reply) => {

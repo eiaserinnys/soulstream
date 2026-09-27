@@ -419,8 +419,7 @@ function routeError(
     return errorReply(reply, 422, error.code, error.message);
   }
   if (
-    error instanceof PageYjsPageNotFoundError ||
-    (error instanceof Error && error.message.includes("page not found"))
+    error instanceof PageYjsPageNotFoundError
   ) {
     return errorReply(reply, 404, "PAGE_NOT_FOUND", error.message);
   }

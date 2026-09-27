@@ -6,6 +6,7 @@ import type { PersistenceHostRepositories } from "./persistence_host_runtime.js"
 export interface PersistenceHostRouteOptions {
   repositoryProvider: () => Promise<PersistenceHostRepositories>;
   authBearerToken: string;
+  environment?: string;
 }
 
 type RepositoryKey = keyof PersistenceHostRepositories;
@@ -151,10 +152,11 @@ function registerDomain(
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
         options.authBearerToken,
+        options.environment,
       );
       if (!authorization.ok) {
-        return sendTimed(request, reply, timing, 401, () =>
-          errorReply(reply, 401, "UNAUTHORIZED", `bearer token is ${authorization.reason}`));
+        return sendTimed(request, reply, timing, authorization.statusCode, () =>
+          errorReply(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`));
       }
       const target = operations[request.params.operation];
       if (!target) {

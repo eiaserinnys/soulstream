@@ -5,6 +5,12 @@ import {
   type AuthJwtHelper,
   type AuthJwtPayload,
 } from "../auth/auth_routes.js";
+import { extractBearerToken } from "../auth/service_bearer.js";
+
+export type DashboardAuthHeaders = Pick<
+  FastifyRequest["headers"],
+  "authorization" | "cookie"
+>;
 
 export type CreateLiveAuthenticatedUserResolversOptions = {
   readonly jwt: AuthJwtHelper;
@@ -33,11 +39,14 @@ export type LiveCallerInfoResolver = (
 export type LiveAuthenticatedUserResolvers = {
   readonly verifyToken: LiveDashboardTokenVerifier;
   readonly resolveUser: LiveAuthenticatedUserResolver;
+  readonly resolveUserFromHeaders: (
+    headers: DashboardAuthHeaders,
+  ) => Promise<AuthenticatedDashboardUser | null>;
   readonly resolveEmail: LiveAuthenticatedEmailResolver;
   readonly resolveCallerInfo: LiveCallerInfoResolver;
 };
 
-type AuthenticatedDashboardUser = {
+export type AuthenticatedDashboardUser = {
   readonly payload: AuthJwtPayload;
   readonly carrier: "cookie" | "bearer";
 };
@@ -62,21 +71,32 @@ export function createLiveAuthenticatedUserResolvers(
     requestCache.set(token, verification);
     return await verification;
   };
-  const resolveAuthenticatedUser = async (
-    request: FastifyRequest,
+  const resolveUserFromHeaders = async (
+    headers: DashboardAuthHeaders,
+    verify: (token: string) => Promise<AuthJwtPayload | null>,
   ): Promise<AuthenticatedDashboardUser | null> => {
-    const cookieToken = extractDashboardJwtCookieToken(request, cookieName);
+    const cookieToken = extractDashboardJwtCookieTokenFromHeader(
+      headers.cookie,
+      cookieName,
+    );
     if (cookieToken !== undefined) {
-      const payload = await verifyToken(request, cookieToken);
+      const payload = await verify(cookieToken);
       if (payload !== null) return { payload, carrier: "cookie" };
     }
-    const bearerToken = extractDashboardBearerToken(request);
+    const bearerToken = extractBearerToken(headers.authorization);
     if (bearerToken !== undefined && bearerToken !== cookieToken) {
-      const payload = await verifyToken(request, bearerToken);
+      const payload = await verify(bearerToken);
       if (payload !== null) return { payload, carrier: "bearer" };
     }
     return null;
   };
+  const resolveAuthenticatedUser = (request: FastifyRequest) =>
+    resolveUserFromHeaders(
+      request.headers,
+      (token) => verifyToken(request, token),
+    );
+  const resolveHeadersWithoutRequest = (headers: DashboardAuthHeaders) =>
+    resolveUserFromHeaders(headers, (token) => Promise.resolve(options.jwt.verifyToken(token)));
   const resolveUser: LiveAuthenticatedUserResolver = async (request) => {
     return (await resolveAuthenticatedUser(request))?.payload ?? null;
   };
@@ -84,6 +104,7 @@ export function createLiveAuthenticatedUserResolvers(
   return {
     verifyToken,
     resolveUser,
+    resolveUserFromHeaders: resolveHeadersWithoutRequest,
     async resolveEmail(request) {
       return (await resolveUser(request))?.email ?? null;
     },
@@ -149,17 +170,20 @@ export function extractDashboardJwtCookieToken(
   request: FastifyRequest,
   cookieName: string,
 ): string | undefined {
-  return parseCookies(headerString(request.headers.cookie))[cookieName];
+  return extractDashboardJwtCookieTokenFromHeader(request.headers.cookie, cookieName);
+}
+
+function extractDashboardJwtCookieTokenFromHeader(
+  header: string | string[] | undefined,
+  cookieName: string,
+): string | undefined {
+  return parseCookies(headerString(header))[cookieName];
 }
 
 export function extractDashboardBearerToken(
   request: FastifyRequest,
 ): string | undefined {
-  const authorization = headerString(request.headers.authorization);
-  if (authorization?.toLowerCase().startsWith("bearer ")) {
-    return authorization.slice(7);
-  }
-  return undefined;
+  return extractBearerToken(request.headers.authorization);
 }
 
 function parseCookies(header: string | undefined): Record<string, string> {

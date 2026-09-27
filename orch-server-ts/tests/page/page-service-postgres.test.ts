@@ -493,7 +493,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
         authBearerToken: "service-token",
         environment: "production",
         dashboardAuthEnabled: false,
-        verifyDashboardToken: async () => null,
+        resolveDashboardUserFromHeaders: async () => null,
       },
       logger: app.log,
     });
@@ -843,7 +843,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
         authBearerToken: "service-token",
         environment: "production",
         dashboardAuthEnabled: false,
-        verifyDashboardToken: async () => null,
+        resolveDashboardUserFromHeaders: async () => null,
       },
       logger: app.log,
     });

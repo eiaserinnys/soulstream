@@ -135,7 +135,10 @@ export type ProductionOrchestrator = {
 export async function createProductionOrchestrator(
   options: CreateProductionOrchestratorOptions,
 ): Promise<ProductionOrchestrator> {
-  const warn = options.warn ?? console.warn;
+  const startupWarnings: string[] = [];
+  let warningSink: (message: string) => void = options.warn
+    ?? ((message) => startupWarnings.push(message));
+  const warn = (message: string) => warningSink(message);
   if (options.config.dashboard_user_folder_access_configured) {
     warn(
       "DASHBOARD_USER_FOLDER_ACCESS is configured but not enforced; manage folder permissions through the users table.",
@@ -144,6 +147,10 @@ export async function createProductionOrchestrator(
   const application = await (
     options.applicationFactory ?? createLiveProductionApplication
   )(options.config, { warn });
+  if (options.warn === undefined) {
+    warningSink = (message) => application.app.log.warn(message);
+    for (const message of startupWarnings) warningSink(message);
+  }
   await registerDashboardServing(application.app, {
     dashboardDir: options.config.dashboard_dir,
     warn,
@@ -274,7 +281,6 @@ export async function createLiveProductionApplication(
   const dbCatalogRepository = createLiveDbCatalogRepository({
     sqlResolver,
     searchDbConnectionFactory,
-    databaseUrl: config.database_url,
     configProvider,
     registry,
     searchQueryExpander,
@@ -386,8 +392,8 @@ export async function createLiveProductionApplication(
           authBearerToken: config.auth_bearer_token,
           environment: config.environment,
           dashboardAuthEnabled: Boolean(config.google_client_id),
-          verifyDashboardToken: async (token) =>
-            await providers.authRoutes.jwt.verifyToken(token),
+          resolveDashboardUserFromHeaders: (headers) =>
+            providers.authenticatedUserResolvers.resolveUserFromHeaders(headers),
         },
       }),
     },
@@ -425,8 +431,8 @@ export async function createLiveProductionApplication(
           authBearerToken: config.auth_bearer_token,
           environment: config.environment,
           dashboardAuthEnabled: Boolean(config.google_client_id),
-          verifyDashboardToken: async (token) =>
-            await providers.authRoutes.jwt.verifyToken(token),
+          resolveDashboardUserFromHeaders: (headers) =>
+            providers.authenticatedUserResolvers.resolveUserFromHeaders(headers),
         },
       }),
     },
@@ -593,6 +599,7 @@ export async function createLiveProductionApplication(
     repository: recurringJobRepository,
     authenticatedUserResolvers: providers.authenticatedUserResolvers,
     authBearerToken: config.auth_bearer_token,
+    environment: config.environment,
     onError: (error, operation) => context.warn(warningMessage(`recurring jobs ${operation}`, error)),
   });
   recurringJobScheduler = recurringJobWiring.scheduler;

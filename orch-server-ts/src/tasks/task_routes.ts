@@ -72,16 +72,18 @@ export function registerTaskRoutes(
   registerTaskCreateRoute(app, options);
   registerTaskCrudRoutes(app, options);
   registerTaskLegacyHttpCompatibility(app, options);
-  if (options.taskIdentityService && options.authBearerToken) {
+  if (options.taskIdentityService) {
     registerTaskIdentityHostRoute(app, {
       service: options.taskIdentityService,
-      authBearerToken: options.authBearerToken,
+      authBearerToken: options.authBearerToken ?? "",
+      environment: options.environment,
     });
   }
-  if (options.taskControlPlaneServiceProvider && options.authBearerToken) {
+  if (options.taskControlPlaneServiceProvider) {
     registerTaskControlPlaneHostRoute(app, {
       serviceProvider: options.taskControlPlaneServiceProvider,
-      authBearerToken: options.authBearerToken,
+      authBearerToken: options.authBearerToken ?? "",
+      environment: options.environment,
     });
   }
 

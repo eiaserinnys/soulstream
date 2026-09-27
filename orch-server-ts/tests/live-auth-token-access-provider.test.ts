@@ -47,7 +47,7 @@ describe("live auth token access resolver", () => {
 
     await expect(production(request({}))).resolves.toMatchObject({
       ok: false,
-      statusCode: 500,
+      statusCode: 503,
     });
     await expect(development(request({}))).resolves.toEqual({ ok: true });
   });
@@ -114,7 +114,7 @@ describe("live auth token access resolver", () => {
     ).resolves.toEqual({ ok: true });
     await expect(resolver(request({}))).resolves.toMatchObject({
       ok: false,
-      statusCode: 500,
+      statusCode: 503,
     });
     expect(jwt.verifyToken).toHaveBeenCalledTimes(1);
   });

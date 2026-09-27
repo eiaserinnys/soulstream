@@ -16,6 +16,7 @@ import {
   storeBoardApplication,
 } from "./task_identity_operation_store.js";
 import { commitTaskProjectMount } from "./task_project_mount_store.js";
+import { TaskIdentityStalePlanConflictError } from "./task_identity_errors.js";
 import { mountBindingsEqual } from "./task_mount_reconciliation.js";
 
 export async function listTaskMountBindings(
@@ -75,7 +76,7 @@ export async function assertTaskMountExpectation(
   if (!expectation) return;
   const current = await listTaskMountBindings(transaction, taskPageId, expectation.scope);
   if (!mountBindingsEqual(current, expectation.bindings)) {
-    throw new Error(`task mount projection changed: ${taskPageId}`);
+    throw new TaskIdentityStalePlanConflictError(`task mount projection changed: ${taskPageId}`);
   }
 }
 
@@ -100,13 +101,17 @@ export async function persistTaskProjectMove(
       true,
     ))[0];
     if (!locked || locked.pageId !== input.binding.pageId) {
-      throw new Error(`task identity mapping changed: ${input.binding.taskId}`);
+      throw new TaskIdentityStalePlanConflictError(
+        `task identity mapping changed: ${input.binding.taskId}`,
+      );
     }
     if (locked.folderId !== input.sourceFolderId) {
-      throw new Error(`task identity source folder changed: ${input.binding.taskId}`);
+      throw new TaskIdentityStalePlanConflictError(
+        `task identity source folder changed: ${input.binding.taskId}`,
+      );
     }
     if (locked.taskVersion !== input.binding.taskVersion) {
-      throw new Error(`task version conflict: ${input.binding.taskId}`);
+      throw new TaskIdentityStalePlanConflictError(`task version conflict: ${input.binding.taskId}`);
     }
     const folders = new Map<string, { project_page_id: string | null; archived: boolean }>();
     for (const folderId of [input.sourceFolderId, input.targetFolderId].sort()) {
@@ -127,7 +132,9 @@ export async function persistTaskProjectMove(
       throw new Error(`task identity target folder not found: ${input.targetFolderId}`);
     }
     if (target.project_page_id !== input.expectedTargetProjectPageId) {
-      throw new Error(`task identity project mapping changed: ${input.targetFolderId}`);
+      throw new TaskIdentityStalePlanConflictError(
+        `task identity project mapping changed: ${input.targetFolderId}`,
+      );
     }
     await assertTaskMountExpectation(transaction, input.binding.pageId, input.mountExpectation);
     assertBoardMoveApplications(input);
@@ -158,7 +165,9 @@ export async function persistTaskProjectMove(
         AND version = ${input.binding.taskVersion}
       RETURNING id
     `;
-    if (!updated[0]) throw new Error(`task version conflict: ${input.binding.taskId}`);
+    if (!updated[0]) {
+      throw new TaskIdentityStalePlanConflictError(`task version conflict: ${input.binding.taskId}`);
+    }
     await insertTaskOperation(transaction, {
       id: input.operationId,
       taskId: input.binding.taskId,
