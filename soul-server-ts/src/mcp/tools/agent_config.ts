@@ -49,14 +49,30 @@ export function registerAgentConfigTools(
         const { raw, parsed } = agentConfig.readRaw();
         const resolutions = runtime.agentProfileSource
           ? await runtime.agentProfileSource.list()
-          : parsed.agents.map((profile) => ({ profile, source: "yaml" as const, stale: false }));
+          : [];
+        const resolutionById = new Map(resolutions.map((resolution) => [
+          resolution.profile.id,
+          resolution,
+        ]));
         return jsonResult({
           config_path: runtime.agentsConfigPath,
-          agents: resolutions.map(({ profile, source, stale }) => ({
-            ...profile,
-            source,
-            stale,
-          })),
+          agents: parsed.agents.map((yamlProfile) => {
+            const resolution = resolutionById.get(yamlProfile.id);
+            const identity = resolution?.source === "db"
+              ? {
+                  name: resolution.profile.name,
+                  atom_contexts: resolution.profile.atom_contexts,
+                  aliases: resolution.profile.aliases,
+                  default_preset: resolution.profile.default_preset,
+                }
+              : {};
+            return {
+              ...yamlProfile,
+              ...identity,
+              source: resolution?.source ?? "yaml",
+              stale: resolution?.stale ?? false,
+            };
+          }),
           ...(include_raw ? { raw_yaml: raw, yaml_agents: parsed.agents } : {}),
         });
       } catch (err) {

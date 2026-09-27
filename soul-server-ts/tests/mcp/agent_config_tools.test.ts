@@ -8,9 +8,55 @@ import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { registerAgentConfigTools } from "../../src/mcp/tools/agent_config.js";
 
 describe("get_agents_config", () => {
-  it("shows effective profiles with their source and keeps YAML behind include_raw", async () => {
-    const yamlProfile = { id: "roselin", name: "YAML Roselin" } as AgentProfile;
-    const effectiveProfile = { id: "roselin", name: "DB Roselin" } as AgentProfile;
+  it("overlays DB identity fields without returning resolved MCP secrets", async () => {
+    const yamlAgentsSdk: NonNullable<AgentProfile["agents_sdk"]> = {
+      entry_agent: "root",
+      agents: [{
+        id: "root",
+        name: "Root",
+        instructions: "instructions",
+        handoffs: [],
+        tools: [],
+        hosted_tools: [],
+        mcp_servers: [],
+      }],
+      guardrails: { input_blocklist: [], output_blocklist: [] },
+    };
+    const yamlProfile = {
+      id: "roselin",
+      name: "YAML Roselin",
+      backend: "openai-agents",
+      workspace_dir: "/tmp/roselin",
+      mcp_profile: "roselin-mcp",
+      agents_sdk: yamlAgentsSdk,
+    } as AgentProfile;
+    const effectiveProfile = {
+      ...yamlProfile,
+      name: "DB Roselin",
+      atom_contexts: [{ node_id: "db-node" }],
+      aliases: [{ id: "db-alias" }],
+      default_preset: "db-preset",
+      agents_sdk: {
+        ...yamlAgentsSdk,
+        agents: [{
+          ...yamlAgentsSdk.agents[0]!,
+          mcp_servers: [
+            {
+              type: "streamable_http",
+              name: "secret-http",
+              url: "https://mcp.example.test",
+              headers: { Authorization: "header-secret-value" },
+            },
+            {
+              type: "stdio",
+              name: "secret-stdio",
+              command: "mcp",
+              env: { API_TOKEN: "env-secret-value" },
+            },
+          ],
+        }],
+      },
+    } as AgentProfile;
     let handler: ((args: { include_raw: boolean }) => Promise<CallToolResult>) | undefined;
     const server = {
       registerTool: (
@@ -45,9 +91,21 @@ describe("get_agents_config", () => {
     const response = await handler!({ include_raw: true });
 
     expect(response.structuredContent).toMatchObject({
-      agents: [{ id: "roselin", name: "DB Roselin", source: "db", stale: false }],
+      agents: [{
+        id: "roselin",
+        name: "DB Roselin",
+        source: "db",
+        stale: false,
+        atom_contexts: [{ node_id: "db-node" }],
+        aliases: [{ id: "db-alias" }],
+        default_preset: "db-preset",
+        agents_sdk: yamlProfile.agents_sdk,
+      }],
       yaml_agents: [{ id: "roselin", name: "YAML Roselin" }],
       raw_yaml: "yaml-source",
     });
+    const serialized = JSON.stringify(response.structuredContent);
+    expect(serialized).not.toContain("header-secret-value");
+    expect(serialized).not.toContain("env-secret-value");
   });
 });
