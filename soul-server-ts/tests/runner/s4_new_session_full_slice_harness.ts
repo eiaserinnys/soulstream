@@ -442,6 +442,7 @@ export class ProductionFullSliceHarness {
           MODEL_CATALOG_PATH: this.modelCatalogPath,
           INCOMING_FILE_DIR: join(this.root, "incoming"),
           MCP_ENABLED: "false",
+          MCP_EXTERNAL_INGRESS_ENABLED: "false",
           MCP_STATELESS_TRANSPORT_ENABLED: "false",
           RUNNER_E2E_CONTROL_DIR: this.controlDirectory,
           RUNNER_E2E_FULL_SLICE_SCENARIO: this.scenario,
