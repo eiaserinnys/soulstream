@@ -389,10 +389,14 @@ async def test_session_model_preset_migration_contract_is_mirrored_in_schema_sql
         "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS model TEXT",
         "CREATE OR REPLACE FUNCTION session_register_with_model_preset(",
         "p_model_preset           TEXT",
-        "s.model_preset, s.model",
     ]:
         assert required in migration_sql
         assert required in schema_sql
+
+    session_get_all_sql = _function_sql(
+        schema_sql, "CREATE OR REPLACE FUNCTION session_get_all("
+    )
+    assert "SELECT s.* FROM sessions s" in session_get_all_sql
 
 
 async def test_session_model_preset_registration_and_summary_round_trip(test_db):
