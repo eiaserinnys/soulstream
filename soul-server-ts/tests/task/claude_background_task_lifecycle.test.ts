@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ClaudeBackgroundTaskGenerationRow } from
-  "../../src/db/repositories/claude_background_task_repository.js";
+  "../../src/control_plane/persistence_host_clients.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
 import { readClaudeBackgroundDeliveryMetadata } from

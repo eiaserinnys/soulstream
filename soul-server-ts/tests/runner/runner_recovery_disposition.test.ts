@@ -22,7 +22,6 @@ const ALL_DISPOSITIONS = [
   "replay_terminal_dead",
   "retired_terminal",
   "reap_dead",
-  "reap_stalled",
   "already_reaped",
   "closed",
 ] as const satisfies readonly RunnerRecoveryDisposition[];

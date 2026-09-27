@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { access, chmod, mkdir, open, readFile, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, open, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { Logger } from "pino";
 
+import { writeFileAtomically } from "../atomic_file_rename.js";
 import {
   parseRunnerChildConfig,
   type RunnerChildConfig,
@@ -13,6 +14,7 @@ import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 import {
   defaultProcessOwnershipLockDependencies,
   inspectProcessIdentity,
+  isProcessAlive,
   processStartIdentitiesMatch,
   type ProcessIdentity,
 } from "./runner_process_lock.js";
@@ -161,8 +163,7 @@ export class RunnerProcessSpawner {
       rolloutRoot: input.rolloutRoot,
     };
     const validatedConfig = parseRunnerChildConfig(config);
-    await writeFile(paths.configPath, JSON.stringify(validatedConfig), { mode: 0o600 });
-    await chmod(paths.configPath, 0o600);
+    await writeFileAtomically(paths.configPath, JSON.stringify(validatedConfig));
 
     // Config + SQLite registration must exist before materialization. GC
     // re-scans registrations under the same release lock before deletion.
@@ -447,7 +448,7 @@ function defaultDependencies(): SpawnDependencies {
     },
     validateEntry: async (path) => await access(path),
     spawnProcess: (entry, args, options) => spawn(process.execPath, [entry, ...args], options),
-    registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+    registerPid: async (path, pid) => await writeFileAtomically(path, `${pid}\n`),
     inspectProcess: inspectProcessIdentity,
     inspectWriterLock: inspectRunnerWriterLock,
     waitForChildRegistrationIdentity: async (paths, pending, pid) =>
@@ -474,12 +475,4 @@ export async function readRunnerChildConfig(path: string): Promise<RunnerChildCo
   }
 }
 
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
 export { readRunnerPid, resolveRegisteredRunnerPid } from "./runner_process_registration.js";

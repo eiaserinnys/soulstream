@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { renameWithTransientRetry } from "../atomic_file_rename.js";
+import { writeFileAtomically } from "../atomic_file_rename.js";
 import { processStartIdentitiesMatch } from "./runner_process_lock.js";
 import { openRunnerSqliteReadOnlyDatabase } from "./runner_sqlite_connection.js";
 import { runnerRowToBootstrap } from "./sqlite_event_outbox_records.js";
@@ -55,12 +55,7 @@ export async function writeRunnerRegistrationIdentity(
 ): Promise<void> {
   validateRunnerRegistrationIdentity(identity);
   const path = runnerRegistrationIdentityPath(sessionDirectory);
-  const temporaryPath = `${path}.tmp-${process.pid}-${randomUUID()}`;
-  await writeFile(temporaryPath, `${JSON.stringify(identity)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  await renameWithTransientRetry(temporaryPath, path);
+  await writeFileAtomically(path, `${JSON.stringify(identity)}\n`);
 }
 
 export async function readRunnerRegistrationIdentity(

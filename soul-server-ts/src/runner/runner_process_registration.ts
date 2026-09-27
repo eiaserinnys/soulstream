@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 
+import { isProcessAlive } from "./runner_process_lock.js";
+
 export async function readRunnerPid(path: string): Promise<number | null> {
   try {
     const value = Number.parseInt((await readFile(path, "utf8")).trim(), 10);
@@ -38,13 +40,4 @@ export function resolveRegisteredRunnerPid(
   // Mismatched dead evidence is stale registration residue, not split brain.
   // Prefer the identity owner so later identity checks remain authoritative.
   return identityPid ?? pidFilePid ?? lifecyclePid ?? null;
-}
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
 }

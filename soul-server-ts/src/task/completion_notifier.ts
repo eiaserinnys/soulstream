@@ -23,7 +23,7 @@ import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import { buildAgentCallerInfo, type AgentCallerInfo } from "../caller_info.js";
-import type { SessionDeliveryRepository } from "../db/repositories/session_delivery_repository.js";
+import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
@@ -71,7 +71,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       "getSession"
     >,
     private readonly deliveryV2Enabled = false,
-    deliveryRepository?: SessionDeliveryRepository,
+    deliveryRepository?: SessionDeliveryHostClient,
   ) {
     this.interveneClient = orch ? new OrchInterveneClient(orch, fetchImpl) : undefined;
     if (deliveryV2Enabled && deliveryRepository) {

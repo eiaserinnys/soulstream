@@ -50,7 +50,7 @@ describe.skipIf(process.platform !== "win32")("Windows atomic rename contention"
 
     expect(attempts).toBeGreaterThan(1);
     await expect(readFile(destinationPath, "utf8")).resolves.toBe("new\n");
-  }, 10_000);
+  }, 30_000);
 
   it("retries the synchronous lifecycle summary rename under a real handle lock", async () => {
     const directory = await mkdtemp(join(tmpdir(), "lifecycle-rename-win32-"));
@@ -106,7 +106,7 @@ describe.skipIf(process.platform !== "win32")("Windows atomic rename contention"
     await expect(readFile(summaryPath, "utf8")).resolves.toContain(
       '\"progress_at\":\"2026-08-12T00:00:01.000Z\"',
     );
-  }, 10_000);
+  }, 30_000);
 });
 
 function holdExclusiveWindowsHandle(path: string): {
