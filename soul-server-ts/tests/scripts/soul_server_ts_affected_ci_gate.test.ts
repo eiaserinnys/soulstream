@@ -52,7 +52,7 @@ function selectedPullRequestWorkflows(changedPaths: string[]) {
 }
 
 describe("soul-server-ts affected CI gate", () => {
-  it("routes the reconnected database and lab test assets through pull-request CI", () => {
+  it("routes migration contracts and lab test assets through pull-request CI", () => {
     const databaseWorkflows = selectedPullRequestWorkflows([
       "packages/db-schema/sql/migrations/105_retire_legacy_procedures.sql",
     ]);
@@ -63,7 +63,7 @@ describe("soul-server-ts affected CI gate", () => {
     const databaseCommands = databaseWorkflow?.workflow.jobs["database-release-postgres"].steps
       .map((step: { run?: string }) => step.run ?? "")
       .join("\n");
-    expect(databaseCommands).toContain("python -m pytest packages/db-schema/tests --timeout=60 -q");
+    expect(databaseCommands).toContain("tests/scripts/migration_runner.test.ts");
 
     const labWorkflows = selectedPullRequestWorkflows([
       "scripts/lab-node/fault-acquire-application-evidence.test.mjs",

@@ -146,25 +146,12 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-
       - name: Install repository dependencies
         shell: bash
         run: |
           corepack enable
           corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
           corepack pnpm install --frozen-lockfile --ignore-scripts --config.strict-dep-builds=false
-
-      - name: Install db-schema test dependencies
-        shell: bash
-        run: python -m pip install asyncpg pytest pytest-asyncio pytest-timeout
-
-      - name: Run db-schema PostgreSQL tests
-        shell: bash
-        run: python -m pytest packages/db-schema/tests --timeout=60 -q
 
       - name: Run isolated PostgreSQL database release contracts
         shell: bash
