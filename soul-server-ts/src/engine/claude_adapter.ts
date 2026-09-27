@@ -36,10 +36,8 @@ import type {
   SupportsInputResponse,
   SupportsToolBoundaryInjection,
 } from "./protocol.js";
-import {
-  mapClaudeClientEvent,
-  type ClaudeClientEvent,
-} from "./claude_event_mapper.js";
+import { mapClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import {
   buildClaudeEnvironment,
   normalizeClaudeModel,
@@ -57,7 +55,7 @@ export {
   normalizeClaudeModel,
 } from "./claude_options.js";
 export { ClaudeSdkClient } from "./claude_sdk_client.js";
-export type { ClaudeClientEvent } from "./claude_event_mapper.js";
+export type { ClaudeClientEvent } from "./claude_client_event.js";
 
 export interface ClaudeRunOptions {
   agentSessionId?: string;

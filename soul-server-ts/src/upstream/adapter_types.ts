@@ -42,7 +42,6 @@ export interface UpstreamDependencies {
   agentConfigService?: AgentConfigService;
   reflectionRuntime?: McpRuntime;
   scheduleCommands?: ClaudeRuntimeScheduleCommands;
-  deliveryV2Enabled?: boolean;
   modelCatalog?: Pick<ModelCatalog, "resolve" | "advertise" | "list">;
   eventOutboxPump?: EventOutboxPumpTransport;
   agentProfileSource?: NewSessionAgentProfileSource;

@@ -343,7 +343,7 @@ function startRuntime(
   );
   const onResume = vi.fn((resumed: Task, activation) => {
     automaticStart();
-    return executor.startExecution(resumed, AGENT, activation);
+    return executor.startNewExecution(resumed, AGENT, activation);
   });
   return { automaticStart, modelCall, onResume, release, turnStarted };
 }

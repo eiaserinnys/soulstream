@@ -5,6 +5,7 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import {
   isActiveTaskStatus,
   isTerminalTaskStatus,
+  terminalTaskStatusForReason,
   type Task,
 } from "./task_models.js";
 import {
@@ -40,13 +41,13 @@ export interface TaskFinalStatePersistenceResult {
 
 const USER_STOP_PROJECTION = {
   true: {
-    status: "interrupted",
+    status: terminalTaskStatusForReason("killed"),
     error: undefined,
     terminationReason: "killed",
     terminationDetail: "user_stop",
   },
   false: {
-    status: "error",
+    status: terminalTaskStatusForReason("error_aborted"),
     error: "runner stop was not confirmed",
     terminationReason: "error_aborted",
     terminationDetail: "runner stop was not confirmed",

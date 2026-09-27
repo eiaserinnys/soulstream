@@ -10,7 +10,7 @@ import type { ModelCatalog } from "../model_catalog.js";
 import { ClaudeSdkClient } from "../engine/claude_adapter.js";
 import { ClaudeDeliveryTranscriptReceiptReader } from
   "../engine/claude_delivery_transcript_receipt.js";
-import type { ClaudeClientEvent } from "../engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../engine/claude_client_event.js";
 import { ClaudeSessionClientRegistry } from
   "../engine/claude_session_client_registry.js";
 import { ClaudeBackgroundTaskLifecycle } from

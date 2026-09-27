@@ -4,7 +4,7 @@ import {
   attachClaudeBackgroundProvenance,
   readClaudeBackgroundProvenance,
 } from "./claude_background_provenance.js";
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import type { ClaudeRuntimeCloseReason } from "./claude_session_runtime.js";
 
 interface PersistentBackgroundRuntime {

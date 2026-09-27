@@ -47,7 +47,6 @@ function createDispatcher(opts: {
   claudeAuth?: ClaudeAuthCommandHandler;
   sessionDb?: Partial<SessionDB>;
   realtimeBroker?: Partial<RealtimeBroker>;
-  deliveryV2Enabled?: boolean;
   listRunningSessionIds?: () => Promise<string[]>;
   logger?: Logger;
   agentConfigService?: Pick<
@@ -119,26 +118,20 @@ function createDispatcher(opts: {
   // sessionDb 미주입(=undefined)이면 dispatcher에도 그대로 undefined 전달 (Phase B list_sessions 명시 error 분기 테스트용)
   const sessionDb = opts.sessionDb === undefined ? undefined : (opts.sessionDb as SessionDB);
 
-  const dispatcher = new CommandDispatcher(
+  const dispatcher = new CommandDispatcher({
     send,
-    opts.logger ?? silentLogger,
-    opts.nodeId ?? "eias-shopping-ts",
-    registry,
-    tm,
-    te,
-    opts.attachmentStore,
-    opts.claudeAuth,
+    logger: opts.logger ?? silentLogger,
+    nodeId: opts.nodeId ?? "eias-shopping-ts",
+    agentRegistry: registry,
+    taskManager: tm,
+    taskExecutor: te,
+    attachmentStore: opts.attachmentStore,
+    claudeAuth: opts.claudeAuth,
     sessionDb,
-    opts.realtimeBroker as RealtimeBroker | undefined,
-    undefined,
-    opts.agentConfigService,
-    undefined,
-    undefined,
-    opts.deliveryV2Enabled,
-    undefined,
-    undefined,
-    opts.listRunningSessionIds,
-  );
+    realtimeBroker: opts.realtimeBroker as RealtimeBroker | undefined,
+    agentConfigService: opts.agentConfigService,
+    listRunningSessionIds: opts.listRunningSessionIds,
+  });
   return { dispatcher, sent, send, registry, tm, te, createdTasks, sessionDb };
 }
 
@@ -961,17 +954,15 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       activation?.resolve();
       return Promise.resolve();
     });
-    const dispatcher = new CommandDispatcher(
+    const dispatcher = new CommandDispatcher({
       send,
-      silentLogger,
-      "eiaserinnys",
-      registry,
+      logger: silentLogger,
+      nodeId: "eiaserinnys",
+      agentRegistry: registry,
       taskManager,
-      { startNewExecution } as unknown as TaskExecutor,
-      undefined,
-      undefined,
-      db,
-    );
+      taskExecutor: { startNewExecution } as unknown as TaskExecutor,
+      sessionDb: db,
+    });
 
     await dispatcher.dispatch({
       type: "intervene",

@@ -4,7 +4,7 @@ import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk";
 
 import { runnerRequestFrame } from "../runner/frame_protocol.js";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { SOULSTREAM_SCHEDULE_TOOLS } from "./claude_sdk_constants.js";
 import { type EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";

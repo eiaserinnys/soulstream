@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { attachClaudeBackgroundProvenance } from "./claude_background_provenance.js";
 import {
   attachClaudeResultInputReceipt,

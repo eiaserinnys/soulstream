@@ -401,10 +401,6 @@ export type AppServerNotification =
       params: { threadId: string; turnId: string; itemId: string; message?: string; delta?: string };
     }
   | {
-      method: "rawResponseItem/completed";
-      params: { threadId: string; turnId: string; item: JsonObject };
-    }
-  | {
       method: "error";
       params: {
         threadId?: string;

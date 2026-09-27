@@ -62,6 +62,28 @@ import type { WorktreeService } from "../worktree/worktree_service.js";
 
 export type { SendFn } from "./command_family.js";
 
+export interface CommandDispatcherOptions {
+  send: SendFn;
+  logger: Logger;
+  nodeId: string;
+  agentRegistry: AgentRegistry;
+  taskManager: TaskManager;
+  taskExecutor: TaskExecutor;
+  attachmentStore?: AttachmentStore;
+  claudeAuth?: ClaudeAuthCommandHandler;
+  /** Missing wiring becomes an explicit command error instead of a silent fallback. */
+  sessionDb?: SessionDB;
+  realtimeBroker?: RealtimeBroker;
+  providerUsage?: ProviderUsageCommandHandler;
+  agentConfigService?: AgentConfigCommandHandler;
+  reflectionRuntime?: McpRuntime;
+  scheduleCommands?: ClaudeRuntimeScheduleCommands;
+  modelCatalog?: Pick<ModelCatalog, "resolve" | "list">;
+  agentProfileSource?: NewSessionAgentProfileSource;
+  listRunningSessionIds?: () => Promise<string[]>;
+  worktreeService?: WorktreeService;
+}
+
 /**
  * orch → 노드 명령 디스패처.
  *
@@ -78,33 +100,32 @@ export type { SendFn } from "./command_family.js";
  */
 export class CommandDispatcher {
   private readonly handlers: CommandHandlerMap;
+  private readonly send: SendFn;
+  private readonly logger: Logger;
 
-  constructor(
-    private readonly send: SendFn,
-    private readonly logger: Logger,
-    nodeId: string,
-    agentRegistry: AgentRegistry,
-    taskManager: TaskManager,
-    taskExecutor: TaskExecutor,
-    attachmentStore: AttachmentStore = new FileAttachmentStore(".local/incoming", logger),
-    claudeAuth?: ClaudeAuthCommandHandler,
-    /**
-     * `list_sessions` needs SessionDB. Keep it optional at construction so
-     * missing wiring becomes an explicit command error instead of a silent
-     * fallback.
-     */
-    sessionDb?: SessionDB,
-    realtimeBroker?: RealtimeBroker,
-    providerUsage?: ProviderUsageCommandHandler,
-    agentConfigService?: AgentConfigCommandHandler,
-    reflectionRuntime?: McpRuntime,
-    scheduleCommands?: ClaudeRuntimeScheduleCommands,
-    _deliveryV2Enabled = false,
-    modelCatalog?: Pick<ModelCatalog, "resolve" | "list">,
-    agentProfileSource?: NewSessionAgentProfileSource,
-    listRunningSessionIds?: () => Promise<string[]>,
-    worktreeService?: WorktreeService,
-  ) {
+  constructor(options: CommandDispatcherOptions) {
+    const {
+      send,
+      logger,
+      nodeId,
+      agentRegistry,
+      taskManager,
+      taskExecutor,
+      attachmentStore = new FileAttachmentStore(".local/incoming", logger),
+      claudeAuth,
+      sessionDb,
+      realtimeBroker,
+      providerUsage,
+      agentConfigService,
+      reflectionRuntime,
+      scheduleCommands,
+      modelCatalog,
+      agentProfileSource,
+      listRunningSessionIds,
+      worktreeService,
+    } = options;
+    this.send = send;
+    this.logger = logger;
     const taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
       taskManager,

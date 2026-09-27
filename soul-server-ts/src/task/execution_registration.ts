@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import type { TaskStatus, TerminationReason } from "./task_models.js";
+import {
+  terminalTaskStatusForReason,
+  type TaskStatus,
+  type TerminationReason,
+} from "./task_models.js";
 
 export const RUNNER_TERMINAL_FACTS = [
   "completed",
@@ -44,13 +48,13 @@ export function runnerFactProjection(fact: RunnerTerminalFact): {
   status: TaskStatus;
   terminationReason: TerminationReason;
 } {
-  switch (fact) {
-    case "completed":
-      return { status: "completed", terminationReason: "completed_ok" };
-    case "failed":
-    case "reaped":
-      return { status: "error", terminationReason: "error_aborted" };
-    case "closed":
-      return { status: "interrupted", terminationReason: "killed" };
-  }
+  const terminationReason = fact === "completed"
+    ? "completed_ok"
+    : fact === "closed"
+    ? "killed"
+    : "error_aborted";
+  return {
+    status: terminalTaskStatusForReason(terminationReason),
+    terminationReason,
+  };
 }

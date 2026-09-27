@@ -4,7 +4,7 @@ import type { ReleaseManifestV1 } from "./release_manifest.js";
 
 export type ReleaseVerificationResult = {
   host: "verified";
-  runner: "verified";
+  runner: "verified" | "skipped";
   env: "verified";
   executable: "verified";
 };

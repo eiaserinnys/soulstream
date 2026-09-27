@@ -1,9 +1,7 @@
 import type { Logger } from "pino";
 
-import {
-  mapClaudeClientEvent,
-  type ClaudeClientEvent,
-} from "../engine/claude_event_mapper.js";
+import { mapClaudeClientEvent } from "../engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../engine/claude_client_event.js";
 import {
   isPostResultDrainEvent,
   markPostResultDrainEvent,

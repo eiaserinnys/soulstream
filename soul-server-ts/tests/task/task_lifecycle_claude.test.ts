@@ -31,7 +31,7 @@ import {
   ClaudeSdkClient,
   type ClaudeSdkQueryFn,
 } from "../../src/engine/claude_sdk_client.js";
-import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -189,7 +189,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
@@ -260,7 +260,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     // 첫 turn 진행 중 intervention 주입 (firstTurnPromptResolve 시점)
     await firstTurnPromptGate;
     task.interventionQueue.push({ text: "intervened", user: "tester" });
@@ -320,7 +320,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
 
     await readyDuringPostResultDrain.promise;
     const transition = new RunningInterventionTransition({
@@ -419,7 +419,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
 
     await readyForIntervention.promise;
     const transition = new RunningInterventionTransition({
@@ -495,7 +495,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     const suggestionCalls = mocks.persistEvent.mock.calls.filter(
@@ -531,7 +531,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       silentLogger,
     );
     const task = makeTask();
-    executor.startExecution(task, claudeAgent);
+    executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     // assistant_error는 durable ingress에 기록되지만 task lifecycle을 중단하지 않음
@@ -579,7 +579,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       silentLogger,
     );
     const task = makeTask({ profileId: claudeAgentWithOpts.id });
-    executor.startExecution(task, claudeAgentWithOpts);
+    executor.startNewExecution(task, claudeAgentWithOpts);
     await task.executionPromise;
 
     expect(capturedRunOptions?.allowedTools).toEqual(["Read", "Edit"]);

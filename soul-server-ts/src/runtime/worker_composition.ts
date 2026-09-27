@@ -281,7 +281,7 @@ export async function composeWorkerRuntime(
   });
   params.releaseActivationState.markPrewarmed({
     host: "verified",
-    runner: "verified",
+    runner: env.SOUL_RUNNER_PROCESS_ENABLED ? "verified" : "skipped",
     env: "verified",
     executable: "verified",
   });

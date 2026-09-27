@@ -75,7 +75,7 @@ function makeDeps(
     setTaskStatus: () => undefined,
   } as unknown as TaskManager);
   const taskExecutor = opts.taskExecutor ?? ({
-    startExecution: () => undefined,
+    startNewExecution: () => undefined,
   } as unknown as TaskExecutor);
   return {
     agentRegistry,

@@ -11,7 +11,7 @@ import type { RunnerControlFrame } from "../runner/frame_protocol.js";
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
 import { buildClaudeCompactRunOptions, consumeClaudeCompact } from "./claude_sdk_compact.js";
 import { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { ClaudePostResultDrain } from "./claude_sdk_drain.js";
 import {
   createEventQueue,

@@ -167,7 +167,7 @@ async function executeHumanLiveSteer(options: HarnessOptions): Promise<HumanLive
     interventionQueue: [intervention],
   };
 
-  executor.startExecution(task, agent);
+  executor.startNewExecution(task, agent);
   await task.executionPromise;
   return ledger;
 }

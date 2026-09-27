@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  mapClaudeClientEvent,
-  type ClaudeClientEvent,
-} from "../../src/engine/claude_event_mapper.js";
+import { mapClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
 
 function eventTypes(events: ReturnType<typeof mapClaudeClientEvent>): string[] {
   return events.map((event) => event.type);

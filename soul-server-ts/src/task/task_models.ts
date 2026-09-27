@@ -31,6 +31,18 @@ import type {
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
 export type TaskStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
 
+export const TASK_STATUSES = [
+  "initializing",
+  "running",
+  "completed",
+  "error",
+  "interrupted",
+] as const satisfies readonly TaskStatus[];
+
+export function isTaskStatus(value: unknown): value is TaskStatus {
+  return typeof value === "string" && TASK_STATUSES.includes(value as TaskStatus);
+}
+
 export function isTerminalTaskStatus(status: TaskStatus): boolean {
   return status === "completed" || status === "error" || status === "interrupted";
 }
@@ -49,6 +61,25 @@ export type TerminationReason =
   | "limit_hit"
   | "error_aborted"
   | "unknown";
+
+export const TERMINATION_REASONS = [
+  "completed_ok",
+  "killed",
+  "limit_hit",
+  "error_aborted",
+  "unknown",
+] as const satisfies readonly TerminationReason[];
+
+export function isTerminationReason(value: unknown): value is TerminationReason {
+  return typeof value === "string"
+    && TERMINATION_REASONS.includes(value as TerminationReason);
+}
+
+export function terminalTaskStatusForReason(reason: TerminationReason): TaskStatus {
+  if (reason === "completed_ok") return "completed";
+  if (reason === "killed") return "interrupted";
+  return "error";
+}
 
 export type PendingTerminationHint = Exclude<
   TerminationReason,
@@ -483,13 +514,13 @@ export interface Task {
    *
    * Retention exists to keep Claude background work running inside a live
    * child. Retaining a handle whose process is gone keeps `task.runner` set
-   * forever, and `startExecution` refuses to run while a runner is attached —
+   * forever, and `startNewExecution` refuses to run while a runner is attached —
    * so the session could never execute again, and every intervention queued
    * itself behind a turn that would never come (260820 incident).
    */
   runnerIsOfflineReplay?: boolean;
 
-  /** task_executor.startExecution 반환 promise. shutdown 시 await. */
+  /** task_executor.startNewExecution 반환 promise. shutdown 시 await. */
   executionPromise?: Promise<void>;
 
   /** Single execution startup barrier. */

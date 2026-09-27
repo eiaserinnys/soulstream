@@ -428,7 +428,7 @@ export class P0R2FullSliceHarness {
               writerLockPresent: await pathExists(paths.lockPath),
               registrationPid: handoffIdentity?.pid ?? null,
             };
-            await executor.startExecution(resumedTask, this.agent, activation);
+            await executor.startNewExecution(resumedTask, this.agent, activation);
           })();
           return successor.promise;
         });
@@ -711,7 +711,7 @@ export class P0R2FullSliceHarness {
     slice: SliceRuntime,
   ): Promise<InitialExecutionObservation> {
     const { task, executor, paths } = slice;
-    const initialExecution = executor.startExecution(task, this.agent);
+    const initialExecution = executor.startNewExecution(task, this.agent);
     await waitFor(async () => await pathExists(paths.pidPath));
     await this.rememberRegisteredChild(paths);
     const firstExecution = await this.readExecutionWithDiagnostics(

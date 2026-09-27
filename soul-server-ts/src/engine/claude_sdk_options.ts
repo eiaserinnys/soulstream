@@ -2,7 +2,7 @@ import type { Options as ClaudeSdkOptions } from "@anthropic-ai/claude-agent-sdk
 import type { Logger } from "pino";
 
 import type { ClaudeRunOptions } from "./claude_adapter.js";
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import type { EventQueue } from "./claude_sdk_event_queue.js";
 import type { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { buildClaudeSdkHooks } from "./claude_sdk_hooks.js";

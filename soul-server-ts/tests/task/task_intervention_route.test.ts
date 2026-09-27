@@ -52,7 +52,7 @@ function makeSubject(
   initialTasks: Task[] = [],
   deliveryLedgerGate?: Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+    "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
       | "recordNotificationPublished" | "recordNotificationFailure"
       | "recordReservationRetry"
   >,
@@ -144,10 +144,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId, "human_live_steer")),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const task = makeTask({ status: "running" });
     const { route, runningInterventionTransition } = makeSubject([task], gate);
@@ -182,10 +182,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
         return candidate;
       }),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const {
       route,
@@ -329,11 +329,11 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit,
       beginDispatch: vi.fn(),
       recordResult: vi.fn(),
-      recordFailure: vi.fn(),
+      deferFailureToCoordinator: vi.fn(),
       recordReservationRetry: vi.fn(),
     } as unknown as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
         | "recordReservationRetry"
     >;
     const { route } = makeSubject([task], gate);
@@ -361,11 +361,11 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit,
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn(),
-      recordFailure: vi.fn(),
+      deferFailureToCoordinator: vi.fn(),
       recordReservationRetry: vi.fn(),
     } as unknown as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
         | "recordReservationRetry"
     >;
     const { route, runningInterventionTransition } = makeSubject([task], gate);
@@ -392,11 +392,11 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(recovered),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
       recordReservationRetry: vi.fn(),
     } satisfies Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
         | "recordReservationRetry"
     >;
     const { route, runningInterventionTransition } = makeSubject([task], gate);
@@ -427,11 +427,11 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(recovered),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
       recordReservationRetry: vi.fn(),
     } satisfies Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
         | "recordReservationRetry"
     >;
     const { route, autoResumeTransition } = makeSubject([task], gate);
@@ -471,10 +471,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
         admit: vi.fn().mockResolvedValue(admitted(deliveryId, intent)),
         beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
         recordResult: vi.fn().mockResolvedValue(undefined),
-        recordFailure: vi.fn().mockResolvedValue(undefined),
+        deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
       } satisfies Pick<
         TaskDeliveryLedgerGate,
-        "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+        "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
       >;
       const task = makeTask({ status: "completed" });
       const {
@@ -526,12 +526,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
       recordNotificationPublished: vi.fn().mockResolvedValue(undefined),
       recordNotificationFailure: vi.fn().mockResolvedValue(undefined),
     } satisfies Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
         | "recordNotificationPublished" | "recordNotificationFailure"
     >;
     const task = makeTask({ status: "completed" });
@@ -580,12 +580,12 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
       recordNotificationPublished: vi.fn().mockResolvedValue(undefined),
       recordNotificationFailure: vi.fn().mockResolvedValue(undefined),
     } satisfies Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
         | "recordNotificationPublished" | "recordNotificationFailure"
     >;
     const task = makeTask({ status: "completed" });
@@ -626,10 +626,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId, "durable_next_turn")),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } satisfies Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const { route, runningInterventionTransition } = makeSubject([task], gate);
     const request = route.addIntervention({
@@ -667,10 +667,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
         return dispatchCount === 1 ? firstDispatch.promise : secondDispatch.promise;
       }),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const { route, autoResumeTransition, runningInterventionTransition } =
       makeSubject([task], gate);
@@ -881,11 +881,11 @@ describe("TaskInterventionRoute.addIntervention", () => {
           reason: "delivery_consumed",
         }),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
       beginDispatch: vi.fn((admission) => Promise.resolve(admission)),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const task = makeTask({ status: "completed" });
     const {
@@ -937,11 +937,11 @@ describe("TaskInterventionRoute.addIntervention", () => {
     const gate = {
       admit: vi.fn().mockResolvedValue(admission),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const task = makeTask({ status: "running" });
     const {
@@ -986,10 +986,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
         reason: "delivery_consumed_before_dispatch",
       }),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const task = makeTask({ status: "completed" });
     const {
@@ -1027,10 +1027,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId, "runtime_followup")),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const task = makeTask({ status: "running" });
     const {
@@ -1054,7 +1054,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }, vi.fn())).rejects.toThrow("queue unavailable");
 
     expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
-    expect(gate.recordFailure).toHaveBeenCalledTimes(1);
+    expect(gate.deferFailureToCoordinator).toHaveBeenCalledTimes(1);
   });
 
   it("propagates terminal completion auto-resume failure before publishing", async () => {
@@ -1063,10 +1063,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const task = makeTask({ status: "completed" });
     const {
@@ -1091,7 +1091,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
 
     expect(autoResumeTransition.resume).toHaveBeenCalledOnce();
     expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
-    expect(gate.recordFailure).toHaveBeenCalledOnce();
+    expect(gate.deferFailureToCoordinator).toHaveBeenCalledOnce();
   });
 
   it("does not start a resumed terminal task when post-transition ledger staging fails", async () => {
@@ -1101,10 +1101,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockRejectedValue(stageError),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const task = makeTask({ status: "completed" });
     const { route, autoResumeTransition, sessionNotificationPublisher } =
@@ -1131,7 +1131,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
 
     expect(onResume).not.toHaveBeenCalled();
     expect(autoResumeTransition.resume).toHaveBeenCalledOnce();
-    expect(gate.recordFailure).toHaveBeenCalledTimes(1);
+    expect(gate.deferFailureToCoordinator).toHaveBeenCalledTimes(1);
     expect(sessionNotificationPublisher.publish).not.toHaveBeenCalled();
   });
 
@@ -1142,10 +1142,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId, "durable_next_turn")),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } satisfies Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const task = makeTask({ status: "completed" });
     const { route, autoResumeTransition } = makeSubject([task], gate);
@@ -1176,7 +1176,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     }, onResume)).rejects.toBe(admissionError);
 
     expect(gate.recordResult).toHaveBeenCalledOnce();
-    expect(gate.recordFailure).not.toHaveBeenCalled();
+    expect(gate.deferFailureToCoordinator).not.toHaveBeenCalled();
     expect(onResume).toHaveBeenCalledOnce();
   });
 
@@ -1187,10 +1187,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const task = makeTask({ status: "completed" });
     const { route, autoResumeTransition, sessionNotificationPublisher } =
@@ -1217,7 +1217,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
 
     expect(onResume).not.toHaveBeenCalled();
     expect(autoResumeTransition.resume).toHaveBeenCalledOnce();
-    expect(gate.recordFailure).not.toHaveBeenCalled();
+    expect(gate.deferFailureToCoordinator).not.toHaveBeenCalled();
   });
 
   it("propagates the executor callback failure for a terminal notification", async () => {
@@ -1227,10 +1227,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId)),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const task = makeTask({ status: "completed" });
     const { route, autoResumeTransition } = makeSubject([task], gate);
@@ -1265,10 +1265,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       admit: vi.fn().mockResolvedValue(admitted(deliveryId, "durable_next_turn")),
       beginDispatch: vi.fn((candidate) => Promise.resolve(candidate)),
       recordResult: vi.fn().mockResolvedValue(undefined),
-      recordFailure: vi.fn().mockResolvedValue(undefined),
+      deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
     } as Pick<
       TaskDeliveryLedgerGate,
-      "admit" | "beginDispatch" | "recordResult" | "recordFailure"
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
     >;
     const task = makeTask({ status: "running" });
     const {

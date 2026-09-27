@@ -15,10 +15,8 @@ import { OrchestratorMaintenanceService } from
 import type { SqlClient } from "../../src/db/session_db.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
-import {
-  mapClaudeClientEvent,
-  type ClaudeClientEvent,
-} from "../../src/engine/claude_event_mapper.js";
+import { mapClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
 import { ClaudeBackgroundTaskLifecycle } from
   "../../src/task/claude_background_task_lifecycle.js";
 import { ClaudeRuntimeTaskFollowupController } from

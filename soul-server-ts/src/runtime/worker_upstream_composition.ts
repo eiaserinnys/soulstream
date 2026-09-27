@@ -82,7 +82,6 @@ export function composeWorkerUpstreamAdapter({
       agentConfigService,
       reflectionRuntime,
       scheduleCommands,
-      deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
       modelCatalog,
       eventOutboxPump,
       ...composeRunnerReconciliationReporter(

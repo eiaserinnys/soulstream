@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ClaudeClientEvent } from
-  "../../src/engine/claude_event_mapper.js";
+  "../../src/engine/claude_client_event.js";
 import {
   captureRejectedRateLimitInfo,
   makeStopFailureError,

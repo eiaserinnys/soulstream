@@ -309,7 +309,7 @@ describe("Lane E running intervention turn handoff", () => {
 
   it("keeps ordinary completion unchanged when no intervention arrives", async () => {
     const slice = makeFullSlice("lane-e-control");
-    const execution = slice.executor.startExecution(slice.task, agent);
+    const execution = slice.executor.startNewExecution(slice.task, agent);
     const input = await slice.sdk.nextInput();
     slice.sdk.push(sdkInit("claude-lane-e-control"));
     slice.sdk.push(assistantMessage("claude-lane-e-control", "ordinary answer"));

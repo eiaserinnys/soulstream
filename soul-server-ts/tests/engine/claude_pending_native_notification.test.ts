@@ -4,7 +4,7 @@ import { attachClaudeBackgroundDeliveryMetadata } from
   "../../src/engine/claude_background_delivery_metadata.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
-import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
 import { ClaudePendingNativeNotificationTracker } from
   "../../src/engine/claude_sdk_persistent_session_support.js";
 

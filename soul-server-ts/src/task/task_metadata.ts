@@ -128,10 +128,6 @@ export function extractClaudePermissionModeFromMetadata(
   return undefined;
 }
 
-export function extractClaudeBackendRolloverAttempts(metadata: unknown): number {
-  return extractClaudeBackendRolloverState(metadata).attempts;
-}
-
 export interface ClaudeBackendRolloverMetadataState {
   attempts: number;
   phase: "pending" | "completed";

@@ -45,7 +45,7 @@ class ReleaseManifestV1(TypedDict, closed=True):
 
 class ReleaseVerificationResult(TypedDict, closed=True):
     host: Literal['verified']
-    runner: Literal['verified']
+    runner: Literal['verified', 'skipped']
     env: Literal['verified']
     executable: Literal['verified']
 

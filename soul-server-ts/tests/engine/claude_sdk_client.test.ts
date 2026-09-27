@@ -19,10 +19,8 @@ import {
   type ClaudeSdkQueryFn,
   type ClaudeSdkQueryParams,
 } from "../../src/engine/claude_sdk_client.js";
-import {
-  mapClaudeClientEvent,
-  type ClaudeClientEvent,
-} from "../../src/engine/claude_event_mapper.js";
+import { mapClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
 import { ClaudeSdkEventMapper } from "../../src/engine/claude_sdk_event_mapper.js";
 import { ClaudeRuntimeState } from "../../src/engine/claude_sdk_runtime_state.js";
 import {

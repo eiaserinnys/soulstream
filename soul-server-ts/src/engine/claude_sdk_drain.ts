@@ -1,7 +1,7 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { isEdeDiagnosticErrorText } from "./claude_sdk_diagnostics.js";
 import {

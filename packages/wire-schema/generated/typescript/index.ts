@@ -198,7 +198,7 @@ export interface ReleaseActivationRegistration {
 }
 export interface ReleaseVerificationResult {
   host: "verified";
-  runner: "verified";
+  runner: "verified" | "skipped";
   env: "verified";
   executable: "verified";
 }

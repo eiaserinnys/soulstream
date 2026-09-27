@@ -5,7 +5,7 @@ import type {
   ClaudeRunOptions,
 } from "../../src/engine/claude_adapter.js";
 import { ClaudeSessionClientRegistry } from "../../src/engine/claude_session_client_registry.js";
-import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
 
 describe("ClaudeSessionClientRegistry", () => {
   it("reuses one client per session and closes it only on explicit removal", async () => {

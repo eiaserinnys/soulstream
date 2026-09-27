@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
 import { markPostResultDrainEvent } from "./claude_event_phase.js";
 import type { EngineUserInput } from "./protocol.js";
-import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import {
   isTerminalPersistentBackgroundEvent,
   observePersistentBackgroundEvent,

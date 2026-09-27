@@ -8,7 +8,7 @@ import type {
 import type { Logger } from "pino";
 
 import type { Env } from "../config.js";
-import type { ClaudeClientEvent } from "../engine/claude_event_mapper.js";
+import type { ClaudeClientEvent } from "../engine/claude_client_event.js";
 import type {
   EngineRunStateSnapshot,
   EngineSessionItemsSnapshot,

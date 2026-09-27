@@ -14,7 +14,7 @@ import {
   type SessionMutationHost,
 } from "../control_plane/persistence_host_clients.js";
 
-import type { Task, TaskStatus } from "./task_models.js";
+import type { Task } from "./task_models.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import { createEvictedTaskLoader } from "./task_evicted_hydration.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
@@ -405,14 +405,9 @@ export class TaskManager {
    * 진행 중 turn abort. Runtime v2에서는 terminal Task의 남은 session runtime도 회수.
    * 성공 시 status=interrupted로 전환. 없으면 false.
    *
-   * code-reviewer P1 정정: status="interrupted" 박힘은 *여기서* 책임진다.
-   * adapter abort catch는 yield 없이 generator를 정상 종료 — task_executor의
-   * 정상 종료 분기 `if (task.status === "running") task.status = "completed"`가
-   * interrupt 경로에도 발동되어 wire가 "completed"로 박히는 결함을 차단.
-   *
-   * 본 메서드가 status를 *engine.interrupt 호출 전*에 박으므로, 그 후 generator가
-   * 정상 종료해도 _consumeEventStream의 가드가 status를 덮지 않는다.
-   * terminal event의 terminal_transition effect가 interrupted 상태를 원자 반영한다.
+   * TaskLifecycleTransition.cancelTask가 runner interrupt를 await한 다음
+   * 사용자 중단 상태와 terminal persistence를 확정한다. interrupt 결과에 따라
+   * interrupted 또는 stop_failed로 기록되며, TaskExecutorFinalizer가 terminal event를 반영한다.
    */
   async cancelTask(sessionId: string): Promise<boolean> {
     return await this.lifecycleRoute.cancelTask(sessionId);
@@ -463,12 +458,6 @@ export class TaskManager {
         "task creation projections did not drain before the shutdown deadline; durable replay remains pending",
       );
     }
-  }
-
-  /** 내부 상태 변경 helper (task_executor용). */
-  setTaskStatus(sessionId: string, status: TaskStatus): void {
-    const task = this.tasks.get(sessionId);
-    if (task) task.status = status;
   }
 
   /**
@@ -526,7 +515,7 @@ export class TaskManager {
  *     포함한 queue/defer 결과를 반환한다.
    *   - Completed/Error/Interrupted: user_message를 박고 status를 "running"으로 돌린 뒤
    *     queue push + session_updated + onResume 콜백 호출 → `{autoResumed}`. 콜백은 호출자가
-   *     task_executor.startExecution을 호출하도록 제공. design-principles §1(지식 경계) —
+   *     새 실행을 시작하도록 제공. design-principles §1(지식 경계) —
    *     task_manager는 executor를 import하지 않는다.
    *   - 미존재 task: `Error` throw — 호출자(dispatcher)가 sendError로 변환.
    *
