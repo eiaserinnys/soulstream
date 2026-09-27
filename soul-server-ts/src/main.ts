@@ -23,7 +23,7 @@ import { startNodeStallMonitor } from "./runtime/node_stall_monitor.js";
 import { installProcessErrorHandlers } from "./runtime/process_error_handlers.js";
 import { assertRunnerNodeRuntime } from "./runner/runner_node_runtime_preflight.js";
 import { startInternalMcpServer, startServer } from "./server.js";
-import { wsToHttpBase } from "./mcp/orch_proxy.js";
+import { buildOrchProxyConfig } from "./mcp/orch_proxy.js";
 import { ReleaseActivationState } from "./release/release_activation_state.js";
 import { loadAndVerifyReleaseManifest } from "./release/release_runtime.js";
 
@@ -109,13 +109,12 @@ async function main(): Promise<void> {
       );
     }
   }
+  const orchProxyConfig = buildOrchProxyConfig(env);
   const agentProfileSource = new AgentProfileSource({
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     cachePath: env.AGENT_PROFILE_CACHE_PATH,
-    runtimeUrl: `${wsToHttpBase(env.SOULSTREAM_UPSTREAM_URL)}/api/agent-profiles/runtime`,
-    headers: env.AUTH_BEARER_TOKEN
-      ? { authorization: `Bearer ${env.AUTH_BEARER_TOKEN}` }
-      : {},
+    runtimeUrl: `${orchProxyConfig.baseUrl}/api/agent-profiles/runtime`,
+    headers: orchProxyConfig.headers,
     logger,
     profileResolver: (profiles) =>
       profiles.map((profile) => mcpConfigService.resolveAgentProfile(profile)),

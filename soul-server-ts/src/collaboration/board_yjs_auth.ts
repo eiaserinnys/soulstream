@@ -1,5 +1,7 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
+
+import { constantTimeStringEqual } from "../security/constant_time_string_equal.js";
 
 export const DASHBOARD_AUTH_COOKIE_NAME = "soul_dashboard_auth";
 
@@ -35,7 +37,7 @@ export async function authenticateBoardYjsConnection({
   const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1] ?? null;
   const providedToken = token || bearer;
   if (config.authBearerToken && providedToken) {
-    if (constantTimeEqual(providedToken, config.authBearerToken)) {
+    if (constantTimeStringEqual(providedToken, config.authBearerToken)) {
       return { source: "bearer", subject: "bearer" };
     }
   }
@@ -83,7 +85,7 @@ export async function authenticateDashboardHttpRequest({
       };
     }
     if (config.authBearerToken && bearer) {
-      if (constantTimeEqual(bearer, config.authBearerToken)) {
+      if (constantTimeStringEqual(bearer, config.authBearerToken)) {
         return { source: "bearer", subject: "bearer" };
       }
       throw new Error("invalid dashboard HTTP bearer token");
@@ -95,7 +97,7 @@ export async function authenticateDashboardHttpRequest({
     return { source: "development", subject: "development" };
   }
 
-  if (config.authBearerToken && bearer && constantTimeEqual(bearer, config.authBearerToken)) {
+  if (config.authBearerToken && bearer && constantTimeStringEqual(bearer, config.authBearerToken)) {
     return { source: "bearer", subject: "bearer" };
   }
   if (config.authBearerToken && bearer) {
@@ -134,7 +136,7 @@ function verifyHs256Jwt(token: string, secret: string): Record<string, unknown> 
   const expected = base64UrlEncode(
     createHmac("sha256", secret).update(signed).digest(),
   );
-  if (!constantTimeEqual(expected, parts[2])) {
+  if (!constantTimeStringEqual(expected, parts[2])) {
     throw new Error("invalid dashboard auth cookie signature");
   }
   const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as Record<string, unknown>;
@@ -159,11 +161,4 @@ function base64UrlEncode(value: Buffer): string {
     .replace(/=/g, "")
     .replace(/\+/g, "-")
     .replace(/\//g, "_");
-}
-
-function constantTimeEqual(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
 }

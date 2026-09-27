@@ -1,12 +1,11 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { resolveCodexCliPath } from "../../src/engine/codex_cli_path.js";
 
-import { makeTempDir, makeTempDirSync } from "../helpers/temp_dir.js";
+import { makeTempDirSync } from "../helpers/temp_dir.js";
 
 const tempDirs: string[] = [];
 
@@ -32,14 +31,16 @@ afterEach(() => {
 });
 
 describe("resolveCodexCliPath", () => {
-  it("CODEX_CLI_PATH가 있으면 파일 존재 여부와 무관하게 정본으로 사용한다", () => {
-    expect(
-      resolveCodexCliPath({
-        CODEX_CLI_PATH: "/opt/codex/bin/codex",
-        PATH: "",
-        HOME: "",
-      }),
-    ).toEqual({ path: "/opt/codex/bin/codex", source: "CODEX_CLI_PATH" });
+  it("ignores a missing explicit path and falls back to a spawnable PATH entry", () => {
+    const dir = makeTempDir();
+    const codex = join(dir, "codex");
+    makeExecutable(codex);
+
+    expect(resolveCodexCliPath({
+      CODEX_CLI_PATH: join(dir, "missing", "codex"),
+      PATH: dir,
+      HOME: "",
+    })).toEqual({ path: codex, source: "PATH" });
   });
 
   it("PATH에서 실행 가능한 codex를 찾는다", () => {
@@ -77,6 +78,17 @@ describe("resolveCodexCliPath", () => {
       path: exe,
       source: "PATH",
     });
+  });
+
+  it("uses PATHEXT order when resolving Windows command shims", () => {
+    const dir = makeTempDir();
+    const cmdShim = join(dir, "codex.cmd");
+    const exe = join(dir, "codex.exe");
+    makeFile(cmdShim);
+    makeFile(exe);
+
+    expect(resolveCodexCliPath({ PATH: dir, PATHEXT: ".CMD;.EXE" }, "win32"))
+      .toEqual({ path: cmdShim, source: "PATH" });
   });
 
   it("Windows Path 키도 PATH처럼 처리한다", () => {

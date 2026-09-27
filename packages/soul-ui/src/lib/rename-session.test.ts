@@ -12,7 +12,7 @@ interface SessionPage {
 
 describe("createRenameSessionOperation", () => {
   let queryClient: QueryClient;
-  const queryKey = ["sessions", "all", "ids", null, ["session-a"]] as const;
+  const queryKey = ["sessions", "ids", null, ["session-a"]] as const;
 
   beforeEach(() => {
     useDashboardStore.getState().reset();

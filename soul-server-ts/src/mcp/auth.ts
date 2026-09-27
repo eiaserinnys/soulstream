@@ -5,9 +5,10 @@
  *   - MCP_REQUIRE_AUTH true → Authorization: Bearer {AUTH_BEARER_TOKEN} 일치 강제
  *   - MCP_ALLOWED_HOSTS string[] → Host 헤더 host(port 제거 후)가 리스트에 포함
  *
- * DNS rebinding 방지: Host 헤더 검증은 *항상* 수행 — loopback 바인딩에서도 외부 사이트가
- * 임의 hostname으로 접속 가능하므로.
+ * DNS rebinding 방지: 허용 host 목록이 설정된 경우 Host 헤더를 검사한다. 비어 있는 목록은
+ * host 제한을 사용하지 않는 설정이며, 비루프백 listener에서는 별도 인증이 요구된다.
  */
+import { constantTimeStringEqual } from "../security/constant_time_string_equal.js";
 
 export interface McpAuthConfig {
   requireAuth: boolean;
@@ -39,21 +40,19 @@ export function checkMcpAuth(
   headers: { host?: string; authorization?: string },
 ): AuthCheckResult {
   const host = extractHost(headers.host);
-  if (config.allowedHosts.length > 0) {
-    if (!config.allowedHosts.includes(host)) {
-      return {
-        ok: false,
-        status: 403,
-        message: `host not allowed: ${host || "(missing)"}`,
-      };
-    }
+  if (config.allowedHosts.length > 0 && !config.allowedHosts.includes(host)) {
+    return {
+      ok: false,
+      status: 403,
+      message: `host not allowed: ${host || "(missing)"}`,
+    };
   }
   if (config.requireAuth) {
     if (!config.bearerToken) {
       return { ok: false, status: 500, message: "bearer token not configured" };
     }
     const expected = `Bearer ${config.bearerToken}`;
-    if (headers.authorization !== expected) {
+    if (!constantTimeStringEqual(headers.authorization ?? "", expected)) {
       return { ok: false, status: 401, message: "invalid bearer token" };
     }
   }

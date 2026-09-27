@@ -18,10 +18,10 @@ describe("extractHost", () => {
 });
 
 describe("checkMcpAuth — allowedHosts", () => {
-  it("allowedHosts 비어 있음 → Host 검증 skip, AUTH도 미요구 시 통과", () => {
+  it("allowedHosts가 비어 있으면 Host 제한을 사용하지 않는다", () => {
     const result = checkMcpAuth(
-      { requireAuth: false, bearerToken: "", allowedHosts: [] },
-      { host: "anything.example.com" },
+      { requireAuth: true, bearerToken: "secret", allowedHosts: [] },
+      { host: "anything.example.com", authorization: "Bearer secret" },
     );
     expect(result.ok).toBe(true);
   });

@@ -2,6 +2,7 @@ import type { MouseEvent, ReactNode } from "react";
 import {
   getSessionActivityTimestamp,
   ProfileAvatar,
+  STATUS_CONFIG,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
@@ -34,7 +35,11 @@ export function RichSessionRow({
   onContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
   const title = failed ? runNumberLabel(runNumber) : sessionPanelTitle(session);
-  const status = failed ? "조회 실패" : nodeOffline ? "노드 오프라인" : statusLabel(session.status);
+  const status = failed
+    ? "조회 실패"
+    : nodeOffline
+      ? "노드 오프라인"
+      : (STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown).label;
   const presentationStatus = failed ? "failed" : nodeOffline ? "offline" : session.status;
   const modelLabel = failed ? null : sessionModelLabel(session);
   const portraitUrl = failed ? null : sessionPortraitUrl(session);
@@ -102,14 +107,6 @@ function sessionPortraitUrl(session: SessionSummary): string | null {
   if (session.agentPortraitUrl) return session.agentPortraitUrl;
   if (!session.nodeId || !session.agentId) return null;
   return `/api/nodes/${encodeURIComponent(session.nodeId)}/agents/${encodeURIComponent(session.agentId)}/portrait`;
-}
-
-function statusLabel(status: SessionSummary["status"]): string {
-  if (status === "running") return "실행 중";
-  if (status === "completed") return "완료";
-  if (status === "error") return "오류";
-  if (status === "interrupted") return "중단";
-  return "대기";
 }
 
 function runNumberLabel(runNumber: number | null): string {

@@ -1,14 +1,16 @@
 import type { SessionProviderConnectionStatus } from "@seosoyoung/soul-ui";
 
 export function SessionStreamStatus({
+  active,
   status,
   reconnect,
 }: {
+  active: boolean;
   status: SessionProviderConnectionStatus;
   reconnect(): void;
 }) {
-  if (status === "connected" || status === "connecting") return null;
-  const message = status === "error" ? "연결 오류 · 다시 연결" : "연결 끊김 · 다시 연결";
+  if (!active || status !== "error") return null;
+  const message = "연결 오류 · 다시 연결";
   return (
     <button
       type="button"

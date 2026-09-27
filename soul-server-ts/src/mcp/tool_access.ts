@@ -26,6 +26,11 @@ const DESTRUCTIVE_TOOL_NAMES_BY_RUNTIME = new WeakMap<
   McpRuntime,
   Set<string>
 >();
+const REGISTERED_TOOL_NAMES_BY_RUNTIME = new WeakMap<McpRuntime, Set<string>>();
+
+export function getRegisteredMcpToolNames(runtime: McpRuntime): string[] {
+  return [...(REGISTERED_TOOL_NAMES_BY_RUNTIME.get(runtime) ?? [])].sort();
+}
 
 export function isDestructiveMcpTool(
   toolName: string,
@@ -124,10 +129,21 @@ export function createGuardedMcpServer(
           toolConfig: unknown,
           toolHandler: (...args: unknown[]) => unknown,
         ) => unknown;
-        return registerTool.call(target, name, registeredConfig, wrappedHandler);
+        const registered = registerTool.call(target, name, registeredConfig, wrappedHandler);
+        recordRegisteredTool(runtime, name);
+        return registered;
       };
     },
   }) as McpServer;
+}
+
+function recordRegisteredTool(runtime: McpRuntime, toolName: string): void {
+  let names = REGISTERED_TOOL_NAMES_BY_RUNTIME.get(runtime);
+  if (!names) {
+    names = new Set();
+    REGISTERED_TOOL_NAMES_BY_RUNTIME.set(runtime, names);
+  }
+  names.add(toolName);
 }
 
 function guardExternalLlmDestructiveOperation(

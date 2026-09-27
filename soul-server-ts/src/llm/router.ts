@@ -1,11 +1,10 @@
-import { timingSafeEqual } from "node:crypto";
-
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Logger } from "pino";
 import { ZodError } from "zod";
 
 import { ProviderNotConfiguredError, type LlmExecutor } from "./executor.js";
 import { parseLlmCompletionRequest } from "./types.js";
+import { constantTimeStringEqual } from "../security/constant_time_string_equal.js";
 
 export interface LlmRouteConfig {
   executor: LlmExecutor;
@@ -119,7 +118,7 @@ function verifyBearer(
     return false;
   }
 
-  if (!constantTimeEqual(parts[1] ?? "", configuredToken)) {
+  if (!constantTimeStringEqual(parts[1] ?? "", configuredToken)) {
     reply.code(401).send({
       detail: {
         error: {
@@ -133,11 +132,4 @@ function verifyBearer(
   }
 
   return true;
-}
-
-function constantTimeEqual(actual: string, expected: string): boolean {
-  const actualBuffer = Buffer.from(actual);
-  const expectedBuffer = Buffer.from(expected);
-  if (actualBuffer.length !== expectedBuffer.length) return false;
-  return timingSafeEqual(actualBuffer, expectedBuffer);
 }

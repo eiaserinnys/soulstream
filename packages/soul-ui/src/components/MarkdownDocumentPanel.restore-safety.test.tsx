@@ -133,13 +133,15 @@ describe("MarkdownDocumentPanel restore safety", () => {
   let container: HTMLDivElement | null = null;
   let runtime: SyncAwareTestRuntime;
   let unregisterRuntime: (() => void) | null = null;
+  let pendingEditId: string | null = null;
 
   beforeEach(() => {
     useDashboardStore.getState().reset();
     useDashboardStore.getState().selectFolder("folder-a");
+    useDashboardStore.getState().setActiveBoardDocument("doc-a");
     runtime = createInitiallyUnsyncedRuntime("folder-a");
     unregisterRuntime = registerBoardYjsRuntime(runtime);
-    useDashboardStore.getState().requestBoardDocumentEdit("doc-a");
+    pendingEditId = "doc-a";
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -147,8 +149,8 @@ describe("MarkdownDocumentPanel restore safety", () => {
       root?.render(createElement(MarkdownDocumentPanel, {
         documentId: "doc-a",
         container: { kind: "folder", id: "folder-a" },
-        pendingEditId: "doc-a",
-        onPendingEditConsumed: () => useDashboardStore.getState().clearPendingBoardDocumentEdit(),
+        pendingEditId,
+        onPendingEditConsumed: () => { pendingEditId = null; },
         onClose: () => useDashboardStore.getState().setActiveBoardDocument(null),
         onDeleted: (boardItemId: string) => useDashboardStore.getState().removeBoardItem(boardItemId),
       }));
@@ -168,7 +170,7 @@ describe("MarkdownDocumentPanel restore safety", () => {
     await settle();
 
     expect(container?.querySelector('[data-testid="markdown-codemirror-editor"]')).toBeNull();
-    expect(useDashboardStore.getState().pendingBoardDocumentEditId).toBe("doc-a");
+    expect(pendingEditId).toBe("doc-a");
     expect(runtime.doc.getMap<Y.Text>("markdownBodies").size).toBe(0);
 
     flushSync(() => runtime.completeInitialSync());
@@ -178,7 +180,7 @@ describe("MarkdownDocumentPanel restore safety", () => {
       "the synced markdown editor with its original body",
     );
     expect(container?.querySelector(".cm-content")?.textContent).toContain("Original body");
-    expect(useDashboardStore.getState().pendingBoardDocumentEditId).toBeNull();
+    expect(pendingEditId).toBeNull();
   });
 
   it("does not save title or body while the document body is still unloaded", async () => {

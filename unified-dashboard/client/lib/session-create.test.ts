@@ -1,6 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { QueryClient } from "@tanstack/react-query";
-import type { DashboardAgentConfig } from "@seosoyoung/soul-ui";
 
 import { createDashboardSession } from "./session-create";
 
@@ -33,7 +32,7 @@ describe("createDashboardSession", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
     const addOptimisticSession = vi.fn();
-    const agent: DashboardAgentConfig = {
+    const agent = {
       id: "roselin_codex",
       name: "Roselin",
       hasPortrait: true,

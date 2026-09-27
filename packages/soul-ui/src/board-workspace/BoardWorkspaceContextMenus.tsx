@@ -423,12 +423,7 @@ export function BoardWorkspaceContextMenus({
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
             onClick={() => {
-              // task 보드는 편집 소유자에게 요청해 로컬 오버레이를 연다. 일반 보드는 기존 store 경로를 쓴다.
-              if (onRequestMarkdownEdit) {
-                onRequestMarkdownEdit(markdownContextMenu.item.documentId);
-              } else {
-                useDashboardStore.getState().requestBoardDocumentEdit(markdownContextMenu.item.documentId);
-              }
+              onRequestMarkdownEdit?.(markdownContextMenu.item.documentId);
               onCloseCardContextMenu();
             }}
           >

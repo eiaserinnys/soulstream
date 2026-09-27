@@ -1,4 +1,5 @@
 import type { McpRuntime } from "../runtime.js";
+import { getRegisteredMcpToolNames } from "../tool_access.js";
 
 import { buildSelfServiceBrief } from "./brief_reflection.js";
 import { buildConfigReflection } from "./config_reflection.js";
@@ -57,7 +58,7 @@ export async function reflectSelf(
           name: SELF_IDENTITY.name,
           description: SELF_IDENTITY.description,
         },
-        capabilities: filterCapabilities(capability),
+        capabilities: filterCapabilities(capability, getRegisteredMcpToolNames(runtime)),
       }),
     );
   }

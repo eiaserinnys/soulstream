@@ -64,12 +64,6 @@ export function measureFirstVisuallyIntersectingItem(
       };
 }
 
-export function findFirstVisuallyIntersectingItemKey(
-  scroller: HTMLElement,
-): string | null {
-  return measureFirstVisuallyIntersectingItem(scroller)?.key ?? null;
-}
-
 export function measureChatItemOffset(
   scroller: HTMLElement,
   key: string,

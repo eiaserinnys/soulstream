@@ -56,19 +56,10 @@ function sessionStoryMounts(): string[] {
 describe("SessionStoryDisclosure stacking contract", () => {
   it("enumerates every production mount surface", () => {
     expect(sessionStoryMounts()).toEqual([
-      "packages/soul-ui/src/components/chat/ChatView.tsx",
       "unified-dashboard/client/v3/TaskBoardWorkspace.tsx",
       "unified-dashboard/client/v3/TaskWorkspace.tsx",
       "unified-dashboard/client/v3/TaskWorkspace.tsx",
     ]);
-  });
-
-  it("keeps the desktop chat header stacking context above the message list", () => {
-    const source = readSource("./chat/ChatView.tsx");
-
-    expect(source).toContain(
-      'className="relative z-[1] mb-3 flex h-[50px]',
-    );
   });
 
   it("lifts the standalone TaskWorkspace chat header above its review banner and message list", () => {

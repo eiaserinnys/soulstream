@@ -57,7 +57,6 @@ export { DashboardIconCap } from "./DashboardIconCap";
 export type { DashboardIconCapProps } from "./DashboardIconCap";
 export { DisclosureActionIcon } from "./DisclosureActionIcon";
 export type { DisclosureActionIconProps } from "./DisclosureActionIcon";
-export { ConfigButton } from "./ConfigButton";
 export { NewSessionFolderSelector } from "./NewSessionFolderSelector";
 export type { NewSessionFolderSelectorProps } from "./NewSessionFolderSelector";
 export { FileAttachmentPreview } from "./FileAttachmentPreview";

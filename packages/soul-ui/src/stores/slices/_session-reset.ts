@@ -12,8 +12,8 @@
  * 동기화되며, 추가/누락이 한 곳에서만 발생하지 않는다.
  *
  * NOTE: activeSessionSummary는 의도적으로 누락된다 — caller가 setActiveSessionSummary로
- *       별도 갱신하기 때문 (기존 동작 보존). 따라서 session-slice의 *전체* 초기 state가
- *       아니라 일부(activeSessionKey/activeSession/select* 5개)만 spread한다.
+ *       별도 갱신하기 때문 (기존 동작 보존). 따라서 session-slice의 전체 초기 state가
+ *       아니라 활성 세션 키와 상세 일부만 spread한다.
  *       activeRightTab은 ui-slice 소유이지만 세션 전환 시 항상 "chat"으로 리셋이
  *       의도된 동작이므로 본 helper에 포함된다.
  */
@@ -34,7 +34,6 @@ export function getSessionResetState() {
     focusEventTarget: null,
     activeRightTab: "chat" as const, // ui-slice 소유 — 세션 전환 시 항상 "chat" 리셋이 의도된 동작
     activeBoardDocumentId: null,
-    pendingBoardDocumentEditId: null,
     activeCustomViewId: null,
   };
 }

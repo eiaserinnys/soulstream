@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   errorResult,
+  errorResultFromError,
   jsonResult,
   paginatedArrayResult,
 } from "../../src/mcp/result.js";
@@ -65,5 +66,29 @@ describe("errorResult", () => {
     expect(result.isError).toBe(true);
     expect(result.content).toEqual([{ type: "text", text: "세션 없음" }]);
     expect(result.structuredContent).toEqual({ error: "세션 없음" });
+  });
+
+  it("structuredContent에 도메인 코드와 details를 보존한다", () => {
+    const result = errorResult("버전 충돌", {
+      code: "TASK_VERSION_CONFLICT",
+      details: { current_version: 4 },
+    });
+    expect(result.structuredContent).toEqual({
+      error: "버전 충돌",
+      code: "TASK_VERSION_CONFLICT",
+      details: { current_version: 4 },
+    });
+  });
+
+  it("Error 객체의 code와 details를 보존한다", () => {
+    const error = Object.assign(new Error("버전 충돌"), {
+      code: "TASK_VERSION_CONFLICT",
+      details: { current_version: 4 },
+    });
+    expect(errorResultFromError(error).structuredContent).toEqual({
+      error: "버전 충돌",
+      code: "TASK_VERSION_CONFLICT",
+      details: { current_version: 4 },
+    });
   });
 });

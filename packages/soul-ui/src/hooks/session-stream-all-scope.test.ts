@@ -6,7 +6,7 @@ describe("all-scope session stream cache", () => {
   it("accepts every session_created delta regardless of folder or type", () => {
     expect(
       shouldApplySessionCreatedToCache(
-        ["sessions", "all", "all", null],
+        ["sessions", "all", null],
         "llm",
         "hidden-folder",
         {

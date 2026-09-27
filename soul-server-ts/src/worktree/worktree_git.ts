@@ -17,7 +17,7 @@ import {
 // visible together. Timeout-partial recovery is split into its own tested module.
 import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, win32 } from "node:path";
 
 import { GitProcessError, runBoundedProcess } from "./worktree_process.js";
 import {
@@ -174,7 +174,7 @@ export class WorktreeGit {
       const gitDir = await this.privateGitDirectory(path);
       writeFileSync(join(gitDir, IDENTITY_FILE), `${input.worktreeId}\n`, { flag: "wx" });
       const entry = (await this.list(input.repoId)).find(
-        (candidate) => candidate.path === realpathSync(path),
+        (candidate) => samePath(candidate.path, realpathSync(path)),
       );
       if (!entry) throw new WorktreeGitError("WORKTREE_CREATE_UNDISCOVERABLE", path);
       finishWorktreeCreationAttempt(attempt);
@@ -219,7 +219,7 @@ export class WorktreeGit {
     const candidate = realpathSync(input.path);
     this.assertPathInsideProjectsRoot(candidate);
     const entries = await this.list(input.repoId);
-    const entry = entries.find((item) => item.path === candidate);
+    const entry = entries.find((item) => samePath(item.path, candidate));
     if (!entry || entry.kind !== "unmanaged") {
       throw new WorktreeGitError("WORKTREE_NOT_ADOPTABLE", candidate);
     }
@@ -455,7 +455,7 @@ export class WorktreeGit {
   }): Promise<string> {
     const path = realpathSync(input.path);
     await this.assertIdentity(path, input.worktreeId);
-    const entry = (await this.list(input.repoId)).find((candidate) => candidate.path === path);
+    const entry = (await this.list(input.repoId)).find((candidate) => samePath(candidate.path, path));
     if (!entry || entry.identity !== input.worktreeId) {
       throw new WorktreeGitError("WORKTREE_UNAVAILABLE", path);
     }
@@ -523,7 +523,7 @@ export class WorktreeGit {
     this.assertPathInsideProjectsRoot(path);
     await this.assertIdentity(path, input.worktreeId);
     const registered = (await this.list(input.repoId)).some(
-      (entry) => entry.path === path && entry.identity === input.worktreeId,
+      (entry) => samePath(entry.path, path) && entry.identity === input.worktreeId,
     );
     if (!registered) throw new WorktreeGitError("WORKTREE_UNAVAILABLE", path);
     return path;
@@ -854,10 +854,15 @@ function isPathInside(root: string, candidate: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-function samePath(left: string, right: string): boolean {
-  return process.platform === "win32"
-    ? resolve(left).toLowerCase() === resolve(right).toLowerCase()
-    : resolve(left) === resolve(right);
+export function samePath(
+  left: string,
+  right: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform === "win32") {
+    return win32.resolve(left).toLowerCase() === win32.resolve(right).toLowerCase();
+  }
+  return resolve(left) === resolve(right);
 }
 
 function isManagedEntry(entry: string, managedPaths: string[]): boolean {

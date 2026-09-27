@@ -10,10 +10,6 @@ export {
 export { useTaskStore } from "./task-store";
 export { useCustomViewStore } from "./custom-view-store";
 export type {
-  ProfileConfig,
-  DashboardConfig,
-  DashboardAgentConfig,
-  SelectedEventNodeData,
   DashboardState,
   DashboardActions,
   FolderSortMode,

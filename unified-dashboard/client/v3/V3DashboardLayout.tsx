@@ -101,7 +101,12 @@ function V3DashboardContent() {
   }, [refreshAuthStatus]);
   const { toast, notify, notifyWriteFailure } = useV3Notifications(refreshAuthStatus);
   useUserPreferencesSync(user?.email ?? null);
-  useInitialCatalogLoad(true);
+  const catalogLoadState = useInitialCatalogLoad(true);
+  const catalogLoadError = catalogLoadState.status === "authentication"
+    || catalogLoadState.status === "forbidden"
+    || catalogLoadState.status === "error"
+    ? "목록 불러오기 실패"
+    : null;
   useReadPositionSync();
   useNotification(true);
   useNodes(handleStreamConnectionError);
@@ -496,7 +501,7 @@ function V3DashboardContent() {
         onOpenSearch={() => setSearchOpen(true)}
       />
       <V3Navigation
-        dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} selectedFolderId={selectedFolderId}
+        dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} catalogLoadError={catalogLoadError} selectedFolderId={selectedFolderId}
         starredTasks={starredTasks} starredTasksHasMore={starredTasksHasMore} starredTasksLoading={starredTasksLoading || starredTasksLoadingMore || starredTasksReordering} todayTaskIds={todayTaskIds}
         completedTaskIds={new Set(currentTasks.filter((task) => task.status === "completed").map((task) => task.page.id))}
         onLoadMoreStarredTasks={() => { void loadMoreStarredTasks(); }}
@@ -556,6 +561,7 @@ function V3DashboardContent() {
           mobileMode={mobileMode}
           mobileTab={mobileTab}
           historyEnabled={historyEnabled}
+          sessionStreamActive={detailActive}
           sessionConnectionStatus={sessionConnectionStatus}
           reconnectSession={reconnectSession}
           onChatVisibilityChange={setDetailChatVisible}

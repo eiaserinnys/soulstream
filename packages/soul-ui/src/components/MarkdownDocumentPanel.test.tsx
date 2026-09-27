@@ -39,7 +39,7 @@ function renderPanel(options: { folderId?: string } = {}) {
     root.render(createElement(MarkdownDocumentPanel, {
       documentId: "doc-a",
       container: options.folderId ? { kind: "folder", id: options.folderId } : null,
-      onPendingEditConsumed: () => useDashboardStore.getState().clearPendingBoardDocumentEdit(),
+      onPendingEditConsumed: () => undefined,
       onClose: () => useDashboardStore.getState().setActiveBoardDocument(null),
       onDeleted: (boardItemId: string) => useDashboardStore.getState().removeBoardItem(boardItemId),
     }));
@@ -365,9 +365,9 @@ describe("MarkdownDocumentPanel", () => {
     expect(readScroller.scrollTop).toBe(980);
   });
 
-  it("auto-enters edit mode when opened via requestBoardDocumentEdit (🔴25)", async () => {
+  it("auto-enters edit mode for a matching pending edit request", async () => {
     useDashboardStore.getState().reset();
-    useDashboardStore.getState().requestBoardDocumentEdit("doc-a");
+    let pendingEditId: string | null = "doc-a";
     const editContainer = document.createElement("div");
     document.body.appendChild(editContainer);
     const editRoot = createRoot(editContainer);
@@ -377,8 +377,8 @@ describe("MarkdownDocumentPanel", () => {
       editRoot.render(createElement(MarkdownDocumentPanel, {
         documentId: "doc-a",
         container: { kind: "folder", id: "folder-a" },
-        pendingEditId: "doc-a",
-        onPendingEditConsumed: () => useDashboardStore.getState().clearPendingBoardDocumentEdit(),
+        pendingEditId,
+        onPendingEditConsumed: () => { pendingEditId = null; },
         onClose: () => useDashboardStore.getState().setActiveBoardDocument(null),
         onDeleted: (boardItemId: string) => useDashboardStore.getState().removeBoardItem(boardItemId),
       }));
@@ -389,7 +389,49 @@ describe("MarkdownDocumentPanel", () => {
     expect(container.querySelector('[data-testid="markdown-codemirror-editor"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="markdown-read-body"]')).toBeNull();
     // 편집 요청은 소비되어 비워진다(재진입 시 중복 편집 방지).
-    await waitForCondition(() => useDashboardStore.getState().pendingBoardDocumentEditId === null);
+    await waitForCondition(() => pendingEditId === null);
+  });
+
+  it("keeps the panel open and shows document load failures", async () => {
+    fetchMock.mockResolvedValue(new Response("unavailable", { status: 503 }));
+    ({ container, root } = renderPanel());
+
+    const error = await waitForSelector(container, '[data-testid="markdown-load-error"]');
+
+    expect(error.textContent).toBe("불러오기 실패");
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-a");
+  });
+
+  it("shows document delete failures", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/markdown-documents/doc-a") && !init?.method) {
+        return new Response(JSON.stringify(storedDocument), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/markdown-documents/doc-a") && init?.method === "DELETE") {
+        return new Response("unavailable", { status: 503 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    ({ container, root } = renderPanel());
+    await waitForSelector(container, '[data-testid="markdown-read-body"]');
+
+    const deleteButton = container.querySelector<HTMLButtonElement>('button[title="Delete document"]');
+    expect(deleteButton).not.toBeNull();
+    flushSync(() => deleteButton?.click());
+
+    await waitForText(container, '[data-testid="markdown-save-status"]', "삭제 실패");
+    expect(container.querySelector('[data-testid="markdown-save-status"]')?.getAttribute("title"))
+      .toContain("503");
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-a");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Markdown document delete failed:",
+      expect.objectContaining({ message: expect.stringContaining("503") }),
+    );
   });
 
   it("stale REST save keeps document dirty and shows a conflict message", async () => {
