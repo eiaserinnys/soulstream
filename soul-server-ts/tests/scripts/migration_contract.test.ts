@@ -284,7 +284,7 @@ describe("versioned migration contract", () => {
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
     ), "utf8");
 
-    expect(migrations.at(-1)?.id).toBe("106_recurring_jobs_once.sql");
+    expect(migrations.at(-1)?.id).toBe("107_context_bundles.sql");
     expect(migration?.sql).toContain("ADD COLUMN IF NOT EXISTS schedule_kind TEXT NOT NULL DEFAULT 'recurring'");
     expect(migration?.sql).toContain("ADD COLUMN IF NOT EXISTS run_at TIMESTAMPTZ");
     expect(migration?.sql).toContain("DROP CONSTRAINT IF EXISTS recurring_jobs_schedule_array");
