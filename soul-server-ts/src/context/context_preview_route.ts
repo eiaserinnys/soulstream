@@ -1,4 +1,5 @@
 import type { IncomingHttpHeaders } from "node:http";
+import { type as getOsType } from "node:os";
 
 import type { FastifyInstance } from "fastify";
 import type { Logger } from "pino";
@@ -9,6 +10,7 @@ import {
   type BoardYjsAuthConfig,
 } from "../collaboration/board_yjs_auth.js";
 import type { AtomFetchConfig, AtomContextSpec } from "./atom_context.js";
+import { hostOsConditionValue } from "./host_os.js";
 import {
   compileContexts,
   type ContextFilterParameters,
@@ -79,6 +81,7 @@ function parsePreviewBody(body: PreviewBody | undefined, nodeId: string): Previe
       : {}),
     ...(nonEmptyString(session.agent) ? { agent: session.agent as string } : {}),
     ...(nonEmptyString(session.backend) ? { backend: session.backend as string } : {}),
+    os: hostOsConditionValue(getOsType()),
   };
   return { ok: true, value: { specs, parameters } };
 }
