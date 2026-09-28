@@ -147,6 +147,20 @@ type TypeScriptAdditiveRoute = Omit<RouteDefinition, "order"> & {
 const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   {
     methods: ["GET"],
+    path: "/api/context-bundles",
+    name: "list_context_bundles",
+    authRequired: true,
+    family: "control_plane",
+  },
+  {
+    methods: ["DELETE", "GET", "PUT"],
+    path: "/api/context-bundles/{bundle_id}",
+    name: "context_bundle_crud",
+    authRequired: true,
+    family: "control_plane",
+  },
+  {
+    methods: ["GET"],
     path: "/api/agent-profiles",
     name: "list_agent_profiles",
     authRequired: true,

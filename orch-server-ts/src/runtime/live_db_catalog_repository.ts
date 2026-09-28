@@ -63,6 +63,8 @@ import type { SessionReviewAcknowledgeRepository } from "../session/session_revi
 import type { SessionDeletionPort } from "../session/session_deletion_service.js";
 import { createLiveAgentProfileRepository } from "./live_agent_profile_repository.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
+import { createLiveContextBundleRepository } from "./live_context_bundle_repository.js";
+import type { ContextBundleRepository } from "../node/context_bundle_routes.js";
 import {
   projectSessionFeedSummary,
   sessionFeedActivityMs,
@@ -75,6 +77,7 @@ import {
 
 export type LiveDbCatalogRepository = {
   readonly agentProfileRepository: AgentProfileRepository;
+  readonly contextBundleRepository: ContextBundleRepository;
   readonly adminUsersRepository: LiveAdminUsersRepository;
   readonly folderRouteProvider: LiveFolderProvider;
   readonly folderCountsProvider: LiveFolderProvider;
@@ -164,6 +167,7 @@ export function createLiveDbCatalogRepository(
     };
   const adminUsersRepository = createLiveAdminUsersRepository({ sqlResolver });
   const agentProfileRepository = createLiveAgentProfileRepository(sqlResolver);
+  const contextBundleRepository = createLiveContextBundleRepository(sqlResolver);
   const cogitoSearchProvider = createLiveCogitoSearchProvider({
     searchDbConnectionFactory,
     queryExpander: options.searchQueryExpander,
@@ -342,6 +346,7 @@ export function createLiveDbCatalogRepository(
   }
   return {
     agentProfileRepository,
+    contextBundleRepository,
     adminUsersRepository,
     folderRouteProvider: folderProvider,
     folderCountsProvider: folderProvider,

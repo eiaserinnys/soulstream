@@ -26,7 +26,7 @@ export function createLiveAgentProfileRepository(
     async list() {
       const rows = await optionalProfileRead(async () =>
         (await sqlResolver.resolveSql())`
-          SELECT agent_id, name, atom_contexts, default_preset, aliases,
+          SELECT agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
                  portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
                  portrait_sha256, octet_length(portrait_blob) AS portrait_size,
                  version, created_at, updated_at
@@ -41,7 +41,7 @@ export function createLiveAgentProfileRepository(
     async get(agentId) {
       const rows = await optionalProfileRead(async () =>
         (await sqlResolver.resolveSql())`
-          SELECT agent_id, name, atom_contexts, default_preset, aliases,
+          SELECT agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
                  portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
                  portrait_sha256, octet_length(portrait_blob) AS portrait_size,
                  version, created_at, updated_at
@@ -125,11 +125,11 @@ function isUndefinedTable(error: unknown): boolean {
 async function insertProfile(sqlResolver: LiveDbSqlResolver, input: AgentProfileWrite) {
   const sql = await sqlResolver.resolveSql();
   return sql`
-    INSERT INTO agent_profiles (agent_id, name, atom_contexts, default_preset, aliases)
-    VALUES (${input.agentId}, ${input.name}, ${sql.json(input.atomContexts)},
+    INSERT INTO agent_profiles (agent_id, name, context_bundles, atom_contexts, default_preset, aliases)
+    VALUES (${input.agentId}, ${input.name}, ${sql.json(input.contextBundles)}, ${sql.json(input.atomContexts)},
             ${input.defaultPreset}, ${sql.json(input.aliases)})
     ON CONFLICT (agent_id) DO NOTHING
-    RETURNING agent_id, name, atom_contexts, default_preset, aliases,
+    RETURNING agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
               portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
               portrait_sha256, octet_length(portrait_blob) AS portrait_size,
               version, created_at, updated_at
@@ -140,11 +140,12 @@ async function updateProfile(sqlResolver: LiveDbSqlResolver, input: AgentProfile
   const sql = await sqlResolver.resolveSql();
   return sql`
     UPDATE agent_profiles
-    SET name = ${input.name}, atom_contexts = ${sql.json(input.atomContexts)},
+    SET name = ${input.name}, context_bundles = ${sql.json(input.contextBundles)},
+        atom_contexts = ${sql.json(input.atomContexts)},
         default_preset = ${input.defaultPreset}, aliases = ${sql.json(input.aliases)},
         version = version + 1, updated_at = NOW()
     WHERE agent_id = ${input.agentId} AND version = ${input.expectedVersion}
-    RETURNING agent_id, name, atom_contexts, default_preset, aliases,
+    RETURNING agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
               portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
               portrait_sha256, octet_length(portrait_blob) AS portrait_size,
               version, created_at, updated_at
@@ -167,7 +168,7 @@ async function updatePortrait(
     SET portrait_blob = ${input.body}, portrait_mime = ${input.mime},
         portrait_sha256 = ${input.sha256}, version = version + 1, updated_at = NOW()
     WHERE agent_id = ${input.agentId} AND version = ${input.expectedVersion}
-    RETURNING agent_id, name, atom_contexts, default_preset, aliases,
+    RETURNING agent_id, name, context_bundles, atom_contexts, default_preset, aliases,
               portrait_blob IS NOT NULL AS has_portrait, portrait_mime,
               portrait_sha256, octet_length(portrait_blob) AS portrait_size,
               version, created_at, updated_at
@@ -178,6 +179,7 @@ function mapProfile(row: Record<string, unknown>): AgentProfileRecord {
   return {
     agentId: String(row.agent_id),
     name: String(row.name),
+    contextBundles: arrayValue(row.context_bundles) as AgentProfileRecord["contextBundles"],
     atomContexts: arrayValue(row.atom_contexts) as AgentProfileRecord["atomContexts"],
     defaultPreset: typeof row.default_preset === "string" ? row.default_preset : null,
     aliases: arrayValue(row.aliases) as AgentProfileRecord["aliases"],

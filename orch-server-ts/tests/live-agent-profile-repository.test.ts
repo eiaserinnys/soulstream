@@ -24,6 +24,7 @@ function harness(responses: Array<readonly Record<string, unknown>[]>) {
 const row = {
   agent_id: "roselin",
   name: "로젤린",
+  context_bundles: ["people", "general"],
   atom_contexts: [{ node_id: "11111111-2222-3333-4444-555555555555" }],
   default_preset: "codex-sol",
   aliases: [{ id: "roselin_codex" }],
@@ -43,6 +44,7 @@ describe("live agent profile repository", () => {
     await expect(repository.list()).resolves.toEqual([{
       agentId: "roselin",
       name: "로젤린",
+      contextBundles: ["people", "general"],
       atomContexts: row.atom_contexts,
       defaultPreset: "codex-sol",
       aliases: [{ id: "roselin_codex" }],
@@ -65,6 +67,7 @@ describe("live agent profile repository", () => {
     await repository.put({
       agentId: "roselin",
       name: "로젤린",
+      contextBundles: [],
       atomContexts: [],
       defaultPreset: null,
       aliases: [],
@@ -77,6 +80,7 @@ describe("live agent profile repository", () => {
     await repository.put({
       agentId: "roselin",
       name: "로젤린 DB",
+      contextBundles: ["people"],
       atomContexts: [],
       defaultPreset: "codex-sol",
       aliases: [],
@@ -95,6 +99,7 @@ describe("live agent profile repository", () => {
     await expect(create.repository.put({
       agentId: "roselin",
       name: "로젤린",
+      contextBundles: [],
       atomContexts: [],
       defaultPreset: null,
       aliases: [],
@@ -106,6 +111,7 @@ describe("live agent profile repository", () => {
     await expect(conflict.repository.put({
       agentId: "roselin",
       name: "로젤린",
+      contextBundles: [],
       atomContexts: [],
       defaultPreset: null,
       aliases: [],

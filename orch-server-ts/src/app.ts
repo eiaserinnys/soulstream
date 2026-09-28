@@ -83,6 +83,10 @@ import {
   type AgentProfileRouteOptions,
 } from "./node/agent_profile_routes.js";
 import {
+  registerContextBundleRoutes,
+  type ContextBundleRouteOptions,
+} from "./node/context_bundle_routes.js";
+import {
   registerFolderRoutes,
   type FolderRouteOptions,
 } from "./folders/folder_routes.js";
@@ -184,6 +188,7 @@ export type CreateAppOptions = {
   nodeClaudeAuthRoutes?: NodeClaudeAuthRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
   agentProfileRoutes?: AgentProfileRouteOptions;
+  contextBundleRoutes?: ContextBundleRouteOptions;
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
   sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
@@ -252,6 +257,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.agentProfileRoutes !== undefined) {
     registerAgentProfileRoutes(app, options.agentProfileRoutes);
+  }
+  if (options.contextBundleRoutes !== undefined) {
+    registerContextBundleRoutes(app, options.contextBundleRoutes);
   }
   if (options.nodeWsRoute !== undefined) {
     registerNodeWsRoute(app, options.nodeWsRoute, {

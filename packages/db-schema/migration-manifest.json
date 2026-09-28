@@ -108,6 +108,7 @@
     { "id": "103_event_search_aggregate_postings.sql", "sha256": "47fe4fc50d2f6deed619fdf26ef624fdcb4995d9a02b5b1f1cb062c1fb9d53d8" },
     { "id": "104_events_event_type_covering_index.sql", "sha256": "023981abbd18e3fa8ac09f1e13b108c51020f5304c36c27f125d6c94306cceb9" },
     { "id": "105_retire_legacy_procedures.sql", "sha256": "1495d3143a110e89aefd0ce03c54317ec3682ec3aae6bbc6a11c4a2e05cc5638" },
-    { "id": "106_recurring_jobs_once.sql", "sha256": "5a4cd1ed2791bef2f43025a0820b93a38fc31ed4a1726ba01353b06016cf8875" }
+    { "id": "106_recurring_jobs_once.sql", "sha256": "5a4cd1ed2791bef2f43025a0820b93a38fc31ed4a1726ba01353b06016cf8875" },
+    { "id": "107_context_bundles.sql", "sha256": "7058f7e477d57da27c843650ed5b8210d173d0a64a5c9e7ff8a7b6297064ea5c" }
   ]
 }

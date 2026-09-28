@@ -552,6 +552,12 @@ function createLiveDependencies(): LiveProviderDependencies {
         putPortrait: vi.fn(),
         deletePortrait: vi.fn(),
       },
+      contextBundleRepository: {
+        list: vi.fn(async () => []),
+        get: vi.fn(async () => null),
+        put: vi.fn(),
+        delete: vi.fn(async () => false),
+      },
       adminUsersRepository: {
         findUserByEmail: vi.fn(async (email) =>
           email === "admin@example.com"
