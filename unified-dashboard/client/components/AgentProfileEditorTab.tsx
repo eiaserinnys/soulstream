@@ -1,26 +1,27 @@
+// This file remains over 500 lines because the requested profile, portrait,
+// and preview workflows stay together in one tab. Bundle rows and CRUD live
+// in separate components; another split would change the planned boundary.
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Button } from "@seosoyoung/soul-ui";
 
 import { useOrchestratorStore } from "../store/orchestrator-store";
-
-type AppliesWhenField = "source" | "node_id" | "container_kind" | "agent";
-type AtomContextMode = "full" | "index" | "titles";
-
-interface AgentAtomContext {
-  node_id: string;
-  depth?: number;
-  titles_only?: boolean;
-  include_ids?: boolean;
-  mode?: AtomContextMode;
-  applies_when?: Record<string, unknown>;
-}
+import {
+  AgentAtomContextFields,
+  LabeledInput,
+  conditionSummary,
+  inputClassName,
+  type AgentAtomContext,
+} from "./AgentAtomContextFields";
+import { ContextBundleEditor, type ContextBundle } from "./ContextBundleEditor";
 
 type AgentAlias = string | { id: string; default_preset?: string };
 
 interface AgentProfile {
   agent_id: string;
   name: string;
+  context_bundles: string[];
   atom_contexts: AgentAtomContext[];
+  effective_atom_contexts: AgentAtomContext[];
   default_preset: string | null;
   aliases: AgentAlias[];
   has_portrait: boolean;
@@ -47,20 +48,16 @@ interface ManifestSource {
   token_estimate: number;
 }
 
-const CONDITION_FIELDS: ReadonlyArray<{ field: AppliesWhenField; label: string }> = [
-  { field: "source", label: "호출 소스" },
-  { field: "node_id", label: "세션 노드" },
-  { field: "container_kind", label: "컨테이너 종류" },
-  { field: "agent", label: "에이전트" },
-];
-
 const VERSION_CONFLICT_MESSAGE =
   "다른 사용자가 먼저 수정했습니다. 최신 프로필을 다시 불러온 뒤 변경을 다시 적용하세요.";
 
 export function AgentProfileEditorTab() {
   const nodes = useOrchestratorStore((state) => state.nodes);
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const [bundles, setBundles] = useState<ContextBundle[]>([]);
   const [draft, setDraft] = useState<ProfileDraft | null>(null);
+  const [managingBundles, setManagingBundles] = useState(false);
+  const [selectedBundleToAdd, setSelectedBundleToAdd] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -79,6 +76,16 @@ export function AgentProfileEditorTab() {
       .map((node) => node.nodeId),
     [nodes],
   );
+  const effectiveContexts = useMemo(() => {
+    if (!draft) return [];
+    return [
+      ...draft.context_bundles.flatMap((bundleId) => {
+        const bundle = bundles.find((candidate) => candidate.bundle_id === bundleId);
+        return bundle?.atom_contexts.map((context) => ({ context, source: bundleId })) ?? [];
+      }),
+      ...draft.atom_contexts.map((context) => ({ context, source: "프로필" })),
+    ];
+  }, [draft, bundles]);
 
   useEffect(() => {
     if (!selectedNodeId || !connectedNodeIds.includes(selectedNodeId)) {
@@ -90,15 +97,20 @@ export function AgentProfileEditorTab() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/agent-profiles", { credentials: "same-origin" });
+      const [response, nextBundles] = await Promise.all([
+        fetch("/api/agent-profiles", { credentials: "same-origin" }),
+        fetchBundles(),
+      ]);
       const body = await responseJson(response);
       if (!response.ok) throw new Error(responseMessage(body, "프로필을 불러오지 못했습니다."));
       const nextProfiles = Array.isArray(body.profiles) ? body.profiles as AgentProfile[] : [];
       setProfiles(nextProfiles);
+      setBundles(nextBundles);
       const selected = nextProfiles.find((profile) => profile.agent_id === preferredAgentId)
         ?? nextProfiles[0]
         ?? null;
       setDraft(selected ? profileDraft(selected) : null);
+      setSelectedBundleToAdd("");
       setPortraitFile(null);
       setRemovePortrait(false);
       setPreviewSources([]);
@@ -109,12 +121,18 @@ export function AgentProfileEditorTab() {
     }
   };
 
+  const refreshBundles = async () => {
+    setBundles(await fetchBundles());
+    setSelectedBundleToAdd("");
+  };
+
   useEffect(() => {
     void loadProfiles();
   }, []);
 
   const selectProfile = (profile: AgentProfile) => {
     setDraft(profileDraft(profile));
+    setSelectedBundleToAdd("");
     setMessage(null);
     setError(null);
     setPortraitFile(null);
@@ -127,7 +145,9 @@ export function AgentProfileEditorTab() {
     setDraft({
       agent_id: "",
       name: "",
+      context_bundles: [],
       atom_contexts: [],
+      effective_atom_contexts: [],
       default_preset: null,
       aliases: [],
       has_portrait: false,
@@ -136,6 +156,7 @@ export function AgentProfileEditorTab() {
       created_at: now,
       updated_at: now,
     });
+    setSelectedBundleToAdd("");
     setMessage(null);
     setError(null);
     setPortraitFile(null);
@@ -168,7 +189,10 @@ export function AgentProfileEditorTab() {
       setDraft(profileDraft(current));
       setPortraitFile(null);
       setRemovePortrait(false);
-      setMessage("프로필을 저장했습니다.");
+      setMessage(JSON.stringify(current.effective_atom_contexts.map(({ node_id }) => node_id))
+        === JSON.stringify(effectiveContexts.map(({ context }) => context.node_id))
+        ? "프로필을 저장했습니다."
+        : "프로필을 저장했습니다. 서버의 실제 주입 순서가 달라 최신 버전을 다시 확인하세요.");
     } catch (caught) {
       if (caught instanceof VersionConflictError) {
         setError(VERSION_CONFLICT_MESSAGE);
@@ -196,7 +220,7 @@ export function AgentProfileEditorTab() {
           credentials: "same-origin",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            atom_contexts: draft.atom_contexts,
+            atom_contexts: effectiveContexts.map(({ context }) => context),
             session: {
               source: previewSource,
               container_kind: previewContainerKind,
@@ -219,6 +243,15 @@ export function AgentProfileEditorTab() {
   if (loading) return <div className="py-8 text-center text-sm text-muted-foreground">프로필을 불러오는 중...</div>;
 
   return (
+    <div>
+      <div className="mb-2 flex justify-end">
+        <Button type="button" size="sm" variant="outline" onClick={() => setManagingBundles(!managingBundles)}>
+          {managingBundles ? "프로필 편집" : "번들 관리"}
+        </Button>
+      </div>
+      {managingBundles ? (
+        <ContextBundleEditor bundles={bundles} onBundlesChanged={refreshBundles} />
+      ) : (
     <div className="grid h-[520px] min-h-0 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden rounded border border-border">
       <aside className="min-h-0 overflow-y-auto border-r border-border bg-muted/20 p-2">
         <Button type="button" size="sm" variant="outline" className="mb-2 w-full" onClick={startProfile}>
@@ -282,6 +315,49 @@ export function AgentProfileEditorTab() {
             </section>
 
             <section>
+              <SectionHeading title="컨텍스트 번들" />
+              <div className="space-y-2">
+                {draft.context_bundles.map((bundleId, index) => {
+                  const bundle = bundles.find((candidate) => candidate.bundle_id === bundleId);
+                  return (
+                    <div key={bundleId} className="flex items-center gap-2 rounded border border-border bg-muted/10 px-3 py-2 text-sm">
+                      <span className="min-w-0 flex-1 truncate" title={bundle?.description}>
+                        <strong>{bundleId}</strong>{bundle?.description ? ` · ${bundle.description}` : ""}
+                      </span>
+                      <Button type="button" size="sm" variant="ghost" aria-label={`${bundleId} 위로`} disabled={index === 0} onClick={() => setDraft(moveBundleReference(draft, index, -1))}>위로</Button>
+                      <Button type="button" size="sm" variant="ghost" aria-label={`${bundleId} 아래로`} disabled={index === draft.context_bundles.length - 1} onClick={() => setDraft(moveBundleReference(draft, index, 1))}>아래로</Button>
+                      <Button type="button" size="sm" variant="ghost" aria-label={`${bundleId} 제거`} onClick={() => setDraft({
+                        ...draft,
+                        context_bundles: draft.context_bundles.filter((_, current) => current !== index),
+                      })}>제거</Button>
+                    </div>
+                  );
+                })}
+                {draft.context_bundles.length === 0 && <p className="text-xs text-muted-foreground">참조 중인 번들이 없습니다.</p>}
+                <div className="flex items-end gap-2">
+                  <label className="min-w-0 flex-1 text-xs font-medium">
+                    번들 선택
+                    <select
+                      aria-label="추가할 번들"
+                      className={inputClassName}
+                      value={selectedBundleToAdd}
+                      onChange={(event) => setSelectedBundleToAdd(event.target.value)}
+                    >
+                      <option value="">추가할 번들 선택</option>
+                      {bundles.filter((bundle) => !draft.context_bundles.includes(bundle.bundle_id)).map((bundle) => (
+                        <option key={bundle.bundle_id} value={bundle.bundle_id}>{bundle.bundle_id} · {bundle.description}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button type="button" size="sm" variant="outline" disabled={!selectedBundleToAdd} onClick={() => {
+                    setDraft({ ...draft, context_bundles: [...draft.context_bundles, selectedBundleToAdd] });
+                    setSelectedBundleToAdd("");
+                  }}>번들 추가</Button>
+                </div>
+              </div>
+            </section>
+
+            <section>
               <SectionHeading
                 title="Atom 컨텍스트"
                 actionLabel="소스 추가"
@@ -289,54 +365,38 @@ export function AgentProfileEditorTab() {
               />
               <div className="space-y-3">
                 {draft.atom_contexts.map((context, index) => (
-                  <div key={`${index}-${context.node_id}`} className="rounded border border-border bg-muted/10 p-3">
-                    <div className="grid grid-cols-[minmax(0,1fr)_7rem_5rem_auto] gap-2">
-                      <LabeledInput
-                        label="Atom node UUID"
-                        value={context.node_id}
-                        onChange={(value) => updateContext(draft, setDraft, index, { ...context, node_id: value })}
-                      />
-                      <label className="text-xs font-medium">
-                        모드
-                        <select
-                          aria-label={`컨텍스트 ${index + 1} 모드`}
-                          className={inputClassName}
-                          value={context.mode ?? "full"}
-                          onChange={(event) => updateContext(draft, setDraft, index, { ...context, mode: event.target.value as AtomContextMode })}
-                        >
-                          <option value="full">full</option>
-                          <option value="index">index</option>
-                          <option value="titles">titles</option>
-                        </select>
-                      </label>
-                      <LabeledInput
-                        label="깊이"
-                        type="number"
-                        min="0"
-                        value={context.depth === undefined ? "" : String(context.depth)}
-                        onChange={(value) => updateContext(draft, setDraft, index, {
-                          ...context,
-                          ...(value === "" ? withoutKey(context, "depth") : { depth: Number(value) }),
-                        })}
-                      />
-                      <Button type="button" size="sm" variant="ghost" className="mt-5" onClick={() => setDraft({ ...draft, atom_contexts: draft.atom_contexts.filter((_, current) => current !== index) })}>
-                        삭제
-                      </Button>
-                    </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
-                      {CONDITION_FIELDS.map(({ field, label }) => (
-                        <LabeledInput
-                          key={field}
-                          label={`조건 · ${label}`}
-                          placeholder="쉼표로 OR"
-                          value={conditionText(context.applies_when?.[field])}
-                          onChange={(value) => updateContext(draft, setDraft, index, updateCondition(context, field, value))}
-                        />
-                      ))}
-                    </div>
-                  </div>
+                  <AgentAtomContextFields
+                    key={index}
+                    context={context}
+                    index={index}
+                    onChange={(next) => updateContext(draft, setDraft, index, next)}
+                    onRemove={() => setDraft({
+                      ...draft,
+                      atom_contexts: draft.atom_contexts.filter((_, current) => current !== index),
+                    })}
+                  />
                 ))}
                 {draft.atom_contexts.length === 0 && <p className="text-xs text-muted-foreground">등록된 컨텍스트 소스가 없습니다.</p>}
+              </div>
+            </section>
+
+            <section data-testid="effective-atom-contexts">
+              <SectionHeading title="실제 주입 순서 (effective)" />
+              <div className="space-y-1">
+                {effectiveContexts.map(({ context, source }, index) => (
+                  <div key={index} data-testid="effective-context-row" data-source={source} className="rounded border border-border/60 px-3 py-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="font-mono">{context.node_id}</span>
+                      <span>mode: {context.mode ?? "full"}</span>
+                      <span>depth: {context.depth ?? "기본값"}</span>
+                      <span className="ml-auto font-medium">{source}</span>
+                    </div>
+                    {conditionSummary(context.applies_when) && (
+                      <div className="mt-1 text-muted-foreground">{conditionSummary(context.applies_when)}</div>
+                    )}
+                  </div>
+                ))}
+                {effectiveContexts.length === 0 && <p className="text-xs text-muted-foreground">주입할 컨텍스트가 없습니다.</p>}
               </div>
             </section>
 
@@ -411,21 +471,8 @@ export function AgentProfileEditorTab() {
         )}
       </div>
     </div>
-  );
-}
-
-const inputClassName = "mt-1 h-8 w-full rounded border border-border bg-background px-2 text-sm";
-
-function LabeledInput({ label, value, onChange, ...props }: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-} & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
-  return (
-    <label className="text-xs font-medium">
-      {label}
-      <input aria-label={label} className={inputClassName} value={value} onChange={(event) => onChange(event.target.value)} {...props} />
-    </label>
+      )}
+    </div>
   );
 }
 
@@ -455,27 +502,17 @@ function updateAlias(draft: ProfileDraft, setDraft: (draft: ProfileDraft) => voi
   setDraft({ ...draft, aliases: draft.aliases.map((current, currentIndex) => currentIndex === index ? alias : current) });
 }
 
-function updateCondition(context: AgentAtomContext, field: AppliesWhenField, text: string): AgentAtomContext {
-  const appliesWhen = { ...(context.applies_when ?? {}) };
-  const values = text.split(",").map((value) => value.trim()).filter(Boolean);
-  if (values.length > 0) appliesWhen[field] = values;
-  else delete appliesWhen[field];
-  if (Object.keys(appliesWhen).length === 0) {
-    const { applies_when: _removed, ...withoutCondition } = context;
-    return withoutCondition;
-  }
-  return { ...context, applies_when: appliesWhen };
+function moveBundleReference(draft: ProfileDraft, index: number, offset: -1 | 1): ProfileDraft {
+  const contextBundles = [...draft.context_bundles];
+  [contextBundles[index], contextBundles[index + offset]] = [contextBundles[index + offset], contextBundles[index]];
+  return { ...draft, context_bundles: contextBundles };
 }
 
-function conditionText(value: unknown): string {
-  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string").join(", ");
-  return typeof value === "string" ? value : "";
-}
-
-function withoutKey<T extends object, K extends keyof T>(value: T, key: K): Omit<T, K> {
-  const copy = { ...value };
-  delete copy[key];
-  return copy;
+async function fetchBundles(): Promise<ContextBundle[]> {
+  const response = await fetch("/api/context-bundles", { credentials: "same-origin" });
+  const body = await responseJson(response);
+  if (!response.ok) throw new Error(responseMessage(body, "번들을 불러오지 못했습니다."));
+  return Array.isArray(body.bundles) ? body.bundles as ContextBundle[] : [];
 }
 
 async function putProfile(draft: ProfileDraft): Promise<AgentProfile> {
@@ -486,6 +523,7 @@ async function putProfile(draft: ProfileDraft): Promise<AgentProfile> {
     body: JSON.stringify({
       name: draft.name.trim(),
       atom_contexts: draft.atom_contexts,
+      context_bundles: draft.context_bundles,
       default_preset: draft.default_preset || null,
       aliases: draft.aliases.filter((alias) => alias.id.trim()).map((alias) => alias.default_preset
         ? { id: alias.id.trim(), default_preset: alias.default_preset }
