@@ -300,6 +300,10 @@
   cursor: pointer;
 }
 
+.v3-shell .v3-session-stream-retry {
+  font: var(--v3-type-badge) var(--v3-font-family);
+}
+
 .v3-status-chip--completed,
 .v3-run-status--completed {
   color: var(--v3-accent);

@@ -305,6 +305,62 @@ describe("production live event fanout", () => {
     }
   });
 
+  it("keeps a session event stream live without a connected session and delivers later events", async () => {
+    const database = createFakeSql();
+    const sqlResolver: LiveDbSqlResolver = {
+      resolveSql: vi.fn(async () => database.sql),
+      close: vi.fn(async () => undefined),
+    };
+    const application = await createLiveProductionApplication(
+      loadOrchServerEnvironment(minimalEnvironment()),
+      { warn: vi.fn() },
+      { sqlResolver },
+    );
+    await application.app.listen({ host: "127.0.0.1", port: 0 });
+    const streamController = new AbortController();
+    let ws: TestWebSocket | undefined;
+    try {
+      const authHeaders = { authorization: "Bearer production-service-token" };
+      const realtime = await connectSse(
+        `${application.app.listeningOrigin}/api/sessions/idle-session/events`,
+        authHeaders,
+        streamController.signal,
+      );
+
+      expect((await realtime.next("history_sync")).data).toMatchObject({
+        type: "history_sync",
+        is_live: true,
+      });
+
+      ws = await (application.app as typeof application.app & {
+        injectWS: (
+          path: string,
+          options: { headers: Record<string, string> },
+        ) => Promise<TestWebSocket>;
+      }).injectWS("/ws/node", { headers: authHeaders });
+      ws.send(JSON.stringify({ type: "node_register", node_id: "node-a" }));
+      ws.send(JSON.stringify({
+        type: "event",
+        agentSessionId: "idle-session",
+        event: {
+          _event_id: 41,
+          type: "assistant_message",
+          content: "delivered after the idle stream opened",
+        },
+      }));
+
+      expect((await realtime.next("assistant_message", 1_000)).data).toMatchObject({
+        type: "assistant_message",
+        content: "delivered after the idle stream opened",
+      });
+    } finally {
+      streamController.abort();
+      ws?.terminate();
+      await application.app.close();
+      await application.closeResources();
+    }
+  });
+
   it("publishes timeout reconciliation through the production catalog without a live node", async () => {
     const updatedAt = new Date("2026-08-12T01:00:00.000Z");
     const database = createFakeSql({
