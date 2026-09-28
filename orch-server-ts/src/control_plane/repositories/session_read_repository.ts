@@ -9,6 +9,7 @@ export interface HostSessionRow extends Record<string, unknown> {
 export interface HostSessionSummaryRow extends Record<string, unknown> {
   session_id: string;
   display_name: string | null;
+  agent_id: string | null;
   updated_at: Date;
 }
 
@@ -48,6 +49,7 @@ export class SessionReadRepository {
           s.last_event_id,
           s.last_read_event_id,
           s.node_id,
+          s.agent_id,
           s.model_preset,
           s.model,
           -- "auto" is a DB-internal marker meaning "resolved to no effort"

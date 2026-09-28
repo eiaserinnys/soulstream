@@ -264,6 +264,7 @@ export interface ListSessionSummaryRow {
   last_event_id: number | null;
   last_read_event_id: number | null;
   node_id: string | null;
+  agent_id: string | null;
   model_preset: string | null;
   model: string | null;
   reasoning_effort: string | null;
@@ -272,7 +273,6 @@ export interface ListSessionSummaryRow {
 }
 
 export interface UpstreamSessionDumpRow extends ListSessionSummaryRow {
-  agent_id: string | null;
   prompt: string | null;
   folder_id: string | null;
   metadata: unknown;
