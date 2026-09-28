@@ -182,6 +182,7 @@ describe("AgentProfileEditorTab", () => {
 
   it("preserves three bundle references when only the profile name changes", async () => {
     const requests: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
+    let persistedBundles = [...bundledProfile.context_bundles];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
@@ -191,7 +192,23 @@ describe("AgentProfileEditorTab", () => {
         ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}),
       });
       if (url === "/api/context-bundles") return jsonResponse({ bundles });
-      if (method === "PUT") return jsonResponse({ ...bundledProfile, name: "새 이름", version: 4 });
+      if (method === "PUT") {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        persistedBundles = Array.isArray(body.context_bundles) ? body.context_bundles as string[] : [];
+        return jsonResponse({
+          ...bundledProfile,
+          name: body.name,
+          context_bundles: persistedBundles,
+          effective_atom_contexts: [
+            ...persistedBundles.flatMap((id) => bundles.find((bundle) => bundle.bundle_id === id)?.atom_contexts ?? []),
+            ...profile.atom_contexts,
+          ],
+          version: 4,
+        });
+      }
+      if (url === "/api/agent-profiles/seosoyoung") {
+        return jsonResponse({ ...bundledProfile, name: "새 이름", context_bundles: persistedBundles, version: 4 });
+      }
       return jsonResponse({ profiles: [bundledProfile] });
     }));
     await renderEditor();
@@ -209,6 +226,8 @@ describe("AgentProfileEditorTab", () => {
       },
     });
     expect(document.body.querySelector('[role="status"]')?.textContent).toBe("프로필을 저장했습니다.");
+    const afterSave = await (await fetch("/api/agent-profiles/seosoyoung")).json() as typeof bundledProfile;
+    expect(afterSave.context_bundles).toEqual(["common-rules", "coding", "human-facing"]);
   });
 
   it("updates effective order and preview immediately when references change", async () => {
