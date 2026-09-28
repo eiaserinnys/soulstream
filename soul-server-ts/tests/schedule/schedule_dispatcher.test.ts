@@ -112,6 +112,84 @@ describe("ScheduleDispatcher", () => {
     expect(service.finishDispatch).not.toHaveBeenCalled();
   });
 
+  it("dispatches ResumeAfterLimit only while the same terminal revision is still limit_hit", async () => {
+    const schedule = makeSchedule({
+      scheduleId: "resume-after-limit:sess-1:32:0",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:32",
+    });
+    const service = makeService({
+      claimDueSchedules: [{ schedule, claimToken: "claim-1" }],
+      consumeClaimedSchedule: schedule,
+      confirmScheduleStillFiring: schedule,
+    });
+    const taskManager = {
+      getScheduleResumeState: vi.fn(async () => ({
+        status: "error" as const,
+        terminationReason: "limit_hit" as const,
+        terminalEventId: 32,
+      })),
+      addIntervention: vi.fn(async () => ({ autoResumed: true })),
+    };
+    const onResume = vi.fn();
+    const dispatcher = new ScheduleDispatcher(
+      { nodeId: "owner-node" },
+      service as never,
+      taskManager as never,
+      onResume,
+      logger,
+    );
+
+    await dispatcher.runOnce(new Date("2026-01-01T00:00:00Z"));
+
+    expect(taskManager.getScheduleResumeState).toHaveBeenCalledWith("sess-1");
+    expect(taskManager.addIntervention).toHaveBeenCalledOnce();
+    expect(service.finishDispatch).toHaveBeenCalledWith(
+      schedule,
+      "claim-1",
+      new Date("2026-01-01T00:00:00Z"),
+    );
+  });
+
+  it("finishes a stale ResumeAfterLimit schedule before intervention", async () => {
+    const schedule = makeSchedule({
+      scheduleId: "resume-after-limit:sess-1:32:0",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:32",
+    });
+    const service = makeService({
+      claimDueSchedules: [{ schedule, claimToken: "claim-1" }],
+      consumeClaimedSchedule: schedule,
+      confirmScheduleStillFiring: schedule,
+    });
+    const taskManager = {
+      getScheduleResumeState: vi.fn(async () => ({
+        status: "error" as const,
+        terminationReason: "limit_hit" as const,
+        terminalEventId: 33,
+      })),
+      addIntervention: vi.fn(async () => ({ autoResumed: true })),
+    };
+    const dispatcher = new ScheduleDispatcher(
+      { nodeId: "owner-node" },
+      service as never,
+      taskManager as never,
+      vi.fn(),
+      logger,
+    );
+
+    await dispatcher.runOnce(new Date("2026-01-01T00:00:00Z"));
+
+    expect(taskManager.getScheduleResumeState).toHaveBeenCalledWith("sess-1");
+    expect(taskManager.addIntervention).not.toHaveBeenCalled();
+    expect(service.finishDispatch).toHaveBeenCalledWith(
+      schedule,
+      "claim-1",
+      new Date("2026-01-01T00:00:00Z"),
+    );
+    expect(service.failDispatch).not.toHaveBeenCalled();
+  });
+
   it("defers instead of using the in-memory intervention queue for running sessions", async () => {
     const schedule = makeSchedule({ status: "firing" });
     const service = makeService({

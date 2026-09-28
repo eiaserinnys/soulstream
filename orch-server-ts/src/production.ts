@@ -812,6 +812,10 @@ export function buildProductionRouteOptions(
   folderControlPlaneServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["controlPlaneServiceProvider"],
   databaseSchemaProvider?: PublicDatabaseSchemaProvider,
 ): CreateAppOptions {
+  const sessionAccessProvider = providers.sessionCatalogRoutes.accessProvider;
+  if (scheduleRepositoryProvider !== undefined && sessionAccessProvider === undefined) {
+    throw new Error("session access provider is required for resume-after-limit routes");
+  }
   return {
     config,
     corsAllowedOrigins,
@@ -887,6 +891,15 @@ export function buildProductionRouteOptions(
     },
     sessionBackgroundScheduleRoutes:
       providers.runtime.sessionBackgroundScheduleRoutes,
+    ...(scheduleRepositoryProvider === undefined
+      ? {}
+      : {
+          sessionResumeAfterLimitRoutes: {
+            accessProvider: sessionAccessProvider!,
+            persistenceRepositoryProvider,
+            scheduleRepositoryProvider,
+          },
+        }),
     sessionCatalogRoutes: providers.sessionCatalogRoutes,
     sessionCommandRoutes: providers.runtime.sessionCommandRoutes,
     sessionHistoryRoutes: providers.runtime.sessionHistoryRoutes,

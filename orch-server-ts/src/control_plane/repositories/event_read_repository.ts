@@ -81,6 +81,24 @@ export class EventReadRepository {
     return rows.map(normalizeEvent).reverse();
   }
 
+  async readEventsBetween(
+    sessionId: string,
+    afterId: number,
+    beforeId: number,
+    eventTypes: string[],
+  ): Promise<HostEventRow[]> {
+    const rows = await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+      SELECT id, session_id, event_type, payload, searchable_text, created_at
+      FROM events
+      WHERE session_id = ${sessionId}
+        AND id > ${afterId}
+        AND id < ${beforeId}
+        AND event_type = ANY(${eventTypes}::text[])
+      ORDER BY id ASC
+    `;
+    return rows.map(normalizeEvent);
+  }
+
   async readOneEvent(
     sessionId: string,
     eventId: number,

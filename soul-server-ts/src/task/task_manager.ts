@@ -301,6 +301,20 @@ export class TaskManager {
     return this.tasks.get(sessionId);
   }
 
+  async getScheduleResumeState(sessionId: string): Promise<{
+    status: Task["status"];
+    terminationReason: Task["terminationReason"];
+    terminalEventId: Task["terminalEventId"];
+  } | null> {
+    const task = this.tasks.get(sessionId) ?? await this.loadEvictedTask(sessionId);
+    if (!task) return null;
+    return {
+      status: task.status,
+      terminationReason: task.terminationReason,
+      terminalEventId: task.terminalEventId,
+    };
+  }
+
   async hydrateRunnerRecoveryTask(sessionId: string): Promise<Task | null> {
     return await this.runnerRecovery.hydrate(sessionId);
   }

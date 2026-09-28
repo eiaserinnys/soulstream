@@ -40,7 +40,7 @@ export class ScheduleDispatcher {
       | "finishDispatch"
       | "failDispatch"
     >,
-    private readonly taskManager: Pick<TaskManager, "addIntervention">,
+    private readonly taskManager: Pick<TaskManager, "addIntervention" | "getScheduleResumeState">,
     private readonly onResume: StartExecutionCallback,
     private readonly logger: Logger,
   ) {
@@ -154,6 +154,21 @@ export class ScheduleDispatcher {
         );
         return;
       }
+      if (ready.sourceTool === "ResumeAfterLimit") {
+        const terminalEventId = resumeAfterLimitTerminalEventId(ready);
+        const current = terminalEventId === null
+          ? null
+          : await this.taskManager.getScheduleResumeState(ready.sessionId);
+        if (
+          terminalEventId === null
+          || current?.status !== "error"
+          || current.terminationReason !== "limit_hit"
+          || current.terminalEventId !== terminalEventId
+        ) {
+          await this.service.finishDispatch(ready, claimToken, now);
+          return;
+        }
+      }
       const result = await this.taskManager.addIntervention(
         {
           agentSessionId: ready.sessionId,
@@ -187,6 +202,20 @@ export class ScheduleDispatcher {
       );
     }
   }
+}
+
+function resumeAfterLimitTerminalEventId(schedule: SoulstreamSchedule): number | null {
+  const match = /^ResumeAfterLimit:(\d+)$/.exec(schedule.toolUseId ?? "");
+  if (!match) return null;
+  const terminalEventId = Number(match[1]);
+  if (!Number.isSafeInteger(terminalEventId) || terminalEventId <= 0) return null;
+
+  const prefix = `resume-after-limit:${schedule.sessionId}:`;
+  if (!schedule.scheduleId.startsWith(prefix)) return null;
+  const suffix = schedule.scheduleId.slice(prefix.length).split(":");
+  if (suffix.length !== 2 || suffix[0] !== String(terminalEventId)) return null;
+  const generation = Number(suffix[1]);
+  return Number.isSafeInteger(generation) && generation >= 0 ? terminalEventId : null;
 }
 
 function buildScheduledPrompt(schedule: SoulstreamSchedule): string {

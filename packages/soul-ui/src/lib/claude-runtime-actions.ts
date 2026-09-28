@@ -55,6 +55,23 @@ export interface ClaudeRuntimeDeleteScheduleResponse {
   schedule: ClaudeRuntimeScheduleView | null;
 }
 
+export interface ResumeAfterLimitScheduleView {
+  schedule_id: string;
+  run_at: string;
+  status: string;
+}
+
+export interface ResumeAfterLimitEligibilityResponse {
+  eligible: boolean;
+  reason: string | null;
+  resets_at: string | null;
+  schedule: ResumeAfterLimitScheduleView | null;
+}
+
+export interface ResumeAfterLimitScheduleResponse extends ResumeAfterLimitScheduleView {
+  reused: boolean;
+}
+
 export async function listClaudeBackgroundTasks(
   sessionId: string,
 ): Promise<ClaudeRuntimeTasksResponse> {
@@ -108,4 +125,29 @@ export async function deleteClaudeSchedule(
   );
   if (!response.ok) throw new Error(await response.text());
   return await response.json() as ClaudeRuntimeDeleteScheduleResponse;
+}
+
+export async function getResumeAfterLimitEligibility(
+  sessionId: string,
+): Promise<ResumeAfterLimitEligibilityResponse> {
+  const response = await fetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/resume-after-limit`,
+  );
+  if (!response.ok) throw new Error(await response.text());
+  return await response.json() as ResumeAfterLimitEligibilityResponse;
+}
+
+export async function scheduleResumeAfterLimit(
+  sessionId: string,
+): Promise<ResumeAfterLimitScheduleResponse> {
+  const response = await fetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/resume-after-limit`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    },
+  );
+  if (!response.ok) throw new Error(await response.text());
+  return await response.json() as ResumeAfterLimitScheduleResponse;
 }

@@ -82,6 +82,55 @@ describe("SoulstreamScheduleRepository", () => {
     });
   });
 
+  it("creates an idempotent schedule only when its stable revision ID is absent", async () => {
+    const { sql, calls } = createMockSql((call) => [
+      scheduleRow({
+        schedule_id: call.values[0] as string,
+        session_id: call.values[1] as string,
+        source_tool: call.values[4] as string,
+        tool_use_id: call.values[5] as string,
+      }),
+    ]);
+    const nextRunAt = new Date("2026-01-01T00:10:00Z");
+    const schedule = await new SoulstreamScheduleRepository(sql).createScheduleIfAbsent({
+      scheduleId: "resume-after-limit:sess-1:32:0",
+      sessionId: "sess-1",
+      kind: "wakeup",
+      prompt: "resume",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:32",
+      recurring: false,
+      nextRunAt,
+      runOnceAt: nextRunAt,
+    });
+
+    expect(calls[0].fragments.join("?")).toContain("ON CONFLICT (schedule_id) DO NOTHING");
+    expect(schedule).toMatchObject({
+      scheduleId: "resume-after-limit:sess-1:32:0",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:32",
+    });
+  });
+
+  it("lists all schedules for a source identity, including terminal attempts", async () => {
+    const { sql, calls } = createMockSql(() => [
+      scheduleRow({ schedule_id: "old", source_tool: "ResumeAfterLimit", tool_use_id: "ResumeAfterLimit:32", status: "cancelled" }),
+      scheduleRow({ schedule_id: "new", source_tool: "ResumeAfterLimit", tool_use_id: "ResumeAfterLimit:32", status: "active" }),
+    ]);
+
+    await expect(new SoulstreamScheduleRepository(sql).listSchedulesBySourceToolUseId(
+      "sess-1",
+      "ResumeAfterLimit",
+      "ResumeAfterLimit:32",
+    )).resolves.toMatchObject([
+      { scheduleId: "old", status: "cancelled" },
+      { scheduleId: "new", status: "active" },
+    ]);
+    expect(calls[0].fragments.join("?")).toContain("source_tool = ?");
+    expect(calls[0].fragments.join("?")).toContain("tool_use_id = ?");
+    expect(calls[0].fragments.join("?")).not.toContain("status NOT IN");
+  });
+
   it("claimDueSchedules only claims due schedules whose session is owned by this node", async () => {
     const { sql, calls } = createMockSql(() => [
       scheduleRow({

@@ -20,6 +20,7 @@ import { pushRouteAuthRequirements } from "../push/push_routes.js";
 import { taskRouteAuthRequirements } from "../tasks/task_route_types.js";
 import { sessionActionCommandRouteAuthRequirements } from "../session/session_action_command_routes.js";
 import { sessionBackgroundScheduleRouteAuthRequirements } from "../session/session_background_schedule_routes.js";
+import { sessionResumeAfterLimitRouteAuthRequirements } from "../session/session_resume_after_limit_routes.js";
 import { sessionCatalogRouteAuthRequirements } from "../session/session_catalog_routes.js";
 import { sessionCommandRouteAuthRequirements } from "../session/session_command_routes.js";
 import { sessionHistoryRouteAuthRequirements } from "../session/session_history_routes.js";
@@ -67,6 +68,10 @@ export const routeCoverageOwners = [
     owner: "session.background-schedule",
     authRequirements: sessionBackgroundScheduleRouteAuthRequirements,
   },
+  {
+    owner: "session.resume-after-limit",
+    authRequirements: sessionResumeAfterLimitRouteAuthRequirements,
+  },
   { owner: "session.catalog", authRequirements: sessionCatalogRouteAuthRequirements },
   { owner: "session.command", authRequirements: sessionCommandRouteAuthRequirements },
   { owner: "session.history", authRequirements: sessionHistoryRouteAuthRequirements },
@@ -94,6 +99,8 @@ export const tsOnlyRouteKeys = [
   "GET /api/admin/settings/session-review-policy",
   "PUT /api/admin/settings/session-review-policy",
   "GET /api/sessions/{session_id}/conversation-context",
+  "GET /api/sessions/{session_id}/resume-after-limit",
+  "POST /api/sessions/{session_id}/resume-after-limit",
   "POST /api/ui-events",
   "GET /api/ui-events",
   "GET /api/ui-events/config",

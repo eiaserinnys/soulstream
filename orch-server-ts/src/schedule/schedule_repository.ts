@@ -77,6 +77,63 @@ export class SoulstreamScheduleRepository {
     return scheduleFromRow(requiredRow(rows, "createSchedule"));
   }
 
+  async createScheduleIfAbsent(params: ScheduleCreateInput): Promise<SoulstreamSchedule | null> {
+    const createdAt = params.createdAt ?? new Date();
+    const rows = await this.sql<ScheduleRow[]>`
+      INSERT INTO soulstream_schedules (
+        schedule_id,
+        session_id,
+        kind,
+        status,
+        prompt,
+        source_tool,
+        tool_use_id,
+        cron_expression,
+        run_once_at,
+        timezone,
+        recurring,
+        next_run_at,
+        created_at,
+        updated_at
+      ) VALUES (
+        ${params.scheduleId},
+        ${params.sessionId},
+        ${params.kind},
+        'active',
+        ${params.prompt},
+        ${params.sourceTool},
+        ${params.toolUseId ?? null},
+        ${params.cronExpression ?? null},
+        ${params.runOnceAt ?? null},
+        ${params.timezone ?? "UTC"},
+        ${params.recurring},
+        ${params.nextRunAt},
+        ${createdAt},
+        ${createdAt}
+      )
+      ON CONFLICT (schedule_id) DO NOTHING
+      RETURNING *
+    `;
+    const row = rows[0];
+    return row ? scheduleFromRow(row) : null;
+  }
+
+  async listSchedulesBySourceToolUseId(
+    sessionId: string,
+    sourceTool: string,
+    toolUseId: string,
+  ): Promise<SoulstreamSchedule[]> {
+    const rows = await this.sql<ScheduleRow[]>`
+      SELECT *
+      FROM soulstream_schedules
+      WHERE session_id = ${sessionId}
+        AND source_tool = ${sourceTool}
+        AND tool_use_id = ${toolUseId}
+      ORDER BY created_at ASC, schedule_id ASC
+    `;
+    return rows.map(scheduleFromRow);
+  }
+
   async listSchedules(sessionId: string): Promise<SoulstreamSchedule[]> {
     const rows = await this.sql<ScheduleRow[]>`
       SELECT *

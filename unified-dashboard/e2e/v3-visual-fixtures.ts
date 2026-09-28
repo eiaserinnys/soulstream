@@ -560,6 +560,26 @@ export async function installV3VisualQaRoutes(
     const url = new URL(request.url());
     const path = url.pathname;
 
+    if (/^\/api\/sessions\/[^/]+\/resume-after-limit$/.test(path)
+      && request.method() === "GET") {
+      return fulfillJson(route, {
+        eligible: false,
+        reason: "사용량 제한으로 중단된 세션이 아닙니다.",
+        resets_at: null,
+        schedule: null,
+      });
+    }
+
+    if (/^\/api\/sessions\/[^/]+\/resume-after-limit$/.test(path)
+      && request.method() === "GET") {
+      return fulfillJson(route, {
+        eligible: false,
+        reason: "사용량 제한으로 중단된 세션이 아닙니다.",
+        resets_at: null,
+        schedule: null,
+      });
+    }
+
     if (path === "/api/auth/config") return fulfillJson(route, { authEnabled: false, devModeEnabled: false });
     if (path === "/api/auth/status") return fulfillJson(route, { authenticated: true, user: null });
     if (path === "/api/config/settings" && request.method() === "GET") {

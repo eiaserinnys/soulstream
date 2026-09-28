@@ -128,6 +128,10 @@ import {
   type SessionSnapshotRouteOptions,
 } from "./session/session_snapshot_routes.js";
 import {
+  registerSessionResumeAfterLimitRoutes,
+  type SessionResumeAfterLimitRouteOptions,
+} from "./session/session_resume_after_limit_routes.js";
+import {
   registerSseReplayRoutes,
   type SseReplayRouteOptions,
 } from "./sse/sse_replay_routes.js";
@@ -184,6 +188,7 @@ export type CreateAppOptions = {
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
   sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
   sessionBackgroundScheduleRoutes?: SessionBackgroundScheduleRouteOptions;
+  sessionResumeAfterLimitRoutes?: SessionResumeAfterLimitRouteOptions;
   sessionCatalogRoutes?: SessionCatalogRouteOptions;
   sessionCommandRoutes?: SessionCommandRouteOptions;
   sessionHistoryRoutes?: SessionHistoryRouteOptions;
@@ -272,6 +277,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
       app,
       options.sessionBackgroundScheduleRoutes,
     );
+  }
+  if (options.sessionResumeAfterLimitRoutes !== undefined) {
+    registerSessionResumeAfterLimitRoutes(app, options.sessionResumeAfterLimitRoutes);
   }
   if (options.recurringJobRoutes !== undefined) {
     registerRecurringJobRoutes(app, options.recurringJobRoutes);
