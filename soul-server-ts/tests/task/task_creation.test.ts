@@ -312,7 +312,7 @@ describe("TaskCreation", () => {
 
   it("places an explicitly assigned folder session through that folder Y.Doc before catalog broadcast", async () => {
     const h = makeHarness();
-    h.getBoardItems.mockResolvedValueOnce([
+    h.getBoardItemsByContainer.mockResolvedValueOnce([
       {
         id: "session:existing-target",
         folderId: "folder-42",
@@ -321,17 +321,6 @@ describe("TaskCreation", () => {
         itemType: "session",
         itemId: "existing-target",
         x: 0,
-        y: 160,
-        metadata: {},
-      },
-      {
-        id: "session:other-folder",
-        folderId: "folder-other",
-        containerKind: "folder",
-        containerId: "folder-other",
-        itemType: "session",
-        itemId: "other-folder",
-        x: 280,
         y: 160,
         metadata: {},
       },
@@ -346,6 +335,10 @@ describe("TaskCreation", () => {
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
+    expect(h.getBoardItemsByContainer).toHaveBeenCalledWith("folder-42", {
+      containerKind: "folder",
+      containerId: "folder-42",
+    });
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "folder-42",
       container: { containerKind: "folder", containerId: "folder-42" },
@@ -382,7 +375,7 @@ describe("TaskCreation", () => {
 
   it("places delegated task sessions through the task board Y-doc before catalog broadcast", async () => {
     const h = makeHarness();
-    h.getBoardItems.mockResolvedValueOnce(
+    h.getBoardItemsByContainer.mockResolvedValueOnce(
       [
         {
           id: "task:rb-1",
@@ -424,7 +417,11 @@ describe("TaskCreation", () => {
       containerId: "rb-1",
     });
     expect(h.assignSessionToFolder).not.toHaveBeenCalledWith("sess-task", "root");
-    expect(h.getBoardItems).toHaveBeenCalledTimes(1);
+    expect(h.getBoardItemsByContainer).toHaveBeenCalledWith("root", {
+      containerKind: "task",
+      containerId: "rb-1",
+    });
+    expect(h.getBoardItems).not.toHaveBeenCalled();
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "root",
       container: { containerKind: "task", containerId: "rb-1" },
@@ -444,7 +441,7 @@ describe("TaskCreation", () => {
 
   it("preserves an existing delegated session card position during idempotent creation", async () => {
     const h = makeHarness();
-    h.getBoardItems.mockResolvedValueOnce(
+    h.getBoardItemsByContainer.mockResolvedValueOnce(
       [{
         id: "session:sess-task",
         folderId: "root",

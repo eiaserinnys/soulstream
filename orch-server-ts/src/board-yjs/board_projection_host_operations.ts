@@ -26,6 +26,10 @@ const checklistRowSchema = z.object({
 
 const schemas = {
   "get-board-items": z.object({}),
+  "get-board-items-by-container": z.object({
+    folderId: z.string().min(1),
+    container: containerSchema,
+  }),
   "get-board-item": z.object({ boardItemId: z.string().min(1) }),
   "get-primary-session-board-item": z.object({ sessionId: z.string().min(1) }),
   "get-markdown-document-board-item": z.object({ documentId: z.string().min(1) }),
@@ -105,6 +109,10 @@ export async function dispatchBoardProjectionHostOperation(
   switch (operation) {
     case "get-board-items":
       return await host.getBoardItems();
+    case "get-board-items-by-container": {
+      const value = input as z.infer<typeof schemas["get-board-items-by-container"]>;
+      return await host.getBoardItemsByContainer(value.folderId, value.container);
+    }
     case "get-board-item":
       return await host.getBoardItemById(
         (input as z.infer<typeof schemas["get-board-item"]>).boardItemId,

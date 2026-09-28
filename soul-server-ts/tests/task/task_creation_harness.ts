@@ -38,6 +38,7 @@ export function makeTaskCreationHarness(options: {
     containerKind: "task",
     containerId: "rb-1",
   });
+  const getBoardItemsByContainer = vi.fn().mockResolvedValue([]);
   const getBoardItems = vi.fn().mockResolvedValue([]);
   const db = {
     registerSession,
@@ -48,6 +49,7 @@ export function makeTaskCreationHarness(options: {
     getSession,
     getPrimarySessionBoardItem,
     resolveBoardYjsContainerScope,
+    getBoardItemsByContainer,
     getBoardItems,
   } as unknown as SessionDB;
 
@@ -104,6 +106,7 @@ export function makeTaskCreationHarness(options: {
     getSession,
     getPrimarySessionBoardItem,
     resolveBoardYjsContainerScope,
+    getBoardItemsByContainer,
     getBoardItems,
     upsertSessionBoardItem,
     emitCatalogUpdated,

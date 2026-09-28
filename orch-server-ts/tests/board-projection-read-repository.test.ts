@@ -182,3 +182,86 @@ describe("BoardProjectionReadRepository.listContainerItems", () => {
     expect(result.scan).toBeNull();
   });
 });
+
+describe("BoardProjectionReadRepository.getBoardItemsByContainer", () => {
+  it("returns only rows matching folder and container kind/id", async () => {
+    const rows = [
+      {
+        id: "markdown:folder-item",
+        folder_id: "folder-1",
+        container_kind: "folder",
+        container_id: "shared-id",
+        membership_kind: "primary",
+        source_task_item_id: null,
+        item_type: "markdown",
+        item_id: "folder-item",
+        x: 0,
+        y: 0,
+        metadata: {},
+        created_at: new Date("2026-09-28T00:00:00.000Z"),
+        updated_at: new Date("2026-09-28T00:00:00.000Z"),
+      },
+      {
+        id: "markdown:task-item",
+        folder_id: "folder-1",
+        container_kind: "task",
+        container_id: "shared-id",
+        membership_kind: "primary",
+        source_task_item_id: null,
+        item_type: "markdown",
+        item_id: "task-item",
+        x: 280,
+        y: 0,
+        metadata: {},
+        created_at: new Date("2026-09-28T00:00:00.000Z"),
+        updated_at: new Date("2026-09-28T00:00:00.000Z"),
+      },
+      {
+        id: "markdown:other-folder-item",
+        folder_id: "folder-2",
+        container_kind: "folder",
+        container_id: "shared-id",
+        membership_kind: "primary",
+        source_task_item_id: null,
+        item_type: "markdown",
+        item_id: "other-folder-item",
+        x: 560,
+        y: 0,
+        metadata: {},
+        created_at: new Date("2026-09-28T00:00:00.000Z"),
+        updated_at: new Date("2026-09-28T00:00:00.000Z"),
+      },
+    ];
+    const { sql, calls } = createMockSql((call) => rows.filter((row) =>
+      row.folder_id === call.values[0] &&
+      row.container_kind === call.values[1] &&
+      row.container_id === call.values[2]
+    ));
+    const repository = new BoardProjectionReadRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    const folderItems = await repository.getBoardItemsByContainer("folder-1", {
+      containerKind: "folder",
+      containerId: "shared-id",
+    });
+    const taskItems = await repository.getBoardItemsByContainer("folder-1", {
+      containerKind: "task",
+      containerId: "shared-id",
+    });
+
+    expect(folderItems.map((item) => item.id)).toEqual(["markdown:folder-item"]);
+    expect(taskItems.map((item) => item.id)).toEqual(["markdown:task-item"]);
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call.query).toContain("FROM board_items");
+      expect(call.query).toContain("folder_id = ?");
+      expect(call.query).toContain("container_kind = ?");
+      expect(call.query).toContain("container_id = ?");
+      expect(call.values[0]).toBe("folder-1");
+      expect(call.values[2]).toBe("shared-id");
+    }
+    expect(calls.map((call) => call.values[1])).toEqual(["folder", "task"]);
+  });
+});

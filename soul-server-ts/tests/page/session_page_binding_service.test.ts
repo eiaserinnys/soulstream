@@ -444,7 +444,7 @@ describe("SessionLegacyProjection", () => {
     const db = {
       resolveBoardYjsContainerScope: vi.fn(async () => ({ folderId: "root" })),
       assignSessionToFolder: vi.fn(async () => undefined),
-      getBoardItems: vi.fn(async () => [
+      getBoardItemsByContainer: vi.fn(async () => [
         { folderId: "root", containerKind: "task", containerId: "rb-1", x: 0, y: 160 },
         { folderId: "root", containerKind: "task", containerId: "rb-1", x: 280, y: 160 },
       ]),
@@ -464,6 +464,10 @@ describe("SessionLegacyProjection", () => {
       x: 560,
       y: 160,
     }));
+    expect(db.getBoardItemsByContainer).toHaveBeenCalledWith("root", {
+      containerKind: "task",
+      containerId: "rb-1",
+    });
   });
 
   it("preserves an existing session board item's coordinates across crash replay", async () => {
@@ -496,10 +500,11 @@ describe("SessionLegacyProjection", () => {
       });
       return {};
     });
+    const getBoardItemsByContainer = vi.fn(async () => boardItems.map((item) => ({ ...item })));
     const db = {
       resolveBoardYjsContainerScope: vi.fn(async () => ({ folderId: "root" })),
       assignSessionToFolder: vi.fn(async () => undefined),
-      getBoardItems: vi.fn(async () => boardItems.map((item) => ({ ...item }))),
+      getBoardItemsByContainer,
     };
     const projection = new SessionLegacyProjection(db as never, { upsertSessionBoardItem } as never);
     const row = binding({
@@ -513,5 +518,10 @@ describe("SessionLegacyProjection", () => {
     await projection.project(row); // durable replay
 
     expect(calls).toEqual([{ x: 280, y: 160 }, { x: 280, y: 160 }]);
+    expect(getBoardItemsByContainer).toHaveBeenCalledTimes(2);
+    expect(getBoardItemsByContainer).toHaveBeenCalledWith("root", {
+      containerKind: "task",
+      containerId: "rb-1",
+    });
   });
 });

@@ -11,7 +11,6 @@ import {
   type TaskCreationHookParams,
 } from "../task/task_creation_hook.js";
 import {
-  boardItemsInContainer,
   sessionBoardItemPosition,
 } from "../task/task_session_position.js";
 import type { PageYjsHostClient } from "./page_host_client.js";
@@ -281,7 +280,7 @@ export class SessionLegacyProjection implements LegacyProjectionPort {
       };
       const scope = await this.db.resolveBoardYjsContainerScope(container);
       if (!scope) throw new ManualRepairError(`stale legacy container: ${binding.legacy_container_id}`);
-      const boardItems = boardItemsInContainer(await this.db.getBoardItems(), container);
+      const boardItems = await this.db.getBoardItemsByContainer(scope.folderId, container);
       const [x, y] = sessionBoardItemPosition(boardItems, binding.session_id);
       await this.boardYjsService.upsertSessionBoardItem({
         folderId: scope.folderId,
