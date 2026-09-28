@@ -1,3 +1,5 @@
+import { type as getOsType } from "node:os";
+
 import type { Logger } from "pino";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import { effectiveTaskBackend } from "../task/task_model_preset.js";
@@ -9,6 +11,7 @@ import {
   type AtomContextSpec,
   type AtomFetchConfig,
 } from "./atom_context.js";
+import { hostOsConditionValue } from "./host_os.js";
 import {
   compileContexts,
   type ContextCompilationResult,
@@ -150,12 +153,15 @@ export function extractAgentAtomContextSpecs(agent: AgentProfile): AtomContextSp
   }));
 }
 
-export function buildContextFilterParameters(args: {
-  task: Task;
-  agent: AgentProfile;
-  nodeId: string;
-  primaryContainer: PrimarySessionContainerContext | null;
-}): ContextFilterParameters {
+export function buildContextFilterParameters(
+  args: {
+    task: Task;
+    agent: AgentProfile;
+    nodeId: string;
+    primaryContainer: PrimarySessionContainerContext | null;
+  },
+  osType = getOsType(),
+): ContextFilterParameters {
   const source = args.task.callerInfo?.source;
   return {
     ...(typeof source === "string" && source.length > 0 ? { source } : {}),
@@ -163,6 +169,7 @@ export function buildContextFilterParameters(args: {
     ...(args.primaryContainer ? { container_kind: args.primaryContainer.container.kind } : {}),
     agent: args.agent.id,
     backend: effectiveTaskBackend(args.task, args.agent),
+    os: hostOsConditionValue(osType),
   };
 }
 

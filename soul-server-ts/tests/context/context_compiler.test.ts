@@ -307,6 +307,43 @@ describe("context compiler applies_when filter", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it("matches the host OS condition and filters a different OS", async () => {
+    const appliesWhen = { os: ["windows"] };
+    const included = await compileContexts(config, [{
+      nodeId: "node-windows",
+      depth: 1,
+      titlesOnly: false,
+      appliesWhen,
+    }], logger, { ...session, os: "windows" });
+    const filtered = await compileContexts(config, [{
+      nodeId: "node-linux",
+      depth: 1,
+      titlesOnly: false,
+      appliesWhen,
+    }], logger, { ...session, os: "linux" });
+
+    expect(included.manifest.sources[0]?.status).toBe("ok");
+    expect(filtered.manifest.sources[0]?.status).toBe("filtered");
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
+  it("warns and ignores an unknown host OS condition value", async () => {
+    const appliesWhen = { os: ["win32"] };
+    const compiled = await compileContexts(config, [{
+      nodeId: "node-unknown-os",
+      depth: 1,
+      titlesOnly: false,
+      appliesWhen,
+    }], logger, { ...session, os: "windows" });
+
+    expect(compiled.manifest.sources[0]).toMatchObject({ status: "ok", applies_when: appliesWhen });
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ field: "os", value: "win32", nodeId: "node-unknown-os" }),
+      "[context compiler] unknown applies_when value — ignoring condition",
+    );
+  });
+
   it("warns and ignores unknown fields and values instead of silently filtering", async () => {
     const appliesWhen = {
       future_field: ["future-value"],

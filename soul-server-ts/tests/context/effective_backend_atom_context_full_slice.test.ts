@@ -1,3 +1,5 @@
+import { type as getOsType } from "node:os";
+
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -28,6 +30,11 @@ function backgroundSource(): AtomContextSpec {
 
 function markerCount(markdown: string | null): number {
   return markdown?.split(BACKGROUND_MARKER).length - 1 || 0;
+}
+
+function expectedHostOsConditionValue(osType: string): string {
+  return ({ Windows_NT: "windows", Linux: "linux", Darwin: "darwin" } as Record<string, string>)[osType]
+    ?? osType.toLowerCase();
 }
 
 describe("effective-backend prompt containment full slice", () => {
@@ -88,6 +95,46 @@ describe("effective-backend prompt containment full slice", () => {
     }
   });
 
+  it("filters context preview against the worker host OS", async () => {
+    const app = Fastify();
+    registerContextPreviewRoute(app, {
+      nodeId: "eiaserinnys",
+      atom: atomConfig,
+      auth: {
+        authBearerToken: "",
+        environment: "development",
+        dashboardAuthEnabled: false,
+      },
+      logger,
+    });
+
+    try {
+      const expectedOs = expectedHostOsConditionValue(getOsType());
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/context/preview",
+        payload: {
+          atom_contexts: [{
+            node_id: BACKGROUND_ATOM_NODE_ID,
+            depth: 5,
+            applies_when: { os: [expectedOs] },
+          }],
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        manifest: {
+          sources: [expect.objectContaining({ status: "ok" })],
+        },
+      });
+      expect(globalThis.fetch).toHaveBeenCalledOnce();
+      expect(logger.warn).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   it("filters ariella-system2-sol when the compiler receives its effective Codex backend", async () => {
     const compiled = await compileContexts(
       atomConfig,
@@ -133,6 +180,27 @@ describe("effective-backend prompt containment full slice", () => {
     );
     expect(markerCount(compiled.assembled)).toBe(1);
     expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
+  it("normalizes the host OS in context filter parameters", () => {
+    const agent = {
+      id: "roselin",
+      name: "로젤린",
+      backend: "codex",
+      workspace_dir: "/workspace",
+    } satisfies AgentProfile;
+    const task = {
+      callerInfo: { source: "agent" },
+    } as Task;
+
+    const parameters = buildContextFilterParameters({
+      task,
+      agent,
+      nodeId: "eiaserinnys",
+      primaryContainer: null,
+    }, "Windows_NT");
+
+    expect(parameters.os).toBe("windows");
   });
 
   it.each([

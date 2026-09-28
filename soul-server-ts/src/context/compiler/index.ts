@@ -32,7 +32,8 @@ export type ContextFilterField =
   | "node_id"
   | "container_kind"
   | "agent"
-  | "backend";
+  | "backend"
+  | "os";
 
 export type ContextFilterParameters = Partial<Record<ContextFilterField, string>>;
 
@@ -134,11 +135,13 @@ const CONTEXT_FILTER_FIELDS = new Set<ContextFilterField>([
   "container_kind",
   "agent",
   "backend",
+  "os",
 ]);
 
 const KNOWN_CALLER_SOURCES = new Set<string>(CALLER_INFO_SOURCES);
 
 const KNOWN_CONTAINER_KINDS = new Set(["folder", "task", "runbook"]);
+const KNOWN_OS_VALUES = new Set(["windows", "linux", "darwin"]);
 const IDENTIFIER_VALUE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 
 interface FilteredContextSources {
@@ -215,6 +218,7 @@ function isKnownConditionValue(field: ContextFilterField, value: unknown): value
   if (field === "source") return KNOWN_CALLER_SOURCES.has(value);
   if (field === "container_kind") return KNOWN_CONTAINER_KINDS.has(value);
   if (field === "backend") return AgentBackendSchema.safeParse(value).success;
+  if (field === "os") return KNOWN_OS_VALUES.has(value);
   return IDENTIFIER_VALUE.test(value);
 }
 
