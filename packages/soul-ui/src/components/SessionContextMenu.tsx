@@ -7,7 +7,7 @@
  * 모바일: Dialog 하단 시트 (bottomStickOnMobile)
  * 데스크탑: base-ui Menu 프리미티브 (VirtualElement anchor + scale/opacity 진입·퇴장 전환)
  */
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useIsMobile } from "../hooks/use-mobile";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, DialogFooter } from "./ui/dialog";
@@ -15,6 +15,12 @@ import { Menu, MenuPopup, MenuItem, MenuSeparator } from "./ui/menu";
 import { Button } from "./ui/button";
 import { cn } from "../lib/cn";
 import { RenameSessionDialog } from "./RenameSessionDialog";
+import {
+  deleteClaudeSchedule,
+  getResumeAfterLimitEligibility,
+  scheduleResumeAfterLimit,
+  type ResumeAfterLimitEligibilityResponse,
+} from "../lib/claude-runtime-actions";
 export interface SessionContextMenuState {
   x: number;
   y: number;
@@ -50,8 +56,19 @@ export interface SessionContextMenuExtraAction {
   label: string;
   onClick: () => void | Promise<void>;
   disabled?: boolean;
+  closeOnClick?: boolean;
   className?: string;
+  description?: string;
 }
+
+type ResumeAfterLimitActionState = {
+  sessionId: string;
+  loading: boolean;
+  busy: boolean;
+  eligibility: ResumeAfterLimitEligibilityResponse | null;
+  message: string | null;
+  error: string | null;
+};
 /** 메뉴 항목 리스트 (모바일/데스크탑 공용) */
 function MenuItems({
   onCopyId,
@@ -131,12 +148,21 @@ function MenuItems({
               key={action.label}
               className={cn(
                 "w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md disabled:pointer-events-none disabled:opacity-64",
+                action.description && "flex flex-col items-start",
                 action.className,
               )}
               disabled={action.disabled}
+              title={action.description}
               onClick={() => { void action.onClick(); }}
             >
-              {action.label}
+              {action.description ? (
+                <>
+                  <span>{action.label}</span>
+                  <span className="max-w-56 pt-1 text-xs text-muted-foreground whitespace-normal break-keep" role="status">
+                    {action.description}
+                  </span>
+                </>
+              ) : action.label}
             </button>
           ))}
         </>
@@ -202,6 +228,159 @@ export function SessionContextMenu({
     sessionIds: string[];
   }>({ open: false, sessionIds: [] });
   const [continueError, setContinueError] = useState<string | null>(null);
+  const contextSessionId = contextMenu?.sessionId ?? null;
+  const [resumeAfterLimit, setResumeAfterLimit] = useState<ResumeAfterLimitActionState | null>(null);
+
+  useEffect(() => {
+    if (!contextSessionId) {
+      setResumeAfterLimit(null);
+      return;
+    }
+
+    let current = true;
+    setResumeAfterLimit({
+      sessionId: contextSessionId,
+      loading: true,
+      busy: false,
+      eligibility: null,
+      message: null,
+      error: null,
+    });
+    void getResumeAfterLimitEligibility(contextSessionId).then(
+      (eligibility) => {
+        if (!current) return;
+        setResumeAfterLimit({
+          sessionId: contextSessionId,
+          loading: false,
+          busy: false,
+          eligibility,
+          message: null,
+          error: null,
+        });
+      },
+      (error: unknown) => {
+        if (!current) return;
+        setResumeAfterLimit({
+          sessionId: contextSessionId,
+          loading: false,
+          busy: false,
+          eligibility: null,
+          message: null,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      },
+    );
+    return () => { current = false; };
+  }, [contextSessionId]);
+
+  const activeResumeAfterLimit = resumeAfterLimit?.sessionId === contextSessionId
+    ? resumeAfterLimit
+    : null;
+  const currentResumeSchedule = activeResumeAfterLimit?.eligibility?.schedule ?? null;
+
+  const handleScheduleResumeAfterLimit = useCallback(async () => {
+    if (
+      !contextSessionId
+      || !activeResumeAfterLimit
+      || !activeResumeAfterLimit.eligibility?.eligible
+      || activeResumeAfterLimit.eligibility.schedule
+      || activeResumeAfterLimit.busy
+      || activeResumeAfterLimit.loading
+    ) return;
+
+    setResumeAfterLimit({ ...activeResumeAfterLimit, busy: true, message: null, error: null });
+    try {
+      const schedule = await scheduleResumeAfterLimit(contextSessionId);
+      setResumeAfterLimit((current) => current?.sessionId === contextSessionId
+        ? {
+            ...current,
+            busy: false,
+            eligibility: current.eligibility
+              ? { ...current.eligibility, schedule: {
+                  schedule_id: schedule.schedule_id,
+                  run_at: schedule.run_at,
+                  status: schedule.status,
+                } }
+              : current.eligibility,
+            message: resumeScheduleMessage(schedule.run_at),
+            error: null,
+          }
+        : current);
+    } catch (error) {
+      setResumeAfterLimit((current) => current?.sessionId === contextSessionId
+        ? {
+            ...current,
+            busy: false,
+            message: null,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        : current);
+    }
+  }, [activeResumeAfterLimit, contextSessionId]);
+
+  const handleCancelResumeAfterLimit = useCallback(async () => {
+    if (!contextSessionId || !currentResumeSchedule || !activeResumeAfterLimit || activeResumeAfterLimit.busy) return;
+    setResumeAfterLimit({ ...activeResumeAfterLimit, busy: true, message: null, error: null });
+    try {
+      const response = await deleteClaudeSchedule(contextSessionId, currentResumeSchedule.schedule_id);
+      setResumeAfterLimit((current) => current?.sessionId === contextSessionId
+        ? {
+            ...current,
+            busy: false,
+            eligibility: current.eligibility
+              ? { ...current.eligibility, schedule: response.deleted ? null : current.eligibility.schedule }
+              : current.eligibility,
+            message: response.deleted ? "재개 예약을 취소했습니다." : null,
+            error: response.deleted ? null : "이미 재개 처리가 시작되어 취소할 수 없습니다.",
+          }
+        : current);
+    } catch (error) {
+      setResumeAfterLimit((current) => current?.sessionId === contextSessionId
+        ? {
+            ...current,
+            busy: false,
+            message: null,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        : current);
+    }
+  }, [activeResumeAfterLimit, contextSessionId, currentResumeSchedule]);
+
+  const resumeDescription = activeResumeAfterLimit === null
+    ? "예약 가능 여부 확인 중…"
+    : activeResumeAfterLimit.loading
+      ? "예약 가능 여부 확인 중…"
+      : activeResumeAfterLimit.error
+        ?? activeResumeAfterLimit.message
+        ?? (currentResumeSchedule
+          ? resumeScheduleMessage(currentResumeSchedule.run_at)
+          : activeResumeAfterLimit.eligibility?.eligible
+            ? activeResumeAfterLimit.eligibility.resets_at
+              ? `${resumeScheduleTime(activeResumeAfterLimit.eligibility.resets_at)} 해제 예정`
+              : null
+            : activeResumeAfterLimit.eligibility?.reason ?? null);
+  const resumeExtraActions: SessionContextMenuExtraAction[] = [
+    {
+      label: "리밋이 풀릴 때 재개",
+      closeOnClick: false,
+      onClick: handleScheduleResumeAfterLimit,
+      disabled: !activeResumeAfterLimit
+        || activeResumeAfterLimit.loading
+        || activeResumeAfterLimit.busy
+        || !activeResumeAfterLimit.eligibility?.eligible
+        || currentResumeSchedule !== null,
+      description: resumeDescription ?? undefined,
+    },
+    ...(currentResumeSchedule
+      ? [{
+          label: "재개 예약 취소",
+          closeOnClick: false,
+          onClick: handleCancelResumeAfterLimit,
+          disabled: activeResumeAfterLimit?.busy ?? true,
+        }]
+      : []),
+  ];
+  const menuExtraActions = [...extraActions, ...resumeExtraActions];
 
   const continueDisabledReason =
     contextMenu && onContinueSession
@@ -294,7 +473,7 @@ export function SessionContextMenu({
                 hasRename={!!onRenameSession}
                 hasMove={!!onMoveSessions}
                 hasDelete={!!onDeleteSessions}
-                extraActions={extraActions}
+                extraActions={menuExtraActions}
               />
             </div>
           </DialogPopup>
@@ -344,17 +523,29 @@ export function SessionContextMenu({
                 <MenuItem onClick={handleMoveClick}>다른 폴더로 이동</MenuItem>
               </>
             )}
-            {extraActions.length > 0 && (
+            {menuExtraActions.length > 0 && (
               <>
                 <MenuSeparator />
-                {extraActions.map((action) => (
+                {menuExtraActions.map((action) => (
                   <MenuItem
                     key={action.label}
                     disabled={action.disabled}
+                    closeOnClick={action.closeOnClick}
+                    title={action.description}
                     onClick={() => { void action.onClick(); }}
-                    className={action.className}
+                    className={cn(
+                      action.className,
+                      action.description && "flex-col items-start gap-0 py-2",
+                    )}
                   >
-                    {action.label}
+                    {action.description ? (
+                      <>
+                        <span>{action.label}</span>
+                        <span className="max-w-56 whitespace-normal break-keep text-xs text-muted-foreground" role="status">
+                          {action.description}
+                        </span>
+                      </>
+                    ) : action.label}
                   </MenuItem>
                 ))}
               </>
@@ -496,4 +687,16 @@ export function SessionContextMenu({
       )}
     </>
   );
+}
+
+function resumeScheduleMessage(runAt: string): string {
+  return `${resumeScheduleTime(runAt)} 재개 예약`;
+}
+
+function resumeScheduleTime(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "재개 예약";
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${date.getMonth() + 1}월 ${date.getDate()}일 ${hour}:${minute}`;
 }

@@ -105,6 +105,7 @@ export * from "./runtime/session_event_hub.js";
 export * from "./session/session_action_command_routes.js";
 export * from "./session/session_review_acknowledge_fallback.js";
 export * from "./session/session_background_schedule_routes.js";
+export * from "./session/session_resume_after_limit_routes.js";
 export * from "./session/session_catalog_routes.js";
 export * from "./session/session_command_router.js";
 export * from "./session/session_create_node_selector.js";

@@ -59,7 +59,7 @@ describe("session-data read repositories", () => {
     expect(summaryQuery!.indexOf("LIMIT")).toBeLessThan(summaryQuery!.indexOf("FROM events"));
   });
 
-  it("owns all seven event read operations and preserves payload contracts", async () => {
+  it("owns event read operations and preserves payload contracts", async () => {
     const now = new Date("2026-08-06T00:00:00.000Z");
     const event = {
       id: 7,
@@ -75,6 +75,12 @@ describe("session-data read repositories", () => {
       payload: { text: "older" },
       searchable_text: "older",
     };
+    const rangeEvent = {
+      ...event,
+      id: 8,
+      event_type: "error",
+      payload: { error_code: "claude_rate_limit_stop_failure", resets_at: "2026-08-06T00:30:00Z" },
+    };
     const { sql, calls } = createSql((text) => {
       if (text.includes("event_count(")) return [{ event_count: "8" }];
       if (text.includes("event_stream_raw(")) return [{
@@ -83,6 +89,7 @@ describe("session-data read repositories", () => {
         payload_text: '{"text":"hello"}',
       }];
       if (text.includes("event_read_one(")) return [{ ...event, parent_event_id: 6 }];
+      if (text.includes("AND id >") && text.includes("AND id <")) return [rangeEvent];
       if (text.includes("event_search(") || text.includes("session_id_search(")) {
         return [{ ...event, score: "0.5" }];
       }
@@ -104,6 +111,8 @@ describe("session-data read repositories", () => {
       .resolves.toEqual([event]);
     await expect(repository.readRecentEvents("s1", 50, ["user_message"]))
       .resolves.toEqual([olderEvent, event]);
+    await expect(repository.readEventsBetween("s1", 5, 9, ["credential_alert", "error"]))
+      .resolves.toEqual([rangeEvent]);
     await expect(repository.readOneEvent("s1", 7))
       .resolves.toMatchObject({ id: 7, parent_event_id: 6, payload: { text: "hello" } });
     await expect(repository.streamEventsRaw("s1"))
@@ -117,12 +126,15 @@ describe("session-data read repositories", () => {
       expect.stringContaining("event_count("),
       expect.stringContaining("event_read("),
       expect.stringContaining("ORDER BY id DESC"),
+      expect.stringContaining("id > ? AND id < ?"),
       expect.stringContaining("event_read_one("),
       expect.stringContaining("event_stream_raw("),
       expect.stringContaining("event_search("),
       expect.stringContaining("session_id_search("),
     ]));
     expect(searchConnection.close).toHaveBeenCalledTimes(2);
+    expect(calls.find((call) => call.text.includes("AND id >"))?.values)
+      .toEqual(["s1", 5, 9, ["credential_alert", "error"]]);
   });
 
   it("cancels and discards its owned event search connection on request abort", async () => {

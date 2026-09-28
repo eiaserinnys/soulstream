@@ -210,6 +210,7 @@ function createAllOptInRouteApp() {
     taskRoutes: inert,
     sessionActionCommandRoutes: inert,
     sessionBackgroundScheduleRoutes: inert,
+    sessionResumeAfterLimitRoutes: inert,
     sessionCatalogRoutes: inert,
     sessionCommandRoutes: inert,
     sessionHistoryRoutes: inert,
