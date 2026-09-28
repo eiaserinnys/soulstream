@@ -19,6 +19,7 @@ import { registerReflectTools } from "./tools/reflect.js";
 import { registerTaskTools } from "./tools/task.js";
 import { registerSessionMgmtTools } from "./tools/session_mgmt.js";
 import { registerSessionQueryTools } from "./tools/session_query.js";
+import { registerSkillsTools } from "./tools/skills.js";
 import { registerWorktreeTools } from "./tools/worktree.js";
 
 export function buildMcpServer(runtime: McpRuntime): McpServer {
@@ -32,6 +33,7 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerSessionMgmtTools(guardedServer, runtime);
   registerClaudeRuntimeTools(guardedServer, runtime);
   registerCatalogTools(guardedServer, runtime);
+  registerSkillsTools(guardedServer, runtime);
   registerAgentConfigTools(guardedServer, runtime);
   registerMultiNodeTools(guardedServer, runtime);
   registerTaskTools(guardedServer, runtime);

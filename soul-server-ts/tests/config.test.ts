@@ -23,6 +23,8 @@ describe("parseEnv", () => {
     expect(env.DASH_USER_PORTRAIT).toBe("");
     expect(env.LLM_OPENAI_API_KEY).toBeUndefined();
     expect(env.LLM_ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.TYPESAFE_API_KEY).toBeUndefined();
+    expect(env.SKILL_CATALOG_NODE_ID).toBeUndefined();
     expect(env.CODEX_CLI_PATH).toBeUndefined();
     expect(env.CODEX_ADAPTER_MODE).toBe("sdk");
     expect(env.EVENT_OUTBOX_DIR).toBe("/tmp/soulstream-event-outbox-test");
@@ -36,6 +38,19 @@ describe("parseEnv", () => {
         SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
       }),
     ).toThrow(ZodError);
+  });
+
+  it("Typesafe API key와 UUID skill catalog node를 받는다", () => {
+    const env = parseEnv({
+      ...minimal,
+      TYPESAFE_API_KEY: "typesafe-test-key",
+      SKILL_CATALOG_NODE_ID: "11111111-2222-4333-8444-555555555555",
+    });
+
+    expect(env.TYPESAFE_API_KEY).toBe("typesafe-test-key");
+    expect(env.SKILL_CATALOG_NODE_ID).toBe("11111111-2222-4333-8444-555555555555");
+    expect(() => parseEnv({ ...minimal, SKILL_CATALOG_NODE_ID: "not-a-uuid" }))
+      .toThrow(ZodError);
   });
 
   it("SOULSTREAM_UPSTREAM_URL 부재 시 ZodError", () => {

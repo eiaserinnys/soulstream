@@ -14,6 +14,8 @@
     "JWT_SECRET": { "owner": "auth", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "LLM_OPENAI_API_KEY": { "owner": "llm", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "LLM_ANTHROPIC_API_KEY": { "owner": "llm", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
+    "TYPESAFE_API_KEY": { "owner": "typesafe", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
+    "SKILL_CATALOG_NODE_ID": { "owner": "atom", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "CODEX_API_KEY": { "owner": "codex", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "CODEX_CLI_PATH": { "owner": "codex", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "CODEX_ADAPTER_MODE": { "owner": "codex", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
