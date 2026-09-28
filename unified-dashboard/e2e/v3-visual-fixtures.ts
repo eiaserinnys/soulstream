@@ -571,12 +571,12 @@ export async function installV3VisualQaRoutes(
     }
 
     if (/^\/api\/sessions\/[^/]+\/resume-after-limit$/.test(path)
-      && request.method() === "GET") {
+      && request.method() === "POST") {
       return fulfillJson(route, {
-        eligible: false,
-        reason: "사용량 제한으로 중단된 세션이 아닙니다.",
-        resets_at: null,
-        schedule: null,
+        schedule_id: "resume-after-limit:session-alpha:32:0",
+        run_at: "2026-09-28T11:00:00.000Z",
+        status: "active",
+        reused: false,
       });
     }
 
