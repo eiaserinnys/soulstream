@@ -19,6 +19,8 @@ describe("session-data read repositories", () => {
         display_name: "Session",
         created_at: now,
         updated_at: now,
+        ...(text.includes("s.agent_id") ? { agent_id: "roselin" } : {}),
+        node_id: "node-a",
         event_count: "4",
         last_event_id: "9",
         last_read_event_id: "5",
@@ -40,7 +42,13 @@ describe("session-data read repositories", () => {
     await expect(repository.listSessionsSummary({ limit: 10, offset: 0 }))
       .resolves.toMatchObject({
         total: 12,
-        sessions: [{ event_count: 4, last_event_id: 9, last_read_event_id: 5 }],
+        sessions: [{
+          agent_id: "roselin",
+          node_id: "node-a",
+          event_count: 4,
+          last_event_id: 9,
+          last_read_event_id: 5,
+        }],
       });
     await expect(repository.listRunningSessionsSummary({ limit: 15, excludeSessionId: "s1" }))
       .resolves.toMatchObject({ total: 1, sessions: [{ session_id: "s2" }] });
@@ -56,6 +64,7 @@ describe("session-data read repositories", () => {
     const summaryQuery = calls.find((call) => call.text.includes("WITH paged AS"))?.text;
     expect(summaryQuery).toBeDefined();
     expect(summaryQuery).not.toContain("session_list_summary(");
+    expect(summaryQuery).toContain("s.agent_id");
     expect(summaryQuery!.indexOf("LIMIT")).toBeLessThan(summaryQuery!.indexOf("FROM events"));
   });
 

@@ -83,6 +83,8 @@ export function registerSessionQueryTools(
           event_count: s.event_count,
           caller_session_id: s.caller_session_id,
           away_summary: s.away_summary,
+          agent_id: s.agent_id,
+          node_id: s.node_id,
         })),
         next_cursor: hasMore ? c + l : null,
       });

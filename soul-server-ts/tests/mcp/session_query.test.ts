@@ -141,6 +141,58 @@ afterEach(async () => {
   }
 });
 
+describe("list_sessions", () => {
+  it("returns each session's agent_id and node_id", async () => {
+    const now = new Date("2026-09-28T00:00:00.000Z");
+    const listSessionsSummary = vi.fn(async () => ({
+      sessions: [
+        {
+          session_id: "s1",
+          display_name: "Session 1",
+          status: "completed",
+          session_type: "agent",
+          created_at: now,
+          updated_at: now,
+          event_count: 1,
+          caller_session_id: null,
+          away_summary: null,
+          agent_id: "roselin",
+          node_id: "eiaserinnys",
+        },
+        {
+          session_id: "s2",
+          display_name: "Session 2",
+          status: "running",
+          session_type: "agent",
+          created_at: now,
+          updated_at: now,
+          event_count: 2,
+          caller_session_id: null,
+          away_summary: null,
+          agent_id: null,
+          node_id: "eias-linegames",
+        },
+      ],
+      total: 2,
+    }));
+    const client = await createClient(makeRuntime({
+      db: { listSessionsSummary },
+    }));
+
+    const result = await client.callTool({
+      name: "list_sessions",
+      arguments: {},
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      sessions: [
+        { session_id: "s1", agent_id: "roselin", node_id: "eiaserinnys" },
+        { session_id: "s2", agent_id: null, node_id: "eias-linegames" },
+      ],
+    });
+  });
+});
+
 describe("list_session_events", () => {
   it("marks truncated pages and gives the exact next cursor instruction", async () => {
     const events = [1, 2, 3].map((id) => ({
