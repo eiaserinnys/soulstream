@@ -56,6 +56,7 @@ export interface SessionContextMenuExtraAction {
   label: string;
   onClick: () => void | Promise<void>;
   disabled?: boolean;
+  closeOnClick?: boolean;
   className?: string;
   description?: string;
 }
@@ -361,6 +362,7 @@ export function SessionContextMenu({
   const resumeExtraActions: SessionContextMenuExtraAction[] = [
     {
       label: "리밋이 풀릴 때 재개",
+      closeOnClick: false,
       onClick: handleScheduleResumeAfterLimit,
       disabled: !activeResumeAfterLimit
         || activeResumeAfterLimit.loading
@@ -372,6 +374,7 @@ export function SessionContextMenu({
     ...(currentResumeSchedule
       ? [{
           label: "재개 예약 취소",
+          closeOnClick: false,
           onClick: handleCancelResumeAfterLimit,
           disabled: activeResumeAfterLimit?.busy ?? true,
         }]
@@ -527,6 +530,7 @@ export function SessionContextMenu({
                   <MenuItem
                     key={action.label}
                     disabled={action.disabled}
+                    closeOnClick={action.closeOnClick}
                     title={action.description}
                     onClick={() => { void action.onClick(); }}
                     className={cn(

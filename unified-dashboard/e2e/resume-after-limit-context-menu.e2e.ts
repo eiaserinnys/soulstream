@@ -28,6 +28,48 @@ for (const theme of ["dark", "light"] as const) {
   });
 }
 
+test("resume-after-limit desktop action keeps a successful reservation result visible", async ({ page }) => {
+  test.setTimeout(60_000);
+  await prepareEligibleDesktopScenario(page, "success");
+
+  const menu = page.getByRole("menu");
+  const action = menu.getByRole("menuitem", { name: /리밋이 풀릴 때 재개/ });
+  await expect(menu.getByRole("status")).toHaveText(/해제 예정$/);
+  await expect(action).not.toHaveAttribute("aria-disabled", "true");
+  const postResponse = page.waitForResponse((response) => (
+    response.request().method() === "POST"
+      && response.url().endsWith("/api/sessions/run-alpha-2/resume-after-limit")
+  ));
+  await action.click();
+  expect((await postResponse).status()).toBe(200);
+
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("status"))
+    .toHaveText(/\d{1,2}월 \d{1,2}일 \d{2}:\d{2} 재개 예약/);
+});
+
+test("resume-after-limit desktop action keeps a failed reservation reason visible", async ({ page }) => {
+  test.setTimeout(60_000);
+  await prepareEligibleDesktopScenario(page, "failure");
+
+  const menu = page.getByRole("menu");
+  const action = menu.getByRole("menuitem", { name: /리밋이 풀릴 때 재개/ });
+  await expect(menu.getByRole("status")).toHaveText(/해제 예정$/);
+  await expect(action).not.toHaveAttribute("aria-disabled", "true");
+  const postResponse = page.waitForResponse((response) => (
+    response.request().method() === "POST"
+      && response.url().endsWith("/api/sessions/run-alpha-2/resume-after-limit")
+  ));
+  await action.click();
+  expect((await postResponse).status()).toBe(409);
+
+  await expect(menu).toBeVisible();
+  const result = menu.getByRole("status");
+  await expect(result).toContainText("RATE_LIMIT_RESET_UNAVAILABLE");
+  await expect(result).toContainText("제한 해제 시각을 확인할 수 없습니다.");
+  await expect(result).not.toContainText("재개 예약");
+});
+
 test("resume-after-limit session menu · mobile · dark · 390px", async ({ page }) => {
   test.setTimeout(60_000);
   await preparePage(page, "dark", { width: 390, height: 844 });
@@ -67,6 +109,43 @@ async function preparePage(
     Object.defineProperty(serviceWorker, "controller", { configurable: true, get: () => null });
   }, theme);
   await installV3VisualQaRoutes(page);
+}
+
+async function prepareEligibleDesktopScenario(
+  page: Page,
+  postResult: "success" | "failure",
+): Promise<void> {
+  await preparePage(page, "dark", { width: 1440, height: 1000 });
+  await page.route("**/api/sessions/run-alpha-2/resume-after-limit", async (route) => {
+    const isGet = route.request().method() === "GET";
+    const body = isGet
+      ? {
+          eligible: true,
+          reason: null,
+          resets_at: "2026-09-28T11:00:00.000Z",
+          schedule: null,
+        }
+      : postResult === "success"
+        ? {
+            schedule_id: "resume-after-limit:run-alpha-2:32:0",
+            run_at: "2026-09-28T11:00:00.000Z",
+            status: "active",
+            reused: false,
+          }
+        : {
+            error: {
+              code: "RATE_LIMIT_RESET_UNAVAILABLE",
+              message: "제한 해제 시각을 확인할 수 없습니다.",
+            },
+          };
+    await route.fulfill({
+      status: isGet || postResult === "success" ? 200 : 409,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+  await openSessionMenu(page, "desktop");
+  await expect(page.getByRole("menuitem", { name: /리밋이 풀릴 때 재개/ })).toBeEnabled();
 }
 
 async function openSessionMenu(page: Page, surface: "desktop" | "mobile"): Promise<void> {
