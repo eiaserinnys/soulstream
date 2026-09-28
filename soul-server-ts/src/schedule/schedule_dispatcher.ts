@@ -36,6 +36,7 @@ export class ScheduleDispatcher {
       | "restoreOrphanSchedulesForLiveNodes"
       | "consumeClaimedSchedule"
       | "confirmScheduleStillFiring"
+      | "hasContinuousLimitWindow"
       | "deferDispatch"
       | "finishDispatch"
       | "failDispatch"
@@ -159,12 +160,22 @@ export class ScheduleDispatcher {
         const current = terminalEventId === null
           ? null
           : await this.taskManager.getScheduleResumeState(ready.sessionId);
-        if (
-          terminalEventId === null
-          || current?.status !== "error"
-          || current.terminationReason !== "limit_hit"
-          || current.terminalEventId !== terminalEventId
-        ) {
+        const reason = terminalEventId === null
+          ? "invalid_original_revision"
+          : current?.status !== "error" || current.terminationReason !== "limit_hit"
+            ? "current_session_not_limit_hit"
+            : typeof current.terminalEventId !== "number"
+              ? "missing_current_revision"
+              : await this.service.hasContinuousLimitWindow(ready, current.terminalEventId)
+                ? null
+                : "limit_window_or_terminal_chain_changed";
+        if (reason !== null) {
+          this.logger.info({
+            scheduleId: ready.scheduleId,
+            originalRevision: terminalEventId,
+            currentRevision: current?.terminalEventId ?? null,
+            reason,
+          }, "resume-after-limit schedule skipped");
           await this.service.finishDispatch(ready, claimToken, now);
           return;
         }

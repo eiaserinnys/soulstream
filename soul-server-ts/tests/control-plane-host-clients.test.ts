@@ -225,6 +225,34 @@ describe("worker control-plane host clients", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/schedules/host/claim_due_schedules");
   });
 
+  it("sends only immutable schedule identity and the worker-observed current revision", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      new Response("true", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ScheduleHostClient({ orch, logger });
+
+    const allowed = await client.hasContinuousLimitWindow({
+      scheduleId: "resume-after-limit:sess-1:3232:0",
+      sessionId: "sess-1",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:3232",
+    } as never, 3259);
+
+    expect(allowed).toBe(true);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://orch.example/api/schedules/host/has_continuous_limit_window",
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      schedule: {
+        schedule_id: "resume-after-limit:sess-1:3232:0",
+        session_id: "sess-1",
+        source_tool: "ResumeAfterLimit",
+        tool_use_id: "ResumeAfterLimit:3232",
+      },
+      expected_current_terminal_id: 3259,
+    });
+  });
+
   it("restores a task version conflict returned by the host", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       detail: {

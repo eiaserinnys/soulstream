@@ -36,7 +36,7 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
   }, 15_000);
 
   beforeEach(async () => {
-    await sql`TRUNCATE soulstream_schedules, sessions, soulstream_node_heartbeats`;
+    await sql`TRUNCATE soulstream_schedules, events, sessions, soulstream_node_heartbeats`;
   });
 
   it("repairs expired dispatching and firing claims so crash-after-claim is reclaimable", async () => {

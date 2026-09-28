@@ -276,6 +276,8 @@ function makeService(overrides: {
     claimDueSchedules: vi.fn(async () => overrides.claimDueSchedules ?? []),
     consumeClaimedSchedule: vi.fn(async () => overrides.consumeClaimedSchedule ?? null),
     confirmScheduleStillFiring: vi.fn(async () => overrides.confirmScheduleStillFiring ?? null),
+    hasContinuousLimitWindow: vi.fn(async (schedule: SoulstreamSchedule, currentTerminalId: number) =>
+      schedule.toolUseId === `ResumeAfterLimit:${currentTerminalId}`),
     deferDispatch: vi.fn(async () => makeSchedule({ status: "active" })),
     finishDispatch: vi.fn(async () => makeSchedule({ status: "completed" })),
     failDispatch: vi.fn(async () => makeSchedule({ status: "failed" })),

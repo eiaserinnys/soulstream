@@ -50,6 +50,17 @@ export class ScheduleHostClient {
   confirmScheduleStillFiring(scheduleId: string, claimToken: string): Promise<SoulstreamSchedule | null> {
     return this.request("confirm_schedule_still_firing", { scheduleId, claimToken });
   }
+  hasContinuousLimitWindow(schedule: SoulstreamSchedule, expectedCurrentTerminalId: number): Promise<boolean> {
+    return this.request("has_continuous_limit_window", {
+      schedule: {
+        scheduleId: schedule.scheduleId,
+        sessionId: schedule.sessionId,
+        sourceTool: schedule.sourceTool,
+        toolUseId: schedule.toolUseId,
+      },
+      expectedCurrentTerminalId,
+    });
+  }
   deferScheduleDispatch(input: {
     scheduleId: string; claimToken: string; nextRunAt: Date; error: string;
   }): Promise<SoulstreamSchedule | null> {

@@ -118,7 +118,18 @@ async function createMinimalScheduleSchema(sql: SqlClient): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       agent_id TEXT,
-      caller_session_id TEXT
+      caller_session_id TEXT,
+      termination_reason TEXT,
+      termination_event_id INTEGER
+    )
+  `;
+  await sql`
+    CREATE TABLE events (
+      session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+      id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      payload JSONB,
+      PRIMARY KEY (session_id, id)
     )
   `;
   await sql`
