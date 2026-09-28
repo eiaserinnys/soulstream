@@ -6,16 +6,10 @@ import {
 } from "@soulstream/agent-profile-contract";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { isUuid } from "../http/uuid.js";
+import type { ContextBundleRecord, ContextBundleRepository } from "./context_bundle_routes.js";
+import { parseAtomContexts, type AgentAtomContext, type ParseResult } from "./atom_contexts.js";
 
-export type AgentAtomContext = {
-  readonly node_id: string;
-  readonly depth?: number;
-  readonly titles_only?: boolean;
-  readonly include_ids?: boolean;
-  readonly mode?: "full" | "index" | "titles";
-  readonly applies_when?: Readonly<Record<string, unknown>>;
-};
+export type { AgentAtomContext } from "./atom_contexts.js";
 
 export type AgentAlias = string | {
   readonly id: string;
@@ -25,6 +19,7 @@ export type AgentAlias = string | {
 export type AgentProfileRecord = {
   readonly agentId: string;
   readonly name: string;
+  readonly contextBundles: readonly string[];
   readonly atomContexts: readonly AgentAtomContext[];
   readonly defaultPreset: string | null;
   readonly aliases: readonly AgentAlias[];
@@ -49,6 +44,7 @@ export type AgentPortraitRecord = {
 export type AgentProfileWrite = {
   readonly agentId: string;
   readonly name: string;
+  readonly contextBundles: readonly string[];
   readonly atomContexts: readonly AgentAtomContext[];
   readonly defaultPreset: string | null;
   readonly aliases: readonly AgentAlias[];
@@ -86,6 +82,7 @@ export class AgentProfileVersionConflictError extends Error {
 
 export type AgentProfileRouteOptions = {
   readonly repository: AgentProfileRepository;
+  readonly bundleRepository: ContextBundleRepository;
 };
 
 export const supportedPortraitMimes = [
@@ -113,24 +110,44 @@ export function registerAgentProfileRoutes(
   app: FastifyInstance,
   options: AgentProfileRouteOptions,
 ): void {
-  app.get("/api/agent-profiles", async (_request, reply) =>
-    reply.send({ profiles: (await options.repository.list()).map(projectProfile) }));
+  const loadBundlesById = async () => new Map(
+    (await options.bundleRepository.list()).map((bundle) => [bundle.bundleId, bundle]),
+  );
 
-  app.get("/api/agent-profiles/runtime", async (_request, reply) =>
-    reply.send({ profiles: (await options.repository.list()).map(projectRuntimeProfile) }));
+  app.get("/api/agent-profiles", async (_request, reply) => {
+    const [profiles, bundlesById] = await Promise.all([
+      options.repository.list(),
+      loadBundlesById(),
+    ]);
+    return reply.send({ profiles: profiles.map((profile) => projectProfile(profile, bundlesById)) });
+  });
+
+  app.get("/api/agent-profiles/runtime", async (_request, reply) => {
+    const [profiles, bundlesById] = await Promise.all([
+      options.repository.list(),
+      loadBundlesById(),
+    ]);
+    return reply.send({
+      profiles: profiles.map((profile) => projectRuntimeProfile(profile, bundlesById)),
+    });
+  });
 
   app.get<{ Params: AgentParams }>("/api/agent-profiles/:agent_id", async (request, reply) => {
     const profile = await options.repository.get(agentId(request));
-    return profile === null
-      ? reply.code(404).send({ detail: "Agent profile not found" })
-      : reply.send(projectProfile(profile));
+    if (profile === null) return reply.code(404).send({ detail: "Agent profile not found" });
+    return reply.send(projectProfile(profile, await loadBundlesById()));
   });
 
   app.put<{ Params: AgentParams }>("/api/agent-profiles/:agent_id", async (request, reply) => {
     const parsed = parseProfileWrite(agentId(request), request.body);
     if (!parsed.ok) return reply.code(422).send({ detail: parsed.error });
+    const bundlesById = await loadBundlesById();
+    const unknownBundles = parsed.value.contextBundles.filter((bundleId) => !bundlesById.has(bundleId));
+    if (unknownBundles.length > 0) {
+      return reply.code(422).send({ detail: `unknown context bundles: ${unknownBundles.join(", ")}` });
+    }
     try {
-      return reply.send(projectProfile(await options.repository.put(parsed.value)));
+      return reply.send(projectProfile(await options.repository.put(parsed.value), bundlesById));
     } catch (error) {
       return sendRepositoryError(reply, error);
     }
@@ -164,7 +181,8 @@ export function registerAgentProfileRoutes(
       const parsed = parsePortraitWrite(agentId(request), request.body);
       if (!parsed.ok) return reply.code(422).send({ detail: parsed.error });
       try {
-        return reply.send(projectProfile(await options.repository.putPortrait(parsed.value)));
+        const profile = await options.repository.putPortrait(parsed.value);
+        return reply.send(projectProfile(profile, await loadBundlesById()));
       } catch (error) {
         return sendRepositoryError(reply, error);
       }
@@ -176,9 +194,8 @@ export function registerAgentProfileRoutes(
     if (!version.ok) return reply.code(422).send({ detail: version.error });
     try {
       const profile = await options.repository.deletePortrait(agentId(request), version.value);
-      return profile === null
-        ? reply.code(404).send({ detail: "Agent profile not found" })
-        : reply.send(projectProfile(profile));
+      if (profile === null) return reply.code(404).send({ detail: "Agent profile not found" });
+      return reply.send(projectProfile(profile, await loadBundlesById()));
     } catch (error) {
       return sendRepositoryError(reply, error);
     }
@@ -189,11 +206,16 @@ function agentId(request: FastifyRequest<{ Params: AgentParams }>): string {
   return request.params.agent_id;
 }
 
-function projectProfile(profile: AgentProfileRecord): Record<string, unknown> {
+function projectProfile(
+  profile: AgentProfileRecord,
+  bundlesById: ReadonlyMap<string, ContextBundleRecord>,
+): Record<string, unknown> {
   return {
     agent_id: profile.agentId,
     name: profile.name,
+    context_bundles: profile.contextBundles,
     atom_contexts: profile.atomContexts,
+    effective_atom_contexts: expandAtomContexts(profile, bundlesById),
     default_preset: profile.defaultPreset,
     aliases: profile.aliases,
     has_portrait: profile.hasPortrait,
@@ -204,19 +226,35 @@ function projectProfile(profile: AgentProfileRecord): Record<string, unknown> {
   };
 }
 
-function projectRuntimeProfile(profile: AgentProfileRecord): Record<string, unknown> {
-  const projected = projectProfile(profile);
+function projectRuntimeProfile(
+  profile: AgentProfileRecord,
+  bundlesById: ReadonlyMap<string, ContextBundleRecord>,
+): Record<string, unknown> {
+  const projected = projectProfile(profile, bundlesById);
+  projected.atom_contexts = expandAtomContexts(profile, bundlesById);
+  delete projected.context_bundles;
+  delete projected.effective_atom_contexts;
   delete projected.created_at;
   return projected;
 }
 
-type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
+export function expandAtomContexts(
+  profile: Pick<AgentProfileRecord, "contextBundles" | "atomContexts">,
+  bundlesById: ReadonlyMap<string, ContextBundleRecord>,
+): readonly AgentAtomContext[] {
+  return [
+    ...profile.contextBundles.flatMap((bundleId) => bundlesById.get(bundleId)!.atomContexts),
+    ...profile.atomContexts,
+  ];
+}
 
 function parseProfileWrite(agentIdValue: string, body: unknown): ParseResult<AgentProfileWrite> {
   if (!isObject(body)) return invalid("Request body must be an object");
   if (typeof body.name !== "string" || body.name.length === 0) return invalid("name is required");
   const contexts = parseAtomContexts(body.atom_contexts);
   if (!contexts.ok) return contexts;
+  const contextBundles = parseContextBundleIds(body.context_bundles);
+  if (!contextBundles.ok) return contextBundles;
   const aliases = parseAliases(body.aliases);
   if (!aliases.ok) return aliases;
   if (body.default_preset !== null && body.default_preset !== undefined && typeof body.default_preset !== "string") {
@@ -227,6 +265,7 @@ function parseProfileWrite(agentIdValue: string, body: unknown): ParseResult<Age
   return { ok: true, value: {
     agentId: agentIdValue,
     name: body.name,
+    contextBundles: contextBundles.value,
     atomContexts: contexts.value,
     defaultPreset: typeof body.default_preset === "string" ? body.default_preset : null,
     aliases: aliases.value,
@@ -254,19 +293,19 @@ function parsePortraitWrite(agentIdValue: string, body: unknown): ParseResult<Ag
   return { ok: true, value: { agentId: agentIdValue, body: decoded, mime, sha256, expectedVersion: version.value } };
 }
 
-function parseAtomContexts(value: unknown): ParseResult<AgentAtomContext[]> {
-  if (!Array.isArray(value)) return invalid("atom_contexts must be an array");
-  const result: AgentAtomContext[] = [];
+function parseContextBundleIds(value: unknown): ParseResult<string[]> {
+  if (value === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(value)) return invalid("context_bundles must be an array of unique bundle ids");
+  const ids: string[] = [];
+  const seen = new Set<string>();
   for (const entry of value) {
-    if (!isObject(entry) || !isUuid(entry.node_id)) return invalid("atom_contexts node_id must be a UUID");
-    if (entry.depth !== undefined && (!Number.isInteger(entry.depth) || (entry.depth as number) < 0)) return invalid("atom_contexts depth must be a non-negative integer");
-    if (entry.mode !== undefined && !["full", "index", "titles"].includes(String(entry.mode))) return invalid("atom_contexts mode is invalid");
-    if (entry.titles_only !== undefined && typeof entry.titles_only !== "boolean") return invalid("atom_contexts titles_only must be boolean");
-    if (entry.include_ids !== undefined && typeof entry.include_ids !== "boolean") return invalid("atom_contexts include_ids must be boolean");
-    if (entry.applies_when !== undefined && !isObject(entry.applies_when)) return invalid("atom_contexts applies_when must be an object");
-    result.push({ node_id: entry.node_id, ...(typeof entry.depth === "number" ? { depth: entry.depth } : {}), ...(typeof entry.titles_only === "boolean" ? { titles_only: entry.titles_only } : {}), ...(typeof entry.include_ids === "boolean" ? { include_ids: entry.include_ids } : {}), ...(typeof entry.mode === "string" ? { mode: entry.mode as AgentAtomContext["mode"] } : {}), ...(isObject(entry.applies_when) ? { applies_when: entry.applies_when } : {}) });
+    if (typeof entry !== "string" || entry.length === 0 || seen.has(entry)) {
+      return invalid("context_bundles must be an array of unique bundle ids");
+    }
+    seen.add(entry);
+    ids.push(entry);
   }
-  return { ok: true, value: result };
+  return { ok: true, value: ids };
 }
 
 function expectedVersion(body: unknown): ParseResult<number> {

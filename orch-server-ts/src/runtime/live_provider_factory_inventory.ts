@@ -53,6 +53,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "cogito", path: "cogitoRoutes.briefCollector" },
   { owner: "cogito", path: "cogitoRoutes.provider" },
   { owner: "cogito", path: "cogitoRoutes.searchProvider" },
+  { owner: "context.bundles", path: "contextBundleRoutes.repository" },
   { owner: "execute", path: "executeProxyRoutes.provider" },
   { owner: "folders", path: "folderRoutes.accessProvider" },
   { owner: "folders", path: "folderRoutes.provider" },

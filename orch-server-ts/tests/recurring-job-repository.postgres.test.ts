@@ -16,6 +16,16 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
 
   beforeAll(async () => {
     harness = await createPagePostgresHarness();
+    const profileMigration = await readFile(
+      new URL("../../packages/db-schema/sql/migrations/056_agent_profiles.sql", import.meta.url),
+      "utf8",
+    );
+    await harness.sql.unsafe(profileMigration);
+    const legacyAtomContexts = [{ node_id: "11111111-2222-3333-4444-555555555555" }];
+    await harness.sql`
+      INSERT INTO agent_profiles (agent_id, name, atom_contexts)
+      VALUES ('legacy-agent', 'Legacy Agent', ${harness.sql.json(legacyAtomContexts)})
+    `;
     const migration = await readFile(
       new URL("../../packages/db-schema/sql/migrations/094_recurring_jobs.sql", import.meta.url),
       "utf8",
@@ -38,6 +48,21 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
       "utf8",
     );
     await harness.sql.unsafe(onceMigration);
+    const contextBundleMigration = await readFile(
+      new URL("../../packages/db-schema/sql/migrations/107_context_bundles.sql", import.meta.url),
+      "utf8",
+    );
+    await harness.sql.unsafe(contextBundleMigration);
+    const migratedProfile = await harness.sql<{
+      atom_contexts: unknown[];
+      context_bundles: unknown[];
+    }[]>`
+      SELECT atom_contexts, context_bundles FROM agent_profiles WHERE agent_id = 'legacy-agent'
+    `;
+    expect(migratedProfile).toEqual([{
+      atom_contexts: legacyAtomContexts,
+      context_bundles: [],
+    }]);
     const migratedRows = await harness.sql<{ schedule_kind: string; run_at: string | null }[]>`
       SELECT schedule_kind, run_at FROM recurring_jobs WHERE job_id = 'legacy-recurring-job'
     `;

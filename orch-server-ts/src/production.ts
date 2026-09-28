@@ -853,6 +853,7 @@ export function buildProductionRouteOptions(
     },
     nodeAgentProfileRoutes: providers.nodeAgentProfileRoutes,
     agentProfileRoutes: providers.agentProfileRoutes,
+    contextBundleRoutes: providers.contextBundleRoutes,
     nodeClaudeAuthRoutes: {
       ...providers.nodeClaudeAuthRoutes,
       registry: runtime.registry,

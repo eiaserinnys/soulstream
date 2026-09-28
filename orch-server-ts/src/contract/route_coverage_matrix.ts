@@ -35,6 +35,7 @@ import { pageYjsRouteAuthRequirements } from "../page/page_yjs_route.js";
 import { pageBrowserRouteAuthRequirements } from "../page/page_browser_routes.js";
 import { plannerRouteAuthRequirements } from "../planner/planner_routes.js";
 import { agentProfileRouteAuthRequirements } from "../node/agent_profile_routes.js";
+import { contextBundleRouteAuthRequirements } from "../node/context_bundle_routes.js";
 import { recurringJobRouteAuthRequirements } from "../recurring-jobs/recurring_job_routes.js";
 import type { RouteCoverageOwner } from "./route_coverage.js";
 
@@ -56,6 +57,7 @@ export const routeCoverageOwners = [
   { owner: "page.browser", authRequirements: pageBrowserRouteAuthRequirements },
   { owner: "planner", authRequirements: plannerRouteAuthRequirements },
   { owner: "agent.profiles", authRequirements: agentProfileRouteAuthRequirements },
+  { owner: "context.bundles", authRequirements: contextBundleRouteAuthRequirements },
   { owner: "node.agent-profiles", authRequirements: nodeAgentProfileRouteAuthRequirements },
   { owner: "node.claude-auth", authRequirements: nodeClaudeAuthRouteAuthRequirements },
   { owner: "node.snapshot", authRequirements: nodeSnapshotRouteAuthRequirements },
@@ -105,6 +107,10 @@ export const tsOnlyRouteKeys = [
   "GET /api/ui-events",
   "GET /api/ui-events/config",
   "GET /api/ui-events/installs",
+  "GET /api/context-bundles",
+  "DELETE /api/context-bundles/{bundle_id}",
+  "GET /api/context-bundles/{bundle_id}",
+  "PUT /api/context-bundles/{bundle_id}",
   "GET /api/recurring-jobs",
   "POST /api/recurring-jobs",
   "POST /api/recurring-jobs/preview",

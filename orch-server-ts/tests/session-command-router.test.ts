@@ -52,6 +52,7 @@ describe("Session command router primitive", () => {
     agentId: "fake-agent",
     name: "DB Agent",
     atomContexts: [],
+    contextBundles: [],
     defaultPreset: "db-preset",
     aliases: [{ id: "db-alias", default_preset: "alias-preset" }],
     hasPortrait: false,
