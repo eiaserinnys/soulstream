@@ -145,6 +145,21 @@ describe("deployment env identity", () => {
       expect(entry.normalization !== undefined).toBe(entry.identity_scope === "deployment");
     }
   });
+
+  it("declares the Typesafe credential and skill catalog node with their right kinds", () => {
+    expect(releaseEnvAllowlistEntry("TYPESAFE_API_KEY")).toMatchObject({
+      owner: "typesafe",
+      kind: "credential",
+      identity_scope: "deployment",
+      normalization: "presence",
+    });
+    expect(releaseEnvAllowlistEntry("SKILL_CATALOG_NODE_ID")).toMatchObject({
+      owner: "atom",
+      kind: "non_secret",
+      identity_scope: "deployment",
+      normalization: "string",
+    });
+  });
 });
 
 describe("release manifest startup verification", () => {
