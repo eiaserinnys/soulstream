@@ -9,11 +9,6 @@ const SCORE_LEVELS = [
   "필수 — 없으면 요청 처리가 틀리거나 누락된다",
 ];
 
-const AGENT =
-  "seosoyoung (서소영) — 슬랙·소울스트림에서 디렉터 김주복의 개발 지원·내러티브 잡무를 처리하는 에이전트";
-const NODE = "eias-linegames (Windows)";
-const CALLER = "디렉터 김주복";
-
 export interface RelevanceItem {
   key: string;
   text: string;
@@ -23,6 +18,7 @@ export interface RankByRelevanceInput {
   query: string;
   items: RelevanceItem[];
   apiKey: string;
+  context?: Record<string, string>;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }
@@ -40,21 +36,20 @@ export async function rankByRelevance({
   query,
   items,
   apiKey,
+  context,
   fetchImpl = fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 }: RankByRelevanceInput): Promise<RelevanceScore[]> {
   const state = {
-    agent: AGENT,
-    node: NODE,
-    caller: CALLER,
-    first_request: query,
+    ...context,
+    request: query,
     candidates: items,
   };
   const questions = Object.fromEntries(items.map(({ key, text }) => [
     key,
     {
       type: "score",
-      instructions: `first_request 처리에 대한 아래 지식 카드의 유관도.\n카드: ${text}`,
+      instructions: `request 처리에 대한 아래 후보의 유관도.\n후보: ${text}`,
       criteria: SCORE_LEVELS,
     },
   ]));

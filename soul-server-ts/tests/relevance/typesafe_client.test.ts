@@ -38,17 +38,17 @@ describe("rankByRelevance", () => {
     });
     const body = JSON.parse(String(init?.body)) as {
       model: string;
-      state: { first_request: string; candidates: Array<{ key: string; text: string }> };
+      state: { request: string; candidates: Array<{ key: string; text: string }> };
       questions: Record<string, { type: string; instructions: string; criteria: string[] }>;
     };
     expect(body.model).toBe("jev-latest");
-    expect(body.state.first_request).toBe("Find the matching skill");
+    expect(body.state.request).toBe("Find the matching skill");
     expect(body.state.candidates).toEqual(items);
     expect(JSON.stringify(body.state)).toContain("Alpha description");
     expect(Object.keys(body.questions)).toEqual(items.map((item) => item.key));
     expect(body.questions.alpha).toMatchObject({
       type: "score",
-      instructions: "first_request 처리에 대한 아래 지식 카드의 유관도.\n카드: Alpha description",
+      instructions: "request 처리에 대한 아래 후보의 유관도.\n후보: Alpha description",
       criteria: [
         "무관 — 이 요청과 관계없다",
         "참고 — 있으면 약간 도움",
@@ -62,6 +62,38 @@ describe("rankByRelevance", () => {
       { key: "gamma", score: 0 },
       { key: "delta", score: 0 },
     ]);
+  });
+
+  it("omits fixed context and copies optional caller context into state", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async () =>
+      new Response(JSON.stringify({ answers: {} }), { status: 200 }),
+    );
+    const items = [{ key: "skill-a", text: "Skill A" }];
+
+    await rankByRelevance({
+      query: "first query",
+      items,
+      apiKey: "typesafe-test-key",
+      fetchImpl,
+    });
+    const defaultState = JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body)) as {
+      state: Record<string, unknown>;
+    };
+    expect(defaultState.state).toEqual({ request: "first query", candidates: items });
+    expect(JSON.stringify(defaultState.state)).not.toMatch(/seosoyoung|eias-linegames|김주복/);
+
+    const context = { agent: "agent-a", node: "eiaserinnys-wsl", purpose: "feed ranking" };
+    await rankByRelevance({
+      query: "second query",
+      items,
+      apiKey: "typesafe-test-key",
+      context,
+      fetchImpl,
+    });
+    const contextualState = JSON.parse(String(fetchImpl.mock.calls[1]![1]?.body)) as {
+      state: Record<string, unknown>;
+    };
+    expect(contextualState.state).toEqual({ ...context, request: "second query", candidates: items });
   });
 
   it("does not include the API key in errors", async () => {
