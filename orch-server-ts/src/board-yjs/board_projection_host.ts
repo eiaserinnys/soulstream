@@ -14,6 +14,8 @@ export function createBoardProjectionHost(
   const checklist = new ChecklistProjectionRepository(sqlResolver);
   return {
     getBoardItems: () => reads.getBoardItems(),
+    getBoardItemsByContainer: (folderId, container) =>
+      reads.getBoardItemsByContainer(folderId, container),
     getBoardItemById: (boardItemId) => reads.getBoardItemById(boardItemId),
     getPrimarySessionBoardItem: (sessionId) =>
       reads.getPrimarySessionBoardItem(sessionId),

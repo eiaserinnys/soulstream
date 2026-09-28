@@ -146,6 +146,10 @@ export interface ListContainerItemsResult {
 
 export interface BoardProjectionHost {
   getBoardItems(): Promise<CatalogBoardItemRow[]>;
+  getBoardItemsByContainer(
+    folderId: string,
+    container: BoardYjsContainerRef,
+  ): Promise<CatalogBoardItemRow[]>;
   getBoardItemById(boardItemId: string): Promise<CatalogBoardItemRow | null>;
   getPrimarySessionBoardItem(sessionId: string): Promise<CatalogBoardItemRow | null>;
   getMarkdownDocumentBoardItem(documentId: string): Promise<CatalogBoardItemRow | null>;

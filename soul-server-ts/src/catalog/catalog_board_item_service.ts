@@ -301,12 +301,7 @@ export class CatalogBoardItemService {
   ): Promise<[number, number]> {
     // Legacy REST/MCP markdown placement. Board catalog reads are Yjs-derived.
     const occupied = new Set(
-      (await this.db.getBoardItems())
-        .filter((item) =>
-          item.folderId === folderId &&
-          (item.containerKind ?? "folder") === container.containerKind &&
-          (item.containerId ?? item.folderId) === container.containerId
-        )
+      (await this.db.getBoardItemsByContainer(folderId, container))
         .map((item) => `${item.x}:${item.y}`),
     );
     let index = 0;

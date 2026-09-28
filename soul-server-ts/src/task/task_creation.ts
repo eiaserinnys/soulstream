@@ -30,7 +30,6 @@ import {
 } from "./task_creation_hook.js";
 import { initialSessionReview } from "./session_review.js";
 import {
-  boardItemsInContainer,
   sessionBoardItemPosition,
 } from "./task_session_position.js";
 import { resolveStructuralCallerSessionId } from "./delegation_relationship.js";
@@ -411,8 +410,8 @@ export class TaskCreation {
         if (!this.deps.boardYjsService) {
           throw new Error("Board Yjs service is required for session placement");
         }
-        const boardItems = boardItemsInContainer(
-          await this.deps.db.getBoardItems(),
+        const boardItems = await this.deps.db.getBoardItemsByContainer(
+          target.folderId,
           target.container,
         );
         const [x, y] = sessionBoardItemPosition(boardItems, sessionId);

@@ -11,6 +11,7 @@ import {
   toMarkdownDocumentRow,
 } from "./board_projection_serialization.js";
 import type {
+  BoardYjsContainerRef,
   ListContainerItemsParams,
   ListContainerItemsResult,
 } from "./board_projection_types.js";
@@ -29,6 +30,21 @@ export class BoardProjectionReadRepository {
   async getBoardItems(): Promise<CatalogBoardItemRow[]> {
     const sql = await this.sqlResolver.resolveSql();
     const rows = await sql<readonly BoardItemDbRow[]>`SELECT * FROM board_item_get_all()`;
+    return rows.map(toCatalogBoardItemRow);
+  }
+
+  async getBoardItemsByContainer(
+    folderId: string,
+    container: BoardYjsContainerRef,
+  ): Promise<CatalogBoardItemRow[]> {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<readonly BoardItemDbRow[]>`
+      SELECT *
+      FROM board_items
+      WHERE folder_id = ${folderId}
+        AND container_kind = ${container.containerKind}
+        AND container_id = ${container.containerId}
+    `;
     return rows.map(toCatalogBoardItemRow);
   }
 

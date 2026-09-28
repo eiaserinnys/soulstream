@@ -159,6 +159,13 @@ export class BoardYjsHostClient
     return await this.request("get-board-items", {});
   }
 
+  async getBoardItemsByContainer(
+    folderId: string,
+    container: BoardYjsContainerRef,
+  ): Promise<CatalogBoardItemRow[]> {
+    return await this.request("get-board-items-by-container", { folderId, container });
+  }
+
   async getBoardItemById(boardItemId: string): Promise<CatalogBoardItemRow | null> {
     return await this.request("get-board-item", { boardItemId });
   }

@@ -205,6 +205,13 @@ export class SessionDB {
     return await this.requireBoardProjectionHost().getBoardItems();
   }
 
+  async getBoardItemsByContainer(
+    folderId: string,
+    container: BoardYjsContainerRef,
+  ): Promise<CatalogBoardItemRow[]> {
+    return await this.requireBoardProjectionHost().getBoardItemsByContainer(folderId, container);
+  }
+
   listContainerItems(params: ListContainerItemsParams): Promise<ListContainerItemsResult> {
     return this.requireBoardProjectionHost().listContainerItems(params);
   }

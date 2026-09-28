@@ -6,6 +6,22 @@ import {
 } from "../src/board-yjs/board_projection_host_operations.js";
 
 describe("board projection host operations", () => {
+  it("validates and dispatches board items scoped to a folder and container", async () => {
+    const container = { containerKind: "task" as const, containerId: "task-1" };
+    const input = { folderId: "root", container };
+    const schema = getBoardProjectionHostOperationSchema("get-board-items-by-container");
+    const getBoardItemsByContainer = vi.fn(async () => [{ id: "markdown:doc-1" }]);
+
+    expect(schema).toBeDefined();
+    expect(schema?.parse(input)).toEqual(input);
+    await expect(dispatchBoardProjectionHostOperation(
+      "get-board-items-by-container",
+      input,
+      { getBoardItemsByContainer } as never,
+    )).resolves.toEqual([{ id: "markdown:doc-1" }]);
+    expect(getBoardItemsByContainer).toHaveBeenCalledWith("root", container);
+  });
+
   it("validates and dispatches the checklist dead-letter transition", async () => {
     const row = {
       block_id: "block-1",

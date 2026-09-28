@@ -108,6 +108,7 @@ function makeMocks() {
   const getAllFolders = vi.fn().mockResolvedValue([]);
   const getPrimarySessionBoardItem = vi.fn().mockResolvedValue(null);
   const getBoardItems = vi.fn().mockResolvedValue([]);
+  const getBoardItemsByContainer = vi.fn().mockResolvedValue([]);
   const upsertSessionBoardItem = vi.fn().mockResolvedValue({});
   // PR #56: hydration mock (Python load_evicted_task 정합)
   const getSession = vi.fn().mockResolvedValue(null);
@@ -121,6 +122,7 @@ function makeMocks() {
     getAllFolders,
     getPrimarySessionBoardItem,
     getBoardItems,
+    getBoardItemsByContainer,
     getSession,
   } as unknown as SessionDB;
   boardYjsServices.set(db, { upsertSessionBoardItem });
@@ -162,6 +164,7 @@ function makeMocks() {
     getAllFolders,
     getPrimarySessionBoardItem,
     getBoardItems,
+    getBoardItemsByContainer,
     upsertSessionBoardItem,
     getSession,
     emitSessionCreated,
