@@ -231,9 +231,6 @@ export function createOrchestratorRuntimeServices(
             provider: options.sessionHistoryProvider,
             liveEvents: {
               subscribe(agentSessionId, listener) {
-                if (registry.findConnectedNodeForSession(agentSessionId) === undefined) {
-                  return undefined;
-                }
                 return sessionEventHub.subscribe(
                   agentSessionId,
                   (event) => listener(event.data),
