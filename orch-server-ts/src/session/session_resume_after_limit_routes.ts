@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { PersistenceHostRepositories } from "../control_plane/persistence_host_runtime.js";
 import type { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
+import { latestValidResetAt } from "../schedule/resume_after_limit_continuity.js";
 import type {
   ScheduleCreateInput,
   SoulstreamSchedule,
@@ -30,7 +31,8 @@ export type SessionResumeAfterLimitRouteOptions = {
   persistenceRepositoryProvider: () => Promise<Pick<PersistenceHostRepositories, "sessionReads" | "eventReads">>;
   scheduleRepositoryProvider: () => Promise<Pick<
     SoulstreamScheduleRepository,
-    "listSchedulesBySourceToolUseId" | "createScheduleIfAbsent"
+    "listSchedulesBySourceToolUseId" | "listReusableSchedulesBySourceTool"
+      | "hasContinuousLimitWindow" | "createScheduleIfAbsent"
   >>;
   now?: () => Date;
 };
@@ -179,7 +181,14 @@ async function resolveEligibility(
     SOURCE_TOOL,
     toolUseId,
   );
-  const active = latestReusableSchedule(schedules);
+  const candidates = await scheduleRepository.listReusableSchedulesBySourceTool(sessionId, SOURCE_TOOL);
+  let active: SoulstreamSchedule | null = null;
+  for (const candidate of candidates) {
+    if (await scheduleRepository.hasContinuousLimitWindow(candidate, terminalEventId)) {
+      active = candidate;
+      break;
+    }
+  }
   return {
     ok: true,
     value: {
@@ -192,23 +201,6 @@ async function resolveEligibility(
       schedules,
     },
   };
-}
-
-function latestValidResetAt(events: Array<{ event_type: string; payload: Record<string, unknown> }>): string | null {
-  let latestMs = Number.NEGATIVE_INFINITY;
-  for (const event of events) {
-    const payload = event.payload;
-    const isRejectedCredential = event.event_type === "credential_alert" && payload.status === "rejected";
-    const isRateLimitError = event.event_type === "error"
-      && payload.error_code === "claude_rate_limit_stop_failure"
-      && payload.fatal === true;
-    if (!isRejectedCredential && !isRateLimitError) continue;
-    if (typeof payload.resets_at !== "string") continue;
-    const resetMs = Date.parse(payload.resets_at);
-    if (!Number.isFinite(resetMs)) continue;
-    latestMs = Math.max(latestMs, resetMs);
-  }
-  return Number.isFinite(latestMs) ? new Date(latestMs).toISOString() : null;
 }
 
 function latestReusableSchedule(schedules: SoulstreamSchedule[]): SoulstreamSchedule | null {

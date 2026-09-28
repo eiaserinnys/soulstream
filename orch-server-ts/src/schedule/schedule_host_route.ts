@@ -20,6 +20,7 @@ const operations = {
   restore_orphan_schedules_for_live_nodes: "restoreOrphanSchedulesForLiveNodes",
   consume_claimed_schedule: "consumeClaimedSchedule",
   confirm_schedule_still_firing: "confirmScheduleStillFiring",
+  has_continuous_limit_window: "hasContinuousLimitWindow",
   defer_schedule_dispatch: "deferScheduleDispatch",
   finish_schedule_dispatch: "finishScheduleDispatch",
   fail_schedule_dispatch: "failScheduleDispatch",
@@ -92,6 +93,10 @@ async function dispatch(
     case "confirmScheduleStillFiring": return await repository.confirmScheduleStillFiring(
       requiredString(input, "scheduleId"), requiredString(input, "claimToken"),
     );
+    case "hasContinuousLimitWindow": return await repository.hasContinuousLimitWindow(
+      requiredScheduleIdentity(input.schedule),
+      requiredEventId(input, "expectedCurrentTerminalId"),
+    );
     case "deferScheduleDispatch": return await repository.deferScheduleDispatch(input as never);
     case "finishScheduleDispatch": return await repository.finishScheduleDispatch(input as never);
     case "failScheduleDispatch": return await repository.failScheduleDispatch(
@@ -149,6 +154,25 @@ function requiredString(input: Record<string, unknown>, key: string): string {
   const value = input[key];
   if (typeof value !== "string" || value.length === 0) throw new Error(`${key} is required`);
   return value;
+}
+
+function requiredEventId(input: Record<string, unknown>, key: string): number {
+  const value = input[key];
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${key} must be a positive event ID`);
+  }
+  return value;
+}
+
+function requiredScheduleIdentity(value: unknown) {
+  const schedule = toInput(value);
+  if (!schedule) throw new Error("schedule is required");
+  return {
+    scheduleId: requiredString(schedule, "scheduleId"),
+    sessionId: requiredString(schedule, "sessionId"),
+    sourceTool: requiredString(schedule, "sourceTool"),
+    toolUseId: requiredString(schedule, "toolUseId"),
+  };
 }
 
 function errorReply(reply: FastifyReply, status: number, code: string, message: string) {

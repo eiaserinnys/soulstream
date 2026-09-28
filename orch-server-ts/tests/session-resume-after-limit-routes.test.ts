@@ -147,6 +147,59 @@ describe("session resume-after-limit routes", () => {
     await app.close();
   });
 
+  it.each(["active", "dispatching", "firing", "orphaned"] as const)(
+    "shows and reuses a %s reservation from an earlier same-window revision",
+    async (status) => {
+      const previous = makeSchedule({
+        scheduleId: "resume-after-limit:sess-1:23:0",
+        toolUseId: "ResumeAfterLimit:23",
+        status,
+      });
+      const { app, dependencies } = createHarness({
+        schedules: [previous], continuousScheduleIds: [previous.scheduleId],
+      });
+
+      const shown = await app.inject({
+        method: "GET", url: "/api/sessions/sess-1/resume-after-limit",
+      });
+      const reused = await app.inject({
+        method: "POST", url: "/api/sessions/sess-1/resume-after-limit", payload: {},
+      });
+
+      expect(shown.statusCode).toBe(200);
+      expect(shown.json().schedule).toEqual({
+        schedule_id: previous.scheduleId, run_at: previous.nextRunAt, status,
+      });
+      expect(reused.statusCode).toBe(200);
+      expect(reused.json()).toMatchObject({ schedule_id: previous.scheduleId, reused: true });
+      expect(dependencies.scheduleRepository.createScheduleIfAbsent).not.toHaveBeenCalled();
+      await app.close();
+    },
+  );
+
+  it.each(["completed", "cancelled"] as const)(
+    "does not reuse a %s reservation from an earlier revision",
+    async (status) => {
+      const previous = makeSchedule({
+        scheduleId: "resume-after-limit:sess-1:23:0",
+        toolUseId: "ResumeAfterLimit:23",
+        status,
+      });
+      const { app, dependencies } = createHarness({ schedules: [previous] });
+
+      const response = await app.inject({
+        method: "POST", url: "/api/sessions/sess-1/resume-after-limit", payload: {},
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        schedule_id: "resume-after-limit:sess-1:32:0", reused: false,
+      });
+      expect(dependencies.scheduleRepository.hasContinuousLimitWindow).not.toHaveBeenCalled();
+      await app.close();
+    },
+  );
+
   it("returns the documented conflict when no structured reset is available", async () => {
     const { app } = createHarness({ currentTurnEvents: [] });
 
@@ -168,6 +221,7 @@ function createHarness(options: {
   now?: () => Date;
   currentTurnEvents?: ReturnType<typeof event>[];
   schedules?: SoulstreamSchedule[];
+  continuousScheduleIds?: string[];
   accessError?: Error;
 } = {}) {
   const app = createApp({ config });
@@ -210,7 +264,13 @@ function createHarness(options: {
     eventReads,
   }));
   const scheduleRepository = {
-    listSchedulesBySourceToolUseId: vi.fn(async () => schedules),
+    listSchedulesBySourceToolUseId: vi.fn(async (_sessionId: string, _sourceTool: string, toolUseId: string) =>
+      schedules.filter((schedule) => schedule.toolUseId === toolUseId)),
+    listReusableSchedulesBySourceTool: vi.fn(async () => schedules.filter((schedule) =>
+      ["active", "dispatching", "firing", "orphaned"].includes(schedule.status))),
+    hasContinuousLimitWindow: vi.fn(async (schedule: SoulstreamSchedule, currentTerminalId: number) =>
+      schedule.toolUseId === `ResumeAfterLimit:${currentTerminalId}`
+      || (options.continuousScheduleIds ?? []).includes(schedule.scheduleId)),
     createScheduleIfAbsent: vi.fn(async (input: {
       scheduleId: string;
       sessionId: string;

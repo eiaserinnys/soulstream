@@ -39,6 +39,7 @@ export class SoulstreamScheduleService {
       | "restoreOrphanSchedulesForLiveNodes"
       | "consumeClaimedSchedule"
       | "confirmScheduleStillFiring"
+      | "hasContinuousLimitWindow"
       | "deferScheduleDispatch"
       | "finishScheduleDispatch"
       | "failScheduleDispatch"
@@ -309,6 +310,13 @@ export class SoulstreamScheduleService {
     claimToken: string,
   ): Promise<SoulstreamSchedule | null> {
     return await this.db.confirmScheduleStillFiring(scheduleId, claimToken);
+  }
+
+  async hasContinuousLimitWindow(
+    schedule: SoulstreamSchedule,
+    expectedCurrentTerminalId: number,
+  ): Promise<boolean> {
+    return await this.db.hasContinuousLimitWindow(schedule, expectedCurrentTerminalId);
   }
 
   async deferDispatch(

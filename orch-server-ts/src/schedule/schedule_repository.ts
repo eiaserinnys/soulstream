@@ -1,4 +1,5 @@
 import type { SqlClient } from "./schedule_types.js";
+import { hasContinuousLimitWindow, type ResumeScheduleIdentity } from "./resume_after_limit_continuity.js";
 
 import type {
   CancelScheduleResult,
@@ -132,6 +133,27 @@ export class SoulstreamScheduleRepository {
       ORDER BY created_at ASC, schedule_id ASC
     `;
     return rows.map(scheduleFromRow);
+  }
+
+  async listReusableSchedulesBySourceTool(
+    sessionId: string,
+    sourceTool: string,
+  ): Promise<SoulstreamSchedule[]> {
+    const rows = await this.sql<ScheduleRow[]>`
+      SELECT * FROM soulstream_schedules
+      WHERE session_id = ${sessionId}
+        AND source_tool = ${sourceTool}
+        AND status IN ('active', 'dispatching', 'firing', 'orphaned')
+      ORDER BY created_at DESC, schedule_id DESC
+    `;
+    return rows.map(scheduleFromRow);
+  }
+
+  async hasContinuousLimitWindow(
+    schedule: ResumeScheduleIdentity,
+    expectedCurrentTerminalId: number,
+  ): Promise<boolean> {
+    return await hasContinuousLimitWindow(this.sql, schedule, expectedCurrentTerminalId);
   }
 
   async listSchedules(sessionId: string): Promise<SoulstreamSchedule[]> {

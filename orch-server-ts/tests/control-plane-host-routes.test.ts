@@ -320,6 +320,40 @@ describe("control-plane host routes", () => {
     expect(capturedInput?.claimedUntil).toBeInstanceOf(Date);
   });
 
+  it("passes a ResumeAfterLimit schedule identity and expected revision to the repository", async () => {
+    const hasContinuousLimitWindow = vi.fn(async () => true);
+    const app = Fastify();
+    apps.push(app);
+    registerScheduleHostRoute(app, {
+      authBearerToken: token,
+      repositoryProvider: async () => ({ hasContinuousLimitWindow }) as unknown as SoulstreamScheduleRepository,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/schedules/host/has_continuous_limit_window",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        schedule: {
+          schedule_id: "resume-after-limit:sess-1:3232:0",
+          session_id: "sess-1",
+          source_tool: "ResumeAfterLimit",
+          tool_use_id: "ResumeAfterLimit:3232",
+        },
+        expected_current_terminal_id: 3259,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toBe(true);
+    expect(hasContinuousLimitWindow).toHaveBeenCalledWith({
+      scheduleId: "resume-after-limit:sess-1:3232:0",
+      sessionId: "sess-1",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:3232",
+    }, 3259);
+  });
+
   it("keeps folder update columns and nullable values explicit", async () => {
     const updateFolder = vi.fn(async () => undefined);
     const app = Fastify();
