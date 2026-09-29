@@ -82,6 +82,12 @@ const bundledProfile = {
   effective_atom_contexts: [...bundles.slice(0, 3).flatMap((bundle) => bundle.atom_contexts), ...profile.atom_contexts],
 };
 
+const portraitProfile = {
+  ...profile,
+  has_portrait: true,
+  portrait: { mime: "image/png", size: 12, sha256: "old-sha" },
+};
+
 describe("AgentProfileEditorTab", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
@@ -112,6 +118,90 @@ describe("AgentProfileEditorTab", () => {
     container = undefined;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("shows the saved portrait in the list and form, and a placeholder for profiles without one", async () => {
+    const withoutPortrait = { ...profile, agent_id: "roselin", name: "로젤린" };
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) =>
+      String(input) === "/api/context-bundles"
+        ? jsonResponse({ bundles: [] })
+        : jsonResponse({ profiles: [portraitProfile, withoutPortrait] })));
+    await renderEditor();
+
+    const expectedUrl = "/api/agent-profiles/seosoyoung/portrait?v=old-sha";
+    expect(profileButton("서소영").querySelector("img")?.getAttribute("src")).toBe(expectedUrl);
+    expect(profileButton("서소영").querySelector("img")?.getAttribute("alt")).toBe("서소영");
+    expect(document.body.querySelector('[data-testid="agent-profile-editor"] img')?.getAttribute("src"))
+      .toBe(expectedUrl);
+    expect(profileButton("로젤린").querySelector("img")).toBeNull();
+    expect(profileButton("로젤린").textContent).toContain("로");
+
+    const removeCheckbox = document.body.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    flushSync(() => removeCheckbox?.click());
+    expect(document.body.querySelector('[data-testid="agent-profile-editor"] img')).toBeNull();
+    expect(document.body.querySelector('[data-testid="profile-portrait-placeholder"]')).not.toBeNull();
+
+    flushSync(() => profileButton("로젤린").click());
+    expect(document.body.querySelector('[data-testid="agent-profile-editor"] img')).toBeNull();
+    expect(document.body.querySelector('[data-testid="profile-portrait-placeholder"]')).not.toBeNull();
+  });
+
+  it("previews a selected portrait immediately and uses the returned sha after saving", async () => {
+    const NativeURL = URL;
+    const createObjectURL = vi.fn(() => "blob:selected-portrait");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", class extends NativeURL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = revokeObjectURL;
+    });
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push(`${init?.method ?? "GET"} ${url}`);
+      if (url === "/api/context-bundles") return jsonResponse({ bundles: [] });
+      if (init?.method === "PUT" && url.endsWith("/portrait")) {
+        return jsonResponse({ ...portraitProfile, version: 5, portrait: { ...portraitProfile.portrait, sha256: "new-sha" } });
+      }
+      if (init?.method === "PUT") return jsonResponse({ ...portraitProfile, version: 4 });
+      return jsonResponse({ profiles: [portraitProfile] });
+    }));
+    await renderEditor();
+
+    const fileInput = document.body.querySelector<HTMLInputElement>('input[aria-label="초상화"]');
+    expect(fileInput).not.toBeNull();
+    const file = new File(["new image"], "new.png", { type: "image/png" });
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [file] });
+    flushSync(() => fileInput?.dispatchEvent(new Event("change", { bubbles: true })));
+    await settle();
+    expect(createObjectURL).toHaveBeenCalledWith(file);
+    expect(document.body.querySelector('[data-testid="agent-profile-editor"] img')?.getAttribute("src"))
+      .toBe("blob:selected-portrait");
+
+    clickButton("프로필 저장");
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[role="status"]')?.textContent).toContain("프로필을 저장했습니다.");
+    });
+    expect(requests).toContain("PUT /api/agent-profiles/seosoyoung/portrait");
+    expect(document.body.querySelector('[data-testid="agent-profile-editor"] img')?.getAttribute("src"))
+      .toBe("/api/agent-profiles/seosoyoung/portrait?v=new-sha");
+    expect(profileButton("서소영").querySelector("img")?.getAttribute("src"))
+      .toBe("/api/agent-profiles/seosoyoung/portrait?v=new-sha");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:selected-portrait");
+  });
+
+  it("explains where context bundles are edited and how they are used", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) =>
+      String(input) === "/api/context-bundles"
+        ? jsonResponse({ bundles })
+        : jsonResponse({ profiles: [profile] })));
+    await renderEditor();
+
+    expect(document.body.textContent).toContain("번들 자체의 내용을 고치려면 상단 「컨텍스트 번들 편집」으로 가십시오.");
+    clickButton("컨텍스트 번들 편집");
+    expect(document.body.querySelector("h2")?.textContent).toBe("컨텍스트 번들");
+    expect(document.body.textContent).toContain("여러 프로필이 함께 쓰는 atom 컨텍스트 묶음입니다. 여기서 번들을 만들고 고치면, 각 프로필의 「컨텍스트 번들」 절에서 참조합니다. 참조 중인 번들은 삭제할 수 없습니다.");
+    clickButton("← 프로필 편집으로");
+    expect(document.body.querySelector('[data-testid="agent-profile-editor"]')).not.toBeNull();
   });
 
   it("saves the edited profile with its optimistic version and preserved conditions", async () => {
@@ -304,7 +394,7 @@ describe("AgentProfileEditorTab", () => {
       return jsonResponse({ profiles: [profile] });
     }));
     await renderEditor();
-    clickButton("번들 관리");
+    clickButton("컨텍스트 번들 편집");
     clickButton("새 번들");
     setInput("번들 ID", "new-bundle");
     setInput("설명", "새 번들");
@@ -356,7 +446,7 @@ describe("AgentProfileEditorTab", () => {
       return jsonResponse({ profiles: [bundledProfile] });
     }));
     await renderEditor();
-    clickButton("번들 관리");
+    clickButton("컨텍스트 번들 편집");
     clickButtonByLabel("coding");
     clickButton("번들 삭제");
     await settle();
@@ -377,7 +467,7 @@ describe("AgentProfileEditorTab", () => {
       return jsonResponse({ profiles: [profile] });
     }));
     await renderEditor();
-    clickButton("번들 관리");
+    clickButton("컨텍스트 번들 편집");
     clickButtonByLabel("coding");
     setInput("설명", "충돌할 초안");
     clickButton("번들 저장");
@@ -497,6 +587,13 @@ function clickButtonByLabel(label: string) {
   const button = document.body.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
   expect(button).not.toBeNull();
   flushSync(() => button?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+}
+
+function profileButton(name: string): HTMLButtonElement {
+  const button = Array.from(document.body.querySelectorAll<HTMLButtonElement>("aside button"))
+    .find((candidate) => candidate.textContent?.includes(name));
+  expect(button).not.toBeUndefined();
+  return button as HTMLButtonElement;
 }
 
 function setSelect(label: string, value: string) {

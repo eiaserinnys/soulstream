@@ -64,6 +64,7 @@ export function AgentProfileEditorTab() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [portraitFile, setPortraitFile] = useState<File | null>(null);
+  const [portraitPreviewUrl, setPortraitPreviewUrl] = useState<string | null>(null);
   const [removePortrait, setRemovePortrait] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [previewSource, setPreviewSource] = useState("browser");
@@ -86,6 +87,16 @@ export function AgentProfileEditorTab() {
       ...draft.atom_contexts.map((context) => ({ context, source: "프로필" })),
     ];
   }, [draft, bundles]);
+
+  useEffect(() => {
+    if (!portraitFile) {
+      setPortraitPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(portraitFile);
+    setPortraitPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [portraitFile]);
 
   useEffect(() => {
     if (!selectedNodeId || !connectedNodeIds.includes(selectedNodeId)) {
@@ -246,7 +257,7 @@ export function AgentProfileEditorTab() {
     <div>
       <div className="mb-2 flex justify-end">
         <Button type="button" size="sm" variant="outline" onClick={() => setManagingBundles(!managingBundles)}>
-          {managingBundles ? "프로필 편집" : "번들 관리"}
+          {managingBundles ? "← 프로필 편집으로" : "컨텍스트 번들 편집"}
         </Button>
       </div>
       {managingBundles ? (
@@ -261,11 +272,20 @@ export function AgentProfileEditorTab() {
           <button
             key={profile.agent_id}
             type="button"
-            className={`mb-1 w-full rounded px-3 py-2 text-left text-sm ${draft?.agent_id === profile.agent_id ? "bg-accent-blue/15 text-foreground" : "text-muted-foreground hover:bg-muted"}`}
+            className={`mb-1 flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm ${draft?.agent_id === profile.agent_id ? "bg-accent-blue/15 text-foreground" : "text-muted-foreground hover:bg-muted"}`}
             onClick={() => selectProfile(profile)}
           >
-            <span className="block font-semibold">{profile.name}</span>
-            <span className="block truncate text-xs">{profile.agent_id} · v{profile.version}</span>
+            {profile.has_portrait ? (
+              <img src={profilePortraitUrl(profile)} alt={profile.name} className="h-8 w-8 shrink-0 rounded-full object-cover" />
+            ) : (
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground" aria-hidden="true">
+                {profile.name.charAt(0)}
+              </span>
+            )}
+            <span className="min-w-0">
+              <span className="block font-semibold">{profile.name}</span>
+              <span className="block truncate text-xs">{profile.agent_id} · v{profile.version}</span>
+            </span>
           </button>
         ))}
       </aside>
@@ -291,31 +311,47 @@ export function AgentProfileEditorTab() {
               />
               <div>
                 <label className="mb-1 block text-xs font-medium">초상화</label>
-                <input
-                  aria-label="초상화"
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif"
-                  className="block w-full text-xs"
-                  onChange={(event) => choosePortrait(event, setPortraitFile, setRemovePortrait)}
-                />
-                {draft.has_portrait && (
-                  <label className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={removePortrait}
-                      onChange={(event) => {
-                        setRemovePortrait(event.target.checked);
-                        if (event.target.checked) setPortraitFile(null);
-                      }}
+                <div className="flex items-start gap-3">
+                  {!removePortrait && (portraitPreviewUrl || draft.has_portrait) ? (
+                    <img
+                      src={portraitPreviewUrl ?? profilePortraitUrl(draft)}
+                      alt={draft.name}
+                      className="h-24 w-24 shrink-0 rounded object-cover"
                     />
-                    기존 초상화 삭제
-                  </label>
-                )}
+                  ) : (
+                    <span data-testid="profile-portrait-placeholder" className="flex h-24 w-24 shrink-0 items-center justify-center rounded bg-muted text-2xl font-medium text-muted-foreground" aria-hidden="true">
+                      {draft.name.charAt(0) || "?"}
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <input
+                      aria-label="초상화"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="block w-full text-xs"
+                      onChange={(event) => choosePortrait(event, setPortraitFile, setRemovePortrait)}
+                    />
+                    {draft.has_portrait && (
+                      <label className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={removePortrait}
+                          onChange={(event) => {
+                            setRemovePortrait(event.target.checked);
+                            if (event.target.checked) setPortraitFile(null);
+                          }}
+                        />
+                        기존 초상화 삭제
+                      </label>
+                    )}
+                  </div>
+                </div>
               </div>
             </section>
 
             <section>
               <SectionHeading title="컨텍스트 번들" />
+              <p className="mb-2 text-xs text-muted-foreground">번들 자체의 내용을 고치려면 상단 「컨텍스트 번들 편집」으로 가십시오.</p>
               <div className="space-y-2">
                 {draft.context_bundles.map((bundleId, index) => {
                   const bundle = bundles.find((candidate) => candidate.bundle_id === bundleId);
@@ -492,6 +528,11 @@ function profileDraft(profile: AgentProfile): ProfileDraft {
       ? { id: alias, default_preset: "" }
       : { id: alias.id, default_preset: alias.default_preset ?? "" }),
   };
+}
+
+function profilePortraitUrl(profile: AgentProfile): string {
+  const path = `/api/agent-profiles/${encodeURIComponent(profile.agent_id)}/portrait`;
+  return profile.portrait?.sha256 ? `${path}?v=${encodeURIComponent(profile.portrait.sha256)}` : path;
 }
 
 function updateContext(draft: ProfileDraft, setDraft: (draft: ProfileDraft) => void, index: number, context: AgentAtomContext) {
