@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
-import type { FolderActorParams } from "../tasks/control_plane/task_types.js";
-import { ChecklistVersionConflict } from "../tasks/control_plane/task_models.js";
+import type { FolderActorParams } from "../checklist/control_plane/checklist_types.js";
+import { ChecklistVersionConflict } from "../checklist/control_plane/checklist_models.js";
 import type { FolderRouteOptions } from "./folder_routes.js";
 import { isFolderAllowed, normalizeAccess } from "./folder_route_access.js";
 import { executeFolderOperation, readFolderSnapshot, type FolderOperation } from "./folder_operations.js";

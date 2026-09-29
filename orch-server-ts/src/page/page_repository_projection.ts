@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { syncStarredFolderOrderProjection } from "../planner/planner_starred_task_order.js";
+import { syncStarredFolderOrderProjection } from "../planner/planner_starred_page_order.js";
 import type { PostgresQuerySql } from "../runtime/postgres_query_adapter.js";
 import type { PageYjsReplica } from "./page_yjs_model.js";
 

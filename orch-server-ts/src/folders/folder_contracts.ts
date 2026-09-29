@@ -1,4 +1,4 @@
-import type { ChecklistMutationResult, FolderRow, FolderSnapshot } from "../tasks/control_plane/task_types.js";
+import type { ChecklistMutationResult, FolderRow, FolderSnapshot } from "../checklist/control_plane/checklist_types.js";
 
 /** Row field names are converted only at the HTTP boundary; JSON content is opaque. */
 export function serializeChecklistRow(row: Record<string, unknown>): Record<string, unknown> {

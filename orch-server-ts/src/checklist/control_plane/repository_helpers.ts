@@ -1,5 +1,5 @@
-import type { RepositorySql } from "./task_types.js";
-export type { RepositorySql } from "./task_types.js";
+import type { RepositorySql } from "./checklist_types.js";
+export type { RepositorySql } from "./checklist_types.js";
 
 export type PostgresJsonValue = Parameters<RepositorySql["json"]>[0];
 

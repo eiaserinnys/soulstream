@@ -4,8 +4,8 @@ import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
-import { ChecklistControlPlaneService } from "./task_control_plane_service.js";
-import type { FolderDbPort, FolderHandoffEvent } from "./control_plane/task_types.js";
+import { ChecklistControlPlaneService } from "./checklist_control_plane_service.js";
+import type { FolderDbPort, FolderHandoffEvent } from "./control_plane/checklist_types.js";
 
 export function createChecklistControlPlaneServiceProvider(options: {
   sqlResolver: LiveDbSqlResolver;

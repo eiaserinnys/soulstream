@@ -3,7 +3,7 @@ import type {
   FolderOperationRow,
   FolderOperationActorKind,
   FolderOperationTargetKind,
-} from "./task_types.js";
+} from "./checklist_types.js";
 import { recordFromDb } from "./repository_helpers.js";
 
 export class ChecklistVersionConflict extends Error {

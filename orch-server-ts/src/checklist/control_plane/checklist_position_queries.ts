@@ -1,5 +1,5 @@
-import type { RepositorySql } from "./task_types.js";
-import { requireOne } from "./task_models.js";
+import type { RepositorySql } from "./checklist_types.js";
+import { requireOne } from "./checklist_models.js";
 
 export async function resolveSectionPositionTx(
   sql: RepositorySql,

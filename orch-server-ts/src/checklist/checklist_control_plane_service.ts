@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { generateKeyBetween } from "@soulstream/fractional-position";
 
-import { assigneeToFields, assertFolderPatchHasFields, type ChecklistAssigneeInput } from "./control_plane/task_models.js";
-import { ChecklistMutationCore } from "./control_plane/task_mutation_core.js";
-import { itemPatchOperationType, sectionPatchOperationType } from "./control_plane/task_operation_types.js";
-import { resolveItemPositionTx, resolveSectionPositionTx } from "./control_plane/task_position_queries.js";
-import { ChecklistRepository } from "./control_plane/task_repository.js";
+import { assigneeToFields, assertFolderPatchHasFields, type ChecklistAssigneeInput } from "./control_plane/checklist_models.js";
+import { ChecklistMutationCore } from "./control_plane/checklist_mutation_core.js";
+import { itemPatchOperationType, sectionPatchOperationType } from "./control_plane/checklist_operation_types.js";
+import { resolveItemPositionTx, resolveSectionPositionTx } from "./control_plane/checklist_position_queries.js";
+import { ChecklistRepository } from "./control_plane/checklist_repository.js";
 import type {
   SqlClient,
   FolderActorParams,
@@ -15,7 +15,7 @@ import type {
   ChecklistItemStatus,
   ChecklistMutationResult,
   FolderStatus,
-} from "./control_plane/task_types.js";
+} from "./control_plane/checklist_types.js";
 
 export class ChecklistControlPlaneService {
   private readonly repo: ChecklistRepository;

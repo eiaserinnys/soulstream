@@ -11,20 +11,20 @@ import type {
   FolderSnapshot,
   FolderStatus,
   SqlClient,
-} from "./task_types.js";
+} from "./checklist_types.js";
 import {
   asPostgresJsonValue,
   recordFromDb,
   type RepositorySql,
 } from "./repository_helpers.js";
-import type { FolderOperationActorKind } from "./task_types.js";
+import type { FolderOperationActorKind } from "./checklist_types.js";
 import {
   type AppendFolderOperationTxParams,
   cleanPatch,
   normalizeOperation,
   requireOne,
   ChecklistVersionConflict,
-} from "./task_models.js";
+} from "./checklist_models.js";
 
 type FolderPatch = Partial<Pick<FolderRow, "name" | "archived" | "checklist_enabled">>;
 type SectionPatch = Partial<

@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerPlannerRoutes, type PlannerRouteOptions } from "../src/planner/planner_routes.js";
 import type { PlannerReadProvider } from "../src/planner/planner_contract.js";
-import { PlannerStarredFolderMembershipConflictError } from "../src/planner/planner_starred_task_order.js";
+import { PlannerStarredFolderMembershipConflictError } from "../src/planner/planner_starred_page_order.js";
 const apps: ReturnType<typeof Fastify>[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map(a => a.close())); });
 function setup(loggedIn = true) {

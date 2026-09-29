@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ChecklistMutationCore } from "../src/tasks/control_plane/task_mutation_core.js";
-import type { ChecklistRepository } from "../src/tasks/control_plane/task_repository.js";
+import { ChecklistMutationCore } from "../src/checklist/control_plane/checklist_mutation_core.js";
+import type { ChecklistRepository } from "../src/checklist/control_plane/checklist_repository.js";
 import type {
   RepositorySql,
   FolderDbPort,
   FolderOperationRow,
   FolderSnapshot,
-} from "../src/tasks/control_plane/task_types.js";
+} from "../src/checklist/control_plane/checklist_types.js";
 
 describe("ChecklistMutationCore orchestrator transaction", () => {
   it("commits actor event, domain mutation, and operation with the same provenance", async () => {

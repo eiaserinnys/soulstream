@@ -4,7 +4,7 @@ import { createLiveDbSqlResolver } from "../src/runtime/live_db_sql.js";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { SqlFolderProjectIdentityRepository } from "../src/folders/folder_project_identity_repository.js";
 import { FolderProjectIdentityService } from "../src/folders/folder_project_identity_service.js";
-import { ChecklistControlPlaneService } from "../src/tasks/task_control_plane_service.js";
+import { ChecklistControlPlaneService } from "../src/checklist/checklist_control_plane_service.js";
 import { executeFolderOperation } from "../src/folders/folder_operations.js";
 import { PlannerRepository } from "../src/planner/planner_repository.js";
 import { PageRepository } from "../src/page/page_repository.js";

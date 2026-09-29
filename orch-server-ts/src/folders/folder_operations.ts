@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CHECKLIST_ITEM_STATUSES } from "@soulstream/wire-schema";
-import type { ChecklistControlPlaneService } from "../tasks/task_control_plane_service.js";
-import type { FolderActorParams } from "../tasks/control_plane/task_types.js";
+import type { ChecklistControlPlaneService } from "../checklist/checklist_control_plane_service.js";
+import type { FolderActorParams } from "../checklist/control_plane/checklist_types.js";
 import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
 import { serializeChecklistMutation, serializeChecklistRow, serializeFolderSnapshot } from "./folder_contracts.js";
 

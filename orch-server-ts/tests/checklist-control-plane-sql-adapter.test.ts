@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { createPostgresQueryAdapter } from "../src/runtime/postgres_query_adapter.js";
 import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
-import { ChecklistRepository } from "../src/tasks/control_plane/task_repository.js";
+import { ChecklistRepository } from "../src/checklist/control_plane/checklist_repository.js";
 
 type SqlCall = {
   query: string;

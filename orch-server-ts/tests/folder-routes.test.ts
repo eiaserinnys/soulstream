@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerFolderRoutes, type FolderRouteOptions } from "../src/folders/folder_routes.js";
-import type { ChecklistControlPlaneService } from "../src/tasks/task_control_plane_service.js";
+import type { ChecklistControlPlaneService } from "../src/checklist/checklist_control_plane_service.js";
 import type { FolderControlPlaneService } from "../src/folders/folder_control_plane_service.js";
 
 const row = { id: "f", name: "기존 폴더", parent_folder_id: null, project_page_id: "p", sort_order: 0,

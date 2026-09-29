@@ -4,7 +4,7 @@ import { serializeSessionRow } from "../runtime/live_session_serialization.js";
 import type { PlannerReadProvider, PlannerPageInput, PlannerTodayDto, PlannerFolderDetailDto } from "./planner_contract.js";
 import { blockDto, pageDto, decodeCursor, decodeStarredFolderCursor, sliceRows } from "./planner_repository_reads.js";
 import { loadPlannerFolders } from "./planner_aggregate_query.js";
-import { moveStarredFolderOrder } from "./planner_starred_task_order.js";
+import { moveStarredFolderOrder } from "./planner_starred_page_order.js";
 
 export class PlannerRepository implements PlannerReadProvider {
   constructor(private readonly resolver: LiveDbSqlResolver) {}

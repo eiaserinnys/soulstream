@@ -13,12 +13,12 @@ export { parseInlineRefs } from "./inline_refs.js";
 export {
   parseInitialFolderContextWire,
   serializeInitialFolderContext,
-} from "./initial_task_context.js";
+} from "./initial_folder_context.js";
 export type {
   InitialFolderAtomReference,
   InitialFolderContext,
   InitialFolderContextWire,
-} from "./initial_task_context.js";
+} from "./initial_folder_context.js";
 
 export {
   isMarkdownRepresentableBlockType,

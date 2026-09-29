@@ -1,4 +1,4 @@
-import type { ChecklistControlPlaneService } from "../tasks/task_control_plane_service.js";
+import type { ChecklistControlPlaneService } from "../checklist/checklist_control_plane_service.js";
 import { registerFolderWorkspaceRoutes, folderWorkspaceRouteAuthRequirements, dashboardFolderActor, folderOperationError } from "./folder_workspace_routes.js";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";

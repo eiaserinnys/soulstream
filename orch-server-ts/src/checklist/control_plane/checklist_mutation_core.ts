@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { generateKeyBetween } from "@soulstream/fractional-position";
 
-import type { RepositorySql } from "./task_types.js";
+import type { RepositorySql } from "./checklist_types.js";
 import type {
   ChecklistItemStatus,
   FolderOperationRow,
@@ -11,17 +11,17 @@ import type {
   FolderOperationTargetKind,
   FolderSnapshot,
   FolderStatus,
-} from "./task_types.js";
+} from "./checklist_types.js";
 
-import { ChecklistVersionConflict } from "./task_models.js";
-import { resolveItemPositionTx } from "./task_position_queries.js";
-import type { ChecklistRepository } from "./task_repository.js";
+import { ChecklistVersionConflict } from "./checklist_models.js";
+import { resolveItemPositionTx } from "./checklist_position_queries.js";
+import type { ChecklistRepository } from "./checklist_repository.js";
 import type {
   FolderActorParams,
   FolderBroadcasterPort,
   FolderDbPort,
   ChecklistMutationResult,
-} from "./task_types.js";
+} from "./checklist_types.js";
 
 export interface FolderMutateParams {
   folderId: string;

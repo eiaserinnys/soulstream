@@ -15,7 +15,7 @@ import { PlannerCursorError } from "./planner_repository_reads.js";
 import {
   PlannerStarredFolderMembershipConflictError,
   type PlannerStarredFolderOrderWriter,
-} from "./planner_starred_task_order.js";
+} from "./planner_starred_page_order.js";
 
 export const plannerRouteAuthRequirements = {
   "GET /api/planner/today": true,

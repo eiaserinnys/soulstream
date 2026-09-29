@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { ChecklistControlPlaneService } from "../tasks/task_control_plane_service.js";
-import type { FolderActorParams } from "../tasks/control_plane/task_types.js";
+import type { ChecklistControlPlaneService } from "../checklist/checklist_control_plane_service.js";
+import type { FolderActorParams } from "../checklist/control_plane/checklist_types.js";
 import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
 import { executeFolderOperation, folderOperationSchemas, readFolderSnapshot, type FolderOperation } from "./folder_operations.js";
 import { serializeChecklistRow, serializeFolder } from "./folder_contracts.js";

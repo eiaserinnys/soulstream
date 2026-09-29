@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { appendFolderOperation } from "./folder_operation_store.js";
 import { syncBoardYjsReplicaWithSql } from "../board-yjs/board_yjs_replica_sync.js";
 import { storePageDocument } from "../page/page_repository_projection.js";
-import { ChecklistVersionConflict } from "../tasks/control_plane/task_models.js";
+import { ChecklistVersionConflict } from "../checklist/control_plane/checklist_models.js";
 import { Buffer } from "node:buffer";
 
 import { BoardYjsSqlResolver, type BoardYjsQuerySql } from "../board-yjs/board_yjs_sql.js";
@@ -320,7 +320,7 @@ async function insertOperation(
 ): Promise<OperationRow> {
   const operation = await appendFolderOperation(sql, {
     ...input, targetKind: "folder", targetId: input.folderId,
-    actorKind: input.actor.actorKind as import("../tasks/control_plane/task_types.js").FolderOperationActorKind,
+    actorKind: input.actor.actorKind as import("../checklist/control_plane/checklist_types.js").FolderOperationActorKind,
     actorSessionId: input.actor.actorSessionId, actorUserId: input.actor.actorUserId, actorEventId: null,
   });
   return operation as OperationRow;

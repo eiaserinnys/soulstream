@@ -1,5 +1,5 @@
 import type { InitialFolderContext } from "@soulstream/page-model";
-import { initialFolderOperations } from "../tasks/task_identity_page.js";
+import { initialFolderOperations } from "./folder_initial_context.js";
 import { randomUUID } from "node:crypto";
 import * as Y from "yjs";
 

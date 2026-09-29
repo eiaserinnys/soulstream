@@ -2,7 +2,7 @@ import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery"
 import type { SessionDeliveryRepository } from "../control_plane/repositories/session_delivery_repository.js";
 import type { NodeCommandResponse } from "../node/pending_commands.js";
 import type { InterveneNodeCommandPayload } from "../session/session_action_command_payloads.js";
-import type { FolderHandoffEvent } from "../tasks/control_plane/task_types.js";
+import type { FolderHandoffEvent } from "../checklist/control_plane/checklist_types.js";
 
 /** Preserve human completion notifications through the existing durable session delivery path. */
 export async function notifyChecklistHandoff(
