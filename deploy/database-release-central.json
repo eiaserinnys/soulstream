@@ -1,5 +1,5 @@
 {
   "schema_version": "soulstream.database-release-manifest.v2",
   "affected_services": ["soulstream-orch-server", "soulstream-soul-server-ts"],
-  "required_subphases": ["folder_storage_documents"]
+  "required_subphases": []
 }

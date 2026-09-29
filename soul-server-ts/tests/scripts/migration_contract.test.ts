@@ -79,6 +79,13 @@ describe("versioned migration contract", () => {
     ), "utf8"));
 
     expect(manifest.environment_service).toBe("soulstream-orch-server");
+    expect(manifest.migration.apply.command).toBe(
+      "node packages/db-schema/scripts/release-executor.mjs apply --manifest deploy/release-manifest.json --database-contract deploy/database-release-central.json",
+    );
+    const centralContract = JSON.parse(readFileSync(fileURLToPath(
+      new URL("../../../deploy/database-release-central.json", import.meta.url),
+    ), "utf8"));
+    expect(centralContract.required_subphases).toEqual([]);
     expect(manifest.migration).not.toHaveProperty("destructive");
     expect(manifest.migration).not.toHaveProperty("backup");
     expect(manifest.migration).not.toHaveProperty("verify_backup");
@@ -157,7 +164,7 @@ describe("versioned migration contract", () => {
     expect(centralContract).toEqual({
       schema_version: "soulstream.database-release-manifest.v2",
       affected_services: ["soulstream-orch-server", "soulstream-soul-server-ts"],
-      required_subphases: ["folder_storage_documents"],
+      required_subphases: [],
     });
     expect(standalone.post_start_verify).toEqual(
       cluster.post_start_verify.map((command: { name: string }) => (

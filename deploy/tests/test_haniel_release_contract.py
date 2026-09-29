@@ -41,7 +41,11 @@ CENTRAL_DATABASE_CONTRACT_PATH = (
 STANDALONE_DATABASE_CONTRACT_PATH = (
     REPOSITORY_ROOT / "deploy" / "database-release-standalone.json"
 )
-DEPLOY_COMMAND = "node orch-server-ts/scripts/apply-folder-storage.mjs"
+DEPLOY_COMMAND = (
+    "node packages/db-schema/scripts/release-executor.mjs apply "
+    "--manifest deploy/release-manifest.json "
+    "--database-contract deploy/database-release-central.json"
+)
 WRITER_SOURCES_PATH = (
     REPOSITORY_ROOT / "deploy" / "database-release-writer-sources.json"
 )
@@ -167,7 +171,7 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
         self.assertEqual(actual_affected, ["soulstream-orch-server"])
         self.assertEqual(projected_affected, actual_affected)
 
-    def test_actual_manifests_scope_folder_documents_to_the_central_manifest(
+    def test_actual_manifests_apply_central_migrations_without_subphases(
         self,
     ) -> None:
         central = ReleaseManifest.load(MANIFEST_PATH)
@@ -184,7 +188,7 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
             ["verify-migration-ledger", "verify-release-health"],
         )
         contract = json.loads(CENTRAL_DATABASE_CONTRACT_PATH.read_text(encoding="utf8"))
-        self.assertEqual(contract["required_subphases"], ["folder_storage_documents"])
+        self.assertEqual(contract["required_subphases"], [])
         for manifest in (worker, standalone):
             self.assertTrue(
                 manifest.migration is None

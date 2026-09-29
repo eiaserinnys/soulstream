@@ -24,7 +24,7 @@
     },
     "apply": {
       "name": "apply-central-database-release",
-      "command": "node orch-server-ts/scripts/apply-folder-storage.mjs",
+      "command": "node packages/db-schema/scripts/release-executor.mjs apply --manifest deploy/release-manifest.json --database-contract deploy/database-release-central.json",
       "timeout_seconds": 300
     }
   },

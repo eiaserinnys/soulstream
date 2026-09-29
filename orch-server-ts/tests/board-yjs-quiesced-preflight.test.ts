@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-
 import { describe, expect, it, vi } from "vitest";
 
 import { assertBoardYjsQuiescedApplyPreflight } from
@@ -60,9 +58,4 @@ describe("Board Y.Doc quiesced apply preflight", () => {
     })).rejects.toThrow("could not prove");
   });
 
-  it("runs the one-time converter in schema pre-start before orch starts", async () => {
-    const source = await readFile(new URL("../scripts/apply-folder-storage.mjs", import.meta.url), "utf8");
-    expect(source).toContain("folder_storage_migration_cli");
-    expect(source).not.toContain("/api/board-yjs/host/");
-  });
 });
