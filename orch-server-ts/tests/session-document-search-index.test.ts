@@ -36,6 +36,7 @@ describe("session document search index", () => {
       session_id: "session-1",
       display_name: "  ✨—제목",
       prompt: "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.   첫 요청\n두 번째",
+      last_assistant_text: null,
       summary: "요약 😀".repeat(80),
       created_at: "2026-09-28T16:00:00.000Z",
       agent_id: "roselin",
@@ -47,13 +48,23 @@ describe("session document search index", () => {
       Array.from("제목첫요청두번째" + "요약😀".repeat(80), (character) => character.codePointAt(0)!),
     );
     expect(document.bigramLength).toBe(document.codePoints.length - 1);
-    expect(Object.keys(document).sort()).toEqual(["bigramLength", "card", "codePoints", "title"]);
+    expect(Object.keys(document).sort()).toEqual(["answerPreview", "bigramLength", "card", "codePoints", "title"]);
     expect("request" in document).toBe(false);
     expect("summary" in document).toBe(false);
     expect("text" in document).toBe(false);
     expect(Array.from(document.card.summary ?? "")).toHaveLength(300);
     expect(document.card.date).toBe("2026-09-29");
     expect(document.card.agent).toBe("roselin");
+  });
+
+  it("keeps the last assistant answer out of bigram text and the Jev card", () => {
+    const answer = ` \u3000${"완료 😀  ".repeat(30)}끝 `;
+    const withoutAnswer = assembleSessionDocument(record("a", "제목", "요청", null));
+    const withAnswer = assembleSessionDocument(record("a", "제목", "요청", null, answer));
+
+    expect(withAnswer.answerPreview).toBe(Array.from("완료 😀 ".repeat(30) + "끝", (character) => character).slice(0, 160).join(""));
+    expect(withAnswer.codePoints).toEqual(withoutAnswer.codePoints);
+    expect(withAnswer.card).toEqual(withoutAnswer.card);
   });
 
   it("ranks with BM25 and applies incremental insert, update, rename, and delete", () => {
@@ -126,7 +137,7 @@ describe("session document search index", () => {
     expect(statementTimeouts.every((timeoutMs) => timeoutMs > 3_000)).toBe(true);
   });
 
-  it("uses the last assistant answer when cold sessions have no summary", async () => {
+  it("keeps the last assistant answer as a preview when cold sessions have no summary", async () => {
     const { sql, calls } = createRefreshSql((text) => {
       if (text.includes("FROM sessions") && text.includes("left(prompt")) {
         return [record("a", "제목", "요청", null, "완료 보고: PR #1045")];
@@ -150,13 +161,14 @@ describe("session document search index", () => {
       expect.stringContaining("FROM events"),
     ]));
     expect(calls.find((call) => call.text.includes("FROM sessions"))?.text)
-      .toContain("left(last_assistant_text, 1500)");
+      .toContain("left(last_assistant_text, 400)");
     expect(calls.every((call) => !/\bLATERAL\b|\bEXISTS\s*\(/i.test(call.text))).toBe(true);
-    expect(search.index.get("a")?.card.summary).toBe("완료 보고: PR #1045");
-    expect(search.index.search("완료 보고", 10).map((hit) => hit.session_id)).toContain("a");
+    expect(search.index.get("a")?.card.summary).toBeUndefined();
+    expect(search.index.get("a")?.answerPreview).toBe("완료 보고: PR #1045");
+    expect(search.index.search("완료 보고", 10)[0]?.score).toBe(0);
   });
 
-  it("keeps a digest highlight ahead of the last assistant answer", async () => {
+  it("keeps a digest highlight as summary and the last answer as a preview", async () => {
     const { sql } = createRefreshSql((text) => {
       if (text.includes("FROM sessions") && text.includes("left(prompt")) {
         return [record("a", "제목", "요청", null, "마지막 답변")];
@@ -176,6 +188,7 @@ describe("session document search index", () => {
     });
 
     expect(search.index.get("a")?.card.summary).toBe("하이라이트 요약");
+    expect(search.index.get("a")?.answerPreview).toBe("마지막 답변");
   });
 
   it("refreshes only new, renamed, and timestamp-changed sessions", async () => {
@@ -249,12 +262,13 @@ describe("session document search index", () => {
     const changedSessionQuery = calls.find((call) =>
       call.text.includes("FROM sessions") && call.text.includes("left(prompt") && call.text.includes("ANY("));
     expect(changedSessionQuery?.values).toContainEqual(["a", "b", "d", "e"]);
-    expect(changedSessionQuery?.text).toContain("left(last_assistant_text, 1500)");
+    expect(changedSessionQuery?.text).toContain("left(last_assistant_text, 400)");
     expect(search.index.get("a")?.title).toBe("새 이름");
     expect(search.index.get("b")?.card.summary).toBe("digest B 갱신");
     expect(search.index.get("c")).toBeUndefined();
     expect(search.index.get("d")?.card.request).toBe("요청 D");
-    expect(search.index.get("e")?.card.summary).toBe("최신 완료 보고");
+    expect(search.index.get("e")?.card.summary).toBeUndefined();
+    expect(search.index.get("e")?.answerPreview).toBe("최신 완료 보고");
   });
 });
 

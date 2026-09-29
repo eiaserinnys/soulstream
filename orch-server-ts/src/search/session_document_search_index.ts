@@ -11,6 +11,7 @@ export type SessionDocumentRecord = {
   readonly session_id: string;
   readonly display_name: string | null;
   readonly prompt: string | null;
+  readonly last_assistant_text: string | null;
   readonly summary: string | null;
   readonly created_at: string;
   readonly agent_id: string | null;
@@ -26,6 +27,7 @@ export type SessionDocumentCard = {
 
 export type SessionDocument = {
   readonly title: string | null;
+  readonly answerPreview: string | null;
   readonly codePoints: Uint32Array;
   readonly bigramLength: number;
   readonly card: SessionDocumentCard;
@@ -91,6 +93,7 @@ export function chooseSessionSummary(
 export function assembleSessionDocument(row: SessionDocumentRecord): SessionDocument {
   const title = cleanTitle(row.display_name);
   const request = cleanRequest(row.prompt);
+  const answerPreview = cleanAnswerPreview(row.last_assistant_text);
   const summary = row.summary;
   const [requestText, requestCard] = clipPair(request, 1_500, 300);
   const [summaryText, summaryCard] = clipPair(summary, 1_500, 300);
@@ -102,7 +105,7 @@ export function assembleSessionDocument(row: SessionDocumentRecord): SessionDocu
     date: sessionDate(row.created_at),
     agent: row.agent_id ?? undefined,
   });
-  return { title, codePoints, bigramLength: Math.max(0, codePoints.length - 1), card };
+  return { title, answerPreview, codePoints, bigramLength: Math.max(0, codePoints.length - 1), card };
 }
 
 export class SessionDocumentSearchIndex {
@@ -353,6 +356,12 @@ function cleanRequest(value: string | null): string | null {
   if (value === null) return null;
   const cleaned = stripPythonWhitespace(value.replaceAll(PROMPT_BOILERPLATE, "").replace(PYTHON_WHITESPACE_RUN, " "));
   return cleaned || null;
+}
+
+function cleanAnswerPreview(value: string | null): string | null {
+  if (value === null) return null;
+  const cleaned = stripPythonWhitespace(value.replace(PYTHON_WHITESPACE_RUN, " "));
+  return Array.from(cleaned).slice(0, 160).join("") || null;
 }
 
 function stripPythonWhitespace(value: string): string {

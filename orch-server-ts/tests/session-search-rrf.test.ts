@@ -4,6 +4,7 @@ import {
   buildSessionSearchRrfPool,
   filterTitleResultsToIndexedSessions,
   orderSessionSearchResults,
+  withSessionCardExcerpt,
   type SessionSearchPoolCandidate,
 } from "../src/search/session_search_rrf.js";
 
@@ -44,6 +45,34 @@ describe("expanded session search RRF", () => {
       { session_id: "b", relevance: null },
       { session_id: "a", relevance: null },
     ]);
+  });
+
+  it("uses the last-answer preview when the card has no summary", () => {
+    const pool = buildSessionSearchRrfPool(
+      [result("a", "2026-09-01")],
+      [],
+      () => ({ request: "첫 요청" }),
+    );
+    const candidate = orderSessionSearchResults(pool, null)[0]!;
+
+    expect(withSessionCardExcerpt(candidate, "완료 보고")).toMatchObject({
+      excerpt: "완료 보고",
+      best_match: { excerpt: "완료 보고" },
+    });
+  });
+
+  it("keeps the card summary ahead of the last-answer preview", () => {
+    const pool = buildSessionSearchRrfPool(
+      [result("a", "2026-09-01")],
+      [],
+      () => ({ summary: "하이라이트", request: "첫 요청" }),
+    );
+    const candidate = orderSessionSearchResults(pool, null)[0]!;
+
+    expect(withSessionCardExcerpt(candidate, "완료 보고")).toMatchObject({
+      excerpt: "하이라이트",
+      best_match: { excerpt: "하이라이트" },
+    });
   });
 
   it("omits A0-only LLM sessions from expanded results", () => {

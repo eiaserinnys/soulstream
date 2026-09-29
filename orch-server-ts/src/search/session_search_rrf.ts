@@ -66,8 +66,9 @@ export function orderSessionSearchResults<T extends { readonly session_id: strin
 
 export function withSessionCardExcerpt(
   candidate: SessionSearchPoolCandidate & { readonly relevance: number | null },
+  answerPreview: string | null,
 ): SessionSearchPoolResult & { readonly relevance: number | null } {
-  const excerptSource = candidate.card.summary || candidate.card.request;
+  const excerptSource = candidate.card.summary || answerPreview || candidate.card.request;
   if (!excerptSource) return { ...candidate.result, relevance: candidate.relevance };
 
   const excerpt = Array.from(excerptSource).slice(0, 160).join("");
