@@ -106,6 +106,146 @@ describe("live Cogito search provider", () => {
     });
   });
 
+  it("uses the session card summary for a title-only expanded result", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("WITH requested AS")) {
+        throw Object.assign(new Error("statement timeout"), { code: "57014" });
+      }
+      if (text.includes("'session_metadata'::text AS event_type")) {
+        return [{
+          id: null,
+          session_id: "session-a",
+          event_type: "session_metadata",
+          searchable_text: "delegation prompt header",
+          created_at: "2026-09-23T00:00:00.000Z",
+          score: 2,
+          match_source: "title",
+          display_name: "cold title",
+          session_prompt: "",
+          folder_id: "folder-a",
+          predecessor_session_id: null,
+          session_updated_at: "2026-09-23T00:00:00.000Z",
+          task_id: null,
+          task_title: null,
+        }];
+      }
+      if (text.includes("left(prompt, 2000)")) {
+        return [{
+          session_id: "session-a",
+          display_name: "cold title",
+          prompt: "",
+          created_at: "2026-09-23T00:00:00.000Z",
+          agent_id: "agent-a",
+        }];
+      }
+      if (text.includes("left(highlight, 1500) AS highlight")) {
+        return [{ session_id: "session-a", highlight: "실제 작업 요약" }];
+      }
+      return [];
+    });
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(harness.sql),
+    });
+
+    const response = await provider.search({
+      q: "cold title",
+      top_k: 5,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      include_session_results: true,
+      session_search_mode: "expanded",
+    });
+
+    expect(response.session_results).toMatchObject([{
+      session_id: "session-a",
+      excerpt: "실제 작업 요약",
+      best_match: { match_source: "title", excerpt: "실제 작업 요약" },
+      evidence: [{ source: "title", excerpt: "delegation prompt header" }],
+    }]);
+  });
+
+  it("uses the cleaned card request when an expanded result has no summary", async () => {
+    const request = "첫 요청: 세션 검색 결과의 날짜와 요약 발췌를 고쳐줘";
+    const harness = createSqlHarness((text) => {
+      if (text.includes("'session_metadata'::text AS event_type")) {
+        return [{
+          id: null,
+          session_id: "session-a",
+          event_type: "session_metadata",
+          searchable_text: "delegation prompt header",
+          created_at: "2026-09-23T00:00:00.000Z",
+          score: 2,
+          match_source: "title",
+          display_name: "세션 검색 작업",
+          session_prompt: request,
+          folder_id: "folder-a",
+          predecessor_session_id: null,
+          session_updated_at: "2026-09-23T00:00:00.000Z",
+          task_id: null,
+          task_title: null,
+        }];
+      }
+      if (text.includes("left(prompt, 2000)")) {
+        return [{
+          session_id: "session-a",
+          display_name: "세션 검색 작업",
+          prompt: request,
+          created_at: "2026-09-23T00:00:00.000Z",
+          agent_id: "agent-a",
+        }];
+      }
+      if (text.includes("left(highlight, 1500) AS highlight")) {
+        return [{ session_id: "session-a", highlight: null }];
+      }
+      if (text.includes("WITH requested AS")) {
+        return [{
+          session_id: "session-a",
+          display_name: "세션 검색 작업",
+          session_prompt: request,
+          review_required: false,
+          folder_id: "folder-a",
+          node_id: "eiaserinnys",
+          status: "completed",
+          backend: "claude",
+          agent_name: "roselin",
+          parent_session_id: null,
+          session_updated_at: "2026-09-23T00:00:00.000Z",
+          task_id: null,
+          task_title: null,
+          task_evidence_kind: null,
+          task_evidence_title: null,
+        }];
+      }
+      return [];
+    });
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(harness.sql),
+      typesafeApiKey: "test-key",
+      jevFetcher: async () => new Response(JSON.stringify({ answers: { c0: { noul: 0.9 } } }), {
+        status: 200,
+      }),
+    });
+
+    const response = await provider.search({
+      q: "세션 검색",
+      top_k: 5,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      include_session_results: true,
+      session_search_mode: "expanded",
+    });
+
+    expect(response.session_results).toMatchObject([{
+      session_id: "session-a",
+      excerpt: request,
+      best_match: { excerpt: request },
+    }]);
+  });
+
   it("queries shared PostgreSQL once, deduplicates event/session matches, and returns navigation", async () => {
     const harness = createSqlHarness((text) => {
       if (text.includes("event_search")) {

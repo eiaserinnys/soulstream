@@ -17,6 +17,7 @@ type CogitoSearchResult = {
   agent_name: string | null;
   node_id: string | null;
   status: string | null;
+  created_at: string | null;
   updated_at: string | null;
   task_title: string | null;
   relevance?: number | null;
@@ -102,6 +103,7 @@ export function registerSearchSessionsTool(
             agent_name: result.agent_name,
             node_id: result.node_id,
             status: result.status,
+            created_at: result.created_at,
             updated_at: result.updated_at,
             task_title: result.task_title,
             relevance: result.relevance ?? null,

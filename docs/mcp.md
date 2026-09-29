@@ -106,7 +106,7 @@ belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 | `get_session_turn_summaries(session_id, mode, ...)` | Stored turn-summary count, single index, or chronological range |
 | `list_session_events(session_id, event_types, ...)` | Raw event stream with pagination and truncation control |
 | `get_session_event(session_id, event_id)` | Full content of a single event (no truncation) |
-| `search_sessions(query, top_k=10, folder_id)` | Search past sessions by meaning, ranked by relevance; use `search_session_history` for exact event text |
+| `search_sessions(query, top_k=10, folder_id)` | Search past sessions by meaning, ranked by relevance; includes `created_at` and `updated_at` ISO timestamps; use `search_session_history` for exact event text |
 | `search_session_history(query, session_ids, event_types, search_session_id, top_k)` | BM25 event search with actual turn count and saved summary/story/highlight presence metadata; use `search_sessions` first for session-level search |
 
 ### Session management
