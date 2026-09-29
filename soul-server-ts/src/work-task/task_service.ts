@@ -4,7 +4,7 @@ import type { FolderSnapshot, FolderStatus, TaskItemStatus } from "../db/session
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import { FolderVersionConflict, type ChecklistAssigneeInput } from "./task_models.js";
-import type { FolderActorParams, FolderHandoffNotifierPort, FolderMutationResult } from "./task_service_models.js";
+import type { FolderActorParams, FolderHandoffNotifierPort, FolderIdentityMutationResult, FolderMutationResult } from "./task_service_models.js";
 
 export type { FolderActorParams, FolderMutationResult } from "./task_service_models.js";
 
@@ -21,8 +21,13 @@ export class FolderService {
     this.handoffNotifier = notifier;
   }
 
-  async getFolder(folderId: string): Promise<FolderSnapshot | null> {
-    return await this.request("get_folder", { folderId });
+  async getFolder(folderId: string, options: { view?: "full" | "outline"; itemId?: string } = {}): Promise<FolderSnapshot | null> {
+    try {
+      return await this.request("get_folder", { folderId, ...options });
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 404) return null;
+      throw error;
+    }
   }
 
   async listChildFolders(params: { folderId: string | null; includeArchived?: boolean; limit?: number }) {
@@ -42,25 +47,24 @@ export class FolderService {
   }
 
   async createFolder(params: FolderActorParams & {
-    folderId?: string;
     parentFolderId?: string | null;
     name: string;
     description?: string;
     checklistEnabled?: boolean;
     initialContext?: unknown;
-    x?: number;
-    y?: number;
+    sortOrder?: number;
     idempotencyKey: string;
-  }): Promise<FolderMutationResult> {
-    return await this.mutate("create_folder", params);
+  }): Promise<FolderIdentityMutationResult> {
+    return await this.mutate<FolderIdentityMutationResult>("create_folder", params);
   }
 
-  async renameFolder(params: FolderActorParams & { folderId: string; expectedVersion: number; name: string; reason?: string | null; idempotencyKey: string }): Promise<FolderMutationResult> {
-    return await this.mutate("rename_folder", params);
+  async renameFolder(params: FolderActorParams & { folderId: string; expectedVersion: number; name?: string; parentFolderId?: string | null; sortOrder?: number; settings?: Record<string, unknown>; reason?: string | null; idempotencyKey: string }): Promise<FolderIdentityMutationResult> {
+    return await this.mutate<FolderIdentityMutationResult>("rename_folder", params);
   }
 
-  async setFolderArchived(params: FolderActorParams & { folderId: string; expectedVersion: number; archived: boolean; reason?: string | null; idempotencyKey: string }): Promise<FolderMutationResult> {
-    return await this.mutate(params.archived ? "archive_folder" : "unarchive_folder", params);
+  async setFolderArchived(params: FolderActorParams & { folderId: string; expectedVersion: number; archived: boolean; reason?: string | null; idempotencyKey: string }): Promise<FolderIdentityMutationResult> {
+    const { archived, ...input } = params;
+    return await this.mutate<FolderIdentityMutationResult>(archived ? "archive_folder" : "unarchive_folder", input);
   }
 
   async setFolderStatus(params: FolderActorParams & { folderId: string; expectedVersion: number; status: FolderStatus; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
@@ -71,13 +75,14 @@ export class FolderService {
     return await this.mutate("set_folder_checklist_enabled", params);
   }
 
-  async createChecklistSection(params: FolderActorParams & { folderId: string; title: string; sectionId?: string; assignee?: ChecklistAssigneeInput | null; afterSectionId?: string | null; beforeSectionId?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
+  async createChecklistSection(params: FolderActorParams & { folderId: string; title: string; assignee?: ChecklistAssigneeInput | null; afterSectionId?: string | null; beforeSectionId?: string | null; idempotencyKey: string }): Promise<FolderMutationResult> {
     return await this.mutate("create_checklist_section", params);
   }
 
   async updateChecklistSection(params: FolderActorParams & { folderId: string; sectionId: string; expectedVersion: number; title?: string; archived?: boolean; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
     const operation = params.archived === true ? "archive_checklist_section" : params.archived === false ? "unarchive_checklist_section" : "update_checklist_section";
-    return await this.mutate(operation, params);
+    const { archived, ...input } = params;
+    return await this.mutate(operation, input);
   }
 
   async setChecklistSectionAssignee(params: FolderActorParams & { folderId: string; sectionId: string; expectedVersion: number; assignee?: ChecklistAssigneeInput | null; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
@@ -88,13 +93,14 @@ export class FolderService {
     return await this.mutate("move_checklist_section", params);
   }
 
-  async createChecklistItem(params: FolderActorParams & { folderId: string; sectionId: string; title: string; howTo?: string; itemId?: string; assignee?: ChecklistAssigneeInput | null; afterItemId?: string | null; beforeItemId?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
+  async createChecklistItem(params: FolderActorParams & { folderId: string; sectionId: string; title: string; howTo?: string; assignee?: ChecklistAssigneeInput | null; afterItemId?: string | null; beforeItemId?: string | null; idempotencyKey: string }): Promise<FolderMutationResult> {
     return await this.mutate("create_checklist_item", params);
   }
 
   async updateChecklistItem(params: FolderActorParams & { folderId: string; itemId: string; expectedVersion: number; title?: string; howTo?: string; archived?: boolean; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
     const operation = params.archived === true ? "archive_checklist_item" : params.archived === false ? "unarchive_checklist_item" : "update_checklist_item";
-    return await this.mutate(operation, params);
+    const { archived, ...input } = params;
+    return await this.mutate(operation, input);
   }
 
   async setChecklistItemAssignee(params: FolderActorParams & { folderId: string; itemId: string; expectedVersion: number; assignee?: ChecklistAssigneeInput | null; reason?: string | null; idempotencyKey?: string | null }): Promise<FolderMutationResult> {
@@ -109,9 +115,9 @@ export class FolderService {
     return await this.mutate("set_checklist_item_status", params);
   }
 
-  private async mutate(operation: string, input: object): Promise<FolderMutationResult> {
+  private async mutate<T extends FolderMutationResult>(operation: string, input: object): Promise<T> {
     const actor = input as { actorKind?: unknown };
-    const result = await this.request<FolderMutationResult>(operation, { ...input, actorKind: actor.actorKind ?? "agent" });
+    const result = await this.request<T>(operation, { ...input, actorKind: actor.actorKind ?? "agent" });
     if (result.handoff) {
       try {
         this.handoffNotifier?.notifyHumanHandoff(result.handoff);
@@ -138,7 +144,16 @@ export class FolderService {
 }
 
 function snakeCaseFields(value: object): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(value)
+  const { assignee, ...fields } = value as Record<string, unknown>;
+  const assigneeFields = assignee === undefined ? {} : assignee === null
+    ? { assigneeKind: null }
+    : {
+      assigneeKind: (assignee as ChecklistAssigneeInput).kind,
+      assigneeAgentId: (assignee as ChecklistAssigneeInput).agentId,
+      assigneeSessionId: (assignee as ChecklistAssigneeInput).sessionId,
+      assigneeUserId: (assignee as ChecklistAssigneeInput).userId,
+    };
+  return Object.fromEntries(Object.entries({ ...fields, ...assigneeFields })
     .filter(([, child]) => child !== undefined)
     .map(([key, child]) => [key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`), child]));
 }

@@ -198,16 +198,17 @@ describe("worker control-plane host clients", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       error: { code: "BAD_INPUT", message: "invalid folder", details: { field: "name" } },
     }), { status: 400 })));
-    const client = new (await import("../src/folder/folder_project_identity_host_client.js"))
-      .FolderProjectIdentityHostClient({ orch, logger });
+    const client = new FolderService({ orch, logger });
 
-    await expect(client.create({
+    await expect(client.createFolder({
+      actorKind: "system",
+      actorSessionId: null,
       name: "",
       sortOrder: 0,
       parentFolderId: null,
       idempotencyKey: "idem-1",
     })).rejects.toMatchObject({
-      message: "folder project identity host create failed: invalid folder",
+      message: "folder host create_folder failed: invalid folder",
     });
   });
 
@@ -293,6 +294,24 @@ describe("worker control-plane host clients", () => {
       session_id: "session-1",
       folder_id: "folder-1",
     });
+  });
+
+  it("reads a folder header from the canonical folder snapshot host operation", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      folder: {
+        id: "folder-1", name: "Work", checklistEnabled: true, status: "open",
+        version: 4, settings: { folderPrompt: "Guide" }, parentFolderId: null,
+      },
+      sections: [], items: [],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new FolderHostClient({ orch, logger });
+
+    await expect(client.getFolderById("folder-1")).resolves.toMatchObject({
+      id: "folder-1", name: "Work", checklist_enabled: true,
+      settings: { folderPrompt: "Guide" }, parent_folder_id: null,
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/folders/host/get_folder");
   });
 
   it("serializes background terminalize and its delivery identity in one request", async () => {

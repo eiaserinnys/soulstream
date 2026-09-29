@@ -6,6 +6,7 @@ import type {
   CatalogFolderRow,
   CatalogSessionAssignmentRow,
   FolderRow,
+  FolderSnapshot,
 } from "../db/session_db_types.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
@@ -22,8 +23,14 @@ export class FolderHostClient {
   getDefaultFolder(name: string): Promise<{ id: string; name: string } | null> {
     return this.request("get_default", { name });
   }
-  getFolderById(folderId: string): Promise<FolderRow | null> {
-    return this.request("get_folder", { folder_id: folderId });
+  async getFolderById(folderId: string): Promise<FolderRow | null> {
+    try {
+      const snapshot = await this.request<FolderSnapshot>("get_folder", { folder_id: folderId });
+      return folderHostRowToDbRow(snapshot.folder);
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 404) return null;
+      throw error;
+    }
   }
   getAllFolders(): Promise<FolderRow[]> {
     return this.request("get_all", {});
@@ -38,14 +45,6 @@ export class FolderHostClient {
   getSessionAssignmentsByIds(sessionIds: readonly string[]): Promise<CatalogSessionAssignmentRow[]> {
     return this.request("get_session_assignments", { session_ids: sessionIds });
   }
-  async updateFolder(
-    folderId: string,
-    columns: ReadonlyArray<"name" | "sort_order" | "settings" | "parent_folder_id">,
-    values: ReadonlyArray<string | null>,
-  ): Promise<void> {
-    await this.request("update", { folder_id: folderId, columns, values });
-  }
-
   private async request<T>(operation: string, body: object): Promise<T> {
     const response = await this.transport.send(
       "POST",
@@ -55,8 +54,14 @@ export class FolderHostClient {
     if (!response.ok) {
       const detail = await readOrchErrorEnvelope(response);
       this.config.logger.warn({ operation, status: response.status, message: detail.message }, "folder host request failed");
-      throw new Error(`folder host ${operation} failed: ${detail.message}`);
+      throw Object.assign(new Error(`folder host ${operation} failed: ${detail.message}`), { statusCode: response.status });
     }
     return await response.json() as T;
   }
+}
+
+function folderHostRowToDbRow(row: FolderSnapshot["folder"]): FolderRow {
+  return Object.fromEntries(Object.entries(row).map(([key, value]) => [
+    key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`), value,
+  ])) as unknown as FolderRow;
 }

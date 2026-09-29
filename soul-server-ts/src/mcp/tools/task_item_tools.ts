@@ -12,7 +12,6 @@ import {
   expectedVersionSchema,
   idempotencyKeySchema,
   mutation,
-  mutationResponseInputSchema,
   mutationToolDescription,
   optionalReasonSchema,
   checklistItemStatusSchema,
@@ -29,12 +28,10 @@ export function registerChecklistItemTools(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템을 생성한다.",
       ),
       inputSchema: {
-        ...mutationResponseInputSchema,
         folder_id: z.string().min(1),
         section_id: z.string().min(1),
         title: z.string().min(1),
         how_to: z.string().default(""),
-        item_id: z.string().min(1).optional(),
         assignee: assigneeSchema,
         after_item_id: z.string().nullable().optional(),
         before_item_id: z.string().nullable().optional(),
@@ -53,13 +50,11 @@ export function registerChecklistItemTools(
             sectionId: input.section_id,
             title: input.title,
             howTo: input.how_to,
-            itemId: input.item_id,
             afterItemId: input.after_item_id,
             beforeItemId: input.before_item_id,
             idempotencyKey: input.idempotency_key,
             ...assigneePatch(input),
           }),
-        { targetKind: "item", includeSnapshot: input.include_snapshot },
       ),
   );
 
@@ -70,7 +65,6 @@ export function registerChecklistItemTools(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템 제목 또는 본문을 수정한다.",
       ),
       inputSchema: {
-        ...mutationResponseInputSchema,
         folder_id: z.string().min(1),
         item_id: z.string().min(1),
         expected_version: expectedVersionSchema,
@@ -96,7 +90,6 @@ export function registerChecklistItemTools(
             reason: input.reason,
             idempotencyKey: input.idempotency_key,
           }),
-        { targetKind: "item", includeSnapshot: input.include_snapshot },
       ),
   );
 
@@ -107,7 +100,6 @@ export function registerChecklistItemTools(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템 담당자를 설정하거나 해제한다.",
       ),
       inputSchema: {
-        ...mutationResponseInputSchema,
         folder_id: z.string().min(1),
         item_id: z.string().min(1),
         expected_version: expectedVersionSchema,
@@ -131,7 +123,6 @@ export function registerChecklistItemTools(
             idempotencyKey: input.idempotency_key,
             ...assigneePatch(input),
           }),
-        { targetKind: "item", includeSnapshot: input.include_snapshot },
       ),
   );
 
@@ -155,7 +146,6 @@ export function registerChecklistItemTools(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템을 다른 위치나 섹션으로 이동한다.",
       ),
       inputSchema: {
-        ...mutationResponseInputSchema,
         folder_id: z.string().min(1),
         item_id: z.string().min(1),
         expected_version: expectedVersionSchema,
@@ -183,7 +173,6 @@ export function registerChecklistItemTools(
             reason: input.reason,
             idempotencyKey: input.idempotency_key,
           }),
-        { targetKind: "item", includeSnapshot: input.include_snapshot },
       ),
   );
 
@@ -194,7 +183,6 @@ export function registerChecklistItemTools(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템 상태를 설정한다.",
       ),
       inputSchema: {
-        ...mutationResponseInputSchema,
         folder_id: z.string().min(1),
         item_id: z.string().min(1),
         status: checklistItemStatusSchema,
@@ -218,7 +206,6 @@ export function registerChecklistItemTools(
             reason: input.reason,
             idempotencyKey: input.idempotency_key,
           }),
-        { targetKind: "item", includeSnapshot: input.include_snapshot },
       ),
   );
 }
@@ -237,7 +224,6 @@ function registerItemArchiveTool(
     {
       description: mutationToolDescription(config.description),
       inputSchema: {
-        ...mutationResponseInputSchema,
         folder_id: z.string().min(1),
         item_id: z.string().min(1),
         expected_version: expectedVersionSchema,
@@ -260,7 +246,6 @@ function registerItemArchiveTool(
             reason: input.reason,
             idempotencyKey: input.idempotency_key,
           }),
-        { targetKind: "item", includeSnapshot: input.include_snapshot },
       ),
   );
 }

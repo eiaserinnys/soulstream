@@ -11,7 +11,6 @@ import {
   expectedVersionSchema,
   idempotencyKeySchema,
   mutation,
-  mutationResponseInputSchema,
   mutationToolDescription,
   optionalReasonSchema,
 } from "./task_shared.js";
@@ -27,10 +26,8 @@ export function registerChecklistSectionTools(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션을 생성한다.",
       ),
       inputSchema: {
-        ...mutationResponseInputSchema,
         folder_id: z.string().min(1),
         title: z.string().min(1),
-        section_id: z.string().min(1).optional(),
         assignee: assigneeSchema,
         after_section_id: z.string().nullable().optional(),
         before_section_id: z.string().nullable().optional(),
@@ -47,13 +44,11 @@ export function registerChecklistSectionTools(
             ...actor,
             folderId: input.folder_id,
             title: input.title,
-            sectionId: input.section_id,
             afterSectionId: input.after_section_id,
             beforeSectionId: input.before_section_id,
             idempotencyKey: input.idempotency_key,
             ...assigneePatch(input),
           }),
-        { targetKind: "section", includeSnapshot: input.include_snapshot },
       ),
   );
 
@@ -64,7 +59,6 @@ export function registerChecklistSectionTools(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션 제목을 수정한다.",
       ),
       inputSchema: {
-        ...mutationResponseInputSchema,
         folder_id: z.string().min(1),
         section_id: z.string().min(1),
         expected_version: expectedVersionSchema,
@@ -88,7 +82,6 @@ export function registerChecklistSectionTools(
             reason: input.reason,
             idempotencyKey: input.idempotency_key,
           }),
-        { targetKind: "section", includeSnapshot: input.include_snapshot },
       ),
   );
 
@@ -99,7 +92,6 @@ export function registerChecklistSectionTools(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션 담당자를 설정하거나 해제한다.",
       ),
       inputSchema: {
-        ...mutationResponseInputSchema,
         folder_id: z.string().min(1),
         section_id: z.string().min(1),
         expected_version: expectedVersionSchema,
@@ -123,7 +115,6 @@ export function registerChecklistSectionTools(
             idempotencyKey: input.idempotency_key,
             ...assigneePatch(input),
           }),
-        { targetKind: "section", includeSnapshot: input.include_snapshot },
       ),
   );
 
@@ -147,7 +138,6 @@ export function registerChecklistSectionTools(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션 position_key를 재계산한다.",
       ),
       inputSchema: {
-        ...mutationResponseInputSchema,
         folder_id: z.string().min(1),
         section_id: z.string().min(1),
         expected_version: expectedVersionSchema,
@@ -173,7 +163,6 @@ export function registerChecklistSectionTools(
             reason: input.reason,
             idempotencyKey: input.idempotency_key,
           }),
-        { targetKind: "section", includeSnapshot: input.include_snapshot },
       ),
   );
 }
@@ -192,7 +181,6 @@ function registerSectionArchiveTool(
     {
       description: mutationToolDescription(config.description),
       inputSchema: {
-        ...mutationResponseInputSchema,
         folder_id: z.string().min(1),
         section_id: z.string().min(1),
         expected_version: expectedVersionSchema,
@@ -215,7 +203,6 @@ function registerSectionArchiveTool(
             reason: input.reason,
             idempotencyKey: input.idempotency_key,
           }),
-        { targetKind: "section", includeSnapshot: input.include_snapshot },
       ),
   );
 }

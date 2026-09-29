@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import type { ChecklistAssigneeInput } from "../../work-task/task_models.js";
 import type { FolderService } from "../../work-task/task_service.js";
-import type { FolderOperationTargetKind } from "../../db/session_db_types.js";
 import { errorResultFromError, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import {
@@ -10,7 +9,7 @@ import {
   requireMcpMutationActor,
   type McpMutationActor,
 } from "./caller_session.js";
-import { formatFolderMutationResponse, type FolderMutationEnvelope } from "./task_response.js";
+import type { FolderMutationResult } from "../../work-task/task_service_models.js";
 
 export const checklistItemStatusSchema = z.enum(["pending", "in_progress", "review", "completed", "cancelled"]);
 export const folderStatusSchema = z.enum(["open", "completed"]);
@@ -25,21 +24,18 @@ export const idempotencyKeySchema = z.string().min(1);
 export const optionalReasonSchema = z.string().nullable().optional();
 export const expectedVersionSchema = z.number().int().positive();
 export const callerSessionIdSchema = z.string().optional();
-export const mutationResponseInputSchema = { include_snapshot: z.boolean().default(false) };
-
 export function mutationToolDescription(description: string): string {
-  return `${description} 기본 응답은 operation, 변경된 target row, folder 헤더만 반환한다. 전체 snapshot이 필요하면 include_snapshot=true를 사용한다. ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`;
+  return `${description} 변경 결과는 폴더 또는 체크리스트 항목과 operation을 반환한다. 전체 체크리스트는 get_folder로 조회한다. ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`;
 }
 
 export async function mutation(
   runtime: McpRuntime,
   explicitCallerSessionId: string | null | undefined,
-  fn: (service: FolderService, actor: McpMutationActor) => Promise<FolderMutationEnvelope>,
-  options: { targetKind: FolderOperationTargetKind; includeSnapshot: boolean },
+  fn: (service: FolderService, actor: McpMutationActor) => Promise<FolderMutationResult>,
 ) {
   try {
     const result = await fn(getFolderService(runtime), requireMcpMutationActor(explicitCallerSessionId, "folder/checklist mutation tools"));
-    return jsonResult(formatFolderMutationResponse(result, options.targetKind, options.includeSnapshot));
+    return jsonResult(result);
   } catch (err) {
     return errorResultFromError(err);
   }

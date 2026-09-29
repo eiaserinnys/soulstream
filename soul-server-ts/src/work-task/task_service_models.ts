@@ -5,13 +5,23 @@ import type {
   FolderSnapshot,
 } from "../db/session_db_types.js";
 
-export interface FolderMutationResult {
-  snapshot: FolderSnapshot;
+interface FolderMutationBase {
   operation: FolderOperationRow;
-  eventId: number;
-  idempotent?: boolean;
+  idempotent: boolean;
   handoff?: FolderHandoffEvent;
 }
+
+export interface FolderIdentityMutationResult extends FolderMutationBase {
+  folder: FolderSnapshot["folder"];
+}
+
+export interface ChecklistMutationResult extends FolderMutationBase {
+  folderId: string;
+  section?: Record<string, unknown> & { id: string } | null;
+  item?: Record<string, unknown> & { id: string } | null;
+}
+
+export type FolderMutationResult = FolderIdentityMutationResult | ChecklistMutationResult;
 
 export interface FolderActorParams {
   actorKind?: FolderOperationActorKind;

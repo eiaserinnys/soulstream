@@ -21,7 +21,7 @@ import type {
   SessionDB,
 } from "../db/session_db.js";
 import { assertMutableFolder } from "../system_folders.js";
-import type { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
+import type { FolderService } from "../work-task/task_service.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import {
@@ -123,9 +123,9 @@ export class CatalogService {
     private readonly db: SessionDB,
     private readonly broadcaster: SessionBroadcaster,
     boardYjsService?: CatalogBoardYjsPort,
-    private readonly folderProjectIdentityHost?: Pick<
-      FolderProjectIdentityHostClient,
-      "create" | "rename" | "archive"
+    private readonly folderService?: Pick<
+      FolderService,
+      "createFolder" | "renameFolder" | "setFolderArchived"
     >,
     private readonly sessionMutations?: SessionMutationHost,
   ) {
@@ -219,10 +219,12 @@ export class CatalogService {
     sortOrder = 0,
     parentFolderId: string | null = null,
   ): Promise<CatalogFolderDto> {
-    if (!this.folderProjectIdentityHost) {
-      throw new Error("folder identity host is required to create folders");
+    if (!this.folderService) {
+      throw new Error("folder service is required to create folders");
     }
-    return (await this.folderProjectIdentityHost.create({
+    return (await this.folderService.createFolder({
+      actorKind: "system",
+      actorSessionId: null,
       name,
       sortOrder,
       parentFolderId,
@@ -232,25 +234,19 @@ export class CatalogService {
 
   async renameFolder(folderId: string, name: string): Promise<void> {
     assertMutableFolder(folderId, "renamed");
-    if (this.folderProjectIdentityHost) {
-      await this.folderProjectIdentityHost.rename({
-        folderId,
-        name,
-        idempotencyKey: randomUUID(),
-      });
-      return;
-    }
-    await this.db.updateFolder(folderId, ["name"], [name]);
-    await this.broadcastCatalog();
+    await this.renameFolderFields(folderId, { name });
   }
 
   async deleteFolder(folderId: string): Promise<void> {
     assertMutableFolder(folderId, "deleted");
-    if (!this.folderProjectIdentityHost) {
-      throw new Error("orchestrator folder project identity port is not configured");
-    }
-    await this.folderProjectIdentityHost.archive({
+    if (!this.folderService) throw new Error("folder service is required");
+    const folder = await this.requireFolder(folderId);
+    await this.folderService.setFolderArchived({
+      actorKind: "system",
+      actorSessionId: null,
       folderId,
+      expectedVersion: folder.version,
+      archived: true,
       idempotencyKey: randomUUID(),
     });
   }
@@ -339,12 +335,7 @@ export class CatalogService {
     } else {
       delete settings.folderPrompt;
     }
-    await this.db.updateFolder(
-      folderId,
-      ["settings"],
-      [JSON.stringify(settings)],
-    );
-    await this.broadcastCatalog();
+    await this.renameFolderFields(folderId, { settings }, folder.version);
   }
 
   async setFolderParent(
@@ -352,13 +343,7 @@ export class CatalogService {
     parentFolderId: string | null,
   ): Promise<void> {
     assertMutableFolder(folderId, "moved");
-    await this.assertParentAllowed(folderId, parentFolderId);
-    await this.db.updateFolder(
-      folderId,
-      ["parent_folder_id"],
-      [parentFolderId],
-    );
-    await this.broadcastCatalog();
+    await this.renameFolderFields(folderId, { parentFolderId });
   }
 
   /** 폴더 전체와 변경된 세션·보드 항목만 발행한다. */
@@ -426,28 +411,27 @@ export class CatalogService {
     await this.boardItems.deleteMarkdownDocument(documentId);
   }
 
-  private async assertParentAllowed(
+  private async requireFolder(folderId: string) {
+    const folder = await this.db.getFolderById(folderId);
+    if (!folder) throw new Error(`folder not found: ${folderId}`);
+    return folder;
+  }
+
+  private async renameFolderFields(
     folderId: string,
-    parentFolderId: string | null,
+    fields: { name?: string; parentFolderId?: string | null; settings?: Record<string, unknown> },
+    expectedVersion?: number,
   ): Promise<void> {
-    if (parentFolderId === null) return;
-    if (folderId === parentFolderId) {
-      throw new Error("folder parent cycle");
-    }
-    const folders = await this.db.getAllFolders();
-    const parentById = new Map(folders.map((folder) => [folder.id, folder.parent_folder_id]));
-    let current: string | null | undefined = parentFolderId;
-    const seen = new Set<string>();
-    while (current) {
-      if (current === folderId) {
-        throw new Error("folder parent cycle");
-      }
-      if (seen.has(current)) {
-        throw new Error("folder parent cycle");
-      }
-      seen.add(current);
-      current = parentById.get(current);
-    }
+    if (!this.folderService) throw new Error("folder service is required");
+    const version = expectedVersion ?? (await this.requireFolder(folderId)).version;
+    await this.folderService.renameFolder({
+      actorKind: "system",
+      actorSessionId: null,
+      folderId,
+      expectedVersion: version,
+      ...fields,
+      idempotencyKey: randomUUID(),
+    });
   }
 }
 

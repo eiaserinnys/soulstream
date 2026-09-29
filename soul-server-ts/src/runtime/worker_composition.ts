@@ -27,7 +27,6 @@ import { ModelCatalog, nodeEffortCapabilities } from "../model_catalog.js";
 import { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { FolderHandoffNotifier } from "../work-task/task_handoff_notifier.js";
 import { FolderService } from "../work-task/task_service.js";
-import { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
 import { FolderHostClient } from "../folder/folder_host_client.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
 import { SessionLegacyProjection, SessionPageBindingService } from "../page/session_page_binding_service.js";
@@ -156,7 +155,6 @@ export async function composeWorkerRuntime(
   );
   const sessionPageBindingRepository = db.sessionPageBindings();
   const pageHost = new PageYjsHostClient(orchHostClientDeps);
-  const folderProjectIdentityHost = new FolderProjectIdentityHostClient(orchHostClientDeps);
   db.configureFolderHost(new FolderHostClient(orchHostClientDeps));
   const sessionPageBindingService = new SessionPageBindingService({
     nodeId: env.SOULSTREAM_NODE_ID,
@@ -328,7 +326,7 @@ export async function composeWorkerRuntime(
     db,
     broadcaster,
     boardYjsService,
-    folderProjectIdentityHost,
+    folderService,
     sessionMutations,
   );
   const taskHandoffNotifier = new FolderHandoffNotifier(

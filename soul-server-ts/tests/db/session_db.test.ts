@@ -480,16 +480,6 @@ describe("SessionDB session-data host delegation", () => {
     ]);
   });
 
-  it("updateFolder parent_folder_id=null → 루트 승격을 stored proc에 null로 전달", async () => {
-    const { sql, calls } = createMockSql();
-    const db = createFolderHostedDb(sql);
-
-    await db.updateFolder("child", ["parent_folder_id"], [null]);
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0].values).toEqual(["child", ["parent_folder_id"], [null]]);
-  });
-
 });
 
 describe("session_delete SQL", () => {

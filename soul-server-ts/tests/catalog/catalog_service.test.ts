@@ -149,55 +149,19 @@ describe("CatalogService.listFolders", () => {
 });
 
 describe("CatalogService.createFolder", () => {
-  it("requires the orch identity host and has no local fallback", async () => {
-    const { sql, calls } = setupSqlWithCatalog();
+  it("sends catalog folder creation through the folder host", async () => {
+    const { sql } = setupSqlWithCatalog();
     const db = createSessionDb(sql);
-    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
-
-    await expect(svc.createFolder("Folder")).rejects.toThrow(
-      "folder identity host is required to create folders",
-    );
-
-    expect(calls).toHaveLength(0);
-    expect(emitCatalogUpdated).not.toHaveBeenCalled();
-  });
-
-  it("uses the orch identity host for MCP create/rename/delete without a local DB fallback", async () => {
-    const { sql, calls } = setupSqlWithCatalog();
-    const db = createSessionDb(sql);
-    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const identityId = "00000000-0000-4000-8000-0000000000af";
-    const host = {
-      create: vi.fn(async (input: { name: string; sortOrder: number; parentFolderId: string | null }) => ({
-        id: identityId,
-        pageId: identityId,
-        folder: {
-          id: identityId,
-          name: input.name,
-          sortOrder: input.sortOrder,
-          settings: {},
-          parentFolderId: input.parentFolderId,
-          projectPageId: identityId,
-        },
-      })),
-      rename: vi.fn(async () => ({})),
-      archive: vi.fn(async () => ({})),
-    };
+    const { broadcaster } = createBroadcasterMock();
+    const folder = { id: "f1", name: "Folder", sortOrder: 4, settings: {}, parentFolderId: null, projectPageId: "p1" };
+    const host = { createFolder: vi.fn().mockResolvedValue({ folder, operation: {}, idempotent: false }) };
     const svc = new CatalogService(db, broadcaster, undefined, host as never);
 
-    await expect(svc.createFolder("MCP 프로젝트", 4, null)).resolves.toMatchObject({
-      id: identityId,
-      projectPageId: identityId,
-    });
-    await svc.renameFolder(identityId, "MCP 이름 변경");
-    await svc.deleteFolder(identityId);
-
-    expect(host.create).toHaveBeenCalledTimes(1);
-    expect(host.rename).toHaveBeenCalledTimes(1);
-    expect(host.archive).toHaveBeenCalledTimes(1);
-    expect(calls.some((call) => call.fragments.join("|").includes("folder_create"))).toBe(false);
-    expect(emitCatalogUpdated).not.toHaveBeenCalled();
+    await expect(svc.createFolder("Folder", 4, null)).resolves.toEqual(folder);
+    expect(host.createFolder).toHaveBeenCalledWith(expect.objectContaining({
+      actorKind: "system", actorSessionId: null, name: "Folder", sortOrder: 4, parentFolderId: null,
+      idempotencyKey: expect.any(String),
+    }));
   });
 });
 
@@ -241,7 +205,7 @@ describe("CatalogService.browseFolder", () => {
       settings: {},
       parent_folder_id: null,
     });
-    const listContainerItems = vi.spyOn(db, "listContainerItems").mockImplementation(
+    const listFolderItems = vi.spyOn(db, "listFolderItems").mockImplementation(
       async (params) => {
         if (params.itemTypes?.includes("session")) {
           return {
@@ -346,8 +310,8 @@ describe("CatalogService.browseFolder", () => {
       assets: 1,
     });
 
-    expect(listContainerItems).toHaveBeenCalledWith(expect.objectContaining({
-      container: { containerKind: "folder", containerId: "root" },
+    expect(listFolderItems).toHaveBeenCalledWith(expect.objectContaining({
+      folderId: "root",
       itemTypes: ["session"],
       limit: 1,
       cursor: 0,
@@ -369,111 +333,24 @@ describe("CatalogService.browseFolder", () => {
   });
 });
 
-describe("CatalogService.setFolderParent", () => {
-  it("parent_folder_id 갱신 + null 루트 복귀 후 broadcast", async () => {
-    const { sql, calls } = createMockSql((call) => {
-      const text = call.fragments.join("|");
-      if (text.includes("folder_get_all"))
-        return [
-          { id: "root", name: "Root", sort_order: 0, settings: {}, parent_folder_id: null },
-          { id: "child", name: "Child", sort_order: 1, settings: {}, parent_folder_id: "root" },
-        ];
-      if (text.includes("catalog_get_sessions")) return [];
-      return [];
-    });
+describe("CatalogService folder mutations", () => {
+  it("routes rename, root move, archive, and prompt setting through the folder host", async () => {
+    const { sql } = setupSqlWithCatalog();
     const db = createSessionDb(sql);
-    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
-
-    await svc.setFolderParent("child", "root");
-    await svc.setFolderParent("child", null);
-
-    const updates = calls.filter((c) =>
-      c.fragments.join("|").includes("folder_update"),
-    );
-    expect(updates).toHaveLength(2);
-    expect(updates[0]!.values).toEqual(["child", ["parent_folder_id"], ["root"]]);
-    expect(updates[1]!.values).toEqual(["child", ["parent_folder_id"], [null]]);
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(2);
-  });
-
-  it("자기 자신을 parent로 지정하면 DB update 전에 거부", async () => {
-    const { sql, calls } = setupSqlWithCatalog();
-    const db = createSessionDb(sql);
+    vi.spyOn(db, "getFolderById").mockResolvedValue({ id: "f1", name: "F1", version: 3, settings: { other: "x" } } as never);
     const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
+    const host = { renameFolder: vi.fn().mockResolvedValue({}), setFolderArchived: vi.fn().mockResolvedValue({}) };
+    const svc = new CatalogService(db, broadcaster, undefined, host as never);
 
-    await expect(svc.setFolderParent("f1", "f1")).rejects.toThrow(/cycle/);
-    expect(calls.some((c) => c.fragments.join("|").includes("folder_update"))).toBe(false);
-  });
+    await svc.renameFolder("f1", "Renamed");
+    await svc.setFolderParent("f1", null);
+    await svc.setFolderSystemPrompt("f1", "Guidance");
+    await svc.deleteFolder("f1");
 
-  it("후손 폴더를 parent로 지정하면 DB update 전에 거부", async () => {
-    const { sql, calls } = createMockSql((call) => {
-      if (call.fragments.join("|").includes("folder_get_all"))
-        return [
-          { id: "root", name: "Root", sort_order: 0, settings: {}, parent_folder_id: null },
-          { id: "child", name: "Child", sort_order: 1, settings: {}, parent_folder_id: "root" },
-          { id: "grand", name: "Grand", sort_order: 2, settings: {}, parent_folder_id: "child" },
-        ];
-      return [];
-    });
-    const db = createSessionDb(sql);
-    const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
-
-    await expect(svc.setFolderParent("root", "grand")).rejects.toThrow(/cycle/);
-    expect(calls.some((c) => c.fragments.join("|").includes("folder_update"))).toBe(false);
-  });
-
-  it("시스템 폴더 move는 DB update 전에 거부", async () => {
-    const { sql, calls } = setupSqlWithCatalog();
-    const db = createSessionDb(sql);
-    const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
-
-    await expect(svc.setFolderParent("claude", null)).rejects.toThrow(/system folder/i);
-    expect(calls.some((c) => c.fragments.join("|").includes("folder_update"))).toBe(false);
-  });
-});
-
-describe("CatalogService.renameFolder", () => {
-  it("folder_update(columns=['name'], values=[name]) + broadcast", async () => {
-    const { sql, calls } = setupSqlWithCatalog();
-    const db = createSessionDb(sql);
-    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
-
-    await svc.renameFolder("f1", "새 이름");
-
-    const updateCall = calls.find((c) =>
-      c.fragments.join("|").includes("folder_update"),
-    );
-    expect(updateCall).toBeDefined();
-    expect(updateCall!.values).toEqual(["f1", ["name"], ["새 이름"]]);
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
-  });
-
-  it("시스템 폴더 rename은 DB update 전에 거부", async () => {
-    const { sql, calls } = setupSqlWithCatalog();
-    const db = createSessionDb(sql);
-    const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
-
-    await expect(svc.renameFolder("claude", "새 이름")).rejects.toThrow(/system folder/i);
-    expect(calls.some((c) => c.fragments.join("|").includes("folder_update"))).toBe(false);
-  });
-});
-
-describe("CatalogService.deleteFolder", () => {
-  it("시스템 폴더 delete는 DB delete 전에 거부", async () => {
-    const { sql, calls } = setupSqlWithCatalog();
-    const db = createSessionDb(sql);
-    const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
-
-    await expect(svc.deleteFolder("llm")).rejects.toThrow(/system folder/i);
-    expect(calls.some((c) => c.fragments.join("|").includes("SET archived = TRUE")))
-      .toBe(false);
+    expect(host.renameFolder).toHaveBeenNthCalledWith(1, expect.objectContaining({ folderId: "f1", expectedVersion: 3, name: "Renamed" }));
+    expect(host.renameFolder).toHaveBeenNthCalledWith(2, expect.objectContaining({ folderId: "f1", expectedVersion: 3, parentFolderId: null }));
+    expect(host.renameFolder).toHaveBeenNthCalledWith(3, expect.objectContaining({ folderId: "f1", expectedVersion: 3, settings: { other: "x", folderPrompt: "Guidance" } }));
+    expect(host.setFolderArchived).toHaveBeenCalledWith(expect.objectContaining({ folderId: "f1", expectedVersion: 3, archived: true }));
   });
 });
 
@@ -526,342 +403,22 @@ describe("CatalogService.moveSessionsToFolder", () => {
 });
 
 describe("CatalogService board items", () => {
-  it("moveBoardItemToContainer는 미영속 세션 타일을 대상 task에 편입한다", async () => {
-    const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
-    const upsertSessionBoardItem = vi.fn().mockResolvedValue({
-      id: "session:s1",
-      folderId: "f1",
-      containerKind: "task",
-      containerId: "rb-1",
-      membershipKind: "primary",
-      sourceTaskItemId: null,
-      itemType: "session",
-      itemId: "s1",
-      x: 120,
-      y: 240,
-      metadata: {},
-    });
+  it("moves a primary board item to a folder through Board Yjs", async () => {
+    const boardItem = { id: "markdown:doc-1", folderId: "source", membershipKind: "primary", itemType: "markdown", itemId: "doc-1", x: 0, y: 0, metadata: {} };
+    const moved = { ...boardItem, folderId: "target" };
     const db = {
-      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
-        folderId: "f1",
-        containerKind: "task",
-        containerId: "rb-1",
-      }),
-      getBoardItemById: vi.fn().mockResolvedValue(null),
-      getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "f1" }),
-      getSessionAssignmentsByIds: vi.fn().mockResolvedValue([
-        { session_id: "s1", folder_id: "f1", display_name: null },
-      ]),
-      assignSessionToFolder,
+      getFolderById: vi.fn().mockResolvedValue({ id: "target" }),
+      getBoardItemById: vi.fn().mockResolvedValue(boardItem),
       getAllFolders: vi.fn().mockResolvedValue([]),
     } as unknown as SessionDB;
-    const boardYjsService = {
-      upsertSessionBoardItem,
-    };
+    const boardYjsService = { moveBoardItemToFolder: vi.fn().mockResolvedValue(moved) };
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster, boardYjsService as never);
 
-    const result = await svc.moveBoardItemToContainer({
-      boardItemId: "session:s1",
-      target: { containerKind: "task", containerId: "rb-1" },
-      position: { x: 121, y: 239 },
-      idempotencyKey: "move-1",
-    });
-
-    expect(result.enrolled).toBe(true);
-    expect(result.boardItem).toMatchObject({
-      id: "session:s1",
-      folderId: "f1",
-      containerKind: "task",
-      containerId: "rb-1",
-      x: 120,
-      y: 240,
-    });
-    expect(assignSessionToFolder).not.toHaveBeenCalled();
-    expect(upsertSessionBoardItem).toHaveBeenCalledWith({
-      folderId: "f1",
-      container: { containerKind: "task", containerId: "rb-1" },
-      sessionId: "s1",
-      sourceTaskItemId: null,
-      x: 120,
-      y: 240,
-    });
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
-  });
-
-  it("moveBoardItemToContainer는 cache inventory로 DB-only stale 세션도 원자 이동한다", async () => {
-    const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
-    const moveBoardItemToContainer = vi.fn().mockResolvedValue({
-      id: "session:s1",
-      folderId: "target-folder",
-      containerKind: "task",
-      containerId: "rb-1",
-      membershipKind: "primary",
-      sourceTaskItemId: null,
-      itemType: "session",
-      itemId: "s1",
-      x: 0,
-      y: 0,
-      metadata: {},
-    });
-    const upsertSessionBoardItem = vi.fn().mockResolvedValue({
-      id: "session:s1",
-      folderId: "target-folder",
-      containerKind: "task",
-      containerId: "rb-1",
-      membershipKind: "primary",
-      sourceTaskItemId: null,
-      itemType: "session",
-      itemId: "s1",
-      x: 280,
-      y: 0,
-      metadata: {},
-    });
-    const db = {
-      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
-        folderId: "target-folder",
-        containerKind: "task",
-        containerId: "rb-1",
-      }),
-      getBoardItemById: vi.fn().mockResolvedValue({
-        id: "session:s1",
-        folderId: "source-folder",
-        containerKind: "folder",
-        containerId: "source-folder",
-        membershipKind: "primary",
-        sourceTaskItemId: null,
-        itemType: "session",
-        itemId: "s1",
-        x: 0,
-        y: 0,
-        metadata: {},
-      }),
-      getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "source-folder" }),
-      getSessionAssignmentsByIds: vi.fn().mockResolvedValue([
-        { session_id: "s1", folder_id: "target-folder", display_name: null },
-      ]),
-      assignSessionToFolder,
-      getBoardItems: vi.fn().mockResolvedValue([
-        {
-          folderId: "target-folder",
-          containerKind: "task",
-          containerId: "rb-1",
-          x: 0,
-          y: 0,
-        },
-      ]),
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    } as unknown as SessionDB;
-    const boardYjsService = {
-      moveBoardItemToContainer,
-      upsertSessionBoardItem,
-    };
-    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster, boardYjsService as never);
-
-    const result = await svc.moveBoardItemToContainer({
-      boardItemId: "session:s1",
-      target: { containerKind: "task", containerId: "rb-1" },
-      idempotencyKey: "move-1",
-    });
-
-    expect(result.enrolled).toBe(false);
-    expect(assignSessionToFolder).not.toHaveBeenCalled();
-    expect(upsertSessionBoardItem).not.toHaveBeenCalled();
-    expect(moveBoardItemToContainer).toHaveBeenCalledOnce();
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
-  });
-
-  it("moveBoardItemToContainer의 미영속 세션 편입은 재시도해도 같은 대상에 upsert한다", async () => {
-    const upsertSessionBoardItem = vi.fn(async (input: {
-      folderId: string;
-      container: { containerKind: "task"; containerId: string };
-      sessionId: string;
-      x: number;
-      y: number;
-    }) => ({
-      id: `session:${input.sessionId}`,
-      folderId: input.folderId,
-      containerKind: input.container.containerKind,
-      containerId: input.container.containerId,
-      membershipKind: "primary" as const,
-      sourceTaskItemId: null,
-      itemType: "session" as const,
-      itemId: input.sessionId,
-      x: input.x,
-      y: input.y,
-      metadata: {},
-    }));
-    const db = {
-      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
-        folderId: "f1",
-        containerKind: "task",
-        containerId: "rb-1",
-      }),
-      getBoardItemById: vi.fn().mockResolvedValue(null),
-      getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "f1" }),
-      getSessionAssignmentsByIds: vi.fn().mockResolvedValue([
-        { session_id: "s1", folder_id: "f1", display_name: null },
-      ]),
-      assignSessionToFolder: vi.fn().mockResolvedValue(undefined),
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    } as unknown as SessionDB;
-    const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster, { upsertSessionBoardItem } as never);
-    const params = {
-      boardItemId: "session:s1",
-      target: { containerKind: "task" as const, containerId: "rb-1" },
-      position: { x: 120, y: 240 },
-      idempotencyKey: "move-1",
-    };
-
-    const first = await svc.moveBoardItemToContainer(params);
-    const second = await svc.moveBoardItemToContainer(params);
-
-    expect(first).toEqual(second);
-    expect(upsertSessionBoardItem).toHaveBeenCalledTimes(2);
-    expect(first.enrolled).toBe(true);
-  });
-
-  it("moveBoardItemToContainer는 실재하지 않는 세션 id를 여전히 거부한다", async () => {
-    const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
-    const upsertSessionBoardItem = vi.fn().mockResolvedValue(undefined);
-    const db = {
-      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
-        folderId: "f1",
-        containerKind: "task",
-        containerId: "rb-1",
-      }),
-      getBoardItemById: vi.fn().mockResolvedValue(null),
-      getSession: vi.fn().mockResolvedValue(null),
-      assignSessionToFolder,
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    } as unknown as SessionDB;
-    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster, { upsertSessionBoardItem } as never);
-
-    await expect(svc.moveBoardItemToContainer({
-      boardItemId: "session:missing",
-      target: { containerKind: "task", containerId: "rb-1" },
-      idempotencyKey: "move-1",
-    })).rejects.toThrow("board item not found: session:missing");
-
-    expect(assignSessionToFolder).not.toHaveBeenCalled();
-    expect(upsertSessionBoardItem).not.toHaveBeenCalled();
-    expect(emitCatalogUpdated).not.toHaveBeenCalled();
-  });
-
-  it("moveBoardItemToContainer의 기존 정상 이동은 BoardYjsService move 경로를 유지한다", async () => {
-    const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
-    const moveBoardItemToContainer = vi.fn().mockResolvedValue({
-      id: "session:s1",
-      folderId: "target-folder",
-      containerKind: "task",
-      containerId: "rb-1",
-      membershipKind: "primary",
-      sourceTaskItemId: null,
-      itemType: "session",
-      itemId: "s1",
-      x: 120,
-      y: 240,
-      metadata: {},
-    });
-    const upsertSessionBoardItem = vi.fn().mockResolvedValue(undefined);
-    const db = {
-      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
-        folderId: "target-folder",
-        containerKind: "task",
-        containerId: "rb-1",
-      }),
-      getBoardItemById: vi.fn().mockResolvedValue({
-        id: "session:s1",
-        folderId: "source-folder",
-        containerKind: "folder",
-        containerId: "source-folder",
-        membershipKind: "primary",
-        sourceTaskItemId: null,
-        itemType: "session",
-        itemId: "s1",
-        x: 0,
-        y: 0,
-        metadata: {},
-      }),
-      getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "source-folder" }),
-      getSessionAssignmentsByIds: vi.fn().mockResolvedValue([
-        { session_id: "s1", folder_id: "target-folder", display_name: null },
-      ]),
-      assignSessionToFolder,
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    } as unknown as SessionDB;
-    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(
-      db,
-      broadcaster,
-      { moveBoardItemToContainer, upsertSessionBoardItem } as never,
-    );
-
-    const result = await svc.moveBoardItemToContainer({
-      boardItemId: "session:s1",
-      target: { containerKind: "task", containerId: "rb-1" },
-      position: { x: 121, y: 239 },
-      idempotencyKey: "move-1",
-    });
-
-    expect(result.enrolled).toBe(false);
-    expect(moveBoardItemToContainer).toHaveBeenCalledWith({
-      boardItem: expect.objectContaining({ id: "session:s1" }),
-      targetScope: { folderId: "target-folder", containerKind: "task", containerId: "rb-1" },
-      position: { x: 120, y: 240 },
-      idempotencyKey: "move-1",
-    });
-    expect(upsertSessionBoardItem).not.toHaveBeenCalled();
-    expect(assignSessionToFolder).not.toHaveBeenCalled();
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
-  });
-
-  it("moveBoardItemToContainer는 task 업무 이동을 서버 identity 정본에 위임한다", async () => {
-    const source = {
-      id: "task:rb-task",
-      folderId: "source-folder",
-      containerKind: "folder" as const,
-      containerId: "source-folder",
-      membershipKind: "primary" as const,
-      sourceTaskItemId: null,
-      itemType: "task" as const,
-      itemId: "rb-task",
-      x: 0,
-      y: 0,
-      metadata: {},
-    };
-    const moved = { ...source, folderId: "target-folder", containerId: "target-folder" };
-    const moveBoardItemToContainer = vi.fn().mockResolvedValue(moved);
-    const db = {
-      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
-        folderId: "target-folder",
-        containerKind: "folder",
-        containerId: "target-folder",
-      }),
-      getBoardItemById: vi.fn().mockResolvedValue(source),
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    } as unknown as SessionDB;
-    const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster, { moveBoardItemToContainer } as never);
-
-    await expect(svc.moveBoardItemToContainer({
-      boardItemId: source.id,
-      target: { containerKind: "folder", containerId: "target-folder" },
-      idempotencyKey: "move-task-1",
-    })).resolves.toMatchObject({ boardItem: moved, enrolled: false });
-
-    expect(moveBoardItemToContainer).toHaveBeenCalledWith({
-      boardItem: source,
-      targetScope: {
-        folderId: "target-folder",
-        containerKind: "folder",
-        containerId: "target-folder",
-      },
-      idempotencyKey: "move-task-1",
-    });
+    await expect(svc.moveBoardItemToFolder({ boardItemId: boardItem.id, folderId: "target", idempotencyKey: "move-1" }))
+      .resolves.toEqual({ boardItem: moved, enrolled: false });
+    expect(boardYjsService.moveBoardItemToFolder).toHaveBeenCalledWith({ boardItem, targetFolderId: "target", idempotencyKey: "move-1" });
+    expect(emitCatalogUpdated).toHaveBeenCalled();
   });
 
   it("createMarkdownDocument는 orch Board Yjs mutation port만 사용한다", async () => {
@@ -887,7 +444,6 @@ describe("CatalogService board items", () => {
 
     expect(boardYjsService.createMarkdownDocument).toHaveBeenCalledWith({
       folderId: "f1",
-      container: { containerKind: "folder", containerId: "f1" },
       title: "Note",
       body: "Body",
       x: 60,
@@ -929,7 +485,7 @@ describe("CatalogService board items", () => {
     await svc.updateBoardItemPosition("markdown:doc-1", 59, 101);
 
     expect(boardYjsService.updateBoardItemPosition).toHaveBeenCalledWith(
-      { containerKind: "folder", containerId: "f1" },
+      "f1",
       "markdown:doc-1",
       60,
       100,
@@ -961,7 +517,7 @@ describe("CatalogService board items", () => {
     });
 
     expect(boardYjsService.updateMarkdownDocument).toHaveBeenCalledWith(
-      { containerKind: "folder", containerId: "f1" },
+      "f1",
       "doc-1",
       { title: "New", body: "Body", expectedVersion: 1 },
     );
@@ -989,7 +545,7 @@ describe("CatalogService board items", () => {
     await svc.deleteMarkdownDocument("doc-1");
 
     expect(boardYjsService.deleteMarkdownDocument).toHaveBeenCalledWith(
-      { containerKind: "folder", containerId: "f1" },
+      "f1",
       "doc-1",
     );
     expect(emitCatalogUpdated).toHaveBeenCalledWith(
@@ -1117,70 +673,6 @@ describe("CatalogService.getFolderSystemPrompt", () => {
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
     expect(await svc.getFolderSystemPrompt("f1")).toBeNull();
-  });
-});
-
-describe("CatalogService.setFolderSystemPrompt", () => {
-  it("prompt 빈 문자열 → settings에서 folderPrompt 키 제거 + broadcast", async () => {
-    let callIndex = 0;
-    const { sql, calls } = createMockSql((call) => {
-      callIndex += 1;
-      const text = call.fragments.join("|");
-      if (text.includes("WHERE id = ") || text.includes("FROM folders"))
-        return [
-          {
-            id: "f1",
-            name: "F1",
-            sort_order: 0,
-            settings: { folderPrompt: "old", other: "x" },
-          },
-        ];
-      if (text.includes("folder_get_all"))
-        return [{ id: "f1", name: "F1", sort_order: 0, settings: {} }];
-      if (text.includes("catalog_get_sessions")) return [];
-      return [];
-    });
-    const db = createSessionDb(sql);
-    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
-
-    await svc.setFolderSystemPrompt("f1", "");
-
-    const updateCall = calls.find((c) =>
-      c.fragments.join("|").includes("folder_update"),
-    );
-    expect(updateCall).toBeDefined();
-    expect(updateCall!.values[0]).toBe("f1");
-    expect(updateCall!.values[1]).toEqual(["settings"]);
-    // settings JSON에 folderPrompt가 빠지고 other 키만 남아야 함
-    const settingsJson = (updateCall!.values[2] as string[])[0];
-    const parsed = JSON.parse(settingsJson);
-    expect(parsed).toEqual({ other: "x" });
-    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
-    expect(callIndex).toBeGreaterThan(0);
-  });
-
-  it("prompt 문자열 → settings에 folderPrompt 키 설정", async () => {
-    const { sql, calls } = createMockSql((call) => {
-      const text = call.fragments.join("|");
-      if (text.includes("FROM folders"))
-        return [{ id: "f1", name: "F1", sort_order: 0, settings: {} }];
-      if (text.includes("folder_get_all"))
-        return [{ id: "f1", name: "F1", sort_order: 0, settings: {} }];
-      if (text.includes("catalog_get_sessions")) return [];
-      return [];
-    });
-    const db = createSessionDb(sql);
-    const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
-
-    await svc.setFolderSystemPrompt("f1", "당신은 도우미");
-
-    const updateCall = calls.find((c) =>
-      c.fragments.join("|").includes("folder_update"),
-    );
-    const settingsJson = (updateCall!.values[2] as string[])[0];
-    expect(JSON.parse(settingsJson)).toEqual({ folderPrompt: "당신은 도우미" });
   });
 });
 

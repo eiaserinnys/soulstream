@@ -11,35 +11,29 @@ import {
   getFolderService,
   idempotencyKeySchema,
   mutation,
-  mutationResponseInputSchema,
   mutationToolDescription,
   optionalReasonSchema,
 } from "./task_shared.js";
-import { formatFolderReadResponse } from "./task_response.js";
 
 export function registerFolderObjectTools(server: McpServer, runtime: McpRuntime): void {
   server.registerTool("create_folder", {
     description: mutationToolDescription("현재 MCP caller session을 actor_kind='agent'로 하여 폴더를 생성한다."),
     inputSchema: {
-      ...mutationResponseInputSchema,
-      folder_id: z.string().min(1).optional(),
       parent_folder_id: z.string().nullable().optional(),
       name: z.string().min(1),
       description: z.string().optional(),
       checklist_enabled: z.boolean().default(false),
       initial_context: z.unknown().optional(),
       sort_order: z.number().int().optional(),
-      x: z.number().optional(),
-      y: z.number().optional(),
       idempotency_key: idempotencyKeySchema,
       caller_session_id: callerSessionIdSchema,
     },
   }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.createFolder({
-    ...actor, folderId: input.folder_id, parentFolderId: input.parent_folder_id,
+    ...actor, parentFolderId: input.parent_folder_id,
     name: input.name, description: input.description, checklistEnabled: input.checklist_enabled,
-    initialContext: input.initial_context, x: input.x, y: input.y,
+    initialContext: input.initial_context, sortOrder: input.sort_order,
     idempotencyKey: input.idempotency_key,
-  }), { targetKind: "folder", includeSnapshot: input.include_snapshot }));
+  })));
 
   server.registerTool("list_child_folders", {
     description: "지정한 폴더의 모든 직접 자식 폴더를 조회한다. checklist_enabled와 status를 포함한다.",
@@ -53,32 +47,32 @@ export function registerFolderObjectTools(server: McpServer, runtime: McpRuntime
     description: "폴더와 체크리스트를 조회한다. view=outline 또는 item_id로 응답을 축약할 수 있다.",
     inputSchema: { folder_id: z.string().min(1), view: z.enum(["full", "outline"]).default("full"), item_id: z.string().min(1).optional() },
   }, async ({ folder_id, view, item_id }) => {
-    try { return jsonResult(formatFolderReadResponse(await getFolderService(runtime).getFolder(folder_id), { view, itemId: item_id })); }
+    try { return jsonResult(await getFolderService(runtime).getFolder(folder_id, { view, itemId: item_id })); }
     catch (err) { return errorResult(errorMessage(err)); }
   });
 
   server.registerTool("rename_folder", {
     description: mutationToolDescription("폴더 이름을 바꾼다."),
-    inputSchema: { ...mutationResponseInputSchema, folder_id: z.string().min(1), name: z.string().min(1), expected_version: expectedVersionSchema, reason: optionalReasonSchema, idempotency_key: idempotencyKeySchema, caller_session_id: callerSessionIdSchema },
-  }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.renameFolder({ ...actor, folderId: input.folder_id, name: input.name, expectedVersion: input.expected_version, reason: input.reason, idempotencyKey: input.idempotency_key }), { targetKind: "folder", includeSnapshot: input.include_snapshot }));
+    inputSchema: { folder_id: z.string().min(1), name: z.string().min(1), expected_version: expectedVersionSchema, reason: optionalReasonSchema, idempotency_key: idempotencyKeySchema, caller_session_id: callerSessionIdSchema },
+  }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.renameFolder({ ...actor, folderId: input.folder_id, name: input.name, expectedVersion: input.expected_version, reason: input.reason, idempotencyKey: input.idempotency_key })));
 
   for (const archived of [true, false]) {
     const name = archived ? "archive_folder" : "unarchive_folder";
     server.registerTool(name, {
       description: mutationToolDescription(archived ? "폴더를 보관한다." : "보관된 폴더를 복구한다."),
-      inputSchema: { ...mutationResponseInputSchema, folder_id: z.string().min(1), expected_version: expectedVersionSchema, reason: optionalReasonSchema, idempotency_key: idempotencyKeySchema, caller_session_id: callerSessionIdSchema },
-    }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.setFolderArchived({ ...actor, folderId: input.folder_id, expectedVersion: input.expected_version, archived, reason: input.reason, idempotencyKey: input.idempotency_key }), { targetKind: "folder", includeSnapshot: input.include_snapshot }));
+      inputSchema: { folder_id: z.string().min(1), expected_version: expectedVersionSchema, reason: optionalReasonSchema, idempotency_key: idempotencyKeySchema, caller_session_id: callerSessionIdSchema },
+    }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.setFolderArchived({ ...actor, folderId: input.folder_id, expectedVersion: input.expected_version, archived, reason: input.reason, idempotencyKey: input.idempotency_key })));
   }
 
   server.registerTool("set_folder_status", {
     description: mutationToolDescription("폴더의 open/completed 상태를 설정한다."),
-    inputSchema: { ...mutationResponseInputSchema, folder_id: z.string().min(1), status: folderStatusSchema, expected_version: expectedVersionSchema, reason: optionalReasonSchema, idempotency_key: idempotencyKeySchema, caller_session_id: callerSessionIdSchema },
-  }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.setFolderStatus({ ...actor, folderId: input.folder_id, status: input.status, expectedVersion: input.expected_version, reason: input.reason, idempotencyKey: input.idempotency_key }), { targetKind: "folder", includeSnapshot: input.include_snapshot }));
+    inputSchema: { folder_id: z.string().min(1), status: folderStatusSchema, expected_version: expectedVersionSchema, reason: optionalReasonSchema, idempotency_key: idempotencyKeySchema, caller_session_id: callerSessionIdSchema },
+  }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.setFolderStatus({ ...actor, folderId: input.folder_id, status: input.status, expectedVersion: input.expected_version, reason: input.reason, idempotencyKey: input.idempotency_key })));
 
   server.registerTool("set_folder_checklist_enabled", {
     description: mutationToolDescription("폴더의 체크리스트 표시 여부를 설정한다. 저장된 섹션과 항목은 유지한다."),
-    inputSchema: { ...mutationResponseInputSchema, folder_id: z.string().min(1), checklist_enabled: z.boolean(), expected_version: expectedVersionSchema, reason: optionalReasonSchema, idempotency_key: idempotencyKeySchema, caller_session_id: callerSessionIdSchema },
-  }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.setFolderChecklistEnabled({ ...actor, folderId: input.folder_id, checklistEnabled: input.checklist_enabled, expectedVersion: input.expected_version, reason: input.reason, idempotencyKey: input.idempotency_key }), { targetKind: "folder", includeSnapshot: input.include_snapshot }));
+    inputSchema: { folder_id: z.string().min(1), checklist_enabled: z.boolean(), expected_version: expectedVersionSchema, reason: optionalReasonSchema, idempotency_key: idempotencyKeySchema, caller_session_id: callerSessionIdSchema },
+  }, async (input) => mutation(runtime, input.caller_session_id, (service, actor) => service.setFolderChecklistEnabled({ ...actor, folderId: input.folder_id, checklistEnabled: input.checklist_enabled, expectedVersion: input.expected_version, reason: input.reason, idempotencyKey: input.idempotency_key })));
 
   server.registerTool("list_folder_operations", {
     description: "폴더와 체크리스트의 감사 기록을 최신순으로 조회한다.",

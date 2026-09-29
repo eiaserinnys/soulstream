@@ -309,14 +309,6 @@ export class SessionDB {
     return await this.requireSessionDataHost().streamEventsRaw(sessionId, afterId);
   }
 
-  async updateFolder(
-    folderId: string,
-    columns: ReadonlyArray<"name" | "sort_order" | "settings" | "parent_folder_id">,
-    values: ReadonlyArray<string | null>,
-  ): Promise<void> {
-    await this.requireFolderHost().updateFolder(folderId, columns, values);
-  }
-
   configureFolderHost(host: FolderHostClient): void {
     this.folderHost = host;
   }

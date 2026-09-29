@@ -521,24 +521,38 @@ export interface ChecklistItemRow extends ChecklistAssigneeFields {
 
 export interface FolderOperationRow {
   id: string;
-  folder_id: string;
-  target_kind: FolderOperationTargetKind;
-  target_id: string;
-  operation_type: string;
-  actor_kind: FolderOperationActorKind;
-  actor_session_id: string | null;
-  actor_event_id: number | null;
-  actor_user_id: string | null;
-  idempotency_key: string | null;
-  payload_json: Record<string, unknown>;
+  folderId: string;
+  targetKind: FolderOperationTargetKind;
+  targetId: string;
+  operationType: string;
+  actorKind: FolderOperationActorKind;
+  actorSessionId: string | null;
+  actorEventId: number | null;
+  actorUserId: string | null;
+  idempotencyKey: string | null;
+  payloadJson: Record<string, unknown>;
   reason: string | null;
-  created_at: Date;
+  createdAt: string;
 }
 
+/** Folder host HTTP rows use camelCase; direct get_all rows use FolderRow above. */
 export interface FolderSnapshot {
-  folder: FolderRow;
-  sections: ChecklistSectionRow[];
-  items: ChecklistItemRow[];
+  folder: Record<string, unknown> & {
+    id: string;
+    name: string;
+    checklistEnabled: boolean;
+    status: FolderStatus;
+    archived: boolean;
+    version: number;
+    sortOrder: number;
+    settings: Record<string, unknown>;
+    parentFolderId: string | null;
+    projectPageId: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+  sections: Array<Record<string, unknown> & { id: string }>;
+  items: Array<Record<string, unknown> & { id: string; sectionId: string }>;
 }
 
 export interface ChildFolderRow {
