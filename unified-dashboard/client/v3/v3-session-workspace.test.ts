@@ -45,7 +45,7 @@ describe("resolveSessionForOpen", () => {
 });
 
 describe("resolveSessionWorkspace", () => {
-  it("uses a cached primary board item without a request", async () => {
+  it("uses the session folder before a cached board item", async () => {
     const fetchImplementation = vi.fn();
     const result = await resolveSessionWorkspace({
       session: session("session-a", "folder-a"),
@@ -53,7 +53,7 @@ describe("resolveSessionWorkspace", () => {
       fetchImplementation: fetchImplementation as typeof globalThis.fetch,
     });
 
-    expect(result).toEqual({ target: { kind: "folder", folderId: "task-a" } });
+    expect(result).toEqual({ target: { kind: "folder", folderId: "folder-a" } });
     expect(fetchImplementation).not.toHaveBeenCalled();
   });
 
@@ -80,7 +80,7 @@ describe("resolveSessionWorkspace", () => {
     }));
 
     const result = await resolveSessionWorkspace({
-      session: session("session-a", "folder-a"),
+      session: session("session-a", null),
       boardItems: [],
       fetchImplementation: fetchImplementation as typeof globalThis.fetch,
     });
@@ -106,7 +106,7 @@ describe("resolveSessionWorkspace", () => {
     }));
 
     const result = await resolveSessionWorkspace({
-      session: session("session-a", "folder-a"),
+      session: session("session-a", null),
       boardItems: [],
       fetchImplementation: fetchImplementation as typeof globalThis.fetch,
     });
@@ -122,7 +122,7 @@ describe("resolveSessionWorkspace", () => {
     const fetchImplementation = vi.fn(async () => new Response("unavailable", { status: 503 }));
 
     await expect(resolveSessionWorkspace({
-      session: session("session-a", "folder-a"),
+      session: session("session-a", null),
       boardItems: [],
       fetchImplementation: fetchImplementation as typeof globalThis.fetch,
     })).rejects.toThrow("세션의 업무를 불러오지 못했습니다 (503)");
@@ -135,9 +135,9 @@ describe("resolveSessionTaskWorkspace", () => {
     const target = plannerTask("task-outside-page", "task-outside", "in_progress");
     const loadTaskByFolderId = vi.fn(async () => target);
     const result = await resolveSessionTaskWorkspace({
-      session: session("session-a", "folder-a"),
+      session: session("session-a", null),
       boardItems: [],
-      currentTasks: [],
+      currentFolderEntries: [],
       loadTaskByFolderId,
       fetchImplementation: vi.fn(async () => json({
         boardItems: [boardItem("session-a", "task-outside")],
@@ -152,9 +152,9 @@ describe("resolveSessionTaskWorkspace", () => {
     const completed = plannerTask("task-complete-page", "task-complete", "completed");
     const loadTaskByFolderId = vi.fn();
     const result = await resolveSessionTaskWorkspace({
-      session: session("session-a", "folder-a"),
+      session: session("session-a", null),
       boardItems: [boardItem("session-a", "task-complete")],
-      currentTasks: [completed],
+      currentFolderEntries: [completed],
       loadTaskByFolderId,
     });
 
@@ -167,7 +167,7 @@ describe("resolveSessionTaskWorkspace", () => {
     const promise = resolveSessionTaskWorkspace({
       session: session("session-a", null),
       boardItems: [],
-      currentTasks: [],
+      currentFolderEntries: [],
       loadTaskByFolderId,
       fetchImplementation: vi.fn(async () => new Response("unavailable", {
         status: 503,
@@ -188,7 +188,7 @@ describe("resolveSessionTaskWorkspace", () => {
     const promise = resolveSessionTaskWorkspace({
       session: session("session-a", null),
       boardItems: [],
-      currentTasks: [],
+      currentFolderEntries: [],
       loadTaskByFolderId: async () => { throw new Error("Not Found"); },
       fetchImplementation: lookup,
     });
@@ -201,7 +201,7 @@ describe("resolveSessionTaskWorkspace", () => {
     await expect(resolveSessionTaskWorkspace({
       session: session("session-unassigned", null),
       boardItems: [],
-      currentTasks: [],
+      currentFolderEntries: [],
       loadTaskByFolderId: vi.fn(),
       fetchImplementation: vi.fn(async () => json({ boardItems: [] })) as typeof globalThis.fetch,
     })).resolves.toMatchObject({ task: null, workspace: { target: { kind: "standalone" } } });

@@ -59,16 +59,16 @@ describe("V3Navigation frame contract", () => {
         onReorderStarredFolders={vi.fn(async () => undefined)}
         onSelectDate={vi.fn()}
         onSelectFolder={vi.fn()}
-        onSelectTask={vi.fn()}
-        onCompleteTask={vi.fn(async () => undefined)}
-        onToggleTaskToday={vi.fn(async () => undefined)}
-        onMoveTaskToProject={vi.fn()}
+        onSelectStarredFolder={vi.fn()}
+        onCompleteFolder={vi.fn(async () => undefined)}
+        onToggleFolderToday={vi.fn(async () => undefined)}
+        onMoveFolderToParent={vi.fn()}
         onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
         projectHasContents={vi.fn(() => false)}
-        onCreateTask={vi.fn()}
+        onCreateFolder={vi.fn()}
       />,
     );
 
@@ -105,16 +105,16 @@ describe("V3Navigation frame contract", () => {
         onReorderStarredFolders={vi.fn(async () => undefined)}
         onSelectDate={vi.fn()}
         onSelectFolder={vi.fn()}
-        onSelectTask={vi.fn()}
-        onCompleteTask={vi.fn(async () => undefined)}
-        onToggleTaskToday={vi.fn(async () => undefined)}
-        onMoveTaskToProject={vi.fn()}
+        onSelectStarredFolder={vi.fn()}
+        onCompleteFolder={vi.fn(async () => undefined)}
+        onToggleFolderToday={vi.fn(async () => undefined)}
+        onMoveFolderToParent={vi.fn()}
         onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
         projectHasContents={vi.fn(() => false)}
-        onCreateTask={vi.fn()}
+        onCreateFolder={vi.fn()}
       />,
     );
 
@@ -150,16 +150,16 @@ describe("V3Navigation frame contract", () => {
         onReorderStarredFolders={vi.fn(async () => undefined)}
         onSelectDate={vi.fn()}
         onSelectFolder={vi.fn()}
-        onSelectTask={vi.fn()}
-        onCompleteTask={vi.fn(async () => undefined)}
-        onToggleTaskToday={vi.fn(async () => undefined)}
-        onMoveTaskToProject={vi.fn()}
+        onSelectStarredFolder={vi.fn()}
+        onCompleteFolder={vi.fn(async () => undefined)}
+        onToggleFolderToday={vi.fn(async () => undefined)}
+        onMoveFolderToParent={vi.fn()}
         onCreateProject={vi.fn(async (title, parentFolderId) => ({ checklistEnabled: false, status: "open" as const, version: 1, archived: false, id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
         projectHasContents={vi.fn(() => false)}
-        onCreateTask={vi.fn()}
+        onCreateFolder={vi.fn()}
       />,
     ));
     const handle = container.querySelector<HTMLButtonElement>(

@@ -57,13 +57,13 @@ const INLINE_ITEM_TYPES = new Set<CatalogBoardItem["itemType"]>([
 export function TaskInlineBoard({
   folderId,
   api,
-  taskMoveTargets,
+  folderMoveTargets,
   markdownDocumentsRevision = 0,
   onMarkdownDocumentsChanged,
 }: {
   folderId: string;
   api: PageApiClient;
-  taskMoveTargets: readonly FolderMoveTarget[];
+  folderMoveTargets: readonly FolderMoveTarget[];
   markdownDocumentsRevision?: number;
   onMarkdownDocumentsChanged(documents: TaskBoardMarkdownDocument[]): void;
 }) {
@@ -373,7 +373,7 @@ export function TaskInlineBoard({
       <TaskDocumentContextMenu
         api={api}
         currentFolderId={folderId}
-        defaultTargets={taskMoveTargets}
+        defaultTargets={folderMoveTargets}
         context={documentContext}
         onClose={() => setDocumentContext(null)}
         onOpen={(item) => setExpandedId(item.id)}

@@ -20,10 +20,6 @@ for (const theme of ["dark", "light"] as const) {
     await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: BASE_URL });
     await preparePage(page, theme, { width: 1440, height: 1000 });
 
-    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("dashboard-layout")).toBeVisible();
-    await capture(page, theme, "00-v1-smoke");
-
     const requests: string[] = [];
     page.on("request", (request) => requests.push(new URL(request.url()).pathname));
     await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
@@ -45,12 +41,12 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByRole("menuitem", { name: "업무 페이지 ID 복사" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "별표 해제" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "완료 처리" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "오늘 플래너에 추가·제거" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "오늘에서 제외" })).toBeVisible();
     await capture(page, theme, "02-task-context-menu");
     await page.keyboard.press("Escape");
 
     await page.getByTestId("v3-task-task-alpha").click();
-    await expect(page.getByRole("heading", { name: fixtureTitles.primaryTask, level: 2 })).toBeVisible();
+    await expect(page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask })).toBeVisible();
     await expect(page.getByRole("button", { name: "▦ 보드로 보기" })).toHaveCount(0);
     await expect(page.getByTestId("v3-inline-board")).toBeVisible();
     await expect.poll(() => requests.filter((pathName) => pathName === "/api/board-items").length).toBe(1);
@@ -70,7 +66,7 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByRole("menuitem", { name: "이름 변경" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "삭제" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "＋ 이어서 새 세션 (승계)" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "다른 업무로 이동" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "다른 폴더로 이동" })).toBeVisible();
     await capture(page, theme, "04-run-context-menu");
     await page.getByRole("menuitem", { name: "세션 ID 복사" }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("run-alpha-2");
@@ -85,20 +81,22 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("button", { name: "승계 닫기" }).click();
 
     await alphaRun.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "다른 업무로 이동" }).click();
-    await expect(page.getByRole("heading", { name: "다른 업무로 이동" })).toBeVisible();
+    await page.getByRole("menuitem", { name: "다른 폴더로 이동" }).click();
+    await expect(page.getByRole("heading", { name: "다른 폴더로 이동" })).toBeVisible();
     await page.getByRole("button", { name: new RegExp(fixtureTitles.secondaryTask) }).click();
     await expect(alphaRun).toHaveCount(0);
 
+    await page.getByRole("button", { name: "상위 폴더로 이동" }).click();
     await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
     await page.getByTestId("v3-task-task-beta").click();
     const movedRun = page.locator('.v3-run-row[data-session-id="run-alpha-2"]');
     await expect(movedRun).toBeVisible();
     await movedRun.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "다른 업무로 이동" }).click();
+    await page.getByRole("menuitem", { name: "다른 폴더로 이동" }).click();
     await page.getByRole("button", { name: new RegExp(fixtureTitles.primaryTask) }).click();
     await expect(movedRun).toHaveCount(0);
 
+    await page.getByRole("button", { name: "상위 폴더로 이동" }).click();
     await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
     await page.getByTestId("v3-task-task-alpha").click();
     await expect(page.locator('.v3-run-row[data-session-id="run-alpha-2"]')).toBeVisible();

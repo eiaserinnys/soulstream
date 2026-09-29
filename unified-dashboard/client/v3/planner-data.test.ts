@@ -7,8 +7,8 @@ import {
   loadFolderSessionPage,
   loadFolderSubfolderPage,
   loadPlannerFolderById,
-  loadProjectDocumentPage,
-  loadProjectPlanner,
+  loadFolderDocumentPage,
+  loadFolderPlanner,
   loadStarredFolders,
 } from "./planner-data";
 
@@ -39,7 +39,7 @@ describe("unified folder planner API", () => {
       folders: [entry("folder-a")], memoBlocks: [], reviewSessionIds: [],
     }));
     const result = await loadDailyPlanner(api, "2026-09-29", { fetchPlanner });
-    expect(result.tasks).toMatchObject([{ folderId: "folder-a", page: { id: "folder-a-page" } }]);
+    expect(result.folders).toMatchObject([{ folderId: "folder-a", page: { id: "folder-a-page" } }]);
     expect(fetchPlanner).toHaveBeenCalledOnce();
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/today?date=2026-09-29");
   });
@@ -51,7 +51,7 @@ describe("unified folder planner API", () => {
       documents: { items: [page("document")], nextCursor: "doc-next" },
       sessions: { items: [{ agentSessionId: "session-a" }], nextCursor: "session-next" },
     }));
-    const result = await loadProjectPlanner(api, "folder-a", page("folder-a-page"), { fetchPlanner });
+    const result = await loadFolderPlanner(api, "folder-a", page("folder-a-page"), { fetchPlanner });
     expect(result).toMatchObject({
       subfolders: [{ id: "child" }], nextSubfolderCursor: "sub-next",
       documents: [{ id: "document" }], nextDocumentCursor: "doc-next",
@@ -64,7 +64,7 @@ describe("unified folder planner API", () => {
     const fetchPlanner = vi.fn(async (_path: string) => ({ items: [], nextCursor: "next" }));
     const dependencies = { fetchPlanner };
     await loadFolderSubfolderPage(dependencies, "folder/a", "child-cursor");
-    await loadProjectDocumentPage(dependencies, "folder/a", "doc-cursor");
+    await loadFolderDocumentPage(dependencies, "folder/a", "doc-cursor");
     await loadFolderSessionPage(dependencies, "folder/a", "session-cursor");
     expect(fetchPlanner.mock.calls.map(([path]) => path)).toEqual([
       "/api/planner/folders/folder%2Fa/subfolders?cursor=child-cursor",

@@ -21,9 +21,9 @@ export const createBoardLayoutSlice: StateCreator<
 > = (set, get) => ({
   folderBoardLayouts: {},
 
-  setFolderBoardLayout: (taskPageId: string, patch: Partial<FolderBoardLayoutSnapshot>) => {
-    if (!taskPageId) return;
-    const current = get().folderBoardLayouts[taskPageId];
+  setFolderBoardLayout: (folderPageId: string, patch: Partial<FolderBoardLayoutSnapshot>) => {
+    if (!folderPageId) return;
+    const current = get().folderBoardLayouts[folderPageId];
     const next = { ...current, ...patch };
     // 값이 실제로 바뀔 때만 set 하여 불필요한 persist/리렌더를 피한다.
     const unchanged = current
@@ -33,7 +33,7 @@ export const createBoardLayoutSlice: StateCreator<
       });
     if (unchanged) return;
     set((state) => ({
-      folderBoardLayouts: { ...state.folderBoardLayouts, [taskPageId]: next },
+      folderBoardLayouts: { ...state.folderBoardLayouts, [folderPageId]: next },
     }));
   },
 });

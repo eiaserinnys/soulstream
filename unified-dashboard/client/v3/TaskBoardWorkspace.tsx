@@ -79,7 +79,7 @@ export function TaskBoardWorkspace({
   sessionStreamActive,
   sessionConnectionStatus,
   reconnectSession,
-  taskMoveTargets,
+  folderMoveTargets,
   folders,
   contextInvalidationKey,
   markdownDocumentsRevision,
@@ -110,7 +110,7 @@ export function TaskBoardWorkspace({
   sessionStreamActive: boolean;
   sessionConnectionStatus: SessionProviderConnectionStatus;
   reconnectSession(): void;
-  taskMoveTargets: readonly PlannerFolder[];
+  folderMoveTargets: readonly PlannerFolder[];
   folders: readonly CatalogFolder[];
   contextInvalidationKey: number;
   markdownDocumentsRevision: number;
@@ -522,7 +522,7 @@ export function TaskBoardWorkspace({
             folderId={task.folderId}
             folderName={task.page.title}
             sessions={sessions}
-            taskMoveTargets={taskMoveTargets}
+            folderMoveTargets={folderMoveTargets}
             viewportPersistenceKey={layoutKey}
             onBoardItemsChanged={handleBoardItemsChanged}
             onMarkdownDocumentDeleted={(documentId) => {
@@ -686,7 +686,7 @@ export function TaskBoardWorkspace({
       <TaskMoveDialog
         api={moveApi}
         currentFolderId={task.folderId}
-        defaultTargets={taskMoveTargets}
+        defaultTargets={folderMoveTargets}
         open={moveSessionId !== null}
         onClose={() => setMoveSessionId(null)}
         onMove={async (target) => {

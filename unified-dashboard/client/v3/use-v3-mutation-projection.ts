@@ -46,12 +46,12 @@ export function useV3MutationProjection({
       : current);
   }, [moveLoadedSession, moveRunHistorySession, setSelectedFolderSnapshot]);
 
-  const moveTaskProjectInPlanner = useCallback((task: PlannerFolder, targetFolderId: string | null) => {
+  const moveFolderParentInPlanner = useCallback((task: PlannerFolder, targetFolderId: string | null) => {
     moveLoadedTaskProject(task, targetFolderId);
     setSelectedFolderSnapshot((current) => current?.page.id === task.page.id
       ? retainEqualValue(current, { ...current, parentFolderId: targetFolderId })
       : current);
   }, [moveLoadedTaskProject, setSelectedFolderSnapshot]);
 
-  return { patchPlannerFolder, removeSessionsFromPlanner, moveSessionInPlanner, moveTaskProjectInPlanner };
+  return { patchPlannerFolder, removeSessionsFromPlanner, moveSessionInPlanner, moveFolderParentInPlanner };
 }

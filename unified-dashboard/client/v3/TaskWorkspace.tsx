@@ -39,7 +39,7 @@ export function TaskWorkspace({
   parentFolder,
   onOpenParent,
   onToggleChecklist,
-  taskResolutionError,
+  folderResolutionError,
   projectTitle,
   projectFolderId,
   folders,
@@ -64,19 +64,19 @@ export function TaskWorkspace({
   sessionConnectionStatus,
   reconnectSession,
   onChatVisibilityChange,
-  taskMoveTargets,
+  folderMoveTargets,
   taskInToday,
   onReturnToToday,
-  onToggleTaskToday,
+  onToggleFolderToday,
   onCloseWorkspace,
   onCloseChat,
   onOpenSession,
-  onRenameTaskTitle,
+  onRenameFolderTitle,
   onSaveDescription,
   onRenameSession,
   onDeleteSessions,
   onMoveSession,
-  onTaskBlocksChanged,
+  onFolderBlocksChanged,
   onAcknowledgedReview,
 }: {
   task: PlannerFolder | null;
@@ -85,7 +85,7 @@ export function TaskWorkspace({
   parentFolder: CatalogFolder | null;
   onOpenParent(folder: CatalogFolder): void;
   onToggleChecklist(enabled: boolean): Promise<void>;
-  taskResolutionError: string | null;
+  folderResolutionError: string | null;
   projectTitle: string;
   projectFolderId: string | null;
   folders: readonly CatalogFolder[];
@@ -110,19 +110,19 @@ export function TaskWorkspace({
   sessionConnectionStatus: SessionProviderConnectionStatus;
   reconnectSession(): void;
   onChatVisibilityChange(visible: boolean): void;
-  taskMoveTargets: readonly PlannerFolder[];
+  folderMoveTargets: readonly PlannerFolder[];
   taskInToday: boolean;
   onReturnToToday(): void;
-  onToggleTaskToday(): Promise<void>;
+  onToggleFolderToday(): Promise<void>;
   onCloseWorkspace(): void;
   onCloseChat(): void;
   onOpenSession(session: SessionSummary): void;
-  onRenameTaskTitle(title: string): Promise<string>;
+  onRenameFolderTitle(title: string): Promise<string>;
   onSaveDescription(markdown: string): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
   onMoveSession(sessionId: string, targetTask: FolderMoveTarget): Promise<void>;
-  onTaskBlocksChanged(blocks: PlannerFolder["blocks"]): void;
+  onFolderBlocksChanged(blocks: PlannerFolder["blocks"]): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
 }) {
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -227,8 +227,8 @@ export function TaskWorkspace({
               </DashboardIconCap>
             </header>
             <div className="v3-chat-empty">
-              <strong>{taskResolutionError ?? "연결된 업무가 없습니다."}</strong>
-              <p>{taskResolutionError
+              <strong>{folderResolutionError ?? "연결된 업무가 없습니다."}</strong>
+              <p>{folderResolutionError
                 ? "업무 귀속을 다시 확인해 주세요. 이 세션의 채팅은 그대로 확인할 수 있습니다."
                 : "이 세션의 채팅은 그대로 확인할 수 있습니다."}</p>
             </div>
@@ -283,7 +283,7 @@ export function TaskWorkspace({
         sessionStreamActive={sessionStreamActive}
         sessionConnectionStatus={sessionConnectionStatus}
         reconnectSession={reconnectSession}
-        taskMoveTargets={taskMoveTargets}
+        folderMoveTargets={folderMoveTargets}
         folders={folders}
         contextInvalidationKey={contextInvalidationKey}
         markdownDocumentsRevision={markdownDocumentsRevision}
@@ -331,10 +331,10 @@ export function TaskWorkspace({
           onFocusRequestHandled={onFocusRequestHandled}
           onLoadMoreRuns={onLoadMoreRuns}
           sessionDefaults={sessionDefaults}
-          taskMoveTargets={taskMoveTargets}
+          folderMoveTargets={folderMoveTargets}
           taskInToday={taskInToday}
           onReturnToToday={onReturnToToday}
-          onToggleTaskToday={onToggleTaskToday}
+          onToggleFolderToday={onToggleFolderToday}
           onOpenBoard={() => {
             const state = useDashboardStore.getState();
             state.setActiveBoardDocument(null);
@@ -342,15 +342,15 @@ export function TaskWorkspace({
             setBoardOpen(true);
           }}
           onOpenSession={onOpenSession}
-          onRenameTaskTitle={async (title) => {
-            const renamedTitle = await onRenameTaskTitle(title);
+          onRenameFolderTitle={async (title) => {
+            const renamedTitle = await onRenameFolderTitle(title);
             setVisibleTitle(renamedTitle);
           }}
           onSaveDescription={onSaveDescription}
           onRenameSession={onRenameSession}
           onDeleteSessions={onDeleteSessions}
           onMoveSession={onMoveSession}
-          onTaskBlocksChanged={onTaskBlocksChanged}
+          onFolderBlocksChanged={onFolderBlocksChanged}
         />
         {chatOpen ? (
           <>

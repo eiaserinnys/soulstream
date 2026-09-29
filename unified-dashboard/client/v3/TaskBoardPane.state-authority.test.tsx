@@ -53,7 +53,7 @@ describe("TaskBoardPane catalog ownership", () => {
         folderId="task-a"
         folderName="Project A"
         sessions={[]}
-        taskMoveTargets={[]}
+        folderMoveTargets={[]}
         onBoardItemsChanged={() => undefined}
         onMarkdownDocumentDeleted={() => undefined}
         onOpenMarkdownDocument={() => undefined}

@@ -47,6 +47,7 @@ export async function resolveSessionWorkspace({
   boardItems: readonly CatalogBoardItem[];
   fetchImplementation?: typeof globalThis.fetch;
 }): Promise<ResolvedSessionWorkspace> {
+  if (session.folderId) return { target: { kind: "folder", folderId: session.folderId } };
   const cached = sessionWorkspaceTargetFromBoardItems(boardItems, session.agentSessionId);
   if (cached) return { target: cached };
 
@@ -72,13 +73,13 @@ export async function resolveSessionWorkspace({
 export async function resolveSessionTaskWorkspace({
   session,
   boardItems,
-  currentTasks,
+  currentFolderEntries,
   loadTaskByFolderId,
   fetchImplementation = globalThis.fetch,
 }: {
   session: SessionSummary;
   boardItems: readonly CatalogBoardItem[];
-  currentTasks: readonly PlannerFolder[];
+  currentFolderEntries: readonly PlannerFolder[];
   loadTaskByFolderId(folderId: string): Promise<PlannerFolder>;
   fetchImplementation?: typeof globalThis.fetch;
 }): Promise<{ workspace: ResolvedSessionWorkspace; task: PlannerFolder | null }> {
@@ -94,7 +95,7 @@ export async function resolveSessionTaskWorkspace({
   }
   if (workspace.target.kind === "standalone") return { workspace, task: null };
   const folderId = workspace.target.folderId;
-  const cached = currentTasks.find((task) => task.folderId === folderId);
+  const cached = currentFolderEntries.find((task) => task.folderId === folderId);
   if (cached) return { workspace, task: cached };
   try {
     return { workspace, task: await loadTaskByFolderId(folderId) };

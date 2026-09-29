@@ -65,16 +65,16 @@ export function V3Navigation({
   onReorderStarredFolders,
   onSelectDate,
   onSelectFolder,
-  onSelectTask,
-  onCompleteTask,
-  onToggleTaskToday,
-  onMoveTaskToProject,
+  onSelectStarredFolder,
+  onCompleteFolder,
+  onToggleFolderToday,
+  onMoveFolderToParent,
   onCreateProject,
   onRenameProject,
   onDeleteProject,
   onReorderProjects,
   projectHasContents,
-  onCreateTask,
+  onCreateFolder,
 }: {
   dates: readonly PlannerDateNavItem[];
   selectedDate: string;
@@ -90,16 +90,16 @@ export function V3Navigation({
   onReorderStarredFolders(movedPageId: string, orderedPageIds: readonly string[]): Promise<void>;
   onSelectDate(date: string): void;
   onSelectFolder(folder: CatalogFolder): void;
-  onSelectTask(task: StarredPlannerFolder): void;
-  onCompleteTask(task: StarredPlannerFolder): Promise<void>;
-  onToggleTaskToday(task: StarredPlannerFolder): Promise<void>;
-  onMoveTaskToProject(task: StarredPlannerFolder): void;
+  onSelectStarredFolder(folder: StarredPlannerFolder): void;
+  onCompleteFolder(task: StarredPlannerFolder): Promise<void>;
+  onToggleFolderToday(task: StarredPlannerFolder): Promise<void>;
+  onMoveFolderToParent(task: StarredPlannerFolder): void;
   onCreateProject(title: string, parentFolderId: string | null): Promise<CatalogFolder>;
   onRenameProject(folder: CatalogFolder, title: string): Promise<void>;
   onDeleteProject(folder: CatalogFolder): Promise<void>;
   onReorderProjects(items: CatalogFolderReorderItem[]): Promise<void>;
   projectHasContents(folderId: string): boolean;
-  onCreateTask(folderId: string): void;
+  onCreateFolder(folderId: string): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
@@ -201,7 +201,7 @@ export function V3Navigation({
   const toggleFolderToday = async (folder: CatalogFolder) => {
     if (!folder.projectPageId || isSystemFolderId(folder.id)) return;
     try {
-      await onToggleTaskToday((await api.getPage(folder.projectPageId)).page);
+      await onToggleFolderToday((await api.getPage(folder.projectPageId)).page);
     } catch (cause) {
       setError(`오늘 목록 변경 실패 · ${errorText(cause)}`);
     }
@@ -248,7 +248,7 @@ export function V3Navigation({
                   pageIds={starredFolderIds}
                   onReorderByKeyboard={onReorderStarredFolders}
                   disabled={starredFoldersLoading || pendingFolderId === page.id}
-                  onSelect={() => onSelectTask(task)}
+                  onSelect={() => onSelectStarredFolder(task)}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     setContextMenu({ target: { x: event.clientX, y: event.clientY }, kind: "starred_folder", task });
@@ -303,25 +303,25 @@ export function V3Navigation({
         target={contextMenu?.target ?? null}
         onClose={() => setContextMenu(null)}
         actions={contextMenu?.kind === "starred_folder" && folders.some((folder) => folder.projectPageId === starredFolderPage(contextMenu.task).id && !folder.checklistEnabled) ? [
-          { label: "폴더 열기", onSelect: () => onSelectTask(contextMenu.task) },
+          { label: "폴더 열기", onSelect: () => onSelectStarredFolder(contextMenu.task) },
           { label: "폴더 페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(starredFolderPage(contextMenu.task).id) },
           { label: "별표 해제", onSelect: () => clearFolderStar(contextMenu.task), separatorBefore: true },
-          { label: todayFolderIds.has(starredFolderPage(contextMenu.task).id) ? "오늘에서 제외" : "오늘에 추가", onSelect: () => onToggleTaskToday(contextMenu.task) },
+          { label: todayFolderIds.has(starredFolderPage(contextMenu.task).id) ? "오늘에서 제외" : "오늘에 추가", onSelect: () => onToggleFolderToday(contextMenu.task) },
         ] : contextMenu?.kind === "starred_folder" ? buildTaskContextMenuActions({
           starred: folderStarredState(starredFolderPage(contextMenu.task).id, folderStarChanges, true),
           completed: completedFolderIds.has(starredFolderPage(contextMenu.task).id),
           inToday: todayFolderIds.has(starredFolderPage(contextMenu.task).id),
         }, {
-          open: () => onSelectTask(contextMenu.task),
+          open: () => onSelectStarredFolder(contextMenu.task),
           copyId: () => navigator.clipboard.writeText(starredFolderPage(contextMenu.task).id),
           toggleStar: () => clearFolderStar(contextMenu.task),
-          moveToProject: () => onMoveTaskToProject(contextMenu.task),
-          complete: () => onCompleteTask(contextMenu.task),
-          toggleToday: () => onToggleTaskToday(contextMenu.task),
+          moveToProject: () => onMoveFolderToParent(contextMenu.task),
+          complete: () => onCompleteFolder(contextMenu.task),
+          toggleToday: () => onToggleFolderToday(contextMenu.task),
         }) : contextMenu?.kind === "folder" ? buildProjectContextMenuActions({
           open: () => onSelectFolder(contextMenu.folder),
           copyId: () => navigator.clipboard.writeText(contextMenu.folder.id),
-          createTask: () => onCreateTask(contextMenu.folder.id),
+          createTask: () => onCreateFolder(contextMenu.folder.id),
           createProject: () => setProjectDialog({ mode: "create", parentFolderId: null, parentName: null }),
           createChildProject: () => setProjectDialog({ mode: "create", parentFolderId: contextMenu.folder.id, parentName: contextMenu.folder.name }),
           edit: () => setProjectDialog({ mode: "edit", folder: contextMenu.folder }),

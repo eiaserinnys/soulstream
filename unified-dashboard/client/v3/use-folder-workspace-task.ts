@@ -1,11 +1,11 @@
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
 
-import type { PlannerFolder, ProjectPlannerData } from "./planner-data";
+import type { PlannerFolder, FolderPlannerData } from "./planner-data";
 import { derivePlannerFolderStatus, folderContextCount } from "./planner-model";
 
 export function useFolderWorkspaceFolder({ folder, aggregate, knownFolder }: {
   folder: CatalogFolder | null;
-  aggregate: ProjectPlannerData | null;
+  aggregate: FolderPlannerData | null;
   knownFolder: PlannerFolder | null;
 }): { folderId: string | null; folder: PlannerFolder | null; error: null } {
   if (!folder) return { folderId: null, folder: null, error: null };

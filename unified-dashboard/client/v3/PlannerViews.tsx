@@ -26,12 +26,12 @@ export function DailyPlannerView({
   nodeConnectivity,
   onSaveMemo,
   onOpenProject,
-  onOpenTask,
-  onCompleteTask,
-  onToggleTaskToday,
-  onMoveTaskToProject,
+  onOpenFolder,
+  onCompleteFolder,
+  onToggleFolderToday,
+  onMoveFolderToParent,
   onOpenRitual,
-  onCreateTask,
+  onCreateFolder,
 }: {
   state: PlannerLoadState<DailyPlannerData>;
   folders: readonly CatalogFolder[];
@@ -42,15 +42,15 @@ export function DailyPlannerView({
   nodeConnectivity: SessionNodeConnectivity;
   onSaveMemo(blockId: string | null, text: string): Promise<void>;
   onOpenProject(folderId: string): void;
-  onOpenTask(task: PlannerFolder): void;
-  onCompleteTask(task: PlannerFolder): Promise<void>;
-  onToggleTaskToday(task: PlannerFolder): Promise<void>;
-  onMoveTaskToProject(task: PlannerFolder): void;
+  onOpenFolder(task: PlannerFolder): void;
+  onCompleteFolder(task: PlannerFolder): Promise<void>;
+  onToggleFolderToday(task: PlannerFolder): Promise<void>;
+  onMoveFolderToParent(task: PlannerFolder): void;
   onOpenRitual(): void;
-  onCreateTask(): void;
+  onCreateFolder(): void;
 }) {
   const data = state.data;
-  const visibleTasks = visibleDailyTasks(data?.tasks ?? [], isTodayView, todayFolderIds);
+  const visibleTasks = visibleDailyTasks(data?.folders ?? [], isTodayView, todayFolderIds);
   const visibleProjects = folders.filter((folder) => visibleTasks.some((task) => task.parentFolderId === folder.id));
   const visibleProjectIds = new Set(visibleProjects.map((folder) => folder.id));
   const groups = data ? [
@@ -81,7 +81,7 @@ export function DailyPlannerView({
       <div className="v3-section-head">
         <h2>오늘의 업무</h2><span>{visibleTasks.length}개</span>
         <span className="v3-spacer" />
-        <DashboardIconCap className="v3-planner-head-action" label="새 업무" onClick={onCreateTask}>
+        <DashboardIconCap className="v3-planner-head-action" label="새 업무" onClick={onCreateFolder}>
           <Plus className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </div>
@@ -101,10 +101,10 @@ export function DailyPlannerView({
                 sessions={sessions}
                 nodeConnectivity={nodeConnectivity}
                 isInToday={todayFolderIds.has(task.page.id)}
-                onOpen={() => onOpenTask(task)}
-                onComplete={() => onCompleteTask(task)}
-                onToggleToday={() => onToggleTaskToday(task)}
-                onMoveToProject={() => onMoveTaskToProject(task)}
+                onOpen={() => onOpenFolder(task)}
+                onComplete={() => onCompleteFolder(task)}
+                onToggleToday={() => onToggleFolderToday(task)}
+                onMoveToProject={() => onMoveFolderToParent(task)}
               />
             ))}
           </div>

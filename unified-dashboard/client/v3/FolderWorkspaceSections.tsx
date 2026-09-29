@@ -14,7 +14,7 @@ import { ProjectContextEditor } from "./ProjectContextEditor";
 import { fetchProjectPageDetails, type ProjectPageSnapshot } from "./project-page-details";
 import { loadConfirmedResult } from "./planner-query-state";
 import type { PlannerLoadState } from "./PlannerViews";
-import type { PlannerFolder, ProjectPlannerData } from "./planner-data";
+import type { PlannerFolder, FolderPlannerData } from "./planner-data";
 import type { SessionNodeConnectivity } from "./session-node-connectivity";
 import { buildDocumentContextMenuActions } from "./context-menu-model";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
@@ -47,7 +47,7 @@ export function FolderWorkspaceSections({
   onBlocksChanged,
 }: {
   folder: CatalogFolder;
-  project: PlannerLoadState<ProjectPlannerData>;
+  project: PlannerLoadState<FolderPlannerData>;
   children: readonly CatalogFolder[];
   hasMoreChildren: boolean;
   childrenLoadingMore: boolean;
@@ -119,8 +119,6 @@ export function FolderWorkspaceSections({
   }, [api, children, knownPages]);
 
   const childTasks = children.map((child) => {
-    const existing = project.data?.tasks.find((task) => task.folderId === child.id);
-    if (existing) return { folder: child, task: existing };
     const page = knownPages.find((candidate) => candidate.id === child.projectPageId)
       ?? childPages[child.id];
     if (!page) return null;

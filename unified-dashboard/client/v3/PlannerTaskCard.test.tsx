@@ -23,7 +23,10 @@ vi.mock("@seosoyoung/soul-ui", () => ({
 }));
 
 vi.mock("@seosoyoung/soul-ui/components/LiquidGlassCard", () => ({
-  LiquidGlassCard: ({ children, ...props }: React.HTMLAttributes<HTMLElement>) => (
+  LiquidGlassCard: ({ children, webglSurface: _webglSurface, cornerRadius: _cornerRadius, ...props }: React.HTMLAttributes<HTMLElement> & {
+    webglSurface?: unknown;
+    cornerRadius?: unknown;
+  }) => (
     <article {...props}>{children}</article>
   ),
 }));

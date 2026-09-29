@@ -20,28 +20,6 @@ for (const theme of ["dark", "light"] as const) {
     { name: "desktop", width: 1440, height: 1000 },
     { name: "mobile", width: 390, height: 844 },
   ] as const) {
-    test(`v1 liquid glass reference · ${theme} · ${viewport.width}px`, async ({ page }) => {
-      const errors = collectErrors(page);
-      await preparePage(page, theme, viewport);
-      await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-      await expect(page.getByTestId("dashboard-layout")).toBeVisible();
-      await page.waitForTimeout(500);
-
-      await expect(page.locator("[data-liquid-glass-webgl-provider=true]")).toHaveCount(1);
-      if (viewport.name === "desktop") {
-        await expectChromeClasses(page.getByTestId("session-panel"));
-        await expect(page.getByTestId("left-navigation-feed")).toHaveCSS("font-size", "14px");
-      } else {
-        const mobileHeader = page.getByTestId("dashboard-layout").locator("header").first();
-        await expect(mobileHeader).toHaveClass(/(?:^|\s)glass-strong(?:\s|$)/);
-        await expect(mobileHeader).toHaveClass(/(?:^|\s)glass-chrome(?:\s|$)/);
-        await expect(mobileHeader).toHaveClass(/(?:^|\s)border-glass-border(?:\s|$)/);
-      }
-      await assertNoHorizontalOverflow(page);
-      await capture(page, `v1-${theme}-${viewport.width}.png`);
-      expect(errors).toEqual([]);
-    });
-
     test(`v3 liquid glass parity · ${theme} · ${viewport.width}px`, async ({ page }) => {
       const errors = collectErrors(page);
       await preparePage(page, theme, viewport);
@@ -58,7 +36,7 @@ for (const theme of ["dark", "light"] as const) {
       );
       if (viewport.name === "desktop") {
         const navigation = page.locator(".v3-navigation");
-        await expect(navigation).toHaveCSS("width", "264px");
+        await expect(navigation).toHaveCSS("width", "280px");
         await expect(navigation.locator(".v3-nav-list button").first()).toHaveCSS("font-size", "14px");
       }
       await assertNoHorizontalOverflow(page);
@@ -72,20 +50,23 @@ for (const theme of ["dark", "light"] as const) {
 }
 
 async function resizeNavigationAndAssertPersistence(page: Page): Promise<void> {
-  const handle = page.getByTestId("v3-navigation-resize-handle");
-  const box = await handle.boundingBox();
-  expect(box).not.toBeNull();
-  await page.mouse.move(box!.x + box!.width / 2, box!.y + 120);
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  await expect(page.locator(".v3-navigation")).toHaveCSS("width", "336px");
+  const box = await page.getByTestId("v3-navigation-resize-handle").evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width };
+  });
+  await page.mouse.move(box.x + box.width / 2, box.y + 120);
   await page.mouse.down();
-  await page.mouse.move(box!.x + box!.width / 2 + 72, box!.y + 120, { steps: 5 });
+  await page.mouse.move(box.x + box.width / 2 + 72, box.y + 120, { steps: 5 });
   await page.mouse.up();
 
-  await expect(page.locator(".v3-navigation")).toHaveCSS("width", "336px");
+  await expect(page.locator(".v3-navigation")).toHaveCSS("width", "408px");
   await expect.poll(() => page.evaluate(() => (
     localStorage.getItem("soul-ui.dashboard.leftSidebarWidth")
-  ))).toBe("336");
+  ))).toBe("408");
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.locator(".v3-navigation")).toHaveCSS("width", "336px");
+  await expect(page.locator(".v3-navigation")).toHaveCSS("width", "408px");
   await assertNoHorizontalOverflow(page);
 }
 

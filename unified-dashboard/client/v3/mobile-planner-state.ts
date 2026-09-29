@@ -37,8 +37,8 @@ export function selectMobilePlannerTab(
     };
   }
 
-  const selectedTask = tasks.find((task) => task.folderId === state.selectedFolderId) ?? tasks[0] ?? null;
-  if (!selectedTask) {
+  const selectedFolderEntry = tasks.find((task) => task.folderId === state.selectedFolderId) ?? tasks[0] ?? null;
+  if (!selectedFolderEntry) {
     return {
       ...state,
       activeTab: "today",
@@ -49,14 +49,14 @@ export function selectMobilePlannerTab(
     };
   }
 
-  const taskChanged = selectedTask.folderId !== state.selectedFolderId;
-  const selectedRunId = taskChanged || !selectedTask.runIds.includes(state.selectedRunId ?? "")
+  const taskChanged = selectedFolderEntry.folderId !== state.selectedFolderId;
+  const selectedRunId = taskChanged || !selectedFolderEntry.runIds.includes(state.selectedRunId ?? "")
     ? null
     : state.selectedRunId;
   return {
     activeTab: target,
-    selectedFolderId: selectedTask.folderId,
-    selectedRunId: target === "chat" ? selectedRunId ?? selectedTask.latestRunId : selectedRunId,
+    selectedFolderId: selectedFolderEntry.folderId,
+    selectedRunId: target === "chat" ? selectedRunId ?? selectedFolderEntry.latestRunId : selectedRunId,
     workspaceOpen: true,
     chatOpen: target === "chat",
   };

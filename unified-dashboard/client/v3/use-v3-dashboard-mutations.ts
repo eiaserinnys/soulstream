@@ -20,7 +20,7 @@ export function useV3DashboardMutations({
   today,
   daily,
   selectedProject,
-  selectedTask,
+  selectedFolderEntry,
   selectedPageId,
   setCreateOpen,
   setCreatePending,
@@ -33,10 +33,10 @@ export function useV3DashboardMutations({
   notify,
   notifyWriteFailure,
   patchPlannerFolder,
-  addTaskToToday,
+  addFolderToToday,
   refreshDaily,
   refreshProject,
-  refreshTask,
+  refreshFolder,
 }: {
   api: PageApiClient;
   mutationPort: BrowserPlannerMutationPort;
@@ -46,7 +46,7 @@ export function useV3DashboardMutations({
   today: string;
   daily: PlannerLoadState<DailyPlannerData>;
   selectedProject: PageDto | null;
-  selectedTask: PlannerFolder | null;
+  selectedFolderEntry: PlannerFolder | null;
   selectedPageId: string | null;
   setCreateOpen: Dispatch<SetStateAction<boolean>>;
   setCreatePending: Dispatch<SetStateAction<boolean>>;
@@ -59,10 +59,10 @@ export function useV3DashboardMutations({
   notify(message: string): void;
   notifyWriteFailure(action: string, error: unknown): string;
   patchPlannerFolder(folderId: string, update: (task: PlannerFolder) => PlannerFolder): void;
-  addTaskToToday(task: PlannerFolder): void;
+  addFolderToToday(task: PlannerFolder): void;
   refreshDaily(): void;
   refreshProject(): void;
-  refreshTask(folderId: string): void;
+  refreshFolder(folderId: string): void;
 }) {
   const createTask = useCallback(async (
     title: string,
@@ -134,16 +134,16 @@ export function useV3DashboardMutations({
   }, [mutationPort, newDocumentTitle, notify, notifyWriteFailure, refreshProject, selectedProject, setNewDocumentOpen, setNewDocumentTitle]);
 
   const saveDescription = useCallback(async (markdown: string) => {
-    if (!selectedTask) return;
+    if (!selectedFolderEntry) return;
     try {
-      await saveFolderDescription(api, selectedTask.page.id, markdown);
-      refreshTask(selectedTask.page.id);
+      await saveFolderDescription(api, selectedFolderEntry.page.id, markdown);
+      refreshFolder(selectedFolderEntry.page.id);
       notify("업무 설명 저장됨");
     } catch (error) {
       notifyWriteFailure("업무 설명 저장", error);
       throw error;
     }
-  }, [api, notify, notifyWriteFailure, refreshTask, selectedTask]);
+  }, [api, notify, notifyWriteFailure, refreshFolder, selectedFolderEntry]);
 
   const acknowledgeReview = useCallback((result: SessionReviewAcknowledgeResult) => {
     setAcknowledgedReviewIds((current) => new Set([...current, result.agentSessionId]));
@@ -164,8 +164,8 @@ export function useV3DashboardMutations({
   }, [patchPlannerFolder, selectedPageId]);
 
   const applyRitualAction = useCallback((item: RitualQueueItem, action: RitualAction) => {
-    if (action === "today") addTaskToToday(item.task);
-  }, [addTaskToToday]);
+    if (action === "today") addFolderToToday(item.task);
+  }, [addFolderToToday]);
 
   return {
     createTask,

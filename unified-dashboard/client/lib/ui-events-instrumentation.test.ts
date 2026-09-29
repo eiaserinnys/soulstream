@@ -86,11 +86,11 @@ describe("navigation target", () => {
       .toEqual({ kind: "custom_view", id: "v1" });
   });
 
-  it("falls back to the folder and then to the view mode", () => {
+  it("tracks the selected folder and ignores disconnected view modes", () => {
     expect(resolveNavigationTarget(snapshot({}), snapshot({ selectedFolderId: "f1" })))
       .toEqual({ kind: "folder", id: "f1" });
     expect(resolveNavigationTarget(snapshot({}), snapshot({ viewMode: "feed" })))
-      .toEqual({ kind: "view", id: "feed" });
+      .toBeNull();
   });
 
   it("sees no navigation when nothing that defines the screen moved", () => {

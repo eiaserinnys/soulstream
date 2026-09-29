@@ -44,6 +44,6 @@ describe("PR-CD task default and context contract", () => {
     );
 
     expect(applyTaskBlocks).toContain("patchPlannerFolder");
-    expect(applyTaskBlocks).not.toContain("refreshTask");
+    expect(applyTaskBlocks).not.toContain("refreshFolder");
   });
 });

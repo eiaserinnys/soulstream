@@ -51,7 +51,7 @@ describe("PR-CN planner polish contract", () => {
 
     expect(ritual).toContain("데일리에서 내리기");
     expect(ritual).not.toContain("완료 처리");
-    expect(model).not.toContain("completeTask");
+    expect(model).not.toContain("completeFolder");
     expect(browserPort).not.toContain("postFolderStatus");
   });
 });

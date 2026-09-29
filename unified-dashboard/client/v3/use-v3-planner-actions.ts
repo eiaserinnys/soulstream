@@ -30,36 +30,36 @@ export function useV3PlannerActions({
   notify,
   notifyWriteFailure,
   todayFolderIds,
-  setTaskTodayPresence,
-  addTaskToToday,
-  patchTask,
+  setFolderTodayPresence,
+  addFolderToToday,
+  patchFolder,
   removeSessionsFromPlanner,
   moveSessionInPlanner,
-  moveTaskProjectInPlanner,
-  refreshTask,
+  moveFolderParentInPlanner,
+  refreshFolder,
 }: {
   api: PageApiClient;
   folders: readonly CatalogFolder[];
   notify(message: string): void;
   notifyWriteFailure(action: string, error: unknown): void;
   todayFolderIds: ReadonlySet<string>;
-  setTaskTodayPresence(folderId: string, present: boolean): void;
-  addTaskToToday(task: PlannerFolder): void;
-  patchTask(folderId: string, update: (task: PlannerFolder) => PlannerFolder): void;
+  setFolderTodayPresence(folderId: string, present: boolean): void;
+  addFolderToToday(task: PlannerFolder): void;
+  patchFolder(folderId: string, update: (task: PlannerFolder) => PlannerFolder): void;
   removeSessionsFromPlanner(sessionIds: readonly string[]): void;
   moveSessionInPlanner(sessionId: string, targetFolderId: string): void;
-  moveTaskProjectInPlanner(task: PlannerFolder, targetFolderId: string | null): void;
-  refreshTask(folderId: string): void;
+  moveFolderParentInPlanner(task: PlannerFolder, targetFolderId: string | null): void;
+  refreshFolder(folderId: string): void;
 }) {
   const queryClient = useQueryClient();
 
-  const completeTask = useCallback(async (task: PlannerFolder) => {
+  const completeFolder = useCallback(async (task: PlannerFolder) => {
     const folderId = task.page.id;
     await runOptimisticTodayMutation({
       folderId,
       wasInToday: todayFolderIds.has(folderId),
       optimisticInToday: false,
-      setPresence: setTaskTodayPresence,
+      setPresence: setFolderTodayPresence,
       mutate: async () => {
         try {
           const folder = folders.find((candidate) => candidate.id === task.folderId);
@@ -72,7 +72,7 @@ export function useV3PlannerActions({
               ? result.folder
               : candidate),
           });
-          patchTask(folderId, (current) => ({ ...current, status: "completed" }));
+          patchFolder(folderId, (current) => ({ ...current, status: "completed" }));
           notify(`업무 완료 · ${task.page.title}`);
         } catch (error) {
           notifyWriteFailure("업무 완료", error);
@@ -81,9 +81,9 @@ export function useV3PlannerActions({
       },
       finalPresence: () => false,
     });
-  }, [folders, notify, notifyWriteFailure, patchTask, setTaskTodayPresence, todayFolderIds]);
+  }, [folders, notify, notifyWriteFailure, patchFolder, setFolderTodayPresence, todayFolderIds]);
 
-  const toggleTaskToday = useCallback(async (task: PlannerFolder) => {
+  const toggleFolderToday = useCallback(async (task: PlannerFolder) => {
     const folderId = task.page.id;
     const wasInToday = todayFolderIds.has(folderId);
     await runOptimisticTodayMutation({
@@ -91,8 +91,8 @@ export function useV3PlannerActions({
       wasInToday,
       optimisticInToday: !wasInToday,
       setPresence: (changedFolderId, present) => {
-        if (present) addTaskToToday(task);
-        else setTaskTodayPresence(changedFolderId, false);
+        if (present) addFolderToToday(task);
+        else setFolderTodayPresence(changedFolderId, false);
       },
       mutate: async () => {
         try {
@@ -106,7 +106,7 @@ export function useV3PlannerActions({
       },
       finalPresence: (result) => result === "added",
     });
-  }, [addTaskToToday, api, notify, notifyWriteFailure, setTaskTodayPresence, todayFolderIds]);
+  }, [addFolderToToday, api, notify, notifyWriteFailure, setFolderTodayPresence, todayFolderIds]);
 
   const resolveStarredFolder = useCallback(async (task: StarredPlannerFolder) => {
     try {
@@ -122,12 +122,12 @@ export function useV3PlannerActions({
   }, [api, folders, notify]);
 
   const completeStarredFolder = useCallback(async (task: StarredPlannerFolder) => {
-    await completeTask(await resolveStarredFolder(task));
-  }, [completeTask, resolveStarredFolder]);
+    await completeFolder(await resolveStarredFolder(task));
+  }, [completeFolder, resolveStarredFolder]);
 
   const toggleStarredFolderToday = useCallback(async (task: StarredPlannerFolder) => {
-    await toggleTaskToday(await resolveStarredFolder(task));
-  }, [resolveStarredFolder, toggleTaskToday]);
+    await toggleFolderToday(await resolveStarredFolder(task));
+  }, [resolveStarredFolder, toggleFolderToday]);
 
   const renameSession = useCallback(async (sessionId: string, displayName: string | null) => {
     try {
@@ -146,7 +146,7 @@ export function useV3PlannerActions({
     });
     try {
       const page = await renameFolderIdentityTitle(api, task.page.id, title);
-      patchTask(task.page.id, (current) => ({ ...current, page }));
+      patchFolder(task.page.id, (current) => ({ ...current, page }));
       notify("업무 제목을 변경했습니다");
       return page.title;
     } catch (error) {
@@ -155,7 +155,7 @@ export function useV3PlannerActions({
     } finally {
       clearFolderStarChange(task.page.id, mutationId);
     }
-  }, [api, notify, notifyWriteFailure, patchTask]);
+  }, [api, notify, notifyWriteFailure, patchFolder]);
 
   const deleteSessions = useCallback(async (sessionIds: string[]) => {
     try {
@@ -183,7 +183,7 @@ export function useV3PlannerActions({
     }
   }, [moveSessionInPlanner, notify, notifyWriteFailure]);
 
-  const moveTaskProject = useCallback(async (
+  const moveFolderParent = useCallback(async (
     task: PlannerFolder,
     target: FolderParentTarget,
   ) => {
@@ -194,15 +194,15 @@ export function useV3PlannerActions({
         folder,
         task,
         target,
-        project: moveTaskProjectInPlanner,
+        project: moveFolderParentInPlanner,
       });
       notify(`프로젝트 이동 · ${folders.find((candidate) => candidate.id === target.folderId)?.name ?? target.folderId}`);
     } catch (error) {
-      refreshTask(task.page.id);
+      refreshFolder(task.page.id);
       notifyWriteFailure("프로젝트 이동", error);
       throw error;
     }
-  }, [api, folders, moveTaskProjectInPlanner, notify, notifyWriteFailure, refreshTask]);
+  }, [api, folders, moveFolderParentInPlanner, notify, notifyWriteFailure, refreshFolder]);
 
-  return { completeTask, toggleTaskToday, completeStarredFolder, toggleStarredFolderToday, renameFolderPageTitle, renameSession, deleteSessions, moveSession, moveTaskProject };
+  return { completeFolder, toggleFolderToday, completeStarredFolder, toggleStarredFolderToday, renameFolderPageTitle, renameSession, deleteSessions, moveSession, moveFolderParent };
 }

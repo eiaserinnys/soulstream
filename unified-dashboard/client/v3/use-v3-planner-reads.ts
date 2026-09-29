@@ -12,16 +12,16 @@ import {
 import type { FolderStarChange } from "./task-star-store";
 import {
   loadDailyPlanner,
-  loadProjectDocumentPage,
+  loadFolderDocumentPage,
   loadFolderSubfolderPage,
   loadStarredFolders,
-  loadProjectPlanner,
+  loadFolderPlanner,
   starredFolderPage,
   type DailyPlannerData,
   type PlannerDataDependencies,
   type PlannerPage,
   type PlannerFolder,
-  type ProjectPlannerData,
+  type FolderPlannerData,
   type StarredPlannerFolder,
 } from "./planner-data";
 import {
@@ -71,7 +71,7 @@ export function usePlannerCollections({
 }) {
   const [daily, setDaily] = useState<PlannerLoadState<DailyPlannerData>>({ status: "loading", data: null, message: null });
   const [todayFolderIds, setTodayFolderIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [project, setProject] = useState<PlannerLoadState<ProjectPlannerData>>({ status: "loading", data: null, message: null });
+  const [project, setProject] = useState<PlannerLoadState<FolderPlannerData>>({ status: "loading", data: null, message: null });
   const [starredFolderIndex, setStarredFolderIndex] = useState<PlannerLoadState<PlannerPage<StarredPlannerFolder>>>({ status: "loading", data: null, message: null });
   const [starredLoadedRefreshKey, setStarredLoadedRefreshKey] = useState<number | null>(null);
   const [starredFoldersLoadingMore, setStarredFoldersLoadingMore] = useState(false);
@@ -93,12 +93,11 @@ export function usePlannerCollections({
 
   const dailyPageRefreshKey = useV3PageInvalidationKey([
     daily.data?.daily.page.id,
-    ...(daily.data?.tasks.map((task) => task.page.id) ?? []),
+    ...(daily.data?.folders.map((task) => task.page.id) ?? []),
   ]);
   const projectPageRefreshKey = useV3PageInvalidationKey([
     selectedProject?.id,
     project.data?.project.id,
-    ...(project.data?.tasks.map((task) => task.page.id) ?? []),
     ...(project.data?.documents.map((document) => document.id) ?? []),
   ]);
 
@@ -180,12 +179,12 @@ export function usePlannerCollections({
     void loadConfirmedResult({
       previous,
       load: () => loadDailyPlanner(api, selectedDate, dependencies),
-      clearsVisibleContent: (current, next) => current.tasks.length > 0 && next.tasks.length === 0,
+      clearsVisibleContent: (current, next) => current.folders.length > 0 && next.folders.length === 0,
     }).then((data) => {
       if (active) {
         setDaily((current) => completePlannerLoad(current, data));
         if (selectedDate === today) {
-          setTodayFolderIds((current) => retainEqualSet(current, new Set(data.tasks.map((task) => task.page.id))));
+          setTodayFolderIds((current) => retainEqualSet(current, new Set(data.folders.map((task) => task.page.id))));
         }
       }
     }).catch((error: unknown) => {
@@ -199,7 +198,7 @@ export function usePlannerCollections({
     let active = true;
     void loadDailyPlanner(api, today, dependencies).then((data) => {
       if (active) {
-        setTodayFolderIds((current) => retainEqualSet(current, new Set(data.tasks.map((task) => task.page.id))));
+        setTodayFolderIds((current) => retainEqualSet(current, new Set(data.folders.map((task) => task.page.id))));
       }
     }).catch(() => {
       // The selected planner remains usable; its own error surface handles load failures.
@@ -207,7 +206,7 @@ export function usePlannerCollections({
     return () => { active = false; };
   }, [api, dailyPageRefreshKey, dependencies, mutationRefresh.daily, refreshKeys.daily, selectedDate, today]);
 
-  const setTaskTodayPresence = useCallback((folderId: string, present: boolean) => {
+  const setFolderTodayPresence = useCallback((folderId: string, present: boolean) => {
     setTodayFolderIds((current) => {
       const next = new Set(current);
       if (present) next.add(folderId);
@@ -216,17 +215,17 @@ export function usePlannerCollections({
     });
   }, []);
 
-  const addTaskToToday = useCallback((task: PlannerFolder) => {
-    setTaskTodayPresence(task.page.id, true);
+  const addFolderToToday = useCallback((task: PlannerFolder) => {
+    setFolderTodayPresence(task.page.id, true);
     if (selectedDate !== today) return;
     setDaily((current) => {
-      if (!current.data || current.data.tasks.some((candidate) => candidate.page.id === task.page.id)) return current;
+      if (!current.data || current.data.folders.some((candidate) => candidate.page.id === task.page.id)) return current;
       return retainEqualValue(current, {
         ...current,
-        data: { ...current.data, tasks: [...current.data.tasks, task] },
+        data: { ...current.data, folders: [...current.data.folders, task] },
       });
     });
-  }, [selectedDate, setTaskTodayPresence, today]);
+  }, [selectedDate, setFolderTodayPresence, today]);
 
   const projects = useMemo(() => {
     const next = mergePages(daily.data?.projects ?? [], selectedProject ? [selectedProject] : []);
@@ -252,10 +251,9 @@ export function usePlannerCollections({
       : { status: "loading", data: null, message: null });
     void loadConfirmedResult({
       previous,
-      load: () => loadProjectPlanner(api, selectedFolderId, selectedProject, dependencies),
+      load: () => loadFolderPlanner(api, selectedFolderId, selectedProject, dependencies),
       clearsVisibleContent: (current, next) => (
-        current.tasks.length + current.documents.length > 0
-        && next.tasks.length + next.documents.length === 0
+        current.documents.length > 0 && next.documents.length === 0
       ),
     }).then((data) => {
       if (active) setProject((current) => completePlannerLoad(current, data));
@@ -265,37 +263,30 @@ export function usePlannerCollections({
     return () => { active = false; };
   }, [api, dependencies, mutationRefresh.project, projectPageRefreshKey, refreshKeys.project, selectedFolderId, selectedProject]);
 
-  const updateLoadedTasks = useCallback((update: (tasks: PlannerFolder[]) => PlannerFolder[]) => {
+  const updateLoadedFolders = useCallback((update: (tasks: PlannerFolder[]) => PlannerFolder[]) => {
     setDaily((current) => {
       if (!current.data) return current;
-      const tasks = update(current.data.tasks);
-      return tasks === current.data.tasks
+      const folders = update(current.data.folders);
+      return folders === current.data.folders
         ? current
-        : retainEqualValue(current, { ...current, data: { ...current.data, tasks } });
-    });
-    setProject((current) => {
-      if (!current.data) return current;
-      const tasks = update(current.data.tasks);
-      return tasks === current.data.tasks
-        ? current
-        : retainEqualValue(current, { ...current, data: { ...current.data, tasks } });
+        : retainEqualValue(current, { ...current, data: { ...current.data, folders } });
     });
   }, []);
 
-  const patchTask = useCallback((folderId: string, update: (task: PlannerFolder) => PlannerFolder) => {
-    updateLoadedTasks((tasks) => replacePlannerFolder(tasks, folderId, update));
-  }, [updateLoadedTasks]);
+  const patchFolder = useCallback((folderId: string, update: (task: PlannerFolder) => PlannerFolder) => {
+    updateLoadedFolders((tasks) => replacePlannerFolder(tasks, folderId, update));
+  }, [updateLoadedFolders]);
 
   const removeSessions = useCallback((sessionIds: readonly string[]) => {
     const removedIds = new Set(sessionIds);
-    updateLoadedTasks((tasks) => removePlannerSessions(tasks, removedIds));
-  }, [updateLoadedTasks]);
+    updateLoadedFolders((tasks) => removePlannerSessions(tasks, removedIds));
+  }, [updateLoadedFolders]);
 
   const moveSession = useCallback((sessionId: string, targetFolderId: string) => {
-    updateLoadedTasks((tasks) => movePlannerSession(tasks, sessionId, targetFolderId));
-  }, [updateLoadedTasks]);
+    updateLoadedFolders((tasks) => movePlannerSession(tasks, sessionId, targetFolderId));
+  }, [updateLoadedFolders]);
 
-  const moveTaskProject = usePlannerProjectMoveProjection(setDaily, setProject);
+  const moveFolderParent = usePlannerProjectMoveProjection(setDaily);
   const { starredFoldersReordering, reorderStarredFolders } = useStarredFolderReorder({
     dependencies,
     notify,
@@ -316,8 +307,8 @@ export function usePlannerCollections({
     setMutationRefresh((current) => ({ ...current, project: current.project + 1 }));
   }, []);
 
-  const refreshTask = useCallback((folderId: string) => {
-    const inDaily = dailyRef.current.data?.tasks.some((task) => task.page.id === folderId) ?? false;
+  const refreshFolder = useCallback((folderId: string) => {
+    const inDaily = dailyRef.current.data?.folders.some((task) => task.page.id === folderId) ?? false;
     const inProject = selectedProject?.id === folderId;
     if (!inDaily && !inProject) return;
     setMutationRefresh((current) => ({
@@ -376,7 +367,7 @@ export function usePlannerCollections({
     setProjectDocumentsLoadingMore(true);
     try {
       if (!selectedFolderId) return;
-      const next = await loadProjectDocumentPage(dependencies, selectedFolderId, data.nextDocumentCursor);
+      const next = await loadFolderDocumentPage(dependencies, selectedFolderId, data.nextDocumentCursor);
       setProject((current) => current.data?.project.id === data.project.id
         ? completePlannerLoad(current, {
           ...current.data,
@@ -414,8 +405,8 @@ export function usePlannerCollections({
   return {
     daily,
     todayFolderIds,
-    setTaskTodayPresence,
-    addTaskToToday,
+    setFolderTodayPresence,
+    addFolderToToday,
     project,
     projects,
     selectedProject,
@@ -432,13 +423,13 @@ export function usePlannerCollections({
     reorderStarredFolders,
     loadMoreProjectDocuments,
     loadMoreSubfolders,
-    patchTask,
+    patchFolder,
     removeSessions,
     moveSession,
-    moveTaskProject,
+    moveFolderParent,
     refreshDaily,
     refreshProject,
-    refreshTask,
+    refreshFolder,
   };
 }
 

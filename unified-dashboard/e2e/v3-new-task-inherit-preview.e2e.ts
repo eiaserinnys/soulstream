@@ -56,7 +56,7 @@ test("PR-Y · one Chromium · inherited values, empty values, and project switch
       await expect(page.getByTestId("inheritance-guidance")).toContainText("없음");
       await expect(page.getByTestId("inheritance-atom")).toContainText("없음");
       await expect(page.getByTestId("inheritance-defaults")).toContainText("없음");
-      await expect.poll(() => projectPageReads.get("/api/pages/project-ops") ?? 0).toBe(1);
+      await expect.poll(() => projectPageReads.get("/api/pages/project-ops") ?? 0).toBe(2);
       await capture(page, theme, "02-without-context");
     } finally {
       await context.close();

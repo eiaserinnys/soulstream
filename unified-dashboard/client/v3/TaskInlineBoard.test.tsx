@@ -83,7 +83,7 @@ describe("TaskInlineBoard document context menu", () => {
       root!.render(createElement(TaskInlineBoard, {
         folderId: "task-1",
         api: {} as PageApiClient,
-        taskMoveTargets: [target],
+        folderMoveTargets: [target],
         onMarkdownDocumentsChanged: vi.fn(),
       }));
     });
@@ -158,7 +158,7 @@ describe("TaskInlineBoard document context menu", () => {
       root!.render(createElement(TaskInlineBoard, {
         folderId: "task-1",
         api: {} as PageApiClient,
-        taskMoveTargets: [],
+        folderMoveTargets: [],
         onMarkdownDocumentsChanged: vi.fn(),
         markdownDocumentsRevision,
       }));

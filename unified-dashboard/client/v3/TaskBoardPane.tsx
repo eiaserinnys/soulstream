@@ -33,7 +33,7 @@ export function TaskBoardPane({
   folderId,
   folderName,
   sessions,
-  taskMoveTargets,
+  folderMoveTargets,
   viewportPersistenceKey,
   onBoardItemsChanged,
   onMarkdownDocumentDeleted,
@@ -45,7 +45,7 @@ export function TaskBoardPane({
   folderId: string;
   folderName: string;
   sessions: readonly SessionSummary[];
-  taskMoveTargets: readonly PlannerFolder[];
+  folderMoveTargets: readonly PlannerFolder[];
   viewportPersistenceKey?: string;
   onBoardItemsChanged(items: readonly CatalogBoardItem[]): void;
   onMarkdownDocumentDeleted(documentId: string, boardItemId: string): void;
@@ -180,7 +180,7 @@ export function TaskBoardPane({
             selectedFolderIdOverride={folderId}
             sessions={displaySessions}
             viewportPersistenceKey={viewportPersistenceKey}
-            taskMoveTargets={taskMoveTargets
+            taskMoveTargets={folderMoveTargets
               .filter((target) => target.folderId !== folderId)
               .map((target) => ({ id: target.folderId, title: target.page.title }))}
             onBoardItemMoved={(item) => removeSourceBoardItem(item.id, item)}

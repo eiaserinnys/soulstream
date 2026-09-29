@@ -45,19 +45,17 @@ export interface DailyPlannerData {
   daily: PageReadResponse;
   projects: PageDto[];
   memoBlocks: BlockDto[];
-  tasks: PlannerFolder[];
+  folders: PlannerFolder[];
   reviewSessionIds: string[];
 }
 
-export interface ProjectPlannerData {
+export interface FolderPlannerData {
   folder: CatalogFolder;
   project: PageDto;
   blocks: BlockDto[];
   items: Array<{ status: string }>;
-  tasks: PlannerFolder[];
   subfolders: CatalogFolder[];
   documents: PageDto[];
-  nextTaskCursor: string | null;
   nextSubfolderCursor: string | null;
   nextDocumentCursor: string | null;
   sessions: PlannerPage<SessionSummary>;
@@ -153,18 +151,18 @@ export async function loadDailyPlanner(
   return {
     daily: payload.daily,
     projects: [],
-    tasks: payload.folders.map(plannerFolder),
+    folders: payload.folders.map(plannerFolder),
     memoBlocks: payload.memoBlocks,
     reviewSessionIds: payload.reviewSessionIds,
   };
 }
 
-export async function loadProjectPlanner(
+export async function loadFolderPlanner(
   _api: PageApiClient,
   folderId: string,
   _project: PageDto,
   dependencies: PlannerDataDependencies,
-): Promise<ProjectPlannerData> {
+): Promise<FolderPlannerData> {
   const payload = await dependencies.fetchPlanner(
     `/api/planner/folders/${encodeURIComponent(folderId)}`,
   ) as PlannerFolderAggregate;
@@ -173,10 +171,8 @@ export async function loadProjectPlanner(
     project: payload.page,
     blocks: payload.blocks,
     items: payload.items,
-    tasks: [],
     subfolders: payload.subfolders.items,
     documents: payload.documents.items,
-    nextTaskCursor: null,
     nextSubfolderCursor: payload.subfolders.nextCursor,
     nextDocumentCursor: payload.documents.nextCursor,
     sessions: payload.sessions,
@@ -207,7 +203,7 @@ export async function loadDailyHistoryDates(
   return payload.dates;
 }
 
-export async function loadProjectDocumentPage(
+export async function loadFolderDocumentPage(
   dependencies: PlannerDataDependencies,
   folderId: string,
   cursor: string | undefined,

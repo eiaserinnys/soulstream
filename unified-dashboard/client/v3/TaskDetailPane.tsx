@@ -55,16 +55,16 @@ export function TaskDetailPane({
   sessionDefaults,
   onReturnToToday,
   taskInToday,
-  onToggleTaskToday,
+  onToggleFolderToday,
   onOpenBoard,
-  taskMoveTargets,
+  folderMoveTargets,
   onOpenSession,
-  onRenameTaskTitle,
+  onRenameFolderTitle,
   onSaveDescription,
   onRenameSession,
   onDeleteSessions,
   onMoveSession,
-  onTaskBlocksChanged,
+  onFolderBlocksChanged,
 }: {
   task: PlannerFolder;
   folderSections: ReactNode;
@@ -88,16 +88,16 @@ export function TaskDetailPane({
   sessionDefaults: PageSessionDefaults | null;
   onReturnToToday(): void;
   taskInToday: boolean;
-  onToggleTaskToday(): Promise<void>;
+  onToggleFolderToday(): Promise<void>;
   onOpenBoard(): void;
-  taskMoveTargets: readonly PlannerFolder[];
+  folderMoveTargets: readonly PlannerFolder[];
   onOpenSession(session: SessionSummary): void;
-  onRenameTaskTitle(title: string): Promise<void>;
+  onRenameFolderTitle(title: string): Promise<void>;
   onSaveDescription(markdown: string): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
   onMoveSession(sessionId: string, targetTask: FolderMoveTarget): Promise<void>;
-  onTaskBlocksChanged(blocks: PlannerFolder["blocks"]): void;
+  onFolderBlocksChanged(blocks: PlannerFolder["blocks"]): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -227,7 +227,7 @@ export function TaskDetailPane({
         >
           <Star className="h-4 w-4" fill={folderStar.starred ? "currentColor" : "none"} aria-hidden="true" />
         </DashboardIconCap>
-        <TaskTodayToggle inToday={taskInToday} onToggle={onToggleTaskToday} />
+        <TaskTodayToggle inToday={taskInToday} onToggle={onToggleFolderToday} />
         <DashboardIconCap label="업무 보드 열기" onClick={onOpenBoard}>
           <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
@@ -252,7 +252,7 @@ export function TaskDetailPane({
           <div className="v3-task-detail-content">
             <div className="v3-detail-title">
               {checklistEnabled ? <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span> : null}
-              <TaskTitleEditor title={task.page.title} onRename={onRenameTaskTitle} />
+              <TaskTitleEditor title={task.page.title} onRename={onRenameFolderTitle} />
             </div>
 
             <section ref={informationSectionRef} className="v3-detail-section" data-task-section="information">
@@ -277,7 +277,7 @@ export function TaskDetailPane({
               <TaskInlineBoard
                 folderId={task.folderId}
                 api={api}
-                taskMoveTargets={taskMoveTargets}
+                folderMoveTargets={folderMoveTargets}
                 markdownDocumentsRevision={markdownDocumentsRevision}
                 onMarkdownDocumentsChanged={setBoardDocuments}
               />
@@ -303,7 +303,7 @@ export function TaskDetailPane({
                 runHistoryLoading={runHistoryLoading}
                 activeSessionId={activeSessionId}
                 onLoadMoreRuns={onLoadMoreRuns}
-                moveTargets={taskMoveTargets}
+                moveTargets={folderMoveTargets}
                 onOpenSession={onOpenSession}
                 onRenameSession={onRenameSession}
                 onDeleteSessions={onDeleteSessions}
