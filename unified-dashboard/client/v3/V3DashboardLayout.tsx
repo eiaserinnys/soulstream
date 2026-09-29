@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type BoardContainerRef, type SessionSummary } from "@seosoyoung/soul-ui";
+import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type BoardContainerRef, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { clampDashboardLeftSidebarWidth, writeDashboardLeftSidebarWidth } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_NAVIGATION_DEFAULT_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX, readV3NavigationWidth } from "./v3-layout-metrics";
@@ -15,6 +15,9 @@ import { RitualModal } from "./RitualModal";
 import { FolderWorkspace } from "./FolderWorkspace";
 import { FolderDetailPane } from "./FolderDetailPane";
 import { FolderWorkspaceSections } from "./FolderWorkspaceSections";
+import { FolderArchiveDialog } from "./FolderArchiveDialog";
+import { ProjectDialog, type ProjectDialogTarget } from "./ProjectDialog";
+import { saveProjectFormContext } from "./project-form-actions";
 import { useFolderWorkspaceFolder } from "./use-folder-workspace-entry";
 import { setFolderChecklistEnabled } from "./folder-workspace-api";
 import { FolderParentMoveDialog } from "./FolderParentMoveDialog";
@@ -67,6 +70,8 @@ function V3DashboardContent() {
   const plannerInvalidationKeys = useV3PlannerInvalidationKeys();
   const projectContextInvalidationKey = useV3PageInvalidationKey([selectedProjectId]) + plannerInvalidationKeys.pageDetail;
   const [createOpen, setCreateOpen] = useState(false);
+  const [childFolderDialog, setChildFolderDialog] = useState<ProjectDialogTarget | null>(null);
+  const [childArchiveTarget, setChildArchiveTarget] = useState<CatalogFolder | null>(null);
   const [ritualOpen, setRitualOpen] = useState(false);
   const [documentInspectorOpen, setDocumentInspectorOpen] = useState(false);
   const [standaloneDocumentId, setStandaloneDocumentId] = useState<string | null>(null);
@@ -528,8 +533,11 @@ function V3DashboardContent() {
   const projectFolderId = selectedFolderId;
   const folderSections = selectedFolder ? <FolderWorkspaceSections
     folder={selectedFolder}
+    parentFolder={parentFolder}
     project={folderAggregate ? project : { status: "loading", data: null, message: null }}
-    children={folderAggregate?.subfolders ?? childFolders}
+    children={(folderAggregate?.subfolders ?? childFolders)
+      .map((child) => catalog?.folders.find((current) => current.id === child.id) ?? child)
+      .filter((child) => !child.archived)}
     hasMoreChildren={Boolean(folderAggregate?.nextSubfolderCursor)}
     childrenLoadingMore={subfoldersLoadingMore}
     onLoadMoreChildren={() => { void loadMoreSubfolders(); }}
@@ -543,6 +551,14 @@ function V3DashboardContent() {
     documentsLoadingMore={projectDocumentsLoadingMore}
     onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }}
     onOpenFolder={(folder) => { void selectFolder(folder); }}
+    onCreateTask={() => setCreateOpen(true)}
+    onCreateSubfolder={() => setChildFolderDialog({ mode: "create", parentFolderId: selectedFolder.id, parentName: selectedFolder.name })}
+    onRenameChild={(folder) => setChildFolderDialog({ mode: "edit", folder })}
+    onArchiveChild={(folder) => {
+      if (projectNavigationMutations.projectHasContents(folder.id)) setChildArchiveTarget(folder);
+      else void projectNavigationMutations.onDeleteProject(folder).catch((error) => notifyWriteFailure("폴더 보관", error));
+    }}
+    onToggleChildChecklist={(folder) => toggleFolderChecklist(folder, !folder.checklistEnabled)}
     onOpenDocument={(page) => openProjectDocument(page.id)}
     onToggleNewDocument={() => setNewDocumentOpen((value) => !value)}
     onNewDocumentTitle={setNewDocumentTitle}
@@ -552,10 +568,9 @@ function V3DashboardContent() {
     onMoveFolderToParent={folderParentMove.openFolder}
     onBlocksChanged={applyFolderBlocks}
   /> : null;
-  const toggleSelectedChecklist = async (enabled: boolean) => {
-    if (!selectedFolder) return;
+  const toggleFolderChecklist = async (folder: CatalogFolder, enabled: boolean) => {
     try {
-      const result = await setFolderChecklistEnabled(selectedFolder, enabled);
+      const result = await setFolderChecklistEnabled(folder, enabled);
       const state = useDashboardStore.getState();
       if (state.catalog) state.setCatalog({
         ...state.catalog,
@@ -565,6 +580,9 @@ function V3DashboardContent() {
       notifyWriteFailure("체크리스트 변경", error);
       throw error;
     }
+  };
+  const toggleSelectedChecklist = async (enabled: boolean) => {
+    if (selectedFolder) await toggleFolderChecklist(selectedFolder, enabled);
   };
   const toggleSelectedToday = () => workspaceFolderEntry
     ? plannerActions.toggleFolderToday(workspaceFolderEntry)
@@ -733,6 +751,23 @@ function V3DashboardContent() {
         }}
       />
       <FolderParentMoveDialog {...folderParentMove.dialogProps} />
+      <ProjectDialog
+        target={childFolderDialog}
+        createLabel="새 폴더"
+        onClose={() => setChildFolderDialog(null)}
+        onCreateIdentity={projectNavigationMutations.onCreateProject}
+        onRename={projectNavigationMutations.onRenameProject}
+        onSaveContext={(pageId, previous, value) => saveProjectFormContext(api, pageId, previous, value)}
+        onSaved={() => undefined}
+      />
+      <FolderArchiveDialog
+        folder={childArchiveTarget}
+        onClose={() => setChildArchiveTarget(null)}
+        onArchive={(folder) => {
+          setChildArchiveTarget(null);
+          void projectNavigationMutations.onDeleteProject(folder).catch((error) => notifyWriteFailure("폴더 보관", error));
+        }}
+      />
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onActionApplied={applyRitualAction} onFocusSessionPanel={() => { requestAnimationFrame(() => sessionPanel.panelRef.current?.focus({ preventScroll: true })); }} />
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />

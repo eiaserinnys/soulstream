@@ -22,6 +22,9 @@ export function buildFolderContextMenuActions(
     moveToParent(): void | Promise<void>;
     complete(): void | Promise<void>;
     toggleToday(): void | Promise<void>;
+    rename?(): void | Promise<void>;
+    archive?(): void | Promise<void>;
+    toggleChecklist?(): void | Promise<void>;
   },
 ): V3ContextMenuAction[] {
   return [
@@ -45,6 +48,11 @@ export function buildFolderContextMenuActions(
       label: state.inToday ? "오늘에서 제외" : "오늘에 추가",
       onSelect: actions.toggleToday,
     },
+    ...(actions.rename && actions.archive && actions.toggleChecklist ? [
+      { label: "이름 변경", onSelect: actions.rename, separatorBefore: true },
+      { label: state.checklistEnabled ? "체크리스트 끄기" : "체크리스트 켜기", onSelect: actions.toggleChecklist },
+      { label: "폴더 보관", onSelect: actions.archive, destructive: true },
+    ] : []),
   ];
 }
 
