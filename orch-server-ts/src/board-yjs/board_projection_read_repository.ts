@@ -145,7 +145,7 @@ export class BoardProjectionReadRepository {
           COALESCE(
             s.updated_at,
             md.updated_at,
-            r.updated_at,
+            sf.updated_at,
             cv.updated_at,
             fa.updated_at,
             bi.updated_at

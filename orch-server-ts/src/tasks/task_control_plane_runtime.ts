@@ -5,12 +5,14 @@ import type {
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
 import { ChecklistControlPlaneService } from "./task_control_plane_service.js";
-import type { FolderDbPort } from "./control_plane/task_types.js";
+import type { FolderDbPort, FolderHandoffEvent } from "./control_plane/task_types.js";
 
 export function createChecklistControlPlaneServiceProvider(options: {
   sqlResolver: LiveDbSqlResolver;
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
   onFolderHeaderUpdated?: () => Promise<void>;
+  onHumanHandoff: (event: FolderHandoffEvent, subscribers: string[]) => Promise<void>;
+  warn: (message: string) => void;
 }): () => Promise<ChecklistControlPlaneService> {
   const resolver = new BoardYjsSqlResolver(options.sqlResolver);
   let service: ChecklistControlPlaneService | undefined;
@@ -35,6 +37,13 @@ export function createChecklistControlPlaneServiceProvider(options: {
       },
     };
     service = new ChecklistControlPlaneService(sql, db, {
+      async notifyHumanHandoff(event) {
+        try {
+          await options.onHumanHandoff(event, await service!.listAgentSubscriberSessionIds(event.folderId));
+        } catch (error) {
+          options.warn(`Checklist handoff failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      },
       async emitFolderUpdated(folderId, _sessionId, headerChanged) {
         if (headerChanged) await options.onFolderHeaderUpdated?.();
         options.broadcaster.append({ type: "folder_updated", folderId });

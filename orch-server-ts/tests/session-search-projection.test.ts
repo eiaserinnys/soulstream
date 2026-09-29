@@ -53,8 +53,8 @@ describe("product session search projection", () => {
         session_updated_at: "2026-09-22T00:00:00.000Z",
         caller_session_id: "caller-parent-session",
         predecessor_session_id: "predecessor-session",
-        task_id: "task-a",
-        task_title: "검색 개선",
+        folder_id: "task-a",
+        folder_name: "검색 개선",
         score: 2,
       },
       {
@@ -68,15 +68,15 @@ describe("product session search projection", () => {
         session_updated_at: "2026-09-22T00:00:00.000Z",
         caller_session_id: "caller-parent-session",
         predecessor_session_id: "predecessor-session",
-        task_id: "task-a",
-        task_title: "검색 개선",
+        folder_id: "task-a",
+        folder_name: "검색 개선",
         score: 0.8,
       },
     ], "피드검색", 10);
 
     expect(result).toMatchObject({
       session_id: "session-title",
-      task_id: "task-a",
+      folder_id: "task-a",
       parent_session_id: "caller-parent-session",
       best_match: { event_id: null, match_source: "title" },
       session_url: "/?session=session-title",
@@ -140,8 +140,8 @@ describe("product session search projection", () => {
       {
         ...candidate("zz-actual-work-session", 21, "original", 1, "피드 검색 결과를 확인했다"),
         event_type: "assistant_message",
-        task_evidence_kind: "task_item_completed",
-        task_evidence_title: "피드 검색 결과 검증",
+        folder_evidence_kind: "checklist_item_completed",
+        folder_evidence_title: "피드 검색 결과 검증",
       },
       {
         ...candidate("aa-diagnostic-session", 31, "original", 1, "피드 검색 결과를 확인했다"),
@@ -154,7 +154,7 @@ describe("product session search projection", () => {
       "aa-diagnostic-session",
     ]);
     expect(results[0]?.evidence).toContainEqual(expect.objectContaining({
-      source: "task_item_completed",
+      source: "checklist_item_completed",
       excerpt: "피드 검색 결과 검증",
     }));
     expect(results[1]?.evidence.some((item) => item.source.includes("task"))).toBe(false);
@@ -183,8 +183,8 @@ describe("product session search projection", () => {
       {
         ...candidate("performed-session", 1, "semantic_2", 18.160247489075633, "기존 대화를 이어서 여는 기능을 구현했습니다."),
         relevance_source: "assistant_message",
-        task_evidence_kind: "task_item_completed",
-        task_evidence_title: "검색 결과 업무 재개 완료",
+        folder_evidence_kind: "checklist_item_completed",
+        folder_evidence_title: "검색 결과 업무 재개 완료",
       },
       ...Array.from({ length: 60 }, (_, index) => ({
         ...candidate(
@@ -201,7 +201,7 @@ describe("product session search projection", () => {
 
     expect(results[0]?.session_id).toBe("performed-session");
     expect(results[0]?.evidence).toContainEqual(expect.objectContaining({
-      source: "task_item_completed",
+      source: "checklist_item_completed",
     }));
   });
 
@@ -209,21 +209,21 @@ describe("product session search projection", () => {
     const [result] = projectSessionSearchResults([
       {
         ...candidate("participant-session", 4, "original", 1, "Search task result was discussed"),
-        task_id: "task-search",
-        task_title: "Search task result",
+        folder_id: "task-search",
+        folder_name: "Search task result",
       },
     ], "Search task result", 10);
 
     expect(result).toMatchObject({
       session_id: "participant-session",
-      task_id: "task-search",
-      task_title: "Search task result",
+      folder_id: "task-search",
+      folder_name: "Search task result",
     });
     expect(result?.evidence.some((item) => [
-      "task_item_completed",
-      "task_completed",
+      "checklist_item_completed",
+      "folder_completed",
       "source_checklist_item",
-      "task_item_assigned",
+      "checklist_item_assigned",
     ].includes(item.source))).toBe(false);
   });
 
@@ -232,10 +232,10 @@ describe("product session search projection", () => {
       candidate("aa-diagnostic-session", 3, "original", 1, "needle is discussed"),
       {
         ...candidate("zz-source-session", 4, "original", 1, "needle is discussed"),
-        task_id: "task-search",
-        task_title: "unrelated task title",
-        task_evidence_kind: "source_checklist_item",
-        task_evidence_title: "source item output",
+        folder_id: "task-search",
+        folder_name: "unrelated task title",
+        folder_evidence_kind: "source_checklist_item",
+        folder_evidence_title: "source item output",
       },
     ], "needle", 10);
 
@@ -269,8 +269,8 @@ function candidate(
     session_updated_at: "2026-09-22T00:00:00.000Z",
     caller_session_id: null,
     predecessor_session_id: null,
-    task_id: null,
-    task_title: null,
+    folder_id: null,
+    folder_name: null,
     score,
   };
 }

@@ -131,6 +131,28 @@ describe("Folder project identity PostgreSQL transaction", () => {
     expect(rows[0]).toEqual({ folders: 0, pages: 0, documents: 0, operations: 0 });
   });
 
+  it("keeps child mounts in the actual parent on create, move, archive and root promotion", async () => {
+    const actor = { actorKind: "user" as const, actorUserId: "user@example.com" };
+    const first = await createService(crypto.randomUUID(), []).create({ name: "첫 부모", actor, idempotencyKey: "mount:first" });
+    const second = await createService(crypto.randomUUID(), []).create({ name: "둘째 부모", actor, idempotencyKey: "mount:second" });
+    const service = createService(crypto.randomUUID(), []);
+    const child = await service.create({ name: "이동 자식", parentFolderId: first.id, actor, idempotencyKey: "mount:child" });
+    const parents = async () => (await harness.sql<Array<{page_id: string}>>`
+      SELECT b.page_id FROM block_links l JOIN blocks b ON b.id = l.source_block_id
+      WHERE l.link_kind = 'mount' AND l.target_page_id = ${child.pageId} ORDER BY b.page_id
+    `).map(row => row.page_id);
+    expect(await parents()).toEqual([first.pageId]);
+    const move = { folderId: child.id, expectedVersion: 1, update: { parentFolderId: second.id }, actor, idempotencyKey: "mount:move" };
+    await service.mutateFromFolder(move);
+    expect(await parents()).toEqual([second.pageId]);
+    await service.mutateFromFolder(move);
+    expect(await parents()).toEqual([second.pageId]);
+    await service.mutateFromFolder({ folderId: child.id, expectedVersion: 2, archived: true, actor, idempotencyKey: "mount:archive" });
+    expect(await parents()).toEqual([second.pageId]);
+    await service.mutateFromFolder({ folderId: child.id, expectedVersion: 3, archived: false, update: { parentFolderId: null }, actor, idempotencyKey: "mount:root" });
+    expect(await parents()).toEqual([]);
+  });
+
   function createService(id: string, operationIds: string[]) {
     return new FolderProjectIdentityService({
       repository: new SqlFolderProjectIdentityRepository(

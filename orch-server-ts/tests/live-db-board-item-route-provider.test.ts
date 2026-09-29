@@ -59,7 +59,7 @@ describe("live DB board item route provider", () => {
     expect(harness.calls.at(-1)?.values).toEqual(["folder-a"]);
   });
 
-  it("lists concrete container board items from the Y.Doc catalog cache", async () => {
+  it("lists concrete container board items from the folder projection", async () => {
     const cached = {
       id: "item-section",
 
@@ -76,8 +76,8 @@ describe("live DB board item route provider", () => {
       updatedAt: "2026-07-09T02:01:00.000Z",
     };
     const harness = createSqlHarness((text) => {
-      if (text.includes("board_yjs_catalog_cache")) {
-        return [{ board_items: JSON.stringify([cached]) }];
+      if (text.includes("board_item_get_all")) {
+        return [cached];
       }
       return [];
     });
@@ -90,18 +90,17 @@ describe("live DB board item route provider", () => {
     ).resolves.toEqual([cached]);
     expect(harness.normalizedCalls()).toEqual([
       expect.stringContaining(
-        "FROM board_yjs_catalog_cache WHERE container_kind = ? AND container_id = ?",
+        "FROM board_item_get_all() WHERE folder_id = ?",
       ),
     ]);
-    expect(harness.calls[0]?.values).toEqual(["task", "task-1"]);
+    expect(harness.calls[0]?.values).toEqual(["task-1"]);
   });
 
   it("looks up a session's canonical primary membership without folder pagination", async () => {
     const harness = createSqlHarness((text) => text.includes("board_item_get_all")
       ? [boardItemRow({
           id: "session:session-a",
-          container_kind: "task",
-          container_id: "task-outside-page",
+          folder_id: "task-outside-page",
           item_type: "session",
           item_id: "session-a",
         })]
@@ -143,8 +142,6 @@ function boardItemRow(overrides: Record<string, unknown> = {}): Record<string, u
   return {
     id: "item-a",
     folder_id: "folder-a",
-    container_kind: "folder",
-    container_id: "folder-a",
     membership_kind: "primary",
     source_checklist_item_id: null,
     item_type: "session",

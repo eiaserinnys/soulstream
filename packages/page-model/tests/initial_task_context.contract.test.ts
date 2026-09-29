@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  parseInitialTaskContextWire,
-  serializeInitialTaskContext,
+  parseInitialFolderContextWire,
+  serializeInitialFolderContext,
 } from "../src/index.js";
 
 describe("initial task context wire", () => {
@@ -24,7 +24,7 @@ describe("initial task context wire", () => {
         modelPreset: "codex-5.6-sol",
       },
     };
-    const wire = serializeInitialTaskContext(context);
+    const wire = serializeInitialFolderContext(context);
 
     expect(wire).toEqual({
       guidance: "직접 지침",
@@ -43,14 +43,14 @@ describe("initial task context wire", () => {
         model_preset: "codex-5.6-sol",
       },
     });
-    expect(parseInitialTaskContextWire(wire)).toEqual({
+    expect(parseInitialFolderContextWire(wire)).toEqual({
       ok: true,
       value: { ...context, guidance: "직접 지침" },
     });
   });
 
   it("rejects invalid depth and missing node title at the shared boundary", () => {
-    expect(parseInitialTaskContextWire({
+    expect(parseInitialFolderContextWire({
       atom_references: [{
         instance: "atom",
         node_id: "node-a",
@@ -73,12 +73,12 @@ describe("initial task context wire", () => {
       }],
     };
 
-    expect(serializeInitialTaskContext(context)?.atom_references?.[0]).not.toHaveProperty("limit");
-    expect(parseInitialTaskContextWire(serializeInitialTaskContext(context))).toEqual({
+    expect(serializeInitialFolderContext(context)?.atom_references?.[0]).not.toHaveProperty("limit");
+    expect(parseInitialFolderContextWire(serializeInitialFolderContext(context))).toEqual({
       ok: true,
       value: context,
     });
-    expect(parseInitialTaskContextWire({
+    expect(parseInitialFolderContextWire({
       atom_references: [{
         instance: "atom",
         node_id: "node-a",
@@ -104,8 +104,8 @@ describe("initial task context wire", () => {
         titlesOnly: false,
       }],
     };
-    expect(serializeInitialTaskContext(legacy)?.atom_references?.[0]).not.toHaveProperty("mode");
-    expect(parseInitialTaskContextWire({
+    expect(serializeInitialFolderContext(legacy)?.atom_references?.[0]).not.toHaveProperty("mode");
+    expect(parseInitialFolderContextWire({
       atom_references: [{
         instance: "atom",
         node_id: "node-a",
@@ -121,7 +121,7 @@ describe("initial task context wire", () => {
   });
 
   it("accepts session defaults as the only initial context", () => {
-    expect(parseInitialTaskContextWire({
+    expect(parseInitialFolderContextWire({
       session_defaults: {
         agent_id: " roselin_codex ",
         node_id: " eiaserinnys ",
@@ -142,7 +142,7 @@ describe("initial task context wire", () => {
   });
 
   it("rejects a blank model preset when it is present", () => {
-    expect(parseInitialTaskContextWire({
+    expect(parseInitialFolderContextWire({
       session_defaults: {
         agent_id: "roselin_codex",
         node_id: "eiaserinnys",
@@ -158,7 +158,7 @@ describe("initial task context wire", () => {
     ["blank agent", { agent_id: " ", node_id: "eiaserinnys" }],
     ["blank node", { agent_id: "roselin_codex", node_id: " " }],
   ])("rejects %s session defaults", (_label, sessionDefaults) => {
-    expect(parseInitialTaskContextWire({ session_defaults: sessionDefaults })).toMatchObject({
+    expect(parseInitialFolderContextWire({ session_defaults: sessionDefaults })).toMatchObject({
       ok: false,
     });
   });

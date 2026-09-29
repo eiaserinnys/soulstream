@@ -289,7 +289,7 @@ export async function observeCompletedDeliveryReconnect(
     sleep: async () => undefined,
   });
   const route = new TaskInterventionRoute({
-    getFolder: (sessionId: string) => tasks.get(sessionId),
+    getTask: (sessionId: string) => tasks.get(sessionId),
     loadEvictedTask: async (sessionId: string) => {
       if (sessionId !== SESSION_ID) return null;
       return hydrateEvictedTaskFromSessionRow(
@@ -324,8 +324,8 @@ export async function observeCompletedDeliveryReconnect(
     NodeRegistrationPayload;
   const taskManager = {
     addIntervention: route.addIntervention.bind(route),
-    getFolder: (sessionId: string) => tasks.get(sessionId),
-    listFolders: () => [...tasks.values()],
+    getTask: (sessionId: string) => tasks.get(sessionId),
+    listTasks: () => [...tasks.values()],
   };
   const taskExecutor = {
     startNewExecution: vi.fn((task: RuntimeTask, _agent: unknown, activation?: {

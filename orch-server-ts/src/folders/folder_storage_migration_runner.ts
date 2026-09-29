@@ -1,3 +1,4 @@
+import { backfillFolderParentMounts } from "./folder_parent_mounts.js";
 import { Buffer } from "node:buffer";
 import * as Y from "yjs";
 
@@ -22,7 +23,7 @@ export async function migrateFolderStorageDocuments(sql: BoardYjsSql) {
       ...transformFolderStorageSnapshot(row.name, row.snapshot),
     }));
     const changed = documents.filter((document) => document.changed);
-    if (changed.length === 0) return { changedDocuments: 0 };
+    if (changed.length === 0) return { changedDocuments: 0, addedMounts: await backfillFolderParentMounts(transaction) };
     const names = new Set(rows.map((row) => row.name));
     for (const document of changed) {
       if (document.name !== document.originalName && names.has(document.name)) {
@@ -62,6 +63,6 @@ export async function migrateFolderStorageDocuments(sql: BoardYjsSql) {
         doc.destroy();
       }
     }
-    return { changedDocuments: changed.length };
+    return { changedDocuments: changed.length, addedMounts: await backfillFolderParentMounts(transaction) };
   });
 }

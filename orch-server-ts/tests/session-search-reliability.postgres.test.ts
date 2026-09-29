@@ -269,6 +269,16 @@ describePostgres("session search reliability PostgreSQL integration", () => {
         )
       `;
       await tx.unsafe(migration);
+      // 097 also replaces unrelated session filters; retain the current folder
+      // schema contract while this case exercises only its compact indexes.
+      const currentSchema = readFileSync(fileURLToPath(new URL(
+        "../../packages/db-schema/sql/schema.sql", import.meta.url,
+      )), "utf8");
+      for (const name of ["session_get_all", "session_count"]) {
+        const start = currentSchema.indexOf("CREATE OR REPLACE FUNCTION " + name + "(");
+        const end = currentSchema.indexOf("$$;", start) + 3;
+        await tx.unsafe(currentSchema.slice(start, end));
+      }
     });
 
     const existingPromptChars = Array.from(existingPrompt);
@@ -298,7 +308,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "lexical",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
 
     const promptHit = await searchSessions("기존요청문검색표적");
@@ -348,6 +358,16 @@ describePostgres("session search reliability PostgreSQL integration", () => {
         )
       `;
       await tx.unsafe(migration);
+      // 097 also replaces unrelated session filters; retain the current folder
+      // schema contract while this case exercises only its compact indexes.
+      const currentSchema = readFileSync(fileURLToPath(new URL(
+        "../../packages/db-schema/sql/schema.sql", import.meta.url,
+      )), "utf8");
+      for (const name of ["session_get_all", "session_count"]) {
+        const start = currentSchema.indexOf("CREATE OR REPLACE FUNCTION " + name + "(");
+        const end = currentSchema.indexOf("$$;", start) + 3;
+        await tx.unsafe(currentSchema.slice(start, end));
+      }
     });
 
     const titleHit = await searchSessions("기존제목검색표적");
@@ -400,7 +420,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "lexical",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
 
     expect(response.session_results?.map((row) => row.session_id))
@@ -442,7 +462,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "lexical",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
 
     const postposition = await search("피드 검색 세션 업무 자동 선택 수정");
@@ -479,7 +499,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "expanded",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
     expect(expandedPrompt.session_results?.[0]?.session_id).toBe("fuzzy-prompt-omission");
     expect(expandedPrompt.search_status?.session_sources?.metadata_prompt_tokens)
@@ -495,7 +515,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "expanded",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
     expect(manyTermPrompt.session_results?.[0]?.session_id)
       .toBe("fuzzy-prompt-many-terms");
@@ -536,7 +556,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "lexical",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
 
     expect(lexical.session_results).toEqual([]);
@@ -560,7 +580,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "expanded",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
 
     expect(expanded.results).toEqual([]);
@@ -588,14 +608,14 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "lexical",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
 
     expect(response.session_results).toEqual(expect.arrayContaining([
       expect.objectContaining({
         session_id: "task-session",
-        task_id: "task-primary",
-        task_title: "Search task result",
+        folder_id: "task-primary",
+        folder_name: "Search task result",
       }),
     ]));
     expect(response.session_results?.map((row) => row.session_id)).not.toContain("denied-session");
@@ -618,17 +638,17 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "lexical",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
 
     expect(execution.session_results?.map((row) => row.session_id)).toContain("actual-work-session");
     expect(execution.session_results?.find((row) => row.session_id === "actual-work-session")).toMatchObject({
-      task_id: "task-primary",
+      folder_id: "task-primary",
       parent_session_id: "caller-parent",
     });
     expect(execution.session_results?.find((row) => row.session_id === "actual-work-session")?.evidence)
       .toContainEqual(expect.objectContaining({
-      source: "task_item_completed",
+      source: "checklist_item_completed",
       excerpt: "Unique execution verification",
     }));
     await sql`UPDATE sessions SET display_name = 'actual-work-session' WHERE session_id = 'actual-work-session'`;
@@ -647,11 +667,11 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "lexical",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
     for (const sessionId of ["referenced-session", "metadata-only-session"]) {
-      expect(taskTitleSearch.session_results?.find((row) => row.session_id === sessionId)?.task_id)
-        .toBeNull();
+      expect(taskTitleSearch.session_results?.find((row) => row.session_id === sessionId)?.folder_id)
+        .toBe("folder-allowed");
     }
     await sql`
       UPDATE sessions SET display_name = session_id
@@ -669,7 +689,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "lexical",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
     expect(outputSearch.session_results?.find((row) => row.session_id === "source-item-session")?.evidence)
       .toContainEqual(expect.objectContaining({ source: "source_checklist_item" }));
@@ -709,7 +729,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       include_story: false,
       event_categories: "messages,responses",
       include_session_results: true,
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
     });
 
     expect(response.results).toEqual([]);
@@ -848,7 +868,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       include_story: true,
       include_session_results: true,
       session_search_mode: "lexical",
-      allowedFolderIds: ["folder-allowed"],
+      allowedFolderIds: ["folder-allowed", "task-primary"],
       session_filters: { folder_id: "folder-denied" },
     });
     expect(emptyIntersection.session_results).toEqual([]);
@@ -1139,27 +1159,9 @@ async function createHarness(): Promise<{
       "../../packages/db-schema/sql/schema.sql",
       import.meta.url,
     )), "utf8");
-    const migration = readFileSync(fileURLToPath(new URL(
-      "../../packages/db-schema/sql/migrations/097_session_search_reliability.sql",
-      import.meta.url,
-    )), "utf8");
-    const scopedSearchMigration = readFileSync(fileURLToPath(new URL(
-      "../../packages/db-schema/sql/migrations/098_event_search_scoped_postings.sql",
-      import.meta.url,
-    )), "utf8");
-    const documentFrequencyMigration = readFileSync(fileURLToPath(new URL(
-      "../../packages/db-schema/sql/migrations/099_event_search_term_document_frequency.sql",
-      import.meta.url,
-    )), "utf8");
-    const metadataTermMigration = readFileSync(fileURLToPath(new URL(
-      "../../packages/db-schema/sql/migrations/100_session_search_metadata_terms.sql",
-      import.meta.url,
-    )), "utf8");
+    // Runtime queries use the final canonical schema. Historical migration tests
+    // below apply their own migrations explicitly.
     await bootstrap.unsafe(schema);
-    await bootstrap.unsafe(migration);
-    await bootstrap.unsafe(scopedSearchMigration);
-    await bootstrap.unsafe(documentFrequencyMigration);
-    await bootstrap.unsafe(metadataTermMigration);
   } catch (error) {
     await bootstrap.end({ timeout: 2 }).catch(() => undefined);
     container.stop();
@@ -1281,30 +1283,30 @@ async function seedSearchFixtures(sql: ReturnType<typeof postgres>): Promise<voi
 
   await sql`
     INSERT INTO board_items (
-      id, folder_id, container_kind, container_id, membership_kind, item_type, item_id
+      id, folder_id, membership_kind, item_type, item_id
     ) VALUES (
-      'task-board-item', 'folder-allowed', 'folder', 'folder-allowed',
-      'primary', 'task', 'task-primary'
+      'task-board-item', 'folder-allowed',
+      'primary', 'subfolder', 'task-primary'
     )
   `;
   await sql`
-    INSERT INTO tasks (id, board_item_id, title)
-    VALUES ('task-primary', 'task-board-item', 'Search task result')
+    INSERT INTO folders (id, parent_folder_id, name, checklist_enabled)
+    VALUES ('task-primary', 'folder-allowed', 'Search task result', TRUE)
   `;
   await sql`
     INSERT INTO board_items (
-      id, folder_id, container_kind, container_id, membership_kind, item_type, item_id
+      id, folder_id, membership_kind, item_type, item_id
     ) VALUES (
-      'task-session-membership', 'folder-allowed', 'task', 'task-primary',
+      'task-session-membership', 'task-primary',
       'primary', 'session', 'task-session'
     )
   `;
   await sql`
-    INSERT INTO task_sections (id, task_id, position_key, title, updated_session_id)
+    INSERT INTO checklist_sections (id, folder_id, position_key, title, updated_session_id)
     VALUES ('search-section', 'task-primary', 'a', 'Search work', 'metadata-only-session')
   `;
   await sql`
-    INSERT INTO task_items (
+    INSERT INTO checklist_items (
       id, section_id, position_key, title, status, completed_session_id
     ) VALUES (
       'execution-item', 'search-section', 'a', 'Unique execution verification',
@@ -1312,43 +1314,45 @@ async function seedSearchFixtures(sql: ReturnType<typeof postgres>): Promise<voi
     )
   `;
   await sql`
-    INSERT INTO task_items (
+    INSERT INTO checklist_items (
       id, section_id, position_key, title, updated_session_id
     ) VALUES (
       'source-item', 'search-section', 'b', 'Output artifact marker', 'metadata-only-session'
     )
   `;
   await sql`
-    INSERT INTO task_items (
+    INSERT INTO checklist_items (
       id, section_id, position_key, title, updated_session_id
     ) VALUES (
       'history-item', 'search-section', 'c', 'Edit history only', 'metadata-only-session'
     )
   `;
   await sql`
-    INSERT INTO task_operations (
-      id, task_id, target_kind, target_id, operation_type, actor_session_id
+    INSERT INTO folder_operations (
+      id, folder_id, target_kind, target_id, operation_type, actor_session_id
     ) VALUES (
-      'history-operation', 'task-primary', 'task', 'task-primary', 'updated', 'metadata-only-session'
+      'history-operation', 'task-primary', 'folder', 'task-primary', 'updated', 'metadata-only-session'
     )
   `;
   await sql`
     INSERT INTO board_items (
-      id, folder_id, container_kind, container_id, membership_kind, item_type, item_id
+      id, folder_id, membership_kind, item_type, item_id
     ) VALUES (
-      'actual-work-membership', 'folder-allowed', 'task', 'task-primary',
+      'actual-work-membership', 'task-primary',
       'primary', 'session', 'actual-work-session'
     ), (
-      'source-item-membership', 'folder-allowed', 'task', 'task-primary',
+      'source-item-membership', 'task-primary',
       'primary', 'session', 'source-item-session'
     ), (
-      'referenced-folder-membership', 'folder-allowed', 'folder', 'folder-allowed',
+      'referenced-folder-membership', 'folder-allowed',
       'primary', 'session', 'referenced-session'
     ), (
-      'referenced-task-membership', 'folder-allowed', 'task', 'task-primary',
+      'referenced-task-membership', 'task-primary',
       'reference', 'session', 'referenced-session'
     )
   `;
+  await sql`UPDATE sessions SET folder_id = 'task-primary'
+    WHERE session_id IN ('task-session', 'actual-work-session', 'source-item-session')`;
   await sql`
     UPDATE board_items SET source_checklist_item_id = 'source-item'
     WHERE id = 'source-item-membership'

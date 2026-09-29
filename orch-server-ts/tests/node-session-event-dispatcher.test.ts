@@ -121,7 +121,7 @@ describe("node inbound session event dispatcher", () => {
             type: "event",
             agentSessionId: "sess-1",
             event: {
-              type: "task_updated",
+              type: "folder_updated",
               taskId: "rb-1",
               version: 2,
             },
@@ -180,7 +180,7 @@ describe("node inbound session event dispatcher", () => {
         nodeId: "node-1",
       },
       {
-        type: "task_updated",
+        type: "folder_updated",
         taskId: "rb-1",
         version: 2,
         nodeId: "node-1",
@@ -279,7 +279,7 @@ describe("node inbound session event dispatcher", () => {
       });
   });
 
-  it("normalizes a production-gated runbook_updated event at the ingestion boundary", () => {
+  it("forwards the canonical folder_updated event unchanged", () => {
     const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
       instanceId: "dispatcher-session-stream",
     });
@@ -293,9 +293,8 @@ describe("node inbound session event dispatcher", () => {
             type: "event",
             agentSessionId: "sess-legacy",
             event: {
-              type: "runbook_updated",
-              runbookId: "rb-legacy",
-              boardItemId: "runbook:opaque-id",
+              type: "folder_updated",
+              folderId: "folder-a",
             },
           },
         },
@@ -305,9 +304,8 @@ describe("node inbound session event dispatcher", () => {
 
     expect(result).toEqual({ appended: 1, skipped: 0, failed: 0 });
     expect(broadcaster.bufferedEvents[0]?.payload).toEqual({
-      type: "task_updated",
-      taskId: "rb-legacy",
-      boardItemId: "runbook:opaque-id",
+      type: "folder_updated",
+      folderId: "folder-a",
       nodeId: "node-legacy",
     });
     expect(broadcaster.bufferedEvents[0]?.payload).not.toHaveProperty("runbookId");

@@ -1,3 +1,4 @@
+import { reconcileFolderParentMounts } from "./folder_parent_mounts.js";
 import { isDeepStrictEqual } from "node:util";
 import { appendFolderOperation } from "./folder_operation_store.js";
 import { syncBoardYjsReplicaWithSql } from "../board-yjs/board_yjs_replica_sync.js";
@@ -78,9 +79,10 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
         await storePageDocument(transaction, application.documentName, application.snapshot);
         await syncBoardYjsReplicaWithSql(transaction, application.scope, application.replica, application.documentName);
       }
-      if (input.parentPageApplication && input.parentPageOperationId) {
-        await commitPage(transaction, { pageApplication: input.parentPageApplication, pageOperationId: input.parentPageOperationId });
-      }
+      const mounts = await reconcileFolderParentMounts(transaction, {
+        pageId: input.pageId, title: input.name, previousParentFolderId: null,
+        parentFolderId: input.parentFolderId, actor: input.actor, idempotencyKey: input.idempotencyKey,
+      });
       const operation = await insertOperation(transaction, {
         id: input.operationId,
         folderId: input.id,
@@ -90,7 +92,7 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
         payload: { request: input.request, page_id: input.pageId, page_operation_id: pageCommit.operation.id },
         reason: "create folder project identity",
       });
-      return await readResult(transaction, operation, false, pageCommit);
+      return { ...await readResult(transaction, operation, false, pageCommit), parentPageUpdates: mounts.updates };
     });
   }
 
@@ -137,6 +139,12 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
         await storePageDocument(transaction, application.documentName, application.snapshot);
         await syncBoardYjsReplicaWithSql(transaction, application.scope, application.replica, application.documentName);
       }
+      const parentFolderId = hasParent ? input.update.parentFolderId ?? null : input.binding.parentFolderId;
+      const mounts = parentFolderId !== input.binding.parentFolderId
+        ? await reconcileFolderParentMounts(transaction, {
+          pageId: input.binding.pageId, title: input.title, previousParentFolderId: input.binding.parentFolderId,
+          parentFolderId, actor: input.actor, idempotencyKey: input.idempotencyKey,
+        }) : { updates: [] };
       const operationType = input.archived !== input.binding.archived
         ? input.archived ? "archive_folder" : "unarchive_folder"
         : "update_folder";
@@ -155,7 +163,7 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
         },
         reason: input.pageApplication.reason ?? "mutate folder project identity",
       });
-      return await readResult(transaction, operation, false, pageCommit);
+      return { ...await readResult(transaction, operation, false, pageCommit), parentPageUpdates: mounts.updates };
     });
   }
 

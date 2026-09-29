@@ -169,4 +169,5 @@ export interface FolderDbPort {
 
 export interface FolderBroadcasterPort {
   emitFolderUpdated(folderId: string, agentSessionId: string | null, headerChanged?: boolean): Promise<void>;
+  notifyHumanHandoff?(event: FolderHandoffEvent): Promise<void>;
 }

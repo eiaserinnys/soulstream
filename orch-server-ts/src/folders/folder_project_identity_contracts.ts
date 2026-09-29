@@ -51,6 +51,7 @@ export interface FolderProjectIdentityMutationResult {
   operation: Record<string, unknown>;
   pageCommit: PageMutationCommitResult;
   idempotent?: boolean;
+  parentPageUpdates?: { pageId: string; version: number }[];
 }
 
 export interface FolderProjectIdentityRepository {
@@ -66,8 +67,6 @@ export interface FolderProjectIdentityRepository {
     settings: Record<string, unknown>;
     parentFolderId: string | null;
     checklistEnabled: boolean;
-    parentPageApplication?: PageMutationApplication;
-    parentPageOperationId?: string;
     actor: PageMutationActor;
     idempotencyKey: string;
     request: Record<string, unknown>;

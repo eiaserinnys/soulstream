@@ -130,7 +130,7 @@ describe("live DB board asset route provider", () => {
         return [
           fileAssetRow({
             id: "asset-multi",
-            storage_key: "containers/task/rb-1/assets/asset-multi/clip.mov",
+            storage_key: "folders/rb-1/assets/asset-multi/clip.mov",
             original_name: "clip.mov",
             mime_type: "video/quicktime",
             byte_size: String(5 * 1024 * 1024 + 1),
@@ -156,7 +156,7 @@ describe("live DB board asset route provider", () => {
       }),
     ).resolves.toMatchObject({
       assetId: "asset-multi",
-      storageKey: "containers/task/rb-1/assets/asset-multi/clip.mov",
+      storageKey: "folders/rb-1/assets/asset-multi/clip.mov",
       uploadMode: "multipart",
       uploadId: "upload-1",
       partSize: 5 * 1024 * 1024,
@@ -166,7 +166,7 @@ describe("live DB board asset route provider", () => {
       ],
     });
     expect(storage.createMultipartUpload).toHaveBeenCalledWith({
-      storageKey: "containers/task/rb-1/assets/asset-multi/clip.mov",
+      storageKey: "folders/rb-1/assets/asset-multi/clip.mov",
       mimeType: "video/quicktime",
       byteSize: 5 * 1024 * 1024 + 1,
       partSize: 5 * 1024 * 1024,
@@ -301,8 +301,6 @@ describe("live DB board asset route provider", () => {
     ]);
     expect(harness.calls.find((call) => call.text.includes("INSERT INTO board_items"))?.values).toEqual([
       "asset:asset-1",
-      "folder-a",
-      "folder",
       "folder-a",
       "asset-1",
       40,

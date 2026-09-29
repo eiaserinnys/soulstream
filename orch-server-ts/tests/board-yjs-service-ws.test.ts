@@ -59,7 +59,7 @@ describe("orch BoardYjsService", () => {
       const moved = await service.moveBoardItemToContainer({
         boardItem: created.boardItem,
         targetScope: {
-          folderId: "folder-1",
+          folderId: "task-1",
           },
         position: { x: 100, y: 200 },
       });

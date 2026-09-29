@@ -76,9 +76,6 @@ export class FolderProjectIdentityService {
           operations: initialFolderOperations(name, input.description ?? "", id, randomUUID, input.initialContext) },
       } : {}),
     });
-    const parent = input.parentFolderId
-      ? await this.config.repository.findByFolderId(input.parentFolderId) : null;
-    const parentPageApplication = parent ? await this.parentMount(parent, name, input) : undefined;
     const persist = (boardApplications: import("../board-yjs/board_yjs_types.js").BoardYjsDocumentApplication[]) => this.config.repository.create({
       boardApplications,
       id,
@@ -88,7 +85,6 @@ export class FolderProjectIdentityService {
       settings: input.settings ?? {},
       parentFolderId: input.parentFolderId ?? null,
       checklistEnabled: input.checklistEnabled ?? false,
-      ...(parentPageApplication ? { parentPageApplication, parentPageOperationId: this.createOperationId() } : {}),
       actor: input.actor,
       idempotencyKey: input.idempotencyKey,
       request,
@@ -99,7 +95,6 @@ export class FolderProjectIdentityService {
     const result = await this.config.withBoardApplication({ folderId: id,
       parentFolderId: input.parentFolderId ?? null, previousParentFolderId: null,
       title: name, archived: false }, persist);
-    if (parent) await this.config.hydratePage(parent.pageId);
     return await this.hydrate(result);
   }
 
@@ -197,29 +192,6 @@ export class FolderProjectIdentityService {
     );
   }
 
-  private async parentMount(
-    parent: FolderProjectBinding,
-    title: string,
-    input: { actor: PageMutationActor; idempotencyKey: string },
-  ): Promise<PageMutationApplication> {
-    const doc = await loadDocument(parent.pageId, this.config.repository.readPageSnapshot.bind(this.config.repository));
-    const replica = readPageYDocReplica(parent.pageId, doc);
-    try {
-      return this.mutationCore.mutate(doc, {
-        pageId: parent.pageId,
-        expectedVersion: replica.page.mutationVersion,
-        command: {
-          type: "create_block", id: randomUUID(), parentId: null,
-          afterBlockId: replica.blocks.filter((block) => block.parentId === null).at(-1)?.id ?? null,
-          blockType: "paragraph", text: `[[${title}]]`, properties: {},
-        },
-        actor: input.actor,
-        idempotencyKey: pageKey("mount_folder", input.actor, input.idempotencyKey),
-        reason: "mount child folder in parent page",
-      });
-    } finally { doc.destroy(); }
-  }
-
   private async requireFolderBinding(folderId: string): Promise<FolderProjectBinding> {
     const binding = await this.config.repository.findByFolderId(folderId);
     if (!binding) throw new Error(`folder project identity mapping not found: ${folderId}`);
@@ -241,6 +213,8 @@ export class FolderProjectIdentityService {
     result: FolderProjectIdentityMutationResult,
   ): Promise<FolderProjectIdentityMutationResult> {
     await this.config.hydratePage(result.pageId);
+    for (const update of result.parentPageUpdates ?? []) await this.config.hydratePage(update.pageId);
+    notifyPageUpdates((result.parentPageUpdates ?? []).map(update => ({ page: { id: update.pageId, version: update.version } })), this.config.onPageUpdated);
     this.notifyPageUpdate(result);
     if (!result.idempotent) await this.config.onCommitted?.();
     return result;

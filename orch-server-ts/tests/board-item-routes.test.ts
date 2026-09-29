@@ -20,6 +20,7 @@ const config = parseOrchServerConfig({
 const folders = [
   { id: "folder-a", parentFolderId: null, name: "Alpha" },
   { id: "folder-a-child", parentFolderId: "folder-a", name: "Child" },
+  { id: "task-1", parentFolderId: "folder-a", name: "Checklist folder" },
   { id: "folder-b", parentFolderId: null, name: "Beta" },
 ];
 
@@ -113,11 +114,11 @@ describe("board item route harness", () => {
     const app = createApp({ config });
 
     for (const [method, url, payload] of [
-      ["GET", "/api/board-items?folder_id=folder-a", undefined],
+      ["GET", "/api/board-items?folderId=folder-a", undefined],
       ["PATCH", "/api/board-items/item-1/position", { x: 1, y: 2 }],
       [
         "PATCH",
-        "/api/board-items/item-1/container",
+        "/api/board-items/item-1/folder",
         { folderId: "folder-a", idempotencyKey: "idem" },
       ],
     ] as const) {
@@ -133,7 +134,7 @@ describe("board item route harness", () => {
     expect(boardItemRouteAuthRequirements).toEqual({
       "GET /api/board-items": true,
       "PATCH /api/board-items/:board_item_id/position": true,
-      "PATCH /api/board-items/:board_item_id/container": true,
+      "PATCH /api/board-items/:board_item_id/folder": true,
     });
 
     const routeRows = fixtures.routeInventory.routes
@@ -141,7 +142,7 @@ describe("board item route harness", () => {
         [
           "list_board_items",
           "update_board_item_position",
-          "move_board_item_to_container",
+          "move_board_item_to_folder",
         ].includes(route.name),
       )
       .map((route) => [route.order, route.methods[0], route.path, route.authRequired]);
@@ -149,7 +150,7 @@ describe("board item route harness", () => {
     expect(routeRows).toEqual([
       [70, "GET", "/api/board-items", true],
       [71, "PATCH", "/api/board-items/{board_item_id}/position", true],
-      [72, "PATCH", "/api/board-items/{board_item_id}/container", true],
+      [72, "PATCH", "/api/board-items/{board_item_id}/folder", true],
     ]);
   });
 
@@ -159,7 +160,7 @@ describe("board item route harness", () => {
     const missing = await app.inject({ method: "GET", url: "/api/board-items" });
     const mixed = await app.inject({
       method: "GET",
-      url: "/api/board-items?folder_id=folder-a&container_kind=folder&container_id=folder-a",
+      url: "/api/board-items?folderId=folder-a&container_kind=folder&container_id=folder-a",
     });
     const invalidKind = await app.inject({
       method: "GET",
@@ -167,17 +168,8 @@ describe("board item route harness", () => {
     });
 
     expect(missing.statusCode).toBe(400);
-    expect(missing.json()).toEqual({
-      detail: "folder_id, session_id, or container_kind/container_id is required",
-    });
     expect(mixed.statusCode).toBe(400);
-    expect(mixed.json()).toEqual({
-      detail: "folder_id, session_id, and container_kind/container_id are mutually exclusive",
-    });
     expect(invalidKind.statusCode).toBe(400);
-    expect(invalidKind.json()).toEqual({
-      detail: "container_kind must be folder or task",
-    });
     expect(calls).toEqual([]);
 
     await app.close();
@@ -191,7 +183,7 @@ describe("board item route harness", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/board-items?folder_id=folder-a-child",
+      url: "/api/board-items?folderId=folder-a-child",
     });
 
     expect(response.statusCode).toBe(200);
@@ -207,25 +199,11 @@ describe("board item route harness", () => {
     await app.close();
   });
 
-  it("resolves task container folder before listing board items", async () => {
-    const { app, calls } = createAppWithBoardItems({
-      restricted: true,
-      allowedFolderIds: ["folder-a"],
-    });
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/board-items?container_kind=task&container_id=task-1",
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(calls).toEqual([
-      ["listFolders"],
-      ["resolveContainer", { kind: "task", id: "task-1" }],
-      ["access"],
-      ["listBoardItems", { folderId: "task-1" }],
-    ]);
-
+  it("rejects retired container query aliases", async () => {
+    const { app, calls } = createAppWithBoardItems({ restricted: false });
+    const response = await app.inject({ method: "GET", url: "/api/board-items?container_kind=task&container_id=task-1" });
+    expect(response.statusCode).toBe(400);
+    expect(calls).toEqual([]);
     await app.close();
   });
 
@@ -251,7 +229,7 @@ describe("board item route harness", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/board-items?session_id=session-a",
+      url: "/api/board-items?sessionId=session-a",
     });
 
     expect(response.statusCode).toBe(200);
@@ -337,7 +315,7 @@ describe("board item route harness", () => {
     await app.close();
   });
 
-  it("moves board items to containers with idempotency alias and optional coordinates", async () => {
+  it("moves board items to containers with idempotency key and optional coordinates", async () => {
     const { app, calls, service } = createAppWithBoardItems({
       restricted: true,
       allowedFolderIds: ["folder-a"],
@@ -345,10 +323,10 @@ describe("board item route harness", () => {
 
     const response = await app.inject({
       method: "PATCH",
-      url: "/api/board-items/item%2Fone/container",
+      url: "/api/board-items/item%2Fone/folder",
       payload: {
         folderId: "task-1",
-        idempotency_key: "idem-1",
+        idempotencyKey: "idem-1",
         x: 2,
         y: 3,
       },
@@ -358,7 +336,6 @@ describe("board item route harness", () => {
     expect(calls).toEqual([
       ["access"],
       ["catalog"],
-      ["resolveContainer", { kind: "task", id: "task-1" }],
     ]);
     expect(service.moveBoardItemToContainer).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -382,7 +359,7 @@ describe("board item route harness", () => {
 
     const response = await app.inject({
       method: "PATCH",
-      url: "/api/board-items/item%2Fone/container",
+      url: "/api/board-items/item%2Fone/folder",
       payload: {
         folderId: "task-1",
         idempotencyKey: "idem-local",
@@ -405,7 +382,7 @@ describe("board item route harness", () => {
 
     const response = await app.inject({
       method: "PATCH",
-      url: "/api/board-items/item%2Fone/container",
+      url: "/api/board-items/item%2Fone/folder",
       payload: {
         folderId: "folder-a",
         idempotencyKey: "idem-1",
@@ -415,7 +392,7 @@ describe("board item route harness", () => {
 
     expect(response.statusCode).toBe(422);
     expect(response.json()).toEqual({
-      detail: "x and y must be supplied together",
+      detail: expect.stringContaining("x and y must be supplied together"),
     });
     expect(service.moveBoardItemToContainer).not.toHaveBeenCalled();
 

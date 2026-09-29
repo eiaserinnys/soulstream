@@ -77,6 +77,7 @@ import { createLivePushRegistrationRepository } from "./runtime/live_push_regist
 import { createLiveUiEventRepository } from "./runtime/live_ui_event_repository.js";
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
 import { createChecklistControlPlaneServiceProvider } from "./tasks/task_control_plane_runtime.js";
+import { notifyChecklistHandoff } from "./folders/checklist_handoff.js";
 import { createScheduleRepositoryProvider } from "./schedule/schedule_host_runtime.js";
 import { createFolderControlPlaneServiceProvider } from "./folders/folder_control_plane_runtime.js";
 import { createPersistenceHostRepositoryProvider } from "./control_plane/persistence_host_runtime.js";
@@ -553,6 +554,14 @@ export async function createLiveProductionApplication(
       memoryStats,
       ephemeralLlmRoutes,
       createChecklistControlPlaneServiceProvider({
+        onHumanHandoff: async (event, subscribers) => notifyChecklistHandoff(event, subscribers, {
+          deliveries: (await persistenceRepositoryProvider()).deliveries,
+          send: async (payload) => runtimeServices.sessionBridge.sendPendingCommand(
+            await runtimeServices.sessionRouter.routeExistingSessionPendingCommand(payload),
+          ),
+          warn: context.warn,
+        }),
+        warn: context.warn,
         onFolderHeaderUpdated: () => broadcastCatalogSnapshot(providers.folderRoutes.provider, runtimeServices.sessionBroadcaster),
         sqlResolver,
         broadcaster: runtimeServices.sessionBroadcaster,

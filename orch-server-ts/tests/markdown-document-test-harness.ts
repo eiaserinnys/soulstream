@@ -26,8 +26,6 @@ const documents = new Map<string, MarkdownDocumentRecord>([
   ["doc/one", {
     id: "doc/one",
     folderId: "folder-a-child",
-    containerKind: "task",
-    containerId: "task-1",
     title: "Doc",
     body: "Before",
     version: 7,
@@ -94,8 +92,6 @@ export function createAppWithMarkdownDocuments(
       document: {
         id: "doc-1",
         folderId: input.folderId,
-        containerKind: input.container.containerKind,
-        containerId: input.container.containerId,
         title: input.title,
         body: input.body,
         version: 1,

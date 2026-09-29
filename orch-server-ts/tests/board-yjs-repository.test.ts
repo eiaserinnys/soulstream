@@ -115,13 +115,13 @@ describe("orch BoardYjsRepository", () => {
     const danglingSourceChecklistItemId = "missing-task-item";
     const existingSourceChecklistItemId = "existing-task-item";
     const { sql, calls, jsonValues } = createMockSql((call) => {
-      if (call.query.includes("FROM task_items")) return [{ id: existingSourceChecklistItemId }];
+      if (call.query.includes("FROM checklist_items")) return [{ id: existingSourceChecklistItemId }];
       if (
         call.query.includes("INSERT INTO board_items") &&
-        call.values[5] === danglingSourceChecklistItemId
+        call.values[3] === danglingSourceChecklistItemId
       ) {
         throw new Error(
-          'violates foreign key constraint "board_items_source_runbook_item_id_fkey"',
+          'violates foreign key constraint "board_items_source_checklist_item_id_fkey"',
         );
       }
       return [];
@@ -192,7 +192,7 @@ describe("orch BoardYjsRepository", () => {
       folderId: "folder-1",
       }, replica)).resolves.toBeUndefined();
 
-    const sourceLookup = calls.find((call) => call.query.includes("FROM task_items"));
+    const sourceLookup = calls.find((call) => call.query.includes("FROM checklist_items"));
     expect(sourceLookup?.query).toContain("FOR KEY SHARE");
     expect(sourceLookup?.values).toEqual([[
       danglingSourceChecklistItemId,
@@ -201,11 +201,11 @@ describe("orch BoardYjsRepository", () => {
     const poisonedInsert = calls.find((call) =>
       call.query.includes("INSERT INTO board_items") && call.values[0] === "session:poisoned"
     );
-    expect(poisonedInsert?.values[5]).toBeNull();
+    expect(poisonedInsert?.values[3]).toBeNull();
     const validInsert = calls.find((call) =>
       call.query.includes("INSERT INTO board_items") && call.values[0] === "session:valid"
     );
-    expect(validInsert?.values[5]).toBe(existingSourceChecklistItemId);
+    expect(validInsert?.values[3]).toBe(existingSourceChecklistItemId);
     const cachedBoardItems = jsonValues.find(Array.isArray) as typeof replica.boardItems;
     expect(cachedBoardItems).toEqual([
       expect.objectContaining({ id: "session:poisoned", sourceChecklistItemId: null }),
@@ -250,8 +250,6 @@ describe("orch BoardYjsRepository", () => {
         return [{
           id: "markdown:d1",
           folder_id: "folder-1",
-          container_kind: "task",
-          container_id: "rb-1",
           membership_kind: "primary",
           source_checklist_item_id: null,
           item_type: "markdown",
@@ -289,12 +287,11 @@ describe("orch BoardYjsRepository", () => {
       expect.stringContaining("board_item_get_all"),
       expect.stringContaining("FROM markdown_documents"),
     ]);
-    expect(calls[0]?.values).toEqual(["task", "rb-1"]);
+    expect(calls[0]?.values).toEqual(["folder-1"]);
     expect(calls[1]).toMatchObject({
-      values: ["task", "rb-1"],
+      values: ["folder-1"],
     });
-    expect(calls[1]?.query).toContain("WHERE container_kind =");
-    expect(calls[1]?.query).toContain("AND container_id =");
+    expect(calls[1]?.query).toContain("WHERE folder_id =");
     expect(seed).toEqual({
       boardItems: [expect.objectContaining({
         id: "markdown:d1",

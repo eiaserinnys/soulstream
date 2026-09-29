@@ -79,11 +79,6 @@ export type SseReplayGapFixture = ContractFixture & {
     resumeFrom: number;
     expectedReplayEventIds: number[];
   };
-  taskStream: {
-    changes: Array<Record<string, unknown>>;
-    resumeFrom: number;
-    expectedReplayEventIds: number[];
-  };
   gap: {
     ringMaxlen: number;
     lastEventIdBeforeOldest: number;

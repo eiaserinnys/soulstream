@@ -328,19 +328,19 @@ describe("PageMutationCore", () => {
       type: "update_block_type_and_properties",
       blockId,
       blockType: "checklist",
-      properties: { checked: true, taskId: "task-1", itemId: "item-1" },
+      properties: { checked: true, folderId: "task-1", itemId: "item-1" },
     }, "checklist-projection"));
 
     expect(valid.replica.blocks[0]?.properties).toEqual({
       checked: true,
-      taskId: "task-1",
+      folderId: "task-1",
       itemId: "item-1",
     });
     expect(() => core.mutate(seeded.document, mutation(2, {
       type: "update_block_type_and_properties",
       blockId,
       blockType: "checklist",
-      properties: { taskId: "task-1", itemId: "item-1" },
+      properties: { folderId: "task-1", itemId: "item-1" },
     }, "checklist-projection-invalid"))).toThrow(
       "checklist.checked must be a boolean",
     );
@@ -361,8 +361,8 @@ describe("PageMutationCore", () => {
             blockType: "checklist",
             properties: { checked: false },
           },
-          structuralBlock("task", "task_ref", { taskId: "task-1", primary: true }),
-          structuralBlock("runbook", "runbook_ref", { runbookId: "task-legacy", primary: true }),
+          structuralBlock("task", "folder_ref", { folderId: "task-1", primary: true }),
+          structuralBlock("runbook", "folder_ref", { folderId: "task-legacy", primary: true }),
           structuralBlock("session", "session_ref", { sessionId: "session-1", primary: true }),
           structuralBlock("atom", "atom_ref", { instance: "atom", nodeId: "node-1" }),
           structuralBlock("defaults", "session_defaults", { scope: "page", agentId: "roselin" }),
@@ -396,8 +396,8 @@ describe("PageMutationCore", () => {
       expect.objectContaining({ id: "replacement", type: "paragraph", text: "Replacement" }),
     );
     expect(replaced.replica.blocks).toContainEqual(expect.objectContaining({
-      type: "task_ref",
-      properties: { taskId: "task-1", primary: true },
+      type: "folder_ref",
+      properties: { folderId: "task-1", primary: true },
     }));
     expect(replaced.replica.blocks).toContainEqual(expect.objectContaining({
       type: "session_ref",

@@ -120,11 +120,11 @@ describe("board asset route harness", () => {
       ["POST", "/api/board/folder-a/assets/init", { name: "photo.png", mime: "image/png", size: 123 }],
       [
         "POST",
-        "/api/board-containers/task/rb-1/assets/init",
+        "/api/board/folder-a/assets/init",
         { name: "photo.png", mime: "image/png", size: 123 },
       ],
       ["POST", "/api/board/folder-a/assets/asset-1/commit", { x: 1, y: 2 }],
-      ["POST", "/api/board-containers/task/rb-1/assets/asset-1/commit", { x: 1, y: 2 }],
+      ["POST", "/api/board/folder-a/assets/asset-1/commit", { x: 1, y: 2 }],
     ] as const) {
       expect(await app.inject({ method, url, payload })).toMatchObject({
         statusCode: 404,
@@ -137,9 +137,7 @@ describe("board asset route harness", () => {
   it("registers Python auth contract rows for route inventory order 82-85", () => {
     expect(boardAssetRouteAuthRequirements).toEqual({
       "POST /api/board/:folder_id/assets/init": true,
-      "POST /api/board-containers/:container_kind/:container_id/assets/init": true,
       "POST /api/board/:folder_id/assets/:asset_id/commit": true,
-      "POST /api/board-containers/:container_kind/:container_id/assets/:asset_id/commit": true,
     });
 
     const routeRows = fixtures.routeInventory.routes
@@ -155,14 +153,7 @@ describe("board asset route harness", () => {
 
     expect(routeRows).toEqual([
       [82, "POST", "/api/board/{folder_id}/assets/init", true],
-      [83, "POST", "/api/board-containers/{container_kind}/{container_id}/assets/init", true],
       [84, "POST", "/api/board/{folder_id}/assets/{asset_id}/commit", true],
-      [
-        85,
-        "POST",
-        "/api/board-containers/{container_kind}/{container_id}/assets/{asset_id}/commit",
-        true,
-      ],
     ]);
   });
 
@@ -201,7 +192,7 @@ describe("board asset route harness", () => {
     await app.close();
   });
 
-  it("resolves task containers from catalog board items before init", async () => {
+  it("initializes a folder asset directly", async () => {
     const { app, calls } = createAppWithBoardAssets({
       restricted: true,
       allowedFolderIds: ["folder-a"],
@@ -209,13 +200,12 @@ describe("board asset route harness", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/api/board-containers/task/rb-1/assets/init",
+      url: "/api/board/folder-a/assets/init",
       payload: { name: "photo.png", mime: "image/png", size: 123 },
     });
 
     expect(response.statusCode).toBe(201);
     expect(calls).toEqual([
-      ["catalog"],
       ["listFolders"],
       ["access"],
       [
@@ -282,7 +272,7 @@ describe("board asset route harness", () => {
     await app.close();
   });
 
-  it("commits task container assets with default parts", async () => {
+  it("commits folder assets with default parts", async () => {
     const { app, calls } = createAppWithBoardAssets({
       restricted: true,
       allowedFolderIds: ["folder-a"],
@@ -290,13 +280,12 @@ describe("board asset route harness", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/api/board-containers/task/rb-1/assets/asset-1/commit",
+      url: "/api/board/folder-a/assets/asset-1/commit",
       payload: { x: 41, y: 79 },
     });
 
     expect(response.statusCode).toBe(200);
     expect(calls).toEqual([
-      ["catalog"],
       ["listFolders"],
       ["access"],
       [
@@ -328,15 +317,9 @@ describe("board asset route harness", () => {
       payload: { name: "photo.png", mime: "image/png", size: 123 },
     });
 
-    expect(invalidKind.statusCode).toBe(400);
-    expect(invalidKind.json()).toEqual({
-      detail: "container_kind must be folder or task",
-    });
+    expect(invalidKind.statusCode).toBe(404);
     expect(missingTask.statusCode).toBe(404);
-    expect(missingTask.json()).toEqual({
-      detail: "Task board container not found",
-    });
-    expect(calls).toEqual([["catalog"]]);
+    expect(calls).toEqual([]);
 
     await app.close();
   });

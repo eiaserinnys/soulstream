@@ -8,7 +8,7 @@ import {
   type ChecklistBlockProperties,
   type PageBlockProperties,
   type PageBlockType,
-  type TaskRefBlockProperties,
+  type FolderRefBlockProperties,
   type SessionDefaultsBlockProperties,
 } from "../src/types.js";
 
@@ -20,7 +20,7 @@ describe("page model DTO contract", () => {
       "atom_ref",
       "guidance",
       "session_defaults",
-      "task_ref",
+      "folder_ref",
       "checklist",
       "custom_view",
       "image",
@@ -58,8 +58,8 @@ describe("page model DTO contract", () => {
     expectTypeOf<PageBlockProperties<"session_defaults">>().toEqualTypeOf<
       SessionDefaultsBlockProperties
     >();
-    expectTypeOf<PageBlockProperties<"task_ref">>().toEqualTypeOf<
-      TaskRefBlockProperties
+    expectTypeOf<PageBlockProperties<"folder_ref">>().toEqualTypeOf<
+      FolderRefBlockProperties
     >();
     expectTypeOf<PageBlockProperties<"plugin/chart">>().toEqualTypeOf<
       Record<string, unknown>
@@ -67,7 +67,7 @@ describe("page model DTO contract", () => {
 
     const boundChecklist: ChecklistBlockProperties = {
       checked: true,
-      taskId: "page-task:page-1",
+      folderId: "page-task:page-1",
       itemId: "checklist:block-1",
     };
     expect(boundChecklist.checked).toBe(true);

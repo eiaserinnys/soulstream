@@ -20,20 +20,16 @@ describe("SessionDeletionRepository", () => {
       if (call.query.includes("FROM board_yjs_catalog_cache")) {
         return [{
           folder_id: "folder-1",
-          container_kind: "folder",
-          container_id: "folder-1",
           board_items: [cachedBoardItem(
             "session:session-a",
             "folder-1",
             "primary",
           )],
         }, {
-          folder_id: "folder-1",
-          container_kind: "task",
-          container_id: "task-1",
+          folder_id: "folder-2",
           board_items: JSON.stringify([cachedBoardItem(
             "session-reference:session-a",
-            "task-1",
+            "folder-2",
             "reference",
           )]),
         }];

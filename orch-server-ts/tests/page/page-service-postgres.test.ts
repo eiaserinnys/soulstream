@@ -144,26 +144,8 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       SELECT version, updated_session_id FROM pages WHERE id = 'page-1'
     `;
     expect(page).toEqual({ version: 2, updated_session_id: "agent-session" });
-    const checklistBlockId = mutated.temp_id_mapping.check!;
-    const projectionRows = await harness.sql<Array<{
-      actor_kind: string;
-      actor_session_id: string | null;
-      actor_user_id: string | null;
-      routing_session_id: string | null;
-      processed_hash: string | null;
-    }>>`
-      SELECT actor_kind, actor_session_id, actor_user_id, routing_session_id, processed_hash
-      FROM checklist_task_projection_outbox
-      WHERE block_id = ${checklistBlockId}
-    `;
-    const projection = projectionRows[0];
-    expect(projection).toEqual({
-      actor_kind: "agent",
-      actor_session_id: "agent-session",
-      actor_user_id: null,
-      routing_session_id: "agent-session",
-      processed_hash: null,
-    });
+    const [{ missing }] = await harness.sql<[{ missing: boolean }]>`SELECT to_regclass('checklist_task_projection_outbox') IS NULL AS missing`;
+    expect(missing).toBe(true);
     const snapshot = await repository.getPageYjsSnapshot("page:page-1");
     expect(snapshot).not.toBeNull();
     expect(readPageYDocReplica("page-1", service.decodeSnapshot(snapshot!)).page.mutationVersion)

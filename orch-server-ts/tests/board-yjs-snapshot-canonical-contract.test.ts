@@ -33,9 +33,7 @@ describe("board Y.Doc snapshot canonical contract", () => {
 
     expect(writers).toEqual([
       "orch-server-ts/src/board-yjs/board_yjs_replica_sync.ts",
-      "orch-server-ts/src/folders/folder_project_identity_repository.ts",
       "orch-server-ts/src/runtime/live_board_asset_route_provider.ts",
-      "orch-server-ts/src/runtime/live_folder_route_provider.ts",
       "packages/db-schema/sql/schema.sql",
     ]);
   });
@@ -51,7 +49,6 @@ describe("board Y.Doc snapshot canonical contract", () => {
       .sort();
 
     expect(writers).toEqual([
-      "orch-server-ts/src/board-yjs/board_yjs_repository.ts",
       "orch-server-ts/src/board-yjs/board_yjs_snapshot_store.ts",
       "orch-server-ts/src/page/page_repository_projection.ts",
     ]);
@@ -82,7 +79,7 @@ function listTypeScriptFiles(directory: string): string[] {
 function listSourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) return listSourceFiles(path);
+    if (entry.isDirectory()) return ["dist", "node_modules", ".git"].includes(entry.name) ? [] : listSourceFiles(path);
     return entry.isFile() && /\.(?:[cm]?[jt]sx?|py|sql)$/.test(entry.name) ? [path] : [];
   });
 }

@@ -209,6 +209,7 @@ export class ChecklistMutationCore {
     await this.broadcastMutation(params.actorSessionId, result);
     if (shouldNotifyHandoff) {
       result.handoff = this.handoffEvent(result);
+      if (result.handoff) await this.broadcaster?.notifyHumanHandoff?.(result.handoff);
     }
     return result;
   }

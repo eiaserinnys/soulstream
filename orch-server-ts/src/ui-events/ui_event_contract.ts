@@ -42,7 +42,7 @@ export type UiEventType = (typeof UI_EVENT_TYPES)[number];
 
 export const UI_EVENT_TARGET_KINDS = [
   "session",
-  "task_item",
+  "checklist_item",
   "folder",
   "page",
   "document",

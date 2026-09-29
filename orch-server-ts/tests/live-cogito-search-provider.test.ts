@@ -62,8 +62,7 @@ describe("live Cogito search provider", () => {
           folder_id: "folder-a",
           predecessor_session_id: null,
           session_updated_at: "2026-09-23T00:00:00.000Z",
-          task_id: null,
-          task_title: null,
+          folder_name: null,
         }];
       }
       if (text.includes("FROM sessions") && text.includes("left(prompt, 2000)")) {
@@ -126,8 +125,7 @@ describe("live Cogito search provider", () => {
           folder_id: "folder-a",
           predecessor_session_id: null,
           session_updated_at: "2026-09-23T00:00:00.000Z",
-          task_id: null,
-          task_title: null,
+          folder_name: null,
         }];
       }
       if (text.includes("left(prompt, 2000)")) {
@@ -185,8 +183,7 @@ describe("live Cogito search provider", () => {
           folder_id: "folder-a",
           predecessor_session_id: null,
           session_updated_at: "2026-09-23T00:00:00.000Z",
-          task_id: null,
-          task_title: null,
+          folder_name: null,
         }];
       }
       if (text.includes("left(prompt, 2000)")) {
@@ -215,10 +212,9 @@ describe("live Cogito search provider", () => {
           agent_name: "roselin",
           parent_session_id: null,
           session_updated_at: "2026-09-23T00:00:00.000Z",
-          task_id: null,
-          task_title: null,
-          task_evidence_kind: null,
-          task_evidence_title: null,
+          folder_name: null,
+          folder_evidence_kind: null,
+          folder_evidence_title: null,
         }];
       }
       return [];
@@ -277,17 +273,13 @@ describe("live Cogito search provider", () => {
             title: "Matching project",
             folder_id: "folder-a",
             project_page_id: "project-page-a",
-            board_item_id: null,
-            task_page_id: null,
           },
           {
-            kind: "task",
+            kind: "folder",
             id: "task-a",
             title: "Matching task",
             folder_id: "folder-a",
-            project_page_id: "project-page-a",
-            board_item_id: "board-item-a",
-            task_page_id: "task-page-a",
+            project_page_id: "task-page-a",
           },
         ];
       }
@@ -324,13 +316,11 @@ describe("live Cogito search provider", () => {
           project_page_id: "project-page-a",
         },
         {
-          kind: "task",
+          kind: "folder",
           id: "task-a",
           title: "Matching task",
           folder_id: "folder-a",
-          project_page_id: "project-page-a",
-          board_item_id: "board-item-a",
-          task_page_id: "task-page-a",
+          project_page_id: "task-page-a",
         },
       ],
     });
@@ -361,8 +351,7 @@ describe("live Cogito search provider", () => {
         folder_id: "folder-a",
         predecessor_session_id: null,
         session_updated_at: "2026-09-23T00:00:00.000Z",
-        task_id: null,
-        task_title: null,
+        folder_name: null,
       }];
     });
     const provider = createLiveCogitoSearchProvider({
@@ -404,8 +393,7 @@ describe("live Cogito search provider", () => {
         folder_id: "folder-a",
         predecessor_session_id: null,
         session_updated_at: "2026-09-23T00:00:00.000Z",
-        task_id: null,
-        task_title: null,
+        folder_name: null,
       }]
       : []);
     const provider = createLiveCogitoSearchProvider({
@@ -571,7 +559,7 @@ describe("live Cogito search provider", () => {
     expect(metadataCalls).toHaveLength(3);
     for (const metadataCall of metadataCalls) {
       expect(metadataCall.text).toContain("candidate.folder_id = ANY");
-      expect(metadataCall.text).toContain("primary_session_item.container_kind = 'task'");
+      expect(metadataCall.text).toContain("primary_session_item.membership_kind = 'primary'");
       expect(metadataCall.text).toContain("primary_session_item.membership_kind = 'primary'");
       expect(metadataCall.values).toContainEqual(["visible-root", "visible-child"]);
     }

@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 155개 $defs (top-level wire 79 + supporting/SSE 76). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 154개 $defs (top-level wire 79 + supporting/SSE 75). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -1715,7 +1715,7 @@ export interface CreateSession {
    */
   predecessor_session_id?: string | null;
   /**
-   * False suppresses caller completion relay for task-tracked fire-and-forget delegation. Missing defaults to true.
+   * False suppresses caller completion relay for checklist-tracked fire-and-forget delegation. Missing defaults to true.
    */
   notify_completion?: boolean;
   attachment_paths?: string[];
@@ -2778,11 +2778,6 @@ export const BOARD_ITEM_TYPES = [
   "custom_view",
 ] as const;
 export type BoardItemType = (typeof BOARD_ITEM_TYPES)[number];
-
-export const BOARD_CONTAINER_KINDS = [
-  "folder",
-] as const;
-export type BoardContainerKind = (typeof BOARD_CONTAINER_KINDS)[number];
 
 export const CONTROL_COMMAND_TYPES = [
   "health_check",
