@@ -1,7 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
 
+const mcpClient = vi.hoisted(() => ({
+  connect: vi.fn(async () => undefined),
+  ping: vi.fn(async () => undefined),
+  listTools: vi.fn(async () => ({ tools: [
+    { name: "get_folder" },
+    { name: "list_my_turn_items" },
+  ] })),
+  callTool: vi.fn(async () => ({ isError: false })),
+  close: vi.fn(async () => undefined),
+}));
+
+vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
+  Client: class {
+    connect = mcpClient.connect;
+    ping = mcpClient.ping;
+    listTools = mcpClient.listTools;
+    callTool = mcpClient.callTool;
+    close = mcpClient.close;
+  },
+}));
+vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
+  StreamableHTTPClientTransport: class {},
+}));
+
 import {
   deriveOrchestratorHealthUrl,
+  readMcpHealth,
   readNodeRegistration,
   verifyReleaseHealth,
 } from "../../scripts/verify-release-health.mjs";
@@ -34,9 +59,37 @@ function healthyFetch(url: URL) {
 }
 
 describe("release health contract", () => {
+  it("reads the current folder MCP contract when a folder is supplied", async () => {
+    mcpClient.callTool.mockClear();
+
+    await expect(readMcpHealth({
+      url: new URL("http://127.0.0.1:4205/mcp"),
+      token: "token",
+      folderId: "folder-1",
+    })).resolves.toEqual({ ping: "ok", tool: "get_folder", folder_id: "folder-1" });
+    expect(mcpClient.callTool).toHaveBeenCalledWith({
+      name: "get_folder",
+      arguments: { folder_id: "folder-1", view: "outline" },
+    });
+  });
+
+  it("reads turn items when no folder is supplied", async () => {
+    mcpClient.callTool.mockClear();
+
+    await expect(readMcpHealth({
+      url: new URL("http://127.0.0.1:4205/mcp"),
+      token: "token",
+      folderId: null,
+    })).resolves.toEqual({ ping: "ok", tool: "list_my_turn_items", folder_id: null });
+    expect(mcpClient.callTool).toHaveBeenCalledWith({
+      name: "list_my_turn_items",
+      arguments: { limit: 1 },
+    });
+  });
+
   it("requires an explicit standalone or cluster scope", async () => {
     await expect(verifyReleaseHealth({
-      taskId: null,
+      folderId: null,
       env: { ...env },
       fetchImpl: healthyFetch,
       mcpRead: async () => ({ ping: "ok" }),
@@ -53,7 +106,7 @@ describe("release health contract", () => {
 
     const report = await verifyReleaseHealth({
       scope: "standalone",
-      taskId: null,
+      folderId: null,
       env: standaloneEnv,
       fetchImpl,
       nodeRead,
@@ -73,11 +126,11 @@ describe("release health contract", () => {
 
   it("requires HTTP, node registration, and an MCP representative read together", async () => {
     const fetchImpl = vi.fn(healthyFetch);
-    const mcpRead = vi.fn(async () => ({ ping: "ok", tool: "get_task" }));
+    const mcpRead = vi.fn(async () => ({ ping: "ok", tool: "get_folder" }));
 
     const report = await verifyReleaseHealth({
       scope: "cluster",
-      taskId: "task-1",
+      folderId: "folder-1",
       env: { ...env },
       fetchImpl,
       mcpRead,
@@ -91,24 +144,24 @@ describe("release health contract", () => {
         headers: { Authorization: "Bearer token" },
       }),
     );
-    expect(mcpRead).toHaveBeenCalledWith(expect.objectContaining({ taskId: "task-1" }));
+    expect(mcpRead).toHaveBeenCalledWith(expect.objectContaining({ folderId: "folder-1" }));
     expect(report).not.toHaveProperty("data");
   });
 
-  it("uses the generic Task read contract when no deployment-specific task is configured", async () => {
+  it("uses the turn-item read when no deployment-specific folder is configured", async () => {
     const fetchImpl = vi.fn(healthyFetch);
     const mcpRead = vi.fn(async () => ({ ping: "ok", tool: "list_my_turn_items" }));
 
     const report = await verifyReleaseHealth({
       scope: "cluster",
-      taskId: null,
+      folderId: null,
       env: { ...env },
       fetchImpl,
       mcpRead,
     });
 
     expect(report.status).toBe("ok");
-    expect(mcpRead).toHaveBeenCalledWith(expect.objectContaining({ taskId: null }));
+    expect(mcpRead).toHaveBeenCalledWith(expect.objectContaining({ folderId: null }));
   });
 
   it("fails closed on an HTTP 500 before reporting release success", async () => {
@@ -123,7 +176,7 @@ describe("release health contract", () => {
 
     await expect(verifyReleaseHealth({
       scope: "cluster",
-      taskId: "task-1",
+      folderId: "folder-1",
       env: { ...env },
       fetchImpl,
       mcpRead: async () => ({ ping: "ok" }),
@@ -133,7 +186,7 @@ describe("release health contract", () => {
   it("fails when MCP is not explicitly enabled", async () => {
     await expect(verifyReleaseHealth({
       scope: "cluster",
-      taskId: "task-1",
+      folderId: "folder-1",
       env: { ...env, MCP_ENABLED: "false" },
     })).rejects.toThrow("MCP_ENABLED must be true");
   });
@@ -154,7 +207,7 @@ describe("release health contract", () => {
 
     await expect(verifyReleaseHealth({
       scope: "cluster",
-      taskId: null,
+      folderId: null,
       env: { ...env },
       fetchImpl,
       nodeRead: async (options) => await readNodeRegistration({
