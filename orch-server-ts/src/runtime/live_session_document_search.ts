@@ -213,6 +213,7 @@ export async function loadSessionDocumentCandidateRows(input: {
          AND mapping.value->>'agent_id' = session.agent_id
        LIMIT 1) AS agent_name,
       session.caller_session_id AS parent_session_id,
+      session.created_at AS session_created_at,
       session.updated_at AS session_updated_at,
       linked_task.id AS task_id,
       linked_task.title AS task_title,

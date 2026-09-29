@@ -223,6 +223,7 @@ export async function loadCandidateRows(
          LIMIT 1)
       ) AS backend,
       session.caller_session_id AS parent_session_id,
+      session.created_at AS session_created_at,
       session.updated_at AS session_updated_at,
       linked_task.id AS task_id,
       linked_task.title AS task_title,

@@ -3,6 +3,30 @@ import { describe, expect, it } from "vitest";
 import { projectSessionSearchResults } from "../src/search/session_search_projection.js";
 
 describe("product session search projection", () => {
+  it("projects Date and string session timestamps as ISO strings", () => {
+    const results = projectSessionSearchResults([
+      {
+        ...candidate("date-session", 1, "original", 1, "date search"),
+        session_created_at: new Date("2026-09-20T10:30:00.000Z"),
+        session_updated_at: new Date("2026-09-21T11:45:00.000Z"),
+      },
+      {
+        ...candidate("string-session", 2, "original", 1, "date search"),
+        session_created_at: "2026-09-22T12:00:00.000Z",
+        session_updated_at: "2026-09-23T13:15:00.000Z",
+      },
+    ], "date search", 10);
+
+    expect(results.find((result) => result.session_id === "date-session")).toMatchObject({
+      created_at: "2026-09-20T10:30:00.000Z",
+      updated_at: "2026-09-21T11:45:00.000Z",
+    });
+    expect(results.find((result) => result.session_id === "string-session")).toMatchObject({
+      created_at: "2026-09-22T12:00:00.000Z",
+      updated_at: "2026-09-23T13:15:00.000Z",
+    });
+  });
+
   it("deduplicates by session before the result limit and keeps the strongest event anchor", () => {
     const results = projectSessionSearchResults([
       candidate("session-a", 9, "original", 4, "long-session later match"),

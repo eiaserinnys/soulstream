@@ -63,3 +63,21 @@ export function orderSessionSearchResults<T extends { readonly session_id: strin
     return result as T & { readonly relevance: number | null };
   });
 }
+
+export function withSessionCardExcerpt(
+  candidate: SessionSearchPoolCandidate & { readonly relevance: number | null },
+): SessionSearchPoolResult & { readonly relevance: number | null } {
+  const excerptSource = candidate.card.summary || candidate.card.request;
+  if (!excerptSource) return { ...candidate.result, relevance: candidate.relevance };
+
+  const excerpt = Array.from(excerptSource).slice(0, 160).join("");
+  const result = candidate.result as SessionSearchPoolResult & {
+    readonly best_match: Record<string, unknown>;
+  };
+  return {
+    ...result,
+    excerpt,
+    best_match: { ...result.best_match, excerpt },
+    relevance: candidate.relevance,
+  };
+}

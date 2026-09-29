@@ -11,6 +11,7 @@ export type SessionSearchResult = {
   readonly folder_id: string | null;
   readonly node_id: string | null;
   readonly status: string | null;
+  readonly created_at: string | null;
   readonly backend: string | null;
   readonly agent_name: string | null;
   readonly review_required: boolean;
@@ -108,7 +109,8 @@ export function projectSessionSearchResults(
         review_required: row.review_required === true,
         title,
         excerpt,
-        updated_at: stringValue(row.session_updated_at),
+        created_at: timestampValue(row.session_created_at),
+        updated_at: timestampValue(row.session_updated_at),
         task_id: stringValue(row.task_id),
         task_title: stringValue(row.task_title),
         parent_session_id: stringValue(row.parent_session_id)
@@ -149,8 +151,8 @@ function addRankedCandidates(
   const weight = queryWeight(queryKind);
   const orderedRows = [...rows].sort((left, right) =>
     numberValue(right.score) - numberValue(left.score)
-    || (stringValue(right.session_updated_at) ?? "")
-      .localeCompare(stringValue(left.session_updated_at) ?? "")
+    || (timestampValue(right.session_updated_at) ?? "")
+      .localeCompare(timestampValue(left.session_updated_at) ?? "")
     || (stringValue(left.session_id) ?? "").localeCompare(stringValue(right.session_id) ?? "")
     || numberValue(left.id) - numberValue(right.id));
   const seenSessions = new Set<string>();
@@ -301,6 +303,11 @@ function firstLine(value: string | null): string | null {
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+function timestampValue(value: unknown): string | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function numberValue(value: unknown): number {

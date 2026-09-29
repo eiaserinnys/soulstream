@@ -8,7 +8,9 @@ Expanded search in `live_cogito_search_provider.ts` obtains A0 from the same met
 
 `live_session_document_search.ts` applies folder, node, status, backend, and updated-after filters to the document candidates and hydrates the session and task fields. Its cold build uses flat session, digest, and turn-summary reads. The in-memory index stores each title, a whitespace-free `Uint32Array` of document code points, bigram length, and C3 card. Each request refreshes only changed IDs from created sessions, updated digests, new turn-summary events, and a full name-roster comparison for renames and deletions. BM25 linearly scans the code points once, using a first-codepoint bitmap to skip irrelevant positions; it does not retain an inverted index or full request/summary text.
 
-The provider fuses the filtered A0 list and the top 100 filtered document candidates with RRF (`k=60`), retaining 50 candidates. `jev_session_reranker.ts` sends their C3 cards to Jev. Successful scores order the response by relevance, with RRF as the tie-breaker. Document-only hits use `match_source="session_document"` and an excerpt from summary, request, or title.
+The provider fuses the filtered A0 list and the top 100 filtered document candidates with RRF (`k=60`), retaining 50 candidates. `jev_session_reranker.ts` sends their C3 cards to Jev. Successful scores order the response by relevance, with RRF as the tie-breaker. All expanded hits use the C3 card summary as the excerpt, falling back to its cleaned first request; if both are absent, the existing excerpt remains. The excerpt and `best_match.excerpt` share the same value, clipped to 160 Unicode code points; `evidence` is unchanged.
+
+Session results expose `created_at` and `updated_at` as ISO timestamp strings.
 
 ## Failure and response
 
