@@ -96,7 +96,7 @@ export async function readNodeRegistration(
   throw lastError;
 }
 
-export async function readMcpHealth({ url, token, taskId }) {
+export async function readMcpHealth({ url, token, folderId }) {
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
   const transport = new StreamableHTTPClientTransport(url, {
     requestInit: { headers },
@@ -107,17 +107,17 @@ export async function readMcpHealth({ url, token, taskId }) {
     await client.ping();
     const tools = await client.listTools();
     const names = new Set(tools.tools.map((tool) => tool.name));
-    if (!names.has("get_task") || !names.has("list_my_turn_items")) {
-      throw new Error("MCP canonical Task read tools are unavailable");
+    if (!names.has("get_folder") || !names.has("list_my_turn_items")) {
+      throw new Error("MCP canonical folder read tools are unavailable");
     }
-    const tool = taskId ? "get_task" : "list_my_turn_items";
-    const result = await client.callTool(taskId
-      ? { name: tool, arguments: { task_id: taskId, view: "outline" } }
+    const tool = folderId ? "get_folder" : "list_my_turn_items";
+    const result = await client.callTool(folderId
+      ? { name: tool, arguments: { folder_id: folderId, view: "outline" } }
       : { name: tool, arguments: { limit: 1 } });
     if ("isError" in result && result.isError) {
       throw new Error(`MCP ${tool} returned an error result`);
     }
-    return { ping: "ok", tool, task_id: taskId ?? null };
+    return { ping: "ok", tool, folder_id: folderId ?? null };
   } finally {
     await client.close().catch(() => undefined);
   }
@@ -126,7 +126,7 @@ export async function readMcpHealth({ url, token, taskId }) {
 export async function verifyReleaseHealth(
   {
     scope,
-    taskId,
+    folderId,
     env = process.env,
     cwd = process.cwd(),
     fetchImpl = fetch,
@@ -152,7 +152,7 @@ export async function verifyReleaseHealth(
   if (scope === "standalone") {
     const [soul, mcp] = await Promise.all([
       fetchHealth(soulHealthUrl, fetchImpl),
-      mcpRead({ url: mcpUrl, token, taskId }),
+      mcpRead({ url: mcpUrl, token, folderId }),
     ]);
     return {
       status: "ok",
@@ -175,7 +175,7 @@ export async function verifyReleaseHealth(
       nodeId,
       fetchImpl,
     }),
-    mcpRead({ url: mcpUrl, token, taskId }),
+    mcpRead({ url: mcpUrl, token, folderId }),
   ]);
   return {
     status: "ok",
@@ -205,7 +205,7 @@ async function main() {
     const argv = process.argv.slice(2);
     const report = await verifyReleaseHealth({
       scope: argument(argv, "--scope"),
-      taskId: argument(argv, "--task-id"),
+      folderId: argument(argv, "--folder-id"),
     });
     console.log(JSON.stringify(report));
   } catch (error) {
