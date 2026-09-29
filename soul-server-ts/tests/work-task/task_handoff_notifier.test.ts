@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { buildDeterministicDeliveryIdentity } from "../../src/task/delivery_identity.js";
 import {
-  TaskHandoffNotifier,
-  type TaskHandoffSubscriberQuery,
+  FolderHandoffNotifier,
+  type FolderHandoffSubscriberQuery,
 } from "../../src/work-task/task_handoff_notifier.js";
-import type { TaskHandoffEvent } from "../../src/work-task/task_service_models.js";
+import type { FolderHandoffEvent } from "../../src/work-task/task_service_models.js";
 
 function createSilentLogger() {
   return {
@@ -19,16 +19,16 @@ function createSilentLogger() {
   };
 }
 
-describe("TaskHandoffNotifier", () => {
+describe("FolderHandoffNotifier", () => {
   it("sends a fire-and-forget message to each derived agent subscriber", async () => {
-    const query: TaskHandoffSubscriberQuery = {
+    const query: FolderHandoffSubscriberQuery = {
       listAgentSubscriberSessionIds: vi.fn(async () => ["sess-agent-1", "sess-agent-2"]),
     };
     const sender = {
       send: vi.fn(async () => ({ ok: true, detail: { queued: true } })),
     };
     const logger = createSilentLogger();
-    const notifier = new TaskHandoffNotifier(query, sender as never, logger as never);
+    const notifier = new FolderHandoffNotifier(query, sender as never, logger as never);
 
     notifier.notifyHumanHandoff(makeEvent({ status: "completed" }));
     await flushAsync();
@@ -48,7 +48,7 @@ describe("TaskHandoffNotifier", () => {
   });
 
   it("does not throw when delivery fails", async () => {
-    const query: TaskHandoffSubscriberQuery = {
+    const query: FolderHandoffSubscriberQuery = {
       listAgentSubscriberSessionIds: vi.fn(async () => ["sess-agent-1"]),
     };
     const sender = {
@@ -57,7 +57,7 @@ describe("TaskHandoffNotifier", () => {
       }),
     };
     const logger = createSilentLogger();
-    const notifier = new TaskHandoffNotifier(query, sender as never, logger as never);
+    const notifier = new FolderHandoffNotifier(query, sender as never, logger as never);
 
     expect(() => notifier.notifyHumanHandoff(makeEvent({ status: "cancelled" }))).not.toThrow();
     await flushAsync();
@@ -68,12 +68,11 @@ describe("TaskHandoffNotifier", () => {
 });
 
 function makeEvent(
-  overrides: Partial<TaskHandoffEvent> = {},
-): TaskHandoffEvent {
+  overrides: Partial<FolderHandoffEvent> = {},
+): FolderHandoffEvent {
   return {
-    taskId: "rb-1",
-    taskTitle: "Launch",
-    boardItemId: "task:rb-1",
+    folderId: "rb-1",
+    folderName: "Launch",
     itemId: "item-1",
     itemTitle: "Deploy",
     status: "completed",
@@ -84,7 +83,7 @@ function makeEvent(
 }
 
 function handoffDelivery(targetSessionId: string, operationId: string) {
-  const relationKey = `task_handoff:rb-1:${operationId}:item-1:${targetSessionId}`;
+  const relationKey = `folder_checklist_handoff:rb-1:${operationId}:item-1:${targetSessionId}`;
   const identity = buildDeterministicDeliveryIdentity({
     targetSessionId,
     relationKey,
@@ -93,7 +92,7 @@ function handoffDelivery(targetSessionId: string, operationId: string) {
   return {
     deliveryId: identity.deliveryId,
     deliveryIntent: "durable_next_turn" as const,
-    source: "task_handoff",
+    source: "folder_checklist_handoff",
     completionId: identity.completionId,
     relationKey,
     producerTerminalRevision: "12",

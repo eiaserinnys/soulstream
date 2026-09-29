@@ -1,112 +1,66 @@
 import { z } from "zod";
 
-import type { TaskAssigneeInput } from "../../work-task/task_models.js";
-import type { TaskService } from "../../work-task/task_service.js";
-import type { TaskOperationTargetKind } from "../../db/session_db_types.js";
+import type { ChecklistAssigneeInput } from "../../work-task/task_models.js";
+import type { FolderService } from "../../work-task/task_service.js";
+import type { FolderOperationTargetKind } from "../../db/session_db_types.js";
 import { errorResultFromError, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
-
 import {
   CALLER_SESSION_ID_FALLBACK_GUIDANCE,
   requireMcpMutationActor,
   type McpMutationActor,
 } from "./caller_session.js";
-import {
-  formatTaskMutationResponse,
-  type TaskMutationEnvelope,
-} from "./task_response.js";
+import { formatFolderMutationResponse, type FolderMutationEnvelope } from "./task_response.js";
 
-export const taskItemStatusSchema = z.enum([
-  "pending",
-  "in_progress",
-  "review",
-  "completed",
-  "cancelled",
-]);
-export const taskStatusSchema = z.enum(["open", "completed"]);
-
-export const assigneeValueSchema = z
-  .object({
-    kind: z.enum(["agent", "human", "session"]),
-    agent_id: z.string().nullable().optional(),
-    session_id: z.string().nullable().optional(),
-    user_id: z.string().nullable().optional(),
-  })
-  .nullable();
-
+export const checklistItemStatusSchema = z.enum(["pending", "in_progress", "review", "completed", "cancelled"]);
+export const folderStatusSchema = z.enum(["open", "completed"]);
+export const assigneeValueSchema = z.object({
+  kind: z.enum(["agent", "human", "session"]),
+  agent_id: z.string().nullable().optional(),
+  session_id: z.string().nullable().optional(),
+  user_id: z.string().nullable().optional(),
+}).nullable();
 export const assigneeSchema = assigneeValueSchema.optional();
 export const idempotencyKeySchema = z.string().min(1);
 export const optionalReasonSchema = z.string().nullable().optional();
 export const expectedVersionSchema = z.number().int().positive();
 export const callerSessionIdSchema = z.string().optional();
-export const mutationResponseInputSchema = {
-  include_snapshot: z.boolean().default(false),
-};
-export const CALLER_SESSION_ID_GUIDANCE =
-  CALLER_SESSION_ID_FALLBACK_GUIDANCE;
-
-type AssigneeToolInput = z.infer<typeof assigneeSchema>;
+export const mutationResponseInputSchema = { include_snapshot: z.boolean().default(false) };
 
 export function mutationToolDescription(description: string): string {
-  return `${description} 기본 응답은 operation, 변경된 target row, task 헤더만 반환한다. 전체 snapshot이 필요하면 include_snapshot=true를 사용한다. ${CALLER_SESSION_ID_GUIDANCE}`;
+  return `${description} 기본 응답은 operation, 변경된 target row, folder 헤더만 반환한다. 전체 snapshot이 필요하면 include_snapshot=true를 사용한다. ${CALLER_SESSION_ID_FALLBACK_GUIDANCE}`;
 }
 
 export async function mutation(
   runtime: McpRuntime,
   explicitCallerSessionId: string | null | undefined,
-  fn: (
-    service: TaskService,
-    actor: McpMutationActor,
-  ) => Promise<TaskMutationEnvelope>,
-  options: {
-    targetKind: TaskOperationTargetKind;
-    includeSnapshot: boolean;
-  },
+  fn: (service: FolderService, actor: McpMutationActor) => Promise<FolderMutationEnvelope>,
+  options: { targetKind: FolderOperationTargetKind; includeSnapshot: boolean },
 ) {
   try {
-    const result = await fn(
-      getTaskService(runtime),
-      requireMcpMutationActor(
-        explicitCallerSessionId,
-        "task mutation tools",
-      ),
-    );
-    return jsonResult(
-      formatTaskMutationResponse(
-        result,
-        options.targetKind,
-        options.includeSnapshot,
-      ),
-    );
+    const result = await fn(getFolderService(runtime), requireMcpMutationActor(explicitCallerSessionId, "folder/checklist mutation tools"));
+    return jsonResult(formatFolderMutationResponse(result, options.targetKind, options.includeSnapshot));
   } catch (err) {
     return errorResultFromError(err);
   }
 }
 
-export function getTaskService(runtime: McpRuntime): TaskService {
-  if (!runtime.taskService) {
-    throw new Error("task service is not configured");
-  }
-  return runtime.taskService;
+export function getFolderService(runtime: McpRuntime): FolderService {
+  if (!runtime.folderService) throw new Error("folder service is not configured");
+  return runtime.folderService;
 }
 
-export function assigneePatch(input: {
-  assignee?: AssigneeToolInput;
-}): { assignee?: TaskAssigneeInput | null } | Record<string, never> {
+export function assigneePatch(input: { assignee?: z.infer<typeof assigneeSchema> }): { assignee?: ChecklistAssigneeInput | null } | Record<string, never> {
   if (!Object.prototype.hasOwnProperty.call(input, "assignee")) return {};
-  return { assignee: toAssignee(input.assignee ?? null) };
+  if (!input.assignee) return { assignee: null };
+  return { assignee: {
+    kind: input.assignee.kind,
+    agentId: input.assignee.agent_id,
+    sessionId: input.assignee.session_id,
+    userId: input.assignee.user_id,
+  } };
 }
 
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-function toAssignee(input: AssigneeToolInput): TaskAssigneeInput | null {
-  if (!input) return null;
-  return {
-    kind: input.kind,
-    agentId: input.agent_id,
-    sessionId: input.session_id,
-    userId: input.user_id,
-  };
 }

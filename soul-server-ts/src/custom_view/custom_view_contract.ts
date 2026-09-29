@@ -1,5 +1,4 @@
 import type {
-  BoardYjsContainerRef,
   CatalogBoardItemRow,
   CustomViewRow,
 } from "../db/session_db_types.js";
@@ -33,7 +32,7 @@ export class CustomViewRevisionConflictError extends Error {
 export interface CustomViewProjectionHost {
   getCustomView(customViewId: string): Promise<CustomViewWithBoardItem | null>;
   listCustomViews(params: {
-    container: BoardYjsContainerRef;
+    folderId: string;
     includeArchived?: boolean;
     limit?: number;
   }): Promise<CustomViewWithBoardItem[]>;

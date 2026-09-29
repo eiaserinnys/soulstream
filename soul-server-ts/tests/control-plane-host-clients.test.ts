@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FolderHostClient } from "../src/folder/folder_host_client.js";
 import { ScheduleHostClient } from "../src/schedule/schedule_host_client.js";
-import { TaskVersionConflict } from "../src/work-task/task_models.js";
-import { TaskService } from "../src/work-task/task_service.js";
+import { FolderVersionConflict } from "../src/work-task/task_models.js";
+import { FolderService } from "../src/work-task/task_service.js";
 import {
   ClaudeRuntimeHostClient,
   PersistenceHostTransport,
@@ -148,25 +148,26 @@ describe("worker control-plane host clients", () => {
     now.mockRestore();
   });
 
-  it("serializes task provenance in snake_case and dispatches a returned handoff", async () => {
+  it("serializes checklist provenance in snake_case and dispatches a returned handoff", async () => {
     const notifyHumanHandoff = vi.fn();
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const request = JSON.parse(String(init?.body));
       expect(request).toMatchObject({
         actor_kind: "agent",
         actor_session_id: "session-1",
+        folder_id: "folder-1",
         item_id: "item-1",
         expected_version: 4,
         idempotency_key: "idem-1",
       });
       return new Response(JSON.stringify({
-        snapshot: { task: { id: "task-1" }, sections: [], items: [] },
+        snapshot: { folder: { id: "folder-1" }, sections: [], items: [] },
         operation: { id: "operation-1" },
         eventId: 12,
         handoff: {
-          taskId: "task-1",
-          taskTitle: "Task",
-          boardItemId: "task:task-1",
+          folderId: "folder-1",
+          folderTitle: "Folder",
+          boardItemId: "folder:folder-1",
           itemId: "item-1",
           itemTitle: "Item",
           status: "completed",
@@ -176,18 +177,19 @@ describe("worker control-plane host clients", () => {
       }), { status: 200, headers: { "content-type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
-    const service = new TaskService({ orch, logger });
+    const service = new FolderService({ orch, logger });
     service.setHandoffNotifier({ notifyHumanHandoff });
 
-    await service.setItemStatus({
+    await service.setChecklistItemStatus({
       actorSessionId: "session-1",
+      folderId: "folder-1",
       itemId: "item-1",
       expectedVersion: 4,
       status: "completed",
       idempotencyKey: "idem-1",
     });
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/tasks/host/set_item_status");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://orch.example/api/folders/host/set_checklist_item_status");
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeDefined();
     expect(notifyHumanHandoff).toHaveBeenCalledOnce();
   });
@@ -253,11 +255,11 @@ describe("worker control-plane host clients", () => {
     });
   });
 
-  it("restores a task version conflict returned by the host", async () => {
+  it("restores a folder version conflict returned by the host", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       detail: {
         error: {
-          code: "TASK_VERSION_CONFLICT",
+          code: "FOLDER_VERSION_CONFLICT",
           message: "stale item",
           details: {
             targetKind: "item",
@@ -268,14 +270,15 @@ describe("worker control-plane host clients", () => {
         },
       },
     }), { status: 409, headers: { "content-type": "application/json" } })));
-    const service = new TaskService({ orch, logger });
+    const service = new FolderService({ orch, logger });
 
-    await expect(service.setItemStatus({
+    await expect(service.setChecklistItemStatus({
       actorSessionId: "session-1",
+      folderId: "folder-1",
       itemId: "item-1",
       expectedVersion: 2,
       status: "completed",
-    })).rejects.toBeInstanceOf(TaskVersionConflict);
+    })).rejects.toBeInstanceOf(FolderVersionConflict);
   });
 
   it("uses the folder host for session assignment", async () => {

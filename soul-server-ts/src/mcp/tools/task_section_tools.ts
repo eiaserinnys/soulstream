@@ -16,19 +16,19 @@ import {
   optionalReasonSchema,
 } from "./task_shared.js";
 
-export function registerTaskSectionTools(
+export function registerChecklistSectionTools(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
   server.registerTool(
-    "create_task_section",
+    "create_checklist_section",
     {
       description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션을 생성한다.",
       ),
       inputSchema: {
         ...mutationResponseInputSchema,
-        task_id: z.string().min(1),
+        folder_id: z.string().min(1),
         title: z.string().min(1),
         section_id: z.string().min(1).optional(),
         assignee: assigneeSchema,
@@ -43,9 +43,9 @@ export function registerTaskSectionTools(
         runtime,
         input.caller_session_id,
         (service, actor) =>
-          service.createSection({
+          service.createChecklistSection({
             ...actor,
-            taskId: input.task_id,
+            folderId: input.folder_id,
             title: input.title,
             sectionId: input.section_id,
             afterSectionId: input.after_section_id,
@@ -58,14 +58,14 @@ export function registerTaskSectionTools(
   );
 
   server.registerTool(
-    "update_task_section",
+    "update_checklist_section",
     {
       description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션 제목을 수정한다.",
       ),
       inputSchema: {
         ...mutationResponseInputSchema,
-        task_id: z.string().min(1),
+        folder_id: z.string().min(1),
         section_id: z.string().min(1),
         expected_version: expectedVersionSchema,
         title: z.string().min(1),
@@ -79,9 +79,9 @@ export function registerTaskSectionTools(
         runtime,
         input.caller_session_id,
         (service, actor) =>
-          service.patchSection({
+          service.updateChecklistSection({
             ...actor,
-            taskId: input.task_id,
+            folderId: input.folder_id,
             sectionId: input.section_id,
             expectedVersion: input.expected_version,
             title: input.title,
@@ -93,14 +93,14 @@ export function registerTaskSectionTools(
   );
 
   server.registerTool(
-    "set_task_section_assignee",
+    "set_checklist_section_assignee",
     {
       description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션 담당자를 설정하거나 해제한다.",
       ),
       inputSchema: {
         ...mutationResponseInputSchema,
-        task_id: z.string().min(1),
+        folder_id: z.string().min(1),
         section_id: z.string().min(1),
         expected_version: expectedVersionSchema,
         assignee: assigneeValueSchema,
@@ -114,9 +114,9 @@ export function registerTaskSectionTools(
         runtime,
         input.caller_session_id,
         (service, actor) =>
-          service.setSectionAssignee({
+          service.setChecklistSectionAssignee({
             ...actor,
-            taskId: input.task_id,
+            folderId: input.folder_id,
             sectionId: input.section_id,
             expectedVersion: input.expected_version,
             reason: input.reason,
@@ -128,27 +128,27 @@ export function registerTaskSectionTools(
   );
 
   registerSectionArchiveTool(server, runtime, {
-    name: "archive_task_section",
+    name: "archive_checklist_section",
     archived: true,
     description:
       "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션을 archived 처리한다.",
   });
   registerSectionArchiveTool(server, runtime, {
-    name: "unarchive_task_section",
+    name: "unarchive_checklist_section",
     archived: false,
     description:
       "현재 MCP caller session을 actor_kind='agent'로 하여 archived 업무 섹션을 복구한다.",
   });
 
   server.registerTool(
-    "move_task_section",
+    "move_checklist_section",
     {
       description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 섹션 position_key를 재계산한다.",
       ),
       inputSchema: {
         ...mutationResponseInputSchema,
-        task_id: z.string().min(1),
+        folder_id: z.string().min(1),
         section_id: z.string().min(1),
         expected_version: expectedVersionSchema,
         after_section_id: z.string().nullable().optional(),
@@ -163,9 +163,9 @@ export function registerTaskSectionTools(
         runtime,
         input.caller_session_id,
         (service, actor) =>
-          service.moveSection({
+          service.moveChecklistSection({
             ...actor,
-            taskId: input.task_id,
+            folderId: input.folder_id,
             sectionId: input.section_id,
             expectedVersion: input.expected_version,
             afterSectionId: input.after_section_id,
@@ -182,7 +182,7 @@ function registerSectionArchiveTool(
   server: McpServer,
   runtime: McpRuntime,
   config: {
-    name: "archive_task_section" | "unarchive_task_section";
+    name: "archive_checklist_section" | "unarchive_checklist_section";
     archived: boolean;
     description: string;
   },
@@ -193,7 +193,7 @@ function registerSectionArchiveTool(
       description: mutationToolDescription(config.description),
       inputSchema: {
         ...mutationResponseInputSchema,
-        task_id: z.string().min(1),
+        folder_id: z.string().min(1),
         section_id: z.string().min(1),
         expected_version: expectedVersionSchema,
         reason: optionalReasonSchema,
@@ -206,9 +206,9 @@ function registerSectionArchiveTool(
         runtime,
         input.caller_session_id,
         (service, actor) =>
-          service.patchSection({
+          service.updateChecklistSection({
             ...actor,
-            taskId: input.task_id,
+            folderId: input.folder_id,
             sectionId: input.section_id,
             expectedVersion: input.expected_version,
             archived: config.archived,

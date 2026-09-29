@@ -13,9 +13,7 @@ import type { CustomViewService } from "../custom_view/custom_view_service.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import type { PageYjsHostClient } from "../page/page_host_client.js";
-import type { ChecklistTaskAdapter } from "../page/checklist_task_adapter.js";
-import type { TaskService } from "../work-task/task_service.js";
-import type { TaskIdentityHostClient } from "../work-task/task_identity_host_client.js";
+import type { FolderService } from "../work-task/task_service.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type {
   StartExecutionCallback,
@@ -51,12 +49,10 @@ export interface McpRuntime {
   agentConfigService?: AgentConfigService;
   mcpConfigService?: McpConfigService;
   catalogService: CatalogService;
-  taskService?: TaskService;
-  taskIdentityHostClient?: TaskIdentityHostClient;
+  folderService?: FolderService;
   customViewService?: CustomViewService;
   /** Tests may inject the page host boundary; production constructs it from orch. */
   pageHostClient?: PageYjsHostClient;
-  checklistTaskAdapter?: ChecklistTaskAdapter;
   logger: Logger;
   /** 미설정 시 multi-node 도구는 등록되되 호출 시 `{error: ...}` 반환. */
   orch?: OrchProxyConfig;

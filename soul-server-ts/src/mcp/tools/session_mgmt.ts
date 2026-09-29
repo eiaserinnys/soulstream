@@ -18,20 +18,14 @@ const ReasoningEffortToolSchema = z.enum(
 
 import type { AgentProfile } from "../../agent_registry.js";
 import type { AgentProfileResolution } from "../../agent_profile_source.js";
-import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
 import { UnknownModelPresetError } from "../../model_catalog.js";
-import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
+import { resolveDelegatedFolderId } from "../../session_folder_fallback.js";
 import { resolveStructuralCallerSessionId } from "../../task/delegation_relationship.js";
 import { sendMessageToSession } from "../../task/session_message_sender.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
 import { appendModelPresetLookupHint } from "./model_preset_hint.js";
-
-const delegatedContainerSchema = z.object({
-  kind: boardContainerKindInputSchema,
-  id: z.string().min(1),
-});
 
 export function registerSessionMgmtTools(
   server: McpServer,
@@ -82,12 +76,11 @@ export function registerSessionMgmtTools(
         predecessor_session_id: z.string().min(1).optional(),
         notify_completion: z.boolean().optional(),
         folder_id: z.string().optional(),
-        container: delegatedContainerSchema.optional(),
-        source_task_item_id: z.string().optional(),
+        source_checklist_item_id: z.string().optional(),
         worktree_id: z.string().uuid().optional(),
       },
     },
-    async ({ agent_id, model_preset, reasoning_effort, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, container, source_task_item_id, worktree_id }) => {
+    async ({ agent_id, model_preset, reasoning_effort, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, source_checklist_item_id, worktree_id }) => {
       let agentResolution: AgentProfileResolution | undefined;
       let agent: AgentProfile | undefined;
       let resolvedAgentId: string;
@@ -113,10 +106,9 @@ export function registerSessionMgmtTools(
 
       // caller_info 조립 — 명시 caller_session_id 우선, 없으면 MCP request context 사용.
       const attribution = resolveMcpCallerAttribution(runtime, caller_session_id);
-      const resolvedContainer = await resolveDelegatedContainer(runtime, {
+      const resolvedFolderId = await resolveDelegatedFolderId(runtime, {
         callerSessionId: attribution.callerSessionId,
         ...(folder_id !== undefined ? { folderId: folder_id } : {}),
-        container: container ?? null,
       });
 
       const sessionId = randomUUID();
@@ -140,9 +132,8 @@ export function registerSessionMgmtTools(
           predecessorSessionId: predecessor_session_id ?? null,
           callerInfo: attribution.callerInfo,
           notifyCompletion: notify_completion,
-          folderId: resolvedContainer.folderId,
-          container: resolvedContainer.container,
-          sourceTaskItemId: source_task_item_id ?? null,
+          folderId: resolvedFolderId,
+          sourceChecklistItemId: source_checklist_item_id ?? null,
           ...(worktree_id
             ? {
                 worktreeId: worktree_id,

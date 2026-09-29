@@ -108,7 +108,7 @@ function makeMocks() {
   const getAllFolders = vi.fn().mockResolvedValue([]);
   const getPrimarySessionBoardItem = vi.fn().mockResolvedValue(null);
   const getBoardItems = vi.fn().mockResolvedValue([]);
-  const getBoardItemsByContainer = vi.fn().mockResolvedValue([]);
+  const getBoardItemsByFolder = vi.fn().mockResolvedValue([]);
   const upsertSessionBoardItem = vi.fn().mockResolvedValue({});
   // PR #56: hydration mock (Python load_evicted_task 정합)
   const getSession = vi.fn().mockResolvedValue(null);
@@ -122,7 +122,7 @@ function makeMocks() {
     getAllFolders,
     getPrimarySessionBoardItem,
     getBoardItems,
-    getBoardItemsByContainer,
+    getBoardItemsByFolder,
     getSession,
   } as unknown as SessionDB;
   boardYjsServices.set(db, { upsertSessionBoardItem });
@@ -164,7 +164,7 @@ function makeMocks() {
     getAllFolders,
     getPrimarySessionBoardItem,
     getBoardItems,
-    getBoardItemsByContainer,
+    getBoardItemsByFolder,
     upsertSessionBoardItem,
     getSession,
     emitSessionCreated,
@@ -438,9 +438,8 @@ describe("TaskManager.createTask", () => {
     ]);
     expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "claude",
-      container: { containerKind: "folder", containerId: "claude" },
       sessionId: "sess-1",
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
     }));
 
     expect(emitSessionCreated).toHaveBeenCalledTimes(1);
@@ -609,7 +608,6 @@ describe("TaskManager.createTask", () => {
     await tm.waitForCreationEffects("s1");
     expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "folder-42",
-      container: { containerKind: "folder", containerId: "folder-42" },
       sessionId: "s1",
     }));
     expect(emitSessionCreated.mock.calls[0][1]).toBe("folder-42");
@@ -1973,9 +1971,8 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     await tm.waitForCreationEffects("s1");
     expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "folder-explicit",
-      container: { containerKind: "folder", containerId: "folder-explicit" },
       sessionId: "s1",
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
     }));
     expect(getFolderById).not.toHaveBeenCalled();  // 명시 folder가 있으면 default lookup 안 함
     expect(emitSessionCreated.mock.calls[0][1]).toBe("folder-explicit");
@@ -1994,9 +1991,8 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     expect(getFolderById).toHaveBeenCalledWith("claude");
     expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "claude",
-      container: { containerKind: "folder", containerId: "claude" },
       sessionId: "s2",
-      sourceTaskItemId: null,
+      sourceChecklistItemId: null,
     }));
     expect(emitSessionCreated.mock.calls[0][1]).toBe("claude");
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);

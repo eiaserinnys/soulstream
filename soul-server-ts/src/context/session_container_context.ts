@@ -1,99 +1,56 @@
 import type { Logger } from "pino";
 
-import type { CatalogBoardItemRow, SessionDB } from "../db/session_db.js";
+import type { CatalogBoardItemRow, FolderRow, SessionDB } from "../db/session_db.js";
+import type { SoulstreamFolderContext } from "./soulstream_item.js";
 
-import type { SoulstreamContainerContext } from "./soulstream_item.js";
-
-export interface PrimarySessionContainerContext {
-  container: SoulstreamContainerContext;
-  sourceTaskItemId?: string | null;
-  taskGuidance?: string | null;
+export interface PrimarySessionFolderContext {
+  folder: SoulstreamFolderContext;
+  sourceChecklistItemId?: string | null;
+  folderGuidance?: string | null;
 }
 
-export async function resolvePrimarySessionContainerContext(
+export async function resolvePrimarySessionFolderContext(
   db: SessionDB,
   logger: Logger,
   sessionId: string,
-  folderName?: string,
-): Promise<PrimarySessionContainerContext | null> {
-  const getPrimarySessionBoardItem = (db as unknown as {
-    getPrimarySessionBoardItem?: (sessionId: string) => Promise<CatalogBoardItemRow | null>;
-  }).getPrimarySessionBoardItem;
-  if (typeof getPrimarySessionBoardItem !== "function") return null;
-
-  let boardItem: CatalogBoardItemRow | null;
+  folderId?: string,
+): Promise<PrimarySessionFolderContext | null> {
+  let id = folderId;
   try {
-    boardItem = await getPrimarySessionBoardItem.call(db, sessionId);
+    id ??= (await db.getSession(sessionId))?.folder_id ?? undefined;
   } catch (err) {
-    logger.warn(
-      { err, sessionId },
-      "resolvePrimarySessionContainerContext: getPrimarySessionBoardItem failed",
-    );
+    logger.warn({ err, sessionId }, "session folder lookup failed");
     return null;
   }
-  if (!boardItem) return null;
-  if (boardItem.itemType !== "session" || boardItem.membershipKind !== "primary") {
-    return null;
-  }
-
-  const kind = boardItem.containerKind ?? "folder";
-  const id = boardItem.containerId ?? boardItem.folderId;
   if (!id) return null;
+  let row: FolderRow | null;
+  try {
+    row = await db.getFolderById(id);
+  } catch (err) {
+    logger.warn({ err, sessionId, folderId: id }, "folder lookup failed");
+    return null;
+  }
+  if (!row) return null;
 
-  if (kind === "task") {
-    const title = await resolveTaskTitle(db, logger, id, boardItem);
-    const container = { kind, id, title };
-    return {
-      container,
-      sourceTaskItemId: boardItem.sourceTaskItemId ?? null,
-      taskGuidance: buildTaskGuidance(container),
-    };
+  let boardItem: CatalogBoardItemRow | null = null;
+  try {
+    boardItem = await db.getPrimarySessionBoardItem(sessionId);
+  } catch (err) {
+    logger.warn({ err, sessionId }, "primary session board item lookup failed");
   }
 
+  const folder = {
+    id: row.id,
+    title: row.name,
+    checklist_enabled: row.checklist_enabled,
+  };
   return {
-    container: {
-      kind,
-      id,
-      title: folderName ?? id,
-    },
+    folder,
+    sourceChecklistItemId: boardItem?.sourceChecklistItemId ?? null,
+    ...(row.checklist_enabled ? { folderGuidance: buildFolderGuidance(folder) } : {}),
   };
 }
 
-async function resolveTaskTitle(
-  db: SessionDB,
-  logger: Logger,
-  taskId: string,
-  boardItem: CatalogBoardItemRow,
-): Promise<string> {
-  const tasks = (db as unknown as {
-    tasks?: () => {
-      getTask?: (taskId: string) => Promise<{ title?: unknown } | null>;
-    };
-  }).tasks;
-  if (typeof tasks === "function") {
-    try {
-      const repo = tasks.call(db);
-      const task = typeof repo.getTask === "function"
-        ? await repo.getTask(taskId)
-        : null;
-      if (typeof task?.title === "string" && task.title.trim().length > 0) {
-        return task.title;
-      }
-    } catch (err) {
-      logger.warn(
-        { err, taskId },
-        "resolveTaskTitle: getTask failed",
-      );
-    }
-  }
-
-  const metadataTitle = boardItem.metadata.title;
-  if (typeof metadataTitle === "string" && metadataTitle.trim().length > 0) {
-    return metadataTitle;
-  }
-  return taskId;
-}
-
-function buildTaskGuidance(container: SoulstreamContainerContext): string {
-  return `이 세션은 업무 ${container.id}(${container.title}) 소속. get_task으로 체크리스트를 확인하고, 산출물·후속 세션은 이 업무 컨테이너에 연결한다.`;
+function buildFolderGuidance(folder: SoulstreamFolderContext): string {
+  return `이 세션은 폴더 ${folder.id}(${folder.title}) 소속. get_folder로 체크리스트를 확인하고, 산출물·후속 세션은 이 폴더에 연결한다.`;
 }

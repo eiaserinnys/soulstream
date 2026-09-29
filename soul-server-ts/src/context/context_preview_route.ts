@@ -76,8 +76,8 @@ function parsePreviewBody(body: PreviewBody | undefined, nodeId: string): Previe
   const parameters: ContextFilterParameters = {
     node_id: nodeId,
     ...(nonEmptyString(session.source) ? { source: session.source as string } : {}),
-    ...(nonEmptyString(session.container_kind)
-      ? { container_kind: session.container_kind as string }
+    ...(nonEmptyString(session.folder_id)
+      ? { folder_id: session.folder_id as string }
       : {}),
     ...(nonEmptyString(session.agent) ? { agent: session.agent as string } : {}),
     ...(nonEmptyString(session.backend) ? { backend: session.backend as string } : {}),

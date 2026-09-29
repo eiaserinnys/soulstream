@@ -16,7 +16,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type {
-  BoardYjsContainerRef,
   CatalogBoardItemRow,
   MarkdownDocumentRow,
   SessionDB,
@@ -38,10 +37,11 @@ import {
   type CatalogSessionsDelta,
 } from "./catalog_delta.js";
 import {
-  ContainerBrowseService,
-  type ContainerBrowseResult,
-  type ContainerSessionItem,
-  createContainerBrowseStore,
+  FolderBrowseService,
+  type FolderBrowseResult,
+  type FolderBrowseItem,
+  type FolderSessionItem,
+  createFolderBrowseStore,
 } from "./container_browse_service.js";
 
 function renameSessionIdempotencyKey(
@@ -93,6 +93,8 @@ export interface BrowseFolderResult {
     nextCursor: number | null;
   };
   boardItems: CatalogBoardItemRow[];
+  items: FolderBrowseItem[];
+  itemsPage: FolderBrowseResult["page"];
   counts: {
     childFolders: number;
     sessions: number;
@@ -115,7 +117,7 @@ export interface BrowseFolderResult {
  */
 export class CatalogService {
   private readonly boardItems: CatalogBoardItemService;
-  private readonly containerBrowser: ContainerBrowseService;
+  private readonly folderBrowser: FolderBrowseService;
 
   constructor(
     private readonly db: SessionDB,
@@ -132,7 +134,7 @@ export class CatalogService {
       boardYjsService,
       (delta) => this.broadcastCatalog(delta),
     );
-    this.containerBrowser = new ContainerBrowseService(createContainerBrowseStore(db));
+    this.folderBrowser = new FolderBrowseService(createFolderBrowseStore(db));
   }
 
   async listFolders(): Promise<CatalogFolderDto[]> {
@@ -155,6 +157,9 @@ export class CatalogService {
     folderId: string;
     sessionCursor?: number;
     sessionLimit?: number;
+    cursor?: number;
+    limit?: number;
+    includeArchived?: boolean;
   }): Promise<BrowseFolderResult> {
     const folders = await this.listFolders();
     const folder = folders.find((candidate) => candidate.id === params.folderId);
@@ -164,21 +169,31 @@ export class CatalogService {
     const childFolders = folders.filter(
       (candidate) => candidate.parentFolderId === params.folderId,
     );
-    const snapshot = await this.containerBrowser.browseLegacyFolder({
-      folderId: params.folderId,
-      sessionCursor: params.sessionCursor,
-      sessionLimit: params.sessionLimit,
-    });
+    const [snapshot, itemPage] = await Promise.all([
+      this.folderBrowser.browseFolderContents({
+        folderId: params.folderId,
+        sessionCursor: params.sessionCursor,
+        sessionLimit: params.sessionLimit,
+      }),
+      this.folderBrowser.browse({
+        folderId: params.folderId,
+        cursor: params.cursor,
+        limit: params.limit,
+        includeArchived: params.includeArchived,
+      }),
+    ]);
     const boardItems = snapshot.boardItems;
     return {
       folderId: params.folderId,
       folder,
       childFolders,
       sessions: snapshot.sessions.items
-        .filter((item): item is ContainerSessionItem => item.type === "session")
+        .filter((item): item is FolderSessionItem => item.type === "session")
         .map(toBrowseFolderSession),
       sessionsPage: snapshot.sessions.page,
       boardItems,
+      items: itemPage.items,
+      itemsPage: itemPage.page,
       counts: {
         childFolders: childFolders.length,
         sessions: snapshot.sessions.page.total,
@@ -189,16 +204,10 @@ export class CatalogService {
     };
   }
 
-  async browseContainer(
-    params: Parameters<ContainerBrowseService["browse"]>[0],
-  ): Promise<ContainerBrowseResult> {
-    return await this.containerBrowser.browse(params);
-  }
-
-  async searchContainerItems(
-    params: Parameters<ContainerBrowseService["search"]>[0],
-  ): Promise<ContainerBrowseResult> {
-    return await this.containerBrowser.search(params);
+  async searchFolderItems(
+    params: Parameters<FolderBrowseService["search"]>[0],
+  ): Promise<FolderBrowseResult> {
+    return await this.folderBrowser.search(params);
   }
 
   /**
@@ -380,18 +389,17 @@ export class CatalogService {
     await this.boardItems.updateBoardItemPosition(boardItemId, x, y);
   }
 
-  async moveBoardItemToContainer(params: {
+  async moveBoardItemToFolder(params: {
     boardItemId: string;
-    target: BoardYjsContainerRef;
+    folderId: string;
     position?: { x: number; y: number };
     idempotencyKey: string;
   }): Promise<CatalogBoardItemMoveResult> {
-    return await this.boardItems.moveBoardItemToContainer(params);
+    return await this.boardItems.moveBoardItemToFolder(params);
   }
 
   async createMarkdownDocument(params: {
     folderId: string;
-    container?: BoardYjsContainerRef | null;
     title: string;
     body?: string;
     x?: number;
@@ -443,7 +451,7 @@ export class CatalogService {
   }
 }
 
-function toBrowseFolderSession(row: ContainerSessionItem): BrowseFolderSessionDto {
+function toBrowseFolderSession(row: FolderSessionItem): BrowseFolderSessionDto {
   return {
     sessionId: row.agentSessionId,
     title: row.displayName,

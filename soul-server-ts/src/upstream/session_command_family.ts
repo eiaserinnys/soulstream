@@ -1,7 +1,6 @@
 import type { Logger } from "pino";
 
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { BoardYjsContainerRef } from "../db/session_db.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
@@ -48,8 +47,7 @@ interface CreateSessionCmd extends CommandLike {
   claudePermissionMode?: ClaudePermissionMode;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
-  container?: { kind: BoardYjsContainerRef["containerKind"]; id: string } | null;
-  sourceTaskItemId?: string | null;
+  sourceChecklistItemId?: string | null;
   worktree_id?: string;
   worktree_actor_session_id?: string;
   /**
@@ -187,10 +185,7 @@ async function handleCreateSession(
       useMcp: cmd.use_mcp ?? cmd.useMcp,
       claudePermissionMode: cmd.claude_permission_mode ?? cmd.claudePermissionMode,
       folderId: cmd.folderId ?? null,
-      container: cmd.container
-        ? { containerKind: cmd.container.kind, containerId: cmd.container.id }
-        : null,
-      sourceTaskItemId: cmd.sourceTaskItemId ?? null,
+      sourceChecklistItemId: cmd.sourceChecklistItemId ?? null,
       worktreeId: cmd.worktree_id,
       worktreeActorSessionId: cmd.worktree_actor_session_id,
       systemPrompt: cmd.systemPrompt,

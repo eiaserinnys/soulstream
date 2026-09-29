@@ -1,12 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type {
-  BoardYjsContainerRef,
-  BoardYjsContainerScope,
-  CatalogBoardItemRow,
-  MarkdownDocumentRow,
-  SessionDB,
-} from "../db/session_db.js";
+import type { CatalogBoardItemRow, MarkdownDocumentRow, SessionDB } from "../db/session_db.js";
 import { getMarkdownPreview } from "../collaboration/board_yjs_preview.js";
 import type { CatalogMutationDelta } from "./catalog_delta.js";
 
@@ -21,51 +15,32 @@ export interface CatalogBoardItemMoveResult {
 }
 
 export interface CatalogBoardYjsPort {
-  moveSessionToFolder(
-    sessionId: string,
-    folderId: string | null,
-  ): Promise<CatalogBoardItemRow | null>;
-  updateBoardItemPosition(
-    container: string | BoardYjsContainerRef,
-    boardItemId: string,
-    x: number,
-    y: number,
-  ): Promise<void>;
-  moveBoardItemToContainer(input: {
+  moveSessionToFolder(sessionId: string, folderId: string | null): Promise<CatalogBoardItemRow | null>;
+  updateBoardItemPosition(folderId: string, boardItemId: string, x: number, y: number): Promise<void>;
+  moveBoardItemToFolder(input: {
     boardItem: CatalogBoardItemRow;
-    targetScope: {
-      folderId: string;
-      containerKind: BoardYjsContainerRef["containerKind"];
-      containerId: string;
-    };
+    targetFolderId: string;
     position?: { x: number; y: number };
     idempotencyKey: string;
   }): Promise<CatalogBoardItemRow>;
   createMarkdownDocument(input: {
     folderId: string;
-    container?: BoardYjsContainerRef;
     title: string;
     body: string;
     x: number;
     y: number;
     documentId: string;
   }): Promise<{ document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow }>;
-  updateMarkdownDocument(
-    container: string | BoardYjsContainerRef,
-    documentId: string,
-    fields: { title?: string; body?: string; expectedVersion: number },
-  ): Promise<MarkdownDocumentRow | null>;
-  deleteMarkdownDocument(
-    container: string | BoardYjsContainerRef,
-    documentId: string,
-  ): Promise<void>;
+  updateMarkdownDocument(folderId: string, documentId: string, fields: {
+    title?: string; body?: string; expectedVersion: number;
+  }): Promise<MarkdownDocumentRow | null>;
+  deleteMarkdownDocument(folderId: string, documentId: string): Promise<void>;
   upsertSessionBoardItem(input: {
     folderId: string;
-    container: BoardYjsContainerRef;
     sessionId: string;
     x: number;
     y: number;
-    sourceTaskItemId?: string | null;
+    sourceChecklistItemId?: string | null;
   }): Promise<CatalogBoardItemRow>;
 }
 
@@ -76,85 +51,39 @@ export class CatalogBoardItemService {
     private readonly broadcastCatalog: (delta?: CatalogMutationDelta) => Promise<void>,
   ) {}
 
-  async moveSessionToFolder(
-    sessionId: string,
-    folderId: string | null,
-  ): Promise<CatalogBoardItemRow | null> {
-    if (!this.boardYjsService) {
-      throw new Error("orchestrator Board Yjs mutation port is not configured");
-    }
-    return await this.boardYjsService.moveSessionToFolder(sessionId, folderId);
+  async moveSessionToFolder(sessionId: string, folderId: string | null): Promise<CatalogBoardItemRow | null> {
+    return await this.requireBoard().moveSessionToFolder(sessionId, folderId);
   }
 
-  async updateBoardItemPosition(
-    boardItemId: string,
-    x: number,
-    y: number,
-  ): Promise<void> {
-    if (!this.boardYjsService) {
-      throw new Error("orchestrator Board Yjs mutation port is not configured");
-    }
+  async updateBoardItemPosition(boardItemId: string, x: number, y: number): Promise<void> {
     const snappedX = snapBoardPosition(x);
     const snappedY = snapBoardPosition(y);
     const boardItem = await this.db.getBoardItemById(boardItemId);
-    if (!boardItem) {
-      throw new Error(`board item not found: ${boardItemId}`);
-    }
-    await this.boardYjsService.updateBoardItemPosition(
-      {
-        containerKind: boardItem.containerKind ?? "folder",
-        containerId: boardItem.containerId ?? boardItem.folderId,
-      },
-      boardItemId,
-      snappedX,
-      snappedY,
-    );
-    await this.broadcastCatalog({
-      boardItems: [{
-        ...boardItem,
-        x: snappedX,
-        y: snappedY,
-      }],
-    });
+    if (!boardItem) throw new Error(`board item not found: ${boardItemId}`);
+    await this.requireBoard().updateBoardItemPosition(boardItem.folderId, boardItemId, snappedX, snappedY);
+    await this.broadcastCatalog({ boardItems: [{ ...boardItem, x: snappedX, y: snappedY }] });
   }
 
-  async moveBoardItemToContainer(params: {
+  async moveBoardItemToFolder(params: {
     boardItemId: string;
-    target: BoardYjsContainerRef;
+    folderId: string;
     position?: { x: number; y: number };
     idempotencyKey: string;
   }): Promise<CatalogBoardItemMoveResult> {
-    if (!this.boardYjsService) {
-      throw new Error("board Yjs service is not configured");
+    if (!params.boardItemId.trim()) throw new Error("boardItemId is required");
+    if (!await this.db.getFolderById(params.folderId)) {
+      throw new Error(`folder not found: ${params.folderId}`);
     }
-    assertSupportedMoveItemId(params.boardItemId);
-    const targetScope = await this.db.resolveBoardYjsContainerScope(params.target);
-    if (!targetScope) {
-      throw new Error(`target container not found: ${params.target.containerKind}:${params.target.containerId}`);
-    }
-    const targetContainer = containerRefFromScope(targetScope);
-    const snappedPosition = params.position
-      ? {
-          x: snapBoardPosition(params.position.x),
-          y: snapBoardPosition(params.position.y),
-        }
-      : undefined;
+    const position = params.position && {
+      x: snapBoardPosition(params.position.x),
+      y: snapBoardPosition(params.position.y),
+    };
     const boardItem = await this.db.getBoardItemById(params.boardItemId);
     if (!boardItem) {
-      const enrolled = await this.enrollGeneratedSessionBoardItem({
-        boardItemId: params.boardItemId,
-        targetScope,
-        targetContainer,
-        position: snappedPosition,
-      });
-      if (enrolled) {
-        await this.broadcastCatalog({
-          sessionIds: [enrolled.itemId],
-          boardItems: [enrolled],
-        });
-        return { boardItem: enrolled, enrolled: true };
-      }
-      throw new Error(`board item not found: ${params.boardItemId}`);
+      const enrolled = await this.enrollGeneratedSessionBoardItem(params.boardItemId, params.folderId, position);
+      if (!enrolled) throw new Error(`board item not found: ${params.boardItemId}`);
+      await this.broadcastCatalog({ sessionIds: [enrolled.itemId], boardItems: [enrolled] });
+      return { boardItem: enrolled, enrolled: true };
     }
     if ((boardItem.membershipKind ?? "primary") !== "primary") {
       throw new Error("only primary board item membership can be moved");
@@ -162,32 +91,17 @@ export class CatalogBoardItemService {
     if (!isMovableBoardItemType(boardItem.itemType)) {
       throw new Error(`board item type is not movable: ${boardItem.itemType}`);
     }
-    const sourceKind = boardItem.containerKind ?? "folder";
-    const sourceId = boardItem.containerId ?? boardItem.folderId;
-
-    if (sourceKind === targetScope.containerKind && sourceId === targetScope.containerId) {
-      if (snappedPosition) {
-        await this.updateBoardItemPosition(
-          boardItem.id,
-          snappedPosition.x,
-          snappedPosition.y,
-        );
-        return {
-          boardItem: {
-            ...boardItem,
-            x: snappedPosition.x,
-            y: snappedPosition.y,
-          },
-          enrolled: false,
-        };
+    if (boardItem.folderId === params.folderId) {
+      if (position) {
+        await this.updateBoardItemPosition(boardItem.id, position.x, position.y);
+        return { boardItem: { ...boardItem, ...position }, enrolled: false };
       }
       return { boardItem, enrolled: false };
     }
-
-    const moved = await this.boardYjsService.moveBoardItemToContainer({
+    const moved = await this.requireBoard().moveBoardItemToFolder({
       boardItem,
-      targetScope,
-      ...(snappedPosition ? { position: snappedPosition } : {}),
+      targetFolderId: params.folderId,
+      ...(position ? { position } : {}),
       idempotencyKey: params.idempotencyKey,
     });
     await this.broadcastCatalog({
@@ -199,27 +113,18 @@ export class CatalogBoardItemService {
 
   async createMarkdownDocument(params: {
     folderId: string;
-    container?: BoardYjsContainerRef | null;
     title: string;
     body?: string;
     x?: number;
     y?: number;
   }): Promise<{ document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow }> {
-    if (!this.boardYjsService) {
-      throw new Error("orchestrator Board Yjs mutation port is not configured");
-    }
     const documentId = randomUUID();
-    const container = params.container ?? {
-      containerKind: "folder" as const,
-      containerId: params.folderId,
-    };
     const [x, y] = params.x !== undefined && params.y !== undefined
       ? [snapBoardPosition(params.x), snapBoardPosition(params.y)]
-      : await this.nextBoardPosition(params.folderId, container);
-    const result = await this.boardYjsService.createMarkdownDocument({
+      : await this.nextBoardPosition(params.folderId);
+    const result = await this.requireBoard().createMarkdownDocument({
       documentId,
       folderId: params.folderId,
-      container,
       title: params.title,
       body: params.body ?? "",
       x,
@@ -229,20 +134,14 @@ export class CatalogBoardItemService {
     return result;
   }
 
-  async getMarkdownDocument(documentId: string) {
+  getMarkdownDocument(documentId: string): Promise<MarkdownDocumentRow | null> {
     return this.db.getMarkdownDocument(documentId);
   }
 
-  async updateMarkdownDocument(
-    documentId: string,
-    fields: { title?: string; body?: string; expectedVersion: number },
-  ) {
-    if (fields.title === undefined && fields.body === undefined) {
-      return this.getMarkdownDocument(documentId);
-    }
-    if (!this.boardYjsService) {
-      throw new Error("orchestrator Board Yjs mutation port is not configured");
-    }
+  async updateMarkdownDocument(documentId: string, fields: {
+    title?: string; body?: string; expectedVersion: number;
+  }): Promise<MarkdownDocumentRow | null> {
+    if (fields.title === undefined && fields.body === undefined) return this.getMarkdownDocument(documentId);
     const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
     if (!boardItem) {
       if (await this.db.getMarkdownDocument(documentId)) {
@@ -250,34 +149,22 @@ export class CatalogBoardItemService {
       }
       return null;
     }
-    const document = await this.boardYjsService.updateMarkdownDocument(
-      {
-        containerKind: boardItem.containerKind ?? "folder",
-        containerId: boardItem.containerId ?? boardItem.folderId,
-      },
-      documentId,
-      fields,
-    );
+    const document = await this.requireBoard().updateMarkdownDocument(boardItem.folderId, documentId, fields);
     await this.broadcastCatalog({
-      boardItems: document
-        ? [{
-            ...boardItem,
-            metadata: {
-              ...boardItem.metadata,
-              title: document.title,
-              preview: getMarkdownPreview(document.body),
-              version: document.version,
-            },
-          }]
-        : [],
+      boardItems: document ? [{
+        ...boardItem,
+        metadata: {
+          ...boardItem.metadata,
+          title: document.title,
+          preview: getMarkdownPreview(document.body),
+          version: document.version,
+        },
+      }] : [],
     });
     return document;
   }
 
   async deleteMarkdownDocument(documentId: string): Promise<void> {
-    if (!this.boardYjsService) {
-      throw new Error("orchestrator Board Yjs mutation port is not configured");
-    }
     const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
     if (!boardItem) {
       if (await this.db.getMarkdownDocument(documentId)) {
@@ -285,25 +172,18 @@ export class CatalogBoardItemService {
       }
       return;
     }
-    await this.boardYjsService.deleteMarkdownDocument(
-      {
-        containerKind: boardItem.containerKind ?? "folder",
-        containerId: boardItem.containerId ?? boardItem.folderId,
-      },
-      documentId,
-    );
+    await this.requireBoard().deleteMarkdownDocument(boardItem.folderId, documentId);
     await this.broadcastCatalog({ deletedBoardItemIds: [boardItem.id] });
   }
 
-  private async nextBoardPosition(
-    folderId: string,
-    container: BoardYjsContainerRef,
-  ): Promise<[number, number]> {
-    // Legacy REST/MCP markdown placement. Board catalog reads are Yjs-derived.
-    const occupied = new Set(
-      (await this.db.getBoardItemsByContainer(folderId, container))
-        .map((item) => `${item.x}:${item.y}`),
-    );
+  private requireBoard(): CatalogBoardYjsPort {
+    if (!this.boardYjsService) throw new Error("orchestrator Board Yjs mutation port is not configured");
+    return this.boardYjsService;
+  }
+
+  private async nextBoardPosition(folderId: string): Promise<[number, number]> {
+    const occupied = new Set((await this.db.getBoardItemsByFolder(folderId))
+      .map((item) => `${item.x}:${item.y}`));
     let index = 0;
     while (true) {
       const x = (index % BOARD_DEFAULT_COLUMNS) * BOARD_TILE_WIDTH;
@@ -313,78 +193,32 @@ export class CatalogBoardItemService {
     }
   }
 
-  private async enrollGeneratedSessionBoardItem(params: {
-    boardItemId: string;
-    targetScope: BoardYjsContainerScope;
-    targetContainer: BoardYjsContainerRef;
-    position?: { x: number; y: number };
-  }): Promise<CatalogBoardItemRow | null> {
-    const sessionId = sessionIdFromBoardItemId(params.boardItemId);
-    if (!sessionId) return null;
-
+  private async enrollGeneratedSessionBoardItem(
+    boardItemId: string,
+    folderId: string,
+    position?: { x: number; y: number },
+  ): Promise<CatalogBoardItemRow | null> {
+    if (!boardItemId.startsWith("session:")) return null;
+    const sessionId = boardItemId.slice("session:".length);
+    if (!sessionId.trim()) return null;
     const session = await this.db.getSession(sessionId);
-    if (!session?.folder_id) return null;
-    if (session.folder_id !== params.targetScope.folderId) return null;
-
-    return await this.enrollSessionBoardItem({
+    if (session?.folder_id !== folderId) return null;
+    const [x, y] = position ? [position.x, position.y] : await this.nextBoardPosition(folderId);
+    return await this.requireBoard().upsertSessionBoardItem({
+      folderId,
       sessionId,
-      targetScope: params.targetScope,
-      targetContainer: params.targetContainer,
-      position: params.position,
-      sourceTaskItemId: null,
-    });
-  }
-
-  private async enrollSessionBoardItem(params: {
-    sessionId: string;
-    targetScope: BoardYjsContainerScope;
-    targetContainer: BoardYjsContainerRef;
-    position?: { x: number; y: number };
-    sourceTaskItemId: string | null;
-  }): Promise<CatalogBoardItemRow> {
-    const [x, y] = params.position
-      ? [params.position.x, params.position.y]
-      : await this.nextBoardPosition(params.targetScope.folderId, params.targetContainer);
-    return await this.boardYjsService!.upsertSessionBoardItem({
-      folderId: params.targetScope.folderId,
-      container: params.targetContainer,
-      sessionId: params.sessionId,
-      sourceTaskItemId: params.sourceTaskItemId,
+      sourceChecklistItemId: null,
       x,
       y,
     });
   }
 }
 
-function containerRefFromScope(scope: BoardYjsContainerScope): BoardYjsContainerRef {
-  return {
-    containerKind: scope.containerKind,
-    containerId: scope.containerId,
-  };
-}
-
 function snapBoardPosition(value: number): number {
   return Math.round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE;
 }
 
-function assertSupportedMoveItemId(boardItemId: string): void {
-  if (!boardItemId.trim()) {
-    throw new Error("boardItemId is required");
-  }
-}
-
-function sessionIdFromBoardItemId(boardItemId: string): string | null {
-  if (!boardItemId.startsWith("session:")) return null;
-  const sessionId = boardItemId.slice("session:".length);
-  return sessionId.trim() ? sessionId : null;
-}
-
-function isMovableBoardItemType(
-  itemType: CatalogBoardItemRow["itemType"],
-): itemType is Extract<CatalogBoardItemRow["itemType"], "session" | "markdown" | "asset" | "custom_view" | "task"> {
-  return itemType === "session" ||
-    itemType === "markdown" ||
-    itemType === "asset" ||
-    itemType === "custom_view" ||
-    itemType === "task";
+function isMovableBoardItemType(itemType: CatalogBoardItemRow["itemType"]): boolean {
+  return itemType === "session" || itemType === "markdown" ||
+    itemType === "asset" || itemType === "custom_view" || itemType === "subfolder";
 }

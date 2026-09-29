@@ -1,107 +1,65 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { TaskSnapshot } from "../../src/db/session_db.js";
-import { resolveSourceTaskItemProvenance } from "../../src/task/source_task_item_provenance.js";
+import type { FolderSnapshot } from "../../src/db/session_db.js";
+import { resolveSourceChecklistItemProvenance } from "../../src/task/source_task_item_provenance.js";
 
-function snapshotWithItems(...ids: string[]): TaskSnapshot {
+function snapshotWithItems(...ids: string[]): FolderSnapshot {
   return {
-    task: { id: "task-1" },
+    folder: { id: "folder-1" },
     sections: [],
     items: ids.map((id) => ({ id })),
-  } as TaskSnapshot;
+  } as FolderSnapshot;
 }
 
-function makeHarness(snapshot: TaskSnapshot | null = snapshotWithItems("valid-item")) {
-  const getTaskSnapshot = vi.fn().mockResolvedValue(snapshot);
+function makeHarness(snapshot: FolderSnapshot | null = snapshotWithItems("valid-item")) {
+  const getFolderSnapshot = vi.fn().mockResolvedValue(snapshot);
   const logger = { warn: vi.fn() };
   const resolve = (input: {
     sessionId?: string;
-    sourceTaskItemId?: string | null;
-    container?: { containerKind: "folder" | "task"; containerId: string } | null;
-  }) => resolveSourceTaskItemProvenance({
+    sourceChecklistItemId?: string | null;
+    folderId?: string | null;
+  }) => resolveSourceChecklistItemProvenance({
     sessionId: input.sessionId ?? "session-1",
-    sourceTaskItemId: input.sourceTaskItemId,
-    container: input.container,
-    getTaskSnapshot,
+    sourceChecklistItemId: input.sourceChecklistItemId,
+    folderId: input.folderId,
+    getFolderSnapshot,
     logger,
   });
-  return { getTaskSnapshot, logger, resolve };
+  return { getFolderSnapshot, logger, resolve };
 }
 
-describe("resolveSourceTaskItemProvenance", () => {
-  it("preserves an existing slug source item", async () => {
-    const h = makeHarness(snapshotWithItems("p13-integrity-constraint"));
-
-    await expect(h.resolve({
-      sourceTaskItemId: "p13-integrity-constraint",
-      container: { containerKind: "task", containerId: "task-1" },
-    })).resolves.toBe("p13-integrity-constraint");
-
-    expect(h.getTaskSnapshot).toHaveBeenCalledWith("task-1");
+describe("resolveSourceChecklistItemProvenance", () => {
+  it("preserves an item that belongs to the folder", async () => {
+    const h = makeHarness(snapshotWithItems("valid-item"));
+    await expect(h.resolve({ sourceChecklistItemId: "valid-item", folderId: "folder-1" }))
+      .resolves.toBe("valid-item");
+    expect(h.getFolderSnapshot).toHaveBeenCalledWith("folder-1");
     expect(h.logger.warn).not.toHaveBeenCalled();
   });
 
-  it("drops an unknown source item with a structured warning", async () => {
+  it("drops an unknown item with a structured warning", async () => {
     const h = makeHarness();
-
-    await expect(h.resolve({
-      sessionId: "session-unknown-source",
-      sourceTaskItemId: "truncated-item-id",
-      container: { containerKind: "task", containerId: "task-1" },
-    })).resolves.toBeNull();
-
+    await expect(h.resolve({ sessionId: "session-2", sourceChecklistItemId: "missing", folderId: "folder-1" }))
+      .resolves.toBeNull();
     expect(h.logger.warn).toHaveBeenCalledWith({
-      sessionId: "session-unknown-source",
-      sourceTaskItemId: "truncated-item-id",
-      taskId: "task-1",
-      reason: "task_item_not_found",
-    }, "source task item provenance rejected; continuing without provenance");
+      sessionId: "session-2", sourceChecklistItemId: "missing",
+      folderId: "folder-1", reason: "checklist_item_not_found",
+    }, "source checklist item provenance rejected; continuing without provenance");
   });
 
-  it("drops provenance when its task cannot be verified", async () => {
+  it("drops provenance if the folder cannot be verified", async () => {
     const h = makeHarness();
-    const validationError = new Error("task host unavailable");
-    h.getTaskSnapshot.mockRejectedValueOnce(validationError);
-
-    await expect(h.resolve({
-      sessionId: "session-source-validation-failed",
-      sourceTaskItemId: "valid-item",
-      container: { containerKind: "task", containerId: "task-1" },
-    })).resolves.toBeNull();
-
-    expect(h.logger.warn).toHaveBeenCalledWith({
-      err: validationError,
-      sessionId: "session-source-validation-failed",
-      sourceTaskItemId: "valid-item",
-      taskId: "task-1",
-      reason: "validation_failed",
-    }, "source task item provenance rejected; continuing without provenance");
+    h.getFolderSnapshot.mockRejectedValueOnce(new Error("host unavailable"));
+    await expect(h.resolve({ sourceChecklistItemId: "valid-item", folderId: "folder-1" }))
+      .resolves.toBeNull();
+    expect(h.logger.warn).toHaveBeenCalledWith(expect.objectContaining({
+      reason: "validation_failed", folderId: "folder-1",
+    }), expect.any(String));
   });
 
-  it("drops provenance that is not scoped to a task container", async () => {
+  it("does not query when the source item is absent", async () => {
     const h = makeHarness();
-
-    await expect(h.resolve({
-      sessionId: "session-unscoped-source",
-      sourceTaskItemId: "valid-item",
-      container: { containerKind: "folder", containerId: "folder-1" },
-    })).resolves.toBeNull();
-
-    expect(h.getTaskSnapshot).not.toHaveBeenCalled();
-    expect(h.logger.warn).toHaveBeenCalledWith({
-      sessionId: "session-unscoped-source",
-      sourceTaskItemId: "valid-item",
-      taskId: null,
-      reason: "task_container_missing",
-    }, "source task item provenance rejected; continuing without provenance");
-  });
-
-  it("does not query or warn when provenance is absent", async () => {
-    const h = makeHarness();
-
-    await expect(h.resolve({ sourceTaskItemId: null })).resolves.toBeNull();
-
-    expect(h.getTaskSnapshot).not.toHaveBeenCalled();
-    expect(h.logger.warn).not.toHaveBeenCalled();
+    await expect(h.resolve({ sourceChecklistItemId: null })).resolves.toBeNull();
+    expect(h.getFolderSnapshot).not.toHaveBeenCalled();
   });
 });

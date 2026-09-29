@@ -14,7 +14,7 @@ export interface WorktreeRecord {
   canonicalPath: string;
   branch: string;
   createdFromSha: string;
-  ownerTaskId: string | null;
+  ownerFolderId: string | null;
   createdBySessionId: string;
   state: WorktreeState;
   setupMode: WorktreeSetupMode;

@@ -679,18 +679,7 @@ describe("agent profile backend boundary", () => {
       undefined,
       [codexAgent, claudeAgent],
       "root",
-      [{
-        id: "session:caller-sess-1",
-        folderId: "root",
-        containerKind: "task",
-        containerId: "rb-1",
-        membershipKind: "primary",
-        itemType: "session",
-        itemId: "caller-sess-1",
-        x: 0,
-        y: 160,
-        metadata: {},
-      }],
+      [],
     );
     const client = await createClient(runtime);
 
@@ -715,7 +704,6 @@ describe("agent profile backend boundary", () => {
         }),
         notifyCompletion: false,
         folderId: "root",
-        container: { containerKind: "task", containerId: "rb-1" },
       }),
     );
   });
@@ -848,24 +836,13 @@ describe("agent profile backend boundary", () => {
     );
   });
 
-  it("create_agent_session은 caller의 task primary membership을 로컬 task container로 상속한다", async () => {
+  it("create_agent_session은 caller의 폴더를 단건 조회해 상속한다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
       undefined,
       [codexAgent, claudeAgent],
       "root",
-      [{
-        id: "session:caller-sess-1",
-        folderId: "root",
-        containerKind: "task",
-        containerId: "rb-1",
-        membershipKind: "primary",
-        itemType: "session",
-        itemId: "caller-sess-1",
-        x: 0,
-        y: 160,
-        metadata: {},
-      }],
+      [],
     );
     const client = await createClient(runtime);
 
@@ -879,13 +856,12 @@ describe("agent profile backend boundary", () => {
     });
 
     expect(result.isError).not.toBe(true);
-    expect(runtime.db.getPrimarySessionBoardItem).toHaveBeenCalledWith("caller-sess-1");
-    expect(runtime.db.getBoardItems).not.toHaveBeenCalled();
+    expect(runtime.db.getSession).toHaveBeenCalledWith("caller-sess-1");
+    expect(runtime.db.getPrimarySessionBoardItem).not.toHaveBeenCalled();
     expect(runtime.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
         callerSessionId: "caller-sess-1",
         folderId: "root",
-        container: { containerKind: "task", containerId: "rb-1" },
       }),
     );
   });
@@ -1379,7 +1355,7 @@ describe("create_remote_agent_session", () => {
     }
   });
 
-  it("notify_completion=false도 caller의 task과 provenance를 remote body에 보존한다", async () => {
+  it("notify_completion=false도 caller의 폴더와 provenance를 remote body에 보존한다", async () => {
     const capture = await createOrchCapture(200, (req) => {
       if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
         return { body: { agents: [{ id: "roselin_codex", name: "로젤린", backend: "codex" }] } };
@@ -1395,18 +1371,7 @@ describe("create_remote_agent_session", () => {
         capture.orch,
         undefined,
         "root",
-        [{
-          id: "session:caller-sess-1",
-          folderId: "root",
-          containerKind: "task",
-          containerId: "rb-1",
-          membershipKind: "primary",
-          itemType: "session",
-          itemId: "caller-sess-1",
-          x: 0,
-          y: 160,
-          metadata: {},
-        }],
+        [],
       );
       const client = await createClient(runtime);
 
@@ -1424,7 +1389,7 @@ describe("create_remote_agent_session", () => {
       expect(result.isError).not.toBe(true);
       const body = JSON.parse(capture.requests[0]!.body);
       expect(body.folderId).toBe("root");
-      expect(body.container).toEqual({ kind: "task", id: "rb-1" });
+      expect(body).not.toHaveProperty("container");
       expect(body.notify_completion).toBe(false);
       expect(body.caller_session_id).toBe("caller-sess-1");
       expect(body.caller_info).toEqual(expect.objectContaining({

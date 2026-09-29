@@ -5,45 +5,45 @@ import type {
   SendMessageToSessionResult,
 } from "../task/session_message_sender.js";
 import { buildDeterministicDeliveryIdentity } from "../task/delivery_identity.js";
-import type { TaskHandoffEvent, TaskHandoffNotifierPort } from "./task_service_models.js";
+import type { FolderHandoffEvent, FolderHandoffNotifierPort } from "./task_service_models.js";
 
-export interface TaskHandoffSubscriberQuery {
-  listAgentSubscriberSessionIds(taskId: string): Promise<string[]>;
+export interface FolderHandoffSubscriberQuery {
+  listAgentSubscriberSessionIds(folderId: string): Promise<string[]>;
 }
 
-export interface TaskHandoffMessageSender {
+export interface FolderHandoffMessageSender {
   send(params: SendMessageToSessionParams): Promise<SendMessageToSessionResult>;
 }
 
-export class TaskHandoffNotifier implements TaskHandoffNotifierPort {
+export class FolderHandoffNotifier implements FolderHandoffNotifierPort {
   constructor(
-    private readonly subscribers: TaskHandoffSubscriberQuery,
-    private readonly sender: TaskHandoffMessageSender,
+    private readonly subscribers: FolderHandoffSubscriberQuery,
+    private readonly sender: FolderHandoffMessageSender,
     private readonly logger: Logger,
   ) {}
 
-  notifyHumanHandoff(event: TaskHandoffEvent): void {
+  notifyHumanHandoff(event: FolderHandoffEvent): void {
     void this.dispatch(event).catch((err) => {
       this.logger.warn(
-        { err, taskId: event.taskId, itemId: event.itemId },
-        "Task handoff notification dispatch failed",
+        { err, folderId: event.folderId, itemId: event.itemId },
+        "Folder checklist handoff notification dispatch failed",
       );
     });
   }
 
-  private async dispatch(event: TaskHandoffEvent): Promise<void> {
+  private async dispatch(event: FolderHandoffEvent): Promise<void> {
     const subscriberSessionIds = await this.subscribers.listAgentSubscriberSessionIds(
-      event.taskId,
+      event.folderId,
     );
     if (subscriberSessionIds.length === 0) {
       this.logger.info(
-        { taskId: event.taskId, itemId: event.itemId },
-        "Task handoff notification skipped: no agent subscribers",
+        { folderId: event.folderId, itemId: event.itemId },
+        "Folder checklist handoff notification skipped: no agent subscribers",
       );
       return;
     }
 
-    const message = buildTaskHandoffMessage(event);
+    const message = buildFolderHandoffMessage(event);
     await Promise.all(subscriberSessionIds.map(async (targetSessionId) => {
       try {
         const result = await this.sender.send({
@@ -53,14 +53,14 @@ export class TaskHandoffNotifier implements TaskHandoffNotifierPort {
         });
         if (!result.ok) {
           this.logger.warn(
-            { taskId: event.taskId, itemId: event.itemId, targetSessionId, result },
-            "Task handoff notification delivery failed",
+            { folderId: event.folderId, itemId: event.itemId, targetSessionId, result },
+            "Folder checklist handoff notification delivery failed",
           );
         }
       } catch (err) {
         this.logger.warn(
-          { err, taskId: event.taskId, itemId: event.itemId, targetSessionId },
-          "Task handoff notification delivery failed",
+          { err, folderId: event.folderId, itemId: event.itemId, targetSessionId },
+          "Folder checklist handoff notification delivery failed",
         );
       }
     }));
@@ -68,7 +68,7 @@ export class TaskHandoffNotifier implements TaskHandoffNotifierPort {
 }
 
 function handoffDelivery(
-  event: TaskHandoffEvent,
+  event: FolderHandoffEvent,
   targetSessionId: string,
 ): Pick<SendMessageToSessionParams,
   | "deliveryId"
@@ -79,8 +79,8 @@ function handoffDelivery(
   | "producerTerminalRevision"
 > {
   const relationKey = [
-    "task_handoff",
-    event.taskId,
+    "folder_checklist_handoff",
+    event.folderId,
     event.operationId,
     event.itemId,
     targetSessionId,
@@ -93,20 +93,19 @@ function handoffDelivery(
   return {
     deliveryId: identity.deliveryId,
     deliveryIntent: "durable_next_turn",
-    source: "task_handoff",
+    source: "folder_checklist_handoff",
     completionId: identity.completionId,
     relationKey,
     producerTerminalRevision: String(event.eventId),
   };
 }
 
-function buildTaskHandoffMessage(event: TaskHandoffEvent): string {
+function buildFolderHandoffMessage(event: FolderHandoffEvent): string {
   const statusText = event.status === "completed" ? "완료" : "취소";
   return [
-    `업무 '${event.taskTitle}'의 '${event.itemTitle}' ${statusText}됨, 이어서 진행`,
+    `업무 '${event.folderName}'의 '${event.itemTitle}' ${statusText}됨, 이어서 진행`,
     "",
-    `task_id: ${event.taskId}`,
-    `board_item_id: ${event.boardItemId}`,
+    `folder_id: ${event.folderId}`,
     `item_id: ${event.itemId}`,
     `status: ${event.status}`,
     `operation_id: ${event.operationId}`,

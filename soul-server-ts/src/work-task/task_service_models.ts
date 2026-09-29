@@ -1,28 +1,27 @@
 import type {
   TaskItemStatus,
-  TaskOperationActorKind,
-  TaskOperationRow,
-  TaskSnapshot,
+  FolderOperationActorKind,
+  FolderOperationRow,
+  FolderSnapshot,
 } from "../db/session_db_types.js";
 
-export interface TaskMutationResult {
-  snapshot: TaskSnapshot;
-  operation: TaskOperationRow;
+export interface FolderMutationResult {
+  snapshot: FolderSnapshot;
+  operation: FolderOperationRow;
   eventId: number;
   idempotent?: boolean;
-  handoff?: TaskHandoffEvent;
+  handoff?: FolderHandoffEvent;
 }
 
-export interface TaskActorParams {
-  actorKind?: TaskOperationActorKind;
+export interface FolderActorParams {
+  actorKind?: FolderOperationActorKind;
   actorSessionId: string | null;
   actorUserId?: string | null;
 }
 
-export interface TaskHandoffEvent {
-  taskId: string;
-  taskTitle: string;
-  boardItemId: string;
+export interface FolderHandoffEvent {
+  folderId: string;
+  folderName: string;
   itemId: string;
   itemTitle: string;
   status: Extract<TaskItemStatus, "completed" | "cancelled">;
@@ -30,6 +29,6 @@ export interface TaskHandoffEvent {
   eventId: number;
 }
 
-export interface TaskHandoffNotifierPort {
-  notifyHumanHandoff(event: TaskHandoffEvent): void;
+export interface FolderHandoffNotifierPort {
+  notifyHumanHandoff(event: FolderHandoffEvent): void;
 }

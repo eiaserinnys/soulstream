@@ -1,12 +1,10 @@
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type {
-  BoardContainerKind,
   BoardItemType,
   TaskItemStatus,
 } from "@soulstream/wire-schema";
 
 export type {
-  BoardContainerKind,
   BoardItemType,
   TaskItemStatus,
 } from "@soulstream/wire-schema";
@@ -50,11 +48,23 @@ export interface LastMessageRow {
 export interface FolderRow {
   id: string;
   name: string;
+  checklist_enabled: boolean;
+  status: FolderStatus;
+  archived: boolean;
+  version: number;
   sort_order: number;
   settings: Record<string, unknown>;
   parent_folder_id: string | null;
   project_page_id: string | null;
+  created_session_id: string | null;
+  created_event_id: number | null;
+  completed_kind: FolderCompletionKind | null;
+  completed_session_id: string | null;
+  completed_event_id: number | null;
+  completed_user_id: string | null;
+  completed_at: Date | string | null;
   created_at?: Date | string;
+  updated_at?: Date | string;
 }
 
 export interface CatalogSessionAssignmentRow {
@@ -66,6 +76,8 @@ export interface CatalogSessionAssignmentRow {
 export interface CatalogFolderRow {
   id: string;
   name: string;
+  checklistEnabled: boolean;
+  status: "open" | "completed";
   sortOrder: number;
   settings: Record<string, unknown>;
   parentFolderId: string | null;
@@ -73,22 +85,11 @@ export interface CatalogFolderRow {
   createdAt?: string;
 }
 
-export interface BoardYjsContainerRef {
-  containerKind: BoardContainerKind;
-  containerId: string;
-}
-
-export interface BoardYjsContainerScope extends BoardYjsContainerRef {
-  folderId: string;
-}
-
 export interface CatalogBoardItemRow {
   id: string;
   folderId: string;
-  containerKind?: BoardContainerKind;
-  containerId?: string;
   membershipKind?: "primary" | "reference";
-  sourceTaskItemId?: string | null;
+  sourceChecklistItemId?: string | null;
   itemType: BoardItemType;
   itemId: string;
   x: number;
@@ -124,9 +125,9 @@ export interface CustomViewRow {
   updatedAt?: string;
 }
 
-export type ContainerItemCounts = Record<BoardItemType, number>;
+export type FolderItemCounts = Record<BoardItemType, number>;
 
-export interface ContainerSessionRecord {
+export interface FolderSessionRecord {
   agentSessionId: string;
   displayName: string | null;
   lastUserMessagePreview: string | null;
@@ -144,37 +145,36 @@ export interface ContainerSessionRecord {
   lastReadEventId: number | null;
 }
 
-export interface ContainerMarkdownRecord {
+export interface FolderMarkdownRecord {
   id: string;
   title: string;
   body: string;
   updatedAt: string | null;
 }
 
-export interface ContainerTitleRecord {
+export interface FolderTitleRecord {
   id: string;
   title: string | null;
   updatedAt: string | null;
 }
 
-export interface ContainerSubfolderRecord {
+export interface FolderSubfolderRecord {
   id: string;
   title: string | null;
 }
 
-export interface ContainerItemRecord {
+export interface FolderItemRecord {
   boardItem: CatalogBoardItemRow;
   archived: boolean;
-  session?: ContainerSessionRecord;
-  markdown?: ContainerMarkdownRecord;
-  task?: ContainerTitleRecord;
-  customView?: ContainerTitleRecord;
-  asset?: ContainerTitleRecord;
-  subfolder?: ContainerSubfolderRecord;
+  session?: FolderSessionRecord;
+  markdown?: FolderMarkdownRecord;
+  customView?: FolderTitleRecord;
+  asset?: FolderTitleRecord;
+  subfolder?: FolderSubfolderRecord;
 }
 
-export interface ListContainerItemsParams {
-  container: BoardYjsContainerRef;
+export interface ListFolderItemsParams {
+  folderId: string;
   query: string | null;
   includeArchived: boolean;
   itemTypes: BoardItemType[] | null;
@@ -183,10 +183,10 @@ export interface ListContainerItemsParams {
   scanLimit?: number | null;
 }
 
-export interface ListContainerItemsResult {
-  items: ContainerItemRecord[];
+export interface ListFolderItemsResult {
+  items: FolderItemRecord[];
   total: number;
-  counts: ContainerItemCounts;
+  counts: FolderItemCounts;
   scan: {
     limit: number;
     scannedItems: number;
@@ -313,7 +313,7 @@ export interface RegisterSessionWithWorktreeParams extends RegisterSessionParams
   /** Trusted MCP/upstream caller used for central ownership verification. */
   worktreeActorSessionId: string;
   /** Primary task container selected for the new session, or null. */
-  ownerTaskId: string | null;
+  ownerFolderId: string | null;
 }
 
 export type RegisterSessionReviewResult = {
@@ -469,40 +469,22 @@ export interface SessionDeliveryNotificationOutboxRow {
   dead_lettered_at: Date | null;
 }
 
-export type TaskAssigneeKind = "agent" | "human" | "session";
-export type TaskStatus = "open" | "completed";
-export type TaskOperationTargetKind = "task" | "section" | "item";
-export type TaskOperationActorKind = "agent" | "user" | "system" | "llm";
-export type TaskCompletionKind = Exclude<TaskOperationActorKind, "system">;
+export type ChecklistAssigneeKind = "agent" | "human" | "session";
+export type FolderStatus = "open" | "completed";
+export type FolderOperationTargetKind = "folder" | "section" | "item";
+export type FolderOperationActorKind = "agent" | "user" | "system" | "llm";
+export type FolderCompletionKind = Exclude<FolderOperationActorKind, "system">;
 
-export interface TaskAssigneeFields {
-  assignee_kind: TaskAssigneeKind | null;
+export interface ChecklistAssigneeFields {
+  assignee_kind: ChecklistAssigneeKind | null;
   assignee_agent_id: string | null;
   assignee_session_id: string | null;
   assignee_user_id: string | null;
 }
 
-export interface TaskRow {
+export interface ChecklistSectionRow extends ChecklistAssigneeFields {
   id: string;
-  board_item_id: string;
-  title: string;
-  status: TaskStatus;
-  archived: boolean;
-  version: number;
-  created_session_id: string | null;
-  created_event_id: number | null;
-  completed_kind: TaskCompletionKind | null;
-  completed_session_id: string | null;
-  completed_event_id: number | null;
-  completed_user_id: string | null;
-  completed_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface TaskSectionRow extends TaskAssigneeFields {
-  id: string;
-  task_id: string;
+  folder_id: string;
   position_key: string;
   title: string;
   archived: boolean;
@@ -515,7 +497,7 @@ export interface TaskSectionRow extends TaskAssigneeFields {
   updated_at: Date;
 }
 
-export interface TaskItemRow extends TaskAssigneeFields {
+export interface ChecklistItemRow extends ChecklistAssigneeFields {
   id: string;
   section_id: string;
   position_key: string;
@@ -528,7 +510,7 @@ export interface TaskItemRow extends TaskAssigneeFields {
   created_event_id: number | null;
   updated_session_id: string | null;
   updated_event_id: number | null;
-  completed_kind: TaskCompletionKind | null;
+  completed_kind: FolderCompletionKind | null;
   completed_session_id: string | null;
   completed_event_id: number | null;
   completed_user_id: string | null;
@@ -537,13 +519,13 @@ export interface TaskItemRow extends TaskAssigneeFields {
   updated_at: Date;
 }
 
-export interface TaskOperationRow {
+export interface FolderOperationRow {
   id: string;
-  task_id: string | null;
-  target_kind: TaskOperationTargetKind;
+  folder_id: string;
+  target_kind: FolderOperationTargetKind;
   target_id: string;
   operation_type: string;
-  actor_kind: TaskOperationActorKind;
+  actor_kind: FolderOperationActorKind;
   actor_session_id: string | null;
   actor_event_id: number | null;
   actor_user_id: string | null;
@@ -553,24 +535,24 @@ export interface TaskOperationRow {
   created_at: Date;
 }
 
-export interface TaskSnapshot {
-  task: TaskRow;
-  sections: TaskSectionRow[];
-  items: TaskItemRow[];
+export interface FolderSnapshot {
+  folder: FolderRow;
+  sections: ChecklistSectionRow[];
+  items: ChecklistItemRow[];
 }
 
-export interface TaskListRow {
+export interface ChildFolderRow {
   id: string;
   board_item_id: string;
   folder_id: string;
   title: string;
-  status: TaskStatus;
+  status: FolderStatus;
   archived: boolean;
   version: number;
   x: number;
   y: number;
   metadata: Record<string, unknown>;
-  completed_kind: TaskCompletionKind | null;
+  completed_kind: FolderCompletionKind | null;
   completed_session_id: string | null;
   completed_event_id: number | null;
   completed_user_id: string | null;
@@ -579,16 +561,15 @@ export interface TaskListRow {
   updated_at: Date;
 }
 
-export interface TaskMyTurnItemRow {
-  task_id: string;
-  task_title: string;
-  task_status: TaskStatus;
-  board_item_id: string;
-  task_completed_kind: TaskCompletionKind | null;
-  task_completed_session_id: string | null;
-  task_completed_event_id: number | null;
-  task_completed_user_id: string | null;
-  task_completed_at: Date | null;
+export interface ChecklistMyTurnItemRow {
+  folder_id: string;
+  folder_name: string;
+  folder_status: FolderStatus;
+  folder_completed_kind: FolderCompletionKind | null;
+  folder_completed_session_id: string | null;
+  folder_completed_event_id: number | null;
+  folder_completed_user_id: string | null;
+  folder_completed_at: Date | null;
   section_id: string;
   section_title: string;
   item_id: string;
@@ -596,7 +577,7 @@ export interface TaskMyTurnItemRow {
   how_to: string;
   status: TaskItemStatus;
   item_version: number;
-  effective_assignee_kind: TaskAssigneeKind | null;
+  effective_assignee_kind: ChecklistAssigneeKind | null;
   effective_assignee_agent_id: string | null;
   effective_assignee_session_id: string | null;
   effective_assignee_user_id: string | null;

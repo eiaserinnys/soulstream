@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
 
 import type {
-  BoardYjsContainerRef,
-  BoardYjsContainerScope,
   CatalogBoardItemRow,
   CustomViewRow,
   FolderRow,
@@ -27,12 +25,8 @@ export interface CustomViewDbPort {
 }
 
 export interface CustomViewBoardYjsPort extends CustomViewProjectionHost {
-  resolveBoardYjsContainerScope(
-    container: BoardYjsContainerRef,
-  ): Promise<BoardYjsContainerScope | null>;
   upsertCustomViewBoardItem(input: {
     folderId: string;
-    container: BoardYjsContainerRef;
     boardItemId: string;
     customViewId: string;
     title: string;
@@ -42,7 +36,7 @@ export interface CustomViewBoardYjsPort extends CustomViewProjectionHost {
     y: number;
     metadata?: Record<string, unknown>;
   }): Promise<CatalogBoardItemRow>;
-  removeBoardItem(container: BoardYjsContainerRef, boardItemId: string): Promise<void>;
+  removeBoardItem(folderId: string, boardItemId: string): Promise<void>;
 }
 
 export interface CustomViewBroadcasterPort {
@@ -79,14 +73,14 @@ export class CustomViewService {
   ) {}
 
   async createCustomView(params: CustomViewActor & {
-    container: BoardYjsContainerRef;
+    folderId: string;
     title: string;
     html: string;
     x?: number;
     y?: number;
     idempotencyKey: string;
   }): Promise<CustomViewMutationResult> {
-    const scope = await this.requireContainerScope(params.container);
+    await this.requireFolder(params.folderId);
     const customViewId = customViewIdForIdempotencyKey(params.idempotencyKey);
     const existing = await this.boardYjsService.getCustomView(customViewId);
     if (existing) {
@@ -97,8 +91,7 @@ export class CustomViewService {
     const html = params.html;
     const boardItemId = `custom_view:${customViewId}`;
     const boardItem = await this.boardYjsService.upsertCustomViewBoardItem({
-      folderId: scope.folderId,
-      container: params.container,
+      folderId: params.folderId,
       boardItemId,
       customViewId,
       title,
@@ -121,7 +114,7 @@ export class CustomViewService {
       await this.broadcast(params.actorSessionId, result);
       return result;
     } catch (err) {
-      await this.boardYjsService.removeBoardItem(params.container, boardItemId)
+      await this.boardYjsService.removeBoardItem(params.folderId, boardItemId)
         .catch(() => undefined);
       throw err;
     }
@@ -155,10 +148,6 @@ export class CustomViewService {
 
     const boardItem = await this.boardYjsService.upsertCustomViewBoardItem({
       folderId: existing.boardItem.folderId,
-      container: {
-        containerKind: existing.boardItem.containerKind ?? "folder",
-        containerId: existing.boardItem.containerId ?? existing.boardItem.folderId,
-      },
       boardItemId: existing.boardItem.id,
       customViewId: customView.id,
       title: customView.title ?? "Custom view",
@@ -178,22 +167,18 @@ export class CustomViewService {
   }
 
   async listCustomViews(params: {
-    container: BoardYjsContainerRef;
+    folderId: string;
     includeArchived?: boolean;
     limit?: number;
   }): Promise<CustomViewWithBoardItem[]> {
-    await this.requireContainerScope(params.container);
+    await this.requireFolder(params.folderId);
     return await this.boardYjsService.listCustomViews(params);
   }
 
-  private async requireContainerScope(
-    container: BoardYjsContainerRef,
-  ): Promise<BoardYjsContainerScope> {
-    const scope = await this.boardYjsService.resolveBoardYjsContainerScope(container);
-    if (!scope) {
-      throw new Error(`board container not found: ${container.containerKind}:${container.containerId}`);
+  private async requireFolder(folderId: string): Promise<void> {
+    if (!(await this.db.getAllFolders()).some((folder) => folder.id === folderId)) {
+      throw new Error(`folder not found: ${folderId}`);
     }
-    return scope;
   }
 
   private async broadcast(

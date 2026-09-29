@@ -260,7 +260,6 @@ async function main(): Promise<void> {
       );
     }
     runtime.sessionPageBindingService.stop();
-    runtime.checklistTaskReconciler.stop();
     await runtime.runnerRecoveryCoordinator?.stop();
     try {
       runtime.scheduleDispatcher.stop();

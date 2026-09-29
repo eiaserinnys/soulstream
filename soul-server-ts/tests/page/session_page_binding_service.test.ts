@@ -23,9 +23,7 @@ function binding(overrides: Partial<SessionPageBindingRow> = {}): SessionPageBin
     daily_date: "2026-07-13",
     session_type: "claude",
     legacy_folder_id: "folder-1",
-    legacy_container_kind: null,
-    legacy_container_id: null,
-    source_task_item_id: null,
+    source_checklist_item_id: null,
     page_state: "pending",
     legacy_state: "pending",
     attempts: 0,
@@ -150,13 +148,6 @@ describe("SessionPageBindingService", () => {
     {
       name: "delegated agent source",
       params: { callerInfo: { source: "agent" } },
-    },
-    {
-      name: "task container",
-      params: {
-        callerInfo: { source: "browser" },
-        container: { containerKind: "task", containerId: "rb-1" },
-      },
     },
     {
       name: "unknown source",
@@ -417,36 +408,34 @@ describe("kstDate", () => {
 });
 
 describe("SessionLegacyProjection", () => {
-  it("moves legacy folder placement through the atomic Board Yjs host operation", async () => {
-    const moveSessionToFolder = vi.fn(async () => null);
-    const assignSessionToFolder = vi.fn(async () => undefined);
+  it("replays folder placement through the atomic Board Yjs host operation", async () => {
+    const upsertSessionBoardItem = vi.fn(async () => null);
     const db = {
       getFolderById: vi.fn(async () => ({ id: "folder-1" })),
-      assignSessionToFolder,
+      getBoardItemsByFolder: vi.fn(async () => []),
     };
     const projection = new SessionLegacyProjection(
       db as never,
-      { moveSessionToFolder, upsertSessionBoardItem: vi.fn() } as never,
+      { upsertSessionBoardItem } as never,
     );
 
     await projection.project(binding({
       legacy_folder_id: "folder-1",
-      legacy_container_kind: null,
-      legacy_container_id: null,
     }));
 
-    expect(moveSessionToFolder).toHaveBeenCalledWith("sess-1", "folder-1");
-    expect(assignSessionToFolder).not.toHaveBeenCalled();
+    expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
+      folderId: "folder-1",
+      sessionId: "sess-1",
+    }));
   });
 
-  it("replays task placement into the same first-free grid policy as initial creation", async () => {
+  it("replays folder placement into the same first-free grid policy as initial creation", async () => {
     const upsertSessionBoardItem = vi.fn(async () => ({}));
     const db = {
-      resolveBoardYjsContainerScope: vi.fn(async () => ({ folderId: "root" })),
-      assignSessionToFolder: vi.fn(async () => undefined),
-      getBoardItemsByContainer: vi.fn(async () => [
-        { folderId: "root", containerKind: "task", containerId: "rb-1", x: 0, y: 160 },
-        { folderId: "root", containerKind: "task", containerId: "rb-1", x: 280, y: 160 },
+      getFolderById: vi.fn(async () => ({ id: "rb-1" })),
+      getBoardItemsByFolder: vi.fn(async () => [
+        { folderId: "rb-1", x: 0, y: 160 },
+        { folderId: "rb-1", x: 280, y: 160 },
       ]),
     };
     const projection = new SessionLegacyProjection(
@@ -454,9 +443,7 @@ describe("SessionLegacyProjection", () => {
       { upsertSessionBoardItem } as never,
     );
     await projection.project(binding({
-      legacy_folder_id: null,
-      legacy_container_kind: "task",
-      legacy_container_id: "rb-1",
+      legacy_folder_id: "rb-1",
     }));
 
     expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
@@ -464,19 +451,14 @@ describe("SessionLegacyProjection", () => {
       x: 560,
       y: 160,
     }));
-    expect(db.getBoardItemsByContainer).toHaveBeenCalledWith("root", {
-      containerKind: "task",
-      containerId: "rb-1",
-    });
+    expect(db.getBoardItemsByFolder).toHaveBeenCalledWith("rb-1");
   });
 
   it("preserves an existing session board item's coordinates across crash replay", async () => {
     const boardItems: Array<Record<string, unknown> & { x: number; y: number }> = [
       {
         id: "other",
-        folderId: "root",
-        containerKind: "task",
-        containerId: "rb-1",
+        folderId: "rb-1",
         itemId: "other",
         itemType: "session",
         x: 0,
@@ -490,9 +472,7 @@ describe("SessionLegacyProjection", () => {
       if (existing) Object.assign(existing, { x: input.x, y: input.y });
       else boardItems.push({
         id: `session:${input.sessionId}`,
-        folderId: "root",
-        containerKind: "task",
-        containerId: "rb-1",
+        folderId: "rb-1",
         itemId: input.sessionId,
         itemType: "session",
         x: input.x,
@@ -500,17 +480,14 @@ describe("SessionLegacyProjection", () => {
       });
       return {};
     });
-    const getBoardItemsByContainer = vi.fn(async () => boardItems.map((item) => ({ ...item })));
+    const getBoardItemsByFolder = vi.fn(async () => boardItems.map((item) => ({ ...item })));
     const db = {
-      resolveBoardYjsContainerScope: vi.fn(async () => ({ folderId: "root" })),
-      assignSessionToFolder: vi.fn(async () => undefined),
-      getBoardItemsByContainer,
+      getFolderById: vi.fn(async () => ({ id: "rb-1" })),
+      getBoardItemsByFolder,
     };
     const projection = new SessionLegacyProjection(db as never, { upsertSessionBoardItem } as never);
     const row = binding({
-      legacy_folder_id: null,
-      legacy_container_kind: "task",
-      legacy_container_id: "rb-1",
+      legacy_folder_id: "rb-1",
       page_state: "bound",
     });
 
@@ -518,10 +495,7 @@ describe("SessionLegacyProjection", () => {
     await projection.project(row); // durable replay
 
     expect(calls).toEqual([{ x: 280, y: 160 }, { x: 280, y: 160 }]);
-    expect(getBoardItemsByContainer).toHaveBeenCalledTimes(2);
-    expect(getBoardItemsByContainer).toHaveBeenCalledWith("root", {
-      containerKind: "task",
-      containerId: "rb-1",
-    });
+    expect(getBoardItemsByFolder).toHaveBeenCalledTimes(2);
+    expect(getBoardItemsByFolder).toHaveBeenCalledWith("rb-1");
   });
 });

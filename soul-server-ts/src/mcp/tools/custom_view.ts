@@ -1,9 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
-
-import type { BoardYjsContainerRef } from "../../db/session_db_types.js";
 import type { CustomViewService } from "../../custom_view/custom_view_service.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
@@ -20,11 +17,6 @@ import {
   mutationToolDescription,
 } from "./task_shared.js";
 
-const containerSchema = z.object({
-  kind: boardContainerKindInputSchema,
-  id: z.string().min(1),
-});
-
 export function registerCustomViewTools(
   server: McpServer,
   runtime: McpRuntime,
@@ -36,7 +28,7 @@ export function registerCustomViewTools(
         "현재 MCP caller origin을 감사 actor로 하여 sandboxed HTML custom view board item을 생성한다.",
       ),
       inputSchema: {
-        container: containerSchema,
+        folder_id: z.string().min(1),
         title: z.string().default("Custom view"),
         html: z.string(),
         x: z.number().optional(),
@@ -49,7 +41,7 @@ export function registerCustomViewTools(
       mutation(runtime, input.caller_session_id, (service, actor) =>
         service.createCustomView({
           ...actor,
-          container: toBoardYjsContainer(input.container),
+          folderId: input.folder_id,
           title: input.title,
           html: input.html,
           x: input.x,
@@ -107,18 +99,18 @@ export function registerCustomViewTools(
   server.registerTool(
     "list_custom_views",
     {
-      description: "지정한 board container의 커스텀 뷰 목록을 조회한다.",
+      description: "지정한 폴더의 커스텀 뷰 목록을 조회한다.",
       inputSchema: {
-        container: containerSchema,
+        folder_id: z.string().min(1),
         include_archived: z.boolean().default(false),
         limit: z.number().int().min(1).max(500).default(100),
       },
     },
-    async ({ container, include_archived, limit }) => {
+    async ({ folder_id, include_archived, limit }) => {
       try {
         return jsonResult(
           await getCustomViewService(runtime).listCustomViews({
-            container: toBoardYjsContainer(container),
+            folderId: folder_id,
             includeArchived: include_archived,
             limit,
           }),
@@ -128,10 +120,6 @@ export function registerCustomViewTools(
       }
     },
   );
-}
-
-function toBoardYjsContainer(input: z.infer<typeof containerSchema>): BoardYjsContainerRef {
-  return { containerKind: input.kind, containerId: input.id };
 }
 
 async function mutation(

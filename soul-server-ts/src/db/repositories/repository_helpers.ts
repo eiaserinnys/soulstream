@@ -1,5 +1,4 @@
 import type {
-  BoardContainerKind,
   BoardItemType,
   CatalogBoardItemRow,
 } from "../session_db_types.js";
@@ -22,10 +21,8 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function toCatalogBoardItemRow(row: {
   id: string;
   folder_id: string;
-  container_kind?: BoardContainerKind | null;
-  container_id?: string | null;
   membership_kind?: "primary" | "reference" | null;
-  source_task_item_id?: string | null;
+  source_checklist_item_id?: string | null;
   item_type: BoardItemType;
   item_id: string;
   x: string | number;
@@ -37,10 +34,8 @@ export function toCatalogBoardItemRow(row: {
   return {
     id: row.id,
     folderId: row.folder_id,
-    containerKind: row.container_kind ?? "folder",
-    containerId: row.container_id ?? row.folder_id,
     membershipKind: row.membership_kind ?? "primary",
-    sourceTaskItemId: row.source_task_item_id ?? null,
+    sourceChecklistItemId: row.source_checklist_item_id ?? null,
     itemType: row.item_type,
     itemId: row.item_id,
     x: Number(row.x),

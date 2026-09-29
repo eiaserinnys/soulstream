@@ -1,55 +1,35 @@
 import type { Logger } from "pino";
 
-import type { BoardYjsContainerRef, TaskSnapshot } from "../db/session_db.js";
+import type { FolderSnapshot } from "../db/session_db.js";
 
 const REJECTION_MESSAGE =
-  "source task item provenance rejected; continuing without provenance";
+  "source checklist item provenance rejected; continuing without provenance";
 
-export async function resolveSourceTaskItemProvenance(params: {
+export async function resolveSourceChecklistItemProvenance(params: {
   sessionId: string;
-  sourceTaskItemId?: string | null;
-  container?: BoardYjsContainerRef | null;
-  getTaskSnapshot(taskId: string): Promise<TaskSnapshot | null>;
+  sourceChecklistItemId?: string | null;
+  folderId?: string | null;
+  getFolderSnapshot(folderId: string): Promise<FolderSnapshot | null>;
   logger: Pick<Logger, "warn">;
 }): Promise<string | null> {
-  const sourceTaskItemId = params.sourceTaskItemId ?? null;
-  if (sourceTaskItemId === null) return null;
-
-  const taskId = params.container?.containerKind === "task"
-    ? params.container.containerId
-    : null;
-  if (taskId === null) {
-    params.logger.warn({
-      sessionId: params.sessionId,
-      sourceTaskItemId,
-      taskId,
-      reason: "task_container_missing",
-    }, REJECTION_MESSAGE);
+  const sourceChecklistItemId = params.sourceChecklistItemId ?? null;
+  if (sourceChecklistItemId === null) return null;
+  if (!params.folderId) {
+    params.logger.warn({ sessionId: params.sessionId, sourceChecklistItemId, reason: "folder_missing" }, REJECTION_MESSAGE);
     return null;
   }
 
-  let snapshot: TaskSnapshot | null;
+  let snapshot: FolderSnapshot | null;
   try {
-    snapshot = await params.getTaskSnapshot(taskId);
+    snapshot = await params.getFolderSnapshot(params.folderId);
   } catch (err) {
-    params.logger.warn({
-      err,
-      sessionId: params.sessionId,
-      sourceTaskItemId,
-      taskId,
-      reason: "validation_failed",
-    }, REJECTION_MESSAGE);
+    params.logger.warn({ err, sessionId: params.sessionId, sourceChecklistItemId, folderId: params.folderId, reason: "validation_failed" }, REJECTION_MESSAGE);
     return null;
   }
 
-  if (snapshot?.items.some((item) => item.id === sourceTaskItemId)) {
-    return sourceTaskItemId;
+  if (snapshot?.items.some((item) => item.id === sourceChecklistItemId)) {
+    return sourceChecklistItemId;
   }
-  params.logger.warn({
-    sessionId: params.sessionId,
-    sourceTaskItemId,
-    taskId,
-    reason: "task_item_not_found",
-  }, REJECTION_MESSAGE);
+  params.logger.warn({ sessionId: params.sessionId, sourceChecklistItemId, folderId: params.folderId, reason: "checklist_item_not_found" }, REJECTION_MESSAGE);
   return null;
 }

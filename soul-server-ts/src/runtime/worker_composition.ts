@@ -25,9 +25,8 @@ import { buildOrchProxyConfig } from "../mcp/orch_proxy.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import { ModelCatalog, nodeEffortCapabilities } from "../model_catalog.js";
 import { RealtimeBroker } from "../realtime/realtime_broker.js";
-import { TaskHandoffNotifier } from "../work-task/task_handoff_notifier.js";
-import { TaskService } from "../work-task/task_service.js";
-import { TaskIdentityHostClient } from "../work-task/task_identity_host_client.js";
+import { FolderHandoffNotifier } from "../work-task/task_handoff_notifier.js";
+import { FolderService } from "../work-task/task_service.js";
 import { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
 import { FolderHostClient } from "../folder/folder_host_client.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
@@ -47,7 +46,6 @@ import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { summarizePayloadForLog } from "../upstream/log_payload_summary.js";
 import { composeTaskRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
-import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
@@ -158,7 +156,6 @@ export async function composeWorkerRuntime(
   );
   const sessionPageBindingRepository = db.sessionPageBindings();
   const pageHost = new PageYjsHostClient(orchHostClientDeps);
-  const taskIdentityHost = new TaskIdentityHostClient(orchHostClientDeps);
   const folderProjectIdentityHost = new FolderProjectIdentityHostClient(orchHostClientDeps);
   db.configureFolderHost(new FolderHostClient(orchHostClientDeps));
   const sessionPageBindingService = new SessionPageBindingService({
@@ -325,8 +322,8 @@ export async function composeWorkerRuntime(
       }
       : {}),
   });
-  const taskService = new TaskService(orchHostClientDeps);
-  db.configureTaskReader(taskService);
+  const folderService = new FolderService(orchHostClientDeps);
+  db.configureFolderReader(folderService);
   const catalogService = new CatalogService(
     db,
     broadcaster,
@@ -334,8 +331,8 @@ export async function composeWorkerRuntime(
     folderProjectIdentityHost,
     sessionMutations,
   );
-  const taskHandoffNotifier = new TaskHandoffNotifier(
-    taskService,
+  const taskHandoffNotifier = new FolderHandoffNotifier(
+    folderService,
     {
       send: (message) =>
         sendMessageToSession(
@@ -352,19 +349,7 @@ export async function composeWorkerRuntime(
     },
     logger,
   );
-  taskService.setHandoffNotifier(taskHandoffNotifier);
-  const {
-    checklistTaskAdapter,
-    checklistTaskReconciler,
-  } = composeChecklistTaskProjection({
-    nodeId: env.SOULSTREAM_NODE_ID,
-    db,
-    taskService,
-    taskIdentityHost,
-    pageHost,
-    logger,
-  });
-  checklistTaskReconciler.start();
+  folderService.setHandoffNotifier(taskHandoffNotifier);
   const customViewService = new CustomViewService(db, boardYjsService, broadcaster);
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) } : {}),
@@ -402,9 +387,7 @@ export async function composeWorkerRuntime(
     agentConfigService,
     mcpConfigService,
     catalogService,
-    taskService,
-    taskIdentityHostClient: taskIdentityHost,
-    checklistTaskAdapter,
+    folderService,
     customViewService,
     logger,
     orch: orchProxyConfig,
@@ -427,12 +410,6 @@ export async function composeWorkerRuntime(
           logger,
         }
       : undefined,
-    task: {
-      service: taskService,
-      taskIdentityHost: taskIdentityHost,
-      checklistAdapter: checklistTaskAdapter,
-      auth: boardYjsAuth,
-    },
     boardItem: { service: catalogService, auth: boardYjsAuth },
     markdownDocument: { service: catalogService, auth: boardYjsAuth },
     contextPreview: {
@@ -481,8 +458,6 @@ export async function composeWorkerRuntime(
     mcpRuntime,
     scheduleService,
     sessionPageBindingService,
-    checklistTaskAdapter,
-    checklistTaskReconciler,
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
     ...(claudeRuntime.startupRecovery
       ? { claudeRuntimeStartupRecovery: claudeRuntime.startupRecovery }

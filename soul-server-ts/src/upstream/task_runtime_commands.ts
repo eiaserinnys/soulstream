@@ -3,7 +3,6 @@ import type { Logger } from "pino";
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { BoardYjsContainerRef } from "../db/session_db.js";
 import type {
   ClaudePermissionMode,
   EngineInterventionFailureReason,
@@ -48,8 +47,7 @@ export interface CreateSessionRuntimeParams {
   claudePermissionMode?: ClaudePermissionMode;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
-  container?: BoardYjsContainerRef | null;
-  sourceTaskItemId?: string | null;
+  sourceChecklistItemId?: string | null;
   worktreeId?: string;
   worktreeActorSessionId?: string;
   systemPrompt?: string;
@@ -203,8 +201,7 @@ export class TaskRuntimeCommands {
       useMcp: params.useMcp,
       claudePermissionMode: params.claudePermissionMode,
       folderId: params.folderId ?? null,
-      container: params.container ?? null,
-      sourceTaskItemId: params.sourceTaskItemId ?? null,
+      sourceChecklistItemId: params.sourceChecklistItemId ?? null,
       worktreeId: params.worktreeId,
       worktreeActorSessionId: params.worktreeActorSessionId,
       systemPrompt: params.systemPrompt,

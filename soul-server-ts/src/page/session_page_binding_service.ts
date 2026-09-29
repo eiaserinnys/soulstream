@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 import { projectSessionBindingWarnings } from "@soulstream/page-model";
 
 import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
-import type { BoardYjsContainerRef, SessionDB } from "../db/session_db.js";
+import type { SessionDB } from "../db/session_db.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 import {
   appendCreationWarning,
@@ -51,7 +51,6 @@ export class SessionPageBindingService implements TaskCreationHook {
   async persistCreationIntent({ task, params }: TaskCreationHookParams): Promise<void> {
     const enrollment = decideSessionPageEnrollment({
       hasPageAnchor: params.pageAnchor !== undefined,
-      containerKind: params.container?.containerKind ?? null,
       callerSource: params.callerInfo?.source,
     });
     await this.deps.repository.enqueue({
@@ -64,9 +63,7 @@ export class SessionPageBindingService implements TaskCreationHook {
       dailyDate: kstDate(this.deps.now?.() ?? new Date()),
       sessionType: params.sessionType ?? "claude",
       legacyFolderId: params.folderId ?? null,
-      legacyContainerKind: params.container?.containerKind ?? null,
-      legacyContainerId: params.container?.containerId ?? null,
-      sourceTaskItemId: params.sourceTaskItemId ?? null,
+      sourceChecklistItemId: params.sourceChecklistItemId ?? null,
     });
   }
 
@@ -273,33 +270,19 @@ export class SessionLegacyProjection implements LegacyProjectionPort {
   ) {}
 
   async project(binding: SessionPageBindingRow): Promise<void> {
-    if (binding.legacy_container_kind && binding.legacy_container_id) {
-      const container: BoardYjsContainerRef = {
-        containerKind: binding.legacy_container_kind as BoardYjsContainerRef["containerKind"],
-        containerId: binding.legacy_container_id,
-      };
-      const scope = await this.db.resolveBoardYjsContainerScope(container);
-      if (!scope) throw new ManualRepairError(`stale legacy container: ${binding.legacy_container_id}`);
-      const boardItems = await this.db.getBoardItemsByContainer(scope.folderId, container);
-      const [x, y] = sessionBoardItemPosition(boardItems, binding.session_id);
-      await this.boardYjsService.upsertSessionBoardItem({
-        folderId: scope.folderId,
-        container,
-        sessionId: binding.session_id,
-        sourceTaskItemId: binding.source_task_item_id,
-        x,
-        y,
-      });
-      return;
-    }
     if (binding.legacy_folder_id) {
       if (!await this.db.getFolderById(binding.legacy_folder_id)) {
         throw new ManualRepairError(`stale legacy folder: ${binding.legacy_folder_id}`);
       }
-      await this.boardYjsService.moveSessionToFolder(
-        binding.session_id,
-        binding.legacy_folder_id,
-      );
+      const boardItems = await this.db.getBoardItemsByFolder(binding.legacy_folder_id);
+      const [x, y] = sessionBoardItemPosition(boardItems, binding.session_id);
+      await this.boardYjsService.upsertSessionBoardItem({
+        folderId: binding.legacy_folder_id,
+        sessionId: binding.session_id,
+        sourceChecklistItemId: binding.source_checklist_item_id,
+        x,
+        y,
+      });
       return;
     }
     const folderId = defaultFolderIdForSessionType(binding.session_type);

@@ -15,22 +15,22 @@ import {
   mutationResponseInputSchema,
   mutationToolDescription,
   optionalReasonSchema,
-  taskItemStatusSchema,
+  checklistItemStatusSchema,
 } from "./task_shared.js";
 
-export function registerTaskItemTools(
+export function registerChecklistItemTools(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
   server.registerTool(
-    "create_task_item",
+    "create_checklist_item",
     {
       description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템을 생성한다.",
       ),
       inputSchema: {
         ...mutationResponseInputSchema,
-        task_id: z.string().min(1),
+        folder_id: z.string().min(1),
         section_id: z.string().min(1),
         title: z.string().min(1),
         how_to: z.string().default(""),
@@ -47,9 +47,9 @@ export function registerTaskItemTools(
         runtime,
         input.caller_session_id,
         (service, actor) =>
-          service.createItem({
+          service.createChecklistItem({
             ...actor,
-            taskId: input.task_id,
+            folderId: input.folder_id,
             sectionId: input.section_id,
             title: input.title,
             howTo: input.how_to,
@@ -64,14 +64,14 @@ export function registerTaskItemTools(
   );
 
   server.registerTool(
-    "update_task_item",
+    "update_checklist_item",
     {
       description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템 제목 또는 본문을 수정한다.",
       ),
       inputSchema: {
         ...mutationResponseInputSchema,
-        task_id: z.string().min(1),
+        folder_id: z.string().min(1),
         item_id: z.string().min(1),
         expected_version: expectedVersionSchema,
         title: z.string().min(1).optional(),
@@ -86,9 +86,9 @@ export function registerTaskItemTools(
         runtime,
         input.caller_session_id,
         (service, actor) =>
-          service.patchItem({
+          service.updateChecklistItem({
             ...actor,
-            taskId: input.task_id,
+            folderId: input.folder_id,
             itemId: input.item_id,
             expectedVersion: input.expected_version,
             title: input.title,
@@ -101,14 +101,14 @@ export function registerTaskItemTools(
   );
 
   server.registerTool(
-    "set_task_item_assignee",
+    "set_checklist_item_assignee",
     {
       description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템 담당자를 설정하거나 해제한다.",
       ),
       inputSchema: {
         ...mutationResponseInputSchema,
-        task_id: z.string().min(1),
+        folder_id: z.string().min(1),
         item_id: z.string().min(1),
         expected_version: expectedVersionSchema,
         assignee: assigneeValueSchema,
@@ -122,9 +122,9 @@ export function registerTaskItemTools(
         runtime,
         input.caller_session_id,
         (service, actor) =>
-          service.setItemAssignee({
+          service.setChecklistItemAssignee({
             ...actor,
-            taskId: input.task_id,
+            folderId: input.folder_id,
             itemId: input.item_id,
             expectedVersion: input.expected_version,
             reason: input.reason,
@@ -136,27 +136,27 @@ export function registerTaskItemTools(
   );
 
   registerItemArchiveTool(server, runtime, {
-    name: "archive_task_item",
+    name: "archive_checklist_item",
     archived: true,
     description:
       "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템을 archived 처리한다.",
   });
   registerItemArchiveTool(server, runtime, {
-    name: "unarchive_task_item",
+    name: "unarchive_checklist_item",
     archived: false,
     description:
       "현재 MCP caller session을 actor_kind='agent'로 하여 archived 업무 아이템을 복구한다.",
   });
 
   server.registerTool(
-    "move_task_item",
+    "move_checklist_item",
     {
       description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템을 다른 위치나 섹션으로 이동한다.",
       ),
       inputSchema: {
         ...mutationResponseInputSchema,
-        task_id: z.string().min(1),
+        folder_id: z.string().min(1),
         item_id: z.string().min(1),
         expected_version: expectedVersionSchema,
         section_id: z.string().nullable().optional(),
@@ -172,9 +172,9 @@ export function registerTaskItemTools(
         runtime,
         input.caller_session_id,
         (service, actor) =>
-          service.moveItem({
+          service.moveChecklistItem({
             ...actor,
-            taskId: input.task_id,
+            folderId: input.folder_id,
             itemId: input.item_id,
             expectedVersion: input.expected_version,
             sectionId: input.section_id,
@@ -188,15 +188,16 @@ export function registerTaskItemTools(
   );
 
   server.registerTool(
-    "set_task_item_status",
+    "set_checklist_item_status",
     {
       description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 업무 아이템 상태를 설정한다.",
       ),
       inputSchema: {
         ...mutationResponseInputSchema,
+        folder_id: z.string().min(1),
         item_id: z.string().min(1),
-        status: taskItemStatusSchema,
+        status: checklistItemStatusSchema,
         expected_version: expectedVersionSchema,
         reason: optionalReasonSchema,
         idempotency_key: idempotencyKeySchema,
@@ -208,8 +209,9 @@ export function registerTaskItemTools(
         runtime,
         input.caller_session_id,
         (service, actor) =>
-          service.setItemStatus({
+          service.setChecklistItemStatus({
             ...actor,
+            folderId: input.folder_id,
             itemId: input.item_id,
             status: input.status as TaskItemStatus,
             expectedVersion: input.expected_version,
@@ -225,7 +227,7 @@ function registerItemArchiveTool(
   server: McpServer,
   runtime: McpRuntime,
   config: {
-    name: "archive_task_item" | "unarchive_task_item";
+    name: "archive_checklist_item" | "unarchive_checklist_item";
     archived: boolean;
     description: string;
   },
@@ -236,7 +238,7 @@ function registerItemArchiveTool(
       description: mutationToolDescription(config.description),
       inputSchema: {
         ...mutationResponseInputSchema,
-        task_id: z.string().min(1),
+        folder_id: z.string().min(1),
         item_id: z.string().min(1),
         expected_version: expectedVersionSchema,
         reason: optionalReasonSchema,
@@ -249,9 +251,9 @@ function registerItemArchiveTool(
         runtime,
         input.caller_session_id,
         (service, actor) =>
-          service.patchItem({
+          service.updateChecklistItem({
             ...actor,
-            taskId: input.task_id,
+            folderId: input.folder_id,
             itemId: input.item_id,
             expectedVersion: input.expected_version,
             archived: config.archived,
