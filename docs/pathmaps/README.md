@@ -11,4 +11,5 @@
 | [러너 생애주기](runner-lifecycle.md) | spawn·등록·identity/lock·adopt·terminate·dispose |
 | [세션 삭제](session-deletion.md) | MCP 삭제·drain·runtime close·registration retirement·중앙 삭제·GC |
 | [전달 원장](delivery-ledger.md) | `session_deliveries.state`·`aggregate_state` 전이와 작성자 |
+| [세션 검색](session-search.md) | `/cogito/search` 모드 분기·A0·문서 색인·RRF·Jev·partial 응답 |
 | [타이머 목록](timers-inventory.md) | 복구·전달·러너 경로의 cadence·owner·유지 판정 |

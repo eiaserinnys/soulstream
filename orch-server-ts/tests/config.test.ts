@@ -100,8 +100,7 @@ describe("orch-server-ts config scaffold", () => {
       claude_oauth_callback_url: "https://example.com/claude/callback",
       codex_cli_path: null,
       model_catalog_path: null,
-      search_query_expansion_preset_id: null,
-      search_query_expansion_effort: null,
+      typesafe_api_key: "",
       turn_summary_openai_key: "turn-summary-key",
       usage_summary_poll_interval_seconds: 300,
       usage_summary_shared_accounts: [
@@ -232,19 +231,17 @@ describe("orch-server-ts config scaffold", () => {
     })).toThrow(/CORS_ALLOWED_ORIGINS/);
   });
 
-  it("maps search expansion model settings independently of turn summaries", () => {
+  it("maps the optional Typesafe key independently of Codex and turn summaries", () => {
     const config = loadOrchServerEnvironment({
       ...minimalEnvironment(),
       CODEX_CLI_PATH: "/configured/codex",
       MODEL_CATALOG_PATH: "config/model-catalog.yaml",
-      SEARCH_QUERY_EXPANSION_PRESET_ID: "catalog-preset",
-      SEARCH_QUERY_EXPANSION_EFFORT: "max",
+      TYPESAFE_API_KEY: "typesafe-key",
     });
 
     expect(config.codex_cli_path).toBe("/configured/codex");
     expect(config.model_catalog_path).toBe("config/model-catalog.yaml");
-    expect(config.search_query_expansion_preset_id).toBe("catalog-preset");
-    expect(config.search_query_expansion_effort).toBe("max");
+    expect(config.typesafe_api_key).toBe("typesafe-key");
     expect(config.turn_summary_openai_key).toBe("");
   });
 

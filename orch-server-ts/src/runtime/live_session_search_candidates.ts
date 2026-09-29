@@ -308,12 +308,13 @@ export async function runSearchQuery<T extends readonly Record<string, unknown>[
   signal: AbortSignal | undefined,
   deadlineAt: number,
   sql?: LiveSearchSql,
+  statementTimeoutCapMs = 3_000,
 ): Promise<T> {
   assertSearchMayContinue(signal, deadlineAt);
   try {
     if (sql?.setStatementTimeout !== undefined) {
       const timeoutMs = Math.min(
-        3_000,
+        statementTimeoutCapMs,
         Math.floor(deadlineAt - Date.now()) - 100,
       );
       if (timeoutMs < 1) {

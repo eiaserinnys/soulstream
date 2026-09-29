@@ -1,0 +1,251 @@
+import type { CogitoSearchParams } from "../cogito/cogito_routes.js";
+import {
+  SessionDocumentSearchIndex,
+  type SessionDocumentRecord,
+} from "../search/session_document_search_index.js";
+import type { SessionBackendCatalogEntry } from "./live_session_serialization.js";
+import {
+  assertSearchMayContinue,
+  runSearchQuery,
+} from "./live_session_search_candidates.js";
+import type {
+  LiveSearchPendingQuery,
+  LiveSearchSql,
+} from "./live_db_sql.js";
+
+type ActiveQuery = { current?: LiveSearchPendingQuery<readonly Record<string, unknown>[]> };
+type SessionRosterRow = { readonly session_id: string; readonly display_name: string | null };
+
+export class LiveSessionDocumentSearch {
+  readonly index = new SessionDocumentSearchIndex();
+  private initialized = false;
+  private roster = new Map<string, string | null>();
+  private watermarkMs = 0;
+  private refreshPromise: Promise<number> | undefined;
+
+  refresh(input: {
+    readonly sql: LiveSearchSql;
+    readonly activeQuery: ActiveQuery;
+    readonly deadlineAt: number;
+    readonly signal: AbortSignal;
+  }): Promise<number> {
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = this.refreshInternal(input).finally(() => { this.refreshPromise = undefined; });
+    return this.refreshPromise;
+  }
+
+  private async refreshInternal(input: {
+    readonly sql: LiveSearchSql;
+    readonly activeQuery: ActiveQuery;
+    readonly deadlineAt: number;
+    readonly signal: AbortSignal;
+  }): Promise<number> {
+    const startedAt = Date.now();
+    assertSearchMayContinue(input.signal, input.deadlineAt);
+    const roster = await runSearchQuery(input.activeQuery, () => input.sql`
+      SELECT session_id, display_name
+      FROM sessions
+      WHERE COALESCE(session_type, '') <> 'llm'
+    `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionRosterRow[];
+    const changedNames = roster
+      .filter((row) => !this.initialized || this.roster.get(row.session_id) !== row.display_name)
+      .map((row) => row.session_id);
+    const overlap = this.initialized ? new Date(this.watermarkMs - 5_000).toISOString() : null;
+    const records = await runSearchQuery(input.activeQuery, () => input.sql`
+      SELECT
+        session.session_id,
+        session.display_name,
+        left(session.prompt, 2000) AS prompt,
+        session.created_at,
+        session.agent_id,
+        CASE
+          WHEN digest.highlight IS NOT NULL THEN left(digest.highlight, 1500)
+          ELSE summaries.content
+        END AS summary
+      FROM sessions session
+      LEFT JOIN session_digests digest ON digest.session_id = session.session_id
+      LEFT JOIN LATERAL (
+        SELECT left(
+          string_agg(left(event.payload->>'content', 1500), ' / ' ORDER BY event.id)
+            FILTER (WHERE COALESCE(event.payload->>'content', '') <> ''),
+          1500
+        ) AS content
+        FROM events event
+        WHERE event.session_id = session.session_id
+          AND event.event_type = 'turn_summary'
+          AND digest.highlight IS NULL
+      ) summaries ON TRUE
+      WHERE COALESCE(session.session_type, '') <> 'llm'
+        AND (
+          ${!this.initialized}::boolean
+          OR session.session_id = ANY(${changedNames}::text[])
+          OR session.created_at >= ${overlap}::timestamptz
+          OR digest.updated_at >= ${overlap}::timestamptz
+          OR EXISTS (
+            SELECT 1 FROM events changed_event
+            WHERE changed_event.session_id = session.session_id
+              AND changed_event.event_type = 'turn_summary'
+              AND changed_event.created_at >= ${overlap}::timestamptz
+          )
+        )
+    `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionDocumentRecord[];
+
+    if (this.initialized) this.index.applyRefresh(records, roster);
+    else this.index.initialize(records);
+    this.roster = new Map(roster.map((row) => [row.session_id, row.display_name]));
+    this.initialized = true;
+    this.watermarkMs = startedAt;
+    return Math.max(0, Date.now() - startedAt);
+  }
+}
+
+export type SessionDocumentCandidateRow = Record<string, unknown> & { readonly session_id: string };
+
+export async function loadSessionDocumentCandidateRows(input: {
+  readonly sql: LiveSearchSql;
+  readonly sessionIds: readonly string[];
+  readonly params: CogitoSearchParams;
+  readonly activeQuery: ActiveQuery;
+  readonly deadlineAt: number;
+  readonly signal: AbortSignal;
+  readonly backendCatalog: readonly SessionBackendCatalogEntry[];
+  readonly limit: number;
+}): Promise<readonly SessionDocumentCandidateRow[]> {
+  if (input.sessionIds.length === 0) return [];
+  const filters = input.params.session_filters;
+  const allowedFolders = input.params.allowedFolderIds ?? null;
+  const statuses = filters?.statuses?.length ? filters.statuses : null;
+  const backends = filters?.backends?.length ? filters.backends : null;
+  const backendCatalog = JSON.stringify(input.backendCatalog);
+  return await runSearchQuery(input.activeQuery, () => input.sql`
+    WITH requested AS (
+      SELECT session_id, ordinality
+      FROM unnest(${input.sessionIds}::text[]) WITH ORDINALITY AS ids(session_id, ordinality)
+    )
+    SELECT
+      session.session_id,
+      session.display_name,
+      session.prompt AS session_prompt,
+      session.review_required,
+      session.folder_id,
+      session.node_id,
+      session.status,
+      COALESCE(
+        (SELECT mapping.value->>'backend'
+         FROM jsonb_array_elements(${backendCatalog}::text::jsonb) AS mapping(value)
+         WHERE mapping.value->>'kind' = 'preset'
+           AND mapping.value->>'node_id' = session.node_id
+           AND mapping.value->>'model_preset' = session.model_preset
+         LIMIT 1),
+        (SELECT mapping.value->>'backend'
+         FROM jsonb_array_elements(${backendCatalog}::text::jsonb) AS mapping(value)
+         WHERE mapping.value->>'kind' = 'agent'
+           AND mapping.value->>'node_id' = session.node_id
+           AND mapping.value->>'agent_id' = session.agent_id
+         LIMIT 1)
+      ) AS backend,
+      (SELECT mapping.value->>'agent_name'
+       FROM jsonb_array_elements(${backendCatalog}::text::jsonb) AS mapping(value)
+       WHERE mapping.value->>'kind' = 'agent'
+         AND mapping.value->>'node_id' = session.node_id
+         AND mapping.value->>'agent_id' = session.agent_id
+       LIMIT 1) AS agent_name,
+      session.caller_session_id AS parent_session_id,
+      session.updated_at AS session_updated_at,
+      linked_task.id AS task_id,
+      linked_task.title AS task_title,
+      linked_task.task_evidence_kind,
+      linked_task.task_evidence_title
+    FROM requested
+    JOIN sessions session ON session.session_id = requested.session_id
+    LEFT JOIN LATERAL (
+      SELECT
+        task.id,
+        task.title,
+        CASE
+          WHEN task.completed_session_id = session.session_id THEN 'task_completed'
+          WHEN completed_item.id IS NOT NULL THEN 'task_item_completed'
+          WHEN primary_session_item.source_task_item_id IS NOT NULL THEN 'source_task_item'
+          WHEN assigned_item.id IS NOT NULL THEN 'task_item_assigned'
+          ELSE NULL
+        END AS task_evidence_kind,
+        CASE
+          WHEN task.completed_session_id = session.session_id THEN task.title
+          WHEN completed_item.id IS NOT NULL THEN completed_item.title
+          WHEN primary_session_item.source_task_item_id IS NOT NULL THEN source_item.title
+          WHEN assigned_item.id IS NOT NULL THEN assigned_item.title
+          ELSE NULL
+        END AS task_evidence_title
+      FROM board_items primary_session_item
+      JOIN tasks task ON task.id = primary_session_item.container_id
+      JOIN board_items task_board_item ON task_board_item.id = task.board_item_id
+      LEFT JOIN task_items source_item
+        ON source_item.id = primary_session_item.source_task_item_id
+       AND EXISTS (
+         SELECT 1 FROM task_sections source_section
+         WHERE source_section.id = source_item.section_id
+           AND source_section.task_id = task.id
+       )
+      LEFT JOIN LATERAL (
+        SELECT task_item.id, task_item.title
+        FROM task_items task_item
+        JOIN task_sections section ON section.id = task_item.section_id
+        WHERE section.task_id = task.id
+          AND section.archived = FALSE
+          AND task_item.archived = FALSE
+          AND task_item.completed_session_id = session.session_id
+        ORDER BY task_item.completed_at DESC NULLS LAST, task_item.id
+        LIMIT 1
+      ) completed_item ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT task_item.id, task_item.title
+        FROM task_items task_item
+        JOIN task_sections section ON section.id = task_item.section_id
+        WHERE section.task_id = task.id
+          AND section.archived = FALSE
+          AND task_item.archived = FALSE
+          AND task_item.assignee_session_id = session.session_id
+        ORDER BY task_item.updated_at DESC, task_item.id
+        LIMIT 1
+      ) assigned_item ON TRUE
+      WHERE primary_session_item.container_kind = 'task'
+        AND primary_session_item.container_id = task.id
+        AND primary_session_item.folder_id = session.folder_id
+        AND primary_session_item.item_type = 'session'
+        AND primary_session_item.item_id = session.session_id
+        AND primary_session_item.membership_kind = 'primary'
+        AND task.archived = FALSE
+        AND task_board_item.folder_id = session.folder_id
+        AND session.folder_id IS NOT NULL
+      ORDER BY
+        ((task.completed_session_id = session.session_id) IS TRUE) DESC,
+        (completed_item.id IS NOT NULL) DESC,
+        (primary_session_item.source_task_item_id IS NOT NULL) DESC,
+        (assigned_item.id IS NOT NULL) DESC,
+        task.id ASC
+      LIMIT 1
+    ) linked_task ON TRUE
+    WHERE COALESCE(session.session_type, '') <> 'llm'
+      AND (${allowedFolders}::text[] IS NULL OR session.folder_id = ANY(${allowedFolders}::text[]))
+      AND (${filters?.node_id ?? null}::text IS NULL OR session.node_id = ${filters?.node_id ?? null}::text)
+      AND (${statuses}::text[] IS NULL OR session.status = ANY(${statuses}::text[]))
+      AND (${filters?.updated_after ?? null}::timestamptz IS NULL
+        OR session.updated_at >= ${filters?.updated_after ?? null}::timestamptz)
+      AND (${backends}::text[] IS NULL OR COALESCE(
+        (SELECT mapping.value->>'backend'
+         FROM jsonb_array_elements(${backendCatalog}::text::jsonb) AS mapping(value)
+         WHERE mapping.value->>'kind' = 'preset'
+           AND mapping.value->>'node_id' = session.node_id
+           AND mapping.value->>'model_preset' = session.model_preset
+         LIMIT 1),
+        (SELECT mapping.value->>'backend'
+         FROM jsonb_array_elements(${backendCatalog}::text::jsonb) AS mapping(value)
+         WHERE mapping.value->>'kind' = 'agent'
+           AND mapping.value->>'node_id' = session.node_id
+           AND mapping.value->>'agent_id' = session.agent_id
+         LIMIT 1)
+      ) = ANY(${backends}::text[]))
+    ORDER BY requested.ordinality
+    LIMIT ${input.limit}
+  `, input.signal, input.deadlineAt, input.sql) as readonly SessionDocumentCandidateRow[];
+}

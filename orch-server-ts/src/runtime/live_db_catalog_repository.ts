@@ -46,7 +46,6 @@ import { createLiveTaskRouteProvider } from "./live_task_route_provider.js";
 import type { TaskRouteProvider } from "../tasks/task_route_types.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
 import { createLiveCogitoSearchProvider } from "./live_cogito_search_provider.js";
-import type { SearchQueryExpander } from "../search/search_query_expander.js";
 import {
   buildSessionBackendCatalog,
   serializeSessionRow,
@@ -131,7 +130,7 @@ export type CreateLiveDbCatalogRepositoryOptions = {
   readonly sql?: LivePostgresSql;
   readonly sqlResolver?: LiveDbSqlResolver;
   readonly searchDbConnectionFactory?: LiveSearchDbConnectionFactory;
-  readonly searchQueryExpander?: SearchQueryExpander;
+  readonly typesafeApiKey?: string | null;
   readonly onSearchCancelError?: (error: unknown) => void;
   readonly configProvider?: LiveConfigProviderBoundary;
   readonly registry?: InMemoryNodeRegistry;
@@ -170,7 +169,7 @@ export function createLiveDbCatalogRepository(
   const contextBundleRepository = createLiveContextBundleRepository(sqlResolver);
   const cogitoSearchProvider = createLiveCogitoSearchProvider({
     searchDbConnectionFactory,
-    queryExpander: options.searchQueryExpander,
+    typesafeApiKey: options.typesafeApiKey,
     sessionBackendCatalog: () => buildSessionBackendCatalog(
       options.registry,
       agentProfileRepository.snapshot(),
