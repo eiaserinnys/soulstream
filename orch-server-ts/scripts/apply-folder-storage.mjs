@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { formatDatabaseReleaseError } from "../../packages/db-schema/scripts/database-release-result.mjs";
 import { readDatabaseUrl } from "../../packages/db-schema/scripts/migration-contract.mjs";
+import { assertDatabaseReleaseSubphaseGate } from "../../packages/db-schema/scripts/database-release-subphase.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const script = fileURLToPath(import.meta.url);
@@ -20,14 +21,17 @@ export function applyFolderStorage() {
     "--", process.execPath, script, "--documents"]);
 }
 
+export async function convertFolderStorage() {
+  await assertDatabaseReleaseSubphaseGate({ subphase: "folder_storage_documents" });
+  const { runFolderStorageMigration } = await import("../dist/folder_storage_migration_cli.js");
+  return await runFolderStorageMigration(readDatabaseUrl());
+}
+
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
 if (import.meta.url === entrypoint) {
   try {
     if (process.argv[2] === "--documents") {
-      // The release executor loads the service environment and gates the child
-      // on committed SQL plus the existing handover/quiescence evidence.
-      const { runFolderStorageMigration } = await import("../dist/folder_storage_migration_cli.js");
-      console.log(JSON.stringify(await runFolderStorageMigration(readDatabaseUrl())));
+      console.log(JSON.stringify(await convertFolderStorage()));
     } else {
       applyFolderStorage();
     }

@@ -56,6 +56,45 @@ describe("unified folder and checklist workflow", () => {
     await expect(call("set_folder_status", { status: "completed", expectedVersion: 1, idempotencyKey: "workflow:test:stale" })).rejects.toThrow(/version/i);
   });
 
+  it("updates, moves, assigns and archives checklist rows through the shared HTTP/host operation boundary", async () => {
+    await h.sql`INSERT INTO folders (id, name) VALUES ('checklist-crud', '체크리스트'), ('unrelated', '다른 폴더')`;
+    const resolver = createLiveDbSqlResolver({ sql: h.liveSql });
+    const checklist = new ChecklistControlPlaneService(createBoardYjsSqlAdapter(h.liveSql), {
+      appendEventTx: async () => { throw new Error("unexpected session event"); },
+    });
+    const identity = new FolderProjectIdentityService({
+      repository: new SqlFolderProjectIdentityRepository(resolver),
+      withBoardApplication: async (_input, persist) => persist([]), hydratePage: async () => undefined,
+    });
+    let sequence = 0;
+    const call = async (operation: Parameters<typeof executeFolderOperation>[1], body: unknown, scope = {}) =>
+      executeFolderOperation({ checklist, identity }, operation,
+        { ...(body as object), idempotencyKey: `crud:test:${++sequence}` },
+        { folderId: "checklist-crud", ...scope }, { actorKind: "user", actorSessionId: null, actorUserId: "user@example.com" }) as Promise<any>;
+    const first = (await call("create_checklist_section", { title: "첫 섹션" })).section;
+    let second = (await call("create_checklist_section", { title: "둘째 섹션" })).section;
+    let item = (await call("create_checklist_item", { title: "항목", howTo: "작업 방법" }, { sectionId: first.id })).item;
+    item = (await call("update_checklist_item", { title: "수정 항목", howTo: "수정 방법", expectedVersion: item.version }, { itemId: item.id })).item;
+    item = (await call("set_checklist_item_assignee", { assigneeKind: "agent", assigneeAgentId: "roselin", expectedVersion: item.version }, { itemId: item.id })).item;
+    item = (await call("move_checklist_item", { sectionId: second.id, expectedVersion: item.version }, { itemId: item.id })).item;
+    expect(item).toMatchObject({ title: "수정 항목", howTo: "수정 방법", assigneeKind: "agent", assigneeAgentId: "roselin", sectionId: second.id, version: 4 });
+    for (const operation of ["archive_checklist_item", "unarchive_checklist_item"] as const) {
+      item = (await call(operation, { expectedVersion: item.version }, { itemId: item.id })).item;
+    }
+    item = (await call("set_checklist_item_status", { status: "review", expectedVersion: item.version }, { itemId: item.id })).item;
+    expect(item).toMatchObject({ archived: false, status: "review", version: 7 });
+    second = (await call("update_checklist_section", { title: "수정 섹션", expectedVersion: second.version }, { sectionId: second.id })).section;
+    second = (await call("set_checklist_section_assignee", { assigneeKind: "human", assigneeUserId: "user@example.com", expectedVersion: second.version }, { sectionId: second.id })).section;
+    second = (await call("move_checklist_section", { beforeSectionId: first.id, expectedVersion: second.version }, { sectionId: second.id })).section;
+    for (const operation of ["archive_checklist_section", "unarchive_checklist_section"] as const) {
+      second = (await call(operation, { expectedVersion: second.version }, { sectionId: second.id })).section;
+    }
+    expect(second).toMatchObject({ title: "수정 섹션", archived: false, assigneeKind: "human", version: 6 });
+    expect(second.positionKey < first.positionKey).toBe(true);
+    expect((await checklist.getFolder("checklist-crud"))?.items).toEqual([expect.objectContaining({ id: item.id, how_to: "수정 방법" })]);
+    await expect(call("update_checklist_item", { title: "잘못된 수정", expectedVersion: item.version }, { folderId: "unrelated", itemId: item.id })).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it("reads ordinary and checklist folders through today, stars and bounded detail", async () => {
     const resolver = createLiveDbSqlResolver({ sql: h.liveSql });
     const pages = new PageYjsService({ repository: new PageRepository(resolver) });

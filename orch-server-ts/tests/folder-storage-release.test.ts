@@ -2,11 +2,21 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
+const { execute, gate } = vi.hoisted(() => ({ execute: vi.fn(), gate: vi.fn() }));
 vi.mock("node:child_process", () => ({ execFileSync: execute }));
+vi.mock("../../packages/db-schema/scripts/database-release-subphase.mjs", () => ({
+  assertDatabaseReleaseSubphaseGate: gate,
+}));
 
 describe("folder storage release entrypoint", () => {
   beforeEach(() => { execute.mockReset(); });
+
+  it("rejects conversion without current release handover evidence", async () => {
+    const { convertFolderStorage } = await import("../scripts/apply-folder-storage.mjs");
+    gate.mockRejectedValue(new Error("JOURNAL_GATE_FAILED"));
+    await expect(convertFolderStorage()).rejects.toThrow("JOURNAL_GATE_FAILED");
+    expect(gate).toHaveBeenCalledWith({ subphase: "folder_storage_documents" });
+  });
 
   it("applies SQL before the journaled document conversion", async () => {
     const { applyFolderStorage } = await import("../scripts/apply-folder-storage.mjs");
