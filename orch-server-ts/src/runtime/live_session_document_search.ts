@@ -17,7 +17,9 @@ import type {
 } from "./live_db_sql.js";
 
 type ActiveQuery = { current?: LiveSearchPendingQuery<readonly Record<string, unknown>[]> };
-type SessionSourceRow = Omit<SessionDocumentRecord, "summary">;
+type SessionSourceRow = Omit<SessionDocumentRecord, "summary"> & {
+  readonly last_assistant_text: string | null;
+};
 type SessionDigestRow = { readonly session_id: string; readonly highlight: string | null };
 type SessionSummarySourceRow = SessionSummaryEvent & { readonly session_id: string };
 
@@ -52,6 +54,7 @@ export class LiveSessionDocumentSearch {
           session_id,
           display_name,
           left(prompt, 2000) AS prompt,
+          left(last_assistant_text, 1500) AS last_assistant_text,
           created_at,
           agent_id
         FROM sessions
@@ -90,6 +93,11 @@ export class LiveSessionDocumentSearch {
         AND created_at >= ${overlap}::timestamptz
       UNION
       SELECT session_id
+      FROM sessions
+      WHERE COALESCE(session_type, '') <> 'llm'
+        AND sessions.updated_at >= ${overlap}::timestamptz
+      UNION
+      SELECT session_id
       FROM session_digests
       WHERE updated_at >= ${overlap}::timestamptz
       UNION
@@ -110,6 +118,7 @@ export class LiveSessionDocumentSearch {
           session_id,
           display_name,
           left(prompt, 2000) AS prompt,
+          left(last_assistant_text, 1500) AS last_assistant_text,
           created_at,
           agent_id
         FROM sessions
@@ -155,10 +164,13 @@ function assembleSessionDocumentRecords(
     sessionEvents.push({ event_id: event.event_id, content: event.content });
     summaries.set(event.session_id, sessionEvents);
   }
-  return sessions.map((session) => ({
-    ...session,
-    summary: chooseSessionSummary(highlights.get(session.session_id) ?? null, summaries.get(session.session_id) ?? []),
-  }));
+  return sessions.map((session) => {
+    const summary = chooseSessionSummary(
+      highlights.get(session.session_id) ?? null,
+      summaries.get(session.session_id) ?? [],
+    );
+    return { ...session, summary: summary ?? session.last_assistant_text };
+  });
 }
 
 export type SessionDocumentCandidateRow = Record<string, unknown> & { readonly session_id: string };
