@@ -147,6 +147,13 @@ function makeRuntime(
         sessionId === "caller-sess-1" ? { folder_id: callerFolderId } : null,
       ),
       getBoardItems: vi.fn(async () => callerBoardItems),
+      getPrimarySessionBoardItem: vi.fn(async (sessionId: string) =>
+        callerBoardItems.find((item) =>
+          item.itemType === "session" &&
+          item.itemId === sessionId &&
+          (item.membershipKind ?? "primary") === "primary"
+        ) ?? null,
+      ),
       resolveBoardYjsContainerScope: vi.fn(async (container) =>
         container.containerKind === "task"
           ? {
@@ -872,6 +879,8 @@ describe("agent profile backend boundary", () => {
     });
 
     expect(result.isError).not.toBe(true);
+    expect(runtime.db.getPrimarySessionBoardItem).toHaveBeenCalledWith("caller-sess-1");
+    expect(runtime.db.getBoardItems).not.toHaveBeenCalled();
     expect(runtime.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
         callerSessionId: "caller-sess-1",
