@@ -349,6 +349,8 @@ export interface Task {
   reviewState?: ReviewState;
   /** Runtime-only non-fatal projection outcomes returned by create_session ACK. */
   creationWarnings?: SessionCreationWarning[];
+  /** Runtime-only: 새 세션의 생성 후속 효과(폴더와 업무 배치 포함). 첫 턴 컨텍스트가 배치 기록 뒤에 지어지도록 기다리는 데 쓴다. */
+  creationEffects?: Promise<void>;
   /** Durable central worktree binding. */
   worktreeId?: string;
   /** Runtime-only path revalidated immediately before every execution. */

@@ -63,6 +63,8 @@ export class TaskTurnInputBuilder {
       );
     }
 
+    if (task.creationEffects) await task.creationEffects;
+
     const ctx = await this.buildContext(task, agent);
     await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx);
     this.recordInitialContextInjection(task);

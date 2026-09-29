@@ -7,6 +7,42 @@ import {
 } from "./task_creation_harness.js";
 
 describe("TaskCreation", () => {
+  it("exposes creation effects that settle after session placement", async () => {
+    const h = makeHarness();
+    let placementStarted!: () => void;
+    const placementStartedPromise = new Promise<void>((resolve) => {
+      placementStarted = resolve;
+    });
+    let finishPlacement!: () => void;
+    const placement = new Promise<void>((resolve) => {
+      finishPlacement = resolve;
+    });
+    h.upsertSessionBoardItem.mockImplementation(async () => {
+      placementStarted();
+      await placement;
+      return {} as never;
+    });
+
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-placement-effects",
+      prompt: "wait for placement",
+      profileId: "codex-default",
+      folderId: "folder-1",
+    });
+    const creationEffects = task.creationEffects;
+    expect(creationEffects).toBeInstanceOf(Promise);
+    if (!creationEffects) throw new Error("creation effects promise was not attached");
+
+    await placementStartedPromise;
+    let settled = false;
+    void creationEffects.then(() => { settled = true; });
+    expect(settled).toBe(false);
+
+    finishPlacement();
+    await creationEffects;
+    expect(settled).toBe(true);
+  });
+
   it("persists binding intent before remember and defers reconciliation before projection", async () => {
     const order: string[] = [];
     const taskCreationHook: TaskCreationHook = {

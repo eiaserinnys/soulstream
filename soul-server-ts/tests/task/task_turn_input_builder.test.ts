@@ -100,6 +100,23 @@ function makeSubject(options: {
 }
 
 describe("TaskTurnInputBuilder", () => {
+  it("waits for creation effects before first-turn context build", async () => {
+    let finishCreationEffects!: () => void;
+    const creationEffects = new Promise<void>((resolve) => {
+      finishCreationEffects = resolve;
+    });
+    const task = makeTask({ creationEffects });
+    const { builder, contextBuilder } = makeSubject();
+
+    const turnInput = builder.prepareInitialTurnInput(task, claudeAgent);
+
+    expect(contextBuilder.build).not.toHaveBeenCalled();
+    finishCreationEffects();
+    await turnInput;
+
+    expect(contextBuilder.build).toHaveBeenCalledWith(task, claudeAgent);
+  });
+
   it("prepares a new Claude turn by publishing initial messages and splitting systemPrompt from prompt text", async () => {
     const ctx = makeContext();
     const task = makeTask({
