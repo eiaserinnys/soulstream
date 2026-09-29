@@ -47,6 +47,50 @@
   flex-direction: column;
 }
 
+.v3-detail-pane--inline {
+  height: auto;
+  overflow: visible;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.v3-detail-pane--inline .v3-detail-scroll {
+  overflow: visible;
+  padding: 0;
+}
+
+.v3-inline-folder-header {
+  margin-bottom: 22px;
+}
+
+.v3-inline-folder-heading,
+.v3-inline-folder-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.v3-inline-folder-heading {
+  min-width: 0;
+}
+
+.v3-inline-folder-heading .v3-task-title-editor {
+  width: auto;
+}
+
+.v3-inline-folder-heading h1 {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  line-height: var(--font-size-xl--line-height);
+  font-weight: 760;
+  letter-spacing: -.035em;
+}
+
+.v3-inline-folder-actions {
+  flex-wrap: wrap;
+}
+
 .v3-workspace-toolbar,
 .v3-chat-header {
   display: flex;

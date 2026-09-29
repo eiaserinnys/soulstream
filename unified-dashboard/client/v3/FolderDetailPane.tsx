@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { DashboardIconCap, FolderChecklistCard, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
+import { Button, DashboardIconCap, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle, FolderChecklistCard, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { ArrowLeft, LayoutDashboard, MoreHorizontal, Star } from "lucide-react";
 
@@ -65,6 +65,9 @@ export function FolderDetailPane({
   onDeleteSessions,
   onMoveSession,
   onFolderBlocksChanged,
+  placement = "overlay",
+  scrollContainerRef,
+  onArchiveFolder,
 }: {
   task: PlannerFolder;
   folderSections: ReactNode;
@@ -98,9 +101,16 @@ export function FolderDetailPane({
   onDeleteSessions(sessionIds: string[]): Promise<void>;
   onMoveSession(sessionId: string, targetFolder: FolderMoveTarget): Promise<void>;
   onFolderBlocksChanged(blocks: PlannerFolder["blocks"]): void;
+  placement?: "inline" | "overlay";
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
+  onArchiveFolder?: () => Promise<void>;
 }) {
+  const inline = placement === "inline";
   const surfaceRef = useRef<HTMLElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const ownScrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = scrollContainerRef ?? ownScrollRef;
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
   const informationSectionRef = useRef<HTMLElement>(null);
   const checklistSectionRef = useRef<HTMLElement>(null);
   const boardSectionRef = useRef<HTMLDivElement>(null);
@@ -111,7 +121,7 @@ export function FolderDetailPane({
     board: boardSectionRef,
     sessions: sessionsSectionRef,
   }), []);
-  const webglActive = useGlassSurface(surfaceRef, { enabled: true });
+  const webglActive = useGlassSurface(surfaceRef, { enabled: !inline });
   const description = useMemo(
     () => descriptionMarkdown(task.page, task.blocks),
     [task.blocks, task.page],
@@ -205,41 +215,72 @@ export function FolderDetailPane({
       && runSessionLoadStates.get(focusRequest.sessionId) === "ready"
   );
   const folderStarLabel = `별표 ${folderStar.starred ? "해제" : "추가"}`;
+  const backLabel = parentFolder ? "상위 폴더로 이동" : "오늘 플래너로 돌아가기";
+  const goBack = () => parentFolder ? onOpenParent(parentFolder) : onReturnToToday();
+  const actions = <>
+    <DashboardIconCap
+      className="v3-task-detail-star"
+      label={folderStarLabel}
+      aria-pressed={folderStar.starred}
+      disabled={folderStar.pending}
+      tooltip={folderStar.error ? `${folderStarLabel} — ${folderStar.error}` : undefined}
+      onClick={() => { void folderStar.toggle(); }}
+    >
+      <Star className="h-4 w-4" fill={folderStar.starred ? "currentColor" : "none"} aria-hidden="true" />
+    </DashboardIconCap>
+    <FolderTodayToggle inToday={folderInToday} onToggle={onToggleFolderToday} />
+    <DashboardIconCap label="업무 보드 열기" onClick={onOpenBoard}>
+      <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+    </DashboardIconCap>
+    <DashboardIconCap label="폴더 메뉴" onClick={(event) => setFolderMenu({ x: event.clientX, y: event.clientY })}>
+      <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+    </DashboardIconCap>
+    <V3ContextMenu target={folderMenu} onClose={() => setFolderMenu(null)} actions={[{
+      label: checklistEnabled ? "체크리스트 숨기기" : "체크리스트 보이기",
+      onSelect: () => onToggleChecklist(!checklistEnabled),
+    }, ...(onArchiveFolder ? [{ label: "폴더 보관", separatorBefore: true, destructive: true, onSelect: () => setArchiveOpen(true) }] : [])]} />
+  </>;
 
   return (
     <article
       ref={surfaceRef}
-      className="v3-detail-pane border border-glass-border glass-strong glass-chrome lg-rim"
+      className={`v3-detail-pane${inline ? " v3-detail-pane--inline" : " border border-glass-border glass-strong glass-chrome lg-rim"}`}
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
     >
-      <header className="v3-workspace-toolbar">
-        <DashboardIconCap label={parentFolder ? "상위 폴더로 이동" : "오늘 플래너로 돌아가기"} onClick={() => parentFolder ? onOpenParent(parentFolder) : onReturnToToday()}>
+      {inline ? <header className="v3-date-head v3-project-title v3-inline-folder-header">
+        <div className="v3-inline-folder-heading">
+          <DashboardIconCap label={backLabel} onClick={goBack}>
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
+          <FolderTitleEditor title={task.page.title} onRename={onRenameFolderTitle} headingLevel={1} />
+        </div>
+        <div className="v3-inline-folder-actions">{actions}</div>
+      </header> : <header className="v3-workspace-toolbar">
+        <DashboardIconCap label={backLabel} onClick={goBack}>
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
         <span className="v3-spacer" />
-        <DashboardIconCap
-          className="v3-task-detail-star"
-          label={folderStarLabel}
-          aria-pressed={folderStar.starred}
-          disabled={folderStar.pending}
-          tooltip={folderStar.error ? `${folderStarLabel} — ${folderStar.error}` : undefined}
-          onClick={() => { void folderStar.toggle(); }}
-        >
-          <Star className="h-4 w-4" fill={folderStar.starred ? "currentColor" : "none"} aria-hidden="true" />
-        </DashboardIconCap>
-        <FolderTodayToggle inToday={folderInToday} onToggle={onToggleFolderToday} />
-        <DashboardIconCap label="업무 보드 열기" onClick={onOpenBoard}>
-          <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
-        </DashboardIconCap>
-        <DashboardIconCap label="폴더 메뉴" onClick={(event) => setFolderMenu({ x: event.clientX, y: event.clientY })}>
-          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-        </DashboardIconCap>
-        <V3ContextMenu target={folderMenu} onClose={() => setFolderMenu(null)} actions={[{
-          label: checklistEnabled ? "체크리스트 숨기기" : "체크리스트 보이기",
-          onSelect: () => onToggleChecklist(!checklistEnabled),
-        }]} />
-      </header>
-      <div ref={scrollRef} className="v3-detail-scroll">
+        {actions}
+      </header>}
+      <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
+        <DialogPopup className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>폴더 보관</DialogTitle>
+            <DialogDescription>‘{task.page.title}’ 폴더를 보관합니다. 내용과 세션은 보존됩니다.</DialogDescription>
+          </DialogHeader>
+          {archiveError ? <p role="alert">폴더 보관 실패 · {archiveError}</p> : null}
+          <DialogFooter variant="bare">
+            <Button type="button" variant="outline" onClick={() => setArchiveOpen(false)}>취소</Button>
+            <Button type="button" variant="destructive" onClick={() => {
+              if (!onArchiveFolder) return;
+              void onArchiveFolder().then(() => setArchiveOpen(false)).catch((error: unknown) => {
+                setArchiveError(error instanceof Error ? error.message : String(error));
+              });
+            }}>보관</Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
+      <div ref={ownScrollRef} className="v3-detail-scroll">
         <div className="v3-task-detail-layout">
           <FolderSectionNavigation
             scrollRef={scrollRef}
@@ -252,7 +293,7 @@ export function FolderDetailPane({
           <div className="v3-task-detail-content">
             <div className="v3-detail-title">
               {checklistEnabled ? <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span> : null}
-              <FolderTitleEditor title={task.page.title} onRename={onRenameFolderTitle} />
+              {inline ? null : <FolderTitleEditor title={task.page.title} onRename={onRenameFolderTitle} />}
             </div>
 
             <section ref={informationSectionRef} className="v3-detail-section" data-task-section="information">

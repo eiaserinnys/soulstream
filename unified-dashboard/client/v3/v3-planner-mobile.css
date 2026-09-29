@@ -15,7 +15,6 @@
     overflow: hidden;
   }
 
-  .v3-shell[data-mobile-tab="task"] .v3-main,
   .v3-shell[data-mobile-tab="chat"] .v3-main {
     display: none;
   }

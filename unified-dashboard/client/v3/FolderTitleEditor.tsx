@@ -5,9 +5,11 @@ import { errorText } from "./v3-dashboard-utils";
 export function FolderTitleEditor({
   title,
   onRename,
+  headingLevel = 2,
 }: {
   title: string;
   onRename(title: string): Promise<void>;
+  headingLevel?: 1 | 2;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
@@ -50,6 +52,18 @@ export function FolderTitleEditor({
     }
   };
 
+  const titleButton = <button
+    type="button"
+    className="v3-task-title-button"
+    aria-label="업무 제목 편집"
+    title="클릭해서 업무 제목 편집"
+    onClick={() => {
+      setDraft(title);
+      setError(null);
+      setEditing(true);
+    }}
+  >{title}</button>;
+
   return (
     <div className="v3-task-title-editor">
       {editing ? (
@@ -75,21 +89,7 @@ export function FolderTitleEditor({
           }}
         />
       ) : (
-        <h2>
-          <button
-            type="button"
-            className="v3-task-title-button"
-            aria-label="업무 제목 편집"
-            title="클릭해서 업무 제목 편집"
-            onClick={() => {
-              setDraft(title);
-              setError(null);
-              setEditing(true);
-            }}
-          >
-            {title}
-          </button>
-        </h2>
+        headingLevel === 1 ? <h1>{titleButton}</h1> : <h2>{titleButton}</h2>
       )}
       {error ? <p className="v3-task-title-error" role="alert">{error}</p> : null}
     </div>

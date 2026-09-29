@@ -270,7 +270,10 @@ export async function loadMoreRunsPreservingScroll(
   loadMore: () => Promise<void>,
   scheduleFrame: (callback: FrameRequestCallback) => number = requestAnimationFrame,
 ): Promise<void> {
-  const scroller = trigger.closest<HTMLElement>(".v3-detail-scroll");
+  const detailScroller = trigger.closest<HTMLElement>(".v3-detail-scroll");
+  const scroller = detailScroller && detailScroller.scrollHeight > detailScroller.clientHeight
+    ? detailScroller
+    : trigger.closest<HTMLElement>(".v3-planner-scroll");
   const scrollTop = scroller?.scrollTop;
   await loadMore();
   if (!scroller || scrollTop === undefined) return;

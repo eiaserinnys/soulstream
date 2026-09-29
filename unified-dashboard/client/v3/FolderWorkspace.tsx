@@ -78,6 +78,11 @@ export function FolderWorkspace({
   onMoveSession,
   onFolderBlocksChanged,
   onAcknowledgedReview,
+  forceBoardOpen = false,
+  onCloseBoard,
+  onArchiveFolder,
+  markdownDocumentsRevision,
+  onMarkdownDocumentEditorClosed,
 }: {
   task: PlannerFolder | null;
   folderSections: ReactNode;
@@ -124,13 +129,17 @@ export function FolderWorkspace({
   onMoveSession(sessionId: string, targetFolder: FolderMoveTarget): Promise<void>;
   onFolderBlocksChanged(blocks: PlannerFolder["blocks"]): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
+  forceBoardOpen?: boolean;
+  onCloseBoard(): void;
+  onArchiveFolder?: () => Promise<void>;
+  markdownDocumentsRevision: number;
+  onMarkdownDocumentEditorClosed(): void;
 }) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const chatSurfaceRef = useRef<HTMLElement>(null);
   const draggingPointer = useRef<number | null>(null);
   const [splitPercent, setSplitPercent] = useState(DEFAULT_WORKSPACE_SPLIT);
   const [boardOpen, setBoardOpen] = useState(false);
-  const [markdownDocumentsRevision, setMarkdownDocumentsRevision] = useState(0);
   const [visibleTitle, setVisibleTitle] = useState(task?.page.title ?? "");
   const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: chatOpen && !boardOpen });
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
@@ -263,7 +272,7 @@ export function FolderWorkspace({
     );
   }
 
-  if (boardOpen) {
+  if (boardOpen || forceBoardOpen) {
     return (
       <FolderBoardWorkspace
         task={visibleTitle === task.page.title ? task : { ...task, page: { ...task.page, title: visibleTitle } }}
@@ -288,10 +297,8 @@ export function FolderWorkspace({
         contextInvalidationKey={contextInvalidationKey}
         markdownDocumentsRevision={markdownDocumentsRevision}
         sessionDefaults={sessionDefaults}
-        onMarkdownDocumentEditorClosed={() => {
-          setMarkdownDocumentsRevision((current) => current + 1);
-        }}
-        onClose={() => setBoardOpen(false)}
+        onMarkdownDocumentEditorClosed={onMarkdownDocumentEditorClosed}
+        onClose={() => { setBoardOpen(false); onCloseBoard(); }}
         onOpenSession={onOpenSession}
         onLoadMoreRuns={onLoadMoreRuns}
         onRenameSession={onRenameSession}
@@ -351,6 +358,7 @@ export function FolderWorkspace({
           onDeleteSessions={onDeleteSessions}
           onMoveSession={onMoveSession}
           onFolderBlocksChanged={onFolderBlocksChanged}
+          onArchiveFolder={onArchiveFolder}
         />
         {chatOpen ? (
           <>

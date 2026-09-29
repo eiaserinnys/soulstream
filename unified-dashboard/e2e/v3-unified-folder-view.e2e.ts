@@ -30,6 +30,8 @@ for (const viewport of [
 
     await openFolder(page, viewport.name, "소울스트림");
     if (phase === "after") {
+      await expect(page.locator(".v3-workspace-scrim")).toHaveCount(0);
+      await expect(page.getByTestId("v3-planner-scroll").locator(".v3-detail-pane--inline")).toBeVisible();
       await expect(page.getByText("화면 점검")).toBeVisible();
       await page.getByTestId("v3-task-checklist").scrollIntoViewIfNeeded();
     }
@@ -74,9 +76,36 @@ for (const viewport of [
     if (phase === "after") {
       await expect(page.getByRole("heading", { name: "세션 히스토리" })).toBeVisible();
       await expect(page.getByRole("button", { name: "이전 세션 더 보기" })).toBeVisible();
+      await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
+      await expect(page.getByText("오늘의 업무")).toBeVisible();
     }
   });
 }
+
+test("folder rows stay inline while sessions open the existing overlay", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.addInitScript(() => {
+    localStorage.setItem("ls.webglGlass", "0");
+    Object.defineProperty(navigator.serviceWorker, "register", {
+      configurable: true,
+      value: async () => ({ update: async () => undefined, active: null, addEventListener: () => undefined }),
+    });
+    Object.defineProperty(navigator.serviceWorker, "controller", { configurable: true, get: () => null });
+  });
+  await installV3VisualQaRoutes(page, { unifiedFolderView: true });
+  await openFolder(page, "desktop", "소울스트림");
+
+  await page.locator('.v3-planner-scroll .v3-run-list .v3-run-open').first().click();
+  await expect(page.locator(".v3-workspace-scrim")).toBeVisible();
+  await expect(page.locator(".v3-workspace-scrim .v3-detail-pane")).toBeVisible();
+  await expect(page.locator(".v3-workspace-scrim .v3-chat-pane")).toBeVisible();
+  await page.locator(".v3-workspace-scrim").click({ position: { x: 5, y: 500 } });
+  await expect(page.locator(".v3-workspace-scrim")).toHaveCount(0);
+  await expect(page.getByTestId("v3-planner-scroll").locator(".v3-detail-pane--inline")).toBeVisible();
+
+  await page.getByTestId("v3-session-panel").locator(".v3-run-open").first().click();
+  await expect(page.locator(".v3-workspace-scrim .v3-chat-pane")).toBeVisible();
+});
 
 async function openFolder(page: Page, viewport: "desktop" | "mobile", name: string) {
   await page.goto("http://127.0.0.1:4173/v3", { waitUntil: "domcontentloaded" });
@@ -90,7 +119,15 @@ async function openFolder(page: Page, viewport: "desktop" | "mobile", name: stri
     await page.getByTestId("v3-all-projects").getByRole("button", { name, exact: true }).click();
   }
   await page.waitForLoadState("networkidle");
-  if (phase === "after") await expect(page.getByTestId("v3-project-context")).toBeVisible();
+  if (phase === "after") {
+    await expect(page.getByTestId("v3-project-context")).toBeVisible();
+    await expect(page.locator(".v3-workspace-scrim")).toHaveCount(0);
+    await expect(page.getByTestId("v3-planner-scroll").locator(".v3-detail-pane--inline")).toBeVisible();
+    if (viewport === "desktop") {
+      await expect(page.locator(".v3-navigation")).toBeVisible();
+      await expect(page.getByTestId("v3-session-panel")).toBeVisible();
+    }
+  }
 }
 
 async function capture(page: Page, viewport: string, name: string) {
